@@ -53,36 +53,81 @@
   - Structured logging with zap
   - TODO: Connect to actual storage
 
+### 4. DynamoDB Storage Implementation ✅
+- [x] **pkg/storage/dynamodb/client.go** - Core infrastructure
+  - Connection pooling for Lambda reuse
+  - DynamoDB client initialization in init()
+  - Interface-based design for testability
+  - Helper functions for building DynamoDB keys
+
+- [x] **pkg/storage/dynamodb/actor.go** - Actor storage operations
+  - CreateActor with encrypted private key storage
+  - GetActor by username
+  - GetActorPrivateKey retrieval
+  - UpdateActor with optimistic locking
+  - DeleteActor with proper error handling
+
+- [x] **pkg/storage/dynamodb/activity.go** - Activity storage operations  
+  - CreateActivity supporting both outbox and inbox
+  - GetActivity by ID (uses scan for now)
+  - GetOutboxActivities with cursor-based pagination
+  - GetInboxActivities using GSI1 with pagination
+  - Helper functions for username extraction and cursor encoding
+
+- [x] **pkg/storage/dynamodb/actor_test.go** - Comprehensive unit tests
+  - Table-driven tests for all actor operations
+  - Mocked DynamoDB client for isolation
+  - Error case coverage
+  - Test helpers for creating test data
+
+- [x] **pkg/storage/dynamodb/integration_test.go** - Integration tests
+  - Tests against local DynamoDB instance
+  - Actor lifecycle testing
+  - Activity pagination testing
+  - Build tags for selective execution
+
+- [x] **pkg/storage/dynamodb/README.md** - Package documentation
+  - Schema documentation
+  - Usage examples
+  - Testing instructions
+  - Performance considerations
+
 ## In Progress 🚧
 
 ### Next Steps (Phase 1: Core ActivityPub)
-1. [ ] **DynamoDB Storage Implementation**
-   - Implement the storage interface for DynamoDB
-   - Create helper functions for key generation
-   - Add connection pooling
+1. [x] ~~**DynamoDB Storage Implementation**~~ ✅ COMPLETED
+   - ~~Implement the storage interface for DynamoDB~~
+   - ~~Create helper functions for key generation~~
+   - ~~Add connection pooling~~
 
-2. [ ] **HTTP Signatures Package**
+2. [ ] **Remaining Storage Operations**
+   - Object storage (Notes, Articles, etc.)
+   - Relationship operations (follows)
+   - Collection operations
+   - DynamoDB transactions for atomic operations
+
+3. [ ] **HTTP Signatures Package**
    - Signature verification for incoming requests
    - Signature generation for outgoing requests
    - Key management
 
-3. [ ] **Actor Profile Endpoint** (cmd/actor)
+4. [ ] **Actor Profile Endpoint** (cmd/actor)
    - GET handler for actor profiles
    - Content negotiation (HTML vs ActivityStreams)
    - Public key serving
 
-4. [ ] **Inbox Endpoint** (cmd/inbox)
+5. [ ] **Inbox Endpoint** (cmd/inbox)
    - POST handler for receiving activities
    - HTTP signature verification
    - Activity validation
    - Queue activities for processing
 
-5. [ ] **Outbox Endpoint** (cmd/outbox)
+6. [ ] **Outbox Endpoint** (cmd/outbox)
    - GET handler for public activities
    - POST handler for creating activities
    - Activity validation
 
-6. [ ] **Pulumi Infrastructure**
+7. [ ] **Pulumi Infrastructure**
    - DynamoDB table definitions
    - Lambda function deployments
    - API Gateway configuration
@@ -111,12 +156,18 @@
 - [x] WebFinger parsing
 - [x] URL validation
 - [x] HTML sanitization
+- [x] **DynamoDB Actor Operations** - All CRUD operations with mocked client
+- [x] **DynamoDB Activity Operations** - Create and query operations
 
 ### Unit Tests Needed:
 - [ ] ActivityPub type marshaling/unmarshaling
 - [ ] HTTP signature verification
-- [ ] DynamoDB key generation
+- [ ] DynamoDB object and relationship operations
 - [ ] Common response utilities
+
+### Integration Tests Completed:
+- [x] **DynamoDB Actor Lifecycle** - Full CRUD cycle against local DynamoDB
+- [x] **DynamoDB Activity Pagination** - Cursor-based pagination testing
 
 ### Integration Tests Needed:
 - [ ] End-to-end federation test with Mastodon
@@ -139,10 +190,12 @@
 
 ## Known Limitations 🚨
 
-1. **No Real Storage Yet** - All endpoints return mock data
+1. **Partial Storage Implementation** - Actor and Activity storage complete, but Object/Relationship/Collection operations pending
 2. **No Authentication** - No way to create or authenticate users
 3. **No Activity Processing** - Activities are received but not processed
 4. **No Federation** - Can't actually communicate with other servers yet
+5. **No KMS Encryption** - Private keys stored in plaintext (TODO: AWS KMS integration)
+6. **GetActivity Uses Scan** - Should optimize with better key design or GSI
 
 ## Resources 📚
 

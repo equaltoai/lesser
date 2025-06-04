@@ -36,7 +36,7 @@
 ```go
 // Configuration - We use simple env vars for Lambda
 // Avoid heavy config libraries like viper to reduce cold starts
-github.com/lesser/lesser/pkg/config
+github.com/aron23/lesser/pkg/config
 
 // Logging - Structured logging with zap
 go.uber.org/zap
