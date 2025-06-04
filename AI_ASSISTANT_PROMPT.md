@@ -19,7 +19,7 @@ The goal is to make hosting an ActivityPub instance affordable for individuals a
 1. **Architecture Design** (see DESIGN.md)
    - Single DynamoDB table design with composite keys
    - Lambda per endpoint pattern
-   - Event-driven architecture with SQS
+   - Event-driven architecture with DynamoDB Streams
 
 2. **Developer Guidelines** (see DEVELOPER_GUIDELINES.md)
    - Technology choices: zap for logging, no heavy frameworks
@@ -31,14 +31,23 @@ The goal is to make hosting an ActivityPub instance affordable for individuals a
    - `pkg/config/` - Environment-based configuration
    - `pkg/common/` - Logging, errors, and response utilities
 
-4. **DynamoDB Storage Layer** (NEW ✅)
+4. **DynamoDB Storage Layer** ✅
    - `pkg/storage/dynamodb/client.go` - Connection pooling, initialization
    - `pkg/storage/dynamodb/actor.go` - Full actor CRUD operations
    - `pkg/storage/dynamodb/activity.go` - Activity storage with pagination
    - Comprehensive unit and integration tests
    - >80% test coverage
 
-5. **First Lambda Function**
+5. **HTTP Signatures Package** (NEW ✅)
+   - `pkg/federation/httpsig.go` - HTTP signature verification and generation
+   - RSA-SHA256 algorithm support
+   - Timestamp validation (±5 minutes)
+   - Digest calculation and verification
+   - Key management utilities (RSA key generation, PEM encoding/decoding)
+   - 87.4% test coverage
+   - Ready for integration with endpoints
+
+6. **First Lambda Function**
    - `cmd/webfinger/` - WebFinger discovery endpoint (needs storage connection)
 
 ### Partially Complete 🚧
@@ -49,184 +58,202 @@ The goal is to make hosting an ActivityPub instance affordable for individuals a
    - ❌ Relationship operations (follows)
    - ❌ Collection operations
 
+### Important Architectural Decisions
+See `ARCHITECTURE_DECISIONS.md` for details:
+- **Private Key Encryption**: AWS KMS (pending implementation)
+- **Client Authentication**: OAuth 2.0 with PKCE
+- **Activity Delivery**: DynamoDB Streams → Lambda
+
 ## Your Task
 
-Continue development by implementing the **HTTP Signatures Package**, which is critical for federation. HTTP Signatures are required for:
-- Authenticating incoming federation requests
-- Signing outgoing federation requests
-- Establishing trust between ActivityPub servers
+Continue development by implementing the **Actor Profile Endpoint** (`cmd/actor`), which is the next critical component for federation. This endpoint will:
+- Serve actor profiles with public keys (required for HTTP signature verification)
+- Connect the DynamoDB storage to actual HTTP endpoints
+- Support content negotiation (HTML vs ActivityStreams)
 
-### Important Prerequisites
+### 1. Create Actor Profile Handler
+Create `cmd/actor/main.go` that handles:
+- `GET /users/{username}` - Returns actor profile
+- Content negotiation based on `Accept` header
+- Integration with DynamoDB storage
+- Proper error handling with common utilities
 
-⚠️ **Before implementing HTTP Signatures**, be aware of these architectural decisions (see ARCHITECTURE_DECISIONS.md):
+### 2. Implement Content Negotiation
+The endpoint must support two response types:
+1. **ActivityStreams JSON** (for federation)
+   - When `Accept: application/activity+json` or `application/ld+json`
+   - Include public key for HTTP signature verification
+   - Follow ActivityPub actor format
 
-1. **Private Key Encryption**: We need to implement AWS KMS encryption for private keys. Currently they're stored in plaintext.
-2. **OAuth 2.0 Authentication**: We're using OAuth 2.0 (not JWT) for client authentication to ensure compatibility with existing ActivityPub clients.
+2. **HTML** (for browsers)
+   - Basic HTML profile page
+   - Can be minimal for MVP
+   - Include meta tags for discoverability
 
-### 1. Create HTTP Signatures Package Structure
-Create `pkg/federation/httpsig.go` with:
-- Signature verification for incoming requests
-- Signature generation for outgoing requests
-- Key management utilities
-- Support for common algorithms (RSA-SHA256)
+### 3. Connect to Storage
+- Initialize DynamoDB storage client
+- Fetch actor from storage
+- Handle not found errors appropriately
+- Use common error responses
 
-### 2. Implement Signature Verification
-```go
-// VerifyHTTPSignature verifies an incoming HTTP request's signature
-func VerifyHTTPSignature(req *http.Request, publicKey *rsa.PublicKey) error
+### 4. Include Public Key
+Actor responses must include the public key for federation:
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://example.com/users/alice",
+  "type": "Person",
+  "preferredUsername": "alice",
+  "inbox": "https://example.com/users/alice/inbox",
+  "outbox": "https://example.com/users/alice/outbox",
+  "publicKey": {
+    "id": "https://example.com/users/alice#main-key",
+    "owner": "https://example.com/users/alice",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n..."
+  }
+}
 ```
 
-Key requirements:
-- Parse the `Signature` header
-- Validate required headers are included (date, host, digest)
-- Verify the signature matches
-- Check timestamp is within acceptable range (±5 minutes)
-- Support for both RSA and Ed25519 keys
-
-### 3. Implement Signature Generation
-```go
-// SignHTTPRequest signs an outgoing HTTP request
-func SignHTTPRequest(req *http.Request, privateKey *rsa.PrivateKey, keyID string) error
-```
-
-Key requirements:
-- Calculate digest for request body
-- Build signature string from headers
-- Sign using private key
-- Add `Signature` header to request
-
-### 4. Create Key Management Utilities
-- RSA key generation (2048-bit minimum)
-- Key serialization/deserialization
-- PEM encoding/decoding
-- Integration with storage layer for key retrieval
-
-### 5. Write Comprehensive Tests
-- Unit tests for signature parsing
-- Verification tests with known-good signatures
-- Generation tests with verification
-- Interoperability tests with reference implementations
-- Edge cases (expired signatures, missing headers, etc.)
-
-## Technical Requirements
-
-### HTTP Signature Specification
-Follow the draft specification: [draft-cavage-http-signatures-12](https://datatracker.ietf.org/doc/html/draft-cavage-http-signatures-12)
-
-Key headers to support:
-- `(request-target)`: The HTTP method and path
-- `host`: The target host
-- `date`: Request timestamp
-- `digest`: Body content digest (SHA-256)
-- `content-type`: For POST requests
-
-### Example Signature Header
-```
-Signature: keyId="https://example.com/users/alice#main-key",
-           algorithm="rsa-sha256",
-           headers="(request-target) host date digest",
-           signature="base64-encoded-signature"
-```
-
-### Integration Points
-1. The `inbox` handler will use this to verify incoming activities
-2. The `activity-processor` will use this to sign outgoing activities
-3. Actor profiles must include public keys for verification
+### 5. Update WebFinger
+Once the actor endpoint is working:
+- Update `cmd/webfinger/main.go` to use real storage
+- Ensure WebFinger returns correct actor URLs
+- Test the discovery flow
 
 ## Example Implementation Pattern
 
 ```go
-package federation
+package main
 
 import (
-    "crypto"
-    "crypto/rsa"
-    "crypto/sha256"
-    "encoding/base64"
+    "context"
+    "encoding/json"
     "fmt"
     "net/http"
     "strings"
-    "time"
     
-    "github.com/lesser/lesser/pkg/common"
+    "github.com/aws/aws-lambda-go/events"
+    "github.com/aws/aws-lambda-go/lambda"
+    "github.com/aron23/lesser/pkg/activitypub"
+    "github.com/aron23/lesser/pkg/common"
+    "github.com/aron23/lesser/pkg/config"
+    "github.com/aron23/lesser/pkg/storage/dynamodb"
     "go.uber.org/zap"
 )
 
-// HTTPSignature represents a parsed HTTP signature
-type HTTPSignature struct {
-    KeyID     string
-    Algorithm string
-    Headers   []string
-    Signature []byte
+var (
+    cfg    *config.Config
+    store  storage.Storage
+    logger *zap.Logger
+)
+
+func init() {
+    cfg = config.Get()
+    logger = common.Logger()
+    
+    // Initialize storage
+    var err error
+    store, err = dynamodb.New()
+    if err != nil {
+        logger.Fatal("failed to initialize storage", zap.Error(err))
+    }
 }
 
-// ParseSignatureHeader parses the Signature header
-func ParseSignatureHeader(header string) (*HTTPSignature, error) {
-    // Implementation here
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    log := common.WithContext(ctx)
+    
+    // Extract username from path
+    username := request.PathParameters["username"]
+    if username == "" {
+        return common.BadRequest(errors.New("missing username")), nil
+    }
+    
+    log.Info("fetching actor profile",
+        zap.String("username", username),
+        zap.String("accept", request.Headers["Accept"]))
+    
+    // Get actor from storage
+    actor, err := store.GetActor(ctx, username)
+    if err != nil {
+        if common.IsNotFound(err) {
+            return common.NotFound(err), nil
+        }
+        log.Error("failed to get actor", zap.Error(err))
+        return common.InternalServerError(err), nil
+    }
+    
+    // Content negotiation
+    accept := request.Headers["Accept"]
+    if strings.Contains(accept, "application/activity+json") || 
+       strings.Contains(accept, "application/ld+json") {
+        // Return ActivityStreams JSON
+        return common.ActivityPubResponse(http.StatusOK, actor), nil
+    }
+    
+    // Return HTML (simplified for MVP)
+    html := fmt.Sprintf(`
+        <html>
+        <head>
+            <title>%s (@%s@%s)</title>
+            <meta property="og:type" content="profile">
+            <meta property="og:title" content="%s">
+            <meta property="og:url" content="%s">
+        </head>
+        <body>
+            <h1>%s</h1>
+            <p>@%s@%s</p>
+            <p>%s</p>
+        </body>
+        </html>`,
+        actor.Name, actor.PreferredUsername, cfg.Domain,
+        actor.Name, actor.ID, actor.Name,
+        actor.PreferredUsername, cfg.Domain,
+        actor.Summary)
+    
+    return events.APIGatewayProxyResponse{
+        StatusCode: http.StatusOK,
+        Headers: map[string]string{
+            "Content-Type": "text/html; charset=utf-8",
+        },
+        Body: html,
+    }, nil
 }
 
-// VerifyHTTPSignature verifies an incoming request
-func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
-    log := common.Logger()
-    
-    // Parse signature header
-    sigHeader := req.Header.Get("Signature")
-    if sigHeader == "" {
-        return common.AuthenticationError{Message: "missing signature header"}
-    }
-    
-    sig, err := ParseSignatureHeader(sigHeader)
-    if err != nil {
-        return fmt.Errorf("failed to parse signature: %w", err)
-    }
-    
-    // Verify timestamp
-    date := req.Header.Get("Date")
-    if err := verifyTimestamp(date); err != nil {
-        return err
-    }
-    
-    // Build signature string
-    sigString, err := buildSignatureString(req, sig.Headers)
-    if err != nil {
-        return err
-    }
-    
-    // Verify signature
-    // ... verification logic
-    
-    log.Info("verified HTTP signature",
-        zap.String("key_id", sig.KeyID),
-        zap.String("method", req.Method),
-        zap.String("path", req.URL.Path))
-    
-    return nil
+func main() {
+    lambda.Start(handler)
 }
 ```
 
 ## Testing Strategy
 
-Create `pkg/federation/httpsig_test.go` with:
-- Table-driven tests for signature parsing
-- Mock HTTP requests for testing
-- Known-good signatures from other implementations
-- Integration tests with real keys
+Create `cmd/actor/handler_test.go` with:
+- Unit tests for username extraction
+- Tests for both JSON and HTML responses
+- Error handling tests
+- Mock storage for testing
 
 ## Success Criteria
 
-- [ ] HTTP signature verification working
-- [ ] HTTP signature generation working  
-- [ ] Key management utilities implemented
-- [ ] Unit tests with >80% coverage
-- [ ] Integration tests with reference signatures
-- [ ] Documentation with examples
-- [ ] Ready for use in inbox/outbox handlers
+- [ ] Actor profiles served correctly in ActivityStreams format
+- [ ] Public key included in actor response
+- [ ] Content negotiation working (JSON vs HTML)
+- [ ] Storage integration working
+- [ ] Error handling with proper status codes
+- [ ] WebFinger updated to use real storage
+- [ ] Unit tests with good coverage
+- [ ] Manual testing with `curl` commands
 
 ## Next Steps After This Task
 
-1. **Connect Storage to Handlers**: Update WebFinger and create Actor endpoint
-2. **Implement Inbox Handler**: Receive and verify federated activities
-3. **Implement Activity Processor**: Background processing of activities
-4. **Complete Remaining Storage**: Objects, relationships, collections
+1. **Implement Inbox Handler**: Receive federated activities with HTTP signature verification
+2. **Implement Outbox Handler**: Create and serve local activities
+3. **Activity Processor**: Background processing with DynamoDB Streams
+4. **Complete Storage Operations**: Objects, relationships, collections
+5. **OAuth 2.0 Implementation**: Client authentication for posting
 
-Begin by studying the HTTP Signatures specification and examining how other ActivityPub implementations handle federation authentication. 
+The Actor Profile endpoint is crucial because it:
+- Enables other servers to discover your actors
+- Provides public keys for signature verification
+- Completes the basic federation discovery flow
+
+Begin by creating the handler structure and connecting to the DynamoDB storage that's already implemented. 

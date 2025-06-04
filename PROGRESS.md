@@ -51,7 +51,7 @@
   - Returns proper WebFinger responses
   - Refactored to use common utilities
   - Structured logging with zap
-  - TODO: Connect to actual storage
+  - ✅ NOW CONNECTED to DynamoDB storage
 
 ### 4. DynamoDB Storage Implementation ✅
 - [x] **pkg/storage/dynamodb/client.go** - Core infrastructure
@@ -105,7 +105,7 @@
   - Unit tests for all functions
   - Integration tests with end-to-end signing/verification
   - Edge case coverage
-  - 84.3% test coverage achieved
+  - 87.4% test coverage achieved
 
 - [x] **pkg/federation/README.md** - Package documentation
   - Usage examples for incoming/outgoing requests
@@ -113,62 +113,89 @@
   - Integration with ActivityPub
   - Future enhancements
 
+### 6. Actor Profile Endpoint ✅ (NEW)
+- [x] **cmd/actor/main.go** - Actor profile handler
+  - GET /users/{username} endpoint
+  - Content negotiation (JSON vs HTML)
+  - Returns ActivityStreams JSON for federation
+  - Beautiful HTML profile pages for browsers
+  - Public key serving for HTTP signatures
+  - Connected to DynamoDB storage
+
+- [x] **cmd/actor/handler_test.go** - Comprehensive unit tests
+  - Mock storage implementation
+  - Tests for both JSON and HTML responses
+  - Error handling coverage
+  - Content negotiation testing
+
+- [x] **cmd/actor/README.md** - Endpoint documentation
+  - API documentation
+  - Content type examples
+  - Testing instructions
+  - Integration with WebFinger
+
+- [x] **WebFinger Integration**
+  - Updated cmd/webfinger to use real storage
+  - Complete discovery flow working
+  - WebFinger → Actor Profile → Public Key
+
 ## In Progress 🚧
 
-### Next Steps (Phase 1: Core ActivityPub)
-1. [x] ~~**DynamoDB Storage Implementation**~~ ✅ COMPLETED
-   - ~~Implement the storage interface for DynamoDB~~
-   - ~~Create helper functions for key generation~~
-   - ~~Add connection pooling~~
+### Next: Inbox Endpoint 🎯
+This is the critical next step to enable receiving federated activities:
 
-2. [x] ~~**HTTP Signatures Package**~~ ✅ COMPLETED
-   - ~~Signature verification for incoming requests~~
-   - ~~Signature generation for outgoing requests~~
-   - ~~Key management~~
+1. [ ] **Inbox Endpoint** (cmd/inbox)
+   - POST handler for receiving activities
+   - HTTP signature verification using federation package
+   - Activity validation
+   - Store activities in DynamoDB
+   - Queue activities for processing (DynamoDB Streams)
 
-3. [ ] **Remaining Storage Operations**
+### Phase 1: Core ActivityPub (Remaining)
+
+2. [ ] **Remaining Storage Operations**
    - Object storage (Notes, Articles, etc.)
    - Relationship operations (follows)
    - Collection operations
    - DynamoDB transactions for atomic operations
 
-4. [ ] **Actor Profile Endpoint** (cmd/actor)
-   - GET handler for actor profiles
-   - Content negotiation (HTML vs ActivityStreams)
-   - Public key serving
-   - Connect to DynamoDB storage
-
-5. [ ] **Inbox Endpoint** (cmd/inbox)
-   - POST handler for receiving activities
-   - HTTP signature verification using federation package
-   - Activity validation
-   - Queue activities for processing
-
-6. [ ] **Outbox Endpoint** (cmd/outbox)
+3. [ ] **Outbox Endpoint** (cmd/outbox)
    - GET handler for public activities
    - POST handler for creating activities
    - Activity validation
 
-7. [ ] **Pulumi Infrastructure**
+4. [ ] **Activity Processor** (cmd/activity-processor)
+   - Background Lambda triggered by DynamoDB Streams
+   - Process incoming activities (follows, likes, etc.)
+   - Deliver activities to remote servers (using HTTP signatures)
+   - Handle retries and failures
+
+5. [ ] **Collections Endpoint** (cmd/collections)
+   - GET handlers for followers/following collections
+   - Pagination support
+   - Proper authorization
+
+6. [ ] **Pulumi Infrastructure**
    - DynamoDB table definitions
    - Lambda function deployments
    - API Gateway configuration
    - IAM roles and policies
+   - DynamoDB Streams setup
 
 ## Architecture Decisions 📋
 
 ### Key Design Choices Made:
 1. **Single DynamoDB Table Design** - Using composite keys for efficient queries
 2. **Lambda Per Endpoint** - Each ActivityPub endpoint gets its own Lambda for isolation
-3. **Background Processing via SQS** - Decouple activity processing from HTTP requests
-4. **JWT for Client Auth** - Simple client authentication separate from federation
+3. **Background Processing via DynamoDB Streams** - Decouple activity processing from HTTP requests
+4. **OAuth 2.0 for Client Auth** - Compatibility with existing ActivityPub clients (not JWT)
 5. **Zap for Logging** - Fast, structured logging optimized for Lambda
 6. **No Heavy Frameworks** - Direct Lambda handlers to minimize cold starts
 7. **Table-Driven Tests** - Comprehensive test coverage with clear test cases
 8. **RSA-SHA256 for HTTP Signatures** - Industry standard algorithm for federation
 
 ### Open Questions:
-1. Should we use DynamoDB Streams or SQS for activity delivery?
+1. ~~Should we use DynamoDB Streams or SQS for activity delivery?~~ → DynamoDB Streams chosen
 2. How should we handle media storage lifecycle policies?
 3. Should we implement a shared inbox for efficiency?
 4. Should we add support for Ed25519 signatures (more efficient)?
@@ -180,24 +207,29 @@
 - [x] WebFinger parsing
 - [x] URL validation
 - [x] HTML sanitization
-- [x] **DynamoDB Actor Operations** - All CRUD operations with mocked client
-- [x] **DynamoDB Activity Operations** - Create and query operations
-- [x] **HTTP Signature Operations** - Parsing, verification, generation, key management
+- [x] DynamoDB Actor Operations - All CRUD operations with mocked client
+- [x] DynamoDB Activity Operations - Create and query operations
+- [x] HTTP Signature Operations - Parsing, verification, generation, key management
+- [x] Actor Profile Handler - Content negotiation, error handling
 
 ### Unit Tests Needed:
 - [ ] ActivityPub type marshaling/unmarshaling
 - [ ] DynamoDB object and relationship operations
-- [ ] Common response utilities
+- [ ] Inbox handler
+- [ ] Outbox handler
+- [ ] Activity processor logic
 
 ### Integration Tests Completed:
-- [x] **DynamoDB Actor Lifecycle** - Full CRUD cycle against local DynamoDB
-- [x] **DynamoDB Activity Pagination** - Cursor-based pagination testing
-- [x] **HTTP Signature End-to-End** - Sign and verify full cycle
+- [x] DynamoDB Actor Lifecycle - Full CRUD cycle against local DynamoDB
+- [x] DynamoDB Activity Pagination - Cursor-based pagination testing
+- [x] HTTP Signature End-to-End - Sign and verify full cycle
+- [x] WebFinger → Actor Profile Discovery - Complete flow working
 
 ### Integration Tests Needed:
 - [ ] End-to-end federation test with Mastodon
 - [ ] Activity delivery reliability
 - [ ] Media upload and serving
+- [ ] Full activity flow (create → outbox → delivery → inbox)
 
 ## Code Quality 📊
 
@@ -208,6 +240,12 @@
 - **Testing**: Table-driven tests with descriptive names
 - **Documentation**: Comprehensive godoc comments
 
+### Test Coverage:
+- `pkg/federation`: 87.4%
+- `pkg/storage/dynamodb`: >80%
+- `cmd/actor`: Unit tests passing
+- `cmd/webfinger`: Needs unit tests
+
 ### Linting & Formatting:
 - `gofmt` for consistent formatting
 - `golangci-lint` for code quality checks
@@ -216,12 +254,28 @@
 ## Known Limitations 🚨
 
 1. **Partial Storage Implementation** - Actor and Activity storage complete, but Object/Relationship/Collection operations pending
-2. **No Authentication** - No way to create or authenticate users
+2. **No Authentication** - No OAuth 2.0 implementation yet
 3. **No Activity Processing** - Activities are received but not processed
-4. **No Federation** - Can't actually communicate with other servers yet (but HTTP signatures are ready!)
+4. **No Activity Delivery** - Can't send activities to other servers yet
 5. **No KMS Encryption** - Private keys stored in plaintext (TODO: AWS KMS integration)
-6. **GetActivity Uses Scan** - Should optimize with better key design or GSI
+6. **GetActivity Uses Scan** - Should optimize with GSI2
 7. **HTTP Signatures RSA Only** - Ed25519 support planned for future
+
+## Federation Status 🌐
+
+### What's Working:
+- ✅ **Discovery**: WebFinger endpoint returns correct actor URLs
+- ✅ **Actor Profiles**: Serving valid ActivityPub actor objects
+- ✅ **Public Keys**: Actors include public keys for signature verification
+- ✅ **Content Negotiation**: Proper JSON/HTML responses
+- ✅ **HTTP Signatures**: Can verify and sign federation requests
+
+### What's Missing:
+- ❌ **Inbox**: Can't receive activities from other servers
+- ❌ **Outbox**: Can't create or serve local activities
+- ❌ **Activity Delivery**: Can't send activities to other servers
+- ❌ **Collections**: No followers/following lists
+- ❌ **Media**: No support for images/attachments
 
 ## Resources 📚
 
