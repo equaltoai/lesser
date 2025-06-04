@@ -159,48 +159,76 @@ https://example.com/activities/20240115-143022-abc12345
 ---
 
 ### 6. Client Authentication Strategy
-**Status:** 📋 PLANNED  
-**Decision:** OAuth 2.0 with PKCE
+**Status:** ✅ IMPLEMENTED  
+**Decision:** OAuth 2.0 with PKCE and JWT tokens
 
 **Context:**
 - Need secure client-to-server authentication
 - Most ActivityPub clients expect OAuth 2.0
 - Must support third-party apps
 
-**Options Considered:**
-1. JWT with refresh tokens
-   - Simpler to implement
-   - Would require migration later
-2. **OAuth 2.0** ✅ SELECTED
-   - Industry standard
-   - Existing client support
-   - PKCE for mobile app security
+**Implementation:**
+- `pkg/auth/oauth.go` - OAuth 2.0 service
+- Authorization code flow with mandatory PKCE
+- JWT access tokens (1 hour expiration)
+- Refresh tokens (30 day expiration)
+- Scope-based authorization (read/write)
+- 67% test coverage
 
-**Rationale:**
-- Avoid future migration from JWT to OAuth
-- Immediate compatibility with Mastodon apps
-- Better security with authorization codes
-- Supports scopes for fine-grained permissions
+**Benefits:**
+- Industry standard OAuth 2.0 compliance
+- PKCE prevents authorization code interception
+- Stateless JWT tokens for scalability
+- Compatible with existing ActivityPub clients
 
-**Implementation Plan:**
-```go
-// pkg/auth/oauth/
-├── server.go        // OAuth 2.0 server implementation
-├── tokens.go        // Token generation and validation
-├── clients.go       // Client app registration
-├── scopes.go        // Permission scopes
-└── pkce.go          // PKCE support
-```
+**Token Details:**
+- **Access Tokens**: JWT with HS256, 1 hour expiration
+- **Refresh Tokens**: Opaque tokens, 30 day expiration
+- **Authorization Codes**: 10 minute expiration
+- **Storage**: DynamoDB with automatic TTL cleanup
 
-**OAuth 2.0 Endpoints:**
-- `/oauth/authorize` - Authorization endpoint
-- `/oauth/token` - Token endpoint
-- `/oauth/revoke` - Token revocation
-- `/api/v1/apps` - Client registration (Mastodon API compatible)
+**Current Limitations:**
+- Single hardcoded client ("dev-client")
+- No actual login page (uses "testuser")
+- No token revocation endpoint
+- No dynamic client registration
 
 ---
 
-### 7. Activity Delivery Architecture
+### 7. JWT Token Strategy
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Use JWT for access tokens with HS256 signing
+
+**Context:**
+- Need stateless authentication for Lambda
+- Must include user information and scopes
+- Balance between security and performance
+
+**Implementation:**
+```go
+type Claims struct {
+    jwt.StandardClaims
+    Username string   `json:"username"`
+    Scopes   []string `json:"scopes"`
+    ClientID string   `json:"client_id"`
+}
+```
+
+**Rationale:**
+- Stateless - no database lookup needed
+- Standard JWT format for compatibility
+- HS256 sufficient for server-only validation
+- Claims include all needed authorization info
+
+**Security Measures:**
+- Short expiration (1 hour)
+- Refresh tokens for long-lived sessions
+- JWT secret from environment variable
+- No sensitive data in claims
+
+---
+
+### 8. Activity Delivery Architecture
 **Status:** ✅ IMPLEMENTED  
 **Decision:** DynamoDB Streams → Lambda
 
@@ -230,7 +258,7 @@ https://example.com/activities/20240115-143022-abc12345
 
 ---
 
-### 8. GetActivity Performance
+### 9. GetActivity Performance
 **Status:** 🔧 OPTIMIZATION NEEDED  
 **Decision:** Add GSI2 for activity lookups
 
@@ -253,7 +281,7 @@ GSI2SK: METADATA
 
 ---
 
-### 9. Shared Inbox Strategy
+### 10. Shared Inbox Strategy
 **Status:** 🟢 DEFERRED  
 **Decision:** Implement individual inboxes first
 
@@ -270,7 +298,7 @@ GSI2SK: METADATA
 
 ---
 
-### 10. Media Storage Architecture
+### 11. Media Storage Architecture
 **Status:** 🟢 DEFERRED  
 **Decision:** S3 with CloudFront CDN
 
@@ -287,7 +315,7 @@ GSI2SK: METADATA
 
 ---
 
-### 11. Federation Protocol Support
+### 12. Federation Protocol Support
 **Status:** 📋 PLANNED  
 **Decision:** ActivityPub S2S only initially
 
@@ -303,7 +331,7 @@ GSI2SK: METADATA
 
 ---
 
-### 12. Database Design
+### 13. Database Design
 **Status:** ✅ IMPLEMENTED  
 **Decision:** Single-table DynamoDB design
 
@@ -320,7 +348,7 @@ GSI2SK: METADATA
 
 ---
 
-### 13. Lambda Architecture
+### 14. Lambda Architecture
 **Status:** ✅ IMPLEMENTED  
 **Decision:** One Lambda per endpoint
 
@@ -337,7 +365,7 @@ GSI2SK: METADATA
 
 ---
 
-### 14. Infrastructure as Code
+### 15. Infrastructure as Code
 **Status:** 📋 PLANNED  
 **Decision:** Pulumi with TypeScript
 

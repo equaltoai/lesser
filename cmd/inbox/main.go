@@ -8,10 +8,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/federation"
@@ -23,9 +25,10 @@ import (
 )
 
 var (
-	cfg    *config.Config
-	store  storage.Storage
-	logger *zap.Logger
+	cfg            *config.Config
+	store          storage.Storage
+	logger         *zap.Logger
+	authMiddleware *auth.Middleware
 )
 
 func init() {
@@ -38,15 +41,16 @@ func init() {
 	if err != nil {
 		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
+
+	// Initialize auth middleware
+	authMiddleware, err = auth.GetMiddleware()
+	if err != nil {
+		logger.Fatal("failed to initialize auth middleware", zap.Error(err))
+	}
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	log := common.WithContext(ctx)
-
-	// Only accept POST requests
-	if request.HTTPMethod != http.MethodPost {
-		return common.BadRequest(fmt.Errorf("method %s not allowed", request.HTTPMethod)), nil
-	}
 
 	// Extract username from path
 	username := request.PathParameters["username"]
@@ -54,7 +58,181 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return common.BadRequest(common.ValidationError{Field: "username", Message: "missing username"}), nil
 	}
 
-	log.Info("received inbox request",
+	// Route based on HTTP method
+	switch request.HTTPMethod {
+	case http.MethodGet:
+		return handleGetInbox(ctx, log, username, request)
+	case http.MethodPost:
+		return handlePostInbox(ctx, log, username, request)
+	default:
+		return common.BadRequest(fmt.Errorf("method %s not allowed", request.HTTPMethod)), nil
+	}
+}
+
+// handleGetInbox handles GET requests to retrieve inbox activities
+func handleGetInbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	log.Info("received inbox GET request",
+		zap.String("username", username),
+		zap.Any("query_params", request.QueryStringParameters))
+
+	// Require authentication
+	claims, err := authMiddleware.RequireAuth(ctx, request)
+	if err != nil {
+		log.Warn("authentication failed", zap.Error(err))
+		return common.Unauthorized(err), nil
+	}
+
+	// Verify user owns this inbox
+	if err := authMiddleware.RequireUser(claims, username); err != nil {
+		log.Warn("user mismatch",
+			zap.String("authenticated_user", claims.Username),
+			zap.String("inbox_owner", username))
+		return common.Forbidden(err), nil
+	}
+
+	// Verify read scope
+	if err := authMiddleware.RequireScope(claims, auth.ScopeRead); err != nil {
+		log.Warn("insufficient scope", zap.Error(err))
+		return common.Forbidden(err), nil
+	}
+
+	// Verify the actor exists
+	actor, err := store.GetActor(ctx, username)
+	if err != nil {
+		if common.IsNotFound(err) {
+			return common.NotFound(err), nil
+		}
+		log.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Parse pagination parameters
+	limitStr := request.QueryStringParameters["limit"]
+	if limitStr == "" {
+		limitStr = "20"
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 || limit > 100 {
+		limit = 20
+	}
+
+	cursor := request.QueryStringParameters["cursor"]
+	page := request.QueryStringParameters["page"]
+
+	// If no page parameter, return the collection with metadata
+	if page == "" && cursor == "" {
+		// Get first page to calculate total items (this is a simplification)
+		activities, _, err := store.GetInboxActivities(ctx, username, 1, "")
+		if err != nil {
+			log.Error("failed to get inbox count", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+
+		// Build the collection response
+		collection := &activitypub.OrderedCollection{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      actor.Inbox,
+					Type:    activitypub.OrderedCollectionType,
+				},
+				TotalItems: len(activities), // This is approximate
+				First:      fmt.Sprintf("%s?page=true", actor.Inbox),
+			},
+		}
+
+		// Serialize the collection
+		responseBody, err := json.Marshal(collection)
+		if err != nil {
+			log.Error("failed to serialize collection", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusOK,
+			Headers: map[string]string{
+				"Content-Type": "application/activity+json",
+			},
+			Body: string(responseBody),
+		}, nil
+	}
+
+	// Get activities for the page
+	activities, nextCursor, err := store.GetInboxActivities(ctx, username, limit, cursor)
+	if err != nil {
+		log.Error("failed to get inbox activities", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Enrich activities with objects if they contain Create activities
+	for _, activity := range activities {
+		if activity.Type == activitypub.CreateType && activity.Object != nil {
+			// If Object is just an ID string, fetch the full object
+			if objID, ok := activity.Object.(string); ok {
+				obj, err := store.GetObject(ctx, objID)
+				if err != nil {
+					log.Warn("failed to fetch object for activity",
+						zap.String("activity_id", activity.ID),
+						zap.String("object_id", objID),
+						zap.Error(err))
+					// Continue without enrichment
+				} else {
+					activity.Object = obj
+				}
+			}
+		}
+	}
+
+	// Convert activities to ordered items
+	orderedItems := make([]interface{}, len(activities))
+	for i, activity := range activities {
+		orderedItems[i] = activity
+	}
+
+	// Build the collection page response
+	collectionPage := &activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      fmt.Sprintf("%s?page=true", actor.Inbox),
+					Type:    "OrderedCollectionPage",
+				},
+				OrderedItems: orderedItems,
+			},
+			PartOf: actor.Inbox,
+		},
+	}
+
+	// Add next link if there are more items
+	if nextCursor != "" {
+		collectionPage.Next = fmt.Sprintf("%s?page=true&cursor=%s&limit=%d", actor.Inbox, nextCursor, limit)
+	}
+
+	// Add prev link if we have a cursor (meaning this isn't the first page)
+	if cursor != "" {
+		collectionPage.Prev = fmt.Sprintf("%s?page=true&limit=%d", actor.Inbox, limit)
+	}
+
+	// Serialize the page
+	responseBody, err := json.Marshal(collectionPage)
+	if err != nil {
+		log.Error("failed to serialize page", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/activity+json",
+		},
+		Body: string(responseBody),
+	}, nil
+}
+
+// handlePostInbox handles POST requests to receive activities
+func handlePostInbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	log.Info("received inbox POST request",
 		zap.String("username", username),
 		zap.String("content_type", request.Headers["Content-Type"]))
 

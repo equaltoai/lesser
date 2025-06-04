@@ -11,22 +11,29 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/federation"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 // MockStorage is a mock implementation of storage.Storage
 type MockStorage struct {
 	mock.Mock
+	mocks.BaseMockStorage
 }
 
 func (m *MockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
@@ -62,13 +69,21 @@ func (m *MockStorage) GetOutboxActivities(ctx context.Context, username string, 
 	return nil, "", nil
 }
 func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	return nil, "", nil
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
 }
 func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
 	return nil
 }
 func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
-	return nil, nil
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0), args.Error(1)
 }
 func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
 	return nil
@@ -99,6 +114,29 @@ func (m *MockStorage) IsFollowing(ctx context.Context, followerUsername, followe
 }
 func (m *MockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
 	return nil, nil
+}
+
+// OAuth-related methods (needed for auth middleware)
+func (m *MockStorage) CreateAuthorizationCode(ctx context.Context, code *storage.AuthorizationCode) error {
+	return nil
+}
+func (m *MockStorage) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
+	return nil, nil
+}
+func (m *MockStorage) DeleteAuthorizationCode(ctx context.Context, code string) error {
+	return nil
+}
+func (m *MockStorage) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
+	return nil
+}
+func (m *MockStorage) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
+	return nil, nil
+}
+func (m *MockStorage) DeleteRefreshToken(ctx context.Context, token string) error {
+	return nil
+}
+func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
+	return nil, "", nil
 }
 
 // Test helper functions
@@ -284,7 +322,7 @@ func TestHandler(t *testing.T) {
 			name: "wrong HTTP method",
 			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
 				return &events.APIGatewayProxyRequest{
-					HTTPMethod: "GET",
+					HTTPMethod: "DELETE",
 					PathParameters: map[string]string{
 						"username": "alice",
 					},
@@ -580,4 +618,394 @@ func TestConvertLambdaRequest(t *testing.T) {
 	body, err := io.ReadAll(httpReq.Body)
 	require.NoError(t, err)
 	assert.Equal(t, `{"test": "body"}`, string(body))
+}
+
+// Helper function to create test JWT token
+func createTestAuthHeader(username string) map[string]string {
+	// Create JWT token directly since generateAccessToken is not exported
+	jwtSecret := []byte("test-secret")
+	now := time.Now()
+
+	claims := auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   username,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			NotBefore: jwt.NewNumericDate(now),
+		},
+		Username: username,
+		ClientID: "test-client",
+		Scopes:   []string{auth.ScopeRead, auth.ScopeWrite},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, _ := token.SignedString(jwtSecret)
+
+	return map[string]string{
+		"Authorization": "Bearer " + tokenString,
+	}
+}
+
+func TestGetInbox(t *testing.T) {
+	// Initialize logger and auth middleware
+	logger = zap.NewNop()
+	os.Setenv("JWT_SECRET", "test-secret")
+	authMiddleware = auth.NewMiddleware()
+
+	// Setup
+	mockStore := new(MockStorage)
+	store = mockStore
+
+	// Create test actor
+	alice := createTestActor("alice")
+
+	tests := []struct {
+		name          string
+		username      string
+		headers       map[string]string
+		queryParams   map[string]string
+		setupMock     func(*MockStorage)
+		expectedCode  int
+		expectedError string
+		validateBody  func(*testing.T, string)
+	}{
+		{
+			name:     "get inbox collection - authenticated",
+			username: "alice",
+			headers:  createTestAuthHeader("alice"),
+			setupMock: func(m *MockStorage) {
+				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
+				m.On("GetInboxActivities", mock.Anything, "alice", 1, "").Return([]*activitypub.Activity{}, "", nil)
+			},
+			expectedCode: http.StatusOK,
+			validateBody: func(t *testing.T, body string) {
+				var collection activitypub.OrderedCollection
+				err := json.Unmarshal([]byte(body), &collection)
+				assert.NoError(t, err)
+				assert.Equal(t, "OrderedCollection", collection.Type)
+				assert.Equal(t, alice.Inbox, collection.ID)
+				assert.Equal(t, alice.Inbox+"?page=true", collection.First)
+			},
+		},
+		{
+			name:     "get inbox page with activities",
+			username: "alice",
+			headers:  createTestAuthHeader("alice"),
+			queryParams: map[string]string{
+				"page": "true",
+			},
+			setupMock: func(m *MockStorage) {
+				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
+
+				activities := []*activitypub.Activity{
+					{
+						BaseObject: activitypub.BaseObject{
+							ID:   "https://remote.example/activities/1",
+							Type: "Follow",
+						},
+						Actor:  "https://remote.example/users/bob",
+						Object: alice.ID,
+					},
+					{
+						BaseObject: activitypub.BaseObject{
+							ID:   "https://remote.example/activities/2",
+							Type: "Create",
+						},
+						Actor:  "https://remote.example/users/charlie",
+						Object: "https://remote.example/objects/note1",
+					},
+				}
+				m.On("GetInboxActivities", mock.Anything, "alice", 20, "").Return(activities, "", nil)
+				// Mock object fetching for Create activity
+				m.On("GetObject", mock.Anything, "https://remote.example/objects/note1").Return(
+					map[string]interface{}{
+						"id":      "https://remote.example/objects/note1",
+						"type":    "Note",
+						"content": "Hello Alice!",
+					}, nil)
+			},
+			expectedCode: http.StatusOK,
+			validateBody: func(t *testing.T, body string) {
+				var page activitypub.OrderedCollectionPage
+				err := json.Unmarshal([]byte(body), &page)
+				assert.NoError(t, err)
+				assert.Equal(t, "OrderedCollectionPage", page.Type)
+				assert.Equal(t, alice.Inbox+"?page=true", page.ID)
+				assert.Equal(t, alice.Inbox, page.PartOf)
+
+				// Check activities
+				items, ok := page.OrderedItems.([]interface{})
+				assert.True(t, ok)
+				assert.Len(t, items, 2)
+
+				// Check that Create activity has enriched object
+				createActivity := items[1].(map[string]interface{})
+				assert.Equal(t, "Create", createActivity["type"])
+				obj, ok := createActivity["object"].(map[string]interface{})
+				assert.True(t, ok)
+				assert.Equal(t, "Note", obj["type"])
+				assert.Equal(t, "Hello Alice!", obj["content"])
+			},
+		},
+		{
+			name:     "get inbox with pagination",
+			username: "alice",
+			headers:  createTestAuthHeader("alice"),
+			queryParams: map[string]string{
+				"page":   "true",
+				"cursor": "some-cursor",
+				"limit":  "10",
+			},
+			setupMock: func(m *MockStorage) {
+				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
+				m.On("GetInboxActivities", mock.Anything, "alice", 10, "some-cursor").Return([]*activitypub.Activity{}, "next-cursor", nil)
+			},
+			expectedCode: http.StatusOK,
+			validateBody: func(t *testing.T, body string) {
+				var page activitypub.OrderedCollectionPage
+				err := json.Unmarshal([]byte(body), &page)
+				assert.NoError(t, err)
+				assert.Equal(t, alice.Inbox+"?page=true&cursor=next-cursor&limit=10", page.Next)
+				assert.Equal(t, alice.Inbox+"?page=true&limit=10", page.Prev)
+			},
+		},
+		{
+			name:     "get inbox - not authenticated",
+			username: "alice",
+			headers:  map[string]string{},
+			setupMock: func(m *MockStorage) {
+				// No mocks needed - should fail at auth
+			},
+			expectedCode: http.StatusUnauthorized,
+		},
+		{
+			name:     "get inbox - wrong user",
+			username: "alice",
+			headers:  createTestAuthHeader("bob"),
+			setupMock: func(m *MockStorage) {
+				// No mocks needed - should fail at user check
+			},
+			expectedCode: http.StatusForbidden,
+		},
+		{
+			name:     "get inbox - no read scope",
+			username: "alice",
+			headers: func() map[string]string {
+				jwtSecret := []byte("test-secret")
+				now := time.Now()
+				claims := auth.Claims{
+					RegisteredClaims: jwt.RegisteredClaims{
+						Subject:   "alice",
+						IssuedAt:  jwt.NewNumericDate(now),
+						ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+						NotBefore: jwt.NewNumericDate(now),
+					},
+					Username: "alice",
+					ClientID: "test-client",
+					Scopes:   []string{auth.ScopeWrite}, // Only write scope
+				}
+				token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+				tokenString, _ := token.SignedString(jwtSecret)
+				return map[string]string{
+					"Authorization": "Bearer " + tokenString,
+				}
+			}(),
+			setupMock: func(m *MockStorage) {
+				// No mocks needed - should fail at scope check
+			},
+			expectedCode: http.StatusForbidden,
+		},
+		{
+			name:     "get inbox - actor not found",
+			username: "unknown",
+			headers:  createTestAuthHeader("unknown"),
+			setupMock: func(m *MockStorage) {
+				m.On("GetActor", mock.Anything, "unknown").Return(nil, common.ActorNotFoundError{Username: "unknown"})
+			},
+			expectedCode: http.StatusNotFound,
+		},
+		{
+			name:     "get inbox - storage error",
+			username: "alice",
+			headers:  createTestAuthHeader("alice"),
+			queryParams: map[string]string{
+				"page": "true",
+			},
+			setupMock: func(m *MockStorage) {
+				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
+				m.On("GetInboxActivities", mock.Anything, "alice", 20, "").Return(nil, "", fmt.Errorf("storage error"))
+			},
+			expectedCode: http.StatusInternalServerError,
+		},
+		{
+			name:     "get inbox - object fetch error ignored",
+			username: "alice",
+			headers:  createTestAuthHeader("alice"),
+			queryParams: map[string]string{
+				"page": "true",
+			},
+			setupMock: func(m *MockStorage) {
+				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
+
+				activities := []*activitypub.Activity{
+					{
+						BaseObject: activitypub.BaseObject{
+							ID:   "https://remote.example/activities/1",
+							Type: "Create",
+						},
+						Actor:  "https://remote.example/users/bob",
+						Object: "https://remote.example/objects/note1",
+					},
+				}
+				m.On("GetInboxActivities", mock.Anything, "alice", 20, "").Return(activities, "", nil)
+				// Mock object fetching failure
+				m.On("GetObject", mock.Anything, "https://remote.example/objects/note1").Return(nil, fmt.Errorf("not found"))
+			},
+			expectedCode: http.StatusOK,
+			validateBody: func(t *testing.T, body string) {
+				var page activitypub.OrderedCollectionPage
+				err := json.Unmarshal([]byte(body), &page)
+				assert.NoError(t, err)
+
+				// Activity should still be returned, just without enriched object
+				items, ok := page.OrderedItems.([]interface{})
+				assert.True(t, ok)
+				assert.Len(t, items, 1)
+
+				createActivity := items[0].(map[string]interface{})
+				assert.Equal(t, "Create", createActivity["type"])
+				// Object should still be the ID string
+				assert.Equal(t, "https://remote.example/objects/note1", createActivity["object"])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock
+			mockStore.ExpectedCalls = nil
+			mockStore.Calls = nil
+
+			// Setup mock expectations
+			tt.setupMock(mockStore)
+
+			// Create request
+			request := events.APIGatewayProxyRequest{
+				HTTPMethod: http.MethodGet,
+				PathParameters: map[string]string{
+					"username": tt.username,
+				},
+				Headers:               tt.headers,
+				QueryStringParameters: tt.queryParams,
+			}
+
+			// Execute handler
+			resp, err := handler(context.Background(), request)
+
+			// Assert
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedCode, resp.StatusCode)
+
+			if tt.expectedError != "" {
+				var errResp common.ErrorResponse
+				err := json.Unmarshal([]byte(resp.Body), &errResp)
+				assert.NoError(t, err)
+				assert.Contains(t, errResp.Message, tt.expectedError)
+			}
+
+			if tt.validateBody != nil && resp.StatusCode == http.StatusOK {
+				tt.validateBody(t, resp.Body)
+			}
+
+			// Verify mock expectations
+			mockStore.AssertExpectations(t)
+		})
+	}
+}
+
+func (m *MockStorage) CountCollectionItems(ctx context.Context, collection string) (int, error) {
+	args := m.Called(ctx, collection)
+	return args.Int(0), args.Error(1)
+}
+
+// Object cascade operations
+func (m *MockStorage) CascadeDeleteLikes(ctx context.Context, objectID string) error {
+	args := m.Called(ctx, objectID)
+	return args.Error(0)
+}
+
+func (m *MockStorage) CascadeDeleteAnnounces(ctx context.Context, objectID string) error {
+	args := m.Called(ctx, objectID)
+	return args.Error(0)
+}
+
+// Collection operations
+func (m *MockStorage) AddToCollection(ctx context.Context, collection string, item *storage.CollectionItem) error {
+	args := m.Called(ctx, collection, item)
+	return args.Error(0)
+}
+
+func (m *MockStorage) RemoveFromCollection(ctx context.Context, collection string, itemID string) error {
+	args := m.Called(ctx, collection, itemID)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetCollectionItems(ctx context.Context, collection string, limit int, cursor string) ([]*storage.CollectionItem, string, error) {
+	args := m.Called(ctx, collection, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.CollectionItem), args.String(1), args.Error(2)
+}
+
+func (m *MockStorage) IsInCollection(ctx context.Context, collection string, itemID string) (bool, error) {
+	args := m.Called(ctx, collection, itemID)
+	return args.Bool(0), args.Error(1)
+}
+
+// Timeline operations
+func (m *MockStorage) WriteToTimeline(ctx context.Context, timeline *storage.TimelineEntry) error {
+	args := m.Called(ctx, timeline)
+	return args.Error(0)
+}
+
+func (m *MockStorage) WriteToTimelines(ctx context.Context, entries []*storage.TimelineEntry) error {
+	args := m.Called(ctx, entries)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetHomeTimeline(ctx context.Context, username string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
+}
+
+func (m *MockStorage) GetPublicTimeline(ctx context.Context, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	args := m.Called(ctx, local, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
+}
+
+func (m *MockStorage) DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error {
+	args := m.Called(ctx, before)
+	return args.Error(0)
+}
+
+func (m *MockStorage) CountFollowers(ctx context.Context, username string) (int, error) {
+	args := m.Called(ctx, username)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockStorage) CountObjectLikes(ctx context.Context, objectID string) (int, error) {
+	args := m.Called(ctx, objectID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockStorage) CountObjectAnnounces(ctx context.Context, objectID string) (int, error) {
+	args := m.Called(ctx, objectID)
+	return args.Int(0), args.Error(1)
 }

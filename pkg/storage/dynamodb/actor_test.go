@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,59 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
-
-// MockDynamoDBClient is a mock implementation of the DynamoDB client
-type MockDynamoDBClient struct {
-	mock.Mock
-}
-
-func (m *MockDynamoDBClient) PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.PutItemOutput), args.Error(1)
-}
-
-func (m *MockDynamoDBClient) GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.GetItemOutput), args.Error(1)
-}
-
-func (m *MockDynamoDBClient) UpdateItem(ctx context.Context, params *dynamodb.UpdateItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.UpdateItemOutput), args.Error(1)
-}
-
-func (m *MockDynamoDBClient) DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.DeleteItemOutput), args.Error(1)
-}
-
-func (m *MockDynamoDBClient) Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.QueryOutput), args.Error(1)
-}
-
-func (m *MockDynamoDBClient) Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.ScanOutput), args.Error(1)
-}
 
 // Helper function to create a test actor
 func createTestActor(username string) *activitypub.Actor {
@@ -96,7 +44,7 @@ func TestCreateActor(t *testing.T) {
 		name          string
 		actor         *activitypub.Actor
 		privateKey    string
-		setupMock     func(*MockDynamoDBClient)
+		setupMock     func(*mocks.MockDynamoDBClient)
 		expectedError error
 		errorContains string
 	}{
@@ -104,7 +52,7 @@ func TestCreateActor(t *testing.T) {
 			name:       "successful actor creation",
 			actor:      createTestActor("alice"),
 			privateKey: "test-private-key",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.PutItemInput) bool {
 					// Verify table name
 					if *input.TableName != "test-table" {
@@ -126,7 +74,7 @@ func TestCreateActor(t *testing.T) {
 			name:       "actor already exists",
 			actor:      createTestActor("alice"),
 			privateKey: "test-private-key",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", mock.Anything, mock.Anything).Return(
 					nil,
 					&types.ConditionalCheckFailedException{Message: aws.String("The conditional request failed")},
@@ -138,14 +86,14 @@ func TestCreateActor(t *testing.T) {
 			name:          "missing username",
 			actor:         &activitypub.Actor{},
 			privateKey:    "test-private-key",
-			setupMock:     func(m *MockDynamoDBClient) {},
+			setupMock:     func(m *mocks.MockDynamoDBClient) {},
 			expectedError: common.ValidationError{Field: "PreferredUsername", Message: "username is required"},
 		},
 		{
 			name:       "dynamodb error",
 			actor:      createTestActor("alice"),
 			privateKey: "test-private-key",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", mock.Anything, mock.Anything).Return(
 					nil,
 					errors.New("dynamodb error"),
@@ -158,7 +106,7 @@ func TestCreateActor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock client
-			mockClient := new(MockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			// Create storage with mock
@@ -190,7 +138,7 @@ func TestGetActor(t *testing.T) {
 	tests := []struct {
 		name          string
 		username      string
-		setupMock     func(*MockDynamoDBClient)
+		setupMock     func(*mocks.MockDynamoDBClient)
 		expectedActor *activitypub.Actor
 		expectedError error
 		errorContains string
@@ -198,7 +146,7 @@ func TestGetActor(t *testing.T) {
 		{
 			name:     "successful get actor",
 			username: "alice",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				actor := createTestActor("alice")
 				m.On("GetItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.GetItemInput) bool {
 					pk, pkOk := input.Key["PK"].(*types.AttributeValueMemberS)
@@ -220,7 +168,7 @@ func TestGetActor(t *testing.T) {
 		{
 			name:     "actor not found",
 			username: "nonexistent",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.Anything).Return(&dynamodb.GetItemOutput{
 					Item: nil,
 				}, nil)
@@ -231,7 +179,7 @@ func TestGetActor(t *testing.T) {
 		{
 			name:     "dynamodb error",
 			username: "alice",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.Anything).Return(
 					nil,
 					errors.New("dynamodb error"),
@@ -245,7 +193,7 @@ func TestGetActor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock client
-			mockClient := new(MockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			// Create storage with mock
@@ -281,7 +229,7 @@ func TestGetActorPrivateKey(t *testing.T) {
 	tests := []struct {
 		name               string
 		username           string
-		setupMock          func(*MockDynamoDBClient)
+		setupMock          func(*mocks.MockDynamoDBClient)
 		expectedPrivateKey string
 		expectedError      error
 		errorContains      string
@@ -289,7 +237,7 @@ func TestGetActorPrivateKey(t *testing.T) {
 		{
 			name:     "successful get private key",
 			username: "alice",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.GetItemInput) bool {
 					// Verify projection expression
 					return input.ProjectionExpression != nil && *input.ProjectionExpression == "PrivateKey"
@@ -305,7 +253,7 @@ func TestGetActorPrivateKey(t *testing.T) {
 		{
 			name:     "actor not found",
 			username: "nonexistent",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.Anything).Return(&dynamodb.GetItemOutput{
 					Item: nil,
 				}, nil)
@@ -316,7 +264,7 @@ func TestGetActorPrivateKey(t *testing.T) {
 		{
 			name:     "private key not found",
 			username: "alice",
-			setupMock: func(m *MockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.Anything).Return(&dynamodb.GetItemOutput{
 					Item: map[string]types.AttributeValue{
 						"PK": &types.AttributeValueMemberS{Value: "ACTOR#alice"},
@@ -331,7 +279,7 @@ func TestGetActorPrivateKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock client
-			mockClient := new(MockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			// Create storage with mock

@@ -6,14 +6,12 @@ import (
 	"os"
 	"sync"
 
-	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	cfg "github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 )
 
@@ -25,6 +23,7 @@ type DynamoDBAPI interface {
 	DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
 	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
 	Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
+	BatchWriteItem(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
 }
 
 // dynamoDBStorage implements the storage.Storage interface using DynamoDB
@@ -100,51 +99,4 @@ func (s *dynamoDBStorage) getTableName() *string {
 	return aws.String(s.tableName)
 }
 
-// Helper methods for common DynamoDB operations
-
-// buildKey builds a DynamoDB key from PK and SK
-func buildKey(pk, sk string) map[string]types.AttributeValue {
-	return map[string]types.AttributeValue{
-		"PK": &types.AttributeValueMemberS{Value: pk},
-		"SK": &types.AttributeValueMemberS{Value: sk},
-	}
-}
-
-// buildKeyWithGSI builds a DynamoDB key with GSI attributes
-func buildKeyWithGSI(pk, sk, gsi1pk, gsi1sk string) map[string]types.AttributeValue {
-	key := buildKey(pk, sk)
-	if gsi1pk != "" {
-		key["GSI1PK"] = &types.AttributeValueMemberS{Value: gsi1pk}
-	}
-	if gsi1sk != "" {
-		key["GSI1SK"] = &types.AttributeValueMemberS{Value: gsi1sk}
-	}
-	return key
-}
-
-// Stub implementations - these will be moved to separate files
-
-// CreateObject - implemented in object.go
-func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) error {
-	panic("implemented in object.go")
-}
-
-// GetObject - implemented in object.go
-func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
-	panic("implemented in object.go")
-}
-
-// UpdateObject - implemented in object.go
-func (s *dynamoDBStorage) UpdateObject(ctx context.Context, object interface{}) error {
-	panic("implemented in object.go")
-}
-
-// DeleteObject - implemented in object.go
-func (s *dynamoDBStorage) DeleteObject(ctx context.Context, id string) error {
-	panic("implemented in object.go")
-}
-
-// GetCollection - implemented in collection.go
-func (s *dynamoDBStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
-	panic("implemented in collection.go")
-}
+// GetCollection is implemented in collection.go

@@ -1,0 +1,3119 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math/rand"
+	"net/http"
+	"net/mail"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/auth"
+	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/federation"
+	"github.com/aron23/lesser/pkg/storage"
+	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	"go.uber.org/zap"
+)
+
+var (
+	cfg    *config.Config
+	store  storage.Storage
+	logger *zap.Logger
+)
+
+func init() {
+	cfg = config.Get()
+	logger = common.Logger()
+
+	var err error
+	store, err = storageDB.New()
+	if err != nil {
+		logger.Fatal("failed to initialize storage", zap.Error(err))
+	}
+}
+
+// AccountRegistrationRequest represents a user registration request
+type AccountRegistrationRequest struct {
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	Agreement bool   `json:"agreement"` // ToS agreement
+	Locale    string `json:"locale,omitempty"`
+	Reason    string `json:"reason,omitempty"` // For approval
+}
+
+// AccountRegistrationResponse represents the response after successful registration
+type AccountRegistrationResponse struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Created  bool   `json:"created"`
+}
+
+// VerifyCredentialsResponse represents the current user info
+type VerifyCredentialsResponse struct {
+	ID             string                 `json:"id"`
+	Username       string                 `json:"username"`
+	DisplayName    string                 `json:"display_name"`
+	Email          string                 `json:"email"`
+	EmailVerified  bool                   `json:"email_verified"`
+	Note           string                 `json:"note"`
+	URL            string                 `json:"url"`
+	Avatar         string                 `json:"avatar"`
+	AvatarStatic   string                 `json:"avatar_static"`
+	Header         string                 `json:"header"`
+	HeaderStatic   string                 `json:"header_static"`
+	FollowersCount int                    `json:"followers_count"`
+	FollowingCount int                    `json:"following_count"`
+	StatusesCount  int                    `json:"statuses_count"`
+	LastStatusAt   string                 `json:"last_status_at,omitempty"`
+	CreatedAt      string                 `json:"created_at"`
+	Role           string                 `json:"role"`
+	Source         map[string]interface{} `json:"source"`
+}
+
+// AppRegistrationRequest represents a Mastodon-compatible client registration request
+type AppRegistrationRequest struct {
+	ClientName   string `json:"client_name"`
+	RedirectURIs string `json:"redirect_uris"`
+	Scopes       string `json:"scopes"`
+	Website      string `json:"website,omitempty"`
+}
+
+// AppRegistrationResponse represents the response after successful app registration
+type AppRegistrationResponse struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Website      string `json:"website,omitempty"`
+	RedirectURI  string `json:"redirect_uri"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	VapidKey     string `json:"vapid_key,omitempty"` // For push notifications
+}
+
+// FavouriteResponse represents the response after liking a status
+type FavouriteResponse struct {
+	ID                 string  `json:"id"`
+	CreatedAt          string  `json:"created_at"`
+	InReplyToID        *string `json:"in_reply_to_id"`
+	InReplyToAccountID *string `json:"in_reply_to_account_id"`
+	Sensitive          bool    `json:"sensitive"`
+	SpoilerText        string  `json:"spoiler_text"`
+	Visibility         string  `json:"visibility"`
+	Language           string  `json:"language"`
+	URI                string  `json:"uri"`
+	URL                string  `json:"url"`
+	RepliesCount       int     `json:"replies_count"`
+	ReblogsCount       int     `json:"reblogs_count"`
+	FavouritesCount    int     `json:"favourites_count"`
+	Favourited         bool    `json:"favourited"`
+	Reblogged          bool    `json:"reblogged"`
+	Muted              bool    `json:"muted"`
+	Bookmarked         bool    `json:"bookmarked"`
+	Content            string  `json:"content"`
+}
+
+// CreateStatusRequest represents a Mastodon-compatible status creation request
+type CreateStatusRequest struct {
+	Status      string   `json:"status"`                   // Text content of the status
+	InReplyToID string   `json:"in_reply_to_id,omitempty"` // ID of the status being replied to
+	MediaIDs    []string `json:"media_ids,omitempty"`      // Array of media attachment IDs
+	Poll        *Poll    `json:"poll,omitempty"`           // Poll object (not yet implemented)
+	Sensitive   bool     `json:"sensitive"`                // Mark status as sensitive
+	SpoilerText string   `json:"spoiler_text,omitempty"`   // Content warning
+	Visibility  string   `json:"visibility"`               // public, unlisted, private, direct
+	Language    string   `json:"language,omitempty"`       // ISO 639-1 language code
+}
+
+// Poll represents a poll in a status (placeholder for future implementation)
+type Poll struct {
+	Options    []string `json:"options"`
+	ExpiresIn  int      `json:"expires_in"`
+	Multiple   bool     `json:"multiple"`
+	HideTotals bool     `json:"hide_totals"`
+}
+
+// Status represents a Mastodon-compatible status response
+type Status struct {
+	ID                 string                 `json:"id"`
+	CreatedAt          string                 `json:"created_at"`
+	InReplyToID        *string                `json:"in_reply_to_id"`
+	InReplyToAccountID *string                `json:"in_reply_to_account_id"`
+	Sensitive          bool                   `json:"sensitive"`
+	SpoilerText        string                 `json:"spoiler_text"`
+	Visibility         string                 `json:"visibility"`
+	Language           string                 `json:"language"`
+	URI                string                 `json:"uri"`
+	URL                string                 `json:"url"`
+	RepliesCount       int                    `json:"replies_count"`
+	ReblogsCount       int                    `json:"reblogs_count"`
+	FavouritesCount    int                    `json:"favourites_count"`
+	Favourited         bool                   `json:"favourited"`
+	Reblogged          bool                   `json:"reblogged"`
+	Muted              bool                   `json:"muted"`
+	Bookmarked         bool                   `json:"bookmarked"`
+	Pinned             bool                   `json:"pinned"`
+	Content            string                 `json:"content"`
+	Reblog             *Status                `json:"reblog"`
+	Application        map[string]interface{} `json:"application,omitempty"`
+	Account            Account                `json:"account"`
+	MediaAttachments   []interface{}          `json:"media_attachments"`
+	Mentions           []interface{}          `json:"mentions"`
+	Tags               []interface{}          `json:"tags"`
+	Emojis             []interface{}          `json:"emojis"`
+	Card               *interface{}           `json:"card"`
+	Poll               *Poll                  `json:"poll"`
+}
+
+// Account represents a Mastodon-compatible account
+type Account struct {
+	ID             string        `json:"id"`
+	Username       string        `json:"username"`
+	Acct           string        `json:"acct"`
+	DisplayName    string        `json:"display_name"`
+	Locked         bool          `json:"locked"`
+	Bot            bool          `json:"bot"`
+	Discoverable   bool          `json:"discoverable"`
+	Group          bool          `json:"group"`
+	CreatedAt      string        `json:"created_at"`
+	Note           string        `json:"note"`
+	URL            string        `json:"url"`
+	Avatar         string        `json:"avatar"`
+	AvatarStatic   string        `json:"avatar_static"`
+	Header         string        `json:"header"`
+	HeaderStatic   string        `json:"header_static"`
+	FollowersCount int           `json:"followers_count"`
+	FollowingCount int           `json:"following_count"`
+	StatusesCount  int           `json:"statuses_count"`
+	LastStatusAt   string        `json:"last_status_at"`
+	Emojis         []interface{} `json:"emojis"`
+	Fields         []interface{} `json:"fields"`
+}
+
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Route based on path and method
+	if request.Path == "/api/v1/apps" && request.HTTPMethod == http.MethodPost {
+		return handleAppRegistration(ctx, request)
+	} else if request.Path == "/api/v1/accounts" && request.HTTPMethod == http.MethodPost {
+		return handleRegistration(ctx, request)
+	} else if request.Path == "/api/v1/accounts/verify_credentials" && request.HTTPMethod == http.MethodGet {
+		return handleVerifyCredentials(ctx, request)
+	} else if request.Path == "/api/v1/statuses" && request.HTTPMethod == http.MethodPost {
+		return handleCreateStatus(ctx, request)
+	} else if request.Path == "/api/v1/timelines/home" && request.HTTPMethod == http.MethodGet {
+		return handleHomeTimeline(ctx, request)
+	} else if request.Path == "/api/v1/timelines/public" && request.HTTPMethod == http.MethodGet {
+		return handlePublicTimeline(ctx, request)
+	} else if strings.HasPrefix(request.Path, "/api/v1/statuses/") && strings.HasSuffix(request.Path, "/favourite") && request.HTTPMethod == http.MethodPost {
+		// Extract status ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			statusID := parts[4]
+			return handleFavourite(ctx, request, statusID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/statuses/") && strings.HasSuffix(request.Path, "/unfavourite") && request.HTTPMethod == http.MethodPost {
+		// Extract status ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			statusID := parts[4]
+			return handleUnfavourite(ctx, request, statusID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/statuses/") && strings.HasSuffix(request.Path, "/reblog") && request.HTTPMethod == http.MethodPost {
+		// Extract status ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			statusID := parts[4]
+			return handleReblog(ctx, request, statusID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/statuses/") && strings.HasSuffix(request.Path, "/unreblog") && request.HTTPMethod == http.MethodPost {
+		// Extract status ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			statusID := parts[4]
+			return handleUnreblog(ctx, request, statusID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/statuses/") && request.HTTPMethod == http.MethodDelete {
+		// Extract status ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) == 5 {
+			statusID := parts[4]
+			return handleDeleteStatus(ctx, request, statusID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/statuses/") && request.HTTPMethod == http.MethodPut {
+		// Extract status ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) == 5 {
+			statusID := parts[4]
+			return handleUpdateStatus(ctx, request, statusID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/accounts/") && request.HTTPMethod == http.MethodPost && strings.HasSuffix(request.Path, "/block") {
+		// Extract account ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			accountID := parts[4]
+			return handleBlock(ctx, request, accountID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/accounts/") && request.HTTPMethod == http.MethodPost && strings.HasSuffix(request.Path, "/unblock") {
+		// Extract account ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			accountID := parts[4]
+			return handleUnblock(ctx, request, accountID)
+		}
+	} else if request.Path == "/api/v1/blocks" && request.HTTPMethod == http.MethodGet {
+		return handleGetBlocks(ctx, request)
+	} else if strings.HasPrefix(request.Path, "/api/v1/statuses/") && strings.HasSuffix(request.Path, "/context") && request.HTTPMethod == http.MethodGet {
+		// Extract status ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			statusID := parts[4]
+			return handleGetStatusContext(ctx, request, statusID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/statuses/") && request.HTTPMethod == http.MethodGet {
+		// Extract status ID from path for individual status retrieval
+		parts := strings.Split(request.Path, "/")
+		if len(parts) == 5 {
+			statusID := parts[4]
+			return handleGetStatus(ctx, request, statusID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/accounts/") && strings.HasSuffix(request.Path, "/statuses") && request.HTTPMethod == http.MethodGet {
+		// Extract account ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			accountID := parts[4]
+			return handleGetAccountStatuses(ctx, request, accountID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/accounts/") && strings.HasSuffix(request.Path, "/follow") && request.HTTPMethod == http.MethodPost {
+		// Extract account ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			accountID := parts[4]
+			return handleFollow(ctx, request, accountID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/accounts/") && strings.HasSuffix(request.Path, "/unfollow") && request.HTTPMethod == http.MethodPost {
+		// Extract account ID from path
+		parts := strings.Split(request.Path, "/")
+		if len(parts) >= 5 {
+			accountID := parts[4]
+			return handleUnfollow(ctx, request, accountID)
+		}
+	} else if strings.HasPrefix(request.Path, "/api/v1/accounts/") && request.HTTPMethod == http.MethodGet {
+		// Get account by ID
+		parts := strings.Split(request.Path, "/")
+		if len(parts) == 5 {
+			accountID := parts[4]
+			return handleGetAccount(ctx, request, accountID)
+		}
+	} else if request.Path == "/api/v1/instance" && request.HTTPMethod == http.MethodGet {
+		return handleGetInstance(ctx, request)
+	} else if request.Path == "/api/v2/search" && request.HTTPMethod == http.MethodGet {
+		return handleSearch(ctx, request)
+	} else if request.Path == "/api/v1/notifications" && request.HTTPMethod == http.MethodGet {
+		return handleGetNotifications(ctx, request)
+	} else if request.Path == "/api/v1/accounts/update_credentials" && request.HTTPMethod == http.MethodPatch {
+		return handleUpdateCredentials(ctx, request)
+	}
+
+	return common.NotFound(errors.New("unknown API endpoint")), nil
+}
+
+func handleAppRegistration(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Parse request
+	var req AppRegistrationRequest
+	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		return common.BadRequest(err), nil
+	}
+
+	// Validate request
+	if req.ClientName == "" {
+		return common.UnprocessableEntity(errors.New("client_name is required")), nil
+	}
+
+	if req.RedirectURIs == "" {
+		return common.UnprocessableEntity(errors.New("redirect_uris is required")), nil
+	}
+
+	// Parse redirect URIs (can be space or newline separated)
+	redirectURIs := strings.Fields(req.RedirectURIs)
+	if len(redirectURIs) == 0 {
+		return common.UnprocessableEntity(errors.New("at least one redirect_uri is required")), nil
+	}
+
+	// Validate redirect URIs
+	for _, uri := range redirectURIs {
+		if uri == "" {
+			continue
+		}
+		// Allow special redirect URI for out-of-band flows
+		if uri == "urn:ietf:wg:oauth:2.0:oob" {
+			continue
+		}
+		// Validate URL format
+		if !strings.Contains(uri, "://") {
+			return common.UnprocessableEntity(fmt.Errorf("invalid redirect_uri format: %s", uri)), nil
+		}
+	}
+
+	// Parse scopes
+	var scopes []string
+	if req.Scopes != "" {
+		scopes = strings.Fields(req.Scopes)
+	} else {
+		// Default scopes
+		scopes = []string{"read", "write"}
+	}
+
+	// Create OAuth client
+	client := &storage.OAuthClient{
+		Name:         req.ClientName,
+		Website:      req.Website,
+		RedirectURIs: redirectURIs,
+		Scopes:       scopes,
+	}
+
+	if err := store.CreateOAuthClient(ctx, client); err != nil {
+		logger.Error("failed to create OAuth client", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Return response
+	resp := AppRegistrationResponse{
+		ID:           client.ClientID,
+		Name:         client.Name,
+		Website:      client.Website,
+		RedirectURI:  redirectURIs[0], // Return first redirect URI for compatibility
+		ClientID:     client.ClientID,
+		ClientSecret: client.ClientSecret,
+		VapidKey:     "", // TODO: Implement push notifications
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK, // Mastodon returns 200, not 201
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleRegistration(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Parse request
+	var req AccountRegistrationRequest
+	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		return common.BadRequest(err), nil
+	}
+
+	// Validate request
+	if err := validateRegistrationRequest(req); err != nil {
+		errResp := map[string]interface{}{
+			"error": err.Error(),
+		}
+		body, _ := json.Marshal(errResp)
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Headers:    common.Headers(),
+			Body:       string(body),
+		}, nil
+	}
+
+	// Hash password
+	passwordHash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		errResp := map[string]interface{}{
+			"error": err.Error(),
+		}
+		body, _ := json.Marshal(errResp)
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Headers:    common.Headers(),
+			Body:       string(body),
+		}, nil
+	}
+
+	// Create user
+	user := &storage.User{
+		Username:     req.Username,
+		Email:        req.Email,
+		PasswordHash: passwordHash,
+		Approved:     true, // Auto-approve for now, can be changed to require admin approval
+		Suspended:    false,
+		Role:         "user",
+		Locale:       req.Locale,
+	}
+
+	if err := store.CreateUser(ctx, user); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			errResp := map[string]interface{}{
+				"error": "Username is already taken",
+			}
+			body, _ := json.Marshal(errResp)
+			return events.APIGatewayProxyResponse{
+				StatusCode: http.StatusUnprocessableEntity,
+				Headers:    common.Headers(),
+				Body:       string(body),
+			}, nil
+		}
+		logger.Error("failed to create user", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Generate RSA keypair for the actor
+	privateKey, err := federation.GenerateRSAKeyPair(2048)
+	if err != nil {
+		logger.Error("failed to generate RSA keypair", zap.Error(err))
+		// Clean up user since we couldn't create the actor
+		_ = store.DeleteUser(ctx, user.Username)
+		return common.InternalServerError(err), nil
+	}
+
+	// Encode public key to PEM format
+	publicKeyPEM, err := federation.EncodePublicKeyPEM(&privateKey.PublicKey)
+	if err != nil {
+		logger.Error("failed to encode public key", zap.Error(err))
+		// Clean up user since we couldn't create the actor
+		_ = store.DeleteUser(ctx, user.Username)
+		return common.InternalServerError(err), nil
+	}
+
+	// Encode private key to PEM format
+	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
+	if err != nil {
+		logger.Error("failed to encode private key", zap.Error(err))
+		// Clean up user since we couldn't create the actor
+		_ = store.DeleteUser(ctx, user.Username)
+		return common.InternalServerError(err), nil
+	}
+
+	// Create corresponding actor
+	actorID := fmt.Sprintf("%s/users/%s", cfg.BaseURL(), user.Username)
+	actor := activitypub.NewActor(activitypub.PersonType, actorID, user.Username)
+	actor.Name = user.Username
+	actor.URL = fmt.Sprintf("%s/@%s", cfg.BaseURL(), user.Username)
+	actor.PublicKey = &activitypub.PublicKey{
+		ID:           fmt.Sprintf("%s#main-key", actorID),
+		Owner:        actorID,
+		PublicKeyPem: string(publicKeyPEM),
+	}
+
+	// Create the actor
+	if err := store.CreateActor(ctx, actor, string(privateKeyPEM)); err != nil {
+		logger.Error("failed to create actor", zap.Error(err))
+		// Clean up user since we couldn't create the actor
+		_ = store.DeleteUser(ctx, user.Username)
+		return common.InternalServerError(err), nil
+	}
+
+	// Return response
+	resp := AccountRegistrationResponse{
+		ID:       actor.ID,
+		Username: user.Username,
+		Email:    user.Email,
+		Created:  true,
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusCreated,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleVerifyCredentials(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Get user
+	user, err := store.GetUser(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get user", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Get actor
+	actor, err := store.GetActor(ctx, user.Username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// TODO: Get real counts
+	resp := VerifyCredentialsResponse{
+		ID:             actor.ID,
+		Username:       user.Username,
+		DisplayName:    actor.Name,
+		Email:          user.Email,
+		EmailVerified:  true, // TODO: Implement email verification
+		Note:           actor.Summary,
+		URL:            actor.URL,
+		Avatar:         "", // TODO: Implement avatars
+		AvatarStatic:   "",
+		Header:         "",
+		HeaderStatic:   "",
+		FollowersCount: 0,
+		FollowingCount: 0,
+		StatusesCount:  0,
+		CreatedAt:      user.CreatedAt.Format("2006-01-02T15:04:05.000Z"),
+		Role:           user.Role,
+		Source: map[string]interface{}{
+			"privacy":   "public",
+			"sensitive": false,
+			"language":  user.Locale,
+			"fields":    []interface{}{},
+		},
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func validateRegistrationRequest(req AccountRegistrationRequest) error {
+	// Validate username
+	if req.Username == "" {
+		return errors.New("username is required")
+	}
+	if len(req.Username) < 3 || len(req.Username) > 30 {
+		return errors.New("username must be between 3 and 30 characters")
+	}
+	if !isValidUsername(req.Username) {
+		return errors.New("username can only contain letters, numbers, and underscores")
+	}
+
+	// Validate email
+	if req.Email == "" {
+		return errors.New("email is required")
+	}
+	if _, err := mail.ParseAddress(req.Email); err != nil {
+		return errors.New("invalid email address")
+	}
+
+	// Validate password
+	if req.Password == "" {
+		return errors.New("password is required")
+	}
+
+	// Validate agreement
+	if !req.Agreement {
+		return errors.New("you must agree to the terms of service")
+	}
+
+	return nil
+}
+
+func isValidUsername(username string) bool {
+	// Username regex: alphanumeric and underscores only
+	match, _ := regexp.MatchString("^[a-zA-Z0-9_]+$", username)
+	return match
+}
+
+func handleCreateStatus(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Parse request
+	var req CreateStatusRequest
+	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		return common.BadRequest(err), nil
+	}
+
+	// Validate request
+	if req.Status == "" {
+		return common.UnprocessableEntity(errors.New("status text is required")), nil
+	}
+
+	// Set default visibility if not specified
+	if req.Visibility == "" {
+		req.Visibility = "public"
+	}
+
+	// Get the user's actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Create a Note object
+	noteID := fmt.Sprintf("%s/objects/%d-%s", cfg.BaseURL(), time.Now().Unix(), generateRandomString(8))
+	note := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			ID:        noteID,
+			Type:      activitypub.NoteType,
+			Summary:   req.SpoilerText,
+			Sensitive: req.Sensitive,
+		},
+		Content:      req.Status,
+		AttributedTo: actor.ID,
+	}
+
+	// Set timestamps
+	now := time.Now()
+	note.Published = &now
+
+	// Process media attachments
+	if len(req.MediaIDs) > 0 {
+		attachments := make([]activitypub.Attachment, 0, len(req.MediaIDs))
+		for _, mediaID := range req.MediaIDs {
+			// Get media metadata from storage (it was stored by the media upload handler)
+			mediaObj, err := store.GetObject(ctx, fmt.Sprintf("MEDIA#%s", mediaID))
+			if err != nil {
+				logger.Warn("failed to get media metadata", zap.String("media_id", mediaID), zap.Error(err))
+				continue
+			}
+
+			// Extract media info
+			if mediaMap, ok := mediaObj.(map[string]interface{}); ok {
+				attachment := activitypub.Attachment{
+					Type:      "Document",
+					MediaType: getStringFromMap(mediaMap, "MimeType", "image/jpeg"),
+					URL:       getStringFromMap(mediaMap, "URL", ""),
+					Name:      getStringFromMap(mediaMap, "Description", ""),
+				}
+				if attachment.URL != "" {
+					attachments = append(attachments, attachment)
+				}
+			}
+		}
+		note.Attachment = attachments
+	}
+
+	// Set addressing based on visibility
+	switch req.Visibility {
+	case "public":
+		note.To = []string{activitypub.PublicAddress}
+		note.CC = []string{actor.Followers}
+	case "unlisted":
+		note.To = []string{actor.Followers}
+		note.CC = []string{activitypub.PublicAddress}
+	case "private":
+		note.To = []string{actor.Followers}
+	case "direct":
+		// TODO: Extract mentions and add to To field
+		note.To = []string{}
+	}
+
+	// Handle reply
+	if req.InReplyToID != "" {
+		note.InReplyTo = req.InReplyToID
+	}
+
+	// Create the Note object
+	if err := store.CreateObject(ctx, note); err != nil {
+		logger.Error("failed to create note object", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Create a Create activity
+	createActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			Type:      activitypub.CreateType,
+			ID:        fmt.Sprintf("%s/activities/create-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			To:        note.To,
+			Published: &now,
+		},
+		Actor:  actor.ID,
+		Object: note,
+	}
+
+	// Store the activity in the outbox (this will trigger delivery)
+	if err := store.CreateActivity(ctx, createActivity); err != nil {
+		logger.Error("failed to create activity", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Return status response
+	resp := Status{
+		ID:               noteID,
+		CreatedAt:        note.Published.Format("2006-01-02T15:04:05.000Z"),
+		Sensitive:        note.Sensitive,
+		SpoilerText:      note.Summary,
+		Visibility:       req.Visibility,
+		Language:         req.Language,
+		URI:              noteID,
+		URL:              noteID,
+		Content:          note.Content,
+		RepliesCount:     0,
+		ReblogsCount:     0,
+		FavouritesCount:  0,
+		Favourited:       false,
+		Reblogged:        false,
+		Muted:            false,
+		Bookmarked:       false,
+		Pinned:           false,
+		MediaAttachments: []interface{}{},
+		Mentions:         []interface{}{},
+		Tags:             []interface{}{},
+		Emojis:           []interface{}{},
+		Account: Account{
+			ID:             actor.ID,
+			Username:       actor.PreferredUsername,
+			Acct:           actor.PreferredUsername,
+			DisplayName:    actor.Name,
+			URL:            actor.URL,
+			CreatedAt:      now.Format("2006-01-02T15:04:05.000Z"),
+			Note:           actor.Summary,
+			Avatar:         "", // TODO: Implement avatars
+			AvatarStatic:   "",
+			Header:         "",
+			HeaderStatic:   "",
+			FollowersCount: 0,
+			FollowingCount: 0,
+			StatusesCount:  0,
+			Emojis:         []interface{}{},
+			Fields:         []interface{}{},
+		},
+	}
+
+	// Handle reply fields
+	if req.InReplyToID != "" {
+		resp.InReplyToID = &req.InReplyToID
+		// TODO: Extract account ID from the replied-to status
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusCreated,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleFavourite(ctx context.Context, request events.APIGatewayProxyRequest, statusID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the user's actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), statusID)
+	}
+
+	// Create a Like activity
+	likeActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.LikeType,
+			ID:      fmt.Sprintf("%s/activities/like-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			To:      []string{activitypub.PublicAddress},
+		},
+		Actor:  actor.ID,
+		Object: objectID,
+	}
+	now := time.Now()
+	likeActivity.Published = &now
+
+	// Store the activity in the outbox (this will trigger delivery)
+	if err := store.CreateActivity(ctx, likeActivity); err != nil {
+		logger.Error("failed to create like activity", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Get object to return status information
+	_, err = store.GetObject(ctx, objectID)
+	if err != nil {
+		// If object not found locally, still return success but with minimal info
+		logger.Warn("object not found locally", zap.String("object_id", objectID), zap.Error(err))
+	}
+
+	// Get like count for the object
+	likeCount, _ := store.CountObjectLikes(ctx, objectID)
+
+	// Return a simplified status response
+	resp := FavouriteResponse{
+		ID:              statusID,
+		CreatedAt:       likeActivity.Published.Format("2006-01-02T15:04:05.000Z"),
+		Favourited:      true,
+		FavouritesCount: likeCount,
+		URI:             objectID,
+		URL:             objectID,
+		Content:         "", // Would be populated from object
+		Visibility:      "public",
+		Language:        "en",
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleUnfavourite(ctx context.Context, request events.APIGatewayProxyRequest, statusID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the user's actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), statusID)
+	}
+
+	// Check if the like exists
+	_, err = store.GetLike(ctx, actor.ID, objectID)
+	if err != nil {
+		// Like doesn't exist, return success anyway for idempotency
+		logger.Info("like not found",
+			zap.String("actor", actor.ID),
+			zap.String("object", objectID))
+	} else {
+		// Create an Undo Like activity
+		undoActivity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.Context,
+				Type:    activitypub.UndoType,
+				ID:      fmt.Sprintf("%s/activities/undo-like-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+				To:      []string{activitypub.PublicAddress},
+			},
+			Actor: actor.ID,
+			Object: map[string]interface{}{
+				"type":   activitypub.LikeType,
+				"actor":  actor.ID,
+				"object": objectID,
+			},
+		}
+		now := time.Now()
+		undoActivity.Published = &now
+
+		// Store the activity in the outbox (this will trigger delivery)
+		if err := store.CreateActivity(ctx, undoActivity); err != nil {
+			logger.Error("failed to create undo like activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	}
+
+	// Get like count for the object
+	likeCount, _ := store.CountObjectLikes(ctx, objectID)
+
+	// Return a simplified status response
+	resp := FavouriteResponse{
+		ID:              statusID,
+		CreatedAt:       time.Now().Format("2006-01-02T15:04:05.000Z"),
+		Favourited:      false,
+		FavouritesCount: likeCount,
+		URI:             objectID,
+		URL:             objectID,
+		Content:         "", // Would be populated from object
+		Visibility:      "public",
+		Language:        "en",
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleReblog(ctx context.Context, request events.APIGatewayProxyRequest, statusID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the user's actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), statusID)
+	}
+
+	// Create an Announce activity
+	announceActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.AnnounceType,
+			ID:      fmt.Sprintf("%s/activities/announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			To:      []string{activitypub.PublicAddress},
+		},
+		Actor:  actor.ID,
+		Object: objectID,
+	}
+	if actor.Followers != "" {
+		announceActivity.CC = []string{actor.Followers}
+	}
+	now := time.Now()
+	announceActivity.Published = &now
+
+	// Store the activity in the outbox (this will trigger delivery)
+	if err := store.CreateActivity(ctx, announceActivity); err != nil {
+		logger.Error("failed to create announce activity", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Get object to return status information
+	_, err = store.GetObject(ctx, objectID)
+	if err != nil {
+		// If object not found locally, still return success but with minimal info
+		logger.Warn("object not found locally", zap.String("object_id", objectID), zap.Error(err))
+	}
+
+	// Get announce count for the object
+	announceCount, _ := store.CountObjectAnnounces(ctx, objectID)
+
+	// Return a simplified status response
+	resp := FavouriteResponse{
+		ID:           statusID,
+		CreatedAt:    announceActivity.Published.Format("2006-01-02T15:04:05.000Z"),
+		Reblogged:    true,
+		ReblogsCount: announceCount,
+		URI:          objectID,
+		URL:          objectID,
+		Content:      "", // Would be populated from object
+		Visibility:   "public",
+		Language:     "en",
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleUnreblog(ctx context.Context, request events.APIGatewayProxyRequest, statusID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the user's actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), statusID)
+	}
+
+	// Check if the announce exists
+	_, err = store.GetAnnounce(ctx, actor.ID, objectID)
+	if err != nil {
+		// Announce doesn't exist, return success anyway for idempotency
+		logger.Info("announce not found",
+			zap.String("actor", actor.ID),
+			zap.String("object", objectID))
+	} else {
+		// Create an Undo Announce activity
+		undoActivity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.Context,
+				Type:    activitypub.UndoType,
+				ID:      fmt.Sprintf("%s/activities/undo-announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+				To:      []string{activitypub.PublicAddress},
+			},
+			Actor: actor.ID,
+			Object: map[string]interface{}{
+				"type":   activitypub.AnnounceType,
+				"actor":  actor.ID,
+				"object": objectID,
+			},
+		}
+		if actor.Followers != "" {
+			undoActivity.CC = []string{actor.Followers}
+		}
+		now := time.Now()
+		undoActivity.Published = &now
+
+		// Store the activity in the outbox (this will trigger delivery)
+		if err := store.CreateActivity(ctx, undoActivity); err != nil {
+			logger.Error("failed to create undo announce activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	}
+
+	// Get announce count for the object
+	announceCount, _ := store.CountObjectAnnounces(ctx, objectID)
+
+	// Return a simplified status response
+	resp := FavouriteResponse{
+		ID:           statusID,
+		CreatedAt:    time.Now().Format("2006-01-02T15:04:05.000Z"),
+		Reblogged:    false,
+		ReblogsCount: announceCount,
+		URI:          objectID,
+		URL:          objectID,
+		Content:      "", // Would be populated from object
+		Visibility:   "public",
+		Language:     "en",
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleDeleteStatus(ctx context.Context, request events.APIGatewayProxyRequest, statusID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the user's actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), statusID)
+	}
+
+	// Check that the object exists and belongs to the actor
+	existingObj, err := store.GetObject(ctx, objectID)
+	if err != nil {
+		logger.Warn("object not found", zap.String("object_id", objectID), zap.Error(err))
+		return common.NotFound(fmt.Errorf("status not found")), nil
+	}
+
+	// Check if it's already a tombstone
+	if _, ok := existingObj.(*storage.Tombstone); ok {
+		return common.NotFound(fmt.Errorf("status already deleted")), nil
+	}
+
+	// Verify the actor owns the object
+	var attributedTo string
+	switch v := existingObj.(type) {
+	case *storageDB.Object:
+		attributedTo = v.AttributedTo
+	case map[string]interface{}:
+		if attr, ok := v["attributedTo"].(string); ok {
+			attributedTo = attr
+		}
+	}
+
+	if attributedTo != actor.ID {
+		return common.Forbidden(errors.New("you can only delete your own statuses")), nil
+	}
+
+	// Create a Delete activity
+	deleteActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.DeleteType,
+			ID:      fmt.Sprintf("%s/activities/delete-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			To:      []string{activitypub.PublicAddress},
+		},
+		Actor:  actor.ID,
+		Object: objectID,
+	}
+	if actor.Followers != "" {
+		deleteActivity.CC = []string{actor.Followers}
+	}
+	now := time.Now()
+	deleteActivity.Published = &now
+
+	// Store the activity in the outbox (this will trigger tombstoning and delivery)
+	if err := store.CreateActivity(ctx, deleteActivity); err != nil {
+		logger.Error("failed to create delete activity", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Return empty response as per Mastodon API
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: "{}",
+	}, nil
+}
+
+func handleUpdateStatus(ctx context.Context, request events.APIGatewayProxyRequest, statusID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the user's actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Parse request body
+	var updateReq struct {
+		Status      string `json:"status"`       // New content
+		SpoilerText string `json:"spoiler_text"` // Content warning
+		Sensitive   bool   `json:"sensitive"`    // Mark as sensitive
+	}
+	if err := json.Unmarshal([]byte(request.Body), &updateReq); err != nil {
+		return common.BadRequest(err), nil
+	}
+
+	// Validate content
+	if updateReq.Status == "" {
+		return common.UnprocessableEntity(errors.New("status content is required")), nil
+	}
+	if len(updateReq.Status) > 500 {
+		return common.UnprocessableEntity(errors.New("status content must not exceed 500 characters")), nil
+	}
+
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), statusID)
+	}
+
+	// Check that the object exists and belongs to the actor
+	existingObj, err := store.GetObject(ctx, objectID)
+	if err != nil {
+		logger.Warn("object not found", zap.String("object_id", objectID), zap.Error(err))
+		return common.NotFound(fmt.Errorf("status not found")), nil
+	}
+
+	// Check if it's already a tombstone
+	if _, ok := existingObj.(*storage.Tombstone); ok {
+		return common.NotFound(fmt.Errorf("status has been deleted")), nil
+	}
+
+	// Verify the actor owns the object
+	var attributedTo string
+	var existingType string
+	var existingPublished time.Time
+	var existingTo []string
+	var existingCC []string
+
+	switch v := existingObj.(type) {
+	case *storageDB.Object:
+		attributedTo = v.AttributedTo
+		existingType = v.Type
+		existingPublished = v.Published
+		existingTo = v.To
+		existingCC = v.CC
+	case map[string]interface{}:
+		if attr, ok := v["attributedTo"].(string); ok {
+			attributedTo = attr
+		}
+		if t, ok := v["type"].(string); ok {
+			existingType = t
+		}
+		if pub, ok := v["published"].(string); ok {
+			existingPublished, _ = time.Parse(time.RFC3339, pub)
+		}
+		if to, ok := v["to"].([]interface{}); ok {
+			for _, t := range to {
+				if s, ok := t.(string); ok {
+					existingTo = append(existingTo, s)
+				}
+			}
+		}
+		if cc, ok := v["cc"].([]interface{}); ok {
+			for _, c := range cc {
+				if s, ok := c.(string); ok {
+					existingCC = append(existingCC, s)
+				}
+			}
+		}
+	}
+
+	if attributedTo != actor.ID {
+		return common.Forbidden(errors.New("you can only update your own statuses")), nil
+	}
+
+	// Create an Update activity
+	updateActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.UpdateType,
+			ID:      fmt.Sprintf("%s/activities/update-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			To:      []string{activitypub.PublicAddress},
+		},
+		Actor: actor.ID,
+		Object: map[string]interface{}{
+			"id":           objectID,
+			"type":         existingType,
+			"attributedTo": actor.ID,
+			"content":      updateReq.Status,
+			"summary":      updateReq.SpoilerText,
+			"sensitive":    updateReq.Sensitive,
+			"published":    existingPublished.Format(time.RFC3339),
+			"updated":      time.Now().UTC().Format(time.RFC3339),
+			"to":           existingTo,
+			"cc":           existingCC,
+		},
+	}
+	if actor.Followers != "" {
+		updateActivity.CC = []string{actor.Followers}
+	}
+	now := time.Now()
+	updateActivity.Published = &now
+
+	// Store the activity in the outbox (this will trigger the update and delivery)
+	if err := store.CreateActivity(ctx, updateActivity); err != nil {
+		logger.Error("failed to create update activity", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Return the updated status in Mastodon format
+	resp := FavouriteResponse{
+		ID:          statusID,
+		CreatedAt:   existingPublished.Format("2006-01-02T15:04:05.000Z"),
+		Content:     updateReq.Status,
+		SpoilerText: updateReq.SpoilerText,
+		Sensitive:   updateReq.Sensitive,
+		URI:         objectID,
+		URL:         objectID,
+		Visibility:  "public",
+		Language:    "en",
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+// generateRandomString generates a random string of specified length
+func generateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
+}
+
+// getStringFromMap safely extracts a string value from a map[string]interface{}
+func getStringFromMap(m map[string]interface{}, key, defaultValue string) string {
+	if val, ok := m[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return defaultValue
+}
+
+func handleBlock(ctx context.Context, request events.APIGatewayProxyRequest, accountID string) (events.APIGatewayProxyResponse, error) {
+	log := common.WithContext(ctx)
+
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		return common.NotFound(err), nil
+	}
+
+	// Construct the blocked actor ID
+	// accountID might be just the username or the full actor ID
+	var blockedActorID string
+	if strings.HasPrefix(accountID, "http://") || strings.HasPrefix(accountID, "https://") {
+		blockedActorID = accountID
+	} else {
+		// Assume it's a local user
+		blockedActorID = fmt.Sprintf("%s/users/%s", cfg.Domain, accountID)
+	}
+
+	// Create Block activity
+	activity := activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.BlockType,
+			To:      []string{blockedActorID},
+		},
+		Actor:  actor.ID,
+		Object: blockedActorID,
+	}
+
+	// Store the block locally
+	block := &storage.Block{
+		Actor:     actor.ID,
+		Object:    blockedActorID,
+		ID:        fmt.Sprintf("%s/activities/block-%d", actor.ID, time.Now().Unix()),
+		Published: time.Now().UTC(),
+	}
+
+	if err := store.CreateBlock(ctx, block); err != nil {
+		// Check if already blocked
+		if strings.Contains(err.Error(), "already exists") {
+			// Already blocked, return success
+			relationship := map[string]interface{}{
+				"id":                   accountID,
+				"following":            false,
+				"showing_reblogs":      false,
+				"notifying":            false,
+				"followed_by":          false,
+				"blocking":             true,
+				"blocked_by":           false,
+				"muting":               false,
+				"muting_notifications": false,
+				"requested":            false,
+				"domain_blocking":      false,
+				"endorsed":             false,
+				"note":                 "",
+			}
+			return common.JSONResponse(http.StatusOK, relationship), nil
+		}
+		return common.InternalServerError(err), nil
+	}
+
+	// Store the activity
+	if err := store.CreateActivity(ctx, &activity); err != nil {
+		// Activity storage failed, but block is created, so we continue
+		log.Warn("failed to store block activity", zap.Error(err))
+	}
+
+	// Return Mastodon-compatible relationship object
+	relationship := map[string]interface{}{
+		"id":                   accountID,
+		"following":            false,
+		"showing_reblogs":      false,
+		"notifying":            false,
+		"followed_by":          false,
+		"blocking":             true,
+		"blocked_by":           false,
+		"muting":               false,
+		"muting_notifications": false,
+		"requested":            false,
+		"domain_blocking":      false,
+		"endorsed":             false,
+		"note":                 "",
+	}
+
+	return common.JSONResponse(http.StatusOK, relationship), nil
+}
+
+func handleUnblock(ctx context.Context, request events.APIGatewayProxyRequest, accountID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		return common.NotFound(err), nil
+	}
+
+	// Construct the blocked actor ID
+	var blockedActorID string
+	if strings.HasPrefix(accountID, "http://") || strings.HasPrefix(accountID, "https://") {
+		blockedActorID = accountID
+	} else {
+		// Assume it's a local user
+		blockedActorID = fmt.Sprintf("%s/users/%s", cfg.Domain, accountID)
+	}
+
+	// Check if the block exists
+	_, err = store.GetBlock(ctx, actor.ID, blockedActorID)
+	if err != nil {
+		// Not blocked, return success anyway
+		relationship := map[string]interface{}{
+			"id":                   accountID,
+			"following":            false,
+			"showing_reblogs":      false,
+			"notifying":            false,
+			"followed_by":          false,
+			"blocking":             false,
+			"blocked_by":           false,
+			"muting":               false,
+			"muting_notifications": false,
+			"requested":            false,
+			"domain_blocking":      false,
+			"endorsed":             false,
+			"note":                 "",
+		}
+		return common.JSONResponse(http.StatusOK, relationship), nil
+	}
+
+	// Delete the block
+	err = store.DeleteBlock(ctx, actor.ID, blockedActorID)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	// Return Mastodon-compatible relationship object
+	relationship := map[string]interface{}{
+		"id":                   accountID,
+		"following":            false,
+		"showing_reblogs":      false,
+		"notifying":            false,
+		"followed_by":          false,
+		"blocking":             false,
+		"blocked_by":           false,
+		"muting":               false,
+		"muting_notifications": false,
+		"requested":            false,
+		"domain_blocking":      false,
+		"endorsed":             false,
+		"note":                 "",
+	}
+
+	return common.JSONResponse(http.StatusOK, relationship), nil
+}
+
+func handleGetBlocks(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		return common.NotFound(err), nil
+	}
+
+	// Parse query parameters
+	limit := 40
+	if limitStr := request.QueryStringParameters["limit"]; limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 80 {
+			limit = l
+		}
+	}
+
+	cursor := request.QueryStringParameters["max_id"]
+
+	// Get blocked actors
+	blocks, nextCursor, err := store.GetBlockedActors(ctx, actor.ID, limit, cursor)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert to Mastodon-compatible account format
+	accounts := make([]map[string]interface{}, 0, len(blocks))
+	for _, block := range blocks {
+		// Extract username from actor ID
+		parts := strings.Split(block.Object, "/")
+		username := parts[len(parts)-1]
+
+		account := map[string]interface{}{
+			"id":              username,
+			"username":        username,
+			"acct":            username,
+			"display_name":    username,
+			"locked":          false,
+			"bot":             false,
+			"discoverable":    true,
+			"group":           false,
+			"created_at":      block.CreatedAt.Format(time.RFC3339),
+			"note":            "",
+			"url":             block.Object,
+			"avatar":          fmt.Sprintf("%s/avatars/default.png", cfg.Domain),
+			"avatar_static":   fmt.Sprintf("%s/avatars/default.png", cfg.Domain),
+			"header":          fmt.Sprintf("%s/headers/default.png", cfg.Domain),
+			"header_static":   fmt.Sprintf("%s/headers/default.png", cfg.Domain),
+			"followers_count": 0,
+			"following_count": 0,
+			"statuses_count":  0,
+			"last_status_at":  nil,
+			"emojis":          []interface{}{},
+			"fields":          []interface{}{},
+		}
+		accounts = append(accounts, account)
+	}
+
+	// Add Link header for pagination
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	if nextCursor != "" {
+		linkHeader := fmt.Sprintf(`<%s/api/v1/blocks?max_id=%s&limit=%d>; rel="next"`,
+			cfg.Domain, nextCursor, limit)
+		headers["Link"] = linkHeader
+	}
+
+	body, err := json.Marshal(accounts)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers:    headers,
+		Body:       string(body),
+	}, nil
+}
+
+func handleHomeTimeline(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Parse query parameters
+	queryParams := request.QueryStringParameters
+	limit := 20 // Default limit
+	if l := queryParams["limit"]; l != "" {
+		if parsedLimit, err := strconv.Atoi(l); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
+			limit = parsedLimit
+		}
+	}
+
+	cursor := queryParams["max_id"] // Mastodon uses max_id for pagination
+
+	// Get the pre-computed home timeline
+	timelineEntries, nextCursor, err := store.GetHomeTimeline(ctx, claims.Username, limit, cursor)
+	if err != nil {
+		logger.Error("failed to get home timeline", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert timeline entries to Mastodon-compatible Status objects
+	statuses := make([]Status, 0, len(timelineEntries))
+	for _, entry := range timelineEntries {
+		// Convert timeline entry to Status
+		status := Status{
+			ID:  extractStatusID(entry.PostID),
+			URI: entry.PostID,
+			URL: entry.PostID, // Could be web URL instead
+			Account: Account{
+				ID:          extractAccountID(entry.ActorID),
+				Username:    extractUsernameFromActorID(entry.ActorID),
+				Acct:        entry.ActorHandle,
+				DisplayName: entry.ActorHandle, // TODO: Get from actor profile
+				URL:         entry.ActorID,
+				// TODO: Add more account fields
+			},
+			Content:          entry.Content,
+			CreatedAt:        entry.CreatedAt.Format(time.RFC3339),
+			RepliesCount:     0, // TODO: Track these counts
+			ReblogsCount:     0,
+			FavouritesCount:  0,
+			Favourited:       false, // TODO: Check if current user liked
+			Reblogged:        false, // TODO: Check if current user boosted
+			Sensitive:        entry.Sensitive,
+			SpoilerText:      entry.SpoilerText,
+			Visibility:       entry.Visibility,
+			Language:         entry.Language,
+			InReplyToID:      nil,             // Will set below if there's a reply
+			MediaAttachments: []interface{}{}, // TODO: Load media
+		}
+
+		// Set InReplyToID if this is a reply
+		if entry.InReplyTo != "" {
+			replyID := extractStatusID(entry.InReplyTo)
+			status.InReplyToID = &replyID
+		}
+
+		// Handle boosts
+		if entry.IsBoost {
+			// For boosts, we need to show who boosted it
+			boosterUsername := extractUsernameFromActorID(entry.BoostedBy)
+			status.Account = Account{
+				ID:       extractAccountID(entry.BoostedBy),
+				Username: boosterUsername,
+				Acct:     fmt.Sprintf("@%s", boosterUsername),
+				URL:      entry.BoostedBy,
+			}
+			// TODO: Set the reblog field to the original status
+		}
+
+		statuses = append(statuses, status)
+	}
+
+	// Build response headers
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	// Add Link header for pagination if there's a next cursor
+	if nextCursor != "" {
+		linkHeader := fmt.Sprintf(`<%s/api/v1/timelines/home?max_id=%s&limit=%d>; rel="next"`,
+			cfg.BaseURL(), nextCursor, limit)
+		headers["Link"] = linkHeader
+	}
+
+	body, err := json.Marshal(statuses)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers:    headers,
+		Body:       string(body),
+	}, nil
+}
+
+// Helper functions for ID extraction
+func extractStatusID(uri string) string {
+	// Extract the ID part from URIs like "https://example.com/users/alice/statuses/123"
+	parts := strings.Split(uri, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return uri
+}
+
+func extractAccountID(actorID string) string {
+	// For now, use username as ID
+	// In a real implementation, you might have numeric IDs
+	return extractUsernameFromActorID(actorID)
+}
+
+func extractUsernameFromActorID(actorID string) string {
+	parts := strings.Split(actorID, "/users/")
+	if len(parts) >= 2 {
+		return parts[1]
+	}
+	// Try other common patterns
+	parts = strings.Split(actorID, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return ""
+}
+
+func handlePublicTimeline(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Public timeline can be accessed without authentication in read-only mode
+	// But some instances might require authentication
+
+	// Parse query parameters
+	queryParams := request.QueryStringParameters
+	limit := 20 // Default limit
+	if l := queryParams["limit"]; l != "" {
+		if parsedLimit, err := strconv.Atoi(l); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
+			limit = parsedLimit
+		}
+	}
+
+	// Check for local only flag
+	local := queryParams["local"] == "true"
+	cursor := queryParams["max_id"] // Mastodon uses max_id for pagination
+
+	// Get the pre-computed public timeline
+	timelineEntries, nextCursor, err := store.GetPublicTimeline(ctx, local, limit, cursor)
+	if err != nil {
+		logger.Error("failed to get public timeline", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert timeline entries to Mastodon-compatible Status objects
+	statuses := make([]Status, 0, len(timelineEntries))
+	for _, entry := range timelineEntries {
+		// Convert timeline entry to Status
+		status := Status{
+			ID:  extractStatusID(entry.PostID),
+			URI: entry.PostID,
+			URL: entry.PostID,
+			Account: Account{
+				ID:          extractAccountID(entry.ActorID),
+				Username:    extractUsernameFromActorID(entry.ActorID),
+				Acct:        entry.ActorHandle,
+				DisplayName: entry.ActorHandle, // TODO: Get from actor profile
+				URL:         entry.ActorID,
+			},
+			Content:          entry.Content,
+			CreatedAt:        entry.CreatedAt.Format(time.RFC3339),
+			RepliesCount:     0, // TODO: Track these counts
+			ReblogsCount:     0,
+			FavouritesCount:  0,
+			Favourited:       false,
+			Reblogged:        false,
+			Sensitive:        entry.Sensitive,
+			SpoilerText:      entry.SpoilerText,
+			Visibility:       entry.Visibility,
+			Language:         entry.Language,
+			InReplyToID:      nil,
+			MediaAttachments: []interface{}{},
+		}
+
+		// Set InReplyToID if this is a reply
+		if entry.InReplyTo != "" {
+			replyID := extractStatusID(entry.InReplyTo)
+			status.InReplyToID = &replyID
+		}
+
+		// Handle boosts
+		if entry.IsBoost {
+			boosterUsername := extractUsernameFromActorID(entry.BoostedBy)
+			status.Account = Account{
+				ID:       extractAccountID(entry.BoostedBy),
+				Username: boosterUsername,
+				Acct:     fmt.Sprintf("@%s", boosterUsername),
+				URL:      entry.BoostedBy,
+			}
+			// TODO: Set the reblog field to the original status
+		}
+
+		statuses = append(statuses, status)
+	}
+
+	// Build response headers
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	// Add Link header for pagination if there's a next cursor
+	if nextCursor != "" {
+		linkHeader := fmt.Sprintf(`<%s/api/v1/timelines/public?local=%t&max_id=%s&limit=%d>; rel="next"`,
+			cfg.BaseURL(), local, nextCursor, limit)
+		headers["Link"] = linkHeader
+	}
+
+	body, err := json.Marshal(statuses)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers:    headers,
+		Body:       string(body),
+	}, nil
+}
+
+// Helper function to convert an object to a Mastodon status
+func objectToStatus(obj interface{}, actor *activitypub.Actor) Status {
+	// Type assertion based on the storage implementation
+	// This handles the dynamodb.Object type
+	var noteID, content, visibility, language string
+	var sensitive bool
+	var spoilerText string
+	var published time.Time
+
+	// Handle different object types from storage
+	switch v := obj.(type) {
+	case *storageDB.Object:
+		noteID = v.ID
+		content = v.Content
+		sensitive = v.Sensitive
+		spoilerText = v.Summary
+		published = v.Published
+		language = "en" // Default, could be extracted from contentMap
+
+		// Determine visibility from addressing
+		hasPublic := false
+		hasFollowers := false
+		for _, to := range v.To {
+			if to == activitypub.PublicAddress {
+				hasPublic = true
+			}
+			if strings.Contains(to, "/followers") {
+				hasFollowers = true
+			}
+		}
+		for _, cc := range v.CC {
+			if cc == activitypub.PublicAddress {
+				hasPublic = true
+			}
+		}
+
+		if hasPublic && !hasFollowers {
+			visibility = "public"
+		} else if hasPublic && hasFollowers {
+			visibility = "unlisted"
+		} else if hasFollowers {
+			visibility = "private"
+		} else {
+			visibility = "direct"
+		}
+
+	case map[string]interface{}:
+		noteID, _ = v["id"].(string)
+		content, _ = v["content"].(string)
+		sensitive, _ = v["sensitive"].(bool)
+		spoilerText, _ = v["summary"].(string)
+		if pubStr, ok := v["published"].(string); ok {
+			published, _ = time.Parse(time.RFC3339, pubStr)
+		}
+		visibility = "public" // Default
+		language = "en"
+	}
+
+	return Status{
+		ID:               noteID,
+		CreatedAt:        published.Format("2006-01-02T15:04:05.000Z"),
+		Sensitive:        sensitive,
+		SpoilerText:      spoilerText,
+		Visibility:       visibility,
+		Language:         language,
+		URI:              noteID,
+		URL:              noteID,
+		Content:          content,
+		RepliesCount:     0,
+		ReblogsCount:     0,
+		FavouritesCount:  0,
+		Favourited:       false,
+		Reblogged:        false,
+		Muted:            false,
+		Bookmarked:       false,
+		Pinned:           false,
+		MediaAttachments: []interface{}{},
+		Mentions:         []interface{}{},
+		Tags:             []interface{}{},
+		Emojis:           []interface{}{},
+		Account: Account{
+			ID:             actor.ID,
+			Username:       actor.PreferredUsername,
+			Acct:           actor.PreferredUsername,
+			DisplayName:    actor.Name,
+			URL:            actor.URL,
+			CreatedAt:      time.Now().Format("2006-01-02T15:04:05.000Z"), // Would need actor creation time
+			Note:           actor.Summary,
+			Avatar:         "",
+			AvatarStatic:   "",
+			Header:         "",
+			HeaderStatic:   "",
+			FollowersCount: 0,
+			FollowingCount: 0,
+			StatusesCount:  0,
+			Emojis:         []interface{}{},
+			Fields:         []interface{}{},
+		},
+	}
+}
+
+// handleGetStatus retrieves a single status by ID
+func handleGetStatus(ctx context.Context, request events.APIGatewayProxyRequest, statusID string) (events.APIGatewayProxyResponse, error) {
+	// Build object ID from status ID
+	// Status IDs come in the format of the last part of the object URL
+	// We need to reconstruct the full object ID
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http") {
+		// Try to reconstruct the full ID
+		// First check if it's a local object
+		objectID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), statusID)
+	}
+
+	// Get the object from storage
+	objInterface, err := store.GetObject(ctx, objectID)
+	if err != nil {
+		// Try without the base URL prefix in case it's stored differently
+		objInterface, err = store.GetObject(ctx, statusID)
+		if err != nil {
+			return common.NotFound(fmt.Errorf("status not found")), nil
+		}
+	}
+
+	// Type assert to check if it's a tombstone
+	if tombstone, ok := objInterface.(*storage.Tombstone); ok {
+		// Return 404 with tombstone info
+		return common.NotFound(fmt.Errorf("status has been deleted at %s", tombstone.Deleted.Format(time.RFC3339))), nil
+	}
+
+	// Convert object to status format using the existing helper
+	// The objectToStatus function already handles the interface{} type
+	// Get the actor who created this object
+	var actorID string
+
+	// Extract actor ID from the object based on its type
+	switch v := objInterface.(type) {
+	case *storageDB.Object:
+		actorID = v.AttributedTo
+	case map[string]interface{}:
+		if id, ok := v["attributedTo"].(string); ok {
+			actorID = id
+		}
+	}
+
+	if actorID == "" {
+		return common.InternalServerError(fmt.Errorf("object has no attributedTo field")), nil
+	}
+
+	// Extract username from actor ID
+	username := extractUsernameFromActorID(actorID)
+	if username == "" {
+		return common.InternalServerError(fmt.Errorf("invalid actor ID format: %s", actorID)), nil
+	}
+
+	// Get the actor
+	actor, err := store.GetActor(ctx, username)
+	if err != nil {
+		logger.Error("failed to get actor for status", zap.String("username", username), zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert to Mastodon status format
+	status := objectToStatus(objInterface, actor)
+
+	// Fix the ID to match what was requested
+	status.ID = statusID
+
+	// Get interaction counts
+	// TODO: Implement these counts in storage
+	// For now, they remain at 0
+
+	// Check if current user has interacted with this status
+	// This requires authentication, but it's optional for public statuses
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	if authHeader != "" {
+		token, err := auth.ExtractBearerToken(authHeader)
+		if err == nil {
+			oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+			claims, err := oauthSvc.ValidateAccessToken(token)
+			if err == nil && claims.HasScope(auth.ScopeRead) {
+				// TODO: Check if user has favourited/reblogged this status
+				// This would require tracking interactions in storage
+			}
+		}
+	}
+
+	body, err := json.Marshal(status)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+// Context represents the ancestors and descendants of a status
+type Context struct {
+	Ancestors   []Status `json:"ancestors"`
+	Descendants []Status `json:"descendants"`
+}
+
+// handleGetStatusContext retrieves the conversation thread for a status
+func handleGetStatusContext(ctx context.Context, request events.APIGatewayProxyRequest, statusID string) (events.APIGatewayProxyResponse, error) {
+	// Build object ID from status ID
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http") {
+		objectID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), statusID)
+	}
+
+	// Get the main object first to ensure it exists
+	objInterface, err := store.GetObject(ctx, objectID)
+	if err != nil {
+		// Try without the base URL prefix
+		objInterface, err = store.GetObject(ctx, statusID)
+		if err != nil {
+			return common.NotFound(fmt.Errorf("status not found")), nil
+		}
+	}
+
+	// Check if it's a tombstone
+	if _, ok := objInterface.(*storage.Tombstone); ok {
+		return common.NotFound(fmt.Errorf("status has been deleted")), nil
+	}
+
+	// Initialize context
+	context := Context{
+		Ancestors:   []Status{},
+		Descendants: []Status{},
+	}
+
+	// Type assert to get the object
+	var currentObj *storageDB.Object
+	switch v := objInterface.(type) {
+	case *storageDB.Object:
+		currentObj = v
+		objectID = v.ID
+	default:
+		// Can't get ancestors without proper object type
+		logger.Warn("cannot get context for non-Object type", zap.String("type", fmt.Sprintf("%T", objInterface)))
+		// Return empty context
+		body, _ := json.Marshal(context)
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusOK,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: string(body),
+		}, nil
+	}
+
+	// Get ancestors (replies this status is replying to)
+	// Walk up the chain of InReplyTo
+	ancestorIDs := []string{}
+	for currentObj.InReplyTo != nil && *currentObj.InReplyTo != "" && len(ancestorIDs) < 40 { // Limit depth to prevent infinite loops
+		// Prevent cycles
+		cycleDetected := false
+		for _, id := range ancestorIDs {
+			if id == *currentObj.InReplyTo {
+				cycleDetected = true
+				break
+			}
+		}
+		if cycleDetected {
+			break
+		}
+
+		parentObjInterface, err := store.GetObject(ctx, *currentObj.InReplyTo)
+		if err != nil {
+			// Can't get parent, stop here
+			break
+		}
+
+		// Check if parent is a tombstone
+		if _, ok := parentObjInterface.(*storage.Tombstone); ok {
+			// Parent was deleted, stop here
+			break
+		}
+
+		// Type assert parent
+		parentObj, ok := parentObjInterface.(*storageDB.Object)
+		if !ok {
+			// Can't handle non-Object parent
+			break
+		}
+
+		ancestorIDs = append([]string{parentObj.ID}, ancestorIDs...) // Prepend to maintain order
+		currentObj = parentObj
+	}
+
+	// Fetch all ancestors and convert to Status format
+	for _, ancestorID := range ancestorIDs {
+		ancestorObjInterface, err := store.GetObject(ctx, ancestorID)
+		if err != nil {
+			continue
+		}
+
+		// Skip if tombstone
+		if _, ok := ancestorObjInterface.(*storage.Tombstone); ok {
+			continue
+		}
+
+		// Extract actor ID
+		var ancestorActorID string
+		switch v := ancestorObjInterface.(type) {
+		case *storageDB.Object:
+			ancestorActorID = v.AttributedTo
+		}
+
+		if ancestorActorID == "" {
+			continue
+		}
+
+		// Get the actor for this ancestor
+		ancestorUsername := extractUsernameFromActorID(ancestorActorID)
+		ancestorActor, err := store.GetActor(ctx, ancestorUsername)
+		if err != nil {
+			continue
+		}
+
+		ancestorStatus := objectToStatus(ancestorObjInterface, ancestorActor)
+		ancestorStatus.ID = extractStatusID(ancestorID)
+		context.Ancestors = append(context.Ancestors, ancestorStatus)
+	}
+
+	// Get descendants (replies to this status)
+	// This is more complex as we need to query for objects that have InReplyTo = objectID
+	// For now, we'll return empty descendants as this would require a new storage query
+	// TODO: Implement GetReplies in storage layer
+	context.Descendants = []Status{}
+
+	body, err := json.Marshal(context)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+// handleGetAccount retrieves account information by ID (username)
+func handleGetAccount(ctx context.Context, request events.APIGatewayProxyRequest, accountID string) (events.APIGatewayProxyResponse, error) {
+	// In our implementation, account ID is the username
+	username := accountID
+
+	// Get the actor
+	actor, err := store.GetActor(ctx, username)
+	if err != nil {
+		return common.NotFound(fmt.Errorf("account not found")), nil
+	}
+
+	// Get follower and following counts
+	followerCount := 0
+	followingCount := 0
+	statusesCount := 0
+
+	// Get followers count (approximate - just get first page)
+	followers, _, err := store.GetFollowers(ctx, username, 1, "")
+	if err == nil && len(followers) > 0 {
+		// This is approximate - in production you'd want actual counts
+		followerCount = len(followers)
+	}
+
+	// Get following count
+	following, _, err := store.GetFollowing(ctx, username, 1, "")
+	if err == nil && len(following) > 0 {
+		followingCount = len(following)
+	}
+
+	// Get statuses count
+	objects, _, err := store.GetObjectsByActor(ctx, actor.ID, "", 1)
+	if err == nil && len(objects) > 0 {
+		statusesCount = len(objects)
+	}
+
+	// Convert to Mastodon account format
+	account := Account{
+		ID:             username,
+		Username:       username,
+		Acct:           username,
+		DisplayName:    actor.Name,
+		Locked:         false, // TODO: Check actor.ManuallyApprovesFollowers
+		Bot:            false, // TODO: Check actor.Type
+		Discoverable:   true,  // TODO: Check actor.Discoverable
+		Group:          actor.Type == "Group",
+		CreatedAt:      time.Now().Format(time.RFC3339), // TODO: Store actor creation time
+		Note:           actor.Summary,
+		URL:            actor.URL,
+		Avatar:         actor.Icon.URL,
+		AvatarStatic:   actor.Icon.URL,
+		Header:         "", // TODO: Add header support
+		HeaderStatic:   "",
+		FollowersCount: followerCount,
+		FollowingCount: followingCount,
+		StatusesCount:  statusesCount,
+		LastStatusAt:   "", // TODO: Track last status time
+		Emojis:         []interface{}{},
+		Fields:         []interface{}{}, // TODO: Parse actor.Attachment
+	}
+
+	// Set default avatar if not present
+	if account.Avatar == "" {
+		account.Avatar = fmt.Sprintf("%s/avatars/default.png", cfg.BaseURL())
+		account.AvatarStatic = account.Avatar
+	}
+
+	body, err := json.Marshal(account)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+// handleGetAccountStatuses retrieves statuses posted by an account
+func handleGetAccountStatuses(ctx context.Context, request events.APIGatewayProxyRequest, accountID string) (events.APIGatewayProxyResponse, error) {
+	// In our implementation, account ID is the username
+	username := accountID
+
+	// Get the actor
+	actor, err := store.GetActor(ctx, username)
+	if err != nil {
+		return common.NotFound(fmt.Errorf("account not found")), nil
+	}
+
+	// Parse query parameters
+	queryParams := request.QueryStringParameters
+	limit := 20 // Default limit
+	if l := queryParams["limit"]; l != "" {
+		if parsedLimit, err := strconv.Atoi(l); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
+			limit = parsedLimit
+		}
+	}
+
+	cursor := queryParams["max_id"]
+	// TODO: Support these filters
+	// onlyMedia := queryParams["only_media"] == "true"
+	// excludeReplies := queryParams["exclude_replies"] == "true"
+	// excludeReblogs := queryParams["exclude_reblogs"] == "true"
+	// pinned := queryParams["pinned"] == "true"
+
+	// Get objects by actor
+	objects, nextCursor, err := store.GetObjectsByActor(ctx, actor.ID, cursor, limit)
+	if err != nil {
+		logger.Error("failed to get actor's objects", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert objects to statuses
+	statuses := make([]Status, 0, len(objects))
+	for _, obj := range objects {
+		// Skip tombstones
+		if _, ok := obj.(*storage.Tombstone); ok {
+			continue
+		}
+
+		status := objectToStatus(obj, actor)
+
+		// Extract status ID
+		switch v := obj.(type) {
+		case *storageDB.Object:
+			status.ID = extractStatusID(v.ID)
+		}
+
+		statuses = append(statuses, status)
+	}
+
+	// Build response headers
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	// Add Link header for pagination if there's a next cursor
+	if nextCursor != "" {
+		linkHeader := fmt.Sprintf(`<%s/api/v1/accounts/%s/statuses?max_id=%s&limit=%d>; rel="next"`,
+			cfg.BaseURL(), accountID, nextCursor, limit)
+		headers["Link"] = linkHeader
+	}
+
+	body, err := json.Marshal(statuses)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers:    headers,
+		Body:       string(body),
+	}, nil
+}
+
+// handleFollow creates a follow relationship
+func handleFollow(ctx context.Context, request events.APIGatewayProxyRequest, accountID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the actor who is following
+	follower, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	// Get the target actor
+	targetUsername := accountID
+	targetActor, err := store.GetActor(ctx, targetUsername)
+	if err != nil {
+		return common.NotFound(fmt.Errorf("account not found")), nil
+	}
+
+	// Create a Follow activity
+	followActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.FollowType,
+			ID:      fmt.Sprintf("%s/activities/follow/%s", cfg.BaseURL(), generateRandomString(16)),
+			To:      []string{targetActor.ID},
+		},
+		Actor:  follower.ID,
+		Object: targetActor.ID,
+	}
+
+	// Store the follow activity in the outbox
+	if err := store.CreateActivity(ctx, followActivity); err != nil {
+		logger.Error("failed to create follow activity", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Create the follow relationship (will be processed by activity processor)
+	if err := store.CreateFollow(ctx, claims.Username, targetUsername, followActivity.ID); err != nil {
+		logger.Error("failed to create follow relationship", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Return relationship object
+	isFollowing := true
+	relationship := map[string]interface{}{
+		"id":                   accountID,
+		"following":            isFollowing,
+		"showing_reblogs":      true,
+		"notifying":            false,
+		"followed_by":          false, // TODO: Check if target follows back
+		"blocking":             false, // TODO: Check blocks
+		"blocked_by":           false,
+		"muting":               false,
+		"muting_notifications": false,
+		"requested":            !targetActor.ManuallyApprovesFollowers, // If manual approval, it's requested
+		"domain_blocking":      false,
+		"endorsed":             false,
+		"note":                 "",
+	}
+
+	return common.JSONResponse(http.StatusOK, relationship), nil
+}
+
+// handleUnfollow removes a follow relationship
+func handleUnfollow(ctx context.Context, request events.APIGatewayProxyRequest, accountID string) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the actor who is unfollowing
+	follower, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	// Get the target actor
+	targetUsername := accountID
+	targetActor, err := store.GetActor(ctx, targetUsername)
+	if err != nil {
+		return common.NotFound(fmt.Errorf("account not found")), nil
+	}
+
+	// Check if following
+	isFollowing, err := store.IsFollowing(ctx, claims.Username, targetUsername)
+	if err != nil || !isFollowing {
+		// Not following, return success anyway
+		relationship := map[string]interface{}{
+			"id":                   accountID,
+			"following":            false,
+			"showing_reblogs":      false,
+			"notifying":            false,
+			"followed_by":          false,
+			"blocking":             false,
+			"blocked_by":           false,
+			"muting":               false,
+			"muting_notifications": false,
+			"requested":            false,
+			"domain_blocking":      false,
+			"endorsed":             false,
+			"note":                 "",
+		}
+		return common.JSONResponse(http.StatusOK, relationship), nil
+	}
+
+	// Create an Undo Follow activity
+	undoActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.UndoType,
+			ID:      fmt.Sprintf("%s/activities/undo/%s", cfg.BaseURL(), generateRandomString(16)),
+			To:      []string{targetActor.ID},
+		},
+		Actor: follower.ID,
+		Object: map[string]interface{}{
+			"type":   activitypub.FollowType,
+			"actor":  follower.ID,
+			"object": targetActor.ID,
+		},
+	}
+
+	// Store the undo activity in the outbox
+	if err := store.CreateActivity(ctx, undoActivity); err != nil {
+		logger.Error("failed to create undo activity", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Remove the follow relationship
+	if err := store.RemoveFollow(ctx, claims.Username, targetUsername); err != nil {
+		logger.Error("failed to remove follow relationship", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Return relationship object
+	relationship := map[string]interface{}{
+		"id":                   accountID,
+		"following":            false,
+		"showing_reblogs":      false,
+		"notifying":            false,
+		"followed_by":          false,
+		"blocking":             false,
+		"blocked_by":           false,
+		"muting":               false,
+		"muting_notifications": false,
+		"requested":            false,
+		"domain_blocking":      false,
+		"endorsed":             false,
+		"note":                 "",
+	}
+
+	return common.JSONResponse(http.StatusOK, relationship), nil
+}
+
+func handleGetInstance(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Get user count for stats (approximate)
+	users, _, err := store.ListUsers(ctx, 1, "")
+	userCount := 0
+	if err == nil && len(users) > 0 {
+		userCount = len(users)
+	}
+
+	// Build instance response
+	instance := map[string]interface{}{
+		"uri":               cfg.Domain,
+		"title":             "Lesser Instance",
+		"short_description": "A serverless ActivityPub instance powered by Lesser",
+		"description":       "This is a Lesser instance - a cost-effective serverless ActivityPub implementation using AWS Lambda and DynamoDB. Join the fediverse without breaking the bank!",
+		"email":             "admin@" + cfg.Domain,
+		"version":           "2.7.2 (compatible; Lesser 1.0)",
+		"languages":         []string{"en"},
+		"registrations":     true,
+		"approval_required": false,
+		"invites_enabled":   false,
+		"configuration": map[string]interface{}{
+			"statuses": map[string]interface{}{
+				"max_characters":        500,
+				"max_media_attachments": 4,
+			},
+			"media_attachments": map[string]interface{}{
+				"supported_mime_types": []string{
+					"image/jpeg",
+					"image/png",
+					"image/gif",
+					"image/webp",
+				},
+				"image_size_limit":       10485760, // 10MB
+				"image_matrix_limit":     16777216, // 4096x4096
+				"video_size_limit":       0,        // Videos not supported yet
+				"video_frame_rate_limit": 0,
+				"video_matrix_limit":     0,
+			},
+			"polls": map[string]interface{}{
+				"max_options":               4,
+				"max_characters_per_option": 50,
+				"min_expiration":            300,
+				"max_expiration":            2629746,
+			},
+		},
+		"stats": map[string]interface{}{
+			"user_count":   userCount,
+			"status_count": 0, // TODO: Implement status counting
+			"domain_count": 1, // TODO: Track federated domains
+		},
+		"thumbnail":       fmt.Sprintf("%s/thumbnail.png", cfg.BaseURL()),
+		"contact_account": nil,             // TODO: Set admin account
+		"rules":           []interface{}{}, // TODO: Add instance rules
+	}
+
+	body, err := json.Marshal(instance)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleSearch(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Parse query parameters
+	queryParams := request.QueryStringParameters
+	q := queryParams["q"] // Search query
+	if q == "" {
+		return common.BadRequest(errors.New("q parameter is required")), nil
+	}
+
+	searchType := queryParams["type"] // Can be: accounts, hashtags, statuses
+	// TODO: Implement remote account resolution when resolve=true
+	// resolve := queryParams["resolve"] == "true"
+	// TODO: Implement pagination with limit
+	// limit := 20
+	// if l := queryParams["limit"]; l != "" {
+	// 	if parsedLimit, err := strconv.Atoi(l); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
+	// 		limit = parsedLimit
+	// 	}
+	// }
+
+	// Check if authenticated (optional for public search)
+	var claims *auth.Claims
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+	if authHeader != "" {
+		token, err := auth.ExtractBearerToken(authHeader)
+		if err == nil {
+			oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+			claims, _ = oauthSvc.ValidateAccessToken(token)
+		}
+	}
+
+	// Initialize search results
+	results := map[string]interface{}{
+		"accounts": []interface{}{},
+		"statuses": []interface{}{},
+		"hashtags": []interface{}{},
+	}
+
+	// Determine what to search for
+	searchAccounts := searchType == "" || searchType == "accounts"
+	searchStatuses := searchType == "" || searchType == "statuses"
+	searchHashtags := searchType == "" || searchType == "hashtags"
+
+	// Search accounts
+	if searchAccounts {
+		accounts := []interface{}{}
+
+		// Simple search: check if query matches a username
+		// First try exact match
+		if actor, err := store.GetActor(ctx, q); err == nil {
+			account := Account{
+				ID:             actor.PreferredUsername,
+				Username:       actor.PreferredUsername,
+				Acct:           actor.PreferredUsername,
+				DisplayName:    actor.Name,
+				URL:            actor.URL,
+				Note:           actor.Summary,
+				Avatar:         "",
+				AvatarStatic:   "",
+				Header:         "",
+				HeaderStatic:   "",
+				FollowersCount: 0,
+				FollowingCount: 0,
+				StatusesCount:  0,
+				Emojis:         []interface{}{},
+				Fields:         []interface{}{},
+			}
+			if actor.Icon != nil {
+				account.Avatar = actor.Icon.URL
+				account.AvatarStatic = actor.Icon.URL
+			}
+			accounts = append(accounts, account)
+		}
+
+		// TODO: Implement partial username search
+		// This would require a new storage method or GSI
+
+		results["accounts"] = accounts
+	}
+
+	// Search statuses
+	if searchStatuses && claims != nil {
+		statuses := []interface{}{}
+
+		// For now, we can only search by exact status ID/URL
+		if strings.HasPrefix(q, "http") {
+			// Try to get object by URL
+			if obj, err := store.GetObject(ctx, q); err == nil {
+				// Get the actor
+				var actorID string
+				switch v := obj.(type) {
+				case *storageDB.Object:
+					actorID = v.AttributedTo
+				case map[string]interface{}:
+					if id, ok := v["attributedTo"].(string); ok {
+						actorID = id
+					}
+				}
+
+				if actorID != "" {
+					username := extractUsernameFromActorID(actorID)
+					if actor, err := store.GetActor(ctx, username); err == nil {
+						status := objectToStatus(obj, actor)
+						status.ID = extractStatusID(q)
+						statuses = append(statuses, status)
+					}
+				}
+			}
+		}
+
+		// TODO: Implement full-text search for status content
+		// This would require a search index or scanning all objects
+
+		results["statuses"] = statuses
+	}
+
+	// Search hashtags
+	if searchHashtags {
+		// TODO: Implement hashtag search
+		// This would require tracking hashtags in a separate index
+		results["hashtags"] = []interface{}{}
+	}
+
+	body, err := json.Marshal(results)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleGetNotifications(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// TODO: Implement notification storage and retrieval
+	// For now, return an empty array
+	notifications := []interface{}{}
+
+	body, err := json.Marshal(notifications)
+	if err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleUpdateCredentials(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the actor
+	actor, err := store.GetActor(ctx, claims.Username)
+	if err != nil {
+		return common.NotFound(err), nil
+	}
+
+	// Parse request body
+	var updateReq struct {
+		DisplayName  string `json:"display_name"`
+		Note         string `json:"note"`
+		Avatar       string `json:"avatar"`
+		Header       string `json:"header"`
+		Locked       bool   `json:"locked"`
+		Discoverable bool   `json:"discoverable"`
+		Bot          bool   `json:"bot"`
+	}
+	if err := json.Unmarshal([]byte(request.Body), &updateReq); err != nil {
+		return common.BadRequest(err), nil
+	}
+
+	// Update actor information (only fields that exist)
+	if updateReq.DisplayName != "" {
+		actor.Name = updateReq.DisplayName
+	}
+	if updateReq.Note != "" {
+		actor.Summary = updateReq.Note
+	}
+	if updateReq.Avatar != "" && actor.Icon != nil {
+		actor.Icon.URL = updateReq.Avatar
+	}
+	// Update actor flags
+	actor.ManuallyApprovesFollowers = updateReq.Locked
+	actor.Discoverable = updateReq.Discoverable
+	// Bot status would need to be tracked separately
+
+	// Save changes
+	if err := store.UpdateActor(ctx, actor); err != nil {
+		return common.InternalServerError(err), nil
+	}
+
+	// Get user for email
+	user, err := store.GetUser(ctx, claims.Username)
+	if err != nil {
+		logger.Error("failed to get user", zap.Error(err))
+	}
+
+	// Return updated credentials in Mastodon format
+	resp := VerifyCredentialsResponse{
+		ID:             actor.ID,
+		Username:       actor.PreferredUsername,
+		DisplayName:    actor.Name,
+		Email:          user.Email,
+		EmailVerified:  true,
+		Note:           actor.Summary,
+		URL:            actor.URL,
+		Avatar:         "",
+		AvatarStatic:   "",
+		Header:         "",
+		HeaderStatic:   "",
+		FollowersCount: 0,
+		FollowingCount: 0,
+		StatusesCount:  0,
+		CreatedAt:      time.Now().Format("2006-01-02T15:04:05.000Z"),
+		Role:           user.Role,
+		Source: map[string]interface{}{
+			"privacy":   "public",
+			"sensitive": false,
+			"language":  "en",
+			"fields":    []interface{}{},
+		},
+	}
+
+	if actor.Icon != nil {
+		resp.Avatar = actor.Icon.URL
+		resp.AvatarStatic = actor.Icon.URL
+	}
+
+	body, _ := json.Marshal(resp)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func main() {
+	lambda.Start(handler)
+}
