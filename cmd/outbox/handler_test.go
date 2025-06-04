@@ -50,7 +50,11 @@ func (m *MockStorage) GetActivity(ctx context.Context, id string) (*activitypub.
 	return nil, nil
 }
 func (m *MockStorage) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	return nil, "", nil
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
 }
 func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
 	return nil, "", nil
@@ -101,11 +105,162 @@ func TestHandler(t *testing.T) {
 		method         string
 		username       string
 		body           string
+		queryParams    map[string]string
 		setupMocks     func(*MockStorage)
 		expectedStatus int
 		expectedError  bool
 		validateBody   func(*testing.T, string)
 	}{
+		// GET request tests
+		{
+			name:     "get outbox collection",
+			method:   http.MethodGet,
+			username: "alice",
+			setupMocks: func(m *MockStorage) {
+				actor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Type:    "Person",
+						ID:      "https://example.com/users/alice",
+					},
+					PreferredUsername: "alice",
+					Inbox:             "https://example.com/users/alice/inbox",
+					Outbox:            "https://example.com/users/alice/outbox",
+				}
+				m.On("GetActor", mock.Anything, "alice").Return(actor, nil)
+
+				// Return empty activities for collection metadata
+				m.On("GetOutboxActivities", mock.Anything, "alice", 1, "").Return([]*activitypub.Activity{}, "", nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateBody: func(t *testing.T, body string) {
+				var collection activitypub.OrderedCollection
+				err := json.Unmarshal([]byte(body), &collection)
+				assert.NoError(t, err)
+				assert.Equal(t, "OrderedCollection", collection.Type)
+				assert.Equal(t, "https://example.com/users/alice/outbox", collection.ID)
+				assert.Equal(t, "https://example.com/users/alice/outbox?page=true", collection.First)
+			},
+		},
+		{
+			name:     "get outbox page with activities",
+			method:   http.MethodGet,
+			username: "alice",
+			queryParams: map[string]string{
+				"page": "true",
+			},
+			setupMocks: func(m *MockStorage) {
+				actor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Type:    "Person",
+						ID:      "https://example.com/users/alice",
+					},
+					PreferredUsername: "alice",
+					Outbox:            "https://example.com/users/alice/outbox",
+				}
+				m.On("GetActor", mock.Anything, "alice").Return(actor, nil)
+
+				activities := []*activitypub.Activity{
+					{
+						BaseObject: activitypub.BaseObject{
+							ID:   "https://example.com/activities/1",
+							Type: "Follow",
+						},
+						Actor:  "https://example.com/users/alice",
+						Object: "https://remote.example/users/bob",
+					},
+					{
+						BaseObject: activitypub.BaseObject{
+							ID:   "https://example.com/activities/2",
+							Type: "Like",
+						},
+						Actor:  "https://example.com/users/alice",
+						Object: "https://remote.example/notes/123",
+					},
+				}
+				m.On("GetOutboxActivities", mock.Anything, "alice", 20, "").Return(activities, "next-cursor", nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateBody: func(t *testing.T, body string) {
+				var page activitypub.OrderedCollectionPage
+				err := json.Unmarshal([]byte(body), &page)
+				assert.NoError(t, err)
+				assert.Equal(t, "OrderedCollectionPage", page.Type)
+				assert.Equal(t, "https://example.com/users/alice/outbox?page=true", page.ID)
+				assert.Equal(t, "https://example.com/users/alice/outbox", page.PartOf)
+				assert.Equal(t, "https://example.com/users/alice/outbox?page=true&cursor=next-cursor&limit=20", page.Next)
+
+				// Check activities
+				items, ok := page.OrderedItems.([]interface{})
+				assert.True(t, ok)
+				assert.Len(t, items, 2)
+			},
+		},
+		{
+			name:     "get outbox page with cursor",
+			method:   http.MethodGet,
+			username: "alice",
+			queryParams: map[string]string{
+				"page":   "true",
+				"cursor": "some-cursor",
+				"limit":  "10",
+			},
+			setupMocks: func(m *MockStorage) {
+				actor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Type:    "Person",
+						ID:      "https://example.com/users/alice",
+					},
+					PreferredUsername: "alice",
+					Outbox:            "https://example.com/users/alice/outbox",
+				}
+				m.On("GetActor", mock.Anything, "alice").Return(actor, nil)
+				m.On("GetOutboxActivities", mock.Anything, "alice", 10, "some-cursor").Return([]*activitypub.Activity{}, "", nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateBody: func(t *testing.T, body string) {
+				var page activitypub.OrderedCollectionPage
+				err := json.Unmarshal([]byte(body), &page)
+				assert.NoError(t, err)
+				assert.Equal(t, "https://example.com/users/alice/outbox?page=true&limit=10", page.Prev)
+			},
+		},
+		{
+			name:     "get outbox with invalid limit",
+			method:   http.MethodGet,
+			username: "alice",
+			queryParams: map[string]string{
+				"page":  "true",
+				"limit": "invalid",
+			},
+			setupMocks: func(m *MockStorage) {
+				actor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Type:    "Person",
+						ID:      "https://example.com/users/alice",
+					},
+					PreferredUsername: "alice",
+					Outbox:            "https://example.com/users/alice/outbox",
+				}
+				m.On("GetActor", mock.Anything, "alice").Return(actor, nil)
+				// Should use default limit of 20
+				m.On("GetOutboxActivities", mock.Anything, "alice", 20, "").Return([]*activitypub.Activity{}, "", nil)
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:     "get outbox actor not found",
+			method:   http.MethodGet,
+			username: "unknown",
+			setupMocks: func(m *MockStorage) {
+				m.On("GetActor", mock.Anything, "unknown").Return(nil, common.ActorNotFoundError{Username: "unknown"})
+			},
+			expectedStatus: http.StatusNotFound,
+		},
+		// POST request tests (existing tests)
 		{
 			name:     "successful activity creation",
 			method:   http.MethodPost,
@@ -205,7 +360,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name:     "method not allowed",
-			method:   http.MethodGet,
+			method:   http.MethodDelete,
 			username: "alice",
 			setupMocks: func(m *MockStorage) {
 				// No mocks needed
@@ -313,6 +468,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{
 					"username": tt.username,
 				},
+				QueryStringParameters: tt.queryParams,
 			}
 
 			// Call handler
@@ -325,7 +481,7 @@ func TestHandler(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedStatus, response.StatusCode)
 
-				if tt.validateBody != nil && response.StatusCode == http.StatusCreated {
+				if tt.validateBody != nil && (response.StatusCode == http.StatusCreated || response.StatusCode == http.StatusOK) {
 					tt.validateBody(t, response.Body)
 				}
 			}

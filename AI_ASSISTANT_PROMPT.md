@@ -79,21 +79,38 @@ The goal is to make hosting an ActivityPub instance affordable for individuals a
    - Returns 201 Created with the activity
    - 84.7% test coverage
 
-### Federation Status ✅
-The core federation flow is now operational:
-1. **Discovery**: Remote server queries `/.well-known/webfinger?resource=acct:alice@example.com`
-2. **Profile Fetch**: WebFinger returns actor URL, remote server fetches `GET /users/alice`
-3. **Key Exchange**: Actor profile includes public key for HTTP signature verification
-4. **Receive Activities**: Remote servers can POST activities to `/users/{username}/inbox`
-5. **Create Activities**: Local users can POST activities to `/users/{username}/outbox`
-6. **Awaiting Processing**: Activities are stored and ready for the Activity Processor
+10. **Activity Processor** ✅ (NEW)
+    - `cmd/activity-processor/main.go` - DynamoDB Streams handler
+    - Processes both inbox and outbox activities
+    - Inbox: Handles Follow, Accept, Create activities
+    - Outbox: Delivers activities to remote servers
+    - HTTP signature signing for outgoing requests
+    - Recipient resolution and filtering
+    - 78.5% test coverage
+
+### Federation Status 🚀
+**Lesser is now a functioning ActivityPub server!**
+
+The complete federation flow is operational:
+1. **Discovery**: Remote servers can find actors via WebFinger
+2. **Profile Exchange**: Actors serve public keys for authentication
+3. **Receive Activities**: Inbox accepts and verifies activities
+4. **Create Activities**: Outbox accepts activities from local users
+5. **Process Activities**: Activity Processor handles follows, accepts, etc.
+6. **Deliver Activities**: Activities are signed and sent to remote servers
+
+What's working:
+- ✅ Remote servers can discover and follow local users
+- ✅ Local activities are delivered to followers
+- ✅ HTTP signatures authenticate all federation
+- ✅ Follow/Accept flow creates relationships
 
 ### Partially Complete 🚧
 1. **Storage Operations**
    - ✅ Actor operations (CRUD)
    - ✅ Activity operations (outbox/inbox with pagination)
    - ❌ Object operations (Notes, Articles, etc.)
-   - ❌ Relationship operations (follows)
+   - ❌ Relationship operations (follows) - partially implemented in processor
    - ❌ Collection operations
 
 ### Important Architectural Decisions
@@ -104,253 +121,153 @@ See `ARCHITECTURE_DECISIONS.md` for details:
 
 ## Your Task
 
-Continue development by implementing the **Activity Processor** (`cmd/activity-processor`), which will process activities from DynamoDB Streams and complete the federation loop.
+Continue development by implementing the **GET Outbox Handler**, which will allow remote servers and clients to retrieve activities from a user's outbox.
 
-### 1. Create Activity Processor Handler
-Create `cmd/activity-processor/main.go` that:
-- Processes DynamoDB Stream events
-- Identifies inbox vs outbox activities
-- Routes to appropriate processors
-- Handles errors gracefully
-- Logs processing results
+### 1. Update Outbox Handler
+Modify `cmd/outbox/main.go` to handle GET requests:
+- `GET /users/{username}/outbox` - Returns paginated outbox activities
+- Support OrderedCollection format
+- Implement cursor-based pagination
+- Return proper ActivityStreams JSON
 
-### 2. Process Inbox Activities
-For activities in user inboxes:
-- **Follow**: Create pending follow relationship
-- **Accept**: Mark follow as accepted, add to followers/following
-- **Reject**: Mark follow as rejected, clean up
-- **Create**: Store the object (Note, Article, etc.)
-- **Like**: Store the like relationship
-- **Announce**: Store the boost
-- **Undo**: Reverse previous activities
-
-### 3. Process Outbox Activities
-For activities in user outboxes:
-- Extract all recipients (to, cc, bto, bcc)
-- Deduplicate and resolve collections
-- Fetch recipient actor profiles to get inbox URLs
-- Sign requests with HTTP signatures
-- Deliver activities to remote inboxes
-- Handle delivery failures with retries
-
-### 4. Activity Delivery Implementation
+### 2. Implement OrderedCollection Response
 ```go
-func deliverActivity(ctx context.Context, activity *activitypub.Activity, recipientInbox string) error {
-    // 1. Get sender's private key
-    actor, _ := store.GetActor(ctx, extractUsername(activity.Actor))
-    privateKey, _ := store.GetActorPrivateKey(ctx, actor.PreferredUsername)
-    
-    // 2. Marshal activity to JSON
-    body, _ := json.Marshal(activity)
-    
-    // 3. Create HTTP request
-    req, _ := http.NewRequestWithContext(ctx, "POST", recipientInbox, bytes.NewReader(body))
-    req.Header.Set("Content-Type", "application/activity+json")
-    
-    // 4. Sign the request
-    keyID := fmt.Sprintf("%s#main-key", activity.Actor)
-    federation.SignHTTPRequest(req, privateKey, keyID)
-    
-    // 5. Send the request
-    resp, err := httpClient.Do(req)
-    // Handle response...
+type OrderedCollectionPage struct {
+    Context    string   `json:"@context"`
+    Type       string   `json:"type"`
+    ID         string   `json:"id"`
+    PartOf     string   `json:"partOf"`
+    TotalItems int      `json:"totalItems"`
+    First      string   `json:"first,omitempty"`
+    Next       string   `json:"next,omitempty"`
+    Prev       string   `json:"prev,omitempty"`
+    OrderedItems []interface{} `json:"orderedItems"`
 }
 ```
 
-### 5. Implement Storage Operations
-Since the processor needs to store relationships and objects:
-- Implement `CreateRelationship` for follows
-- Implement `UpdateRelationship` for accept/reject
-- Implement `CreateObject` for Notes, Articles
-- Add these to the storage interface
+### 3. Query and Pagination
+- Use `GetOutboxActivities` from storage layer
+- Support `?page=true` for paginated results
+- Support `?cursor=xxx` for pagination
+- Default to showing collection metadata without `?page=true`
 
-### 6. Write Comprehensive Tests
-- Unit tests for each activity type processor
-- Mock DynamoDB stream events
-- Mock HTTP client for delivery tests
-- Test retry logic with failures
-- Test recipient resolution
+### 4. Access Control
+- Public activities should be visible to everyone
+- Private activities only visible to authenticated users (future)
+- For now, return all activities (no auth implemented yet)
+
+### 5. Response Format
+Without `?page=true`:
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "OrderedCollection",
+  "id": "https://example.com/users/alice/outbox",
+  "totalItems": 42,
+  "first": "https://example.com/users/alice/outbox?page=true",
+  "last": "https://example.com/users/alice/outbox?page=true&cursor=xyz"
+}
+```
+
+With `?page=true`:
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "OrderedCollectionPage",
+  "id": "https://example.com/users/alice/outbox?page=true",
+  "partOf": "https://example.com/users/alice/outbox",
+  "totalItems": 42,
+  "next": "https://example.com/users/alice/outbox?page=true&cursor=abc",
+  "orderedItems": [
+    {
+      "type": "Create",
+      "actor": "https://example.com/users/alice",
+      "object": {...}
+    }
+  ]
+}
+```
+
+### 6. Write Tests
+- Test collection vs page responses
+- Test pagination with cursors
+- Test empty outbox
+- Test invalid usernames
+- Mock storage for testing
 
 ## Example Implementation Pattern
 
 ```go
-package main
-
-import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "net/http"
-    "time"
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    log := common.WithContext(ctx)
     
-    "github.com/aws/aws-lambda-go/events"
-    "github.com/aws/aws-lambda-go/lambda"
-    "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-    "github.com/aron23/lesser/pkg/activitypub"
-    "github.com/aron23/lesser/pkg/common"
-    "github.com/aron23/lesser/pkg/federation"
-    "github.com/aron23/lesser/pkg/storage"
-    "github.com/aron23/lesser/pkg/storage/dynamodb"
-    "go.uber.org/zap"
-)
-
-var (
-    store      storage.Storage
-    logger     *zap.Logger
-    httpClient *http.Client
-)
-
-func init() {
-    logger = common.Logger()
+    // Handle GET requests
+    if request.HTTPMethod == http.MethodGet {
+        return handleGetOutbox(ctx, request)
+    } else if request.HTTPMethod == http.MethodPost {
+        return handlePostOutbox(ctx, request)
+    }
     
-    var err error
-    store, err = dynamodb.New()
+    return common.MethodNotAllowed(request.HTTPMethod), nil
+}
+
+func handleGetOutbox(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    username := request.PathParameters["username"]
+    if username == "" {
+        return common.BadRequest(errors.New("missing username")), nil
+    }
+    
+    // Check if actor exists
+    actor, err := store.GetActor(ctx, username)
     if err != nil {
-        logger.Fatal("failed to initialize storage", zap.Error(err))
-    }
-    
-    // HTTP client with timeout for delivery
-    httpClient = &http.Client{
-        Timeout: 30 * time.Second,
-    }
-}
-
-func handler(ctx context.Context, event events.DynamoDBEvent) error {
-    log := common.WithContext(ctx)
-    
-    for _, record := range event.Records {
-        if record.EventName != "INSERT" && record.EventName != "MODIFY" {
-            continue
+        if common.IsNotFound(err) {
+            return common.NotFound(err), nil
         }
-        
-        // Parse the DynamoDB record
-        activity, direction, username, err := parseActivityRecord(record.Change.NewImage)
-        if err != nil {
-            log.Error("failed to parse record", zap.Error(err))
-            continue
-        }
-        
-        log.Info("processing activity",
-            zap.String("id", activity.ID),
-            zap.String("type", activity.Type),
-            zap.String("direction", string(direction)),
-            zap.String("username", username))
-        
-        if direction == storage.ActivityDirectionInbox {
-            // Process inbox activity
-            if err := processInboxActivity(ctx, activity, username); err != nil {
-                log.Error("failed to process inbox activity",
-                    zap.String("activity_id", activity.ID),
-                    zap.Error(err))
-            }
-        } else {
-            // Process outbox activity - deliver to recipients
-            if err := processOutboxActivity(ctx, activity); err != nil {
-                log.Error("failed to process outbox activity",
-                    zap.String("activity_id", activity.ID),
-                    zap.Error(err))
-            }
-        }
+        return common.InternalServerError(err), nil
     }
     
-    return nil
-}
-
-func parseActivityRecord(image map[string]types.AttributeValue) (*activitypub.Activity, storage.ActivityDirection, string, error) {
-    // Extract activity from DynamoDB record
-    // Parse PK to get username
-    // Parse GSI1PK to determine if inbox or outbox
-    // Return activity, direction, and username
-}
-
-func processInboxActivity(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-    log := common.WithContext(ctx)
+    // Check if pagination is requested
+    isPage := request.QueryStringParameters["page"] == "true"
+    cursor := request.QueryStringParameters["cursor"]
     
-    switch activity.Type {
-    case activitypub.FollowType:
-        // Create pending follow relationship
-        return processFollow(ctx, activity, recipientUsername)
-        
-    case activitypub.AcceptType:
-        // Check if this is accepting a follow
-        if innerActivity, ok := activity.Object.(map[string]interface{}); ok {
-            if innerActivity["type"] == activitypub.FollowType {
-                return processFollowAccept(ctx, activity, recipientUsername)
-            }
-        }
-        
-    case activitypub.CreateType:
-        // Store the created object
-        return processCreate(ctx, activity, recipientUsername)
-        
-    case activitypub.LikeType:
-        // Store the like
-        return processLike(ctx, activity, recipientUsername)
-        
-    default:
-        log.Warn("unhandled inbox activity type",
-            zap.String("type", activity.Type),
-            zap.String("id", activity.ID))
+    if !isPage {
+        // Return collection metadata
+        return returnOutboxCollection(actor)
     }
     
-    return nil
-}
-
-func processOutboxActivity(ctx context.Context, activity *activitypub.Activity) error {
-    // Extract all recipients
-    recipients := extractAllRecipients(activity)
-    
-    // Deliver to each recipient
-    var deliveryErrors []error
-    for _, recipient := range recipients {
-        if err := deliverToRecipient(ctx, activity, recipient); err != nil {
-            deliveryErrors = append(deliveryErrors, err)
-        }
+    // Get activities with pagination
+    activities, nextCursor, err := store.GetOutboxActivities(ctx, username, cursor, 20)
+    if err != nil {
+        return common.InternalServerError(err), nil
     }
     
-    if len(deliveryErrors) > 0 {
-        return fmt.Errorf("delivery failed to %d recipients", len(deliveryErrors))
-    }
-    
-    return nil
-}
-
-func main() {
-    lambda.Start(handler)
+    // Build and return page
+    return returnOutboxPage(actor, activities, cursor, nextCursor)
 }
 ```
 
-## Testing Strategy
-
-Create `cmd/activity-processor/handler_test.go` with:
-- Mock DynamoDB stream events for different activity types
-- Test inbox processing for each activity type
-- Test outbox delivery with mock HTTP client
-- Test error handling and retries
-- Test recipient resolution and deduplication
-
 ## Success Criteria
 
-- [ ] DynamoDB stream events are properly parsed
-- [ ] Inbox activities update local state correctly
-- [ ] Follow relationships are created/updated
-- [ ] Outbox activities are delivered to recipients
-- [ ] HTTP signatures work for delivery
-- [ ] Failed deliveries are retried appropriately
+- [ ] GET requests return proper OrderedCollection
+- [ ] Pagination works with cursors
+- [ ] ActivityStreams JSON is properly formatted
+- [ ] Empty outboxes handled correctly
+- [ ] Integration with existing POST handler
 - [ ] Good test coverage (>80%)
 
 ## Next Steps After This Task
 
-1. **GET Outbox Handler**: Serve activities from outbox with pagination
-2. **Collections**: Implement followers/following endpoints
-3. **OAuth 2.0**: Authentication for local users
-4. **Object Storage**: Implement storage for Notes, Articles
-5. **Pulumi Infrastructure**: Deploy everything to AWS
+1. **Collections**: Implement followers/following endpoints
+2. **GET Inbox**: Allow viewing inbox (with auth)
+3. **OAuth 2.0**: Implement authentication
+4. **Objects**: Store and serve Notes, Articles
+5. **Media**: Handle image uploads
+6. **Pulumi**: Deploy infrastructure
 
-The Activity Processor is the most critical component because it:
-- Completes the federation loop by delivering activities
-- Processes incoming activities to update local state
-- Enables follows, likes, and other social features
-- Makes Lesser a fully functional ActivityPub server
+The GET Outbox handler is important because it:
+- Completes the outbox functionality
+- Allows other servers to see local activities
+- Enables followers to retrieve posts
+- Provides the public API for content
 
-Begin by creating the handler structure and parsing DynamoDB stream events. Focus on getting basic Follow/Accept working first, then expand to other activity types. 
+Begin by modifying the existing outbox handler to support GET requests, then implement the OrderedCollection format. 
