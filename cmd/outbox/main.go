@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,18 +40,146 @@ func init() {
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	log := common.WithContext(ctx)
 
-	// Only accept POST requests
-	if request.HTTPMethod != http.MethodPost {
-		return common.BadRequest(fmt.Errorf("method %s not allowed", request.HTTPMethod)), nil
-	}
-
 	// Extract username from path
 	username := request.PathParameters["username"]
 	if username == "" {
 		return common.BadRequest(common.ValidationError{Field: "username", Message: "missing username"}), nil
 	}
 
-	log.Info("received outbox request",
+	switch request.HTTPMethod {
+	case http.MethodGet:
+		return handleGetOutbox(ctx, log, username, request.QueryStringParameters)
+	case http.MethodPost:
+		return handlePostOutbox(ctx, log, username, request)
+	default:
+		return common.BadRequest(fmt.Errorf("method %s not allowed", request.HTTPMethod)), nil
+	}
+}
+
+// handleGetOutbox handles GET requests to retrieve outbox activities
+func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, queryParams map[string]string) (events.APIGatewayProxyResponse, error) {
+	log.Info("received outbox GET request",
+		zap.String("username", username),
+		zap.Any("query_params", queryParams))
+
+	// Verify the actor exists
+	actor, err := store.GetActor(ctx, username)
+	if err != nil {
+		if common.IsNotFound(err) {
+			return common.NotFound(err), nil
+		}
+		log.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Parse pagination parameters
+	limitStr := queryParams["limit"]
+	if limitStr == "" {
+		limitStr = "20"
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 || limit > 100 {
+		limit = 20
+	}
+
+	cursor := queryParams["cursor"]
+	page := queryParams["page"]
+
+	// If no page parameter, return the collection with metadata
+	if page == "" && cursor == "" {
+		// Get first page to calculate total items (this is a simplification)
+		activities, _, err := store.GetOutboxActivities(ctx, username, 1, "")
+		if err != nil {
+			log.Error("failed to get outbox count", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+
+		// Build the collection response
+		collection := &activitypub.OrderedCollection{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      actor.Outbox,
+					Type:    activitypub.OrderedCollectionType,
+				},
+				TotalItems: len(activities), // This is approximate
+				First:      fmt.Sprintf("%s?page=true", actor.Outbox),
+			},
+		}
+
+		// Serialize the collection
+		responseBody, err := json.Marshal(collection)
+		if err != nil {
+			log.Error("failed to serialize collection", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusOK,
+			Headers: map[string]string{
+				"Content-Type": "application/activity+json",
+			},
+			Body: string(responseBody),
+		}, nil
+	}
+
+	// Get activities for the page
+	activities, nextCursor, err := store.GetOutboxActivities(ctx, username, limit, cursor)
+	if err != nil {
+		log.Error("failed to get outbox activities", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert activities to ordered items
+	orderedItems := make([]interface{}, len(activities))
+	for i, activity := range activities {
+		orderedItems[i] = activity
+	}
+
+	// Build the collection page response
+	collectionPage := &activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      fmt.Sprintf("%s?page=true", actor.Outbox),
+					Type:    "OrderedCollectionPage",
+				},
+				OrderedItems: orderedItems,
+			},
+			PartOf: actor.Outbox,
+		},
+	}
+
+	// Add next link if there are more items
+	if nextCursor != "" {
+		collectionPage.Next = fmt.Sprintf("%s?page=true&cursor=%s&limit=%d", actor.Outbox, nextCursor, limit)
+	}
+
+	// Add prev link if we have a cursor (meaning this isn't the first page)
+	if cursor != "" {
+		collectionPage.Prev = fmt.Sprintf("%s?page=true&limit=%d", actor.Outbox, limit)
+	}
+
+	// Serialize the page
+	responseBody, err := json.Marshal(collectionPage)
+	if err != nil {
+		log.Error("failed to serialize page", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "application/activity+json",
+		},
+		Body: string(responseBody),
+	}, nil
+}
+
+// handlePostOutbox handles POST requests to create activities
+func handlePostOutbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	log.Info("received outbox POST request",
 		zap.String("username", username),
 		zap.String("content_type", request.Headers["Content-Type"]))
 

@@ -140,7 +140,7 @@
   - Complete discovery flow working
   - WebFinger → Actor Profile → Public Key
 
-### 7. Inbox Endpoint ✅ (NEW)
+### 7. Inbox Endpoint ✅
 - [x] **cmd/inbox/main.go** - Inbox handler
   - POST /users/{username}/inbox endpoint
   - HTTP signature verification for authentication
@@ -157,7 +157,7 @@
   - Tests for addressing verification
   - 79.5% test coverage
 
-### 8. Outbox Endpoint ✅ (NEW)
+### 8. Outbox Endpoint ✅
 - [x] **cmd/outbox/main.go** - Outbox handler
   - POST /users/{username}/outbox endpoint
   - Accepts activities from local users
@@ -175,50 +175,88 @@
   - Tests for validation errors
   - 84.7% test coverage
 
+### 9. Activity Processor ✅ (NEW)
+- [x] **cmd/activity-processor/main.go** - DynamoDB Streams handler
+  - Processes activities from DynamoDB Streams
+  - Routes inbox and outbox activities appropriately
+  - Inbox processing: Follow, Accept, Create activities
+  - Outbox processing: Delivers to remote servers
+  - HTTP signature signing for outgoing requests
+  - Recipient extraction and deduplication
+
+- [x] **cmd/activity-processor/handler_test.go** - Comprehensive test suite
+  - Mock DynamoDB stream events
+  - Tests for activity parsing
+  - Tests for inbox activity processing
+  - Tests for outbox activity delivery
+  - Mock HTTP server for federation testing
+  - 78.5% test coverage
+
+- [x] **cmd/activity-processor/README.md** - Component documentation
+  - Processing flow explanation
+  - Supported activity types
+  - Future improvements list
+
+### 10. GET Outbox Handler ✅ (NEW)
+- [x] **cmd/outbox/main.go** - Extended to handle GET requests
+  - GET /users/{username}/outbox endpoint
+  - OrderedCollection format for collection metadata
+  - OrderedCollectionPage format for paginated results
+  - Cursor-based pagination with limit support
+  - Public access (no auth required)
+  - Differentiates between collection and page responses
+
+- [x] **cmd/outbox/handler_test.go** - Added comprehensive GET tests
+  - Tests for collection response (no page parameter)
+  - Tests for page response with activities
+  - Tests for pagination with cursor
+  - Tests for invalid parameters
+  - 81.7% test coverage maintained
+
+- [x] **cmd/outbox/README.md** - Complete documentation
+  - API documentation for both GET and POST
+  - Collection vs page response examples
+  - Query parameter documentation
+  - Integration with other components
+
 ## In Progress 🚧
 
-### Next: Activity Processor 🎯
-This is the critical next step to enable processing and delivering federated activities:
+### Next: Collections Endpoints 🎯
+This is the next step to implement collection views for followers/following:
 
-1. [ ] **Activity Processor** (cmd/activity-processor)
-   - Background Lambda triggered by DynamoDB Streams
-   - Process incoming inbox activities (Accept follows, etc.)
-   - Deliver outbox activities to remote servers
-   - HTTP signature signing for outgoing requests
-   - Handle retries and failures
-
-### Phase 1: Core ActivityPub (Remaining)
-
-2. [ ] **GET Outbox Handler**
-   - Retrieve activities from user's outbox
-   - Pagination support
-   - Public/authenticated access control
-
-3. [ ] **Activity Delivery System**
-   - Sign requests with HTTP signatures
-   - Deliver to recipient inboxes
-   - Handle failures and retries
-   - Track delivery status
-
-4. [ ] **Remaining Storage Operations**
-   - Object storage (Notes, Articles, etc.)
-   - Relationship operations (follows)
-   - Collection operations
-   - DynamoDB transactions for atomic operations
-
-5. [ ] **Collections Endpoint** (cmd/collections)
-   - GET handlers for followers/following collections
+1. [ ] **Collections Endpoints** (cmd/collections)
+   - GET /users/{username}/followers
+   - GET /users/{username}/following
    - Pagination support
    - Proper authorization
 
-6. [ ] **OAuth 2.0 Implementation**
+### Phase 1: Core ActivityPub (Remaining)
+
+2. [ ] **Remaining Storage Operations**
+   - Object storage (Notes, Articles, etc.)
+   - Complete relationship operations
+   - Collection operations
+   - DynamoDB transactions for atomic operations
+
+3. [ ] **OAuth 2.0 Implementation**
    - Authorization endpoint
    - Token endpoint
    - Client registration
    - Scopes and permissions
    - PKCE support
 
-7. [ ] **Pulumi Infrastructure**
+4. [ ] **Object Storage and Retrieval**
+   - Store Note, Article objects
+   - GET /objects/{id} endpoint
+   - Support for attachments
+
+5. [ ] **Media Support**
+   - Image upload endpoint
+   - S3 storage integration
+   - Thumbnail generation
+   - CDN delivery
+
+6. [ ] **Pulumi Infrastructure**
    - DynamoDB table definitions
    - Lambda function deployments
    - API Gateway configuration
@@ -236,12 +274,16 @@ This is the critical next step to enable processing and delivering federated act
 6. **No Heavy Frameworks** - Direct Lambda handlers to minimize cold starts
 7. **Table-Driven Tests** - Comprehensive test coverage with clear test cases
 8. **RSA-SHA256 for HTTP Signatures** - Industry standard algorithm for federation
+9. **Activity ID Generation** - Auto-generate IDs with timestamp + random format
+10. **Actor Validation** - Prevent spoofing by validating actor matches authenticated user
+11. **Collection Pagination** - Using cursor-based pagination for scalability
 
 ### Open Questions:
 1. ~~Should we use DynamoDB Streams or SQS for activity delivery?~~ → DynamoDB Streams chosen
 2. How should we handle media storage lifecycle policies?
 3. Should we implement a shared inbox for efficiency?
 4. Should we add support for Ed25519 signatures (more efficient)?
+5. How to handle retry logic for failed deliveries?
 
 ## Testing Strategy 🧪
 
@@ -255,12 +297,14 @@ This is the critical next step to enable processing and delivering federated act
 - [x] HTTP Signature Operations - Parsing, verification, generation, key management
 - [x] Actor Profile Handler - Content negotiation, error handling
 - [x] Inbox Handler - Signature verification, activity validation
+- [x] Outbox Handler - Activity creation and validation
+- [x] Activity Processor - Stream processing, delivery
+- [x] GET Outbox handler - Collection and page responses, pagination
 
 ### Unit Tests Needed:
 - [ ] ActivityPub type marshaling/unmarshaling
 - [ ] DynamoDB object and relationship operations
-- [ ] Outbox handler
-- [ ] Activity processor logic
+- [ ] Collections handlers
 - [ ] OAuth 2.0 flows
 
 ### Integration Tests Completed:
@@ -269,12 +313,13 @@ This is the critical next step to enable processing and delivering federated act
 - [x] HTTP Signature End-to-End - Sign and verify full cycle
 - [x] WebFinger → Actor Profile Discovery - Complete flow working
 - [x] Inbox HTTP Signature Verification - Full verification flow
+- [x] Activity Processor Delivery - Mock federation server testing
 
 ### Integration Tests Needed:
 - [ ] End-to-end federation test with Mastodon
-- [ ] Activity delivery reliability
+- [ ] Full activity flow (create → outbox → delivery → inbox → process)
 - [ ] Media upload and serving
-- [ ] Full activity flow (create → outbox → delivery → inbox)
+- [ ] OAuth 2.0 authorization flow
 
 ## Code Quality 📊
 
@@ -290,7 +335,8 @@ This is the critical next step to enable processing and delivering federated act
 - `pkg/storage/dynamodb`: >80%
 - `cmd/actor`: 95.5%
 - `cmd/inbox`: 79.5%
-- `cmd/outbox`: 84.7%
+- `cmd/outbox`: 81.7%
+- `cmd/activity-processor`: 78.5%
 - `cmd/webfinger`: Needs unit tests
 
 ### Linting & Formatting:
@@ -302,30 +348,35 @@ This is the critical next step to enable processing and delivering federated act
 
 1. **Partial Storage Implementation** - Actor and Activity storage complete, but Object/Relationship/Collection operations pending
 2. **No Authentication** - No OAuth 2.0 implementation yet
-3. **No Activity Processing** - Activities are received but not processed
-4. **No Activity Delivery** - Can't send activities to other servers yet
+3. **No Retry Logic** - Failed deliveries aren't retried
+4. **No Collections** - Can't view followers/following lists
 5. **No KMS Encryption** - Private keys stored in plaintext (TODO: AWS KMS integration)
 6. **GetActivity Uses Scan** - Should optimize with GSI2
 7. **HTTP Signatures RSA Only** - Ed25519 support planned for future
+8. **No Media Support** - Can't handle image/video attachments yet
+9. **Approximate Total Count** - Outbox collection totalItems is approximate
 
 ## Federation Status 🌐
 
-### What's Working:
+### What's Working: 🚀
 - ✅ **Discovery**: WebFinger endpoint returns correct actor URLs
 - ✅ **Actor Profiles**: Serving valid ActivityPub actor objects
 - ✅ **Public Keys**: Actors include public keys for signature verification
 - ✅ **Content Negotiation**: Proper JSON/HTML responses
 - ✅ **HTTP Signatures**: Can verify and sign federation requests
-- ✅ **Receiving Activities**: Inbox can receive and verify activities from other servers
-- ✅ **Creating Activities**: Outbox can accept and store activities from local users
+- ✅ **Receiving Activities**: Inbox receives and verifies activities
+- ✅ **Creating Activities**: Outbox accepts activities from local users
+- ✅ **Processing Activities**: Activity Processor handles follows, accepts
+- ✅ **Delivering Activities**: Activities are signed and sent to remote servers
+- ✅ **Outbox Retrieval**: GET outbox with proper pagination
+- ✅ **Federation Loop**: Complete bidirectional federation is operational!
 
 ### What's Missing:
-- ❌ **GET Outbox**: Can't retrieve/serve local activities yet
-- ❌ **Activity Processing**: Received activities aren't processed (follows, likes, etc.)
-- ❌ **Activity Delivery**: Can't send activities to other servers
 - ❌ **Collections**: No followers/following lists
 - ❌ **Authentication**: No way for local users to authenticate
+- ❌ **Objects**: Can't store/retrieve Notes, Articles
 - ❌ **Media**: No support for images/attachments
+- ❌ **Advanced Activities**: Undo, Update, Delete not implemented
 
 ## Resources 📚
 

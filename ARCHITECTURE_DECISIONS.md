@@ -101,7 +101,35 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 
 ---
 
-### 4. Client Authentication Strategy
+### 4. Outbox Activity Creation
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Auto-generate IDs and validate actor ownership
+
+**Context:**
+- Activities need unique IDs
+- Must prevent users from posting as other actors
+- Need user-friendly API
+
+**Implementation:**
+- Auto-generate activity IDs if not provided (timestamp + random)
+- Auto-fill actor field if empty
+- Validate actor matches authenticated user
+- 84.7% test coverage
+
+**Benefits:**
+- Simpler API for clients
+- Prevents spoofing
+- Consistent ID format
+- No client-side ID generation needed
+
+**ID Format:**
+```
+https://example.com/activities/20240115-143022-abc12345
+```
+
+---
+
+### 5. Client Authentication Strategy
 **Status:** 📋 PLANNED  
 **Decision:** OAuth 2.0 with PKCE
 
@@ -143,8 +171,8 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 
 ---
 
-### 5. Activity Delivery Architecture
-**Status:** 📋 PLANNED  
+### 6. Activity Delivery Architecture
+**Status:** ✅ IMPLEMENTED  
 **Decision:** DynamoDB Streams → Lambda
 
 **Context:**
@@ -152,24 +180,28 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 - Must handle retries and failures gracefully
 - Should scale automatically
 
-**Options Considered:**
-1. **DynamoDB Streams** ✅ SELECTED
-   - Automatic triggering
-   - Built-in retry logic
-   - No additional infrastructure
-2. SQS Queue
-   - More control but more complexity
-   - Additional component to manage
+**Implementation:**
+- `cmd/activity-processor/main.go` - Stream processor
+- Processes INSERT and MODIFY events
+- Routes inbox/outbox activities
+- HTTP signature signing for delivery
+- 78.5% test coverage
 
-**Rationale:**
+**Benefits:**
 - Leverages existing DynamoDB infrastructure
 - Automatic scaling with Lambda
-- Built-in error handling and DLQ
-- Can add SQS later if needed
+- Built-in retry capabilities
+- No additional infrastructure needed
+
+**Future Enhancements:**
+- Implement exponential backoff for retries
+- Add Dead Letter Queue for failed deliveries
+- Metrics and monitoring
+- Shared inbox optimization
 
 ---
 
-### 6. GetActivity Performance
+### 7. GetActivity Performance
 **Status:** 🔧 OPTIMIZATION NEEDED  
 **Decision:** Add GSI2 for activity lookups
 
@@ -192,7 +224,7 @@ GSI2SK: METADATA
 
 ---
 
-### 7. Shared Inbox Strategy
+### 8. Shared Inbox Strategy
 **Status:** 🟢 DEFERRED  
 **Decision:** Implement individual inboxes first
 
@@ -209,7 +241,7 @@ GSI2SK: METADATA
 
 ---
 
-### 8. Media Storage Architecture
+### 9. Media Storage Architecture
 **Status:** 🟢 DEFERRED  
 **Decision:** S3 with CloudFront CDN
 
@@ -226,7 +258,7 @@ GSI2SK: METADATA
 
 ---
 
-### 9. Federation Protocol Support
+### 10. Federation Protocol Support
 **Status:** 📋 PLANNED  
 **Decision:** ActivityPub S2S only initially
 
@@ -242,7 +274,7 @@ GSI2SK: METADATA
 
 ---
 
-### 10. Database Design
+### 11. Database Design
 **Status:** ✅ IMPLEMENTED  
 **Decision:** Single-table DynamoDB design
 
@@ -259,7 +291,7 @@ GSI2SK: METADATA
 
 ---
 
-### 11. Lambda Architecture
+### 12. Lambda Architecture
 **Status:** ✅ IMPLEMENTED  
 **Decision:** One Lambda per endpoint
 
@@ -276,7 +308,7 @@ GSI2SK: METADATA
 
 ---
 
-### 12. Infrastructure as Code
+### 13. Infrastructure as Code
 **Status:** 📋 PLANNED  
 **Decision:** Pulumi with TypeScript
 
