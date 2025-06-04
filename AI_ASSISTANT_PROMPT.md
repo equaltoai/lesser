@@ -70,16 +70,14 @@ The goal is to make hosting an ActivityPub instance affordable for individuals a
    - 79.5% test coverage
 
 9. **Outbox Endpoint** ✅
-   - `cmd/outbox/main.go` - POST /users/{username}/outbox handler
-   - Accepts activities from local users
-   - Validates actor matches the URL username
-   - Auto-generates activity IDs if not provided
-   - Activity validation using activitypub package
-   - Storage in DynamoDB (automatically goes to outbox)
-   - Returns 201 Created with the activity
-   - 84.7% test coverage
+   - `cmd/outbox/main.go` - Handles both POST and GET requests
+   - POST: Create activities with validation and auto-ID generation
+   - GET: Retrieve activities with OrderedCollection/OrderedCollectionPage
+   - Cursor-based pagination with configurable limits
+   - Public access for GET (no auth required)
+   - 81.7% test coverage
 
-10. **Activity Processor** ✅ (NEW)
+10. **Activity Processor** ✅
     - `cmd/activity-processor/main.go` - DynamoDB Streams handler
     - Processes both inbox and outbox activities
     - Inbox: Handles Follow, Accept, Create activities
@@ -89,21 +87,23 @@ The goal is to make hosting an ActivityPub instance affordable for individuals a
     - 78.5% test coverage
 
 ### Federation Status 🚀
-**Lesser is now a functioning ActivityPub server!**
+**Lesser is now a functioning ActivityPub server with full outbox support!**
 
 The complete federation flow is operational:
 1. **Discovery**: Remote servers can find actors via WebFinger
 2. **Profile Exchange**: Actors serve public keys for authentication
 3. **Receive Activities**: Inbox accepts and verifies activities
 4. **Create Activities**: Outbox accepts activities from local users
-5. **Process Activities**: Activity Processor handles follows, accepts, etc.
-6. **Deliver Activities**: Activities are signed and sent to remote servers
+5. **Retrieve Activities**: Outbox serves activities with pagination
+6. **Process Activities**: Activity Processor handles follows, accepts, etc.
+7. **Deliver Activities**: Activities are signed and sent to remote servers
 
 What's working:
 - ✅ Remote servers can discover and follow local users
 - ✅ Local activities are delivered to followers
 - ✅ HTTP signatures authenticate all federation
 - ✅ Follow/Accept flow creates relationships
+- ✅ Outbox browsing with standard ActivityPub format
 
 ### Partially Complete 🚧
 1. **Storage Operations**
@@ -117,108 +117,153 @@ What's working:
 See `ARCHITECTURE_DECISIONS.md` for details:
 - **Private Key Encryption**: AWS KMS (pending implementation)
 - **Client Authentication**: OAuth 2.0 with PKCE (currently no auth)
-- **Activity Delivery**: DynamoDB Streams → Lambda
+- **Activity Delivery**: DynamoDB Streams → Lambda ✅ IMPLEMENTED
 
 ## Your Task
 
-Continue development by implementing the **GET Outbox Handler**, which will allow remote servers and clients to retrieve activities from a user's outbox.
+Continue development by implementing the **Collections Endpoints** (`cmd/collections`), which will provide followers and following lists for actors.
 
-### 1. Update Outbox Handler
-Modify `cmd/outbox/main.go` to handle GET requests:
-- `GET /users/{username}/outbox` - Returns paginated outbox activities
+### 1. Create Collections Handler
+Create `cmd/collections/main.go` that handles:
+- `GET /users/{username}/followers` - Returns followers collection
+- `GET /users/{username}/following` - Returns following collection
 - Support OrderedCollection format
 - Implement cursor-based pagination
-- Return proper ActivityStreams JSON
+- Public access (no auth required initially)
 
-### 2. Implement OrderedCollection Response
+### 2. Implement Storage Operations
+First, you'll need to implement relationship storage in the storage layer:
 ```go
-type OrderedCollectionPage struct {
-    Context    string   `json:"@context"`
-    Type       string   `json:"type"`
-    ID         string   `json:"id"`
-    PartOf     string   `json:"partOf"`
-    TotalItems int      `json:"totalItems"`
-    First      string   `json:"first,omitempty"`
-    Next       string   `json:"next,omitempty"`
-    Prev       string   `json:"prev,omitempty"`
-    OrderedItems []interface{} `json:"orderedItems"`
+// In pkg/storage/interface.go
+type Relationship struct {
+    FollowerUsername string
+    FollowedUsername string
+    State           string // "pending", "accepted", "rejected"
+    FollowActivityID string
+    CreatedAt       time.Time
+    AcceptedAt      *time.Time
 }
+
+// Add to Storage interface:
+GetFollowers(ctx context.Context, username string, cursor string, limit int) ([]*Relationship, string, error)
+GetFollowing(ctx context.Context, username string, cursor string, limit int) ([]*Relationship, string, error)
+CreateRelationship(ctx context.Context, rel *Relationship) error
+UpdateRelationship(ctx context.Context, rel *Relationship) error
 ```
 
-### 3. Query and Pagination
-- Use `GetOutboxActivities` from storage layer
-- Support `?page=true` for paginated results
-- Support `?cursor=xxx` for pagination
-- Default to showing collection metadata without `?page=true`
+### 3. DynamoDB Schema for Relationships
+Implement in `pkg/storage/dynamodb/relationships.go`:
+```go
+// Primary access pattern:
+PK: FOLLOW#{follower_username}
+SK: FOLLOWING#{followed_username}
 
-### 4. Access Control
-- Public activities should be visible to everyone
-- Private activities only visible to authenticated users (future)
-- For now, return all activities (no auth implemented yet)
+// Reverse lookup via GSI:
+GSI1PK: FOLLOW#{followed_username}
+GSI1SK: FOLLOWER#{follower_username}
+```
 
-### 5. Response Format
-Without `?page=true`:
+### 4. Collections Response Format
+Return proper ActivityStreams collections:
 ```json
 {
   "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://example.com/users/alice/followers",
   "type": "OrderedCollection",
-  "id": "https://example.com/users/alice/outbox",
-  "totalItems": 42,
-  "first": "https://example.com/users/alice/outbox?page=true",
-  "last": "https://example.com/users/alice/outbox?page=true&cursor=xyz"
+  "totalItems": 150,
+  "first": "https://example.com/users/alice/followers?page=true"
 }
 ```
 
-With `?page=true`:
+With pagination:
 ```json
 {
   "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://example.com/users/alice/followers?page=true",
   "type": "OrderedCollectionPage",
-  "id": "https://example.com/users/alice/outbox?page=true",
-  "partOf": "https://example.com/users/alice/outbox",
-  "totalItems": 42,
-  "next": "https://example.com/users/alice/outbox?page=true&cursor=abc",
+  "partOf": "https://example.com/users/alice/followers",
+  "totalItems": 150,
+  "next": "https://example.com/users/alice/followers?page=true&cursor=xyz",
   "orderedItems": [
-    {
-      "type": "Create",
-      "actor": "https://example.com/users/alice",
-      "object": {...}
-    }
+    "https://remote.example/users/bob",
+    "https://another.example/users/carol"
   ]
 }
 ```
 
-### 6. Write Tests
-- Test collection vs page responses
+### 5. Update Activity Processor
+Modify the activity processor to actually create/update relationships:
+- When processing Follow in inbox: Create pending relationship
+- When processing Accept in inbox: Update relationship to accepted
+- When sending Accept from outbox: Update local relationship
+
+### 6. Write Comprehensive Tests
+- Test followers and following endpoints
 - Test pagination with cursors
-- Test empty outbox
-- Test invalid usernames
-- Mock storage for testing
+- Test empty collections
+- Test relationship storage operations
+- Mock storage for handler tests
 
 ## Example Implementation Pattern
 
 ```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "errors"
+    "net/http"
+    "strconv"
+    
+    "github.com/aws/aws-lambda-go/events"
+    "github.com/aws/aws-lambda-go/lambda"
+    "github.com/aron23/lesser/pkg/activitypub"
+    "github.com/aron23/lesser/pkg/common"
+    "github.com/aron23/lesser/pkg/config"
+    "github.com/aron23/lesser/pkg/storage"
+    "github.com/aron23/lesser/pkg/storage/dynamodb"
+    "go.uber.org/zap"
+)
+
+var (
+    cfg    *config.Config
+    store  storage.Storage
+    logger *zap.Logger
+)
+
+func init() {
+    cfg = config.Get()
+    logger = common.Logger()
+    
+    var err error
+    store, err = dynamodb.New()
+    if err != nil {
+        logger.Fatal("failed to initialize storage", zap.Error(err))
+    }
+}
+
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
     log := common.WithContext(ctx)
     
-    // Handle GET requests
-    if request.HTTPMethod == http.MethodGet {
-        return handleGetOutbox(ctx, request)
-    } else if request.HTTPMethod == http.MethodPost {
-        return handlePostOutbox(ctx, request)
+    // Only accept GET requests
+    if request.HTTPMethod != http.MethodGet {
+        return common.MethodNotAllowed(request.HTTPMethod), nil
     }
     
-    return common.MethodNotAllowed(request.HTTPMethod), nil
-}
-
-func handleGetOutbox(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
     username := request.PathParameters["username"]
     if username == "" {
         return common.BadRequest(errors.New("missing username")), nil
     }
     
+    // Determine collection type from path
+    collectionType := request.PathParameters["collection"]
+    if collectionType != "followers" && collectionType != "following" {
+        return common.NotFound(errors.New("unknown collection")), nil
+    }
+    
     // Check if actor exists
-    actor, err := store.GetActor(ctx, username)
+    _, err := store.GetActor(ctx, username)
     if err != nil {
         if common.IsNotFound(err) {
             return common.NotFound(err), nil
@@ -226,48 +271,68 @@ func handleGetOutbox(ctx context.Context, request events.APIGatewayProxyRequest)
         return common.InternalServerError(err), nil
     }
     
-    // Check if pagination is requested
+    // Parse query parameters
     isPage := request.QueryStringParameters["page"] == "true"
     cursor := request.QueryStringParameters["cursor"]
+    limit := 20 // default
+    if l := request.QueryStringParameters["limit"]; l != "" {
+        if parsed, err := strconv.Atoi(l); err == nil && parsed >= 1 && parsed <= 100 {
+            limit = parsed
+        }
+    }
     
     if !isPage {
         // Return collection metadata
-        return returnOutboxCollection(actor)
+        return returnCollection(username, collectionType)
     }
     
-    // Get activities with pagination
-    activities, nextCursor, err := store.GetOutboxActivities(ctx, username, cursor, 20)
+    // Get relationships based on type
+    var relationships []*storage.Relationship
+    var nextCursor string
+    
+    if collectionType == "followers" {
+        relationships, nextCursor, err = store.GetFollowers(ctx, username, cursor, limit)
+    } else {
+        relationships, nextCursor, err = store.GetFollowing(ctx, username, cursor, limit)
+    }
+    
     if err != nil {
+        log.Error("failed to get relationships", 
+            zap.String("type", collectionType),
+            zap.Error(err))
         return common.InternalServerError(err), nil
     }
     
     // Build and return page
-    return returnOutboxPage(actor, activities, cursor, nextCursor)
+    return returnCollectionPage(username, collectionType, relationships, cursor, nextCursor, limit)
+}
+
+func main() {
+    lambda.Start(handler)
 }
 ```
 
 ## Success Criteria
 
-- [ ] GET requests return proper OrderedCollection
-- [ ] Pagination works with cursors
-- [ ] ActivityStreams JSON is properly formatted
-- [ ] Empty outboxes handled correctly
-- [ ] Integration with existing POST handler
+- [ ] Followers and following endpoints working
+- [ ] Relationship storage implemented
+- [ ] Pagination with cursors
+- [ ] OrderedCollection format correct
+- [ ] Activity processor creates relationships
 - [ ] Good test coverage (>80%)
 
 ## Next Steps After This Task
 
-1. **Collections**: Implement followers/following endpoints
-2. **GET Inbox**: Allow viewing inbox (with auth)
-3. **OAuth 2.0**: Implement authentication
-4. **Objects**: Store and serve Notes, Articles
-5. **Media**: Handle image uploads
-6. **Pulumi**: Deploy infrastructure
+1. **OAuth 2.0**: Implement authentication for local users
+2. **Objects**: Store and serve Notes, Articles
+3. **GET Inbox**: Allow viewing inbox (with auth)
+4. **Media**: Handle image uploads
+5. **Pulumi**: Deploy infrastructure
 
-The GET Outbox handler is important because it:
-- Completes the outbox functionality
-- Allows other servers to see local activities
-- Enables followers to retrieve posts
-- Provides the public API for content
+The Collections endpoints are important because they:
+- Enable users to see their social graph
+- Allow remote servers to discover relationships
+- Complete the basic social features
+- Required for proper ActivityPub compliance
 
-Begin by modifying the existing outbox handler to support GET requests, then implement the OrderedCollection format. 
+Begin by implementing the relationship storage operations, then create the handler for serving collections. 

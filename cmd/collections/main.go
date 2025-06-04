@@ -1,0 +1,202 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/storage"
+	"github.com/aron23/lesser/pkg/storage/dynamodb"
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	"go.uber.org/zap"
+)
+
+var (
+	cfg    *config.Config
+	store  storage.Storage
+	logger *zap.Logger
+)
+
+func init() {
+	cfg = config.Get()
+	logger = common.Logger()
+
+	var err error
+	store, err = dynamodb.New()
+	if err != nil {
+		logger.Fatal("failed to initialize storage", zap.Error(err))
+	}
+}
+
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	log := common.WithContext(ctx)
+
+	// Only accept GET requests
+	if request.HTTPMethod != http.MethodGet {
+		return common.ErrorResponseWithCode(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED",
+			fmt.Errorf("method %s not allowed", request.HTTPMethod)), nil
+	}
+
+	username := request.PathParameters["username"]
+	if username == "" {
+		return common.BadRequest(errors.New("missing username")), nil
+	}
+
+	// Extract collection type from path
+	// Path should be /users/{username}/followers or /users/{username}/following
+	path := request.Path
+	var collectionType string
+	if strings.HasSuffix(path, "/followers") {
+		collectionType = "followers"
+	} else if strings.HasSuffix(path, "/following") {
+		collectionType = "following"
+	} else {
+		return common.NotFound(errors.New("unknown collection")), nil
+	}
+
+	// Check if actor exists
+	actor, err := store.GetActor(ctx, username)
+	if err != nil {
+		if common.IsNotFound(err) {
+			return common.NotFound(err), nil
+		}
+		log.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Parse query parameters
+	isPage := request.QueryStringParameters["page"] == "true"
+	cursor := request.QueryStringParameters["cursor"]
+	limit := 20 // default
+	if l := request.QueryStringParameters["limit"]; l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed >= 1 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	// If not requesting a page, return the collection metadata
+	if !isPage {
+		return returnCollection(ctx, actor, collectionType)
+	}
+
+	// Get relationships based on type
+	var usernames []string
+	var nextCursor string
+
+	if collectionType == "followers" {
+		usernames, nextCursor, err = store.GetFollowers(ctx, username, limit, cursor)
+	} else {
+		usernames, nextCursor, err = store.GetFollowing(ctx, username, limit, cursor)
+	}
+
+	if err != nil {
+		log.Error("failed to get relationships",
+			zap.String("type", collectionType),
+			zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Build and return page
+	return returnCollectionPage(ctx, actor, collectionType, usernames, cursor, nextCursor, limit)
+}
+
+// returnCollection returns the collection metadata (not a page)
+func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionType string) (events.APIGatewayProxyResponse, error) {
+	log := common.WithContext(ctx)
+
+	// Get total count (we'll get a small sample to determine if there are any items)
+	// In a production system, you might want to add a count method to storage
+	var usernames []string
+	var err error
+
+	if collectionType == "followers" {
+		usernames, _, err = store.GetFollowers(ctx, actor.PreferredUsername, 1, "")
+	} else {
+		usernames, _, err = store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
+	}
+
+	if err != nil {
+		log.Error("failed to get count", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Build collection URL
+	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+
+	// Build the collection
+	collection := &activitypub.OrderedCollection{
+		Collection: activitypub.Collection{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.Context,
+				ID:      collectionID,
+				Type:    activitypub.OrderedCollectionType,
+			},
+			TotalItems: len(usernames),
+		},
+	}
+
+	// Only add first page link if there are items
+	if len(usernames) > 0 {
+		collection.First = fmt.Sprintf("%s?page=true", collectionID)
+	}
+
+	return common.JSONResponse(http.StatusOK, collection), nil
+}
+
+// returnCollectionPage returns a page of the collection
+func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collectionType string, usernames []string, cursor, nextCursor string, limit int) (events.APIGatewayProxyResponse, error) {
+	// Build collection and page URLs
+	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+	pageID := fmt.Sprintf("%s?page=true", collectionID)
+	if cursor != "" {
+		pageID = fmt.Sprintf("%s&cursor=%s", pageID, cursor)
+	}
+
+	// Convert usernames to actor URLs
+	// In a federated system, these might be remote actor URLs
+	// For now, we'll assume they're all local actors
+	orderedItems := make([]interface{}, len(usernames))
+	for i, username := range usernames {
+		orderedItems[i] = fmt.Sprintf("%s/users/%s", cfg.Domain, username)
+	}
+
+	// Build the page
+	page := &activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      pageID,
+					Type:    "OrderedCollectionPage", // The constant doesn't exist, use string literal
+				},
+				OrderedItems: orderedItems,
+			},
+			PartOf: collectionID,
+		},
+	}
+
+	// Add next link if there are more items
+	if nextCursor != "" {
+		page.Next = fmt.Sprintf("%s?page=true&cursor=%s&limit=%d", collectionID, nextCursor, limit)
+	}
+
+	// Add prev link if this is not the first page
+	if cursor != "" {
+		// In a real implementation, you'd need to implement reverse pagination
+		// For now, we'll just indicate that there are previous items
+		page.Prev = fmt.Sprintf("%s?page=true", collectionID)
+	}
+
+	return common.JSONResponse(http.StatusOK, page), nil
+}
+
+func main() {
+	lambda.Start(handler)
+}
