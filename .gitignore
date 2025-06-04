@@ -67,3 +67,8 @@ tmp/
 .env.*.local
 
 .aws
+
+# AWS configuration files
+__debug_bin*
+auth.test
+objects.test
