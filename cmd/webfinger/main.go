@@ -10,6 +10,7 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/storage"
+	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"go.uber.org/zap"
@@ -24,8 +25,13 @@ var (
 func init() {
 	cfg = config.Get()
 	logger = common.Logger()
-	// TODO: Initialize DynamoDB storage
-	// store = dynamodb.New(cfg)
+
+	// Initialize DynamoDB storage
+	var err error
+	store, err = dynamodb.New()
+	if err != nil {
+		logger.Fatal("failed to initialize storage", zap.Error(err))
+	}
 }
 
 // parseWebFingerResource parses a WebFinger resource identifier
@@ -95,15 +101,18 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return common.NotFound(common.ActorNotFoundError{Username: username}), nil
 	}
 
-	// TODO: Check if the actor exists in our database
-	// actor, err := store.GetActor(ctx, username)
-	// if err != nil {
-	//     if common.IsNotFound(err) {
-	//         return common.NotFound(err), nil
-	//     }
-	//     log.Error("failed to get actor", zap.Error(err))
-	//     return common.InternalServerError(err), nil
-	// }
+	// Check if the actor exists in our database
+	_, err = store.GetActor(ctx, username)
+	if err != nil {
+		if common.IsNotFound(err) {
+			log.Debug("actor not found",
+				zap.String("username", username),
+			)
+			return common.NotFound(err), nil
+		}
+		log.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
 
 	// Build WebFinger response
 	actorURL := cfg.ActorURL(username)

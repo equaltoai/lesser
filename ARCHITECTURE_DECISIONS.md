@@ -46,7 +46,38 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 
 ---
 
-### 2. Client Authentication Strategy
+### 2. HTTP Signatures for Federation
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Implement HTTP Signatures following draft-cavage-http-signatures-12
+
+**Context:**
+- ActivityPub requires HTTP signatures for server-to-server authentication
+- Need to verify incoming federation requests
+- Need to sign outgoing federation requests
+
+**Implementation Completed:**
+- `pkg/federation/httpsig.go` - Core implementation
+- RSA-SHA256 algorithm support
+- Timestamp validation (±5 minutes window)
+- Digest calculation and verification
+- Key management utilities (RSA key generation, PEM encoding)
+- 87.4% test coverage
+- Comprehensive documentation in `pkg/federation/README.md`
+
+**Features:**
+- `VerifyHTTPSignature()` - Verify incoming requests
+- `SignHTTPRequest()` - Sign outgoing requests
+- `GenerateRSAKeyPair()` - Generate RSA keys (2048-bit minimum)
+- PEM encoding/decoding utilities
+
+**Future Enhancements:**
+- Ed25519 support for more efficient signatures
+- Integration with AWS KMS for private key encryption
+- Public key caching to reduce lookups
+
+---
+
+### 3. Client Authentication Strategy
 **Status:** 📋 PLANNED  
 **Decision:** OAuth 2.0 with PKCE
 
@@ -88,7 +119,7 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 
 ---
 
-### 3. Activity Delivery Architecture
+### 4. Activity Delivery Architecture
 **Status:** 📋 PLANNED  
 **Decision:** DynamoDB Streams → Lambda
 
@@ -114,7 +145,7 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 
 ---
 
-### 4. GetActivity Performance
+### 5. GetActivity Performance
 **Status:** 🔧 OPTIMIZATION NEEDED  
 **Decision:** Add GSI2 for activity lookups
 
@@ -137,7 +168,7 @@ GSI2SK: METADATA
 
 ---
 
-### 5. Shared Inbox Strategy
+### 6. Shared Inbox Strategy
 **Status:** 🟢 DEFERRED  
 **Decision:** Implement individual inboxes first
 
@@ -154,7 +185,7 @@ GSI2SK: METADATA
 
 ---
 
-### 6. Media Storage Architecture
+### 7. Media Storage Architecture
 **Status:** 🟢 DEFERRED  
 **Decision:** S3 with CloudFront CDN
 
@@ -171,7 +202,7 @@ GSI2SK: METADATA
 
 ---
 
-### 7. Federation Protocol Support
+### 8. Federation Protocol Support
 **Status:** 📋 PLANNED  
 **Decision:** ActivityPub S2S only initially
 
@@ -187,7 +218,7 @@ GSI2SK: METADATA
 
 ---
 
-### 8. Database Design
+### 9. Database Design
 **Status:** ✅ IMPLEMENTED  
 **Decision:** Single-table DynamoDB design
 
@@ -204,7 +235,7 @@ GSI2SK: METADATA
 
 ---
 
-### 9. Lambda Architecture
+### 10. Lambda Architecture
 **Status:** ✅ IMPLEMENTED  
 **Decision:** One Lambda per endpoint
 
@@ -221,7 +252,7 @@ GSI2SK: METADATA
 
 ---
 
-### 10. Infrastructure as Code
+### 11. Infrastructure as Code
 **Status:** 📋 PLANNED  
 **Decision:** Pulumi with TypeScript
 
