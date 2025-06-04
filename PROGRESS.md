@@ -92,6 +92,27 @@
   - Testing instructions
   - Performance considerations
 
+### 5. HTTP Signatures Package ✅
+- [x] **pkg/federation/httpsig.go** - HTTP Signatures implementation
+  - Signature parsing and verification (VerifyHTTPSignature)
+  - Signature generation for outgoing requests (SignHTTPRequest)  
+  - Support for RSA-SHA256 algorithm
+  - Timestamp validation (±5 minutes)
+  - Digest calculation and verification
+  - Key management utilities (PEM encoding/decoding)
+
+- [x] **pkg/federation/httpsig_test.go** - Comprehensive test suite
+  - Unit tests for all functions
+  - Integration tests with end-to-end signing/verification
+  - Edge case coverage
+  - 84.3% test coverage achieved
+
+- [x] **pkg/federation/README.md** - Package documentation
+  - Usage examples for incoming/outgoing requests
+  - Security considerations
+  - Integration with ActivityPub
+  - Future enhancements
+
 ## In Progress 🚧
 
 ### Next Steps (Phase 1: Core ActivityPub)
@@ -100,25 +121,26 @@
    - ~~Create helper functions for key generation~~
    - ~~Add connection pooling~~
 
-2. [ ] **Remaining Storage Operations**
+2. [x] ~~**HTTP Signatures Package**~~ ✅ COMPLETED
+   - ~~Signature verification for incoming requests~~
+   - ~~Signature generation for outgoing requests~~
+   - ~~Key management~~
+
+3. [ ] **Remaining Storage Operations**
    - Object storage (Notes, Articles, etc.)
    - Relationship operations (follows)
    - Collection operations
    - DynamoDB transactions for atomic operations
 
-3. [ ] **HTTP Signatures Package**
-   - Signature verification for incoming requests
-   - Signature generation for outgoing requests
-   - Key management
-
 4. [ ] **Actor Profile Endpoint** (cmd/actor)
    - GET handler for actor profiles
    - Content negotiation (HTML vs ActivityStreams)
    - Public key serving
+   - Connect to DynamoDB storage
 
 5. [ ] **Inbox Endpoint** (cmd/inbox)
    - POST handler for receiving activities
-   - HTTP signature verification
+   - HTTP signature verification using federation package
    - Activity validation
    - Queue activities for processing
 
@@ -143,11 +165,13 @@
 5. **Zap for Logging** - Fast, structured logging optimized for Lambda
 6. **No Heavy Frameworks** - Direct Lambda handlers to minimize cold starts
 7. **Table-Driven Tests** - Comprehensive test coverage with clear test cases
+8. **RSA-SHA256 for HTTP Signatures** - Industry standard algorithm for federation
 
 ### Open Questions:
 1. Should we use DynamoDB Streams or SQS for activity delivery?
 2. How should we handle media storage lifecycle policies?
 3. Should we implement a shared inbox for efficiency?
+4. Should we add support for Ed25519 signatures (more efficient)?
 
 ## Testing Strategy 🧪
 
@@ -158,16 +182,17 @@
 - [x] HTML sanitization
 - [x] **DynamoDB Actor Operations** - All CRUD operations with mocked client
 - [x] **DynamoDB Activity Operations** - Create and query operations
+- [x] **HTTP Signature Operations** - Parsing, verification, generation, key management
 
 ### Unit Tests Needed:
 - [ ] ActivityPub type marshaling/unmarshaling
-- [ ] HTTP signature verification
 - [ ] DynamoDB object and relationship operations
 - [ ] Common response utilities
 
 ### Integration Tests Completed:
 - [x] **DynamoDB Actor Lifecycle** - Full CRUD cycle against local DynamoDB
 - [x] **DynamoDB Activity Pagination** - Cursor-based pagination testing
+- [x] **HTTP Signature End-to-End** - Sign and verify full cycle
 
 ### Integration Tests Needed:
 - [ ] End-to-end federation test with Mastodon
@@ -193,9 +218,10 @@
 1. **Partial Storage Implementation** - Actor and Activity storage complete, but Object/Relationship/Collection operations pending
 2. **No Authentication** - No way to create or authenticate users
 3. **No Activity Processing** - Activities are received but not processed
-4. **No Federation** - Can't actually communicate with other servers yet
+4. **No Federation** - Can't actually communicate with other servers yet (but HTTP signatures are ready!)
 5. **No KMS Encryption** - Private keys stored in plaintext (TODO: AWS KMS integration)
 6. **GetActivity Uses Scan** - Should optimize with better key design or GSI
+7. **HTTP Signatures RSA Only** - Ed25519 support planned for future
 
 ## Resources 📚
 

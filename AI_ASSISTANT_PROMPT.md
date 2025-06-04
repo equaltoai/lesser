@@ -29,158 +29,204 @@ The goal is to make hosting an ActivityPub instance affordable for individuals a
 3. **Core Packages**
    - `pkg/activitypub/` - ActivityPub types and validation
    - `pkg/config/` - Environment-based configuration
-   - `pkg/storage/interface.go` - Storage interface (not implemented)
    - `pkg/common/` - Logging, errors, and response utilities
 
-4. **First Lambda Function**
-   - `cmd/webfinger/` - WebFinger discovery endpoint (mock implementation)
+4. **DynamoDB Storage Layer** (NEW ✅)
+   - `pkg/storage/dynamodb/client.go` - Connection pooling, initialization
+   - `pkg/storage/dynamodb/actor.go` - Full actor CRUD operations
+   - `pkg/storage/dynamodb/activity.go` - Activity storage with pagination
+   - Comprehensive unit and integration tests
+   - >80% test coverage
 
-### Project Structure
-```
-lesser/
-├── cmd/                    # Lambda function handlers
-├── pkg/                    # Shared packages
-│   ├── activitypub/       # ActivityPub types and validation
-│   ├── common/            # Common utilities
-│   ├── config/            # Configuration
-│   └── storage/           # Storage interface (needs implementation)
-├── internal/              # Internal packages
-├── infra/                 # Pulumi infrastructure
-└── *.md                   # Documentation files
-```
+5. **First Lambda Function**
+   - `cmd/webfinger/` - WebFinger discovery endpoint (needs storage connection)
 
-## Key Architecture Decisions
-
-1. **No Heavy Frameworks**: Direct Lambda handlers to minimize cold starts
-2. **Structured Logging**: Using zap with Lambda context
-3. **Domain Errors**: Custom error types for better error handling
-4. **Single Table Design**: DynamoDB with composite keys for efficient queries
-5. **Table-Driven Tests**: Comprehensive test coverage pattern
+### Partially Complete 🚧
+1. **Storage Operations**
+   - ✅ Actor operations (CRUD)
+   - ✅ Activity operations (outbox/inbox with pagination)
+   - ❌ Object operations (Notes, Articles, etc.)
+   - ❌ Relationship operations (follows)
+   - ❌ Collection operations
 
 ## Your Task
 
-Continue development by implementing the **DynamoDB Storage Layer**, which is the next critical component. This involves:
+Continue development by implementing the **HTTP Signatures Package**, which is critical for federation. HTTP Signatures are required for:
+- Authenticating incoming federation requests
+- Signing outgoing federation requests
+- Establishing trust between ActivityPub servers
 
-### 1. Create DynamoDB Storage Implementation
-Create `pkg/storage/dynamodb/client.go` that:
-- Implements the `storage.Storage` interface
-- Uses AWS SDK v2 for DynamoDB
-- Follows the single-table design pattern
-- Implements connection pooling for Lambda reuse
+### Important Prerequisites
 
-### 2. Implement Actor Storage
-Create `pkg/storage/dynamodb/actor.go` with:
-- CreateActor (with encrypted private key storage)
-- GetActor
-- UpdateActor
-- DeleteActor
-- GetActorPrivateKey
+⚠️ **Before implementing HTTP Signatures**, be aware of these architectural decisions (see ARCHITECTURE_DECISIONS.md):
 
-### 3. Implement Activity Storage
-Create `pkg/storage/dynamodb/activity.go` with:
-- CreateActivity
-- GetActivity
-- GetOutboxActivities (with pagination)
-- GetInboxActivities (with pagination)
+1. **Private Key Encryption**: We need to implement AWS KMS encryption for private keys. Currently they're stored in plaintext.
+2. **OAuth 2.0 Authentication**: We're using OAuth 2.0 (not JWT) for client authentication to ensure compatibility with existing ActivityPub clients.
 
-### 4. Write Comprehensive Tests
-- Unit tests with mocked DynamoDB client
-- Integration tests using local DynamoDB (Docker)
-- Table-driven test patterns
-- Error case coverage
+### 1. Create HTTP Signatures Package Structure
+Create `pkg/federation/httpsig.go` with:
+- Signature verification for incoming requests
+- Signature generation for outgoing requests
+- Key management utilities
+- Support for common algorithms (RSA-SHA256)
+
+### 2. Implement Signature Verification
+```go
+// VerifyHTTPSignature verifies an incoming HTTP request's signature
+func VerifyHTTPSignature(req *http.Request, publicKey *rsa.PublicKey) error
+```
+
+Key requirements:
+- Parse the `Signature` header
+- Validate required headers are included (date, host, digest)
+- Verify the signature matches
+- Check timestamp is within acceptable range (±5 minutes)
+- Support for both RSA and Ed25519 keys
+
+### 3. Implement Signature Generation
+```go
+// SignHTTPRequest signs an outgoing HTTP request
+func SignHTTPRequest(req *http.Request, privateKey *rsa.PrivateKey, keyID string) error
+```
+
+Key requirements:
+- Calculate digest for request body
+- Build signature string from headers
+- Sign using private key
+- Add `Signature` header to request
+
+### 4. Create Key Management Utilities
+- RSA key generation (2048-bit minimum)
+- Key serialization/deserialization
+- PEM encoding/decoding
+- Integration with storage layer for key retrieval
+
+### 5. Write Comprehensive Tests
+- Unit tests for signature parsing
+- Verification tests with known-good signatures
+- Generation tests with verification
+- Interoperability tests with reference implementations
+- Edge cases (expired signatures, missing headers, etc.)
 
 ## Technical Requirements
 
-### DynamoDB Key Schema
+### HTTP Signature Specification
+Follow the draft specification: [draft-cavage-http-signatures-12](https://datatracker.ietf.org/doc/html/draft-cavage-http-signatures-12)
+
+Key headers to support:
+- `(request-target)`: The HTTP method and path
+- `host`: The target host
+- `date`: Request timestamp
+- `digest`: Body content digest (SHA-256)
+- `content-type`: For POST requests
+
+### Example Signature Header
 ```
-Actors:
-  PK: ACTOR#{username}
-  SK: PROFILE
-
-Activities:
-  PK: ACTOR#{username}
-  SK: ACTIVITY#{timestamp}#{id}
-  GSI1PK: INBOX#{username}
-  GSI1SK: {timestamp}
-
-Relationships:
-  PK: FOLLOW#{follower_username}
-  SK: FOLLOWING#{followed_username}
-  GSI1PK: FOLLOW#{followed_username}
-  GSI1SK: FOLLOWER#{follower_username}
+Signature: keyId="https://example.com/users/alice#main-key",
+           algorithm="rsa-sha256",
+           headers="(request-target) host date digest",
+           signature="base64-encoded-signature"
 ```
 
-### Coding Standards
-- Use the common logging utilities (pkg/common/logging.go)
-- Return domain-specific errors (pkg/common/errors.go)
-- Follow naming conventions from DEVELOPER_GUIDELINES.md
-- Include comprehensive godoc comments
-- Write table-driven tests
+### Integration Points
+1. The `inbox` handler will use this to verify incoming activities
+2. The `activity-processor` will use this to sign outgoing activities
+3. Actor profiles must include public keys for verification
 
-### Performance Considerations
-- Initialize DynamoDB client in init() for Lambda reuse
-- Use batch operations where possible
-- Implement efficient pagination
-- Consider eventually consistent reads where appropriate
-
-## Example Code Pattern
-
-Follow this pattern for DynamoDB operations:
+## Example Implementation Pattern
 
 ```go
-func (s *dynamoDBStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-    log := common.WithContext(ctx)
+package federation
+
+import (
+    "crypto"
+    "crypto/rsa"
+    "crypto/sha256"
+    "encoding/base64"
+    "fmt"
+    "net/http"
+    "strings"
+    "time"
     
-    // Build the key
-    pk := storage.ActorPKPrefix + username
-    sk := storage.ActorSK
+    "github.com/lesser/lesser/pkg/common"
+    "go.uber.org/zap"
+)
+
+// HTTPSignature represents a parsed HTTP signature
+type HTTPSignature struct {
+    KeyID     string
+    Algorithm string
+    Headers   []string
+    Signature []byte
+}
+
+// ParseSignatureHeader parses the Signature header
+func ParseSignatureHeader(header string) (*HTTPSignature, error) {
+    // Implementation here
+}
+
+// VerifyHTTPSignature verifies an incoming request
+func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
+    log := common.Logger()
     
-    // Get the item
-    result, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
-        TableName: aws.String(s.tableName),
-        Key: map[string]types.AttributeValue{
-            "PK": &types.AttributeValueMemberS{Value: pk},
-            "SK": &types.AttributeValueMemberS{Value: sk},
-        },
-    })
+    // Parse signature header
+    sigHeader := req.Header.Get("Signature")
+    if sigHeader == "" {
+        return common.AuthenticationError{Message: "missing signature header"}
+    }
     
+    sig, err := ParseSignatureHeader(sigHeader)
     if err != nil {
-        log.Error("failed to get actor", 
-            zap.String("username", username),
-            zap.Error(err))
-        return nil, fmt.Errorf("failed to get actor: %w", err)
+        return fmt.Errorf("failed to parse signature: %w", err)
     }
     
-    if result.Item == nil {
-        return nil, common.ActorNotFoundError{Username: username}
+    // Verify timestamp
+    date := req.Header.Get("Date")
+    if err := verifyTimestamp(date); err != nil {
+        return err
     }
     
-    // Unmarshal the actor
-    var record storage.ActorRecord
-    if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
-        log.Error("failed to unmarshal actor",
-            zap.String("username", username),
-            zap.Error(err))
-        return nil, fmt.Errorf("failed to unmarshal actor: %w", err)
+    // Build signature string
+    sigString, err := buildSignatureString(req, sig.Headers)
+    if err != nil {
+        return err
     }
     
-    return record.Actor, nil
+    // Verify signature
+    // ... verification logic
+    
+    log.Info("verified HTTP signature",
+        zap.String("key_id", sig.KeyID),
+        zap.String("method", req.Method),
+        zap.String("path", req.URL.Path))
+    
+    return nil
 }
 ```
 
-## Questions to Consider
+## Testing Strategy
 
-1. Should we use DynamoDB transactions for operations that touch multiple items?
-2. How should we handle encryption of private keys? (AWS KMS vs application-level)
-3. Should we implement caching at the storage layer or leave it to the Lambda handlers?
+Create `pkg/federation/httpsig_test.go` with:
+- Table-driven tests for signature parsing
+- Mock HTTP requests for testing
+- Known-good signatures from other implementations
+- Integration tests with real keys
 
 ## Success Criteria
 
-- [ ] All storage interface methods implemented
+- [ ] HTTP signature verification working
+- [ ] HTTP signature generation working  
+- [ ] Key management utilities implemented
 - [ ] Unit tests with >80% coverage
-- [ ] Integration tests passing with local DynamoDB
-- [ ] Proper error handling and logging
-- [ ] Performance considerations documented
-- [ ] Ready for use by Lambda handlers
+- [ ] Integration tests with reference signatures
+- [ ] Documentation with examples
+- [ ] Ready for use in inbox/outbox handlers
 
-Begin by examining the existing code structure and the storage interface in `pkg/storage/interface.go`, then proceed with implementing the DynamoDB storage layer. 
+## Next Steps After This Task
+
+1. **Connect Storage to Handlers**: Update WebFinger and create Actor endpoint
+2. **Implement Inbox Handler**: Receive and verify federated activities
+3. **Implement Activity Processor**: Background processing of activities
+4. **Complete Remaining Storage**: Objects, relationships, collections
+
+Begin by studying the HTTP Signatures specification and examining how other ActivityPub implementations handle federation authentication. 
