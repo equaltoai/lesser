@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/lesser/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/activitypub"
 )
 
 // Storage defines the interface for data storage operations

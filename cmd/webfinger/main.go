@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/lesser/lesser/pkg/activitypub"
-	"github.com/lesser/lesser/pkg/common"
-	"github.com/lesser/lesser/pkg/config"
-	"github.com/lesser/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 

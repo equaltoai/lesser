@@ -65,3 +65,5 @@ tmp/
 # Environment specific files
 .env.local
 .env.*.local
+
+.aws
