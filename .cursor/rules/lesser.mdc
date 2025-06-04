@@ -8,3 +8,7 @@ lesser is a serverless ActivityPub implementation written in go
 the goal is to provide a flexible ActivityPub core that can be extended to various use cases
 
 https://www.w3.org/TR/activitypub/
+
+[README.md](mdc:README.md)
+[DESIGN.md](mdc:DESIGN.md)
+[DEVELOPER_GUIDELINES.md](mdc:DEVELOPER_GUIDELINES.md)

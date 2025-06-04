@@ -2,87 +2,111 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/lesser/lesser/pkg/activitypub"
+	"github.com/lesser/lesser/pkg/common"
 	"github.com/lesser/lesser/pkg/config"
 	"github.com/lesser/lesser/pkg/storage"
+	"go.uber.org/zap"
 )
 
 var (
-	cfg   *config.Config
-	store storage.Storage
+	cfg    *config.Config
+	store  storage.Storage
+	logger *zap.Logger
 )
 
 func init() {
 	cfg = config.Get()
+	logger = common.Logger()
 	// TODO: Initialize DynamoDB storage
 	// store = dynamodb.New(cfg)
 }
 
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// WebFinger endpoint should handle requests like:
-	// GET /.well-known/webfinger?resource=acct:username@domain
-
-	resource := request.QueryStringParameters["resource"]
-	if resource == "" {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusBadRequest,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error": "Missing resource parameter"}`,
-		}, nil
-	}
-
-	// Parse the resource parameter
-	// Expected format: acct:username@domain
+// parseWebFingerResource parses a WebFinger resource identifier
+// Expected format: acct:username@domain
+func parseWebFingerResource(resource string) (username, domain string, err error) {
 	if !strings.HasPrefix(resource, "acct:") {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusBadRequest,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error": "Resource must start with 'acct:'"}`,
-		}, nil
+		return "", "", common.ValidationError{
+			Field:   "resource",
+			Message: "must start with 'acct:'",
+		}
 	}
 
 	acct := strings.TrimPrefix(resource, "acct:")
 	parts := strings.Split(acct, "@")
 	if len(parts) != 2 {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusBadRequest,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error": "Invalid resource format"}`,
-		}, nil
+		return "", "", common.ValidationError{
+			Field:   "resource",
+			Message: "invalid format, expected acct:username@domain",
+		}
 	}
 
-	username := parts[0]
-	domain := parts[1]
+	username = parts[0]
+	domain = parts[1]
+
+	if username == "" {
+		return "", "", common.ValidationError{
+			Field:   "resource",
+			Message: "username cannot be empty",
+		}
+	}
+
+	return username, domain, nil
+}
+
+// handler processes WebFinger requests
+// GET /.well-known/webfinger?resource=acct:username@domain
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	log := common.WithContext(ctx)
+
+	// Extract resource parameter
+	resource := request.QueryStringParameters["resource"]
+	if resource == "" {
+		log.Debug("missing resource parameter")
+		return common.BadRequest(errors.New("missing resource parameter")), nil
+	}
+
+	log.Info("processing webfinger request",
+		zap.String("resource", resource),
+	)
+
+	// Parse the resource
+	username, domain, err := parseWebFingerResource(resource)
+	if err != nil {
+		log.Debug("invalid resource format",
+			zap.String("resource", resource),
+			zap.Error(err),
+		)
+		return common.ErrorFromType(err), nil
+	}
 
 	// Check if the domain matches our instance
 	if domain != cfg.Domain {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusNotFound,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error": "User not found"}`,
-		}, nil
+		log.Debug("domain mismatch",
+			zap.String("requested_domain", domain),
+			zap.String("our_domain", cfg.Domain),
+		)
+		return common.NotFound(common.ActorNotFoundError{Username: username}), nil
 	}
 
 	// TODO: Check if the actor exists in our database
-	// For now, we'll create a mock response
+	// actor, err := store.GetActor(ctx, username)
+	// if err != nil {
+	//     if common.IsNotFound(err) {
+	//         return common.NotFound(err), nil
+	//     }
+	//     log.Error("failed to get actor", zap.Error(err))
+	//     return common.InternalServerError(err), nil
+	// }
 
+	// Build WebFinger response
 	actorURL := cfg.ActorURL(username)
-
 	response := activitypub.WebFingerResource{
 		Subject: resource,
 		Aliases: []string{actorURL},
@@ -104,26 +128,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		},
 	}
 
-	body, err := json.Marshal(response)
-	if err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusInternalServerError,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error": "Internal server error"}`,
-		}, nil
-	}
+	log.Info("webfinger request successful",
+		zap.String("username", username),
+	)
 
-	return events.APIGatewayProxyResponse{
-		StatusCode: http.StatusOK,
-		Headers: map[string]string{
-			"Content-Type":                "application/jrd+json",
-			"Access-Control-Allow-Origin": "*",
-			"Cache-Control":               "max-age=86400", // Cache for 24 hours
-		},
-		Body: string(body),
-	}, nil
+	// Return WebFinger response with proper content type
+	resp := common.JSONResponse(200, response)
+	resp.Headers["Content-Type"] = "application/jrd+json"
+	resp.Headers["Cache-Control"] = "max-age=86400" // Cache for 24 hours
+
+	return resp, nil
 }
 
 func main() {

@@ -8,6 +8,11 @@
 - [x] Initialized Go module structure
 - [x] Created directory structure for Lambda functions and packages
 - [x] Added AWS SDK dependencies
+- [x] **Created Developer Guidelines** (DEVELOPER_GUIDELINES.md)
+  - Technology stack decisions (zap for logging, no heavy frameworks)
+  - Naming conventions and file structure
+  - Testing strategy with examples
+  - Security and performance guidelines
 
 ### 2. Core Packages
 - [x] **pkg/activitypub/types.go** - Complete ActivityPub type definitions
@@ -15,6 +20,13 @@
   - Collections and OrderedCollections
   - WebFinger types
   - Helper functions and constants
+
+- [x] **pkg/activitypub/validation.go** - Input validation
+  - Username validation with regex
+  - URL validation
+  - Actor, Activity, and Note validation
+  - Basic HTML sanitization
+  - Comprehensive test coverage
   
 - [x] **pkg/config/config.go** - Configuration management
   - Environment variable handling
@@ -27,11 +39,18 @@
   - Relationship operations
   - DynamoDB record types
 
+- [x] **pkg/common/** - Common utilities
+  - **logging.go** - Zap logger setup with Lambda context
+  - **errors.go** - Domain-specific error types
+  - **response.go** - Consistent Lambda response helpers
+
 ### 3. Lambda Functions
 - [x] **cmd/webfinger/main.go** - WebFinger discovery endpoint
   - Handles .well-known/webfinger requests
   - Parses acct: URIs
   - Returns proper WebFinger responses
+  - Refactored to use common utilities
+  - Structured logging with zap
   - TODO: Connect to actual storage
 
 ## In Progress 🚧
@@ -76,6 +95,9 @@
 2. **Lambda Per Endpoint** - Each ActivityPub endpoint gets its own Lambda for isolation
 3. **Background Processing via SQS** - Decouple activity processing from HTTP requests
 4. **JWT for Client Auth** - Simple client authentication separate from federation
+5. **Zap for Logging** - Fast, structured logging optimized for Lambda
+6. **No Heavy Frameworks** - Direct Lambda handlers to minimize cold starts
+7. **Table-Driven Tests** - Comprehensive test coverage with clear test cases
 
 ### Open Questions:
 1. Should we use DynamoDB Streams or SQS for activity delivery?
@@ -84,16 +106,36 @@
 
 ## Testing Strategy 🧪
 
+### Unit Tests Completed:
+- [x] ActivityPub validation functions
+- [x] WebFinger parsing
+- [x] URL validation
+- [x] HTML sanitization
+
 ### Unit Tests Needed:
 - [ ] ActivityPub type marshaling/unmarshaling
 - [ ] HTTP signature verification
 - [ ] DynamoDB key generation
-- [ ] WebFinger parsing
+- [ ] Common response utilities
 
 ### Integration Tests Needed:
 - [ ] End-to-end federation test with Mastodon
 - [ ] Activity delivery reliability
 - [ ] Media upload and serving
+
+## Code Quality 📊
+
+### Standards Established:
+- **Naming Conventions**: camelCase for functions/variables, PascalCase for types
+- **Error Handling**: Domain-specific error types with proper error wrapping
+- **Logging**: Structured logging with request IDs and context
+- **Testing**: Table-driven tests with descriptive names
+- **Documentation**: Comprehensive godoc comments
+
+### Linting & Formatting:
+- `gofmt` for consistent formatting
+- `golangci-lint` for code quality checks
+- All tests passing ✅
 
 ## Known Limitations 🚨
 
