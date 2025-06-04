@@ -1,0 +1,110 @@
+# Lesser - Implementation Progress
+
+## Completed ✅
+
+### 1. Project Setup
+- [x] Created comprehensive design document (DESIGN.md)
+- [x] Updated README with project overview
+- [x] Initialized Go module structure
+- [x] Created directory structure for Lambda functions and packages
+- [x] Added AWS SDK dependencies
+
+### 2. Core Packages
+- [x] **pkg/activitypub/types.go** - Complete ActivityPub type definitions
+  - Actor, Activity, Object types
+  - Collections and OrderedCollections
+  - WebFinger types
+  - Helper functions and constants
+  
+- [x] **pkg/config/config.go** - Configuration management
+  - Environment variable handling
+  - URL generation helpers
+  - Instance configuration
+
+- [x] **pkg/storage/interface.go** - Storage interface definition
+  - Actor operations
+  - Activity operations
+  - Relationship operations
+  - DynamoDB record types
+
+### 3. Lambda Functions
+- [x] **cmd/webfinger/main.go** - WebFinger discovery endpoint
+  - Handles .well-known/webfinger requests
+  - Parses acct: URIs
+  - Returns proper WebFinger responses
+  - TODO: Connect to actual storage
+
+## In Progress 🚧
+
+### Next Steps (Phase 1: Core ActivityPub)
+1. [ ] **DynamoDB Storage Implementation**
+   - Implement the storage interface for DynamoDB
+   - Create helper functions for key generation
+   - Add connection pooling
+
+2. [ ] **HTTP Signatures Package**
+   - Signature verification for incoming requests
+   - Signature generation for outgoing requests
+   - Key management
+
+3. [ ] **Actor Profile Endpoint** (cmd/actor)
+   - GET handler for actor profiles
+   - Content negotiation (HTML vs ActivityStreams)
+   - Public key serving
+
+4. [ ] **Inbox Endpoint** (cmd/inbox)
+   - POST handler for receiving activities
+   - HTTP signature verification
+   - Activity validation
+   - Queue activities for processing
+
+5. [ ] **Outbox Endpoint** (cmd/outbox)
+   - GET handler for public activities
+   - POST handler for creating activities
+   - Activity validation
+
+6. [ ] **Pulumi Infrastructure**
+   - DynamoDB table definitions
+   - Lambda function deployments
+   - API Gateway configuration
+   - IAM roles and policies
+
+## Architecture Decisions 📋
+
+### Key Design Choices Made:
+1. **Single DynamoDB Table Design** - Using composite keys for efficient queries
+2. **Lambda Per Endpoint** - Each ActivityPub endpoint gets its own Lambda for isolation
+3. **Background Processing via SQS** - Decouple activity processing from HTTP requests
+4. **JWT for Client Auth** - Simple client authentication separate from federation
+
+### Open Questions:
+1. Should we use DynamoDB Streams or SQS for activity delivery?
+2. How should we handle media storage lifecycle policies?
+3. Should we implement a shared inbox for efficiency?
+
+## Testing Strategy 🧪
+
+### Unit Tests Needed:
+- [ ] ActivityPub type marshaling/unmarshaling
+- [ ] HTTP signature verification
+- [ ] DynamoDB key generation
+- [ ] WebFinger parsing
+
+### Integration Tests Needed:
+- [ ] End-to-end federation test with Mastodon
+- [ ] Activity delivery reliability
+- [ ] Media upload and serving
+
+## Known Limitations 🚨
+
+1. **No Real Storage Yet** - All endpoints return mock data
+2. **No Authentication** - No way to create or authenticate users
+3. **No Activity Processing** - Activities are received but not processed
+4. **No Federation** - Can't actually communicate with other servers yet
+
+## Resources 📚
+
+- [ActivityPub Specification](https://www.w3.org/TR/activitypub/)
+- [WebFinger RFC 7033](https://tools.ietf.org/html/rfc7033)
+- [HTTP Signatures Draft](https://datatracker.ietf.org/doc/html/draft-cavage-http-signatures)
+- [Mastodon ActivityPub Implementation](https://docs.joinmastodon.org/spec/activitypub/) 
