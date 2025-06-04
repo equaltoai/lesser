@@ -1,6 +1,7 @@
 package activitypub
 
 import (
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -158,12 +159,12 @@ func ValidateActivity(activity *Activity) error {
 	// Validate activity type
 	switch activity.Type {
 	case CreateType, UpdateType, DeleteType, FollowType, AcceptType,
-		RejectType, LikeType, AnnounceType, UndoType:
+		RejectType, LikeType, AnnounceType, UndoType, BlockType:
 		// Valid types
 	default:
 		return common.ValidationError{
 			Field:   "type",
-			Message: "invalid activity type",
+			Message: fmt.Sprintf("invalid activity type: %s", activity.Type),
 		}
 	}
 

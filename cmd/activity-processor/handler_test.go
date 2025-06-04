@@ -8,96 +8,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
-// MockStorage is a mock implementation of storage.Storage
+// MockStorage embeds the centralized mock and overrides only what we need
 type MockStorage struct {
-	mock.Mock
+	mocks.MockStorage
 }
 
-func (m *MockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
-	args := m.Called(ctx, actor, privateKey)
-	return args.Error(0)
-}
-
-func (m *MockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	args := m.Called(ctx, username)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.Actor), args.Error(1)
-}
-
-func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
-	args := m.Called(ctx, username)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockStorage) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
-	args := m.Called(ctx, actor)
-	return args.Error(0)
-}
-
-func (m *MockStorage) DeleteActor(ctx context.Context, username string) error {
-	args := m.Called(ctx, username)
-	return args.Error(0)
-}
-
-func (m *MockStorage) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
-	args := m.Called(ctx, activity)
-	return args.Error(0)
-}
-
-func (m *MockStorage) GetActivity(ctx context.Context, id string) (*activitypub.Activity, error) {
-	args := m.Called(ctx, id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.Activity), args.Error(1)
-}
-
-func (m *MockStorage) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
-}
-
-func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
-}
-
-func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
-	args := m.Called(ctx, object)
-	return args.Error(0)
-}
-
-func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
-	args := m.Called(ctx, id)
-	return args.Get(0), args.Error(1)
-}
-
-func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
-	args := m.Called(ctx, object)
-	return args.Error(0)
-}
-
-func (m *MockStorage) DeleteObject(ctx context.Context, id string) error {
-	args := m.Called(ctx, id)
-	return args.Error(0)
-}
-
+// Override only the methods that need mock expectations in these tests
 func (m *MockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
 	args := m.Called(ctx, followerUsername, followedUsername, followActivityID)
 	return args.Error(0)
@@ -108,43 +32,14 @@ func (m *MockStorage) AcceptFollow(ctx context.Context, followerUsername, follow
 	return args.Error(0)
 }
 
-func (m *MockStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	args := m.Called(ctx, followerUsername, followedUsername)
+func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
+	args := m.Called(ctx, object)
 	return args.Error(0)
 }
 
-func (m *MockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	args := m.Called(ctx, followerUsername, followedUsername)
-	return args.Error(0)
-}
-
-func (m *MockStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]string), args.String(1), args.Error(2)
-}
-
-func (m *MockStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]string), args.String(1), args.Error(2)
-}
-
-func (m *MockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
-	args := m.Called(ctx, followerUsername, followedUsername)
-	return args.Bool(0), args.Error(1)
-}
-
-func (m *MockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
-	args := m.Called(ctx, username, collectionType, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.OrderedCollectionPage), args.Error(1)
+func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
+	args := m.Called(ctx, username)
+	return args.String(0), args.Error(1)
 }
 
 func TestParseActivityRecord(t *testing.T) {

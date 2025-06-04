@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
@@ -18,6 +19,7 @@ import (
 // Mock storage for testing
 type mockStorage struct {
 	mock.Mock
+	mocks.BaseMockStorage // Embed all base methods
 }
 
 func (m *mockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {

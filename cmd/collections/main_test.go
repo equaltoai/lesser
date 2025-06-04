@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
@@ -18,6 +19,7 @@ import (
 // MockStorage is a mock implementation of storage.Storage
 type MockStorage struct {
 	mock.Mock
+	mocks.BaseMockStorage
 }
 
 func (m *MockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {

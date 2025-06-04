@@ -196,6 +196,29 @@ type Undo struct {
 	Activity
 }
 
+// Flag represents a flag activity for content moderation
+type Flag struct {
+	Activity
+}
+
+// Move represents a move activity for account migration
+type Move struct {
+	Activity
+	Target string `json:"target"` // The new account location
+}
+
+// Add represents an add activity for adding items to collections
+type Add struct {
+	Activity
+	Target string `json:"target"` // The collection to add to
+}
+
+// Remove represents a remove activity for removing items from collections
+type Remove struct {
+	Activity
+	Target string `json:"target"` // The collection to remove from
+}
+
 // WebFingerResource represents a WebFinger response
 type WebFingerResource struct {
 	Subject string          `json:"subject"`
@@ -274,6 +297,11 @@ const (
 	LikeType     = "Like"
 	AnnounceType = "Announce"
 	UndoType     = "Undo"
+	BlockType    = "Block"
+	FlagType     = "Flag"
+	MoveType     = "Move"
+	AddType      = "Add"
+	RemoveType   = "Remove"
 
 	// Object types
 	NoteType              = "Note"

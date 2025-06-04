@@ -152,6 +152,12 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 
 // returnCollectionPage returns a page of the collection
 func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collectionType string, usernames []string, cursor, nextCursor string, limit int) (events.APIGatewayProxyResponse, error) {
+	log := common.WithContext(ctx)
+	log.Debug("returning collection page",
+		zap.String("actor", actor.ID),
+		zap.String("collection_type", collectionType),
+		zap.Int("item_count", len(usernames)))
+
 	// Build collection and page URLs
 	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
 	pageID := fmt.Sprintf("%s?page=true", collectionID)

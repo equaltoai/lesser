@@ -1,0 +1,7 @@
+name: lesser
+description: Infrastructure for Lesser ActivityPub Server
+runtime: go
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-go

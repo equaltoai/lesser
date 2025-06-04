@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -14,60 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-const testTableName = "lesser-test"
-
-// mockDynamoDBClient is a mock implementation of the DynamoDB client
-type mockDynamoDBClient struct {
-	mock.Mock
-}
-
-func (m *mockDynamoDBClient) PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.PutItemOutput), args.Error(1)
-}
-
-func (m *mockDynamoDBClient) GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.GetItemOutput), args.Error(1)
-}
-
-func (m *mockDynamoDBClient) UpdateItem(ctx context.Context, params *dynamodb.UpdateItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.UpdateItemOutput), args.Error(1)
-}
-
-func (m *mockDynamoDBClient) DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.DeleteItemOutput), args.Error(1)
-}
-
-func (m *mockDynamoDBClient) Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.QueryOutput), args.Error(1)
-}
-
-func (m *mockDynamoDBClient) Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*dynamodb.ScanOutput), args.Error(1)
-}
+const testTableName = "test-table"
 
 func TestCreateFollow(t *testing.T) {
 	tests := []struct {
@@ -75,7 +23,7 @@ func TestCreateFollow(t *testing.T) {
 		followerUsername string
 		followedUsername string
 		followActivityID string
-		setupMock        func(*mockDynamoDBClient)
+		setupMock        func(*mocks.MockDynamoDBClient)
 		expectedError    bool
 		errorContains    string
 	}{
@@ -84,7 +32,7 @@ func TestCreateFollow(t *testing.T) {
 			followerUsername: "alice",
 			followedUsername: "bob",
 			followActivityID: "https://example.com/activities/123",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.PutItemInput) bool {
 					return *input.TableName == testTableName &&
 						input.Item["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
@@ -102,7 +50,7 @@ func TestCreateFollow(t *testing.T) {
 			followerUsername: "alice",
 			followedUsername: "bob",
 			followActivityID: "https://example.com/activities/123",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", mock.Anything, mock.Anything).Return(
 					nil, &types.ConditionalCheckFailedException{Message: aws.String("already exists")})
 			},
@@ -113,7 +61,7 @@ func TestCreateFollow(t *testing.T) {
 			followerUsername: "alice",
 			followedUsername: "bob",
 			followActivityID: "https://example.com/activities/123",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", mock.Anything, mock.Anything).Return(
 					nil, errors.New("dynamodb error"))
 			},
@@ -124,7 +72,7 @@ func TestCreateFollow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			s := NewWithClient(mockClient, testTableName)
@@ -150,7 +98,7 @@ func TestAcceptFollow(t *testing.T) {
 		name             string
 		followerUsername string
 		followedUsername string
-		setupMock        func(*mockDynamoDBClient)
+		setupMock        func(*mocks.MockDynamoDBClient)
 		expectedError    bool
 		errorContains    string
 	}{
@@ -158,7 +106,7 @@ func TestAcceptFollow(t *testing.T) {
 			name:             "successful accept",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("UpdateItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.UpdateItemInput) bool {
 					return *input.TableName == testTableName &&
 						input.Key["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
@@ -172,7 +120,7 @@ func TestAcceptFollow(t *testing.T) {
 			name:             "relationship not found",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("UpdateItem", mock.Anything, mock.Anything).Return(
 					nil, &types.ConditionalCheckFailedException{Message: aws.String("not found")})
 			},
@@ -183,7 +131,7 @@ func TestAcceptFollow(t *testing.T) {
 			name:             "dynamodb error",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("UpdateItem", mock.Anything, mock.Anything).Return(
 					nil, errors.New("dynamodb error"))
 			},
@@ -194,7 +142,7 @@ func TestAcceptFollow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			s := NewWithClient(mockClient, testTableName)
@@ -221,7 +169,7 @@ func TestGetFollowers(t *testing.T) {
 		username      string
 		limit         int
 		cursor        string
-		setupMock     func(*mockDynamoDBClient)
+		setupMock     func(*mocks.MockDynamoDBClient)
 		expected      []string
 		expectedNext  string
 		expectedError bool
@@ -232,7 +180,7 @@ func TestGetFollowers(t *testing.T) {
 			username: "bob",
 			limit:    10,
 			cursor:   "",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("Query", mock.Anything, mock.MatchedBy(func(input *dynamodb.QueryInput) bool {
 					return *input.TableName == testTableName &&
 						*input.IndexName == "GSI1" &&
@@ -260,7 +208,7 @@ func TestGetFollowers(t *testing.T) {
 			username: "bob",
 			limit:    10,
 			cursor:   "invalid-cursor",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				// The implementation returns error for invalid cursor, so Query won't be called
 			},
 			expected:      nil,
@@ -273,7 +221,7 @@ func TestGetFollowers(t *testing.T) {
 			username: "bob",
 			limit:    10,
 			cursor:   "",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("Query", mock.Anything, mock.Anything).Return(
 					nil, errors.New("dynamodb error"))
 			},
@@ -286,7 +234,7 @@ func TestGetFollowers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			s := NewWithClient(mockClient, testTableName)
@@ -319,7 +267,7 @@ func TestGetFollowing(t *testing.T) {
 		username      string
 		limit         int
 		cursor        string
-		setupMock     func(*mockDynamoDBClient)
+		setupMock     func(*mocks.MockDynamoDBClient)
 		expected      []string
 		expectedNext  string
 		expectedError bool
@@ -330,7 +278,7 @@ func TestGetFollowing(t *testing.T) {
 			username: "alice",
 			limit:    10,
 			cursor:   "",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("Query", mock.Anything, mock.MatchedBy(func(input *dynamodb.QueryInput) bool {
 					return *input.TableName == testTableName &&
 						input.ExpressionAttributeValues[":pk"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
@@ -357,7 +305,7 @@ func TestGetFollowing(t *testing.T) {
 			username: "alice",
 			limit:    10,
 			cursor:   "",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("Query", mock.Anything, mock.Anything).Return(&dynamodb.QueryOutput{
 					Items: []map[string]types.AttributeValue{
 						{
@@ -377,7 +325,7 @@ func TestGetFollowing(t *testing.T) {
 			username: "alice",
 			limit:    2,
 			cursor:   "",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("Query", mock.Anything, mock.Anything).Return(&dynamodb.QueryOutput{
 					Items: []map[string]types.AttributeValue{
 						{
@@ -404,7 +352,7 @@ func TestGetFollowing(t *testing.T) {
 			username: "alice",
 			limit:    10,
 			cursor:   "invalid-cursor",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				// Query won't be called due to cursor error
 			},
 			expected:      nil,
@@ -417,7 +365,7 @@ func TestGetFollowing(t *testing.T) {
 			username: "alice",
 			limit:    10,
 			cursor:   "",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("Query", mock.Anything, mock.Anything).Return(
 					nil, errors.New("dynamodb error"))
 			},
@@ -430,7 +378,7 @@ func TestGetFollowing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			s := NewWithClient(mockClient, testTableName)
@@ -464,7 +412,7 @@ func TestIsFollowing(t *testing.T) {
 		name             string
 		followerUsername string
 		followedUsername string
-		setupMock        func(*mockDynamoDBClient)
+		setupMock        func(*mocks.MockDynamoDBClient)
 		expected         bool
 		expectedError    bool
 		errorContains    string
@@ -473,7 +421,7 @@ func TestIsFollowing(t *testing.T) {
 			name:             "following with accepted state",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.GetItemInput) bool {
 					return *input.TableName == testTableName &&
 						input.Key["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
@@ -493,7 +441,7 @@ func TestIsFollowing(t *testing.T) {
 			name:             "following with pending state",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.Anything).Return(&dynamodb.GetItemOutput{
 					Item: map[string]types.AttributeValue{
 						"State":     &types.AttributeValueMemberS{Value: storage.RelationshipPending},
@@ -509,7 +457,7 @@ func TestIsFollowing(t *testing.T) {
 			name:             "not following",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.Anything).Return(&dynamodb.GetItemOutput{
 					Item: nil,
 				}, nil)
@@ -521,7 +469,7 @@ func TestIsFollowing(t *testing.T) {
 			name:             "dynamodb error",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.Anything).Return(
 					nil, errors.New("dynamodb error"))
 			},
@@ -533,7 +481,7 @@ func TestIsFollowing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			s := NewWithClient(mockClient, testTableName)
@@ -560,7 +508,7 @@ func TestRejectFollow(t *testing.T) {
 		name             string
 		followerUsername string
 		followedUsername string
-		setupMock        func(*mockDynamoDBClient)
+		setupMock        func(*mocks.MockDynamoDBClient)
 		expectedError    bool
 		errorContains    string
 	}{
@@ -568,7 +516,7 @@ func TestRejectFollow(t *testing.T) {
 			name:             "successful reject",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("UpdateItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.UpdateItemInput) bool {
 					return *input.TableName == testTableName &&
 						input.Key["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
@@ -582,7 +530,7 @@ func TestRejectFollow(t *testing.T) {
 			name:             "dynamodb error",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("UpdateItem", mock.Anything, mock.Anything).Return(
 					nil, errors.New("dynamodb error"))
 			},
@@ -593,7 +541,7 @@ func TestRejectFollow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			s := NewWithClient(mockClient, testTableName)
@@ -619,7 +567,7 @@ func TestRemoveFollow(t *testing.T) {
 		name             string
 		followerUsername string
 		followedUsername string
-		setupMock        func(*mockDynamoDBClient)
+		setupMock        func(*mocks.MockDynamoDBClient)
 		expectedError    bool
 		errorContains    string
 	}{
@@ -627,7 +575,7 @@ func TestRemoveFollow(t *testing.T) {
 			name:             "successful remove",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("DeleteItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.DeleteItemInput) bool {
 					return *input.TableName == testTableName &&
 						input.Key["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
@@ -640,7 +588,7 @@ func TestRemoveFollow(t *testing.T) {
 			name:             "dynamodb error",
 			followerUsername: "alice",
 			followedUsername: "bob",
-			setupMock: func(m *mockDynamoDBClient) {
+			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("DeleteItem", mock.Anything, mock.Anything).Return(
 					nil, errors.New("dynamodb error"))
 			},
@@ -651,7 +599,7 @@ func TestRemoveFollow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockDynamoDBClient)
+			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
 			s := NewWithClient(mockClient, testTableName)

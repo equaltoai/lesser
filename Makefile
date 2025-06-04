@@ -131,4 +131,55 @@ help:
 	@echo "  dev-init        - Initialize development environment"
 	@echo "  tidy            - Run go mod tidy"
 	@echo "  vendor          - Vendor dependencies"
-	@echo "  help            - Show this help" 
+	@echo "  help            - Show this help"
+
+.PHONY: integration-test
+integration-test:
+	@echo "Running integration tests..."
+	@$(TEST_ENV) go test -tags=integration -v -timeout=30s ./...
+
+.PHONY: build-lambdas
+build-lambdas:
+	@echo "Building Lambda functions..."
+	@mkdir -p bin
+	@echo "Building api..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/api ./cmd/api
+	@cd bin && zip -q api.zip api && rm api
+	@echo "Building actor..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/actor ./cmd/actor
+	@cd bin && zip -q actor.zip actor && rm actor
+	@echo "Building inbox..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/inbox ./cmd/inbox
+	@cd bin && zip -q inbox.zip inbox && rm inbox
+	@echo "Building outbox..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/outbox ./cmd/outbox
+	@cd bin && zip -q outbox.zip outbox && rm outbox
+	@echo "Building collections..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/collections ./cmd/collections
+	@cd bin && zip -q collections.zip collections && rm collections
+	@echo "Building objects..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/objects ./cmd/objects
+	@cd bin && zip -q objects.zip objects && rm objects
+	@echo "Building webfinger..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/webfinger ./cmd/webfinger
+	@cd bin && zip -q webfinger.zip webfinger && rm webfinger
+	@echo "Building auth..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/auth ./cmd/auth
+	@cd bin && zip -q auth.zip auth && rm auth
+	@echo "Building media..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/media ./cmd/media
+	@cd bin && zip -q media.zip media && rm media
+	@echo "Building activity-processor..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/activity-processor ./cmd/activity-processor
+	@cd bin && zip -q activity-processor.zip activity-processor && rm activity-processor
+	@echo "Lambda functions built successfully!"
+
+.PHONY: deploy
+deploy: build-lambdas
+	@echo "Deploying with Pulumi..."
+	@cd infra && pulumi up
+
+.PHONY: deploy-preview
+deploy-preview: build-lambdas
+	@echo "Previewing deployment..."
+	@cd infra && pulumi preview 
