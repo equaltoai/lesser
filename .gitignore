@@ -11,11 +11,8 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
-coverage.*
-*.coverprofile
-profile.cov
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -30,3 +27,41 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Build artifacts
+bin/
+dist/
+
+# Coverage files
+coverage.out
+coverage.html
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Pulumi
+Pulumi.*.yaml
+.pulumi/
+
+# Local DynamoDB
+.dynamodb/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+
+# Log files
+*.log
+
+# Environment specific files
+.env.local
+.env.*.local

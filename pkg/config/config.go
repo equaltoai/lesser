@@ -1,0 +1,126 @@
+package config
+
+import (
+	"fmt"
+	"os"
+)
+
+// Config holds the application configuration
+type Config struct {
+	// Instance configuration
+	Domain       string // e.g., "example.com"
+	InstanceName string // e.g., "My ActivityPub Server"
+
+	// AWS configuration
+	Region          string
+	DynamoTableName string
+	S3BucketName    string
+	SQSQueueURL     string
+
+	// Security
+	JWTSecret string // For client authentication
+
+	// Features
+	MaxUploadSize     int64 // Maximum file upload size in bytes
+	PageSize          int   // Default pagination size
+	AllowRegistration bool  // Whether new users can register
+}
+
+var config *Config
+
+// Get returns the current configuration
+func Get() *Config {
+	if config == nil {
+		config = loadConfig()
+	}
+	return config
+}
+
+// loadConfig loads configuration from environment variables
+func loadConfig() *Config {
+	cfg := &Config{
+		Domain:       getEnvOrDefault("DOMAIN", "localhost"),
+		InstanceName: getEnvOrDefault("INSTANCE_NAME", "Lesser ActivityPub Server"),
+
+		Region:          getEnvOrDefault("AWS_REGION", "us-east-1"),
+		DynamoTableName: getEnvOrDefault("DYNAMO_TABLE_NAME", "lesser-main"),
+		S3BucketName:    getEnvOrDefault("S3_BUCKET_NAME", "lesser-media"),
+		SQSQueueURL:     getEnvOrDefault("SQS_QUEUE_URL", ""),
+
+		JWTSecret: getEnvOrPanic("JWT_SECRET"),
+
+		MaxUploadSize:     getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
+		PageSize:          getEnvAsIntOrDefault("PAGE_SIZE", 20),
+		AllowRegistration: getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
+	}
+
+	return cfg
+}
+
+// BaseURL returns the base URL for the instance
+func (c *Config) BaseURL() string {
+	protocol := "https"
+	if c.Domain == "localhost" || c.Domain == "127.0.0.1" {
+		protocol = "http"
+	}
+	return fmt.Sprintf("%s://%s", protocol, c.Domain)
+}
+
+// ActorURL returns the URL for an actor
+func (c *Config) ActorURL(username string) string {
+	return fmt.Sprintf("%s/users/%s", c.BaseURL(), username)
+}
+
+// ObjectURL returns the URL for an object
+func (c *Config) ObjectURL(objectType, id string) string {
+	return fmt.Sprintf("%s/%s/%s", c.BaseURL(), objectType, id)
+}
+
+// Helper functions
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvOrPanic(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		panic(fmt.Sprintf("Required environment variable %s is not set", key))
+	}
+	return value
+}
+
+func getEnvAsIntOrDefault(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	var result int
+	if _, err := fmt.Sscanf(value, "%d", &result); err != nil {
+		return defaultValue
+	}
+	return result
+}
+
+func getEnvAsInt64OrDefault(key string, defaultValue int64) int64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	var result int64
+	if _, err := fmt.Sscanf(value, "%d", &result); err != nil {
+		return defaultValue
+	}
+	return result
+}
+
+func getEnvAsBoolOrDefault(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value == "true" || value == "1" || value == "yes"
+}

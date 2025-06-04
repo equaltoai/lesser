@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+lesser is a serverless ActivityPub implementation written in go
+
+the goal is to provide a flexible ActivityPub core that can be extended to various use cases
+
+https://www.w3.org/TR/activitypub/
