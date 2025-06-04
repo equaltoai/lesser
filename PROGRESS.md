@@ -113,7 +113,7 @@
   - Integration with ActivityPub
   - Future enhancements
 
-### 6. Actor Profile Endpoint ✅ (NEW)
+### 6. Actor Profile Endpoint ✅
 - [x] **cmd/actor/main.go** - Actor profile handler
   - GET /users/{username} endpoint
   - Content negotiation (JSON vs HTML)
@@ -121,6 +121,7 @@
   - Beautiful HTML profile pages for browsers
   - Public key serving for HTTP signatures
   - Connected to DynamoDB storage
+  - 95.5% test coverage
 
 - [x] **cmd/actor/handler_test.go** - Comprehensive unit tests
   - Mock storage implementation
@@ -139,43 +140,85 @@
   - Complete discovery flow working
   - WebFinger → Actor Profile → Public Key
 
+### 7. Inbox Endpoint ✅ (NEW)
+- [x] **cmd/inbox/main.go** - Inbox handler
+  - POST /users/{username}/inbox endpoint
+  - HTTP signature verification for authentication
+  - Fetches sender's public key from actor profile
+  - Activity validation (ID, Actor, Type required)
+  - Addressing verification (to, cc, bto, bcc)
+  - Stores activities in DynamoDB
+  - Returns 202 Accepted for valid activities
+
+- [x] **cmd/inbox/handler_test.go** - Comprehensive test suite
+  - Mock HTTP server for testing actor fetching
+  - Tests for signature verification
+  - Tests for activity validation
+  - Tests for addressing verification
+  - 79.5% test coverage
+
+### 8. Outbox Endpoint ✅ (NEW)
+- [x] **cmd/outbox/main.go** - Outbox handler
+  - POST /users/{username}/outbox endpoint
+  - Accepts activities from local users
+  - Validates actor matches authenticated user
+  - Auto-generates activity IDs if not provided
+  - Activity validation using activitypub package
+  - Stores activities in DynamoDB
+  - Returns 201 Created with the activity
+
+- [x] **cmd/outbox/handler_test.go** - Comprehensive test suite
+  - Mock storage implementation
+  - Tests for activity creation
+  - Tests for auto-generated IDs
+  - Tests for auto-filled actor
+  - Tests for validation errors
+  - 84.7% test coverage
+
 ## In Progress 🚧
 
-### Next: Inbox Endpoint 🎯
-This is the critical next step to enable receiving federated activities:
+### Next: Activity Processor 🎯
+This is the critical next step to enable processing and delivering federated activities:
 
-1. [ ] **Inbox Endpoint** (cmd/inbox)
-   - POST handler for receiving activities
-   - HTTP signature verification using federation package
-   - Activity validation
-   - Store activities in DynamoDB
-   - Queue activities for processing (DynamoDB Streams)
+1. [ ] **Activity Processor** (cmd/activity-processor)
+   - Background Lambda triggered by DynamoDB Streams
+   - Process incoming inbox activities (Accept follows, etc.)
+   - Deliver outbox activities to remote servers
+   - HTTP signature signing for outgoing requests
+   - Handle retries and failures
 
 ### Phase 1: Core ActivityPub (Remaining)
 
-2. [ ] **Remaining Storage Operations**
+2. [ ] **GET Outbox Handler**
+   - Retrieve activities from user's outbox
+   - Pagination support
+   - Public/authenticated access control
+
+3. [ ] **Activity Delivery System**
+   - Sign requests with HTTP signatures
+   - Deliver to recipient inboxes
+   - Handle failures and retries
+   - Track delivery status
+
+4. [ ] **Remaining Storage Operations**
    - Object storage (Notes, Articles, etc.)
    - Relationship operations (follows)
    - Collection operations
    - DynamoDB transactions for atomic operations
-
-3. [ ] **Outbox Endpoint** (cmd/outbox)
-   - GET handler for public activities
-   - POST handler for creating activities
-   - Activity validation
-
-4. [ ] **Activity Processor** (cmd/activity-processor)
-   - Background Lambda triggered by DynamoDB Streams
-   - Process incoming activities (follows, likes, etc.)
-   - Deliver activities to remote servers (using HTTP signatures)
-   - Handle retries and failures
 
 5. [ ] **Collections Endpoint** (cmd/collections)
    - GET handlers for followers/following collections
    - Pagination support
    - Proper authorization
 
-6. [ ] **Pulumi Infrastructure**
+6. [ ] **OAuth 2.0 Implementation**
+   - Authorization endpoint
+   - Token endpoint
+   - Client registration
+   - Scopes and permissions
+   - PKCE support
+
+7. [ ] **Pulumi Infrastructure**
    - DynamoDB table definitions
    - Lambda function deployments
    - API Gateway configuration
@@ -211,19 +254,21 @@ This is the critical next step to enable receiving federated activities:
 - [x] DynamoDB Activity Operations - Create and query operations
 - [x] HTTP Signature Operations - Parsing, verification, generation, key management
 - [x] Actor Profile Handler - Content negotiation, error handling
+- [x] Inbox Handler - Signature verification, activity validation
 
 ### Unit Tests Needed:
 - [ ] ActivityPub type marshaling/unmarshaling
 - [ ] DynamoDB object and relationship operations
-- [ ] Inbox handler
 - [ ] Outbox handler
 - [ ] Activity processor logic
+- [ ] OAuth 2.0 flows
 
 ### Integration Tests Completed:
 - [x] DynamoDB Actor Lifecycle - Full CRUD cycle against local DynamoDB
 - [x] DynamoDB Activity Pagination - Cursor-based pagination testing
 - [x] HTTP Signature End-to-End - Sign and verify full cycle
 - [x] WebFinger → Actor Profile Discovery - Complete flow working
+- [x] Inbox HTTP Signature Verification - Full verification flow
 
 ### Integration Tests Needed:
 - [ ] End-to-end federation test with Mastodon
@@ -243,7 +288,9 @@ This is the critical next step to enable receiving federated activities:
 ### Test Coverage:
 - `pkg/federation`: 87.4%
 - `pkg/storage/dynamodb`: >80%
-- `cmd/actor`: Unit tests passing
+- `cmd/actor`: 95.5%
+- `cmd/inbox`: 79.5%
+- `cmd/outbox`: 84.7%
 - `cmd/webfinger`: Needs unit tests
 
 ### Linting & Formatting:
@@ -269,12 +316,15 @@ This is the critical next step to enable receiving federated activities:
 - ✅ **Public Keys**: Actors include public keys for signature verification
 - ✅ **Content Negotiation**: Proper JSON/HTML responses
 - ✅ **HTTP Signatures**: Can verify and sign federation requests
+- ✅ **Receiving Activities**: Inbox can receive and verify activities from other servers
+- ✅ **Creating Activities**: Outbox can accept and store activities from local users
 
 ### What's Missing:
-- ❌ **Inbox**: Can't receive activities from other servers
-- ❌ **Outbox**: Can't create or serve local activities
+- ❌ **GET Outbox**: Can't retrieve/serve local activities yet
+- ❌ **Activity Processing**: Received activities aren't processed (follows, likes, etc.)
 - ❌ **Activity Delivery**: Can't send activities to other servers
 - ❌ **Collections**: No followers/following lists
+- ❌ **Authentication**: No way for local users to authenticate
 - ❌ **Media**: No support for images/attachments
 
 ## Resources 📚

@@ -77,7 +77,31 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 
 ---
 
-### 3. Client Authentication Strategy
+### 3. Actor Profile Content Negotiation
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Support both HTML and ActivityStreams JSON responses
+
+**Context:**
+- ActivityPub servers need JSON responses
+- Humans need readable HTML profiles
+- Must serve public keys for federation
+
+**Implementation:**
+- `cmd/actor/main.go` - Dual-format responses
+- Content-Type detection based on Accept header
+- Beautiful responsive HTML with Tailwind-inspired styling
+- ActivityStreams JSON with public key
+- 95.5% test coverage
+
+**Benefits:**
+- Single endpoint serves both audiences
+- Better user experience for web browsers
+- Full federation compliance
+- SEO-friendly HTML with meta tags
+
+---
+
+### 4. Client Authentication Strategy
 **Status:** 📋 PLANNED  
 **Decision:** OAuth 2.0 with PKCE
 
@@ -119,7 +143,7 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 
 ---
 
-### 4. Activity Delivery Architecture
+### 5. Activity Delivery Architecture
 **Status:** 📋 PLANNED  
 **Decision:** DynamoDB Streams → Lambda
 
@@ -145,7 +169,7 @@ func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext strin
 
 ---
 
-### 5. GetActivity Performance
+### 6. GetActivity Performance
 **Status:** 🔧 OPTIMIZATION NEEDED  
 **Decision:** Add GSI2 for activity lookups
 
@@ -168,7 +192,7 @@ GSI2SK: METADATA
 
 ---
 
-### 6. Shared Inbox Strategy
+### 7. Shared Inbox Strategy
 **Status:** 🟢 DEFERRED  
 **Decision:** Implement individual inboxes first
 
@@ -185,7 +209,7 @@ GSI2SK: METADATA
 
 ---
 
-### 7. Media Storage Architecture
+### 8. Media Storage Architecture
 **Status:** 🟢 DEFERRED  
 **Decision:** S3 with CloudFront CDN
 
@@ -202,7 +226,7 @@ GSI2SK: METADATA
 
 ---
 
-### 8. Federation Protocol Support
+### 9. Federation Protocol Support
 **Status:** 📋 PLANNED  
 **Decision:** ActivityPub S2S only initially
 
@@ -218,7 +242,7 @@ GSI2SK: METADATA
 
 ---
 
-### 9. Database Design
+### 10. Database Design
 **Status:** ✅ IMPLEMENTED  
 **Decision:** Single-table DynamoDB design
 
@@ -235,7 +259,7 @@ GSI2SK: METADATA
 
 ---
 
-### 10. Lambda Architecture
+### 11. Lambda Architecture
 **Status:** ✅ IMPLEMENTED  
 **Decision:** One Lambda per endpoint
 
@@ -252,7 +276,7 @@ GSI2SK: METADATA
 
 ---
 
-### 11. Infrastructure as Code
+### 12. Infrastructure as Code
 **Status:** 📋 PLANNED  
 **Decision:** Pulumi with TypeScript
 
