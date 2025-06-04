@@ -144,41 +144,6 @@ func (s *dynamoDBStorage) DeleteObject(ctx context.Context, id string) error {
 	panic("implemented in object.go")
 }
 
-// CreateFollow - implemented in relationship.go
-func (s *dynamoDBStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
-	panic("implemented in relationship.go")
-}
-
-// AcceptFollow - implemented in relationship.go
-func (s *dynamoDBStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	panic("implemented in relationship.go")
-}
-
-// RejectFollow - implemented in relationship.go
-func (s *dynamoDBStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	panic("implemented in relationship.go")
-}
-
-// RemoveFollow - implemented in relationship.go
-func (s *dynamoDBStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	panic("implemented in relationship.go")
-}
-
-// GetFollowers - implemented in relationship.go
-func (s *dynamoDBStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	panic("implemented in relationship.go")
-}
-
-// GetFollowing - implemented in relationship.go
-func (s *dynamoDBStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	panic("implemented in relationship.go")
-}
-
-// IsFollowing - implemented in relationship.go
-func (s *dynamoDBStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
-	panic("implemented in relationship.go")
-}
-
 // GetCollection - implemented in collection.go
 func (s *dynamoDBStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
 	panic("implemented in collection.go")

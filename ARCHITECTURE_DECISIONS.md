@@ -129,7 +129,36 @@ https://example.com/activities/20240115-143022-abc12345
 
 ---
 
-### 5. Client Authentication Strategy
+### 5. Collection Pagination Strategy
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Use OrderedCollection with cursor-based pagination
+
+**Context:**
+- ActivityPub requires OrderedCollection format
+- Need efficient pagination for large collections
+- Must support both collection metadata and pages
+
+**Implementation:**
+- OrderedCollection for metadata (no `?page` parameter)
+- OrderedCollectionPage for paginated results (`?page=true`)
+- Cursor-based pagination for scalability
+- Configurable limits (1-100 items)
+- 81.7% test coverage in outbox
+
+**Benefits:**
+- Standard ActivityPub compliance
+- Efficient for large datasets
+- No offset calculations needed
+- Consistent with other endpoints
+
+**Query Parameters:**
+- `page=true` - Get a page of items
+- `cursor=xxx` - Continue from cursor
+- `limit=20` - Items per page (1-100)
+
+---
+
+### 6. Client Authentication Strategy
 **Status:** 📋 PLANNED  
 **Decision:** OAuth 2.0 with PKCE
 
@@ -171,7 +200,7 @@ https://example.com/activities/20240115-143022-abc12345
 
 ---
 
-### 6. Activity Delivery Architecture
+### 7. Activity Delivery Architecture
 **Status:** ✅ IMPLEMENTED  
 **Decision:** DynamoDB Streams → Lambda
 
@@ -201,7 +230,7 @@ https://example.com/activities/20240115-143022-abc12345
 
 ---
 
-### 7. GetActivity Performance
+### 8. GetActivity Performance
 **Status:** 🔧 OPTIMIZATION NEEDED  
 **Decision:** Add GSI2 for activity lookups
 
@@ -224,7 +253,7 @@ GSI2SK: METADATA
 
 ---
 
-### 8. Shared Inbox Strategy
+### 9. Shared Inbox Strategy
 **Status:** 🟢 DEFERRED  
 **Decision:** Implement individual inboxes first
 
@@ -241,7 +270,7 @@ GSI2SK: METADATA
 
 ---
 
-### 9. Media Storage Architecture
+### 10. Media Storage Architecture
 **Status:** 🟢 DEFERRED  
 **Decision:** S3 with CloudFront CDN
 
@@ -258,7 +287,7 @@ GSI2SK: METADATA
 
 ---
 
-### 10. Federation Protocol Support
+### 11. Federation Protocol Support
 **Status:** 📋 PLANNED  
 **Decision:** ActivityPub S2S only initially
 
@@ -274,7 +303,7 @@ GSI2SK: METADATA
 
 ---
 
-### 11. Database Design
+### 12. Database Design
 **Status:** ✅ IMPLEMENTED  
 **Decision:** Single-table DynamoDB design
 
@@ -291,7 +320,7 @@ GSI2SK: METADATA
 
 ---
 
-### 12. Lambda Architecture
+### 13. Lambda Architecture
 **Status:** ✅ IMPLEMENTED  
 **Decision:** One Lambda per endpoint
 
@@ -308,7 +337,7 @@ GSI2SK: METADATA
 
 ---
 
-### 13. Infrastructure as Code
+### 14. Infrastructure as Code
 **Status:** 📋 PLANNED  
 **Decision:** Pulumi with TypeScript
 
