@@ -5,7 +5,7 @@
 
 You are helping develop Lesser, a serverless ActivityPub implementation that aims to be compatible with Mastodon clients. The project is written in Go and deployed on AWS using Lambda, DynamoDB, and API Gateway.
 
-**📚 Latest Achievement**: Full federation protocol implemented with remote follow, activity delivery, and inbox processing. AI-powered semantic search with OpenSearch vector similarity is operational!
+**📚 Latest Achievement**: Push notifications are now fully deployed! Users can receive real-time notifications for follows, favorites, reblogs, and mentions through Web Push Protocol.
 
 ## Project Overview
 
@@ -52,6 +52,15 @@ Lesser uses a modular architecture with:
   - Read/unread status tracking
 - **Account Relationships Batch** ✨
   - Batch endpoint for checking multiple relationships at once
+- **Push Notifications** ✨ NEW!
+  - VAPID key generation and storage
+  - Web Push subscription endpoints (GET/POST/PUT/DELETE)
+  - Push notification storage in DynamoDB
+  - SQS queue integration for reliable delivery
+  - Push delivery Lambda with Web Push Protocol encryption
+  - Automatic notifications for follows, favorites, reblogs, mentions
+  - Invalid subscription cleanup
+  - Fully deployed and operational!
 - **Advanced Search Architecture (Weeks 1-3 Complete!)** ✨
   - Multi-strategy search with parallel execution
   - DynamoDB GSI optimization for username/display name search
@@ -131,41 +140,17 @@ Lesser now has:
 
 ### ⭐ IMMEDIATE NEXT PRIORITIES
 
-1. **Push Notifications Infrastructure** (NEEDS DEPLOYMENT) 🟡
-   - Code implementation COMPLETE ✅
-   - Need to add SQS queue and Lambda to Pulumi infrastructure
-   - See PUSH_NOTIFICATIONS_IMPLEMENTATION.md for details
-   - Run `./bin/configure-instance -generate-vapid` after deployment
-
-2. **Polls Support** (HIGH PRIORITY) 🔴
+1. **Polls Support** (HIGH PRIORITY) 🔴
    - Poll creation in status endpoint
    - Vote submission endpoint
    - Real-time vote tallying
    - Expiration handling
 
-3. **Filters & Mutes** (MEDIUM PRIORITY) 🟠
+2. **Filters & Mutes** (MEDIUM PRIORITY) 🟠
    - Content filtering system
    - Mute accounts/keywords
    - Filter contexts (home, public, etc)
    - Client-side filter hints
-
-### 🎉 JUST COMPLETED - Push Notifications
-
-**Push Notifications Implementation Complete!** 🔔
-- ✅ VAPID key generation in configure-instance command
-- ✅ Web Push subscription endpoints (GET/POST/PUT/DELETE)
-- ✅ Push notification storage in DynamoDB
-- ✅ SQS queue integration for reliable delivery
-- ✅ Push delivery Lambda with Web Push Protocol encryption
-- ✅ Automatic notifications for follows, favorites, reblogs, mentions
-- ✅ Invalid subscription cleanup
-- 🟡 Needs infrastructure deployment (SQS queue + Lambda)
-
-To deploy:
-1. Update Pulumi infrastructure with SQS queue and push-delivery Lambda
-2. Run `pulumi up` to deploy
-3. Generate VAPID keys: `./bin/configure-instance -generate-vapid`
-4. Test with Mastodon clients that support push notifications
 
 ### 🔧 Future Enhancement Options
 
@@ -263,6 +248,14 @@ python test_federation_complete.py  # Full federation
 - **Used for**: Vector search, fuzzy search, real-time indexing
 
 ## Recent Wins 🎉
+
+**Push Notifications DEPLOYED!** 🔔✅
+1. **Full Web Push Implementation**: Complete push notification system with VAPID authentication!
+2. **Real-time Notifications**: Users receive instant notifications for follows, favorites, reblogs, mentions!
+3. **SQS Queue Integration**: Reliable delivery with message queuing!
+4. **Push Delivery Lambda**: Encrypted notification delivery using Web Push Protocol!
+5. **Client Compatibility**: Works with all Mastodon clients that support push notifications!
+6. **Infrastructure Complete**: SQS queue and Lambda fully deployed and operational!
 
 **Month 2 Track 2 - Federation COMPLETE!** 🌐✅
 1. **Full ActivityPub Federation**: Complete inbox/outbox implementation with activity processing!
@@ -375,24 +368,7 @@ python test_federation_complete.py https://your-instance.com --token YOUR_TOKEN
 - pkg/storage/dynamodb/media.go
 ```
 
-**Option 2: Push Notifications** 🔔 (MEDIUM PRIORITY)
-```bash
-# Real-time engagement features
-# Enable push notifications for mentions, follows, etc.
-
-# Tasks:
-- Web Push subscription endpoints
-- VAPID key generation in configure-instance
-- SQS queue for reliable delivery
-- Lambda function for push delivery
-
-# Key files to create:
-- cmd/api/handlers/push_subscriptions.go
-- pkg/notifications/push.go
-- cmd/push-delivery/main.go (new Lambda)
-```
-
-**Option 3: Polls Support** 📊 (MEDIUM PRIORITY)
+**Option 2: Polls Support** 📊 (MEDIUM PRIORITY)
 ```bash
 # Interactive content with polls
 # Allow users to create and vote on polls
@@ -415,6 +391,7 @@ python test_federation_complete.py https://your-instance.com --token YOUR_TOKEN
 - ✅ Full ActivityPub federation implementation
 - ✅ Remote follow functionality
 - ✅ Activity delivery with HTTP signatures
+- ✅ Push notifications fully deployed and operational!
 - ✅ Build issues resolved - ready for deployment!
 
 **🎯 Development Progress**: 
