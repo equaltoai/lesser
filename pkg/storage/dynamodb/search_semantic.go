@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
@@ -166,6 +167,9 @@ func (s *SemanticSearchStrategy) searchWithOpenSearchVectors(ctx context.Context
 	if s.opensearchURL == "" {
 		return nil, fmt.Errorf("OpenSearch endpoint not configured")
 	}
+
+	// Track OpenSearch query for cost purposes
+	cost.TrackOpenSearchQueryContext(ctx, 1)
 
 	// Build OpenSearch vector search query
 	searchBody := map[string]interface{}{

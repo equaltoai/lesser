@@ -12,6 +12,7 @@ import (
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aws/aws-sdk-go-v2/config"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
 	opensearchapi "github.com/opensearch-project/opensearch-go/v2/opensearchapi"
@@ -76,6 +77,9 @@ func (s *FuzzySearchStrategy) Name() string {
 
 // Search performs fuzzy search using OpenSearch
 func (s *FuzzySearchStrategy) Search(ctx context.Context, query string, options SearchOptions) ([]*SearchResult, error) {
+	// Track OpenSearch query for cost purposes
+	cost.TrackOpenSearchQueryContext(ctx, 1)
+
 	log := common.WithContext(ctx)
 
 	// Build the search query

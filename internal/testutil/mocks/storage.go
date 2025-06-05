@@ -496,6 +496,81 @@ func (m *BaseMockStorage) DeleteAllPushSubscriptions(ctx context.Context, userna
 	return nil
 }
 
+// Filter operations
+func (m *BaseMockStorage) CreateFilter(ctx context.Context, filter *storage.Filter) error {
+	return nil
+}
+func (m *BaseMockStorage) GetFilter(ctx context.Context, filterID string) (*storage.Filter, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetFiltersForUser(ctx context.Context, username string) ([]*storage.Filter, error) {
+	return []*storage.Filter{}, nil
+}
+func (m *BaseMockStorage) UpdateFilter(ctx context.Context, filterID string, updates map[string]interface{}) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteFilter(ctx context.Context, filterID string) error {
+	return nil
+}
+func (m *BaseMockStorage) AddFilterKeyword(ctx context.Context, filterID string, keyword *storage.FilterKeyword) error {
+	return nil
+}
+func (m *BaseMockStorage) GetFilterKeywords(ctx context.Context, filterID string) ([]*storage.FilterKeyword, error) {
+	return []*storage.FilterKeyword{}, nil
+}
+func (m *BaseMockStorage) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]interface{}) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
+	return nil
+}
+func (m *BaseMockStorage) AddFilterStatus(ctx context.Context, filterID string, status *storage.FilterStatus) error {
+	return nil
+}
+func (m *BaseMockStorage) GetFilterStatuses(ctx context.Context, filterID string) ([]*storage.FilterStatus, error) {
+	return []*storage.FilterStatus{}, nil
+}
+func (m *BaseMockStorage) DeleteFilterStatus(ctx context.Context, statusID string) error {
+	return nil
+}
+
+// Mute operations
+func (m *BaseMockStorage) CreateMute(ctx context.Context, mute *storage.Mute) error {
+	return nil
+}
+func (m *BaseMockStorage) GetMute(ctx context.Context, actor, mutedActor string) (*storage.Mute, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) DeleteMute(ctx context.Context, actor, mutedActor string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetMutedActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Mute, string, error) {
+	return []*storage.Mute{}, "", nil
+}
+func (m *BaseMockStorage) IsMuted(ctx context.Context, actor, targetActor string) (bool, error) {
+	return false, nil
+}
+
+// Poll operations
+func (m *BaseMockStorage) CreatePoll(ctx context.Context, poll *storage.Poll) error {
+	return nil
+}
+func (m *BaseMockStorage) GetPoll(ctx context.Context, pollID string) (*storage.Poll, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetPollByStatusID(ctx context.Context, statusID string) (*storage.Poll, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) VoteOnPoll(ctx context.Context, pollID, voterID string, choices []int) error {
+	return nil
+}
+func (m *BaseMockStorage) GetPollVotes(ctx context.Context, pollID string) (map[string][]int, error) {
+	return map[string][]int{}, nil
+}
+func (m *BaseMockStorage) HasUserVoted(ctx context.Context, pollID string, userID string) (bool, []int, error) {
+	return false, nil, nil
+}
+
 // VAPID key operations
 func (m *BaseMockStorage) GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
 	return nil, fmt.Errorf("not found")

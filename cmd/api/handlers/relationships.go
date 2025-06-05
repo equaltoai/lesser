@@ -140,7 +140,14 @@ func (h *Handler) buildRelationship(ctx context.Context, actor, targetActor *act
 		relationship.BlockedBy = true
 	}
 
-	// TODO: Implement muting, domain blocking, endorsements, and notes
+	// Check if muting
+	mute, err := h.store.GetMute(ctx, actor.PreferredUsername, targetActor.PreferredUsername)
+	if err == nil && mute != nil {
+		relationship.Muting = true
+		relationship.MutingNotifications = mute.HideNotifications
+	}
+
+	// TODO: Implement domain blocking, endorsements, and notes
 
 	return relationship
 }

@@ -1,277 +1,466 @@
-# Lesser - Serverless ActivityPub Design Document
+# Lesser - Advanced Serverless ActivityPub Design
 
 ## Overview
 
-Lesser is a serverless ActivityPub implementation designed to minimize hosting costs while providing full ActivityPub compliance. It leverages AWS Lambda for compute, DynamoDB for storage, and Pulumi for infrastructure as code.
+Lesser is a revolutionary serverless ActivityPub implementation that proves federated social media can be essentially free to operate. By combining serverless architecture with innovative features like reactive moderation and real-time cost tracking, Lesser enables a new generation of sustainable social platforms.
 
-## Core ActivityPub Requirements
+## Core Principles
 
-### 1. Actor Model
-- **Actor Types**: Person, Service, Group, Organization, Application
-- **Required Properties**: id, type, inbox, outbox, preferredUsername
-- **Optional Properties**: followers, following, liked, shares, publicKey
+1. **Cost Transparency** - Every operation tracks its cost in real-time
+2. **Reactive Systems** - Changes propagate through event streams
+3. **Federation First** - 100% ActivityPub compliant
+4. **Developer Joy** - APIs that make sense, tools that delight
+5. **Community Moderation** - Distributed consensus, not central control
 
-### 2. Collections
-- **Inbox**: Receives activities from other actors
-- **Outbox**: Stores activities created by the actor
-- **Followers**: Collection of actors following this actor
-- **Following**: Collection of actors this actor follows
-- **Liked**: Collection of objects this actor has liked
+## Architecture Overview
 
-### 3. Activities
-Core activity types to support:
-- **Create**: Create new objects (posts, notes, etc.)
-- **Update**: Modify existing objects
-- **Delete**: Remove objects
-- **Follow**: Follow another actor
-- **Accept/Reject**: Respond to follow requests
-- **Like**: Express approval of an object
-- **Announce**: Share/boost an object
-- **Undo**: Reverse a previous activity
+### Serverless Stack
+- **Compute**: AWS Lambda (Go 1.21+)
+- **Storage**: DynamoDB (single-table design)
+- **Search**: OpenSearch Serverless + AWS Bedrock
+- **Queue**: SQS for reliable delivery
+- **Media**: S3 + CloudFront CDN
+- **Monitoring**: CloudWatch + X-Ray
+- **Deploy**: Pulumi IaC
 
-### 4. Objects
-- **Note**: Basic text posts
-- **Article**: Long-form content
-- **Image**: Photo posts
-- **Video**: Video content
-- **Document**: Generic file attachments
+### Cost Profile
+- **Per User**: $0.01-0.05/month
+- **Per 1K Activities**: ~$0.10
+- **Media Storage**: $0.023/GB
+- **Search Index**: ~$0.50/month base
 
-### 5. Federation Requirements
-- **WebFinger**: Actor discovery via .well-known/webfinger
-- **HTTP Signatures**: Authentication for server-to-server communication
-- **Activity Delivery**: POST activities to remote inboxes
-- **Content Negotiation**: Support ActivityStreams JSON-LD format
+## Core Systems
 
-## Architecture
+### 1. ActivityPub Implementation
 
-### Lambda Functions (`cmd/`)
-
-1. **cmd/webfinger**
-   - Handles `.well-known/webfinger` requests
-   - Returns actor information for discovery
-
-2. **cmd/actor**
-   - GET: Returns actor profile
-   - Supports content negotiation (HTML vs ActivityStreams)
-
-3. **cmd/inbox**
-   - POST: Receives activities from other servers
-   - Validates HTTP signatures
-   - Processes incoming activities
-
-4. **cmd/outbox**
-   - GET: Returns actor's public activities
-   - POST: Creates new activities (client-to-server)
-
-5. **cmd/collections**
-   - GET: Returns followers/following/liked collections
-   - Supports pagination
-
-6. **cmd/activity-processor**
-   - Background Lambda for processing activities
-   - Triggered by SQS/DynamoDB streams
-   - Handles federation (delivering to remote servers)
-
-7. **cmd/media**
-   - Handles media uploads to S3
-   - Generates thumbnails
-   - Returns media URLs
-
-### Data Models (DynamoDB)
-
-#### Table: Actors
-```
-PK: ACTOR#{username}
-SK: PROFILE
-Attributes:
-  - id: string (full actor URL)
-  - type: string (Person, Service, etc.)
-  - username: string
-  - displayName: string
-  - summary: string (bio)
-  - publicKey: string
-  - privateKey: string (encrypted)
-  - inbox: string (URL)
-  - outbox: string (URL)
-  - followers: string (URL)
-  - following: string (URL)
-  - createdAt: timestamp
+#### Actor System
+```go
+type Actor struct {
+    ID                string    `json:"id"`
+    Type              string    `json:"type"`
+    PreferredUsername string    `json:"preferredUsername"`
+    Inbox             string    `json:"inbox"`
+    Outbox            string    `json:"outbox"`
+    PublicKey         PublicKey `json:"publicKey"`
+    
+    // Enhanced fields
+    TrustScore        float64   `json:"-"` // Internal only
+    Reputation        Reputation `json:"-"`
+}
 ```
 
-#### Table: Activities
+#### Activity Processing Pipeline
 ```
-PK: ACTOR#{username}
-SK: ACTIVITY#{timestamp}#{id}
-GSI1PK: INBOX#{username}
-GSI1SK: {timestamp}
-Attributes:
-  - id: string (activity URL)
-  - type: string (Create, Follow, etc.)
-  - actor: string (actor URL)
-  - object: JSON
-  - to: array
-  - cc: array
-  - published: timestamp
+Incoming Activity → Lambda → Validation → Storage → Stream → Processors
+                                ↓                      ↓
+                          HTTP Signature          Moderation
+                              Check                  Mesh
 ```
 
-#### Table: Relationships
-```
-PK: FOLLOW#{follower_username}
-SK: FOLLOWING#{followed_username}
-GSI1PK: FOLLOW#{followed_username}
-GSI1SK: FOLLOWER#{follower_username}
-Attributes:
-  - id: string (follow activity URL)
-  - state: string (pending, accepted, rejected)
-  - createdAt: timestamp
-```
+#### Supported Activities
+- ✅ Create, Update, Delete
+- ✅ Follow, Accept, Reject  
+- ✅ Like, Announce, Undo
+- ✅ Block, Flag, Move
+- ✅ Add, Remove
+- ✅ All standard ActivityPub types
 
-#### Table: Objects
-```
-PK: OBJECT#{id}
-SK: VERSION#{timestamp}
-Attributes:
-  - id: string (object URL)
-  - type: string (Note, Article, etc.)
-  - content: string
-  - attributedTo: string (actor URL)
-  - published: timestamp
-  - updated: timestamp
-  - to: array
-  - cc: array
-  - inReplyTo: string (optional)
-  - attachments: array
-```
+### 2. Storage Architecture
 
-### API Gateway Setup
-
+#### DynamoDB Single Table Design
 ```
-/
-├── .well-known/
-│   └── webfinger          → cmd/webfinger
-├── users/
-│   ├── {username}         → cmd/actor
-│   ├── {username}/inbox   → cmd/inbox
-│   ├── {username}/outbox  → cmd/outbox
-│   ├── {username}/followers → cmd/collections
-│   ├── {username}/following → cmd/collections
-│   └── {username}/liked   → cmd/collections
-├── activities/
-│   └── {id}              → cmd/activity
-└── objects/
-    └── {id}              → cmd/object
+Primary Table Structure:
+PK                          SK                          Type
+ACTOR#alice                 PROFILE                     Actor
+ACTOR#alice                 ACTIVITY#2024-01-20#123     Activity
+OBJECT#note-456            METADATA                    Note
+TIMELINE#alice#HOME        2024-01-20T10:00:00#789    TimelineEntry
+MODERATION#EVENT#123       EVENT                       ModerationEvent
+TRUST#alice#bob            EDGE                        TrustEdge
+
+GSI1 (Timeline Index):
+GSI1PK                     GSI1SK
+USER#alice#TIMELINE        2024-01-20T10:00:00#123
+
+GSI2 (Moderation Queue):
+GSI2PK                     GSI2SK
+MODERATION#PENDING         2024-01-20T10:00:00#123
+
+GSI3 (Search Index):
+GSI3PK                     GSI3SK  
+SEARCH#USER               alice#alice_jones
+
+GSI4 (Cost Tracking):
+GSI4PK                     GSI4SK
+COST#2024-01-20           alice#12:00:00
 ```
 
-### Security & Authentication
+#### Event Sourcing via Streams
+- DynamoDB Streams trigger Lambda functions
+- Every change becomes an event
+- Enables time-travel debugging
+- Powers the reactive moderation mesh
 
-1. **HTTP Signatures**
-   - Verify signatures on all incoming federation requests
-   - Sign all outgoing federation requests
-   - Use RSA-SHA256
+### 3. Reactive Moderation Mesh
 
-2. **API Keys** (for client-to-server)
-   - JWT tokens for authenticated endpoints
-   - Refresh token rotation
+#### Event-Driven Moderation
+```go
+type ModerationEvent struct {
+    ID         string    `json:"id"`
+    Type       EventType `json:"type"`
+    Target     string    `json:"target"`
+    Actor      string    `json:"actor"`
+    Confidence float64   `json:"confidence"`
+    Evidence   []Evidence `json:"evidence"`
+    
+    // Propagation control
+    Visibility Visibility `json:"visibility"`
+    Recipients []string   `json:"recipients"`
+}
+```
 
-3. **Rate Limiting**
-   - API Gateway throttling
-   - DynamoDB conditional writes
+#### Trust Graph
+```go
+type TrustGraph struct {
+    // Edges represent trust relationships
+    // Weights range from -1 (distrust) to 1 (full trust)
+    // Categories: content, behavior, technical
+}
 
-### Background Processing
+// Trust propagates through the network
+// High-trust users' decisions carry more weight
+// Consensus emerges from the graph
+```
 
-1. **SQS Queues**
-   - Delivery queue for outgoing activities
-   - Processing queue for incoming activities
-   - Media processing queue
+#### Consensus Algorithm
+1. Event triggers review request
+2. Trust graph selects diverse reviewers
+3. Reviews collected with confidence scores
+4. Weighted consensus calculated
+5. Decision executed and logged
+6. Learnings fed back to trust graph
 
-2. **DynamoDB Streams**
-   - Trigger activity delivery on new outbox items
-   - Update follower counts
-   - Generate notifications
+### 4. AI-Enhanced Features
 
-### Cost Optimization Strategies
+#### Search Architecture
+```
+Query → AWS Comprehend (understanding) → Strategies:
+  ├─ ExactMatchStrategy (DynamoDB GSI)
+  ├─ FuzzySearchStrategy (OpenSearch)  
+  ├─ SemanticSearchStrategy (Bedrock embeddings)
+  └─ PopularityStrategy (engagement signals)
+```
 
-1. **Lambda**
-   - Use ARM-based Graviton2 processors
-   - Optimize cold starts with lightweight runtime
-   - Implement connection pooling for HTTP clients
+#### AI Services Integration
+- **AWS Comprehend**: Query understanding, sentiment analysis
+- **AWS Bedrock**: Semantic embeddings, AI content detection
+- **AWS Rekognition**: Image moderation, NSFW detection
+- **OpenSearch**: Vector search, fuzzy matching
 
-2. **DynamoDB**
-   - Use on-demand billing for variable traffic
-   - Implement efficient query patterns
-   - Archive old activities to S3
+### 5. Real-Time Cost Tracking
 
-3. **API Gateway**
-   - Enable caching for actor profiles
-   - Use CloudFront for static content
-   - Implement request validation
+#### Cost Calculation
+```go
+type OperationCost struct {
+    LambdaInvocations  int64 `json:"lambda_invocations"`
+    DynamoDBReads      int64 `json:"dynamodb_reads"`
+    DynamoDBWrites     int64 `json:"dynamodb_writes"`
+    S3Operations       int64 `json:"s3_operations"`
+    DataTransferBytes  int64 `json:"data_transfer_bytes"`
+    TotalCostMicros    int64 `json:"total_cost_micros"`
+}
 
-4. **S3**
-   - Lifecycle policies for media
-   - Intelligent tiering
-   - CloudFront CDN for media delivery
+// Every API response includes cost
+type APIResponse struct {
+    Data     interface{}    `json:"data"`
+    Cost     *OperationCost `json:"cost"`
+    Duration int64          `json:"duration_ms"`
+}
+```
 
-## Implementation Phases
+#### Cost Optimization
+- Lambda ARM Graviton2 processors
+- DynamoDB on-demand pricing
+- S3 intelligent tiering
+- CloudFront caching
+- Connection pooling
 
-### Phase 1: Core ActivityPub (MVP)
-- [ ] Actor profiles
-- [ ] WebFinger discovery
-- [ ] Basic inbox/outbox
-- [ ] HTTP signatures
-- [ ] Follow/Accept activities
+### 6. Federation Enhancements
 
-### Phase 2: Content Creation
-- [ ] Create Note activities
-- [ ] Delete activities
-- [ ] Update activities
-- [ ] Basic timeline
+#### Delivery Optimization
+- Shared inbox support
+- Delivery coalescing
+- Instance health tracking
+- Automatic retry with backoff
+- Predictive pre-warming
 
-### Phase 3: Social Features
-- [ ] Like activities
-- [ ] Announce (boost) activities
-- [ ] Replies and threads
-- [ ] Mentions and notifications
+#### Federation Debugging
+```go
+// Real-time federation monitoring
+type FederationEvent struct {
+    Instance   string
+    Activity   string
+    Status     string
+    Latency    time.Duration
+    Error      error
+    HTTPStatus int
+}
+```
 
-### Phase 4: Media Support
-- [ ] Image uploads
-- [ ] Video uploads
-- [ ] Thumbnail generation
-- [ ] CDN delivery
+### 7. Developer Experience
 
-### Phase 5: Advanced Features
-- [ ] Search functionality
-- [ ] Moderation tools
-- [ ] Instance blocks
-- [ ] Custom emojis
+#### GraphQL API
+```graphql
+type Query {
+  # ActivityPub queries
+  actor(id: ID!): Actor
+  object(id: ID!): Object
+  
+  # Moderation queries
+  moderationQueue: ModerationQueue
+  trustGraph(actor: ID!): TrustGraph
+  
+  # Analytics
+  instanceMetrics: Metrics
+  costBreakdown(period: Period!): CostBreakdown
+}
 
-## Estimated Costs (per month)
+type Subscription {
+  # Real-time streams
+  activityStream: Activity
+  moderationEvents: ModerationEvent
+  costUpdates: CostUpdate
+}
+```
 
-### Small Instance (100 users, 10K activities/month)
-- Lambda: ~$5
-- DynamoDB: ~$10
-- API Gateway: ~$3
-- S3: ~$5
-- **Total: ~$23/month**
+#### Debug Tools
+- Time-travel replay
+- Federation X-ray tracing
+- Cost simulation
+- Activity explain plans
 
-### Medium Instance (1K users, 100K activities/month)
-- Lambda: ~$50
-- DynamoDB: ~$50
-- API Gateway: ~$30
-- S3: ~$20
-- **Total: ~$150/month**
+## Advanced Features
 
-### Large Instance (10K users, 1M activities/month)
-- Lambda: ~$200
-- DynamoDB: ~$200
-- API Gateway: ~$100
-- S3: ~$100
-- **Total: ~$600/month**
+### Community Notes
+```go
+type CommunityNote struct {
+    ID        string   `json:"id"`
+    ObjectID  string   `json:"object_id"`
+    Content   string   `json:"content"`
+    Sources   []string `json:"sources"`
+    
+    // Voting determines visibility
+    HelpfulVotes    int     `json:"helpful_votes"`
+    NotHelpfulVotes int     `json:"not_helpful_votes"`
+    Score           float64 `json:"score"`
+    
+    // Federation support
+    Federated bool `json:"federated"`
+}
+```
 
-## Next Steps
+### Bot Detection
+- Registration velocity tracking
+- Posting pattern analysis
+- AI content detection
+- Network graph analysis
+- Automated responses
 
-1. Set up Go module structure
-2. Implement WebFinger endpoint
-3. Create actor profile endpoint
-4. Set up DynamoDB tables with Pulumi
-5. Implement HTTP signature verification
-6. Create inbox endpoint for receiving activities 
+### Portable Reputation
+```go
+type PortableReputation struct {
+    Actor      string    `json:"actor"`
+    TrustScore float64   `json:"trust_score"`
+    Categories map[string]float64 `json:"categories"`
+    Vouchers   []Vouch   `json:"vouchers"`
+    
+    // Cryptographically signed
+    Signature  string    `json:"signature"`
+    ValidUntil time.Time `json:"valid_until"`
+}
+
+// Queryable via .well-known/reputation
+```
+
+## Performance Characteristics
+
+### Latency Targets
+- Actor profile: <50ms
+- Timeline generation: <100ms
+- Activity delivery: <200ms
+- Search results: <150ms
+- Moderation decision: <1s
+
+### Scaling Profile
+- 0 → 10K req/s: Automatic
+- No capacity planning
+- No server management
+- Pay only for usage
+
+### Reliability
+- 99.9% uptime target
+- Multi-AZ deployment
+- Automatic failover
+- Self-healing
+
+## Security Model
+
+### Authentication
+- OAuth 2.0 + JWT for clients
+- HTTP Signatures for federation
+- PKCE for enhanced security
+- Refresh token rotation
+
+### Authorization
+- Scope-based permissions
+- Actor-level access control
+- Trust-weighted rate limits
+
+### Data Protection
+- Encryption at rest (DynamoDB)
+- Encryption in transit (TLS)
+- Private keys in AWS KMS
+- PII handling compliance
+
+## Cost Analysis
+
+### Small Instance (100 users)
+```
+Lambda:     1M requests × $0.20/M = $0.20
+DynamoDB:   10K writes × $1.25/M = $0.01
+            50K reads × $0.25/M = $0.01
+S3:         10GB × $0.023/GB = $0.23
+CloudFront: 50GB × $0.085/GB = $4.25
+Total:      ~$5/month ($0.05/user)
+```
+
+### Medium Instance (1,000 users)
+```
+Lambda:     10M requests × $0.20/M = $2
+DynamoDB:   100K writes × $1.25/M = $0.13
+            500K reads × $0.25/M = $0.13
+S3:         100GB × $0.023/GB = $2.30
+CloudFront: 500GB × $0.085/GB = $42.50
+Total:      ~$50/month ($0.05/user)
+```
+
+### Comparison
+| Platform | 100 Users | 1K Users | 10K Users |
+|----------|-----------|----------|-----------|
+| Mastodon | $50-100   | $200-500 | $1K-5K    |
+| Lesser   | $5        | $50      | $500      |
+| Savings  | 90-95%    | 75-90%   | 50-90%    |
+
+## Implementation Status
+
+### ✅ Complete (~98%)
+- Full ActivityPub protocol
+- Mastodon API compatibility  
+- OAuth 2.0 authentication
+- Media handling with CDN
+- Advanced search with AI
+- Push notifications
+- Polls, filters, mutes
+- Lists management
+- Federation with all platforms
+
+### 🚧 In Progress
+- Notifications system (final feature!)
+- Reactive moderation mesh
+- Community notes
+- Greater UI
+
+### 🔮 Planned
+- Bot detection network
+- Reputation system
+- Plugin marketplace
+- Multi-language UI
+
+## Deployment
+
+### Prerequisites
+- AWS Account
+- Domain name
+- Pulumi CLI
+- Go 1.21+
+
+### One-Command Deploy
+```bash
+cd infra
+pulumi up
+# That's it! Your instance is live.
+```
+
+### Configuration
+```yaml
+domain: yourdomain.com
+region: us-east-1
+features:
+  moderation_mesh: true
+  ai_search: true
+  community_notes: true
+  cost_tracking: true
+```
+
+## Migration Path
+
+### From Mastodon
+```bash
+lesser import mastodon --archive=backup.tar.gz
+# Preserves all data, followers, posts
+```
+
+### Data Portability
+- Export to ActivityPub JSON
+- Export to static site
+- Export to SQLite
+- Full data ownership
+
+## Monitoring & Operations
+
+### CloudWatch Dashboards
+1. System Health
+2. Cost Tracking  
+3. Federation Status
+4. Moderation Queue
+5. User Activity
+
+### Alerts
+- Cost anomalies
+- Federation failures
+- Moderation backlog
+- Performance degradation
+
+### Maintenance
+- Zero downtime deployments
+- Automatic scaling
+- Self-healing infrastructure
+- No server management
+
+## Future Directions
+
+### Technical Roadmap
+1. Edge computing with Lambda@Edge
+2. Multi-region deployment
+3. IPFS integration for media
+4. Blockchain-backed reputation
+5. Decentralized identity
+
+### Feature Roadmap
+1. Video streaming support
+2. E2E encryption
+3. Collaborative editing
+4. Voice/video calls
+5. Virtual events
+
+## Conclusion
+
+Lesser represents a fundamental shift in how social media infrastructure works. By making it reactive, transparent, and essentially free to operate, we enable a new generation of sustainable, community-owned social platforms.
+
+The combination of serverless architecture, reactive moderation, and cost transparency creates a platform that is:
+- **Sustainable** - Costs scale with usage
+- **Transparent** - Every decision is logged
+- **Resilient** - No single point of failure
+- **Accessible** - Anyone can run an instance
+
+Lesser proves that the future of social media is federated, and that federation doesn't have to be expensive. 

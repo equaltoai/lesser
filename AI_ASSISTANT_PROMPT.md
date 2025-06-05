@@ -1,414 +1,364 @@
 # AI Assistant Prompt for Lesser Development
 
-## 🎯 MONTH 2 COMPLETE! ✅
-**Status**: Both AI Enhancement (Track 1) AND Federation (Track 2) are fully implemented!
+## 🚀 LESSER 2.0: Revolutionary Serverless ActivityPub Platform
 
-You are helping develop Lesser, a serverless ActivityPub implementation that aims to be compatible with Mastodon clients. The project is written in Go and deployed on AWS using Lambda, DynamoDB, and API Gateway.
+**Status**: Mastodon API Complete ✅ | Now Building the Future of Federation 🔮
 
-**📚 Latest Achievement**: Push notifications are now fully deployed! Users can receive real-time notifications for follows, favorites, reblogs, and mentions through Web Push Protocol.
+You are helping develop Lesser, a revolutionary serverless ActivityPub platform that demonstrates federated social media can be essentially free to operate while providing superior features through serverless architecture and reactive systems.
 
-## Project Overview
+**Phase 1 Complete**: Full Mastodon API compatibility achieved! Now advancing to Phase 2: Building features no other ActivityPub server has attempted.
 
-Lesser uses a modular architecture with:
-- **Converter Pattern**: `pkg/mastodon/converter.go` - Centralizes ActivityPub to Mastodon API conversions
-- **Service Layer**: `pkg/mastodon/actor_service.go` - Higher-level business logic
-- **Clean Handlers**: HTTP handlers use shared converter instance
-- **DynamoDB Storage**: All data persisted in single-table design
-- **Advanced Search**: Multi-strategy, AWS-native search with Google-quality results (major differentiator!)
-- **Media CDN**: CloudFront distribution serving media files with proper caching
+## Architecture Evolution
+
+Lesser is evolving from a Mastodon-compatible server to a platform that fundamentally changes how social media infrastructure works:
+
+### Core Principles
+1. **Everything is an Event** - All actions trigger DynamoDB streams
+2. **Reactive by Default** - Changes propagate through Lambda functions  
+3. **Cost-Conscious** - Every operation tracks its cost in real-time
+4. **Federation-First** - Built for interoperability from day one
+5. **Developer Experience** - APIs that make sense, debug tools that delight
+
+### New Architecture Components
+- **Real-Time Cost Tracking**: Every API response includes cost metadata
+- **Activity Streams**: WebSocket/SSE for real-time monitoring
+- **Reactive Moderation Mesh**: Consensus-based moderation with trust graphs
+- **GraphQL Gateway**: Modern API alongside REST
+- **AI Integration Layer**: AWS Bedrock, Comprehend, and Rekognition
+
+## Current Implementation Roadmap
+
+### 📊 Phase 1: Enhanced Core Platform (Weeks 1-2) - CURRENT FOCUS
+**Goal**: Add real-time cost tracking and activity streaming
+
+🔲 **1.1 Real-Time Cost Tracking**
+- Instrument all storage operations with cost calculation
+- Add `X-Cost-*` headers to all API responses
+- Create cost aggregation Lambda
+- Store cost history with analytics
+
+🔲 **1.2 Activity Stream API**
+- WebSocket endpoint at `wss://instance.com/api/v1/streaming`
+- SSE endpoint at `https://instance.com/api/v1/streaming/events`
+- Stream federation activities, moderation decisions, cost alerts
+- Real-time system metrics
+
+🔲 **1.3 Enhanced Metrics API**
+- Current metrics (active users, requests/min, latency)
+- Daily aggregates (costs, posts, interactions)
+- Predictive analytics (monthly cost, storage growth)
+
+### 🛡️ Phase 2: Reactive Moderation Mesh (Weeks 3-4)
+**Goal**: Build consensus-based moderation with trust graphs
+
+🔲 **2.1 Moderation Event System**
+- Event-driven moderation pipeline
+- Moderation events with confidence scores
+- Evidence tracking and audit trail
+
+🔲 **2.2 Trust Graph Engine**
+- Directional trust relationships
+- Category-based trust (content, behavior, technical)
+- Trust score propagation algorithms
+
+🔲 **2.3 Consensus Engine**
+- Weighted review aggregation
+- Configurable consensus thresholds
+- Sub-second decision making
+
+🔲 **2.4 Moderation API**
+- Flag content with evidence
+- Review queue with priority scoring
+- Consensus visualization
+
+### 🛠️ Phase 3: Developer Experience (Week 5)
+**Goal**: Make Lesser a joy to develop against
+
+🔲 **3.1 GraphQL Gateway**
+- Unified query interface
+- Real-time subscriptions
+- Cost-aware query planning
+
+🔲 **3.2 Debug Endpoints**
+- Federation debugging tools
+- Object explanation with storage details
+- Activity replay for testing
+
+🔲 **3.3 Testing Utilities**
+- Test data generation
+- Federation test harness
+- Performance benchmarking
+
+### ⚡ Phase 4: Advanced Features (Weeks 6-7)
+**Goal**: Features no other ActivityPub server has
+
+🔲 **4.1 Portable Reputation API**
+- Cryptographically signed reputation
+- Cross-instance trust portability
+- Vouch system for new users
+
+🔲 **4.2 Community Notes**
+- Crowdsourced context on posts
+- Voting and visibility algorithms
+- Multi-language support
+
+🔲 **4.3 AI Integration**
+- Sentiment analysis
+- Toxicity detection
+- AI-generated content detection
+- Spam probability scoring
+
+🔲 **4.4 Plugin System**
+- Lambda-based plugins
+- Hook into activity pipeline
+- Custom moderation rules
+
+### 🚄 Phase 5: Performance & Scale (Week 8)
+**Goal**: <50ms responses at any scale
+
+🔲 **5.1 Caching Strategy**
+- CloudFront + DAX + Lambda memory
+- Cache warming for hot paths
+- Intelligent TTL management
+
+🔲 **5.2 Timeline Optimizations**
+- Pre-computed timeline chunks
+- Parallel generation
+- Hybrid fan-out strategies
 
 ## Project Structure
 - `/cmd/api/` - API Lambda handlers (includes media handling)
 - `/cmd/search-indexer/` - OpenSearch indexing Lambda
+- `/cmd/activity-processor/` - Activity processing Lambda
 - `/pkg/storage/dynamodb/` - DynamoDB storage layer
 - `/pkg/activitypub/` - ActivityPub types and logic
 - `/pkg/mastodon/` - Mastodon API converters and services
+- `/pkg/cost/` - Cost tracking infrastructure (NEW)
+- `/pkg/moderation/` - Moderation mesh system (NEW)
+- `/pkg/trust/` - Trust graph engine (NEW)
 - `/infra/` - Pulumi infrastructure code
 - `test_api_automated.py` - API test script
 - `test_media_urls.py` - Media CDN verification script
 
-## Current Status
+## Implementation Status
 
-✅ **Completed Features**:
+### ✅ Foundation Complete (Phase 1 - Mastodon Compatibility)
 - OAuth 2.0 authentication with scopes
-- Account operations (follow/unfollow, block/unblock, update profile)
-- Creating, editing, deleting statuses
-- Favorites and reblogs
-- Media upload to S3 with CloudFront CDN
-- Bookmarks with pagination
-- Basic timelines (home, public, hashtag)
-- Modular converter architecture
-- Home timeline fan-out on write pattern
-- **Hashtag extraction and timeline fan-out** ✨
-- **Lists management** ✨
-  - Full CRUD operations for lists
-  - Managing list memberships
-  - List timelines with proper fan-out
-  - Respects replies policies (none, followed, list)
-- **Conversation Threading** ✨
-  - Automatic conversation ID tracking
-  - Reply chains with proper inheritance
-  - Full conversations API implementation
-  - Read/unread status tracking
-- **Account Relationships Batch** ✨
-  - Batch endpoint for checking multiple relationships at once
-- **Push Notifications** ✨ 
-  - VAPID key generation and storage
-  - Web Push subscription endpoints (GET/POST/PUT/DELETE)
-  - Push notification storage in DynamoDB
-  - SQS queue integration for reliable delivery
-  - Push delivery Lambda with Web Push Protocol encryption
-  - Automatic notifications for follows, favorites, reblogs, mentions
-  - Invalid subscription cleanup
-  - Fully deployed and operational!
-- **Polls Support** ✨ NEW!
-  - Poll creation in statuses with 2-4 options
-  - Vote submission with duplicate prevention
-  - Real-time vote tallying
-  - Multiple choice polls support
-  - Hidden totals option (results hidden until poll ends)
-  - Poll expiration with TTL
-  - Proper integration with status creation/retrieval
-  - Full Mastodon API compatibility
-- **Advanced Search Architecture (Weeks 1-3 Complete!)** ✨
-  - Multi-strategy search with parallel execution
-  - DynamoDB GSI optimization for username/display name search
-  - Search suggestions API with <50ms response times
-  - OpenSearch Serverless integration for fuzzy search
-  - Real-time indexing via DynamoDB Streams
+- Full Mastodon API implementation
+- ActivityPub federation
+- Advanced AI-powered search
+- Media CDN with CloudFront
+- Push notifications
+- Lists, polls, filters, mutes
+- Complete test suite
 
-✅ **Just Completed - AI-Enhanced Search (Month 2)**:
-- ✅ AWS Bedrock integration for semantic embeddings
-- ✅ AWS Comprehend for query understanding and analysis
-- ✅ SemanticSearchStrategy with vector similarity search
-- ✅ OpenSearch vector indexing with knn_vector field
-- ✅ "Did you mean?" suggestions using semantic similarity
-- ✅ Real-time embedding generation via DynamoDB Streams
-- ✅ Comprehensive test suite for AI features
-- ✅ Graceful fallback when AI services unavailable
+### 🚧 Current Sprint: Real-Time Cost Tracking (Week 1)
 
-✅ **Recently Completed (Week 3 - OpenSearch Integration)**:
-- ✅ OpenSearch Serverless infrastructure with IAM auth
-- ✅ Search indexer Lambda with DynamoDB Streams trigger
-- ✅ FuzzySearchStrategy with typo tolerance
-- ✅ Bio/content search capabilities
-- ✅ Real-time index synchronization
-- ✅ Graceful fallback when OpenSearch unavailable
-- ✅ Score normalization for consistent ranking
+**This Week's Goals**:
+1. **Cost Instrumentation**
+   - [ ] Create `pkg/cost/tracker.go` with AWS pricing rates
+   - [ ] Instrument DynamoDB operations in storage layer
+   - [ ] Add cost calculation to Lambda invocations
+   - [ ] Track S3 operations and data transfer
 
-✅ **Media CDN Implementation** (JUST COMPLETED!) 🎉:
-- ✅ Consolidated media handling into API Lambda
-- ✅ CloudFront distribution with Origin Access Identity
-- ✅ Private S3 ACLs with CDN-only access
-- ✅ Proper cache headers (1-year max-age)
-- ✅ Media metadata storage in DynamoDB
-- ✅ Test script for CDN verification
+2. **API Integration**
+   - [ ] Add cost middleware to all handlers
+   - [ ] Include `X-Cost-*` headers in responses
+   - [ ] Return cost in JSON response metadata
+   - [ ] Create `/api/v1/instance/costs` endpoint
 
-❌ **Known Issues**:
-- Conversation participant indexing incomplete
-- Timeline trimming for inactive users not implemented
-- Search follower/following filters not yet implemented
-- No search analytics/tracking yet
+3. **Cost Analytics**
+   - [ ] Store operation costs in DynamoDB
+   - [ ] Create cost aggregation Lambda
+   - [ ] Build daily/monthly roll-ups
+   - [ ] Add predictive cost modeling
 
-✅ **Recently Fixed**:
-- Media CDN URLs now properly use CloudFront distribution
-- Removed duplicate media Lambda handler
-- Fixed S3 ACL to use private access with CloudFront OAI
-- AWS SDK v2 compatibility issues with Comprehend (LanguageCode type)
-- OpenSearch Serverless integration (using HTTP REST API with v4 signing)
+### 🎯 Next Sprints
 
-🚧 **Recently Implemented (Ready for Testing)**:
-- **Media CDN Integration**: Full CloudFront CDN for media files ✨ NEW!
-  - Consolidated into `cmd/api/handlers/media.go`
-  - CloudFront distribution with custom domain `media.{domain}`
-  - Long-term caching headers for optimal performance
-  - Private S3 bucket with OAI access
-  - Ready for testing with Mastodon clients!
+**Week 2: Activity Streams**
+- WebSocket handler implementation
+- SSE endpoint for simpler clients
+- Event routing from DynamoDB streams
+- Real-time metrics dashboard data
 
-- **OpenSearch Fuzzy Search**: Full-text search with typo tolerance
-  - `pkg/storage/dynamodb/search_fuzzy.go` - FuzzySearchStrategy implementation
-  - `cmd/search-indexer/main.go` - Real-time indexing Lambda
-  - Multi-field search across username, display_name, and bio
-  - Automatic fuzziness for typo tolerance
+**Weeks 3-4: Reactive Moderation Mesh**
+- Event-driven moderation pipeline
+- Trust graph storage and queries
+- Consensus engine implementation
+- Moderation queue APIs
 
-## 🎯 NEXT IMPLEMENTATION PRIORITIES
-
-### ✅ Month 2 COMPLETE! - AI Enhancement & Federation 🎉
-
-Both tracks of Month 2 are now complete:
-- **Track 1: AI-Enhanced Search** ✅ 
-- **Track 2: Federation & Remote Search** ✅
-- **Bonus: Media CDN URLs** ✅ NEW!
-
-Lesser now has:
-- Google-quality search with AI enhancement
-- Full ActivityPub federation capabilities
-- Cross-instance communication
-- Remote follow functionality
-- Proper media CDN with CloudFront
-
-### ⭐ IMMEDIATE NEXT PRIORITIES
-
-1. **Filters & Mutes** ✅ COMPLETED (2025-01-20)
-   - Content filtering system (v2 API)
-   - Mute accounts/keywords
-   - Filter contexts (home, public, etc)
-   - Server-side filtering with client hints
-
-### 🔧 Future Enhancement Options
-
-1. **Personalized Search Results**
-   - Learn from user interactions
-   - Personalized result ranking
-   - Search history for users
-   - Saved searches functionality
-
-2. **Federation Admin Tools**
-   - Instance blocking/allowlisting
-   - Federation statistics dashboard
-   - Remote content moderation
-   - Delivery queue monitoring
-
-3. **Advanced AI Features**
-   - Multi-lingual search with Amazon Translate
-   - Custom Comprehend models for social queries
-   - Image search using Amazon Rekognition
-   - Content moderation with AI
+**Week 5: Developer Experience**
+- GraphQL schema and resolvers
+- Debug endpoints for federation
+- Testing utilities and data generators
 
 ## Implementation Guidelines
 
-### 🎯 Building AWS-Native Search Architecture
-We're implementing a **Google-quality search system** using only AWS serverless components:
+### 🏗️ Building Cost-Conscious Infrastructure
 
-1. **Multi-Strategy Architecture** - Different search approaches run in parallel
-2. **Progressive Enhancement** - Start simple, add sophistication incrementally  
-3. **Cost-Effective Scaling** - Pay only for what you use
-4. **Real-time Updates** - DynamoDB Streams keep indices fresh
+When implementing cost tracking:
+1. **Granular Tracking** - Track costs at the operation level, not just request level
+2. **Async Aggregation** - Use DynamoDB streams for cost roll-ups to avoid blocking
+3. **Predictive Modeling** - Use historical data to predict monthly costs
+4. **Cost Alerts** - Trigger notifications when costs exceed thresholds
 
-### 🔍 Search Implementation Progress
+### 🔄 Event-Driven Architecture
 
-**✅ Phase 1: Basic Infrastructure** (COMPLETE)
-- SearchService with strategy pattern
-- Parallel execution framework
-- Result merging and ranking
-- DynamoDB caching layer
+All new features should follow the reactive pattern:
+1. **Write to DynamoDB** - All state changes go through DynamoDB
+2. **Stream Processing** - Lambda functions react to DynamoDB streams
+3. **Parallel Execution** - Multiple handlers can process the same event
+4. **Eventually Consistent** - Embrace async processing for scalability
 
-**✅ Phase 2: DynamoDB Optimization** (COMPLETE)
-- Global Secondary Indices for fast queries
-- Username search with 2-char prefix partitioning
-- Display name search with intelligent sharding
-- Search suggestions API for autocomplete
+### 📊 Metrics and Observability
 
-**✅ Phase 3: OpenSearch Serverless** (COMPLETE)
-- OpenSearch Serverless collection deployed
-- Custom analyzers with edge n-gram filters
-- Real-time indexing via DynamoDB Streams
-- Fuzzy search with typo tolerance
-- Bio/content search with relevance scoring
-- Graceful fallback when unavailable
+Every new feature must include:
+1. **CloudWatch Metrics** - Custom metrics for feature-specific monitoring
+2. **X-Ray Tracing** - Distributed tracing for debugging
+3. **Cost Attribution** - Track costs per feature/operation
+4. **Performance Baselines** - Establish and monitor performance targets
 
-**✅ Phase 4: Advanced Features** (COMPLETE)
-- Popularity-based ranking
-- Search analytics and tracking
-- Advanced filtering options
-- Performance optimization
+## Development Workflow
 
-**✅ Phase 5: AI Enhancement** (COMPLETE - Month 2)
-- AWS Comprehend for query understanding
-- Semantic search with embeddings
-- "Did you mean?" suggestions
-- Vector similarity search
-
-**🚀 Phase 6: Federation** (NEXT)
-- Cross-instance search
-- Remote actor discovery
-- Federated search results
-
-### Testing Workflow
+### Building New Features
 
 ```bash
-# Build (now with all dependencies fixed!)
-make build-lambdas
+# 1. Create feature branch
+git checkout -b feature/cost-tracking
 
-# Deploy (OpenSearch endpoint auto-configured)
-cd infra && pulumi up
+# 2. Implement in small, testable increments
+# Start with core logic, then handlers, then integration
 
-# Test search features
-python test_account_search.py
-python test_semantic_search.py  # AI-powered search
-python test_federation_complete.py  # Full federation
+# 3. Test locally with SAM
+sam local start-api
 
-# Test with clients
-# - Ivory (iOS) - Great search UI
-# - Elk.zone (Web) - Modern search experience
-# - Mastodon official app
+# 4. Run integration tests
+python test_cost_tracking.py
+
+# 5. Deploy to dev environment
+cd infra && pulumi up -s dev
+
+# 6. Validate in production-like environment
+# Monitor CloudWatch logs and metrics
 ```
 
-### OpenSearch Configuration
-- **Endpoint**: Automatically set via Pulumi deployment
-- **Your endpoint**: `https://w1drcxx7lls7uheaolp6.us-east-1.aoss.amazonaws.com`
-- **Environment variable**: `OPENSEARCH_ENDPOINT` (auto-configured)
-- **Used for**: Vector search, fuzzy search, real-time indexing
+### Cost Tracking Implementation Example
 
-## Recent Wins 🎉
+```go
+// pkg/cost/tracker.go
+package cost
 
-**Push Notifications DEPLOYED!** 🔔✅
-1. **Full Web Push Implementation**: Complete push notification system with VAPID authentication!
-2. **Real-time Notifications**: Users receive instant notifications for follows, favorites, reblogs, mentions!
-3. **SQS Queue Integration**: Reliable delivery with message queuing!
-4. **Push Delivery Lambda**: Encrypted notification delivery using Web Push Protocol!
-5. **Client Compatibility**: Works with all Mastodon clients that support push notifications!
-6. **Infrastructure Complete**: SQS queue and Lambda fully deployed and operational!
+import (
+    "context"
+    "sync/atomic"
+)
 
-**Month 2 Track 2 - Federation COMPLETE!** 🌐✅
-1. **Full ActivityPub Federation**: Complete inbox/outbox implementation with activity processing!
-2. **Remote Follow Working**: Users can follow actors on any ActivityPub instance!
-3. **Activity Delivery**: All activities delivered to remote followers with HTTP signatures!
-4. **Inbox Processing**: Handles Follow, Accept, Create, Update, Delete, Undo activities!
-5. **Delivery Service**: Optimized delivery with shared inbox support!
-6. **Test Suite Enhanced**: `test_federation_complete.py` covers all federation scenarios!
+type Tracker struct {
+    dynamoReads  atomic.Int64
+    dynamoWrites atomic.Int64
+    lambdaMs     atomic.Int64
+    s3Gets       atomic.Int64
+    s3Puts       atomic.Int64
+    dataTransfer atomic.Int64
+}
 
-**Latest Progress** 🚀
-- ✅ **Build Issues Fixed**: AWS SDK v2 compatibility resolved for Comprehend and OpenSearch
-- ✅ **OpenSearch Restored**: Vector search functionality fully implemented with HTTP REST API
-- ✅ **Auto-Configuration**: OpenSearch endpoint automatically set during Pulumi deployment
-- ✅ **AWS v4 Signing**: Proper authentication for OpenSearch Serverless requests
+func (t *Tracker) TrackDynamoRead(items int) {
+    t.dynamoReads.Add(int64(items))
+}
 
-**Month 2 AI Enhancement Complete!** 🤖✨
-1. **AWS Bedrock Integration**: Semantic embeddings with Amazon Titan model!
-2. **Vector Search Working**: OpenSearch k-NN search with HNSW algorithm!
-3. **Query Understanding**: AWS Comprehend analyzes search intent!
-4. **"Did You Mean?"**: Semantic similarity suggestions for queries!
-5. **Real-time Embeddings**: DynamoDB Streams trigger automatic embedding generation!
-6. **Comprehensive Testing**: Full test suite with `test_semantic_search.py`!
-7. **Graceful Degradation**: System works even if AI services are unavailable!
-
-**Week 4 Complete!** 🚀
-1. **PopularitySearchStrategy Live**: Accounts ranked by follower count with time decay!
-2. **Search Analytics Tracking**: All searches tracked with TTL for analysis!
-3. **Advanced Filters Working**: Following-only and local-only search filters!
-4. **Count Tracking Automated**: Follower/following/status counts update automatically!
-5. **GSI4 Bucket Management**: Actors move between popularity buckets as they grow!
-6. **Enhanced Caching**: Multi-level caching with popularity weighting!
-7. **Comprehensive Testing**: Full test suite for all Week 4 features!
-
-**Previous Wins**:
-- OpenSearch fuzzy search with typo tolerance
-- Real-time indexing via DynamoDB Streams
-- Multi-field search (username, display name, bio)
-- <50ms search suggestions API
-
-## Quick Start - Deploy & Test Complete Month 2 Features
-
-```bash
-# 🎉 MONTH 2 COMPLETE - Ready for deployment!
-
-# === BUILD & DEPLOY ===
-# 1. Build Lambda functions (now fixed!)
-make build-lambdas
-
-# 2. Deploy to AWS
-cd infra && pulumi up
-# OpenSearch endpoint is automatically configured!
-
-# === TEST AI FEATURES ===
-# 1. Test semantic search with vector similarity
-python test_semantic_search.py https://your-instance.com --token YOUR_TOKEN
-
-# 2. Compare regular vs AI-enhanced search
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  "https://your-instance.com/api/v2/search?q=developer&type=accounts&semantic=true"
-
-# === TEST FEDERATION FEATURES ===
-# 1. Test complete federation implementation
-python test_federation_complete.py https://your-instance.com --token YOUR_TOKEN
-
-# 2. Follow a remote actor
-curl -X POST -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/activity+json" \
-  -d '{"type":"Follow","object":"https://mastodon.social/users/Gargron"}' \
-  "https://your-instance.com/users/YOUR_USERNAME/outbox"
-
-# 3. Test WebFinger
-curl "https://your-instance.com/.well-known/webfinger?resource=acct:test@your-instance.com"
+func (t *Tracker) CalculateCost() *OperationCost {
+    // Use current AWS pricing
+    return &OperationCost{
+        DynamoDBReads:    t.dynamoReads.Load(),
+        DynamoDBWrites:   t.dynamoWrites.Load(),
+        TotalCostMicros:  t.calculateTotal(),
+    }
+}
 ```
 
-## What's Next?
+### Testing Cost Features
 
-### 🎉 MONTH 2 COMPLETE - Deploy and Test!
-
-**Immediate Action: Deploy Your Complete Lesser Instance**
-```bash
-# 1. Ensure AWS credentials are configured
-aws configure
-
-# 2. Build the fixed Lambda functions
-make build-lambdas
-
-# 3. Deploy with OpenSearch auto-configuration
-cd infra && pulumi up
-
-# 4. Test everything works
-python test_semantic_search.py https://your-instance.com --token YOUR_TOKEN
-python test_federation_complete.py https://your-instance.com --token YOUR_TOKEN
+```python
+# test_cost_tracking.py
+def test_cost_headers():
+    """Verify cost tracking headers are present"""
+    response = client.get("/api/v1/accounts/verify_credentials")
+    assert "X-Cost-Total-Micros" in response.headers
+    assert "X-Cost-DynamoDB-Reads" in response.headers
+    
+def test_cost_aggregation():
+    """Verify costs are aggregated correctly"""
+    # Make several API calls
+    # Check /api/v1/instance/costs endpoint
+    # Verify aggregation is accurate
 ```
 
-### 🚀 Next Development Priorities
+## Architecture Decisions
 
-**Option 1: Media CDN URLs** 🔴 (HIGH PRIORITY)
-```bash
-# Fix media attachment URL generation
-# Current issue: Media URLs not using CloudFront CDN properly
+### Why Event-Driven?
+- **Scalability**: Each component scales independently
+- **Resilience**: Failures in one component don't cascade
+- **Cost**: Only pay for actual processing time
+- **Flexibility**: Easy to add new event processors
 
-# Tasks:
-- Fix URL generation in media handlers
-- Ensure CloudFront distribution is used
-- Add URL signing if needed for private media
-- Test with various Mastodon clients
+### Why Cost Tracking?
+- **Transparency**: Users see the real cost of social media
+- **Optimization**: Identify and optimize expensive operations
+- **Budgeting**: Instances can set and enforce cost limits
+- **Innovation**: Enables new cost-based features
 
-# Key files:
-- cmd/api/handlers/media.go
-- pkg/storage/dynamodb/media.go
-```
+### Why Moderation Mesh?
+- **Decentralized**: No single point of failure or control
+- **Transparent**: All decisions are auditable
+- **Flexible**: Instances choose their own policies
+- **Collaborative**: Learn from the network's decisions
 
-**Option 2: Polls Support** 📊 (MEDIUM PRIORITY)
-```bash
-# Interactive content with polls
-# Allow users to create and vote on polls
+## Success Metrics
 
-# Tasks:
-- Add poll fields to status creation
-- Vote submission endpoint
-- Real-time vote counting
-- Expiration handling with TTL
+### Phase 1 Success Criteria (Weeks 1-2)
+- [ ] Cost data available on 100% of API calls
+- [ ] <1ms overhead from cost tracking
+- [ ] Activity stream handling 1000 events/second
+- [ ] Cost prediction accuracy within 10%
 
-# Key files:
-- cmd/api/handlers/polls.go (new)
-- pkg/storage/dynamodb/polls.go (new)
-- Update status creation/display
-```
+### Phase 2 Success Criteria (Weeks 3-4)
+- [ ] Moderation decisions in <1 second
+- [ ] Trust graph queries in <50ms
+- [ ] 95% consensus achievement rate
+- [ ] Zero false positive removals
 
-**📊 Major Achievements**:
-- ✅ Complete search architecture (Weeks 1-4)
-- ✅ AI-enhanced semantic search with OpenSearch vectors
-- ✅ Full ActivityPub federation implementation
-- ✅ Remote follow functionality
-- ✅ Activity delivery with HTTP signatures
-- ✅ Push notifications fully deployed and operational!
-- ✅ Build issues resolved - ready for deployment!
+### Overall Project Success
+- [ ] <$0.01/month per active user
+- [ ] <50ms response times at p99
+- [ ] 99.99% uptime
+- [ ] Developer adoption from major clients
 
-**🎯 Development Progress**: 
-- ✅ Week 1-4: Advanced search complete
-- ✅ Month 2 Track 1: AI enhancement complete
-- ✅ Month 2 Track 2: Federation implementation complete
-- ✅ OpenSearch vector search restored and working
-- ✅ Auto-configuration via Pulumi deployment
-- 🎉 MONTH 2 FULLY COMPLETE & DEPLOYABLE!
+## Key Differentiators
 
-## Additional Resources
+Lesser 2.0 is not just another ActivityPub server:
 
-- [Search Architecture Design](SEARCH_DESIGN.md) - **CURRENT FOCUS** 🎯
-- [ActivityPub Specification](https://www.w3.org/TR/activitypub/)
-- [Mastodon API Documentation](https://docs.joinmastodon.org/api/)
-- [Project Design Document](DESIGN.md)
-- [Developer Guidelines](DEVELOPER_GUIDELINES.md) 
+1. **Cost Transparency** - First server to show real costs per operation
+2. **Reactive Moderation** - Consensus-based decisions, not dictatorial
+3. **Developer-First** - GraphQL, debug tools, comprehensive SDKs
+4. **AI-Native** - Built-in AI services, not bolted on
+5. **Truly Serverless** - Scales to zero, scales to millions
+
+## Next Steps
+
+**Immediate Priority**: Implement cost tracking infrastructure
+1. Create `pkg/cost/tracker.go` with operation tracking
+2. Add middleware to API handlers
+3. Deploy cost aggregation Lambda
+4. Update tests to verify cost headers
+
+**This Week**: Complete Phase 1.1 (Cost Tracking)
+- All API responses include cost metadata
+- Cost history stored and queryable
+- Basic cost analytics available
+- Documentation updated
+
+Remember: We're not just building features, we're demonstrating that federated social media can be essentially free while providing superior functionality. Every line of code should reflect this mission.
+
+---
+
+*Lesser 2.0: Making the impossible inevitable in federated social media.* 

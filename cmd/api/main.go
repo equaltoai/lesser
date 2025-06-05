@@ -58,6 +58,7 @@ import (
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/storage"
 	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
@@ -93,6 +94,11 @@ func init() {
 }
 
 func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Wrap the actual handler with cost tracking
+	return cost.WrapHandler(handleRequest, logger)(ctx, request)
+}
+
+func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// IMPORTANT: Mastodon API Version Notes
 	// =====================================
 	// We support both /api/v1 and /api/v2 endpoints.
@@ -251,8 +257,14 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 					if method == http.MethodPost {
 						return handler.HandleUnbookmark(ctx, request, statusID)
 					}
-					// TODO: GET /api/v1/statuses/:id/favourited_by - Who favourited this status
-					// TODO: GET /api/v1/statuses/:id/reblogged_by - Who boosted this status
+				case "favourited_by":
+					if method == http.MethodGet {
+						return handler.HandleGetStatusFavouritedBy(ctx, request, statusID)
+					}
+				case "reblogged_by":
+					if method == http.MethodGet {
+						return handler.HandleGetStatusRebloggedBy(ctx, request, statusID)
+					}
 					// TODO: POST /api/v1/statuses/:id/mute - Mute conversation
 					// TODO: POST /api/v1/statuses/:id/unmute - Unmute conversation
 					// TODO: POST /api/v1/statuses/:id/pin - Pin status to profile
@@ -317,11 +329,14 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 					if method == http.MethodPost {
 						return handler.HandleUnmuteAccount(ctx, request, accountID)
 					}
+				case "lists":
+					if method == http.MethodGet {
+						return handler.HandleGetAccountLists(ctx, request, accountID)
+					}
 					// TODO: POST /api/v1/accounts/:id/pin - Pin account to profile
 					// TODO: POST /api/v1/accounts/:id/unpin - Unpin account from profile
 					// TODO: POST /api/v1/accounts/:id/note - Set private note on account
 					// TODO: POST /api/v1/accounts/:id/remove_from_followers - Remove follower
-					// TODO: GET /api/v1/accounts/:id/lists - Lists containing this account
 				}
 			} else if len(parts) == 3 && method == http.MethodGet {
 				return handler.HandleGetAccount(ctx, request, accountID)
@@ -467,6 +482,11 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 			"updated_at": updatedAt.Format(time.RFC3339),
 			"content":    content,
 		}), nil
+	}
+
+	// Instance costs
+	if path == "/instance/costs" && method == http.MethodGet {
+		return handler.HandleGetInstanceCosts(ctx, request)
 	}
 
 	// Profile directory
@@ -656,11 +676,36 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/bookmarks" && method == http.MethodGet {
 		return handler.HandleGetBookmarks(ctx, request)
 	}
-	// TODO: GET /api/v1/favourites - View favourited statuses
+	// Favourites
+	if path == "/favourites" && method == http.MethodGet {
+		return handler.HandleGetFavourites(ctx, request)
+	}
 
-	// TODO: GET /api/v1/follow_requests - View follow requests
-	// TODO: POST /api/v1/follow_requests/:account_id/authorize - Accept follow
-	// TODO: POST /api/v1/follow_requests/:account_id/reject - Reject follow
+	// Follow requests
+	if path == "/follow_requests" && method == http.MethodGet {
+		return handler.HandleGetFollowRequests(ctx, request)
+	}
+	// Follow request operations
+	if strings.HasPrefix(path, "/follow_requests/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			accountID := parts[2]
+
+			if len(parts) == 4 {
+				action := parts[3]
+				switch action {
+				case "authorize":
+					if method == http.MethodPost {
+						return handler.HandleAuthorizeFollowRequest(ctx, request, accountID)
+					}
+				case "reject":
+					if method == http.MethodPost {
+						return handler.HandleRejectFollowRequest(ctx, request, accountID)
+					}
+				}
+			}
+		}
+	}
 
 	// TODO: GET /api/v1/endorsements - View endorsed accounts
 	// TODO: GET /api/v1/suggestions - Get follow suggestions

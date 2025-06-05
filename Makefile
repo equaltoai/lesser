@@ -176,6 +176,9 @@ build-lambdas:
 	@echo "Building push-delivery..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/push-delivery
 	@cd bin && zip -q push-delivery.zip bootstrap && rm bootstrap
+	@echo "Building cost-aggregator..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/cost-aggregator
+	@cd bin && zip -q cost-aggregator.zip bootstrap && rm bootstrap
 	@echo "Lambda functions built successfully!"
 
 .PHONY: deploy
