@@ -178,6 +178,10 @@ type Storage interface {
 	DeleteNotification(ctx context.Context, id string) error
 	ClearNotifications(ctx context.Context, username string) error
 	CountUnreadNotifications(ctx context.Context, username string) (int, error)
+
+	// Remote actor caching operations
+	CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error
+	GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error)
 }
 
 // User represents a user account in the system

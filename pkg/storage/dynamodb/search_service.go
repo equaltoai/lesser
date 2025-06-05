@@ -10,6 +10,7 @@ import (
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -102,7 +103,7 @@ func (s *SearchService) Search(ctx context.Context, query string, options Search
 	analyzedQuery := s.analyzeQuery(ctx, query)
 
 	// Initialize strategies based on query analysis
-	strategies := s.selectStrategies(analyzedQuery, options)
+	strategies := s.selectStrategies(ctx, analyzedQuery, options)
 
 	// Execute strategies in parallel
 	resultsChan := make(chan []*SearchResult, len(strategies))
@@ -207,7 +208,7 @@ func (s *SearchService) analyzeQuery(ctx context.Context, query string) *Analyze
 }
 
 // selectStrategies chooses which search strategies to use based on the query
-func (s *SearchService) selectStrategies(query *AnalyzedQuery, options SearchOptions) []SearchStrategy {
+func (s *SearchService) selectStrategies(ctx context.Context, query *AnalyzedQuery, options SearchOptions) []SearchStrategy {
 	strategies := make([]SearchStrategy, 0)
 
 	// Always try exact match first
@@ -241,6 +242,23 @@ func (s *SearchService) selectStrategies(query *AnalyzedQuery, options SearchOpt
 			}
 		} else {
 			s.logger.Warn("failed to create fuzzy search strategy", zap.Error(err))
+		}
+	}
+
+	// Add semantic search if enabled
+	if options.Semantic && len(query.Query) >= 3 {
+		// Get AWS config from somewhere - we'll need to pass this properly
+		// For now, we'll create it here (in production, this would be passed from the handler)
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			s.logger.Warn("failed to load AWS config for semantic search", zap.Error(err))
+		} else {
+			if semanticStrategy, err := NewSemanticSearchStrategy(s, cfg); err == nil {
+				strategies = append(strategies, semanticStrategy)
+				s.logger.Debug("semantic search strategy enabled")
+			} else {
+				s.logger.Warn("failed to create semantic search strategy", zap.Error(err))
+			}
 		}
 	}
 

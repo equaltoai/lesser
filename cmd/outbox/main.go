@@ -13,6 +13,7 @@ import (
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/federation"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
@@ -314,6 +315,14 @@ func handlePostOutbox(ctx context.Context, log *zap.Logger, username string, req
 		}
 	}
 
+	// Handle Follow activities
+	if activity.Type == activitypub.FollowType {
+		if err := processFollowActivity(ctx, &activity, actor); err != nil {
+			log.Warn("failed to process Follow activity", zap.Error(err))
+			return common.BadRequest(err), nil
+		}
+	}
+
 	// Validate the activity
 	if err := activitypub.ValidateActivity(&activity); err != nil {
 		log.Warn("activity validation failed",
@@ -335,6 +344,11 @@ func handlePostOutbox(ctx context.Context, log *zap.Logger, username string, req
 			// Log the error but don't fail the request
 			log.Error("failed to fan out post to timelines", zap.Error(err))
 		}
+	}
+
+	// Deliver activity to remote followers and recipients
+	if shouldDeliverRemotely(activity.Type) {
+		go deliverActivityRemotely(ctx, &activity, actor)
 	}
 
 	log.Info("activity created",
@@ -1143,6 +1157,69 @@ func extractUsernameFromActorID(actorID string) string {
 }
 
 // processBlockActivity processes a Block activity and validates its object
+// processFollowActivity processes a Follow activity for remote actors
+func processFollowActivity(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	// Ensure the activity has an object (the actor being followed)
+	if activity.Object == nil {
+		return common.ValidationError{Field: "object", Message: "Follow activity must have an object"}
+	}
+
+	// The object should be the ID of the actor being followed
+	var followedActorID string
+	switch obj := activity.Object.(type) {
+	case string:
+		followedActorID = obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			followedActorID = id
+		} else {
+			return common.ValidationError{Field: "object.id", Message: "Follow object must have an ID"}
+		}
+	default:
+		return common.ValidationError{Field: "object", Message: "Follow object must be a string or object"}
+	}
+
+	// Validate the followed actor ID is a valid URL
+	if !isValidURL(followedActorID) {
+		return common.ValidationError{Field: "object", Message: "Follow object must be a valid URL"}
+	}
+
+	// Extract handle from the followed actor ID
+	followedHandle := extractHandleFromActorID(followedActorID)
+
+	// Create the follow relationship (in pending state)
+	err := store.CreateFollow(ctx, actor.PreferredUsername, followedHandle, activity.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create follow relationship: %w", err)
+	}
+
+	// Set activity published time if not set
+	if activity.Published == nil {
+		now := time.Now().UTC()
+		activity.Published = &now
+	}
+
+	// Set addressing to the followed actor
+	activity.To = []string{followedActorID}
+
+	return nil
+}
+
+// extractHandleFromActorID extracts a handle from an actor ID
+func extractHandleFromActorID(actorID string) string {
+	// Extract username and domain from actor ID
+	// Format: https://domain.com/users/username -> @username@domain.com
+	parts := strings.Split(actorID, "/")
+	if len(parts) < 5 {
+		return actorID // Return as-is if not in expected format
+	}
+
+	domain := parts[2]
+	username := parts[len(parts)-1]
+
+	return fmt.Sprintf("@%s@%s", username, domain)
+}
+
 func processBlockActivity(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	// Ensure object is a string (actor ID)
 	blockedActor, ok := activity.Object.(string)
@@ -1200,6 +1277,80 @@ func processBlockActivity(ctx context.Context, activity *activitypub.Activity, a
 	}
 
 	return nil
+}
+
+// shouldDeliverRemotely checks if an activity type should be delivered to remote instances
+func shouldDeliverRemotely(activityType string) bool {
+	switch activityType {
+	case activitypub.CreateType,
+		activitypub.UpdateType,
+		activitypub.DeleteType,
+		activitypub.LikeType,
+		activitypub.AnnounceType,
+		activitypub.UndoType,
+		activitypub.FollowType,
+		activitypub.AcceptType,
+		activitypub.RejectType:
+		return true
+	default:
+		return false
+	}
+}
+
+// deliverActivityRemotely delivers an activity to remote followers and recipients
+func deliverActivityRemotely(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) {
+	log := common.WithContext(ctx)
+
+	// Create delivery service
+	deliveryService := federation.NewDeliveryService(store)
+
+	// Deliver to followers if the activity is public or addressed to followers
+	if isAddressedToFollowers(activity, actor) {
+		if err := deliveryService.DeliverToFollowers(ctx, activity, actor); err != nil {
+			log.Error("failed to deliver to followers", zap.Error(err))
+		}
+	}
+
+	// Deliver to specific recipients
+	if hasSpecificRecipients(activity) {
+		if err := deliveryService.DeliverToRecipients(ctx, activity, actor); err != nil {
+			log.Error("failed to deliver to recipients", zap.Error(err))
+		}
+	}
+}
+
+// isAddressedToFollowers checks if an activity is addressed to followers
+func isAddressedToFollowers(activity *activitypub.Activity, actor *activitypub.Actor) bool {
+	// Check if public or followers are in the addressing
+	for _, to := range activity.To {
+		if to == activitypub.PublicAddress || to == actor.Followers {
+			return true
+		}
+	}
+	for _, cc := range activity.CC {
+		if cc == activitypub.PublicAddress || cc == actor.Followers {
+			return true
+		}
+	}
+	return false
+}
+
+// hasSpecificRecipients checks if an activity has specific recipients (not just public/followers)
+func hasSpecificRecipients(activity *activitypub.Activity) bool {
+	// Check To field
+	for _, to := range activity.To {
+		if to != activitypub.PublicAddress && !strings.Contains(to, "/followers") {
+			return true
+		}
+	}
+	// Check CC field
+	for _, cc := range activity.CC {
+		if cc != activitypub.PublicAddress && !strings.Contains(cc, "/followers") {
+			return true
+		}
+	}
+	// Check BTo and BCC fields
+	return len(activity.BTo) > 0 || len(activity.BCC) > 0
 }
 
 func main() {
