@@ -194,6 +194,14 @@ type Storage interface {
 	// VAPID key operations
 	GetVAPIDKeys(ctx context.Context) (*VAPIDKeys, error)
 	SetVAPIDKeys(ctx context.Context, keys *VAPIDKeys) error
+
+	// Poll operations
+	CreatePoll(ctx context.Context, poll *Poll) error
+	GetPoll(ctx context.Context, pollID string) (*Poll, error)
+	GetPollByStatusID(ctx context.Context, statusID string) (*Poll, error)
+	VoteOnPoll(ctx context.Context, pollID string, voterID string, choices []int) error
+	GetPollVotes(ctx context.Context, pollID string) (map[string][]int, error)
+	HasUserVoted(ctx context.Context, pollID string, userID string) (bool, []int, error)
 }
 
 // User represents a user account in the system
@@ -548,4 +556,20 @@ type VAPIDKeys struct {
 	PrivateKey string    `dynamodbav:"private_key"`
 	Subject    string    `dynamodbav:"subject"`
 	CreatedAt  time.Time `dynamodbav:"created_at"`
+}
+
+// Poll represents a poll in the storage layer
+type Poll struct {
+	ID          string           `dynamodbav:"id"`
+	StatusID    string           `dynamodbav:"statusId"`   // The status this poll belongs to
+	CreatedBy   string           `dynamodbav:"createdBy"`  // Actor ID who created the poll
+	Options     []string         `dynamodbav:"options"`    // Poll options
+	Multiple    bool             `dynamodbav:"multiple"`   // Allow multiple choices
+	HideTotals  bool             `dynamodbav:"hideTotals"` // Hide vote counts until poll ends
+	ExpiresAt   time.Time        `dynamodbav:"expiresAt"`  // When the poll expires
+	CreatedAt   time.Time        `dynamodbav:"createdAt"`
+	UpdatedAt   time.Time        `dynamodbav:"updatedAt"`
+	VotesCount  int              `dynamodbav:"votesCount"`  // Total number of votes
+	VotersCount int              `dynamodbav:"votersCount"` // Total number of voters
+	Votes       map[string][]int `dynamodbav:"votes"`       // Map of voter ID to option indices
 }
