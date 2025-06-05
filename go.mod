@@ -8,7 +8,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.28.0
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.19.0
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.7.82
+	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.27.0
+	github.com/aws/aws-sdk-go-v2/service/comprehend v1.35.8
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.43.1
+	github.com/aws/aws-sdk-go-v2/service/opensearchserverless v1.19.4
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.80.0
 	github.com/bytedance/sonic v1.13.3
 	github.com/golang-jwt/jwt/v5 v5.2.2

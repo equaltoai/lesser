@@ -325,7 +325,46 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		return common.InternalServerError(err), nil
 	}
 
-	log.Info("activity accepted",
+	// Process different activity types
+	switch activity.Type {
+	case activitypub.FollowType:
+		if err := processFollowActivity(ctx, &activity, actor); err != nil {
+			log.Error("failed to process follow activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	case activitypub.AcceptType:
+		if err := processAcceptActivity(ctx, &activity, actor); err != nil {
+			log.Error("failed to process accept activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	case activitypub.RejectType:
+		if err := processRejectActivity(ctx, &activity, actor); err != nil {
+			log.Error("failed to process reject activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	case activitypub.CreateType:
+		if err := processRemoteCreateActivity(ctx, &activity, actor); err != nil {
+			log.Error("failed to process create activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	case activitypub.UpdateType:
+		if err := processRemoteUpdateActivity(ctx, &activity, actor); err != nil {
+			log.Error("failed to process update activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	case activitypub.DeleteType:
+		if err := processRemoteDeleteActivity(ctx, &activity, actor); err != nil {
+			log.Error("failed to process delete activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	case activitypub.UndoType:
+		if err := processUndoActivity(ctx, &activity, actor); err != nil {
+			log.Error("failed to process undo activity", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+	}
+
+	log.Info("activity accepted and processed",
 		zap.String("id", activity.ID),
 		zap.String("type", activity.Type),
 		zap.String("from", activity.Actor))
@@ -480,6 +519,298 @@ func fetchActorPublicKey(ctx context.Context, actorURL string) (crypto.PublicKey
 		zap.String("key_id", actor.PublicKey.ID))
 
 	return publicKey, nil
+}
+
+// processFollowActivity processes an incoming Follow activity
+func processFollowActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+	log := common.WithContext(ctx)
+
+	// Extract follower username from actor ID
+	followerHandle := extractHandleFromActorID(activity.Actor)
+
+	// Create the follow relationship with pending state
+	err := store.CreateFollow(ctx, followerHandle, targetActor.PreferredUsername, activity.ID)
+	if err != nil {
+		log.Error("failed to create follow relationship", zap.Error(err))
+		return err
+	}
+
+	// For now, auto-accept all follows (TODO: implement manual approval option)
+	err = store.AcceptFollow(ctx, followerHandle, targetActor.PreferredUsername)
+	if err != nil {
+		log.Error("failed to accept follow", zap.Error(err))
+		return err
+	}
+
+	// Send Accept activity back to the follower
+	acceptActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			ID:        fmt.Sprintf("%s/activities/%s", targetActor.ID, generateActivityID()),
+			Type:      activitypub.AcceptType,
+			Published: timePtr(time.Now()),
+		},
+		Actor:  targetActor.ID,
+		Object: activity.ID, // Reference the original Follow activity
+	}
+
+	// Deliver the Accept activity
+	deliveryService := federation.NewDeliveryService(store)
+	if err := deliveryService.DeliverActivity(ctx, acceptActivity, activity.Actor, targetActor); err != nil {
+		log.Error("failed to deliver accept activity", zap.Error(err))
+		// Don't fail the operation if delivery fails
+	}
+
+	return nil
+}
+
+// processAcceptActivity processes an incoming Accept activity
+func processAcceptActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+	log := common.WithContext(ctx)
+
+	// Check if this is accepting a Follow request
+	if objectID, ok := activity.Object.(string); ok {
+		// Fetch the original activity
+		originalActivity, err := store.GetActivity(ctx, objectID)
+		if err != nil {
+			log.Warn("failed to find original activity", zap.String("id", objectID))
+			return nil // Don't fail, just ignore
+		}
+
+		if originalActivity.Type == activitypub.FollowType {
+			// Update the follow relationship to accepted
+			acceptorHandle := extractHandleFromActorID(activity.Actor)
+			err = store.AcceptFollow(ctx, targetActor.PreferredUsername, acceptorHandle)
+			if err != nil {
+				log.Error("failed to update follow status", zap.Error(err))
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// processRejectActivity processes an incoming Reject activity
+func processRejectActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+	log := common.WithContext(ctx)
+
+	// Check if this is rejecting a Follow request
+	if objectID, ok := activity.Object.(string); ok {
+		// Fetch the original activity
+		originalActivity, err := store.GetActivity(ctx, objectID)
+		if err != nil {
+			log.Warn("failed to find original activity", zap.String("id", objectID))
+			return nil // Don't fail, just ignore
+		}
+
+		if originalActivity.Type == activitypub.FollowType {
+			// Remove the follow relationship
+			rejectorHandle := extractHandleFromActorID(activity.Actor)
+			err = store.RemoveFollow(ctx, targetActor.PreferredUsername, rejectorHandle)
+			if err != nil {
+				log.Error("failed to remove follow", zap.Error(err))
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// processRemoteCreateActivity processes an incoming Create activity from a remote instance
+func processRemoteCreateActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+	log := common.WithContext(ctx)
+
+	// Extract the object
+	objMap, ok := activity.Object.(map[string]interface{})
+	if !ok {
+		log.Warn("create activity has invalid object")
+		return nil
+	}
+
+	// Store the object if it's a Note
+	if objType, _ := objMap["type"].(string); objType == activitypub.NoteType {
+		// Convert to Note object
+		objJSON, err := json.Marshal(objMap)
+		if err != nil {
+			return err
+		}
+
+		var note activitypub.Note
+		if err := json.Unmarshal(objJSON, &note); err != nil {
+			return err
+		}
+
+		// Store the note (it will be marked as remote)
+		if err := store.CreateObject(ctx, &note); err != nil {
+			log.Error("failed to store remote note", zap.Error(err))
+			return err
+		}
+	}
+
+	return nil
+}
+
+// processRemoteUpdateActivity processes an incoming Update activity from a remote instance
+func processRemoteUpdateActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+	log := common.WithContext(ctx)
+
+	// Extract the object
+	objMap, ok := activity.Object.(map[string]interface{})
+	if !ok {
+		log.Warn("update activity has invalid object")
+		return nil
+	}
+
+	// Update the object if it's a Note
+	if objType, _ := objMap["type"].(string); objType == activitypub.NoteType {
+		// Convert to Note object
+		objJSON, err := json.Marshal(objMap)
+		if err != nil {
+			return err
+		}
+
+		var note activitypub.Note
+		if err := json.Unmarshal(objJSON, &note); err != nil {
+			return err
+		}
+
+		// Update the note
+		if err := store.UpdateObject(ctx, &note); err != nil {
+			log.Error("failed to update remote note", zap.Error(err))
+			// Don't fail if we can't update (might not have it)
+		}
+	}
+
+	return nil
+}
+
+// processRemoteDeleteActivity processes an incoming Delete activity from a remote instance
+func processRemoteDeleteActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+	log := common.WithContext(ctx)
+
+	// Get the object ID to delete
+	var objectID string
+	switch obj := activity.Object.(type) {
+	case string:
+		objectID = obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			objectID = id
+		}
+	}
+
+	if objectID == "" {
+		log.Warn("delete activity has no object ID")
+		return nil
+	}
+
+	// Delete the object
+	if err := store.DeleteObject(ctx, objectID); err != nil {
+		log.Warn("failed to delete object", zap.String("id", objectID), zap.Error(err))
+		// Don't fail if we can't delete (might not have it)
+	}
+
+	return nil
+}
+
+// processUndoActivity processes an incoming Undo activity
+func processUndoActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+	log := common.WithContext(ctx)
+
+	// Get the activity being undone
+	var originalActivity *activitypub.Activity
+
+	switch obj := activity.Object.(type) {
+	case string:
+		// Fetch the activity by ID
+		var err error
+		originalActivity, err = store.GetActivity(ctx, obj)
+		if err != nil {
+			log.Warn("failed to find activity to undo", zap.String("id", obj))
+			return nil
+		}
+	case map[string]interface{}:
+		// Convert to activity
+		objJSON, err := json.Marshal(obj)
+		if err != nil {
+			return err
+		}
+
+		originalActivity = &activitypub.Activity{}
+		if err := json.Unmarshal(objJSON, originalActivity); err != nil {
+			return err
+		}
+	default:
+		log.Warn("undo activity has invalid object")
+		return nil
+	}
+
+	// Process based on the original activity type
+	switch originalActivity.Type {
+	case activitypub.FollowType:
+		// Undo follow
+		unfollowerHandle := extractHandleFromActorID(activity.Actor)
+		err := store.RemoveFollow(ctx, unfollowerHandle, targetActor.PreferredUsername)
+		if err != nil {
+			log.Error("failed to remove follow", zap.Error(err))
+			return err
+		}
+	case activitypub.LikeType:
+		// Undo like
+		if objectID, ok := originalActivity.Object.(string); ok {
+			err := store.DeleteLike(ctx, activity.Actor, objectID)
+			if err != nil {
+				log.Warn("failed to remove like", zap.Error(err))
+				// Don't fail
+			}
+		}
+	}
+
+	return nil
+}
+
+// Helper functions
+
+func extractHandleFromActorID(actorID string) string {
+	// Extract username and domain from actor ID
+	// Format: https://domain.com/users/username -> @username@domain.com
+	parts := strings.Split(actorID, "/")
+	if len(parts) < 5 {
+		return actorID // Return as-is if not in expected format
+	}
+
+	domain := parts[2]
+	username := parts[len(parts)-1]
+
+	return fmt.Sprintf("@%s@%s", username, domain)
+}
+
+func extractUsernameFromHandle(handle string) string {
+	// Extract username from handle @username@domain
+	parts := strings.Split(handle, "@")
+	if len(parts) >= 2 {
+		return parts[1]
+	}
+	return handle
+}
+
+func generateActivityID() string {
+	return fmt.Sprintf("%d-%s", time.Now().UnixNano(), generateRandomString(8))
+}
+
+func generateRandomString(length int) string {
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+	result := make([]byte, length)
+	for i := range result {
+		result[i] = chars[time.Now().UnixNano()%int64(len(chars))]
+	}
+	return string(result)
+}
+
+func timePtr(t time.Time) *time.Time {
+	return &t
 }
 
 func main() {

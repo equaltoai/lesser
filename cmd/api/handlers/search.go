@@ -9,6 +9,7 @@ import (
 
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/federation"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 
@@ -84,13 +85,24 @@ func (h *Handler) HandleAccountSearch(ctx context.Context, request events.APIGat
 		return common.InternalServerError(fmt.Errorf("search failed")), nil
 	}
 
-	// If no local results and resolve is true, try WebFinger lookup
-	if len(actors) == 0 && resolve {
-		// Check if query looks like a federated handle
-		if isValidHandle(query) {
-			// TODO: Implement WebFinger resolution
-			h.logger.Debug("would perform WebFinger lookup",
-				zap.String("query", query))
+	// If resolve is true, try WebFinger lookup for federated handles
+	if resolve && isValidHandle(query) {
+		// Create remote search service
+		remoteSearchSvc := federation.NewRemoteSearchService(h.store)
+
+		// Search for remote actors
+		remoteResults, err := remoteSearchSvc.SearchRemoteActors(ctx, query, limit)
+		if err != nil {
+			h.logger.Debug("remote search failed",
+				zap.String("query", query),
+				zap.Error(err))
+		} else if len(remoteResults) > 0 {
+			// Add remote actors to results
+			for _, result := range remoteResults {
+				if result.Actor != nil {
+					actors = append(actors, result.Actor)
+				}
+			}
 		}
 	}
 

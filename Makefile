@@ -5,8 +5,9 @@ GOOS ?= linux
 GOARCH ?= arm64
 CGO_ENABLED ?= 0
 
-# Lambda function directories
-LAMBDAS := webfinger actor inbox outbox collections activity-processor media
+# List of Lambda functions to build
+LAMBDAS := webfinger actor inbox outbox collections activity-processor
+# Add new lambdas here and create corresponding build targets below
 
 # Build all Lambda functions
 build:
@@ -166,9 +167,6 @@ build-lambdas:
 	@echo "Building auth..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/auth
 	@cd bin && zip -q auth.zip bootstrap && rm bootstrap
-	@echo "Building media..."
-	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/media
-	@cd bin && zip -q media.zip bootstrap && rm bootstrap
 	@echo "Building activity-processor..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/activity-processor
 	@cd bin && zip -q activity-processor.zip bootstrap && rm bootstrap
@@ -202,4 +200,16 @@ build-search-indexer:
 build-configure-instance:
 	@echo "Building cmd/configure-instance..."
 	@GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
-		go build -ldflags="-s -w" -o bin/configure-instance ./cmd/configure-instance 
+		go build -ldflags="-s -w" -o bin/configure-instance ./cmd/configure-instance
+
+# Build auth Lambda
+build-auth:
+	@echo "Building auth..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/auth
+	@cd bin && zip -q auth.zip bootstrap && rm bootstrap
+
+# Build search-indexer Lambda
+build-search-indexer:
+	@echo "Building search-indexer..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/search-indexer
+	@cd bin && zip -q search-indexer.zip bootstrap && rm bootstrap 

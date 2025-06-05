@@ -12,17 +12,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
 	opensearchapi "github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	requestsigner "github.com/opensearch-project/opensearch-go/v2/signer/awsv2"
+	"go.uber.org/zap"
 )
 
 type SearchIndexer struct {
-	osClient *opensearch.Client
-	domain   string
+	osClient  *opensearch.Client
+	domain    string
+	embedding *dynamodb.EmbeddingService
+	logger    *zap.Logger
 }
 
 // Actor represents the data structure we'll index in OpenSearch
@@ -39,6 +44,7 @@ type ActorDocument struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 	IndexedAt      time.Time `json:"indexed_at"`
 	IsLocal        bool      `json:"is_local"`
+	Embedding      []float32 `json:"embedding,omitempty"` // Vector embedding for semantic search
 }
 
 func NewSearchIndexer() (*SearchIndexer, error) {
@@ -50,6 +56,17 @@ func NewSearchIndexer() (*SearchIndexer, error) {
 	domain := os.Getenv("DOMAIN")
 	if domain == "" {
 		return nil, fmt.Errorf("DOMAIN environment variable is required")
+	}
+
+	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	if tableName == "" {
+		return nil, fmt.Errorf("DYNAMO_TABLE_NAME environment variable is required")
+	}
+
+	// Create logger
+	logger, err := zap.NewProduction()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logger: %w", err)
 	}
 
 	// Load AWS configuration
@@ -87,9 +104,19 @@ func NewSearchIndexer() (*SearchIndexer, error) {
 		return nil, fmt.Errorf("OpenSearch ping failed with status: %d", res.StatusCode)
 	}
 
+	// Create embedding service
+	embeddingService, err := dynamodb.NewEmbeddingService(cfg, tableName, logger)
+	if err != nil {
+		logger.Warn("Failed to create embedding service, continuing without embeddings", zap.Error(err))
+		// Don't fail - allow indexing to continue without embeddings
+		embeddingService = nil
+	}
+
 	return &SearchIndexer{
-		osClient: client,
-		domain:   domain,
+		osClient:  client,
+		domain:    domain,
+		embedding: embeddingService,
+		logger:    logger,
 	}, nil
 }
 
@@ -128,6 +155,15 @@ func (si *SearchIndexer) ensureIndex(ctx context.Context) error {
 					"updated_at":      map[string]interface{}{"type": "date"},
 					"indexed_at":      map[string]interface{}{"type": "date"},
 					"is_local":        map[string]interface{}{"type": "boolean"},
+					"embedding": map[string]interface{}{
+						"type":      "knn_vector",
+						"dimension": 1536, // AWS Titan embedding dimension
+						"method": map[string]interface{}{
+							"name":       "hnsw",
+							"space_type": "cosinesimil",
+							"engine":     "nmslib",
+						},
+					},
 				},
 			},
 			"settings": map[string]interface{}{
@@ -247,6 +283,30 @@ func (si *SearchIndexer) indexActor(ctx context.Context, item map[string]events.
 	if val, ok := item["UpdatedAt"]; ok {
 		if t, err := time.Parse(time.RFC3339, val.String()); err == nil {
 			doc.UpdatedAt = t
+		}
+	}
+
+	// Generate embedding if service is available
+	if si.embedding != nil {
+		actor := &activitypub.Actor{
+			PreferredUsername: doc.Username,
+			Name:              doc.DisplayName,
+			Summary:           doc.Bio,
+		}
+
+		embedding, err := si.embedding.GenerateActorEmbedding(ctx, actor)
+		if err != nil {
+			si.logger.Warn("Failed to generate embedding for actor",
+				zap.String("actor", actorID),
+				zap.Error(err))
+		} else {
+			doc.Embedding = embedding
+			// Also store embedding in DynamoDB for fallback search
+			if err := si.embedding.StoreActorEmbedding(ctx, actorID, embedding); err != nil {
+				si.logger.Warn("Failed to store embedding in DynamoDB",
+					zap.String("actor", actorID),
+					zap.Error(err))
+			}
 		}
 	}
 

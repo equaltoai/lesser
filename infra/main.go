@@ -453,6 +453,39 @@ func main() {
 			return err
 		}
 
+		// Create Bedrock and Comprehend policy for Lambda
+		aiPolicy := pulumi.String(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"bedrock:InvokeModel",
+						"bedrock:InvokeModelWithResponseStream"
+					],
+					"Resource": "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v1"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"comprehend:DetectDominantLanguage",
+						"comprehend:DetectEntities",
+						"comprehend:DetectKeyPhrases",
+						"comprehend:DetectSentiment"
+					],
+					"Resource": "*"
+				}
+			]
+		}`)
+
+		_, err = iam.NewRolePolicy(ctx, "lambda-ai", &iam.RolePolicyArgs{
+			Role:   lambdaRole.Name,
+			Policy: aiPolicy,
+		})
+		if err != nil {
+			return err
+		}
+
 		// Create OpenSearch data access policy now that Lambda role exists
 		_, err = opensearch.NewServerlessAccessPolicy(ctx, "lesser-search-data-access", &opensearch.ServerlessAccessPolicyArgs{
 			Name: pulumi.String("lesser-search-data-access"),
@@ -573,10 +606,6 @@ func main() {
 		if err != nil {
 			return err
 		}
-		mediaLambda, err := createLambda("media", "media", 120)
-		if err != nil {
-			return err
-		}
 		activityProcessorLambda, err := createLambda("activity-processor", "activity-processor", 300)
 		if err != nil {
 			return err
@@ -690,7 +719,6 @@ func main() {
 			{"/oauth/token", "POST", authLambda},
 			{"/.well-known/oauth-authorization-server", "GET", authLambda},
 			{"/{proxy+}", "ANY", apiLambda},
-			{"/media", "POST", mediaLambda},
 		}
 
 		for _, route := range routes {
