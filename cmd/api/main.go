@@ -503,35 +503,13 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/push/subscription" {
 		switch method {
 		case http.MethodGet:
-			// TODO: Implement push subscription storage
-			return common.OK(map[string]interface{}{
-				"id":       "",
-				"endpoint": "",
-				"alerts": map[string]bool{
-					"follow":    false,
-					"favourite": false,
-					"reblog":    false,
-					"mention":   false,
-					"poll":      false,
-				},
-				"server_key": "",
-			}), nil
-		case http.MethodPost, http.MethodPut:
-			// TODO: Implement push subscription storage
-			return common.OK(map[string]interface{}{
-				"id":       "1",
-				"endpoint": request.Headers["endpoint"],
-				"alerts": map[string]bool{
-					"follow":    true,
-					"favourite": true,
-					"reblog":    true,
-					"mention":   true,
-					"poll":      true,
-				},
-				"server_key": "dummy_server_key",
-			}), nil
+			return handler.HandleGetPushSubscription(ctx, request)
+		case http.MethodPost:
+			return handler.HandleCreatePushSubscription(ctx, request)
+		case http.MethodPut:
+			return handler.HandleUpdatePushSubscription(ctx, request)
 		case http.MethodDelete:
-			return common.NoContent(), nil
+			return handler.HandleDeletePushSubscription(ctx, request)
 		}
 	}
 

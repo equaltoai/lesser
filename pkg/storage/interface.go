@@ -182,6 +182,18 @@ type Storage interface {
 	// Remote actor caching operations
 	CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error
 	GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error)
+
+	// Push notification operations
+	CreatePushSubscription(ctx context.Context, username string, subscription *PushSubscription) error
+	GetPushSubscription(ctx context.Context, username, subscriptionID string) (*PushSubscription, error)
+	GetUserPushSubscriptions(ctx context.Context, username string) ([]*PushSubscription, error)
+	UpdatePushSubscription(ctx context.Context, username, subscriptionID string, alerts PushSubscriptionAlerts) error
+	DeletePushSubscription(ctx context.Context, username, subscriptionID string) error
+	DeleteAllPushSubscriptions(ctx context.Context, username string) error
+
+	// VAPID key operations
+	GetVAPIDKeys(ctx context.Context) (*VAPIDKeys, error)
+	SetVAPIDKeys(ctx context.Context, keys *VAPIDKeys) error
 }
 
 // User represents a user account in the system
@@ -501,4 +513,39 @@ type SearchSuggestion struct {
 	Value       string `json:"value"`    // The suggestion text
 	DisplayText string `json:"display"`  // What to show to the user
 	Username    string `json:"username"` // For account suggestions
+}
+
+// PushSubscription represents a web push subscription
+type PushSubscription struct {
+	ID        string                 `dynamodbav:"id"`
+	Username  string                 `dynamodbav:"username"`
+	Endpoint  string                 `dynamodbav:"endpoint"`
+	P256dh    string                 `dynamodbav:"p256dh"`
+	Auth      string                 `dynamodbav:"auth"`
+	Alerts    PushSubscriptionAlerts `dynamodbav:"alerts"`
+	Policy    string                 `dynamodbav:"policy,omitempty"`
+	CreatedAt time.Time              `dynamodbav:"created_at"`
+	UpdatedAt time.Time              `dynamodbav:"updated_at"`
+}
+
+// PushSubscriptionAlerts represents which events trigger push notifications
+type PushSubscriptionAlerts struct {
+	Follow        bool `dynamodbav:"follow"`
+	Favourite     bool `dynamodbav:"favourite"`
+	Reblog        bool `dynamodbav:"reblog"`
+	Mention       bool `dynamodbav:"mention"`
+	Poll          bool `dynamodbav:"poll"`
+	FollowRequest bool `dynamodbav:"follow_request"`
+	Status        bool `dynamodbav:"status"`
+	Update        bool `dynamodbav:"update"`
+	AdminSignUp   bool `dynamodbav:"admin_sign_up"`
+	AdminReport   bool `dynamodbav:"admin_report"`
+}
+
+// VAPIDKeys represents the VAPID keys for web push
+type VAPIDKeys struct {
+	PublicKey  string    `dynamodbav:"public_key"`
+	PrivateKey string    `dynamodbav:"private_key"`
+	Subject    string    `dynamodbav:"subject"`
+	CreatedAt  time.Time `dynamodbav:"created_at"`
 }

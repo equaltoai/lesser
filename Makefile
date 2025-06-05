@@ -173,6 +173,9 @@ build-lambdas:
 	@echo "Building search-indexer..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/search-indexer
 	@cd bin && zip -q search-indexer.zip bootstrap && rm bootstrap
+	@echo "Building push-delivery..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/push-delivery
+	@cd bin && zip -q push-delivery.zip bootstrap && rm bootstrap
 	@echo "Lambda functions built successfully!"
 
 .PHONY: deploy

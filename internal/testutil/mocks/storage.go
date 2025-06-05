@@ -460,6 +460,50 @@ func (m *BaseMockStorage) CountUnreadNotifications(ctx context.Context, username
 	return 0, nil
 }
 
+// Search operations
+func (m *BaseMockStorage) SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error) {
+	return []*activitypub.Actor{}, nil
+}
+func (m *BaseMockStorage) GetSearchSuggestions(ctx context.Context, prefix string) ([]storage.SearchSuggestion, error) {
+	return []storage.SearchSuggestion{}, nil
+}
+
+// Remote actor caching operations
+func (m *BaseMockStorage) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
+	return nil
+}
+func (m *BaseMockStorage) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
+	return nil, fmt.Errorf("not found")
+}
+
+// Push notification operations
+func (m *BaseMockStorage) CreatePushSubscription(ctx context.Context, username string, subscription *storage.PushSubscription) error {
+	return nil
+}
+func (m *BaseMockStorage) GetPushSubscription(ctx context.Context, username, subscriptionID string) (*storage.PushSubscription, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetUserPushSubscriptions(ctx context.Context, username string) ([]*storage.PushSubscription, error) {
+	return []*storage.PushSubscription{}, nil
+}
+func (m *BaseMockStorage) UpdatePushSubscription(ctx context.Context, username, subscriptionID string, alerts storage.PushSubscriptionAlerts) error {
+	return nil
+}
+func (m *BaseMockStorage) DeletePushSubscription(ctx context.Context, username, subscriptionID string) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteAllPushSubscriptions(ctx context.Context, username string) error {
+	return nil
+}
+
+// VAPID key operations
+func (m *BaseMockStorage) GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) SetVAPIDKeys(ctx context.Context, keys *storage.VAPIDKeys) error {
+	return nil
+}
+
 // MockStorage is a testify mock implementation that embeds BaseMockStorage
 // This provides default no-op implementations for all methods while allowing
 // tests to set expectations on specific methods using testify's mock framework
