@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/stretchr/testify/assert"
@@ -20,7 +21,7 @@ func TestProcessFlag(t *testing.T) {
 		name         string
 		activity     *activitypub.Activity
 		recipient    string
-		setupMocks   func(*MockStorage)
+		setupMocks   func(*mocks.MockStorage)
 		expectError  bool
 		errorMessage string
 	}{
@@ -37,7 +38,7 @@ func TestProcessFlag(t *testing.T) {
 				Object: "https://example.com/posts/offensive-post",
 			},
 			recipient: "moderator",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateFlag", mock.Anything, mock.MatchedBy(func(f *storage.Flag) bool {
 					return f.ID == "https://example.com/activities/flag-1" &&
 						f.Actor == "https://reporter.example.com/users/alice" &&
@@ -65,7 +66,7 @@ func TestProcessFlag(t *testing.T) {
 				},
 			},
 			recipient: "moderator",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateFlag", mock.Anything, mock.MatchedBy(func(f *storage.Flag) bool {
 					return f.ID == "https://example.com/activities/flag-2" &&
 						f.Actor == "https://reporter.example.com/users/bob" &&
@@ -93,7 +94,7 @@ func TestProcessFlag(t *testing.T) {
 				},
 			},
 			recipient: "moderator",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateFlag", mock.Anything, mock.MatchedBy(func(f *storage.Flag) bool {
 					return f.ID == "https://example.com/activities/flag-3" &&
 						f.Actor == "https://reporter.example.com/users/charlie" &&
@@ -126,7 +127,7 @@ func TestProcessFlag(t *testing.T) {
 				},
 			},
 			recipient: "moderator",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateFlag", mock.Anything, mock.MatchedBy(func(f *storage.Flag) bool {
 					return f.ID == "https://example.com/activities/flag-4" &&
 						f.Actor == "https://reporter.example.com/users/dave" &&
@@ -149,7 +150,7 @@ func TestProcessFlag(t *testing.T) {
 				Object: nil,
 			},
 			recipient:    "moderator",
-			setupMocks:   func(m *MockStorage) {},
+			setupMocks:   func(m *mocks.MockStorage) {},
 			expectError:  true,
 			errorMessage: "no objects to flag",
 		},
@@ -168,7 +169,7 @@ func TestProcessFlag(t *testing.T) {
 				},
 			},
 			recipient: "moderator",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateFlag", mock.Anything, mock.MatchedBy(func(f *storage.Flag) bool {
 					return f.ID == "https://example.com/activities/flag-6" &&
 						f.Content == "" // Should be empty
@@ -188,7 +189,7 @@ func TestProcessFlag(t *testing.T) {
 				Object: "https://example.com/posts/post-2",
 			},
 			recipient: "moderator",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateFlag", mock.Anything, mock.MatchedBy(func(f *storage.Flag) bool {
 					// Check that Published is recent (within last minute)
 					return f.ID == "https://example.com/activities/flag-7" &&
@@ -202,7 +203,7 @@ func TestProcessFlag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock storage
-			mockStore := &MockStorage{}
+			mockStore := &mocks.MockStorage{}
 			tt.setupMocks(mockStore)
 
 			// Replace global store with mock temporarily

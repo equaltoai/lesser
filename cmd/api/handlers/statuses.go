@@ -16,9 +16,10 @@ import (
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
+
+	"github.com/aron23/lesser/pkg/mastodon"
 )
 
 // HandleCreateStatus creates a new status (post)
@@ -86,6 +87,24 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 	// Set timestamps
 	now := time.Now()
 	note.Published = &now
+
+	// Extract hashtags from content
+	hashtags := mastodon.ExtractHashtagsWithCase(req.Status)
+	if len(hashtags) > 0 {
+		tags := make([]activitypub.Tag, 0, len(hashtags))
+		for _, tag := range hashtags {
+			// Create hashtag URL
+			normalizedTag := mastodon.NormalizeHashtag(tag)
+			tagURL := fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), normalizedTag)
+
+			tags = append(tags, activitypub.Tag{
+				Type: "Hashtag",
+				Name: "#" + tag, // Keep original case for display
+				Href: tagURL,
+			})
+		}
+		note.Tag = tags
+	}
 
 	// Process media attachments
 	if len(req.MediaIDs) > 0 {
@@ -159,6 +178,25 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		return common.InternalServerError(err), nil
 	}
 
+	// Fan out the post to timelines
+	if err := h.store.FanOutPost(ctx, createActivity); err != nil {
+		// Log the error but don't fail the request
+		h.logger.Error("failed to fan out post to timelines", zap.Error(err))
+	}
+
+	// Convert hashtags for Mastodon API response
+	mastodonTags := make([]interface{}, 0, len(note.Tag))
+	for _, tag := range note.Tag {
+		if tag.Type == "Hashtag" {
+			// Extract tag name without # prefix
+			tagName := strings.TrimPrefix(tag.Name, "#")
+			mastodonTags = append(mastodonTags, map[string]interface{}{
+				"name": tagName,
+				"url":  tag.Href,
+			})
+		}
+	}
+
 	// Return status response
 	resp := models.Status{
 		ID:               noteID,
@@ -180,7 +218,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		Pinned:           false,
 		MediaAttachments: []interface{}{},
 		Mentions:         []interface{}{},
-		Tags:             []interface{}{},
+		Tags:             mastodonTags,
 		Emojis:           []interface{}{},
 		Account: models.Account{
 			ID:             actor.ID,
@@ -808,7 +846,7 @@ func (h *Handler) HandleUpdateStatus(ctx context.Context, request events.APIGate
 	}
 
 	// Return updated status response
-	resp := ObjectToStatus(note, actor)
+	resp := h.converter.ObjectToStatus(note, actor)
 	if req.Visibility != "" {
 		resp.Visibility = req.Visibility
 	}
@@ -864,7 +902,7 @@ func (h *Handler) HandleGetStatus(ctx context.Context, request events.APIGateway
 	}
 
 	// Convert to status response
-	status := ObjectToStatus(object, actor)
+	status := h.converter.ObjectToStatus(object, actor)
 
 	// Get interaction counts
 	likeCount, _ := h.store.CountObjectLikes(ctx, objectID)
@@ -960,14 +998,13 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 		}
 
 		if attributedTo != "" {
-			parts := strings.Split(attributedTo, "/")
-			if len(parts) > 0 {
-				username := parts[len(parts)-1]
+			username := h.converter.ExtractUsernameFromActorID(attributedTo)
+			if username != "" {
 				parentActor, _ = h.store.GetActor(ctx, username)
 			}
 		}
 
-		status := ObjectToStatus(parentObj, parentActor)
+		status := h.converter.ObjectToStatus(parentObj, parentActor)
 		ancestors = append([]models.Status{status}, ancestors...) // Prepend to maintain order
 		currentID = inReplyTo
 	}
@@ -1092,7 +1129,7 @@ func (h *Handler) HandleGetAccountStatuses(ctx context.Context, request events.A
 
 		// TODO: Implement exclude_reblogs and tagged filters
 
-		status := ObjectToStatus(obj, actor)
+		status := h.converter.ObjectToStatus(obj, actor)
 		statuses = append(statuses, status)
 	}
 
@@ -1148,223 +1185,4 @@ func getStringFromMap(m map[string]interface{}, key, defaultValue string) string
 		return val
 	}
 	return defaultValue
-}
-
-// ObjectToStatus converts an ActivityPub object to a Mastodon status
-func ObjectToStatus(obj interface{}, actor *activitypub.Actor) models.Status {
-	status := models.Status{
-		MediaAttachments: []interface{}{},
-		Mentions:         []interface{}{},
-		Tags:             []interface{}{},
-		Emojis:           []interface{}{},
-		Visibility:       "public", // Default
-		Language:         "en",     // Default
-	}
-
-	// Handle different object types
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		status.ID = extractIDFromURL(o.ID)
-		status.URI = o.ID
-		status.URL = o.ID // Note doesn't have URL field, use ID
-		status.Content = o.Content
-		status.SpoilerText = o.Summary
-		status.Sensitive = o.Sensitive
-		if o.Published != nil {
-			status.CreatedAt = o.Published.Format("2006-01-02T15:04:05.000Z")
-		}
-		if o.InReplyTo != "" {
-			inReplyToID := extractIDFromURL(o.InReplyTo)
-			status.InReplyToID = &inReplyToID
-		}
-
-		// Process attachments
-		if len(o.Attachment) > 0 {
-			attachments := make([]interface{}, 0, len(o.Attachment))
-			for _, att := range o.Attachment {
-				attachment := map[string]interface{}{
-					"id":          generateRandomString(8),
-					"type":        "image", // Default to image
-					"url":         att.URL,
-					"preview_url": att.URL,
-					"text_url":    att.URL,
-					"description": att.Name,
-				}
-				if att.MediaType != "" {
-					if strings.HasPrefix(att.MediaType, "video/") {
-						attachment["type"] = "video"
-					} else if strings.HasPrefix(att.MediaType, "audio/") {
-						attachment["type"] = "audio"
-					}
-				}
-				attachments = append(attachments, attachment)
-			}
-			status.MediaAttachments = attachments
-		}
-
-		// Determine visibility from addressing
-		if contains(o.To, activitypub.PublicAddress) {
-			status.Visibility = "public"
-		} else if contains(o.CC, activitypub.PublicAddress) {
-			status.Visibility = "unlisted"
-		} else if len(o.To) > 0 && strings.Contains(o.To[0], "/followers") {
-			status.Visibility = "private"
-		} else {
-			status.Visibility = "direct"
-		}
-
-	case *dynamodb.Object:
-		// Handle DynamoDB Object type
-		status.ID = extractIDFromURL(o.ID)
-		status.URI = o.ID
-		status.URL = o.URL
-		if o.URL == "" {
-			status.URL = o.ID
-		}
-		status.Content = o.Content
-		status.SpoilerText = o.Summary
-		status.Sensitive = o.Sensitive
-		status.CreatedAt = o.Published.Format("2006-01-02T15:04:05.000Z")
-
-		if o.InReplyTo != nil && *o.InReplyTo != "" {
-			inReplyToID := extractIDFromURL(*o.InReplyTo)
-			status.InReplyToID = &inReplyToID
-		}
-
-		// Process attachments
-		if len(o.Attachment) > 0 {
-			attachments := make([]interface{}, 0, len(o.Attachment))
-			for _, att := range o.Attachment {
-				attachment := map[string]interface{}{
-					"id":          generateRandomString(8),
-					"type":        "image", // Default to image
-					"url":         att.URL,
-					"preview_url": att.URL,
-					"text_url":    att.URL,
-					"description": att.Name,
-				}
-				if att.MediaType != "" {
-					if strings.HasPrefix(att.MediaType, "video/") {
-						attachment["type"] = "video"
-					} else if strings.HasPrefix(att.MediaType, "audio/") {
-						attachment["type"] = "audio"
-					}
-				}
-				attachments = append(attachments, attachment)
-			}
-			status.MediaAttachments = attachments
-		}
-
-		// Determine visibility from addressing
-		if contains(o.To, activitypub.PublicAddress) {
-			status.Visibility = "public"
-		} else if contains(o.CC, activitypub.PublicAddress) {
-			status.Visibility = "unlisted"
-		} else if len(o.To) > 0 && strings.Contains(o.To[0], "/followers") {
-			status.Visibility = "private"
-		} else {
-			status.Visibility = "direct"
-		}
-
-	case map[string]interface{}:
-		// Handle map representation
-		if id, ok := o["id"].(string); ok {
-			status.ID = extractIDFromURL(id)
-			status.URI = id
-			status.URL = id
-		}
-		if url, ok := o["url"].(string); ok {
-			status.URL = url
-		}
-		if content, ok := o["content"].(string); ok {
-			status.Content = content
-		}
-		if summary, ok := o["summary"].(string); ok {
-			status.SpoilerText = summary
-		}
-		if sensitive, ok := o["sensitive"].(bool); ok {
-			status.Sensitive = sensitive
-		}
-		if published, ok := o["published"].(string); ok {
-			status.CreatedAt = published
-		}
-		if inReplyTo, ok := o["inReplyTo"].(string); ok && inReplyTo != "" {
-			inReplyToID := extractIDFromURL(inReplyTo)
-			status.InReplyToID = &inReplyToID
-		}
-
-		// Process attachments from map
-		if attachments, ok := o["attachment"].([]interface{}); ok && len(attachments) > 0 {
-			processedAttachments := make([]interface{}, 0, len(attachments))
-			for _, att := range attachments {
-				if attMap, ok := att.(map[string]interface{}); ok {
-					attachment := map[string]interface{}{
-						"id":          generateRandomString(8),
-						"type":        "image",
-						"url":         getStringFromMap(attMap, "url", ""),
-						"preview_url": getStringFromMap(attMap, "url", ""),
-						"text_url":    getStringFromMap(attMap, "url", ""),
-						"description": getStringFromMap(attMap, "name", ""),
-					}
-					mediaType := getStringFromMap(attMap, "mediaType", "")
-					if strings.HasPrefix(mediaType, "video/") {
-						attachment["type"] = "video"
-					} else if strings.HasPrefix(mediaType, "audio/") {
-						attachment["type"] = "audio"
-					}
-					processedAttachments = append(processedAttachments, attachment)
-				}
-			}
-			status.MediaAttachments = processedAttachments
-		}
-	}
-
-	// Set account information if actor is provided
-	if actor != nil {
-		status.Account = models.Account{
-			ID:             actor.PreferredUsername,
-			Username:       actor.PreferredUsername,
-			Acct:           actor.PreferredUsername,
-			DisplayName:    actor.Name,
-			URL:            actor.URL,
-			CreatedAt:      time.Now().Format("2006-01-02T15:04:05.000Z"), // TODO: Store actor creation time
-			Note:           actor.Summary,
-			Avatar:         "",
-			AvatarStatic:   "",
-			Header:         "",
-			HeaderStatic:   "",
-			FollowersCount: 0,
-			FollowingCount: 0,
-			StatusesCount:  0,
-			Emojis:         []interface{}{},
-			Fields:         []interface{}{},
-		}
-
-		if actor.Icon != nil {
-			status.Account.Avatar = actor.Icon.URL
-			status.Account.AvatarStatic = actor.Icon.URL
-		}
-	}
-
-	return status
-}
-
-// extractIDFromURL extracts the ID portion from a full URL
-func extractIDFromURL(url string) string {
-	// Extract the last part of the URL as the ID
-	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return url
-}
-
-// contains checks if a slice contains a string
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }

@@ -205,7 +205,7 @@ func TestHandler(t *testing.T) {
 	tests := []struct {
 		name         string
 		request      events.APIGatewayV2HTTPRequest
-		setupMock    func(*MockStorage)
+		setupMock func(*mocks.MockStorage)
 		expectedCode int
 		checkBody    func(t *testing.T, body string)
 	}{
@@ -219,7 +219,7 @@ func TestHandler(t *testing.T) {
 				},
 				PathParameters: map[string]string{},
 			},
-			setupMock:    func(m *MockStorage) {},
+			setupMock:    func(m *mocks.MockStorage) {},
 			expectedCode: 400,
 		},
 		{
@@ -234,7 +234,7 @@ func TestHandler(t *testing.T) {
 					"id": "https://example.com/objects/999",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetObject", mock.Anything, "https://example.com/objects/999").Return(nil, fmt.Errorf("object not found"))
 			},
 			expectedCode: 404,
@@ -254,7 +254,7 @@ func TestHandler(t *testing.T) {
 					"Accept": "application/json",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				obj := &dynamodb.Object{
 					ID:           "https://example.com/objects/123",
 					Type:         "Note",
@@ -285,7 +285,7 @@ func TestHandler(t *testing.T) {
 					"Accept": "text/html",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				obj := &dynamodb.Object{
 					ID:           "https://example.com/objects/123",
 					Type:         "Note",
@@ -308,7 +308,7 @@ func TestHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorage)
+			mockStore := new(mocks.MockStorage)
 			tt.setupMock(mockStore)
 			store = mockStore
 

@@ -16,92 +16,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockStorage is a mock implementation of storage.Storage
-type MockStorage struct {
-	mock.Mock
-	mocks.BaseMockStorage
-}
-
-func (m *MockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	args := m.Called(ctx, username)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.Actor), args.Error(1)
-}
-
-func (m *MockStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]string), args.String(1), args.Error(2)
-}
-
-func (m *MockStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]string), args.String(1), args.Error(2)
-}
-
-// Implement other required methods with panic as they're not used in these tests
-func (m *MockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
-	panic("not implemented")
-}
-func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
-	panic("not implemented")
-}
-func (m *MockStorage) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
-	panic("not implemented")
-}
-func (m *MockStorage) DeleteActor(ctx context.Context, username string) error {
-	panic("not implemented")
-}
-func (m *MockStorage) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
-	panic("not implemented")
-}
-func (m *MockStorage) GetActivity(ctx context.Context, id string) (*activitypub.Activity, error) {
-	panic("not implemented")
-}
-func (m *MockStorage) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	panic("not implemented")
-}
-func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	panic("not implemented")
-}
-func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
-	panic("not implemented")
-}
-func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
-	panic("not implemented")
-}
-func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
-	panic("not implemented")
-}
-func (m *MockStorage) DeleteObject(ctx context.Context, id string) error {
-	panic("not implemented")
-}
-func (m *MockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
-	panic("not implemented")
-}
-func (m *MockStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	panic("not implemented")
-}
-func (m *MockStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	panic("not implemented")
-}
-func (m *MockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	panic("not implemented")
-}
-func (m *MockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
-	panic("not implemented")
-}
-func (m *MockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
-	panic("not implemented")
-}
-
 func TestHandler(t *testing.T) {
 	// Initialize config
 	cfg = &config.Config{
@@ -125,7 +39,7 @@ func TestHandler(t *testing.T) {
 	tests := []struct {
 		name              string
 		request           events.APIGatewayV2HTTPRequest
-		setupMock         func(*MockStorage)
+		setupMock         func(*mocks.MockStorage)
 		expectedStatus    int
 		expectedBodyCheck func(*testing.T, string)
 	}{
@@ -142,7 +56,7 @@ func TestHandler(t *testing.T) {
 					"username": "alice",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 				m.On("GetFollowers", mock.Anything, "alice", 1, "").Return([]string{"bob"}, "", nil)
 			},
@@ -170,7 +84,7 @@ func TestHandler(t *testing.T) {
 					"username": "alice",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 				m.On("GetFollowing", mock.Anything, "alice", 1, "").Return([]string{}, "", nil)
 			},
@@ -200,7 +114,7 @@ func TestHandler(t *testing.T) {
 					"page": "true",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 				m.On("GetFollowers", mock.Anything, "alice", 20, "").Return(
 					[]string{"bob", "carol", "dave"}, "nextcursor123", nil)
@@ -235,7 +149,7 @@ func TestHandler(t *testing.T) {
 					"limit":  "10",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 				m.On("GetFollowing", mock.Anything, "alice", 10, "cursor456").Return(
 					[]string{"eve", "frank"}, "", nil)
@@ -264,7 +178,7 @@ func TestHandler(t *testing.T) {
 					"username": "alice",
 				},
 			},
-			setupMock:      func(m *MockStorage) {},
+			setupMock:      func(m *mocks.MockStorage) {},
 			expectedStatus: http.StatusNotFound,
 			expectedBodyCheck: func(t *testing.T, body string) {
 				assert.Contains(t, body, "unknown collection")
@@ -283,7 +197,7 @@ func TestHandler(t *testing.T) {
 					"username": "alice",
 				},
 			},
-			setupMock:      func(m *MockStorage) {},
+			setupMock:      func(m *mocks.MockStorage) {},
 			expectedStatus: http.StatusMethodNotAllowed,
 			expectedBodyCheck: func(t *testing.T, body string) {
 				assert.Contains(t, body, "METHOD_NOT_ALLOWED")
@@ -302,7 +216,7 @@ func TestHandler(t *testing.T) {
 					"username": "nonexistent",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "nonexistent").Return(nil, common.ActorNotFoundError{Username: "nonexistent"})
 			},
 			expectedStatus: http.StatusNotFound,
@@ -326,7 +240,7 @@ func TestHandler(t *testing.T) {
 					"page": "true",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 				m.On("GetFollowers", mock.Anything, "alice", 20, "").Return(nil, "", errors.New("database error"))
 			},
@@ -352,7 +266,7 @@ func TestHandler(t *testing.T) {
 					"limit": "invalid",
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 				m.On("GetFollowers", mock.Anything, "alice", 20, "").Return([]string{}, "", nil) // Default limit
 			},
@@ -381,7 +295,7 @@ func TestHandler(t *testing.T) {
 					"limit": "200", // Over 100
 				},
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 				m.On("GetFollowers", mock.Anything, "alice", 20, "").Return([]string{}, "", nil) // Default limit
 			},
@@ -392,7 +306,7 @@ func TestHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock storage
-			mockStore := new(MockStorage)
+			mockStore := new(mocks.MockStorage)
 			tt.setupMock(mockStore)
 			store = mockStore
 
@@ -427,7 +341,7 @@ func TestReturnCollection(t *testing.T) {
 	}
 
 	t.Run("followers with items", func(t *testing.T) {
-		mockStore := new(MockStorage)
+		mockStore := new(mocks.MockStorage)
 		mockStore.On("GetFollowers", mock.Anything, "alice", 1, "").Return([]string{"bob"}, "", nil)
 		store = mockStore
 
@@ -443,7 +357,7 @@ func TestReturnCollection(t *testing.T) {
 	})
 
 	t.Run("following empty", func(t *testing.T) {
-		mockStore := new(MockStorage)
+		mockStore := new(mocks.MockStorage)
 		mockStore.On("GetFollowing", mock.Anything, "alice", 1, "").Return([]string{}, "", nil)
 		store = mockStore
 

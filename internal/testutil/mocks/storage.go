@@ -2,6 +2,7 @@ package mocks
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
@@ -38,6 +39,11 @@ func (m *TimelineMethods) GetListTimeline(ctx context.Context, listID string, li
 	return []*storage.TimelineEntry{}, "", nil
 }
 
+// GetHashtagTimeline is a mock implementation
+func (m *TimelineMethods) GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	return []*storage.TimelineEntry{}, "", nil
+}
+
 // DeleteFromTimeline is a mock implementation
 func (m *TimelineMethods) DeleteFromTimeline(ctx context.Context, timelineType, timelineID, entryID string) error {
 	return nil
@@ -45,6 +51,11 @@ func (m *TimelineMethods) DeleteFromTimeline(ctx context.Context, timelineType, 
 
 // DeleteExpiredTimelineEntries is a mock implementation
 func (m *TimelineMethods) DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error {
+	return nil
+}
+
+// FanOutPost is a mock implementation
+func (m *TimelineMethods) FanOutPost(ctx context.Context, activity *activitypub.Activity) error {
 	return nil
 }
 
@@ -355,6 +366,100 @@ func (m *BaseMockStorage) IsBookmarked(ctx context.Context, username, objectID s
 	return false, nil
 }
 
+// Conversation operations
+func (m *BaseMockStorage) CreateConversation(ctx context.Context, conversation *storage.Conversation) error {
+	return nil
+}
+func (m *BaseMockStorage) GetConversation(ctx context.Context, id string) (*storage.Conversation, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetConversationByParticipants(ctx context.Context, participants []string) (*storage.Conversation, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
+	return nil
+}
+func (m *BaseMockStorage) MarkConversationRead(ctx context.Context, id, username string) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteConversation(ctx context.Context, id string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetUserConversations(ctx context.Context, userID string, limit int, cursor string) ([]*storage.Conversation, string, error) {
+	return []*storage.Conversation{}, "", nil
+}
+func (m *BaseMockStorage) AddParticipantToConversation(ctx context.Context, conversationID, participantID string) error {
+	return nil
+}
+
+// List operations
+func (m *BaseMockStorage) CreateList(ctx context.Context, username, title, repliesPolicy string) (*storage.List, error) {
+	return &storage.List{
+		ID:            "list-123",
+		Username:      username,
+		Title:         title,
+		RepliesPolicy: repliesPolicy,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}, nil
+}
+func (m *BaseMockStorage) GetList(ctx context.Context, listID string) (*storage.List, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetListsForUser(ctx context.Context, username string) ([]*storage.List, error) {
+	return []*storage.List{}, nil
+}
+func (m *BaseMockStorage) UpdateList(ctx context.Context, listID string, updates map[string]interface{}) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteList(ctx context.Context, listID string) error {
+	return nil
+}
+func (m *BaseMockStorage) AddAccountsToList(ctx context.Context, listID string, accountIDs []string) error {
+	return nil
+}
+func (m *BaseMockStorage) RemoveAccountsFromList(ctx context.Context, listID string, accountIDs []string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetListAccounts(ctx context.Context, listID string) ([]string, error) {
+	return []string{}, nil
+}
+func (m *BaseMockStorage) IsAccountInList(ctx context.Context, listID, accountID string) (bool, error) {
+	return false, nil
+}
+func (m *BaseMockStorage) GetListsContainingAccount(ctx context.Context, accountID, username string) ([]*storage.List, error) {
+	return []*storage.List{}, nil
+}
+
+// Notification operations
+func (m *BaseMockStorage) CreateNotification(ctx context.Context, notification *storage.Notification) error {
+	return nil
+}
+func (m *BaseMockStorage) GetNotification(ctx context.Context, id string) (*storage.Notification, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetNotifications(ctx context.Context, username string, limit int, cursor string) ([]*storage.Notification, string, error) {
+	return []*storage.Notification{}, "", nil
+}
+func (m *BaseMockStorage) GetNotificationsFiltered(ctx context.Context, username string, filter *storage.NotificationFilter) ([]*storage.Notification, string, error) {
+	return []*storage.Notification{}, "", nil
+}
+func (m *BaseMockStorage) MarkNotificationAsRead(ctx context.Context, id string) error {
+	return nil
+}
+func (m *BaseMockStorage) MarkAllNotificationsAsRead(ctx context.Context, username string) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteNotification(ctx context.Context, id string) error {
+	return nil
+}
+func (m *BaseMockStorage) ClearNotifications(ctx context.Context, username string) error {
+	return nil
+}
+func (m *BaseMockStorage) CountUnreadNotifications(ctx context.Context, username string) (int, error) {
+	return 0, nil
+}
+
 // MockStorage is a testify mock implementation that embeds BaseMockStorage
 // This provides default no-op implementations for all methods while allowing
 // tests to set expectations on specific methods using testify's mock framework
@@ -367,6 +472,206 @@ type MockStorage struct {
 // Only override the methods you need to set expectations on in your tests
 // All other methods will use the BaseMockStorage no-op implementations
 
-func (m *BaseMockStorage) DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error {
-	return nil
+// CreateFollow with mock support
+func (m *MockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
+	args := m.Called(ctx, followerUsername, followedUsername, followActivityID)
+	return args.Error(0)
+}
+
+// AcceptFollow with mock support
+func (m *MockStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Error(0)
+}
+
+// CreateObject with mock support
+func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
+	args := m.Called(ctx, object)
+	return args.Error(0)
+}
+
+// GetActorPrivateKey with mock support
+func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
+	args := m.Called(ctx, username)
+	return args.String(0), args.Error(1)
+}
+
+// CreateFlag with mock support
+func (m *MockStorage) CreateFlag(ctx context.Context, flag *storage.Flag) error {
+	args := m.Called(ctx, flag)
+	return args.Error(0)
+}
+
+// CreateMove with mock support
+func (m *MockStorage) CreateMove(ctx context.Context, move *storage.Move) error {
+	args := m.Called(ctx, move)
+	return args.Error(0)
+}
+
+// AddToCollection with mock support
+func (m *MockStorage) AddToCollection(ctx context.Context, collection string, item *storage.CollectionItem) error {
+	args := m.Called(ctx, collection, item)
+	return args.Error(0)
+}
+
+// RemoveFromCollection with mock support
+func (m *MockStorage) RemoveFromCollection(ctx context.Context, collection string, itemID string) error {
+	args := m.Called(ctx, collection, itemID)
+	return args.Error(0)
+}
+
+// CreateLike with mock support
+func (m *MockStorage) CreateLike(ctx context.Context, like *storage.Like) error {
+	args := m.Called(ctx, like)
+	return args.Error(0)
+}
+
+// GetActor with mock support
+func (m *MockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*activitypub.Actor), args.Error(1)
+}
+
+// CreateActivity with mock support
+func (m *MockStorage) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
+	args := m.Called(ctx, activity)
+	return args.Error(0)
+}
+
+// GetUser with mock support
+func (m *MockStorage) GetUser(ctx context.Context, username string) (*storage.User, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.User), args.Error(1)
+}
+
+// GetAuthorizationCode with mock support
+func (m *MockStorage) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
+	args := m.Called(ctx, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.AuthorizationCode), args.Error(1)
+}
+
+// DeleteAuthorizationCode with mock support
+func (m *MockStorage) DeleteAuthorizationCode(ctx context.Context, code string) error {
+	args := m.Called(ctx, code)
+	return args.Error(0)
+}
+
+// CreateRefreshToken with mock support
+func (m *MockStorage) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
+	args := m.Called(ctx, token)
+	return args.Error(0)
+}
+
+// GetRefreshToken with mock support
+func (m *MockStorage) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
+	args := m.Called(ctx, token)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.RefreshToken), args.Error(1)
+}
+
+// DeleteRefreshToken with mock support
+func (m *MockStorage) DeleteRefreshToken(ctx context.Context, token string) error {
+	args := m.Called(ctx, token)
+	return args.Error(0)
+}
+
+// GetObjectsByActor with mock support
+func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
+	args := m.Called(ctx, actorID, cursor, limit)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]interface{}), args.String(1), args.Error(2)
+}
+
+// IsFollowing with mock support
+func (m *MockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Bool(0), args.Error(1)
+}
+
+// GetLike with mock support
+func (m *MockStorage) GetLike(ctx context.Context, actor, object string) (*storage.Like, error) {
+	args := m.Called(ctx, actor, object)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Like), args.Error(1)
+}
+
+// DeleteLike with mock support
+func (m *MockStorage) DeleteLike(ctx context.Context, actor, object string) error {
+	args := m.Called(ctx, actor, object)
+	return args.Error(0)
+}
+
+// GetCollection with mock support
+func (m *MockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
+	args := m.Called(ctx, username, collectionType, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*activitypub.OrderedCollectionPage), args.Error(1)
+}
+
+// RemoveFollow with mock support
+func (m *MockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Error(0)
+}
+
+// GetObject with mock support
+func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0), args.Error(1)
+}
+
+// TombstoneObject with mock support
+func (m *MockStorage) TombstoneObject(ctx context.Context, objectID string, deletedBy string) error {
+	args := m.Called(ctx, objectID, deletedBy)
+	return args.Error(0)
+}
+
+// UpdateObject with mock support
+func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
+	args := m.Called(ctx, object)
+	return args.Error(0)
+}
+
+// CreateAnnounce with mock support
+func (m *MockStorage) CreateAnnounce(ctx context.Context, announce *storage.Announce) error {
+	args := m.Called(ctx, announce)
+	return args.Error(0)
+}
+
+// GetAnnounce with mock support
+func (m *MockStorage) GetAnnounce(ctx context.Context, actor, object string) (*storage.Announce, error) {
+	args := m.Called(ctx, actor, object)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Announce), args.Error(1)
+}
+
+// DeleteAnnounce with mock support
+func (m *MockStorage) DeleteAnnounce(ctx context.Context, actor, object string) error {
+	args := m.Called(ctx, actor, object)
+	return args.Error(0)
+}
+
+// CreateBlock with mock support
+func (m *MockStorage) CreateBlock(ctx context.Context, block *storage.Block) error {
+	args := m.Called(ctx, block)
+	return args.Error(0)
 }

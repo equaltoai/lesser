@@ -1,7 +1,5 @@
 package models
 
-import "time"
-
 // AccountRegistrationRequest represents a user registration request
 type AccountRegistrationRequest struct {
 	Username  string `json:"username"`
@@ -206,15 +204,6 @@ type Instance struct {
 	Thumbnail        string                 `json:"thumbnail"`
 	ContactAccount   *Account               `json:"contact_account"`
 	Rules            []interface{}          `json:"rules"`
-}
-
-// Notification represents a notification
-type Notification struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	CreatedAt time.Time `json:"created_at"`
-	Account   Account   `json:"account"`
-	Status    *Status   `json:"status,omitempty"`
 }
 
 // MediaAttachment represents a media attachment

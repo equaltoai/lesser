@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Automated test script for lesser API using Mastodon.py
-Tests endpoints that don't require manual OAuth flow
+Tests public endpoints only
 """
 
 from mastodon import Mastodon
@@ -9,217 +9,270 @@ import json
 import requests
 import base64
 import time
+import sys
+from datetime import datetime
 
 # Your lesser instance
 INSTANCE_URL = 'https://lesser.host'
 
-# Test credentials (from your existing test user)
-TEST_USERNAME = 'testuser'
-TEST_PASSWORD = 'testpassword'
+# Global counters for test results
+tests_passed = 0
+tests_failed = 0
+
+def log_test(success, test_name, details=""):
+    """Log test result with consistent formatting"""
+    global tests_passed, tests_failed
+    
+    if success:
+        tests_passed += 1
+        print(f"✓ {test_name}")
+        if details:
+            print(f"  {details}")
+    else:
+        tests_failed += 1
+        print(f"✗ {test_name}")
+        if details:
+            print(f"  ERROR: {details}")
 
 def test_public_endpoints():
-    """Test endpoints that don't require authentication"""
-    print("=== Testing Public Endpoints ===\n")
+    """Test public endpoints that don't require authentication"""
+    print("\n=== Testing Public Endpoints ===")
     
-    # Create anonymous client
-    mastodon = Mastodon(api_base_url=INSTANCE_URL)
-    
-    # Test instance info
+    # Test instance v2 (v2 endpoint)
     try:
-        instance = mastodon.instance()
-        print(f"✓ GET /api/v1/instance")
-        print(f"  URI: {instance.get('uri', 'N/A')}")
-        print(f"  Title: {instance.get('title', 'N/A')}")
-        print(f"  Version: {instance.get('version', 'N/A')}")
-    except Exception as e:
-        print(f"✗ GET /api/v1/instance failed: {e}")
-    
-    # Test public timeline
-    try:
-        public_tl = mastodon.timeline_public(limit=5)
-        print(f"\n✓ GET /api/v1/timelines/public")
-        print(f"  Statuses: {len(public_tl)}")
-    except Exception as e:
-        print(f"\n✗ GET /api/v1/timelines/public failed: {e}")
-    
-    # Test local timeline
-    try:
-        local_tl = mastodon.timeline_local(limit=5)
-        print(f"\n✓ GET /api/v1/timelines/public?local=true")
-        print(f"  Statuses: {len(local_tl)}")
-    except Exception as e:
-        print(f"\n✗ GET /api/v1/timelines/public?local=true failed: {e}")
-    
-    # Test custom emojis
-    try:
-        emojis = mastodon.custom_emojis()
-        print(f"\n✓ GET /api/v1/custom_emojis")
-        print(f"  Emojis: {len(emojis)}")
-    except Exception as e:
-        print(f"\n✗ GET /api/v1/custom_emojis failed: {e}")
-    
-    # Test instance activity
-    try:
-        activity = mastodon.instance_activity()
-        print(f"\n✓ GET /api/v1/instance/activity")
-        print(f"  Activity entries: {len(activity)}")
-    except Exception as e:
-        print(f"\n✗ GET /api/v1/instance/activity failed: {e}")
-    
-    # Test instance peers
-    try:
-        peers = mastodon.instance_peers()
-        print(f"\n✓ GET /api/v1/instance/peers")
-        print(f"  Peers: {len(peers)}")
-    except Exception as e:
-        print(f"\n✗ GET /api/v1/instance/peers failed: {e}")
-
-def test_webfinger():
-    """Test WebFinger endpoint"""
-    print("\n\n=== Testing WebFinger ===\n")
-    
-    webfinger_url = f"{INSTANCE_URL}/.well-known/webfinger"
-    resource = f"acct:{TEST_USERNAME}@{INSTANCE_URL.replace('https://', '')}"
-    
-    try:
-        response = requests.get(webfinger_url, params={'resource': resource})
+        response = requests.get(f"{INSTANCE_URL}/api/v2/instance")
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ WebFinger lookup for {resource}")
-            print(f"  Subject: {data.get('subject', 'N/A')}")
-            print(f"  Links: {len(data.get('links', []))}")
+            # Debug: print full response
+            print(f"  DEBUG: Full v2 response: {json.dumps(data, indent=2)[:500]}...")
+            log_test(True, "GET /api/v2/instance", 
+                    f"Domain: {data.get('domain', 'N/A')}")
         else:
-            print(f"✗ WebFinger failed with status {response.status_code}")
+            log_test(False, "GET /api/v2/instance", f"Status {response.status_code}")
     except Exception as e:
-        print(f"✗ WebFinger failed: {e}")
+        log_test(False, "GET /api/v2/instance", str(e))
+    
+    # Public timeline (v1 endpoint)
+    mastodon = Mastodon(api_base_url=INSTANCE_URL)
+    try:
+        timeline = mastodon.timeline_public(limit=10)
+        log_test(True, "GET /api/v1/timelines/public", 
+                f"Statuses: {len(timeline)}")
+    except Exception as e:
+        log_test(False, "GET /api/v1/timelines/public", str(e))
+    
+    # Local timeline (v1 endpoint)
+    try:
+        timeline = mastodon.timeline_local(limit=10)
+        log_test(True, "GET /api/v1/timelines/public?local=true", 
+                f"Local statuses: {len(timeline)}")
+    except Exception as e:
+        log_test(False, "GET /api/v1/timelines/public?local=true", str(e))
+    
+    # Hashtag timeline (v1 endpoint)
+    try:
+        timeline = mastodon.timeline_hashtag("test", limit=10)
+        log_test(True, "GET /api/v1/timelines/tag/test", 
+                f"Statuses: {len(timeline)}")
+    except Exception as e:
+        log_test(False, "GET /api/v1/timelines/tag/test", str(e))
+    
+    # Custom emojis (v1 endpoint)
+    try:
+        emojis = mastodon.custom_emojis()
+        log_test(True, "GET /api/v1/custom_emojis", 
+                f"Emojis: {len(emojis)}")
+    except Exception as e:
+        log_test(False, "GET /api/v1/custom_emojis", str(e))
+    
+    # Instance activity (v1 endpoint)
+    try:
+        activity = mastodon.instance_activity()
+        log_test(True, "GET /api/v1/instance/activity", 
+                f"Weeks: {len(activity)}")
+    except Exception as e:
+        log_test(False, "GET /api/v1/instance/activity", str(e))
+    
+    # Instance peers (v1 endpoint)
+    try:
+        peers = mastodon.instance_peers()
+        log_test(True, "GET /api/v1/instance/peers", 
+                f"Peers: {len(peers)}")
+    except Exception as e:
+        log_test(False, "GET /api/v1/instance/peers", str(e))
+
+def test_search():
+    """Test search functionality (v2 endpoint)"""
+    print("\n=== Testing Search ===")
+    mastodon = Mastodon(api_base_url=INSTANCE_URL)
+    
+    # Search for accounts
+    try:
+        results = mastodon.search_v2("@testuser", result_type="accounts")
+        log_test(True, "Search for accounts", 
+                f"Found {len(results['accounts'])} accounts")
+    except Exception as e:
+        log_test(False, "Search for accounts", str(e))
+    
+    # Search for hashtags
+    try:
+        results = mastodon.search_v2("#test", result_type="hashtags")
+        log_test(True, "Search for hashtags", 
+                f"Found {len(results['hashtags'])} hashtags")
+    except Exception as e:
+        log_test(False, "Search for hashtags", str(e))
+
+def test_webfinger():
+    """Test WebFinger lookups"""
+    print("\n=== Testing WebFinger ===")
+    
+    try:
+        response = requests.get(f"{INSTANCE_URL}/.well-known/webfinger",
+                              params={"resource": "acct:testuser@lesser.host"})
+        if response.status_code == 200:
+            data = response.json()
+            log_test(True, "WebFinger lookup", 
+                    f"Subject: {data.get('subject', 'N/A')}")
+        else:
+            log_test(False, "WebFinger lookup", f"Status {response.status_code}")
+    except Exception as e:
+        log_test(False, "WebFinger lookup", str(e))
 
 def test_nodeinfo():
     """Test NodeInfo endpoints"""
-    print("\n\n=== Testing NodeInfo ===\n")
+    print("\n=== Testing NodeInfo ===")
     
-    # Test .well-known/nodeinfo
+    # NodeInfo discovery
     try:
         response = requests.get(f"{INSTANCE_URL}/.well-known/nodeinfo")
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ GET /.well-known/nodeinfo")
-            print(f"  Links: {len(data.get('links', []))}")
+            log_test(True, "GET /.well-known/nodeinfo", 
+                    f"Links: {len(data.get('links', []))}")
             
-            # Test actual nodeinfo endpoints
+            # Follow NodeInfo 2.0 link
             for link in data.get('links', []):
-                href = link.get('href')
-                if href:
-                    try:
-                        ni_response = requests.get(href)
-                        if ni_response.status_code == 200:
-                            ni_data = ni_response.json()
-                            print(f"\n✓ GET {href}")
-                            print(f"  Software: {ni_data.get('software', {}).get('name', 'N/A')}")
-                            print(f"  Version: {ni_data.get('software', {}).get('version', 'N/A')}")
-                    except:
-                        pass
+                if link.get('rel') == 'http://nodeinfo.diaspora.software/ns/schema/2.0':
+                    nodeinfo_url = link.get('href')
+                    break
         else:
-            print(f"✗ GET /.well-known/nodeinfo failed with status {response.status_code}")
+            log_test(False, "GET /.well-known/nodeinfo", f"Status {response.status_code}")
     except Exception as e:
-        print(f"✗ NodeInfo failed: {e}")
-
-def test_oauth_endpoints():
-    """Test OAuth endpoints directly"""
-    print("\n\n=== Testing OAuth Endpoints ===\n")
+        log_test(False, "GET /.well-known/nodeinfo", str(e))
     
-    # Test app creation
+    # NodeInfo 2.0
     try:
-        app_data = {
-            'client_name': 'lesser-test-automated',
-            'redirect_uris': 'urn:ietf:wg:oauth:2.0:oob',
-            'scopes': 'read write follow push',
-            'website': 'https://github.com/aron23/lesser'
-        }
-        
-        response = requests.post(f"{INSTANCE_URL}/api/v1/apps", json=app_data)
+        response = requests.get(f"{INSTANCE_URL}/nodeinfo/2.0")
         if response.status_code == 200:
-            app = response.json()
-            print(f"✓ POST /api/v1/apps")
-            print(f"  Client ID: {app.get('client_id', 'N/A')[:20]}...")
-            print(f"  Redirect URI: {app.get('redirect_uri', 'N/A')}")
-            return app
+            data = response.json()
+            log_test(True, "GET /nodeinfo/2.0", 
+                    f"Software: {data.get('software', {}).get('name', 'N/A')} {data.get('software', {}).get('version', 'N/A')}")
         else:
-            print(f"✗ POST /api/v1/apps failed with status {response.status_code}")
-            return None
+            log_test(False, "GET /nodeinfo/2.0", f"Status {response.status_code}")
     except Exception as e:
-        print(f"✗ App creation failed: {e}")
-        return None
+        log_test(False, "GET /nodeinfo/2.0", str(e))
 
-def test_api_response_headers():
-    """Test API response headers"""
-    print("\n\n=== Testing Response Headers ===\n")
+def test_pagination():
+    """Test pagination headers"""
+    print("\n=== Testing Pagination ===")
     
     endpoints = [
-        '/api/v1/instance',
-        '/api/v1/timelines/public',
-        '/api/v1/custom_emojis',
+        ("/api/v1/timelines/public?limit=5", "public timeline"),
+        ("/api/v1/timelines/tag/test?limit=5", "hashtag timeline"),
+        ("/api/v1/custom_emojis", "custom emojis")
     ]
     
-    for endpoint in endpoints:
+    for endpoint, name in endpoints:
         try:
             response = requests.get(f"{INSTANCE_URL}{endpoint}")
-            print(f"\n{endpoint}:")
-            print(f"  Status: {response.status_code}")
-            print(f"  Content-Type: {response.headers.get('Content-Type', 'N/A')}")
-            print(f"  CORS: {response.headers.get('Access-Control-Allow-Origin', 'N/A')}")
+            has_link = 'Link' in response.headers
+            has_pagination = 'X-Total-Count' in response.headers or 'Link' in response.headers
             
-            # Test OPTIONS for CORS
-            options_response = requests.options(f"{INSTANCE_URL}{endpoint}")
-            print(f"  OPTIONS Status: {options_response.status_code}")
-            print(f"  Allow Methods: {options_response.headers.get('Access-Control-Allow-Methods', 'N/A')}")
-        except Exception as e:
-            print(f"\n{endpoint}: Failed - {e}")
-
-def test_missing_endpoints():
-    """Test for commonly expected but possibly missing endpoints"""
-    print("\n\n=== Testing Additional Endpoints ===\n")
-    
-    endpoints = [
-        ('/api/v1/instance/extended_description', 'Extended description'),
-        ('/api/v1/instance/rules', 'Instance rules'),
-        ('/api/v2/instance', 'Instance v2'),
-        ('/api/v1/trends', 'Trends'),
-        ('/api/v1/trends/statuses', 'Trending statuses'),
-        ('/api/v1/trends/tags', 'Trending tags'),
-        ('/api/v1/trends/links', 'Trending links'),
-        ('/api/v1/directory', 'Profile directory'),
-        ('/api/v1/announcements', 'Announcements'),
-    ]
-    
-    for endpoint, description in endpoints:
-        try:
-            response = requests.get(f"{INSTANCE_URL}{endpoint}")
-            if response.status_code == 200:
-                data = response.json()
-                if isinstance(data, list):
-                    print(f"✓ {endpoint} - {description}: {len(data)} items")
-                else:
-                    print(f"✓ {endpoint} - {description}: OK")
+            # Show what headers are actually present
+            header_info = []
+            if 'Link' in response.headers:
+                header_info.append(f"Link: {response.headers['Link'][:50]}...")
+            if 'X-Total-Count' in response.headers:
+                header_info.append(f"X-Total-Count: {response.headers['X-Total-Count']}")
+            
+            details = f"Status: {response.status_code}, "
+            if header_info:
+                details += ", ".join(header_info)
             else:
-                print(f"✗ {endpoint} - {description}: Status {response.status_code}")
+                details += "No pagination headers"
+                
+            log_test(True, f"Pagination for {endpoint}", details)
         except Exception as e:
-            print(f"✗ {endpoint} - {description}: Failed - {str(e)[:50]}")
+            log_test(False, f"Pagination for {endpoint}", str(e))
+
+def test_account_lookup():
+    """Test account lookup (v1 endpoint)"""
+    print("\n=== Testing Account Lookup ===")
+    
+    try:
+        response = requests.get(f"{INSTANCE_URL}/api/v1/accounts/lookup",
+                              params={"acct": "testuser"})
+        if response.status_code == 200:
+            data = response.json()
+            log_test(True, "GET /api/v1/accounts/lookup", 
+                    f"Found account: @{data.get('username', 'N/A')} (ID: {data.get('id', 'N/A')})")
+            
+            # Test getting account statuses
+            account_id = data.get('id')
+            if account_id:
+                response2 = requests.get(f"{INSTANCE_URL}/api/v1/accounts/{account_id}/statuses")
+                if response2.status_code == 200:
+                    statuses = response2.json()
+                    log_test(True, f"GET /api/v1/accounts/{account_id}/statuses", 
+                            f"Statuses: {len(statuses)}")
+                else:
+                    log_test(False, f"GET /api/v1/accounts/{account_id}/statuses", 
+                            f"Status {response2.status_code}")
+        else:
+            log_test(False, "GET /api/v1/accounts/lookup", f"Status {response.status_code}")
+    except Exception as e:
+        log_test(False, "GET /api/v1/accounts/lookup", str(e))
+
+def test_app_creation():
+    """Test OAuth app creation (v1 endpoint)"""
+    print("\n=== Testing App Creation ===")
+    
+    try:
+        response = requests.post(f"{INSTANCE_URL}/api/v1/apps", json={
+            "client_name": "Test App",
+            "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
+            "scopes": "read write follow",
+            "website": "https://example.com"
+        })
+        if response.status_code == 200:
+            data = response.json()
+            log_test(True, "POST /api/v1/apps", 
+                    f"Client ID: {data.get('client_id', 'N/A')[:20]}...")
+        else:
+            log_test(False, "POST /api/v1/apps", f"Status {response.status_code}")
+    except Exception as e:
+        log_test(False, "POST /api/v1/apps", str(e))
 
 def main():
-    """Run all automated tests"""
-    print(f"🧪 Testing lesser API at {INSTANCE_URL}\n")
-    print("=" * 50)
+    print(f"Testing Lesser API at {INSTANCE_URL}")
+    print(f"Started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
+    # Run tests
     test_public_endpoints()
+    test_search()
     test_webfinger()
     test_nodeinfo()
-    test_oauth_endpoints()
-    test_api_response_headers()
-    test_missing_endpoints()
+    test_pagination()
+    test_account_lookup()
+    test_app_creation()
     
-    print("\n" + "=" * 50)
-    print("\n✅ Automated testing complete!")
-    print("\nFor authenticated endpoint testing, run test_api.py")
+    # Print summary
+    print("\n" + "="*50)
+    print(f"Test Summary: {tests_passed} passed, {tests_failed} failed")
+    print(f"Completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Exit with appropriate code
+    sys.exit(0 if tests_failed == 0 else 1)
 
 if __name__ == "__main__":
     main() 

@@ -3,9 +3,11 @@ package dynamodb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aron23/lesser/pkg/common"
+	cfg "github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -357,6 +359,91 @@ func (s *dynamoDBStorage) GetListTimeline(ctx context.Context, listID string, li
 			nextCursor = s.timelineSK(lastEntry.TimelineAt, lastEntry.PostID)
 		}
 	}
+
+	return entries, nextCursor, nil
+}
+
+// GetHashtagTimeline retrieves posts with a specific hashtag
+func (s *dynamoDBStorage) GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	log := common.Logger().With(
+		zap.String("hashtag", hashtag),
+		zap.Bool("local", local),
+		zap.Int("limit", limit),
+		zap.String("cursor", cursor),
+	)
+
+	// Normalize hashtag (remove # if present)
+	if strings.HasPrefix(hashtag, "#") {
+		hashtag = hashtag[1:]
+	}
+	hashtag = strings.ToLower(hashtag)
+
+	// Determine which timeline to query
+	timelineID := hashtag
+	if local {
+		timelineID = fmt.Sprintf("%s#LOCAL", hashtag)
+	}
+
+	pk := s.timelinePK("HASHTAG", timelineID)
+
+	var keyCondition string
+	var expressionAttributeValues map[string]types.AttributeValue
+
+	if cursor == "" {
+		keyCondition = "PK = :pk"
+		expressionAttributeValues = map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: pk},
+		}
+	} else {
+		keyCondition = "PK = :pk AND SK < :cursor"
+		expressionAttributeValues = map[string]types.AttributeValue{
+			":pk":     &types.AttributeValueMemberS{Value: pk},
+			":cursor": &types.AttributeValueMemberS{Value: cursor},
+		}
+	}
+
+	input := &dynamodb.QueryInput{
+		TableName:                 aws.String(s.tableName),
+		KeyConditionExpression:    aws.String(keyCondition),
+		ExpressionAttributeValues: expressionAttributeValues,
+		Limit:                     aws.Int32(int32(limit + 1)),
+		ScanIndexForward:          aws.Bool(false), // Newest first
+	}
+
+	output, err := s.client.Query(ctx, input)
+	if err != nil {
+		log.Error("failed to query hashtag timeline", zap.Error(err))
+		return nil, "", fmt.Errorf("failed to query hashtag timeline: %w", err)
+	}
+
+	entries := make([]*storage.TimelineEntry, 0, len(output.Items))
+	for _, item := range output.Items {
+		var record TimelineRecord
+		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+			log.Warn("failed to unmarshal timeline record", zap.Error(err))
+			continue
+		}
+
+		// Filter local-only if requested
+		if local && !strings.HasPrefix(record.Entry.ActorID, cfg.Get().BaseURL()) {
+			continue
+		}
+
+		entries = append(entries, record.Entry)
+	}
+
+	var nextCursor string
+	if len(entries) > limit {
+		entries = entries[:limit]
+		if len(entries) > 0 {
+			lastEntry := entries[len(entries)-1]
+			nextCursor = s.timelineSK(lastEntry.TimelineAt, lastEntry.PostID)
+		}
+	}
+
+	log.Debug("retrieved hashtag timeline",
+		zap.Int("entry_count", len(entries)),
+		zap.Bool("has_more", nextCursor != ""))
 
 	return entries, nextCursor, nil
 }

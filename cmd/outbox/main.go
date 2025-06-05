@@ -329,6 +329,14 @@ func handlePostOutbox(ctx context.Context, log *zap.Logger, username string, req
 		return common.InternalServerError(err), nil
 	}
 
+	// Fan out posts to timelines (for Create activities)
+	if activity.Type == activitypub.CreateType {
+		if err := store.FanOutPost(ctx, &activity); err != nil {
+			// Log the error but don't fail the request
+			log.Error("failed to fan out post to timelines", zap.Error(err))
+		}
+	}
+
 	log.Info("activity created",
 		zap.String("id", activity.ID),
 		zap.String("type", activity.Type),
