@@ -317,15 +317,26 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 		zap.String("instanceConfig.Version", instanceConfig.Version),
 	)
 
-	// Get dynamic rules from DynamoDB
+	// Get rules from storage
 	rules, err := h.store.GetInstanceRules(ctx)
 	if err != nil {
-		h.logger.Error("failed to get instance rules", zap.Error(err))
+		h.logger.Warn("failed to get instance rules", zap.Error(err))
 		rules = []storage.InstanceRule{}
 	}
 
-	// Convert rules to API format
-	apiRules := make([]interface{}, len(rules))
+	// Get VAPID public key
+	var vapidPublicKey string
+	vapidKeys, err := h.store.GetVAPIDKeys(ctx)
+	if err != nil {
+		h.logger.Warn("failed to get VAPID keys, using placeholder", zap.Error(err))
+		// Use a placeholder that clients will recognize as invalid
+		vapidPublicKey = "BCkMmVdKDnKYwzVCDC99Iuc9GvId-x7-kKtuHnLgfF98ENiZp_aj-UNthbCdI70DqN1zUVis-x0Wrot2sBagkMc="
+	} else {
+		vapidPublicKey = vapidKeys.PublicKey
+	}
+
+	// Convert rules for API response
+	apiRules := make([]map[string]interface{}, len(rules))
 	for i, rule := range rules {
 		apiRules[i] = map[string]interface{}{
 			"id":   rule.ID,
@@ -333,7 +344,6 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 		}
 	}
 
-	// V2 instance response format
 	resp := map[string]interface{}{
 		"domain":      h.cfg.Domain,
 		"title":       instanceConfig.Title,
@@ -358,7 +368,7 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 				"terms_of_service": h.cfg.BaseURL() + "/terms",
 			},
 			"vapid": map[string]interface{}{
-				"public_key": "BCkMmVdKDnKYwzVCDC99Iuc9GvId-x7-kKtuHnLgfF98ENiZp_aj-UNthbCdI70DqN1zUVis-x0Wrot2sBagkMc=",
+				"public_key": vapidPublicKey,
 			},
 			"accounts": map[string]interface{}{
 				"max_featured_tags":   10,

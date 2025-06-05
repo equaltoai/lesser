@@ -11,7 +11,9 @@ import (
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/federation"
+	"github.com/aron23/lesser/pkg/notifications"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
@@ -28,23 +30,38 @@ const (
 )
 
 var (
-	store      storage.Storage
-	logger     *zap.Logger
-	httpClient *http.Client
+	store       storage.Storage
+	logger      *zap.Logger
+	log         *zap.Logger
+	httpClient  *http.Client
+	cfg         *config.Config
+	pushService *notifications.PushService
 )
 
 func init() {
-	logger = common.Logger()
-
 	var err error
+	logger, err = zap.NewProduction()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
+	}
+	log = logger
+
+	cfg = config.Get()
+
 	store, err = dynamodb.New()
 	if err != nil {
-		logger.Fatal("failed to initialize storage", zap.Error(err))
+		logger.Fatal("Failed to initialize storage", zap.Error(err))
 	}
 
 	// HTTP client with timeout for delivery
 	httpClient = &http.Client{
 		Timeout: 30 * time.Second,
+	}
+
+	// Initialize push service (can be nil if not configured)
+	pushService, err = notifications.NewPushService()
+	if err != nil {
+		logger.Warn("Failed to initialize push service, push notifications will be disabled", zap.Error(err))
 	}
 }
 
@@ -213,8 +230,12 @@ func processInboxActivity(ctx context.Context, activity *activitypub.Activity, r
 
 	switch activity.Type {
 	case activitypub.FollowType:
-		// Create pending follow relationship
-		return processFollow(ctx, activity, recipientUsername)
+		// Process follow
+		if err := processFollow(ctx, activity, recipientUsername); err != nil {
+			log.Error("failed to process follow",
+				zap.String("activity_id", activity.ID),
+				zap.Error(err))
+		}
 
 	case activitypub.AcceptType:
 		// Check if this is accepting a follow
@@ -345,6 +366,53 @@ func processFollow(ctx context.Context, activity *activitypub.Activity, recipien
 	err := store.CreateFollow(ctx, followerUsername, recipientUsername, activity.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create follow relationship: %w", err)
+	}
+
+	// Check if this is a local user being followed
+	localActor, err := store.GetActor(ctx, recipientUsername)
+	if err == nil && localActor != nil {
+		// This is a local user being followed, create a notification
+		notification := &storage.Notification{
+			Type:      "follow",
+			Username:  recipientUsername, // The person being followed
+			AccountID: followerUsername,  // The person doing the following
+			CreatedAt: time.Now(),
+		}
+		if err := store.CreateNotification(ctx, notification); err != nil {
+			log.Warn("failed to create follow notification",
+				zap.String("follower", followerUsername),
+				zap.String("followed", recipientUsername),
+				zap.Error(err))
+		}
+
+		// Queue push notification
+		if pushService != nil {
+			// Get follower info for notification
+			followerActor, err := store.GetActor(ctx, followerUsername)
+			if err == nil {
+				displayName := followerActor.Name
+				if displayName == "" {
+					displayName = followerActor.PreferredUsername
+				}
+
+				pushMsg := &notifications.PushMessage{
+					Username:         recipientUsername,
+					NotificationType: "follow",
+					Title:            notifications.FormatNotificationTitle("follow", displayName),
+					Body:             "",
+					Icon:             followerActor.Icon.URL,
+					NotificationID:   notification.ID,
+					AccessToken:      "", // Will be populated by client
+				}
+
+				if err := pushService.QueueNotification(ctx, pushMsg); err != nil {
+					log.Warn("failed to queue push notification",
+						zap.String("type", "follow"),
+						zap.String("username", recipientUsername),
+						zap.Error(err))
+				}
+			}
+		}
 	}
 
 	return nil
@@ -703,6 +771,36 @@ func processLike(ctx context.Context, activity *activitypub.Activity, recipientU
 					zap.String("actor", activity.Actor),
 					zap.String("object", objectID),
 					zap.Error(err))
+			}
+
+			// Queue push notification
+			if pushService != nil {
+				// Get actor info for notification
+				actorUsername := extractUsernameFromActorID(activity.Actor)
+				actor, err := store.GetActor(ctx, actorUsername)
+				if err == nil {
+					displayName := actor.Name
+					if displayName == "" {
+						displayName = actor.PreferredUsername
+					}
+
+					pushMsg := &notifications.PushMessage{
+						Username:         objectOwner,
+						NotificationType: "favourite",
+						Title:            notifications.FormatNotificationTitle("favourite", displayName),
+						Body:             "",
+						Icon:             actor.Icon.URL,
+						NotificationID:   notification.ID,
+						AccessToken:      "", // Will be populated by client
+					}
+
+					if err := pushService.QueueNotification(ctx, pushMsg); err != nil {
+						log.Warn("failed to queue push notification",
+							zap.String("type", "favourite"),
+							zap.String("username", objectOwner),
+							zap.Error(err))
+					}
+				}
 			}
 		}
 	}

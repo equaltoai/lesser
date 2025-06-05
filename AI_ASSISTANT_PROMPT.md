@@ -131,13 +131,13 @@ Lesser now has:
 
 ### ⭐ IMMEDIATE NEXT PRIORITIES
 
-1. **Push Notifications** (HIGH PRIORITY) 🔴
-   - Web Push subscription endpoints
-   - VAPID key generation in instance config
-   - SQS queue for notification delivery
-   - Lambda function for push delivery
+1. **Push Notifications Infrastructure** (NEEDS DEPLOYMENT) 🟡
+   - Code implementation COMPLETE ✅
+   - Need to add SQS queue and Lambda to Pulumi infrastructure
+   - See PUSH_NOTIFICATIONS_IMPLEMENTATION.md for details
+   - Run `./bin/configure-instance -generate-vapid` after deployment
 
-2. **Polls Support** (MEDIUM PRIORITY) 🟠
+2. **Polls Support** (HIGH PRIORITY) 🔴
    - Poll creation in status endpoint
    - Vote submission endpoint
    - Real-time vote tallying
@@ -148,6 +148,24 @@ Lesser now has:
    - Mute accounts/keywords
    - Filter contexts (home, public, etc)
    - Client-side filter hints
+
+### 🎉 JUST COMPLETED - Push Notifications
+
+**Push Notifications Implementation Complete!** 🔔
+- ✅ VAPID key generation in configure-instance command
+- ✅ Web Push subscription endpoints (GET/POST/PUT/DELETE)
+- ✅ Push notification storage in DynamoDB
+- ✅ SQS queue integration for reliable delivery
+- ✅ Push delivery Lambda with Web Push Protocol encryption
+- ✅ Automatic notifications for follows, favorites, reblogs, mentions
+- ✅ Invalid subscription cleanup
+- 🟡 Needs infrastructure deployment (SQS queue + Lambda)
+
+To deploy:
+1. Update Pulumi infrastructure with SQS queue and push-delivery Lambda
+2. Run `pulumi up` to deploy
+3. Generate VAPID keys: `./bin/configure-instance -generate-vapid`
+4. Test with Mastodon clients that support push notifications
 
 ### 🔧 Future Enhancement Options
 

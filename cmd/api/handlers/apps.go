@@ -153,9 +153,15 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 		return common.InternalServerError(err), nil
 	}
 
-	h.logger.Info("OAuth client created successfully",
-		zap.String("client_id", client.ClientID),
-		zap.String("client_name", client.Name))
+	// Get VAPID public key
+	var vapidKey string
+	vapidKeys, err := h.store.GetVAPIDKeys(ctx)
+	if err != nil {
+		h.logger.Warn("failed to get VAPID keys, push notifications will not be available", zap.Error(err))
+		vapidKey = ""
+	} else {
+		vapidKey = vapidKeys.PublicKey
+	}
 
 	// Return response
 	resp := models.AppRegistrationResponse{
@@ -165,7 +171,7 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 		RedirectURI:  redirectURIs[0], // Return first redirect URI for compatibility
 		ClientID:     client.ClientID,
 		ClientSecret: client.ClientSecret,
-		VapidKey:     "", // TODO: Implement push notifications
+		VapidKey:     vapidKey,
 	}
 
 	h.logger.Info("returning app registration response",
