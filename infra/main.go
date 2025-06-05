@@ -12,6 +12,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/dynamodb"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lambda"
+	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/opensearch"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/route53"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/s3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -208,6 +209,74 @@ func main() {
 			return err
 		}
 
+		// Create OpenSearch Serverless encryption security policy
+		collectionName := pulumi.Sprintf("lesser-search-%s", environment)
+		encryptionPolicy, err := opensearch.NewServerlessSecurityPolicy(ctx, "lesser-search-encryption", &opensearch.ServerlessSecurityPolicyArgs{
+			Name: pulumi.String("lesser-search-encryption"),
+			Type: pulumi.String("encryption"),
+			Policy: collectionName.ApplyT(func(name string) (string, error) {
+				policy := map[string]interface{}{
+					"Rules": []interface{}{
+						map[string]interface{}{
+							"Resource": []string{
+								fmt.Sprintf("collection/%s", name),
+							},
+							"ResourceType": "collection",
+						},
+					},
+					"AWSOwnedKey": true,
+				}
+				policyJSON, err := json.Marshal(policy)
+				return string(policyJSON), err
+			}).(pulumi.StringOutput),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create OpenSearch Serverless network security policy
+		networkPolicy, err := opensearch.NewServerlessSecurityPolicy(ctx, "lesser-search-network", &opensearch.ServerlessSecurityPolicyArgs{
+			Name: pulumi.String("lesser-search-network"),
+			Type: pulumi.String("network"),
+			Policy: collectionName.ApplyT(func(name string) (string, error) {
+				policy := []interface{}{
+					map[string]interface{}{
+						"Rules": []interface{}{
+							map[string]interface{}{
+								"Resource": []string{
+									fmt.Sprintf("collection/%s", name),
+								},
+								"ResourceType": "collection",
+							},
+						},
+						"AllowFromPublic": true,
+					},
+				}
+				policyJSON, err := json.Marshal(policy)
+				return string(policyJSON), err
+			}).(pulumi.StringOutput),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create OpenSearch Serverless collection
+		searchCollection, err := opensearch.NewServerlessCollection(ctx, "lesser-search", &opensearch.ServerlessCollectionArgs{
+			Name:        collectionName,
+			Type:        pulumi.String("SEARCH"),
+			Description: pulumi.String("Lesser ActivityPub search collection for actors"),
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Search Collection"),
+				"Environment": pulumi.String(environment),
+			},
+		}, pulumi.DependsOn([]pulumi.Resource{
+			encryptionPolicy,
+			networkPolicy,
+		}))
+		if err != nil {
+			return err
+		}
+
 		// Create CloudFront distribution for media
 		mediaDistribution, err := cloudfront.NewDistribution(ctx, "lesser-media-cdn", &cloudfront.DistributionArgs{
 			Enabled:           pulumi.Bool(true),
@@ -358,13 +427,88 @@ func main() {
 			return err
 		}
 
+		// Create OpenSearch policy for Lambda
+		opensearchPolicy := searchCollection.Arn.ApplyT(func(arn string) (string, error) {
+			policy := map[string]interface{}{
+				"Version": "2012-10-17",
+				"Statement": []interface{}{
+					map[string]interface{}{
+						"Effect": "Allow",
+						"Action": []string{
+							"aoss:APIAccessAll",
+						},
+						"Resource": arn,
+					},
+				},
+			}
+			policyJSON, err := json.Marshal(policy)
+			return string(policyJSON), err
+		})
+
+		_, err = iam.NewRolePolicy(ctx, "lambda-opensearch", &iam.RolePolicyArgs{
+			Role:   lambdaRole.Name,
+			Policy: opensearchPolicy,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create OpenSearch data access policy now that Lambda role exists
+		_, err = opensearch.NewServerlessAccessPolicy(ctx, "lesser-search-data-access", &opensearch.ServerlessAccessPolicyArgs{
+			Name: pulumi.String("lesser-search-data-access"),
+			Type: pulumi.String("data"),
+			Policy: pulumi.All(collectionName, lambdaRole.Arn).ApplyT(func(args []interface{}) (string, error) {
+				collection := args[0].(string)
+				roleArn := args[1].(string)
+				policy := []interface{}{
+					map[string]interface{}{
+						"Rules": []interface{}{
+							map[string]interface{}{
+								"Resource": []string{
+									fmt.Sprintf("collection/%s", collection),
+								},
+								"Permission": []string{
+									"aoss:CreateCollectionItems",
+									"aoss:UpdateCollectionItems",
+									"aoss:DeleteCollectionItems",
+									"aoss:DescribeCollectionItems",
+								},
+								"ResourceType": "collection",
+							},
+							map[string]interface{}{
+								"Resource": []string{
+									fmt.Sprintf("index/%s/*", collection),
+								},
+								"Permission": []string{
+									"aoss:CreateIndex",
+									"aoss:UpdateIndex",
+									"aoss:DeleteIndex",
+									"aoss:DescribeIndex",
+									"aoss:ReadDocument",
+									"aoss:WriteDocument",
+								},
+								"ResourceType": "index",
+							},
+						},
+						"Principal": []string{roleArn},
+					},
+				}
+				policyJSON, err := json.Marshal(policy)
+				return string(policyJSON), err
+			}).(pulumi.StringOutput),
+		})
+		if err != nil {
+			return err
+		}
+
 		// Lambda environment variables
 		lambdaEnv := pulumi.StringMap{
-			"DYNAMO_TABLE_NAME": table.Name,
-			"S3_BUCKET_NAME":    mediaBucket.Bucket,
-			"CDN_DOMAIN":        pulumi.Sprintf("media.%s", domain),
-			"DOMAIN":            pulumi.String(domain),
-			"JWT_SECRET":        jwtSecret,
+			"DYNAMO_TABLE_NAME":   table.Name,
+			"S3_BUCKET_NAME":      mediaBucket.Bucket,
+			"CDN_DOMAIN":          pulumi.Sprintf("media.%s", domain),
+			"DOMAIN":              pulumi.String(domain),
+			"JWT_SECRET":          jwtSecret,
+			"OPENSEARCH_ENDPOINT": searchCollection.CollectionEndpoint,
 			// Instance configuration
 			"INSTANCE_TITLE":       pulumi.String("Lesser Instance"),
 			"INSTANCE_SHORT_DESC":  pulumi.String("A personal ActivityPub server"),
@@ -437,6 +581,10 @@ func main() {
 		if err != nil {
 			return err
 		}
+		searchIndexerLambda, err := createLambda("search-indexer", "search-indexer", 60)
+		if err != nil {
+			return err
+		}
 
 		// Add DynamoDB Streams trigger
 		_, err = lambda.NewEventSourceMapping(ctx, "activity-stream", &lambda.EventSourceMappingArgs{
@@ -446,6 +594,25 @@ func main() {
 			MaximumBatchingWindowInSeconds: pulumi.Int(5),
 			ParallelizationFactor:          pulumi.Int(10),
 			MaximumRetryAttempts:           pulumi.Int(3),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add DynamoDB Streams trigger for search indexer
+		_, err = lambda.NewEventSourceMapping(ctx, "search-indexer-stream", &lambda.EventSourceMappingArgs{
+			EventSourceArn:        table.StreamArn,
+			FunctionName:          searchIndexerLambda.Name,
+			StartingPosition:      pulumi.String("LATEST"),
+			ParallelizationFactor: pulumi.Int(5),
+			MaximumRetryAttempts:  pulumi.Int(3),
+			FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
+				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
+					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
+						Pattern: pulumi.String(`{"eventName": ["INSERT", "MODIFY", "REMOVE"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "ACTOR#"}]}}}}`),
+					},
+				},
+			},
 		})
 		if err != nil {
 			return err
@@ -653,6 +820,7 @@ func main() {
 		ctx.Export("bucketName", mediaBucket.Bucket)
 		ctx.Export("distributionId", mediaDistribution.ID())
 		ctx.Export("apiId", api.ID())
+		ctx.Export("opensearchEndpoint", searchCollection.CollectionEndpoint)
 
 		return nil
 	})

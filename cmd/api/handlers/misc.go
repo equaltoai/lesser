@@ -57,10 +57,25 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 
 	// Search accounts
 	if searchType == "" || searchType == "accounts" {
-		// Simple username search
-		if strings.HasPrefix(query, "@") {
-			username := strings.TrimPrefix(query, "@")
-			if actor, err := h.store.GetActor(ctx, username); err == nil {
+		// Parse limit from query parameters
+		searchLimit := 20
+		if limitStr := request.QueryStringParameters["limit"]; limitStr != "" {
+			if l, err := fmt.Sscanf(limitStr, "%d", &searchLimit); err == nil && l == 1 {
+				if searchLimit > 40 {
+					searchLimit = 40
+				}
+			}
+		}
+
+		// Use the new SearchAccounts method
+		actors, err := h.store.SearchAccounts(ctx, query, searchLimit, false, 0)
+		if err != nil {
+			h.logger.Error("account search failed",
+				zap.String("query", query),
+				zap.Error(err))
+		} else {
+			// Convert actors to accounts
+			for _, actor := range actors {
 				account := models.Account{
 					ID:             actor.PreferredUsername,
 					Username:       actor.PreferredUsername,
@@ -87,8 +102,6 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 				result.Accounts = append(result.Accounts, account)
 			}
 		}
-
-		// TODO: Implement full-text search for accounts
 	}
 
 	// Search statuses

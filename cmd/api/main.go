@@ -194,8 +194,15 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/accounts/relationships" && method == http.MethodGet {
 		return handler.HandleGetRelationships(ctx, request)
 	}
+	// Account search
+	if path == "/accounts/search" && method == http.MethodGet {
+		return handler.HandleAccountSearch(ctx, request)
+	}
+	// Account search suggestions
+	if path == "/accounts/search/suggestions" && method == http.MethodGet {
+		return handler.HandleGetSearchSuggestions(ctx, request)
+	}
 	// TODO: GET /api/v1/accounts/familiar_followers - Find familiar followers
-	// TODO: GET /api/v1/accounts/search - Search for accounts
 
 	// ==================== STATUSES ====================
 	// Status management
@@ -392,6 +399,9 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}
 	}
 	// TODO: GET /api/v1/conversations - View conversations
+
+	// ==================== CONVERSATIONS ====================
+	// TODO: Implement conversations endpoints
 
 	// ==================== INSTANCE ====================
 	// Instance info (v2 only)
