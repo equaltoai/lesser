@@ -1047,3 +1047,76 @@ Lesser has achieved its core goal of being a serverless ActivityPub implementati
 - [OAuth 2.0 RFC 6749](https://tools.ietf.org/html/rfc6749) ✅ NEW
 - [PKCE RFC 7636](https://tools.ietf.org/html/rfc7636) ✅ NEW
 - [JWT RFC 7519](https://tools.ietf.org/html/rfc7519) ✅ NEW 
+
+## Code Modularization
+
+#### Converter Pattern Implementation
+- Created `pkg/mastodon/converter.go` with a `Converter` interface for ActivityPub to Mastodon API conversions
+- Implemented `converterImpl` with methods:
+  - `ActorToAccount` / `ActorToAccountWithCounts` - Convert ActivityPub actors to Mastodon accounts
+  - `ObjectToStatus` / `ObjectToStatusWithContext` - Convert ActivityPub objects to Mastodon statuses
+  - `ConversationToAPI` - Convert storage conversations to API format
+  - `ExtractUsernameFromActorID` / `ExtractIDFromURL` - Utility methods
+- Removed duplicate conversion functions across handlers
+- All handlers now use the centralized converter
+
+#### Actor Service
+- Created `pkg/mastodon/actor_service.go` with `ActorService` interface
+- Provides higher-level actor operations:
+  - `GetAccountByUsername` - Retrieve account with basic info
+  - `GetAccountWithStats` - Include follower/following/status counts
+  - `GetAccountsByIDs` - Batch retrieval of multiple accounts
+- Encapsulates storage access and conversion logic
+
+#### Handler Improvements
+- Updated `Handler` struct to include the converter
+- Removed duplicate helper functions (`extractUsernameFromActorID`, `ObjectToStatus`, etc.)
+- All handlers now use the shared converter instance
+- Cleaner separation of concerns between HTTP handling and data conversion
+
+#### Storage Implementation
+- Added conversation support to DynamoDB storage
+- Implemented all conversation methods required by the interface
+- Fixed timeline implementation to use proper configuration
+
+## Next Steps
+
+### Priority 1 - Lists Management
+- `GET /api/v1/lists` - Get user's lists
+- `POST /api/v1/lists` - Create list
+- `GET /api/v1/lists/:id` - Get list
+- `PUT /api/v1/lists/:id` - Update list
+- `DELETE /api/v1/lists/:id` - Delete list
+- `GET /api/v1/lists/:id/accounts` - Get accounts in list
+- `POST /api/v1/lists/:id/accounts` - Add accounts to list
+- `DELETE /api/v1/lists/:id/accounts` - Remove accounts from list
+
+### Priority 2 - Notifications
+- `GET /api/v1/notifications` - Get notifications
+- `GET /api/v1/notifications/:id` - Get single notification
+- `POST /api/v1/notifications/clear` - Clear all notifications
+- `POST /api/v1/notifications/:id/dismiss` - Dismiss notification
+
+### Priority 3 - Account Relationships
+- `GET /api/v1/accounts/relationships` - Get relationships with accounts
+- `GET /api/v1/blocks` - Get blocked accounts
+- `GET /api/v1/mutes` - Get muted accounts
+- `POST /api/v1/accounts/:id/mute` - Mute account
+- `POST /api/v1/accounts/:id/unmute` - Unmute account
+
+### Priority 4 - Enhanced Features
+- `GET /api/v1/favourites` - Get favorited statuses
+- `GET /api/v1/preferences` - Get user preferences
+- `PATCH /api/v1/preferences` - Update preferences
+- Polls support
+- Scheduled posts
+- Account migration
+
+## Known Issues
+- GetObjectsByActor pagination needs proper implementation
+- Home timeline doesn't filter by follows yet (shows public timeline)
+- Media attachments need proper CDN URL generation
+- Search is basic and needs optimization
+- Hashtag extraction and indexing not implemented
+- Conversation support needs proper participant indexing
+- DynamoDB TTL for timeline cleanup not configured 

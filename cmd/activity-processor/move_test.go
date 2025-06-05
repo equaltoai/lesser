@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/stretchr/testify/assert"
@@ -20,7 +21,7 @@ func TestProcessMove(t *testing.T) {
 		name         string
 		activity     *activitypub.Activity
 		recipient    string
-		setupMocks   func(*MockStorage)
+		setupMocks   func(*mocks.MockStorage)
 		expectError  bool
 		errorMessage string
 	}{
@@ -36,7 +37,7 @@ func TestProcessMove(t *testing.T) {
 				Object: "https://newserver.com/users/alice",
 			},
 			recipient: "followers",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateMove", mock.Anything, mock.MatchedBy(func(move *storage.Move) bool {
 					return move.ID == "https://example.com/activities/move-1" &&
 						move.Actor == "https://oldserver.com/users/alice" &&
@@ -61,7 +62,7 @@ func TestProcessMove(t *testing.T) {
 				},
 			},
 			recipient: "followers",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateMove", mock.Anything, mock.MatchedBy(func(move *storage.Move) bool {
 					return move.ID == "https://example.com/activities/move-2" &&
 						move.Actor == "https://oldserver.com/users/bob" &&
@@ -84,7 +85,7 @@ func TestProcessMove(t *testing.T) {
 				},
 			},
 			recipient:    "followers",
-			setupMocks:   func(m *MockStorage) {},
+			setupMocks:   func(m *mocks.MockStorage) {},
 			expectError:  true,
 			errorMessage: "move activity missing target",
 		},
@@ -100,7 +101,7 @@ func TestProcessMove(t *testing.T) {
 				Object: "https://newserver.com/users/dave",
 			},
 			recipient: "followers",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("CreateMove", mock.Anything, mock.MatchedBy(func(move *storage.Move) bool {
 					return move.Published.Equal(now)
 				})).Return(nil)
@@ -111,7 +112,7 @@ func TestProcessMove(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := &MockStorage{}
+			mockStore := &mocks.MockStorage{}
 			tt.setupMocks(mockStore)
 
 			oldStore := store
@@ -141,7 +142,7 @@ func TestProcessAdd(t *testing.T) {
 		name         string
 		activity     *activitypub.Activity
 		recipient    string
-		setupMocks   func(*MockStorage)
+		setupMocks   func(*mocks.MockStorage)
 		expectError  bool
 		errorMessage string
 	}{
@@ -160,7 +161,7 @@ func TestProcessAdd(t *testing.T) {
 				},
 			},
 			recipient: "alice",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("AddToCollection", mock.Anything,
 					"https://example.com/users/alice/collections/featured",
 					mock.MatchedBy(func(item *storage.CollectionItem) bool {
@@ -186,7 +187,7 @@ func TestProcessAdd(t *testing.T) {
 				},
 			},
 			recipient: "bob",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("AddToCollection", mock.Anything,
 					"https://example.com/users/bob/collections/bookmarks",
 					mock.MatchedBy(func(item *storage.CollectionItem) bool {
@@ -207,7 +208,7 @@ func TestProcessAdd(t *testing.T) {
 				Object: map[string]interface{}{},
 			},
 			recipient:    "charlie",
-			setupMocks:   func(m *MockStorage) {},
+			setupMocks:   func(m *mocks.MockStorage) {},
 			expectError:  true,
 			errorMessage: "add activity missing object",
 		},
@@ -225,7 +226,7 @@ func TestProcessAdd(t *testing.T) {
 				},
 			},
 			recipient:    "dave",
-			setupMocks:   func(m *MockStorage) {},
+			setupMocks:   func(m *mocks.MockStorage) {},
 			expectError:  true,
 			errorMessage: "add activity missing target collection",
 		},
@@ -233,7 +234,7 @@ func TestProcessAdd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := &MockStorage{}
+			mockStore := &mocks.MockStorage{}
 			tt.setupMocks(mockStore)
 
 			oldStore := store
@@ -263,7 +264,7 @@ func TestProcessRemove(t *testing.T) {
 		name         string
 		activity     *activitypub.Activity
 		recipient    string
-		setupMocks   func(*MockStorage)
+		setupMocks   func(*mocks.MockStorage)
 		expectError  bool
 		errorMessage string
 	}{
@@ -281,7 +282,7 @@ func TestProcessRemove(t *testing.T) {
 				},
 			},
 			recipient: "alice",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("RemoveFromCollection", mock.Anything,
 					"https://example.com/users/alice/collections/featured",
 					"https://example.com/posts/1").Return(nil)
@@ -302,7 +303,7 @@ func TestProcessRemove(t *testing.T) {
 				},
 			},
 			recipient: "bob",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("RemoveFromCollection", mock.Anything,
 					"https://example.com/users/bob/collections/bookmarks",
 					"https://example.com/posts/2").Return(nil)
@@ -320,7 +321,7 @@ func TestProcessRemove(t *testing.T) {
 				Object: map[string]interface{}{},
 			},
 			recipient:    "charlie",
-			setupMocks:   func(m *MockStorage) {},
+			setupMocks:   func(m *mocks.MockStorage) {},
 			expectError:  true,
 			errorMessage: "remove activity missing object",
 		},
@@ -337,7 +338,7 @@ func TestProcessRemove(t *testing.T) {
 				},
 			},
 			recipient:    "dave",
-			setupMocks:   func(m *MockStorage) {},
+			setupMocks:   func(m *mocks.MockStorage) {},
 			expectError:  true,
 			errorMessage: "remove activity missing target collection",
 		},
@@ -355,7 +356,7 @@ func TestProcessRemove(t *testing.T) {
 				},
 			},
 			recipient: "eve",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("RemoveFromCollection", mock.Anything,
 					"https://example.com/users/eve/collections/featured",
 					"https://example.com/posts/nonexistent").Return(nil)
@@ -366,7 +367,7 @@ func TestProcessRemove(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := &MockStorage{}
+			mockStore := &mocks.MockStorage{}
 			tt.setupMocks(mockStore)
 
 			oldStore := store

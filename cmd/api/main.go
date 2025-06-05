@@ -94,23 +94,61 @@ func init() {
 }
 
 func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	// Get the path, removing the stage prefix if present
-	path := request.RawPath
-	rawPath := request.RawPath // Keep original for version detection
+	// IMPORTANT: Mastodon API Version Notes
+	// =====================================
+	// We support both /api/v1 and /api/v2 endpoints.
+	//
+	// v2 endpoints (introduced in Mastodon 4.0.0+):
+	//   - /api/v2/instance (GET) - Server information
+	//   - /api/v2/search (GET) - Search with grouped results
+	//   - /api/v2/suggestions (GET) - Follow suggestions
+	//   - /api/v2/media (POST) - Async media upload
+	//
+	// v1 endpoints (most of the API):
+	//   - /api/v1/accounts/* - All account endpoints
+	//   - /api/v1/statuses/* - All status endpoints
+	//   - /api/v1/timelines/* - All timeline endpoints
+	//   - /api/v1/custom_emojis - Custom emoji list
+	//   - /api/v1/instance/activity - Weekly activity
+	//   - /api/v1/instance/peers - Connected domains
+	//   - /api/v1/notifications - Notifications
+	//   - /api/v1/bookmarks, /api/v1/favourites - User collections
+	//   - /api/v1/lists/* - List management
+	//   - /api/v1/filters/* - Content filters
+	//   - ... and all other endpoints
+	//
+	// API Gateway strips the version prefix, so we receive paths like:
+	// - "/instance" for both /api/v1/instance and /api/v2/instance
+	// - "/timelines/public" for /api/v1/timelines/public
 
-	if request.RequestContext.Stage != "" && strings.HasPrefix(path, "/"+request.RequestContext.Stage) {
-		path = strings.TrimPrefix(path, "/"+request.RequestContext.Stage)
+	// API Gateway v2 provides the clean path (with ApiMappingKey already stripped) in RequestContext.HTTP.Path
+	path := request.RequestContext.HTTP.Path
+
+	// Remove stage prefix if present (e.g., /lab)
+	if request.RequestContext.Stage != "" && request.RequestContext.Stage != "$default" {
+		stagePrefix := "/" + request.RequestContext.Stage
+		if strings.HasPrefix(path, stagePrefix) {
+			path = strings.TrimPrefix(path, stagePrefix)
+		}
 	}
 
-	// Detect API version from the raw path
-	isV2 := strings.Contains(rawPath, "/api/v2/") || strings.HasPrefix(rawPath, "/api/v2/")
+	// Ensure path starts with /
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
 
-	// Log request
+	// Remove trailing slash for consistency (except for root path)
+	if len(path) > 1 && strings.HasSuffix(path, "/") {
+		path = strings.TrimSuffix(path, "/")
+	}
+
+	// Log request with all path information for debugging
 	logger.Info("API request",
 		zap.String("raw_path", request.RawPath),
+		zap.String("http_path", request.RequestContext.HTTP.Path),
 		zap.String("path", path),
 		zap.String("method", request.RequestContext.HTTP.Method),
-		zap.Bool("is_v2", isV2),
+		zap.String("stage", request.RequestContext.Stage),
 		zap.Any("headers", request.Headers))
 
 	// Handle OPTIONS requests for CORS preflight
@@ -148,10 +186,16 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/accounts/update_credentials" && method == http.MethodPatch {
 		return handler.HandleUpdateCredentials(ctx, request)
 	}
-	// TODO: GET /api/v1/accounts/relationships - Check relationships with multiple accounts
+	// Account lookup
+	if path == "/accounts/lookup" && method == http.MethodGet {
+		return handler.HandleAccountLookup(ctx, request)
+	}
+	// Account relationships
+	if path == "/accounts/relationships" && method == http.MethodGet {
+		return handler.HandleGetRelationships(ctx, request)
+	}
 	// TODO: GET /api/v1/accounts/familiar_followers - Find familiar followers
 	// TODO: GET /api/v1/accounts/search - Search for accounts
-	// TODO: GET /api/v1/accounts/lookup - Lookup account by username@domain
 
 	// ==================== STATUSES ====================
 	// Status management
@@ -285,17 +329,43 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 
 	// ==================== LISTS ====================
 	// Lists
-	if path == "/lists" && method == http.MethodGet {
-		// TODO: Implement list management
-		return common.OK([]interface{}{}), nil
+	if path == "/lists" {
+		switch method {
+		case http.MethodGet:
+			return handler.HandleGetLists(ctx, request)
+		case http.MethodPost:
+			return handler.HandleCreateList(ctx, request)
+		}
 	}
-	// TODO: GET /api/v1/lists/:id - View a single list
-	// TODO: POST /api/v1/lists - Create a list
-	// TODO: PUT /api/v1/lists/:id - Update a list
-	// TODO: DELETE /api/v1/lists/:id - Delete a list
-	// TODO: GET /api/v1/lists/:id/accounts - View accounts in list
-	// TODO: POST /api/v1/lists/:id/accounts - Add accounts to list
-	// TODO: DELETE /api/v1/lists/:id/accounts - Remove accounts from list
+	// List operations
+	if strings.HasPrefix(path, "/lists/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			listID := parts[2]
+
+			if len(parts) == 4 && parts[3] == "accounts" {
+				// List accounts operations
+				switch method {
+				case http.MethodGet:
+					return handler.HandleGetListAccounts(ctx, request, listID)
+				case http.MethodPost:
+					return handler.HandleAddAccountsToList(ctx, request, listID)
+				case http.MethodDelete:
+					return handler.HandleRemoveAccountsFromList(ctx, request, listID)
+				}
+			} else if len(parts) == 3 {
+				// Single list operations
+				switch method {
+				case http.MethodGet:
+					return handler.HandleGetList(ctx, request, listID)
+				case http.MethodPut:
+					return handler.HandleUpdateList(ctx, request, listID)
+				case http.MethodDelete:
+					return handler.HandleDeleteList(ctx, request, listID)
+				}
+			}
+		}
+	}
 
 	// ==================== TIMELINES ====================
 	// Timelines
@@ -305,17 +375,28 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/timelines/public" && method == http.MethodGet {
 		return handler.HandlePublicTimeline(ctx, request)
 	}
-	// TODO: GET /api/v1/timelines/tag/:hashtag - Hashtag timeline
-	// TODO: GET /api/v1/timelines/list/:list_id - List timeline
+	// Hashtag timeline
+	if strings.HasPrefix(path, "/timelines/tag/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 4 && method == http.MethodGet {
+			hashtag := parts[3]
+			return handler.HandleHashtagTimeline(ctx, request, hashtag)
+		}
+	}
+	// List timeline
+	if strings.HasPrefix(path, "/timelines/list/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 4 && method == http.MethodGet {
+			listID := parts[3]
+			return handler.HandleListTimeline(ctx, request, listID)
+		}
+	}
 	// TODO: GET /api/v1/conversations - View conversations
 
 	// ==================== INSTANCE ====================
-	// Instance info
+	// Instance info (v2 only)
 	if path == "/instance" && method == http.MethodGet {
-		if isV2 {
-			return handler.HandleGetInstanceV2(ctx, request)
-		}
-		return handler.HandleGetInstance(ctx, request)
+		return handler.HandleGetInstanceV2(ctx, request)
 	}
 
 	// Instance activity
@@ -390,9 +471,22 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/notifications" && method == http.MethodGet {
 		return handler.HandleGetNotifications(ctx, request)
 	}
-	// TODO: GET /api/v1/notifications/:id - View single notification
-	// TODO: POST /api/v1/notifications/clear - Clear all notifications
-	// TODO: POST /api/v1/notifications/:id/dismiss - Dismiss single notification
+	if path == "/notifications/clear" && method == http.MethodPost {
+		return handler.HandleClearNotifications(ctx, request)
+	}
+	// Notification operations
+	if strings.HasPrefix(path, "/notifications/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			notificationID := parts[2]
+
+			if len(parts) == 4 && parts[3] == "dismiss" && method == http.MethodPost {
+				return handler.HandleDismissNotification(ctx, request, notificationID)
+			} else if len(parts) == 3 && method == http.MethodGet {
+				return handler.HandleGetNotification(ctx, request, notificationID)
+			}
+		}
+	}
 
 	// ==================== PUSH NOTIFICATIONS ====================
 	// Push subscription

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -8,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
@@ -18,57 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
-
-// MockStorage embeds the centralized mock and overrides only what we need
-type MockStorage struct {
-	mocks.MockStorage
-}
-
-// Override only the methods that need mock expectations in these tests
-func (m *MockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
-	args := m.Called(ctx, followerUsername, followedUsername, followActivityID)
-	return args.Error(0)
-}
-
-func (m *MockStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	args := m.Called(ctx, followerUsername, followedUsername)
-	return args.Error(0)
-}
-
-func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
-	args := m.Called(ctx, object)
-	return args.Error(0)
-}
-
-func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
-	args := m.Called(ctx, username)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockStorage) CreateFlag(ctx context.Context, flag *storage.Flag) error {
-	args := m.Called(ctx, flag)
-	return args.Error(0)
-}
-
-func (m *MockStorage) CreateMove(ctx context.Context, move *storage.Move) error {
-	args := m.Called(ctx, move)
-	return args.Error(0)
-}
-
-func (m *MockStorage) AddToCollection(ctx context.Context, collection string, item *storage.CollectionItem) error {
-	args := m.Called(ctx, collection, item)
-	return args.Error(0)
-}
-
-func (m *MockStorage) RemoveFromCollection(ctx context.Context, collection, itemID string) error {
-	args := m.Called(ctx, collection, itemID)
-	return args.Error(0)
-}
-
-func (m *MockStorage) CreateLike(ctx context.Context, like *storage.Like) error {
-	args := m.Called(ctx, like)
-	return args.Error(0)
-}
 
 func TestParseActivityRecord(t *testing.T) {
 	tests := []struct {
@@ -318,7 +267,7 @@ func TestExtractAllRecipients(t *testing.T) {
 
 func TestProcessInboxActivity(t *testing.T) {
 	// Set up mock storage
-	mockStore := &MockStorage{}
+	mockStore := &mocks.MockStorage{}
 	originalStore := store
 	store = mockStore
 	defer func() { store = originalStore }()
@@ -519,7 +468,7 @@ func TestProcessOutboxActivity(t *testing.T) {
 	serverURL = testServer.URL
 
 	// Set up mock storage
-	mockStore := &MockStorage{}
+	mockStore := &mocks.MockStorage{}
 	originalStore := store
 	store = mockStore
 	defer func() { store = originalStore }()
@@ -618,7 +567,7 @@ func TestProcessOutboxActivity(t *testing.T) {
 
 func TestHandler(t *testing.T) {
 	// Set up mock storage
-	mockStore := &MockStorage{}
+	mockStore := &mocks.MockStorage{}
 	originalStore := store
 	store = mockStore
 	defer func() { store = originalStore }()

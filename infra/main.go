@@ -564,6 +564,9 @@ func main() {
 		}
 
 		// Map API to domain
+		// Note: Mastodon API has both v1 and v2 endpoints
+		// v2 is used for: /instance, /search, /suggestions, /media
+		// v1 is used for everything else (timelines, accounts, statuses, etc.)
 		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-mapping", &apigatewayv2.ApiMappingArgs{
 			ApiId:         api.ID(),
 			DomainName:    apiDomain.ID(),
@@ -574,7 +577,7 @@ func main() {
 			return err
 		}
 
-		// Add v1 mapping for backward compatibility
+		// v1 mapping for endpoints that don't have v2 versions
 		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-v1-mapping", &apigatewayv2.ApiMappingArgs{
 			ApiId:         api.ID(),
 			DomainName:    apiDomain.ID(),

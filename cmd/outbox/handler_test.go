@@ -364,7 +364,7 @@ func TestHandler(t *testing.T) {
 		body           string
 		queryParams    map[string]string
 		headers        map[string]string
-		setupMocks     func(*MockStorage)
+		setupMocks func(*mocks.MockStorage)
 		expectedStatus int
 		expectedError  bool
 		validateBody   func(*testing.T, string)
@@ -374,7 +374,7 @@ func TestHandler(t *testing.T) {
 			name:     "get outbox collection",
 			method:   http.MethodGet,
 			username: "alice",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -407,7 +407,7 @@ func TestHandler(t *testing.T) {
 			queryParams: map[string]string{
 				"page": "true",
 			},
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -464,7 +464,7 @@ func TestHandler(t *testing.T) {
 				"cursor": "some-cursor",
 				"limit":  "10",
 			},
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -493,7 +493,7 @@ func TestHandler(t *testing.T) {
 				"page":  "true",
 				"limit": "invalid",
 			},
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -513,7 +513,7 @@ func TestHandler(t *testing.T) {
 			name:     "get outbox actor not found",
 			method:   http.MethodGet,
 			username: "unknown",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "unknown").Return(nil, common.ActorNotFoundError{Username: "unknown"})
 			},
 			expectedStatus: http.StatusNotFound,
@@ -530,7 +530,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://remote.example/users/bob"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -565,7 +565,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://remote.example/notes/123"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -596,7 +596,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://remote.example/notes/123"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -636,7 +636,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -666,7 +666,7 @@ func TestHandler(t *testing.T) {
 				"object": "not-a-url"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -688,7 +688,7 @@ func TestHandler(t *testing.T) {
 				"type": "Like"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -714,7 +714,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -738,7 +738,7 @@ func TestHandler(t *testing.T) {
 			name:     "method not allowed",
 			method:   http.MethodDelete,
 			username: "alice",
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				// No mocks needed
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -747,7 +747,7 @@ func TestHandler(t *testing.T) {
 			name:   "missing username",
 			method: http.MethodPost,
 			body:   `{"type": "Follow"}`,
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				// No mocks needed
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -758,7 +758,7 @@ func TestHandler(t *testing.T) {
 			username: "unknown",
 			body:     `{"type": "Follow"}`,
 			headers:  createTestAuthHeader("unknown"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "unknown").Return(nil, common.ActorNotFoundError{Username: "unknown"})
 			},
 			expectedStatus: http.StatusNotFound,
@@ -769,7 +769,7 @@ func TestHandler(t *testing.T) {
 			username: "alice",
 			body:     `{invalid json`,
 			headers:  createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -793,7 +793,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://remote.example/users/charlie"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -817,7 +817,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://remote.example/users/bob"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -844,7 +844,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -902,7 +902,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -951,7 +951,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -986,7 +986,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1018,7 +1018,7 @@ func TestHandler(t *testing.T) {
 				"type": "Create"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1042,7 +1042,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1067,7 +1067,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1093,7 +1093,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1119,7 +1119,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1150,7 +1150,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1182,7 +1182,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1212,7 +1212,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1242,7 +1242,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1272,7 +1272,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1309,7 +1309,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1341,7 +1341,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1370,7 +1370,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1393,7 +1393,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://remote.example/notes/456"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1436,7 +1436,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1467,7 +1467,7 @@ func TestHandler(t *testing.T) {
 				"object": "not-a-url"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1489,7 +1489,7 @@ func TestHandler(t *testing.T) {
 				"type": "Announce"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1515,7 +1515,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1550,7 +1550,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1595,7 +1595,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1623,7 +1623,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1660,7 +1660,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1688,7 +1688,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1722,7 +1722,7 @@ func TestHandler(t *testing.T) {
 				"type": "Undo"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1745,7 +1745,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://example.com/activities/123"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1772,7 +1772,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1799,7 +1799,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1823,7 +1823,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://example.com/users/bob"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1868,7 +1868,7 @@ func TestHandler(t *testing.T) {
 				}
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1901,7 +1901,7 @@ func TestHandler(t *testing.T) {
 				"object": "not-a-url"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1923,7 +1923,7 @@ func TestHandler(t *testing.T) {
 				"type": "Block"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1946,7 +1946,7 @@ func TestHandler(t *testing.T) {
 				"object": "https://example.com/users/bob"
 			}`,
 			headers: createTestAuthHeader("alice"),
-			setupMocks: func(m *MockStorage) {
+			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -1966,7 +1966,7 @@ func TestHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock storage
-			mockStore := new(MockStorage)
+			mockStore := new(mocks.MockStorage)
 			tt.setupMocks(mockStore)
 			store = mockStore
 

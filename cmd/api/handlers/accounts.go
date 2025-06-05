@@ -401,6 +401,35 @@ func (h *Handler) HandleGetAccount(ctx context.Context, request events.APIGatewa
 	}, nil
 }
 
+// HandleAccountLookup looks up an account by username@domain
+func (h *Handler) HandleAccountLookup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Get acct parameter
+	acct := request.QueryStringParameters["acct"]
+	if acct == "" {
+		return common.BadRequest(errors.New("acct parameter is required")), nil
+	}
+
+	// Remove @ prefix if present
+	acct = strings.TrimPrefix(acct, "@")
+
+	// For local accounts, just use the username part
+	username := acct
+	if parts := strings.Split(acct, "@"); len(parts) > 0 {
+		username = parts[0]
+	}
+
+	// Get the actor
+	actor, err := h.store.GetActor(ctx, username)
+	if err != nil {
+		return common.NotFound(fmt.Errorf("account not found")), nil
+	}
+
+	// Convert to Mastodon account format
+	account := h.converter.ActorToAccount(actor)
+
+	return common.OK(account), nil
+}
+
 // validateRegistrationRequest validates a registration request
 func (h *Handler) validateRegistrationRequest(req models.AccountRegistrationRequest) error {
 	// Validate username

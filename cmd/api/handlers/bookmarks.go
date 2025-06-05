@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/aron23/lesser/cmd/api/models"
-	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
@@ -215,26 +213,14 @@ func (h *Handler) convertObjectToStatus(ctx context.Context, obj interface{}, cu
 	attributedTo, _ := objMap["attributedTo"].(string)
 
 	// Get the actor
-	actorUsername := extractUsernameFromActorID(attributedTo)
+	actorUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
 	actor, err := h.store.GetActor(ctx, actorUsername)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
 
 	// Create account from actor
-	account := models.Account{
-		ID:           actor.ID,
-		Username:     actor.PreferredUsername,
-		Acct:         actor.PreferredUsername,
-		DisplayName:  actor.Name,
-		URL:          actor.URL,
-		Avatar:       getActorAvatar(actor),
-		AvatarStatic: getActorAvatar(actor),
-		Header:       getActorHeader(actor),
-		HeaderStatic: getActorHeader(actor),
-		Note:         actor.Summary,
-		CreatedAt:    published, // Using published time for now
-	}
+	account := h.converter.ActorToAccount(actor)
 
 	// Check if bookmarked
 	bookmarked, _ := h.store.IsBookmarked(ctx, currentUsername, id)
@@ -261,29 +247,4 @@ func (h *Handler) convertObjectToStatus(ctx context.Context, obj interface{}, cu
 	}
 
 	return status, nil
-}
-
-// Helper functions (these should be in a shared location)
-
-func extractUsernameFromActorID(actorID string) string {
-	// Extract username from actor ID like "https://example.com/users/alice"
-	parts := strings.Split(actorID, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return ""
-}
-
-func getActorAvatar(actor *activitypub.Actor) string {
-	if actor.Icon != nil {
-		return actor.Icon.URL
-	}
-	return ""
-}
-
-func getActorHeader(actor *activitypub.Actor) string {
-	if actor.Image != nil {
-		return actor.Image.URL
-	}
-	return ""
 }

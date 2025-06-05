@@ -255,7 +255,7 @@ func setupMockActorServer(t *testing.T, actor *activitypub.Actor) *httptest.Serv
 
 func TestHandler(t *testing.T) {
 	// Setup
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	store = mockStore
 
 	// Create test actor (recipient)
@@ -271,7 +271,7 @@ func TestHandler(t *testing.T) {
 	tests := []struct {
 		name          string
 		setupRequest  func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error)
-		setupMock     func(*MockStorage)
+		setupMock func(*mocks.MockStorage)
 		setupServer   func() (*httptest.Server, *activitypub.Actor)
 		expectedCode  int
 		expectedError string
@@ -295,7 +295,7 @@ func TestHandler(t *testing.T) {
 				body, _ := json.Marshal(activity)
 				return createSignedRequest("POST", "/users/alice/inbox", body, privateKey, sender.PublicKey.ID)
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(recipient, nil)
 				m.On("CreateActivity", mock.Anything, mock.MatchedBy(func(a *activitypub.Activity) bool {
 					return strings.Contains(a.ID, "/activities/123")
@@ -332,7 +332,7 @@ func TestHandler(t *testing.T) {
 					PathParameters: map[string]string{"username": "alice"},
 				}, nil
 			},
-			setupMock:    func(m *MockStorage) {},
+			setupMock:    func(m *mocks.MockStorage) {},
 			setupServer:  func() (*httptest.Server, *activitypub.Actor) { return nil, nil },
 			expectedCode: http.StatusBadRequest,
 		},
@@ -348,7 +348,7 @@ func TestHandler(t *testing.T) {
 					PathParameters: map[string]string{},
 				}, nil
 			},
-			setupMock:    func(m *MockStorage) {},
+			setupMock:    func(m *mocks.MockStorage) {},
 			setupServer:  func() (*httptest.Server, *activitypub.Actor) { return nil, nil },
 			expectedCode: http.StatusBadRequest,
 		},
@@ -365,7 +365,7 @@ func TestHandler(t *testing.T) {
 				body, _ := json.Marshal(activity)
 				return createSignedRequest("POST", "/users/alice/inbox", body, privateKey, "https://remote.example/users/bob#main-key")
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(nil, common.ActorNotFoundError{Username: "alice"})
 			},
 			setupServer:  func() (*httptest.Server, *activitypub.Actor) { return nil, nil },
@@ -384,7 +384,7 @@ func TestHandler(t *testing.T) {
 					Body:           "invalid json",
 				}, nil
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(recipient, nil)
 			},
 			setupServer:  func() (*httptest.Server, *activitypub.Actor) { return nil, nil },
@@ -404,7 +404,7 @@ func TestHandler(t *testing.T) {
 				body, _ := json.Marshal(activity)
 				return createSignedRequest("POST", "/users/alice/inbox", body, privateKey, "https://remote.example/users/bob#main-key")
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(recipient, nil)
 			},
 			setupServer:  func() (*httptest.Server, *activitypub.Actor) { return nil, nil },
@@ -424,7 +424,7 @@ func TestHandler(t *testing.T) {
 				body, _ := json.Marshal(activity)
 				return createSignedRequest("POST", "/users/alice/inbox", body, privateKey, "https://remote.example/users/bob#main-key")
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(recipient, nil)
 			},
 			setupServer:  func() (*httptest.Server, *activitypub.Actor) { return nil, nil },
@@ -451,7 +451,7 @@ func TestHandler(t *testing.T) {
 				req.Headers["Signature"] = "keyId=\"test\",algorithm=\"rsa-sha256\",signature=\"invalid\""
 				return req, nil
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(recipient, nil)
 			},
 			setupServer: func() (*httptest.Server, *activitypub.Actor) {
@@ -667,7 +667,7 @@ func TestGetInbox(t *testing.T) {
 	authMiddleware = auth.NewMiddleware()
 
 	// Setup
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	store = mockStore
 
 	// Create test actor
@@ -678,7 +678,7 @@ func TestGetInbox(t *testing.T) {
 		username      string
 		headers       map[string]string
 		queryParams   map[string]string
-		setupMock     func(*MockStorage)
+		setupMock func(*mocks.MockStorage)
 		expectedCode  int
 		expectedError string
 		validateBody  func(*testing.T, string)
@@ -687,7 +687,7 @@ func TestGetInbox(t *testing.T) {
 			name:     "get inbox collection - authenticated",
 			username: "alice",
 			headers:  createTestAuthHeader("alice"),
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
 				m.On("GetInboxActivities", mock.Anything, "alice", 1, "").Return([]*activitypub.Activity{}, "", nil)
 			},
@@ -708,7 +708,7 @@ func TestGetInbox(t *testing.T) {
 			queryParams: map[string]string{
 				"page": "true",
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
 
 				activities := []*activitypub.Activity{
@@ -770,7 +770,7 @@ func TestGetInbox(t *testing.T) {
 				"cursor": "some-cursor",
 				"limit":  "10",
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
 				m.On("GetInboxActivities", mock.Anything, "alice", 10, "some-cursor").Return([]*activitypub.Activity{}, "next-cursor", nil)
 			},
@@ -787,7 +787,7 @@ func TestGetInbox(t *testing.T) {
 			name:     "get inbox - not authenticated",
 			username: "alice",
 			headers:  map[string]string{},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				// No mocks needed - should fail at auth
 			},
 			expectedCode: http.StatusUnauthorized,
@@ -796,7 +796,7 @@ func TestGetInbox(t *testing.T) {
 			name:     "get inbox - wrong user",
 			username: "alice",
 			headers:  createTestAuthHeader("bob"),
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				// No mocks needed - should fail at user check
 			},
 			expectedCode: http.StatusForbidden,
@@ -824,7 +824,7 @@ func TestGetInbox(t *testing.T) {
 					"Authorization": "Bearer " + tokenString,
 				}
 			}(),
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				// No mocks needed - should fail at scope check
 			},
 			expectedCode: http.StatusForbidden,
@@ -833,7 +833,7 @@ func TestGetInbox(t *testing.T) {
 			name:     "get inbox - actor not found",
 			username: "unknown",
 			headers:  createTestAuthHeader("unknown"),
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "unknown").Return(nil, common.ActorNotFoundError{Username: "unknown"})
 			},
 			expectedCode: http.StatusNotFound,
@@ -845,7 +845,7 @@ func TestGetInbox(t *testing.T) {
 			queryParams: map[string]string{
 				"page": "true",
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
 				m.On("GetInboxActivities", mock.Anything, "alice", 20, "").Return(nil, "", fmt.Errorf("storage error"))
 			},
@@ -858,7 +858,7 @@ func TestGetInbox(t *testing.T) {
 			queryParams: map[string]string{
 				"page": "true",
 			},
-			setupMock: func(m *MockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(alice, nil)
 
 				activities := []*activitypub.Activity{

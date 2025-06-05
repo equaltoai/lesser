@@ -11,70 +11,18 @@ import (
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-// MockStorage is a mock implementation of the storage interface for testing
-type MockStorage struct {
-	mock.Mock
-	mocks.BaseMockStorage
-}
-
-// Override only methods that need specific mock expectations in these tests
-func (m *MockStorage) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
-	args := m.Called(ctx, clientID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*storage.OAuthClient), args.Error(1)
-}
-
-func (m *MockStorage) CreateAuthorizationCode(ctx context.Context, code *storage.AuthorizationCode) error {
-	args := m.Called(ctx, code)
-	return args.Error(0)
-}
-
-func (m *MockStorage) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
-	args := m.Called(ctx, code)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*storage.AuthorizationCode), args.Error(1)
-}
-
-func (m *MockStorage) DeleteAuthorizationCode(ctx context.Context, code string) error {
-	args := m.Called(ctx, code)
-	return args.Error(0)
-}
-
-func (m *MockStorage) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
-	args := m.Called(ctx, token)
-	return args.Error(0)
-}
-
-func (m *MockStorage) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
-	args := m.Called(ctx, token)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*storage.RefreshToken), args.Error(1)
-}
-
-func (m *MockStorage) DeleteRefreshToken(ctx context.Context, token string) error {
-	args := m.Called(ctx, token)
-	return args.Error(0)
-}
-
 func TestNewOAuthService(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 	assert.NotNil(t, svc)
 	assert.NotNil(t, svc.storage)
 }
 
 func TestValidateClient(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 	ctx := context.Background()
 
@@ -132,7 +80,7 @@ func TestValidateClient(t *testing.T) {
 }
 
 func TestValidateRedirectURI(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 	ctx := context.Background()
 
@@ -208,7 +156,7 @@ func TestValidateRedirectURI(t *testing.T) {
 }
 
 func TestGenerateAuthorizationCode(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 
 	code1, err := svc.GenerateAuthorizationCode()
@@ -224,7 +172,7 @@ func TestGenerateAuthorizationCode(t *testing.T) {
 }
 
 func TestVerifyCodeChallenge(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 
 	// Test data from RFC 7636 example
@@ -291,7 +239,7 @@ func TestVerifyCodeChallenge(t *testing.T) {
 }
 
 func TestGenerateTokens(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 
 	username := "testuser"
@@ -312,7 +260,7 @@ func TestGenerateTokens(t *testing.T) {
 }
 
 func TestValidateAccessToken(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 
 	// Generate a valid token
@@ -334,7 +282,7 @@ func TestValidateAccessToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a token with wrong signature
-	wrongStore := new(MockStorage)
+	wrongStore := new(mocks.MockStorage)
 	wrongSvc := NewOAuthService("wrong-secret", wrongStore)
 	wrongToken, _, err := wrongSvc.GenerateTokens("testuser", "test-client", []string{ScopeRead})
 	require.NoError(t, err)
@@ -498,7 +446,7 @@ func TestDefaultScopes(t *testing.T) {
 }
 
 func TestGenerateRefreshToken(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 
 	token1, err := svc.generateRefreshToken()
@@ -514,7 +462,7 @@ func TestGenerateRefreshToken(t *testing.T) {
 }
 
 func TestTokenGeneration(t *testing.T) {
-	mockStore := new(MockStorage)
+	mockStore := new(mocks.MockStorage)
 	svc := NewOAuthService("test-secret", mockStore)
 
 	// Test that generated tokens are properly formatted

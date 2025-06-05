@@ -380,6 +380,21 @@ func processFollowAccept(ctx context.Context, activity *activitypub.Activity, re
 		return fmt.Errorf("failed to accept follow: %w", err)
 	}
 
+	// Create a follow notification for the follower
+	notification := &storage.Notification{
+		Type:      "follow",
+		Username:  followerUsername,
+		AccountID: recipientUsername,
+		CreatedAt: time.Now(),
+	}
+	if err := store.CreateNotification(ctx, notification); err != nil {
+		log.Warn("failed to create follow notification",
+			zap.String("follower", followerUsername),
+			zap.String("followed", recipientUsername),
+			zap.Error(err))
+		// Don't fail the whole operation if notification creation fails
+	}
+
 	return nil
 }
 
@@ -464,6 +479,35 @@ func processCreate(ctx context.Context, activity *activitypub.Activity, recipien
 		log.Info("object created from activity",
 			zap.String("object_id", object.ID),
 			zap.String("type", object.Type))
+
+		// Check for mentions in the object tags
+		if object.Type == "Note" {
+			for _, tag := range object.Tag {
+				if tag.Type == "Mention" && tag.Href != "" {
+					// Extract mentioned username from href
+					mentionedUsername := extractUsernameFromActorID(tag.Href)
+
+					// Check if this is a local user
+					if mentionedActor, err := store.GetActor(ctx, mentionedUsername); err == nil && mentionedActor != nil {
+						// Create mention notification
+						notification := &storage.Notification{
+							Type:      "mention",
+							Username:  mentionedUsername,
+							AccountID: extractUsernameFromActorID(activity.Actor),
+							StatusID:  object.ID,
+							CreatedAt: time.Now(),
+						}
+						if err := store.CreateNotification(ctx, notification); err != nil {
+							log.Warn("failed to create mention notification",
+								zap.String("mentioned", mentionedUsername),
+								zap.String("actor", activity.Actor),
+								zap.String("object", object.ID),
+								zap.Error(err))
+						}
+					}
+				}
+			}
+		}
 	} else {
 		log.Warn("activity object is not a map, skipping object creation",
 			zap.String("activity_id", activity.ID))
@@ -623,6 +667,46 @@ func processLike(ctx context.Context, activity *activitypub.Activity, recipientU
 		zap.String("actor", activity.Actor),
 		zap.String("object", objectID))
 
+	// Check if the liked object belongs to our local user
+	// Get the object to find out who created it
+	obj, err := store.GetObject(ctx, objectID)
+	if err == nil {
+		// Extract the owner of the object
+		var objectOwner string
+		switch v := obj.(type) {
+		case *dynamodb.Object:
+			// Extract username from AttributedTo
+			if v.AttributedTo != "" {
+				objectOwner = extractUsernameFromActorID(v.AttributedTo)
+			}
+		case *activitypub.Note:
+			if v.AttributedTo != "" {
+				objectOwner = extractUsernameFromActorID(v.AttributedTo)
+			}
+		case map[string]interface{}:
+			if attr, ok := v["attributedTo"].(string); ok {
+				objectOwner = extractUsernameFromActorID(attr)
+			}
+		}
+
+		// If this is a local user's object, create a notification
+		if objectOwner != "" && objectOwner == recipientUsername {
+			notification := &storage.Notification{
+				Type:      "favourite",
+				Username:  objectOwner,
+				AccountID: extractUsernameFromActorID(activity.Actor),
+				StatusID:  objectID,
+				CreatedAt: time.Now(),
+			}
+			if err := store.CreateNotification(ctx, notification); err != nil {
+				log.Warn("failed to create favourite notification",
+					zap.String("actor", activity.Actor),
+					zap.String("object", objectID),
+					zap.Error(err))
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -680,6 +764,46 @@ func processAnnounce(ctx context.Context, activity *activitypub.Activity, recipi
 	log.Info("announce stored successfully",
 		zap.String("actor", activity.Actor),
 		zap.String("object", objectID))
+
+	// Check if the announced object belongs to our local user
+	// Get the object to find out who created it
+	obj, err := store.GetObject(ctx, objectID)
+	if err == nil {
+		// Extract the owner of the object
+		var objectOwner string
+		switch v := obj.(type) {
+		case *dynamodb.Object:
+			// Extract username from AttributedTo
+			if v.AttributedTo != "" {
+				objectOwner = extractUsernameFromActorID(v.AttributedTo)
+			}
+		case *activitypub.Note:
+			if v.AttributedTo != "" {
+				objectOwner = extractUsernameFromActorID(v.AttributedTo)
+			}
+		case map[string]interface{}:
+			if attr, ok := v["attributedTo"].(string); ok {
+				objectOwner = extractUsernameFromActorID(attr)
+			}
+		}
+
+		// If this is a local user's object, create a notification
+		if objectOwner != "" && objectOwner == recipientUsername {
+			notification := &storage.Notification{
+				Type:      "reblog",
+				Username:  objectOwner,
+				AccountID: extractUsernameFromActorID(activity.Actor),
+				StatusID:  objectID,
+				CreatedAt: time.Now(),
+			}
+			if err := store.CreateNotification(ctx, notification); err != nil {
+				log.Warn("failed to create reblog notification",
+					zap.String("actor", activity.Actor),
+					zap.String("object", objectID),
+					zap.Error(err))
+			}
+		}
+	}
 
 	return nil
 }
