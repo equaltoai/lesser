@@ -4,15 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/aron23/lesser/cmd/api/models"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/zap"
 )
 
@@ -595,4 +600,183 @@ func (h *Handler) HandleDismissNotification(ctx context.Context, request events.
 	}
 
 	return common.NoContent(), nil
+}
+
+// HandleGetInstanceCosts returns cost analytics for the instance
+func (h *Handler) HandleGetInstanceCosts(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	h.logger.Info("HandleGetInstanceCosts called")
+
+	// Initialize cost storage if not already done
+	costTableName := os.Getenv("COST_HISTORY_TABLE_NAME")
+	if costTableName == "" {
+		// Return placeholder data if cost tracking is not configured
+		response := map[string]interface{}{
+			"error": "Cost tracking not configured",
+		}
+		return common.OK(response), nil
+	}
+
+	// Create DynamoDB client for cost queries
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRegion(h.cfg.Region),
+	)
+	if err != nil {
+		h.logger.Error("failed to load AWS config", zap.Error(err))
+		return nil, errors.New("failed to initialize cost tracking")
+	}
+
+	dynamoClient := dynamodb.NewFromConfig(awsCfg)
+	costStorage := cost.NewStorage(dynamoClient, costTableName, h.logger)
+
+	// Get current month data
+	now := time.Now()
+	currentMonth, err := costStorage.GetMonthlyCost(ctx, now.Year(), now.Month())
+	if err != nil {
+		h.logger.Error("failed to get monthly cost", zap.Error(err))
+	}
+
+	// Get daily costs for the last 7 days
+	endDate := now
+	startDate := now.AddDate(0, 0, -6) // 7 days including today
+	dailyCosts, err := costStorage.GetDailyCosts(ctx, startDate, endDate)
+	if err != nil {
+		h.logger.Error("failed to get daily costs", zap.Error(err))
+	}
+
+	// Format daily costs for response
+	formattedDailyCosts := make([]map[string]interface{}, 0, len(dailyCosts))
+	for _, daily := range dailyCosts {
+		formattedDailyCosts = append(formattedDailyCosts, map[string]interface{}{
+			"date":          daily.Date,
+			"cost_cents":    float64(daily.TotalCostMicrocents) / float64(cost.MicroCentsToCents),
+			"request_count": daily.RequestCount,
+			"unique_users":  daily.UniqueUsers,
+		})
+	}
+
+	// Calculate cost breakdown percentages
+	var dynamoPercent, lambdaPercent, transferPercent, storagePercent float64
+	if currentMonth != nil && currentMonth.TotalCostMicrocents > 0 {
+		// Calculate component costs
+		dynamoCost := (currentMonth.DynamoDBReads * cost.DynamoDBReadRequestUnit / 1000000) +
+			(currentMonth.DynamoDBWrites * cost.DynamoDBWriteRequestUnit / 1000000)
+
+		lambdaCost := (currentMonth.LambdaInvocations * cost.LambdaRequestCost / 1000000) +
+			int64(float64(currentMonth.LambdaDurationMs)*128/(1000*1024)*float64(cost.LambdaGBSecondCost))
+
+		transferCost := int64(currentMonth.DataTransferGB * float64(cost.S3DataTransferPerGB))
+
+		// Storage cost is the remainder
+		storageCost := currentMonth.TotalCostMicrocents - dynamoCost - lambdaCost - transferCost
+		if storageCost < 0 {
+			storageCost = 0
+		}
+
+		// Calculate percentages
+		total := float64(currentMonth.TotalCostMicrocents)
+		dynamoPercent = float64(dynamoCost) / total * 100
+		lambdaPercent = float64(lambdaCost) / total * 100
+		transferPercent = float64(transferCost) / total * 100
+		storagePercent = float64(storageCost) / total * 100
+	}
+
+	// Calculate cost per user
+	var avgCostPerUser, medianCostPerUser float64
+	if currentMonth != nil && currentMonth.UniqueUsers > 0 {
+		avgCostPerUser = float64(currentMonth.TotalCostMicrocents) / float64(currentMonth.UniqueUsers) / float64(cost.MicroCentsToCents)
+		// For now, use average as median (would need more detailed data for true median)
+		medianCostPerUser = avgCostPerUser
+	}
+
+	response := map[string]interface{}{
+		"current_month": map[string]interface{}{
+			"total_cost_cents":     float64(currentMonth.TotalCostMicrocents) / float64(cost.MicroCentsToCents),
+			"dynamodb_reads":       currentMonth.DynamoDBReads,
+			"dynamodb_writes":      currentMonth.DynamoDBWrites,
+			"lambda_invocations":   currentMonth.LambdaInvocations,
+			"data_transfer_gb":     currentMonth.DataTransferGB,
+			"projected_cost_cents": float64(currentMonth.ProjectedCostMicrocents) / float64(cost.MicroCentsToCents),
+		},
+		"daily_costs": formattedDailyCosts,
+		"cost_per_user": map[string]interface{}{
+			"average_cents": avgCostPerUser,
+			"median_cents":  medianCostPerUser,
+		},
+		"cost_breakdown": map[string]interface{}{
+			"dynamodb_percent":      dynamoPercent,
+			"lambda_percent":        lambdaPercent,
+			"data_transfer_percent": transferPercent,
+			"storage_percent":       storagePercent,
+		},
+	}
+
+	return common.OK(response), nil
+}
+
+// HandleGetInstanceConfiguration returns configuration details
+func (h *Handler) HandleGetInstanceConfiguration(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Build configuration response
+	config := map[string]interface{}{
+		"urls": map[string]interface{}{
+			"streaming": fmt.Sprintf("wss://%s", h.cfg.Domain),
+		},
+		"accounts": map[string]interface{}{
+			"max_featured_tags":   20,
+			"max_pinned_statuses": 5,
+		},
+		"statuses": map[string]interface{}{
+			"max_characters":              5000,
+			"max_media_attachments":       4,
+			"characters_reserved_per_url": 23,
+		},
+		"media_attachments": map[string]interface{}{
+			"supported_mime_types": []string{
+				"image/jpeg",
+				"image/png",
+				"image/gif",
+				"image/heif",
+				"image/heic",
+				"image/webp",
+				"image/avif",
+				"video/webm",
+				"video/mp4",
+				"video/quicktime",
+				"video/ogg",
+				"audio/wave",
+				"audio/wav",
+				"audio/x-wav",
+				"audio/x-pn-wave",
+				"audio/vnd.wave",
+				"audio/ogg",
+				"audio/mpeg",
+				"audio/mp3",
+				"audio/webm",
+				"audio/flac",
+				"audio/aac",
+				"audio/m4a",
+				"audio/x-m4a",
+				"audio/mp4",
+				"audio/3gpp",
+				"video/x-ms-asf",
+			},
+			"image_size_limit":       16777216,  // 16MB
+			"image_matrix_limit":     33177600,  // 33MP
+			"video_size_limit":       103809024, // 99MB
+			"video_frame_rate_limit": 120,
+			"video_matrix_limit":     8294400, // 4K
+		},
+		"polls": map[string]interface{}{
+			"max_options":               4,
+			"max_characters_per_option": 50,
+			"min_expiration":            300,
+			"max_expiration":            2629746,
+		},
+		"translation": map[string]interface{}{
+			"enabled": false,
+		},
+	}
+
+	// TODO: Add vapid_key when available in config
+
+	return common.OK(config), nil
 }

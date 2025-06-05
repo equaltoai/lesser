@@ -114,6 +114,62 @@ func main() {
 			return err
 		}
 
+		// Export table name for other components
+		ctx.Export("tableName", table.Name)
+
+		// Cost History Table for tracking operation costs
+		costHistoryTable, err := dynamodb.NewTable(ctx, "cost-history-table", &dynamodb.TableArgs{
+			Name:        pulumi.String(fmt.Sprintf("lesser-cost-history-%s", environment)),
+			BillingMode: pulumi.String("PAY_PER_REQUEST"),
+			HashKey:     pulumi.String("PK"),
+			RangeKey:    pulumi.String("SK"),
+
+			Attributes: dynamodb.TableAttributeArray{
+				&dynamodb.TableAttributeArgs{
+					Name: pulumi.String("PK"),
+					Type: pulumi.String("S"),
+				},
+				&dynamodb.TableAttributeArgs{
+					Name: pulumi.String("SK"),
+					Type: pulumi.String("S"),
+				},
+				&dynamodb.TableAttributeArgs{
+					Name: pulumi.String("GSI1PK"),
+					Type: pulumi.String("S"),
+				},
+				&dynamodb.TableAttributeArgs{
+					Name: pulumi.String("GSI1SK"),
+					Type: pulumi.String("S"),
+				},
+			},
+
+			GlobalSecondaryIndexes: dynamodb.TableGlobalSecondaryIndexArray{
+				&dynamodb.TableGlobalSecondaryIndexArgs{
+					Name:           pulumi.String("GSI1"),
+					HashKey:        pulumi.String("GSI1PK"),
+					RangeKey:       pulumi.String("GSI1SK"),
+					ProjectionType: pulumi.String("ALL"),
+				},
+			},
+
+			StreamEnabled:  pulumi.Bool(true),
+			StreamViewType: pulumi.String("NEW_AND_OLD_IMAGES"),
+
+			PointInTimeRecovery: &dynamodb.TablePointInTimeRecoveryArgs{
+				Enabled: pulumi.Bool(true),
+			},
+
+			Tags: pulumi.StringMap{
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Export the cost history table name
+		ctx.Export("costHistoryTableName", costHistoryTable.Name)
+
 		// Create S3 bucket for media storage
 		mediaBucket, err := s3.NewBucket(ctx, "lesser-media", &s3.BucketArgs{
 			Bucket: pulumi.Sprintf("lesser-media-%s", environment),
@@ -356,7 +412,9 @@ func main() {
 		}
 
 		// Create DynamoDB policy for Lambda
-		dynamoPolicy := table.Arn.ApplyT(func(arn string) (string, error) {
+		dynamoPolicy := pulumi.All(table.Arn, costHistoryTable.Arn).ApplyT(func(args []interface{}) (string, error) {
+			tableArn := args[0].(string)
+			costTableArn := args[1].(string)
 			policy := map[string]interface{}{
 				"Version": "2012-10-17",
 				"Statement": []interface{}{
@@ -372,7 +430,12 @@ func main() {
 							"dynamodb:BatchGetItem",
 							"dynamodb:BatchWriteItem",
 						},
-						"Resource": []string{arn, fmt.Sprintf("%s/index/*", arn)},
+						"Resource": []string{
+							tableArn,
+							fmt.Sprintf("%s/index/*", tableArn),
+							costTableArn,
+							fmt.Sprintf("%s/index/*", costTableArn),
+						},
 					},
 					map[string]interface{}{
 						"Effect": "Allow",
@@ -382,7 +445,10 @@ func main() {
 							"dynamodb:GetShardIterator",
 							"dynamodb:ListStreams",
 						},
-						"Resource": fmt.Sprintf("%s/stream/*", arn),
+						"Resource": []string{
+							fmt.Sprintf("%s/stream/*", tableArn),
+							fmt.Sprintf("%s/stream/*", costTableArn),
+						},
 					},
 				},
 			}
@@ -536,12 +602,13 @@ func main() {
 
 		// Lambda environment variables
 		lambdaEnv := pulumi.StringMap{
-			"DYNAMO_TABLE_NAME":   table.Name,
-			"S3_BUCKET_NAME":      mediaBucket.Bucket,
-			"CDN_DOMAIN":          pulumi.Sprintf("media.%s", domain),
-			"DOMAIN":              pulumi.String(domain),
-			"JWT_SECRET":          jwtSecret,
-			"OPENSEARCH_ENDPOINT": searchCollection.CollectionEndpoint,
+			"DYNAMO_TABLE_NAME":       table.Name,
+			"S3_BUCKET_NAME":          mediaBucket.Bucket,
+			"CDN_DOMAIN":              pulumi.Sprintf("media.%s", domain),
+			"DOMAIN":                  pulumi.String(domain),
+			"JWT_SECRET":              jwtSecret,
+			"OPENSEARCH_ENDPOINT":     searchCollection.CollectionEndpoint,
+			"COST_HISTORY_TABLE_NAME": costHistoryTable.Name,
 			// Instance configuration
 			"INSTANCE_TITLE":       pulumi.String("Lesser Instance"),
 			"INSTANCE_SHORT_DESC":  pulumi.String("A personal ActivityPub server"),
@@ -614,6 +681,10 @@ func main() {
 		if err != nil {
 			return err
 		}
+		costAggregatorLambda, err := createLambda("cost-aggregator", "cost-aggregator", 60)
+		if err != nil {
+			return err
+		}
 
 		// Add DynamoDB Streams trigger
 		_, err = lambda.NewEventSourceMapping(ctx, "activity-stream", &lambda.EventSourceMappingArgs{
@@ -639,6 +710,25 @@ func main() {
 				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
 					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
 						Pattern: pulumi.String(`{"eventName": ["INSERT", "MODIFY", "REMOVE"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "ACTOR#"}]}}}}`),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add DynamoDB Streams trigger for cost aggregator
+		_, err = lambda.NewEventSourceMapping(ctx, "cost-aggregator-stream", &lambda.EventSourceMappingArgs{
+			EventSourceArn:        costHistoryTable.StreamArn,
+			FunctionName:          costAggregatorLambda.Name,
+			StartingPosition:      pulumi.String("LATEST"),
+			ParallelizationFactor: pulumi.Int(5),
+			MaximumRetryAttempts:  pulumi.Int(3),
+			FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
+				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
+					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
+						Pattern: pulumi.String(`{"eventName": ["INSERT"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "COST#"}]}}}}`),
 					},
 				},
 			},
@@ -841,10 +931,47 @@ func main() {
 			return err
 		}
 
+		// Create EventBridge rule for periodic cost aggregation
+		costAggregationRule, err := cloudwatch.NewEventRule(ctx, "cost-aggregation-rule", &cloudwatch.EventRuleArgs{
+			Description:        pulumi.String("Trigger cost aggregation every hour"),
+			ScheduleExpression: pulumi.String("rate(1 hour)"),
+			State:              pulumi.String("ENABLED"),
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Cost Aggregation"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add Lambda permission for EventBridge
+		_, err = lambda.NewPermission(ctx, "cost-aggregation-eventbridge", &lambda.PermissionArgs{
+			Action:    pulumi.String("lambda:InvokeFunction"),
+			Function:  costAggregatorLambda.Name,
+			Principal: pulumi.String("events.amazonaws.com"),
+			SourceArn: costAggregationRule.Arn,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create EventBridge target
+		_, err = cloudwatch.NewEventTarget(ctx, "cost-aggregation-target", &cloudwatch.EventTargetArgs{
+			Rule: costAggregationRule.Name,
+			Arn:  costAggregatorLambda.Arn,
+			RetryPolicy: &cloudwatch.EventTargetRetryPolicyArgs{
+				MaximumRetryAttempts:     pulumi.Int(2),
+				MaximumEventAgeInSeconds: pulumi.Int(3600),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
 		// Export important values
 		ctx.Export("apiUrl", pulumi.Sprintf("https://%s", domain))
 		ctx.Export("mediaUrl", pulumi.Sprintf("https://media.%s", domain))
-		ctx.Export("tableName", table.Name)
 		ctx.Export("bucketName", mediaBucket.Bucket)
 		ctx.Export("distributionId", mediaDistribution.ID())
 		ctx.Export("apiId", api.ID())

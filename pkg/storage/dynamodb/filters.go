@@ -37,7 +37,7 @@ type FilterStatusRecord struct {
 
 // CreateFilter creates a new filter
 func (s *dynamoDBStorage) CreateFilter(ctx context.Context, filter *storage.Filter) error {
-	s.logger.Info("creating filter", zap.String("username", filter.Username), zap.String("title", filter.Title))
+	s.logger().Info("creating filter", zap.String("username", filter.Username), zap.String("title", filter.Title))
 
 	// Generate ID if not provided
 	if filter.ID == "" {
@@ -127,7 +127,7 @@ func (s *dynamoDBStorage) GetFiltersForUser(ctx context.Context, username string
 		var record FilterRecord
 		err = attributevalue.UnmarshalMap(item, &record)
 		if err != nil {
-			s.logger.Error("failed to unmarshal filter record", zap.Error(err))
+			s.logger().Error("failed to unmarshal filter record", zap.Error(err))
 			continue
 		}
 		filters = append(filters, &record.Filter)
@@ -309,7 +309,7 @@ func (s *dynamoDBStorage) GetFilterKeywords(ctx context.Context, filterID string
 		var record FilterKeywordRecord
 		err = attributevalue.UnmarshalMap(item, &record)
 		if err != nil {
-			s.logger.Error("failed to unmarshal filter keyword record", zap.Error(err))
+			s.logger().Error("failed to unmarshal filter keyword record", zap.Error(err))
 			continue
 		}
 		keywords = append(keywords, &record.FilterKeyword)
@@ -487,7 +487,7 @@ func (s *dynamoDBStorage) GetFilterStatuses(ctx context.Context, filterID string
 		var record FilterStatusRecord
 		err = attributevalue.UnmarshalMap(item, &record)
 		if err != nil {
-			s.logger.Error("failed to unmarshal filter status record", zap.Error(err))
+			s.logger().Error("failed to unmarshal filter status record", zap.Error(err))
 			continue
 		}
 		statuses = append(statuses, &record.FilterStatus)

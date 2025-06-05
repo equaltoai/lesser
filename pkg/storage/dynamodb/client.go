@@ -8,6 +8,7 @@ import (
 
 	"github.com/aron23/lesser/pkg/common"
 	cfg "github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -65,10 +66,21 @@ func getClient() (DynamoDBAPI, error) {
 			return
 		}
 
-		globalClient = dynamodb.NewFromConfig(awsCfg)
-		common.Logger().Info("DynamoDB client initialized",
-			zap.String("region", cfg.Get().Region),
-		)
+		// Create base DynamoDB client
+		baseClient := dynamodb.NewFromConfig(awsCfg)
+
+		// Wrap with cost tracking if not in test mode
+		if os.Getenv("GO_ENV") != "test" && os.Getenv("DISABLE_COST_TRACKING") != "true" {
+			globalClient = cost.NewDynamoDBWrapper(baseClient)
+			common.Logger().Info("DynamoDB client initialized with cost tracking",
+				zap.String("region", cfg.Get().Region),
+			)
+		} else {
+			globalClient = baseClient
+			common.Logger().Info("DynamoDB client initialized",
+				zap.String("region", cfg.Get().Region),
+			)
+		}
 	})
 
 	return globalClient, clientErr
@@ -88,8 +100,12 @@ func New() (storage.Storage, error) {
 	}
 
 	// Initialize search service with storage reference
-	searchService := NewSearchService(client.(*dynamodb.Client), tableName, common.Logger(), dynStorage, cfg.Get().Domain)
-	dynStorage.searchService = searchService
+	// For now, search service needs the actual DynamoDB client
+	// TODO: Update search service to use the DynamoDBAPI interface
+	if dc, ok := client.(*dynamodb.Client); ok {
+		searchService := NewSearchService(dc, tableName, common.Logger(), dynStorage, cfg.Get().Domain)
+		dynStorage.searchService = searchService
+	}
 
 	return dynStorage, nil
 }

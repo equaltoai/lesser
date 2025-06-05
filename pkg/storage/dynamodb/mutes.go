@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,7 +25,7 @@ type MuteRecord struct {
 
 // CreateMute creates a new mute relationship
 func (s *dynamoDBStorage) CreateMute(ctx context.Context, mute *storage.Mute) error {
-	s.logger.Info("creating mute", zap.String("actor", mute.Actor), zap.String("muted", mute.Object))
+	s.logger().Info("creating mute", zap.String("actor", mute.Actor), zap.String("muted", mute.Object))
 
 	// Set timestamps if not provided
 	if mute.CreatedAt.IsZero() {
@@ -56,7 +57,7 @@ func (s *dynamoDBStorage) CreateMute(ctx context.Context, mute *storage.Mute) er
 	_, err = s.client.PutItem(ctx, input)
 	if err != nil {
 		var ccf *types.ConditionalCheckFailedException
-		if err.(*types.ConditionalCheckFailedException) != nil {
+		if errors.As(err, &ccf) {
 			return fmt.Errorf("mute already exists")
 		}
 		return fmt.Errorf("failed to create mute: %w", err)
@@ -145,7 +146,7 @@ func (s *dynamoDBStorage) GetMutedActors(ctx context.Context, actor string, limi
 		var record MuteRecord
 		err = attributevalue.UnmarshalMap(item, &record)
 		if err != nil {
-			s.logger.Error("failed to unmarshal mute record", zap.Error(err))
+			s.logger().Error("failed to unmarshal mute record", zap.Error(err))
 			continue
 		}
 		mutes = append(mutes, &record.Mute)
@@ -153,10 +154,7 @@ func (s *dynamoDBStorage) GetMutedActors(ctx context.Context, actor string, limi
 
 	var nextCursor string
 	if result.LastEvaluatedKey != nil {
-		nextCursor, err = encodeCursor(result.LastEvaluatedKey)
-		if err != nil {
-			s.logger.Error("failed to encode cursor", zap.Error(err))
-		}
+		nextCursor = encodeCursor(result.LastEvaluatedKey)
 	}
 
 	return mutes, nextCursor, nil

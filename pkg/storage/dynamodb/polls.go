@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -283,7 +284,7 @@ func (s *dynamoDBStorage) VoteOnPoll(ctx context.Context, pollID string, voterID
 	})
 	if err != nil {
 		var cfe *types.ConditionalCheckFailedException
-		if err.(*types.ConditionalCheckFailedException) != nil {
+		if errors.As(err, &cfe) {
 			return fmt.Errorf("user has already voted on this poll")
 		}
 		return fmt.Errorf("failed to record vote: %w", err)

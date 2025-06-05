@@ -455,3 +455,56 @@ func (h *Handler) HandleRemoveAccountsFromList(ctx context.Context, request even
 
 	return common.NoContent(), nil
 }
+
+// HandleGetAccountLists handles GET /api/v1/accounts/:id/lists
+// Returns lists that the specified account is a member of (only lists owned by the requesting user)
+func (h *Handler) HandleGetAccountLists(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract token
+	token, err := auth.ExtractBearerToken(request.Headers["Authorization"])
+	if err != nil {
+		token, err = auth.ExtractBearerToken(request.Headers["authorization"])
+		if err != nil {
+			return common.Unauthorized(err), nil
+		}
+	}
+
+	// Validate token
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Verify the account exists
+	_, err = h.store.GetActor(ctx, accountID)
+	if err != nil {
+		return common.NotFound(fmt.Errorf("account not found")), nil
+	}
+
+	// Get lists containing this account that are owned by the requesting user
+	lists, err := h.store.GetListsContainingAccount(ctx, accountID, claims.Username)
+	if err != nil {
+		h.logger.Error("failed to get lists containing account",
+			zap.String("account_id", accountID),
+			zap.String("username", claims.Username),
+			zap.Error(err))
+		return common.InternalServerError(fmt.Errorf("failed to get lists")), nil
+	}
+
+	// Convert to API format
+	apiLists := make([]*models.List, len(lists))
+	for i, list := range lists {
+		apiLists[i] = &models.List{
+			ID:            list.ID,
+			Title:         list.Title,
+			RepliesPolicy: list.RepliesPolicy,
+		}
+	}
+
+	return common.OK(apiLists), nil
+}

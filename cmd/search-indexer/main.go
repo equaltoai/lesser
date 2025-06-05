@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
 	opensearchapi "github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	requestsigner "github.com/opensearch-project/opensearch-go/v2/signer/awsv2"
@@ -69,8 +71,11 @@ func NewSearchIndexer() (*SearchIndexer, error) {
 		return nil, fmt.Errorf("failed to create logger: %w", err)
 	}
 
-	// Load AWS configuration
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	// Initialize AWS config
+	ctx := context.Background()
+	cfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRegion(config.Get().Region),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -227,6 +232,9 @@ func (si *SearchIndexer) handleRecord(ctx context.Context, record events.DynamoD
 }
 
 func (si *SearchIndexer) indexActor(ctx context.Context, item map[string]events.DynamoDBAttributeValue) error {
+	// Track OpenSearch indexing for cost purposes
+	cost.TrackOpenSearchIndexContext(ctx, 1)
+
 	// Extract PK to ensure it's an actor
 	pk, ok := item["PK"]
 	if !ok || !strings.HasPrefix(pk.String(), "ACTOR#") {
@@ -347,11 +355,14 @@ func (si *SearchIndexer) deleteActor(ctx context.Context, item map[string]events
 	// Extract actor ID
 	actorID := strings.TrimPrefix(pk.String(), "ACTOR#")
 
+	// Delete the actor from the index
 	req := opensearchapi.DeleteRequest{
 		Index:      "actors",
 		DocumentID: actorID,
-		Refresh:    "true",
 	}
+
+	// Track OpenSearch delete operation (counts as indexing for cost purposes)
+	cost.TrackOpenSearchIndexContext(ctx, 1)
 
 	res, err := req.Do(ctx, si.osClient)
 	if err != nil {
