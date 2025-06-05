@@ -327,6 +327,34 @@ func (m *BaseMockStorage) CountCollectionItems(ctx context.Context, collection s
 	return 0, nil
 }
 
+// Instance configuration operations
+func (m *BaseMockStorage) GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error) {
+	return []storage.InstanceRule{}, nil
+}
+func (m *BaseMockStorage) SetInstanceRules(ctx context.Context, rules []storage.InstanceRule) error {
+	return nil
+}
+func (m *BaseMockStorage) GetExtendedDescription(ctx context.Context) (string, time.Time, error) {
+	return "", time.Now(), nil
+}
+func (m *BaseMockStorage) SetExtendedDescription(ctx context.Context, description string) error {
+	return nil
+}
+
+// Bookmark operations
+func (m *BaseMockStorage) CreateBookmark(ctx context.Context, username, objectID string) error {
+	return nil
+}
+func (m *BaseMockStorage) RemoveBookmark(ctx context.Context, username, objectID string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	return []string{}, "", nil
+}
+func (m *BaseMockStorage) IsBookmarked(ctx context.Context, username, objectID string) (bool, error) {
+	return false, nil
+}
+
 // MockStorage is a testify mock implementation that embeds BaseMockStorage
 // This provides default no-op implementations for all methods while allowing
 // tests to set expectations on specific methods using testify's mock framework

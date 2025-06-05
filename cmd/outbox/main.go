@@ -45,7 +45,7 @@ func init() {
 	}
 }
 
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	log := common.WithContext(ctx)
 
 	// Extract username from path
@@ -54,18 +54,19 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return common.BadRequest(common.ValidationError{Field: "username", Message: "missing username"}), nil
 	}
 
-	switch request.HTTPMethod {
+	// Route based on HTTP method
+	switch request.RequestContext.HTTP.Method {
 	case http.MethodGet:
 		return handleGetOutbox(ctx, log, username, request.QueryStringParameters)
 	case http.MethodPost:
 		return handlePostOutbox(ctx, log, username, request)
 	default:
-		return common.BadRequest(fmt.Errorf("method %s not allowed", request.HTTPMethod)), nil
+		return common.BadRequest(fmt.Errorf("method %s not allowed", request.RequestContext.HTTP.Method)), nil
 	}
 }
 
 // handleGetOutbox handles GET requests to retrieve outbox activities
-func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, queryParams map[string]string) (events.APIGatewayProxyResponse, error) {
+func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, queryParams map[string]string) (*events.APIGatewayV2HTTPResponse, error) {
 	log.Info("received outbox GET request",
 		zap.String("username", username),
 		zap.Any("query_params", queryParams))
@@ -122,7 +123,7 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 			return common.InternalServerError(err), nil
 		}
 
-		return events.APIGatewayProxyResponse{
+		return &events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusOK,
 			Headers: map[string]string{
 				"Content-Type": "application/activity+json",
@@ -176,7 +177,7 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 		return common.InternalServerError(err), nil
 	}
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
 			"Content-Type": "application/activity+json",
@@ -186,7 +187,7 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 }
 
 // handlePostOutbox handles POST requests to create activities
-func handlePostOutbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handlePostOutbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	log.Info("received outbox POST request",
 		zap.String("username", username),
 		zap.String("content_type", request.Headers["Content-Type"]))
@@ -334,7 +335,7 @@ func handlePostOutbox(ctx context.Context, log *zap.Logger, username string, req
 		zap.String("actor", activity.Actor))
 
 	// Return 201 Created with the activity
-	response := events.APIGatewayProxyResponse{
+	response := &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusCreated,
 		Headers: map[string]string{
 			"Content-Type": "application/activity+json",

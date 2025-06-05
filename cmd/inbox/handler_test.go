@@ -199,7 +199,7 @@ func encodePublicKeyPEM(publicKey *rsa.PublicKey) (string, error) {
 	return string(publicKeyPEM), nil
 }
 
-func createSignedRequest(method, path string, body []byte, privateKey *rsa.PrivateKey, keyID string) (*events.APIGatewayProxyRequest, error) {
+func createSignedRequest(method, path string, body []byte, privateKey *rsa.PrivateKey, keyID string) (*events.APIGatewayV2HTTPRequest, error) {
 	// Create a real HTTP request for signing
 	req, err := http.NewRequest(method, "https://example.com"+path, strings.NewReader(string(body)))
 	if err != nil {
@@ -221,14 +221,16 @@ func createSignedRequest(method, path string, body []byte, privateKey *rsa.Priva
 		headers[k] = v[0]
 	}
 
-	return &events.APIGatewayProxyRequest{
-		HTTPMethod: method,
-		Path:       path,
-		Headers:    headers,
-		Body:       string(body),
-		PathParameters: map[string]string{
-			"username": "alice",
+	return &events.APIGatewayV2HTTPRequest{
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: method,
+			},
 		},
+		RawPath:        path,
+		Headers:        headers,
+		Body:           string(body),
+		PathParameters: map[string]string{"username": "alice"},
 	}, nil
 }
 
@@ -268,7 +270,7 @@ func TestHandler(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		setupRequest  func(senderBaseURL string) (*events.APIGatewayProxyRequest, error)
+		setupRequest  func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error)
 		setupMock     func(*MockStorage)
 		setupServer   func() (*httptest.Server, *activitypub.Actor)
 		expectedCode  int
@@ -276,7 +278,7 @@ func TestHandler(t *testing.T) {
 	}{
 		{
 			name: "successful activity delivery",
-			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
+			setupRequest: func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error) {
 				sender := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						ID:   senderBaseURL + "/users/bob",
@@ -320,12 +322,14 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "wrong HTTP method",
-			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
-				return &events.APIGatewayProxyRequest{
-					HTTPMethod: "DELETE",
-					PathParameters: map[string]string{
-						"username": "alice",
+			setupRequest: func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error) {
+				return &events.APIGatewayV2HTTPRequest{
+					RequestContext: events.APIGatewayV2HTTPRequestContext{
+						HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+							Method: "DELETE",
+						},
 					},
+					PathParameters: map[string]string{"username": "alice"},
 				}, nil
 			},
 			setupMock:    func(m *MockStorage) {},
@@ -334,9 +338,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "missing username",
-			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
-				return &events.APIGatewayProxyRequest{
-					HTTPMethod:     "POST",
+			setupRequest: func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error) {
+				return &events.APIGatewayV2HTTPRequest{
+					RequestContext: events.APIGatewayV2HTTPRequestContext{
+						HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+							Method: "POST",
+						},
+					},
 					PathParameters: map[string]string{},
 				}, nil
 			},
@@ -346,7 +354,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "actor not found",
-			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
+			setupRequest: func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error) {
 				sender := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						ID:   "https://remote.example/users/bob",
@@ -365,13 +373,15 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "invalid JSON",
-			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
-				return &events.APIGatewayProxyRequest{
-					HTTPMethod: "POST",
-					PathParameters: map[string]string{
-						"username": "alice",
+			setupRequest: func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error) {
+				return &events.APIGatewayV2HTTPRequest{
+					RequestContext: events.APIGatewayV2HTTPRequestContext{
+						HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+							Method: "POST",
+						},
 					},
-					Body: "invalid json",
+					PathParameters: map[string]string{"username": "alice"},
+					Body:           "invalid json",
 				}, nil
 			},
 			setupMock: func(m *MockStorage) {
@@ -382,7 +392,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "missing activity ID",
-			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
+			setupRequest: func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error) {
 				sender := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						ID:   "https://remote.example/users/bob",
@@ -402,7 +412,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "activity not addressed to actor",
-			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
+			setupRequest: func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error) {
 				sender := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						ID:   "https://remote.example/users/bob",
@@ -422,7 +432,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "signature verification failure",
-			setupRequest: func(senderBaseURL string) (*events.APIGatewayProxyRequest, error) {
+			setupRequest: func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error) {
 				sender := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						ID:   senderBaseURL + "/users/bob",
@@ -592,9 +602,13 @@ func TestIsAddressedTo(t *testing.T) {
 }
 
 func TestConvertLambdaRequest(t *testing.T) {
-	lambdaReq := &events.APIGatewayProxyRequest{
-		HTTPMethod: "POST",
-		Path:       "/users/alice/inbox",
+	lambdaReq := &events.APIGatewayV2HTTPRequest{
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: "POST",
+			},
+		},
+		RawPath: "/users/alice/inbox",
 		Headers: map[string]string{
 			"Host":         "example.com",
 			"Content-Type": "application/activity+json",
@@ -890,8 +904,12 @@ func TestGetInbox(t *testing.T) {
 			tt.setupMock(mockStore)
 
 			// Create request
-			request := events.APIGatewayProxyRequest{
-				HTTPMethod: http.MethodGet,
+			request := events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
 				PathParameters: map[string]string{
 					"username": tt.username,
 				},

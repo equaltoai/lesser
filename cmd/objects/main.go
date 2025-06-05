@@ -28,8 +28,13 @@ func init() {
 	}
 }
 
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	log := common.WithContext(ctx)
+
+	// Ensure this is a GET request
+	if request.RequestContext.HTTP.Method != http.MethodGet {
+		return common.BadRequest(fmt.Errorf("method %s not allowed", request.RequestContext.HTTP.Method)), nil
+	}
 
 	// Extract object ID from path
 	objectID := request.PathParameters["id"]
@@ -63,7 +68,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if strings.Contains(acceptHeader, "text/html") {
 		// Return HTML representation
 		htmlContent := generateObjectHTML(obj)
-		return events.APIGatewayProxyResponse{
+		return &events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusOK,
 			Headers: map[string]string{
 				"Content-Type": "text/html; charset=utf-8",

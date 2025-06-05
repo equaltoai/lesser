@@ -84,14 +84,22 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 		obj.Published = time.Now()
 	}
 
+	// Extract username from actor ID for GSI
+	username := extractUsernameFromActorID(obj.AttributedTo)
+
 	// Create the DynamoDB record
-	record := &storage.ObjectRecord{
+	record := &ObjectRecord{
 		PK:        fmt.Sprintf("OBJECT#%s", obj.ID),
 		SK:        "METADATA",
-		Type:      obj.Type,
 		Object:    obj,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+	}
+
+	// Add GSI fields if we have a valid username
+	if username != "" {
+		record.GSI1PK = fmt.Sprintf("ACTOR#%s#OBJECTS", username)
+		record.GSI1SK = obj.Published.Format(time.RFC3339)
 	}
 
 	av, err := attributevalue.MarshalMap(record)
@@ -245,10 +253,9 @@ func (s *dynamoDBStorage) UpdateObject(ctx context.Context, object interface{}) 
 	obj.Updated = time.Now()
 
 	// Create the updated record
-	record := &storage.ObjectRecord{
+	record := &ObjectRecord{
 		PK:        fmt.Sprintf("OBJECT#%s", obj.ID),
 		SK:        "METADATA",
-		Type:      obj.Type,
 		Object:    obj,
 		UpdatedAt: time.Now(),
 	}

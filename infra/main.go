@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/acm"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/apigatewayv2"
@@ -16,6 +17,25 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
+
+// sanitizePermissionName converts a route path into a valid Lambda permission statement ID
+func sanitizePermissionName(path string, method string) string {
+	// Replace special characters with underscores
+	sanitized := strings.ReplaceAll(path, "/", "_")
+	sanitized = strings.ReplaceAll(sanitized, "{", "_")
+	sanitized = strings.ReplaceAll(sanitized, "}", "_")
+	sanitized = strings.ReplaceAll(sanitized, "+", "plus")
+	sanitized = strings.ReplaceAll(sanitized, ".", "_")
+	sanitized = strings.ReplaceAll(sanitized, "-", "_")
+
+	// Remove leading/trailing underscores and collapse multiple underscores
+	sanitized = strings.Trim(sanitized, "_")
+	for strings.Contains(sanitized, "__") {
+		sanitized = strings.ReplaceAll(sanitized, "__", "_")
+	}
+
+	return fmt.Sprintf("%s_%s_permission", sanitized, method)
+}
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
@@ -160,14 +180,16 @@ func main() {
 		}
 
 		// Update bucket policy to allow CloudFront access
-		bucketPolicyDocument := mediaBucket.ID().ApplyT(func(bucketName string) (string, error) {
+		bucketPolicyDocument := pulumi.All(mediaBucket.ID(), originAccessIdentity.IamArn).ApplyT(func(args []interface{}) (string, error) {
+			bucketName := string(args[0].(pulumi.ID))
+			oaiArn := args[1].(string)
 			policy := map[string]interface{}{
 				"Version": "2012-10-17",
 				"Statement": []interface{}{
 					map[string]interface{}{
 						"Effect": "Allow",
 						"Principal": map[string]interface{}{
-							"AWS": originAccessIdentity.IamArn,
+							"AWS": oaiArn,
 						},
 						"Action":   "s3:GetObject",
 						"Resource": fmt.Sprintf("arn:aws:s3:::%s/*", bucketName),
@@ -176,7 +198,7 @@ func main() {
 			}
 			policyJSON, err := json.Marshal(policy)
 			return string(policyJSON), err
-		}).(pulumi.StringOutput)
+		})
 
 		_, err = s3.NewBucketPolicy(ctx, "lesser-media-policy", &s3.BucketPolicyArgs{
 			Bucket: mediaBucket.ID(),
@@ -297,7 +319,7 @@ func main() {
 			}
 			policyJSON, err := json.Marshal(policy)
 			return string(policyJSON), err
-		}).(pulumi.StringOutput)
+		})
 
 		_, err = iam.NewRolePolicy(ctx, "lambda-dynamodb", &iam.RolePolicyArgs{
 			Role:   lambdaRole.Name,
@@ -326,7 +348,7 @@ func main() {
 			}
 			policyJSON, err := json.Marshal(policy)
 			return string(policyJSON), err
-		}).(pulumi.StringOutput)
+		})
 
 		_, err = iam.NewRolePolicy(ctx, "lambda-s3", &iam.RolePolicyArgs{
 			Role:   lambdaRole.Name,
@@ -338,22 +360,31 @@ func main() {
 
 		// Lambda environment variables
 		lambdaEnv := pulumi.StringMap{
-			"DYNAMODB_TABLE_NAME": table.Name,
-			"S3_BUCKET_NAME":      mediaBucket.Bucket,
-			"CDN_DOMAIN":          pulumi.Sprintf("media.%s", domain),
-			"DOMAIN":              pulumi.String(domain),
-			"JWT_SECRET":          jwtSecret,
-			"AWS_REGION":          pulumi.String("us-east-1"),
+			"DYNAMO_TABLE_NAME": table.Name,
+			"S3_BUCKET_NAME":    mediaBucket.Bucket,
+			"CDN_DOMAIN":        pulumi.Sprintf("media.%s", domain),
+			"DOMAIN":            pulumi.String(domain),
+			"JWT_SECRET":        jwtSecret,
+			// Instance configuration
+			"INSTANCE_TITLE":       pulumi.String("Lesser Instance"),
+			"INSTANCE_SHORT_DESC":  pulumi.String("A personal ActivityPub server"),
+			"INSTANCE_DESCRIPTION": pulumi.String("A lightweight, serverless ActivityPub implementation"),
+			"INSTANCE_ADMIN_EMAIL": pulumi.Sprintf("admin@%s", domain),
+			"REGISTRATIONS_OPEN":   pulumi.String("false"),
+			"APPROVAL_REQUIRED":    pulumi.String("true"),
+			"INVITES_ENABLED":      pulumi.String("false"),
+			"FEDERATION_ENABLED":   pulumi.String("true"),
 		}
 
 		// Helper function to create Lambda functions
 		createLambda := func(name string, handler string, timeout int) (*lambda.Function, error) {
 			return lambda.NewFunction(ctx, fmt.Sprintf("lesser-%s", name), &lambda.FunctionArgs{
-				Runtime:    pulumi.String("go1.x"),
-				Handler:    pulumi.String("main"),
-				Role:       lambdaRole.Arn,
-				Timeout:    pulumi.Int(timeout),
-				MemorySize: pulumi.Int(512),
+				Runtime:       pulumi.String("provided.al2"),
+				Handler:       pulumi.String("bootstrap"),
+				Role:          lambdaRole.Arn,
+				Timeout:       pulumi.Int(timeout),
+				MemorySize:    pulumi.Int(512),
+				Architectures: pulumi.StringArray{pulumi.String("arm64")},
 				Environment: &lambda.FunctionEnvironmentArgs{
 					Variables: lambdaEnv,
 				},
@@ -460,7 +491,7 @@ func main() {
 				return err
 			}
 
-			_, err = lambda.NewPermission(ctx, fmt.Sprintf("%s-%s-permission", path, method), &lambda.PermissionArgs{
+			_, err = lambda.NewPermission(ctx, sanitizePermissionName(path, method), &lambda.PermissionArgs{
 				Action:    pulumi.String("lambda:InvokeFunction"),
 				Function:  fn.Name,
 				Principal: pulumi.String("apigateway.amazonaws.com"),
@@ -476,6 +507,9 @@ func main() {
 			fn     *lambda.Function
 		}{
 			{"/.well-known/webfinger", "GET", webfingerLambda},
+			{"/.well-known/nodeinfo", "GET", webfingerLambda},
+			{"/nodeinfo/2.0", "GET", webfingerLambda},
+			{"/nodeinfo/2.1", "GET", webfingerLambda},
 			{"/users/{username}", "GET", actorLambda},
 			{"/users/{username}/inbox", "GET", inboxLambda},
 			{"/users/{username}/inbox", "POST", inboxLambda},
@@ -488,9 +522,8 @@ func main() {
 			{"/oauth/authorize", "POST", authLambda},
 			{"/oauth/token", "POST", authLambda},
 			{"/.well-known/oauth-authorization-server", "GET", authLambda},
-			{"/api/v1/{proxy+}", "ANY", apiLambda},
-			{"/api/v2/{proxy+}", "ANY", apiLambda},
-			{"/api/v1/media", "POST", mediaLambda},
+			{"/{proxy+}", "ANY", apiLambda},
+			{"/media", "POST", mediaLambda},
 		}
 
 		for _, route := range routes {
@@ -532,9 +565,33 @@ func main() {
 
 		// Map API to domain
 		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-mapping", &apigatewayv2.ApiMappingArgs{
+			ApiId:         api.ID(),
+			DomainName:    apiDomain.ID(),
+			Stage:         stage.ID(),
+			ApiMappingKey: pulumi.String("api/v2"),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add v1 mapping for backward compatibility
+		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-v1-mapping", &apigatewayv2.ApiMappingArgs{
+			ApiId:         api.ID(),
+			DomainName:    apiDomain.ID(),
+			Stage:         stage.ID(),
+			ApiMappingKey: pulumi.String("api/v1"),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Map root-level routes for OAuth and ActivityPub
+		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-root-mapping", &apigatewayv2.ApiMappingArgs{
 			ApiId:      api.ID(),
 			DomainName: apiDomain.ID(),
 			Stage:      stage.ID(),
+			// Empty ApiMappingKey means routes are accessible at root level
+			ApiMappingKey: pulumi.String(""),
 		})
 		if err != nil {
 			return err
@@ -547,8 +604,8 @@ func main() {
 			Type:   pulumi.String("A"),
 			Aliases: route53.RecordAliasArray{
 				&route53.RecordAliasArgs{
-					Name:                 apiDomain.DomainNameConfiguration.TargetDomainName(),
-					ZoneId:               apiDomain.DomainNameConfiguration.HostedZoneId(),
+					Name:                 apiDomain.DomainNameConfiguration.TargetDomainName().Elem(),
+					ZoneId:               apiDomain.DomainNameConfiguration.HostedZoneId().Elem(),
 					EvaluateTargetHealth: pulumi.Bool(true),
 				},
 			},

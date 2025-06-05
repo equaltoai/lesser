@@ -181,7 +181,7 @@ func TestHandler(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		request        events.APIGatewayProxyRequest
+		request        events.APIGatewayV2HTTPRequest
 		setupMock      func(*mockStorage)
 		wantStatusCode int
 		wantHeaders    map[string]string
@@ -189,7 +189,7 @@ func TestHandler(t *testing.T) {
 	}{
 		{
 			name: "JSON response for ActivityPub client",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"Accept": "application/activity+json"},
 			},
@@ -208,7 +208,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "JSON response for LD+JSON accept header",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"Accept": "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""},
 			},
@@ -222,7 +222,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "HTML response for browser",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"Accept": "text/html"},
 			},
@@ -243,7 +243,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "HTML response when no Accept header",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "alice"},
 			},
 			setupMock: func(m *mockStorage) {
@@ -256,7 +256,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "actor not found",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "nonexistent"},
 				Headers:        map[string]string{"Accept": "application/activity+json"},
 			},
@@ -270,7 +270,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "missing username parameter",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{},
 				Headers:        map[string]string{"Accept": "application/activity+json"},
 			},
@@ -282,7 +282,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "storage error",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"Accept": "application/activity+json"},
 			},
@@ -296,7 +296,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "HTML for actor without avatar",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "bob"},
 				Headers:        map[string]string{"Accept": "text/html"},
 			},
@@ -324,7 +324,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "lowercase accept header",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"accept": "application/activity+json"},
 			},

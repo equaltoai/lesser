@@ -129,6 +129,18 @@ type Storage interface {
 	GetListTimeline(ctx context.Context, listID string, limit int, cursor string) ([]*TimelineEntry, string, error)
 	DeleteFromTimeline(ctx context.Context, timelineType, timelineID, entryID string) error
 	DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error
+
+	// Instance configuration operations
+	GetInstanceRules(ctx context.Context) ([]InstanceRule, error)
+	SetInstanceRules(ctx context.Context, rules []InstanceRule) error
+	GetExtendedDescription(ctx context.Context) (string, time.Time, error)
+	SetExtendedDescription(ctx context.Context, description string) error
+
+	// Bookmark operations
+	CreateBookmark(ctx context.Context, username, objectID string) error
+	RemoveBookmark(ctx context.Context, username, objectID string) error
+	GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	IsBookmarked(ctx context.Context, username, objectID string) (bool, error)
 }
 
 // User represents a user account in the system
@@ -280,6 +292,12 @@ type RefreshTokenRecord struct {
 	SK        string        `dynamodbav:"SK"`
 	Token     *RefreshToken `dynamodbav:"Token"`
 	CreatedAt time.Time     `dynamodbav:"CreatedAt"`
+}
+
+// InstanceRule represents a server rule
+type InstanceRule struct {
+	ID   string `json:"id" dynamodbav:"ID"`
+	Text string `json:"text" dynamodbav:"Text"`
 }
 
 // Constants for DynamoDB key patterns

@@ -91,16 +91,26 @@ func (m *MockStorage) RejectFollow(ctx context.Context, followerUsername, follow
 	return nil
 }
 func (m *MockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	return nil
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Error(0)
 }
 func (m *MockStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	return nil, "", nil
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]string), args.String(1), args.Error(2)
 }
 func (m *MockStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	return nil, "", nil
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]string), args.String(1), args.Error(2)
 }
 func (m *MockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
-	return false, nil
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Bool(0), args.Error(1)
 }
 func (m *MockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
 	return nil, nil
@@ -1961,13 +1971,17 @@ func TestHandler(t *testing.T) {
 			store = mockStore
 
 			// Create request
-			request := events.APIGatewayProxyRequest{
-				HTTPMethod: tt.method,
-				Body:       tt.body,
-				Headers:    tt.headers,
+			request := events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: tt.method,
+					},
+				},
 				PathParameters: map[string]string{
 					"username": tt.username,
 				},
+				Body:                  tt.body,
+				Headers:               tt.headers,
 				QueryStringParameters: tt.queryParams,
 			}
 

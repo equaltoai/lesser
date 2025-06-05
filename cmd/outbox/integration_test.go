@@ -194,7 +194,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		body, err := json.Marshal(createActivity)
 		require.NoError(t, err)
 
-		request := events.APIGatewayProxyRequest{
+		request := events.APIGatewayV2HTTPRequest{
 			HTTPMethod: http.MethodPost,
 			PathParameters: map[string]string{
 				"username": "alice",
@@ -292,7 +292,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		body, err := json.Marshal(createActivity)
 		require.NoError(t, err)
 
-		request := events.APIGatewayProxyRequest{
+		request := events.APIGatewayV2HTTPRequest{
 			HTTPMethod: http.MethodPost,
 			PathParameters: map[string]string{
 				"username": "alice",
@@ -357,7 +357,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		body, err := json.Marshal(createActivity)
 		require.NoError(t, err)
 
-		request := events.APIGatewayProxyRequest{
+		request := events.APIGatewayV2HTTPRequest{
 			HTTPMethod: http.MethodPost,
 			PathParameters: map[string]string{
 				"username": "alice",
@@ -407,7 +407,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 			body, err := json.Marshal(createActivity)
 			require.NoError(t, err)
 
-			request := events.APIGatewayProxyRequest{
+			request := events.APIGatewayV2HTTPRequest{
 				HTTPMethod: http.MethodPost,
 				PathParameters: map[string]string{
 					"username": "alice",
@@ -464,7 +464,7 @@ func TestCreateActivityValidation(t *testing.T) {
 		body, err := json.Marshal(createActivity)
 		require.NoError(t, err)
 
-		request := events.APIGatewayProxyRequest{
+		request := events.APIGatewayV2HTTPRequest{
 			HTTPMethod: http.MethodPost,
 			PathParameters: map[string]string{
 				"username": "alice",
@@ -494,7 +494,7 @@ func TestCreateActivityValidation(t *testing.T) {
 		body, err := json.Marshal(createActivity)
 		require.NoError(t, err)
 
-		request := events.APIGatewayProxyRequest{
+		request := events.APIGatewayV2HTTPRequest{
 			HTTPMethod: http.MethodPost,
 			PathParameters: map[string]string{
 				"username": "alice",
@@ -525,7 +525,7 @@ func TestCreateActivityValidation(t *testing.T) {
 		body, err := json.Marshal(createActivity)
 		require.NoError(t, err)
 
-		request := events.APIGatewayProxyRequest{
+		request := events.APIGatewayV2HTTPRequest{
 			HTTPMethod: http.MethodPost,
 			PathParameters: map[string]string{
 				"username": "alice",

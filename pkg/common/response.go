@@ -33,14 +33,14 @@ func ActivityPubHeaders() map[string]string {
 }
 
 // JSONResponse creates a successful JSON response
-func JSONResponse(statusCode int, body interface{}) events.APIGatewayProxyResponse {
+func JSONResponse(statusCode int, body interface{}) *events.APIGatewayV2HTTPResponse {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		Logger().Error("failed to marshal response body", zap.Error(err))
 		return InternalServerError(err)
 	}
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: statusCode,
 		Headers:    Headers(),
 		Body:       string(jsonBody),
@@ -48,14 +48,14 @@ func JSONResponse(statusCode int, body interface{}) events.APIGatewayProxyRespon
 }
 
 // ActivityPubResponse creates a successful ActivityPub response
-func ActivityPubResponse(statusCode int, body interface{}) events.APIGatewayProxyResponse {
+func ActivityPubResponse(statusCode int, body interface{}) *events.APIGatewayV2HTTPResponse {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		Logger().Error("failed to marshal ActivityPub response", zap.Error(err))
 		return InternalServerError(err)
 	}
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: statusCode,
 		Headers:    ActivityPubHeaders(),
 		Body:       string(jsonBody),
@@ -63,7 +63,7 @@ func ActivityPubResponse(statusCode int, body interface{}) events.APIGatewayProx
 }
 
 // ErrorResponseWithCode creates an error response with a specific code
-func ErrorResponseWithCode(statusCode int, code string, err error) events.APIGatewayProxyResponse {
+func ErrorResponseWithCode(statusCode int, code string, err error) *events.APIGatewayV2HTTPResponse {
 	errorResp := ErrorResponse{
 		Error:   http.StatusText(statusCode),
 		Message: err.Error(),
@@ -72,7 +72,7 @@ func ErrorResponseWithCode(statusCode int, code string, err error) events.APIGat
 
 	body, _ := json.Marshal(errorResp)
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: statusCode,
 		Headers:    Headers(),
 		Body:       string(body),
@@ -82,37 +82,42 @@ func ErrorResponseWithCode(statusCode int, code string, err error) events.APIGat
 // Error response helpers
 
 // BadRequest returns a 400 Bad Request response
-func BadRequest(err error) events.APIGatewayProxyResponse {
+func BadRequest(err error) *events.APIGatewayV2HTTPResponse {
 	return ErrorResponseWithCode(http.StatusBadRequest, "BAD_REQUEST", err)
 }
 
 // Unauthorized returns a 401 Unauthorized response
-func Unauthorized(err error) events.APIGatewayProxyResponse {
+func Unauthorized(err error) *events.APIGatewayV2HTTPResponse {
 	return ErrorResponseWithCode(http.StatusUnauthorized, "UNAUTHORIZED", err)
 }
 
 // Forbidden returns a 403 Forbidden response
-func Forbidden(err error) events.APIGatewayProxyResponse {
+func Forbidden(err error) *events.APIGatewayV2HTTPResponse {
 	return ErrorResponseWithCode(http.StatusForbidden, "FORBIDDEN", err)
 }
 
 // NotFound returns a 404 Not Found response
-func NotFound(err error) events.APIGatewayProxyResponse {
+func NotFound(err error) *events.APIGatewayV2HTTPResponse {
 	return ErrorResponseWithCode(http.StatusNotFound, "NOT_FOUND", err)
 }
 
+// MethodNotAllowed returns a 405 error response
+func MethodNotAllowed(err error) *events.APIGatewayV2HTTPResponse {
+	return ErrorResponseWithCode(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", err)
+}
+
 // Conflict returns a 409 Conflict response
-func Conflict(err error) events.APIGatewayProxyResponse {
+func Conflict(err error) *events.APIGatewayV2HTTPResponse {
 	return ErrorResponseWithCode(http.StatusConflict, "CONFLICT", err)
 }
 
 // UnprocessableEntity returns a 422 Unprocessable Entity response
-func UnprocessableEntity(err error) events.APIGatewayProxyResponse {
+func UnprocessableEntity(err error) *events.APIGatewayV2HTTPResponse {
 	return ErrorResponseWithCode(http.StatusUnprocessableEntity, "VALIDATION_ERROR", err)
 }
 
 // InternalServerError returns a 500 Internal Server Error response
-func InternalServerError(err error) events.APIGatewayProxyResponse {
+func InternalServerError(err error) *events.APIGatewayV2HTTPResponse {
 	// Log the actual error but don't expose internal details
 	Logger().Error("internal server error", zap.Error(err))
 
@@ -124,7 +129,7 @@ func InternalServerError(err error) events.APIGatewayProxyResponse {
 
 	body, _ := json.Marshal(genericErr)
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusInternalServerError,
 		Headers:    Headers(),
 		Body:       string(body),
@@ -132,7 +137,7 @@ func InternalServerError(err error) events.APIGatewayProxyResponse {
 }
 
 // ErrorFromType returns an appropriate error response based on error type
-func ErrorFromType(err error) events.APIGatewayProxyResponse {
+func ErrorFromType(err error) *events.APIGatewayV2HTTPResponse {
 	switch {
 	case IsNotFound(err):
 		return NotFound(err)
@@ -156,23 +161,23 @@ func ErrorFromType(err error) events.APIGatewayProxyResponse {
 // Success response helpers
 
 // OK returns a 200 OK response
-func OK(body interface{}) events.APIGatewayProxyResponse {
+func OK(body interface{}) *events.APIGatewayV2HTTPResponse {
 	return JSONResponse(http.StatusOK, body)
 }
 
 // Created returns a 201 Created response
-func Created(body interface{}) events.APIGatewayProxyResponse {
+func Created(body interface{}) *events.APIGatewayV2HTTPResponse {
 	return JSONResponse(http.StatusCreated, body)
 }
 
 // Accepted returns a 202 Accepted response
-func Accepted(body interface{}) events.APIGatewayProxyResponse {
+func Accepted(body interface{}) *events.APIGatewayV2HTTPResponse {
 	return JSONResponse(http.StatusAccepted, body)
 }
 
 // NoContent returns a 204 No Content response
-func NoContent() events.APIGatewayProxyResponse {
-	return events.APIGatewayProxyResponse{
+func NoContent() *events.APIGatewayV2HTTPResponse {
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusNoContent,
 		Headers:    Headers(),
 	}

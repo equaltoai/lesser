@@ -49,7 +49,7 @@ func init() {
 	}
 }
 
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	log := common.WithContext(ctx)
 
 	// Extract username from path
@@ -59,18 +59,18 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// Route based on HTTP method
-	switch request.HTTPMethod {
+	switch request.RequestContext.HTTP.Method {
 	case http.MethodGet:
 		return handleGetInbox(ctx, log, username, request)
 	case http.MethodPost:
 		return handlePostInbox(ctx, log, username, request)
 	default:
-		return common.BadRequest(fmt.Errorf("method %s not allowed", request.HTTPMethod)), nil
+		return common.BadRequest(fmt.Errorf("method %s not allowed", request.RequestContext.HTTP.Method)), nil
 	}
 }
 
 // handleGetInbox handles GET requests to retrieve inbox activities
-func handleGetInbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handleGetInbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	log.Info("received inbox GET request",
 		zap.String("username", username),
 		zap.Any("query_params", request.QueryStringParameters))
@@ -148,7 +148,7 @@ func handleGetInbox(ctx context.Context, log *zap.Logger, username string, reque
 			return common.InternalServerError(err), nil
 		}
 
-		return events.APIGatewayProxyResponse{
+		return &events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusOK,
 			Headers: map[string]string{
 				"Content-Type": "application/activity+json",
@@ -221,7 +221,7 @@ func handleGetInbox(ctx context.Context, log *zap.Logger, username string, reque
 		return common.InternalServerError(err), nil
 	}
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
 			"Content-Type": "application/activity+json",
@@ -231,7 +231,7 @@ func handleGetInbox(ctx context.Context, log *zap.Logger, username string, reque
 }
 
 // handlePostInbox handles POST requests to receive activities
-func handlePostInbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handlePostInbox(ctx context.Context, log *zap.Logger, username string, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	log.Info("received inbox POST request",
 		zap.String("username", username),
 		zap.String("content_type", request.Headers["Content-Type"]))
@@ -331,7 +331,7 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		zap.String("from", activity.Actor))
 
 	// Return 202 Accepted
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusAccepted,
 	}, nil
 }
@@ -373,7 +373,7 @@ func isAddressedTo(activity *activitypub.Activity, actor *activitypub.Actor) boo
 }
 
 // verifyRequest verifies the HTTP signature on the request
-func verifyRequest(request *events.APIGatewayProxyRequest, publicKey crypto.PublicKey, body []byte) error {
+func verifyRequest(request *events.APIGatewayV2HTTPRequest, publicKey crypto.PublicKey, body []byte) error {
 	// Convert Lambda request to http.Request for signature verification
 	req, err := convertLambdaRequest(request, body)
 	if err != nil {
@@ -384,12 +384,18 @@ func verifyRequest(request *events.APIGatewayProxyRequest, publicKey crypto.Publ
 }
 
 // convertLambdaRequest converts a Lambda API Gateway request to an http.Request
-func convertLambdaRequest(request *events.APIGatewayProxyRequest, body []byte) (*http.Request, error) {
+func convertLambdaRequest(request *events.APIGatewayV2HTTPRequest, body []byte) (*http.Request, error) {
+	// Get the path, removing the stage prefix if present
+	path := request.RawPath
+	if request.RequestContext.Stage != "" && strings.HasPrefix(path, "/"+request.RequestContext.Stage) {
+		path = strings.TrimPrefix(path, "/"+request.RequestContext.Stage)
+	}
+
 	// Build URL
 	u := &url.URL{
 		Scheme: "https",
 		Host:   request.Headers["Host"],
-		Path:   request.Path,
+		Path:   path,
 	}
 	if request.QueryStringParameters != nil {
 		q := u.Query()
@@ -400,7 +406,7 @@ func convertLambdaRequest(request *events.APIGatewayProxyRequest, body []byte) (
 	}
 
 	// Create request
-	req, err := http.NewRequest(request.HTTPMethod, u.String(), strings.NewReader(string(body)))
+	req, err := http.NewRequest(request.RequestContext.HTTP.Method, u.String(), strings.NewReader(string(body)))
 	if err != nil {
 		return nil, err
 	}

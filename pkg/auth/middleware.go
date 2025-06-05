@@ -76,13 +76,12 @@ func NewMiddleware() *Middleware {
 	return m
 }
 
-// RequireAuth verifies the JWT token and adds claims to context
-func (m *Middleware) RequireAuth(ctx context.Context, request events.APIGatewayProxyRequest) (*Claims, error) {
-	// Get Authorization header
-	authHeader := request.Headers["authorization"]
+// RequireAuth validates the Bearer token from the request and returns the claims
+func (m *Middleware) RequireAuth(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*Claims, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
 	if authHeader == "" {
-		// Try lowercase
-		authHeader = request.Headers["Authorization"]
+		authHeader = request.Headers["authorization"]
 	}
 
 	if authHeader == "" {

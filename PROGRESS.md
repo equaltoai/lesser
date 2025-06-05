@@ -715,31 +715,50 @@
   - Ready for future implementation
 
 ### 29. Media Upload Support ✅ NEW
-- [x] **Media Handler Lambda**
-  - cmd/media/main.go - Complete media upload handler
-  - POST /api/v1/media endpoint
-  - Multipart form data parsing
-  - Base64 decoding for Lambda
+- [x] **Media Handler Implementation**
+  - cmd/api/handlers/media.go - Complete media upload handler
+  - POST /api/v1/media - Upload media files
+  - GET /api/v1/media/:id - Get media metadata
+  - PUT /api/v1/media/:id - Update media metadata (description/focus)
+  - Multipart form parsing with base64 support
+  - S3 integration for file storage
+  - CloudFront CDN support
+  - File type validation (images, videos, audio)
+  - 10MB file size limit (configurable)
 
-- [x] **S3 Integration**
-  - Upload to S3 with public-read ACL
-  - Support for images, videos, and audio
-  - File size validation (10MB limit)
-  - MIME type validation
-  - Cache control headers
+- [x] **Storage Integration**
+  - Media metadata stored in DynamoDB
+  - S3 key generation with user namespacing
+  - CDN URL generation when available
+  - Fallback to S3 direct URLs
 
-- [x] **Media Management**
-  - Unique filename generation
-  - Metadata storage in DynamoDB
-  - CDN support via environment variable
+- [x] **Mastodon API Compatibility**
+  - MediaAttachment response format
+  - Meta field with dimensions (TODO: actual calculation)
+  - Focus point support for image cropping
+  - Description field for alt text
+  - Blurhash support (TODO: generation)
+
+### 30. Bookmarks Support ✅ NEW
+- [x] **Storage Layer Implementation**
+  - pkg/storage/interface.go - Added bookmark operations
+  - pkg/storage/dynamodb/bookmarks.go - Complete bookmark storage
+  - CreateBookmark with duplicate prevention
+  - RemoveBookmark for unbookmarking
+  - GetBookmarks with cursor-based pagination
+  - IsBookmarked for checking bookmark status
+  - Timestamp-based sorting (newest first)
+
+- [x] **API Endpoints**
+  - POST /api/v1/statuses/:id/bookmark - Bookmark a status
+  - POST /api/v1/statuses/:id/unbookmark - Remove bookmark
+  - GET /api/v1/bookmarks - List bookmarked statuses
   - Mastodon-compatible response format
+  - Authentication required with write/read scope
+  - Pagination with Link headers
+  - Bookmarked flag in status responses
 
-- [x] **Status Integration**
-  - Media attachments in status creation
-  - Media metadata retrieval
-  - Attachment formatting in ActivityPub objects
-
-### 30. Pulumi Infrastructure ✅ NEW (Phase 1)
+### 31. Pulumi Infrastructure ✅ NEW (Phase 1)
 - [x] **Infrastructure as Code**
   - infra/main.go - Complete Pulumi infrastructure in Go
   - All AWS resources defined declaratively

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -203,14 +204,19 @@ func TestHandler(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		request      events.APIGatewayProxyRequest
+		request      events.APIGatewayV2HTTPRequest
 		setupMock    func(*MockStorage)
 		expectedCode int
 		checkBody    func(t *testing.T, body string)
 	}{
 		{
 			name: "missing object ID",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
 				PathParameters: map[string]string{},
 			},
 			setupMock:    func(m *MockStorage) {},
@@ -218,7 +224,12 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "object not found",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
 				PathParameters: map[string]string{
 					"id": "https://example.com/objects/999",
 				},
@@ -230,7 +241,12 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "success - JSON response",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
 				PathParameters: map[string]string{
 					"id": "https://example.com/objects/123",
 				},
@@ -256,7 +272,12 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "success - HTML response",
-			request: events.APIGatewayProxyRequest{
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
 				PathParameters: map[string]string{
 					"id": "https://example.com/objects/123",
 				},
