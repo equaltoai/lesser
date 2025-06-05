@@ -794,6 +794,37 @@
   - Troubleshooting tips
   - Post-deployment steps
 
+### 32. Polls Support ✅ NEW! (2025-01-19)
+- [x] **Storage Layer**
+  - pkg/storage/dynamodb/polls.go - Complete poll storage implementation
+  - CreatePoll with validation (2-4 options)
+  - GetPoll and GetPollByStatusID for retrieval
+  - VoteOnPoll with duplicate prevention
+  - Real-time vote tallying
+  - DynamoDB TTL for poll expiration
+
+- [x] **API Handlers**
+  - cmd/api/handlers/polls.go - Poll endpoints implementation
+  - GET /api/v1/polls/:id - View poll with results
+  - POST /api/v1/polls/:id/votes - Submit vote
+  - Proper vote count calculation
+  - Hidden totals support (results hidden until expiry)
+  - User vote tracking (voted/own_votes)
+
+- [x] **Status Integration**
+  - Poll creation in status endpoint
+  - Automatic poll retrieval when fetching statuses
+  - Poll data included in status responses
+  - Full Mastodon API compatibility
+
+- [x] **Features**
+  - Single and multiple choice polls
+  - Poll expiration with time-based TTL
+  - Vote validation (choice indices, duplicates)
+  - Hidden totals option for secret polls
+  - Real-time vote counting
+  - Notification on poll votes (poll type)
+
 ## In Progress 🚧
 
 ### Phase 3: Activity Support ✅ COMPLETE!
@@ -843,10 +874,15 @@ All critical endpoints for basic Mastodon client compatibility have been impleme
   - Keyword filtering
   - Account muting
   - Conversation muting
-- [ ] **Polls**
-  - Create polls in statuses
-  - Vote on polls
-  - Poll expiration
+- [x] **Polls** ✅ NEW! (2025-01-19)
+  - [x] Create polls in statuses (2-4 options)
+  - [x] Vote on polls with validation
+  - [x] Poll expiration with DynamoDB TTL
+  - [x] Multiple choice polls support
+  - [x] Hidden totals option
+  - [x] GET /api/v1/polls/:id endpoint
+  - [x] POST /api/v1/polls/:id/votes endpoint
+  - [x] Full integration with status creation/retrieval
 - [ ] **Media Processing**
   - Thumbnail generation for images/videos
   - Image optimization
@@ -932,7 +968,7 @@ All Phase 1 tasks have been completed:
    - Actor search
    - Hashtag support
 
-### Overall Project Completion: ~95% 🎯
+### Overall Project Completion: ~96% 🎯
 
 Lesser is now a fully functional ActivityPub server that:
 - Federates with other servers ✅
@@ -944,11 +980,11 @@ Lesser is now a fully functional ActivityPub server that:
 - Provides timeline functionality ✅
 - **Can be deployed with one command** ✅
 
-The remaining 5% consists of:
+The remaining 4% consists of:
 - Comprehensive test coverage
 - ~~Infrastructure deployment (Pulumi)~~ ✅ COMPLETE!
 - Performance optimizations
-- Advanced features (notifications, lists, polls)
+- Advanced features (notifications, lists, ~~polls~~ ✅)
 - Documentation and deployment guides
 
 ## Next Milestone: Production Ready! 🚀

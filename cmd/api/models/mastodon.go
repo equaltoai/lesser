@@ -73,10 +73,33 @@ type CreateStatusRequest struct {
 
 // Poll represents a poll in a status (placeholder for future implementation)
 type Poll struct {
-	Options    []string `json:"options"`
-	ExpiresIn  int      `json:"expires_in"`
-	Multiple   bool     `json:"multiple"`
-	HideTotals bool     `json:"hide_totals"`
+	// Request fields (used when creating a poll)
+	Options    []string `json:"options,omitempty"`     // Array of poll options (2-4 options)
+	ExpiresIn  int      `json:"expires_in,omitempty"`  // Duration in seconds
+	Multiple   bool     `json:"multiple,omitempty"`    // Allow multiple choices
+	HideTotals bool     `json:"hide_totals,omitempty"` // Hide vote counts until poll ends
+
+	// Response fields (returned in API responses)
+	ID          string        `json:"id,omitempty"`           // Poll ID
+	ExpiresAt   string        `json:"expires_at,omitempty"`   // ISO 8601 datetime
+	Expired     bool          `json:"expired,omitempty"`      // Whether the poll has ended
+	VotesCount  int           `json:"votes_count,omitempty"`  // Total number of votes
+	VotersCount int           `json:"voters_count,omitempty"` // Total number of voters
+	Voted       bool          `json:"voted,omitempty"`        // Whether the current user voted
+	OwnVotes    []int         `json:"own_votes,omitempty"`    // Which options the user voted for
+	OptionsData []PollOption  `json:"options,omitempty"`      // Detailed option data for responses
+	Emojis      []interface{} `json:"emojis,omitempty"`       // Custom emojis used in options
+}
+
+// PollOption represents an option in a poll response
+type PollOption struct {
+	Title      string `json:"title"`       // The text of the option
+	VotesCount int    `json:"votes_count"` // Number of votes for this option
+}
+
+// PollVoteRequest represents a vote submission request
+type PollVoteRequest struct {
+	Choices []int `json:"choices"` // Array of option indices (0-based)
 }
 
 // Status represents a Mastodon-compatible status response

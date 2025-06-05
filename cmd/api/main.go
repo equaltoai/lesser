@@ -21,11 +21,10 @@ MASTODON API IMPLEMENTATION STATUS
 - Notifications (basic structure only)
 
 ❌ NOT IMPLEMENTED (Major features):
-- Media uploads
-- Lists management
+- Media uploads (partial - upload works, GET/PUT need work)
+- Lists management (partial - basic CRUD works)
 - Filters
-- Polls
-- Bookmarks
+- Bookmarks (partial - basic functionality works)
 - Mutes
 - Domain blocks
 - Featured tags
@@ -586,8 +585,22 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}
 	}
 
-	// TODO: GET /api/v1/polls/:id - View a poll
-	// TODO: POST /api/v1/polls/:id/votes - Vote on a poll
+	// ==================== POLLS ====================
+	// Poll endpoints
+	if strings.HasPrefix(path, "/polls/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			pollID := parts[2]
+
+			if len(parts) == 4 && parts[3] == "votes" && method == http.MethodPost {
+				// Vote on a poll
+				return handler.HandleVoteOnPoll(ctx, request, pollID)
+			} else if len(parts) == 3 && method == http.MethodGet {
+				// View a poll
+				return handler.HandleGetPoll(ctx, request, pollID)
+			}
+		}
+	}
 
 	// TODO: GET /api/v1/filters - View filters
 	// TODO: GET /api/v1/filters/:id - View single filter

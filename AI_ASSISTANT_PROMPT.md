@@ -52,7 +52,7 @@ Lesser uses a modular architecture with:
   - Read/unread status tracking
 - **Account Relationships Batch** ✨
   - Batch endpoint for checking multiple relationships at once
-- **Push Notifications** ✨ NEW!
+- **Push Notifications** ✨ 
   - VAPID key generation and storage
   - Web Push subscription endpoints (GET/POST/PUT/DELETE)
   - Push notification storage in DynamoDB
@@ -61,6 +61,15 @@ Lesser uses a modular architecture with:
   - Automatic notifications for follows, favorites, reblogs, mentions
   - Invalid subscription cleanup
   - Fully deployed and operational!
+- **Polls Support** ✨ NEW!
+  - Poll creation in statuses with 2-4 options
+  - Vote submission with duplicate prevention
+  - Real-time vote tallying
+  - Multiple choice polls support
+  - Hidden totals option (results hidden until poll ends)
+  - Poll expiration with TTL
+  - Proper integration with status creation/retrieval
+  - Full Mastodon API compatibility
 - **Advanced Search Architecture (Weeks 1-3 Complete!)** ✨
   - Multi-strategy search with parallel execution
   - DynamoDB GSI optimization for username/display name search
@@ -140,13 +149,7 @@ Lesser now has:
 
 ### ⭐ IMMEDIATE NEXT PRIORITIES
 
-1. **Polls Support** (HIGH PRIORITY) 🔴
-   - Poll creation in status endpoint
-   - Vote submission endpoint
-   - Real-time vote tallying
-   - Expiration handling
-
-2. **Filters & Mutes** (MEDIUM PRIORITY) 🟠
+1. **Filters & Mutes** (HIGH PRIORITY) 🔴
    - Content filtering system
    - Mute accounts/keywords
    - Filter contexts (home, public, etc)

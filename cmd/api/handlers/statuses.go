@@ -16,6 +16,7 @@ import (
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 
@@ -159,6 +160,55 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		return common.InternalServerError(err), nil
 	}
 
+	// Handle poll creation if requested
+	var pollResp *models.Poll
+	if req.Poll != nil && len(req.Poll.Options) > 0 {
+		// Validate poll options
+		if len(req.Poll.Options) < 2 || len(req.Poll.Options) > 4 {
+			return common.UnprocessableEntity(errors.New("poll must have between 2 and 4 options")), nil
+		}
+
+		// Calculate expiration time
+		expiresAt := time.Now().Add(time.Duration(req.Poll.ExpiresIn) * time.Second)
+
+		// Create poll in storage
+		poll := &storage.Poll{
+			StatusID:   noteID,
+			CreatedBy:  actor.ID,
+			Options:    req.Poll.Options,
+			Multiple:   req.Poll.Multiple,
+			HideTotals: req.Poll.HideTotals,
+			ExpiresAt:  expiresAt,
+		}
+
+		if err := h.store.CreatePoll(ctx, poll); err != nil {
+			h.logger.Error("failed to create poll", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+
+		// Build poll response
+		optionsData := make([]models.PollOption, len(poll.Options))
+		for i, option := range poll.Options {
+			optionsData[i] = models.PollOption{
+				Title:      option,
+				VotesCount: 0,
+			}
+		}
+
+		pollResp = &models.Poll{
+			ID:          poll.ID,
+			ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
+			Expired:     false,
+			Multiple:    poll.Multiple,
+			VotesCount:  0,
+			VotersCount: 0,
+			Voted:       false,
+			OwnVotes:    nil,
+			OptionsData: optionsData,
+			Emojis:      []interface{}{},
+		}
+	}
+
 	// Create a Create activity
 	createActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
@@ -220,6 +270,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		Mentions:         []interface{}{},
 		Tags:             mastodonTags,
 		Emojis:           []interface{}{},
+		Poll:             pollResp,
 		Account: models.Account{
 			ID:             actor.ID,
 			Username:       actor.PreferredUsername,
@@ -910,6 +961,57 @@ func (h *Handler) HandleGetStatus(ctx context.Context, request events.APIGateway
 	status.FavouritesCount = likeCount
 	status.ReblogsCount = announceCount
 
+	// Check if status has a poll
+	poll, err := h.store.GetPollByStatusID(ctx, objectID)
+	if err == nil && poll != nil {
+		// Calculate vote counts per option
+		optionVotes := make([]int, len(poll.Options))
+		for _, choices := range poll.Votes {
+			for _, choice := range choices {
+				if choice < len(optionVotes) {
+					optionVotes[choice]++
+				}
+			}
+		}
+
+		// Check if poll has expired
+		expired := !poll.ExpiresAt.IsZero() && time.Now().After(poll.ExpiresAt)
+
+		// Build options data
+		optionsData := make([]models.PollOption, len(poll.Options))
+		for i, option := range poll.Options {
+			optionsData[i] = models.PollOption{
+				Title:      option,
+				VotesCount: optionVotes[i],
+			}
+		}
+
+		// Build poll response
+		pollResp := &models.Poll{
+			ID:          poll.ID,
+			ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
+			Expired:     expired,
+			Multiple:    poll.Multiple,
+			VotesCount:  poll.VotesCount,
+			VotersCount: poll.VotersCount,
+			Voted:       false,
+			OwnVotes:    nil,
+			OptionsData: optionsData,
+			Emojis:      []interface{}{},
+		}
+
+		// Hide totals if requested and poll hasn't expired
+		if poll.HideTotals && !expired {
+			for i := range pollResp.OptionsData {
+				pollResp.OptionsData[i].VotesCount = 0
+			}
+			pollResp.VotesCount = 0
+			pollResp.VotersCount = 0
+		}
+
+		status.Poll = pollResp
+	}
+
 	// Check if the current user has interacted with this status
 	authHeader := request.Headers["Authorization"]
 	if authHeader == "" {
@@ -927,6 +1029,13 @@ func (h *Handler) HandleGetStatus(ctx context.Context, request events.APIGateway
 				// Check if user has reblogged this status
 				if _, err := h.store.GetAnnounce(ctx, userActor.ID, objectID); err == nil {
 					status.Reblogged = true
+				}
+				// Check if user has voted on the poll
+				if status.Poll != nil && poll != nil {
+					if userVotes, ok := poll.Votes[userActor.ID]; ok {
+						status.Poll.Voted = true
+						status.Poll.OwnVotes = userVotes
+					}
 				}
 			}
 		}
