@@ -34,7 +34,7 @@ func init() {
 	}
 }
 
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	log := common.WithContext(ctx)
 
 	// Extract username from path
@@ -73,7 +73,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// Return HTML for browsers
 	html := generateHTMLProfile(actor)
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
 			"Content-Type": "text/html; charset=utf-8",

@@ -35,13 +35,12 @@ func init() {
 	}
 }
 
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	log := common.WithContext(ctx)
 
-	// Only accept GET requests
-	if request.HTTPMethod != http.MethodGet {
-		return common.ErrorResponseWithCode(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED",
-			fmt.Errorf("method %s not allowed", request.HTTPMethod)), nil
+	// Ensure this is a GET request
+	if request.RequestContext.HTTP.Method != http.MethodGet {
+		return common.MethodNotAllowed(fmt.Errorf("method %s not allowed", request.RequestContext.HTTP.Method)), nil
 	}
 
 	username := request.PathParameters["username"]
@@ -51,7 +50,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// Extract collection type from path
 	// Path should be /users/{username}/followers or /users/{username}/following
-	path := request.Path
+	path := request.RawPath
+	// Remove stage prefix if present
+	if request.RequestContext.Stage != "" && strings.HasPrefix(path, "/"+request.RequestContext.Stage) {
+		path = strings.TrimPrefix(path, "/"+request.RequestContext.Stage)
+	}
+
 	var collectionType string
 	if strings.HasSuffix(path, "/followers") {
 		collectionType = "followers"
@@ -108,7 +112,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 }
 
 // returnCollection returns the collection metadata (not a page)
-func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionType string) (events.APIGatewayProxyResponse, error) {
+func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionType string) (*events.APIGatewayV2HTTPResponse, error) {
 	log := common.WithContext(ctx)
 
 	// Get total count (we'll get a small sample to determine if there are any items)
@@ -151,7 +155,7 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 }
 
 // returnCollectionPage returns a page of the collection
-func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collectionType string, usernames []string, cursor, nextCursor string, limit int) (events.APIGatewayProxyResponse, error) {
+func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collectionType string, usernames []string, cursor, nextCursor string, limit int) (*events.APIGatewayV2HTTPResponse, error) {
 	log := common.WithContext(ctx)
 	log.Debug("returning collection page",
 		zap.String("actor", actor.ID),

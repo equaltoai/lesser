@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -68,14 +67,42 @@ func parseWebFingerResource(resource string) (username, domain string, err error
 
 // handler processes WebFinger requests
 // GET /.well-known/webfinger?resource=acct:username@domain
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	log := common.WithContext(ctx)
+func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Remove stage prefix if present
+	path := request.RawPath
+	if request.RequestContext.Stage != "" && strings.HasPrefix(path, "/"+request.RequestContext.Stage) {
+		path = strings.TrimPrefix(path, "/"+request.RequestContext.Stage)
+	}
 
-	// Extract resource parameter
+	log := logger.With(
+		zap.String("path", path),
+		zap.Any("query", request.QueryStringParameters),
+		zap.Any("headers", request.Headers),
+	)
+
+	// Handle different endpoints
+	switch path {
+	case "/.well-known/webfinger":
+		return handleWebFinger(ctx, request, log)
+	case "/.well-known/nodeinfo":
+		return handleNodeInfoDiscovery(ctx, request, log)
+	case "/nodeinfo/2.0":
+		return handleNodeInfo20(ctx, request, log)
+	case "/nodeinfo/2.1":
+		return handleNodeInfo21(ctx, request, log)
+	default:
+		log.Debug("unknown endpoint", zap.String("path", path))
+		return common.NotFound(fmt.Errorf("unknown endpoint: %s", path)), nil
+	}
+}
+
+// handleWebFinger handles webfinger requests
+func handleWebFinger(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
+	// Validate resource parameter
 	resource := request.QueryStringParameters["resource"]
 	if resource == "" {
-		log.Debug("missing resource parameter")
-		return common.BadRequest(errors.New("missing resource parameter")), nil
+		log.Warn("missing resource parameter")
+		return common.BadRequest(common.ValidationError{Field: "resource", Message: "resource parameter is required"}), nil
 	}
 
 	log.Info("processing webfinger request",
@@ -146,6 +173,105 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	resp.Headers["Content-Type"] = "application/jrd+json"
 	resp.Headers["Cache-Control"] = "max-age=86400" // Cache for 24 hours
 
+	return resp, nil
+}
+
+// handleNodeInfoDiscovery returns the well-known nodeinfo discovery document
+func handleNodeInfoDiscovery(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
+	log.Info("handling nodeinfo discovery request")
+
+	discovery := map[string]interface{}{
+		"links": []map[string]string{
+			{
+				"rel":  "http://nodeinfo.diaspora.software/ns/schema/2.0",
+				"href": cfg.BaseURL() + "/nodeinfo/2.0",
+			},
+			{
+				"rel":  "http://nodeinfo.diaspora.software/ns/schema/2.1",
+				"href": cfg.BaseURL() + "/nodeinfo/2.1",
+			},
+		},
+	}
+
+	resp := common.JSONResponse(200, discovery)
+	resp.Headers["Cache-Control"] = "max-age=86400" // Cache for 24 hours
+	return resp, nil
+}
+
+// handleNodeInfo20 returns nodeinfo 2.0 format
+func handleNodeInfo20(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
+	log.Info("handling nodeinfo 2.0 request")
+
+	// TODO: implement user counting
+	userCount := 1
+
+	nodeinfo := map[string]interface{}{
+		"version": "2.0",
+		"software": map[string]interface{}{
+			"name":    "lesser",
+			"version": "0.1.0",
+		},
+		"protocols": []string{"activitypub"},
+		"services": map[string]interface{}{
+			"outbound": []string{},
+			"inbound":  []string{},
+		},
+		"usage": map[string]interface{}{
+			"users": map[string]interface{}{
+				"total": userCount,
+			},
+			"localPosts": 0, // TODO: implement post counting
+		},
+		"openRegistrations": true,
+		"metadata": map[string]interface{}{
+			"nodeName":        cfg.InstanceName,
+			"nodeDescription": "A serverless ActivityPub implementation",
+		},
+	}
+
+	resp := common.JSONResponse(200, nodeinfo)
+	resp.Headers["Content-Type"] = "application/json; profile=\"http://nodeinfo.diaspora.software/ns/schema/2.0#\""
+	resp.Headers["Cache-Control"] = "max-age=300" // Cache for 5 minutes
+	return resp, nil
+}
+
+// handleNodeInfo21 returns nodeinfo 2.1 format
+func handleNodeInfo21(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
+	log.Info("handling nodeinfo 2.1 request")
+
+	// TODO: implement user counting
+	userCount := 1
+
+	nodeinfo := map[string]interface{}{
+		"version": "2.1",
+		"software": map[string]interface{}{
+			"name":       "lesser",
+			"version":    "0.1.0",
+			"repository": "https://github.com/aron23/lesser",
+		},
+		"protocols": []string{"activitypub"},
+		"services": map[string]interface{}{
+			"outbound": []string{},
+			"inbound":  []string{},
+		},
+		"usage": map[string]interface{}{
+			"users": map[string]interface{}{
+				"total":          userCount,
+				"activeMonth":    userCount, // TODO: implement proper active user counting
+				"activeHalfyear": userCount,
+			},
+			"localPosts": 0, // TODO: implement post counting
+		},
+		"openRegistrations": true,
+		"metadata": map[string]interface{}{
+			"nodeName":        cfg.InstanceName,
+			"nodeDescription": "A serverless ActivityPub implementation",
+		},
+	}
+
+	resp := common.JSONResponse(200, nodeinfo)
+	resp.Headers["Content-Type"] = "application/json; profile=\"http://nodeinfo.diaspora.software/ns/schema/2.1#\""
+	resp.Headers["Cache-Control"] = "max-age=300" // Cache for 5 minutes
 	return resp, nil
 }
 

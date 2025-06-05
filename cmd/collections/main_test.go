@@ -124,16 +124,20 @@ func TestHandler(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		request           events.APIGatewayProxyRequest
+		request           events.APIGatewayV2HTTPRequest
 		setupMock         func(*MockStorage)
 		expectedStatus    int
 		expectedBodyCheck func(*testing.T, string)
 	}{
 		{
 			name: "GET followers collection metadata",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/alice/followers",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/alice/followers",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -155,9 +159,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "GET following collection metadata - empty",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/alice/following",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/alice/following",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -178,9 +186,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "GET followers page",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/alice/followers",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/alice/followers",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -207,9 +219,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "GET following page with cursor",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/alice/following",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/alice/following",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -237,9 +253,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "Unknown collection type",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/alice/unknown",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/alice/unknown",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -252,9 +272,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "Method not allowed",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "POST",
-				Path:       "/users/alice/followers",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodPost,
+					},
+				},
+				RawPath: "/users/alice/followers",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -267,9 +291,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "Actor not found",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/nonexistent/followers",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/nonexistent/followers",
 				PathParameters: map[string]string{
 					"username": "nonexistent",
 				},
@@ -284,9 +312,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "Storage error",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/alice/followers",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/alice/followers",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -305,9 +337,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "Invalid limit parameter",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/alice/followers",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/alice/followers",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -330,9 +366,13 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "Limit exceeds maximum",
-			request: events.APIGatewayProxyRequest{
-				HTTPMethod: "GET",
-				Path:       "/users/alice/followers",
+			request: events.APIGatewayV2HTTPRequest{
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodGet,
+					},
+				},
+				RawPath: "/users/alice/followers",
 				PathParameters: map[string]string{
 					"username": "alice",
 				},

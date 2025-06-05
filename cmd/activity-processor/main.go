@@ -474,24 +474,60 @@ func processCreate(ctx context.Context, activity *activitypub.Activity, recipien
 
 // Helper functions for extracting fields from map[string]interface{}
 func getStringField(m map[string]interface{}, key string) string {
+	// Try lowercase key first
 	if val, ok := m[key].(string); ok {
+		return val
+	}
+	// Try uppercase key (for DynamoDB field names)
+	upperKey := strings.ToUpper(key[:1]) + key[1:]
+	if val, ok := m[upperKey].(string); ok {
+		return val
+	}
+	// Try all uppercase
+	if val, ok := m[strings.ToUpper(key)].(string); ok {
 		return val
 	}
 	return ""
 }
 
 func getBoolField(m map[string]interface{}, key string) bool {
+	// Try lowercase key first
 	if val, ok := m[key].(bool); ok {
+		return val
+	}
+	// Try uppercase key (for DynamoDB field names)
+	upperKey := strings.ToUpper(key[:1]) + key[1:]
+	if val, ok := m[upperKey].(bool); ok {
+		return val
+	}
+	// Try all uppercase
+	if val, ok := m[strings.ToUpper(key)].(bool); ok {
 		return val
 	}
 	return false
 }
 
 func getIntField(m map[string]interface{}, key string) int {
+	// Try lowercase key first
 	if val, ok := m[key].(float64); ok {
 		return int(val)
 	}
 	if val, ok := m[key].(int); ok {
+		return val
+	}
+	// Try uppercase key (for DynamoDB field names)
+	upperKey := strings.ToUpper(key[:1]) + key[1:]
+	if val, ok := m[upperKey].(float64); ok {
+		return int(val)
+	}
+	if val, ok := m[upperKey].(int); ok {
+		return val
+	}
+	// Try all uppercase
+	if val, ok := m[strings.ToUpper(key)].(float64); ok {
+		return int(val)
+	}
+	if val, ok := m[strings.ToUpper(key)].(int); ok {
 		return val
 	}
 	return 0
@@ -499,7 +535,8 @@ func getIntField(m map[string]interface{}, key string) int {
 
 func getStringSliceField(m map[string]interface{}, key string) []string {
 	var result []string
-	if val, ok := m[key]; ok {
+	// Helper function to process the value
+	processValue := func(val interface{}) {
 		switch v := val.(type) {
 		case []interface{}:
 			for _, item := range v {
@@ -512,6 +549,23 @@ func getStringSliceField(m map[string]interface{}, key string) []string {
 		case string:
 			result = []string{v}
 		}
+	}
+
+	// Try lowercase key first
+	if val, ok := m[key]; ok {
+		processValue(val)
+		return result
+	}
+	// Try uppercase key (for DynamoDB field names)
+	upperKey := strings.ToUpper(key[:1]) + key[1:]
+	if val, ok := m[upperKey]; ok {
+		processValue(val)
+		return result
+	}
+	// Try all uppercase
+	if val, ok := m[strings.ToUpper(key)]; ok {
+		processValue(val)
+		return result
 	}
 	return result
 }
@@ -1401,19 +1455,20 @@ func processAdd(ctx context.Context, activity *activitypub.Activity, recipientUs
 
 	// Extract object being added
 	var objectID string
-	var objectType string
+	var objectType string = "Object" // Default type
 
 	switch obj := activity.Object.(type) {
 	case string:
 		objectID = obj
-		objectType = "Object" // Default type
+		// objectType already defaulted to "Object"
 	case map[string]interface{}:
 		if id, ok := obj["id"].(string); ok {
 			objectID = id
 		}
-		if t, ok := obj["type"].(string); ok {
+		if t, ok := obj["type"].(string); ok && t != "" {
 			objectType = t
 		}
+		// If type is not specified or empty, use default "Object"
 	}
 
 	if objectID == "" {

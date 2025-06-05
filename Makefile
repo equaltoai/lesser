@@ -2,7 +2,7 @@
 
 # Variables
 GOOS ?= linux
-GOARCH ?= amd64
+GOARCH ?= arm64
 CGO_ENABLED ?= 0
 
 # Lambda function directories
@@ -143,43 +143,52 @@ build-lambdas:
 	@echo "Building Lambda functions..."
 	@mkdir -p bin
 	@echo "Building api..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/api ./cmd/api
-	@cd bin && zip -q api.zip api && rm api
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/api
+	@cd bin && zip -q api.zip bootstrap && rm bootstrap
 	@echo "Building actor..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/actor ./cmd/actor
-	@cd bin && zip -q actor.zip actor && rm actor
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/actor
+	@cd bin && zip -q actor.zip bootstrap && rm bootstrap
 	@echo "Building inbox..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/inbox ./cmd/inbox
-	@cd bin && zip -q inbox.zip inbox && rm inbox
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/inbox
+	@cd bin && zip -q inbox.zip bootstrap && rm bootstrap
 	@echo "Building outbox..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/outbox ./cmd/outbox
-	@cd bin && zip -q outbox.zip outbox && rm outbox
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/outbox
+	@cd bin && zip -q outbox.zip bootstrap && rm bootstrap
 	@echo "Building collections..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/collections ./cmd/collections
-	@cd bin && zip -q collections.zip collections && rm collections
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/collections
+	@cd bin && zip -q collections.zip bootstrap && rm bootstrap
 	@echo "Building objects..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/objects ./cmd/objects
-	@cd bin && zip -q objects.zip objects && rm objects
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/objects
+	@cd bin && zip -q objects.zip bootstrap && rm bootstrap
 	@echo "Building webfinger..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/webfinger ./cmd/webfinger
-	@cd bin && zip -q webfinger.zip webfinger && rm webfinger
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/webfinger
+	@cd bin && zip -q webfinger.zip bootstrap && rm bootstrap
 	@echo "Building auth..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/auth ./cmd/auth
-	@cd bin && zip -q auth.zip auth && rm auth
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/auth
+	@cd bin && zip -q auth.zip bootstrap && rm bootstrap
 	@echo "Building media..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/media ./cmd/media
-	@cd bin && zip -q media.zip media && rm media
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/media
+	@cd bin && zip -q media.zip bootstrap && rm bootstrap
 	@echo "Building activity-processor..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/activity-processor ./cmd/activity-processor
-	@cd bin && zip -q activity-processor.zip activity-processor && rm activity-processor
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/activity-processor
+	@cd bin && zip -q activity-processor.zip bootstrap && rm bootstrap
 	@echo "Lambda functions built successfully!"
 
 .PHONY: deploy
 deploy: build-lambdas
 	@echo "Deploying with Pulumi..."
-	@cd infra && pulumi up
+	@cd infra && pulumi up --yes
 
 .PHONY: deploy-preview
 deploy-preview: build-lambdas
 	@echo "Previewing deployment..."
-	@cd infra && pulumi preview 
+	@cd infra && pulumi preview
+
+build-activity-processor:
+	@echo "Building cmd/activity-processor..."
+	@$(BUILD_CMD) ./cmd/activity-processor
+
+build-configure-instance:
+	@echo "Building cmd/configure-instance..."
+	@GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+		go build -ldflags="-s -w" -o bin/configure-instance ./cmd/configure-instance 

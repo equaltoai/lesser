@@ -66,7 +66,7 @@ type MediaUploadResponse struct {
 	Blurhash    *string                `json:"blurhash,omitempty"`
 }
 
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Extract token from Authorization header
 	authHeader := request.Headers["Authorization"]
 	if authHeader == "" {
@@ -250,13 +250,13 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		// Don't fail the request, media is already uploaded
 	}
 
-	body, _ := json.Marshal(resp)
-	return events.APIGatewayProxyResponse{
-		StatusCode: http.StatusOK,
+	respBody, _ := json.Marshal(resp)
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusCreated,
 		Headers: map[string]string{
 			"Content-Type": "application/json",
 		},
-		Body: string(body),
+		Body: string(respBody),
 	}, nil
 }
 

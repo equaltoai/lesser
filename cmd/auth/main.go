@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,7 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
+	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"go.uber.org/zap"
@@ -34,7 +35,7 @@ func init() {
 	logger = common.Logger()
 
 	var err error
-	store, err = dynamodb.New()
+	store, err = storageDB.New()
 	if err != nil {
 		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
@@ -113,6 +114,7 @@ type LoginPageData struct {
 	Scope               string
 	ResponseType        string
 	Error               string
+	ActionURL           string
 }
 
 // LoginRequest represents a login form submission
@@ -128,9 +130,21 @@ type LoginRequest struct {
 	ResponseType        string `json:"response_type"`
 }
 
-func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Get the path, removing the stage prefix if present
+	path := request.RawPath
+	if request.RequestContext.Stage != "" && strings.HasPrefix(path, "/"+request.RequestContext.Stage) {
+		path = strings.TrimPrefix(path, "/"+request.RequestContext.Stage)
+	}
+
+	// Log request for debugging
+	logger.Info("OAuth request",
+		zap.String("raw_path", request.RawPath),
+		zap.String("path", path),
+		zap.String("method", request.RequestContext.HTTP.Method))
+
 	// Route based on path
-	switch request.Path {
+	switch path {
 	case "/oauth/authorize":
 		return handleAuthorize(ctx, request)
 	case "/oauth/token":
@@ -142,12 +156,18 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 }
 
-func handleAuthorize(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Log raw request details for debugging
+	logger.Info("raw authorize request details",
+		zap.Any("query_params", request.QueryStringParameters),
+		zap.String("raw_query_string", request.RawQueryString),
+		zap.String("raw_path", request.RawPath))
+
 	// Parse request parameters
 	var req AuthorizeRequest
 	var loginErr string
 
-	if request.HTTPMethod == http.MethodGet {
+	if request.RequestContext.HTTP.Method == http.MethodGet {
 		req = AuthorizeRequest{
 			ResponseType:        request.QueryStringParameters["response_type"],
 			ClientID:            request.QueryStringParameters["client_id"],
@@ -157,13 +177,42 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayProxyRequest)
 			CodeChallengeMethod: request.QueryStringParameters["code_challenge_method"],
 			Scope:               request.QueryStringParameters["scope"],
 		}
-	} else if request.HTTPMethod == http.MethodPost {
+
+		logger.Info("parsed OAuth authorize request",
+			zap.String("response_type", req.ResponseType),
+			zap.String("client_id", req.ClientID),
+			zap.String("redirect_uri", req.RedirectURI),
+			zap.String("state", req.State),
+			zap.String("code_challenge", req.CodeChallenge),
+			zap.String("scope", req.Scope))
+	} else if request.RequestContext.HTTP.Method == http.MethodPost {
 		// Check if this is a login form submission
 		contentType := request.Headers["content-type"]
+		if contentType == "" {
+			contentType = request.Headers["Content-Type"]
+		}
+
+		// Decode body if base64 encoded
+		body := request.Body
+		if request.IsBase64Encoded {
+			decodedBytes, err := base64.StdEncoding.DecodeString(request.Body)
+			if err != nil {
+				logger.Error("failed to decode base64 body", zap.Error(err))
+				return common.BadRequest(fmt.Errorf("failed to decode body: %w", err)), nil
+			}
+			body = string(decodedBytes)
+		}
+
+		logger.Info("processing POST request",
+			zap.String("content_type", contentType),
+			zap.Bool("is_base64", request.IsBase64Encoded),
+			zap.String("body", body))
+
 		if strings.Contains(contentType, "application/x-www-form-urlencoded") {
 			// Parse form data
-			values, err := url.ParseQuery(request.Body)
+			values, err := url.ParseQuery(body)
 			if err != nil {
+				logger.Error("failed to parse form data", zap.Error(err))
 				return common.BadRequest(err), nil
 			}
 
@@ -193,39 +242,55 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayProxyRequest)
 				loginErr = "Account is pending approval"
 			} else {
 				// Login successful, continue with OAuth flow
+				logger.Info("login successful, completing authorization",
+					zap.String("username", user.Username),
+					zap.String("client_id", req.ClientID))
 				return completeAuthorization(ctx, req, user.Username)
 			}
 		} else {
 			// JSON request
-			if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+			if err := json.Unmarshal([]byte(body), &req); err != nil {
 				return common.BadRequest(err), nil
 			}
 		}
 	} else {
-		return methodNotAllowed(request.HTTPMethod), nil
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
 	}
 
 	// Validate request
 	if req.ResponseType != "code" {
+		logger.Warn("unsupported response type", zap.String("response_type", req.ResponseType))
 		return returnOAuthError("unsupported_response_type", "Only authorization code flow is supported", req.RedirectURI, req.State), nil
 	}
 
 	if req.ClientID == "" {
+		logger.Warn("missing client_id")
 		return common.BadRequest(errors.New("missing client_id")), nil
 	}
 
 	if req.RedirectURI == "" {
+		logger.Warn("missing redirect_uri")
 		return common.BadRequest(errors.New("missing redirect_uri")), nil
 	}
 
 	// Validate client and redirect URI
+	logger.Info("validating client and redirect URI",
+		zap.String("client_id", req.ClientID),
+		zap.String("redirect_uri", req.RedirectURI))
+
 	if err := oauthSvc.ValidateRedirectURI(ctx, req.ClientID, req.RedirectURI); err != nil {
+		logger.Warn("client validation failed",
+			zap.String("client_id", req.ClientID),
+			zap.String("redirect_uri", req.RedirectURI),
+			zap.Error(err))
 		return common.BadRequest(err), nil
 	}
 
-	// PKCE is required
+	// PKCE is optional but recommended
 	if req.CodeChallenge == "" {
-		return returnOAuthError("invalid_request", "PKCE code_challenge is required", req.RedirectURI, req.State), nil
+		logger.Info("PKCE not used for this request")
+	} else {
+		logger.Info("PKCE enabled", zap.String("code_challenge_method", req.CodeChallengeMethod))
 	}
 
 	// Parse scopes
@@ -233,40 +298,58 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayProxyRequest)
 	if req.Scope != "" {
 		scopes = strings.Split(req.Scope, " ")
 		if err := auth.ValidateScopes(scopes); err != nil {
+			logger.Warn("invalid scopes", zap.String("scopes", req.Scope), zap.Error(err))
 			return returnOAuthError("invalid_scope", "Invalid scopes requested", req.RedirectURI, req.State), nil
 		}
 	}
 
 	// Return login page
+	logger.Info("rendering login page",
+		zap.String("client_id", req.ClientID),
+		zap.String("redirect_uri", req.RedirectURI))
 	return renderLoginPage(req, loginErr), nil
 }
 
 // validateUserCredentials checks username and password
 func validateUserCredentials(ctx context.Context, username, password string) (*storage.User, error) {
+	logger.Info("validating user credentials", zap.String("username", username))
+
 	if username == "" || password == "" {
 		return nil, errors.New("username and password are required")
 	}
 
 	// Try to get user by username first
+	logger.Info("attempting to get user by username", zap.String("username", username))
 	user, err := store.GetUser(ctx, username)
 	if err != nil {
+		logger.Info("username lookup failed, trying email", zap.Error(err))
 		// Try by email
 		user, err = store.GetUserByEmail(ctx, username)
 		if err != nil {
+			logger.Warn("email lookup also failed", zap.Error(err))
 			return nil, errors.New("invalid credentials")
 		}
 	}
 
+	logger.Info("user found, verifying password", zap.String("username", user.Username))
+
 	// Verify password
 	if err := auth.VerifyPassword(password, user.PasswordHash); err != nil {
+		logger.Warn("password verification failed", zap.Error(err))
 		return nil, errors.New("invalid credentials")
 	}
+
+	logger.Info("password verified successfully")
 
 	return user, nil
 }
 
 // completeAuthorization completes the OAuth flow after successful login
-func completeAuthorization(ctx context.Context, req AuthorizeRequest, username string) (events.APIGatewayProxyResponse, error) {
+func completeAuthorization(ctx context.Context, req AuthorizeRequest, username string) (*events.APIGatewayV2HTTPResponse, error) {
+	logger.Info("starting authorization completion",
+		zap.String("username", username),
+		zap.String("client_id", req.ClientID))
+
 	// Parse scopes
 	scopes := []string{auth.ScopeRead, auth.ScopeWrite} // Default scopes
 	if req.Scope != "" {
@@ -274,11 +357,13 @@ func completeAuthorization(ctx context.Context, req AuthorizeRequest, username s
 	}
 
 	// Generate authorization code
+	logger.Info("generating authorization code")
 	code, err := oauthSvc.GenerateAuthorizationCode()
 	if err != nil {
 		logger.Error("failed to generate authorization code", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
+	logger.Info("authorization code generated", zap.String("code", code))
 
 	// Store authorization code
 	authCode := &storage.AuthorizationCode{
@@ -290,10 +375,12 @@ func completeAuthorization(ctx context.Context, req AuthorizeRequest, username s
 		Scopes:        scopes,
 	}
 
+	logger.Info("storing authorization code in DynamoDB")
 	if err := store.CreateAuthorizationCode(ctx, authCode); err != nil {
 		logger.Error("failed to store authorization code", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
+	logger.Info("authorization code stored successfully")
 
 	// Build redirect URL
 	redirectURL, _ := url.Parse(req.RedirectURI)
@@ -304,17 +391,25 @@ func completeAuthorization(ctx context.Context, req AuthorizeRequest, username s
 	}
 	redirectURL.RawQuery = q.Encode()
 
+	logger.Info("redirecting with authorization code",
+		zap.String("redirect_url", redirectURL.String()))
+
 	// Return redirect response
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusFound,
 		Headers: map[string]string{
-			"Location": redirectURL.String(),
+			"Location":                     redirectURL.String(),
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
 		},
 	}, nil
 }
 
 // renderLoginPage returns an HTML login page
-func renderLoginPage(req AuthorizeRequest, errorMsg string) events.APIGatewayProxyResponse {
+func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2HTTPResponse {
+	// Build the form action URL with query parameters
+	actionURL := "/oauth/authorize"
+
 	loginHTML := `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -402,7 +497,7 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) events.APIGatewayPro
         {{if .Error}}
         <div class="error">{{.Error}}</div>
         {{end}}
-        <form method="POST" action="/oauth/authorize">
+        <form method="POST" action="{{.ActionURL}}">
             <input type="hidden" name="response_type" value="{{.ResponseType}}">
             <input type="hidden" name="client_id" value="{{.ClientID}}">
             <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
@@ -447,6 +542,7 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) events.APIGatewayPro
 		Scope:               req.Scope,
 		ResponseType:        req.ResponseType,
 		Error:               errorMsg,
+		ActionURL:           actionURL,
 	}
 
 	var buf strings.Builder
@@ -455,7 +551,7 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) events.APIGatewayPro
 		return common.InternalServerError(err)
 	}
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
 			"Content-Type": "text/html; charset=utf-8",
@@ -464,23 +560,112 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) events.APIGatewayPro
 	}
 }
 
-func handleToken(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handleToken(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	logger.Info("token endpoint called",
+		zap.String("method", request.RequestContext.HTTP.Method),
+		zap.Any("headers", request.Headers),
+		zap.String("body", request.Body))
+
 	// Only accept POST
-	if request.HTTPMethod != http.MethodPost {
-		return methodNotAllowed(request.HTTPMethod), nil
+	if request.RequestContext.HTTP.Method != http.MethodPost {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
 	}
 
 	// Parse request
 	var req TokenRequest
 	contentType := request.Headers["content-type"]
+	logger.Info("parsing token request",
+		zap.String("content_type", contentType),
+		zap.Bool("is_json", strings.Contains(contentType, "application/json")))
+
 	if strings.Contains(contentType, "application/json") {
 		if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+			logger.Error("failed to parse JSON", zap.Error(err))
 			return returnTokenError("invalid_request", "Invalid JSON"), nil
 		}
+	} else if strings.Contains(contentType, "multipart/form-data") {
+		// Handle multipart/form-data (used by Ivory)
+		body := request.Body
+		if request.IsBase64Encoded {
+			decodedBytes, err := base64.StdEncoding.DecodeString(request.Body)
+			if err != nil {
+				logger.Error("failed to decode base64 body", zap.Error(err))
+				return returnTokenError("invalid_request", "Failed to decode body"), nil
+			}
+			body = string(decodedBytes)
+		}
+
+		// Parse multipart form
+		boundary := ""
+		if idx := strings.Index(contentType, "boundary="); idx != -1 {
+			boundary = contentType[idx+9:]
+			// Remove quotes if present
+			boundary = strings.Trim(boundary, "\"")
+		}
+
+		if boundary == "" {
+			logger.Error("missing boundary in multipart form")
+			return returnTokenError("invalid_request", "Invalid multipart form"), nil
+		}
+
+		// Simple multipart parser
+		parts := strings.Split(body, "--"+boundary)
+		formData := make(map[string]string)
+
+		for _, part := range parts {
+			if strings.TrimSpace(part) == "" || strings.HasPrefix(part, "--") {
+				continue
+			}
+
+			// Split headers and content
+			sections := strings.SplitN(part, "\r\n\r\n", 2)
+			if len(sections) != 2 {
+				continue
+			}
+
+			// Extract field name
+			headers := sections[0]
+			content := strings.TrimSpace(sections[1])
+
+			if strings.Contains(headers, `name="`) {
+				start := strings.Index(headers, `name="`) + 6
+				end := strings.Index(headers[start:], `"`)
+				if end > 0 {
+					fieldName := headers[start : start+end]
+					formData[fieldName] = content
+				}
+			}
+		}
+
+		// Map form data to TokenRequest
+		req = TokenRequest{
+			GrantType:    formData["grant_type"],
+			Code:         formData["code"],
+			RedirectURI:  formData["redirect_uri"],
+			ClientID:     formData["client_id"],
+			ClientSecret: formData["client_secret"],
+			CodeVerifier: formData["code_verifier"],
+			RefreshToken: formData["refresh_token"],
+			Scope:        formData["scope"],
+		}
+
+		logger.Info("parsed multipart form data",
+			zap.Any("form_data", formData))
 	} else {
-		// Parse form data
-		values, err := url.ParseQuery(request.Body)
+		// Parse form data (application/x-www-form-urlencoded)
+		body := request.Body
+		if request.IsBase64Encoded {
+			decodedBytes, err := base64.StdEncoding.DecodeString(request.Body)
+			if err != nil {
+				logger.Error("failed to decode base64 body", zap.Error(err))
+				return returnTokenError("invalid_request", "Failed to decode body"), nil
+			}
+			body = string(decodedBytes)
+		}
+
+		values, err := url.ParseQuery(body)
 		if err != nil {
+			logger.Error("failed to parse form data", zap.Error(err))
 			return returnTokenError("invalid_request", "Invalid form data"), nil
 		}
 		req = TokenRequest{
@@ -495,58 +680,126 @@ func handleToken(ctx context.Context, request events.APIGatewayProxyRequest) (ev
 		}
 	}
 
+	logger.Info("parsed token request",
+		zap.String("grant_type", req.GrantType),
+		zap.String("client_id", req.ClientID),
+		zap.String("code", req.Code),
+		zap.String("redirect_uri", req.RedirectURI),
+		zap.Bool("has_client_secret", req.ClientSecret != ""))
+
 	// Validate client
+	logger.Info("validating client credentials")
 	if err := oauthSvc.ValidateClient(ctx, req.ClientID, req.ClientSecret); err != nil {
+		logger.Error("client validation failed", zap.Error(err))
 		return returnTokenError("invalid_client", "Invalid client credentials"), nil
 	}
+	logger.Info("client validation successful")
 
 	switch req.GrantType {
 	case auth.GrantTypeAuthorizationCode:
+		logger.Info("handling authorization code grant")
 		return handleAuthorizationCodeGrant(ctx, req)
 	case auth.GrantTypeRefreshToken:
+		logger.Info("handling refresh token grant")
 		return handleRefreshTokenGrant(ctx, req)
+	case "client_credentials":
+		logger.Info("handling client credentials grant")
+		return handleClientCredentialsGrant(ctx, req)
 	default:
+		logger.Warn("unsupported grant type", zap.String("grant_type", req.GrantType))
 		return returnTokenError("unsupported_grant_type", "Grant type not supported"), nil
 	}
 }
 
-func handleAuthorizationCodeGrant(ctx context.Context, req TokenRequest) (events.APIGatewayProxyResponse, error) {
+func handleAuthorizationCodeGrant(ctx context.Context, req TokenRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	logger.Info("starting authorization code grant",
+		zap.String("code", req.Code),
+		zap.String("client_id", req.ClientID))
+
 	if req.Code == "" {
+		logger.Warn("missing authorization code")
 		return returnTokenError("invalid_request", "Missing authorization code"), nil
 	}
 
-	if req.CodeVerifier == "" {
-		return returnTokenError("invalid_request", "Missing PKCE code_verifier"), nil
-	}
-
 	// Get authorization code
+	logger.Info("retrieving authorization code from store")
 	authCode, err := store.GetAuthorizationCode(ctx, req.Code)
 	if err != nil {
 		if common.IsNotFound(err) {
+			logger.Warn("authorization code not found", zap.String("code", req.Code))
 			return returnTokenError("invalid_grant", "Invalid or expired authorization code"), nil
 		}
 		logger.Error("failed to get authorization code", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
+	logger.Info("authorization code retrieved",
+		zap.String("username", authCode.Username),
+		zap.String("client_id", authCode.ClientID))
+
+	// Add detailed logging about the authorization code
+	logger.Info("authorization code details",
+		zap.String("code", authCode.Code),
+		zap.String("username", authCode.Username),
+		zap.String("client_id", authCode.ClientID),
+		zap.String("code_challenge", authCode.CodeChallenge),
+		zap.Time("expires_at", authCode.ExpiresAt),
+		zap.Int("scopes_count", len(authCode.Scopes)))
+
+	// Check if authCode is nil (defensive programming)
+	if authCode == nil {
+		logger.Error("authorization code is nil after retrieval")
+		return returnTokenError("invalid_grant", "Invalid authorization code"), nil
+	}
+
+	logger.Info("checking client ID match",
+		zap.String("auth_code_client_id", authCode.ClientID),
+		zap.String("request_client_id", req.ClientID))
 
 	// Verify client ID matches
 	if authCode.ClientID != req.ClientID {
+		logger.Warn("client ID mismatch",
+			zap.String("expected", authCode.ClientID),
+			zap.String("received", req.ClientID))
 		return returnTokenError("invalid_grant", "Client ID mismatch"), nil
 	}
 
-	// Verify PKCE
-	if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, req.CodeVerifier, "S256"); err != nil {
-		return returnTokenError("invalid_grant", "Invalid PKCE code_verifier"), nil
+	logger.Info("client ID match verified")
+
+	// Verify PKCE if it was used
+	if authCode.CodeChallenge != "" {
+		logger.Info("PKCE verification required",
+			zap.String("code_challenge", authCode.CodeChallenge))
+		if req.CodeVerifier == "" {
+			logger.Warn("missing PKCE code_verifier")
+			return returnTokenError("invalid_request", "PKCE code_verifier is required"), nil
+		}
+		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, req.CodeVerifier, "S256"); err != nil {
+			logger.Error("PKCE verification failed", zap.Error(err))
+			return returnTokenError("invalid_grant", "Invalid PKCE code_verifier"), nil
+		}
+		logger.Info("PKCE verification successful")
+	} else {
+		logger.Info("PKCE not used for this authorization code")
 	}
 
 	// Generate tokens
+	logger.Info("generating tokens",
+		zap.String("username", authCode.Username),
+		zap.String("client_id", authCode.ClientID),
+		zap.Int("scopes_count", len(authCode.Scopes)))
+
 	accessToken, refreshToken, err := oauthSvc.GenerateTokens(authCode.Username, authCode.ClientID, authCode.Scopes)
 	if err != nil {
 		logger.Error("failed to generate tokens", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
 
+	logger.Info("tokens generated successfully",
+		zap.Int("access_token_length", len(accessToken)),
+		zap.Int("refresh_token_length", len(refreshToken)))
+
 	// Store refresh token
+	logger.Info("storing refresh token")
 	refreshTokenData := &storage.RefreshToken{
 		Token:     refreshToken,
 		ClientID:  authCode.ClientID,
@@ -559,10 +812,14 @@ func handleAuthorizationCodeGrant(ctx context.Context, req TokenRequest) (events
 		logger.Error("failed to store refresh token", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
+	logger.Info("refresh token stored successfully")
 
 	// Delete used authorization code
+	logger.Info("deleting used authorization code")
 	if err := store.DeleteAuthorizationCode(ctx, req.Code); err != nil {
 		logger.Warn("failed to delete authorization code", zap.Error(err))
+	} else {
+		logger.Info("authorization code deleted successfully")
 	}
 
 	// Return tokens
@@ -575,18 +832,27 @@ func handleAuthorizationCodeGrant(ctx context.Context, req TokenRequest) (events
 	}
 
 	body, _ := json.Marshal(resp)
-	return events.APIGatewayProxyResponse{
+
+	logger.Info("returning token response",
+		zap.Int("status", http.StatusOK),
+		zap.String("token_type", resp.TokenType),
+		zap.Int("expires_in", resp.ExpiresIn),
+		zap.String("scope", resp.Scope))
+
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
-			"Content-Type":  "application/json",
-			"Cache-Control": "no-store",
-			"Pragma":        "no-cache",
+			"Content-Type":                 "application/json",
+			"Cache-Control":                "no-store",
+			"Pragma":                       "no-cache",
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
 		},
 		Body: string(body),
 	}, nil
 }
 
-func handleRefreshTokenGrant(ctx context.Context, req TokenRequest) (events.APIGatewayProxyResponse, error) {
+func handleRefreshTokenGrant(ctx context.Context, req TokenRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	if req.RefreshToken == "" {
 		return returnTokenError("invalid_request", "Missing refresh token"), nil
 	}
@@ -622,21 +888,76 @@ func handleRefreshTokenGrant(ctx context.Context, req TokenRequest) (events.APIG
 	}
 
 	body, _ := json.Marshal(resp)
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
-			"Content-Type":  "application/json",
-			"Cache-Control": "no-store",
-			"Pragma":        "no-cache",
+			"Content-Type":                 "application/json",
+			"Cache-Control":                "no-store",
+			"Pragma":                       "no-cache",
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
 		},
 		Body: string(body),
 	}, nil
 }
 
-func handleDiscovery(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handleClientCredentialsGrant(ctx context.Context, req TokenRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	logger.Info("processing client credentials grant",
+		zap.String("client_id", req.ClientID),
+		zap.String("scope", req.Scope))
+
+	// Client credentials grant doesn't use authorization codes
+	// It directly exchanges client credentials for an access token
+
+	// Parse requested scopes
+	scopes := []string{auth.ScopeRead} // Default minimal scope
+	if req.Scope != "" {
+		requestedScopes := strings.Split(req.Scope, " ")
+		// Validate scopes
+		if err := auth.ValidateScopes(requestedScopes); err == nil {
+			scopes = requestedScopes
+		}
+	}
+
+	// Generate a client token (not associated with a user)
+	// For client credentials, we use the client_id as the "username" in the token
+	accessToken, _, err := oauthSvc.GenerateTokens(req.ClientID, req.ClientID, scopes)
+	if err != nil {
+		logger.Error("failed to generate client token", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Return token response (no refresh token for client credentials)
+	resp := TokenResponse{
+		AccessToken: accessToken,
+		TokenType:   "Bearer",
+		ExpiresIn:   int(auth.AccessTokenDuration.Seconds()),
+		Scope:       strings.Join(scopes, " "),
+	}
+
+	body, _ := json.Marshal(resp)
+
+	logger.Info("client credentials token issued",
+		zap.String("client_id", req.ClientID),
+		zap.String("scope", resp.Scope))
+
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type":                 "application/json",
+			"Cache-Control":                "no-store",
+			"Pragma":                       "no-cache",
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
+		},
+		Body: string(body),
+	}, nil
+}
+
+func handleDiscovery(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Only accept GET
-	if request.HTTPMethod != http.MethodGet {
-		return methodNotAllowed(request.HTTPMethod), nil
+	if request.RequestContext.HTTP.Method != http.MethodGet {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
 	}
 
 	// Return OAuth discovery document
@@ -646,13 +967,13 @@ func handleDiscovery(ctx context.Context, request events.APIGatewayProxyRequest)
 		"token_endpoint":                        cfg.BaseURL() + "/oauth/token",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
-		"code_challenge_methods_supported":      []string{"S256"},
+		"code_challenge_methods_supported":      []string{"S256", "plain"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
-		"scopes_supported":                      []string{"read", "write"},
+		"scopes_supported":                      []string{"read", "write", "follow", "push"},
 	}
 
 	body, _ := json.Marshal(discovery)
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
 			"Content-Type": "application/json",
@@ -661,7 +982,7 @@ func handleDiscovery(ctx context.Context, request events.APIGatewayProxyRequest)
 	}, nil
 }
 
-func returnOAuthError(error, description, redirectURI, state string) events.APIGatewayProxyResponse {
+func returnOAuthError(error, description, redirectURI, state string) *events.APIGatewayV2HTTPResponse {
 	// If we have a redirect URI, redirect with error
 	if redirectURI != "" {
 		redirectURL, _ := url.Parse(redirectURI)
@@ -675,7 +996,7 @@ func returnOAuthError(error, description, redirectURI, state string) events.APIG
 		}
 		redirectURL.RawQuery = q.Encode()
 
-		return events.APIGatewayProxyResponse{
+		return &events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusFound,
 			Headers: map[string]string{
 				"Location": redirectURL.String(),
@@ -690,7 +1011,7 @@ func returnOAuthError(error, description, redirectURI, state string) events.APIG
 	}
 	body, _ := json.Marshal(errResp)
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusBadRequest,
 		Headers: map[string]string{
 			"Content-Type": "application/json",
@@ -699,26 +1020,28 @@ func returnOAuthError(error, description, redirectURI, state string) events.APIG
 	}
 }
 
-func returnTokenError(error, description string) events.APIGatewayProxyResponse {
+func returnTokenError(error, description string) *events.APIGatewayV2HTTPResponse {
 	errResp := ErrorResponse{
 		Error:            error,
 		ErrorDescription: description,
 	}
 	body, _ := json.Marshal(errResp)
 
-	return events.APIGatewayProxyResponse{
+	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusBadRequest,
 		Headers: map[string]string{
-			"Content-Type":  "application/json",
-			"Cache-Control": "no-store",
-			"Pragma":        "no-cache",
+			"Content-Type":                 "application/json",
+			"Cache-Control":                "no-store",
+			"Pragma":                       "no-cache",
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
 		},
 		Body: string(body),
 	}
 }
 
 // methodNotAllowed returns a 405 Method Not Allowed response
-func methodNotAllowed(method string) events.APIGatewayProxyResponse {
+func methodNotAllowed(method string) *events.APIGatewayV2HTTPResponse {
 	return common.ErrorResponseWithCode(
 		http.StatusMethodNotAllowed,
 		"METHOD_NOT_ALLOWED",

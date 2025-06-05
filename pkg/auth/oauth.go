@@ -95,6 +95,10 @@ func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redire
 		return ErrInvalidClient
 	}
 
+	// Log for debugging
+	fmt.Printf("ValidateRedirectURI - Client %s registered URIs: %v\n", clientID, client.RedirectURIs)
+	fmt.Printf("ValidateRedirectURI - Requested URI: %s\n", redirectURI)
+
 	// Check if the redirect URI is valid for this client
 	validURI := false
 	for _, uri := range client.RedirectURIs {
@@ -107,10 +111,17 @@ func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redire
 			validURI = true
 			break
 		}
+		// Support web clients that include instance domain in the path
+		// e.g., registered: https://elk.zone/api/oauth
+		//       actual: https://elk.zone/api/lesser.host/oauth/...
+		if strings.Contains(redirectURI, uri) {
+			validURI = true
+			break
+		}
 	}
 
 	if !validURI {
-		return ErrInvalidRequest
+		return fmt.Errorf("redirect URI mismatch: requested %s, registered %v", redirectURI, client.RedirectURIs)
 	}
 
 	return nil
@@ -230,6 +241,9 @@ func ValidateScopes(scopes []string) error {
 	validScopes := map[string]bool{
 		ScopeRead:  true,
 		ScopeWrite: true,
+		"follow":   true, // Mastodon-specific
+		"push":     true, // Mastodon-specific for push notifications
+		"admin":    true, // Admin access
 	}
 
 	for _, scope := range scopes {

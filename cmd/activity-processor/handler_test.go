@@ -10,8 +10,11 @@ import (
 
 	"github.com/aron23/lesser/internal/testutil/mocks"
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/storage"
+	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -40,6 +43,31 @@ func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) erro
 func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
 	args := m.Called(ctx, username)
 	return args.String(0), args.Error(1)
+}
+
+func (m *MockStorage) CreateFlag(ctx context.Context, flag *storage.Flag) error {
+	args := m.Called(ctx, flag)
+	return args.Error(0)
+}
+
+func (m *MockStorage) CreateMove(ctx context.Context, move *storage.Move) error {
+	args := m.Called(ctx, move)
+	return args.Error(0)
+}
+
+func (m *MockStorage) AddToCollection(ctx context.Context, collection string, item *storage.CollectionItem) error {
+	args := m.Called(ctx, collection, item)
+	return args.Error(0)
+}
+
+func (m *MockStorage) RemoveFromCollection(ctx context.Context, collection, itemID string) error {
+	args := m.Called(ctx, collection, itemID)
+	return args.Error(0)
+}
+
+func (m *MockStorage) CreateLike(ctx context.Context, like *storage.Like) error {
+	args := m.Called(ctx, like)
+	return args.Error(0)
 }
 
 func TestParseActivityRecord(t *testing.T) {
@@ -357,10 +385,14 @@ func TestProcessInboxActivity(t *testing.T) {
 			},
 			recipientUsername: "alice",
 			setupMocks: func() {
-				mockStore.On("CreateObject", ctx, map[string]interface{}{
-					"type":    "Note",
-					"content": "Hello!",
-				}).Return(nil).Once()
+				mockStore.On("CreateObject", ctx, mock.MatchedBy(func(obj interface{}) bool {
+					// Check that it's a *dynamodb.Object with the expected fields
+					o, ok := obj.(*dynamodb.Object)
+					if !ok {
+						return false
+					}
+					return o.Type == "Note" && o.Content == "Hello!" && o.AttributedTo == "https://example.com/users/bob"
+				})).Return(nil).Once()
 			},
 			wantError: false,
 		},
@@ -376,7 +408,11 @@ func TestProcessInboxActivity(t *testing.T) {
 			},
 			recipientUsername: "alice",
 			setupMocks: func() {
-				// Like storage not implemented yet
+				mockStore.On("CreateLike", ctx, mock.MatchedBy(func(like *storage.Like) bool {
+					return like.Actor == "https://example.com/users/bob" &&
+						like.Object == "https://myserver.com/objects/note-1" &&
+						like.ID == "https://example.com/activities/like-1"
+				})).Return(nil).Once()
 			},
 			wantError: false,
 		},
