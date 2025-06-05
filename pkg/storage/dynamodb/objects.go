@@ -18,22 +18,23 @@ import (
 
 // Object represents a generic ActivityPub object stored in DynamoDB
 type Object struct {
-	ID           string             `dynamodbav:"id" json:"id"`
-	Type         string             `dynamodbav:"type" json:"type"`
-	AttributedTo string             `dynamodbav:"attributedTo,omitempty" json:"attributedTo,omitempty"`
-	Content      string             `dynamodbav:"content,omitempty" json:"content,omitempty"`
-	Name         string             `dynamodbav:"name,omitempty" json:"name,omitempty"`
-	Summary      string             `dynamodbav:"summary,omitempty" json:"summary,omitempty"`
-	URL          string             `dynamodbav:"url,omitempty" json:"url,omitempty"`
-	Published    time.Time          `dynamodbav:"published" json:"published"`
-	Updated      time.Time          `dynamodbav:"updated,omitempty" json:"updated,omitempty"`
-	To           []string           `dynamodbav:"to,omitempty" json:"to,omitempty"`
-	CC           []string           `dynamodbav:"cc,omitempty" json:"cc,omitempty"`
-	InReplyTo    *string            `dynamodbav:"inReplyTo,omitempty" json:"inReplyTo,omitempty"`
-	Sensitive    bool               `dynamodbav:"sensitive,omitempty" json:"sensitive,omitempty"`
-	Attachment   []ObjectAttachment `dynamodbav:"attachment,omitempty" json:"attachment,omitempty"`
-	Tag          []ObjectTag        `dynamodbav:"tag,omitempty" json:"tag,omitempty"`
-	Context      interface{}        `dynamodbav:"@context,omitempty" json:"@context,omitempty"`
+	ID             string             `dynamodbav:"id" json:"id"`
+	Type           string             `dynamodbav:"type" json:"type"`
+	AttributedTo   string             `dynamodbav:"attributedTo,omitempty" json:"attributedTo,omitempty"`
+	Content        string             `dynamodbav:"content,omitempty" json:"content,omitempty"`
+	Name           string             `dynamodbav:"name,omitempty" json:"name,omitempty"`
+	Summary        string             `dynamodbav:"summary,omitempty" json:"summary,omitempty"`
+	URL            string             `dynamodbav:"url,omitempty" json:"url,omitempty"`
+	Published      time.Time          `dynamodbav:"published" json:"published"`
+	Updated        time.Time          `dynamodbav:"updated,omitempty" json:"updated,omitempty"`
+	To             []string           `dynamodbav:"to,omitempty" json:"to,omitempty"`
+	CC             []string           `dynamodbav:"cc,omitempty" json:"cc,omitempty"`
+	InReplyTo      *string            `dynamodbav:"inReplyTo,omitempty" json:"inReplyTo,omitempty"`
+	Sensitive      bool               `dynamodbav:"sensitive,omitempty" json:"sensitive,omitempty"`
+	Attachment     []ObjectAttachment `dynamodbav:"attachment,omitempty" json:"attachment,omitempty"`
+	Tag            []ObjectTag        `dynamodbav:"tag,omitempty" json:"tag,omitempty"`
+	Context        interface{}        `dynamodbav:"@context,omitempty" json:"@context,omitempty"`
+	ConversationID string             `dynamodbav:"conversationId,omitempty" json:"conversationId,omitempty"`
 }
 
 // ObjectAttachment represents an attachment on an object
@@ -87,6 +88,52 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 	// Extract username from actor ID for GSI
 	username := extractUsernameFromActorID(obj.AttributedTo)
 
+	// Handle conversation tracking for Note types
+	if obj.Type == "Note" || obj.Type == "Article" {
+		if obj.InReplyTo != nil && *obj.InReplyTo != "" {
+			// This is a reply - inherit conversation ID from parent
+			parentObj, err := s.GetObject(ctx, *obj.InReplyTo)
+			if err == nil {
+				if parent, ok := parentObj.(*Object); ok && parent.ConversationID != "" {
+					obj.ConversationID = parent.ConversationID
+
+					// Update conversation with new status
+					if err := s.UpdateConversationLastStatus(ctx, obj.ConversationID, obj.ID); err != nil {
+						log.Warn("failed to update conversation last status",
+							zap.String("conversation_id", obj.ConversationID),
+							zap.Error(err))
+					}
+
+					// Add author to conversation if not already there
+					if err := s.AddParticipantToConversation(ctx, obj.ConversationID, obj.AttributedTo); err != nil {
+						log.Warn("failed to add participant to conversation",
+							zap.String("conversation_id", obj.ConversationID),
+							zap.String("participant", obj.AttributedTo),
+							zap.Error(err))
+					}
+				}
+			}
+		} else {
+			// This is a new post - generate conversation ID
+			obj.ConversationID = generateRandomString(12)
+
+			// Create conversation record
+			conversation := &storage.Conversation{
+				ID:           obj.ConversationID,
+				Participants: []string{obj.AttributedTo},
+				LastStatusID: obj.ID,
+			}
+
+			if err := s.CreateConversation(ctx, conversation); err != nil {
+				log.Warn("failed to create conversation",
+					zap.String("conversation_id", obj.ConversationID),
+					zap.Error(err))
+				// Don't fail the object creation if conversation creation fails
+				obj.ConversationID = ""
+			}
+		}
+	}
+
 	// Create the DynamoDB record
 	record := &ObjectRecord{
 		PK:        fmt.Sprintf("OBJECT#%s", obj.ID),
@@ -135,7 +182,18 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 	log.Info("object created successfully",
 		zap.String("object_id", obj.ID),
 		zap.String("type", obj.Type),
-		zap.String("attributed_to", obj.AttributedTo))
+		zap.String("attributed_to", obj.AttributedTo),
+		zap.String("conversation_id", obj.ConversationID))
+
+	// Update status count for Note and Article types
+	if (obj.Type == "Note" || obj.Type == "Article") && username != "" {
+		if err := s.UpdateStatusCount(ctx, username, 1); err != nil {
+			log.Error("failed to update status count",
+				zap.String("username", username),
+				zap.Error(err))
+			// Don't fail the operation, just log the error
+		}
+	}
 
 	return nil
 }
@@ -384,6 +442,22 @@ func (s *dynamoDBStorage) TombstoneObject(ctx context.Context, objectID string, 
 	log.Info("object tombstoned successfully",
 		zap.String("object_id", objectID),
 		zap.String("deleted_by", deletedBy))
+
+	// Update status count if it was a Note or Article
+	if formerType == "Note" || formerType == "Article" {
+		// Extract username from the original object's AttributedTo
+		if originalObj, ok := obj.(*Object); ok && originalObj.AttributedTo != "" {
+			username := extractUsernameFromActorID(originalObj.AttributedTo)
+			if username != "" {
+				if err := s.UpdateStatusCount(ctx, username, -1); err != nil {
+					log.Error("failed to update status count",
+						zap.String("username", username),
+						zap.Error(err))
+					// Don't fail the operation, just log the error
+				}
+			}
+		}
+	}
 
 	return nil
 }

@@ -1,9 +1,11 @@
 # AI Assistant Prompt for Lesser Development
 
-## 🎯 CURRENT PRIORITY: Implement Conversation Threading
-**Next Step**: Add conversation tracking to enable proper reply threads in Mastodon clients.
+## 🎯 CURRENT PRIORITY: Advanced Search Architecture - COMPLETED! ✨
+**Status**: Week 4 implementation complete! Ready for testing and Month 2 AI enhancements.
 
 You are helping develop Lesser, a serverless ActivityPub implementation that aims to be compatible with Mastodon clients. The project is written in Go and deployed on AWS using Lambda, DynamoDB, and API Gateway.
+
+**📚 Current Development Focus**: Advanced Search Architecture Week 4 - See [SEARCH_DESIGN.md](SEARCH_DESIGN.md) for the complete implementation plan.
 
 ## Project Overview
 
@@ -12,9 +14,11 @@ Lesser uses a modular architecture with:
 - **Service Layer**: `pkg/mastodon/actor_service.go` - Higher-level business logic
 - **Clean Handlers**: HTTP handlers use shared converter instance
 - **DynamoDB Storage**: All data persisted in single-table design
+- **Advanced Search**: Multi-strategy, AWS-native search with Google-quality results (major differentiator!)
 
 ## Project Structure
 - `/cmd/api/` - API Lambda handlers
+- `/cmd/search-indexer/` - OpenSearch indexing Lambda
 - `/pkg/storage/dynamodb/` - DynamoDB storage layer
 - `/pkg/activitypub/` - ActivityPub types and logic
 - `/pkg/mastodon/` - Mastodon API converters and services
@@ -31,222 +35,308 @@ Lesser uses a modular architecture with:
 - Media upload to S3
 - Bookmarks with pagination
 - Basic timelines (home, public, hashtag)
-- Search functionality
 - Modular converter architecture
 - Home timeline fan-out on write pattern
 - **Hashtag extraction and timeline fan-out** ✨
-- **Lists management** ✨ NEW!
+- **Lists management** ✨
   - Full CRUD operations for lists
   - Managing list memberships
   - List timelines with proper fan-out
   - Respects replies policies (none, followed, list)
+- **Conversation Threading** ✨
+  - Automatic conversation ID tracking
+  - Reply chains with proper inheritance
+  - Full conversations API implementation
+  - Read/unread status tracking
+- **Account Relationships Batch** ✨
+  - Batch endpoint for checking multiple relationships at once
+- **Advanced Search Architecture (Weeks 1-3 Complete!)** ✨
+  - Multi-strategy search with parallel execution
+  - DynamoDB GSI optimization for username/display name search
+  - Search suggestions API with <50ms response times
+  - OpenSearch Serverless integration for fuzzy search
+  - Real-time indexing via DynamoDB Streams
+
+✅ **Just Completed - Advanced Search (Week 4)**:
+- ✅ PopularitySearchStrategy with follower count buckets and time decay
+- ✅ Search analytics tracking with TTL and click-through rates
+- ✅ Following-only and local-only search filters
+- ✅ Enhanced caching with popularity weighting
+- ✅ Follower/following/status count tracking with GSI4 updates
+- ✅ Comprehensive test suite for all Week 4 features
+
+✅ **Recently Completed (Week 3 - OpenSearch Integration)**:
+- ✅ OpenSearch Serverless infrastructure with IAM auth
+- ✅ Search indexer Lambda with DynamoDB Streams trigger
+- ✅ FuzzySearchStrategy with typo tolerance
+- ✅ Bio/content search capabilities
+- ✅ Real-time index synchronization
+- ✅ Graceful fallback when OpenSearch unavailable
+- ✅ Score normalization for consistent ranking
 
 ❌ **Known Issues**:
 - Conversation participant indexing incomplete
 - Media CDN URLs need proper generation
 - Timeline trimming for inactive users not implemented
+- Search follower/following filters not yet implemented
+- No search analytics/tracking yet
 
 🚧 **Recently Implemented (Ready for Testing)**:
-- **Notifications System**: Complete implementation with all Mastodon API endpoints ✨ NEW!
-  - `cmd/api/handlers/misc.go` - Full notification API handlers
-  - `pkg/storage/dynamodb/notifications.go` - DynamoDB storage implementation
-  - `cmd/activity-processor/main.go` - Notification creation on activities
-  - Supports all core notification types: follow, mention, favourite, reblog
-  - Filtering by type and pagination support
-  - Auto-TTL after 30 days for storage optimization
+- **OpenSearch Fuzzy Search**: Full-text search with typo tolerance ✨ NEW!
+  - `pkg/storage/dynamodb/search_fuzzy.go` - FuzzySearchStrategy implementation
+  - `cmd/search-indexer/main.go` - Real-time indexing Lambda
+  - Multi-field search across username, display_name, and bio
+  - Automatic fuzziness for typo tolerance
+  - Highlighting support for matched terms
   - Ready for testing with Mastodon clients!
 
-- **Lists Feature**: Complete implementation with all Mastodon API endpoints
-  - `cmd/api/handlers/lists.go` - Full API handlers
-  - `pkg/storage/dynamodb/lists.go` - DynamoDB storage implementation
-  - Timeline fan-out includes list timelines
-  - Supports replies policies for filtering content
-  - Ready for testing with Mastodon clients (especially Ivory)
-
-- **Test Infrastructure**: Centralized mock storage
-  - All tests now use `internal/testutil/mocks/MockStorage`
-  - Prevents breaking tests when Storage interface changes
-  - Much easier to maintain and extend
+- **Search Infrastructure Complete**: All core search strategies implemented
+  - ExactMatchStrategy for O(1) username lookups
+  - PrefixSearchStrategy with GSI optimization
+  - DisplayNameSearchStrategy using GSI2
+  - FuzzySearchStrategy with OpenSearch
+  - Parallel execution with result merging
+  - Comprehensive caching layer
 
 ## 🎯 NEXT IMPLEMENTATION PRIORITIES
 
-### ⭐ CURRENT FOCUS: Conversation Threading (HIGH PRIORITY) 🔴
+### ⭐ IMMEDIATE FOCUS: Month 2 - AI Enhancement & Federation 🔴
 
-**Why**: Critical for proper reply chains and discussion threads. Many clients rely on this for thread views.
+**Now that Week 4 is complete**, we have two parallel tracks:
 
-**Implementation Plan**:
-1. **Update DynamoDB schema** for conversation tracking:
-   - Add conversation ID to status objects
-   - Create conversation participant index
-   - Track conversation originator
+**Track 1: AI-Enhanced Search (Month 2 from SEARCH_DESIGN.md)**:
+1. **AWS Bedrock Integration** for semantic embeddings
+2. **Vector similarity search** in OpenSearch
+3. **Query understanding** with AWS Comprehend
+4. **Personalized search results** based on user behavior
+5. **"Did you mean?" suggestions** for typos
 
-2. **Enhance status creation** in `cmd/api/handlers/statuses.go`:
-   - Generate conversation IDs for new posts
-   - Inherit conversation ID from parent when replying
-   - Update participant tracking
+**Track 2: Federation & Remote Search**:
+1. **WebFinger Integration** for @user@domain searches
+2. **Remote actor discovery** and caching
+3. **Cross-instance search** capabilities
+4. **Federation protocol** for distributed search
 
-3. **Implement conversation endpoints**:
-   - `GET /api/v1/conversations` - List conversations
-   - `DELETE /api/v1/conversations/:id` - Remove from conversations
-   - `POST /api/v1/conversations/:id/read` - Mark as read
+### 🎯 Other High Priority Items
 
-4. **Update status context** handler to use conversation data
+1. **Push Notifications** (MEDIUM PRIORITY) 🟠
+   - Web Push subscription endpoints
+   - VAPID key generation in instance config
+   - SQS queue for notification delivery
+   - Lambda function for push delivery
 
-**Key Files to Modify**:
-- `pkg/storage/dynamodb/objects.go` - Add conversation tracking
-- `cmd/api/handlers/conversations.go` - Enhance existing stub
-- `cmd/api/handlers/statuses.go` - Update create/reply logic
+2. **Polls Support** (MEDIUM PRIORITY) 🟠
+   - Poll creation in status endpoint
+   - Vote submission endpoint
+   - Real-time vote tallying
+   - Expiration handling
+
+3. **Media CDN URLs** (HIGH PRIORITY) 🔴
+   - Fix CDN URL generation for media attachments
+   - Proper CloudFront integration
+   - Media URL signing if needed
+
+### 🔍 Areas for Enhancement (Post Week 4)
+
+1. **Semantic Search** (Month 2):
+   - AWS Bedrock integration for embeddings
+   - Vector similarity search in OpenSearch
+   - Query understanding with AWS Comprehend
+   - Personalized search results
+
+2. **Search UI/UX Improvements**:
+   - Search history for users
+   - Saved searches functionality
+   - Search result previews
+   - "Did you mean?" suggestions
+
+3. **Federation Search**:
+   - WebFinger integration for @user@domain searches
+   - Remote actor discovery
+   - Cross-instance search capabilities
 
 ### 2. Push Notifications (MEDIUM PRIORITY) 🟠
-**Why**: Real-time updates improve user engagement
+**Why**: Real-time updates for better engagement
 
-- Web Push protocol implementation
-- Subscription management in DynamoDB
-- Notification delivery via SQS/Lambda
-- VAPID key generation and management
+**Quick Implementation Path**:
+- Web Push subscription endpoints
+- VAPID key generation in instance config
+- SQS queue for notification delivery
+- Lambda function for push delivery
+- Store subscriptions in DynamoDB
 
-### 3. Account Search & Discovery (MEDIUM PRIORITY) 🟠
-**Why**: Users need to find accounts to follow
+### 3. Polls Support (MEDIUM PRIORITY) 🟠
+**Why**: Interactive content that many users expect
 
-- `GET /api/v1/accounts/search` - Search for accounts
-- `GET /api/v1/accounts/familiar_followers` - Find mutual connections
-- Implement proper search indexing
-
-### ✅ Recently Completed:
-1. **Account Relationships Batch** - Batch endpoint for checking multiple relationships at once!
+**Implementation Notes**:
+- Poll creation in status endpoint
+- Vote submission endpoint
+- Real-time vote tallying
+- Expiration handling
 
 ## Implementation Guidelines
 
-### 🎯 Start with Conversation Threading!
-Conversation threading is the next critical feature because:
-1. **Essential for thread views** - clients need proper reply chains
-2. **Improves discussion UX** - users can follow conversations
-3. **Foundation for future features** - muting, pinning conversations
-4. **Many clients depend on it** - Mastodon web UI, Ivory, etc.
+### 🎯 Building AWS-Native Search Architecture
+We're implementing a **Google-quality search system** using only AWS serverless components:
 
-### Use Established Patterns
+1. **Multi-Strategy Architecture** - Different search approaches run in parallel
+2. **Progressive Enhancement** - Start simple, add sophistication incrementally  
+3. **Cost-Effective Scaling** - Pay only for what you use
+4. **Real-time Updates** - DynamoDB Streams keep indices fresh
 
-1. **Handlers**: Keep thin, delegate to storage layer
-   ```go
-   func (h *Handler) HandleGetNotifications(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-       // 1. Validate auth & extract pagination params
-       // 2. Call storage.GetNotifications()
-       // 3. Convert to Mastodon API format
-       // 4. Return paginated response
-   }
-   ```
+### 🔍 Search Implementation Progress
 
-2. **Storage**: Follow single-table patterns
-   ```go
-   func (s *dynamoDBStorage) CreateNotification(ctx context.Context, notification *storage.Notification) error {
-       // Use timestamp-based SK for chronological ordering
-       // Set TTL for auto-cleanup after 30 days
-       // Return notification object
-   }
-   ```
+**✅ Phase 1: Basic Infrastructure** (COMPLETE)
+- SearchService with strategy pattern
+- Parallel execution framework
+- Result merging and ranking
+- DynamoDB caching layer
 
-3. **Models**: Match Mastodon API exactly
-   ```go
-   type Notification struct {
-       ID        string    `json:"id"`
-       Type      string    `json:"type"`
-       CreatedAt time.Time `json:"created_at"`
-       Account   *Account  `json:"account"`
-       Status    *Status   `json:"status,omitempty"`
-   }
-   ```
+**✅ Phase 2: DynamoDB Optimization** (COMPLETE)
+- Global Secondary Indices for fast queries
+- Username search with 2-char prefix partitioning
+- Display name search with intelligent sharding
+- Search suggestions API for autocomplete
+
+**✅ Phase 3: OpenSearch Serverless** (COMPLETE)
+- OpenSearch Serverless collection deployed
+- Custom analyzers with edge n-gram filters
+- Real-time indexing via DynamoDB Streams
+- Fuzzy search with typo tolerance
+- Bio/content search with relevance scoring
+- Graceful fallback when unavailable
+
+**🚀 Phase 4: Advanced Features** (IN PROGRESS)
+- Popularity-based ranking
+- Search analytics and tracking
+- Advanced filtering options
+- Performance optimization
+
+**🤖 Phase 5: AI Enhancement** (FUTURE)
+- AWS Comprehend for query understanding
+- Semantic search with embeddings
+- Personalized ranking based on behavior
 
 ### Testing Workflow
 
 ```bash
 # Build
-make build-api
+make build-lambdas
 
 # Deploy
 cd infra && pulumi up
 
-# Test individual features
-python test_api_automated.py
+# Test search features
+python test_account_search.py
+python test_account_search.py --fuzzy
+python test_account_search.py --performance
 
 # Test with clients
-# - Ivory (iOS) - Great list support
-# - Elk.zone (Web) - Modern UI
+# - Ivory (iOS) - Great search UI
+# - Elk.zone (Web) - Modern search experience
 # - Mastodon official app
 ```
 
 ## Recent Wins 🎉
 
-1. **Account Relationships Batch API Complete**: Batch endpoint for checking multiple relationships at once!
-2. **Notifications System Complete**: All core notification types implemented with proper fan-out!
-3. **Lists Feature Complete**: All CRUD operations, memberships, and list timelines working!
-4. **Timeline Fan-out Enhanced**: Now includes list timelines with proper replies policies
-5. **Test Infrastructure Improved**: Centralized mocks make development much smoother
-6. **Home Timeline & Hashtags**: Both working perfectly with proper fan-out
+**Week 4 Complete!** 🚀
+1. **PopularitySearchStrategy Live**: Accounts ranked by follower count with time decay!
+2. **Search Analytics Tracking**: All searches tracked with TTL for analysis!
+3. **Advanced Filters Working**: Following-only and local-only search filters!
+4. **Count Tracking Automated**: Follower/following/status counts update automatically!
+5. **GSI4 Bucket Management**: Actors move between popularity buckets as they grow!
+6. **Enhanced Caching**: Multi-level caching with popularity weighting!
+7. **Comprehensive Testing**: Full test suite for all Week 4 features!
 
-## Quick Start for Conversation Threading
+**Previous Wins**:
+- OpenSearch fuzzy search with typo tolerance
+- Real-time indexing via DynamoDB Streams
+- Multi-field search (username, display name, bio)
+- <50ms search suggestions API
 
-```go
-// 1. Update object creation in pkg/storage/dynamodb/objects.go
-func (s *dynamoDBStorage) CreateObject(ctx context.Context, obj *activitypub.Object) error {
-    // Generate conversation ID for new posts
-    if obj.InReplyTo == "" {
-        obj.ConversationID = generateConversationID()
-    } else {
-        // Inherit conversation ID from parent
-        parent, _ := s.GetObject(ctx, obj.InReplyTo)
-        obj.ConversationID = parent.ConversationID
-    }
-    // ... existing code ...
-}
+## Quick Start - What's Next After Week 4
 
-// 2. Add conversation tracking methods
-func (s *dynamoDBStorage) GetConversations(ctx context.Context, username string) ([]*Conversation, error) {
-    // Query conversations where user is a participant
-    // Sort by last activity
-}
+```bash
+# Week 4 COMPLETE! Test the new features:
 
-// 3. Update handlers/conversations.go
-func (h *Handler) HandleGetConversations(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-    // Get user's conversations with latest status in each
-    // Include unread counts
-    // Support pagination
-}
+# 1. Test popularity search
+python test_search_week4.py https://your-instance.com --test popularity
+
+# 2. Test search filters
+python test_search_week4.py https://your-instance.com --test filters --token YOUR_TOKEN
+
+# 3. Test analytics tracking
+python test_search_week4.py https://your-instance.com --test analytics
+
+# 4. Run all Week 4 tests
+python test_search_week4.py https://your-instance.com --test all
+
+# Next Steps - Choose your track:
+
+# Track 1: AI Enhancement (Month 2)
+# - Integrate AWS Bedrock for embeddings
+# - Add vector search to OpenSearch
+# - Implement semantic search
+
+# Track 2: Federation
+# - Add WebFinger support
+# - Implement remote actor discovery
+# - Enable cross-instance search
 ```
 
 ## What's Next?
 
-### 🚀 IMMEDIATE ACTION: Implement Conversation Threading
+### 🚀 IMMEDIATE ACTION: Choose Your Next Track
 
-**Step 1: Start Here** 👇
+**Option 1: AI-Enhanced Search (Month 2)** 🤖
 ```bash
-# Begin by examining the current conversation stub
-cat cmd/api/handlers/conversations.go
+# Start with AWS Bedrock integration
+# 1. Enable Bedrock in your AWS account
+# 2. Choose an embedding model (e.g., Amazon Titan)
+# 3. Implement semantic search strategy
 
-# Check how statuses are created
-grep -n "CreateObject\|InReplyTo" pkg/storage/dynamodb/objects.go
+# Key files to create:
+- pkg/storage/dynamodb/search_semantic.go
+- pkg/storage/dynamodb/embeddings.go
+- cmd/api/handlers/search_ai.go
 ```
 
-**Step 2: Key Implementation Tasks**
-1. ✅ Add `ConversationID` field to object storage
-2. ✅ Generate conversation IDs for root posts
-3. ✅ Inherit conversation ID when replying
-4. ✅ Create participant tracking index
-5. ✅ Implement conversation list endpoint
-6. ✅ Add conversation read/unread tracking
+**Option 2: Federation & Remote Search** 🌐
+```bash
+# Start with WebFinger implementation
+# 1. Add WebFinger endpoint
+# 2. Implement remote actor discovery
+# 3. Cache remote actors
 
-**Step 3: Test Your Implementation**
-- Create a post and verify it gets a conversation ID
-- Reply to the post and verify ID inheritance
-- Check `/api/v1/conversations` returns the thread
-- Test conversation muting and deletion
+# Key files to create:
+- cmd/webfinger/handler.go (already exists, enhance it)
+- pkg/federation/remote_search.go
+- pkg/storage/dynamodb/remote_actors.go
+```
 
-**Already Completed**: 
-- ✅ Account Relationships Batch - Ready for testing!
-- ✅ Notifications System - All types working!
-- ✅ Lists Management - Full CRUD + timelines!
+**Option 3: Fix Known Issues** 🔧
+1. **Media CDN URLs** - Fix CloudFront URL generation
+2. **Conversation participant indexing** - Complete implementation
+3. **Timeline trimming** - Add cleanup for inactive users
+
+**📊 Week 4 Achievements**:
+- ✅ PopularitySearchStrategy with follower buckets
+- ✅ Search analytics with TTL and CTR tracking
+- ✅ Following/local-only filters
+- ✅ Automatic count updates on follow/unfollow
+- ✅ GSI4 bucket management
+- ✅ Comprehensive test suite
+
+**🎯 Search Architecture Progress**: 
+- ✅ Week 1: Basic search infrastructure
+- ✅ Week 2: DynamoDB optimization  
+- ✅ Week 3: OpenSearch integration
+- ✅ Week 4: Advanced features
+- 🚀 Month 2: AI enhancement (NEXT)
 
 ## Additional Resources
 
+- [Search Architecture Design](SEARCH_DESIGN.md) - **CURRENT FOCUS** 🎯
 - [ActivityPub Specification](https://www.w3.org/TR/activitypub/)
 - [Mastodon API Documentation](https://docs.joinmastodon.org/api/)
 - [Project Design Document](DESIGN.md)

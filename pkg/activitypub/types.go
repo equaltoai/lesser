@@ -84,10 +84,11 @@ type Activity struct {
 // Note represents a basic text post
 type Note struct {
 	BaseObject
-	Content      string       `json:"content"`
-	AttributedTo string       `json:"attributedTo"`
-	Attachment   []Attachment `json:"attachment,omitempty"`
-	Tag          []Tag        `json:"tag,omitempty"`
+	Content        string       `json:"content"`
+	AttributedTo   string       `json:"attributedTo"`
+	Attachment     []Attachment `json:"attachment,omitempty"`
+	Tag            []Tag        `json:"tag,omitempty"`
+	ConversationID string       `json:"conversationId,omitempty"` // For tracking conversation threads
 }
 
 // Article represents long-form content

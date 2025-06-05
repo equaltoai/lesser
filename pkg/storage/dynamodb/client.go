@@ -28,8 +28,9 @@ type DynamoDBAPI interface {
 
 // dynamoDBStorage implements the storage.Storage interface using DynamoDB
 type dynamoDBStorage struct {
-	client    DynamoDBAPI
-	tableName string
+	client        DynamoDBAPI
+	tableName     string
+	searchService *SearchService
 }
 
 var (
@@ -80,18 +81,33 @@ func New() (storage.Storage, error) {
 		return nil, err
 	}
 
-	return &dynamoDBStorage{
+	tableName := cfg.Get().DynamoTableName
+	dynStorage := &dynamoDBStorage{
 		client:    client,
-		tableName: cfg.Get().DynamoTableName,
-	}, nil
+		tableName: tableName,
+	}
+
+	// Initialize search service with storage reference
+	searchService := NewSearchService(client.(*dynamodb.Client), tableName, common.Logger(), dynStorage, cfg.Get().Domain)
+	dynStorage.searchService = searchService
+
+	return dynStorage, nil
 }
 
 // NewWithClient creates a new DynamoDB storage instance with a custom client (for testing)
 func NewWithClient(client DynamoDBAPI, tableName string) storage.Storage {
-	return &dynamoDBStorage{
+	dynStorage := &dynamoDBStorage{
 		client:    client,
 		tableName: tableName,
 	}
+
+	// For testing, we might not have a real DynamoDB client
+	if dynamoClient, ok := client.(*dynamodb.Client); ok {
+		searchService := NewSearchService(dynamoClient, tableName, common.Logger(), dynStorage, cfg.Get().Domain)
+		dynStorage.searchService = searchService
+	}
+
+	return dynStorage
 }
 
 // getTableName returns the table name with optional override for testing

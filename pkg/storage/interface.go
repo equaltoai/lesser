@@ -15,6 +15,8 @@ type Storage interface {
 	GetActorPrivateKey(ctx context.Context, username string) (string, error)
 	UpdateActor(ctx context.Context, actor *activitypub.Actor) error
 	DeleteActor(ctx context.Context, username string) error
+	SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error)
+	GetSearchSuggestions(ctx context.Context, prefix string) ([]SearchSuggestion, error)
 
 	// Activity operations
 	CreateActivity(ctx context.Context, activity *activitypub.Activity) error
@@ -487,4 +489,12 @@ type NotificationFilter struct {
 	MinID        string   // Return results newer than this ID
 	MaxID        string   // Return results older than this ID
 	SinceID      string   // Return results newer than this ID (for polling)
+}
+
+// SearchSuggestion represents a search suggestion
+type SearchSuggestion struct {
+	Type        string `json:"type"`     // "username", "display_name", "hashtag"
+	Value       string `json:"value"`    // The suggestion text
+	DisplayText string `json:"display"`  // What to show to the user
+	Username    string `json:"username"` // For account suggestions
 }

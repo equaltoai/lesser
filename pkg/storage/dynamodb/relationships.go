@@ -103,6 +103,23 @@ func (s *dynamoDBStorage) AcceptFollow(ctx context.Context, followerUsername, fo
 		zap.String("follower", followerUsername),
 		zap.String("followed", followedUsername))
 
+	// Update follower counts
+	// Increment followed user's follower count
+	if err := s.UpdateFollowerCount(ctx, followedUsername, 1); err != nil {
+		log.Error("failed to update follower count",
+			zap.String("username", followedUsername),
+			zap.Error(err))
+		// Don't fail the operation, just log the error
+	}
+
+	// Increment follower's following count
+	if err := s.UpdateFollowingCount(ctx, followerUsername, 1); err != nil {
+		log.Error("failed to update following count",
+			zap.String("username", followerUsername),
+			zap.Error(err))
+		// Don't fail the operation, just log the error
+	}
+
 	return nil
 }
 
@@ -140,6 +157,28 @@ func (s *dynamoDBStorage) RejectFollow(ctx context.Context, followerUsername, fo
 func (s *dynamoDBStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
 	log := common.WithContext(ctx)
 
+	// First check if the relationship was accepted (to know if we need to update counts)
+	wasAccepted := false
+	getInput := &dynamodb.GetItemInput{
+		TableName: s.getTableName(),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s%s", storage.FollowPKPrefix, followerUsername)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s%s", storage.FollowingSKPrefix, followedUsername)},
+		},
+		ProjectionExpression: aws.String("#state"),
+		ExpressionAttributeNames: map[string]string{
+			"#state": "State",
+		},
+	}
+
+	getOutput, err := s.client.GetItem(ctx, getInput)
+	if err == nil && getOutput.Item != nil {
+		if state, ok := getOutput.Item["State"].(*types.AttributeValueMemberS); ok {
+			wasAccepted = state.Value == storage.RelationshipAccepted
+		}
+	}
+
+	// Delete the relationship
 	input := &dynamodb.DeleteItemInput{
 		TableName: s.getTableName(),
 		Key: map[string]types.AttributeValue{
@@ -148,10 +187,29 @@ func (s *dynamoDBStorage) RemoveFollow(ctx context.Context, followerUsername, fo
 		},
 	}
 
-	_, err := s.client.DeleteItem(ctx, input)
+	_, err = s.client.DeleteItem(ctx, input)
 	if err != nil {
 		log.Error("failed to remove follow", zap.Error(err))
 		return fmt.Errorf("failed to remove follow: %w", err)
+	}
+
+	// Update follower counts if the relationship was accepted
+	if wasAccepted {
+		// Decrement followed user's follower count
+		if err := s.UpdateFollowerCount(ctx, followedUsername, -1); err != nil {
+			log.Error("failed to update follower count",
+				zap.String("username", followedUsername),
+				zap.Error(err))
+			// Don't fail the operation, just log the error
+		}
+
+		// Decrement follower's following count
+		if err := s.UpdateFollowingCount(ctx, followerUsername, -1); err != nil {
+			log.Error("failed to update following count",
+				zap.String("username", followerUsername),
+				zap.Error(err))
+			// Don't fail the operation, just log the error
+		}
 	}
 
 	return nil

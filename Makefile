@@ -172,6 +172,9 @@ build-lambdas:
 	@echo "Building activity-processor..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/activity-processor
 	@cd bin && zip -q activity-processor.zip bootstrap && rm bootstrap
+	@echo "Building search-indexer..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/search-indexer
+	@cd bin && zip -q search-indexer.zip bootstrap && rm bootstrap
 	@echo "Lambda functions built successfully!"
 
 .PHONY: deploy
@@ -185,8 +188,16 @@ deploy-preview: build-lambdas
 	@cd infra && pulumi preview
 
 build-activity-processor:
-	@echo "Building cmd/activity-processor..."
-	@$(BUILD_CMD) ./cmd/activity-processor
+	@echo "Building activity-processor Lambda..."
+	cd cmd/activity-processor && GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bootstrap .
+	cd cmd/activity-processor && zip -j ../../bin/activity-processor.zip bootstrap
+	cd cmd/activity-processor && rm bootstrap
+
+build-search-indexer:
+	@echo "Building search-indexer Lambda..."
+	cd cmd/search-indexer && GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bootstrap .
+	cd cmd/search-indexer && zip -j ../../bin/search-indexer.zip bootstrap
+	cd cmd/search-indexer && rm bootstrap
 
 build-configure-instance:
 	@echo "Building cmd/configure-instance..."
