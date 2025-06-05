@@ -870,9 +870,9 @@ All critical endpoints for basic Mastodon client compatibility have been impleme
   - Create/edit/delete lists
   - Add/remove accounts from lists
   - List timelines
-- [ ] **Filters and Mutes**
-  - Keyword filtering
-  - Account muting
+- [x] **Filters and Mutes**
+  - [x] Keyword filtering (v2 API)
+  - [x] Account muting
   - Conversation muting
 - [x] **Polls** ✅ NEW! (2025-01-19)
   - [x] Create polls in statuses (2-4 options)
@@ -1136,9 +1136,18 @@ Lesser has achieved its core goal of being a serverless ActivityPub implementati
 ### Priority 3 - Account Relationships
 - `GET /api/v1/accounts/relationships` - Get relationships with accounts
 - `GET /api/v1/blocks` - Get blocked accounts
-- `GET /api/v1/mutes` - Get muted accounts
-- `POST /api/v1/accounts/:id/mute` - Mute account
-- `POST /api/v1/accounts/:id/unmute` - Unmute account
+- [x] `GET /api/v1/mutes` - Get muted accounts ✅ NEW! (2025-01-20)
+- [x] `POST /api/v1/accounts/:id/mute` - Mute account ✅ NEW! (2025-01-20)
+- [x] `POST /api/v1/accounts/:id/unmute` - Unmute account ✅ NEW! (2025-01-20)
+
+### Filters (v2 API)
+- [x] `GET /api/v2/filters` - Get all filters ✅ NEW! (2025-01-20)
+- [x] `GET /api/v2/filters/:id` - Get a specific filter ✅ NEW! (2025-01-20)
+- [x] `POST /api/v2/filters` - Create a filter ✅ NEW! (2025-01-20)
+- [x] `PUT /api/v2/filters/:id` - Update a filter ✅ NEW! (2025-01-20)
+- [x] `DELETE /api/v2/filters/:id` - Delete a filter ✅ NEW! (2025-01-20)
+- [x] `GET /api/v2/filters/:filter_id/keywords` - Get filter keywords ✅ NEW! (2025-01-20)
+- [x] `POST /api/v2/filters/:filter_id/keywords` - Add keyword to filter ✅ NEW! (2025-01-20)
 
 ### Priority 4 - Enhanced Features
 - `GET /api/v1/favourites` - Get favorited statuses

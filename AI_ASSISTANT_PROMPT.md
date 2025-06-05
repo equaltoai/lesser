@@ -149,11 +149,11 @@ Lesser now has:
 
 ### ⭐ IMMEDIATE NEXT PRIORITIES
 
-1. **Filters & Mutes** (HIGH PRIORITY) 🔴
-   - Content filtering system
+1. **Filters & Mutes** ✅ COMPLETED (2025-01-20)
+   - Content filtering system (v2 API)
    - Mute accounts/keywords
    - Filter contexts (home, public, etc)
-   - Client-side filter hints
+   - Server-side filtering with client hints
 
 ### 🔧 Future Enhancement Options
 

@@ -202,6 +202,31 @@ type Storage interface {
 	VoteOnPoll(ctx context.Context, pollID string, voterID string, choices []int) error
 	GetPollVotes(ctx context.Context, pollID string) (map[string][]int, error)
 	HasUserVoted(ctx context.Context, pollID string, userID string) (bool, []int, error)
+
+	// Mute operations
+	CreateMute(ctx context.Context, mute *Mute) error
+	GetMute(ctx context.Context, actor, mutedActor string) (*Mute, error)
+	DeleteMute(ctx context.Context, actor, mutedActor string) error
+	GetMutedActors(ctx context.Context, actor string, limit int, cursor string) ([]*Mute, string, error)
+	IsMuted(ctx context.Context, actor, targetActor string) (bool, error)
+
+	// Filter operations (v2)
+	CreateFilter(ctx context.Context, filter *Filter) error
+	GetFilter(ctx context.Context, filterID string) (*Filter, error)
+	GetFiltersForUser(ctx context.Context, username string) ([]*Filter, error)
+	UpdateFilter(ctx context.Context, filterID string, updates map[string]interface{}) error
+	DeleteFilter(ctx context.Context, filterID string) error
+
+	// Filter keyword operations
+	AddFilterKeyword(ctx context.Context, filterID string, keyword *FilterKeyword) error
+	GetFilterKeywords(ctx context.Context, filterID string) ([]*FilterKeyword, error)
+	UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]interface{}) error
+	DeleteFilterKeyword(ctx context.Context, keywordID string) error
+
+	// Filter status operations
+	AddFilterStatus(ctx context.Context, filterID string, status *FilterStatus) error
+	GetFilterStatuses(ctx context.Context, filterID string) ([]*FilterStatus, error)
+	DeleteFilterStatus(ctx context.Context, statusID string) error
 }
 
 // User represents a user account in the system
@@ -572,4 +597,43 @@ type Poll struct {
 	VotesCount  int              `dynamodbav:"votesCount"`  // Total number of votes
 	VotersCount int              `dynamodbav:"votersCount"` // Total number of voters
 	Votes       map[string][]int `dynamodbav:"votes"`       // Map of voter ID to option indices
+}
+
+// Mute represents a mute relationship
+type Mute struct {
+	Actor             string    `dynamodbav:"actor"`              // The actor doing the muting
+	Object            string    `dynamodbav:"object"`             // The actor being muted
+	ID                string    `dynamodbav:"id"`                 // The mute activity ID
+	HideNotifications bool      `dynamodbav:"hide_notifications"` // Whether to hide notifications from this user
+	Published         time.Time `dynamodbav:"published"`          // When the mute was created
+	CreatedAt         time.Time `dynamodbav:"created_at"`         // Database timestamp
+}
+
+// Filter represents a filter in the storage layer
+type Filter struct {
+	ID           string     `dynamodbav:"id"`
+	Username     string     `dynamodbav:"username"`
+	Title        string     `dynamodbav:"title"`
+	Context      []string   `dynamodbav:"context"`       // home, notifications, public, thread, account
+	FilterAction string     `dynamodbav:"filter_action"` // warn, hide, blur
+	ExpiresAt    *time.Time `dynamodbav:"expires_at,omitempty"`
+	CreatedAt    time.Time  `dynamodbav:"created_at"`
+	UpdatedAt    time.Time  `dynamodbav:"updated_at"`
+}
+
+// FilterKeyword represents a keyword in a filter
+type FilterKeyword struct {
+	ID        string    `dynamodbav:"id"`
+	FilterID  string    `dynamodbav:"filter_id"`
+	Keyword   string    `dynamodbav:"keyword"`
+	WholeWord bool      `dynamodbav:"whole_word"`
+	CreatedAt time.Time `dynamodbav:"created_at"`
+}
+
+// FilterStatus represents a status in a filter
+type FilterStatus struct {
+	ID        string    `dynamodbav:"id"`
+	FilterID  string    `dynamodbav:"filter_id"`
+	StatusID  string    `dynamodbav:"status_id"`
+	CreatedAt time.Time `dynamodbav:"created_at"`
 }

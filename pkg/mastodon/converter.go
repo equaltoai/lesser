@@ -21,6 +21,13 @@ type Converter interface {
 	// Conversation conversions
 	ConversationToAPI(conv *storage.Conversation, participants []*activitypub.Actor, lastStatus interface{}, unread bool) models.Conversation
 
+	// Filter conversions
+	ConvertFilterToMastodon(filter *storage.Filter, keywords []*storage.FilterKeyword, statuses []*storage.FilterStatus) *Filter
+	ConvertFilterKeywordToV1(keyword *storage.FilterKeyword, filter *storage.Filter) *V1Filter
+
+	// Mute conversions
+	ConvertMuteToRelationship(relationship *models.Relationship, mute *storage.Mute)
+
 	// Utility methods
 	ExtractUsernameFromActorID(actorID string) string
 	ExtractIDFromURL(url string) string

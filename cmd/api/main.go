@@ -309,8 +309,14 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 					// TODO: GET /api/v1/accounts/:id/followers - Get account's followers
 					// TODO: GET /api/v1/accounts/:id/following - Get account's following
 					// TODO: GET /api/v1/accounts/:id/featured_tags - Get account's featured tags
-					// TODO: POST /api/v1/accounts/:id/mute - Mute account
-					// TODO: POST /api/v1/accounts/:id/unmute - Unmute account
+				case "mute":
+					if method == http.MethodPost {
+						return handler.HandleMuteAccount(ctx, request, accountID)
+					}
+				case "unmute":
+					if method == http.MethodPost {
+						return handler.HandleUnmuteAccount(ctx, request, accountID)
+					}
 					// TODO: POST /api/v1/accounts/:id/pin - Pin account to profile
 					// TODO: POST /api/v1/accounts/:id/unpin - Unpin account from profile
 					// TODO: POST /api/v1/accounts/:id/note - Set private note on account
@@ -328,7 +334,10 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/blocks" && method == http.MethodGet {
 		return handler.HandleGetBlocks(ctx, request)
 	}
-	// TODO: GET /api/v1/mutes - View muted accounts
+	// Mutes list
+	if path == "/mutes" && method == http.MethodGet {
+		return handler.HandleGetMutedAccounts(ctx, request)
+	}
 	// TODO: GET /api/v1/domain_blocks - View blocked domains
 	// TODO: POST /api/v1/domain_blocks - Block a domain
 	// TODO: DELETE /api/v1/domain_blocks - Unblock a domain
@@ -602,19 +611,46 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}
 	}
 
-	// TODO: GET /api/v1/filters - View filters
-	// TODO: GET /api/v1/filters/:id - View single filter
-	// TODO: POST /api/v1/filters - Create filter
-	// TODO: PUT /api/v1/filters/:id - Update filter
-	// TODO: DELETE /api/v1/filters/:id - Delete filter
-	// TODO: GET /api/v1/filters/:filter_id/keywords - View filter keywords
-	// TODO: POST /api/v1/filters/:filter_id/keywords - Add filter keyword
-	// TODO: GET /api/v1/filters/:filter_id/keywords/:id - View filter keyword
-	// TODO: PUT /api/v1/filters/:filter_id/keywords/:id - Update filter keyword
-	// TODO: DELETE /api/v1/filters/:filter_id/keywords/:id - Delete filter keyword
-	// TODO: GET /api/v1/filters/:filter_id/statuses - View filtered statuses
-	// TODO: POST /api/v1/filters/:filter_id/statuses - Add filtered status
-	// TODO: DELETE /api/v1/filters/:filter_id/statuses/:id - Remove filtered status
+	// ==================== FILTERS (v2) ====================
+	// Filters v2
+	if path == "/filters" {
+		switch method {
+		case http.MethodGet:
+			return handler.HandleGetFilters(ctx, request)
+		case http.MethodPost:
+			return handler.HandleCreateFilter(ctx, request)
+		}
+	}
+	// Filter operations
+	if strings.HasPrefix(path, "/filters/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			filterID := parts[2]
+
+			if len(parts) == 4 {
+				action := parts[3]
+				switch action {
+				case "keywords":
+					switch method {
+					case http.MethodGet:
+						return handler.HandleGetFilterKeywords(ctx, request, filterID)
+					case http.MethodPost:
+						return handler.HandleAddFilterKeyword(ctx, request, filterID)
+					}
+				}
+			} else if len(parts) == 3 {
+				// Single filter operations
+				switch method {
+				case http.MethodGet:
+					return handler.HandleGetFilter(ctx, request, filterID)
+				case http.MethodPut:
+					return handler.HandleUpdateFilter(ctx, request, filterID)
+				case http.MethodDelete:
+					return handler.HandleDeleteFilter(ctx, request, filterID)
+				}
+			}
+		}
+	}
 
 	// Bookmarks
 	if path == "/bookmarks" && method == http.MethodGet {
