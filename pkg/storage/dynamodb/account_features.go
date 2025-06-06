@@ -150,10 +150,13 @@ func (s *dynamoDBStorage) IsAccountPinned(ctx context.Context, username, pinnedA
 	return result.Item != nil, nil
 }
 
-// SetAccountNote creates or updates a private note on an account
-func (s *dynamoDBStorage) SetAccountNote(ctx context.Context, note *storage.AccountNote) error {
+// CreateAccountNote creates a new private note on an account
+func (s *dynamoDBStorage) CreateAccountNote(ctx context.Context, note *storage.AccountNote) error {
+	if note.CreatedAt.IsZero() {
+		note.CreatedAt = time.Now()
+	}
 	if note.UpdatedAt.IsZero() {
-		note.UpdatedAt = time.Now()
+		note.UpdatedAt = note.CreatedAt
 	}
 
 	// Create the record
@@ -171,13 +174,45 @@ func (s *dynamoDBStorage) SetAccountNote(ctx context.Context, note *storage.Acco
 		return err
 	}
 
-	// Put the item (overwrites if exists)
+	// Put the item
 	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(s.tableName),
 		Item:      av,
 	})
 	if err != nil {
-		s.logger().Error("failed to set account note", zap.Error(err))
+		s.logger().Error("failed to create account note", zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+// UpdateAccountNote updates an existing private note on an account
+func (s *dynamoDBStorage) UpdateAccountNote(ctx context.Context, note *storage.AccountNote) error {
+	note.UpdatedAt = time.Now()
+
+	// Create the record
+	record := AccountNoteRecord{
+		PK:        fmt.Sprintf("%s%s", AccountNotePKPrefix, note.Username),
+		SK:        fmt.Sprintf("%s%s", AccountNoteSK, note.TargetActorID),
+		Note:      note,
+		UpdatedAt: time.Now(),
+	}
+
+	// Marshal the record
+	av, err := attributevalue.MarshalMap(record)
+	if err != nil {
+		s.logger().Error("failed to marshal account note record", zap.Error(err))
+		return err
+	}
+
+	// Put the item (overwrites existing)
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(s.tableName),
+		Item:      av,
+	})
+	if err != nil {
+		s.logger().Error("failed to update account note", zap.Error(err))
 		return err
 	}
 

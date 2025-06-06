@@ -270,14 +270,34 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 					if method == http.MethodGet {
 						return handler.HandleGetStatusRebloggedBy(ctx, request, statusID)
 					}
-					// TODO: POST /api/v1/statuses/:id/mute - Mute conversation
-					// TODO: POST /api/v1/statuses/:id/unmute - Unmute conversation
-					// TODO: POST /api/v1/statuses/:id/pin - Pin status to profile
-					// TODO: POST /api/v1/statuses/:id/unpin - Unpin status from profile
-					// TODO: GET /api/v1/statuses/:id/source - View status source
-					// TODO: GET /api/v1/statuses/:id/history - View edit history
-					// TODO: PUT /api/v1/statuses/:id - Edit status
-					// TODO: POST /api/v1/statuses/:id/translate - Translate status
+				case "mute":
+					if method == http.MethodPost {
+						return handler.HandleMuteConversation(ctx, request, statusID)
+					}
+				case "unmute":
+					if method == http.MethodPost {
+						return handler.HandleUnmuteConversation(ctx, request, statusID)
+					}
+				case "pin":
+					if method == http.MethodPost {
+						return handler.HandlePinStatus(ctx, request, statusID)
+					}
+				case "unpin":
+					if method == http.MethodPost {
+						return handler.HandleUnpinStatus(ctx, request, statusID)
+					}
+				case "source":
+					if method == http.MethodGet {
+						return handler.HandleGetStatusSource(ctx, request, statusID)
+					}
+				case "history":
+					if method == http.MethodGet {
+						return handler.HandleGetStatusHistory(ctx, request, statusID)
+					}
+				case "translate":
+					if method == http.MethodPost {
+						return handler.HandleTranslateStatus(ctx, request, statusID)
+					}
 				}
 			} else if len(parts) == 3 {
 				// Direct status operations
@@ -331,7 +351,10 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 					if method == http.MethodGet {
 						return handler.HandleGetAccountFollowing(ctx, request, accountID)
 					}
-					// TODO: GET /api/v1/accounts/:id/featured_tags - Get account's featured tags
+				case "featured_tags":
+					if method == http.MethodGet {
+						return handler.HandleGetAccountFeaturedTags(ctx, request, accountID)
+					}
 				case "mute":
 					if method == http.MethodPost {
 						return handler.HandleMuteAccount(ctx, request, accountID)
@@ -524,6 +547,11 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}), nil
 	}
 
+	// Instance translation languages
+	if path == "/instance/translation_languages" && method == http.MethodGet {
+		return handler.HandleGetTranslationLanguages(ctx, request)
+	}
+
 	// Instance costs
 	if path == "/instance/costs" && method == http.MethodGet {
 		return handler.HandleGetInstanceCosts(ctx, request)
@@ -564,19 +592,38 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/notifications" && method == http.MethodGet {
 		return handler.HandleGetNotifications(ctx, request)
 	}
-	if path == "/notifications/clear" && method == http.MethodPost {
-		return handler.HandleClearNotifications(ctx, request)
-	}
-	// Notification operations
 	if strings.HasPrefix(path, "/notifications/") {
 		parts := strings.Split(path, "/")
-		if len(parts) >= 3 {
+		if len(parts) == 3 {
 			notificationID := parts[2]
-
-			if len(parts) == 4 && parts[3] == "dismiss" && method == http.MethodPost {
-				return handler.HandleDismissNotification(ctx, request, notificationID)
-			} else if len(parts) == 3 && method == http.MethodGet {
+			if method == http.MethodGet {
 				return handler.HandleGetNotification(ctx, request, notificationID)
+			}
+			if method == http.MethodPost && strings.HasSuffix(path, "/dismiss") {
+				return handler.HandleDismissNotification(ctx, request, notificationID)
+			}
+		}
+		if len(parts) == 3 && parts[2] == "clear" && method == http.MethodPost {
+			return handler.HandleClearNotifications(ctx, request)
+		}
+	}
+
+	// ==================== SCHEDULED STATUSES ====================
+	// Scheduled statuses
+	if path == "/scheduled_statuses" && method == http.MethodGet {
+		return handler.HandleGetScheduledStatuses(ctx, request)
+	}
+	if strings.HasPrefix(path, "/scheduled_statuses/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 {
+			scheduledID := parts[2]
+			switch method {
+			case http.MethodGet:
+				return handler.HandleGetScheduledStatus(ctx, request, scheduledID)
+			case http.MethodPut:
+				return handler.HandleUpdateScheduledStatus(ctx, request, scheduledID)
+			case http.MethodDelete:
+				return handler.HandleDeleteScheduledStatus(ctx, request, scheduledID)
 			}
 		}
 	}
@@ -805,12 +852,22 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	// ==================== FEATURED CONTENT ====================
 	// Featured tags
 	if path == "/featured_tags" && method == http.MethodGet {
-		// TODO: Implement featured tags
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetFeaturedTags(ctx, request)
 	}
-	// TODO: POST /api/v1/featured_tags - Feature a tag
-	// TODO: DELETE /api/v1/featured_tags/:id - Unfeature a tag
-	// TODO: GET /api/v1/featured_tags/suggestions - Get suggested tags
+	if path == "/featured_tags" && method == http.MethodPost {
+		return handler.HandleCreateFeaturedTag(ctx, request)
+	}
+	if strings.HasPrefix(path, "/featured_tags/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 {
+			if parts[2] == "suggestions" && method == http.MethodGet {
+				return handler.HandleGetFeaturedTagSuggestions(ctx, request)
+			} else if method == http.MethodDelete {
+				featuredTagID := parts[2]
+				return handler.HandleDeleteFeaturedTag(ctx, request, featuredTagID)
+			}
+		}
+	}
 
 	// ==================== TRENDS ====================
 	// Trends
@@ -945,9 +1002,37 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	// TODO: GET /api/v1/suggestions - Get follow suggestions
 	// TODO: DELETE /api/v1/suggestions/:account_id - Remove suggestion
 
-	// TODO: GET /api/v1/tags/:id - View hashtag info
-	// TODO: POST /api/v1/tags/:id/follow - Follow hashtag
-	// TODO: POST /api/v1/tags/:id/unfollow - Unfollow hashtag
+	// ==================== HASHTAGS ====================
+	// Hashtag endpoints
+	if strings.HasPrefix(path, "/tags/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			tagName := parts[2]
+
+			if len(parts) == 3 && method == http.MethodGet {
+				// GET /api/v1/tags/:id - View hashtag info
+				return handler.HandleGetTag(ctx, request, tagName)
+			} else if len(parts) == 4 {
+				action := parts[3]
+				switch action {
+				case "follow":
+					if method == http.MethodPost {
+						// POST /api/v1/tags/:id/follow - Follow hashtag
+						return handler.HandleFollowTag(ctx, request, tagName)
+					}
+				case "unfollow":
+					if method == http.MethodPost {
+						// POST /api/v1/tags/:id/unfollow - Unfollow hashtag
+						return handler.HandleUnfollowTag(ctx, request, tagName)
+					}
+				}
+			}
+		}
+	}
+	// Followed tags
+	if path == "/followed_tags" && method == http.MethodGet {
+		return handler.HandleGetFollowedTags(ctx, request)
+	}
 
 	// TODO: GET /api/v1/markers - Get timeline position markers
 	// TODO: POST /api/v1/markers - Save timeline position

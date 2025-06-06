@@ -847,15 +847,15 @@ func (h *Handler) HandleSetAccountNote(ctx context.Context, request events.APIGa
 
 	// Create or update account note
 	note := &storage.AccountNote{
-		Username:       claims.Username,
-		TargetActorID:  targetActor.ID,
-		TargetUsername: accountID,
-		Note:           req.Comment,
-		UpdatedAt:      time.Now(),
+		Username:      claims.Username,
+		TargetActorID: targetActor.ID,
+		Note:          req.Comment,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
 	}
 
 	// Store the note
-	if err := h.store.SetAccountNote(ctx, note); err != nil {
+	if err := h.store.CreateAccountNote(ctx, note); err != nil {
 		h.logger.Error("failed to set account note", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}

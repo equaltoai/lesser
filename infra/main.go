@@ -686,15 +686,9 @@ func main() {
 			return err
 		}
 
-		// Create WebSocket Lambda functions
-		streamingLambda, err := createLambda("streaming", "streaming", 30)
-		if err != nil {
-			return err
-		}
-		streamRouterLambda, err := createLambda("stream-router", "stream-router", 30)
-		if err != nil {
-			return err
-		}
+		// WebSocket Lambda functions will be created after tables are set up
+		var streamingLambda *lambda.Function
+		var streamRouterLambda *lambda.Function
 
 		// Create DynamoDB tables for WebSocket connections
 		connectionsTable, err := dynamodb.NewTable(ctx, "lesser-streaming-connections", &dynamodb.TableArgs{
@@ -759,6 +753,46 @@ func main() {
 			return err
 		}
 
+		// Add DynamoDB policy for WebSocket tables
+		wsTablePolicy := pulumi.All(connectionsTable.Arn, subscriptionsTable.Arn).ApplyT(func(args []interface{}) (string, error) {
+			connectionsArn := args[0].(string)
+			subscriptionsArn := args[1].(string)
+			policy := map[string]interface{}{
+				"Version": "2012-10-17",
+				"Statement": []interface{}{
+					map[string]interface{}{
+						"Effect": "Allow",
+						"Action": []string{
+							"dynamodb:GetItem",
+							"dynamodb:PutItem",
+							"dynamodb:UpdateItem",
+							"dynamodb:DeleteItem",
+							"dynamodb:Query",
+							"dynamodb:Scan",
+							"dynamodb:BatchGetItem",
+							"dynamodb:BatchWriteItem",
+						},
+						"Resource": []string{
+							connectionsArn,
+							fmt.Sprintf("%s/index/*", connectionsArn),
+							subscriptionsArn,
+							fmt.Sprintf("%s/index/*", subscriptionsArn),
+						},
+					},
+				},
+			}
+			policyJSON, err := json.Marshal(policy)
+			return string(policyJSON), err
+		})
+
+		_, err = iam.NewRolePolicy(ctx, "lambda-dynamodb-websocket", &iam.RolePolicyArgs{
+			Role:   lambdaRole.Name,
+			Policy: wsTablePolicy,
+		})
+		if err != nil {
+			return err
+		}
+
 		// Create WebSocket API
 		wsApi, err := apigatewayv2.NewApi(ctx, "lesser-websocket-api", &apigatewayv2.ApiArgs{
 			ProtocolType:             pulumi.String("WEBSOCKET"),
@@ -779,6 +813,7 @@ func main() {
 			"SUBSCRIPTIONS_TABLE": subscriptionsTable.Name,
 			"DOMAIN":              pulumi.String(domain),
 			"WEBSOCKET_ENDPOINT":  pulumi.Sprintf("https://%s.execute-api.us-east-1.amazonaws.com/%s", wsApi.ID(), environment),
+			"JWT_SECRET":          jwtSecret,
 		}
 
 		// Create WebSocket Lambda with updated environment
@@ -817,9 +852,9 @@ func main() {
 		connectIntegration, err := apigatewayv2.NewIntegration(ctx, "lesser-ws-connect-integration", &apigatewayv2.IntegrationArgs{
 			ApiId:                wsApi.ID(), // Use WebSocket API, not HTTP API
 			IntegrationType:      pulumi.String("AWS_PROXY"),
-			IntegrationUri:       streamingLambda.Arn,
+			IntegrationUri:       streamingLambda.InvokeArn,
 			PayloadFormatVersion: pulumi.String("1.0"),
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{streamingLambda}))
 		if err != nil {
 			return err
 		}
@@ -827,9 +862,9 @@ func main() {
 		disconnectIntegration, err := apigatewayv2.NewIntegration(ctx, "lesser-ws-disconnect-integration", &apigatewayv2.IntegrationArgs{
 			ApiId:                wsApi.ID(), // Use WebSocket API, not HTTP API
 			IntegrationType:      pulumi.String("AWS_PROXY"),
-			IntegrationUri:       streamingLambda.Arn,
+			IntegrationUri:       streamingLambda.InvokeArn,
 			PayloadFormatVersion: pulumi.String("1.0"),
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{streamingLambda}))
 		if err != nil {
 			return err
 		}
@@ -837,9 +872,9 @@ func main() {
 		defaultIntegration, err := apigatewayv2.NewIntegration(ctx, "lesser-ws-default-integration", &apigatewayv2.IntegrationArgs{
 			ApiId:                wsApi.ID(), // Use WebSocket API, not HTTP API
 			IntegrationType:      pulumi.String("AWS_PROXY"),
-			IntegrationUri:       streamingLambda.Arn,
+			IntegrationUri:       streamingLambda.InvokeArn,
 			PayloadFormatVersion: pulumi.String("1.0"),
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{streamingLambda}))
 		if err != nil {
 			return err
 		}
@@ -849,7 +884,7 @@ func main() {
 			ApiId:    wsApi.ID(),
 			RouteKey: pulumi.String("$connect"),
 			Target:   pulumi.Sprintf("integrations/%s", connectIntegration.ID()),
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{connectIntegration}))
 		if err != nil {
 			return err
 		}
@@ -858,7 +893,7 @@ func main() {
 			ApiId:    wsApi.ID(),
 			RouteKey: pulumi.String("$disconnect"),
 			Target:   pulumi.Sprintf("integrations/%s", disconnectIntegration.ID()),
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{disconnectIntegration}))
 		if err != nil {
 			return err
 		}
@@ -867,7 +902,7 @@ func main() {
 			ApiId:    wsApi.ID(),
 			RouteKey: pulumi.String("$default"),
 			Target:   pulumi.Sprintf("integrations/%s", defaultIntegration.ID()),
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{defaultIntegration}))
 		if err != nil {
 			return err
 		}
@@ -892,6 +927,32 @@ func main() {
 			Function:  streamingLambda.Name,
 			Principal: pulumi.String("apigateway.amazonaws.com"),
 			SourceArn: pulumi.Sprintf("%s/*/*", wsApi.ExecutionArn),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add API Gateway Management API permissions for stream router
+		wsManagementPolicy := wsApi.ExecutionArn.ApplyT(func(executionArn string) (string, error) {
+			policy := map[string]interface{}{
+				"Version": "2012-10-17",
+				"Statement": []interface{}{
+					map[string]interface{}{
+						"Effect": "Allow",
+						"Action": []string{
+							"execute-api:ManageConnections",
+						},
+						"Resource": fmt.Sprintf("%s/*/*/*", executionArn),
+					},
+				},
+			}
+			policyJSON, err := json.Marshal(policy)
+			return string(policyJSON), err
+		})
+
+		_, err = iam.NewRolePolicy(ctx, "lambda-ws-management", &iam.RolePolicyArgs{
+			Role:   lambdaRole.Name,
+			Policy: wsManagementPolicy,
 		})
 		if err != nil {
 			return err
@@ -1170,12 +1231,12 @@ func main() {
 			return err
 		}
 
-		// Map WebSocket API to subdomain at /api
+		// Map WebSocket API to root of subdomain
 		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-websocket-mapping", &apigatewayv2.ApiMappingArgs{
 			ApiId:         wsApi.ID(),
 			DomainName:    wsDomain.ID(),
 			Stage:         wsStage.ID(),
-			ApiMappingKey: pulumi.String("api"),
+			ApiMappingKey: pulumi.String(""), // Empty string maps to root
 		})
 		if err != nil {
 			return err

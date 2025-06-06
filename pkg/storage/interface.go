@@ -33,6 +33,10 @@ type Storage interface {
 	DeleteObject(ctx context.Context, id string) error
 	GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error)
 
+	// Update history operations
+	CreateUpdateHistory(ctx context.Context, history *UpdateHistory) error
+	GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*UpdateHistory, error)
+
 	// Relationship operations
 	CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error
 	AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error
@@ -90,10 +94,6 @@ type Storage interface {
 	GetTombstone(ctx context.Context, objectID string) (*Tombstone, error)
 	CascadeDeleteLikes(ctx context.Context, objectID string) error
 	CascadeDeleteAnnounces(ctx context.Context, objectID string) error
-
-	// Update history operations
-	CreateUpdateHistory(ctx context.Context, history *UpdateHistory) error
-	GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*UpdateHistory, error)
 
 	// Block operations
 	CreateBlock(ctx context.Context, block *Block) error
@@ -258,12 +258,46 @@ type Storage interface {
 	CreateAccountPin(ctx context.Context, pin *AccountPin) error
 	DeleteAccountPin(ctx context.Context, username, pinnedActorID string) error
 	GetAccountPins(ctx context.Context, username string) ([]*AccountPin, error)
-	IsAccountPinned(ctx context.Context, username, pinnedActorID string) (bool, error)
-
-	// Account note operations (private notes on accounts)
-	SetAccountNote(ctx context.Context, note *AccountNote) error
+	IsAccountPinned(ctx context.Context, username, actorID string) (bool, error)
+	CreateAccountNote(ctx context.Context, note *AccountNote) error
 	GetAccountNote(ctx context.Context, username, targetActorID string) (*AccountNote, error)
+	UpdateAccountNote(ctx context.Context, note *AccountNote) error
 	DeleteAccountNote(ctx context.Context, username, targetActorID string) error
+	RemoveFromFollowers(ctx context.Context, username, followerUsername string) error
+
+	// Status pinning operations
+	CreateStatusPin(ctx context.Context, pin *StatusPin) error
+	DeleteStatusPin(ctx context.Context, username, statusID string) error
+	GetStatusPins(ctx context.Context, username string) ([]*StatusPin, error)
+	IsStatusPinned(ctx context.Context, username, statusID string) (bool, error)
+	CountUserPinnedStatuses(ctx context.Context, username string) (int, error)
+
+	// Conversation muting operations
+	CreateConversationMute(ctx context.Context, mute *ConversationMute) error
+	DeleteConversationMute(ctx context.Context, username, conversationID string) error
+	IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error)
+	GetMutedConversations(ctx context.Context, username string) ([]string, error)
+
+	// Scheduled status operations
+	CreateScheduledStatus(ctx context.Context, scheduled *ScheduledStatus) error
+	GetScheduledStatus(ctx context.Context, id string) (*ScheduledStatus, error)
+	GetScheduledStatuses(ctx context.Context, username string, limit int, cursor string) ([]*ScheduledStatus, string, error)
+	UpdateScheduledStatus(ctx context.Context, scheduled *ScheduledStatus) error
+	DeleteScheduledStatus(ctx context.Context, id string) error
+	GetDueScheduledStatuses(ctx context.Context, before time.Time, limit int) ([]*ScheduledStatus, error)
+	MarkScheduledStatusPublished(ctx context.Context, id string) error
+
+	// Hashtag following
+	FollowHashtag(ctx context.Context, userID string, hashtag string) error
+	UnfollowHashtag(ctx context.Context, userID string, hashtag string) error
+	IsFollowingHashtag(ctx context.Context, userID string, hashtag string) (bool, error)
+	GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]string, string, error)
+
+	// Featured tags
+	CreateFeaturedTag(ctx context.Context, userID string, tagName string) (*FeaturedTag, error)
+	DeleteFeaturedTag(ctx context.Context, userID string, featuredTagID string) error
+	GetFeaturedTags(ctx context.Context, userID string) ([]*FeaturedTag, error)
+	GetTagSuggestions(ctx context.Context, userID string, limit int) ([]string, error)
 }
 
 // User represents a user account in the system
@@ -579,10 +613,9 @@ type NotificationFilter struct {
 
 // SearchSuggestion represents a search suggestion
 type SearchSuggestion struct {
-	Type        string `json:"type"`     // "username", "display_name", "hashtag"
-	Value       string `json:"value"`    // The suggestion text
-	DisplayText string `json:"display"`  // What to show to the user
-	Username    string `json:"username"` // For account suggestions
+	Type  string `json:"type"`  // account, hashtag, etc.
+	Value string `json:"value"` // The suggested value
+	Score int    `json:"score"` // Relevance score
 }
 
 // PushSubscription represents a web push subscription
@@ -696,9 +729,55 @@ type AccountPin struct {
 
 // AccountNote represents a private note on an account
 type AccountNote struct {
-	Username       string    `dynamodbav:"username"`        // Who wrote the note
-	TargetActorID  string    `dynamodbav:"target_actor_id"` // The actor the note is about
-	TargetUsername string    `dynamodbav:"target_username"` // The username the note is about
-	Note           string    `dynamodbav:"note"`            // The note content
-	UpdatedAt      time.Time `dynamodbav:"updated_at"`
+	Username      string    `dynamodbav:"username"`        // Who wrote the note
+	TargetActorID string    `dynamodbav:"target_actor_id"` // The actor the note is about
+	Note          string    `dynamodbav:"note"`            // The note content
+	CreatedAt     time.Time `dynamodbav:"created_at"`
+	UpdatedAt     time.Time `dynamodbav:"updated_at"`
+}
+
+// StatusPin represents a pinned status on a user's profile
+type StatusPin struct {
+	Username  string    `dynamodbav:"username"`  // Who pinned the status
+	StatusID  string    `dynamodbav:"status_id"` // The status that was pinned
+	CreatedAt time.Time `dynamodbav:"created_at"`
+}
+
+// ConversationMute represents a muted conversation thread
+type ConversationMute struct {
+	Username       string    `dynamodbav:"username"`        // Who muted the conversation
+	ConversationID string    `dynamodbav:"conversation_id"` // The conversation/thread ID (usually the root status ID)
+	CreatedAt      time.Time `dynamodbav:"created_at"`
+	ExpiresAt      time.Time `dynamodbav:"expires_at,omitempty"` // Optional expiration
+}
+
+// ScheduledStatus represents a status scheduled for future publication
+type ScheduledStatus struct {
+	ID            string                 `dynamodbav:"id"`
+	Username      string                 `dynamodbav:"username"` // Who scheduled the status
+	Status        string                 `dynamodbav:"status"`   // The status content
+	MediaIDs      []string               `dynamodbav:"media_ids,omitempty"`
+	Sensitive     bool                   `dynamodbav:"sensitive"`
+	SpoilerText   string                 `dynamodbav:"spoiler_text,omitempty"`
+	Visibility    string                 `dynamodbav:"visibility"` // public, unlisted, private, direct
+	Language      string                 `dynamodbav:"language,omitempty"`
+	InReplyToID   string                 `dynamodbav:"in_reply_to_id,omitempty"`
+	Poll          map[string]interface{} `dynamodbav:"poll,omitempty"` // Poll data if any
+	ScheduledAt   time.Time              `dynamodbav:"scheduled_at"`   // When to publish
+	CreatedAt     time.Time              `dynamodbav:"created_at"`
+	UpdatedAt     time.Time              `dynamodbav:"updated_at"`
+	Published     bool                   `dynamodbav:"published"` // Whether it has been published
+	PublishedAt   *time.Time             `dynamodbav:"published_at,omitempty"`
+	ApplicationID string                 `dynamodbav:"application_id,omitempty"` // OAuth app that created it
+}
+
+// FeaturedTag represents a hashtag featured on a user's profile
+type FeaturedTag struct {
+	ID            string    `dynamodbav:"id"`
+	Username      string    `dynamodbav:"username"`       // Who featured the tag
+	Name          string    `dynamodbav:"name"`           // The tag name (without #)
+	URL           string    `dynamodbav:"url"`            // URL to the tag
+	StatusesCount int       `dynamodbav:"statuses_count"` // Number of statuses with this tag
+	LastStatusAt  string    `dynamodbav:"last_status_at"` // Last time the user posted with this tag
+	CreatedAt     time.Time `dynamodbav:"created_at"`
 }

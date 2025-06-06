@@ -336,12 +336,6 @@ func (h *Handler) HandleGetUserNotes(ctx context.Context, request events.APIGate
 
 // Helper functions
 
-func (h *Handler) getNotesService() (*notes.Service, error) {
-	// For now, we're using the functions directly
-	// In a full implementation, we'd create a proper service
-	return nil, nil
-}
-
 // Helper method to get reputation service
 func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
 	// Create AWS config

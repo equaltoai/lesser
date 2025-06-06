@@ -160,10 +160,9 @@ func (h *Handler) HandleGetSearchSuggestions(ctx context.Context, request events
 	response := make([]map[string]interface{}, 0, len(suggestions))
 	for _, sugg := range suggestions {
 		response = append(response, map[string]interface{}{
-			"type":     sugg.Type,
-			"value":    sugg.Value,
-			"display":  sugg.DisplayText,
-			"username": sugg.Username,
+			"type":  sugg.Type,
+			"value": sugg.Value,
+			"score": sugg.Score,
 		})
 	}
 

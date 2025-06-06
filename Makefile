@@ -185,6 +185,18 @@ build-lambdas:
 	@echo "Building ai-processor..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/ai-processor
 	@cd bin && zip -q ai-processor.zip bootstrap && rm bootstrap
+	@echo "Building streaming..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/streaming
+	@cd bin && zip -q streaming.zip bootstrap && rm bootstrap
+	@echo "Building stream-router..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/stream-router
+	@cd bin && zip -q stream-router.zip bootstrap && rm bootstrap
+	@echo "Building note-processor..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/note-processor
+	@cd bin && zip -q note-processor.zip bootstrap && rm bootstrap
+	@echo "Building moderation-processor..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/moderation-processor
+	@cd bin && zip -q moderation-processor.zip bootstrap && rm bootstrap
 	@echo "Lambda functions built successfully!"
 
 .PHONY: deploy
@@ -201,8 +213,6 @@ build-activity-processor:
 	@echo "Building activity-processor..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/activity-processor
 	@cd bin && zip -q activity-processor.zip bootstrap && rm bootstrap
-
-
 
 build-configure-instance:
 	@echo "Building cmd/configure-instance..."

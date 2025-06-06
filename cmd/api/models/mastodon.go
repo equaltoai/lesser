@@ -1,5 +1,7 @@
 package models
 
+import "encoding/json"
+
 // AccountRegistrationRequest represents a user registration request
 type AccountRegistrationRequest struct {
 	Username  string `json:"username"`
@@ -69,12 +71,16 @@ type CreateStatusRequest struct {
 	SpoilerText string   `json:"spoiler_text,omitempty"`   // Content warning
 	Visibility  string   `json:"visibility"`               // public, unlisted, private, direct
 	Language    string   `json:"language,omitempty"`       // ISO 639-1 language code
+	ScheduledAt *string  `json:"scheduled_at,omitempty"`   // ISO 8601 datetime for scheduling
 }
 
-// Poll represents a poll in a status (placeholder for future implementation)
+// Poll represents a poll in a status
+// Note: This struct is used for both requests and responses.
+// For requests, Options field contains simple strings.
+// For responses, OptionsData should be populated and will be marshaled as "options".
 type Poll struct {
 	// Request fields (used when creating a poll)
-	Options    []string `json:"options,omitempty"`     // Array of poll options (2-4 options)
+	Options    []string `json:"options,omitempty"`     // Array of poll options (2-4 options) - only for requests
 	ExpiresIn  int      `json:"expires_in,omitempty"`  // Duration in seconds
 	Multiple   bool     `json:"multiple,omitempty"`    // Allow multiple choices
 	HideTotals bool     `json:"hide_totals,omitempty"` // Hide vote counts until poll ends
@@ -87,7 +93,7 @@ type Poll struct {
 	VotersCount int           `json:"voters_count,omitempty"` // Total number of voters
 	Voted       bool          `json:"voted,omitempty"`        // Whether the current user voted
 	OwnVotes    []int         `json:"own_votes,omitempty"`    // Which options the user voted for
-	OptionsData []PollOption  `json:"options,omitempty"`      // Detailed option data for responses
+	OptionsData []PollOption  `json:"-"`                      // Internal field for detailed option data
 	Emojis      []interface{} `json:"emojis,omitempty"`       // Custom emojis used in options
 }
 
@@ -276,6 +282,25 @@ type FavouriteResponse struct {
 	Language        string `json:"language"`
 }
 
+// StatusSource represents the source/raw content of a status
+type StatusSource struct {
+	ID          string `json:"id"`
+	Text        string `json:"text"`
+	SpoilerText string `json:"spoiler_text"`
+}
+
+// StatusEdit represents a single edit in the status history
+type StatusEdit struct {
+	Content          string        `json:"content"`
+	SpoilerText      string        `json:"spoiler_text"`
+	Sensitive        bool          `json:"sensitive"`
+	CreatedAt        string        `json:"created_at"`
+	Account          Account       `json:"account"`
+	Poll             *Poll         `json:"poll,omitempty"`
+	MediaAttachments []interface{} `json:"media_attachments"`
+	Emojis           []interface{} `json:"emojis"`
+}
+
 // SearchResult represents search results
 type SearchResult struct {
 	Accounts []Account `json:"accounts"`
@@ -285,14 +310,63 @@ type SearchResult struct {
 
 // Tag represents a hashtag
 type Tag struct {
-	Name    string       `json:"name"`
-	URL     string       `json:"url"`
-	History []TagHistory `json:"history"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	History []struct {
+		Day      string `json:"day"`
+		Uses     string `json:"uses"`
+		Accounts string `json:"accounts"`
+	} `json:"history,omitempty"`
 }
 
-// TagHistory represents hashtag usage history
+// TagHistory represents hashtag usage statistics for a day
 type TagHistory struct {
 	Day      string `json:"day"`
 	Uses     string `json:"uses"`
 	Accounts string `json:"accounts"`
+}
+
+// ScheduledStatus represents a scheduled status
+type ScheduledStatus struct {
+	ID               string        `json:"id"`
+	ScheduledAt      string        `json:"scheduled_at"`
+	Params           StatusParams  `json:"params"`
+	MediaAttachments []interface{} `json:"media_attachments"`
+}
+
+// StatusParams represents the parameters for a scheduled status
+type StatusParams struct {
+	Text          string   `json:"text"`
+	MediaIDs      []string `json:"media_ids,omitempty"`
+	Sensitive     bool     `json:"sensitive"`
+	SpoilerText   string   `json:"spoiler_text,omitempty"`
+	Visibility    string   `json:"visibility"`
+	Language      string   `json:"language,omitempty"`
+	InReplyToID   string   `json:"in_reply_to_id,omitempty"`
+	ApplicationID string   `json:"application_id,omitempty"`
+	Poll          *Poll    `json:"poll,omitempty"`
+}
+
+// ScheduledStatusUpdateRequest represents a request to update a scheduled status
+type ScheduledStatusUpdateRequest struct {
+	ScheduledAt string `json:"scheduled_at"`
+}
+
+// MarshalJSON custom marshaling for Poll to handle options field
+func (p Poll) MarshalJSON() ([]byte, error) {
+	type Alias Poll
+
+	// If OptionsData is populated (response case), we need to marshal it as "options"
+	if len(p.OptionsData) > 0 {
+		return json.Marshal(&struct {
+			Options []PollOption `json:"options"`
+			*Alias
+		}{
+			Options: p.OptionsData,
+			Alias:   (*Alias)(&p),
+		})
+	}
+
+	// Otherwise, use default marshaling (request case with string options)
+	return json.Marshal((*Alias)(&p))
 }

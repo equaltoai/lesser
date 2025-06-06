@@ -455,10 +455,9 @@ func (s *dynamoDBStorage) GetSearchSuggestions(ctx context.Context, prefix strin
 	result := make([]storage.SearchSuggestion, 0, len(suggestions))
 	for _, sugg := range suggestions {
 		result = append(result, storage.SearchSuggestion{
-			Type:        sugg.Type,
-			Value:       sugg.Value,
-			DisplayText: sugg.DisplayText,
-			Username:    sugg.Username,
+			Type:  sugg.Type,
+			Value: sugg.Value,
+			Score: int(sugg.Score),
 		})
 	}
 

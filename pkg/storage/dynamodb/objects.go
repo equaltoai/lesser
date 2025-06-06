@@ -240,13 +240,29 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 		return nil, fmt.Errorf("object not found: %s", id)
 	}
 
-	// Unmarshal the object record
+	// Unmarshal the object record using our wrapper that handles conversions
 	var record ObjectRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		log.Error("failed to unmarshal object",
 			zap.String("object_id", id),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to unmarshal object: %w", err)
+	}
+
+	// If Object is still nil after unmarshaling, try direct conversion
+	if record.Object == nil {
+		// Get the raw object data and convert it
+		if objItem, ok := result.Item["Object"]; ok {
+			// Create a temporary map with just the Object field
+			tempItem := map[string]types.AttributeValue{"Object": objItem}
+			var tempRecord struct {
+				Object interface{} `dynamodbav:"Object"`
+			}
+			if err := s.UnmarshalItem(tempItem, &tempRecord); err == nil && tempRecord.Object != nil {
+				return tempRecord.Object, nil
+			}
+		}
+		return nil, fmt.Errorf("object data is missing or invalid")
 	}
 
 	return record.Object, nil
@@ -698,33 +714,39 @@ func (s *dynamoDBStorage) CreateUpdateHistory(ctx context.Context, history *stor
 	return nil
 }
 
-// GetUpdateHistory retrieves the update history for an object
+// GetUpdateHistory retrieves update history for an object
 func (s *dynamoDBStorage) GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*storage.UpdateHistory, error) {
+	log := common.WithContext(ctx)
+
+	// Validate limit
 	if limit <= 0 || limit > 100 {
-		limit = 10
+		limit = 10 // default
 	}
 
-	// Query update history
-	result, err := s.client.Query(ctx, &dynamodb.QueryInput{
+	queryInput := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
-		KeyConditionExpression: aws.String("PK = :pk"),
+		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :sk)"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s#HISTORY", objectID)},
+			":sk": &types.AttributeValueMemberS{Value: "VERSION#"},
 		},
 		Limit:            aws.Int32(int32(limit)),
-		ScanIndexForward: aws.Bool(false), // Most recent first
-	})
+		ScanIndexForward: aws.Bool(false), // Newest first
+	}
+
+	result, err := s.client.Query(ctx, queryInput)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query update history: %w", err)
 	}
 
-	// Unmarshal results
 	histories := make([]*storage.UpdateHistory, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record struct {
 			History *storage.UpdateHistory `dynamodbav:"History"`
 		}
 		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+			log.Error("failed to unmarshal history record",
+				zap.Error(err))
 			continue
 		}
 		histories = append(histories, record.History)
@@ -733,25 +755,27 @@ func (s *dynamoDBStorage) GetUpdateHistory(ctx context.Context, objectID string,
 	return histories, nil
 }
 
-// extractUsernameFromActorID is already defined in activity.go
-
-// convertToObject converts various object types to our internal Object type
+// convertToObject converts various object representations to our internal Object type
 func convertToObject(obj interface{}) (*Object, error) {
 	// If it's already an Object, return it
 	if o, ok := obj.(*Object); ok {
 		return o, nil
 	}
 
-	// Try to marshal and unmarshal through JSON
-	data, err := json.Marshal(obj)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal object: %w", err)
+	// If it's a map, try to convert it
+	if m, ok := obj.(map[string]interface{}); ok {
+		jsonBytes, err := json.Marshal(m)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal map to JSON: %w", err)
+		}
+
+		var object Object
+		if err := json.Unmarshal(jsonBytes, &object); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal JSON to Object: %w", err)
+		}
+
+		return &object, nil
 	}
 
-	var result Object
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal object: %w", err)
-	}
-
-	return &result, nil
+	return nil, fmt.Errorf("unsupported object type: %T", obj)
 }
