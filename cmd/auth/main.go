@@ -149,6 +149,8 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 		return handleAuthorize(ctx, request)
 	case "/oauth/token":
 		return handleToken(ctx, request)
+	case "/oauth/revoke":
+		return handleRevoke(ctx, request)
 	case "/oauth/.well-known/oauth-authorization-server":
 		return handleDiscovery(ctx, request)
 	default:
@@ -954,6 +956,119 @@ func handleClientCredentialsGrant(ctx context.Context, req TokenRequest) (*event
 	}, nil
 }
 
+func handleRevoke(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	logger.Info("revoke endpoint called",
+		zap.String("method", request.RequestContext.HTTP.Method),
+		zap.Any("headers", request.Headers))
+
+	// Only accept POST
+	if request.RequestContext.HTTP.Method != http.MethodPost {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
+	}
+
+	// Parse request
+	contentType := request.Headers["content-type"]
+	if contentType == "" {
+		contentType = request.Headers["Content-Type"]
+	}
+
+	var token string
+	var tokenTypeHint string
+	var clientID string
+	var clientSecret string
+
+	// Parse form data
+	body := request.Body
+	if request.IsBase64Encoded {
+		decodedBytes, err := base64.StdEncoding.DecodeString(request.Body)
+		if err != nil {
+			logger.Error("failed to decode base64 body", zap.Error(err))
+			return common.BadRequest(err), nil
+		}
+		body = string(decodedBytes)
+	}
+
+	values, err := url.ParseQuery(body)
+	if err != nil {
+		logger.Error("failed to parse form data", zap.Error(err))
+		return common.BadRequest(err), nil
+	}
+
+	token = values.Get("token")
+	tokenTypeHint = values.Get("token_type_hint")
+	clientID = values.Get("client_id")
+	clientSecret = values.Get("client_secret")
+
+	// Validate request
+	if token == "" {
+		logger.Warn("missing token parameter")
+		return common.BadRequest(errors.New("missing token parameter")), nil
+	}
+
+	// Validate client credentials if provided
+	if clientID != "" {
+		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
+			logger.Error("client validation failed", zap.Error(err))
+			// Per RFC 7009, invalid client credentials should still return 200 OK
+			// to prevent token scanning attacks
+			return &events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusOK,
+				Headers: map[string]string{
+					"Content-Type":                 "application/json",
+					"Cache-Control":                "no-store",
+					"Pragma":                       "no-cache",
+					"Access-Control-Allow-Origin":  "*",
+					"Access-Control-Allow-Headers": "Content-Type, Authorization",
+				},
+				Body: "{}",
+			}, nil
+		}
+	}
+
+	// Try to revoke based on token type hint
+	revoked := false
+
+	if tokenTypeHint == "" || tokenTypeHint == "refresh_token" {
+		// Try to revoke as refresh token first
+		err := store.DeleteRefreshToken(ctx, token)
+		if err == nil {
+			logger.Info("refresh token revoked", zap.String("token", token[:10]+"..."))
+			revoked = true
+		} else if !common.IsNotFound(err) {
+			logger.Error("failed to delete refresh token", zap.Error(err))
+		}
+	}
+
+	if !revoked && (tokenTypeHint == "" || tokenTypeHint == "access_token") {
+		// Try to revoke as access token
+		// Since we're using JWTs for access tokens, we can't truly revoke them
+		// but we can add them to a blacklist if needed
+		// For now, we'll just validate it's a valid JWT
+		claims, err := oauthSvc.ValidateAccessToken(token)
+		if err == nil {
+			logger.Info("access token validated for revocation",
+				zap.String("username", claims.Username),
+				zap.String("client_id", claims.ClientID))
+			// In a production system, you might want to add this to a blacklist
+			revoked = true
+		}
+	}
+
+	// Per RFC 7009, always return 200 OK regardless of whether the token was found
+	// This prevents token scanning attacks
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type":                 "application/json",
+			"Cache-Control":                "no-store",
+			"Pragma":                       "no-cache",
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
+		},
+		Body: "{}",
+	}, nil
+}
+
 func handleDiscovery(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Only accept GET
 	if request.RequestContext.HTTP.Method != http.MethodGet {
@@ -965,6 +1080,7 @@ func handleDiscovery(ctx context.Context, request events.APIGatewayV2HTTPRequest
 		"issuer":                                cfg.BaseURL(),
 		"authorization_endpoint":                cfg.BaseURL() + "/oauth/authorize",
 		"token_endpoint":                        cfg.BaseURL() + "/oauth/token",
+		"revocation_endpoint":                   cfg.BaseURL() + "/oauth/revoke",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":      []string{"S256", "plain"},

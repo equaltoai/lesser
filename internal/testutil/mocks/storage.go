@@ -643,6 +643,31 @@ func (m *BaseMockStorage) RecordTrustUpdate(ctx context.Context, update *storage
 	return nil
 }
 
+// Account pin operations
+func (m *BaseMockStorage) CreateAccountPin(ctx context.Context, pin *storage.AccountPin) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteAccountPin(ctx context.Context, username, pinnedActorID string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
+	return []*storage.AccountPin{}, nil
+}
+func (m *BaseMockStorage) IsAccountPinned(ctx context.Context, username, pinnedActorID string) (bool, error) {
+	return false, nil
+}
+
+// Account note operations
+func (m *BaseMockStorage) SetAccountNote(ctx context.Context, note *storage.AccountNote) error {
+	return nil
+}
+func (m *BaseMockStorage) GetAccountNote(ctx context.Context, username, targetActorID string) (*storage.AccountNote, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) DeleteAccountNote(ctx context.Context, username, targetActorID string) error {
+	return nil
+}
+
 // MockStorage is a testify mock implementation that embeds BaseMockStorage
 // This provides default no-op implementations for all methods while allowing
 // tests to set expectations on specific methods using testify's mock framework

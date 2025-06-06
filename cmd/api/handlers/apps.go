@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aron23/lesser/cmd/api/models"
+	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
@@ -177,6 +178,101 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 	h.logger.Info("returning app registration response",
 		zap.String("client_id", resp.ClientID),
 		zap.String("client_secret", resp.ClientSecret))
+
+	return common.OK(resp), nil
+}
+
+// HandleAppVerifyCredentials verifies OAuth app credentials
+func (h *Handler) HandleAppVerifyCredentials(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	// This endpoint expects a Bearer token with app credentials
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Parse the token to get app credentials
+	// The token should be in the format "client_id:client_secret" base64 encoded
+	// or a valid OAuth access token
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+
+	// First try to validate as an access token
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err == nil && claims.ClientID != "" {
+		// Valid access token, get the client
+		client, err := h.store.GetOAuthClient(ctx, claims.ClientID)
+		if err != nil {
+			h.logger.Error("failed to get OAuth client", zap.Error(err))
+			return common.Unauthorized(errors.New("invalid credentials")), nil
+		}
+
+		// Get VAPID public key
+		var vapidKey string
+		vapidKeys, err := h.store.GetVAPIDKeys(ctx)
+		if err != nil {
+			h.logger.Warn("failed to get VAPID keys", zap.Error(err))
+			vapidKey = ""
+		} else {
+			vapidKey = vapidKeys.PublicKey
+		}
+
+		resp := models.AppRegistrationResponse{
+			ID:           client.ClientID,
+			Name:         client.Name,
+			Website:      client.Website,
+			RedirectURI:  client.RedirectURIs[0], // Return first redirect URI for compatibility
+			ClientID:     client.ClientID,
+			ClientSecret: client.ClientSecret,
+			VapidKey:     vapidKey,
+		}
+
+		return common.OK(resp), nil
+	}
+
+	// Try to parse as basic auth (client_id:client_secret)
+	decoded, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return common.Unauthorized(errors.New("invalid credentials")), nil
+	}
+
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return common.Unauthorized(errors.New("invalid credentials")), nil
+	}
+
+	clientID := parts[0]
+	clientSecret := parts[1]
+
+	// Verify client credentials
+	client, err := h.store.GetOAuthClient(ctx, clientID)
+	if err != nil || client.ClientSecret != clientSecret {
+		return common.Unauthorized(errors.New("invalid credentials")), nil
+	}
+
+	// Get VAPID public key
+	var vapidKey string
+	vapidKeys, err := h.store.GetVAPIDKeys(ctx)
+	if err != nil {
+		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
+		vapidKey = ""
+	} else {
+		vapidKey = vapidKeys.PublicKey
+	}
+
+	resp := models.AppRegistrationResponse{
+		ID:           client.ClientID,
+		Name:         client.Name,
+		Website:      client.Website,
+		RedirectURI:  client.RedirectURIs[0], // Return first redirect URI for compatibility
+		ClientID:     client.ClientID,
+		ClientSecret: client.ClientSecret,
+		VapidKey:     vapidKey,
+	}
 
 	return common.OK(resp), nil
 }

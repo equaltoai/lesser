@@ -253,6 +253,17 @@ type Storage interface {
 	GetTrustScore(ctx context.Context, actorID, category string) (*TrustScore, error)
 	UpdateTrustScore(ctx context.Context, score *TrustScore) error
 	RecordTrustUpdate(ctx context.Context, update *TrustUpdate) error
+
+	// Account pin operations (endorsed accounts)
+	CreateAccountPin(ctx context.Context, pin *AccountPin) error
+	DeleteAccountPin(ctx context.Context, username, pinnedActorID string) error
+	GetAccountPins(ctx context.Context, username string) ([]*AccountPin, error)
+	IsAccountPinned(ctx context.Context, username, pinnedActorID string) (bool, error)
+
+	// Account note operations (private notes on accounts)
+	SetAccountNote(ctx context.Context, note *AccountNote) error
+	GetAccountNote(ctx context.Context, username, targetActorID string) (*AccountNote, error)
+	DeleteAccountNote(ctx context.Context, username, targetActorID string) error
 }
 
 // User represents a user account in the system
@@ -674,3 +685,20 @@ type ModerationQueueItem = moderation.QueueItem
 type TrustRelationship = trust.TrustRelationship
 type TrustScore = trust.TrustScore
 type TrustUpdate = trust.TrustUpdate
+
+// AccountPin represents a pinned/endorsed account
+type AccountPin struct {
+	Username       string    `dynamodbav:"username"`        // Who pinned the account
+	PinnedActorID  string    `dynamodbav:"pinned_actor_id"` // The actor ID that was pinned
+	PinnedUsername string    `dynamodbav:"pinned_username"` // The username that was pinned
+	CreatedAt      time.Time `dynamodbav:"created_at"`
+}
+
+// AccountNote represents a private note on an account
+type AccountNote struct {
+	Username       string    `dynamodbav:"username"`        // Who wrote the note
+	TargetActorID  string    `dynamodbav:"target_actor_id"` // The actor the note is about
+	TargetUsername string    `dynamodbav:"target_username"` // The username the note is about
+	Note           string    `dynamodbav:"note"`            // The note content
+	UpdatedAt      time.Time `dynamodbav:"updated_at"`
+}
