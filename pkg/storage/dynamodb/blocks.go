@@ -72,7 +72,7 @@ func (s *dynamoDBStorage) CreateBlock(ctx context.Context, block *storage.Block)
 		GSI5SK: fmt.Sprintf("BLOCKER#%s", extractUsername(block.Actor)),
 	}
 
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}

@@ -44,7 +44,7 @@ func (s *dynamoDBStorage) CreateOAuthClient(ctx context.Context, client *storage
 	client.CreatedAt = time.Now()
 
 	// Marshal client data
-	av, err := attributevalue.MarshalMap(client)
+	av, err := s.MarshalItem(client)
 	if err != nil {
 		return fmt.Errorf("failed to marshal OAuth client: %w", err)
 	}

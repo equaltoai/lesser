@@ -47,7 +47,7 @@ func (s *dynamoDBStorage) CreateMove(ctx context.Context, move *storage.Move) er
 		CreatedAt: move.CreatedAt,
 	}
 
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal move record", zap.Error(err))
 		return fmt.Errorf("failed to marshal move record: %w", err)

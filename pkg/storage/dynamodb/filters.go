@@ -55,7 +55,7 @@ func (s *dynamoDBStorage) CreateFilter(ctx context.Context, filter *storage.Filt
 		Filter: *filter,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal filter: %w", err)
 	}
@@ -270,7 +270,7 @@ func (s *dynamoDBStorage) AddFilterKeyword(ctx context.Context, filterID string,
 		FilterKeyword: *keyword,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal filter keyword: %w", err)
 	}
@@ -448,7 +448,7 @@ func (s *dynamoDBStorage) AddFilterStatus(ctx context.Context, filterID string, 
 		FilterStatus: *status,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal filter status: %w", err)
 	}

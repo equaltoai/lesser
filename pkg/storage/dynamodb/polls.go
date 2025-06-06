@@ -108,7 +108,7 @@ func (s *dynamoDBStorage) CreatePoll(ctx context.Context, poll *storage.Poll) er
 		record.TTL = poll.ExpiresAt.Add(24 * time.Hour).Unix()
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal poll: %w", err)
 	}
@@ -271,7 +271,7 @@ func (s *dynamoDBStorage) VoteOnPoll(ctx context.Context, pollID string, voterID
 		VotedAt: time.Now(),
 	}
 
-	av, err := attributevalue.MarshalMap(voteRecord)
+	av, err := s.MarshalItem(voteRecord)
 	if err != nil {
 		return fmt.Errorf("failed to marshal vote: %w", err)
 	}
@@ -397,7 +397,7 @@ func (s *dynamoDBStorage) updatePollCounts(ctx context.Context, poll *storage.Po
 		record.TTL = poll.ExpiresAt.Add(24 * time.Hour).Unix()
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal poll: %w", err)
 	}

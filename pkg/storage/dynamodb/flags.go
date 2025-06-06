@@ -59,7 +59,7 @@ func (s *dynamoDBStorage) CreateFlag(ctx context.Context, flag *storage.Flag) er
 		record.GSI2SK = fmt.Sprintf("CREATED#%s", flag.CreatedAt.Format(time.RFC3339Nano))
 	}
 
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal flag record", zap.Error(err))
 		return fmt.Errorf("failed to marshal flag record: %w", err)

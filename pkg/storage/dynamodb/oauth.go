@@ -26,7 +26,7 @@ func (s *dynamoDBStorage) CreateAuthorizationCode(ctx context.Context, code *sto
 		CreatedAt: time.Now(),
 	}
 
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal authorization code", zap.Error(err))
 		return fmt.Errorf("failed to marshal authorization code: %w", err)
@@ -125,7 +125,7 @@ func (s *dynamoDBStorage) CreateRefreshToken(ctx context.Context, token *storage
 		CreatedAt: time.Now(),
 	}
 
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal refresh token", zap.Error(err))
 		return fmt.Errorf("failed to marshal refresh token: %w", err)

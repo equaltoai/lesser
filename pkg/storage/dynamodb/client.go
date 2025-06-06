@@ -310,9 +310,9 @@ func (s *dynamoDBStorage) UnmarshalItem(item map[string]types.AttributeValue, ou
 	return nil
 }
 
-// MarshalItem is a wrapper around attributevalue.MarshalMap for consistency
+// MarshalItem is a wrapper around s.MarshalItem for consistency
 func (s *dynamoDBStorage) MarshalItem(in interface{}) (map[string]types.AttributeValue, error) {
-	return attributevalue.MarshalMap(in)
+	return s.MarshalItem(in)
 }
 
 // UnmarshalListOfMaps converts a list of DynamoDB items to a slice of the target type

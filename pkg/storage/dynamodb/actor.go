@@ -41,7 +41,7 @@ func (s *dynamoDBStorage) CreateActor(ctx context.Context, actor *activitypub.Ac
 	}
 
 	// Marshal the record to DynamoDB attributes
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal actor record",
 			zap.String("username", username),

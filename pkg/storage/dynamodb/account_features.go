@@ -61,7 +61,7 @@ func (s *dynamoDBStorage) CreateAccountPin(ctx context.Context, pin *storage.Acc
 	}
 
 	// Marshal the record
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		s.logger().Error("failed to marshal account pin record", zap.Error(err))
 		return err
@@ -168,7 +168,7 @@ func (s *dynamoDBStorage) CreateAccountNote(ctx context.Context, note *storage.A
 	}
 
 	// Marshal the record
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		s.logger().Error("failed to marshal account note record", zap.Error(err))
 		return err
@@ -200,7 +200,7 @@ func (s *dynamoDBStorage) UpdateAccountNote(ctx context.Context, note *storage.A
 	}
 
 	// Marshal the record
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		s.logger().Error("failed to marshal account note record", zap.Error(err))
 		return err

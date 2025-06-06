@@ -73,7 +73,7 @@ func (s *dynamoDBStorage) CreateFeaturedTag(ctx context.Context, userID string, 
 		CreatedAt:     featuredTag.CreatedAt,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal featured tag: %w", err)
 	}

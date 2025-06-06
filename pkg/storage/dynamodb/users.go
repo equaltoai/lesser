@@ -30,7 +30,7 @@ func (s *dynamoDBStorage) CreateUser(ctx context.Context, user *storage.User) er
 	}
 
 	// Marshal user data
-	av, err := attributevalue.MarshalMap(user)
+	av, err := s.MarshalItem(user)
 	if err != nil {
 		return fmt.Errorf("failed to marshal user: %w", err)
 	}

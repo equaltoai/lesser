@@ -35,7 +35,7 @@ func (s *dynamoDBStorage) CreateList(ctx context.Context, username, title, repli
 	}
 
 	// Marshal the list
-	av, err := attributevalue.MarshalMap(list)
+	av, err := s.MarshalItem(list)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal list: %w", err)
 	}

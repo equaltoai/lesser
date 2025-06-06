@@ -54,7 +54,7 @@ func (s *dynamoDBStorage) WriteToTimeline(ctx context.Context, entry *storage.Ti
 		record.GSI1SK = record.SK
 	}
 
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal timeline entry", zap.Error(err))
 		return fmt.Errorf("failed to marshal timeline entry: %w", err)
@@ -114,7 +114,7 @@ func (s *dynamoDBStorage) WriteToTimelines(ctx context.Context, entries []*stora
 				record.GSI1SK = record.SK
 			}
 
-			item, err := attributevalue.MarshalMap(record)
+			item, err := s.MarshalItem(record)
 			if err != nil {
 				log.Error("failed to marshal timeline entry", zap.Error(err))
 				continue

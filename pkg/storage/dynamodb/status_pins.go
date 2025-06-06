@@ -47,7 +47,7 @@ func (s *dynamoDBStorage) CreateStatusPin(ctx context.Context, pin *storage.Stat
 		StatusPin: *pin,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal status pin: %w", err)
 	}
