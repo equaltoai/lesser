@@ -82,7 +82,7 @@ func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGateway
 	response := map[string]interface{}{
 		"error":         "SSE not supported in Lambda environment",
 		"message":       "Please use WebSocket endpoint for real-time streaming",
-		"websocket_url": fmt.Sprintf("wss://%s/api/v1/streaming", h.cfg.Domain),
+		"websocket_url": fmt.Sprintf("wss://ws.%s", h.cfg.Domain),
 		"documentation": "https://docs.joinmastodon.org/methods/streaming/",
 		"note":          "Lambda functions cannot maintain long-lived SSE connections. Use our WebSocket endpoint instead.",
 	}

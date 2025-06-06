@@ -149,7 +149,11 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 			tag := models.Tag{
 				Name: strings.TrimPrefix(query, "#"),
 				URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), strings.TrimPrefix(query, "#")),
-				History: []models.TagHistory{
+				History: []struct {
+					Day      string `json:"day"`
+					Uses     string `json:"uses"`
+					Accounts string `json:"accounts"`
+				}{
 					{
 						Day:      "0",
 						Uses:     "0",
@@ -367,7 +371,7 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 		"languages": instanceConfig.Languages,
 		"configuration": map[string]interface{}{
 			"urls": map[string]interface{}{
-				"streaming":        fmt.Sprintf("wss://ws.%s/api", h.cfg.Domain),
+				"streaming":        fmt.Sprintf("wss://ws.%s", h.cfg.Domain),
 				"about":            h.cfg.BaseURL() + "/about",
 				"privacy_policy":   h.cfg.BaseURL() + "/privacy-policy",
 				"terms_of_service": h.cfg.BaseURL() + "/terms",
@@ -718,7 +722,7 @@ func (h *Handler) HandleGetInstanceConfiguration(ctx context.Context, request ev
 	// Build configuration response
 	config := map[string]interface{}{
 		"urls": map[string]interface{}{
-			"streaming": fmt.Sprintf("wss://ws.%s/api", h.cfg.Domain),
+			"streaming": fmt.Sprintf("wss://ws.%s", h.cfg.Domain),
 		},
 		"accounts": map[string]interface{}{
 			"max_featured_tags":   20,

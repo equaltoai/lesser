@@ -141,7 +141,7 @@ func handleConnect(ctx context.Context, event events.APIGatewayWebsocketProxyReq
 		token = event.QueryStringParameters["access_token"] // Mastodon uses access_token
 	}
 
-	if token == "" && event.Headers != nil {
+	if event.Headers != nil {
 		authHeader := event.Headers["Authorization"]
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			token = strings.TrimPrefix(authHeader, "Bearer ")
@@ -157,28 +157,27 @@ func handleConnect(ctx context.Context, event events.APIGatewayWebsocketProxyReq
 	var userID, username string
 	authSuccess := false
 
-	if token == "" {
-		log.Warn("no token provided for connection, rejecting")
-		return events.APIGatewayProxyResponse{StatusCode: 401}, nil
+	if token != "" {
+		// Validate OAuth token with auth middleware
+		// Since we can't use RequireAuth (it expects APIGatewayV2HTTPRequest),
+		// we'll extract the token and validate directly
+		authService := auth.NewOAuthService(os.Getenv("JWT_SECRET"), nil)
+		claims, err := authService.ValidateAccessToken(token)
+		if err != nil {
+			log.Warn("invalid token", zap.Error(err))
+			// Don't reject connection, allow anonymous access for public streams
+		} else {
+			userID = claims.Subject
+			username = claims.Username
+			authSuccess = true
+			log.Info("user authenticated",
+				zap.String("userID", userID),
+				zap.String("username", username),
+				zap.Strings("scopes", claims.Scopes))
+		}
+	} else {
+		log.Info("anonymous connection allowed")
 	}
-
-	// Validate OAuth token with auth middleware
-	// Since we can't use RequireAuth (it expects APIGatewayV2HTTPRequest),
-	// we'll extract the token and validate directly
-	authService := auth.NewOAuthService(os.Getenv("JWT_SECRET"), nil)
-	claims, err := authService.ValidateAccessToken(token)
-	if err != nil {
-		log.Warn("invalid token", zap.Error(err))
-		return events.APIGatewayProxyResponse{StatusCode: 401}, nil
-	}
-
-	userID = claims.Subject
-	username = claims.Username
-	authSuccess = true
-	log.Info("user authenticated",
-		zap.String("userID", userID),
-		zap.String("username", username),
-		zap.Strings("scopes", claims.Scopes))
 
 	// Create connection record
 	connection := &StreamConnection{

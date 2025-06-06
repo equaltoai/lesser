@@ -54,12 +54,22 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		return common.BadRequest(err), nil
 	}
 
-	// Validate request
+	// Validate content
 	if req.Status == "" {
-		return common.UnprocessableEntity(errors.New("status text is required")), nil
+		return common.UnprocessableEntity(errors.New("status content is required")), nil
 	}
 
-	// Set default visibility if not specified
+	// Character limit check (500 characters)
+	if len(req.Status) > 500 {
+		return common.UnprocessableEntity(errors.New("status content must not exceed 500 characters")), nil
+	}
+
+	// Check if this is a scheduled status
+	if req.ScheduledAt != nil && *req.ScheduledAt != "" {
+		return h.HandleScheduleStatus(ctx, claims, req)
+	}
+
+	// Default visibility
 	if req.Visibility == "" {
 		req.Visibility = "public"
 	}

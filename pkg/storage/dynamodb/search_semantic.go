@@ -278,7 +278,7 @@ func (s *SemanticSearchStrategy) searchWithOpenSearchVectors(ctx context.Context
 }
 
 // searchWithDynamoDBVectors performs vector similarity search using DynamoDB
-func (s *SemanticSearchStrategy) searchWithDynamoDBVectors(ctx context.Context, queryEmbedding []float32, query string, limit int) ([]*SearchResult, error) {
+func (s *SemanticSearchStrategy) searchWithDynamoDBVectors(ctx context.Context, queryEmbedding []float32, _ string, limit int) ([]*SearchResult, error) {
 	// Scan all embeddings (this is not efficient for large datasets)
 	// In production, you'd want to use a proper vector database or OpenSearch
 	scanInput := &dynamodb.ScanInput{

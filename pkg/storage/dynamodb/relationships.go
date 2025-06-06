@@ -375,3 +375,10 @@ func (s *dynamoDBStorage) IsFollowing(ctx context.Context, followerUsername, fol
 
 	return record.State == storage.RelationshipAccepted, nil
 }
+
+// RemoveFromFollowers removes a follower from the current user's followers list
+// This is an alias for RemoveFollow with parameters in the order expected by the interface
+func (s *dynamoDBStorage) RemoveFromFollowers(ctx context.Context, username, followerUsername string) error {
+	// RemoveFollow expects (follower, followed), so we swap the parameters
+	return s.RemoveFollow(ctx, followerUsername, username)
+}

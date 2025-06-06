@@ -24,7 +24,9 @@ class StreamingTestClient:
     def __init__(self, instance_url: str, access_token: str):
         self.instance_url = instance_url.rstrip('/')
         self.access_token = access_token
-        self.ws_url = f"wss://{instance_url.replace('https://', '').replace('http://', '')}/api/v1/streaming"
+        # Extract domain from instance URL and construct WebSocket URL
+        domain = instance_url.replace('https://', '').replace('http://', '').split('/')[0]
+        self.ws_url = f"wss://ws.{domain}"
         self.websocket: Optional[WebSocketClientProtocol] = None
         
     async def connect(self):

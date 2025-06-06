@@ -102,7 +102,7 @@ func (m *BaseMockStorage) CreateObject(ctx context.Context, object interface{}) 
 	return nil
 }
 func (m *BaseMockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
-	return nil, nil
+	return nil, fmt.Errorf("not found")
 }
 func (m *BaseMockStorage) UpdateObject(ctx context.Context, object interface{}) error {
 	return nil
@@ -111,7 +111,7 @@ func (m *BaseMockStorage) DeleteObject(ctx context.Context, id string) error {
 	return nil
 }
 func (m *BaseMockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
-	return nil, "", nil
+	return []interface{}{}, "", nil
 }
 
 // Relationship operations
@@ -261,7 +261,7 @@ func (m *BaseMockStorage) CreateUpdateHistory(ctx context.Context, history *stor
 	return nil
 }
 func (m *BaseMockStorage) GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*storage.UpdateHistory, error) {
-	return nil, nil
+	return []*storage.UpdateHistory{}, nil
 }
 
 // Block operations
@@ -582,6 +582,88 @@ func (m *BaseMockStorage) SetVAPIDKeys(ctx context.Context, keys *storage.VAPIDK
 	return nil
 }
 
+// Status pinning operations
+func (m *BaseMockStorage) CreateStatusPin(ctx context.Context, pin *storage.StatusPin) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteStatusPin(ctx context.Context, username, statusID string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetStatusPins(ctx context.Context, username string) ([]*storage.StatusPin, error) {
+	return []*storage.StatusPin{}, nil
+}
+func (m *BaseMockStorage) IsStatusPinned(ctx context.Context, username, statusID string) (bool, error) {
+	return false, nil
+}
+func (m *BaseMockStorage) CountUserPinnedStatuses(ctx context.Context, username string) (int, error) {
+	return 0, nil
+}
+
+// Conversation muting operations
+func (m *BaseMockStorage) CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteConversationMute(ctx context.Context, username, conversationID string) error {
+	return nil
+}
+func (m *BaseMockStorage) IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error) {
+	return false, nil
+}
+func (m *BaseMockStorage) GetMutedConversations(ctx context.Context, username string) ([]string, error) {
+	return []string{}, nil
+}
+
+// Scheduled status operations
+func (m *BaseMockStorage) CreateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error {
+	return nil
+}
+func (m *BaseMockStorage) GetScheduledStatus(ctx context.Context, id string) (*storage.ScheduledStatus, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetScheduledStatuses(ctx context.Context, username string, limit int, cursor string) ([]*storage.ScheduledStatus, string, error) {
+	return []*storage.ScheduledStatus{}, "", nil
+}
+func (m *BaseMockStorage) UpdateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteScheduledStatus(ctx context.Context, id string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetDueScheduledStatuses(ctx context.Context, before time.Time, limit int) ([]*storage.ScheduledStatus, error) {
+	return []*storage.ScheduledStatus{}, nil
+}
+func (m *BaseMockStorage) MarkScheduledStatusPublished(ctx context.Context, id string) error {
+	return nil
+}
+
+// Hashtag following operations
+func (m *BaseMockStorage) FollowHashtag(ctx context.Context, userID string, hashtag string) error {
+	return nil
+}
+func (m *BaseMockStorage) UnfollowHashtag(ctx context.Context, userID string, hashtag string) error {
+	return nil
+}
+func (m *BaseMockStorage) IsFollowingHashtag(ctx context.Context, userID string, hashtag string) (bool, error) {
+	return false, nil
+}
+func (m *BaseMockStorage) GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]string, string, error) {
+	return []string{}, "", nil
+}
+
+// Featured tags operations
+func (m *BaseMockStorage) CreateFeaturedTag(ctx context.Context, userID string, tagName string) (*storage.FeaturedTag, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) DeleteFeaturedTag(ctx context.Context, userID string, featuredTagID string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetFeaturedTags(ctx context.Context, userID string) ([]*storage.FeaturedTag, error) {
+	return []*storage.FeaturedTag{}, nil
+}
+func (m *BaseMockStorage) GetTagSuggestions(ctx context.Context, userID string, limit int) ([]string, error) {
+	return []string{}, nil
+}
+
 // Moderation operations
 func (m *BaseMockStorage) CreateModerationEvent(ctx context.Context, event *storage.ModerationEvent) error {
 	return nil
@@ -658,13 +740,19 @@ func (m *BaseMockStorage) IsAccountPinned(ctx context.Context, username, pinnedA
 }
 
 // Account note operations
-func (m *BaseMockStorage) SetAccountNote(ctx context.Context, note *storage.AccountNote) error {
+func (m *BaseMockStorage) CreateAccountNote(ctx context.Context, note *storage.AccountNote) error {
 	return nil
 }
 func (m *BaseMockStorage) GetAccountNote(ctx context.Context, username, targetActorID string) (*storage.AccountNote, error) {
 	return nil, nil
 }
+func (m *BaseMockStorage) UpdateAccountNote(ctx context.Context, note *storage.AccountNote) error {
+	return nil
+}
 func (m *BaseMockStorage) DeleteAccountNote(ctx context.Context, username, targetActorID string) error {
+	return nil
+}
+func (m *BaseMockStorage) RemoveFromFollowers(ctx context.Context, username, followerUsername string) error {
 	return nil
 }
 
@@ -888,4 +976,13 @@ func (m *MockStorage) CreateBlock(ctx context.Context, block *storage.Block) err
 func (m *MockStorage) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
 	args := m.Called(ctx, days)
 	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetOAuthClient with mock support
+func (m *MockStorage) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
+	args := m.Called(ctx, clientID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.OAuthClient), args.Error(1)
 }
