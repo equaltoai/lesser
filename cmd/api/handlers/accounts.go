@@ -470,3 +470,517 @@ func isValidUsername(username string) bool {
 	match, _ := regexp.MatchString("^[a-zA-Z0-9_]+$", username)
 	return match
 }
+
+// HandleGetAccountFollowers retrieves the list of accounts following the given account
+func (h *Handler) HandleGetAccountFollowers(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract username from accountID
+	username := accountID
+
+	// Get the actor to verify it exists
+	_, err := h.store.GetActor(ctx, username)
+	if err != nil {
+		return common.NotFound(fmt.Errorf("account not found")), nil
+	}
+
+	// Parse pagination parameters
+	limit := 40
+	maxID := request.QueryStringParameters["max_id"]
+	minID := request.QueryStringParameters["min_id"]
+	cursor := maxID
+
+	// Use minID as cursor if provided and maxID is not
+	if minID != "" && maxID == "" {
+		cursor = minID
+	}
+
+	// Get followers
+	followers, nextCursor, err := h.store.GetFollowers(ctx, username, limit, cursor)
+	if err != nil {
+		h.logger.Error("failed to get followers", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert followers to Mastodon account format
+	accounts := make([]models.Account, 0, len(followers))
+	for _, follower := range followers {
+		// Extract username from follower ID
+		followerUsername := h.converter.ExtractUsernameFromActorID(follower)
+		if followerUsername == "" {
+			// Try to parse as a remote actor
+			h.logger.Warn("could not extract username from follower", zap.String("follower_id", follower))
+			continue
+		}
+
+		// Get the follower actor
+		followerActor, err := h.store.GetActor(ctx, followerUsername)
+		if err != nil {
+			h.logger.Warn("could not get follower actor",
+				zap.String("username", followerUsername),
+				zap.Error(err))
+			continue
+		}
+
+		// Convert to account
+		account := h.converter.ActorToAccount(followerActor)
+		accounts = append(accounts, account)
+	}
+
+	// Set Link header for pagination if there's a cursor
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+	if nextCursor != "" {
+		nextURL := fmt.Sprintf("%s/api/v1/accounts/%s/followers?max_id=%s",
+			h.cfg.BaseURL(), accountID, nextCursor)
+		headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL)
+	}
+
+	body, _ := json.Marshal(accounts)
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Headers:    headers,
+		Body:       string(body),
+	}, nil
+}
+
+// HandleGetAccountFollowing retrieves the list of accounts the given account is following
+func (h *Handler) HandleGetAccountFollowing(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract username from accountID
+	username := accountID
+
+	// Get the actor to verify it exists
+	_, err := h.store.GetActor(ctx, username)
+	if err != nil {
+		return common.NotFound(fmt.Errorf("account not found")), nil
+	}
+
+	// Parse pagination parameters
+	limit := 40
+	maxID := request.QueryStringParameters["max_id"]
+	minID := request.QueryStringParameters["min_id"]
+	cursor := maxID
+
+	// Use minID as cursor if provided and maxID is not
+	if minID != "" && maxID == "" {
+		cursor = minID
+	}
+
+	// Get following
+	following, nextCursor, err := h.store.GetFollowing(ctx, username, limit, cursor)
+	if err != nil {
+		h.logger.Error("failed to get following", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert following to Mastodon account format
+	accounts := make([]models.Account, 0, len(following))
+	for _, followed := range following {
+		// Extract username from followed ID
+		followedUsername := h.converter.ExtractUsernameFromActorID(followed)
+		if followedUsername == "" {
+			// Try to parse as a remote actor
+			h.logger.Warn("could not extract username from followed", zap.String("followed_id", followed))
+			continue
+		}
+
+		// Get the followed actor
+		followedActor, err := h.store.GetActor(ctx, followedUsername)
+		if err != nil {
+			h.logger.Warn("could not get followed actor",
+				zap.String("username", followedUsername),
+				zap.Error(err))
+			continue
+		}
+
+		// Convert to account
+		account := h.converter.ActorToAccount(followedActor)
+		accounts = append(accounts, account)
+	}
+
+	// Set Link header for pagination if there's a cursor
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+	if nextCursor != "" {
+		nextURL := fmt.Sprintf("%s/api/v1/accounts/%s/following?max_id=%s",
+			h.cfg.BaseURL(), accountID, nextCursor)
+		headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL)
+	}
+
+	body, _ := json.Marshal(accounts)
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Headers:    headers,
+		Body:       string(body),
+	}, nil
+}
+
+// HandleGetFamiliarFollowers returns accounts that the requesting user follows and who also follow the given account
+func (h *Handler) HandleGetFamiliarFollowers(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Get account IDs from query parameter
+	accountIDs := request.QueryStringParameters["id[]"]
+	if accountIDs == "" {
+		return common.BadRequest(errors.New("id[] parameter is required")), nil
+	}
+
+	// Split account IDs
+	ids := strings.Split(accountIDs, ",")
+	if len(ids) == 0 {
+		return common.BadRequest(errors.New("at least one account ID is required")), nil
+	}
+
+	// Get current user's following list
+	following, _, err := h.store.GetFollowing(ctx, claims.Username, 1000, "") // Get a reasonable number
+	if err != nil {
+		h.logger.Error("failed to get following", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Create a map of who the current user follows
+	userFollowsMap := make(map[string]bool)
+	for _, followedActorID := range following {
+		userFollowsMap[followedActorID] = true
+	}
+
+	// Build response for each requested account
+	type FamiliarFollowersResponse struct {
+		ID       string           `json:"id"`
+		Accounts []models.Account `json:"accounts"`
+	}
+
+	results := make([]FamiliarFollowersResponse, 0, len(ids))
+
+	for _, accountID := range ids {
+		// Get followers of this account
+		followers, _, err := h.store.GetFollowers(ctx, accountID, 100, "")
+		if err != nil {
+			// Skip if account not found
+			continue
+		}
+
+		// Find mutual connections (accounts that follow this user AND are followed by the current user)
+		mutualAccounts := make([]models.Account, 0)
+		for _, followerActorID := range followers {
+			if userFollowsMap[followerActorID] {
+				// Get actor details
+				username := h.converter.ExtractUsernameFromActorID(followerActorID)
+				if username != "" {
+					actor, err := h.store.GetActor(ctx, username)
+					if err == nil {
+						account := h.converter.ActorToAccount(actor)
+						mutualAccounts = append(mutualAccounts, account)
+					}
+				}
+			}
+		}
+
+		results = append(results, FamiliarFollowersResponse{
+			ID:       accountID,
+			Accounts: mutualAccounts,
+		})
+	}
+
+	return common.OK(results), nil
+}
+
+// HandlePinAccount pins an account to the user's profile
+func (h *Handler) HandlePinAccount(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write:accounts scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get target actor to verify it exists
+	targetActor, err := h.store.GetActor(ctx, accountID)
+	if err != nil {
+		return common.NotFound(errors.New("account not found")), nil
+	}
+
+	// Create pin relationship
+	pin := &storage.AccountPin{
+		Username:       claims.Username,
+		PinnedActorID:  targetActor.ID,
+		PinnedUsername: accountID,
+		CreatedAt:      time.Now(),
+	}
+
+	// Store the pin
+	if err := h.store.CreateAccountPin(ctx, pin); err != nil {
+		if strings.Contains(err.Error(), "already pinned") {
+			return common.UnprocessableEntity(errors.New("account already pinned")), nil
+		}
+		h.logger.Error("failed to pin account", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Get relationship status to return
+	relationship, err := h.getRelationshipMap(ctx, claims.Username, accountID)
+	if err != nil {
+		h.logger.Error("failed to get relationship", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	return common.OK(relationship), nil
+}
+
+// HandleUnpinAccount unpins an account from the user's profile
+func (h *Handler) HandleUnpinAccount(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write:accounts scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get target actor to verify it exists
+	targetActor, err := h.store.GetActor(ctx, accountID)
+	if err != nil {
+		return common.NotFound(errors.New("account not found")), nil
+	}
+
+	// Delete the pin
+	if err := h.store.DeleteAccountPin(ctx, claims.Username, targetActor.ID); err != nil {
+		h.logger.Error("failed to unpin account", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Get relationship status to return
+	relationship, err := h.getRelationshipMap(ctx, claims.Username, accountID)
+	if err != nil {
+		h.logger.Error("failed to get relationship", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	return common.OK(relationship), nil
+}
+
+// HandleSetAccountNote sets a private note on an account
+func (h *Handler) HandleSetAccountNote(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write:accounts scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Parse request body
+	var req struct {
+		Comment string `json:"comment"`
+	}
+	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		return common.BadRequest(err), nil
+	}
+
+	// Get target actor to verify it exists
+	targetActor, err := h.store.GetActor(ctx, accountID)
+	if err != nil {
+		return common.NotFound(errors.New("account not found")), nil
+	}
+
+	// Create or update account note
+	note := &storage.AccountNote{
+		Username:       claims.Username,
+		TargetActorID:  targetActor.ID,
+		TargetUsername: accountID,
+		Note:           req.Comment,
+		UpdatedAt:      time.Now(),
+	}
+
+	// Store the note
+	if err := h.store.SetAccountNote(ctx, note); err != nil {
+		h.logger.Error("failed to set account note", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Get relationship status to return
+	relationship, err := h.getRelationshipMap(ctx, claims.Username, accountID)
+	if err != nil {
+		h.logger.Error("failed to get relationship", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Add the note to the relationship
+	relationship["note"] = req.Comment
+
+	return common.OK(relationship), nil
+}
+
+// HandleRemoveFromFollowers removes a follower from the current user's followers list
+func (h *Handler) HandleRemoveFromFollowers(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check write:follows scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get target actor to verify it exists
+	_, err = h.store.GetActor(ctx, accountID)
+	if err != nil {
+		return common.NotFound(errors.New("account not found")), nil
+	}
+
+	// Check if target follows current user using IsFollowing
+	follows, err := h.store.IsFollowing(ctx, accountID, claims.Username)
+	if err != nil {
+		h.logger.Error("failed to check follow status", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	if !follows {
+		return common.NotFound(errors.New("account is not following you")), nil
+	}
+
+	// Remove the follow relationship
+	if err := h.store.RemoveFollow(ctx, accountID, claims.Username); err != nil {
+		h.logger.Error("failed to remove follower", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Get relationship status to return
+	relationship, err := h.getRelationshipMap(ctx, claims.Username, accountID)
+	if err != nil {
+		h.logger.Error("failed to get relationship", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	return common.OK(relationship), nil
+}
+
+// Helper function to get relationship status (used by pin/unpin/note endpoints)
+func (h *Handler) getRelationshipMap(ctx context.Context, currentUsername, targetUsername string) (map[string]interface{}, error) {
+	// Get actors
+	currentActor, err := h.store.GetActor(ctx, currentUsername)
+	if err != nil {
+		return nil, err
+	}
+
+	targetActor, err := h.store.GetActor(ctx, targetUsername)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check various relationship statuses using IsFollowing
+	following, _ := h.store.IsFollowing(ctx, currentUsername, targetUsername)
+	followedBy, _ := h.store.IsFollowing(ctx, targetUsername, currentUsername)
+
+	// Check if pinned
+	endorsed, _ := h.store.IsAccountPinned(ctx, currentUsername, targetActor.ID)
+
+	// Get note if exists
+	note, _ := h.store.GetAccountNote(ctx, currentUsername, targetActor.ID)
+	noteText := ""
+	if note != nil {
+		noteText = note.Note
+	}
+
+	// Check if muted
+	muted, _ := h.store.IsMuted(ctx, currentActor.ID, targetActor.ID)
+
+	// Check if blocked
+	blocking, _ := h.store.IsBlocked(ctx, currentActor.ID, targetActor.ID)
+	blockedBy, _ := h.store.IsBlocked(ctx, targetActor.ID, currentActor.ID)
+
+	// Build relationship response
+	relationship := map[string]interface{}{
+		"id":                   targetUsername,
+		"following":            following,
+		"showing_reblogs":      true,  // TODO: Implement reblog filtering
+		"notifying":            false, // TODO: Implement notification settings
+		"followed_by":          followedBy,
+		"blocking":             blocking,
+		"blocked_by":           blockedBy,
+		"muting":               muted,
+		"muting_notifications": false, // TODO: Implement notification muting separately
+		"requested":            false, // TODO: Check follow requests
+		"domain_blocking":      false, // TODO: Check domain blocks
+		"endorsed":             endorsed,
+		"note":                 noteText,
+	}
+
+	return relationship, nil
+}

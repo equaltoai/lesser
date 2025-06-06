@@ -177,7 +177,10 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/apps" && method == http.MethodPost {
 		return handler.HandleAppRegistration(ctx, request)
 	}
-	// TODO: GET /api/v1/apps/verify_credentials - Verify app credentials
+	// Verify app credentials
+	if path == "/apps/verify_credentials" && method == http.MethodGet {
+		return handler.HandleAppVerifyCredentials(ctx, request)
+	}
 
 	// ==================== ACCOUNTS ====================
 	// Account management
@@ -206,7 +209,10 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/accounts/search/suggestions" && method == http.MethodGet {
 		return handler.HandleGetSearchSuggestions(ctx, request)
 	}
-	// TODO: GET /api/v1/accounts/familiar_followers - Find familiar followers
+	// Find familiar followers
+	if path == "/accounts/familiar_followers" && method == http.MethodGet {
+		return handler.HandleGetFamiliarFollowers(ctx, request)
+	}
 
 	// ==================== STATUSES ====================
 	// Status management
@@ -317,8 +323,14 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 					if method == http.MethodGet {
 						return handler.HandleGetAccountStatuses(ctx, request, accountID)
 					}
-					// TODO: GET /api/v1/accounts/:id/followers - Get account's followers
-					// TODO: GET /api/v1/accounts/:id/following - Get account's following
+				case "followers":
+					if method == http.MethodGet {
+						return handler.HandleGetAccountFollowers(ctx, request, accountID)
+					}
+				case "following":
+					if method == http.MethodGet {
+						return handler.HandleGetAccountFollowing(ctx, request, accountID)
+					}
 					// TODO: GET /api/v1/accounts/:id/featured_tags - Get account's featured tags
 				case "mute":
 					if method == http.MethodPost {
@@ -332,10 +344,22 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 					if method == http.MethodGet {
 						return handler.HandleGetAccountLists(ctx, request, accountID)
 					}
-					// TODO: POST /api/v1/accounts/:id/pin - Pin account to profile
-					// TODO: POST /api/v1/accounts/:id/unpin - Unpin account from profile
-					// TODO: POST /api/v1/accounts/:id/note - Set private note on account
-					// TODO: POST /api/v1/accounts/:id/remove_from_followers - Remove follower
+				case "pin":
+					if method == http.MethodPost {
+						return handler.HandlePinAccount(ctx, request, accountID)
+					}
+				case "unpin":
+					if method == http.MethodPost {
+						return handler.HandleUnpinAccount(ctx, request, accountID)
+					}
+				case "note":
+					if method == http.MethodPost {
+						return handler.HandleSetAccountNote(ctx, request, accountID)
+					}
+				case "remove_from_followers":
+					if method == http.MethodPost {
+						return handler.HandleRemoveFromFollowers(ctx, request, accountID)
+					}
 				}
 			} else if len(parts) == 3 && method == http.MethodGet {
 				return handler.HandleGetAccount(ctx, request, accountID)
@@ -420,10 +444,27 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 			return handler.HandleListTimeline(ctx, request, listID)
 		}
 	}
-	// TODO: GET /api/v1/conversations - View conversations
 
 	// ==================== CONVERSATIONS ====================
-	// TODO: Implement conversations endpoints
+	// List conversations
+	if path == "/conversations" && method == http.MethodGet {
+		return handler.HandleGetConversations(ctx, request)
+	}
+	// Conversation operations
+	if strings.HasPrefix(path, "/conversations/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			conversationID := parts[2]
+
+			if len(parts) == 4 && parts[3] == "read" && method == http.MethodPost {
+				// Mark conversation as read
+				return handler.HandleMarkConversationRead(ctx, request, conversationID)
+			} else if len(parts) == 3 && method == http.MethodDelete {
+				// Delete conversation
+				return handler.HandleDeleteConversation(ctx, request, conversationID)
+			}
+		}
+	}
 
 	// ==================== INSTANCE ====================
 	// Instance info (v2 only)
