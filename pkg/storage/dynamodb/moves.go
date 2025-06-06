@@ -9,7 +9,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -106,7 +105,7 @@ func (s *dynamoDBStorage) GetMove(ctx context.Context, actor string) (*storage.M
 	}
 
 	var record MoveRecord
-	if err := attributevalue.UnmarshalMap(result.Items[0], &record); err != nil {
+	if err := s.UnmarshalItem(result.Items[0], &record); err != nil {
 		log.Error("failed to unmarshal move record", zap.Error(err))
 		return nil, fmt.Errorf("failed to unmarshal move record: %w", err)
 	}
@@ -144,7 +143,7 @@ func (s *dynamoDBStorage) GetMoveByTarget(ctx context.Context, target string) ([
 	moves := make([]*storage.Move, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record MoveRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal move record", zap.Error(err))
 			continue
 		}

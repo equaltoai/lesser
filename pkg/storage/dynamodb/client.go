@@ -14,8 +14,8 @@ import (
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 )
@@ -310,9 +310,9 @@ func (s *dynamoDBStorage) UnmarshalItem(item map[string]types.AttributeValue, ou
 	return nil
 }
 
-// MarshalItem is a wrapper around s.MarshalItem for consistency
+// MarshalItem is a wrapper around attributevalue.MarshalMap for consistency
 func (s *dynamoDBStorage) MarshalItem(in interface{}) (map[string]types.AttributeValue, error) {
-	return s.MarshalItem(in)
+	return attributevalue.MarshalMap(in)
 }
 
 // UnmarshalListOfMaps converts a list of DynamoDB items to a slice of the target type

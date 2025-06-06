@@ -10,7 +10,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -123,7 +122,7 @@ func (s *dynamoDBStorage) GetBlock(ctx context.Context, actor, blockedActor stri
 	}
 
 	var record blockRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
 	}
 
@@ -200,7 +199,7 @@ func (s *dynamoDBStorage) GetBlockedActors(ctx context.Context, actor string, li
 	blocks := make([]*storage.Block, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record blockRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal block", zap.Error(err))
 			continue
 		}
@@ -275,7 +274,7 @@ func (s *dynamoDBStorage) GetBlockedByActors(ctx context.Context, actor string, 
 	blocks := make([]*storage.Block, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record blockRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal block", zap.Error(err))
 			continue
 		}

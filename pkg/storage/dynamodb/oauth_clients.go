@@ -88,7 +88,7 @@ func (s *dynamoDBStorage) GetOAuthClient(ctx context.Context, clientID string) (
 	}
 
 	var client storage.OAuthClient
-	if err := attributevalue.UnmarshalMap(result.Item, &client); err != nil {
+	if err := s.UnmarshalItem(result.Item, &client); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal OAuth client: %w", err)
 	}
 
@@ -193,7 +193,7 @@ func (s *dynamoDBStorage) ListOAuthClients(ctx context.Context, limit int32, cur
 	clients := make([]*storage.OAuthClient, 0, len(result.Items))
 	for _, item := range result.Items {
 		var client storage.OAuthClient
-		if err := attributevalue.UnmarshalMap(item, &client); err != nil {
+		if err := s.UnmarshalItem(item, &client); err != nil {
 			continue
 		}
 		clients = append(clients, &client)

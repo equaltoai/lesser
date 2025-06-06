@@ -144,18 +144,69 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 
 	// Search hashtags
 	if searchType == "" || searchType == "hashtags" {
-		// TODO: Implement hashtag search
-		if strings.HasPrefix(query, "#") {
+		// Parse limit for hashtag search
+		hashtagLimit := 20
+		if limitStr := request.QueryStringParameters["limit"]; limitStr != "" {
+			if l, err := fmt.Sscanf(limitStr, "%d", &hashtagLimit); err == nil && l == 1 {
+				if hashtagLimit > 40 {
+					hashtagLimit = 40
+				}
+			}
+		}
+
+		// Search for hashtags in the database
+		hashtags, err := h.store.SearchHashtags(ctx, query, hashtagLimit)
+		if err != nil {
+			h.logger.Warn("hashtag search failed", zap.Error(err))
+		} else {
+			// Convert storage hashtags to API format
+			for _, hashtag := range hashtags {
+				// Get usage history for the last 7 days
+				history, _ := h.store.GetHashtagUsageHistory(ctx, hashtag.Name, 7)
+
+				// Convert history to API format
+				apiHistory := make([]struct {
+					Day      string `json:"day"`
+					Uses     string `json:"uses"`
+					Accounts string `json:"accounts"`
+				}, 0)
+
+				// Create history entries (most recent first)
+				for i := 0; i < len(history) && i < 7; i++ {
+					day := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+					apiHistory = append(apiHistory, struct {
+						Day      string `json:"day"`
+						Uses     string `json:"uses"`
+						Accounts string `json:"accounts"`
+					}{
+						Day:      day,
+						Uses:     fmt.Sprintf("%d", history[i]),
+						Accounts: "0", // TODO: Track unique accounts per day
+					})
+				}
+
+				tag := models.Tag{
+					Name:    hashtag.Name,
+					URL:     hashtag.URL,
+					History: apiHistory,
+				}
+				result.Hashtags = append(result.Hashtags, tag)
+			}
+		}
+
+		// If no results and query starts with #, create a placeholder
+		if len(result.Hashtags) == 0 && strings.HasPrefix(query, "#") {
+			tagName := strings.ToLower(strings.TrimPrefix(query, "#"))
 			tag := models.Tag{
-				Name: strings.TrimPrefix(query, "#"),
-				URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), strings.TrimPrefix(query, "#")),
+				Name: tagName,
+				URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
 				History: []struct {
 					Day      string `json:"day"`
 					Uses     string `json:"uses"`
 					Accounts string `json:"accounts"`
 				}{
 					{
-						Day:      "0",
+						Day:      time.Now().Format("2006-01-02"),
 						Uses:     "0",
 						Accounts: "0",
 					},
@@ -166,6 +217,14 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 	}
 
 	return common.OK(result), nil
+}
+
+// HandleSearchV2 handles GET /api/v2/search requests - returns same format as v1
+func (h *Handler) HandleSearchV2(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// V2 search has the same implementation as V1 in Lesser
+	// The main difference in Mastodon is that v2 groups results by type,
+	// but our v1 already returns grouped results
+	return h.HandleSearch(ctx, request)
 }
 
 // HandleGetNotifications retrieves notifications for the authenticated user

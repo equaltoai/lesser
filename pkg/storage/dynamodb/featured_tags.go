@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
@@ -134,7 +133,7 @@ func (s *dynamoDBStorage) GetFeaturedTags(ctx context.Context, userID string) ([
 	tags := make([]*storage.FeaturedTag, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record FeaturedTagRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			s.logger().Warn("failed to unmarshal featured tag", zap.Error(err))
 			continue
 		}

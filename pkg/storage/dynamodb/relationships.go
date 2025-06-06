@@ -9,7 +9,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -259,7 +258,7 @@ func (s *dynamoDBStorage) GetFollowers(ctx context.Context, username string, lim
 	followers := make([]string, 0, len(output.Items))
 	for _, item := range output.Items {
 		var record storage.RelationshipRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal relationship record", zap.Error(err))
 			continue
 		}
@@ -322,7 +321,7 @@ func (s *dynamoDBStorage) GetFollowing(ctx context.Context, username string, lim
 	following := make([]string, 0, len(output.Items))
 	for _, item := range output.Items {
 		var record storage.RelationshipRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal relationship record", zap.Error(err))
 			continue
 		}
@@ -368,7 +367,7 @@ func (s *dynamoDBStorage) IsFollowing(ctx context.Context, followerUsername, fol
 
 	// Check if the relationship is accepted
 	var record storage.RelationshipRecord
-	if err := attributevalue.UnmarshalMap(output.Item, &record); err != nil {
+	if err := s.UnmarshalItem(output.Item, &record); err != nil {
 		log.Error("failed to unmarshal relationship record", zap.Error(err))
 		return false, fmt.Errorf("failed to unmarshal record: %w", err)
 	}

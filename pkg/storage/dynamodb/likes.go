@@ -9,7 +9,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
@@ -94,7 +93,7 @@ func (s *dynamoDBStorage) GetLike(ctx context.Context, actor, object string) (*s
 	}
 
 	var record LikeRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal like: %w", err)
 	}
 
@@ -152,7 +151,7 @@ func (s *dynamoDBStorage) GetObjectLikes(ctx context.Context, objectID string, l
 	likes := make([]*storage.Like, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record LikeRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			continue
 		}
 		likes = append(likes, record.Like)
@@ -207,7 +206,7 @@ func (s *dynamoDBStorage) GetActorLikes(ctx context.Context, actorID string, lim
 	likes := make([]*storage.Like, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record LikeRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			continue
 		}
 		likes = append(likes, record.Like)

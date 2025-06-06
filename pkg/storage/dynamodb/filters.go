@@ -7,7 +7,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
@@ -98,7 +97,7 @@ func (s *dynamoDBStorage) GetFilter(ctx context.Context, filterID string) (*stor
 	}
 
 	var record FilterRecord
-	err = attributevalue.UnmarshalMap(result.Items[0], &record)
+	err = s.UnmarshalItem(result.Items[0], &record)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal filter: %w", err)
 	}
@@ -125,7 +124,7 @@ func (s *dynamoDBStorage) GetFiltersForUser(ctx context.Context, username string
 	filters := make([]*storage.Filter, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record FilterRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			s.logger().Error("failed to unmarshal filter record", zap.Error(err))
 			continue
@@ -307,7 +306,7 @@ func (s *dynamoDBStorage) GetFilterKeywords(ctx context.Context, filterID string
 	keywords := make([]*storage.FilterKeyword, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record FilterKeywordRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			s.logger().Error("failed to unmarshal filter keyword record", zap.Error(err))
 			continue
@@ -344,7 +343,7 @@ func (s *dynamoDBStorage) UpdateFilterKeyword(ctx context.Context, keywordID str
 	}
 
 	var record FilterKeywordRecord
-	err = attributevalue.UnmarshalMap(result.Items[0], &record)
+	err = s.UnmarshalItem(result.Items[0], &record)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal keyword: %w", err)
 	}
@@ -485,7 +484,7 @@ func (s *dynamoDBStorage) GetFilterStatuses(ctx context.Context, filterID string
 	statuses := make([]*storage.FilterStatus, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record FilterStatusRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			s.logger().Error("failed to unmarshal filter status record", zap.Error(err))
 			continue

@@ -8,7 +8,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/trust"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -104,7 +103,7 @@ func (s *dynamoDBStorage) GetTrustRelationship(ctx context.Context, trusterID, t
 	}
 
 	var record TrustRecord
-	err = attributevalue.UnmarshalMap(result.Item, &record)
+	err = s.UnmarshalItem(result.Item, &record)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal trust relationship: %w", err)
 	}
@@ -172,7 +171,7 @@ func (s *dynamoDBStorage) GetTrustRelationships(ctx context.Context, trusterID s
 	relationships := make([]*trust.TrustRelationship, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record TrustRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			common.Logger().Error("Failed to unmarshal trust record", zap.Error(err))
 			continue
@@ -222,7 +221,7 @@ func (s *dynamoDBStorage) GetTrustedByRelationships(ctx context.Context, trustee
 	relationships := make([]*trust.TrustRelationship, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record TrustRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			common.Logger().Error("Failed to unmarshal trust record", zap.Error(err))
 			continue
@@ -260,7 +259,7 @@ func (s *dynamoDBStorage) GetTrustScore(ctx context.Context, actorID, category s
 
 	if err == nil && result.Item != nil {
 		var record TrustRecord
-		err = attributevalue.UnmarshalMap(result.Item, &record)
+		err = s.UnmarshalItem(result.Item, &record)
 		if err == nil && record.Score != nil {
 			// Check if cache is still valid
 			if record.Score.CacheTTL.After(time.Now()) {

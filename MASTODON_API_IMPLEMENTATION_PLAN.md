@@ -178,8 +178,8 @@ This document outlines all remaining work needed to achieve full Mastodon API co
 - ✅ Search caching and analytics - IMPLEMENTED
 
 #### Remaining Tasks:
-- [ ] `GET /api/v2/search` - Grouped search results (v1 exists, need v2 format)
-- [ ] Hashtag search implementation (TODO in misc.go:146)
+- [x] `GET /api/v2/search` - Grouped search results (v1 exists, need v2 format) ✅ IMPLEMENTED
+- [x] Hashtag search implementation (TODO in misc.go:146) ✅ IMPLEMENTED
 - [ ] Status/post search implementation (TODO in misc.go:113)
 - [ ] Add language detection (TODO in search_service.go:190)
 - [ ] Extract user context for personalized search (TODO in search_service.go:157)

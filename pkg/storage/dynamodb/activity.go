@@ -118,7 +118,7 @@ func (s *dynamoDBStorage) GetActivity(ctx context.Context, id string) (*activity
 
 	// Unmarshal the first item
 	var record storage.ActivityRecord
-	if err := attributevalue.UnmarshalMap(result.Items[0], &record); err != nil {
+	if err := s.UnmarshalItem(result.Items[0], &record); err != nil {
 		log.Error("failed to unmarshal activity",
 			zap.String("activity_id", id),
 			zap.Error(err))
@@ -175,7 +175,7 @@ func (s *dynamoDBStorage) GetOutboxActivities(ctx context.Context, username stri
 	activities := make([]*activitypub.Activity, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record storage.ActivityRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal activity record",
 				zap.String("username", username),
 				zap.Error(err))
@@ -245,7 +245,7 @@ func (s *dynamoDBStorage) GetInboxActivities(ctx context.Context, username strin
 	activities := make([]*activitypub.Activity, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record storage.ActivityRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal activity record",
 				zap.String("username", username),
 				zap.Error(err))

@@ -668,7 +668,10 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/search" && method == http.MethodGet {
 		return handler.HandleSearch(ctx, request)
 	}
-	// TODO: Implement v2 search with better pagination
+	// Search v2 (same format as v1 in Lesser)
+	if path == "/search/v2" && method == http.MethodGet {
+		return handler.HandleSearchV2(ctx, request)
+	}
 
 	// ==================== MODERATION ====================
 	// Moderation endpoints

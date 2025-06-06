@@ -10,7 +10,6 @@ import (
 	cfg "github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -197,7 +196,7 @@ func (s *dynamoDBStorage) GetHomeTimeline(ctx context.Context, username string, 
 	entries := make([]*storage.TimelineEntry, 0, len(output.Items))
 	for _, item := range output.Items {
 		var record TimelineRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Warn("failed to unmarshal timeline record", zap.Error(err))
 			continue
 		}
@@ -275,7 +274,7 @@ func (s *dynamoDBStorage) GetPublicTimeline(ctx context.Context, local bool, lim
 	entries := make([]*storage.TimelineEntry, 0, len(output.Items))
 	for _, item := range output.Items {
 		var record TimelineRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Warn("failed to unmarshal timeline record", zap.Error(err))
 			continue
 		}
@@ -344,7 +343,7 @@ func (s *dynamoDBStorage) GetListTimeline(ctx context.Context, listID string, li
 	entries := make([]*storage.TimelineEntry, 0, len(output.Items))
 	for _, item := range output.Items {
 		var record TimelineRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Warn("failed to unmarshal timeline record", zap.Error(err))
 			continue
 		}
@@ -419,7 +418,7 @@ func (s *dynamoDBStorage) GetHashtagTimeline(ctx context.Context, hashtag string
 	entries := make([]*storage.TimelineEntry, 0, len(output.Items))
 	for _, item := range output.Items {
 		var record TimelineRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Warn("failed to unmarshal timeline record", zap.Error(err))
 			continue
 		}

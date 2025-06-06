@@ -9,7 +9,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -157,7 +156,7 @@ func (s *dynamoDBStorage) GetPoll(ctx context.Context, pollID string) (*storage.
 	}
 
 	var record PollRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal poll: %w", err)
 	}
 
@@ -207,7 +206,7 @@ func (s *dynamoDBStorage) GetPollByStatusID(ctx context.Context, statusID string
 	}
 
 	var record PollRecord
-	if err := attributevalue.UnmarshalMap(result.Items[0], &record); err != nil {
+	if err := s.UnmarshalItem(result.Items[0], &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal poll: %w", err)
 	}
 
@@ -330,7 +329,7 @@ func (s *dynamoDBStorage) GetPollVotes(ctx context.Context, pollID string) (map[
 	votes := make(map[string][]int)
 	for _, item := range result.Items {
 		var voteRecord VoteRecord
-		if err := attributevalue.UnmarshalMap(item, &voteRecord); err != nil {
+		if err := s.UnmarshalItem(item, &voteRecord); err != nil {
 			continue
 		}
 		votes[voteRecord.VoterID] = voteRecord.Choices
@@ -357,7 +356,7 @@ func (s *dynamoDBStorage) HasUserVoted(ctx context.Context, pollID string, userI
 	}
 
 	var voteRecord VoteRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &voteRecord); err != nil {
+	if err := s.UnmarshalItem(result.Item, &voteRecord); err != nil {
 		return false, nil, fmt.Errorf("failed to unmarshal vote: %w", err)
 	}
 

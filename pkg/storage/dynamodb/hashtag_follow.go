@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -123,7 +122,7 @@ func (s *dynamoDBStorage) GetFollowedHashtags(ctx context.Context, userID string
 	hashtags := make([]string, 0, len(result.Items))
 	for _, item := range result.Items {
 		var follow HashtagFollow
-		if err := attributevalue.UnmarshalMap(item, &follow); err != nil {
+		if err := s.UnmarshalItem(item, &follow); err != nil {
 			s.logger().Warn("failed to unmarshal hashtag follow", zap.Error(err))
 			continue
 		}

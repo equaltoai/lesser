@@ -151,7 +151,7 @@ func (s *dynamoDBStorage) GetActor(ctx context.Context, username string) (*activ
 
 	// Unmarshal the actor record
 	var record storage.ActorRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		log.Error("failed to unmarshal actor",
 			zap.String("username", username),
 			zap.Error(err))
@@ -413,7 +413,7 @@ func (s *dynamoDBStorage) SearchAccounts(ctx context.Context, query string, limi
 		}
 
 		var record storage.ActorRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Warn("failed to unmarshal actor record", zap.Error(err))
 			continue
 		}

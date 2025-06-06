@@ -76,7 +76,7 @@ func (s *dynamoDBStorage) GetUser(ctx context.Context, username string) (*storag
 	}
 
 	var user storage.User
-	if err := attributevalue.UnmarshalMap(result.Item, &user); err != nil {
+	if err := s.UnmarshalItem(result.Item, &user); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal user: %w", err)
 	}
 
@@ -104,7 +104,7 @@ func (s *dynamoDBStorage) GetUserByEmail(ctx context.Context, email string) (*st
 	}
 
 	var user storage.User
-	if err := attributevalue.UnmarshalMap(result.Items[0], &user); err != nil {
+	if err := s.UnmarshalItem(result.Items[0], &user); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal user: %w", err)
 	}
 
@@ -256,7 +256,7 @@ func (s *dynamoDBStorage) ListUsers(ctx context.Context, limit int32, cursor str
 	users := make([]*storage.User, 0, len(result.Items))
 	for _, item := range result.Items {
 		var user storage.User
-		if err := attributevalue.UnmarshalMap(item, &user); err != nil {
+		if err := s.UnmarshalItem(item, &user); err != nil {
 			continue
 		}
 		users = append(users, &user)

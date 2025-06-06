@@ -8,7 +8,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
@@ -97,7 +96,7 @@ func (s *dynamoDBStorage) GetList(ctx context.Context, listID string) (*storage.
 	}
 
 	var list storage.List
-	if err := attributevalue.UnmarshalMap(result.Item, &list); err != nil {
+	if err := s.UnmarshalItem(result.Item, &list); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal list: %w", err)
 	}
 

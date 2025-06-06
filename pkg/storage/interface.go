@@ -298,6 +298,12 @@ type Storage interface {
 	DeleteFeaturedTag(ctx context.Context, userID string, featuredTagID string) error
 	GetFeaturedTags(ctx context.Context, userID string) ([]*FeaturedTag, error)
 	GetTagSuggestions(ctx context.Context, userID string, limit int) ([]string, error)
+
+	// Hashtag operations
+	IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error
+	SearchHashtags(ctx context.Context, query string, limit int) ([]*Hashtag, error)
+	GetHashtagInfo(ctx context.Context, hashtag string) (*Hashtag, error)
+	GetHashtagUsageHistory(ctx context.Context, hashtag string, days int) ([]int64, error)
 }
 
 // User represents a user account in the system
@@ -780,4 +786,13 @@ type FeaturedTag struct {
 	StatusesCount int       `dynamodbav:"statuses_count"` // Number of statuses with this tag
 	LastStatusAt  string    `dynamodbav:"last_status_at"` // Last time the user posted with this tag
 	CreatedAt     time.Time `dynamodbav:"created_at"`
+}
+
+// Hashtag represents a hashtag with usage statistics
+type Hashtag struct {
+	Name       string    `dynamodbav:"Name" json:"name"`
+	URL        string    `dynamodbav:"URL" json:"url"`
+	UsageCount int64     `dynamodbav:"UsageCount" json:"usage_count"`
+	FirstSeen  time.Time `dynamodbav:"FirstSeen" json:"first_seen"`
+	LastUsed   time.Time `dynamodbav:"LastUsed" json:"last_used"`
 }

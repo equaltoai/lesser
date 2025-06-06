@@ -9,7 +9,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
@@ -94,7 +93,7 @@ func (s *dynamoDBStorage) GetAnnounce(ctx context.Context, actor, object string)
 	}
 
 	var record AnnounceRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal announce: %w", err)
 	}
 
@@ -152,7 +151,7 @@ func (s *dynamoDBStorage) GetObjectAnnounces(ctx context.Context, objectID strin
 	announces := make([]*storage.Announce, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record AnnounceRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			continue
 		}
 		announces = append(announces, record.Announce)
@@ -207,7 +206,7 @@ func (s *dynamoDBStorage) GetActorAnnounces(ctx context.Context, actorID string,
 	announces := make([]*storage.Announce, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record AnnounceRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			continue
 		}
 		announces = append(announces, record.Announce)

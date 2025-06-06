@@ -9,7 +9,6 @@ import (
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -99,7 +98,7 @@ func (s *dynamoDBStorage) GetCachedRemoteActor(ctx context.Context, handle strin
 	}
 
 	var record RemoteActorRecord
-	err = attributevalue.UnmarshalMap(result.Item, &record)
+	err = s.UnmarshalItem(result.Item, &record)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal remote actor: %w", err)
 	}
@@ -166,7 +165,7 @@ func (s *dynamoDBStorage) ListCachedRemoteActors(ctx context.Context, limit int3
 
 	for _, item := range result.Items {
 		var record RemoteActorRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			continue // Skip invalid records
 		}
 
@@ -212,7 +211,7 @@ func (s *dynamoDBStorage) CleanupExpiredRemoteActors(ctx context.Context) (int, 
 	// Delete expired entries
 	for _, item := range result.Items {
 		var record RemoteActorRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			continue
 		}
 
