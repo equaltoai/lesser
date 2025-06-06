@@ -34,7 +34,7 @@ func (s *dynamoDBStorage) CreateBookmark(ctx context.Context, username, objectID
 		CreatedAt: time.Now(),
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal bookmark",
 			zap.String("username", username),

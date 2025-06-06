@@ -44,7 +44,7 @@ func (s *dynamoDBStorage) CreateConversationMute(ctx context.Context, mute *stor
 		record.TTL = mute.ExpiresAt.Unix()
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal conversation mute: %w", err)
 	}

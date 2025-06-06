@@ -33,7 +33,7 @@ func (s *dynamoDBStorage) CreateFollow(ctx context.Context, followerUsername, fo
 	}
 
 	// Marshal the record
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal relationship record", zap.Error(err))
 		return fmt.Errorf("failed to marshal relationship: %w", err)

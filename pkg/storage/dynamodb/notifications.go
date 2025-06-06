@@ -58,7 +58,7 @@ func (s *dynamoDBStorage) CreateNotification(ctx context.Context, notification *
 		TTL:       time.Now().Add(30 * 24 * time.Hour).Unix(), // 30 days TTL
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}

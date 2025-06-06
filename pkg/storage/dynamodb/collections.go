@@ -49,7 +49,7 @@ func (s *dynamoDBStorage) AddToCollection(ctx context.Context, collection string
 		CreatedAt:      item.AddedAt,
 	}
 
-	itemData, err := attributevalue.MarshalMap(record)
+	itemData, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal collection item record", zap.Error(err))
 		return fmt.Errorf("failed to marshal collection item record: %w", err)

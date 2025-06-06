@@ -43,7 +43,7 @@ func (s *dynamoDBStorage) CreateMute(ctx context.Context, mute *storage.Mute) er
 		Mute:   *mute,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal mute: %w", err)
 	}

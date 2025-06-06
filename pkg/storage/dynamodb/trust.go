@@ -58,7 +58,7 @@ func (s *dynamoDBStorage) CreateTrustRelationship(ctx context.Context, relations
 		CreatedAt: now,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal trust relationship: %w", err)
 	}
@@ -295,7 +295,7 @@ func (s *dynamoDBStorage) UpdateTrustScore(ctx context.Context, score *trust.Tru
 		TTL:       score.CacheTTL.Unix(),
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal trust score: %w", err)
 	}
@@ -325,7 +325,7 @@ func (s *dynamoDBStorage) RecordTrustUpdate(ctx context.Context, update *trust.T
 		TTL:       time.Now().Add(30 * 24 * time.Hour).Unix(), // 30 days retention
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal trust update: %w", err)
 	}

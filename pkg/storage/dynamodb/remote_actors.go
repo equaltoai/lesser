@@ -47,13 +47,13 @@ func (s *dynamoDBStorage) CacheRemoteActor(ctx context.Context, handle string, a
 		TTL:       expiresAt.Unix(), // DynamoDB TTL
 	}
 
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal remote actor: %w", err)
 	}
 
 	// Marshal the Actor separately to avoid issues with nested structs
-	actorItem, err := attributevalue.MarshalMap(actor)
+	actorItem, err := s.MarshalItem(actor)
 	if err != nil {
 		return fmt.Errorf("failed to marshal actor data: %w", err)
 	}

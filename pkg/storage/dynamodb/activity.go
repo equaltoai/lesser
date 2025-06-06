@@ -50,7 +50,7 @@ func (s *dynamoDBStorage) CreateActivity(ctx context.Context, activity *activity
 	}
 
 	// Marshal the record to DynamoDB attributes
-	item, err := attributevalue.MarshalMap(record)
+	item, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal activity record",
 			zap.String("activity_id", activity.ID),

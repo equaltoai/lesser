@@ -32,7 +32,7 @@ func (s *dynamoDBStorage) FollowHashtag(ctx context.Context, userID string, hash
 		CreatedAt: time.Now(),
 	}
 
-	av, err := attributevalue.MarshalMap(follow)
+	av, err := s.MarshalItem(follow)
 	if err != nil {
 		return fmt.Errorf("failed to marshal hashtag follow: %w", err)
 	}

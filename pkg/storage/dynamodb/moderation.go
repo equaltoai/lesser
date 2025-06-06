@@ -60,7 +60,7 @@ func (s *dynamoDBStorage) CreateModerationEvent(ctx context.Context, event *mode
 		CreatedAt: event.Created,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal moderation event: %w", err)
 	}
@@ -288,7 +288,7 @@ func (s *dynamoDBStorage) AddModerationReview(ctx context.Context, review *moder
 		TTL:       time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal review: %w", err)
 	}
@@ -360,7 +360,7 @@ func (s *dynamoDBStorage) CreateModerationDecision(ctx context.Context, decision
 		TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal decision: %w", err)
 	}

@@ -57,7 +57,7 @@ func (s *dynamoDBStorage) CreatePushSubscription(ctx context.Context, username s
 		Data:   *subscription,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal push subscription: %w", err)
 	}
@@ -158,7 +158,7 @@ func (s *dynamoDBStorage) UpdatePushSubscription(ctx context.Context, username, 
 		Data:   *subscription,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal push subscription: %w", err)
 	}
@@ -268,7 +268,7 @@ func (s *dynamoDBStorage) SetVAPIDKeys(ctx context.Context, keys *storage.VAPIDK
 		UpdatedAt: time.Now(),
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal VAPID keys: %w", err)
 	}

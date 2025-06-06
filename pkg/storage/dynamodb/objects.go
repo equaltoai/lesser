@@ -149,7 +149,7 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 		record.GSI1SK = obj.Published.Format(time.RFC3339)
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal object",
 			zap.String("object_id", obj.ID),
@@ -334,7 +334,7 @@ func (s *dynamoDBStorage) UpdateObject(ctx context.Context, object interface{}) 
 		UpdatedAt: time.Now(),
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		log.Error("failed to marshal object",
 			zap.String("object_id", obj.ID),
@@ -414,7 +414,7 @@ func (s *dynamoDBStorage) TombstoneObject(ctx context.Context, objectID string, 
 		"CreatedAt": time.Now(),
 	}
 
-	av, err := attributevalue.MarshalMap(tombstoneRecord)
+	av, err := s.MarshalItem(tombstoneRecord)
 	if err != nil {
 		return fmt.Errorf("failed to marshal tombstone: %w", err)
 	}
@@ -693,7 +693,7 @@ func (s *dynamoDBStorage) CreateUpdateHistory(ctx context.Context, history *stor
 		"CreatedAt": time.Now(),
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal update history: %w", err)
 	}

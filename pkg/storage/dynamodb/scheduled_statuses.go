@@ -52,7 +52,7 @@ func (s *dynamoDBStorage) CreateScheduledStatus(ctx context.Context, scheduled *
 		ScheduledStatus: *scheduled,
 	}
 
-	av, err := attributevalue.MarshalMap(record)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal scheduled status: %w", err)
 	}

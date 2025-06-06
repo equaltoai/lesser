@@ -64,7 +64,7 @@ func (s *dynamoDBStorage) SetInstanceRules(ctx context.Context, rules []storage.
 		UpdatedAt: time.Now(),
 	}
 
-	item, err := attributevalue.MarshalMap(data)
+	item, err := s.MarshalItem(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal instance rules: %w", err)
 	}
@@ -117,7 +117,7 @@ func (s *dynamoDBStorage) SetExtendedDescription(ctx context.Context, descriptio
 		UpdatedAt:           time.Now(),
 	}
 
-	item, err := attributevalue.MarshalMap(data)
+	item, err := s.MarshalItem(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal extended description: %w", err)
 	}

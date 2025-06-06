@@ -66,7 +66,7 @@ func (s *dynamoDBStorage) CreateConversation(ctx context.Context, conversation *
 
 	// Batch write all records
 	for _, rec := range records {
-		item, err := attributevalue.MarshalMap(rec)
+		item, err := s.MarshalItem(rec)
 		if err != nil {
 			log.Error("failed to marshal conversation record", zap.Error(err))
 			return fmt.Errorf("failed to marshal conversation: %w", err)
@@ -182,7 +182,7 @@ func (s *dynamoDBStorage) MarkConversationRead(ctx context.Context, id, username
 		},
 	}
 
-	item, err := attributevalue.MarshalMap(status)
+	item, err := s.MarshalItem(status)
 	if err != nil {
 		return fmt.Errorf("failed to marshal status: %w", err)
 	}
