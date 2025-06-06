@@ -628,6 +628,51 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}
 	}
 
+	// ==================== DEBUG ENDPOINTS ====================
+	// Debug endpoints require admin or debug scope
+	if strings.HasPrefix(path, "/debug/") {
+		// Federation trace
+		if strings.HasPrefix(path, "/debug/federation/trace/") {
+			parts := strings.Split(path, "/")
+			if len(parts) == 5 && method == http.MethodGet {
+				activityID := parts[4]
+				return handler.HandleDebugFederationTrace(ctx, request, activityID)
+			}
+		}
+		// Object inspection
+		if strings.HasPrefix(path, "/debug/objects/") && !strings.HasSuffix(path, "/explain") {
+			parts := strings.Split(path, "/")
+			if len(parts) == 4 && method == http.MethodGet {
+				objectID := parts[3]
+				return handler.HandleDebugObject(ctx, request, objectID)
+			}
+		}
+		// Activity replay
+		if strings.HasPrefix(path, "/debug/replay/") {
+			parts := strings.Split(path, "/")
+			if len(parts) == 4 && method == http.MethodPost {
+				activityID := parts[3]
+				return handler.HandleDebugReplay(ctx, request, activityID)
+			}
+		}
+		// Federation domain debug
+		if strings.HasPrefix(path, "/debug/federation/domain/") {
+			parts := strings.Split(path, "/")
+			if len(parts) == 5 && method == http.MethodGet {
+				domain := parts[4]
+				return handler.HandleDebugFederationDomain(ctx, request, domain)
+			}
+		}
+		// Object explanation with storage details
+		if strings.HasPrefix(path, "/debug/objects/") && strings.HasSuffix(path, "/explain") {
+			parts := strings.Split(path, "/")
+			if len(parts) == 5 && method == http.MethodGet {
+				objectID := parts[3]
+				return handler.HandleDebugObjectExplain(ctx, request, objectID)
+			}
+		}
+	}
+
 	// ==================== FEATURED CONTENT ====================
 	// Featured tags
 	if path == "/featured_tags" && method == http.MethodGet {
