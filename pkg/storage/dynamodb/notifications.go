@@ -9,7 +9,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
@@ -105,7 +104,7 @@ func (s *dynamoDBStorage) GetNotification(ctx context.Context, id string) (*stor
 	}
 
 	var record NotificationRecord
-	if err := attributevalue.UnmarshalMap(result.Items[0], &record); err != nil {
+	if err := s.UnmarshalItem(result.Items[0], &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal notification: %w", err)
 	}
 
@@ -157,7 +156,7 @@ func (s *dynamoDBStorage) GetNotifications(ctx context.Context, username string,
 	notifications := make([]*storage.Notification, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record NotificationRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			common.Logger().Warn("failed to unmarshal notification record", zap.Error(err))
 			continue
 		}

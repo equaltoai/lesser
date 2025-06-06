@@ -9,7 +9,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -78,7 +77,7 @@ func (s *dynamoDBStorage) GetAuthorizationCode(ctx context.Context, code string)
 	}
 
 	var record storage.AuthorizationCodeRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		log.Error("failed to unmarshal authorization code", zap.Error(err))
 		return nil, fmt.Errorf("failed to unmarshal authorization code: %w", err)
 	}
@@ -177,7 +176,7 @@ func (s *dynamoDBStorage) GetRefreshToken(ctx context.Context, token string) (*s
 	}
 
 	var record storage.RefreshTokenRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		log.Error("failed to unmarshal refresh token", zap.Error(err))
 		return nil, fmt.Errorf("failed to unmarshal refresh token: %w", err)
 	}

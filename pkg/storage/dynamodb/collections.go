@@ -9,7 +9,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -148,7 +147,7 @@ func (s *dynamoDBStorage) GetCollectionItems(ctx context.Context, collection str
 	items := make([]*storage.CollectionItem, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record CollectionItemRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal collection item record", zap.Error(err))
 			continue
 		}

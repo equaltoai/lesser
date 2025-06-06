@@ -8,7 +8,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/moderation"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -104,7 +103,7 @@ func (s *dynamoDBStorage) GetModerationEvent(ctx context.Context, eventID string
 	}
 
 	var record ModerationRecord
-	err = attributevalue.UnmarshalMap(result.Items[0], &record)
+	err = s.UnmarshalItem(result.Items[0], &record)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal moderation event: %w", err)
 	}
@@ -140,7 +139,7 @@ func (s *dynamoDBStorage) GetModerationQueue(ctx context.Context, limit int, cur
 	items := make([]*moderation.QueueItem, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record ModerationRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			common.Logger().Error("Failed to unmarshal moderation record", zap.Error(err))
 			continue
@@ -198,7 +197,7 @@ func (s *dynamoDBStorage) GetModerationEventsByObject(ctx context.Context, objec
 	events := make([]*moderation.ModerationEvent, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record ModerationRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			common.Logger().Error("Failed to unmarshal moderation record", zap.Error(err))
 			continue
@@ -249,7 +248,7 @@ func (s *dynamoDBStorage) GetModerationEventsByActor(ctx context.Context, actorI
 	events := make([]*moderation.ModerationEvent, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record ModerationRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			common.Logger().Error("Failed to unmarshal moderation record", zap.Error(err))
 			continue
@@ -328,7 +327,7 @@ func (s *dynamoDBStorage) GetModerationReviews(ctx context.Context, eventID stri
 	reviews := make([]*moderation.Review, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record ModerationRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			common.Logger().Error("Failed to unmarshal review record", zap.Error(err))
 			continue
@@ -406,7 +405,7 @@ func (s *dynamoDBStorage) GetModerationDecision(ctx context.Context, objectID st
 	}
 
 	var record ModerationRecord
-	err = attributevalue.UnmarshalMap(result.Items[0], &record)
+	err = s.UnmarshalItem(result.Items[0], &record)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal decision: %w", err)
 	}
@@ -445,7 +444,7 @@ func (s *dynamoDBStorage) GetModerationHistory(ctx context.Context, objectID str
 	if err == nil {
 		for _, item := range result.Items {
 			var record ModerationRecord
-			err = attributevalue.UnmarshalMap(item, &record)
+			err = s.UnmarshalItem(item, &record)
 			if err == nil && record.Type == "DECISION" && record.Decision != nil {
 				history.Decisions = append(history.Decisions, *record.Decision)
 			}

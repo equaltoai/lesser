@@ -627,7 +627,7 @@ func main() {
 				Handler:       pulumi.String("bootstrap"),
 				Role:          lambdaRole.Arn,
 				Timeout:       pulumi.Int(timeout),
-				MemorySize:    pulumi.Int(512),
+				MemorySize:    pulumi.Int(3008),
 				Architectures: pulumi.StringArray{pulumi.String("arm64")},
 				Environment: &lambda.FunctionEnvironmentArgs{
 					Variables: lambdaEnv,
@@ -823,7 +823,7 @@ func main() {
 				Handler:       pulumi.String("bootstrap"),
 				Role:          lambdaRole.Arn,
 				Timeout:       pulumi.Int(timeout),
-				MemorySize:    pulumi.Int(512),
+				MemorySize:    pulumi.Int(3008),
 				Architectures: pulumi.StringArray{pulumi.String("arm64")},
 				Environment: &lambda.FunctionEnvironmentArgs{
 					Variables: wsLambdaEnv,

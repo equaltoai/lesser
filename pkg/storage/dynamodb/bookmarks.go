@@ -8,7 +8,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -168,7 +167,7 @@ func (s *dynamoDBStorage) GetBookmarks(ctx context.Context, username string, lim
 		}
 
 		var record BookmarkRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal bookmark record",
 				zap.Error(err))
 			continue

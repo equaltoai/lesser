@@ -7,7 +7,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -121,7 +120,7 @@ func (s *dynamoDBStorage) GetAccountPins(ctx context.Context, username string) (
 	pins := make([]*storage.AccountPin, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record AccountPinRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			s.logger().Error("failed to unmarshal account pin record", zap.Error(err))
 			continue
 		}
@@ -241,7 +240,7 @@ func (s *dynamoDBStorage) GetAccountNote(ctx context.Context, username, targetAc
 
 	// Unmarshal the record
 	var record AccountNoteRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		s.logger().Error("failed to unmarshal account note record", zap.Error(err))
 		return nil, err
 	}

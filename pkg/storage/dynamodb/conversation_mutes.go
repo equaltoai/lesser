@@ -8,7 +8,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -106,7 +105,7 @@ func (s *dynamoDBStorage) IsConversationMuted(ctx context.Context, username, con
 
 	// Check if the mute has expired
 	var record ConversationMuteRecord
-	err = attributevalue.UnmarshalMap(result.Item, &record)
+	err = s.UnmarshalItem(result.Item, &record)
 	if err != nil {
 		return false, fmt.Errorf("failed to unmarshal conversation mute: %w", err)
 	}
@@ -140,7 +139,7 @@ func (s *dynamoDBStorage) GetMutedConversations(ctx context.Context, username st
 
 		for _, item := range result.Items {
 			var record ConversationMuteRecord
-			err := attributevalue.UnmarshalMap(item, &record)
+			err := s.UnmarshalItem(item, &record)
 			if err != nil {
 				s.logger().Error("failed to unmarshal conversation mute", zap.Error(err))
 				continue

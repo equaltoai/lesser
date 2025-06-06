@@ -7,7 +7,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
@@ -41,7 +40,7 @@ func (s *dynamoDBStorage) GetInstanceRules(ctx context.Context) ([]storage.Insta
 	}
 
 	var data InstanceData
-	if err := attributevalue.UnmarshalMap(result.Item, &data); err != nil {
+	if err := s.UnmarshalItem(result.Item, &data); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal instance rules: %w", err)
 	}
 
@@ -101,7 +100,7 @@ func (s *dynamoDBStorage) GetExtendedDescription(ctx context.Context) (string, t
 	}
 
 	var data InstanceData
-	if err := attributevalue.UnmarshalMap(result.Item, &data); err != nil {
+	if err := s.UnmarshalItem(result.Item, &data); err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to unmarshal extended description: %w", err)
 	}
 

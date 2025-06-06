@@ -8,7 +8,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -86,7 +85,7 @@ func (s *dynamoDBStorage) GetMute(ctx context.Context, actor, mutedActor string)
 	}
 
 	var record MuteRecord
-	err = attributevalue.UnmarshalMap(result.Item, &record)
+	err = s.UnmarshalItem(result.Item, &record)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal mute: %w", err)
 	}
@@ -144,7 +143,7 @@ func (s *dynamoDBStorage) GetMutedActors(ctx context.Context, actor string, limi
 	mutes := make([]*storage.Mute, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record MuteRecord
-		err = attributevalue.UnmarshalMap(item, &record)
+		err = s.UnmarshalItem(item, &record)
 		if err != nil {
 			s.logger().Error("failed to unmarshal mute record", zap.Error(err))
 			continue

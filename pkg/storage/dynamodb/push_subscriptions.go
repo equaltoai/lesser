@@ -100,7 +100,7 @@ func (s *dynamoDBStorage) GetPushSubscription(ctx context.Context, username, sub
 	}
 
 	var record PushSubscriptionRecord
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal push subscription: %w", err)
 	}
 
@@ -125,7 +125,7 @@ func (s *dynamoDBStorage) GetUserPushSubscriptions(ctx context.Context, username
 	subscriptions := make([]*storage.PushSubscription, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record PushSubscriptionRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			common.Logger().Error("failed to unmarshal push subscription",
 				zap.String("username", username),
 				zap.Error(err))

@@ -10,7 +10,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -193,6 +192,40 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 				zap.Error(err))
 			// Don't fail the operation, just log the error
 		}
+
+		// Index hashtags from the content
+		if obj.Content != "" {
+			hashtags := ExtractHashtags(obj.Content)
+			visibility := "public" // Default visibility
+			if len(obj.To) > 0 {
+				// Determine visibility based on To field
+				for _, to := range obj.To {
+					if to == "https://www.w3.org/ns/activitystreams#Public" {
+						visibility = "public"
+						break
+					}
+				}
+				if visibility != "public" && len(obj.CC) > 0 {
+					for _, cc := range obj.CC {
+						if cc == "https://www.w3.org/ns/activitystreams#Public" {
+							visibility = "unlisted"
+							break
+						}
+					}
+				}
+			}
+
+			// Index each hashtag
+			for _, hashtag := range hashtags {
+				if err := s.IndexHashtag(ctx, hashtag, obj.ID, obj.AttributedTo, visibility); err != nil {
+					log.Warn("failed to index hashtag",
+						zap.String("hashtag", hashtag),
+						zap.String("object_id", obj.ID),
+						zap.Error(err))
+					// Don't fail the operation, just log the error
+				}
+			}
+		}
 	}
 
 	return nil
@@ -215,7 +248,7 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 		var tombstoneRecord struct {
 			Tombstone *storage.Tombstone `dynamodbav:"Tombstone"`
 		}
-		if err := attributevalue.UnmarshalMap(result.Item, &tombstoneRecord); err != nil {
+		if err := s.UnmarshalItem(result.Item, &tombstoneRecord); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal tombstone: %w", err)
 		}
 		return tombstoneRecord.Tombstone, nil
@@ -498,7 +531,7 @@ func (s *dynamoDBStorage) GetTombstone(ctx context.Context, objectID string) (*s
 	var record struct {
 		Tombstone *storage.Tombstone `dynamodbav:"Tombstone"`
 	}
-	if err := attributevalue.UnmarshalMap(result.Item, &record); err != nil {
+	if err := s.UnmarshalItem(result.Item, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal tombstone: %w", err)
 	}
 
@@ -657,7 +690,7 @@ func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string,
 		}
 
 		var record ObjectRecord
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal object record",
 				zap.Error(err))
 			continue
@@ -744,7 +777,7 @@ func (s *dynamoDBStorage) GetUpdateHistory(ctx context.Context, objectID string,
 		var record struct {
 			History *storage.UpdateHistory `dynamodbav:"History"`
 		}
-		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			log.Error("failed to unmarshal history record",
 				zap.Error(err))
 			continue
