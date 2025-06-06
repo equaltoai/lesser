@@ -10,11 +10,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.19.0
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.7.82
 	github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.2
-	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.27.0
-	github.com/aws/aws-sdk-go-v2/service/comprehend v1.35.8
+	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.7.2
+	github.com/aws/aws-sdk-go-v2/service/comprehend v1.36.4
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.43.1
+	github.com/aws/aws-sdk-go-v2/service/rekognition v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.80.0
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.5
+	github.com/awslabs/aws-lambda-go-api-proxy v0.16.2
 	github.com/bytedance/sonic v1.13.3
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
@@ -44,7 +46,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.32.2 // indirect
 	github.com/aws/smithy-go v1.22.2 // indirect
-	github.com/awslabs/aws-lambda-go-api-proxy v0.16.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

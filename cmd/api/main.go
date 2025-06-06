@@ -628,6 +628,28 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}
 	}
 
+	// ==================== AI INTEGRATION ====================
+	// AI Analysis endpoints
+	if strings.HasPrefix(path, "/ai/analysis/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 && method == http.MethodGet {
+			objectID := parts[2]
+			return handler.HandleGetAIAnalysis(ctx, request, objectID)
+		}
+	}
+	// Request AI analysis
+	if path == "/ai/analyze" && method == http.MethodPost {
+		return handler.HandleRequestAIAnalysis(ctx, request)
+	}
+	// AI statistics
+	if path == "/ai/stats" && method == http.MethodGet {
+		return handler.HandleGetAIStats(ctx, request)
+	}
+	// AI capabilities
+	if path == "/ai/capabilities" && method == http.MethodGet {
+		return handler.HandleGetAISummary(ctx, request)
+	}
+
 	// ==================== REPUTATION & VOUCHES ====================
 	// Reputation endpoints
 	if strings.HasPrefix(path, "/reputation/") {
@@ -663,6 +685,35 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 				vouchID := parts[2]
 				return handler.HandleRevokeVouch(ctx, request, vouchID)
 			}
+		}
+	}
+
+	// ==================== COMMUNITY NOTES ====================
+	// Create a note
+	if path == "/notes" && method == http.MethodPost {
+		return handler.HandleCreateNote(ctx, request)
+	}
+	// Get notes for an object
+	if strings.HasPrefix(path, "/notes/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			if len(parts) == 4 && parts[3] == "vote" && method == http.MethodPost {
+				// Vote on a note
+				noteID := parts[2]
+				return handler.HandleVoteNote(ctx, request, noteID)
+			} else if len(parts) == 3 && method == http.MethodGet {
+				// Get notes for object
+				objectID := parts[2]
+				return handler.HandleGetNotes(ctx, request, objectID)
+			}
+		}
+	}
+	// Get user's notes
+	if strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/notes") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 4 && method == http.MethodGet {
+			username := parts[2]
+			return handler.HandleGetUserNotes(ctx, request, username)
 		}
 	}
 
