@@ -6,7 +6,7 @@ GOARCH ?= arm64
 CGO_ENABLED ?= 0
 
 # List of Lambda functions to build
-LAMBDAS := webfinger actor inbox outbox collections activity-processor
+LAMBDAS := webfinger actor inbox outbox collections activity-processor graphql
 # Add new lambdas here and create corresponding build targets below
 
 # Build all Lambda functions
@@ -179,6 +179,9 @@ build-lambdas:
 	@echo "Building cost-aggregator..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/cost-aggregator
 	@cd bin && zip -q cost-aggregator.zip bootstrap && rm bootstrap
+	@echo "Building graphql..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/graphql
+	@cd bin && zip -q graphql.zip bootstrap && rm bootstrap
 	@echo "Lambda functions built successfully!"
 
 .PHONY: deploy
@@ -218,4 +221,15 @@ build-auth:
 build-search-indexer:
 	@echo "Building search-indexer..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/search-indexer
-	@cd bin && zip -q search-indexer.zip bootstrap && rm bootstrap 
+	@cd bin && zip -q search-indexer.zip bootstrap && rm bootstrap
+
+# Generate GraphQL code
+gqlgen:
+	@echo "Generating GraphQL code..."
+	@go run github.com/99designs/gqlgen generate
+
+# Build GraphQL Lambda
+build-graphql:
+	@echo "Building graphql Lambda..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/graphql
+	@cd bin && zip -q graphql.zip bootstrap && rm bootstrap 
