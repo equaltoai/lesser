@@ -28,7 +28,9 @@ func init() {
 		cfg, err := config.LoadDefaultConfig(ctx)
 		if err == nil {
 			client := dynamodb.NewFromConfig(cfg)
-			globalCostStorage = NewStorage(client, tableName, nil)
+			// Create a logger for cost storage
+			logger, _ := zap.NewProduction()
+			globalCostStorage = NewStorage(client, tableName, logger)
 		}
 	}
 }

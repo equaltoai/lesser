@@ -9,8 +9,8 @@ import (
 func GetCORSHeaders() map[string]string {
 	return map[string]string{
 		"Access-Control-Allow-Origin":  "*",
-		"Access-Control-Allow-Headers": "Content-Type, Authorization",
-		"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+		"Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Accept, Accept-Encoding, Accept-Language, Date, Digest, Host, Signature, User-Agent, X-Forwarded-For, X-Forwarded-Proto",
+		"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD",
 	}
 }
 
