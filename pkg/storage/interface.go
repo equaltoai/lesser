@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/moderation"
+	"github.com/aron23/lesser/pkg/trust"
 )
 
 // Storage defines the interface for data storage operations
@@ -228,6 +230,29 @@ type Storage interface {
 	AddFilterStatus(ctx context.Context, filterID string, status *FilterStatus) error
 	GetFilterStatuses(ctx context.Context, filterID string) ([]*FilterStatus, error)
 	DeleteFilterStatus(ctx context.Context, statusID string) error
+
+	// Moderation operations
+	CreateModerationEvent(ctx context.Context, event *ModerationEvent) error
+	GetModerationEvent(ctx context.Context, eventID string) (*ModerationEvent, error)
+	GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*ModerationQueueItem, string, error)
+	GetModerationEventsByObject(ctx context.Context, objectID string, limit int, cursor string) ([]*ModerationEvent, string, error)
+	GetModerationEventsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*ModerationEvent, string, error)
+	AddModerationReview(ctx context.Context, review *ModerationReview) error
+	GetModerationReviews(ctx context.Context, eventID string) ([]*ModerationReview, error)
+	CreateModerationDecision(ctx context.Context, decision *ModerationDecision) error
+	GetModerationDecision(ctx context.Context, objectID string) (*ModerationDecision, error)
+	GetModerationHistory(ctx context.Context, objectID string) (*ModerationHistory, error)
+
+	// Trust operations
+	CreateTrustRelationship(ctx context.Context, relationship *TrustRelationship) error
+	GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*TrustRelationship, error)
+	UpdateTrustRelationship(ctx context.Context, relationship *TrustRelationship) error
+	DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error
+	GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*TrustRelationship, string, error)
+	GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*TrustRelationship, string, error)
+	GetTrustScore(ctx context.Context, actorID, category string) (*TrustScore, error)
+	UpdateTrustScore(ctx context.Context, score *TrustScore) error
+	RecordTrustUpdate(ctx context.Context, update *TrustUpdate) error
 }
 
 // User represents a user account in the system
@@ -638,3 +663,14 @@ type FilterStatus struct {
 	StatusID  string    `dynamodbav:"status_id"`
 	CreatedAt time.Time `dynamodbav:"created_at"`
 }
+
+// Type aliases for moderation and trust types to avoid repetition
+type ModerationEvent = moderation.ModerationEvent
+type ModerationReview = moderation.Review
+type ModerationDecision = moderation.ModerationDecision
+type ModerationHistory = moderation.ModerationHistory
+type ModerationQueueItem = moderation.QueueItem
+
+type TrustRelationship = trust.TrustRelationship
+type TrustScore = trust.TrustScore
+type TrustUpdate = trust.TrustUpdate
