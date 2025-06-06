@@ -1,0 +1,370 @@
+# Lesser GraphQL Schema
+
+scalar Time
+scalar Cursor
+
+# Enums
+enum TimelineType {
+  HOME
+  PUBLIC
+  LOCAL
+  HASHTAG
+  LIST
+  DIRECT
+}
+
+enum ActorType {
+  PERSON
+  GROUP
+  APPLICATION
+  SERVICE
+  ORGANIZATION
+}
+
+enum ObjectType {
+  NOTE
+  ARTICLE
+  IMAGE
+  VIDEO
+  QUESTION
+  EVENT
+  PAGE
+}
+
+enum Visibility {
+  PUBLIC
+  UNLISTED
+  FOLLOWERS
+  DIRECT
+}
+
+enum Period {
+  HOUR
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum ActivityType {
+  CREATE
+  UPDATE
+  DELETE
+  FOLLOW
+  LIKE
+  ANNOUNCE
+  UNDO
+  ACCEPT
+  REJECT
+  FLAG
+}
+
+enum TrustCategory {
+  CONTENT
+  BEHAVIOR
+  TECHNICAL
+}
+
+# Core Types
+type Actor {
+  id: ID!
+  username: String!
+  domain: String
+  displayName: String
+  summary: String
+  avatar: String
+  header: String
+  followers: Int!
+  following: Int!
+  statusesCount: Int!
+  bot: Boolean!
+  locked: Boolean!
+  createdAt: Time!
+  updatedAt: Time!
+  fields: [Field!]!
+  
+  # Lesser enhancements
+  trustScore: Float!
+  reputationSignature: String
+}
+
+type Field {
+  name: String!
+  value: String!
+  verifiedAt: Time
+}
+
+type Object {
+  id: ID!
+  type: ObjectType!
+  actor: Actor!
+  content: String!
+  contentMap: [ContentMap!]!
+  inReplyTo: Object
+  visibility: Visibility!
+  sensitive: Boolean!
+  spoilerText: String
+  attachments: [Attachment!]!
+  tags: [Tag!]!
+  mentions: [Mention!]!
+  createdAt: Time!
+  updatedAt: Time!
+  
+  # Engagement metrics
+  repliesCount: Int!
+  likesCount: Int!
+  sharesCount: Int!
+  
+  # Lesser enhancements
+  estimatedCost: Int!
+  moderationScore: Float
+  communityNotes: [CommunityNote!]!
+}
+
+type ContentMap {
+  language: String!
+  content: String!
+}
+
+type Attachment {
+  id: ID!
+  type: String!
+  url: String!
+  preview: String
+  description: String
+  blurhash: String
+  width: Int
+  height: Int
+  duration: Float
+}
+
+type Tag {
+  name: String!
+  url: String!
+}
+
+type Mention {
+  id: ID!
+  username: String!
+  domain: String
+  url: String!
+}
+
+type Activity {
+  id: ID!
+  type: ActivityType!
+  actor: Actor!
+  object: Object
+  target: Object
+  published: Time!
+  
+  # Lesser enhancement
+  cost: Int!
+}
+
+# Connections for pagination
+type ObjectConnection {
+  edges: [ObjectEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ObjectEdge {
+  node: Object!
+  cursor: Cursor!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: Cursor
+  endCursor: Cursor
+}
+
+# Instance Metrics
+type InstanceMetrics {
+  activeUsers: Int!
+  requestsPerMinute: Int!
+  averageLatencyMs: Float!
+  storageUsedGB: Float!
+  estimatedMonthlyCost: Float!
+  lastUpdated: Time!
+}
+
+type CostBreakdown {
+  period: Period!
+  totalCost: Float!
+  dynamoDBCost: Float!
+  s3StorageCost: Float!
+  lambdaCost: Float!
+  dataTransferCost: Float!
+  breakdown: [CostItem!]!
+}
+
+type CostItem {
+  operation: String!
+  count: Int!
+  cost: Float!
+}
+
+# Trust & Moderation
+type TrustEdge {
+  from: Actor!
+  to: Actor!
+  category: TrustCategory!
+  score: Float!
+  updatedAt: Time!
+}
+
+type ModerationDecision {
+  id: ID!
+  object: Object!
+  decision: String!
+  confidence: Float!
+  evidence: [String!]!
+  reviewers: [Actor!]!
+  timestamp: Time!
+}
+
+type CommunityNote {
+  id: ID!
+  author: Actor!
+  content: String!
+  helpful: Int!
+  notHelpful: Int!
+  createdAt: Time!
+}
+
+# Input Types
+input CreateNoteInput {
+  content: String!
+  contentMap: [ContentMapInput!]
+  inReplyToId: ID
+  visibility: Visibility!
+  sensitive: Boolean
+  spoilerText: String
+  attachmentIds: [ID!]
+  mentions: [String!]
+  tags: [String!]
+}
+
+input ContentMapInput {
+  language: String!
+  content: String!
+}
+
+input TrustInput {
+  targetActorId: ID!
+  category: TrustCategory!
+  score: Float!
+}
+
+input FlagInput {
+  objectId: ID!
+  reason: String!
+  evidence: [String!]
+}
+
+input CommunityNoteInput {
+  objectId: ID!
+  content: String!
+}
+
+# Payloads
+type CreateNotePayload {
+  object: Object!
+  activity: Activity!
+  cost: CostUpdate!
+}
+
+type FlagPayload {
+  moderationId: ID!
+  queued: Boolean!
+}
+
+type CommunityNotePayload {
+  note: CommunityNote!
+  object: Object!
+}
+
+# Updates
+type CostUpdate {
+  operationCost: Int!
+  dailyTotal: Float!
+  monthlyProjection: Float!
+}
+
+# Queries
+type Query {
+  # Mastodon compatibility
+  actor(id: ID, username: String): Actor
+  object(id: ID!): Object
+  timeline(type: TimelineType!, hashtag: String, listId: ID, first: Int = 20, after: Cursor): ObjectConnection!
+  search(query: String!, type: String, first: Int = 20, after: Cursor): ObjectConnection!
+  
+  # Lesser enhancements
+  instanceMetrics: InstanceMetrics!
+  costBreakdown(period: Period = DAY): CostBreakdown!
+  trustGraph(actorId: ID!, category: TrustCategory): [TrustEdge!]!
+  moderationQueue(first: Int = 20, after: Cursor): [ModerationDecision!]!
+  
+  # Debug endpoints
+  explainObject(id: ID!): ObjectExplanation!
+  federationStatus(domain: String!): FederationStatus!
+}
+
+# Mutations
+type Mutation {
+  # Mastodon compatibility
+  createNote(input: CreateNoteInput!): CreateNotePayload!
+  deleteObject(id: ID!): Boolean!
+  likeObject(id: ID!): Activity!
+  unlikeObject(id: ID!): Boolean!
+  shareObject(id: ID!): Activity!
+  unshareObject(id: ID!): Boolean!
+  followActor(id: ID!): Activity!
+  unfollowActor(id: ID!): Boolean!
+  
+  # Lesser enhancements
+  updateTrust(input: TrustInput!): TrustEdge!
+  flagObject(input: FlagInput!): FlagPayload!
+  addCommunityNote(input: CommunityNoteInput!): CommunityNotePayload!
+  voteCommunityNote(id: ID!, helpful: Boolean!): CommunityNote!
+}
+
+# Subscriptions (via WebSocket Lambda)
+type Subscription {
+  # Activity streams
+  activityStream(types: [ActivityType!]): Activity!
+  timelineUpdates(type: TimelineType!): Object!
+  
+  # Lesser enhancements
+  costUpdates(threshold: Int): CostUpdate!
+  moderationEvents(actorId: ID): ModerationDecision!
+  trustUpdates(actorId: ID!): TrustEdge!
+}
+
+# Debug types
+type ObjectExplanation {
+  object: Object!
+  storageLocation: String!
+  sizeBytes: Int!
+  storageCost: Float!
+  accessPattern: [AccessLog!]!
+}
+
+type AccessLog {
+  timestamp: Time!
+  operation: String!
+  cost: Int!
+}
+
+type FederationStatus {
+  domain: String!
+  reachable: Boolean!
+  lastContact: Time
+  sharedInbox: String
+  publicKey: String
+  software: String
+  version: String
+} 
