@@ -24,7 +24,7 @@ import (
 // HandleSearch performs a search across accounts, statuses, and hashtags
 func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Search can be authenticated or not
-	var _ *activitypub.Actor
+	var authenticatedUser string
 	authHeader := request.Headers["Authorization"]
 	if authHeader == "" {
 		authHeader = request.Headers["authorization"]
@@ -33,7 +33,9 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 	if token, err := auth.ExtractBearerToken(authHeader); err == nil {
 		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-			_, _ = h.store.GetActor(ctx, claims.Username)
+			authenticatedUser = claims.Username
+			// Add user ID to context for personalization
+			ctx = context.WithValue(ctx, "user_id", authenticatedUser)
 		}
 	}
 
@@ -46,8 +48,8 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 	// Parse search parameters
 	searchType := request.QueryStringParameters["type"] // accounts, hashtags, statuses
 	_ = request.QueryStringParameters["resolve"] == "true"
-	_ = request.QueryStringParameters["following"] == "true"
-	_ = request.QueryStringParameters["account_id"]
+	followingOnly := request.QueryStringParameters["following"] == "true"
+	accountID := request.QueryStringParameters["account_id"]
 	_ = request.QueryStringParameters["exclude_unreviewed"] == "true"
 	_ = request.QueryStringParameters["min_id"]
 	_ = request.QueryStringParameters["max_id"]
@@ -111,33 +113,85 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 
 	// Search statuses
 	if searchType == "" || searchType == "statuses" {
-		// TODO: Implement status search
-		// For now, just search by exact URL
-		if strings.HasPrefix(query, "http://") || strings.HasPrefix(query, "https://") {
-			if obj, err := h.store.GetObject(ctx, query); err == nil {
-				// Get the actor who created the object
-				var attributedTo string
-				var objActor *activitypub.Actor
-
-				switch o := obj.(type) {
-				case *activitypub.Note:
-					attributedTo = o.AttributedTo
-				case map[string]interface{}:
-					if attr, ok := o["attributedTo"].(string); ok {
-						attributedTo = attr
-					}
-				}
-
-				if attributedTo != "" {
-					parts := strings.Split(attributedTo, "/")
+		// Check if it's a direct URL search
+		if strings.HasPrefix(query, "http") {
+			// Handle URL search
+			statusResult, err := h.store.SearchStatusesByURL(ctx, query)
+			if err == nil && statusResult != nil {
+				// Convert to API format
+				var statusActor *activitypub.Actor
+				if statusResult.AuthorID != "" {
+					parts := strings.Split(statusResult.AuthorID, "/")
 					if len(parts) > 0 {
 						username := parts[len(parts)-1]
-						objActor, _ = h.store.GetActor(ctx, username)
+						statusActor, _ = h.store.GetActor(ctx, username)
 					}
 				}
 
-				status := h.converter.ObjectToStatus(obj, objActor)
+				status := models.Status{
+					ID:        statusResult.StatusID,
+					Content:   statusResult.Content,
+					URL:       statusResult.URL,
+					CreatedAt: statusResult.Published.Format(time.RFC3339),
+				}
+
+				if statusActor != nil {
+					account := h.converter.ActorToAccount(statusActor)
+					status.Account = account
+				}
+
 				result.Statuses = append(result.Statuses, status)
+			}
+		} else {
+			// Perform content search
+			statusLimit := 20
+			if limitStr := request.QueryStringParameters["limit"]; limitStr != "" {
+				if l, err := fmt.Sscanf(limitStr, "%d", &statusLimit); err == nil && l == 1 {
+					if statusLimit > 40 {
+						statusLimit = 40
+					}
+				}
+			}
+
+			// Use the new search method with options
+			searchOptions := storage.StatusSearchOptions{
+				Limit:         statusLimit,
+				FollowingOnly: followingOnly,
+				AccountID:     accountID,
+			}
+
+			statusResults, err := h.store.SearchStatusesWithOptions(ctx, query, searchOptions)
+			if err != nil {
+				h.logger.Warn("status search failed", zap.Error(err))
+			} else {
+				// Convert search results to API format
+				for _, sr := range statusResults {
+					// Get the actor for each status
+					var statusActor *activitypub.Actor
+					if sr.AuthorID != "" {
+						parts := strings.Split(sr.AuthorID, "/")
+						if len(parts) > 0 {
+							username := parts[len(parts)-1]
+							statusActor, _ = h.store.GetActor(ctx, username)
+						}
+					}
+
+					// Create API status
+					status := models.Status{
+						ID:        sr.StatusID,
+						Content:   sr.Content,
+						URL:       sr.URL,
+						CreatedAt: sr.Published.Format(time.RFC3339),
+					}
+
+					// Add account info if we found the actor
+					if statusActor != nil {
+						account := h.converter.ActorToAccount(statusActor)
+						status.Account = account
+					}
+
+					result.Statuses = append(result.Statuses, status)
+				}
 			}
 		}
 	}

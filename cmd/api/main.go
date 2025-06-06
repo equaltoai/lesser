@@ -467,6 +467,10 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 			return handler.HandleListTimeline(ctx, request, listID)
 		}
 	}
+	// Link timeline
+	if path == "/timelines/link" && method == http.MethodGet {
+		return handler.HandleGetLinkTimeline(ctx, request)
+	}
 
 	// ==================== CONVERSATIONS ====================
 	// List conversations
@@ -574,8 +578,7 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 
 	// Profile directory
 	if path == "/directory" && method == http.MethodGet {
-		// TODO: Implement profile directory
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetDirectory(ctx, request)
 	}
 
 	// Announcements
@@ -875,20 +878,16 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	// ==================== TRENDS ====================
 	// Trends
 	if path == "/trends" && method == http.MethodGet {
-		// TODO: Implement trending algorithm
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetTrends(ctx, request)
 	}
 	if path == "/trends/statuses" && method == http.MethodGet {
-		// TODO: Implement trending statuses
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetTrendingStatuses(ctx, request)
 	}
 	if path == "/trends/tags" && method == http.MethodGet {
-		// TODO: Implement trending tags
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetTrendingTags(ctx, request)
 	}
 	if path == "/trends/links" && method == http.MethodGet {
-		// TODO: Implement trending links
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetTrendingLinks(ctx, request)
 	}
 
 	// ==================== MISSING ENDPOINTS ====================
@@ -1002,8 +1001,21 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	}
 
 	// TODO: GET /api/v1/endorsements - View endorsed accounts
-	// TODO: GET /api/v1/suggestions - Get follow suggestions
-	// TODO: DELETE /api/v1/suggestions/:account_id - Remove suggestion
+	// Follow suggestions
+	if path == "/suggestions" && method == http.MethodGet {
+		return handler.HandleGetSuggestionsV1(ctx, request)
+	}
+	if path == "/suggestions/v2" && method == http.MethodGet {
+		return handler.HandleGetSuggestionsV2(ctx, request)
+	}
+	// Remove suggestion
+	if strings.HasPrefix(path, "/suggestions/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 && method == http.MethodDelete {
+			accountID := parts[2]
+			return handler.HandleRemoveSuggestion(ctx, request, accountID)
+		}
+	}
 
 	// ==================== HASHTAGS ====================
 	// Hashtag endpoints

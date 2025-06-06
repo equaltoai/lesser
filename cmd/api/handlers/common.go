@@ -5,6 +5,7 @@ import (
 	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/mastodon"
 	"github.com/aron23/lesser/pkg/storage"
+	"github.com/aron23/lesser/pkg/trends"
 	"go.uber.org/zap"
 )
 
@@ -15,16 +16,20 @@ type Handler struct {
 	logger         *zap.Logger
 	authMiddleware *auth.Middleware
 	converter      mastodon.Converter
+	trendService   *trends.Service
 }
 
 // NewHandler creates a new handler with all dependencies
 func NewHandler(cfg *config.Config, store storage.Storage, logger *zap.Logger, authMiddleware *auth.Middleware) *Handler {
 	converter := mastodon.NewConverter(cfg.BaseURL())
+	trendService := trends.NewService(store)
+
 	return &Handler{
 		cfg:            cfg,
 		store:          store,
 		logger:         logger,
 		authMiddleware: authMiddleware,
 		converter:      converter,
+		trendService:   trendService,
 	}
 }
