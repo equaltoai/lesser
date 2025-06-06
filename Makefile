@@ -182,6 +182,9 @@ build-lambdas:
 	@echo "Building graphql..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/graphql
 	@cd bin && zip -q graphql.zip bootstrap && rm bootstrap
+	@echo "Building ai-processor..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/ai-processor
+	@cd bin && zip -q ai-processor.zip bootstrap && rm bootstrap
 	@echo "Lambda functions built successfully!"
 
 .PHONY: deploy

@@ -312,6 +312,11 @@ type Query {
   # Debug endpoints
   explainObject(id: ID!): ObjectExplanation!
   federationStatus(domain: String!): FederationStatus!
+  
+  # AI Analysis
+  aiAnalysis(objectId: ID!): AIAnalysis
+  aiStats(period: Period!): AIStats!
+  aiCapabilities: AICapabilities!
 }
 
 # Mutations
@@ -331,6 +336,9 @@ type Mutation {
   flagObject(input: FlagInput!): FlagPayload!
   addCommunityNote(input: CommunityNoteInput!): CommunityNotePayload!
   voteCommunityNote(id: ID!, helpful: Boolean!): CommunityNote!
+  
+  # AI Analysis
+  requestAIAnalysis(objectId: ID!, objectType: String, force: Boolean): AIAnalysisRequest!
 }
 
 # Subscriptions (via WebSocket Lambda)
@@ -343,6 +351,9 @@ type Subscription {
   costUpdates(threshold: Int): CostUpdate!
   moderationEvents(actorId: ID): ModerationDecision!
   trustUpdates(actorId: ID!): TrustEdge!
+  
+  # AI Analysis
+  aiAnalysisUpdates(objectId: ID): AIAnalysis!
 }
 
 # Debug types
@@ -440,4 +451,172 @@ type ReputationImportResult {
   vouchesImported: Int!
   message: String
   error: String
+}
+
+"""
+AI Analysis types
+"""
+type AIAnalysis {
+  id: ID!
+  objectId: ID!
+  objectType: String!
+  textAnalysis: TextAnalysis
+  imageAnalysis: ImageAnalysis
+  aiDetection: AIDetection
+  spamAnalysis: SpamAnalysis
+  overallRisk: Float!
+  moderationAction: ModerationAction!
+  confidence: Float!
+  analyzedAt: Time!
+}
+
+type TextAnalysis {
+  sentiment: Sentiment!
+  sentimentScores: SentimentScores!
+  toxicityScore: Float!
+  toxicityLabels: [String!]!
+  containsPII: Boolean!
+  dominantLanguage: String!
+  entities: [Entity!]!
+  keyPhrases: [String!]!
+}
+
+type SentimentScores {
+  positive: Float!
+  negative: Float!
+  neutral: Float!
+  mixed: Float!
+}
+
+type Entity {
+  type: String!
+  text: String!
+  score: Float!
+}
+
+type ImageAnalysis {
+  moderationLabels: [ModerationLabel!]!
+  isNSFW: Boolean!
+  nsfwConfidence: Float!
+  violenceScore: Float!
+  weaponsDetected: Boolean!
+  detectedText: [String!]!
+  textToxicity: Float!
+  celebrityFaces: [Celebrity!]!
+  deepfakeScore: Float!
+}
+
+type ModerationLabel {
+  name: String!
+  confidence: Float!
+  parentName: String
+}
+
+type Celebrity {
+  name: String!
+  confidence: Float!
+  urls: [String!]!
+}
+
+type AIDetection {
+  aiGeneratedProbability: Float!
+  generationModel: String
+  patternConsistency: Float!
+  styleDeviation: Float!
+  semanticCoherence: Float!
+  suspiciousPatterns: [String!]!
+}
+
+type SpamAnalysis {
+  spamScore: Float!
+  spamIndicators: [SpamIndicator!]!
+  postingVelocity: Float!
+  repetitionScore: Float!
+  linkDensity: Float!
+  followerRatio: Float!
+  interactionRate: Float!
+  accountAgeDays: Int!
+}
+
+type SpamIndicator {
+  type: String!
+  description: String!
+  severity: Float!
+}
+
+type AIStats {
+  period: String!
+  totalAnalyses: Int!
+  toxicContent: Int!
+  spamDetected: Int!
+  aiGenerated: Int!
+  nsfwContent: Int!
+  piiDetected: Int!
+  toxicityRate: Float!
+  spamRate: Float!
+  aiContentRate: Float!
+  nsfwRate: Float!
+  moderationActions: ModerationActionCounts!
+}
+
+type ModerationActionCounts {
+  none: Int!
+  flag: Int!
+  hide: Int!
+  remove: Int!
+  shadowBan: Int!
+  review: Int!
+}
+
+type AIAnalysisRequest {
+  message: String!
+  objectId: ID!
+  estimatedTime: String!
+}
+
+enum Sentiment {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+  MIXED
+}
+
+enum ModerationAction {
+  NONE
+  FLAG
+  HIDE
+  REMOVE
+  SHADOW_BAN
+  REVIEW
+}
+
+type AICapabilities {
+  textAnalysis: TextAnalysisCapabilities!
+  imageAnalysis: ImageAnalysisCapabilities!
+  aiDetection: AIDetectionCapabilities!
+  moderationActions: [String!]!
+  costPerAnalysis: CostBreakdown!
+}
+
+type TextAnalysisCapabilities {
+  sentimentAnalysis: Boolean!
+  toxicityDetection: Boolean!
+  spamDetection: Boolean!
+  piiDetection: Boolean!
+  entityExtraction: Boolean!
+  languageDetection: Boolean!
+}
+
+type ImageAnalysisCapabilities {
+  nsfwDetection: Boolean!
+  violenceDetection: Boolean!
+  textExtraction: Boolean!
+  celebrityRecognition: Boolean!
+  deepfakeDetection: Boolean!
+}
+
+type AIDetectionCapabilities {
+  aiGeneratedContent: Boolean!
+  patternAnalysis: Boolean!
+  styleConsistency: Boolean!
 } 
