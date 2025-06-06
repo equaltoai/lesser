@@ -370,3 +370,145 @@ func (p Poll) MarshalJSON() ([]byte, error) {
 	// Otherwise, use default marshaling (request case with string options)
 	return json.Marshal((*Alias)(&p))
 }
+
+// Announcement represents an announcement in the Mastodon API
+type Announcement struct {
+	ID          string                 `json:"id"`
+	Content     string                 `json:"content"`
+	Text        string                 `json:"text"`
+	PublishedAt string                 `json:"published_at"`
+	UpdatedAt   string                 `json:"updated_at"`
+	AllDay      bool                   `json:"all_day"`
+	StartsAt    *string                `json:"starts_at,omitempty"`
+	EndsAt      *string                `json:"ends_at,omitempty"`
+	Read        bool                   `json:"read"` // Whether the user has dismissed it
+	Reactions   []AnnouncementReaction `json:"reactions"`
+	Mentions    []AnnouncementAccount  `json:"mentions"`
+	Statuses    []AnnouncementStatus   `json:"statuses"`
+	Tags        []AnnouncementTag      `json:"tags"`
+	Emojis      []CustomEmoji          `json:"emojis"`
+}
+
+// AnnouncementReaction represents a reaction to an announcement
+type AnnouncementReaction struct {
+	Name      string `json:"name"`
+	Count     int    `json:"count"`
+	Me        bool   `json:"me"`
+	URL       string `json:"url,omitempty"`
+	StaticURL string `json:"static_url,omitempty"`
+}
+
+// AnnouncementAccount represents an account mentioned in an announcement
+type AnnouncementAccount struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	URL      string `json:"url"`
+	Acct     string `json:"acct"`
+}
+
+// AnnouncementStatus represents a status linked in an announcement
+type AnnouncementStatus struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
+}
+
+// AnnouncementTag represents a hashtag in an announcement
+type AnnouncementTag struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// CustomEmoji represents a custom emoji
+type CustomEmoji struct {
+	Shortcode       string `json:"shortcode"`
+	URL             string `json:"url"`
+	StaticURL       string `json:"static_url"`
+	VisibleInPicker bool   `json:"visible_in_picker"`
+	Category        string `json:"category,omitempty"`
+}
+
+// CreateAnnouncementRequest represents a request to create an announcement (admin only)
+type CreateAnnouncementRequest struct {
+	Content  string `json:"content"`
+	Text     string `json:"text,omitempty"`
+	AllDay   bool   `json:"all_day"`
+	StartsAt string `json:"starts_at,omitempty"`
+	EndsAt   string `json:"ends_at,omitempty"`
+}
+
+// CreateCustomEmojiRequest represents a request to create a custom emoji (admin only)
+type CreateCustomEmojiRequest struct {
+	Shortcode string `json:"shortcode"`
+	URL       string `json:"url"`
+	StaticURL string `json:"static_url,omitempty"`
+	Category  string `json:"category,omitempty"`
+}
+
+// UpdateCustomEmojiRequest represents a request to update a custom emoji (admin only)
+type UpdateCustomEmojiRequest struct {
+	Category        *string `json:"category,omitempty"`
+	VisibleInPicker *bool   `json:"visible_in_picker,omitempty"`
+	Disabled        *bool   `json:"disabled,omitempty"`
+}
+
+// Report represents a user report
+type Report struct {
+	ID            string   `json:"id"`
+	ActionTaken   bool     `json:"action_taken"`
+	ActionTakenAt *string  `json:"action_taken_at"`
+	Category      string   `json:"category"`
+	Comment       string   `json:"comment"`
+	Forwarded     bool     `json:"forwarded"`
+	CreatedAt     string   `json:"created_at"`
+	StatusIDs     []string `json:"status_ids"`
+	RuleIDs       []int    `json:"rule_ids"`
+	TargetAccount *Account `json:"target_account"`
+}
+
+// Marker represents a timeline position marker
+type Marker struct {
+	LastReadID string `json:"last_read_id"`
+	UpdatedAt  string `json:"updated_at"`
+	Version    int    `json:"version"`
+}
+
+// MarkersResponse represents the response for markers endpoint
+type MarkersResponse struct {
+	Home          *Marker `json:"home,omitempty"`
+	Notifications *Marker `json:"notifications,omitempty"`
+}
+
+// Preferences represents user preferences
+type Preferences struct {
+	PostingDefaultVisibility string `json:"posting:default:visibility"`
+	PostingDefaultSensitive  bool   `json:"posting:default:sensitive"`
+	PostingDefaultLanguage   string `json:"posting:default:language"`
+	ReadingExpandMedia       string `json:"reading:expand:media"`
+	ReadingExpandSpoilers    bool   `json:"reading:expand:spoilers"`
+	ReadingAutoplayGifs      bool   `json:"reading:autoplay:gifs"`
+}
+
+// Field represents an account field (used in Account)
+type Field struct {
+	Name       string  `json:"name"`
+	Value      string  `json:"value"`
+	VerifiedAt *string `json:"verified_at,omitempty"`
+}
+
+// Emoji represents an emoji (used in various responses)
+type Emoji struct {
+	Shortcode       string `json:"shortcode"`
+	URL             string `json:"url"`
+	StaticURL       string `json:"static_url"`
+	VisibleInPicker bool   `json:"visible_in_picker"`
+}
+
+// AccountSource represents the source information for the authenticated user's account
+type AccountSource struct {
+	Privacy        string  `json:"privacy"`
+	Sensitive      bool    `json:"sensitive"`
+	Language       string  `json:"language"`
+	Note           string  `json:"note"`
+	Fields         []Field `json:"fields"`
+	FollowRequests int     `json:"follow_requests_count"`
+}

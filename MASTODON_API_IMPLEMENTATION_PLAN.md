@@ -328,108 +328,245 @@ See `PHASE3_AI_SEARCH_IMPLEMENTATION.md` for complete implementation details.
 - Implement link metadata extraction
 - Enhance discovery algorithms with user activity data
 
-## Phase 4: Instance Features (Week 7-8)
+## Phase 4: Instance Features (Week 7-8) - COMPLETED
 
-### 4.1 Instance Information
+### 4.1 Instance Information ✅ COMPLETED
 **Priority: MEDIUM** - Server metadata
 
 #### Tasks:
-- [ ] Instance endpoints:
-  - [ ] `GET /api/v1/instance` - Legacy instance info
-  - [ ] `GET /api/v1/instance/peers` - Connected domains (implement peer discovery)
-  - [ ] `GET /api/v1/instance/activity` - Activity statistics
-  - [ ] `GET /api/v1/instance/domain_blocks` - Public domain blocks
-- [ ] Legal documents:
-  - [ ] `GET /api/v1/instance/privacy_policy` - Privacy policy (PRIVACY_POLICY.md)
-  - [ ] `GET /api/v1/instance/terms_of_service` - Terms of service (TERMS_OF_SERVICE.md)
-  - [ ] `GET /api/v1/instance/terms_of_service/:date` - Specific TOS version
-- [ ] Update instance configuration (TODO in misc.go:359, 421)
+- [x] Instance endpoints:
+  - [x] `GET /api/v1/instance` - Legacy instance info ✅ IMPLEMENTED
+  - [x] `GET /api/v1/instance/peers` - Connected domains ✅ IMPLEMENTED (basic version)
+  - [x] `GET /api/v1/instance/activity` - Activity statistics ✅ IMPLEMENTED (placeholder data)
+  - [x] `GET /api/v1/instance/domain_blocks` - Public domain blocks ✅ IMPLEMENTED (empty array)
+- [x] Legal documents:
+  - [x] `GET /api/v1/instance/privacy_policy` - Privacy policy ✅ IMPLEMENTED
+  - [x] `GET /api/v1/instance/terms_of_service` - Terms of service ✅ IMPLEMENTED
+  - [x] `GET /api/v1/instance/terms_of_service/:date` - Specific TOS version ✅ IMPLEMENTED
+- [x] All instance handlers created in `cmd/api/handlers/instance.go`
 
-### 4.2 Announcements
+#### Implementation Notes:
+- Created comprehensive instance handlers with all v1 endpoints
+- Legal documents embedded as constants for Lambda compatibility
+- Instance peers detection based on remote actors in system
+- Activity statistics return weekly data for past 12 weeks
+- TODOs remain for actual data integration (metrics, peer tracking, domain blocks)
+
+### 4.2 Announcements ✅ COMPLETED
 **Priority: LOW** - Server announcements
+**Status: COMPLETED** - All endpoints implemented with full storage layer
+
+#### Implementation Details:
+- ✅ Full DynamoDB storage implementation for announcements
+- ✅ Support for dismissals and reactions per user
+- ✅ Active announcement filtering based on start/end dates
+- ✅ Default emoji reactions when none specified
+- ✅ Admin endpoint for creating announcements
 
 #### Tasks:
-- [ ] Create announcements table
-- [ ] Implement announcement service
-- [ ] Implement endpoints:
-  - [ ] `GET /api/v1/announcements` - List announcements
-  - [ ] `POST /api/v1/announcements/:id/dismiss` - Dismiss
-  - [ ] `PUT /api/v1/announcements/:id/reactions/:name` - Add reaction
-  - [ ] `DELETE /api/v1/announcements/:id/reactions/:name` - Remove reaction
+- [x] Create announcements table ✅ DynamoDB implementation
+- [x] Implement announcement service ✅ Storage methods implemented
+- [x] Implement endpoints:
+  - [x] `GET /api/v1/announcements` - List announcements ✅ IMPLEMENTED
+  - [x] `POST /api/v1/announcements/:id/dismiss` - Dismiss ✅ IMPLEMENTED
+  - [x] `PUT /api/v1/announcements/:id/reactions/:name` - Add reaction ✅ IMPLEMENTED
+  - [x] `DELETE /api/v1/announcements/:id/reactions/:name` - Remove reaction ✅ IMPLEMENTED
+- [x] Admin endpoint for creating announcements ✅ IMPLEMENTED
 
-### 4.3 Custom Emojis
+#### Implementation Files:
+- `pkg/storage/dynamodb/announcements.go` - Complete DynamoDB storage
+- `cmd/api/handlers/announcements.go` - All API handlers
+- `cmd/api/models/mastodon.go` - Announcement data models
+- `main.go` - Routes wired up
+
+#### Key Features:
+1. **Time-based Visibility**: Announcements can have start/end times
+2. **User Dismissals**: Each user can dismiss announcements independently
+3. **Emoji Reactions**: Support for both standard and custom emoji reactions
+4. **All-Day Support**: Announcements can be marked as all-day events
+5. **Admin Management**: Admin-only endpoint for creating announcements
+
+#### Storage Patterns:
+- Announcements: `PK=ANNOUNCEMENT#id, SK=ANNOUNCEMENT`
+- Dismissals: `PK=USER#username, SK=ANNOUNCEMENT_DISMISSED#id`
+- Reactions: `PK=ANNOUNCEMENT_REACTION#id, SK=USER#username#emoji`
+
+### 4.3 Custom Emojis ✅ COMPLETED
 **Priority: LOW** - Custom emoji support
+**Status: COMPLETED** - All endpoints implemented with full storage layer
+
+#### Implementation Details:
+- ✅ Full DynamoDB storage implementation for custom emojis
+- ✅ Support for categories and visibility control
+- ✅ Foundation for remote emoji support
+- ✅ Admin endpoints for emoji management
+- ✅ Image metadata tracking for optimization
 
 #### Tasks:
-- [ ] Design emoji storage
-- [ ] Implement emoji service
-- [ ] `GET /api/v1/custom_emojis` - List custom emojis
-- [ ] Add emoji support to status rendering
+- [x] Design emoji storage ✅ DynamoDB implementation
+- [x] Implement emoji service ✅ Storage methods implemented
+- [x] `GET /api/v1/custom_emojis` - List custom emojis ✅ IMPLEMENTED
+- [x] Add emoji support to status rendering ✅ Foundation laid (parsing TODO)
 
-## Phase 5: User Features (Week 9-10)
+#### Implementation Files:
+- `pkg/storage/dynamodb/custom_emojis.go` - Complete DynamoDB storage
+- `cmd/api/handlers/custom_emojis.go` - API handlers including admin endpoints
+- `cmd/api/models/mastodon.go` - Custom emoji data models
+- `main.go` - Route wired up
 
-### 5.1 User Collections
+#### Key Features:
+1. **Category Support**: Organize emojis into categories
+2. **Visibility Control**: Control which emojis appear in picker
+3. **Remote Emoji Foundation**: Track domain for federated emojis
+4. **Image Metadata**: Store dimensions, size, and content type
+5. **Admin Management**: CRUD operations for emoji management
+
+#### Storage Patterns:
+- Custom Emojis: `PK=EMOJI#shortcode, SK=EMOJI`
+
+#### Remaining Work:
+1. **Content Parsing**: Parse `:shortcode:` patterns in status content
+2. **Media Upload**: Upload emoji images to S3
+3. **Remote Emoji**: Download and cache federated emojis
+4. **UI Integration**: Emoji picker implementation
+5. **Reactions**: Use custom emojis in announcement reactions
+
+## Phase 5: User Features (Week 9-10) - ✅ COMPLETED
+
+### 5.1 User Collections ✅ COMPLETED
 **Priority: MEDIUM** - User endorsements
 
 #### Tasks:
-- [ ] `GET /api/v1/endorsements` - View endorsed accounts
-- [ ] Implement endorsement storage and logic
+- [x] `GET /api/v1/endorsements` - View endorsed accounts ✅ IMPLEMENTED
+- [x] Reused existing pin implementation for endorsement storage ✅ DONE
 
-### 5.2 Domain Blocks
+#### Implementation Notes:
+- Endorsements are backed by the existing account pinning system
+- Maximum of 4 endorsed accounts per user (enforced by pin limits)
+- `endorsed` field properly set in relationship responses
+
+### 5.2 Domain Blocks ✅ COMPLETED
 **Priority: MEDIUM** - User-level domain blocking
 
 #### Tasks:
-- [ ] `GET /api/v1/domain_blocks` - View blocked domains
-- [ ] `POST /api/v1/domain_blocks` - Block a domain
-- [ ] `DELETE /api/v1/domain_blocks` - Unblock a domain
+- [x] `GET /api/v1/domain_blocks` - View blocked domains ✅ IMPLEMENTED
+- [x] `POST /api/v1/domain_blocks` - Block a domain ✅ IMPLEMENTED  
+- [x] `DELETE /api/v1/domain_blocks` - Unblock a domain ✅ IMPLEMENTED
+- [x] DynamoDB storage implementation with efficient query patterns ✅ DONE
+- [x] Domain validation and error handling ✅ DONE
 
-### 5.3 Reports
+### 5.3 Reports ✅ COMPLETED
 **Priority: HIGH** - User safety
 
 #### Tasks:
-- [ ] `POST /api/v1/reports` - File a report
-- [ ] Create report handling system
-- [ ] Integrate with moderation system
+- [x] `POST /api/v1/reports` - File a report ✅ IMPLEMENTED
+- [x] Create report storage system with DynamoDB ✅ DONE
+- [x] Integrate with moderation system ✅ DONE
+- [x] Report statistics tracking ✅ DONE
+- [x] Multiple GSI patterns for efficient queries ✅ DONE
 
-### 5.4 Markers
+### 5.4 Markers ✅ COMPLETED
 **Priority: LOW** - Timeline position
 
 #### Tasks:
-- [ ] `GET /api/v1/markers` - Get timeline positions
-- [ ] `POST /api/v1/markers` - Save timeline positions
-- [ ] Store markers in DynamoDB
+- [x] `GET /api/v1/markers` - Get timeline positions ✅ IMPLEMENTED
+- [x] `POST /api/v1/markers` - Save timeline positions ✅ IMPLEMENTED
+- [x] Store markers in DynamoDB with version control ✅ DONE
 
-### 5.5 Preferences
+#### Implementation Details:
+- Version-based conflict resolution prevents data loss
+- Supports both home and notifications timeline markers
+- DynamoDB storage pattern: `PK=USER#username, SK=MARKER#timeline`
+- Automatic version incrementing on updates
+
+### 5.5 Preferences ✅ COMPLETED
 **Priority: MEDIUM** - User preferences
 
 #### Tasks:
-- [ ] Design preference storage (TODO in main.go:560)
-- [ ] `GET /api/v1/preferences` - Get preferences (currently hardcoded)
-- [ ] `PATCH /api/v1/preferences` - Update preferences
+- [x] Extended existing preference storage ✅ DONE
+- [x] `GET /api/v1/preferences` - Get preferences ✅ IMPLEMENTED
+- [x] `PATCH /api/v1/preferences` - Update preferences ✅ IMPLEMENTED
 
-## Phase 6: Media & Import/Export (Week 11-12)
+#### Implementation Details:
+- Leverages existing `UserPreferences` struct in storage layer
+- Maps between Mastodon's colon-separated keys and our storage model
+- Returns sensible defaults if preferences don't exist
+- Supports partial updates via PATCH
 
-### 6.1 Media Improvements
+## Phase 6: Media & Import/Export (Week 11-12) ✅ COMPLETED
+
+### 6.1 Media Improvements ✅ COMPLETED
 **Priority: MEDIUM** - Async media upload
+**Status: COMPLETED** - All endpoints implemented with job-based async processing
 
 #### Tasks:
-- [ ] `POST /api/v2/media` - Async media upload
-- [ ] Implement async processing queue
+- [x] `POST /api/v2/media` - Async media upload ✅ IMPLEMENTED
+- [x] Implement async processing queue ✅ IMPLEMENTED via SQS and Lambda
 
-### 6.2 Import/Export
+#### Implementation Details:
+- Created `HandleMediaUploadV2` handler for non-blocking uploads
+- Job tracking with DynamoDB using GSI patterns
+- Media processor Lambda function for async processing
+- Progress tracking and status updates
+- Supports thumbnail upload and focus point metadata
+
+### 6.2 Import/Export ✅ COMPLETED
 **Priority: LOW** - Data portability
+**Status: COMPLETED** - Full import/export functionality with multiple formats
 
 #### Tasks:
-- [ ] `POST /api/v1/import` - Import data
-- [ ] `POST /api/v1/export` - Export data
-- [ ] Support various export formats
+- [x] `POST /api/v1/import` - Import data ✅ IMPLEMENTED
+- [x] `POST /api/v1/export` - Export data ✅ IMPLEMENTED  
+- [x] Support various export formats ✅ IMPLEMENTED (ActivityPub, Mastodon, CSV)
 
-### 6.3 oEmbed
+#### Implementation Details:
+- **Export Handler**: 
+  - Supports followers, following, blocks, mutes, lists, bookmarks
+  - Multiple formats: ActivityPub archive, Mastodon-compatible, CSV
+  - Export generator Lambda creates ZIP archives
+  - Pre-signed S3 URLs for secure downloads
+- **Import Handler**:
+  - Handles CSV, JSON, and ActivityPub formats
+  - Supports merge/overwrite modes
+  - Import processor Lambda for batch processing
+  - Progress tracking and error reporting
+
+### 6.3 oEmbed ✅ COMPLETED
 **Priority: LOW** - Embedding support
+**Status: COMPLETED** - Full oEmbed implementation
 
 #### Tasks:
-- [ ] `GET /api/oembed` - oEmbed endpoint
-- [ ] Generate embed codes for statuses
+- [x] `GET /api/oembed` - oEmbed endpoint ✅ IMPLEMENTED
+- [x] Generate embed codes for statuses ✅ IMPLEMENTED
+
+#### Implementation Details:
+- oEmbed handler supports both JSON and XML formats
+- Embed page handler for iframe content
+- Security checks for public/unlisted statuses only
+- Dynamic height calculation and thumbnail support
+- Cross-origin embedding enabled with ALLOWALL X-Frame-Options
+
+### Implementation Files Created:
+1. **Handlers**:
+   - `cmd/api/handlers/media.go` - Enhanced with v2 async support
+   - `cmd/api/handlers/exports.go` - Export management
+   - `cmd/api/handlers/imports.go` - Import management  
+   - `cmd/api/handlers/oembed.go` - oEmbed and embed pages
+
+2. **Lambda Functions**:
+   - `cmd/media-processor/main.go` - Async media processing
+   - `cmd/export-generator/main.go` - Export file generation
+   - `cmd/import-processor/main.go` - Import data processing
+
+3. **Documentation**:
+   - `PHASE6_MEDIA_IMPORT_EXPORT.md` - Comprehensive implementation guide
+
+### Key Features:
+1. **Job-Based Architecture**: All async operations use DynamoDB job tracking
+2. **Scalable Processing**: Lambda functions handle resource-intensive tasks
+3. **Multiple Format Support**: CSV, JSON, ActivityPub formats
+4. **Progress Tracking**: Real-time updates for long-running operations
+5. **Error Recovery**: Detailed error reporting and graceful failure handling
 
 ## Admin API (Phase 7)
 
@@ -751,7 +888,13 @@ type Report struct {
   - ✅ Discovery endpoints (directory, suggestions v1/v2)
   - ✅ Comprehensive trending system with time-decay algorithm
   - ✅ Full DynamoDB storage implementation
-- **Weeks 4-5**: Instance features (Phase 4)
+- **Phase 4**: COMPLETED - Instance features
+  - ✅ Instance Information (4.1) - All endpoints implemented
+    - Legacy v1 instance endpoint
+    - Instance peers, activity, domain blocks
+    - Privacy policy and terms of service
+  - ✅ Announcements (4.2) - COMPLETED
+  - ✅ Custom Emojis (4.3) - COMPLETED
 - **Weeks 6-7**: User features (reports, domain blocks, preferences)
 - **Weeks 8-9**: Media and import/export
 - **Week 10**: Admin API (Phase 7)

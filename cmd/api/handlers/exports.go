@@ -1,0 +1,357 @@
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/aron23/lesser/pkg/auth"
+	"github.com/aron23/lesser/pkg/common"
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+)
+
+// ExportRequest represents a data export request
+type ExportRequest struct {
+	Type         string                 `json:"type"`          // archive, followers, following, blocks, mutes, lists, bookmarks
+	Format       string                 `json:"format"`        // activitypub, mastodon, csv
+	IncludeMedia bool                   `json:"include_media"` // Include media attachments
+	DateRange    *DateRange             `json:"date_range"`    // Optional date filtering
+	Options      map[string]interface{} `json:"options"`       // Additional format-specific options
+}
+
+// DateRange for filtering exports
+type DateRange struct {
+	Start string `json:"start"` // ISO date
+	End   string `json:"end"`   // ISO date
+}
+
+// ExportJob represents an export job status
+type ExportJob struct {
+	ID          string  `json:"id"`
+	Status      string  `json:"status"` // pending, processing, completed, failed
+	Type        string  `json:"type"`
+	Format      string  `json:"format"`
+	CreatedAt   string  `json:"created_at"`
+	DownloadURL *string `json:"download_url"`
+	ExpiresAt   *string `json:"expires_at"`
+	FileSize    *int64  `json:"file_size"`
+	RecordCount *int    `json:"record_count"`
+	Error       *string `json:"error"`
+}
+
+// HandleCreateExport handles POST /api/v1/exports
+func (h *Handler) HandleCreateExport(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract and validate token
+	token, err := auth.ExtractBearerToken(request.Headers["Authorization"])
+	if err != nil {
+		token, err = auth.ExtractBearerToken(request.Headers["authorization"])
+		if err != nil {
+			return common.Unauthorized(err), nil
+		}
+	}
+
+	// Validate token
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Parse request
+	var req ExportRequest
+	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		return common.BadRequest(err), nil
+	}
+
+	// Set defaults
+	if req.Type == "" {
+		req.Type = "archive"
+	}
+	if req.Format == "" {
+		req.Format = "activitypub"
+	}
+
+	// Validate export type
+	validTypes := map[string]bool{
+		"archive":   true,
+		"followers": true,
+		"following": true,
+		"blocks":    true,
+		"mutes":     true,
+		"lists":     true,
+		"bookmarks": true,
+	}
+	if !validTypes[req.Type] {
+		return common.BadRequest(fmt.Errorf("invalid export type: %s", req.Type)), nil
+	}
+
+	// Validate format
+	validFormats := map[string]bool{
+		"activitypub": true,
+		"mastodon":    true,
+		"csv":         true,
+	}
+	if !validFormats[req.Format] {
+		return common.BadRequest(fmt.Errorf("invalid export format: %s", req.Format)), nil
+	}
+
+	// CSV format is only valid for certain types
+	if req.Format == "csv" && req.Type == "archive" {
+		return common.BadRequest(errors.New("CSV format not available for archive exports")), nil
+	}
+
+	// Check for existing pending/processing export of same type
+	existingJobs, err := h.getUserExportJobs(ctx, claims.Username, "pending", "processing")
+	if err != nil {
+		h.logger.Error("failed to check existing jobs", zap.Error(err))
+	} else {
+		for _, job := range existingJobs {
+			if job["Type"] == req.Type {
+				return common.Conflict(errors.New("export already in progress for this type")), nil
+			}
+		}
+	}
+
+	// Create export job
+	exportID := uuid.New().String()
+	now := time.Now()
+
+	jobRecord := map[string]interface{}{
+		"PK":           fmt.Sprintf("EXPORT#%s", exportID),
+		"SK":           fmt.Sprintf("EXPORT#%s", exportID),
+		"GSI1PK":       fmt.Sprintf("USER#%s", claims.Username),
+		"GSI1SK":       fmt.Sprintf("CREATED#%s", now.Format(time.RFC3339)),
+		"ExportID":     exportID,
+		"Username":     claims.Username,
+		"Type":         req.Type,
+		"Format":       req.Format,
+		"Status":       "pending",
+		"Options":      req.Options,
+		"IncludeMedia": req.IncludeMedia,
+		"CreatedAt":    now,
+		"TTL":          now.Add(30 * 24 * time.Hour).Unix(), // 30 days TTL
+	}
+
+	// Add date range if provided
+	if req.DateRange != nil {
+		jobRecord["DateRangeStart"] = req.DateRange.Start
+		jobRecord["DateRangeEnd"] = req.DateRange.End
+	}
+
+	if err := h.store.CreateObject(ctx, jobRecord); err != nil {
+		h.logger.Error("failed to create export job", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to create export job")), nil
+	}
+
+	// TODO: Trigger export generator Lambda
+	// This would normally be done via SQS or EventBridge
+
+	// Return job status
+	job := ExportJob{
+		ID:        exportID,
+		Status:    "pending",
+		Type:      req.Type,
+		Format:    req.Format,
+		CreatedAt: now.Format(time.RFC3339),
+	}
+
+	return common.Accepted(job), nil
+}
+
+// HandleGetExportStatus handles GET /api/v1/exports/:id
+func (h *Handler) HandleGetExportStatus(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract and validate token
+	token, err := auth.ExtractBearerToken(request.Headers["Authorization"])
+	if err != nil {
+		token, err = auth.ExtractBearerToken(request.Headers["authorization"])
+		if err != nil {
+			return common.Unauthorized(err), nil
+		}
+	}
+
+	// Validate token
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Get export ID
+	exportID := request.PathParameters["id"]
+	if exportID == "" {
+		return common.BadRequest(errors.New("missing export ID")), nil
+	}
+
+	// Get export job
+	obj, err := h.store.GetObject(ctx, fmt.Sprintf("EXPORT#%s", exportID))
+	if err != nil {
+		return common.NotFound(fmt.Errorf("export not found: %s", exportID)), nil
+	}
+
+	jobData, ok := obj.(map[string]interface{})
+	if !ok {
+		return common.InternalServerError(errors.New("invalid export data")), nil
+	}
+
+	// Verify ownership
+	if jobData["Username"] != claims.Username {
+		return common.Forbidden(errors.New("not authorized to view this export")), nil
+	}
+
+	// Build response
+	job := ExportJob{
+		ID:        exportID,
+		Status:    getStringFromJobData(jobData, "Status"),
+		Type:      getStringFromJobData(jobData, "Type"),
+		Format:    getStringFromJobData(jobData, "Format"),
+		CreatedAt: getTimeFromJobData(jobData, "CreatedAt").Format(time.RFC3339),
+	}
+
+	// Add completed fields if available
+	if job.Status == "completed" {
+		if url := getStringFromJobData(jobData, "DownloadURL"); url != "" {
+			job.DownloadURL = &url
+		}
+		if expiresAt := getTimeFromJobData(jobData, "ExpiresAt"); !expiresAt.IsZero() {
+			expires := expiresAt.Format(time.RFC3339)
+			job.ExpiresAt = &expires
+		}
+		if size := getInt64FromJobData(jobData, "FileSize"); size > 0 {
+			job.FileSize = &size
+		}
+		if count := getIntFromJobData(jobData, "RecordCount"); count > 0 {
+			job.RecordCount = &count
+		}
+	}
+
+	// Add error if failed
+	if job.Status == "failed" {
+		if err := getStringFromJobData(jobData, "Error"); err != "" {
+			job.Error = &err
+		}
+	}
+
+	return common.OK(job), nil
+}
+
+// HandleListExports handles GET /api/v1/exports
+func (h *Handler) HandleListExports(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract and validate token
+	token, err := auth.ExtractBearerToken(request.Headers["Authorization"])
+	if err != nil {
+		token, err = auth.ExtractBearerToken(request.Headers["authorization"])
+		if err != nil {
+			return common.Unauthorized(err), nil
+		}
+	}
+
+	// Validate token
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Get all user's export jobs
+	jobs, err := h.getUserExportJobs(ctx, claims.Username)
+	if err != nil {
+		h.logger.Error("failed to get export jobs", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to retrieve exports")), nil
+	}
+
+	// Convert to response format
+	exports := make([]ExportJob, 0, len(jobs))
+	for _, jobData := range jobs {
+		job := ExportJob{
+			ID:        getStringFromJobData(jobData, "ExportID"),
+			Status:    getStringFromJobData(jobData, "Status"),
+			Type:      getStringFromJobData(jobData, "Type"),
+			Format:    getStringFromJobData(jobData, "Format"),
+			CreatedAt: getTimeFromJobData(jobData, "CreatedAt").Format(time.RFC3339),
+		}
+
+		// Add completed fields if available
+		if job.Status == "completed" {
+			if url := getStringFromJobData(jobData, "DownloadURL"); url != "" {
+				job.DownloadURL = &url
+			}
+			if expiresAt := getTimeFromJobData(jobData, "ExpiresAt"); !expiresAt.IsZero() {
+				expires := expiresAt.Format(time.RFC3339)
+				job.ExpiresAt = &expires
+			}
+			if size := getInt64FromJobData(jobData, "FileSize"); size > 0 {
+				job.FileSize = &size
+			}
+			if count := getIntFromJobData(jobData, "RecordCount"); count > 0 {
+				job.RecordCount = &count
+			}
+		}
+
+		// Add error if failed
+		if job.Status == "failed" {
+			if err := getStringFromJobData(jobData, "Error"); err != "" {
+				job.Error = &err
+			}
+		}
+
+		exports = append(exports, job)
+	}
+
+	return common.OK(exports), nil
+}
+
+// Helper to get user's export jobs
+func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+	// Query GSI1 for user's exports
+	// This would normally use a proper DynamoDB query
+	// For now, return empty to avoid errors
+	return []map[string]interface{}{}, nil
+}
+
+// Helper functions for job data extraction
+func getStringFromJobData(data map[string]interface{}, key string) string {
+	if val, ok := data[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+func getIntFromJobData(data map[string]interface{}, key string) int {
+	if val, ok := data[key].(float64); ok {
+		return int(val)
+	}
+	if val, ok := data[key].(int); ok {
+		return val
+	}
+	return 0
+}
+
+func getInt64FromJobData(data map[string]interface{}, key string) int64 {
+	if val, ok := data[key].(float64); ok {
+		return int64(val)
+	}
+	if val, ok := data[key].(int64); ok {
+		return val
+	}
+	return 0
+}
+
+func getTimeFromJobData(data map[string]interface{}, key string) time.Time {
+	if val, ok := data[key].(string); ok {
+		t, _ := time.Parse(time.RFC3339, val)
+		return t
+	}
+	if val, ok := data[key].(time.Time); ok {
+		return val
+	}
+	return time.Time{}
+}

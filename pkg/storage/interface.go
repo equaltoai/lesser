@@ -329,6 +329,52 @@ type Storage interface {
 	GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*TrendingHashtag, error)
 	GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*TrendingStatus, error)
 	GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*TrendingLink, error)
+
+	// Announcement operations
+	CreateAnnouncement(ctx context.Context, announcement *Announcement) error
+	GetAnnouncement(ctx context.Context, id string) (*Announcement, error)
+	GetAnnouncements(ctx context.Context, active bool) ([]*Announcement, error)
+	UpdateAnnouncement(ctx context.Context, announcement *Announcement) error
+	DeleteAnnouncement(ctx context.Context, id string) error
+	DismissAnnouncement(ctx context.Context, username, announcementID string) error
+	IsDismissed(ctx context.Context, username, announcementID string) (bool, error)
+	GetDismissedAnnouncements(ctx context.Context, username string) ([]string, error)
+	AddAnnouncementReaction(ctx context.Context, username, announcementID, emojiName string) error
+	RemoveAnnouncementReaction(ctx context.Context, username, announcementID, emojiName string) error
+	GetAnnouncementReactions(ctx context.Context, announcementID string) (map[string][]string, error)
+
+	// Custom emoji operations
+	CreateCustomEmoji(ctx context.Context, emoji *CustomEmoji) error
+	GetCustomEmoji(ctx context.Context, shortcode string) (*CustomEmoji, error)
+	GetCustomEmojis(ctx context.Context) ([]*CustomEmoji, error)
+	UpdateCustomEmoji(ctx context.Context, emoji *CustomEmoji) error
+	DeleteCustomEmoji(ctx context.Context, shortcode string) error
+	GetCustomEmojisByCategory(ctx context.Context, category string) ([]*CustomEmoji, error)
+
+	// Report operations
+	CreateReport(ctx context.Context, report *Report) error
+	GetReport(ctx context.Context, id string) (*Report, error)
+	GetUserReports(ctx context.Context, username string, limit int, cursor string) ([]*Report, string, error)
+	GetReportsByTarget(ctx context.Context, targetAccountID string, limit int, cursor string) ([]*Report, string, error)
+	GetReportsByStatus(ctx context.Context, status ReportStatus, limit int, cursor string) ([]*Report, string, error)
+	UpdateReportStatus(ctx context.Context, id string, status ReportStatus, actionTaken string, moderatorID string) error
+	GetReportStats(ctx context.Context, username string) (*ReportStats, error)
+
+	// Domain block operations
+	AddDomainBlock(ctx context.Context, username, domain string) error
+	RemoveDomainBlock(ctx context.Context, username, domain string) error
+	GetUserDomainBlocks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	IsBlockedDomain(ctx context.Context, username, domain string) (bool, error)
+
+	// Marker operations
+	SaveMarker(ctx context.Context, username, timeline string, lastReadID string, version int) error
+	GetMarkers(ctx context.Context, username string, timelines []string) (map[string]*Marker, error)
+
+	// Extended preferences operations
+	SetPreference(ctx context.Context, username string, key string, value interface{}) error
+	GetPreference(ctx context.Context, username string, key string) (interface{}, error)
+	GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error)
+	UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error
 }
 
 // User represents a user account in the system
@@ -912,4 +958,123 @@ type TrendingLink struct {
 	AuthorName  string `dynamodbav:"author_name"`
 	Image       string `dynamodbav:"image"`
 	ShareCount  int64  `dynamodbav:"share_count"`
+}
+
+// Announcement represents an announcement activity
+type Announcement struct {
+	ID          string        `dynamodbav:"id"`
+	Content     string        `dynamodbav:"content"`             // HTML content
+	Text        string        `dynamodbav:"text"`                // Plain text version
+	PublishedAt time.Time     `dynamodbav:"published_at"`        // When it was published
+	UpdatedAt   time.Time     `dynamodbav:"updated_at"`          // When it was last updated
+	AllDay      bool          `dynamodbav:"all_day"`             // Whether it's an all-day announcement
+	StartsAt    *time.Time    `dynamodbav:"starts_at,omitempty"` // When the announcement starts (optional)
+	EndsAt      *time.Time    `dynamodbav:"ends_at,omitempty"`   // When the announcement ends (optional)
+	Reactions   []Reaction    `dynamodbav:"reactions,omitempty"` // Available reactions
+	Tags        []string      `dynamodbav:"tags,omitempty"`      // Hashtags in the announcement
+	Emojis      []CustomEmoji `dynamodbav:"emojis,omitempty"`    // Custom emojis used
+	Mentions    []Mention     `dynamodbav:"mentions,omitempty"`  // Mentioned accounts
+	CreatedBy   string        `dynamodbav:"created_by"`          // Admin who created it
+}
+
+// AnnouncementDismissal represents a user dismissing an announcement
+type AnnouncementDismissal struct {
+	Username       string    `dynamodbav:"username"`
+	AnnouncementID string    `dynamodbav:"announcement_id"`
+	DismissedAt    time.Time `dynamodbav:"dismissed_at"`
+}
+
+// AnnouncementReaction represents a user's reaction to an announcement
+type AnnouncementReaction struct {
+	Username       string    `dynamodbav:"username"`
+	AnnouncementID string    `dynamodbav:"announcement_id"`
+	EmojiName      string    `dynamodbav:"emoji_name"`
+	ReactedAt      time.Time `dynamodbav:"reacted_at"`
+}
+
+// Reaction represents an available reaction for announcements
+type Reaction struct {
+	Name      string `dynamodbav:"name"`                 // Emoji name or custom emoji shortcode
+	Count     int    `dynamodbav:"count"`                // Number of users who reacted
+	Me        bool   `dynamodbav:"me"`                   // Whether the current user reacted
+	URL       string `dynamodbav:"url,omitempty"`        // URL for custom emoji
+	StaticURL string `dynamodbav:"static_url,omitempty"` // Static URL for custom emoji
+}
+
+// CustomEmoji represents a custom emoji (placeholder for now)
+type CustomEmoji struct {
+	Shortcode           string    `dynamodbav:"shortcode"`
+	URL                 string    `dynamodbav:"url"`
+	StaticURL           string    `dynamodbav:"static_url"`
+	VisibleInPicker     bool      `dynamodbav:"visible_in_picker"`
+	Category            string    `dynamodbav:"category,omitempty"`
+	CreatedAt           time.Time `dynamodbav:"created_at"`
+	UpdatedAt           time.Time `dynamodbav:"updated_at"`
+	Disabled            bool      `dynamodbav:"disabled"`
+	Domain              string    `dynamodbav:"domain,omitempty"` // Empty for local emojis
+	ImageRemoteURL      string    `dynamodbav:"image_remote_url,omitempty"`
+	ImageStorageVersion int       `dynamodbav:"image_storage_version"`
+	ImageFileSize       int64     `dynamodbav:"image_file_size"`
+	ImageContentType    string    `dynamodbav:"image_content_type"`
+	ImageWidth          int       `dynamodbav:"image_width"`
+	ImageHeight         int       `dynamodbav:"image_height"`
+	ImageUpdatedAt      time.Time `dynamodbav:"image_updated_at"`
+}
+
+// Mention represents a mention in an announcement (placeholder)
+type Mention struct {
+	ID       string `dynamodbav:"id"`
+	Username string `dynamodbav:"username"`
+	URL      string `dynamodbav:"url"`
+	Acct     string `dynamodbav:"acct"`
+}
+
+// ReportStatus represents the status of a report
+type ReportStatus string
+
+const (
+	ReportStatusOpen     ReportStatus = "open"
+	ReportStatusResolved ReportStatus = "resolved"
+	ReportStatusRejected ReportStatus = "rejected"
+)
+
+// Report represents a user report
+type Report struct {
+	ID                string       `dynamodbav:"id"`
+	ReporterID        string       `dynamodbav:"reporter_id"`            // Username of reporter
+	TargetAccountID   string       `dynamodbav:"target_account_id"`      // Account being reported
+	StatusIDs         []string     `dynamodbav:"status_ids,omitempty"`   // Specific statuses reported
+	Comment           string       `dynamodbav:"comment"`                // Reporter's comment
+	Category          string       `dynamodbav:"category"`               // spam, violation, other
+	RuleIDs           []int        `dynamodbav:"rule_ids,omitempty"`     // Rule violations
+	Forwarded         bool         `dynamodbav:"forwarded"`              // Forwarded to remote instance
+	Status            ReportStatus `dynamodbav:"status"`                 // Current status
+	ActionTaken       string       `dynamodbav:"action_taken,omitempty"` // What action was taken
+	ActionTakenAt     *time.Time   `dynamodbav:"action_taken_at,omitempty"`
+	ModeratorID       string       `dynamodbav:"moderator_id,omitempty"`        // Who handled the report
+	ModerationEventID string       `dynamodbav:"moderation_event_id,omitempty"` // Link to moderation system
+	CreatedAt         time.Time    `dynamodbav:"created_at"`
+	UpdatedAt         time.Time    `dynamodbav:"updated_at"`
+}
+
+// ReportStats represents reporting statistics for a user
+type ReportStats struct {
+	TotalReports    int       `dynamodbav:"total_reports"`
+	ResolvedReports int       `dynamodbav:"resolved_reports"`
+	FalseReports    int       `dynamodbav:"false_reports"`
+	LastReportAt    time.Time `dynamodbav:"last_report_at"`
+}
+
+// Marker represents a timeline position marker
+type Marker struct {
+	LastReadID string    `dynamodbav:"last_read_id"`
+	UpdatedAt  time.Time `dynamodbav:"updated_at"`
+	Version    int       `dynamodbav:"version"` // For optimistic locking
+}
+
+// DomainBlock represents a user-level domain block
+type DomainBlock struct {
+	Username  string    `dynamodbav:"username"`
+	Domain    string    `dynamodbav:"domain"`
+	CreatedAt time.Time `dynamodbav:"created_at"`
 }

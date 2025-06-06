@@ -262,30 +262,74 @@ func (h *Handler) HandleGetMedia(ctx context.Context, request events.APIGatewayV
 		return common.InternalServerError(errors.New("invalid media data")), nil
 	}
 
-	// Build response
-	url := mediaData["URL"].(string)
-	description := ""
-	if desc, ok := mediaData["Description"].(string); ok {
-		description = desc
+	// Check if media is still processing (for v2 uploads)
+	processing, _ := mediaData["Processing"].(bool)
+	if processing {
+		// Get processing progress
+		isProcessing, progress, _ := h.GetMediaProcessingStatus(ctx, mediaID)
+
+		attachment := &models.MediaAttachment{
+			ID:         mediaID,
+			Type:       getMediaType(mediaData["MimeType"].(string)),
+			URL:        "", // Empty while processing
+			PreviewURL: "", // Empty while processing
+			RemoteURL:  nil,
+			TextURL:    "",
+			Meta: map[string]interface{}{
+				"processing": isProcessing,
+				"progress":   progress,
+			},
+			Description: getStringFromMediaData(mediaData, "Description"),
+			Blurhash:    "",
+		}
+
+		// Add focus if present
+		if focus := getStringFromMediaData(mediaData, "Focus"); focus != "" {
+			var focusX, focusY float64
+			fmt.Sscanf(focus, "%f,%f", &focusX, &focusY)
+			attachment.Meta["focus"] = map[string]interface{}{
+				"x": focusX,
+				"y": focusY,
+			}
+		}
+
+		return common.OK(attachment), nil
 	}
 
+	// Build response for processed media
+	url := getStringFromMediaData(mediaData, "URL")
 	attachment := &models.MediaAttachment{
 		ID:         mediaID,
 		Type:       getMediaType(mediaData["MimeType"].(string)),
 		URL:        url,
-		PreviewURL: url,
+		PreviewURL: getStringFromMediaData(mediaData, "PreviewURL", url), // Fallback to main URL
 		RemoteURL:  nil,
 		TextURL:    url,
 		Meta: map[string]interface{}{
 			"original": map[string]interface{}{
-				"width":  0,
-				"height": 0,
-				"size":   "0x0",
-				"aspect": 1.0,
+				"width":  getIntFromMediaData(mediaData, "Width"),
+				"height": getIntFromMediaData(mediaData, "Height"),
+				"size":   fmt.Sprintf("%dx%d", getIntFromMediaData(mediaData, "Width"), getIntFromMediaData(mediaData, "Height")),
+				"aspect": calculateAspectRatio(getIntFromMediaData(mediaData, "Width"), getIntFromMediaData(mediaData, "Height")),
 			},
 		},
-		Description: description,
-		Blurhash:    "",
+		Description: getStringFromMediaData(mediaData, "Description"),
+		Blurhash:    getStringFromMediaData(mediaData, "Blurhash"),
+	}
+
+	// Add focus if present
+	if focus := getStringFromMediaData(mediaData, "Focus"); focus != "" {
+		var focusX, focusY float64
+		fmt.Sscanf(focus, "%f,%f", &focusX, &focusY)
+		attachment.Meta["focus"] = map[string]interface{}{
+			"x": focusX,
+			"y": focusY,
+		}
+	}
+
+	// Add duration for video/audio
+	if duration := getIntFromMediaData(mediaData, "Duration"); duration > 0 {
+		attachment.Meta["duration"] = float64(duration) / 1000.0 // Convert ms to seconds
 	}
 
 	return common.OK(attachment), nil
@@ -439,4 +483,88 @@ func getMediaType(mimeType string) string {
 		return "audio"
 	}
 	return "unknown"
+}
+
+// Helper functions for media data extraction
+func getStringFromMediaData(data map[string]interface{}, key string, defaultValue ...string) string {
+	if val, ok := data[key].(string); ok {
+		return val
+	}
+	if len(defaultValue) > 0 {
+		return defaultValue[0]
+	}
+	return ""
+}
+
+func getIntFromMediaData(data map[string]interface{}, key string) int {
+	if val, ok := data[key].(float64); ok {
+		return int(val)
+	}
+	if val, ok := data[key].(int); ok {
+		return val
+	}
+	return 0
+}
+
+func calculateAspectRatio(width, height int) float64 {
+	if height == 0 {
+		return 1.0
+	}
+	return float64(width) / float64(height)
+}
+
+// GetMediaProcessingStatus checks if a media item is still processing
+func (h *Handler) GetMediaProcessingStatus(ctx context.Context, mediaID string) (bool, int, error) {
+	// Get media record
+	obj, err := h.store.GetObject(ctx, fmt.Sprintf("MEDIA#%s", mediaID))
+	if err != nil {
+		return false, 0, err
+	}
+
+	mediaData, ok := obj.(map[string]interface{})
+	if !ok {
+		return false, 0, errors.New("invalid media data")
+	}
+
+	// Check if still processing
+	processing, _ := mediaData["Processing"].(bool)
+	if !processing {
+		return false, 100, nil
+	}
+
+	// Get job ID and check job status
+	jobID, ok := mediaData["JobID"].(string)
+	if !ok {
+		return true, 0, nil
+	}
+
+	// Get job record
+	jobObj, err := h.store.GetObject(ctx, fmt.Sprintf("JOB#%s", jobID))
+	if err != nil {
+		// Job not found, assume still processing
+		return true, 0, nil
+	}
+
+	jobData, ok := jobObj.(map[string]interface{})
+	if !ok {
+		return true, 0, nil
+	}
+
+	// Calculate progress based on completed tasks
+	tasks, _ := jobData["ProcessingTasks"].([]string)
+	results, _ := jobData["Results"].(map[string]interface{})
+
+	if len(tasks) == 0 {
+		return true, 0, nil
+	}
+
+	completedTasks := len(results)
+	progress := (completedTasks * 100) / len(tasks)
+
+	status, _ := jobData["Status"].(string)
+	if status == "completed" || status == "failed" {
+		return false, 100, nil
+	}
+
+	return true, progress, nil
 }
