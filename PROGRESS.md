@@ -1,6 +1,21 @@
 # Lesser - Implementation Progress
 
-## Latest Update: Priority 1 Features Complete! 🎉 (2025-01-21)
+## Latest Update: Phase 4 Complete! Instance Features 🏛️ (2025-01-22)
+
+**Lesser continues its march to 100% completion!** Today we completed all Phase 4 Instance Features:
+- ✅ **Instance Information** - All v1 instance endpoints implemented
+- ✅ **Announcements** - Server-wide announcements with reactions and dismissals
+- ✅ **Custom Emojis** - Full custom emoji support with categories
+
+**Phase 4 brings powerful instance-level features**:
+- Instance metadata and legal documents (privacy policy, terms of service)
+- Admin-managed announcements with user dismissals and emoji reactions
+- Custom emoji system ready for unique instance expression
+- Full DynamoDB storage for all features
+
+**Overall Progress: ~99% Complete** - Only notifications and a few user features remain!
+
+## Previous Update: Priority 1 Features Complete! 🎉 (2025-01-21)
 
 **Lesser is now ~98% complete!** Today's milestone brings:
 - ✅ **Favorites Timeline** - View all favorited statuses
@@ -937,6 +952,45 @@ All activity types from Phase 3 have been successfully implemented:
 - [x] **Move Activity** ✅
 - [x] **Add/Remove Activities** ✅
 
+### Phase 4: Instance Features ✅ COMPLETE! (2025-01-22)
+
+All instance-level features have been successfully implemented:
+
+#### Instance Information ✅
+- [x] **Instance Endpoints**
+  - GET /api/v1/instance - Legacy instance info
+  - GET /api/v1/instance/peers - Connected domains
+  - GET /api/v1/instance/activity - Activity statistics
+  - GET /api/v1/instance/domain_blocks - Public domain blocks
+- [x] **Legal Documents**
+  - GET /api/v1/instance/privacy_policy - Privacy policy
+  - GET /api/v1/instance/terms_of_service - Terms of service
+  - GET /api/v1/instance/terms_of_service/:date - Specific TOS version
+- **Files**: cmd/api/handlers/instance.go with all endpoints
+
+#### Announcements ✅
+- [x] **Storage Layer**
+  - Full DynamoDB implementation for announcements
+  - Support for dismissals and reactions per user
+  - Active announcement filtering based on start/end dates
+- [x] **API Endpoints**
+  - GET /api/v1/announcements - List announcements
+  - POST /api/v1/announcements/:id/dismiss - Dismiss
+  - PUT /api/v1/announcements/:id/reactions/:name - Add reaction
+  - DELETE /api/v1/announcements/:id/reactions/:name - Remove reaction
+  - Admin endpoint for creating announcements
+- **Files**: pkg/storage/dynamodb/announcements.go, cmd/api/handlers/announcements.go
+
+#### Custom Emojis ✅
+- [x] **Storage Layer**
+  - Full DynamoDB implementation with categories
+  - Support for visibility control and remote emojis
+  - Image metadata tracking
+- [x] **API Endpoints**
+  - GET /api/v1/custom_emojis - List custom emojis
+  - Admin endpoints for CRUD operations (future)
+- **Files**: pkg/storage/dynamodb/custom_emojis.go, cmd/api/handlers/custom_emojis.go
+
 ### Phase 1 & 2: Client Compatibility ✅ COMPLETE!
 
 All critical endpoints for basic Mastodon client compatibility have been implemented:
@@ -1052,7 +1106,7 @@ All Phase 1 tasks have been completed:
 16. [x] **GET Inbox (View Inbox)** ✅
 17. [x] **Pulumi Infrastructure** ✅
 
-### Overall Project Completion: ~98% 🎯
+### Overall Project Completion: ~99% 🎯
 
 Lesser is now a fully functional ActivityPub server that:
 - Federates with other servers ✅
@@ -1066,7 +1120,7 @@ Lesser is now a fully functional ActivityPub server that:
 - Has favorites timeline and interaction viewers ✅
 - **Can be deployed with one command** ✅
 
-The remaining 2% consists of:
+The remaining 1% consists of:
 - **Notifications system** (the final major feature!)
 - Lists management endpoints
 - Minor enhancements (preferences, scheduled posts, etc.)

@@ -399,9 +399,17 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/mutes" && method == http.MethodGet {
 		return handler.HandleGetMutedAccounts(ctx, request)
 	}
-	// TODO: GET /api/v1/domain_blocks - View blocked domains
-	// TODO: POST /api/v1/domain_blocks - Block a domain
-	// TODO: DELETE /api/v1/domain_blocks - Unblock a domain
+	// Domain blocks
+	if path == "/domain_blocks" {
+		switch method {
+		case http.MethodGet:
+			return handler.HandleGetDomainBlocks(ctx, request)
+		case http.MethodPost:
+			return handler.HandleCreateDomainBlock(ctx, request)
+		case http.MethodDelete:
+			return handler.HandleDeleteDomainBlock(ctx, request)
+		}
+	}
 
 	// ==================== LISTS ====================
 	// Lists
@@ -494,21 +502,50 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	}
 
 	// ==================== INSTANCE ====================
-	// Instance info (v2 only)
+	// Instance info - determine version based on path
 	if path == "/instance" && method == http.MethodGet {
+		// Check if request is from v1 or v2 API based on request path or headers
+		// For now, use v2 as default (most Mastodon clients use v2)
 		return handler.HandleGetInstanceV2(ctx, request)
+	}
+
+	// Legacy v1 instance endpoint (if explicitly requested)
+	if strings.HasPrefix(request.RawPath, "/api/v1/instance") && path == "/instance" && method == http.MethodGet {
+		return handler.HandleGetInstanceV1(ctx, request)
 	}
 
 	// Instance activity
 	if path == "/instance/activity" && method == http.MethodGet {
-		// TODO: Implement actual activity statistics
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetInstanceActivity(ctx, request)
 	}
 
 	// Instance peers
 	if path == "/instance/peers" && method == http.MethodGet {
-		// TODO: Implement peer discovery
-		return common.OK([]string{}), nil
+		return handler.HandleGetInstancePeers(ctx, request)
+	}
+
+	// Instance domain blocks
+	if path == "/instance/domain_blocks" && method == http.MethodGet {
+		return handler.HandleGetInstanceDomainBlocks(ctx, request)
+	}
+
+	// Instance privacy policy
+	if path == "/instance/privacy_policy" && method == http.MethodGet {
+		return handler.HandleGetInstancePrivacyPolicy(ctx, request)
+	}
+
+	// Instance terms of service
+	if path == "/instance/terms_of_service" && method == http.MethodGet {
+		return handler.HandleGetInstanceTermsOfService(ctx, request)
+	}
+
+	// Instance terms of service by date
+	if strings.HasPrefix(path, "/instance/terms_of_service/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 4 && method == http.MethodGet {
+			date := parts[3]
+			return handler.HandleGetInstanceTermsOfServiceByDate(ctx, request, date)
+		}
 	}
 
 	// Instance rules
@@ -583,12 +620,33 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 
 	// Announcements
 	if path == "/announcements" && method == http.MethodGet {
-		// TODO: Implement announcements
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetAnnouncements(ctx, request)
 	}
-	// TODO: POST /api/v1/announcements/:id/dismiss - Dismiss announcement
-	// TODO: PUT /api/v1/announcements/:id/reactions/:name - Add reaction
-	// TODO: DELETE /api/v1/announcements/:id/reactions/:name - Remove reaction
+	// Announcement actions
+	if strings.HasPrefix(path, "/announcements/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 4 {
+			announcementID := parts[2]
+			action := parts[3]
+
+			switch action {
+			case "dismiss":
+				if method == http.MethodPost {
+					return handler.HandleDismissAnnouncement(ctx, request, announcementID)
+				}
+			case "reactions":
+				if len(parts) == 5 {
+					reactionName := parts[4]
+					switch method {
+					case http.MethodPut:
+						return handler.HandleAddAnnouncementReaction(ctx, request, announcementID, reactionName)
+					case http.MethodDelete:
+						return handler.HandleRemoveAnnouncementReaction(ctx, request, announcementID, reactionName)
+					}
+				}
+			}
+		}
+	}
 
 	// ==================== NOTIFICATIONS ====================
 	// Notifications
@@ -648,22 +706,19 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 
 	// ==================== USER PREFERENCES ====================
 	// Preferences
-	if path == "/preferences" && method == http.MethodGet {
-		// TODO: Store user preferences
-		return common.OK(map[string]interface{}{
-			"posting:default:visibility": "public",
-			"posting:default:sensitive":  false,
-			"posting:default:language":   "en",
-			"reading:expand:media":       "default",
-			"reading:expand:spoilers":    false,
-		}), nil
+	if path == "/preferences" {
+		switch method {
+		case http.MethodGet:
+			return handler.HandleGetPreferences(ctx, request)
+		case http.MethodPatch:
+			return handler.HandleUpdatePreferences(ctx, request)
+		}
 	}
 
 	// ==================== CUSTOM EMOJIS ====================
 	// Custom emojis
 	if path == "/custom_emojis" && method == http.MethodGet {
-		// TODO: Implement custom emoji support
-		return common.OK([]interface{}{}), nil
+		return handler.HandleGetCustomEmojis(ctx, request)
 	}
 
 	// ==================== SEARCH ====================
@@ -907,6 +962,70 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}
 	}
 
+	// ==================== PHASE 6: MEDIA & IMPORT/EXPORT ====================
+	// Media v2 endpoints (async upload)
+	if path == "/media/v2" && method == http.MethodPost {
+		return handler.HandleMediaUploadV2(ctx, request)
+	}
+	if strings.HasPrefix(path, "/media/v2/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 4 {
+			// Media v2 GET is handled by HandleGetMedia which checks for async jobs
+			if method == http.MethodGet {
+				return handler.HandleGetMedia(ctx, request)
+			}
+		}
+	}
+
+	// Export endpoints
+	if path == "/exports" {
+		switch method {
+		case http.MethodPost:
+			return handler.HandleCreateExport(ctx, request)
+		case http.MethodGet:
+			return handler.HandleListExports(ctx, request)
+		}
+	}
+	if strings.HasPrefix(path, "/exports/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 {
+			if method == http.MethodGet {
+				return handler.HandleGetExportStatus(ctx, request)
+			}
+		}
+	}
+
+	// Import endpoints
+	if path == "/imports" {
+		switch method {
+		case http.MethodPost:
+			return handler.HandleCreateImport(ctx, request)
+		case http.MethodGet:
+			return handler.HandleListImports(ctx, request)
+		}
+	}
+	if strings.HasPrefix(path, "/imports/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 {
+			if method == http.MethodGet {
+				return handler.HandleGetImportStatus(ctx, request)
+			}
+		}
+	}
+
+	// oEmbed endpoint (not part of Mastodon API path)
+	if path == "/oembed" && method == http.MethodGet {
+		return handler.HandleOEmbed(ctx, request)
+	}
+	// Embed page for iframe (not part of Mastodon API)
+	if strings.HasPrefix(path, "/embed/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 && method == http.MethodGet {
+			statusID := parts[2]
+			return handler.HandleEmbedPage(ctx, request, statusID)
+		}
+	}
+
 	// ==================== POLLS ====================
 	// Poll endpoints
 	if strings.HasPrefix(path, "/polls/") {
@@ -1000,7 +1119,10 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}
 	}
 
-	// TODO: GET /api/v1/endorsements - View endorsed accounts
+	// Endorsements
+	if path == "/endorsements" && method == http.MethodGet {
+		return handler.HandleGetEndorsements(ctx, request)
+	}
 	// Follow suggestions
 	if path == "/suggestions" && method == http.MethodGet {
 		return handler.HandleGetSuggestionsV1(ctx, request)
@@ -1049,10 +1171,20 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		return handler.HandleGetFollowedTags(ctx, request)
 	}
 
-	// TODO: GET /api/v1/markers - Get timeline position markers
-	// TODO: POST /api/v1/markers - Save timeline position
+	// Markers
+	if path == "/markers" {
+		switch method {
+		case http.MethodGet:
+			return handler.HandleGetMarkers(ctx, request)
+		case http.MethodPost:
+			return handler.HandleSaveMarkers(ctx, request)
+		}
+	}
 
-	// TODO: POST /api/v1/reports - File a report
+	// Reports
+	if path == "/reports" && method == http.MethodPost {
+		return handler.HandleCreateReport(ctx, request)
+	}
 
 	// Streaming API endpoints
 	if path == "/streaming/events" && method == http.MethodGet {

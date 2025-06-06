@@ -804,6 +804,42 @@ func (m *BaseMockStorage) UpdateUserPreferences(ctx context.Context, username st
 	return nil
 }
 
+// Marker operations
+func (m *BaseMockStorage) SaveMarker(ctx context.Context, username, timeline string, lastReadID string, version int) error {
+	return nil
+}
+func (m *BaseMockStorage) GetMarkers(ctx context.Context, username string, timelines []string) (map[string]*storage.Marker, error) {
+	return make(map[string]*storage.Marker), nil
+}
+
+// Domain block operations
+func (m *BaseMockStorage) AddDomainBlock(ctx context.Context, username, domain string) error {
+	return nil
+}
+func (m *BaseMockStorage) RemoveDomainBlock(ctx context.Context, username, domain string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetUserDomainBlocks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	return []string{}, "", nil
+}
+func (m *BaseMockStorage) IsBlockedDomain(ctx context.Context, username, domain string) (bool, error) {
+	return false, nil
+}
+
+// Extended preferences operations
+func (m *BaseMockStorage) SetPreference(ctx context.Context, username string, key string, value interface{}) error {
+	return nil
+}
+func (m *BaseMockStorage) GetPreference(ctx context.Context, username string, key string) (interface{}, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+	return make(map[string]interface{}), nil
+}
+func (m *BaseMockStorage) UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error {
+	return nil
+}
+
 // Search suggestion tracking and analytics mocks
 func (m *BaseMockStorage) TrackSearchQuery(ctx context.Context, userID, query string, resultCount int) error {
 	return nil
@@ -836,6 +872,84 @@ func (m *BaseMockStorage) GetTrendingStatuses(ctx context.Context, since time.Ti
 }
 func (m *BaseMockStorage) GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
 	return []*storage.TrendingLink{}, nil
+}
+
+// Announcement operations
+func (m *BaseMockStorage) CreateAnnouncement(ctx context.Context, announcement *storage.Announcement) error {
+	return nil
+}
+func (m *BaseMockStorage) GetAnnouncement(ctx context.Context, id string) (*storage.Announcement, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetAnnouncements(ctx context.Context, active bool) ([]*storage.Announcement, error) {
+	return []*storage.Announcement{}, nil
+}
+func (m *BaseMockStorage) UpdateAnnouncement(ctx context.Context, announcement *storage.Announcement) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteAnnouncement(ctx context.Context, id string) error {
+	return nil
+}
+func (m *BaseMockStorage) DismissAnnouncement(ctx context.Context, username, announcementID string) error {
+	return nil
+}
+func (m *BaseMockStorage) IsDismissed(ctx context.Context, username, announcementID string) (bool, error) {
+	return false, nil
+}
+func (m *BaseMockStorage) GetDismissedAnnouncements(ctx context.Context, username string) ([]string, error) {
+	return []string{}, nil
+}
+func (m *BaseMockStorage) AddAnnouncementReaction(ctx context.Context, username, announcementID, emojiName string) error {
+	return nil
+}
+func (m *BaseMockStorage) RemoveAnnouncementReaction(ctx context.Context, username, announcementID, emojiName string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetAnnouncementReactions(ctx context.Context, announcementID string) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+// Custom emoji operations
+func (m *BaseMockStorage) CreateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error {
+	return nil
+}
+func (m *BaseMockStorage) GetCustomEmoji(ctx context.Context, shortcode string) (*storage.CustomEmoji, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetCustomEmojis(ctx context.Context) ([]*storage.CustomEmoji, error) {
+	return []*storage.CustomEmoji{}, nil
+}
+func (m *BaseMockStorage) UpdateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteCustomEmoji(ctx context.Context, shortcode string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetCustomEmojisByCategory(ctx context.Context, category string) ([]*storage.CustomEmoji, error) {
+	return []*storage.CustomEmoji{}, nil
+}
+
+// Report operations
+func (m *BaseMockStorage) CreateReport(ctx context.Context, report *storage.Report) error {
+	return nil
+}
+func (m *BaseMockStorage) GetReport(ctx context.Context, id string) (*storage.Report, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetUserReports(ctx context.Context, username string, limit int, cursor string) ([]*storage.Report, string, error) {
+	return []*storage.Report{}, "", nil
+}
+func (m *BaseMockStorage) GetReportsByTarget(ctx context.Context, targetAccountID string, limit int, cursor string) ([]*storage.Report, string, error) {
+	return []*storage.Report{}, "", nil
+}
+func (m *BaseMockStorage) GetReportsByStatus(ctx context.Context, status storage.ReportStatus, limit int, cursor string) ([]*storage.Report, string, error) {
+	return []*storage.Report{}, "", nil
+}
+func (m *BaseMockStorage) UpdateReportStatus(ctx context.Context, id string, status storage.ReportStatus, actionTaken string, moderatorID string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetReportStats(ctx context.Context, username string) (*storage.ReportStats, error) {
+	return &storage.ReportStats{}, nil
 }
 
 // MockStorage is a testify mock implementation that embeds BaseMockStorage
