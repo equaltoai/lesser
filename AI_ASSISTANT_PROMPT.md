@@ -26,6 +26,69 @@ Lesser is evolving from a Mastodon-compatible server to a platform that fundamen
 - **GraphQL Gateway**: Modern API alongside REST
 - **AI Integration Layer**: AWS Bedrock, Comprehend, and Rekognition
 
+## 🚨 CRITICAL: Lambda Architecture Principles 🚨
+
+**Lesser is a SERVERLESS application using AWS Lambda functions. This is NOT a traditional HTTP server!**
+
+### ❌ What Lesser is NOT:
+- NOT a long-running HTTP server
+- NOT using http.ListenAndServe or similar
+- NOT maintaining persistent connections in Lambda
+- NOT storing state in Lambda memory between invocations
+- NOT using goroutines that outlive the request
+
+### ✅ What Lesser IS:
+- **Event-driven Lambda functions** triggered by API Gateway
+- **Stateless request handlers** that complete within milliseconds
+- **DynamoDB for all state** - Lambda functions are ephemeral
+- **API Gateway manages HTTP** - Lambda only handles business logic
+- **One Lambda invocation per request** - no connection pooling in Lambda
+
+### Lambda Handler Pattern (ALWAYS use this):
+```go
+// ✅ CORRECT: Lambda handler pattern
+package main
+
+import (
+    "context"
+    "github.com/aws/aws-lambda-go/events"
+    "github.com/aws/aws-lambda-go/lambda"
+)
+
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    // Process request
+    // Return response
+    // Function ends, Lambda container may be frozen
+}
+
+func main() {
+    lambda.Start(handler) // ✅ This is the ONLY way to start
+}
+```
+
+```go
+// ❌ WRONG: Traditional HTTP server
+func main() {
+    http.HandleFunc("/", handler)
+    http.ListenAndServe(":8080", nil) // ❌ NEVER do this in Lambda!
+}
+```
+
+### WebSocket & Streaming in Lambda:
+- **WebSockets**: API Gateway manages connections, Lambda handles messages
+- **Connection state**: Stored in DynamoDB, NOT in Lambda memory
+- **Long polling**: Not supported - use WebSockets or SSE through API Gateway
+- **Streaming**: Response streaming through Lambda Function URLs
+
+### Key Principles for Every Feature:
+1. **Stateless**: Each Lambda starts fresh - no shared memory
+2. **Event-driven**: DynamoDB Streams trigger downstream processing
+3. **Managed services**: Let AWS handle connections, scaling, persistence
+4. **Fast execution**: Optimize for cold starts and quick completion
+5. **Cost-conscious**: Every millisecond costs money
+
+**Remember**: If you're writing `http.ListenAndServe`, you're doing it wrong!
+
 ## Current Implementation Roadmap
 
 ### 📊 Phase 1: Enhanced Core Platform (Weeks 1-2) - CURRENT FOCUS
@@ -74,10 +137,80 @@ Lesser is evolving from a Mastodon-compatible server to a platform that fundamen
 ### 🛠️ Phase 3: Developer Experience (Week 5)
 **Goal**: Make Lesser a joy to develop against
 
-🔲 **3.1 GraphQL Gateway**
-- Unified query interface
-- Real-time subscriptions
-- Cost-aware query planning
+🔲 **3.1 GraphQL Gateway** - Using [gqlgen](https://github.com/99designs/gqlgen) with Lambda
+- Type-safe code generation from schema
+- Lambda-optimized request handling (NOT a server!)
+- Cost tracking via GraphQL extensions
+- DataLoader for N+1 prevention
+- WebSocket subscriptions via API Gateway
+
+**GraphQL Lambda Implementation** (NOT an HTTP server!):
+```go
+// cmd/graphql/main.go - LAMBDA FUNCTION
+package main
+
+import (
+    "context"
+    "github.com/99designs/gqlgen/graphql/handler"
+    "github.com/aws/aws-lambda-go/events"
+    "github.com/aws/aws-lambda-go/lambda"
+    "github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
+)
+
+// Global handler - initialized ONCE during cold start
+var graphqlHandler *handler.Server
+
+func init() {
+    // Initialize during cold start, not per request
+    graphqlHandler = handler.NewDefaultServer(
+        generated.NewExecutableSchema(generated.Config{
+            Resolvers: &resolvers.Resolver{
+                // Services initialized from environment
+                DynamoDB: initDynamoDB(),
+                Cost:     initCostTracker(),
+            },
+        }),
+    )
+    
+    // Add extensions
+    graphqlHandler.Use(&CostTrackingExtension{})
+}
+
+// Lambda handler - called for EACH request
+func lambdaHandler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    // Use httpadapter to convert Lambda event to http.Request
+    return httpadapter.New(graphqlHandler).ProxyWithContext(ctx, request)
+}
+
+func main() {
+    // Start Lambda runtime - this is the ONLY way!
+    lambda.Start(lambdaHandler)
+}
+```
+
+**GraphQL Schema** (`graph/schema.graphql`):
+```graphql
+type Query {
+  # Mastodon compatibility
+  actor(id: ID, username: String): Actor
+  timeline(type: TimelineType!, first: Int, after: String): ObjectConnection
+  
+  # Lesser enhancements
+  instanceMetrics: InstanceMetrics!
+  costBreakdown(period: Period): CostBreakdown!
+}
+
+type Mutation {
+  createNote(input: CreateNoteInput!): CreateNotePayload!
+  updateTrust(input: TrustInput!): TrustEdge!
+}
+
+# WebSocket subscriptions handled by separate Lambda
+type Subscription {
+  activityStream(types: [ActivityType!]): Activity!
+  costUpdates(threshold: Int): CostUpdate!
+}
+```
 
 🔲 **3.2 Debug Endpoints**
 - Federation debugging tools
@@ -128,17 +261,33 @@ Lesser is evolving from a Mastodon-compatible server to a platform that fundamen
 
 ## Project Structure
 - `/cmd/api/` - API Lambda handlers (includes media handling)
+  - Each handler is a separate Lambda function!
+- `/cmd/graphql/` - GraphQL Lambda handler 🔲
+  - `main.go` - Lambda function using gqlgen + httpadapter
+- `/cmd/streaming/` - WebSocket connection handler 🔲
+  - Separate Lambda for $connect/$disconnect/$default routes
 - `/cmd/search-indexer/` - OpenSearch indexing Lambda
 - `/cmd/activity-processor/` - Activity processing Lambda
+- `/graph/` - GraphQL schema and generated code 🔲
+  - `schema.graphql` - GraphQL schema definition
+  - `schema.resolvers.go` - Resolver implementations
 - `/pkg/storage/dynamodb/` - DynamoDB storage layer
 - `/pkg/activitypub/` - ActivityPub types and logic
 - `/pkg/mastodon/` - Mastodon API converters and services
 - `/pkg/cost/` - Cost tracking infrastructure (NEW)
 - `/pkg/moderation/` - Moderation mesh system (NEW)
 - `/pkg/trust/` - Trust graph engine (NEW)
+- `/pkg/graphql/` - GraphQL support code 🔲
+  - `/dataloader/` - Batch loading to prevent N+1
+  - `/middleware/` - Cost tracking, auth extensions
 - `/infra/` - Pulumi infrastructure code
+  - API Gateway configurations for REST, GraphQL, WebSocket
+- `gqlgen.yml` - gqlgen configuration 🔲
 - `test_api_automated.py` - API test script
 - `test_media_urls.py` - Media CDN verification script
+- `test_graphql.py` - GraphQL API tests 🔲
+
+**Note**: Each `/cmd/` directory is a separate Lambda function - NOT a monolithic server!
 
 ## Implementation Status
 
@@ -152,26 +301,32 @@ Lesser is evolving from a Mastodon-compatible server to a platform that fundamen
 - Lists, polls, filters, mutes
 - Complete test suite
 
-### 🚧 Current Sprint: Real-Time Cost Tracking (Week 1)
+### ✅ Phase 1 Status: 95% Complete!
 
-**This Week's Goals**:
-1. **Cost Instrumentation**
-   - [ ] Create `pkg/cost/tracker.go` with AWS pricing rates
-   - [ ] Instrument DynamoDB operations in storage layer
-   - [ ] Add cost calculation to Lambda invocations
-   - [ ] Track S3 operations and data transfer
+**Phase 1.1: Real-Time Cost Tracking** ✅ COMPLETE
+- ✅ Cost instrumentation in `pkg/cost/`
+- ✅ DynamoDB and S3 operation tracking
+- ✅ Cost middleware on all API handlers
+- ✅ `X-Cost-*` headers in all responses
+- ✅ `/api/v1/instance/costs` endpoint
+- ✅ Cost aggregation Lambda
+- ✅ Daily/monthly roll-ups
+- ✅ DynamoDB cost history table
 
-2. **API Integration**
-   - [ ] Add cost middleware to all handlers
-   - [ ] Include `X-Cost-*` headers in responses
-   - [ ] Return cost in JSON response metadata
-   - [ ] Create `/api/v1/instance/costs` endpoint
+**Phase 1.2: Activity Stream API** ✅ COMPLETE
+- ✅ WebSocket handler implementation
+- ✅ Connection management with auth
+- ✅ Subscribe/unsubscribe functionality
+- ✅ Stream router for event broadcasting
+- ✅ Support for all Mastodon stream types
 
-3. **Cost Analytics**
-   - [ ] Store operation costs in DynamoDB
-   - [ ] Create cost aggregation Lambda
-   - [ ] Build daily/monthly roll-ups
-   - [ ] Add predictive cost modeling
+**Phase 1.3: Enhanced Metrics API** 🚧 90% Complete
+- ✅ `/api/v1/instance/metrics` endpoint
+- ✅ `/api/v1/instance/metrics/daily` endpoint
+- ✅ `/api/v1/instance/analytics` endpoint
+- 🔲 Wire up real cost storage
+- 🔲 Implement active user counting
+- 🔲 Real metrics aggregation
 
 ### 🎯 Next Sprints
 
@@ -217,6 +372,391 @@ Every new feature must include:
 2. **X-Ray Tracing** - Distributed tracing for debugging
 3. **Cost Attribution** - Track costs per feature/operation
 4. **Performance Baselines** - Establish and monitor performance targets
+
+## Lambda Patterns & Anti-Patterns
+
+### ✅ CORRECT Lambda Patterns
+
+**1. DynamoDB for State Management**:
+```go
+// ✅ Store WebSocket connections in DynamoDB
+func handleWebSocketConnect(ctx context.Context, request events.APIGatewayWebsocketProxyRequest) {
+    // Store connection in DynamoDB
+    item := map[string]types.AttributeValue{
+        "ConnectionID": &types.AttributeValueMemberS{Value: request.RequestContext.ConnectionID},
+        "TTL":          &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(24*time.Hour).Unix())},
+    }
+    dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+        TableName: aws.String("WebSocketConnections"),
+        Item:      item,
+    })
+}
+```
+
+**2. API Gateway Proxy Integration**:
+```go
+// ✅ Always use API Gateway proxy events
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    // Parse path parameters
+    userID := request.PathParameters["id"]
+    
+    // Return API Gateway response format
+    return events.APIGatewayProxyResponse{
+        StatusCode: 200,
+        Headers: map[string]string{
+            "Content-Type": "application/json",
+            "X-Cost-Micros": "1234",
+        },
+        Body: jsonBody,
+    }, nil
+}
+```
+
+**3. Cold Start Optimization**:
+```go
+// ✅ Initialize expensive operations outside handler
+var (
+    dynamoClient *dynamodb.Client
+    s3Client     *s3.Client
+)
+
+func init() {
+    cfg, _ := config.LoadDefaultConfig(context.Background())
+    dynamoClient = dynamodb.NewFromConfig(cfg)
+    s3Client = s3.NewFromConfig(cfg)
+}
+```
+
+### ❌ INCORRECT Anti-Patterns
+
+**1. HTTP Server in Lambda**:
+```go
+// ❌ NEVER create HTTP servers
+func main() {
+    r := mux.NewRouter()
+    r.HandleFunc("/api/v1/accounts", handler)
+    http.ListenAndServe(":8080", r) // ❌ This will not work!
+}
+```
+
+**2. In-Memory State**:
+```go
+// ❌ NEVER store state in global variables
+var connectionPool = make(map[string]*websocket.Conn) // ❌ Lost between invocations!
+
+// ❌ NEVER use goroutines that outlive the request
+go func() {
+    time.Sleep(5 * time.Minute)
+    cleanup() // ❌ Lambda may be frozen or terminated!
+}()
+```
+
+**3. Long-Running Operations**:
+```go
+// ❌ NEVER have long-running loops
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) {
+    for {
+        // ❌ This will timeout and fail!
+        pollDatabase()
+        time.Sleep(10 * time.Second)
+    }
+}
+```
+
+### Specific Scenarios
+
+**GraphQL with gqlgen**:
+```go
+// ✅ CORRECT: Use httpadapter
+import "github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
+
+func main() {
+    lambda.Start(httpadapter.New(graphqlHandler).ProxyWithContext)
+}
+
+// ❌ WRONG: Don't start an HTTP server
+func main() {
+    srv := handler.NewDefaultServer(schema)
+    http.Handle("/graphql", srv)
+    http.ListenAndServe(":8080", nil) // ❌ NO!
+}
+```
+
+**WebSocket Handling**:
+```go
+// ✅ CORRECT: Separate Lambda for each route
+func main() {
+    lambda.Start(func(ctx context.Context, request events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
+        switch request.RequestContext.RouteKey {
+        case "$connect":
+            return handleConnect(ctx, request)
+        case "$disconnect":
+            return handleDisconnect(ctx, request)
+        default:
+            return handleMessage(ctx, request)
+        }
+    })
+}
+```
+
+**Background Processing**:
+```go
+// ✅ CORRECT: Use DynamoDB Streams + Lambda
+// Write to DynamoDB, let streams trigger processing
+
+// ❌ WRONG: Background goroutines
+go processInBackground() // ❌ Will be killed!
+```
+
+### ❌ Anti-Pattern #6: Long-Running Operations
+**Wrong**: Processing in the handler
+```go
+result := expensiveOperation() // ❌ Blocks Lambda
+```
+**Right**: Queue for async processing
+```go
+// Queue to SQS/DynamoDB for another Lambda to process
+```
+
+## AWS WebSocket Implementation Guide
+
+**Reference Implementation**: See `/reference-only/penny-iac` for working WebSocket patterns
+
+### WebSocket Architecture in AWS Lambda
+
+Lesser uses API Gateway WebSocket APIs with Lambda functions. This is fundamentally different from traditional WebSocket servers:
+
+1. **API Gateway manages the WebSocket connections** - NOT your Lambda
+2. **Lambda functions handle events** - $connect, $disconnect, $default routes
+3. **Connection state stored in DynamoDB** - NOT in Lambda memory
+4. **Messages sent via API Gateway Management API** - NOT direct socket writes
+
+### WebSocket Lambda Structure
+
+```go
+// cmd/streaming/main.go - WebSocket route handler
+package main
+
+import (
+    "context"
+    "github.com/aws/aws-lambda-go/events"
+    "github.com/aws/aws-lambda-go/lambda"
+    "github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
+    "github.com/aws/aws-sdk-go-v2/service/dynamodb"
+)
+
+func handler(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
+    switch event.RequestContext.RouteKey {
+    case "$connect":
+        return handleConnect(ctx, event)
+    case "$disconnect":
+        return handleDisconnect(ctx, event)
+    case "$default":
+        return handleMessage(ctx, event)
+    default:
+        return events.APIGatewayProxyResponse{StatusCode: 400}, nil
+    }
+}
+```
+
+### $connect Handler Pattern
+
+```go
+func handleConnect(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
+    // 1. Extract token from query parameters
+    token := event.QueryStringParameters["token"]
+    
+    // 2. Validate token and get user info
+    userID, email, err := validateToken(ctx, token)
+    if err != nil {
+        // Reject connection
+        return events.APIGatewayProxyResponse{StatusCode: 401}, nil
+    }
+    
+    // 3. Store connection in DynamoDB
+    connection := &Connection{
+        PK:           "CONN#" + event.RequestContext.ConnectionID,
+        SK:           "CONN#" + event.RequestContext.ConnectionID,
+        ConnectionID: event.RequestContext.ConnectionID,
+        UserID:       userID,
+        Email:        email,
+        Established:  time.Now(),
+        TTL:          time.Now().Add(24 * time.Hour).Unix(),
+    }
+    
+    err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+        TableName: aws.String("ConnectionsTable"),
+        Item:      marshalConnection(connection),
+    })
+    
+    // 4. Return 200 to accept connection
+    // NOTE: Cannot send messages during $connect!
+    return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+```
+
+### Sending Messages to Clients
+
+```go
+func sendMessageToConnection(connectionID string, message interface{}) error {
+    // 1. Create API Gateway Management API client
+    endpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
+        apiGatewayID, region, stage)
+    
+    client := apigatewaymanagementapi.NewFromConfig(cfg, func(o *apigatewaymanagementapi.Options) {
+        o.BaseEndpoint = aws.String(endpoint)
+    })
+    
+    // 2. Marshal message
+    data, err := json.Marshal(message)
+    if err != nil {
+        return err
+    }
+    
+    // 3. Send via PostToConnection
+    _, err = client.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
+        ConnectionId: aws.String(connectionID),
+        Data:         data,
+    })
+    
+    return err
+}
+```
+
+### Message Processing Pattern
+
+**DO NOT process messages synchronously in the WebSocket handler!**
+
+```go
+func handleMessage(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
+    // 1. Parse message
+    var msg WebSocketMessage
+    json.Unmarshal([]byte(event.Body), &msg)
+    
+    // 2. Store in DynamoDB for async processing
+    item := map[string]types.AttributeValue{
+        "PK":           &types.AttributeValueMemberS{Value: "REQ#" + requestID},
+        "SK":           &types.AttributeValueMemberS{Value: "REQ#" + requestID},
+        "ConnectionID": &types.AttributeValueMemberS{Value: event.RequestContext.ConnectionID},
+        "Type":         &types.AttributeValueMemberS{Value: msg.Type},
+        "Payload":      &types.AttributeValueMemberS{Value: string(payloadJSON)},
+        "Status":       &types.AttributeValueMemberS{Value: "pending"},
+        "TTL":          &types.AttributeValueMemberN{Value: ttl},
+    }
+    
+    dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+        TableName: aws.String("RequestsTable"),
+        Item:      item,
+    })
+    
+    // 3. Send acknowledgment
+    ack := map[string]interface{}{
+        "type": "request.queued",
+        "payload": map[string]interface{}{
+            "requestId": requestID,
+            "message":   "Your request is being processed",
+        },
+    }
+    
+    sendMessageToConnection(event.RequestContext.ConnectionID, ack)
+    
+    // 4. Return immediately
+    return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+```
+
+### DynamoDB Stream Processing
+
+```go
+// cmd/stream-processor/main.go - Processes WebSocket requests
+func handleStreamRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+    if record.EventName == "INSERT" {
+        // Extract request from stream
+        var request Request
+        err := attributevalue.UnmarshalMap(record.Change.NewImage, &request)
+        
+        // Process based on type
+        switch request.Type {
+        case "timeline.subscribe":
+            // Subscribe to timeline updates
+            return subscribeToTimeline(ctx, request)
+        case "moderation.stream":
+            // Stream moderation events
+            return streamModerationEvents(ctx, request)
+        }
+    }
+    return nil
+}
+```
+
+### Common WebSocket Mistakes
+
+#### ❌ Mistake: Trying to maintain WebSocket connection in Lambda
+```go
+// WRONG - Lambda can't maintain connections
+ws, err := websocket.Dial(url, "", origin)
+defer ws.Close()
+```
+
+#### ❌ Mistake: Processing synchronously in WebSocket handler
+```go
+// WRONG - Will timeout and block other connections
+result := callOpenAI(prompt) // Takes 5-30 seconds
+sendMessageToConnection(connID, result)
+```
+
+#### ❌ Mistake: Storing state in Lambda memory
+```go
+// WRONG - Each invocation is isolated
+var connections = make(map[string]*Connection)
+```
+
+### WebSocket Cost Tracking
+
+```go
+// Track WebSocket message costs
+type WebSocketCost struct {
+    ConnectionMinutes float64 // $0.25 per million minutes
+    Messages          int64   // $1.00 per million messages
+    DataTransferGB    float64 // $0.09 per GB
+}
+
+func trackWebSocketCost(ctx context.Context, connectionID string, messageSize int) {
+    cost := &WebSocketCost{
+        Messages:       1,
+        DataTransferGB: float64(messageSize) / (1024 * 1024 * 1024),
+    }
+    
+    // Store in DynamoDB for aggregation
+    writeCostRecord(ctx, connectionID, cost)
+}
+```
+
+### WebSocket Infrastructure (CDK/Pulumi)
+
+```typescript
+// WebSocket API Gateway
+const wsApi = new aws.apigatewayv2.Api("lesser-websocket", {
+    protocolType: "WEBSOCKET",
+    routeSelectionExpression: "$request.body.action",
+});
+
+// Lambda integration
+const integration = new aws.apigatewayv2.Integration("lesser-ws-integration", {
+    apiId: wsApi.id,
+    integrationType: "AWS_PROXY",
+    integrationUri: streamingLambda.invokeArn,
+});
+
+// Routes
+["$connect", "$disconnect", "$default"].forEach(routeKey => {
+    new aws.apigatewayv2.Route(`lesser-ws-${routeKey}`, {
+        apiId: wsApi.id,
+        routeKey: routeKey,
+        target: pulumi.interpolate`integrations/${integration.id}`,
+    });
+});
+```
 
 ## Development Workflow
 
@@ -273,6 +813,47 @@ func (t *Tracker) CalculateCost() *OperationCost {
         DynamoDBWrites:   t.dynamoWrites.Load(),
         TotalCostMicros:  t.calculateTotal(),
     }
+}
+```
+
+```go
+// cmd/api/handlers/example.go - LAMBDA HANDLER
+package handlers
+
+import (
+    "context"
+    "github.com/aws/aws-lambda-go/events"
+)
+
+// Initialize tracker ONCE during cold start
+var costTracker = cost.NewTracker()
+
+// Lambda handler - NOT an HTTP handler!
+func HandleGetAccount(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    // Track costs
+    costTracker.TrackDynamoRead(1)
+    
+    // Business logic
+    account, err := getAccount(request.PathParameters["id"])
+    if err != nil {
+        return events.APIGatewayProxyResponse{
+            StatusCode: 404,
+            Body: `{"error":"not found"}`,
+        }, nil
+    }
+    
+    // Calculate final cost
+    cost := costTracker.CalculateCost()
+    
+    // Return with cost headers
+    return events.APIGatewayProxyResponse{
+        StatusCode: 200,
+        Headers: map[string]string{
+            "Content-Type": "application/json",
+            "X-Cost-Micros": fmt.Sprintf("%d", cost.TotalCostMicros),
+        },
+        Body: marshalJSON(account),
+    }, nil
 }
 ```
 
@@ -342,6 +923,63 @@ Lesser 2.0 is not just another ActivityPub server:
 3. **Developer-First** - GraphQL, debug tools, comprehensive SDKs
 4. **AI-Native** - Built-in AI services, not bolted on
 5. **Truly Serverless** - Scales to zero, scales to millions
+
+## Common Mistakes to Avoid
+
+### 🚫 Mistake #1: Creating HTTP Servers
+**Wrong**: "Let me start an HTTP server for GraphQL..."
+```go
+http.ListenAndServe(":8080", graphqlHandler) // ❌ NO!
+```
+**Right**: Use Lambda handlers with API Gateway
+```go
+lambda.Start(httpadapter.New(graphqlHandler).ProxyWithContext) // ✅ YES!
+```
+
+### 🚫 Mistake #2: Storing State in Lambda
+**Wrong**: "I'll keep WebSocket connections in memory..."
+```go
+var connections = make(map[string]*websocket.Conn) // ❌ NO!
+```
+**Right**: Use DynamoDB for all state
+```go
+dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{...}) // ✅ YES!
+```
+
+### 🚫 Mistake #3: Background Processing in Lambda
+**Wrong**: "I'll process this async in a goroutine..."
+```go
+go processLater() // ❌ NO! Lambda will freeze/terminate!
+```
+**Right**: Use DynamoDB Streams or SQS
+```go
+// Write to DynamoDB, let streams trigger another Lambda // ✅ YES!
+```
+
+### 🚫 Mistake #4: Long-Running Operations
+**Wrong**: "I'll poll for updates..."
+```go
+for { time.Sleep(5 * time.Second); check() } // ❌ NO!
+```
+**Right**: Use event-driven patterns
+```go
+// DynamoDB Streams, EventBridge, or Step Functions // ✅ YES!
+```
+
+### 🚫 Mistake #5: Ignoring Cold Starts
+**Wrong**: "I'll initialize everything in the handler..."
+```go
+func handler(ctx context.Context, req events.APIGatewayProxyRequest) {
+    db := initDB() // ❌ Slow! Done every request!
+}
+```
+**Right**: Initialize once globally
+```go
+var db *dynamodb.Client
+func init() { db = initDB() } // ✅ Only during cold start!
+```
+
+**Remember**: Lesser is serverless. If it looks like a traditional server pattern, it's probably wrong!
 
 ## Next Steps
 

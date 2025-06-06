@@ -30,6 +30,8 @@ github.com/aws/aws-sdk-go-v2/internal/ini v1.8.1 h1:VaRN3TlFdd6KxX1x3ILT5ynH6HvK
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.1/go.mod h1:FbtygfRFze9usAadmnGJNc8KsP346kEe+y2/oyhGAGc=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.34 h1:ZNTqv4nIdE/DiBfUUfXcLZ/Spcuz+RjeziUtNJackkM=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.34/go.mod h1:zf7Vcd1ViW7cPqYWEHLHJkS50X0JS2IKz9Cgaj6ugrs=
+github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.2 h1:K8klcITUtmyEqBPjSq/rg0St/CsMUwfLwETjC3B4hUk=
+github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.2/go.mod h1:zJtUxSHKzEvu7CeiViuk5MgDNTWaCSxrGtkJhzO3+A8=
 github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.27.0 h1:g6Oa7sFNIXtDxBYAhE8HjGlxPuzVWgA9WWt8j9brrs8=
 github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.27.0/go.mod h1:0b5Rq7rUvSQFYHI1UO0zFTV/S6j6DUyuykXA80C+YOI=
 github.com/aws/aws-sdk-go-v2/service/comprehend v1.35.8 h1:DVmvbYjA+ZwyzDiPyexJp5TS2d0A0lJXQwII5XXOifc=

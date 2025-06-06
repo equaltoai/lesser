@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.28.0
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.19.0
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.7.82
+	github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.2
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.27.0
 	github.com/aws/aws-sdk-go-v2/service/comprehend v1.35.8
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.43.1
