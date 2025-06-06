@@ -582,6 +582,67 @@ func (m *BaseMockStorage) SetVAPIDKeys(ctx context.Context, keys *storage.VAPIDK
 	return nil
 }
 
+// Moderation operations
+func (m *BaseMockStorage) CreateModerationEvent(ctx context.Context, event *storage.ModerationEvent) error {
+	return nil
+}
+func (m *BaseMockStorage) GetModerationEvent(ctx context.Context, eventID string) (*storage.ModerationEvent, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*storage.ModerationQueueItem, string, error) {
+	return nil, "", nil
+}
+func (m *BaseMockStorage) GetModerationEventsByObject(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
+	return nil, "", nil
+}
+func (m *BaseMockStorage) GetModerationEventsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
+	return nil, "", nil
+}
+func (m *BaseMockStorage) AddModerationReview(ctx context.Context, review *storage.ModerationReview) error {
+	return nil
+}
+func (m *BaseMockStorage) GetModerationReviews(ctx context.Context, eventID string) ([]*storage.ModerationReview, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) CreateModerationDecision(ctx context.Context, decision *storage.ModerationDecision) error {
+	return nil
+}
+func (m *BaseMockStorage) GetModerationDecision(ctx context.Context, objectID string) (*storage.ModerationDecision, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetModerationHistory(ctx context.Context, objectID string) (*storage.ModerationHistory, error) {
+	return nil, nil
+}
+
+// Trust operations
+func (m *BaseMockStorage) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
+	return nil
+}
+func (m *BaseMockStorage) GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
+	return nil, "", nil
+}
+func (m *BaseMockStorage) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
+	return nil, "", nil
+}
+func (m *BaseMockStorage) GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error {
+	return nil
+}
+func (m *BaseMockStorage) RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error {
+	return nil
+}
+
 // MockStorage is a testify mock implementation that embeds BaseMockStorage
 // This provides default no-op implementations for all methods while allowing
 // tests to set expectations on specific methods using testify's mock framework

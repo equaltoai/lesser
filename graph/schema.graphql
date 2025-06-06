@@ -85,7 +85,8 @@ type Actor {
   
   # Lesser enhancements
   trustScore: Float!
-  reputationSignature: String
+  reputation: Reputation
+  vouches: [Vouch!]!
 }
 
 type Field {
@@ -367,4 +368,76 @@ type FederationStatus {
   publicKey: String
   software: String
   version: String
+}
+
+# Reputation types
+type Reputation {
+  actorId: ID!
+  instance: String!
+  totalScore: Int!
+  trustScore: Int!
+  activityScore: Int!
+  moderationScore: Int!
+  communityScore: Int!
+  calculatedAt: Time!
+  version: String!
+  evidence: ReputationEvidence!
+  signature: String
+}
+
+type ReputationEvidence {
+  totalPosts: Int!
+  totalFollowers: Int!
+  accountAge: Int!
+  vouchCount: Int!
+  trustingActors: Int!
+  averageTrustScore: Float!
+}
+
+type Vouch {
+  id: ID!
+  from: Actor!
+  to: Actor!
+  confidence: Float!
+  context: String!
+  voucherReputation: Int!
+  createdAt: Time!
+  expiresAt: Time!
+  active: Boolean!
+  revoked: Boolean!
+  revokedAt: Time
+}
+
+type PortableReputation {
+  context: [String!]!
+  type: String!
+  actor: String!
+  reputation: Reputation!
+  vouches: [Vouch!]!
+  issuedAt: Time!
+  expiresAt: Time!
+  issuer: String!
+  issuerProof: String!
+}
+
+type ReputationVerificationResult {
+  valid: Boolean!
+  actorId: String!
+  issuer: String!
+  issuedAt: Time!
+  expiresAt: Time!
+  signatureValid: Boolean!
+  notExpired: Boolean!
+  issuerTrusted: Boolean!
+  error: String
+}
+
+type ReputationImportResult {
+  success: Boolean!
+  actorId: String!
+  previousScore: Int!
+  importedScore: Int!
+  vouchesImported: Int!
+  message: String
+  error: String
 } 

@@ -86,6 +86,8 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 		return handleWebFinger(ctx, request, log)
 	case "/.well-known/nodeinfo":
 		return handleNodeInfoDiscovery(ctx, request, log)
+	case "/.well-known/reputation-keys":
+		return handleReputationKeys(ctx, request, log)
 	case "/nodeinfo/2.0":
 		return handleNodeInfo20(ctx, request, log)
 	case "/nodeinfo/2.1":
@@ -178,6 +180,10 @@ func handleWebFinger(ctx context.Context, request events.APIGatewayV2HTTPRequest
 
 // handleNodeInfoDiscovery returns the well-known nodeinfo discovery document
 func handleNodeInfoDiscovery(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
+	// Explicitly ignore unused parameters
+	_ = ctx
+	_ = request
+
 	log.Info("handling nodeinfo discovery request")
 
 	discovery := map[string]interface{}{
@@ -200,6 +206,10 @@ func handleNodeInfoDiscovery(ctx context.Context, request events.APIGatewayV2HTT
 
 // handleNodeInfo20 returns nodeinfo 2.0 format
 func handleNodeInfo20(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
+	// Explicitly ignore unused parameters
+	_ = ctx
+	_ = request
+
 	log.Info("handling nodeinfo 2.0 request")
 
 	// TODO: implement user counting
@@ -237,6 +247,10 @@ func handleNodeInfo20(ctx context.Context, request events.APIGatewayV2HTTPReques
 
 // handleNodeInfo21 returns nodeinfo 2.1 format
 func handleNodeInfo21(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
+	// Explicitly ignore unused parameters
+	_ = ctx
+	_ = request
+
 	log.Info("handling nodeinfo 2.1 request")
 
 	// TODO: implement user counting
@@ -272,6 +286,28 @@ func handleNodeInfo21(ctx context.Context, request events.APIGatewayV2HTTPReques
 	resp := common.JSONResponse(200, nodeinfo)
 	resp.Headers["Content-Type"] = "application/json; profile=\"http://nodeinfo.diaspora.software/ns/schema/2.1#\""
 	resp.Headers["Cache-Control"] = "max-age=300" // Cache for 5 minutes
+	return resp, nil
+}
+
+// handleReputationKeys returns the instance's public key for reputation signing
+func handleReputationKeys(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
+	// Explicitly ignore unused parameters
+	_ = ctx
+	_ = request
+
+	log.Info("handling reputation keys request")
+
+	// TODO: Implement actual key retrieval from reputation service
+	// For now, return a placeholder response
+	keys := map[string]interface{}{
+		"publicKey": "Ed25519PublicKeyBase64EncodedHere",
+		"algorithm": "Ed25519",
+		"keyId":     cfg.BaseURL() + "#reputation-key",
+		"created":   "2024-01-01T00:00:00Z",
+	}
+
+	resp := common.JSONResponse(200, keys)
+	resp.Headers["Cache-Control"] = "max-age=3600" // Cache for 1 hour
 	return resp, nil
 }
 

@@ -628,6 +628,44 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		}
 	}
 
+	// ==================== REPUTATION & VOUCHES ====================
+	// Reputation endpoints
+	if strings.HasPrefix(path, "/reputation/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			if parts[2] == "export" && method == http.MethodPost {
+				return handler.HandleExportReputation(ctx, request)
+			} else if parts[2] == "import" && method == http.MethodPost {
+				return handler.HandleImportReputation(ctx, request)
+			} else if parts[2] == "verify" && method == http.MethodPost {
+				return handler.HandleVerifyReputation(ctx, request)
+			} else if method == http.MethodGet {
+				// GET /reputation/:actor_id
+				actorID := parts[2]
+				return handler.HandleGetReputation(ctx, request, actorID)
+			}
+		}
+	}
+
+	// Vouch endpoints
+	if path == "/vouches" && method == http.MethodPost {
+		return handler.HandleCreateVouch(ctx, request)
+	}
+	if strings.HasPrefix(path, "/vouches/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 3 {
+			if method == http.MethodGet {
+				// GET /vouches/:actor_id
+				actorID := parts[2]
+				return handler.HandleGetVouches(ctx, request, actorID)
+			} else if method == http.MethodDelete {
+				// DELETE /vouches/:vouch_id
+				vouchID := parts[2]
+				return handler.HandleRevokeVouch(ctx, request, vouchID)
+			}
+		}
+	}
+
 	// ==================== DEBUG ENDPOINTS ====================
 	// Debug endpoints require admin or debug scope
 	if strings.HasPrefix(path, "/debug/") {
