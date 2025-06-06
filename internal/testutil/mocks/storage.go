@@ -181,6 +181,9 @@ func (m *BaseMockStorage) DeleteUser(ctx context.Context, username string) error
 func (m *BaseMockStorage) ListUsers(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error) {
 	return nil, "", nil
 }
+func (m *BaseMockStorage) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
+	return 10, nil
+}
 
 // OAuth Client operations
 func (m *BaseMockStorage) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
@@ -793,4 +796,10 @@ func (m *MockStorage) DeleteAnnounce(ctx context.Context, actor, object string) 
 func (m *MockStorage) CreateBlock(ctx context.Context, block *storage.Block) error {
 	args := m.Called(ctx, block)
 	return args.Error(0)
+}
+
+// GetActiveUserCount with mock support
+func (m *MockStorage) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
+	args := m.Called(ctx, days)
+	return args.Get(0).(int64), args.Error(1)
 }
