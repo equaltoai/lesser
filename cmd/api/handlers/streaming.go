@@ -100,13 +100,6 @@ func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGateway
 	}, nil
 }
 
-// Helper function to get recent events for a stream (for testing/debugging)
-func (h *Handler) getRecentStreamEvents(ctx context.Context, stream string, limit int) ([]SSEEvent, error) {
-	// This would query recent events from DynamoDB
-	// For now, return empty array
-	return []SSEEvent{}, nil
-}
-
 func mustMarshalJSON(v interface{}) string {
 	data, err := json.Marshal(v)
 	if err != nil {

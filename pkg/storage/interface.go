@@ -58,6 +58,7 @@ type Storage interface {
 	UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error
 	DeleteUser(ctx context.Context, username string) error
 	ListUsers(ctx context.Context, limit int32, cursor string) ([]*User, string, error)
+	GetActiveUserCount(ctx context.Context, days int) (int64, error)
 
 	// OAuth Client operations
 	CreateOAuthClient(ctx context.Context, client *OAuthClient) error

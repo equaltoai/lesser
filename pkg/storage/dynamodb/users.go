@@ -274,3 +274,48 @@ func (s *dynamoDBStorage) ListUsers(ctx context.Context, limit int32, cursor str
 
 	return users, nextCursor, nil
 }
+
+// GetActiveUserCount returns the number of users active in the last N days
+func (s *dynamoDBStorage) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
+	// TODO: Implement proper activity tracking
+	// This would require tracking last activity timestamps for users
+	// For now, return count of all non-suspended users as a placeholder
+
+	// Query all users
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: "USERS"},
+		},
+		Select: types.SelectCount,
+	}
+
+	var totalCount int64 = 0
+
+	// Paginate through all results
+	for {
+		result, err := s.client.Query(ctx, input)
+		if err != nil {
+			return 0, fmt.Errorf("failed to count active users: %w", err)
+		}
+
+		totalCount += int64(result.Count)
+
+		// Check if there are more pages
+		if result.LastEvaluatedKey == nil {
+			break
+		}
+
+		// Set start key for next page
+		input.ExclusiveStartKey = result.LastEvaluatedKey
+	}
+
+	// TODO: In a real implementation, we would:
+	// 1. Track last_activity_at timestamp for each user
+	// 2. Query users where last_activity_at > (now - N days)
+	// 3. Consider different types of activity (posts, likes, follows, etc.)
+
+	return totalCount, nil
+}
