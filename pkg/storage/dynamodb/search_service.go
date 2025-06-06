@@ -182,6 +182,9 @@ MERGE:
 
 // analyzeQuery processes the search query to understand intent
 func (s *SearchService) analyzeQuery(ctx context.Context, query string) *AnalyzedQuery {
+	// Explicitly ignore context for now (may be used for language detection in future)
+	_ = ctx
+
 	analyzed := &AnalyzedQuery{
 		Original: query,
 		Query:    strings.ToLower(strings.TrimSpace(query)),
