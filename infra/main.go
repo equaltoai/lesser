@@ -778,7 +778,7 @@ func main() {
 			"CONNECTIONS_TABLE":   connectionsTable.Name,
 			"SUBSCRIPTIONS_TABLE": subscriptionsTable.Name,
 			"DOMAIN":              pulumi.String(domain),
-			"WEBSOCKET_ENDPOINT":  pulumi.Sprintf("https://%s.execute-api.us-east-1.amazonaws.com/prod", wsApi.ID()),
+			"WEBSOCKET_ENDPOINT":  pulumi.Sprintf("https://%s.execute-api.us-east-1.amazonaws.com/%s", wsApi.ID(), environment),
 		}
 
 		// Create WebSocket Lambda with updated environment
@@ -875,7 +875,7 @@ func main() {
 		// Create WebSocket stage
 		wsStage, err := apigatewayv2.NewStage(ctx, "lesser-websocket-stage", &apigatewayv2.StageArgs{
 			ApiId:      wsApi.ID(),
-			Name:       pulumi.String("prod"),
+			Name:       pulumi.String(environment),
 			AutoDeploy: pulumi.Bool(true),
 			Tags: pulumi.StringMap{
 				"Name":        pulumi.String("Lesser WebSocket Stage"),
@@ -971,11 +971,37 @@ func main() {
 		api, err := apigatewayv2.NewApi(ctx, "lesser-api", &apigatewayv2.ApiArgs{
 			ProtocolType: pulumi.String("HTTP"),
 			CorsConfiguration: &apigatewayv2.ApiCorsConfigurationArgs{
-				AllowOrigins:  pulumi.StringArray{pulumi.String("*")},
-				AllowMethods:  pulumi.StringArray{pulumi.String("GET"), pulumi.String("POST"), pulumi.String("PUT"), pulumi.String("DELETE"), pulumi.String("OPTIONS"), pulumi.String("PATCH")},
-				AllowHeaders:  pulumi.StringArray{pulumi.String("*")},
-				ExposeHeaders: pulumi.StringArray{pulumi.String("*")},
-				MaxAge:        pulumi.Int(300),
+				AllowOrigins: pulumi.StringArray{pulumi.String("*")},
+				AllowMethods: pulumi.StringArray{pulumi.String("GET"), pulumi.String("POST"), pulumi.String("PUT"), pulumi.String("DELETE"), pulumi.String("OPTIONS"), pulumi.String("PATCH"), pulumi.String("HEAD")},
+				AllowHeaders: pulumi.StringArray{
+					pulumi.String("*"),
+					pulumi.String("Accept"),
+					pulumi.String("Accept-Encoding"),
+					pulumi.String("Accept-Language"),
+					pulumi.String("Authorization"),
+					pulumi.String("Content-Type"),
+					pulumi.String("Date"),
+					pulumi.String("Digest"),
+					pulumi.String("Host"),
+					pulumi.String("Signature"),
+					pulumi.String("User-Agent"),
+					pulumi.String("X-Requested-With"),
+					pulumi.String("X-Forwarded-For"),
+					pulumi.String("X-Forwarded-Proto"),
+				},
+				ExposeHeaders: pulumi.StringArray{
+					pulumi.String("*"),
+					pulumi.String("Date"),
+					pulumi.String("ETag"),
+					pulumi.String("Link"),
+					pulumi.String("Location"),
+					pulumi.String("X-Content-Type-Options"),
+					pulumi.String("X-Frame-Options"),
+					pulumi.String("X-RateLimit-Limit"),
+					pulumi.String("X-RateLimit-Remaining"),
+					pulumi.String("X-RateLimit-Reset"),
+				},
+				MaxAge: pulumi.Int(300),
 			},
 			Tags: pulumi.StringMap{
 				"Name":        pulumi.String("Lesser API"),
@@ -1038,13 +1064,25 @@ func main() {
 			{"/oauth/authorize", "POST", authLambda},
 			{"/oauth/token", "POST", authLambda},
 			{"/.well-known/oauth-authorization-server", "GET", authLambda},
-			{"/{proxy+}", "ANY", apiLambda},
+			// Don't use ANY for the catch-all to avoid conflicts with OPTIONS
+			{"/{proxy+}", "GET", apiLambda},
+			{"/{proxy+}", "POST", apiLambda},
+			{"/{proxy+}", "PUT", apiLambda},
+			{"/{proxy+}", "DELETE", apiLambda},
+			{"/{proxy+}", "PATCH", apiLambda},
+			{"/{proxy+}", "HEAD", apiLambda},
+			// OPTIONS will be handled separately after the loop
 		}
 
 		for _, route := range routes {
 			if err := createRoute(route.path, route.method, route.fn); err != nil {
 				return err
 			}
+		}
+
+		// Add OPTIONS handler for all routes to properly handle CORS preflight
+		if err := createRoute("/{proxy+}", "OPTIONS", apiLambda); err != nil {
+			return err
 		}
 
 		// Create API Gateway stage
@@ -1115,6 +1153,34 @@ func main() {
 			return err
 		}
 
+		// Create WebSocket domain
+		wsDomain, err := apigatewayv2.NewDomainName(ctx, "lesser-ws-domain", &apigatewayv2.DomainNameArgs{
+			DomainName: pulumi.Sprintf("ws.%s", domain),
+			DomainNameConfiguration: &apigatewayv2.DomainNameDomainNameConfigurationArgs{
+				CertificateArn: certificateValidation.CertificateArn,
+				EndpointType:   pulumi.String("REGIONAL"),
+				SecurityPolicy: pulumi.String("TLS_1_2"),
+			},
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser WebSocket Domain"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Map WebSocket API to subdomain at /api
+		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-websocket-mapping", &apigatewayv2.ApiMappingArgs{
+			ApiId:         wsApi.ID(),
+			DomainName:    wsDomain.ID(),
+			Stage:         wsStage.ID(),
+			ApiMappingKey: pulumi.String("api"),
+		})
+		if err != nil {
+			return err
+		}
+
 		// Create Route53 records
 		_, err = route53.NewRecord(ctx, "api-record", &route53.RecordArgs{
 			ZoneId: pulumi.String(hostedZoneId),
@@ -1141,6 +1207,22 @@ func main() {
 					Name:                 mediaDistribution.DomainName,
 					ZoneId:               mediaDistribution.HostedZoneId,
 					EvaluateTargetHealth: pulumi.Bool(false),
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = route53.NewRecord(ctx, "ws-record", &route53.RecordArgs{
+			ZoneId: pulumi.String(hostedZoneId),
+			Name:   pulumi.Sprintf("ws.%s", domain),
+			Type:   pulumi.String("A"),
+			Aliases: route53.RecordAliasArray{
+				&route53.RecordAliasArgs{
+					Name:                 wsDomain.DomainNameConfiguration.TargetDomainName().Elem(),
+					ZoneId:               wsDomain.DomainNameConfiguration.HostedZoneId().Elem(),
+					EvaluateTargetHealth: pulumi.Bool(true),
 				},
 			},
 		})
@@ -1206,7 +1288,7 @@ func main() {
 		ctx.Export("distributionId", mediaDistribution.ID())
 		ctx.Export("apiId", api.ID())
 		ctx.Export("opensearchEndpoint", searchCollection.CollectionEndpoint)
-		ctx.Export("websocketUrl", pulumi.Sprintf("wss://%s/%s", wsApi.ApiEndpoint, wsStage.Name))
+		ctx.Export("websocketUrl", pulumi.Sprintf("wss://ws.%s", domain))
 
 		return nil
 	})

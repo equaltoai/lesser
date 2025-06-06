@@ -77,10 +77,12 @@ func (s *Storage) SaveOperationCost(ctx context.Context, cost *OperationCost) er
 	})
 
 	if err != nil {
-		s.logger.Error("failed to save operation cost",
-			zap.String("request_id", cost.RequestID),
-			zap.Error(err),
-		)
+		if s.logger != nil {
+			s.logger.Error("failed to save operation cost",
+				zap.String("request_id", cost.RequestID),
+				zap.Error(err),
+			)
+		}
 		return fmt.Errorf("failed to save operation cost: %w", err)
 	}
 
@@ -105,10 +107,12 @@ func (s *Storage) GetDailyCosts(ctx context.Context, startDate, endDate time.Tim
 		})
 
 		if err != nil {
-			s.logger.Error("failed to get daily cost",
-				zap.String("date", date),
-				zap.Error(err),
-			)
+			if s.logger != nil {
+				s.logger.Error("failed to get daily cost",
+					zap.String("date", date),
+					zap.Error(err),
+				)
+			}
 			continue
 		}
 
@@ -118,10 +122,12 @@ func (s *Storage) GetDailyCosts(ctx context.Context, startDate, endDate time.Tim
 
 		var aggregate DailyCostAggregate
 		if err := unmarshalDailyCostAggregate(result.Item, &aggregate); err != nil {
-			s.logger.Error("failed to unmarshal daily cost",
-				zap.String("date", date),
-				zap.Error(err),
-			)
+			if s.logger != nil {
+				s.logger.Error("failed to unmarshal daily cost",
+					zap.String("date", date),
+					zap.Error(err),
+				)
+			}
 			continue
 		}
 
