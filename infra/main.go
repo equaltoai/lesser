@@ -686,6 +686,217 @@ func main() {
 			return err
 		}
 
+		// Create WebSocket Lambda functions
+		streamingLambda, err := createLambda("streaming", "streaming", 30)
+		if err != nil {
+			return err
+		}
+		streamRouterLambda, err := createLambda("stream-router", "stream-router", 30)
+		if err != nil {
+			return err
+		}
+
+		// Create DynamoDB tables for WebSocket connections
+		connectionsTable, err := dynamodb.NewTable(ctx, "lesser-streaming-connections", &dynamodb.TableArgs{
+			Name:        pulumi.String(fmt.Sprintf("lesser-streaming-connections-%s", environment)),
+			BillingMode: pulumi.String("PAY_PER_REQUEST"),
+			HashKey:     pulumi.String("PK"),
+			RangeKey:    pulumi.String("SK"),
+
+			Attributes: dynamodb.TableAttributeArray{
+				&dynamodb.TableAttributeArgs{
+					Name: pulumi.String("PK"),
+					Type: pulumi.String("S"),
+				},
+				&dynamodb.TableAttributeArgs{
+					Name: pulumi.String("SK"),
+					Type: pulumi.String("S"),
+				},
+			},
+
+			Ttl: &dynamodb.TableTtlArgs{
+				AttributeName: pulumi.String("TTL"),
+				Enabled:       pulumi.Bool(true),
+			},
+
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Streaming Connections"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		subscriptionsTable, err := dynamodb.NewTable(ctx, "lesser-streaming-subscriptions", &dynamodb.TableArgs{
+			Name:        pulumi.String(fmt.Sprintf("lesser-streaming-subscriptions-%s", environment)),
+			BillingMode: pulumi.String("PAY_PER_REQUEST"),
+			HashKey:     pulumi.String("PK"),
+			RangeKey:    pulumi.String("SK"),
+
+			Attributes: dynamodb.TableAttributeArray{
+				&dynamodb.TableAttributeArgs{
+					Name: pulumi.String("PK"),
+					Type: pulumi.String("S"),
+				},
+				&dynamodb.TableAttributeArgs{
+					Name: pulumi.String("SK"),
+					Type: pulumi.String("S"),
+				},
+			},
+
+			Ttl: &dynamodb.TableTtlArgs{
+				AttributeName: pulumi.String("TTL"),
+				Enabled:       pulumi.Bool(true),
+			},
+
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Streaming Subscriptions"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create WebSocket API
+		wsApi, err := apigatewayv2.NewApi(ctx, "lesser-websocket-api", &apigatewayv2.ApiArgs{
+			ProtocolType:             pulumi.String("WEBSOCKET"),
+			RouteSelectionExpression: pulumi.String("$request.body.type"),
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser WebSocket API"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Update Lambda environment for WebSocket functions
+		wsLambdaEnv := pulumi.StringMap{
+			"DYNAMO_TABLE_NAME":   table.Name,
+			"CONNECTIONS_TABLE":   connectionsTable.Name,
+			"SUBSCRIPTIONS_TABLE": subscriptionsTable.Name,
+			"DOMAIN":              pulumi.String(domain),
+			"WEBSOCKET_ENDPOINT":  pulumi.Sprintf("https://%s.execute-api.us-east-1.amazonaws.com/prod", wsApi.ID()),
+		}
+
+		// Create WebSocket Lambda with updated environment
+		createWebSocketLambda := func(name string, handler string, timeout int) (*lambda.Function, error) {
+			return lambda.NewFunction(ctx, fmt.Sprintf("lesser-%s", name), &lambda.FunctionArgs{
+				Runtime:       pulumi.String("provided.al2"),
+				Handler:       pulumi.String("bootstrap"),
+				Role:          lambdaRole.Arn,
+				Timeout:       pulumi.Int(timeout),
+				MemorySize:    pulumi.Int(512),
+				Architectures: pulumi.StringArray{pulumi.String("arm64")},
+				Environment: &lambda.FunctionEnvironmentArgs{
+					Variables: wsLambdaEnv,
+				},
+				Code: pulumi.NewFileArchive(fmt.Sprintf("../bin/%s.zip", handler)),
+				Tags: pulumi.StringMap{
+					"Name":        pulumi.Sprintf("Lesser %s", name),
+					"Environment": pulumi.String(environment),
+				},
+			})
+		}
+
+		// Recreate streaming Lambda with WebSocket environment
+		streamingLambda, err = createWebSocketLambda("streaming-ws", "streaming", 30)
+		if err != nil {
+			return err
+		}
+
+		// Recreate stream router Lambda with WebSocket environment
+		streamRouterLambda, err = createWebSocketLambda("stream-router-ws", "stream-router", 30)
+		if err != nil {
+			return err
+		}
+
+		// Create WebSocket integrations
+		connectIntegration, err := apigatewayv2.NewIntegration(ctx, "lesser-ws-connect-integration", &apigatewayv2.IntegrationArgs{
+			ApiId:                wsApi.ID(), // Use WebSocket API, not HTTP API
+			IntegrationType:      pulumi.String("AWS_PROXY"),
+			IntegrationUri:       streamingLambda.Arn,
+			PayloadFormatVersion: pulumi.String("1.0"),
+		})
+		if err != nil {
+			return err
+		}
+
+		disconnectIntegration, err := apigatewayv2.NewIntegration(ctx, "lesser-ws-disconnect-integration", &apigatewayv2.IntegrationArgs{
+			ApiId:                wsApi.ID(), // Use WebSocket API, not HTTP API
+			IntegrationType:      pulumi.String("AWS_PROXY"),
+			IntegrationUri:       streamingLambda.Arn,
+			PayloadFormatVersion: pulumi.String("1.0"),
+		})
+		if err != nil {
+			return err
+		}
+
+		defaultIntegration, err := apigatewayv2.NewIntegration(ctx, "lesser-ws-default-integration", &apigatewayv2.IntegrationArgs{
+			ApiId:                wsApi.ID(), // Use WebSocket API, not HTTP API
+			IntegrationType:      pulumi.String("AWS_PROXY"),
+			IntegrationUri:       streamingLambda.Arn,
+			PayloadFormatVersion: pulumi.String("1.0"),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create WebSocket routes
+		_, err = apigatewayv2.NewRoute(ctx, "lesser-ws-connect-route", &apigatewayv2.RouteArgs{
+			ApiId:    wsApi.ID(),
+			RouteKey: pulumi.String("$connect"),
+			Target:   pulumi.Sprintf("integrations/%s", connectIntegration.ID()),
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = apigatewayv2.NewRoute(ctx, "lesser-ws-disconnect-route", &apigatewayv2.RouteArgs{
+			ApiId:    wsApi.ID(),
+			RouteKey: pulumi.String("$disconnect"),
+			Target:   pulumi.Sprintf("integrations/%s", disconnectIntegration.ID()),
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = apigatewayv2.NewRoute(ctx, "lesser-ws-default-route", &apigatewayv2.RouteArgs{
+			ApiId:    wsApi.ID(),
+			RouteKey: pulumi.String("$default"),
+			Target:   pulumi.Sprintf("integrations/%s", defaultIntegration.ID()),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create WebSocket stage
+		wsStage, err := apigatewayv2.NewStage(ctx, "lesser-websocket-stage", &apigatewayv2.StageArgs{
+			ApiId:      wsApi.ID(),
+			Name:       pulumi.String("prod"),
+			AutoDeploy: pulumi.Bool(true),
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser WebSocket Stage"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Grant Lambda permission for WebSocket
+		_, err = lambda.NewPermission(ctx, "lesser-streaming-permission", &lambda.PermissionArgs{
+			Action:    pulumi.String("lambda:InvokeFunction"),
+			Function:  streamingLambda.Name,
+			Principal: pulumi.String("apigateway.amazonaws.com"),
+			SourceArn: pulumi.Sprintf("%s/*/*", wsApi.ExecutionArn),
+		})
+		if err != nil {
+			return err
+		}
+
 		// Add DynamoDB Streams trigger
 		_, err = lambda.NewEventSourceMapping(ctx, "activity-stream", &lambda.EventSourceMappingArgs{
 			EventSourceArn:                 table.StreamArn,
@@ -729,6 +940,25 @@ func main() {
 				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
 					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
 						Pattern: pulumi.String(`{"eventName": ["INSERT"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "COST#"}]}}}}`),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add DynamoDB Streams trigger for stream router (WebSocket broadcasting)
+		_, err = lambda.NewEventSourceMapping(ctx, "stream-router-trigger", &lambda.EventSourceMappingArgs{
+			EventSourceArn:        table.StreamArn,
+			FunctionName:          streamRouterLambda.Name,
+			StartingPosition:      pulumi.String("LATEST"),
+			ParallelizationFactor: pulumi.Int(5),
+			MaximumRetryAttempts:  pulumi.Int(3),
+			FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
+				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
+					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
+						Pattern: pulumi.String(`{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "STATUS#"}, {"prefix": "NOTIFICATION#"}, {"prefix": "ACTOR#"}]}}}}`),
 					},
 				},
 			},
@@ -976,6 +1206,7 @@ func main() {
 		ctx.Export("distributionId", mediaDistribution.ID())
 		ctx.Export("apiId", api.ID())
 		ctx.Export("opensearchEndpoint", searchCollection.CollectionEndpoint)
+		ctx.Export("websocketUrl", pulumi.Sprintf("wss://%s/%s", wsApi.ApiEndpoint, wsStage.Name))
 
 		return nil
 	})

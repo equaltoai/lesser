@@ -489,6 +489,21 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		return handler.HandleGetInstanceCosts(ctx, request)
 	}
 
+	// Instance metrics
+	if path == "/instance/metrics" && method == http.MethodGet {
+		return handler.HandleGetInstanceMetrics(ctx, request)
+	}
+
+	// Daily aggregates
+	if path == "/instance/metrics/daily" && method == http.MethodGet {
+		return handler.HandleGetDailyAggregates(ctx, request)
+	}
+
+	// Predictive analytics
+	if path == "/instance/analytics" && method == http.MethodGet {
+		return handler.HandleGetPredictiveAnalytics(ctx, request)
+	}
+
 	// Profile directory
 	if path == "/directory" && method == http.MethodGet {
 		// TODO: Implement profile directory
@@ -720,7 +735,11 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 
 	// TODO: POST /api/v1/reports - File a report
 
-	// TODO: Streaming API endpoints (WebSocket/SSE)
+	// Streaming API endpoints
+	if path == "/streaming/events" && method == http.MethodGet {
+		return handler.HandleSSEStream(ctx, request)
+	}
+
 	// TODO: Admin API endpoints
 
 	// Unknown endpoint
