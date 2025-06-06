@@ -583,6 +583,51 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	}
 	// TODO: Implement v2 search with better pagination
 
+	// ==================== MODERATION ====================
+	// Moderation endpoints
+	if path == "/moderation/flag" && method == http.MethodPost {
+		return handler.HandleModerationFlag(ctx, request)
+	}
+	if path == "/moderation/queue" && method == http.MethodGet {
+		return handler.HandleModerationQueue(ctx, request)
+	}
+	if path == "/moderation/review" && method == http.MethodPost {
+		return handler.HandleModerationReview(ctx, request)
+	}
+	// Moderation history
+	if strings.HasPrefix(path, "/moderation/history/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 && method == http.MethodGet {
+			objectID := parts[2]
+			return handler.HandleModerationHistory(ctx, request, objectID)
+		}
+	}
+	// Moderation consensus
+	if strings.HasPrefix(path, "/moderation/consensus/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 3 && method == http.MethodGet {
+			eventID := parts[2]
+			return handler.HandleGetConsensus(ctx, request, eventID)
+		}
+	}
+	// Trust relationships
+	if path == "/moderation/trust" {
+		switch method {
+		case http.MethodGet:
+			return handler.HandleGetTrustRelationships(ctx, request)
+		case http.MethodPut:
+			return handler.HandleUpdateTrust(ctx, request)
+		}
+	}
+	// Trust score
+	if strings.HasPrefix(path, "/moderation/trust/") && strings.HasSuffix(path, "/score") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 4 && method == http.MethodGet {
+			actorID := parts[2]
+			return handler.HandleGetTrustScore(ctx, request, actorID)
+		}
+	}
+
 	// ==================== FEATURED CONTENT ====================
 	// Featured tags
 	if path == "/featured_tags" && method == http.MethodGet {
