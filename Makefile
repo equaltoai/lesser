@@ -173,6 +173,9 @@ build-lambdas:
 	@echo "Building search-indexer..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/search-indexer
 	@cd bin && zip -q search-indexer.zip bootstrap && rm bootstrap
+	@echo "Building status-indexer..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/status-indexer
+	@cd bin && zip -q status-indexer.zip bootstrap && rm bootstrap
 	@echo "Building push-delivery..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/push-delivery
 	@cd bin && zip -q push-delivery.zip bootstrap && rm bootstrap
@@ -230,6 +233,12 @@ build-search-indexer:
 	@echo "Building search-indexer..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/search-indexer
 	@cd bin && zip -q search-indexer.zip bootstrap && rm bootstrap
+
+# Build status-indexer Lambda
+build-status-indexer:
+	@echo "Building status-indexer..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/status-indexer
+	@cd bin && zip -q status-indexer.zip bootstrap && rm bootstrap
 
 # Generate GraphQL code
 gqlgen:

@@ -20,6 +20,11 @@ type Storage interface {
 	SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error)
 	GetSearchSuggestions(ctx context.Context, prefix string) ([]SearchSuggestion, error)
 
+	// Status search operations
+	SearchStatuses(ctx context.Context, query string, limit int) ([]*StatusSearchResult, error)
+	SearchStatusesWithOptions(ctx context.Context, query string, options StatusSearchOptions) ([]*StatusSearchResult, error)
+	SearchStatusesByURL(ctx context.Context, url string) (*StatusSearchResult, error)
+
 	// Activity operations
 	CreateActivity(ctx context.Context, activity *activitypub.Activity) error
 	GetActivity(ctx context.Context, id string) (*activitypub.Activity, error)
@@ -304,6 +309,26 @@ type Storage interface {
 	SearchHashtags(ctx context.Context, query string, limit int) ([]*Hashtag, error)
 	GetHashtagInfo(ctx context.Context, hashtag string) (*Hashtag, error)
 	GetHashtagUsageHistory(ctx context.Context, hashtag string, days int) ([]int64, error)
+
+	// Language detection and user preferences
+	GetUserLanguagePreference(ctx context.Context, username string) (string, error)
+	SetUserLanguagePreference(ctx context.Context, username string, language string) error
+	GetUserPreferences(ctx context.Context, username string) (*UserPreferences, error)
+	UpdateUserPreferences(ctx context.Context, username string, preferences *UserPreferences) error
+
+	// Search suggestion tracking and analytics
+	TrackSearchQuery(ctx context.Context, userID, query string, resultCount int) error
+	GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]SearchQueryStats, error)
+	GetUserSearchHistory(ctx context.Context, userID string, limit int) ([]SearchHistoryEntry, error)
+	GenerateSearchSuggestions(ctx context.Context, userID, partialQuery string, limit int) ([]string, error)
+
+	// Trending operations
+	RecordHashtagUsage(ctx context.Context, hashtag string, statusID string, authorID string) error
+	RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error
+	RecordLinkShare(ctx context.Context, url string, statusID string, authorID string) error
+	GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*TrendingHashtag, error)
+	GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*TrendingStatus, error)
+	GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*TrendingLink, error)
 }
 
 // User represents a user account in the system
@@ -624,6 +649,18 @@ type SearchSuggestion struct {
 	Score int    `json:"score"` // Relevance score
 }
 
+// StatusSearchResult represents a status search result
+type StatusSearchResult struct {
+	StatusID       string
+	Content        string
+	URL            string
+	AuthorID       string
+	AuthorUsername string
+	Published      time.Time
+	Score          float64
+	Highlights     map[string]string
+}
+
 // PushSubscription represents a web push subscription
 type PushSubscription struct {
 	ID        string                 `dynamodbav:"id"`
@@ -795,4 +832,84 @@ type Hashtag struct {
 	UsageCount int64     `dynamodbav:"UsageCount" json:"usage_count"`
 	FirstSeen  time.Time `dynamodbav:"FirstSeen" json:"first_seen"`
 	LastUsed   time.Time `dynamodbav:"LastUsed" json:"last_used"`
+}
+
+// StatusSearchOptions configures status search behavior
+type StatusSearchOptions struct {
+	Limit         int       // Maximum results to return
+	Offset        int       // For pagination
+	AccountID     string    // Filter by specific account
+	FollowingOnly bool      // Only from accounts user follows
+	LocalOnly     bool      // Only local statuses
+	MediaOnly     bool      // Only statuses with media
+	Language      string    // Filter by language
+	MinEngagement int       // Minimum likes/boosts
+	TimeRange     TimeRange // Time-based filtering
+}
+
+// TimeRange represents a time-based filter
+type TimeRange struct {
+	Start time.Time
+	End   time.Time
+}
+
+// UserPreferences represents user-specific preferences
+type UserPreferences struct {
+	Language                  string `dynamodbav:"language"`
+	DefaultPostingVisibility  string `dynamodbav:"default_posting_visibility"`
+	DefaultMediaSensitive     bool   `dynamodbav:"default_media_sensitive"`
+	ExpandSpoilers            bool   `dynamodbav:"expand_spoilers"`
+	ShowFollowCounts          bool   `dynamodbav:"show_follow_counts"`
+	PreferredTimelineOrder    string `dynamodbav:"preferred_timeline_order"` // newest, oldest, engagement
+	SearchSuggestionsEnabled  bool   `dynamodbav:"search_suggestions_enabled"`
+	PersonalizedSearchEnabled bool   `dynamodbav:"personalized_search_enabled"`
+}
+
+// SearchQueryStats represents statistics about a search query
+type SearchQueryStats struct {
+	Query      string    `dynamodbav:"query"`
+	Count      int       `dynamodbav:"count"`
+	UserCount  int       `dynamodbav:"user_count"`  // Unique users who searched
+	AvgResults float64   `dynamodbav:"avg_results"` // Average number of results
+	LastUsed   time.Time `dynamodbav:"last_used"`
+}
+
+// SearchHistoryEntry represents a user's search history entry
+type SearchHistoryEntry struct {
+	UserID      string    `dynamodbav:"user_id"`
+	Query       string    `dynamodbav:"query"`
+	ResultCount int       `dynamodbav:"result_count"`
+	ClickedIDs  []string  `dynamodbav:"clicked_ids"` // IDs of results user clicked
+	SearchedAt  time.Time `dynamodbav:"searched_at"`
+}
+
+// TrendingHashtag represents a trending hashtag
+type TrendingHashtag struct {
+	Name        string    `dynamodbav:"name"`
+	URL         string    `dynamodbav:"url"`
+	UsageCount  int64     `dynamodbav:"usage_count"`
+	UniqueUsers int64     `dynamodbav:"unique_users"`
+	LastUsed    time.Time `dynamodbav:"last_used"`
+	FirstSeen   time.Time `dynamodbav:"first_seen"`
+}
+
+// TrendingStatus represents a trending status
+type TrendingStatus struct {
+	ID          string    `dynamodbav:"id"`
+	URL         string    `dynamodbav:"url"`
+	AuthorID    string    `dynamodbav:"author_id"`
+	Content     string    `dynamodbav:"content"`
+	Engagements int64     `dynamodbav:"engagements"`
+	PublishedAt time.Time `dynamodbav:"published_at"`
+}
+
+// TrendingLink represents a trending link
+type TrendingLink struct {
+	URL         string `dynamodbav:"url"`
+	Title       string `dynamodbav:"title"`
+	Description string `dynamodbav:"description"`
+	Type        string `dynamodbav:"type"` // link, photo, video
+	AuthorName  string `dynamodbav:"author_name"`
+	Image       string `dynamodbav:"image"`
+	ShareCount  int64  `dynamodbav:"share_count"`
 }

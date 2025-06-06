@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
@@ -33,9 +34,12 @@ type DynamoDBAPI interface {
 
 // dynamoDBStorage implements the storage.Storage interface using DynamoDB
 type dynamoDBStorage struct {
-	client        DynamoDBAPI
-	tableName     string
-	searchService *SearchService
+	client              DynamoDBAPI
+	tableName           string
+	searchService       *SearchService
+	statusSearchService *StatusSearchService
+	embeddingService    *EmbeddingService
+	domain              string
 }
 
 var (
@@ -101,6 +105,24 @@ func New() (storage.Storage, error) {
 	dynStorage := &dynamoDBStorage{
 		client:    client,
 		tableName: tableName,
+		domain:    cfg.Get().Domain,
+	}
+
+	// Get AWS config for services that need it
+	ctx := context.Background()
+	awsCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(cfg.Get().Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	// Initialize embedding service (optional - non-critical if it fails)
+	embeddingService, err := NewEmbeddingService(awsCfg, tableName, common.Logger())
+	if err != nil {
+		common.Logger().Warn("failed to initialize embedding service, semantic search will be disabled", zap.Error(err))
+	} else {
+		dynStorage.embeddingService = embeddingService
 	}
 
 	// Initialize search service with storage reference
@@ -109,6 +131,13 @@ func New() (storage.Storage, error) {
 	if dc, ok := client.(*dynamodb.Client); ok {
 		searchService := NewSearchService(dc, tableName, common.Logger(), dynStorage, cfg.Get().Domain)
 		dynStorage.searchService = searchService
+
+		// Initialize status search service
+		statusSearchService := NewStatusSearchService(dc, tableName, common.Logger(), dynStorage)
+		statusSearchService.embeddings = embeddingService // Share the embedding service
+		// Initialize AWS Comprehend for language detection
+		statusSearchService.comprehend = comprehend.NewFromConfig(awsCfg)
+		dynStorage.statusSearchService = statusSearchService
 	}
 
 	return dynStorage, nil
@@ -119,12 +148,17 @@ func NewWithClient(client DynamoDBAPI, tableName string) storage.Storage {
 	dynStorage := &dynamoDBStorage{
 		client:    client,
 		tableName: tableName,
+		domain:    cfg.Get().Domain,
 	}
 
 	// For testing, we might not have a real DynamoDB client
 	if dynamoClient, ok := client.(*dynamodb.Client); ok {
 		searchService := NewSearchService(dynamoClient, tableName, common.Logger(), dynStorage, cfg.Get().Domain)
 		dynStorage.searchService = searchService
+
+		// Initialize status search service
+		statusSearchService := NewStatusSearchService(dynamoClient, tableName, common.Logger(), dynStorage)
+		dynStorage.statusSearchService = statusSearchService
 	}
 
 	return dynStorage

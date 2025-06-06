@@ -463,7 +463,7 @@ func (m *BaseMockStorage) CountUnreadNotifications(ctx context.Context, username
 	return 0, nil
 }
 
-// Search operations
+// Search methods
 func (m *BaseMockStorage) SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error) {
 	return []*activitypub.Actor{}, nil
 }
@@ -471,7 +471,18 @@ func (m *BaseMockStorage) GetSearchSuggestions(ctx context.Context, prefix strin
 	return []storage.SearchSuggestion{}, nil
 }
 
-// Remote actor caching operations
+// Status search operations
+func (m *BaseMockStorage) SearchStatuses(ctx context.Context, query string, limit int) ([]*storage.StatusSearchResult, error) {
+	return []*storage.StatusSearchResult{}, nil
+}
+func (m *BaseMockStorage) SearchStatusesWithOptions(ctx context.Context, query string, options storage.StatusSearchOptions) ([]*storage.StatusSearchResult, error) {
+	return []*storage.StatusSearchResult{}, nil
+}
+func (m *BaseMockStorage) SearchStatusesByURL(ctx context.Context, url string) (*storage.StatusSearchResult, error) {
+	return nil, nil
+}
+
+// Remote actor cache operations
 func (m *BaseMockStorage) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
 	return nil
 }
@@ -664,6 +675,20 @@ func (m *BaseMockStorage) GetTagSuggestions(ctx context.Context, userID string, 
 	return []string{}, nil
 }
 
+// Hashtag operations
+func (m *BaseMockStorage) IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error {
+	return nil
+}
+func (m *BaseMockStorage) SearchHashtags(ctx context.Context, query string, limit int) ([]*storage.Hashtag, error) {
+	return []*storage.Hashtag{}, nil
+}
+func (m *BaseMockStorage) GetHashtagInfo(ctx context.Context, hashtag string) (*storage.Hashtag, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetHashtagUsageHistory(ctx context.Context, hashtag string, days int) ([]int64, error) {
+	return []int64{}, nil
+}
+
 // Moderation operations
 func (m *BaseMockStorage) CreateModerationEvent(ctx context.Context, event *storage.ModerationEvent) error {
 	return nil
@@ -754,6 +779,63 @@ func (m *BaseMockStorage) DeleteAccountNote(ctx context.Context, username, targe
 }
 func (m *BaseMockStorage) RemoveFromFollowers(ctx context.Context, username, followerUsername string) error {
 	return nil
+}
+
+// Language detection and user preferences mocks
+func (m *BaseMockStorage) GetUserLanguagePreference(ctx context.Context, username string) (string, error) {
+	return "en", nil
+}
+func (m *BaseMockStorage) SetUserLanguagePreference(ctx context.Context, username string, language string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetUserPreferences(ctx context.Context, username string) (*storage.UserPreferences, error) {
+	return &storage.UserPreferences{
+		Language:                  "en",
+		DefaultPostingVisibility:  "public",
+		DefaultMediaSensitive:     false,
+		ExpandSpoilers:            false,
+		ShowFollowCounts:          true,
+		PreferredTimelineOrder:    "newest",
+		SearchSuggestionsEnabled:  true,
+		PersonalizedSearchEnabled: true,
+	}, nil
+}
+func (m *BaseMockStorage) UpdateUserPreferences(ctx context.Context, username string, preferences *storage.UserPreferences) error {
+	return nil
+}
+
+// Search suggestion tracking and analytics mocks
+func (m *BaseMockStorage) TrackSearchQuery(ctx context.Context, userID, query string, resultCount int) error {
+	return nil
+}
+func (m *BaseMockStorage) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
+	return []storage.SearchQueryStats{}, nil
+}
+func (m *BaseMockStorage) GetUserSearchHistory(ctx context.Context, userID string, limit int) ([]storage.SearchHistoryEntry, error) {
+	return []storage.SearchHistoryEntry{}, nil
+}
+func (m *BaseMockStorage) GenerateSearchSuggestions(ctx context.Context, userID, partialQuery string, limit int) ([]string, error) {
+	return []string{}, nil
+}
+
+// Trending operations
+func (m *BaseMockStorage) RecordHashtagUsage(ctx context.Context, hashtag string, statusID string, authorID string) error {
+	return nil
+}
+func (m *BaseMockStorage) RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error {
+	return nil
+}
+func (m *BaseMockStorage) RecordLinkShare(ctx context.Context, url string, statusID string, authorID string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
+	return []*storage.TrendingHashtag{}, nil
+}
+func (m *BaseMockStorage) GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
+	return []*storage.TrendingStatus{}, nil
+}
+func (m *BaseMockStorage) GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
+	return []*storage.TrendingLink{}, nil
 }
 
 // MockStorage is a testify mock implementation that embeds BaseMockStorage

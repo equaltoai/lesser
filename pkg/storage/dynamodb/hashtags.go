@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
@@ -13,15 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 )
-
-// Hashtag represents a hashtag with usage statistics
-type Hashtag struct {
-	Name       string    `dynamodbav:"Name" json:"name"`
-	URL        string    `dynamodbav:"URL" json:"url"`
-	UsageCount int64     `dynamodbav:"UsageCount" json:"usage_count"`
-	FirstSeen  time.Time `dynamodbav:"FirstSeen" json:"first_seen"`
-	LastUsed   time.Time `dynamodbav:"LastUsed" json:"last_used"`
-}
 
 // HashtagUsage represents a single use of a hashtag
 type HashtagUsage struct {
@@ -73,7 +66,7 @@ func (s *dynamoDBStorage) IndexHashtag(ctx context.Context, hashtag string, stat
 			"PK":         &types.AttributeValueMemberS{Value: metadataPK},
 			"SK":         &types.AttributeValueMemberS{Value: metadataSK},
 			"Name":       &types.AttributeValueMemberS{Value: tagLower},
-			"URL":        &types.AttributeValueMemberS{Value: fmt.Sprintf("%s/tags/%s", s.config.BaseURL(), tagLower)},
+			"URL":        &types.AttributeValueMemberS{Value: fmt.Sprintf("https://%s/tags/%s", s.domain, tagLower)},
 			"UsageCount": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", existingCount+1)},
 			"FirstSeen":  &types.AttributeValueMemberS{Value: firstSeen.Format(time.RFC3339)},
 			"LastUsed":   &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
@@ -113,7 +106,7 @@ func (s *dynamoDBStorage) IndexHashtag(ctx context.Context, hashtag string, stat
 }
 
 // SearchHashtags searches for hashtags matching the query
-func (s *dynamoDBStorage) SearchHashtags(ctx context.Context, query string, limit int) ([]*Hashtag, error) {
+func (s *dynamoDBStorage) SearchHashtags(ctx context.Context, query string, limit int) ([]*storage.Hashtag, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -125,7 +118,7 @@ func (s *dynamoDBStorage) SearchHashtags(ctx context.Context, query string, limi
 
 	// Need at least 1 character for search
 	if len(searchTerm) < 1 {
-		return []*Hashtag{}, nil
+		return []*storage.Hashtag{}, nil
 	}
 
 	// Try exact match first
@@ -140,11 +133,11 @@ func (s *dynamoDBStorage) SearchHashtags(ctx context.Context, query string, limi
 		},
 	})
 
-	results := make([]*Hashtag, 0)
+	results := make([]*storage.Hashtag, 0)
 
 	// Add exact match if found
 	if err == nil && exactResult.Item != nil {
-		var hashtag Hashtag
+		var hashtag storage.Hashtag
 		if err := attributevalue.UnmarshalMap(exactResult.Item, &hashtag); err == nil {
 			results = append(results, &hashtag)
 		}
@@ -177,10 +170,10 @@ func (s *dynamoDBStorage) SearchHashtags(ctx context.Context, query string, limi
 
 		queryResult, err := s.client.Query(ctx, queryInput)
 		if err != nil {
-			s.logger.Warn("hashtag prefix search failed", zap.Error(err))
+			common.Logger().Warn("hashtag prefix search failed", zap.Error(err))
 		} else {
 			for _, item := range queryResult.Items {
-				var hashtag Hashtag
+				var hashtag storage.Hashtag
 				if err := attributevalue.UnmarshalMap(item, &hashtag); err == nil {
 					// Skip if it's the exact match we already added
 					if hashtag.Name != searchTerm {
@@ -195,7 +188,7 @@ func (s *dynamoDBStorage) SearchHashtags(ctx context.Context, query string, limi
 }
 
 // GetHashtagInfo retrieves information about a specific hashtag
-func (s *dynamoDBStorage) GetHashtagInfo(ctx context.Context, hashtag string) (*Hashtag, error) {
+func (s *dynamoDBStorage) GetHashtagInfo(ctx context.Context, hashtag string) (*storage.Hashtag, error) {
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 
 	pk := fmt.Sprintf("HASHTAG#%s", tagLower)
@@ -217,7 +210,7 @@ func (s *dynamoDBStorage) GetHashtagInfo(ctx context.Context, hashtag string) (*
 		return nil, nil
 	}
 
-	var hashtagInfo Hashtag
+	var hashtagInfo storage.Hashtag
 	if err := attributevalue.UnmarshalMap(result.Item, &hashtagInfo); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal hashtag: %w", err)
 	}
