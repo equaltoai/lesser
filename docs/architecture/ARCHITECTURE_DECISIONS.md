@@ -1,0 +1,401 @@
+# Lesser Architecture Decisions
+
+This document records key architectural decisions for the Lesser project. Each decision includes context, options considered, and rationale.
+
+## Decision Log
+
+### 1. Private Key Storage Encryption
+**Status:** 🚨 PENDING IMPLEMENTATION  
+**Decision:** Use AWS KMS for private key encryption
+
+**Context:**
+- ActivityPub requires private keys for HTTP signatures
+- Currently storing private keys in plaintext (security risk)
+- Need secure, auditable encryption
+
+**Options Considered:**
+1. **AWS KMS** ✅ SELECTED
+   - Use a single Customer Master Key (CMK)
+   - Encrypt/decrypt private keys on demand
+   - ~$1/month + API calls
+2. Application-level encryption
+   - Would require secure master key management
+   - More complex key rotation
+
+**Rationale:**
+- KMS provides hardware security modules (HSM)
+- Automatic key rotation
+- CloudTrail audit logs
+- No key management burden
+
+**Implementation:**
+```go
+// In pkg/storage/dynamodb/actor.go
+func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext string) (string, error) {
+    input := &kms.EncryptInput{
+        KeyId:     aws.String(s.kmsKeyID),
+        Plaintext: []byte(plaintext),
+    }
+    result, err := s.kmsClient.Encrypt(ctx, input)
+    if err != nil {
+        return "", fmt.Errorf("failed to encrypt private key: %w", err)
+    }
+    return base64.StdEncoding.EncodeToString(result.CiphertextBlob), nil
+}
+```
+
+---
+
+### 2. HTTP Signatures for Federation
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Implement HTTP Signatures following draft-cavage-http-signatures-12
+
+**Context:**
+- ActivityPub requires HTTP signatures for server-to-server authentication
+- Need to verify incoming federation requests
+- Need to sign outgoing federation requests
+
+**Implementation Completed:**
+- `pkg/federation/httpsig.go` - Core implementation
+- RSA-SHA256 algorithm support
+- Timestamp validation (±5 minutes window)
+- Digest calculation and verification
+- Key management utilities (RSA key generation, PEM encoding)
+- 87.4% test coverage
+- Comprehensive documentation in `pkg/federation/README.md`
+
+**Features:**
+- `VerifyHTTPSignature()` - Verify incoming requests
+- `SignHTTPRequest()` - Sign outgoing requests
+- `GenerateRSAKeyPair()` - Generate RSA keys (2048-bit minimum)
+- PEM encoding/decoding utilities
+
+**Future Enhancements:**
+- Ed25519 support for more efficient signatures
+- Integration with AWS KMS for private key encryption
+- Public key caching to reduce lookups
+
+---
+
+### 3. Actor Profile Content Negotiation
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Support both HTML and ActivityStreams JSON responses
+
+**Context:**
+- ActivityPub servers need JSON responses
+- Humans need readable HTML profiles
+- Must serve public keys for federation
+
+**Implementation:**
+- `cmd/actor/main.go` - Dual-format responses
+- Content-Type detection based on Accept header
+- Beautiful responsive HTML with Tailwind-inspired styling
+- ActivityStreams JSON with public key
+- 95.5% test coverage
+
+**Benefits:**
+- Single endpoint serves both audiences
+- Better user experience for web browsers
+- Full federation compliance
+- SEO-friendly HTML with meta tags
+
+---
+
+### 4. Outbox Activity Creation
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Auto-generate IDs and validate actor ownership
+
+**Context:**
+- Activities need unique IDs
+- Must prevent users from posting as other actors
+- Need user-friendly API
+
+**Implementation:**
+- Auto-generate activity IDs if not provided (timestamp + random)
+- Auto-fill actor field if empty
+- Validate actor matches authenticated user
+- 84.7% test coverage
+
+**Benefits:**
+- Simpler API for clients
+- Prevents spoofing
+- Consistent ID format
+- No client-side ID generation needed
+
+**ID Format:**
+```
+https://example.com/activities/20240115-143022-abc12345
+```
+
+---
+
+### 5. Collection Pagination Strategy
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Use OrderedCollection with cursor-based pagination
+
+**Context:**
+- ActivityPub requires OrderedCollection format
+- Need efficient pagination for large collections
+- Must support both collection metadata and pages
+
+**Implementation:**
+- OrderedCollection for metadata (no `?page` parameter)
+- OrderedCollectionPage for paginated results (`?page=true`)
+- Cursor-based pagination for scalability
+- Configurable limits (1-100 items)
+- 81.7% test coverage in outbox
+
+**Benefits:**
+- Standard ActivityPub compliance
+- Efficient for large datasets
+- No offset calculations needed
+- Consistent with other endpoints
+
+**Query Parameters:**
+- `page=true` - Get a page of items
+- `cursor=xxx` - Continue from cursor
+- `limit=20` - Items per page (1-100)
+
+---
+
+### 6. Client Authentication Strategy
+**Status:** ✅ IMPLEMENTED  
+**Decision:** OAuth 2.0 with PKCE and JWT tokens
+
+**Context:**
+- Need secure client-to-server authentication
+- Most ActivityPub clients expect OAuth 2.0
+- Must support third-party apps
+
+**Implementation:**
+- `pkg/auth/oauth.go` - OAuth 2.0 service
+- Authorization code flow with mandatory PKCE
+- JWT access tokens (1 hour expiration)
+- Refresh tokens (30 day expiration)
+- Scope-based authorization (read/write)
+- 67% test coverage
+
+**Benefits:**
+- Industry standard OAuth 2.0 compliance
+- PKCE prevents authorization code interception
+- Stateless JWT tokens for scalability
+- Compatible with existing ActivityPub clients
+
+**Token Details:**
+- **Access Tokens**: JWT with HS256, 1 hour expiration
+- **Refresh Tokens**: Opaque tokens, 30 day expiration
+- **Authorization Codes**: 10 minute expiration
+- **Storage**: DynamoDB with automatic TTL cleanup
+
+**Current Limitations:**
+- Single hardcoded client ("dev-client")
+- No actual login page (uses "testuser")
+- No token revocation endpoint
+- No dynamic client registration
+
+---
+
+### 7. JWT Token Strategy
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Use JWT for access tokens with HS256 signing
+
+**Context:**
+- Need stateless authentication for Lambda
+- Must include user information and scopes
+- Balance between security and performance
+
+**Implementation:**
+```go
+type Claims struct {
+    jwt.StandardClaims
+    Username string   `json:"username"`
+    Scopes   []string `json:"scopes"`
+    ClientID string   `json:"client_id"`
+}
+```
+
+**Rationale:**
+- Stateless - no database lookup needed
+- Standard JWT format for compatibility
+- HS256 sufficient for server-only validation
+- Claims include all needed authorization info
+
+**Security Measures:**
+- Short expiration (1 hour)
+- Refresh tokens for long-lived sessions
+- JWT secret from environment variable
+- No sensitive data in claims
+
+---
+
+### 8. Activity Delivery Architecture
+**Status:** ✅ IMPLEMENTED  
+**Decision:** DynamoDB Streams → Lambda
+
+**Context:**
+- Need to deliver activities to remote servers
+- Must handle retries and failures gracefully
+- Should scale automatically
+
+**Implementation:**
+- `cmd/activity-processor/main.go` - Stream processor
+- Processes INSERT and MODIFY events
+- Routes inbox/outbox activities
+- HTTP signature signing for delivery
+- 78.5% test coverage
+
+**Benefits:**
+- Leverages existing DynamoDB infrastructure
+- Automatic scaling with Lambda
+- Built-in retry capabilities
+- No additional infrastructure needed
+
+**Future Enhancements:**
+- Implement exponential backoff for retries
+- Add Dead Letter Queue for failed deliveries
+- Metrics and monitoring
+- Shared inbox optimization
+
+---
+
+### 9. GetActivity Performance
+**Status:** 🔧 OPTIMIZATION NEEDED  
+**Decision:** Add GSI2 for activity lookups
+
+**Context:**
+- Current implementation uses Scan (inefficient)
+- Need O(1) activity lookups by ID
+- Activities can be in any user's outbox
+
+**Solution:**
+Add a second Global Secondary Index:
+```
+GSI2PK: ACTIVITY#{activity_id}
+GSI2SK: METADATA
+```
+
+**Rationale:**
+- Enables efficient GetActivity queries
+- Minimal storage overhead
+- Can be added without data migration
+
+---
+
+### 10. Shared Inbox Strategy
+**Status:** 🟢 DEFERRED  
+**Decision:** Implement individual inboxes first
+
+**Context:**
+- Shared inbox improves efficiency for multiple followers
+- Adds routing complexity
+- Not required for MVP
+
+**Rationale:**
+- Start simple with individual delivery
+- Can add shared inbox endpoint later
+- No breaking changes required
+- Measure actual performance first
+
+---
+
+### 11. Media Storage Architecture
+**Status:** 🟢 DEFERRED  
+**Decision:** S3 with CloudFront CDN
+
+**Context:**
+- Need to store images, videos, avatars
+- Must serve media efficiently
+- Cost optimization important
+
+**Planned Implementation:**
+- S3 bucket with lifecycle policies
+- CloudFront for global CDN
+- Presigned URLs for uploads
+- Image processing Lambda for thumbnails
+
+---
+
+### 12. Federation Protocol Support
+**Status:** 📋 PLANNED  
+**Decision:** ActivityPub S2S only initially
+
+**Context:**
+- Multiple federation protocols exist
+- ActivityPub is the modern standard
+- Some servers support legacy protocols
+
+**Rationale:**
+- Focus on ActivityPub for MVP
+- Most active development in Fediverse
+- Can add OStatus/Diaspora later if needed
+
+---
+
+### 13. Database Design
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Single-table DynamoDB design
+
+**Context:**
+- Need efficient queries at scale
+- Cost-effective for serverless
+- Must support various access patterns
+
+**Implementation:**
+- Single table with composite keys
+- GSI1 for inbox queries
+- GSI2 (planned) for activity lookups
+- Optimized for common queries
+
+---
+
+### 14. Lambda Architecture
+**Status:** ✅ IMPLEMENTED  
+**Decision:** One Lambda per endpoint
+
+**Context:**
+- Need fast cold starts
+- Independent scaling per endpoint
+- Clear separation of concerns
+
+**Benefits:**
+- Minimal cold start time
+- Independent deployment
+- Easier debugging
+- Per-endpoint metrics
+
+---
+
+### 15. Infrastructure as Code
+**Status:** 📋 PLANNED  
+**Decision:** Pulumi with TypeScript
+
+**Context:**
+- Need reproducible deployments
+- Version control for infrastructure
+- Support for multiple environments
+
+**Rationale:**
+- Type safety with TypeScript
+- Better than CloudFormation/SAM
+- Supports all AWS resources
+- Great Go SDK integration
+
+---
+
+## Decision Process
+
+When making architecture decisions:
+
+1. **Document the context** - Why is this decision needed?
+2. **List options** - What alternatives were considered?
+3. **Explain rationale** - Why was this option chosen?
+4. **Plan implementation** - How will it be built?
+5. **Set status** - Is it implemented, planned, or pending?
+
+## Status Key
+
+- 🚨 **PENDING IMPLEMENTATION** - Blocking progress
+- 📋 **PLANNED** - Scheduled for implementation
+- 🔧 **OPTIMIZATION NEEDED** - Working but needs improvement
+- 🟢 **DEFERRED** - Intentionally postponed
+- ✅ **IMPLEMENTED** - Completed 

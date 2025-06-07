@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"image/draw"
 	"image/jpeg"
 	"image/png"
 
@@ -71,13 +70,22 @@ func resizeForBlurhash(src image.Image, maxWidth int) image.Image {
 	// Calculate new dimensions maintaining aspect ratio
 	newWidth := maxWidth
 	newHeight := (height * maxWidth) / width
+	if newHeight < 1 {
+		newHeight = 1
+	}
 
 	// Create a new image
 	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
 
-	// Use simple nearest-neighbor scaling for speed
+	// Simple resize using nearest neighbor algorithm
 	// For blurhash, quality doesn't matter much since it's going to be blurred anyway
-	draw.NearestNeighbor.Scale(dst, dst.Bounds(), src, bounds, draw.Over, nil)
+	for y := 0; y < newHeight; y++ {
+		for x := 0; x < newWidth; x++ {
+			srcX := x * width / newWidth
+			srcY := y * height / newHeight
+			dst.Set(x, y, src.At(srcX, srcY))
+		}
+	}
 
 	return dst
 }

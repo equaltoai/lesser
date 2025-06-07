@@ -145,7 +145,7 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 	}
 
 	// Parse the signature
-	sig, err := ParseHTTPSignature(signature)
+	sig, err := ParseSignatureHeader(signature)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse signature: %w", err)
 	}
@@ -165,8 +165,14 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 		return nil, fmt.Errorf("failed to fetch actor: %w", err)
 	}
 
+	// Parse the public key
+	publicKey, err := ParsePublicKeyPEM([]byte(actor.PublicKey.PublicKeyPem))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+
 	// Verify the signature
-	if err := VerifyHTTPSignature(req, actor.PublicKey.PublicKeyPem, sig); err != nil {
+	if err := VerifyHTTPSignature(req, publicKey); err != nil {
 		return nil, fmt.Errorf("signature verification failed: %w", err)
 	}
 

@@ -28,7 +28,7 @@ Lesser is production-ready and implements:
 - ✅ **Push Notifications** - Web Push Protocol support
 - ✅ **Media Handling** - S3 + CloudFront CDN
 - ✅ **One-Click Deploy** - Pulumi infrastructure as code
-- ⏳ **Final Feature** - Notifications system (coming this week!)
+- ⏳ **Final Feature** - Notifications system
 
 ## Architecture
 
@@ -36,7 +36,7 @@ Lesser is production-ready and implements:
 - **Compute**: AWS Lambda (scales to zero)
 - **Storage**: DynamoDB (single-table design)
 - **Media**: S3 + CloudFront CDN
-- **Search**: OpenSearch Serverless + AI
+- **Search**: DynamoDB + AI
 - **Queue**: SQS for reliable delivery
 - **Deploy**: Pulumi (one command)
 
@@ -170,30 +170,6 @@ make test-all
 - Timeline algorithms
 - Federation filters
 
-## Roadmap
-
-### ✅ Completed (Weeks 1-8)
-- Core ActivityPub implementation
-- Mastodon API compatibility
-- Federation with all platforms
-- Media uploads with CDN
-- OAuth 2.0 authentication
-- Advanced search with AI
-- Polls and filters
-- Push notifications
-
-### 🚧 In Progress (Week 9)
-- Notifications system (final feature!)
-- Greater UI development
-- Performance optimizations
-
-### 🔮 Coming Soon
-- Reactive moderation mesh
-- Community notes
-- Bot detection network
-- Reputation system
-- Plugin marketplace
-
 ## Why Lesser?
 
 ### For Individuals
@@ -216,11 +192,30 @@ make test-all
 
 ## Documentation
 
-- [Design Document](DESIGN.md) - Architecture details
-- [Developer Guidelines](DEVELOPER_GUIDELINES.md) - Coding standards
-- [Progress Tracker](PROGRESS.md) - Implementation status
-- [API Reference](GREATER_API_REFERENCE.md) - For Greater UI team
-- [Server Implementation](SERVER_IMPLEMENTATION_PLAN.md) - Full roadmap
+### 📚 Getting Started
+- [Quick Start Guide](docs/deployment/QUICK_START.md) - Deploy your instance in minutes
+- [Architecture Overview](docs/architecture/OVERVIEW.md) - High-level system design
+- [API Reference](docs/api/API_REFERENCE.md) - Complete Mastodon API documentation
+
+### 🏗️ Architecture & Design
+- [System Design](docs/architecture/SYSTEM_DESIGN.md) - Detailed architecture documentation
+- [Storage Architecture](docs/architecture/STORAGE_ARCHITECTURE.md) - DynamoDB design
+- [AI Integration](docs/architecture/AI_INTEGRATION.md) - AI-powered features
+- [Moderation Design](docs/architecture/MODERATION_DESIGN.md) - Reactive moderation mesh
+
+### 👩‍💻 Development
+- [Developer Guidelines](docs/development/DEVELOPER_GUIDELINES.md) - Coding standards and practices
+- [Testing Guide](docs/development/TESTING.md) - How to write and run tests
+- [Server Implementation Plan](docs/api/SERVER_IMPLEMENTATION_PLAN.md) - Full implementation roadmap
+
+### 📊 Project Status
+- [Progress Tracker](docs/archive/PROGRESS.md) - Detailed implementation status
+- [Feature List](docs/FEATURES.md) - Complete feature documentation
+
+### 📖 Additional Resources
+- [Documentation Index](docs/README.md) - Browse all documentation
+- [Security](docs/security/) - Authentication and security documentation
+- [Legal](docs/legal/) - Licensing and compliance
 
 ## Contributing
 

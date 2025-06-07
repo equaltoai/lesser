@@ -17,8 +17,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/rekognition v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.80.0
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.5
+	github.com/aws/aws-sdk-go-v2/service/translate v1.29.2
 	github.com/awslabs/aws-lambda-go-api-proxy v0.16.2
+	github.com/bbrks/go-blurhash v1.1.1
 	github.com/bytedance/sonic v1.13.3
+	github.com/disintegration/imaging v1.6.2
 	github.com/ethereum/go-ethereum v1.13.8
 	github.com/go-webauthn/webauthn v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
@@ -29,6 +32,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.27
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.38.0
+	golang.org/x/image v0.28.0
 )
 
 require (

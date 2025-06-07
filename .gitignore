@@ -1,74 +1,62 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Binaries
+bin/
 *.exe
-*.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
+main
+auth-api
+activity-processor.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
+# Go
+vendor/
 go.work
-go.work.sum
 
-# env file
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+test_venv/
+venv/
 .env
 
-# Editor/IDE
-# .idea/
-# .vscode/
-
-# Build artifacts
-bin/
-dist/
-
-# Coverage files
-coverage.out
-coverage.html
-
-# IDE files
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 
-# Pulumi
-Pulumi.*.yaml
-.pulumi/
+# AWS
+.aws/
+.aws-sam/
 
-# Local DynamoDB
-.dynamodb/
+# Terraform/Pulumi
+*.tfstate
+*.tfstate.*
+.terraform/
+Pulumi.*.yaml
+
+# Test outputs
+*.log
+*.out
+coverage.txt
+coverage.html
+results.csv
 
 # Temporary files
-*.tmp
-*.temp
 tmp/
+temp/
+*.tmp
+*.bak
 
-# Log files
-*.log
-
-# Environment specific files
-.env.local
-.env.*.local
-.env.lesser
-.aws
-
-# AWS configuration files
-__debug_bin*
-auth.test
-objects.test
+# API documentation
+docs/api/openapi.json
+docs/api/swagger-ui/
