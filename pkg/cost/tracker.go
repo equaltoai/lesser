@@ -32,10 +32,6 @@ const (
 	CloudFrontHTTPSCost      = 10    // $0.01 per 10,000 HTTPS requests
 	CloudFrontDataTransferGB = 85000 // $0.085 per GB (first 10TB)
 
-	// OpenSearch Pricing (t3.small.search instance)
-	OpenSearchInstanceHour = 36000000 // $0.036 per hour
-	OpenSearchStorageGB    = 10000    // $0.10 per GB-month
-
 	// Micro to cents conversion
 	MicroCentsToCents = 1000000
 )
@@ -52,8 +48,6 @@ type OperationCost struct {
 	S3Puts              int64     `json:"s3_puts"`
 	S3Storage           int64     `json:"s3_storage_bytes"`
 	DataTransferBytes   int64     `json:"data_transfer_bytes"`
-	OpenSearchQueries   int64     `json:"opensearch_queries"`
-	OpenSearchIndexed   int64     `json:"opensearch_indexed"`
 	TotalCostMicroCents int64     `json:"total_cost_microcents"`
 	Timestamp           time.Time `json:"timestamp"`
 	OperationType       string    `json:"operation_type"`
@@ -73,8 +67,6 @@ type Tracker struct {
 	s3Puts            atomic.Int64
 	s3Storage         atomic.Int64
 	dataTransfer      atomic.Int64
-	openSearchQueries atomic.Int64
-	openSearchIndexed atomic.Int64
 
 	// For request-scoped tracking
 	requestID     string
@@ -144,16 +136,6 @@ func (t *Tracker) TrackDataTransfer(bytes int64) {
 	t.dataTransfer.Add(bytes)
 }
 
-// TrackOpenSearchQuery tracks OpenSearch query operations
-func (t *Tracker) TrackOpenSearchQuery(count int) {
-	t.openSearchQueries.Add(int64(count))
-}
-
-// TrackOpenSearchIndex tracks OpenSearch indexing operations
-func (t *Tracker) TrackOpenSearchIndex(count int) {
-	t.openSearchIndexed.Add(int64(count))
-}
-
 // CalculateCost calculates the total cost of tracked operations
 func (t *Tracker) CalculateCost() *OperationCost {
 	cost := &OperationCost{
@@ -167,8 +149,6 @@ func (t *Tracker) CalculateCost() *OperationCost {
 		S3Puts:            t.s3Puts.Load(),
 		S3Storage:         t.s3Storage.Load(),
 		DataTransferBytes: t.dataTransfer.Load(),
-		OpenSearchQueries: t.openSearchQueries.Load(),
-		OpenSearchIndexed: t.openSearchIndexed.Load(),
 		Timestamp:         time.Now(),
 		OperationType:     t.operationType,
 		RequestID:         t.requestID,
@@ -240,8 +220,6 @@ func (t *Tracker) Reset() {
 	t.s3Puts.Store(0)
 	t.s3Storage.Store(0)
 	t.dataTransfer.Store(0)
-	t.openSearchQueries.Store(0)
-	t.openSearchIndexed.Store(0)
 	t.startTime = time.Now()
 }
 
@@ -261,8 +239,6 @@ func (t *Tracker) Merge(other *Tracker) {
 	t.s3Puts.Add(other.s3Puts.Load())
 	t.s3Storage.Add(other.s3Storage.Load())
 	t.dataTransfer.Add(other.dataTransfer.Load())
-	t.openSearchQueries.Add(other.openSearchQueries.Load())
-	t.openSearchIndexed.Add(other.openSearchIndexed.Load())
 }
 
 // Clone creates a copy of the tracker with current values
@@ -283,8 +259,6 @@ func (t *Tracker) Clone() *Tracker {
 	clone.s3Puts.Store(t.s3Puts.Load())
 	clone.s3Storage.Store(t.s3Storage.Load())
 	clone.dataTransfer.Store(t.dataTransfer.Load())
-	clone.openSearchQueries.Store(t.openSearchQueries.Load())
-	clone.openSearchIndexed.Store(t.openSearchIndexed.Load())
 
 	return clone
 }

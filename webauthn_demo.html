@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesser WebAuthn Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 2rem;
+        }
+        .section {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 0.75rem 1.5rem;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-right: 0.5rem;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            background-color: #fee;
+            color: #c33;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        .success {
+            background-color: #efe;
+            color: #3c3;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        .info {
+            background-color: #eef;
+            color: #33c;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        .credentials-list {
+            margin-top: 1rem;
+        }
+        .credential-item {
+            padding: 0.5rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .log {
+            background-color: #f5f5f5;
+            padding: 1rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.875rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Lesser WebAuthn Demo</h1>
+        
+        <div id="message"></div>
+        
+        <!-- Login Section -->
+        <div class="section">
+            <h2>1. Login with Password</h2>
+            <input type="text" id="username" placeholder="Username" value="testuser">
+            <input type="password" id="password" placeholder="Password" value="testpassword123">
+            <button onclick="loginWithPassword()">Login</button>
+            <div id="loginStatus"></div>
+        </div>
+        
+        <!-- WebAuthn Registration -->
+        <div class="section" id="registrationSection" style="display: none;">
+            <h2>2. Register Passkey</h2>
+            <input type="text" id="credentialName" placeholder="Passkey name (e.g., MacBook TouchID)">
+            <button onclick="registerPasskey()">Register New Passkey</button>
+            <div id="registrationStatus"></div>
+        </div>
+        
+        <!-- Credentials List -->
+        <div class="section" id="credentialsSection" style="display: none;">
+            <h2>3. Your Passkeys</h2>
+            <div id="credentialsList"></div>
+            <button onclick="refreshCredentials()">Refresh List</button>
+        </div>
+        
+        <!-- WebAuthn Login -->
+        <div class="section">
+            <h2>4. Login with Passkey</h2>
+            <input type="text" id="passkeyUsername" placeholder="Username" value="testuser">
+            <button onclick="loginWithPasskey()">Login with Passkey</button>
+            <div id="passkeyLoginStatus"></div>
+        </div>
+        
+        <!-- Debug Log -->
+        <div class="section">
+            <h3>Debug Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const AUTH_URL = 'https://api.lesser.app/lab'; // Update this to your auth API URL
+        let accessToken = null;
+        let currentUsername = null;
+
+        // Logging
+        function log(message, data = null) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+            let logMessage = `[${timestamp}] ${message}`;
+            if (data) {
+                logMessage += '\n' + JSON.stringify(data, null, 2);
+            }
+            logDiv.innerHTML += logMessage + '\n\n';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Show message
+        function showMessage(message, type = 'info') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = type;
+            messageDiv.textContent = message;
+            setTimeout(() => {
+                messageDiv.textContent = '';
+                messageDiv.className = '';
+            }, 5000);
+        }
+
+        // Login with password
+        async function loginWithPassword() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (!username || !password) {
+                showMessage('Please enter username and password', 'error');
+                return;
+            }
+            
+            try {
+                log('Logging in with password...');
+                const response = await fetch(`${AUTH_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username,
+                        password,
+                        device_name: 'WebAuthn Demo'
+                    })
+                });
+                
+                const data = await response.json();
+                log('Login response:', data);
+                
+                if (response.ok) {
+                    accessToken = data.access_token;
+                    currentUsername = username;
+                    document.getElementById('loginStatus').innerHTML = 
+                        '<div class="success">Logged in successfully!</div>';
+                    document.getElementById('registrationSection').style.display = 'block';
+                    document.getElementById('credentialsSection').style.display = 'block';
+                    refreshCredentials();
+                } else {
+                    showMessage('Login failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                log('Login error:', error);
+                showMessage('Login error: ' + error.message, 'error');
+            }
+        }
+
+        // Register passkey
+        async function registerPasskey() {
+            if (!accessToken) {
+                showMessage('Please login first', 'error');
+                return;
+            }
+            
+            const credentialName = document.getElementById('credentialName').value || 'My Passkey';
+            
+            try {
+                // Step 1: Begin registration
+                log('Beginning passkey registration...');
+                const beginResponse = await fetch(`${AUTH_URL}/auth/webauthn/register/begin`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const beginData = await beginResponse.json();
+                log('Registration begin response:', beginData);
+                
+                if (!beginResponse.ok) {
+                    throw new Error(beginData.error || 'Registration begin failed');
+                }
+                
+                // Step 2: Create credential with browser WebAuthn API
+                const publicKeyOptions = beginData.publicKey;
+                
+                // Convert base64 strings to ArrayBuffers
+                publicKeyOptions.challenge = base64ToArrayBuffer(publicKeyOptions.challenge);
+                publicKeyOptions.user.id = new TextEncoder().encode(publicKeyOptions.user.id);
+                
+                if (publicKeyOptions.excludeCredentials) {
+                    publicKeyOptions.excludeCredentials = publicKeyOptions.excludeCredentials.map(cred => ({
+                        ...cred,
+                        id: base64ToArrayBuffer(cred.id)
+                    }));
+                }
+                
+                log('Creating credential with WebAuthn API...');
+                const credential = await navigator.credentials.create({
+                    publicKey: publicKeyOptions
+                });
+                
+                log('Credential created:', credential);
+                
+                // Step 3: Finish registration
+                const credentialResponse = {
+                    id: credential.id,
+                    rawId: arrayBufferToBase64(credential.rawId),
+                    type: credential.type,
+                    response: {
+                        clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                        attestationObject: arrayBufferToBase64(credential.response.attestationObject)
+                    }
+                };
+                
+                log('Finishing registration...');
+                const finishResponse = await fetch(`${AUTH_URL}/auth/webauthn/register/finish`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        challenge: beginData.challenge,
+                        response: credentialResponse,
+                        credential_name: credentialName
+                    })
+                });
+                
+                const finishData = await finishResponse.json();
+                log('Registration finish response:', finishData);
+                
+                if (finishResponse.ok) {
+                    showMessage('Passkey registered successfully!', 'success');
+                    refreshCredentials();
+                } else {
+                    throw new Error(finishData.error || 'Registration finish failed');
+                }
+                
+            } catch (error) {
+                log('Registration error:', error);
+                showMessage('Registration error: ' + error.message, 'error');
+            }
+        }
+
+        // Login with passkey
+        async function loginWithPasskey() {
+            const username = document.getElementById('passkeyUsername').value;
+            
+            if (!username) {
+                showMessage('Please enter username', 'error');
+                return;
+            }
+            
+            try {
+                // Step 1: Begin login
+                log('Beginning passkey login...');
+                const beginResponse = await fetch(`${AUTH_URL}/auth/webauthn/login/begin`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username })
+                });
+                
+                const beginData = await beginResponse.json();
+                log('Login begin response:', beginData);
+                
+                if (!beginResponse.ok) {
+                    throw new Error(beginData.error || 'Login begin failed');
+                }
+                
+                // Step 2: Get credential with browser WebAuthn API
+                const publicKeyOptions = beginData.publicKey;
+                
+                // Convert base64 strings to ArrayBuffers
+                publicKeyOptions.challenge = base64ToArrayBuffer(publicKeyOptions.challenge);
+                
+                if (publicKeyOptions.allowCredentials) {
+                    publicKeyOptions.allowCredentials = publicKeyOptions.allowCredentials.map(cred => ({
+                        ...cred,
+                        id: base64ToArrayBuffer(cred.id)
+                    }));
+                }
+                
+                log('Getting credential with WebAuthn API...');
+                const credential = await navigator.credentials.get({
+                    publicKey: publicKeyOptions
+                });
+                
+                log('Credential retrieved:', credential);
+                
+                // Step 3: Finish login
+                const credentialResponse = {
+                    id: credential.id,
+                    rawId: arrayBufferToBase64(credential.rawId),
+                    type: credential.type,
+                    response: {
+                        clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                        authenticatorData: arrayBufferToBase64(credential.response.authenticatorData),
+                        signature: arrayBufferToBase64(credential.response.signature),
+                        userHandle: credential.response.userHandle ? 
+                            arrayBufferToBase64(credential.response.userHandle) : null
+                    }
+                };
+                
+                log('Finishing login...');
+                const finishResponse = await fetch(`${AUTH_URL}/auth/webauthn/login/finish`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username,
+                        challenge: beginData.challenge,
+                        response: credentialResponse,
+                        device_name: 'WebAuthn Demo'
+                    })
+                });
+                
+                const finishData = await finishResponse.json();
+                log('Login finish response:', finishData);
+                
+                if (finishResponse.ok) {
+                    accessToken = finishData.access_token;
+                    currentUsername = username;
+                    showMessage('Logged in with passkey successfully!', 'success');
+                    document.getElementById('passkeyLoginStatus').innerHTML = 
+                        '<div class="success">Logged in successfully with passkey!</div>';
+                    document.getElementById('registrationSection').style.display = 'block';
+                    document.getElementById('credentialsSection').style.display = 'block';
+                    refreshCredentials();
+                } else {
+                    throw new Error(finishData.error || 'Login finish failed');
+                }
+                
+            } catch (error) {
+                log('Login error:', error);
+                showMessage('Login error: ' + error.message, 'error');
+            }
+        }
+
+        // Refresh credentials list
+        async function refreshCredentials() {
+            if (!accessToken) return;
+            
+            try {
+                log('Fetching credentials...');
+                const response = await fetch(`${AUTH_URL}/auth/webauthn/credentials`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                    }
+                });
+                
+                const data = await response.json();
+                log('Credentials response:', data);
+                
+                if (response.ok) {
+                    displayCredentials(data.credentials || []);
+                }
+            } catch (error) {
+                log('Error fetching credentials:', error);
+            }
+        }
+
+        // Display credentials
+        function displayCredentials(credentials) {
+            const listDiv = document.getElementById('credentialsList');
+            
+            if (credentials.length === 0) {
+                listDiv.innerHTML = '<p>No passkeys registered yet.</p>';
+                return;
+            }
+            
+            listDiv.innerHTML = '<div class="credentials-list">' +
+                credentials.map(cred => `
+                    <div class="credential-item">
+                        <div>
+                            <strong>${cred.name}</strong><br>
+                            <small>Created: ${new Date(cred.created_at).toLocaleDateString()}</small>
+                        </div>
+                        <button onclick="deleteCredential('${cred.id}')">Delete</button>
+                    </div>
+                `).join('') +
+                '</div>';
+        }
+
+        // Delete credential
+        async function deleteCredential(credentialId) {
+            if (!confirm('Are you sure you want to delete this passkey?')) return;
+            
+            try {
+                log('Deleting credential:', credentialId);
+                const response = await fetch(`${AUTH_URL}/auth/webauthn/credentials/${credentialId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                    }
+                });
+                
+                if (response.ok) {
+                    showMessage('Passkey deleted successfully', 'success');
+                    refreshCredentials();
+                } else {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Delete failed');
+                }
+            } catch (error) {
+                log('Delete error:', error);
+                showMessage('Delete error: ' + error.message, 'error');
+            }
+        }
+
+        // Utility functions
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        // Check WebAuthn support
+        if (!window.PublicKeyCredential) {
+            showMessage('WebAuthn is not supported in this browser', 'error');
+            document.getElementById('registrationSection').style.display = 'none';
+        } else {
+            log('WebAuthn is supported!');
+        }
+    </script>
+</body>
+</html> 

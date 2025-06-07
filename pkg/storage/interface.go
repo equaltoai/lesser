@@ -74,6 +74,22 @@ type Storage interface {
 	ListUsers(ctx context.Context, limit int32, cursor string) ([]*User, string, error)
 	GetActiveUserCount(ctx context.Context, days int) (int64, error)
 
+	// OAuth provider operations
+	GetUserByProviderID(ctx context.Context, provider, providerID string) (*User, error)
+	LinkProviderAccount(ctx context.Context, username, provider, providerID string) error
+	UnlinkProviderAccount(ctx context.Context, username, provider string) error
+	GetLinkedProviders(ctx context.Context, username string) ([]string, error)
+
+	// Recovery operations
+	StoreRecoveryToken(ctx context.Context, key string, data map[string]interface{}) error
+	GetRecoveryToken(ctx context.Context, key string) (map[string]interface{}, error)
+	DeleteRecoveryToken(ctx context.Context, key string) error
+
+	// OAuth state operations
+	StoreOAuthState(ctx context.Context, state string, data *OAuthState) error
+	GetOAuthState(ctx context.Context, state string) (*OAuthState, error)
+	DeleteOAuthState(ctx context.Context, state string) error
+
 	// OAuth Client operations
 	CreateOAuthClient(ctx context.Context, client *OAuthClient) error
 	GetOAuthClient(ctx context.Context, clientID string) (*OAuthClient, error)
@@ -428,19 +444,86 @@ type Storage interface {
 	GetPreference(ctx context.Context, username string, key string) (interface{}, error)
 	GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error)
 	UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error
+
+	// Session management operations
+	CreateSession(ctx context.Context, session *Session) error
+	GetSession(ctx context.Context, sessionID string) (*Session, error)
+	GetSessionByRefreshToken(ctx context.Context, refreshToken string) (*Session, error)
+	UpdateSession(ctx context.Context, session *Session) error
+	DeleteSession(ctx context.Context, sessionID string) error
+	GetUserSessions(ctx context.Context, username string) ([]*Session, error)
+
+	// Device management operations
+	CreateDevice(ctx context.Context, device *Device) error
+	GetDevice(ctx context.Context, deviceID string) (*Device, error)
+	UpdateDevice(ctx context.Context, device *Device) error
+	GetUserDevices(ctx context.Context, username string) ([]*Device, error)
+
+	// Rate limiting operations
+	RecordLoginAttempt(ctx context.Context, identifier string, success bool) error
+	GetLoginAttemptCount(ctx context.Context, identifier string, since time.Time) (int, error)
+	IsRateLimited(ctx context.Context, identifier string) (bool, time.Time, error)
+	ClearLoginAttempts(ctx context.Context, identifier string) error
+
+	// WebAuthn operations
+	StoreWebAuthnCredential(ctx context.Context, credential *WebAuthnCredential) error
+	GetWebAuthnCredential(ctx context.Context, credentialID string) (*WebAuthnCredential, error)
+	GetUserWebAuthnCredentials(ctx context.Context, username string) ([]*WebAuthnCredential, error)
+	UpdateWebAuthnCredential(ctx context.Context, credential *WebAuthnCredential) error
+	DeleteWebAuthnCredential(ctx context.Context, credentialID string) error
+
+	// WebAuthn challenge operations
+	StoreWebAuthnChallenge(ctx context.Context, challenge *WebAuthnChallenge) error
+	GetWebAuthnChallenge(ctx context.Context, challengeID string) (*WebAuthnChallenge, error)
+	DeleteWebAuthnChallenge(ctx context.Context, challengeID string) error
+
+	// Wallet authentication operations
+	StoreWalletChallenge(ctx context.Context, challenge *WalletChallenge) error
+	GetWalletChallenge(ctx context.Context, challengeID string) (*WalletChallenge, error)
+	DeleteWalletChallenge(ctx context.Context, challengeID string) error
+
+	// Wallet credential operations
+	StoreWalletCredential(ctx context.Context, credential *WalletCredential) error
+	GetWalletCredential(ctx context.Context, walletType, address string) (*WalletCredential, error)
+	GetUserWalletCredentials(ctx context.Context, username string) ([]*WalletCredential, error)
+	DeleteWalletCredential(ctx context.Context, username, address string) error
+	UpdateWalletLastUsed(ctx context.Context, username, address string) error
+
+	// Social recovery operations
+	StoreTrustee(ctx context.Context, username string, trustee *TrusteeConfig) error
+	GetTrustees(ctx context.Context, username string) ([]*TrusteeConfig, error)
+	DeleteTrustee(ctx context.Context, username, trusteeActorID string) error
+	UpdateTrusteeConfirmed(ctx context.Context, username, trusteeActorID string, confirmed bool) error
+
+	// Recovery request operations
+	StoreRecoveryRequest(ctx context.Context, request *SocialRecoveryRequest) error
+	GetRecoveryRequest(ctx context.Context, requestID string) (*SocialRecoveryRequest, error)
+	UpdateRecoveryRequest(ctx context.Context, request *SocialRecoveryRequest) error
+	DeleteRecoveryRequest(ctx context.Context, requestID string) error
+	GetActiveRecoveryRequests(ctx context.Context, username string) ([]*SocialRecoveryRequest, error)
+
+	// Recovery code operations
+	StoreRecoveryCode(ctx context.Context, username string, code *RecoveryCodeItem) error
+	GetRecoveryCodes(ctx context.Context, username string) ([]*RecoveryCodeItem, error)
+	MarkRecoveryCodeUsed(ctx context.Context, username, codeHash string) error
+	DeleteAllRecoveryCodes(ctx context.Context, username string) error
+	CountUnusedRecoveryCodes(ctx context.Context, username string) (int, error)
 }
 
 // User represents a user account in the system
 type User struct {
 	Username     string    `dynamodbav:"username"`
-	Email        string    `dynamodbav:"email"`
-	PasswordHash string    `dynamodbav:"password_hash"`
+	Email        string    `dynamodbav:"email,omitempty"`         // Optional - not required for email-free auth
+	PasswordHash string    `dynamodbav:"password_hash,omitempty"` // Optional - not required for passkey/wallet auth
 	CreatedAt    time.Time `dynamodbav:"created_at"`
 	UpdatedAt    time.Time `dynamodbav:"updated_at"`
 	Approved     bool      `dynamodbav:"approved"`
 	Suspended    bool      `dynamodbav:"suspended"`
 	Role         string    `dynamodbav:"role"` // user, moderator, admin
 	Locale       string    `dynamodbav:"locale,omitempty"`
+
+	// Recovery options (email-free)
+	RecoveryMethods []string `dynamodbav:"recovery_methods,omitempty"` // ["passkey", "wallet", "social", "recovery_code"]
 }
 
 // OAuthClient represents an OAuth client application
@@ -596,6 +679,18 @@ type RefreshTokenRecord struct {
 	SK        string        `dynamodbav:"SK"`
 	Token     *RefreshToken `dynamodbav:"Token"`
 	CreatedAt time.Time     `dynamodbav:"CreatedAt"`
+}
+
+// OAuthState represents OAuth state stored for CSRF protection
+type OAuthState struct {
+	State       string    `dynamodbav:"State"`
+	Provider    string    `dynamodbav:"Provider"`
+	RedirectURI string    `dynamodbav:"RedirectURI"`
+	Username    string    `dynamodbav:"Username,omitempty"` // For account linking
+	ClientID    string    `dynamodbav:"ClientID,omitempty"` // For standard OAuth
+	Scopes      []string  `dynamodbav:"Scopes,omitempty"`
+	CreatedAt   time.Time `dynamodbav:"CreatedAt"`
+	ExpiresAt   time.Time `dynamodbav:"ExpiresAt"` // For TTL
 }
 
 // InstanceRule represents a server rule
@@ -1270,4 +1365,111 @@ type CommunityNoteVote struct {
 	Helpful   bool      `dynamodbav:"helpful"`   // For simplified access
 	Weight    float64   `dynamodbav:"weight"`
 	CreatedAt time.Time `dynamodbav:"created_at"`
+}
+
+// Session represents a user session
+type Session struct {
+	SessionID    string    `dynamodbav:"session_id"`
+	Username     string    `dynamodbav:"username"`
+	RefreshToken string    `dynamodbav:"refresh_token"`
+	DeviceID     string    `dynamodbav:"device_id"`
+	DeviceName   string    `dynamodbav:"device_name"`
+	UserAgent    string    `dynamodbav:"user_agent"`
+	IPAddress    string    `dynamodbav:"ip_address"`
+	AuthMethod   string    `dynamodbav:"auth_method"` // password, passkey, wallet, oauth
+	CreatedAt    time.Time `dynamodbav:"created_at"`
+	LastActivity time.Time `dynamodbav:"last_activity"`
+	ExpiresAt    time.Time `dynamodbav:"expires_at"`
+
+	// Token rotation tracking
+	PreviousRefreshToken string    `dynamodbav:"previous_refresh_token,omitempty"`
+	TokenRotatedAt       time.Time `dynamodbav:"token_rotated_at,omitempty"`
+}
+
+// Device represents a user's device/session
+type Device struct {
+	DeviceID      string    `dynamodbav:"device_id"`
+	Username      string    `dynamodbav:"username"`
+	DeviceName    string    `dynamodbav:"device_name"`
+	DeviceType    string    `dynamodbav:"device_type"` // web, mobile, desktop
+	LastIPAddress string    `dynamodbav:"last_ip_address"`
+	LastUserAgent string    `dynamodbav:"last_user_agent"`
+	CreatedAt     time.Time `dynamodbav:"created_at"`
+	LastSeenAt    time.Time `dynamodbav:"last_seen_at"`
+	TrustLevel    string    `dynamodbav:"trust_level"` // trusted, untrusted, suspicious
+}
+
+// WebAuthnCredential represents a stored WebAuthn credential
+type WebAuthnCredential struct {
+	ID              string    `dynamodbav:"id"`
+	UserID          string    `dynamodbav:"user_id"`
+	PublicKey       []byte    `dynamodbav:"public_key"`
+	AttestationType string    `dynamodbav:"attestation_type"`
+	AAGUID          []byte    `dynamodbav:"aaguid"`
+	SignCount       uint32    `dynamodbav:"sign_count"`
+	CloneWarning    bool      `dynamodbav:"clone_warning"`
+	CreatedAt       time.Time `dynamodbav:"created_at"`
+	LastUsedAt      time.Time `dynamodbav:"last_used_at"`
+	Name            string    `dynamodbav:"name"` // User-friendly name
+}
+
+// WebAuthnChallenge represents a temporary challenge for registration/login
+type WebAuthnChallenge struct {
+	Challenge   string    `dynamodbav:"challenge"`
+	UserID      string    `dynamodbav:"user_id"`
+	SessionData []byte    `dynamodbav:"session_data"` // Serialized session data
+	ExpiresAt   time.Time `dynamodbav:"expires_at"`
+	Type        string    `dynamodbav:"type"` // "registration" or "authentication"
+}
+
+// WalletChallenge represents a challenge for wallet authentication
+type WalletChallenge struct {
+	ID        string    `dynamodbav:"id"`
+	Username  string    `dynamodbav:"username,omitempty"`
+	Address   string    `dynamodbav:"address"`
+	ChainID   int       `dynamodbav:"chain_id"`
+	Nonce     string    `dynamodbav:"nonce"`
+	Message   string    `dynamodbav:"message"`
+	IssuedAt  time.Time `dynamodbav:"issued_at"`
+	ExpiresAt time.Time `dynamodbav:"expires_at"`
+}
+
+// WalletCredential represents a linked wallet
+type WalletCredential struct {
+	Username string    `dynamodbav:"username"`
+	Address  string    `dynamodbav:"address"`
+	ChainID  int       `dynamodbav:"chain_id"`
+	Type     string    `dynamodbav:"type"` // ethereum, solana, etc.
+	ENS      string    `dynamodbav:"ens,omitempty"`
+	LinkedAt time.Time `dynamodbav:"linked_at"`
+	LastUsed time.Time `dynamodbav:"last_used"`
+}
+
+// TrusteeConfig represents a trusted contact for social recovery
+type TrusteeConfig struct {
+	Username  string    `dynamodbav:"username"` // Who owns this trustee relationship
+	ActorID   string    `dynamodbav:"actor_id"` // @friend@mastodon.social
+	AddedAt   time.Time `dynamodbav:"added_at"`
+	Confirmed bool      `dynamodbav:"confirmed"`
+}
+
+// SocialRecoveryRequest represents an active recovery request
+type SocialRecoveryRequest struct {
+	ID            string          `dynamodbav:"id"`
+	Username      string          `dynamodbav:"username"`
+	InitiatedAt   time.Time       `dynamodbav:"initiated_at"`
+	ExpiresAt     time.Time       `dynamodbav:"expires_at"`
+	RequiredVotes int             `dynamodbav:"required_votes"`
+	ReceivedVotes map[string]bool `dynamodbav:"received_votes"` // trustee_id -> voted
+	RecoveryToken string          `dynamodbav:"recovery_token"`
+	Status        string          `dynamodbav:"status"` // pending, approved, expired, cancelled
+}
+
+// RecoveryCodeItem represents a single recovery code
+type RecoveryCodeItem struct {
+	Username  string     `dynamodbav:"username"`
+	CodeHash  string     `dynamodbav:"code_hash"` // bcrypt hash of the code
+	CreatedAt time.Time  `dynamodbav:"created_at"`
+	UsedAt    *time.Time `dynamodbav:"used_at,omitempty"`
+	Position  int        `dynamodbav:"position"` // Position in the list (0-7 typically)
 }

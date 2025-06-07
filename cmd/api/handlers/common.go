@@ -17,12 +17,14 @@ type Handler struct {
 	authMiddleware *auth.Middleware
 	converter      mastodon.Converter
 	trendService   *trends.Service
+	emojiParser    *mastodon.EmojiParser
 }
 
 // NewHandler creates a new handler with all dependencies
 func NewHandler(cfg *config.Config, store storage.Storage, logger *zap.Logger, authMiddleware *auth.Middleware) *Handler {
 	converter := mastodon.NewConverter(cfg.BaseURL())
 	trendService := trends.NewService(store)
+	emojiParser := mastodon.NewEmojiParser(store)
 
 	return &Handler{
 		cfg:            cfg,
@@ -31,5 +33,6 @@ func NewHandler(cfg *config.Config, store storage.Storage, logger *zap.Logger, a
 		authMiddleware: authMiddleware,
 		converter:      converter,
 		trendService:   trendService,
+		emojiParser:    emojiParser,
 	}
 }

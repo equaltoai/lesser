@@ -182,6 +182,47 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		return handler.HandleAppVerifyCredentials(ctx, request)
 	}
 
+	// OAuth authorization endpoint
+	if path == "/oauth/authorize" && method == http.MethodGet {
+		return handler.HandleOAuthAuthorize(ctx, request)
+	}
+
+	// OAuth token endpoint
+	if path == "/oauth/token" && method == http.MethodPost {
+		return handler.HandleOAuthToken(ctx, request)
+	}
+
+	// OAuth revoke endpoint
+	if path == "/oauth/revoke" && method == http.MethodPost {
+		return handler.HandleOAuthRevoke(ctx, request)
+	}
+
+	// External OAuth provider endpoints
+	if strings.HasPrefix(path, "/oauth/") && len(strings.Split(path, "/")) >= 3 {
+		parts := strings.Split(path, "/")
+		provider := parts[2]
+
+		// Provider authorization
+		if len(parts) == 4 && parts[3] == "authorize" && method == http.MethodGet {
+			return handler.HandleOAuthProviderAuthorize(ctx, request, provider)
+		}
+
+		// Provider callback
+		if len(parts) == 4 && parts[3] == "callback" && method == http.MethodGet {
+			return handler.HandleOAuthProviderCallback(ctx, request, provider)
+		}
+
+		// Link provider to existing account
+		if len(parts) == 4 && parts[3] == "link" && method == http.MethodPost {
+			return handler.HandleLinkOAuthProvider(ctx, request, provider)
+		}
+
+		// Unlink provider from account
+		if len(parts) == 4 && parts[3] == "unlink" && method == http.MethodDelete {
+			return handler.HandleUnlinkOAuthProvider(ctx, request, provider)
+		}
+	}
+
 	// ==================== ACCOUNTS ====================
 	// Account management
 	if path == "/accounts" && method == http.MethodPost {
@@ -193,6 +234,24 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 	if path == "/accounts/update_credentials" && method == http.MethodPatch {
 		return handler.HandleUpdateCredentials(ctx, request)
 	}
+
+	// Account recovery
+	if path == "/auth/recovery/initiate" && method == http.MethodPost {
+		return handler.HandleInitiateRecovery(ctx, request)
+	}
+	if path == "/auth/recovery/verify" && method == http.MethodGet {
+		return handler.HandleVerifyRecoveryToken(ctx, request)
+	}
+	if path == "/auth/recovery/complete" && method == http.MethodPost {
+		return handler.HandleCompleteRecovery(ctx, request)
+	}
+	if path == "/auth/recovery/options" && method == http.MethodGet {
+		return handler.HandleAccountRecoveryOptions(ctx, request)
+	}
+	if path == "/auth/recovery/send-code" && method == http.MethodPost {
+		return handler.HandleSendRecoveryCode(ctx, request)
+	}
+
 	// Account lookup
 	if path == "/accounts/lookup" && method == http.MethodGet {
 		return handler.HandleAccountLookup(ctx, request)

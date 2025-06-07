@@ -233,19 +233,9 @@ func (s *SearchService) selectStrategies(ctx context.Context, query *AnalyzedQue
 	// Can work with or without a search term
 	strategies = append(strategies, &PopularitySearchStrategy{service: s})
 
-	// Add fuzzy search if enabled and query is long enough
+	// Fuzzy search disabled - OpenSearch removed to reduce costs
 	if options.Fuzzy && len(query.Query) >= 3 {
-		// Try to create fuzzy search strategy
-		if fuzzyStrategy, err := NewFuzzySearchStrategy(s); err == nil {
-			// Check if OpenSearch is available
-			if fuzzyStrategy.(*FuzzySearchStrategy).IsAvailable() {
-				strategies = append(strategies, fuzzyStrategy)
-			} else {
-				s.logger.Warn("fuzzy search strategy not available - OpenSearch unreachable")
-			}
-		} else {
-			s.logger.Warn("failed to create fuzzy search strategy", zap.Error(err))
-		}
+		s.logger.Debug("fuzzy search requested but not available (OpenSearch removed)")
 	}
 
 	// Add semantic search if enabled

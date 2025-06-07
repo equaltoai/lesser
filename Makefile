@@ -167,6 +167,9 @@ build-lambdas:
 	@echo "Building auth..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/auth
 	@cd bin && zip -q auth.zip bootstrap && rm bootstrap
+	@echo "Building auth-api..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/auth-api
+	@cd bin && zip -q auth-api.zip bootstrap && rm bootstrap
 	@echo "Building activity-processor..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/activity-processor
 	@cd bin && zip -q activity-processor.zip bootstrap && rm bootstrap
@@ -248,6 +251,12 @@ build-auth:
 	@echo "Building auth..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/auth
 	@cd bin && zip -q auth.zip bootstrap && rm bootstrap
+
+# Build auth-api Lambda
+build-auth-api:
+	@echo "Building auth-api..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/auth-api
+	@cd bin && zip -q auth-api.zip bootstrap && rm bootstrap
 
 # Build search-indexer Lambda
 build-search-indexer:

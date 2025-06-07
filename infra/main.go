@@ -633,6 +633,10 @@ func main() {
 		if err != nil {
 			return err
 		}
+		authApiLambda, err := createLambda("auth-api", "auth-api", 30)
+		if err != nil {
+			return err
+		}
 		activityProcessorLambda, err := createLambda("activity-processor", "activity-processor", 300)
 		if err != nil {
 			return err
@@ -655,6 +659,78 @@ func main() {
 
 		// Create push delivery Lambda (already exists in cmd/push-delivery)
 		pushDeliveryLambda, err := createLambda("push-delivery", "push-delivery", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create media Lambda
+		mediaLambda, err := createLambda("media", "media", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create GraphQL Lambda
+		graphqlLambda, err := createLambda("graphql", "graphql", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create AI processor Lambda
+		aiProcessorLambda, err := createLambda("ai-processor", "ai-processor", 300)
+		if err != nil {
+			return err
+		}
+
+		// Create note processor Lambda
+		noteProcessorLambda, err := createLambda("note-processor", "note-processor", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create moderation processor Lambda
+		moderationProcessorLambda, err := createLambda("moderation-processor", "moderation-processor", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create report trust updater Lambda
+		reportTrustUpdaterLambda, err := createLambda("report-trust-updater", "report-trust-updater", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create federation tracker Lambda
+		federationTrackerLambda, err := createLambda("federation-tracker", "federation-tracker", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create import processor Lambda
+		importProcessorLambda, err := createLambda("import-processor", "import-processor", 300)
+		if err != nil {
+			return err
+		}
+
+		// Create export generator Lambda
+		exportGeneratorLambda, err := createLambda("export-generator", "export-generator", 300)
+		if err != nil {
+			return err
+		}
+
+		// Create media processor Lambda
+		mediaProcessorLambda, err := createLambda("media-processor", "media-processor", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create trend aggregator Lambda
+		trendAggregatorLambda, err := createLambda("trend-aggregator", "trend-aggregator", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create status indexer Lambda
+		statusIndexerLambda, err := createLambda("status-indexer", "status-indexer", 60)
 		if err != nil {
 			return err
 		}
@@ -1001,6 +1077,121 @@ func main() {
 			return err
 		}
 
+		// Add DynamoDB Streams trigger for note processor (community notes)
+		_, err = lambda.NewEventSourceMapping(ctx, "note-processor-stream", &lambda.EventSourceMappingArgs{
+			EventSourceArn:        table.StreamArn,
+			FunctionName:          noteProcessorLambda.Name,
+			StartingPosition:      pulumi.String("LATEST"),
+			ParallelizationFactor: pulumi.Int(5),
+			MaximumRetryAttempts:  pulumi.Int(3),
+			FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
+				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
+					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
+						Pattern: pulumi.String(`{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "COMMUNITYNOTE#"}]}}}}`),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add DynamoDB Streams trigger for moderation processor
+		_, err = lambda.NewEventSourceMapping(ctx, "moderation-processor-stream", &lambda.EventSourceMappingArgs{
+			EventSourceArn:        table.StreamArn,
+			FunctionName:          moderationProcessorLambda.Name,
+			StartingPosition:      pulumi.String("LATEST"),
+			ParallelizationFactor: pulumi.Int(5),
+			MaximumRetryAttempts:  pulumi.Int(3),
+			FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
+				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
+					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
+						Pattern: pulumi.String(`{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "MODREPORT#"}, {"prefix": "MODACTION#"}]}}}}`),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add DynamoDB Streams trigger for status indexer
+		_, err = lambda.NewEventSourceMapping(ctx, "status-indexer-stream", &lambda.EventSourceMappingArgs{
+			EventSourceArn:        table.StreamArn,
+			FunctionName:          statusIndexerLambda.Name,
+			StartingPosition:      pulumi.String("LATEST"),
+			ParallelizationFactor: pulumi.Int(5),
+			MaximumRetryAttempts:  pulumi.Int(3),
+			FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
+				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
+					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
+						Pattern: pulumi.String(`{"eventName": ["INSERT", "MODIFY", "REMOVE"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "STATUS#"}]}}}}`),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add DynamoDB Streams trigger for AI processor (for AI-enhanced features)
+		_, err = lambda.NewEventSourceMapping(ctx, "ai-processor-stream", &lambda.EventSourceMappingArgs{
+			EventSourceArn:        table.StreamArn,
+			FunctionName:          aiProcessorLambda.Name,
+			StartingPosition:      pulumi.String("LATEST"),
+			ParallelizationFactor: pulumi.Int(2), // Lower parallelization for AI processing
+			MaximumRetryAttempts:  pulumi.Int(1), // Fewer retries to avoid excessive AI API calls
+			FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
+				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
+					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
+						Pattern: pulumi.String(`{"eventName": ["INSERT"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "STATUS#"}]}}}}`),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add periodic trigger for trend aggregator
+		trendAggregationRule, err := cloudwatch.NewEventRule(ctx, "trend-aggregation-rule", &cloudwatch.EventRuleArgs{
+			Description:        pulumi.String("Trigger trend aggregation every 15 minutes"),
+			ScheduleExpression: pulumi.String("rate(15 minutes)"),
+			State:              pulumi.String("ENABLED"),
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Trend Aggregation"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = lambda.NewPermission(ctx, "trend-aggregation-eventbridge", &lambda.PermissionArgs{
+			Action:    pulumi.String("lambda:InvokeFunction"),
+			Function:  trendAggregatorLambda.Name,
+			Principal: pulumi.String("events.amazonaws.com"),
+			SourceArn: trendAggregationRule.Arn,
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = cloudwatch.NewEventTarget(ctx, "trend-aggregation-target", &cloudwatch.EventTargetArgs{
+			Rule: trendAggregationRule.Name,
+			Arn:  trendAggregatorLambda.Arn,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Unused Lambda functions that we keep for future use
+		_ = reportTrustUpdaterLambda // Will be used when trust system is fully implemented
+		_ = federationTrackerLambda  // Will be used for federation analytics
+		_ = importProcessorLambda    // Will be triggered manually for imports
+		_ = exportGeneratorLambda    // Will be triggered manually for exports
+		_ = mediaProcessorLambda     // Will be used for media optimization
+
 		// Create API Gateway
 		api, err := apigatewayv2.NewApi(ctx, "lesser-api", &apigatewayv2.ApiArgs{
 			ProtocolType: pulumi.String("HTTP"),
@@ -1098,7 +1289,27 @@ func main() {
 			{"/oauth/authorize", "POST", authLambda},
 			{"/oauth/token", "POST", authLambda},
 			{"/.well-known/oauth-authorization-server", "GET", authLambda},
-			// Don't use ANY for the catch-all to avoid conflicts with OPTIONS
+			// Auth API routes for WebAuthn, wallet auth, and email-free recovery
+			{"/api/v1/auth/webauthn/{proxy+}", "GET", authApiLambda},
+			{"/api/v1/auth/webauthn/{proxy+}", "POST", authApiLambda},
+			{"/api/v1/auth/webauthn/{proxy+}", "DELETE", authApiLambda},
+			{"/api/v1/auth/wallet/{proxy+}", "GET", authApiLambda},
+			{"/api/v1/auth/wallet/{proxy+}", "POST", authApiLambda},
+			{"/api/v1/auth/wallet/{proxy+}", "DELETE", authApiLambda},
+			{"/api/v1/auth/recovery/{proxy+}", "GET", authApiLambda},
+			{"/api/v1/auth/recovery/{proxy+}", "POST", authApiLambda},
+			{"/api/v1/auth/recovery/{proxy+}", "DELETE", authApiLambda},
+			{"/api/v1/auth/sessions", "GET", authApiLambda},
+			{"/api/v1/auth/sessions/{proxy+}", "DELETE", authApiLambda},
+			{"/api/v1/auth/logout", "POST", authApiLambda},
+			{"/api/v1/auth/devices", "GET", authApiLambda},
+			{"/api/v1/auth/devices/{proxy+}", "DELETE", authApiLambda},
+			// Media API routes
+			{"/api/v1/media", "POST", mediaLambda},
+			{"/api/v2/media", "POST", mediaLambda},
+			// GraphQL API route
+			{"/api/graphql", "POST", graphqlLambda},
+			{"/api/graphql", "GET", graphqlLambda},
 			{"/{proxy+}", "GET", apiLambda},
 			{"/{proxy+}", "POST", apiLambda},
 			{"/{proxy+}", "PUT", apiLambda},

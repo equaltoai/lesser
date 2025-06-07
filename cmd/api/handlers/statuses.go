@@ -164,12 +164,6 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		note.InReplyTo = req.InReplyToID
 	}
 
-	// Create the Note object
-	if err := h.store.CreateObject(ctx, note); err != nil {
-		h.logger.Error("failed to create note object", zap.Error(err))
-		return common.InternalServerError(err), nil
-	}
-
 	// Handle poll creation if requested
 	var pollResp *models.Poll
 	if req.Poll != nil && len(req.Poll.Options) > 0 {
@@ -219,6 +213,23 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		}
 	}
 
+	// Parse and process custom emojis in content
+	processedContent, parsedEmojis, err := h.emojiParser.ProcessContent(ctx, note.Content)
+	if err != nil {
+		// Log error but don't fail the request
+		h.logger.Warn("failed to parse emojis in content", zap.Error(err))
+		parsedEmojis = nil
+	} else {
+		// Update the note content with processed content (emojis replaced with img tags)
+		note.Content = processedContent
+	}
+
+	// Create the Note object
+	if err := h.store.CreateObject(ctx, note); err != nil {
+		h.logger.Error("failed to create note object", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
 	// Create a Create activity
 	createActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
@@ -257,6 +268,20 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		}
 	}
 
+	// Convert parsed emojis to Mastodon API format
+	mastodonEmojis := make([]interface{}, 0, len(parsedEmojis))
+	for _, parsed := range parsedEmojis {
+		if parsed.Emoji != nil {
+			mastodonEmojis = append(mastodonEmojis, map[string]interface{}{
+				"shortcode":         parsed.Emoji.Shortcode,
+				"url":               parsed.Emoji.URL,
+				"static_url":        parsed.Emoji.StaticURL,
+				"visible_in_picker": parsed.Emoji.VisibleInPicker,
+				"category":          parsed.Emoji.Category,
+			})
+		}
+	}
+
 	// Return status response
 	resp := models.Status{
 		ID:               noteID,
@@ -279,7 +304,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		MediaAttachments: []interface{}{},
 		Mentions:         []interface{}{},
 		Tags:             mastodonTags,
-		Emojis:           []interface{}{},
+		Emojis:           mastodonEmojis,
 		Poll:             pollResp,
 		Account: models.Account{
 			ID:             actor.ID,
@@ -964,6 +989,28 @@ func (h *Handler) HandleGetStatus(ctx context.Context, request events.APIGateway
 
 	// Convert to status response
 	status := h.converter.ObjectToStatus(object, actor)
+
+	// Parse emojis from content
+	parsedEmojis, err := h.emojiParser.ParseEmojis(ctx, status.Content)
+	if err != nil {
+		// Log error but don't fail the request
+		h.logger.Warn("failed to parse emojis in status content", zap.Error(err))
+	} else if len(parsedEmojis) > 0 {
+		// Convert parsed emojis to Mastodon API format
+		mastodonEmojis := make([]interface{}, 0, len(parsedEmojis))
+		for _, parsed := range parsedEmojis {
+			if parsed.Emoji != nil {
+				mastodonEmojis = append(mastodonEmojis, map[string]interface{}{
+					"shortcode":         parsed.Emoji.Shortcode,
+					"url":               parsed.Emoji.URL,
+					"static_url":        parsed.Emoji.StaticURL,
+					"visible_in_picker": parsed.Emoji.VisibleInPicker,
+					"category":          parsed.Emoji.Category,
+				})
+			}
+		}
+		status.Emojis = mastodonEmojis
+	}
 
 	// Get interaction counts
 	likeCount, _ := h.store.CountObjectLikes(ctx, objectID)
