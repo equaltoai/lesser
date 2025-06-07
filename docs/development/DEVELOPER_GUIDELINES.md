@@ -66,7 +66,7 @@ github.com/aws/aws-sdk-go-v2/service/s3
 github.com/aws/aws-sdk-go-v2/service/sqs
 github.com/aws/aws-sdk-go-v2/service/comprehend
 github.com/aws/aws-sdk-go-v2/service/bedrock
-github.com/aws/aws-sdk-go-v2/service/opensearchserverless
+
 
 // HTTP Signatures
 github.com/go-fed/httpsig

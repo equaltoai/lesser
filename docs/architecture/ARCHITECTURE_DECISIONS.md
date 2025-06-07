@@ -366,19 +366,25 @@ GSI2SK: METADATA
 ---
 
 ### 15. Infrastructure as Code
-**Status:** 📋 PLANNED  
-**Decision:** Pulumi with TypeScript
+**Status:** ✅ IMPLEMENTED  
+**Decision:** Pulumi with Go
 
 **Context:**
 - Need reproducible deployments
 - Version control for infrastructure
 - Support for multiple environments
 
+**Implementation:**
+- `infra/main.go` - Complete infrastructure definition
+- All AWS resources defined in code
+- Environment-based configuration
+- Automatic resource naming
+
 **Rationale:**
-- Type safety with TypeScript
+- Consistency with Lambda functions (also in Go)
+- Type safety and compile-time checks
 - Better than CloudFormation/SAM
-- Supports all AWS resources
-- Great Go SDK integration
+- Native AWS SDK integration
 
 ---
 

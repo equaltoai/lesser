@@ -28,7 +28,7 @@ Lesser is production-ready and implements:
 - ✅ **Push Notifications** - Web Push Protocol support
 - ✅ **Media Handling** - S3 + CloudFront CDN
 - ✅ **One-Click Deploy** - Pulumi infrastructure as code
-- ⏳ **Final Feature** - Notifications system
+- ✅ **Passwordless** - Full support for WebAuthn
 
 ## Architecture
 

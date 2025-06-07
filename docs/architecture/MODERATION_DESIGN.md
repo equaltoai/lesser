@@ -209,28 +209,6 @@ trustService.CreateRelationship(ctx, rel)
 3. **Brigade Protection**: Trust decay limits influence
 4. **Audit Trail**: All actions logged with TTL
 
-## Future Enhancements
-
-1. **Machine Learning Integration**
-   - Train on consensus outcomes
-   - Improve auto-flagging accuracy
-   - Predict trust relationships
-
-2. **Federation Trust**
-   - Cross-instance trust sharing
-   - Portable reputation
-   - Instance-level trust scores
-
-3. **Appeal System**
-   - Structured appeal process
-   - Higher trust weight for appeals
-   - Time-based decision reversal
-
-4. **Visualization**
-   - Trust graph visualization
-   - Consensus decision trees
-   - Moderation analytics dashboard
-
 ## Cost Analysis
 
 Assuming 1000 active users, 100 posts/day, 10% flagging rate:

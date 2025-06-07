@@ -136,7 +136,6 @@ Lesser is 100% compatible with Mastodon apps:
 
 ### Web
 - Use any Mastodon web client
-- Or the built-in Lesser web interface
 
 **To connect:** Enter your domain (e.g., `your-domain.com`) when the app asks for an instance.
 
@@ -189,29 +188,22 @@ aws iam get-user
 ### Advanced Features
 
 1. **[Enable AI Features](../architecture/AI_INTEGRATION.md)** - Semantic search & translation
-2. **[Understand the Architecture](../architecture/OVERVIEW.md)** - Deep dive into Lesser
+2. **[Understand the Architecture](../architecture/SYSTEM_DESIGN.md)** - Deep dive into Lesser
 3. **[Review Security](../security/)** - Security best practices
 
 ## 🆘 Getting Help
 
-- **Discord**: [Join our community](https://discord.gg/lesser)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/lesser/issues)
+- **Issues**: Check the documentation and logs
 - **Docs**: [Full documentation](../README.md)
 
 ## 🎉 Congratulations!
 
 You now have your own ActivityPub instance running at a fraction of traditional hosting costs!
 
-**Share your instance**: Tag us on Mastodon [@lesser@mastodon.social](https://mastodon.social/@lesser) 
-
-**Star the project**: If Lesser saved you money, [star us on GitHub](https://github.com/yourusername/lesser)!
-
 ---
 
 <div align="center">
 
-**Problems?** We're here to help in [Discord](https://discord.gg/lesser)
-
-[Back to Docs](../README.md) • [Architecture Overview](../architecture/OVERVIEW.md) • [API Reference](../api/QUICK_REFERENCE.md)
+[Back to Docs](../README.md) • [Architecture Overview](../architecture/SYSTEM_DESIGN.md) • [API Reference](../api/QUICK_REFERENCE.md)
 
 </div> 

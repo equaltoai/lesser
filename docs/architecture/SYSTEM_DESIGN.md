@@ -17,7 +17,7 @@ Lesser is a revolutionary serverless ActivityPub implementation that proves fede
 ### Serverless Stack
 - **Compute**: AWS Lambda (Go 1.21+)
 - **Storage**: DynamoDB (single-table design)
-- **Search**: OpenSearch Serverless + AWS Bedrock
+- **Search**: DynamoDB GSIs + AWS Bedrock embeddings
 - **Queue**: SQS for reliable delivery
 - **Media**: S3 + CloudFront CDN
 - **Monitoring**: CloudWatch + X-Ray
@@ -146,7 +146,6 @@ type TrustGraph struct {
 ```
 Query → AWS Comprehend (understanding) → Strategies:
   ├─ ExactMatchStrategy (DynamoDB GSI)
-  ├─ FuzzySearchStrategy (OpenSearch)  
   ├─ SemanticSearchStrategy (Bedrock embeddings)
   └─ PopularityStrategy (engagement signals)
 ```
@@ -155,7 +154,6 @@ Query → AWS Comprehend (understanding) → Strategies:
 - **AWS Comprehend**: Query understanding, sentiment analysis
 - **AWS Bedrock**: Semantic embeddings, AI content detection
 - **AWS Rekognition**: Image moderation, NSFW detection
-- **OpenSearch**: Vector search, fuzzy matching
 
 ### 5. Real-Time Cost Tracking
 
@@ -370,12 +368,6 @@ Total:      ~$50/month ($0.05/user)
 - Community notes
 - Greater UI
 
-### 🔮 Planned
-- Bot detection network
-- Reputation system
-- Plugin marketplace
-- Multi-language UI
-
 ## Deployment
 
 ### Prerequisites
@@ -436,22 +428,6 @@ lesser import mastodon --archive=backup.tar.gz
 - Automatic scaling
 - Self-healing infrastructure
 - No server management
-
-## Future Directions
-
-### Technical Roadmap
-1. Edge computing with Lambda@Edge
-2. Multi-region deployment
-3. IPFS integration for media
-4. Blockchain-backed reputation
-5. Decentralized identity
-
-### Feature Roadmap
-1. Video streaming support
-2. E2E encryption
-3. Collaborative editing
-4. Voice/video calls
-5. Virtual events
 
 ## Conclusion
 

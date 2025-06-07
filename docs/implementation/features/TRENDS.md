@@ -20,7 +20,11 @@ This document outlines the implementation of Mastodon API's Trends & Discovery f
    - Periodic aggregation of trending data
    - Scheduled via EventBridge (hourly/daily)
 
-4. **Storage Interface Updates**
+4. **Storage Implementation** (`pkg/storage/dynamodb/trends.go`)
+   - Complete DynamoDB implementation for trending data
+   - Support for all trend types: hashtags, statuses, links
+
+5. **Storage Interface Updates**
    - Added trending-related methods to `pkg/storage/interface.go`
    - New types: `TrendingHashtag`, `TrendingStatus`, `TrendingLink`
 
@@ -90,35 +94,8 @@ This allows efficient queries for top trending items by type and time period.
 - [x] Discovery handlers (directory, suggestions)
 - [x] Lambda function structure for aggregation
 - [x] Storage interface updates
-
-### TODO 📝
-
-#### 1. Storage Implementation
-- [ ] Implement trending methods in `pkg/storage/dynamodb/trends.go`
-- [ ] Add GSI8 to DynamoDB table for trend queries
-- [ ] Implement TTL cleanup for old trends
-
-#### 2. Trend Aggregation
-- [ ] Complete hashtag trend aggregation in Lambda
-- [ ] Complete status trend aggregation
-- [ ] Implement link extraction and aggregation
-- [ ] Add trust score integration
-
-#### 3. API Integration
-- [ ] Wire up trend handlers in `cmd/api/main.go`
-- [ ] Add trend service initialization
-- [ ] Configure Lambda deployment
-
-#### 4. Discovery Features
-- [ ] Implement proper account discovery flags
-- [ ] Add follow suggestion algorithm
-- [ ] Store dismissed suggestions
-- [ ] Implement "similar accounts" logic
-
-#### 5. Link Timeline
-- [ ] Create link timeline storage pattern
-- [ ] Implement link extraction from statuses
-- [ ] Add link timeline endpoint
+- [x] DynamoDB storage implementation
+- [x] Routes wired in main.go
 
 ## API Endpoints
 
@@ -132,39 +109,6 @@ This allows efficient queries for top trending items by type and time period.
 - `GET /api/v1/suggestions` - Follow suggestions (v1)
 - `GET /api/v2/suggestions` - Follow suggestions (v2)
 - `DELETE /api/v1/suggestions/:account_id` - Remove suggestion
-
-## Next Steps
-
-1. **Create DynamoDB Implementation**
-   ```go
-   // pkg/storage/dynamodb/trends.go
-   func (s *dynamoDBStorage) RecordHashtagUsage(ctx context.Context, hashtag string, statusID string, authorID string) error
-   func (s *dynamoDBStorage) GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error)
-   // ... etc
-   ```
-
-2. **Update main.go Routes**
-   ```go
-   // Initialize trend service
-   trendService := trends.NewService(storage)
-   trendHandlers := handlers.NewTrendHandlers(trendService)
-   discoveryHandlers := handlers.NewDiscoveryHandlers(storage)
-   
-   // Add routes
-   r.Get("/api/v1/trends", trendHandlers.GetTrends)
-   r.Get("/api/v1/trends/statuses", trendHandlers.GetTrendingStatuses)
-   // ... etc
-   ```
-
-3. **Deploy Lambda Function**
-   - Build and deploy trend-aggregator Lambda
-   - Configure EventBridge rule for periodic execution
-   - Set appropriate IAM permissions for DynamoDB access
-
-4. **Integration Points**
-   - Hook into status creation to record hashtag usage
-   - Hook into like/boost activities for engagement tracking
-   - Extract and index links from new statuses
 
 ## Trending Algorithm Details
 
