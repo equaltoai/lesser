@@ -72,6 +72,72 @@ func (c *converterImpl) ActorToAccountWithCounts(actor *activitypub.Actor, follo
 	return account
 }
 
+// ActorToAccountWithMetadata converts an Actor to Account with metadata
+func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, metadata *storage.ActorMetadata, followers, following, statuses int) models.Account {
+	account := models.Account{
+		ID:             actor.PreferredUsername,
+		Username:       actor.PreferredUsername,
+		Acct:           actor.PreferredUsername,
+		DisplayName:    actor.Name,
+		URL:            actor.URL,
+		Note:           actor.Summary,
+		Locked:         actor.ManuallyApprovesFollowers,
+		Bot:            actor.Type == "Service",
+		Group:          actor.Type == "Group",
+		Discoverable:   actor.Discoverable,
+		CreatedAt:      metadata.CreatedAt.Format(time.RFC3339), // Use actual creation time
+		FollowersCount: followers,
+		FollowingCount: following,
+		StatusesCount:  statuses,
+		LastStatusAt:   "", // Default empty
+		Emojis:         []interface{}{},
+		Fields:         []interface{}{}, // Default empty
+	}
+
+	// Set last status time if available
+	if metadata.LastStatusAt != nil {
+		account.LastStatusAt = metadata.LastStatusAt.Format("2006-01-02") // Mastodon uses date only
+	}
+
+	// Convert actor fields to Mastodon format
+	if len(metadata.Fields) > 0 {
+		fields := make([]interface{}, 0, len(metadata.Fields))
+		for _, field := range metadata.Fields {
+			fieldMap := map[string]interface{}{
+				"name":        field.Name,
+				"value":       field.Value,
+				"verified_at": nil,
+			}
+			if field.VerifiedAt != nil {
+				fieldMap["verified_at"] = field.VerifiedAt.Format(time.RFC3339)
+			}
+			fields = append(fields, fieldMap)
+		}
+		account.Fields = fields
+	}
+
+	// Set avatar
+	if actor.Icon != nil {
+		account.Avatar = actor.Icon.URL
+		account.AvatarStatic = actor.Icon.URL
+	} else {
+		// Default avatar
+		account.Avatar = fmt.Sprintf("%s/avatars/default.png", c.baseURL)
+		account.AvatarStatic = account.Avatar
+	}
+
+	// Set header
+	if actor.Image != nil {
+		account.Header = actor.Image.URL
+		account.HeaderStatic = actor.Image.URL
+	} else {
+		account.Header = ""
+		account.HeaderStatic = ""
+	}
+
+	return account
+}
+
 // ObjectToStatus converts an ActivityPub object to a Mastodon status
 func (c *converterImpl) ObjectToStatus(obj interface{}, actor *activitypub.Actor) models.Status {
 	return c.ObjectToStatusWithContext(context.Background(), obj, actor, 0, 0, false, false, false)

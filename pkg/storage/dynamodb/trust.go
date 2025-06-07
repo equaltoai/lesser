@@ -3,6 +3,7 @@ package dynamodb
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/aron23/lesser/pkg/common"
@@ -373,12 +374,15 @@ func (s *dynamoDBStorage) calculateTrustScore(ctx context.Context, actorID, cate
 
 	// Calculate direct trust score
 	var totalWeight float64
+	trusterScores := make(map[string]float64) // Store truster scores for propagation
+
 	for _, rel := range relationships {
 		if string(rel.Category) == category || rel.Category == trust.TrustCategoryGeneral {
 			weight := rel.Confidence
 			score.DirectScore += rel.Score * weight
 			totalWeight += weight
 			score.TrusterCount++
+			trusterScores[rel.TrusterID] = rel.Score * weight
 		}
 	}
 
@@ -387,11 +391,179 @@ func (s *dynamoDBStorage) calculateTrustScore(ctx context.Context, actorID, cate
 		score.Confidence = totalWeight / float64(score.TrusterCount)
 	}
 
-	// TODO: Implement trust propagation through the network
-	// For now, just use direct score
-	score.Score = score.DirectScore
+	// Implement trust propagation through the network
+	// PageRank-style algorithm with dampening factor
+	const (
+		dampingFactor   = 0.85 // How much trust propagates through the network
+		maxDepth        = 3    // Maximum depth of trust propagation
+		minTrustScore   = 0.1  // Minimum trust score to propagate
+		propagationRate = 0.5  // How much of the trust score propagates to next level
+	)
+
+	// Track visited actors to avoid cycles
+	visited := make(map[string]bool)
+	visited[actorID] = true
+
+	// Propagated trust accumulator
+	propagatedTrust := 0.0
+	propagatedWeight := 0.0
+
+	// BFS-style propagation through trust network
+	type propagationNode struct {
+		actorID   string
+		trustPath float64 // Accumulated trust along the path
+		depth     int
+	}
+
+	queue := make([]propagationNode, 0)
+
+	// Initialize queue with direct trusters
+	for trusterID, trustValue := range trusterScores {
+		if trustValue >= minTrustScore {
+			queue = append(queue, propagationNode{
+				actorID:   trusterID,
+				trustPath: trustValue,
+				depth:     1,
+			})
+		}
+	}
+
+	// Process propagation queue
+	for len(queue) > 0 && len(visited) < 100 { // Limit total actors examined
+		node := queue[0]
+		queue = queue[1:]
+
+		if visited[node.actorID] || node.depth > maxDepth {
+			continue
+		}
+		visited[node.actorID] = true
+
+		// Get trust score of the current node
+		nodeScore, err := s.GetTrustScore(ctx, node.actorID, category)
+		if err != nil {
+			common.Logger().Warn("Failed to get trust score for propagation",
+				zap.String("actor", node.actorID),
+				zap.Error(err))
+			continue
+		}
+
+		// Skip if the node has low trust
+		if nodeScore.Score < minTrustScore {
+			continue
+		}
+
+		// Calculate propagated trust contribution
+		// Trust diminishes with each hop (propagationRate) and is weighted by the path trust
+		propagationFactor := math.Pow(propagationRate, float64(node.depth-1))
+		contribution := node.trustPath * nodeScore.Score * propagationFactor * dampingFactor
+
+		propagatedTrust += contribution
+		propagatedWeight += node.trustPath * propagationFactor
+
+		// Get this node's trust relationships for further propagation
+		if node.depth < maxDepth {
+			nodeRelationships, _, err := s.GetTrustedByRelationships(ctx, node.actorID, 50, "")
+			if err == nil {
+				for _, rel := range nodeRelationships {
+					if !visited[rel.TrusterID] && (string(rel.Category) == category || rel.Category == trust.TrustCategoryGeneral) {
+						queue = append(queue, propagationNode{
+							actorID:   rel.TrusterID,
+							trustPath: contribution * rel.Score * rel.Confidence,
+							depth:     node.depth + 1,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// Normalize propagated score
+	if propagatedWeight > 0 {
+		score.PropagatedScore = propagatedTrust / propagatedWeight
+	}
+
+	// Combine direct and propagated scores
+	// Weight direct trust more heavily than propagated trust
+	const directWeight = 0.7
+	const propagatedWeightFactor = 0.3
+
+	if score.DirectScore > 0 && score.PropagatedScore > 0 {
+		score.Score = (score.DirectScore * directWeight) + (score.PropagatedScore * propagatedWeightFactor)
+	} else if score.DirectScore > 0 {
+		score.Score = score.DirectScore
+	} else {
+		score.Score = score.PropagatedScore
+	}
+
+	// Apply bounds
+	if score.Score > 1.0 {
+		score.Score = 1.0
+	} else if score.Score < 0.0 {
+		score.Score = 0.0
+	}
+
+	common.Logger().Debug("Calculated trust score with propagation",
+		zap.String("actor", actorID),
+		zap.String("category", category),
+		zap.Float64("direct_score", score.DirectScore),
+		zap.Float64("propagated_score", score.PropagatedScore),
+		zap.Float64("final_score", score.Score),
+		zap.Int("visited_actors", len(visited)))
 
 	return score, nil
+}
+
+// GetAllTrustRelationships retrieves all trust relationships for admin visualization
+func (s *dynamoDBStorage) GetAllTrustRelationships(ctx context.Context, limit int) ([]*trust.TrustRelationship, error) {
+	relationships := make([]*trust.TrustRelationship, 0)
+
+	// Use a scan to get all trust relationships
+	input := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("#type = :type"),
+		ExpressionAttributeNames: map[string]string{
+			"#type": "Type",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":type": &types.AttributeValueMemberS{Value: "RELATIONSHIP"},
+		},
+	}
+
+	// Use paginator to handle large result sets
+	paginator := dynamodb.NewScanPaginator(s.client, input)
+
+	count := 0
+	for paginator.HasMorePages() && count < limit {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan trust relationships: %w", err)
+		}
+
+		for _, item := range page.Items {
+			if count >= limit {
+				break
+			}
+
+			var record TrustRecord
+			err = s.UnmarshalItem(item, &record)
+			if err != nil {
+				common.Logger().Error("Failed to unmarshal trust record", zap.Error(err))
+				continue
+			}
+
+			if record.Type == "RELATIONSHIP" && record.Relation != nil {
+				relationships = append(relationships, record.Relation)
+				count++
+			}
+		}
+	}
+
+	common.Logger().Debug("Retrieved all trust relationships",
+		zap.Int("count", len(relationships)),
+		zap.Int("limit", limit),
+	)
+
+	return relationships, nil
 }
 
 // invalidateTrustScoreCache invalidates cached trust scores for an actor

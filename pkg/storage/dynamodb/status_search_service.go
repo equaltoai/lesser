@@ -482,6 +482,8 @@ func (s *StatusSearchService) mergeAndRankResults(
 }
 
 // applyFilters applies search filters to results
+//
+//nolint:unused // False positive - options parameter is used throughout the function
 func (s *StatusSearchService) applyFilters(
 	ctx context.Context,
 	results []*StatusSearchResult,
@@ -546,7 +548,7 @@ func (s *StatusSearchService) applyFilters(
 
 // personalizeResults applies personalization to search results
 func (s *StatusSearchService) personalizeResults(
-	ctx context.Context,
+	_ context.Context,
 	results []*StatusSearchResult,
 	context SearchContext,
 ) []*StatusSearchResult {

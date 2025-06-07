@@ -13,6 +13,7 @@ type Converter interface {
 	// Actor conversions
 	ActorToAccount(actor *activitypub.Actor) models.Account
 	ActorToAccountWithCounts(actor *activitypub.Actor, followers, following, statuses int) models.Account
+	ActorToAccountWithMetadata(actor *activitypub.Actor, metadata *storage.ActorMetadata, followers, following, statuses int) models.Account
 
 	// Object conversions
 	ObjectToStatus(obj interface{}, actor *activitypub.Actor) models.Status

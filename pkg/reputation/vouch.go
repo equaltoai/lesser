@@ -285,7 +285,7 @@ func (vm *VouchManager) canCreateVouch(ctx context.Context, actorID string) (boo
 func (vm *VouchManager) getActorReputation(ctx context.Context, actorID string) (int, error) {
 	// Query the reputation table for the latest score
 	result, err := vm.db.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String("ReputationTable"), // TODO: Make configurable
+		TableName:              aws.String(vm.tableName),
 		KeyConditionExpression: aws.String("PK = :pk"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorID)},
@@ -319,4 +319,103 @@ func (vm *VouchManager) getActorReputation(ctx context.Context, actorID string) 
 	}
 
 	return 0, fmt.Errorf("reputation data not found")
+}
+
+// ImportVouch imports a vouch from another instance
+func (vm *VouchManager) ImportVouch(ctx context.Context, vouch *Vouch, verifier *Verifier) error {
+	// Validate vouch
+	if vouch == nil {
+		return fmt.Errorf("vouch cannot be nil")
+	}
+
+	// Check if vouch is still valid
+	now := time.Now()
+	if !vouch.Active || vouch.Revoked {
+		return fmt.Errorf("vouch is not active or has been revoked")
+	}
+	if now.After(vouch.ExpiresAt) {
+		return fmt.Errorf("vouch has expired")
+	}
+
+	// Verify the signature
+	valid, err := verifier.VerifyVouchSignature(vouch)
+	if err != nil {
+		return fmt.Errorf("failed to verify vouch signature: %w", err)
+	}
+	if !valid {
+		return fmt.Errorf("vouch signature is invalid")
+	}
+
+	// Check if vouch already exists (prevent duplicates)
+	existing, err := vm.GetVouchByID(ctx, vouch.ID)
+	if err == nil && existing != nil {
+		// Vouch already exists
+		vm.logger.Debug("Vouch already imported", zap.String("vouch_id", vouch.ID))
+		return nil
+	}
+
+	// Check if the voucher has sufficient reputation from their instance
+	if vouch.VoucherReputation < 500 {
+		return fmt.Errorf("voucher had insufficient reputation at time of vouch (%d < 500)", vouch.VoucherReputation)
+	}
+
+	// Store the imported vouch
+	item, err := attributevalue.MarshalMap(vouch)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vouch: %w", err)
+	}
+
+	// Add DynamoDB keys
+	item["PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouch.ID)}
+	item["SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouch.ID)}
+	item["GSI1PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("FROM#%s", vouch.From)}
+	item["GSI1SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("CREATED#%s", vouch.CreatedAt.Format(time.RFC3339))}
+	item["GSI2PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("TO#%s", vouch.To)}
+	item["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("CREATED#%s", vouch.CreatedAt.Format(time.RFC3339))}
+	item["TTL"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", vouch.ExpiresAt.Unix())}
+
+	// Mark as imported
+	item["Imported"] = &types.AttributeValueMemberBOOL{Value: true}
+	item["ImportedAt"] = &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)}
+	item["ImportedFrom"] = &types.AttributeValueMemberS{Value: vouch.InstanceURL}
+
+	_, err = vm.db.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName:           aws.String(vm.tableName),
+		Item:                item,
+		ConditionExpression: aws.String("attribute_not_exists(PK)"), // Ensure we don't overwrite
+	})
+	if err != nil {
+		// Check if it's a conditional check failure (duplicate)
+		if _, ok := err.(*types.ConditionalCheckFailedException); ok {
+			vm.logger.Debug("Vouch already exists", zap.String("vouch_id", vouch.ID))
+			return nil
+		}
+		return fmt.Errorf("failed to store imported vouch: %w", err)
+	}
+
+	vm.logger.Info("Imported vouch",
+		zap.String("id", vouch.ID),
+		zap.String("from", vouch.From),
+		zap.String("to", vouch.To),
+		zap.String("instance", vouch.InstanceURL),
+		zap.Float64("confidence", vouch.Confidence))
+
+	return nil
+}
+
+// ImportVouches imports multiple vouches in batch
+func (vm *VouchManager) ImportVouches(ctx context.Context, vouches []Vouch, verifier *Verifier) (int, error) {
+	imported := 0
+
+	for _, vouch := range vouches {
+		if err := vm.ImportVouch(ctx, &vouch, verifier); err != nil {
+			vm.logger.Warn("Failed to import vouch",
+				zap.String("vouch_id", vouch.ID),
+				zap.Error(err))
+			continue
+		}
+		imported++
+	}
+
+	return imported, nil
 }

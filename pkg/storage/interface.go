@@ -14,8 +14,11 @@ type Storage interface {
 	// Actor operations
 	CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error
 	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+	GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *ActorMetadata, error)
 	GetActorPrivateKey(ctx context.Context, username string) (string, error)
 	UpdateActor(ctx context.Context, actor *activitypub.Actor) error
+	UpdateActorLastStatusTime(ctx context.Context, username string) error
+	SetActorFields(ctx context.Context, username string, fields []ActorField) error
 	DeleteActor(ctx context.Context, username string) error
 	SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error)
 	GetSearchSuggestions(ctx context.Context, prefix string) ([]SearchSuggestion, error)
@@ -247,6 +250,10 @@ type Storage interface {
 	CreateModerationDecision(ctx context.Context, decision *ModerationDecision) error
 	GetModerationDecision(ctx context.Context, objectID string) (*ModerationDecision, error)
 	GetModerationHistory(ctx context.Context, objectID string) (*ModerationHistory, error)
+	// New admin-specific moderation methods
+	GetModerationEvents(ctx context.Context, filter *ModerationEventFilter, limit int, cursor string) ([]*ModerationEvent, string, error)
+	CreateAdminReview(ctx context.Context, eventID string, adminID string, action ActionType, reason string) error
+	GetReviewerStats(ctx context.Context, reviewerID string) (*ReviewerStats, error)
 
 	// Trust operations
 	CreateTrustRelationship(ctx context.Context, relationship *TrustRelationship) error
@@ -258,6 +265,8 @@ type Storage interface {
 	GetTrustScore(ctx context.Context, actorID, category string) (*TrustScore, error)
 	UpdateTrustScore(ctx context.Context, score *TrustScore) error
 	RecordTrustUpdate(ctx context.Context, update *TrustUpdate) error
+	// New admin trust method
+	GetAllTrustRelationships(ctx context.Context, limit int) ([]*TrustRelationship, error)
 
 	// Account pin operations (endorsed accounts)
 	CreateAccountPin(ctx context.Context, pin *AccountPin) error
@@ -359,12 +368,56 @@ type Storage interface {
 	GetReportsByStatus(ctx context.Context, status ReportStatus, limit int, cursor string) ([]*Report, string, error)
 	UpdateReportStatus(ctx context.Context, id string, status ReportStatus, actionTaken string, moderatorID string) error
 	GetReportStats(ctx context.Context, username string) (*ReportStats, error)
+	IncrementFalseReports(ctx context.Context, username string) error
+	// New report assignment methods
+	AssignReport(ctx context.Context, reportID string, assignedTo string) error
+	UnassignReport(ctx context.Context, reportID string) error
 
-	// Domain block operations
+	// Reputation-related operations
+	GetStatusCount(ctx context.Context, actorID string) (int, error)
+	GetFollowerCount(ctx context.Context, actorID string) (int, error)
+	GetLatestStatus(ctx context.Context, actorID string) (*StatusSearchResult, error)
+	GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*CommunityNote, string, error)
+	GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*CommunityNoteVote, error)
+
+	// Domain block operations (user-level)
 	AddDomainBlock(ctx context.Context, username, domain string) error
 	RemoveDomainBlock(ctx context.Context, username, domain string) error
 	GetUserDomainBlocks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 	IsBlockedDomain(ctx context.Context, username, domain string) (bool, error)
+
+	// Instance domain block operations (admin-level)
+	CreateInstanceDomainBlock(ctx context.Context, block *InstanceDomainBlock) error
+	GetInstanceDomainBlock(ctx context.Context, domain string) (*InstanceDomainBlock, error)
+	GetInstanceDomainBlockByID(ctx context.Context, id string) (*InstanceDomainBlock, error)
+	ListInstanceDomainBlocks(ctx context.Context, limit int, cursor string) ([]*InstanceDomainBlock, string, error)
+	UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]interface{}) error
+	DeleteInstanceDomainBlock(ctx context.Context, domain string) error
+	IsInstanceDomainBlocked(ctx context.Context, domain string) (bool, *InstanceDomainBlock, error)
+
+	// Federation domain management operations (admin-level)
+	GetDomainBlocks(ctx context.Context, limit int, cursor string) ([]*InstanceDomainBlock, string, error)
+	GetDomainBlock(ctx context.Context, id string) (*InstanceDomainBlock, error)
+	CreateDomainBlock(ctx context.Context, block *InstanceDomainBlock) error
+	UpdateDomainBlock(ctx context.Context, id string, updates map[string]interface{}) error
+	DeleteDomainBlock(ctx context.Context, id string) error
+	IsDomainBlocked(ctx context.Context, domain string) (bool, *InstanceDomainBlock, error)
+
+	// Domain allow operations (for allowlist mode)
+	GetDomainAllows(ctx context.Context, limit int, cursor string) ([]*DomainAllow, string, error)
+	CreateDomainAllow(ctx context.Context, allow *DomainAllow) error
+	DeleteDomainAllow(ctx context.Context, id string) error
+
+	// Federation instance tracking
+	GetInstanceInfo(ctx context.Context, domain string) (*InstanceInfo, error)
+	UpsertInstanceInfo(ctx context.Context, info *InstanceInfo) error
+	GetKnownInstances(ctx context.Context, limit int, cursor string) ([]*InstanceInfo, string, error)
+	GetFederationStatistics(ctx context.Context, startTime, endTime time.Time) (*FederationStats, error)
+
+	// Email domain blocks
+	CreateEmailDomainBlock(ctx context.Context, block *EmailDomainBlock) error
+	GetEmailDomainBlocks(ctx context.Context, limit int, cursor string) ([]*EmailDomainBlock, string, error)
+	DeleteEmailDomainBlock(ctx context.Context, id string) error
 
 	// Marker operations
 	SaveMarker(ctx context.Context, username, timeline string, lastReadID string, version int) error
@@ -453,12 +506,29 @@ type UpdateHistory struct {
 
 // ActorRecord represents an actor stored in DynamoDB
 type ActorRecord struct {
-	PK         string `dynamodbav:"PK"`
-	SK         string `dynamodbav:"SK"`
-	Actor      *activitypub.Actor
-	PrivateKey string    `dynamodbav:"PrivateKey,omitempty"`
-	CreatedAt  time.Time `dynamodbav:"CreatedAt"`
-	UpdatedAt  time.Time `dynamodbav:"UpdatedAt"`
+	PK           string             `dynamodbav:"PK"`
+	SK           string             `dynamodbav:"SK"`
+	Actor        *activitypub.Actor `dynamodbav:"Actor"`
+	PrivateKey   string             `dynamodbav:"PrivateKey,omitempty"`
+	CreatedAt    time.Time          `dynamodbav:"CreatedAt"`
+	UpdatedAt    time.Time          `dynamodbav:"UpdatedAt"`
+	LastStatusAt *time.Time         `dynamodbav:"LastStatusAt,omitempty"`
+	Fields       []ActorField       `dynamodbav:"Fields,omitempty"`
+}
+
+// ActorMetadata contains additional metadata about an actor
+type ActorMetadata struct {
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
+	LastStatusAt *time.Time   `json:"last_status_at,omitempty"`
+	Fields       []ActorField `json:"fields,omitempty"`
+}
+
+// ActorField represents a profile field (like bio fields in Mastodon)
+type ActorField struct {
+	Name       string     `json:"name" dynamodbav:"name"`
+	Value      string     `json:"value" dynamodbav:"value"`
+	VerifiedAt *time.Time `json:"verified_at,omitempty" dynamodbav:"verified_at,omitempty"`
 }
 
 // ActivityRecord represents an activity stored in DynamoDB
@@ -803,10 +873,31 @@ type ModerationReview = moderation.Review
 type ModerationDecision = moderation.ModerationDecision
 type ModerationHistory = moderation.ModerationHistory
 type ModerationQueueItem = moderation.QueueItem
+type EventType = moderation.EventType
+type Category = moderation.Category
+type Severity = moderation.Severity
+type ActionType = moderation.ActionType
 
 type TrustRelationship = trust.TrustRelationship
 type TrustScore = trust.TrustScore
 type TrustUpdate = trust.TrustUpdate
+type TrustCategory = trust.TrustCategory
+
+// Constant aliases for moderation types
+const (
+	// Severity levels
+	SeverityLow      = moderation.SeverityLow
+	SeverityMedium   = moderation.SeverityMedium
+	SeverityHigh     = moderation.SeverityHigh
+	SeverityCritical = moderation.SeverityCritical
+
+	// Action types
+	ActionTypeNone    = moderation.ActionTypeNone
+	ActionTypeWarning = moderation.ActionTypeWarning
+	ActionTypeSilence = moderation.ActionTypeSilence
+	ActionTypeSuspend = moderation.ActionTypeSuspend
+	ActionTypeRemove  = moderation.ActionTypeRemove
+)
 
 // AccountPin represents a pinned/endorsed account
 type AccountPin struct {
@@ -1055,6 +1146,7 @@ type Report struct {
 	ModerationEventID string       `dynamodbav:"moderation_event_id,omitempty"` // Link to moderation system
 	CreatedAt         time.Time    `dynamodbav:"created_at"`
 	UpdatedAt         time.Time    `dynamodbav:"updated_at"`
+	AssignedTo        string       `dynamodbav:"assigned_to,omitempty"` // Admin/moderator assigned to handle this
 }
 
 // ReportStats represents reporting statistics for a user
@@ -1076,5 +1168,106 @@ type Marker struct {
 type DomainBlock struct {
 	Username  string    `dynamodbav:"username"`
 	Domain    string    `dynamodbav:"domain"`
+	CreatedAt time.Time `dynamodbav:"created_at"`
+}
+
+// InstanceDomainBlock represents an instance-level domain block
+type InstanceDomainBlock struct {
+	ID             string    `dynamodbav:"ID"`
+	Domain         string    `dynamodbav:"Domain"`
+	Severity       string    `dynamodbav:"Severity"` // "silence" or "suspend"
+	RejectMedia    bool      `dynamodbav:"RejectMedia"`
+	RejectReports  bool      `dynamodbav:"RejectReports"`
+	PrivateComment string    `dynamodbav:"PrivateComment"` // Admin-only notes
+	PublicComment  string    `dynamodbav:"PublicComment"`  // Public reason
+	Obfuscate      bool      `dynamodbav:"Obfuscate"`      // Whether to obfuscate in public lists
+	CreatedBy      string    `dynamodbav:"CreatedBy"`      // Admin username who created
+	CreatedByID    string    `dynamodbav:"CreatedByID"`    // Admin actor ID
+	CreatedAt      time.Time `dynamodbav:"CreatedAt"`
+	UpdatedAt      time.Time `dynamodbav:"UpdatedAt"`
+}
+
+// DomainAllow represents a domain in the allowlist
+type DomainAllow struct {
+	ID        string    `dynamodbav:"ID"`
+	Domain    string    `dynamodbav:"Domain"`
+	CreatedBy string    `dynamodbav:"CreatedBy"`
+	CreatedAt time.Time `dynamodbav:"CreatedAt"`
+}
+
+// InstanceInfo represents tracked information about a federated instance
+type InstanceInfo struct {
+	Domain        string    `dynamodbav:"Domain"`
+	Software      string    `dynamodbav:"Software"`      // mastodon, pleroma, etc.
+	Version       string    `dynamodbav:"Version"`       // Software version
+	FirstSeen     time.Time `dynamodbav:"FirstSeen"`     // When we first saw this instance
+	LastSeen      time.Time `dynamodbav:"LastSeen"`      // Last activity from this instance
+	PublicKey     string    `dynamodbav:"PublicKey"`     // Instance actor public key
+	SharedInbox   string    `dynamodbav:"SharedInbox"`   // Shared inbox endpoint
+	TrustScore    float64   `dynamodbav:"TrustScore"`    // Calculated trust score
+	ActiveUsers   int       `dynamodbav:"ActiveUsers"`   // Number of active users
+	TotalMessages int64     `dynamodbav:"TotalMessages"` // Total messages received
+}
+
+// FederationStats represents aggregated federation statistics
+type FederationStats struct {
+	ActiveInstances int   `dynamodbav:"ActiveInstances"`
+	TotalMessages   int64 `dynamodbav:"TotalMessages"`
+	TotalUsers      int   `dynamodbav:"TotalUsers"`
+}
+
+// EmailDomainBlock represents a blocked email domain for registration
+type EmailDomainBlock struct {
+	ID        string    `dynamodbav:"ID"`
+	Domain    string    `dynamodbav:"Domain"`
+	CreatedBy string    `dynamodbav:"CreatedBy"`
+	CreatedAt time.Time `dynamodbav:"CreatedAt"`
+}
+
+// ModerationEventFilter represents filters for querying moderation events
+type ModerationEventFilter struct {
+	EventType   *EventType `json:"event_type,omitempty"`
+	Category    *Category  `json:"category,omitempty"`
+	MinSeverity *Severity  `json:"min_severity,omitempty"`
+	ActorID     string     `json:"actor_id,omitempty"`
+	ObjectID    string     `json:"object_id,omitempty"`
+	StartTime   *time.Time `json:"start_time,omitempty"`
+	EndTime     *time.Time `json:"end_time,omitempty"`
+}
+
+// ReviewerStats represents statistics about a moderation reviewer
+type ReviewerStats struct {
+	ReviewerID        string         `dynamodbav:"reviewer_id"`
+	TotalReviews      int            `dynamodbav:"total_reviews"`
+	AccurateReviews   int            `dynamodbav:"accurate_reviews"`
+	AccuracyRate      float64        `dynamodbav:"accuracy_rate"`
+	LastReviewAt      time.Time      `dynamodbav:"last_review_at"`
+	TrustScore        float64        `dynamodbav:"trust_score"`
+	JoinedAt          time.Time      `dynamodbav:"joined_at"`
+	ReviewsByCategory map[string]int `dynamodbav:"reviews_by_category"`
+}
+
+// CommunityNote represents a fact-checking note on any ActivityPub object
+type CommunityNote struct {
+	ID               string    `dynamodbav:"id"`
+	ObjectID         string    `dynamodbav:"object_id"`
+	ObjectType       string    `dynamodbav:"object_type"`
+	AuthorID         string    `dynamodbav:"author_id"`
+	Content          string    `dynamodbav:"content"`
+	HelpfulVotes     int       `dynamodbav:"helpful_votes"`
+	NotHelpfulVotes  int       `dynamodbav:"not_helpful_votes"`
+	Score            float64   `dynamodbav:"score"`
+	VisibilityStatus string    `dynamodbav:"visibility_status"`
+	CreatedAt        time.Time `dynamodbav:"created_at"`
+	UpdatedAt        time.Time `dynamodbav:"updated_at"`
+}
+
+// CommunityNoteVote represents a vote on a community note
+type CommunityNoteVote struct {
+	NoteID    string    `dynamodbav:"note_id"`
+	VoterID   string    `dynamodbav:"voter_id"`
+	VoteType  string    `dynamodbav:"vote_type"` // helpful, not_helpful, neutral
+	Helpful   bool      `dynamodbav:"helpful"`   // For simplified access
+	Weight    float64   `dynamodbav:"weight"`
 	CreatedAt time.Time `dynamodbav:"created_at"`
 }

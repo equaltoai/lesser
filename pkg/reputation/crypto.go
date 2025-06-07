@@ -1,15 +1,21 @@
 package reputation
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -23,11 +29,66 @@ type Signer struct {
 
 // NewSigner creates a new reputation signer
 func NewSigner(privateKeyPEM string, instanceURL string, logger *zap.Logger) (*Signer, error) {
-	// For now, generate a new key pair (in production, load from PEM)
-	// TODO: Implement PEM loading
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate key pair: %w", err)
+	var privateKey ed25519.PrivateKey
+	var publicKey ed25519.PublicKey
+
+	if privateKeyPEM != "" {
+		// Parse PEM-encoded private key
+		block, _ := pem.Decode([]byte(privateKeyPEM))
+		if block == nil {
+			return nil, fmt.Errorf("failed to parse PEM block containing private key")
+		}
+
+		// Check for different PEM types
+		switch block.Type {
+		case "PRIVATE KEY":
+			// PKCS#8 format
+			key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse PKCS#8 private key: %w", err)
+			}
+
+			ed25519Key, ok := key.(ed25519.PrivateKey)
+			if !ok {
+				return nil, fmt.Errorf("private key is not an Ed25519 key")
+			}
+			privateKey = ed25519Key
+			publicKey = ed25519Key.Public().(ed25519.PublicKey)
+
+		case "ED25519 PRIVATE KEY":
+			// Raw Ed25519 format (32 bytes for private key)
+			if len(block.Bytes) != ed25519.PrivateKeySize {
+				return nil, fmt.Errorf("invalid Ed25519 private key size: expected %d, got %d",
+					ed25519.PrivateKeySize, len(block.Bytes))
+			}
+			privateKey = ed25519.PrivateKey(block.Bytes)
+			publicKey = privateKey.Public().(ed25519.PublicKey)
+
+		default:
+			return nil, fmt.Errorf("unsupported PEM block type: %s", block.Type)
+		}
+
+		logger.Info("loaded Ed25519 key from PEM",
+			zap.String("instance", instanceURL))
+	} else {
+		// Generate a new key pair
+		logger.Warn("no private key provided, generating new Ed25519 key pair")
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate key pair: %w", err)
+		}
+		publicKey = pub
+		privateKey = priv
+
+		// Log the generated private key in PEM format for future use
+		privKeyBytes, _ := x509.MarshalPKCS8PrivateKey(privateKey)
+		pemBlock := &pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: privKeyBytes,
+		}
+		pemData := pem.EncodeToMemory(pemBlock)
+		logger.Info("generated new Ed25519 key pair",
+			zap.String("private_key_pem", string(pemData)))
 	}
 
 	return &Signer{
@@ -132,18 +193,20 @@ type Verifier struct {
 	instanceURL string
 	logger      *zap.Logger
 	httpClient  *http.Client
+	storage     storage.Storage
 	// Cache of known instance public keys
 	keyCache map[string]ed25519.PublicKey
 }
 
 // NewVerifier creates a new reputation verifier
-func NewVerifier(instanceURL string, logger *zap.Logger) *Verifier {
+func NewVerifier(instanceURL string, logger *zap.Logger, storage storage.Storage) *Verifier {
 	return &Verifier{
 		instanceURL: instanceURL,
 		logger:      logger,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		storage:  storage,
 		keyCache: make(map[string]ed25519.PublicKey),
 	}
 }
@@ -283,8 +346,47 @@ func (v *Verifier) getInstancePublicKey(instanceURL string) (ed25519.PublicKey, 
 
 // isInstanceTrusted checks if an instance is trusted
 func (v *Verifier) isInstanceTrusted(instanceURL string) bool {
-	// TODO: Implement instance trust checking
-	// For now, trust all instances
+	// Extract domain from URL
+	parsedURL, err := url.Parse(instanceURL)
+	if err != nil {
+		v.logger.Error("failed to parse instance URL",
+			zap.String("url", instanceURL),
+			zap.Error(err))
+		return false
+	}
+
+	domain := parsedURL.Host
+	// Remove port if present
+	if idx := strings.IndexByte(domain, ':'); idx != -1 {
+		domain = domain[:idx]
+	}
+
+	// Check if we have storage available
+	if v.storage == nil {
+		v.logger.Warn("no storage configured for trust checking, allowing by default")
+		return true
+	}
+
+	// Check if domain is blocked
+	ctx := context.Background()
+	isBlocked, block, err := v.storage.IsDomainBlocked(ctx, domain)
+	if err != nil {
+		v.logger.Error("failed to check domain block",
+			zap.String("domain", domain),
+			zap.Error(err))
+		// On error, default to not trusting
+		return false
+	}
+
+	if isBlocked {
+		v.logger.Info("domain is blocked",
+			zap.String("domain", domain),
+			zap.String("severity", block.Severity))
+		return false
+	}
+
+	// TODO: Check domain allow list if in allow-list mode
+	// For now, if not blocked, it's trusted
 	return true
 }
 
@@ -308,4 +410,43 @@ func canonicalizeJSON(v interface{}) ([]byte, error) {
 	delete(m, "IssuerProof")
 
 	return json.Marshal(m)
+}
+
+// VerifyVouchSignature verifies a vouch's signature using the issuer's public key
+func (v *Verifier) VerifyVouchSignature(vouch *Vouch) (bool, error) {
+	// Get the issuer's public key from the instance
+	publicKey, err := v.getInstancePublicKey(vouch.InstanceURL)
+	if err != nil {
+		// If we can't get the public key from the instance, check if we have it embedded in the vouch
+		// This would need to be added to the Vouch struct if not already there
+		return false, fmt.Errorf("failed to get issuer public key: %w", err)
+	}
+
+	// Get and clear signature
+	signatureB64 := vouch.Signature
+	vouch.Signature = ""
+	defer func() { vouch.Signature = signatureB64 }()
+
+	// Decode signature
+	signature, err := base64.StdEncoding.DecodeString(signatureB64)
+	if err != nil {
+		return false, fmt.Errorf("invalid signature encoding: %w", err)
+	}
+
+	// Canonicalize and verify
+	canonical, err := canonicalizeJSON(vouch)
+	if err != nil {
+		return false, fmt.Errorf("failed to canonicalize: %w", err)
+	}
+
+	hash := sha256.Sum256(canonical)
+	valid := ed25519.Verify(publicKey, hash[:], signature)
+
+	v.logger.Debug("Verified vouch signature",
+		zap.String("vouch_id", vouch.ID),
+		zap.String("from", vouch.From),
+		zap.String("to", vouch.To),
+		zap.Bool("valid", valid))
+
+	return valid, nil
 }

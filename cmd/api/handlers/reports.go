@@ -11,6 +11,7 @@ import (
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/moderation"
+	"github.com/aron23/lesser/pkg/reports"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/google/uuid"
@@ -87,43 +88,34 @@ func (h *Handler) HandleCreateReport(ctx context.Context, request events.APIGate
 		return common.InternalServerError(fmt.Errorf("failed to create report")), nil
 	}
 
-	// Create a moderation event for the report
-	now := time.Now()
-	moderationEvent := &moderation.ModerationEvent{
-		ID:              uuid.New().String(),
-		EventType:       moderation.EventTypeFlagged,
-		ObjectID:        req.AccountID,
-		ObjectType:      "Actor",
-		ActorID:         claims.Username,
-		Category:        moderation.CategoryOther,
-		Severity:        moderation.SeverityMedium,
-		ConfidenceScore: 1.0, // User reports have full confidence
-		Reason:          req.Comment,
-		Created:         now,
-		Updated:         now,
+	// Get reporter's actor ID for trust integration
+	reporterActor, err := h.store.GetActor(ctx, claims.Username)
+	if err != nil {
+		h.logger.Warn("failed to get reporter actor", zap.Error(err))
+		// Continue with report creation even if actor lookup fails
 	}
 
-	// Map report category to moderation category
-	switch req.Category {
-	case "spam":
-		moderationEvent.Category = moderation.CategorySpam
-	case "violation":
-		moderationEvent.Category = moderation.CategoryOther
+	reporterActorID := claims.Username
+	if reporterActor != nil {
+		reporterActorID = reporterActor.ID
 	}
 
-	// If specific statuses were reported, focus on the first one
-	if len(req.StatusIDs) > 0 {
-		moderationEvent.ObjectType = "Note"
-		moderationEvent.ObjectID = req.StatusIDs[0]
-	}
-
-	if err := h.store.CreateModerationEvent(ctx, moderationEvent); err != nil {
-		h.logger.Error("failed to create moderation event for report", zap.Error(err))
-		// Don't fail the request - the report was still created
+	// Create enhanced moderation event with trust weighting
+	enhancedService := reports.NewEnhancedReportService(h.store, h.logger)
+	moderationEvent, err := enhancedService.CreateEnhancedModerationEvent(ctx, report, reporterActorID)
+	if err != nil {
+		h.logger.Error("failed to create enhanced moderation event", zap.Error(err))
+		// Don't fail the report creation - fall back to basic moderation event
+		h.createBasicModerationEvent(ctx, report, reporterActorID)
 	} else {
 		// Update the report with the moderation event ID
 		report.ModerationEventID = moderationEvent.ID
 		_ = h.store.UpdateReportStatus(ctx, report.ID, report.Status, "", "")
+
+		h.logger.Info("created report with enhanced moderation",
+			zap.String("report_id", report.ID),
+			zap.String("moderation_event_id", moderationEvent.ID),
+			zap.Float64("confidence_score", moderationEvent.ConfidenceScore))
 	}
 
 	// Convert to Mastodon API format
@@ -141,4 +133,44 @@ func (h *Handler) HandleCreateReport(ctx context.Context, request events.APIGate
 	}
 
 	return common.OK(response), nil
+}
+
+// createBasicModerationEvent creates a basic moderation event as fallback
+func (h *Handler) createBasicModerationEvent(ctx context.Context, report *storage.Report, actorID string) {
+	now := time.Now()
+	moderationEvent := &moderation.ModerationEvent{
+		ID:              uuid.New().String(),
+		EventType:       moderation.EventTypeFlagged,
+		ObjectID:        report.TargetAccountID,
+		ObjectType:      "Actor",
+		ActorID:         actorID,
+		Category:        moderation.CategoryOther,
+		Severity:        moderation.SeverityMedium,
+		ConfidenceScore: 1.0, // User reports have full confidence
+		Reason:          report.Comment,
+		Created:         now,
+		Updated:         now,
+	}
+
+	// Map report category to moderation category
+	switch report.Category {
+	case "spam":
+		moderationEvent.Category = moderation.CategorySpam
+	case "violation":
+		moderationEvent.Category = moderation.CategoryOther
+	}
+
+	// If specific statuses were reported, focus on the first one
+	if len(report.StatusIDs) > 0 {
+		moderationEvent.ObjectType = "Note"
+		moderationEvent.ObjectID = report.StatusIDs[0]
+	}
+
+	if err := h.store.CreateModerationEvent(ctx, moderationEvent); err != nil {
+		h.logger.Error("failed to create basic moderation event", zap.Error(err))
+	} else {
+		// Update the report with the moderation event ID
+		report.ModerationEventID = moderationEvent.ID
+		_ = h.store.UpdateReportStatus(ctx, report.ID, report.Status, "", "")
+	}
 }

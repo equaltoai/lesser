@@ -6,12 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"go.uber.org/zap"
 )
 
@@ -20,17 +26,39 @@ type DeliveryService struct {
 	store      storage.Storage
 	httpClient *http.Client
 	logger     *zap.Logger
+	sqsClient  *sqs.Client
+	queueURL   string
 }
 
 // NewDeliveryService creates a new delivery service
 func NewDeliveryService(store storage.Storage) *DeliveryService {
-	return &DeliveryService{
+	logger := common.Logger()
+
+	svc := &DeliveryService{
 		store: store,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		logger: common.Logger(),
+		logger: logger,
 	}
+
+	// Initialize SQS client if queue URL is configured
+	queueURL := os.Getenv("FEDERATION_QUEUE_URL")
+	if queueURL != "" {
+		cfg, err := config.LoadDefaultConfig(context.Background())
+		if err == nil {
+			svc.sqsClient = sqs.NewFromConfig(cfg)
+			svc.queueURL = queueURL
+			logger.Info("SQS queue configured for federation delivery",
+				zap.String("queue_url", queueURL))
+		} else {
+			logger.Warn("Failed to initialize SQS client", zap.Error(err))
+		}
+	} else {
+		logger.Info("No SQS queue configured, using synchronous delivery")
+	}
+
+	return svc
 }
 
 // DeliverActivity delivers an activity to a remote inbox
@@ -327,9 +355,84 @@ func extractDomain(actorID string) string {
 
 // QueueDelivery queues an activity for delivery (for future SQS implementation)
 func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error {
-	// TODO: Implement SQS queue for reliable delivery
-	// For now, deliver synchronously
-	return d.DeliverActivity(ctx, activity, targetInbox, signingActor)
+	// Create delivery message
+	deliveryID := fmt.Sprintf("delivery_%s_%d", generateDeliveryID(), time.Now().UnixNano())
+
+	message := map[string]interface{}{
+		"delivery_id":      deliveryID,
+		"activity":         activity,
+		"target_inbox":     targetInbox,
+		"signing_actor_id": signingActor.PreferredUsername,
+		"retry_count":      0,
+		"max_retries":      5,
+		"created_at":       time.Now(),
+	}
+
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		d.logger.Error("failed to marshal delivery message", zap.Error(err))
+		return fmt.Errorf("failed to marshal delivery message: %w", err)
+	}
+
+	// Get SQS client from config
+	sqsClient := d.getSQSClient()
+	if sqsClient == nil {
+		// SQS not configured, fall back to synchronous delivery
+		d.logger.Warn("SQS not configured, using synchronous delivery")
+		return d.DeliverActivity(ctx, activity, targetInbox, signingActor)
+	}
+
+	// Send to SQS queue
+	queueURL := d.getQueueURL()
+	_, err = sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    aws.String(queueURL),
+		MessageBody: aws.String(string(messageJSON)),
+		MessageAttributes: map[string]types.MessageAttributeValue{
+			"activity_type": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(activity.Type),
+			},
+			"target_domain": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(extractDomain(targetInbox)),
+			},
+		},
+	})
+
+	if err != nil {
+		d.logger.Error("failed to send to SQS, falling back to synchronous delivery",
+			zap.String("delivery_id", deliveryID),
+			zap.Error(err))
+		// Fall back to synchronous delivery
+		return d.DeliverActivity(ctx, activity, targetInbox, signingActor)
+	}
+
+	d.logger.Info("queued activity for delivery",
+		zap.String("delivery_id", deliveryID),
+		zap.String("activity_id", activity.ID),
+		zap.String("target_inbox", targetInbox))
+
+	return nil
+}
+
+// getSQSClient returns the SQS client if configured
+func (d *DeliveryService) getSQSClient() *sqs.Client {
+	// This would be initialized in NewDeliveryService if SQS is configured
+	// For now, return nil to indicate SQS is not configured
+	return d.sqsClient
+}
+
+// getQueueURL returns the configured queue URL
+func (d *DeliveryService) getQueueURL() string {
+	// This would come from configuration
+	return d.queueURL
+}
+
+// generateDeliveryID generates a unique delivery ID
+func generateDeliveryID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
 }
 
 // extractHandleFromActorID extracts a handle (e.g., @user@domain) from an actor ID

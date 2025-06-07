@@ -32,6 +32,9 @@ type StatusFuzzySearchStrategy struct {
 
 // NewStatusFuzzySearchStrategy creates a new fuzzy search strategy
 func NewStatusFuzzySearchStrategy(service *StatusSearchService, cfg aws.Config) (*StatusFuzzySearchStrategy, error) {
+	// TEMPORARY: Disable OpenSearch to save costs
+	return nil, fmt.Errorf("OpenSearch is disabled")
+
 	// Get credentials from config
 	creds, err := cfg.Credentials.Retrieve(context.Background())
 	if err != nil {

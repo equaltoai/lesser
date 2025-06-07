@@ -1,6 +1,9 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // AccountRegistrationRequest represents a user registration request
 type AccountRegistrationRequest struct {
@@ -511,4 +514,111 @@ type AccountSource struct {
 	Note           string  `json:"note"`
 	Fields         []Field `json:"fields"`
 	FollowRequests int     `json:"follow_requests_count"`
+}
+
+// AdminAccount represents an account in admin context
+type AdminAccount struct {
+	ID                     string    `json:"id"`
+	Username               string    `json:"username"`
+	Domain                 *string   `json:"domain"`
+	CreatedAt              time.Time `json:"created_at"`
+	Email                  string    `json:"email"`
+	EmailStatus            string    `json:"email_status,omitempty"`
+	IP                     *string   `json:"ip"`
+	IPs                    []AdminIP `json:"ips"`
+	Locale                 string    `json:"locale"`
+	InviteRequest          *string   `json:"invite_request"`
+	Role                   Role      `json:"role"`
+	Confirmed              bool      `json:"confirmed"`
+	Approved               bool      `json:"approved"`
+	Disabled               bool      `json:"disabled"`
+	Silenced               bool      `json:"silenced"`
+	Suspended              bool      `json:"suspended"`
+	Account                Account   `json:"account"`
+	CreatedByApplicationID *string   `json:"created_by_application_id"`
+	InvitedByAccountID     *string   `json:"invited_by_account_id"`
+	ReportsCount           int       `json:"reports_count"`
+	ResolvedReportsCount   int       `json:"resolved_reports_count"`
+}
+
+// AdminIP represents IP address info in admin context
+type AdminIP struct {
+	IP     string    `json:"ip"`
+	UsedAt time.Time `json:"used_at"`
+}
+
+// Role represents a user role
+type Role struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color,omitempty"`
+	Permissions int    `json:"permissions"`
+	Highlighted bool   `json:"highlighted"`
+}
+
+// AdminReport represents a report in admin context
+type AdminReport struct {
+	ID                   string     `json:"id"`
+	ActionTaken          bool       `json:"action_taken"`
+	ActionTakenAt        *time.Time `json:"action_taken_at"`
+	Category             string     `json:"category"`
+	Comment              string     `json:"comment"`
+	Forwarded            bool       `json:"forwarded"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	Account              Account    `json:"account"`
+	TargetAccount        Account    `json:"target_account"`
+	AssignedAccount      *Account   `json:"assigned_account"`
+	ActionTakenByAccount *Account   `json:"action_taken_by_account"`
+	Statuses             []Status   `json:"statuses"`
+	Rules                []Rule     `json:"rules"`
+}
+
+// Rule represents an instance rule
+type Rule struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// AdminAccountActionRequest represents a request to take action on an account
+type AdminAccountActionRequest struct {
+	Type                  string `json:"type"`                // suspend, unsuspend, silence, unsilence, etc.
+	ReportID              string `json:"report_id,omitempty"` // Report that caused this action
+	WarningPresetID       string `json:"warning_preset_id,omitempty"`
+	Text                  string `json:"text,omitempty"` // Reason for action
+	SendEmailNotification bool   `json:"send_email_notification"`
+}
+
+// DomainBlock represents an instance-level domain block
+type DomainBlock struct {
+	ID             string    `json:"id"`
+	Domain         string    `json:"domain"`
+	CreatedAt      time.Time `json:"created_at"`
+	Severity       string    `json:"severity"`        // "silence" or "suspend"
+	RejectMedia    bool      `json:"reject_media"`    // Whether to reject media files from this domain
+	RejectReports  bool      `json:"reject_reports"`  // Whether to reject reports from this domain
+	PrivateComment string    `json:"private_comment"` // Private admin notes
+	PublicComment  string    `json:"public_comment"`  // Public reason for the block
+	Obfuscate      bool      `json:"obfuscate"`       // Whether to obfuscate the domain in public lists
+}
+
+// CreateDomainBlockRequest represents a request to create a domain block
+type CreateDomainBlockRequest struct {
+	Domain         string `json:"domain"`
+	Severity       string `json:"severity"`        // "silence" or "suspend"
+	RejectMedia    bool   `json:"reject_media"`    // Whether to reject media files from this domain
+	RejectReports  bool   `json:"reject_reports"`  // Whether to reject reports from this domain
+	PrivateComment string `json:"private_comment"` // Private admin notes
+	PublicComment  string `json:"public_comment"`  // Public reason for the block
+	Obfuscate      bool   `json:"obfuscate"`       // Whether to obfuscate the domain in public lists
+}
+
+// UpdateDomainBlockRequest represents a request to update a domain block
+type UpdateDomainBlockRequest struct {
+	Severity       string `json:"severity,omitempty"`        // "silence" or "suspend"
+	RejectMedia    *bool  `json:"reject_media,omitempty"`    // Whether to reject media files from this domain
+	RejectReports  *bool  `json:"reject_reports,omitempty"`  // Whether to reject reports from this domain
+	PrivateComment string `json:"private_comment,omitempty"` // Private admin notes
+	PublicComment  string `json:"public_comment,omitempty"`  // Public reason for the block
+	Obfuscate      *bool  `json:"obfuscate,omitempty"`       // Whether to obfuscate the domain in public lists
 }

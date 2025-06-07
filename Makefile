@@ -200,6 +200,27 @@ build-lambdas:
 	@echo "Building moderation-processor..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/moderation-processor
 	@cd bin && zip -q moderation-processor.zip bootstrap && rm bootstrap
+	@echo "Building report-trust-updater..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/report-trust-updater
+	@cd bin && zip -q report-trust-updater.zip bootstrap && rm bootstrap
+	@echo "Building federation-tracker..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/federation-tracker
+	@cd bin && zip -q federation-tracker.zip bootstrap && rm bootstrap
+	@echo "Building federation-delivery..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/federation-delivery
+	@cd bin && zip -q federation-delivery.zip bootstrap && rm bootstrap
+	@echo "Building import-processor..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/import-processor
+	@cd bin && zip -q import-processor.zip bootstrap && rm bootstrap
+	@echo "Building export-generator..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/export-generator
+	@cd bin && zip -q export-generator.zip bootstrap && rm bootstrap
+	@echo "Building media-processor..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/media-processor
+	@cd bin && zip -q media-processor.zip bootstrap && rm bootstrap
+	@echo "Building trend-aggregator..."
+	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/trend-aggregator
+	@cd bin && zip -q trend-aggregator.zip bootstrap && rm bootstrap
 	@echo "Lambda functions built successfully!"
 
 .PHONY: deploy

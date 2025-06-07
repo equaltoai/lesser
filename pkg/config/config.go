@@ -12,13 +12,15 @@ type Config struct {
 	InstanceName string // e.g., "My ActivityPub Server"
 
 	// AWS configuration
-	Region          string
-	DynamoTableName string
-	S3BucketName    string
-	SQSQueueURL     string
+	Region              string
+	DynamoTableName     string
+	S3BucketName        string
+	SQSQueueURL         string
+	ReputationTableName string // For reputation/vouch storage
 
 	// Security
 	JWTSecret string // For client authentication
+	KMSKeyID  string // AWS KMS key ID for encryption (optional)
 
 	// Features
 	MaxUploadSize     int64 // Maximum file upload size in bytes
@@ -42,12 +44,14 @@ func loadConfig() *Config {
 		Domain:       getEnvOrDefault("DOMAIN", "localhost"),
 		InstanceName: getEnvOrDefault("INSTANCE_NAME", "Lesser ActivityPub Server"),
 
-		Region:          getEnvOrDefault("AWS_REGION", "us-east-1"),
-		DynamoTableName: getEnvOrDefault("DYNAMO_TABLE_NAME", "lesser-main"),
-		S3BucketName:    getEnvOrDefault("S3_BUCKET_NAME", "lesser-media"),
-		SQSQueueURL:     getEnvOrDefault("SQS_QUEUE_URL", ""),
+		Region:              getEnvOrDefault("AWS_REGION", "us-east-1"),
+		DynamoTableName:     getEnvOrDefault("DYNAMO_TABLE_NAME", "lesser-main"),
+		S3BucketName:        getEnvOrDefault("S3_BUCKET_NAME", "lesser-media"),
+		SQSQueueURL:         getEnvOrDefault("SQS_QUEUE_URL", ""),
+		ReputationTableName: getEnvOrDefault("REPUTATION_TABLE_NAME", "lesser-reputation"),
 
 		JWTSecret: getEnvOrPanic("JWT_SECRET"),
+		KMSKeyID:  getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
 
 		MaxUploadSize:     getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
 		PageSize:          getEnvAsIntOrDefault("PAGE_SIZE", 20),

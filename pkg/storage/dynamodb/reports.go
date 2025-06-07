@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -313,6 +314,26 @@ func (s *dynamoDBStorage) UpdateReportStatus(ctx context.Context, id string, sta
 	return err
 }
 
+// IncrementFalseReports increments the false report count for a user
+func (s *dynamoDBStorage) IncrementFalseReports(ctx context.Context, username string) error {
+	key := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", username)},
+		"SK": &types.AttributeValueMemberS{Value: "REPORT_STATS"},
+	}
+
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:        aws.String(s.tableName),
+		Key:              key,
+		UpdateExpression: aws.String("ADD FalseReports :one SET LastFalseReportAt = :now"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":one": &types.AttributeValueMemberN{Value: "1"},
+			":now": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+		},
+	})
+
+	return err
+}
+
 // GetReportStats retrieves reporting statistics for a user
 func (s *dynamoDBStorage) GetReportStats(ctx context.Context, username string) (*storage.ReportStats, error) {
 	key := map[string]types.AttributeValue{
@@ -339,4 +360,78 @@ func (s *dynamoDBStorage) GetReportStats(ctx context.Context, username string) (
 	}
 
 	return &stats, nil
+}
+
+// AssignReport assigns a report to a moderator/admin
+func (s *dynamoDBStorage) AssignReport(ctx context.Context, reportID string, assignedTo string) error {
+	now := time.Now()
+	key := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("REPORT#%s", reportID)},
+		"SK": &types.AttributeValueMemberS{Value: "REPORT"},
+	}
+
+	updateExpression := "SET AssignedTo = :assignedTo, UpdatedAt = :now"
+	expressionAttributeValues := map[string]types.AttributeValue{
+		":assignedTo": &types.AttributeValueMemberS{Value: assignedTo},
+		":now":        &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
+	}
+
+	// Add condition to ensure report exists
+	conditionExpression := "attribute_exists(PK)"
+
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(s.tableName),
+		Key:                       key,
+		UpdateExpression:          aws.String(updateExpression),
+		ExpressionAttributeValues: expressionAttributeValues,
+		ConditionExpression:       aws.String(conditionExpression),
+	})
+
+	if err != nil {
+		// Check if the error is because the report doesn't exist
+		var ccfe *types.ConditionalCheckFailedException
+		if errors.As(err, &ccfe) {
+			return storage.ErrNotFound
+		}
+		return fmt.Errorf("failed to assign report: %w", err)
+	}
+
+	return nil
+}
+
+// UnassignReport removes assignment from a report
+func (s *dynamoDBStorage) UnassignReport(ctx context.Context, reportID string) error {
+	now := time.Now()
+	key := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("REPORT#%s", reportID)},
+		"SK": &types.AttributeValueMemberS{Value: "REPORT"},
+	}
+
+	// Remove AssignedTo field
+	updateExpression := "REMOVE AssignedTo SET UpdatedAt = :now"
+	expressionAttributeValues := map[string]types.AttributeValue{
+		":now": &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
+	}
+
+	// Add condition to ensure report exists
+	conditionExpression := "attribute_exists(PK)"
+
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(s.tableName),
+		Key:                       key,
+		UpdateExpression:          aws.String(updateExpression),
+		ExpressionAttributeValues: expressionAttributeValues,
+		ConditionExpression:       aws.String(conditionExpression),
+	})
+
+	if err != nil {
+		// Check if the error is because the report doesn't exist
+		var ccfe *types.ConditionalCheckFailedException
+		if errors.As(err, &ccfe) {
+			return storage.ErrNotFound
+		}
+		return fmt.Errorf("failed to unassign report: %w", err)
+	}
+
+	return nil
 }
