@@ -323,29 +323,18 @@ GitHub → GitHub Actions → Build & Test
 
 ## 🌍 Multi-Region Considerations
 
-### Active-Active Setup (Future)
-```
-Region A                    Region B
-   ↓                           ↓
-DynamoDB <-- Global Tables --> DynamoDB
-   ↓                           ↓
-Route53 (Latency routing)
-   ↓
-Users get routed to nearest region
-```
+Lesser is designed to run efficiently in a single region. For global performance, CloudFront CDN provides edge caching worldwide.
 
 ## 🎓 Learn More
 
-- **[Storage Architecture](../../LESSER_STORAGE_ARCHITECTURE.md)** - DynamoDB schema details
-- **[API Design](../../GREATER_API_REFERENCE.md)** - Endpoint documentation
-- **[Security Model](../../AUTH_INFRASTRUCTURE_SECURITY.md)** - Security deep dive
-- **[Cost Optimization](../operations/COST_OPTIMIZATION.md)** - Reduce costs further
+- **[Storage Architecture](STORAGE_ARCHITECTURE.md)** - DynamoDB schema details
+- **[API Design](../api/API_REFERENCE.md)** - Endpoint documentation
+- **[Security Model](../security/)** - Security deep dive
+- **[System Design](SYSTEM_DESIGN.md)** - Complete architecture details
 
 ---
 
 <div align="center">
-
-**Questions about the architecture?** Join our [Discord](https://discord.gg/lesser)
 
 [Back to Docs](../README.md) • [Quick Start](../deployment/QUICK_START.md) • [API Reference](../api/QUICK_REFERENCE.md)
 

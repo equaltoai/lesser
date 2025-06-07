@@ -200,16 +200,6 @@ When no reactions are specified for an announcement, the following defaults are 
 - 🚀 (rocket)
 - 👀 (eyes)
 
-## Future Enhancements
-
-1. **Custom Emoji Support**: Full integration with custom emoji system
-2. **Rich Content**: Support for mentions and status links in announcements
-3. **Notification Integration**: Push notifications for new announcements
-4. **Localization**: Multi-language announcement support
-5. **Analytics**: Track announcement engagement metrics
-6. **Bulk Operations**: Admin tools for managing multiple announcements
-7. **Templates**: Reusable announcement templates for common messages
-
 ## Testing
 
 A comprehensive test suite is available in `test_announcements.py` covering:

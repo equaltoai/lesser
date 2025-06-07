@@ -146,18 +146,15 @@ wss://{domain}/api/v1/streaming?access_token={token}
 
 ## Testing
 
-Use the provided test script:
+WebSocket streaming can be tested using:
+- WebSocket client libraries in your preferred programming language
+- Command-line tools like `wscat` for quick testing
+- Mastodon client applications that support streaming
 
+Example connection:
 ```bash
-python test_streaming.py https://lesser.example.com your_access_token
+wscat -c "wss://lesser.example.com/api/v1/streaming?access_token=YOUR_TOKEN"
 ```
-
-The test script will:
-1. Connect to the WebSocket endpoint
-2. Subscribe to various streams
-3. Listen for events
-4. Test concurrent connections
-5. Verify proper cleanup on disconnect
 
 ## Monitoring
 
@@ -171,16 +168,6 @@ The test script will:
 - Connection IDs logged for tracing
 - Failed message deliveries logged with reasons
 - Automatic cleanup of stale subscriptions
-
-## Future Enhancements
-
-1. **Filtering** - Client-side event filtering
-2. **Presence** - Online status for users
-3. **Typing Indicators** - Show when users are typing
-4. **Read Receipts** - Track message read status
-5. **Custom Streams** - Application-specific event streams
-6. **Stream Compression** - Reduce bandwidth usage
-7. **Regional Endpoints** - Multi-region support
 
 ## Security Considerations
 

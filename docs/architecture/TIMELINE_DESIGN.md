@@ -222,11 +222,4 @@ const params = {
 - Home timeline load: < 200ms (p95)
 - Public timeline load: < 100ms (p95)
 - Timeline write fan-out: < 5s (async)
-- Cache hit rate: > 80% for active users
-
-## Future Considerations
-
-1. **Personalized timelines**: ML-based ranking
-2. **Real-time updates**: WebSocket subscriptions
-3. **Timeline mixing**: Blend followed + recommended
-4. **Efficient muting**: Bitmap filters for muted words/accounts 
+- Cache hit rate: > 80% for active users 

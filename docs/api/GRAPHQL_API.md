@@ -77,7 +77,7 @@ type Mutation {
 }
 ```
 
-### Subscriptions (via WebSocket Lambda)
+### Subscriptions (Not Yet Implemented)
 
 ```graphql
 type Subscription {
@@ -229,16 +229,6 @@ The GraphQL layer reuses existing Lesser components:
 2. **Rate Limiting**: Implement per-user rate limits
 3. **Field Authorization**: Use field-level resolvers for access control
 4. **Input Validation**: Validate all inputs in resolvers
-
-## Next Steps
-
-- [ ] Implement DataLoader for efficient batch loading
-- [ ] Add query complexity analysis
-- [ ] Implement field-level authorization
-- [ ] Add GraphQL-specific cost calculations
-- [ ] Create GraphQL client SDK
-- [ ] Add subscription support via WebSocket Lambda
-- [ ] Implement caching strategies
 
 ## Troubleshooting
 

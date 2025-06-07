@@ -185,16 +185,6 @@ Response:
 - ✅ Admin handlers for CRUD operations
 - ✅ Data models
 
-### TODO
-1. **Content Parsing**: Implement emoji parsing in status content
-2. **Media Upload**: Support uploading emoji images to S3
-3. **Remote Emoji**: Implement downloading and caching of remote emojis
-4. **UI Integration**: Add emoji picker support
-5. **Reactions**: Use custom emojis in announcement reactions
-6. **Import/Export**: Bulk emoji management
-7. **Animation Support**: Handle animated GIFs appropriately
-8. **Size Limits**: Implement file size and dimension limits
-
 ## Best Practices
 
 ### Emoji Guidelines
@@ -214,16 +204,6 @@ Response:
 2. **Sanitization**: Ensure shortcodes don't contain malicious patterns
 3. **Rate Limiting**: Limit emoji creation to prevent abuse
 4. **Access Control**: Only admins can manage emojis
-
-## Future Enhancements
-
-1. **Emoji Packs**: Import/export emoji packs for easy sharing
-2. **Usage Analytics**: Track which emojis are most popular
-3. **Auto-Import**: Automatically import emojis from federated content
-4. **Emoji Aliases**: Support multiple shortcodes for the same emoji
-5. **Animated Previews**: Show animation on hover in picker
-6. **Emoji Voting**: Let users vote for new emojis
-7. **Seasonal Emojis**: Time-limited special emojis
 
 ## Testing
 

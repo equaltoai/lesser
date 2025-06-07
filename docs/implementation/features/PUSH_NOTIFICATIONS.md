@@ -171,12 +171,4 @@ fetch('/api/v1/push/subscription', {
 3. **Test with Mastodon Client**:
    - Use a client that supports push notifications (e.g., official Mastodon app)
    - Enable notifications in client settings
-   - Trigger test activities (follow, mention, etc.)
-
-## Future Enhancements
-
-1. **Notification Grouping**: Group similar notifications together
-2. **Rich Notifications**: Include images and action buttons
-3. **Notification Preferences**: Per-account notification settings
-4. **Delivery Reports**: Track notification delivery success rates
-5. **Localization**: Support multiple languages for notification text 
+   - Trigger test activities (follow, mention, etc.) 

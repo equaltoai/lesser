@@ -171,7 +171,6 @@ This document outlines all remaining work needed to achieve full Mastodon API co
   - ✅ Prefix search strategy (using GSI1)
   - ✅ Display name search (using GSI2)
   - ✅ Popularity search (using GSI4)
-  - ✅ Fuzzy search (OpenSearch integration)
   - ✅ Semantic search (AWS Bedrock integration)
 - ✅ Search suggestions endpoint - IMPLEMENTED
 - ✅ GraphQL search support - IMPLEMENTED
@@ -188,7 +187,6 @@ This document outlines all remaining work needed to achieve full Mastodon API co
   - ✅ Author search using GSI7
   - ✅ URL search for exact matches
   - ✅ Trending search for popular content
-  - ✅ Fuzzy search with OpenSearch (when available)
   - ✅ Semantic search with AWS Bedrock embeddings
   - ✅ Caching and analytics
   - ✅ Lambda function for indexing (cmd/status-indexer)
@@ -206,7 +204,7 @@ This document outlines all remaining work needed to achieve full Mastodon API co
 Implemented a sophisticated multi-strategy status search system that provides high-quality results through multiple search approaches.
 
 #### Architecture Details
-See `PHASE3_AI_SEARCH_IMPLEMENTATION.md` for complete implementation details.
+See `docs/archive/phases/PHASE3_AI_SEARCH_IMPLEMENTATION.md` for complete implementation details.
 
 #### Key Achievements
 
@@ -311,7 +309,7 @@ See `PHASE3_AI_SEARCH_IMPLEMENTATION.md` for complete implementation details.
 - `cmd/api/handlers/discovery.go` - Discovery API handlers
 - `pkg/storage/dynamodb/trends.go` - DynamoDB storage implementation
 - `cmd/trend-aggregator/main.go` - Lambda function for aggregation
-- `TRENDS_DISCOVERY_IMPLEMENTATION.md` - Comprehensive documentation
+- `docs/archive/TRENDS_DISCOVERY_IMPLEMENTATION.md` - Comprehensive documentation
 
 #### Key Features:
 1. **Pluggable Algorithm System**: Easy to swap or add new trending algorithms
@@ -320,13 +318,6 @@ See `PHASE3_AI_SEARCH_IMPLEMENTATION.md` for complete implementation details.
 4. **Efficient Storage**: GSI8 optimized for trending queries
 5. **TTL Cleanup**: 7-day automatic cleanup of old trend data
 6. **Diversity Factors**: Unique users and engagement types considered
-
-#### Remaining Enhancements:
-- Deploy Lambda function with EventBridge schedule
-- Add GSI8 to DynamoDB table configuration
-- Hook into status creation/engagement handlers
-- Implement link metadata extraction
-- Enhance discovery algorithms with user activity data
 
 ## Phase 4: Instance Features (Week 7-8) - COMPLETED
 
@@ -559,7 +550,7 @@ See `PHASE3_AI_SEARCH_IMPLEMENTATION.md` for complete implementation details.
    - `cmd/import-processor/main.go` - Import data processing
 
 3. **Documentation**:
-   - `PHASE6_MEDIA_IMPORT_EXPORT.md` - Comprehensive implementation guide
+   - `docs/archive/phases/PHASE6_MEDIA_IMPORT_EXPORT.md` - Comprehensive implementation guide
 
 ### Key Features:
 1. **Job-Based Architecture**: All async operations use DynamoDB job tracking
@@ -757,20 +748,6 @@ Lesser's admin API needs to support both Mastodon-compatible admin endpoints and
 - [x] Update search service to use DynamoDBAPI interface (TODO in client.go:103) ✅ COMPLETED
 - [x] Implement follower tracking for search (TODO in search_helpers.go:62) ✅ IMPLEMENTED via loadUserFollowing
 
-## Testing & Documentation
-
-### Testing Requirements
-- [ ] Add integration tests for all new endpoints
-- [ ] Test OAuth flow end-to-end
-- [ ] Test federation with real Mastodon instances
-- [ ] Performance testing for trending/discovery features
-
-### Documentation
-- [ ] Update API documentation
-- [ ] Add OAuth setup guide
-- [ ] Document configuration options
-- [ ] Create migration guides
-
 ## Priority Matrix
 
 ### Critical (Blocks Mastodon clients) - COMPLETED ✅
@@ -830,18 +807,13 @@ Lesser's admin API needs to support both Mastodon-compatible admin endpoints and
     - Privacy policy and terms of service
   - ✅ Announcements (4.2) - COMPLETED
   - ✅ Custom Emojis (4.3) - COMPLETED
-- **Weeks 6-7**: User features (reports, domain blocks, preferences)
-- **Weeks 8-9**: Media and import/export
-- **Week 10**: Admin API (Phase 7) - MOSTLY COMPLETE ✅
-  - ✅ Core admin management (7.1) - All account actions completed
-  - ✅ Moderation integration (7.2) - All endpoints implemented with full storage support
-  - ✅ Reports management (7.3) - All endpoints implemented with full storage support
-  - ✅ Domain & Federation management (7.4) - COMPLETED
-- **Ongoing**: Infrastructure improvements and technical debt
+- **Phase 5**: ✅ COMPLETED - User features (reports, domain blocks, preferences)
+- **Phase 6**: ✅ COMPLETED - Media and import/export
+- **Phase 7**: ✅ COMPLETED - Admin API - All endpoints fully implemented
 
 Total estimated time: 10 weeks for full Mastodon API compatibility
 
-**Note**: Phases 1, 2, and 3 completed ahead of schedule with all features fully implemented. This includes:
+**Note**: All phases completed with full features implemented. This includes:
 - Complete OAuth flow with app verification
 - All account management features (relationships, pins, notes)
 - Content features (status operations, scheduled posts, hashtag following)
@@ -854,34 +826,28 @@ Total estimated time: 10 weeks for full Mastodon API compatibility
 ### Search Architecture
 Lesser has an advanced search implementation that goes beyond basic Mastodon search:
 - **Multi-strategy search**: Combines exact match, prefix, display name, and popularity strategies
-- **AI-powered search**: Optional fuzzy search (OpenSearch) and semantic search (AWS Bedrock)
+- [X] AI-powered search: Semantic search with AWS Bedrock embeddings
 - **Optimized indexes**: Uses DynamoDB GSIs for efficient searching:
   - GSI1: Username prefix search
   - GSI2: Display name search  
   - GSI4: Popularity-based search (by follower count buckets)
+  - GSI5-7: Status content, hashtag, and author search
 - **Search analytics**: Tracks search queries and results for improving relevance
 - **Caching layer**: Reduces repeated searches
 - **Remote search**: WebFinger integration for federated actor discovery
 
-The main gaps are:
-- Status/post search (currently only searches by exact URL) - **Detailed implementation plan added in section 3.1.1**
-- ~~Hashtag search (basic implementation exists but incomplete)~~ ✅ COMPLETED
-- ~~v2 search endpoint format (v1 returns flat results, v2 groups by type)~~ ✅ COMPLETED
-
 ### Enhanced Status Search Benefits
 
-The proposed status search implementation provides several advantages over basic approaches:
+The implemented status search provides several advantages:
 
-1. **Multi-Strategy Search**: Unlike simple content scanning, uses 7 different search strategies for comprehensive results
-2. **Performance**: GSI-based indexing provides sub-200ms search latency vs seconds for table scans
+1. **Multi-Strategy Search**: Uses 7 different search strategies for comprehensive results
+2. **Performance**: GSI-based indexing provides sub-200ms search latency
 3. **Relevance**: Advanced ranking algorithm considers recency, engagement, author authority, and personal affinity
 4. **AI-Powered**: Semantic search understands meaning, not just keywords
 5. **Personalization**: Results tailored to user's social graph and interests
 6. **Cost-Effective**: Smart indexing and caching minimize AWS service costs
 7. **Scalable**: Can handle millions of statuses without performance degradation
 8. **Real-time**: New content searchable within 30 seconds
-
-This brings Lesser's search capabilities on par with or beyond major social platforms.
 
 **Alignment with Lesser's Philosophy**:
 - **Cost Transparency**: Each search operation tracks its cost (DynamoDB reads, Bedrock API calls, etc.)
