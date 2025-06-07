@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // InstanceConfig holds static instance configuration
@@ -43,7 +44,7 @@ func GetInstanceConfig() *InstanceConfig {
 		MaxStatusChars: getInstanceEnvInt("MAX_STATUS_CHARS", 5000),
 		MaxMediaSize:   getInstanceEnvInt64("MAX_MEDIA_SIZE", 10*1024*1024), // 10MB
 		MaxVideoSize:   getInstanceEnvInt64("MAX_VIDEO_SIZE", 40*1024*1024), // 40MB
-		Languages:      []string{"en"},                                      // TODO: Make configurable
+		Languages:      getInstanceEnvLanguages("INSTANCE_LANGUAGES", []string{"en"}),
 
 		// Feature flags
 		RegistrationsOpen: getInstanceEnvBool("REGISTRATIONS_OPEN", false),
@@ -82,6 +83,28 @@ func getInstanceEnvBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		if b, err := strconv.ParseBool(value); err == nil {
 			return b
+		}
+	}
+	return defaultValue
+}
+
+func getInstanceEnvLanguages(key string, defaultValue []string) []string {
+	if value := os.Getenv(key); value != "" {
+		// Parse comma-separated list of languages
+		languages := strings.Split(value, ",")
+		// Trim whitespace from each language
+		for i := range languages {
+			languages[i] = strings.TrimSpace(languages[i])
+		}
+		// Filter out empty strings
+		var filtered []string
+		for _, lang := range languages {
+			if lang != "" {
+				filtered = append(filtered, lang)
+			}
+		}
+		if len(filtered) > 0 {
+			return filtered
 		}
 	}
 	return defaultValue

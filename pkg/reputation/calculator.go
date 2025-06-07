@@ -11,15 +11,17 @@ import (
 
 // Calculator computes reputation scores for actors
 type Calculator struct {
-	db     *dynamodb.Client
-	logger *zap.Logger
+	db          *dynamodb.Client
+	logger      *zap.Logger
+	instanceURL string
 }
 
 // NewCalculator creates a new reputation calculator
-func NewCalculator(db *dynamodb.Client, logger *zap.Logger) *Calculator {
+func NewCalculator(db *dynamodb.Client, instanceURL string, logger *zap.Logger) *Calculator {
 	return &Calculator{
-		db:     db,
-		logger: logger,
+		db:          db,
+		logger:      logger,
+		instanceURL: instanceURL,
 	}
 }
 
@@ -27,7 +29,7 @@ func NewCalculator(db *dynamodb.Client, logger *zap.Logger) *Calculator {
 func (c *Calculator) Calculate(ctx context.Context, input *CalculationInput) (*Reputation, error) {
 	rep := &Reputation{
 		ActorID:      input.ActorID,
-		InstanceURL:  "https://lesser.example.com", // TODO: Get from config
+		InstanceURL:  c.instanceURL, // Use configured instance URL
 		CalculatedAt: time.Now(),
 		Version:      "1.0",
 

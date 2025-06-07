@@ -71,6 +71,9 @@ func (s *dynamoDBStorage) SearchStatusesWithOptions(ctx context.Context, query s
 }
 
 // basicStatusSearch provides a fallback basic search implementation
+// TODO: This method is kept as a fallback option but is currently unused in favor of the more advanced StatusSearchService.
+// It may be useful for debugging or as a simpler alternative when the search service is unavailable.
+// nolint:unused
 func (s *dynamoDBStorage) basicStatusSearch(ctx context.Context, query string, limit int) ([]*storage.StatusSearchResult, error) {
 	if query == "" || limit <= 0 {
 		return []*storage.StatusSearchResult{}, nil

@@ -55,6 +55,9 @@ func NewSemanticSearchStrategy(service *SearchService, cfg aws.Config) (*Semanti
 		service.logger.Warn("OpenSearch endpoint not configured, vector search will fall back to DynamoDB")
 	}
 
+	// TEMPORARY: Force empty to use DynamoDB fallback and save costs
+	opensearchURL = ""
+
 	return &SemanticSearchStrategy{
 		service:        service,
 		embedding:      embeddingService,

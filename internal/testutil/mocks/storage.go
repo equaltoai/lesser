@@ -73,10 +73,19 @@ func (m *BaseMockStorage) CreateActor(ctx context.Context, actor *activitypub.Ac
 func (m *BaseMockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
 	return nil, nil
 }
+func (m *BaseMockStorage) GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *storage.ActorMetadata, error) {
+	return nil, nil, nil
+}
 func (m *BaseMockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
 	return "", nil
 }
 func (m *BaseMockStorage) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
+	return nil
+}
+func (m *BaseMockStorage) UpdateActorLastStatusTime(ctx context.Context, username string) error {
+	return nil
+}
+func (m *BaseMockStorage) SetActorFields(ctx context.Context, username string, fields []storage.ActorField) error {
 	return nil
 }
 func (m *BaseMockStorage) DeleteActor(ctx context.Context, username string) error {
@@ -720,6 +729,15 @@ func (m *BaseMockStorage) GetModerationDecision(ctx context.Context, objectID st
 func (m *BaseMockStorage) GetModerationHistory(ctx context.Context, objectID string) (*storage.ModerationHistory, error) {
 	return nil, nil
 }
+func (m *BaseMockStorage) GetModerationEvents(ctx context.Context, filter *storage.ModerationEventFilter, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
+	return []*storage.ModerationEvent{}, "", nil
+}
+func (m *BaseMockStorage) CreateAdminReview(ctx context.Context, eventID string, adminID string, action storage.ActionType, reason string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetReviewerStats(ctx context.Context, reviewerID string) (*storage.ReviewerStats, error) {
+	return &storage.ReviewerStats{}, nil
+}
 
 // Trust operations
 func (m *BaseMockStorage) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
@@ -748,6 +766,9 @@ func (m *BaseMockStorage) UpdateTrustScore(ctx context.Context, score *storage.T
 }
 func (m *BaseMockStorage) RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error {
 	return nil
+}
+func (m *BaseMockStorage) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
+	return []*storage.TrustRelationship{}, nil
 }
 
 // Account pin operations
@@ -951,6 +972,94 @@ func (m *BaseMockStorage) UpdateReportStatus(ctx context.Context, id string, sta
 func (m *BaseMockStorage) GetReportStats(ctx context.Context, username string) (*storage.ReportStats, error) {
 	return &storage.ReportStats{}, nil
 }
+func (m *BaseMockStorage) IncrementFalseReports(ctx context.Context, username string) error {
+	return nil
+}
+func (m *BaseMockStorage) AssignReport(ctx context.Context, reportID string, assignedTo string) error {
+	return nil
+}
+func (m *BaseMockStorage) UnassignReport(ctx context.Context, reportID string) error {
+	return nil
+}
+
+// Instance domain block operations
+func (m *BaseMockStorage) CreateInstanceDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error {
+	return nil
+}
+func (m *BaseMockStorage) GetInstanceDomainBlock(ctx context.Context, domain string) (*storage.InstanceDomainBlock, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) GetInstanceDomainBlockByID(ctx context.Context, id string) (*storage.InstanceDomainBlock, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) ListInstanceDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.InstanceDomainBlock, string, error) {
+	return []*storage.InstanceDomainBlock{}, "", nil
+}
+func (m *BaseMockStorage) UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]interface{}) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteInstanceDomainBlock(ctx context.Context, domain string) error {
+	return nil
+}
+func (m *BaseMockStorage) IsInstanceDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
+	return false, nil, nil
+}
+
+// Federation domain management operations (admin-level)
+func (m *BaseMockStorage) GetDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.InstanceDomainBlock, string, error) {
+	return nil, "", nil
+}
+func (m *BaseMockStorage) GetDomainBlock(ctx context.Context, id string) (*storage.InstanceDomainBlock, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) CreateDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error {
+	return nil
+}
+func (m *BaseMockStorage) UpdateDomainBlock(ctx context.Context, id string, updates map[string]interface{}) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteDomainBlock(ctx context.Context, id string) error {
+	return nil
+}
+func (m *BaseMockStorage) IsDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
+	return false, nil, nil
+}
+
+// Domain allow operations
+func (m *BaseMockStorage) GetDomainAllows(ctx context.Context, limit int, cursor string) ([]*storage.DomainAllow, string, error) {
+	return []*storage.DomainAllow{}, "", nil
+}
+func (m *BaseMockStorage) CreateDomainAllow(ctx context.Context, allow *storage.DomainAllow) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteDomainAllow(ctx context.Context, id string) error {
+	return nil
+}
+
+// Federation instance tracking
+func (m *BaseMockStorage) GetInstanceInfo(ctx context.Context, domain string) (*storage.InstanceInfo, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) UpsertInstanceInfo(ctx context.Context, info *storage.InstanceInfo) error {
+	return nil
+}
+func (m *BaseMockStorage) GetKnownInstances(ctx context.Context, limit int, cursor string) ([]*storage.InstanceInfo, string, error) {
+	return []*storage.InstanceInfo{}, "", nil
+}
+func (m *BaseMockStorage) GetFederationStatistics(ctx context.Context, startTime, endTime time.Time) (*storage.FederationStats, error) {
+	return &storage.FederationStats{}, nil
+}
+
+// Email domain blocks
+func (m *BaseMockStorage) CreateEmailDomainBlock(ctx context.Context, block *storage.EmailDomainBlock) error {
+	return nil
+}
+func (m *BaseMockStorage) GetEmailDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.EmailDomainBlock, string, error) {
+	return []*storage.EmailDomainBlock{}, "", nil
+}
+func (m *BaseMockStorage) DeleteEmailDomainBlock(ctx context.Context, id string) error {
+	return nil
+}
 
 // MockStorage is a testify mock implementation that embeds BaseMockStorage
 // This provides default no-op implementations for all methods while allowing
@@ -1025,6 +1134,27 @@ func (m *MockStorage) GetActor(ctx context.Context, username string) (*activityp
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*activitypub.Actor), args.Error(1)
+}
+
+// GetActorWithMetadata mocks the GetActorWithMetadata method
+func (m *MockStorage) GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *storage.ActorMetadata, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*activitypub.Actor), args.Get(1).(*storage.ActorMetadata), args.Error(2)
+}
+
+// UpdateActorLastStatusTime mocks the UpdateActorLastStatusTime method
+func (m *MockStorage) UpdateActorLastStatusTime(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+// SetActorFields mocks the SetActorFields method
+func (m *MockStorage) SetActorFields(ctx context.Context, username string, fields []storage.ActorField) error {
+	args := m.Called(ctx, username, fields)
+	return args.Error(0)
 }
 
 // CreateActivity with mock support
@@ -1181,4 +1311,29 @@ func (m *MockStorage) GetOAuthClient(ctx context.Context, clientID string) (*sto
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*storage.OAuthClient), args.Error(1)
+}
+
+// GetStatusCount retrieves the number of statuses posted by an actor
+func (m *BaseMockStorage) GetStatusCount(ctx context.Context, actorID string) (int, error) {
+	return 0, nil
+}
+
+// GetFollowerCount retrieves the exact follower count for an actor
+func (m *BaseMockStorage) GetFollowerCount(ctx context.Context, actorID string) (int, error) {
+	return 0, nil
+}
+
+// GetLatestStatus retrieves the most recent status by an actor
+func (m *BaseMockStorage) GetLatestStatus(ctx context.Context, actorID string) (*storage.StatusSearchResult, error) {
+	return nil, nil
+}
+
+// GetCommunityNotesByAuthor retrieves community notes authored by a specific actor
+func (m *BaseMockStorage) GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error) {
+	return nil, "", nil
+}
+
+// GetCommunityNoteVotes retrieves votes on a specific community note
+func (m *BaseMockStorage) GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error) {
+	return nil, nil
 }

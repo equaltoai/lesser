@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"go.uber.org/zap"
 )
 
@@ -40,6 +41,7 @@ type dynamoDBStorage struct {
 	statusSearchService *StatusSearchService
 	embeddingService    *EmbeddingService
 	domain              string
+	kmsClient           *kms.Client
 }
 
 var (
@@ -139,6 +141,9 @@ func New() (storage.Storage, error) {
 		statusSearchService.comprehend = comprehend.NewFromConfig(awsCfg)
 		dynStorage.statusSearchService = statusSearchService
 	}
+
+	// Initialize KMS client for private key encryption
+	dynStorage.kmsClient = kms.NewFromConfig(awsCfg)
 
 	return dynStorage, nil
 }

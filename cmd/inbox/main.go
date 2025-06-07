@@ -282,6 +282,35 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		}), nil
 	}
 
+	// Extract domain from actor URL
+	actorDomain := extractDomainFromURL(activity.Actor)
+	if actorDomain != "" {
+		// Check if the domain is blocked at the instance level
+		isBlocked, block, err := store.IsDomainBlocked(ctx, actorDomain)
+		if err != nil {
+			log.Error("failed to check domain block status",
+				zap.String("domain", actorDomain),
+				zap.Error(err))
+			// Continue processing on error - fail open rather than closed
+		} else if isBlocked && block != nil {
+			log.Info("rejecting activity from blocked domain",
+				zap.String("domain", actorDomain),
+				zap.String("severity", block.Severity),
+				zap.String("actor", activity.Actor))
+
+			// For suspended domains, reject completely
+			if block.Severity == "suspend" {
+				return &events.APIGatewayV2HTTPResponse{
+					StatusCode: http.StatusForbidden,
+					Body:       `{"error": "Domain is suspended"}`,
+				}, nil
+			}
+
+			// For silenced domains, we accept but may limit visibility
+			// This is handled later in processing
+		}
+	}
+
 	// Fetch the sender's public key
 	publicKey, err := fetchActorPublicKey(ctx, activity.Actor)
 	if err != nil {
@@ -811,6 +840,15 @@ func generateRandomString(length int) string {
 
 func timePtr(t time.Time) *time.Time {
 	return &t
+}
+
+// extractDomainFromURL extracts the domain from an ActivityPub actor URL
+func extractDomainFromURL(actorURL string) string {
+	u, err := url.Parse(actorURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 func main() {

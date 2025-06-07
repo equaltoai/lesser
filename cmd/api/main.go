@@ -1191,7 +1191,229 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		return handler.HandleSSEStream(ctx, request)
 	}
 
-	// TODO: Admin API endpoints
+	// ==================== ADMIN API ENDPOINTS ====================
+	// Admin endpoints require admin role
+	if strings.HasPrefix(path, "/admin/") {
+		adminPath := strings.TrimPrefix(path, "/admin/")
+
+		// Admin accounts endpoints
+		if adminPath == "accounts" && method == http.MethodGet {
+			return handler.HandleAdminGetAccounts(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "accounts/") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) >= 2 {
+				accountID := parts[1]
+
+				if len(parts) == 2 && method == http.MethodGet {
+					// GET /api/v1/admin/accounts/:id
+					return handler.HandleAdminGetAccount(ctx, request, accountID)
+				} else if len(parts) == 3 {
+					action := parts[2]
+					switch action {
+					case "action":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/accounts/:id/action
+							return handler.HandleAdminAccountAction(ctx, request, accountID)
+						}
+					case "approve":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/accounts/:id/approve
+							return handler.HandleAdminApproveAccount(ctx, request, accountID)
+						}
+					case "reject":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/accounts/:id/reject
+							return handler.HandleAdminRejectAccount(ctx, request, accountID)
+						}
+					case "enable":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/accounts/:id/enable
+							return handler.HandleAdminEnableAccount(ctx, request, accountID)
+						}
+					case "unsilence":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/accounts/:id/unsilence
+							return handler.HandleAdminUnsilenceAccount(ctx, request, accountID)
+						}
+					case "unsuspend":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/accounts/:id/unsuspend
+							return handler.HandleAdminUnsuspendAccount(ctx, request, accountID)
+						}
+					case "unsensitive":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/accounts/:id/unsensitive
+							return handler.HandleAdminUnsensitiveAccount(ctx, request, accountID)
+						}
+					}
+				}
+			}
+		}
+
+		// Admin reports endpoints
+		if adminPath == "reports" && method == http.MethodGet {
+			return handler.HandleAdminGetReports(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "reports/") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) >= 2 {
+				reportID := parts[1]
+
+				if len(parts) == 2 && method == http.MethodGet {
+					// GET /api/v1/admin/reports/:id
+					return handler.HandleAdminGetReport(ctx, request, reportID)
+				} else if len(parts) == 3 {
+					action := parts[2]
+					switch action {
+					case "resolve":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/reports/:id/resolve
+							return handler.HandleAdminResolveReport(ctx, request, reportID)
+						}
+					case "reopen":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/reports/:id/reopen
+							return handler.HandleAdminReopenReport(ctx, request, reportID)
+						}
+					case "assign_to_self":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/reports/:id/assign_to_self
+							return handler.HandleAdminAssignReport(ctx, request, reportID)
+						}
+					case "unassign":
+						if method == http.MethodPost {
+							// POST /api/v1/admin/reports/:id/unassign
+							return handler.HandleAdminUnassignReport(ctx, request, reportID)
+						}
+					}
+				}
+			}
+		}
+
+		// Admin moderation overview
+		if adminPath == "moderation/overview" && method == http.MethodGet {
+			return handler.HandleAdminModerationOverview(ctx, request)
+		}
+
+		// Admin moderation events
+		if adminPath == "moderation/events" && method == http.MethodGet {
+			return handler.HandleAdminGetModerationEvents(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "moderation/events/") && strings.HasSuffix(adminPath, "/override") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) == 4 && method == http.MethodPost {
+				eventID := parts[2]
+				return handler.HandleAdminOverrideModerationEvent(ctx, request, eventID)
+			}
+		}
+
+		// Admin trust graph management
+		if adminPath == "moderation/trust/graph" && method == http.MethodGet {
+			return handler.HandleAdminGetTrustGraph(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "moderation/trust/") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) == 4 && method == http.MethodPut {
+				fromActorID := parts[2]
+				toActorID := parts[3]
+				return handler.HandleAdminUpdateTrust(ctx, request, fromActorID, toActorID)
+			}
+		}
+
+		// Admin reviewer management
+		if adminPath == "moderation/reviewers" && method == http.MethodGet {
+			return handler.HandleAdminGetReviewers(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "moderation/reviewers/") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) == 4 {
+				userID := parts[2]
+				action := parts[3]
+				switch action {
+				case "promote":
+					if method == http.MethodPost {
+						return handler.HandleAdminPromoteModerator(ctx, request, userID)
+					}
+				case "demote":
+					if method == http.MethodPost {
+						return handler.HandleAdminDemoteModerator(ctx, request, userID)
+					}
+				}
+			}
+		}
+
+		// Admin domain blocks (federation management)
+		if adminPath == "domain_blocks" && method == http.MethodGet {
+			return handler.HandleGetAdminDomainBlocks(ctx, request)
+		}
+		if adminPath == "domain_blocks" && method == http.MethodPost {
+			return handler.HandleCreateAdminDomainBlock(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "domain_blocks/") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) == 2 {
+				switch method {
+				case http.MethodGet:
+					return handler.HandleGetAdminDomainBlock(ctx, request)
+				case http.MethodPut:
+					return handler.HandleUpdateAdminDomainBlock(ctx, request)
+				case http.MethodDelete:
+					return handler.HandleDeleteAdminDomainBlock(ctx, request)
+				}
+			}
+		}
+
+		// Admin domain allows (allowlist mode)
+		if adminPath == "domain_allows" && method == http.MethodGet {
+			return handler.HandleGetAdminDomainAllows(ctx, request)
+		}
+		if adminPath == "domain_allows" && method == http.MethodPost {
+			return handler.HandleCreateAdminDomainAllow(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "domain_allows/") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) == 2 && method == http.MethodDelete {
+				return handler.HandleDeleteAdminDomainAllow(ctx, request)
+			}
+		}
+
+		// Admin federation insights
+		if adminPath == "federation/statistics" && method == http.MethodGet {
+			return handler.HandleGetFederationStatistics(ctx, request)
+		}
+		if adminPath == "federation/instances" && method == http.MethodGet {
+			return handler.HandleGetFederationInstances(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "federation/instance/") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) == 3 && method == http.MethodGet {
+				return handler.HandleGetFederationInstance(ctx, request)
+			}
+		}
+
+		// Admin email domain blocks
+		if adminPath == "email_domain_blocks" && method == http.MethodGet {
+			return handler.HandleGetEmailDomainBlocks(ctx, request)
+		}
+		if adminPath == "email_domain_blocks" && method == http.MethodPost {
+			return handler.HandleCreateEmailDomainBlock(ctx, request)
+		}
+		if strings.HasPrefix(adminPath, "email_domain_blocks/") {
+			parts := strings.Split(adminPath, "/")
+			if len(parts) == 2 && method == http.MethodDelete {
+				return handler.HandleDeleteEmailDomainBlock(ctx, request)
+			}
+		}
+
+		// TODO: More admin endpoints
+		// - IP blocks
+		// - Webhooks
+		// - Instance configuration
+		// - Analytics
+	}
+
+	// TODO: More admin API endpoints
 
 	// Unknown endpoint
 	return common.NotFound(fmt.Errorf("unknown API endpoint: %s %s", method, path)), nil

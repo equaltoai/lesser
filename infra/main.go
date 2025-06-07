@@ -12,9 +12,9 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/dynamodb"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lambda"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/opensearch"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/route53"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/s3"
+	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/sqs"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
@@ -203,6 +203,63 @@ func main() {
 			return err
 		}
 
+		// Create SQS Dead Letter Queue for federation
+		federationDLQ, err := sqs.NewQueue(ctx, "lesser-federation-dlq", &sqs.QueueArgs{
+			Name:                     pulumi.Sprintf("lesser-federation-dlq-%s", environment),
+			MessageRetentionSeconds:  pulumi.Int(1209600), // 14 days
+			VisibilityTimeoutSeconds: pulumi.Int(30),
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Federation DLQ"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create SQS Queue for federation delivery
+		federationQueue, err := sqs.NewQueue(ctx, "lesser-federation-queue", &sqs.QueueArgs{
+			Name:                     pulumi.Sprintf("lesser-federation-queue-%s", environment),
+			VisibilityTimeoutSeconds: pulumi.Int(300),    // 5 minutes
+			MessageRetentionSeconds:  pulumi.Int(345600), // 4 days
+			ReceiveWaitTimeSeconds:   pulumi.Int(20),     // Long polling
+			RedrivePolicy: federationDLQ.Arn.ApplyT(func(dlqArn string) (string, error) {
+				policy := map[string]interface{}{
+					"deadLetterTargetArn": dlqArn,
+					"maxReceiveCount":     5, // After 5 failed attempts, send to DLQ
+				}
+				policyJSON, err := json.Marshal(policy)
+				return string(policyJSON), err
+			}).(pulumi.StringOutput),
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Federation Queue"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create SQS Queue for push notifications
+		pushNotificationQueue, err := sqs.NewQueue(ctx, "lesser-push-notification-queue", &sqs.QueueArgs{
+			Name:                     pulumi.Sprintf("lesser-push-notification-queue-%s", environment),
+			VisibilityTimeoutSeconds: pulumi.Int(60),    // 1 minute
+			MessageRetentionSeconds:  pulumi.Int(86400), // 1 day
+			ReceiveWaitTimeSeconds:   pulumi.Int(20),    // Long polling
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Push Notification Queue"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Export queue URLs for reference
+		ctx.Export("federationQueueUrl", federationQueue.ID())
+		ctx.Export("federationDLQUrl", federationDLQ.ID())
+		ctx.Export("pushNotificationQueueUrl", pushNotificationQueue.ID())
+
 		// Create ACM certificate for HTTPS
 		certificate, err := acm.NewCertificate(ctx, "lesser-cert", &acm.CertificateArgs{
 			DomainName: pulumi.String(domain),
@@ -261,74 +318,6 @@ func main() {
 			Bucket: mediaBucket.ID(),
 			Policy: bucketPolicyDocument,
 		})
-		if err != nil {
-			return err
-		}
-
-		// Create OpenSearch Serverless encryption security policy
-		collectionName := pulumi.Sprintf("lesser-search-%s", environment)
-		encryptionPolicy, err := opensearch.NewServerlessSecurityPolicy(ctx, "lesser-search-encryption", &opensearch.ServerlessSecurityPolicyArgs{
-			Name: pulumi.String("lesser-search-encryption"),
-			Type: pulumi.String("encryption"),
-			Policy: collectionName.ApplyT(func(name string) (string, error) {
-				policy := map[string]interface{}{
-					"Rules": []interface{}{
-						map[string]interface{}{
-							"Resource": []string{
-								fmt.Sprintf("collection/%s", name),
-							},
-							"ResourceType": "collection",
-						},
-					},
-					"AWSOwnedKey": true,
-				}
-				policyJSON, err := json.Marshal(policy)
-				return string(policyJSON), err
-			}).(pulumi.StringOutput),
-		})
-		if err != nil {
-			return err
-		}
-
-		// Create OpenSearch Serverless network security policy
-		networkPolicy, err := opensearch.NewServerlessSecurityPolicy(ctx, "lesser-search-network", &opensearch.ServerlessSecurityPolicyArgs{
-			Name: pulumi.String("lesser-search-network"),
-			Type: pulumi.String("network"),
-			Policy: collectionName.ApplyT(func(name string) (string, error) {
-				policy := []interface{}{
-					map[string]interface{}{
-						"Rules": []interface{}{
-							map[string]interface{}{
-								"Resource": []string{
-									fmt.Sprintf("collection/%s", name),
-								},
-								"ResourceType": "collection",
-							},
-						},
-						"AllowFromPublic": true,
-					},
-				}
-				policyJSON, err := json.Marshal(policy)
-				return string(policyJSON), err
-			}).(pulumi.StringOutput),
-		})
-		if err != nil {
-			return err
-		}
-
-		// Create OpenSearch Serverless collection
-		searchCollection, err := opensearch.NewServerlessCollection(ctx, "lesser-search", &opensearch.ServerlessCollectionArgs{
-			Name:        collectionName,
-			Type:        pulumi.String("SEARCH"),
-			Description: pulumi.String("Lesser ActivityPub search collection for actors"),
-			Tags: pulumi.StringMap{
-				"Name":        pulumi.String("Lesser Search Collection"),
-				"Environment": pulumi.String(environment),
-			},
-		}, pulumi.DependsOn([]pulumi.Resource{
-			encryptionPolicy,
-			networkPolicy,
-		}))
 		if err != nil {
 			return err
 		}
@@ -493,17 +482,29 @@ func main() {
 			return err
 		}
 
-		// Create OpenSearch policy for Lambda
-		opensearchPolicy := searchCollection.Arn.ApplyT(func(arn string) (string, error) {
+		// Create SQS policy for Lambda
+		sqsPolicy := pulumi.All(federationQueue.Arn, federationDLQ.Arn, pushNotificationQueue.Arn).ApplyT(func(args []interface{}) (string, error) {
+			federationQueueArn := args[0].(string)
+			federationDLQArn := args[1].(string)
+			pushQueueArn := args[2].(string)
 			policy := map[string]interface{}{
 				"Version": "2012-10-17",
 				"Statement": []interface{}{
 					map[string]interface{}{
 						"Effect": "Allow",
 						"Action": []string{
-							"aoss:APIAccessAll",
+							"sqs:SendMessage",
+							"sqs:ReceiveMessage",
+							"sqs:DeleteMessage",
+							"sqs:GetQueueAttributes",
+							"sqs:ChangeMessageVisibility",
+							"sqs:GetQueueUrl",
 						},
-						"Resource": arn,
+						"Resource": []string{
+							federationQueueArn,
+							federationDLQArn,
+							pushQueueArn,
+						},
 					},
 				},
 			}
@@ -511,13 +512,15 @@ func main() {
 			return string(policyJSON), err
 		})
 
-		_, err = iam.NewRolePolicy(ctx, "lambda-opensearch", &iam.RolePolicyArgs{
+		_, err = iam.NewRolePolicy(ctx, "lambda-sqs", &iam.RolePolicyArgs{
 			Role:   lambdaRole.Name,
-			Policy: opensearchPolicy,
+			Policy: sqsPolicy,
 		})
 		if err != nil {
 			return err
 		}
+
+		// OpenSearch policy removed - using DynamoDB search instead
 
 		// Create Bedrock and Comprehend policy for Lambda
 		aiPolicy := pulumi.String(`{
@@ -552,63 +555,20 @@ func main() {
 			return err
 		}
 
-		// Create OpenSearch data access policy now that Lambda role exists
-		_, err = opensearch.NewServerlessAccessPolicy(ctx, "lesser-search-data-access", &opensearch.ServerlessAccessPolicyArgs{
-			Name: pulumi.String("lesser-search-data-access"),
-			Type: pulumi.String("data"),
-			Policy: pulumi.All(collectionName, lambdaRole.Arn).ApplyT(func(args []interface{}) (string, error) {
-				collection := args[0].(string)
-				roleArn := args[1].(string)
-				policy := []interface{}{
-					map[string]interface{}{
-						"Rules": []interface{}{
-							map[string]interface{}{
-								"Resource": []string{
-									fmt.Sprintf("collection/%s", collection),
-								},
-								"Permission": []string{
-									"aoss:CreateCollectionItems",
-									"aoss:UpdateCollectionItems",
-									"aoss:DeleteCollectionItems",
-									"aoss:DescribeCollectionItems",
-								},
-								"ResourceType": "collection",
-							},
-							map[string]interface{}{
-								"Resource": []string{
-									fmt.Sprintf("index/%s/*", collection),
-								},
-								"Permission": []string{
-									"aoss:CreateIndex",
-									"aoss:UpdateIndex",
-									"aoss:DeleteIndex",
-									"aoss:DescribeIndex",
-									"aoss:ReadDocument",
-									"aoss:WriteDocument",
-								},
-								"ResourceType": "index",
-							},
-						},
-						"Principal": []string{roleArn},
-					},
-				}
-				policyJSON, err := json.Marshal(policy)
-				return string(policyJSON), err
-			}).(pulumi.StringOutput),
-		})
-		if err != nil {
-			return err
-		}
+		// OpenSearch data access policy removed - using DynamoDB search instead
 
 		// Lambda environment variables
 		lambdaEnv := pulumi.StringMap{
-			"DYNAMO_TABLE_NAME":       table.Name,
-			"S3_BUCKET_NAME":          mediaBucket.Bucket,
-			"CDN_DOMAIN":              pulumi.Sprintf("media.%s", domain),
-			"DOMAIN":                  pulumi.String(domain),
-			"JWT_SECRET":              jwtSecret,
-			"OPENSEARCH_ENDPOINT":     searchCollection.CollectionEndpoint,
+			"DYNAMO_TABLE_NAME": table.Name,
+			"S3_BUCKET_NAME":    mediaBucket.Bucket,
+			"CDN_DOMAIN":        pulumi.Sprintf("media.%s", domain),
+			"DOMAIN":            pulumi.String(domain),
+			"JWT_SECRET":        jwtSecret,
+			// OpenSearch removed - using DynamoDB search
 			"COST_HISTORY_TABLE_NAME": costHistoryTable.Name,
+			// SQS Queue URLs
+			"FEDERATION_QUEUE_URL":        federationQueue.ID(),
+			"PUSH_NOTIFICATION_QUEUE_URL": pushNotificationQueue.ID(),
 			// Instance configuration
 			"INSTANCE_TITLE":       pulumi.String("Lesser Instance"),
 			"INSTANCE_SHORT_DESC":  pulumi.String("A personal ActivityPub server"),
@@ -681,7 +641,20 @@ func main() {
 		if err != nil {
 			return err
 		}
+		_ = searchIndexerLambda // Intentionally unused - OpenSearch removed
 		costAggregatorLambda, err := createLambda("cost-aggregator", "cost-aggregator", 60)
+		if err != nil {
+			return err
+		}
+
+		// Create federation delivery Lambda
+		federationDeliveryLambda, err := createLambda("federation-delivery", "federation-delivery", 300)
+		if err != nil {
+			return err
+		}
+
+		// Create push delivery Lambda (already exists in cmd/push-delivery)
+		pushDeliveryLambda, err := createLambda("push-delivery", "push-delivery", 60)
 		if err != nil {
 			return err
 		}
@@ -971,24 +944,24 @@ func main() {
 			return err
 		}
 
-		// Add DynamoDB Streams trigger for search indexer
-		_, err = lambda.NewEventSourceMapping(ctx, "search-indexer-stream", &lambda.EventSourceMappingArgs{
-			EventSourceArn:        table.StreamArn,
-			FunctionName:          searchIndexerLambda.Name,
-			StartingPosition:      pulumi.String("LATEST"),
-			ParallelizationFactor: pulumi.Int(5),
-			MaximumRetryAttempts:  pulumi.Int(3),
-			FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
-				Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
-					&lambda.EventSourceMappingFilterCriteriaFilterArgs{
-						Pattern: pulumi.String(`{"eventName": ["INSERT", "MODIFY", "REMOVE"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "ACTOR#"}]}}}}`),
-					},
-				},
-			},
-		})
-		if err != nil {
-			return err
-		}
+		// Search indexer disabled - OpenSearch removed to save costs
+		// _, err = lambda.NewEventSourceMapping(ctx, "search-indexer-stream", &lambda.EventSourceMappingArgs{
+		// 	EventSourceArn:        table.StreamArn,
+		// 	FunctionName:          searchIndexerLambda.Name,
+		// 	StartingPosition:      pulumi.String("LATEST"),
+		// 	ParallelizationFactor: pulumi.Int(5),
+		// 	MaximumRetryAttempts:  pulumi.Int(3),
+		// 	FilterCriteria: &lambda.EventSourceMappingFilterCriteriaArgs{
+		// 		Filters: lambda.EventSourceMappingFilterCriteriaFilterArray{
+		// 			&lambda.EventSourceMappingFilterCriteriaFilterArgs{
+		// 				Pattern: pulumi.String(`{"eventName": ["INSERT", "MODIFY", "REMOVE"], "dynamodb": {"Keys": {"PK": {"S": [{"prefix": "ACTOR#"}]}}}}`),
+		// 			},
+		// 		},
+		// 	},
+		// })
+		// if err != nil {
+		// 	return err
+		// }
 
 		// Add DynamoDB Streams trigger for cost aggregator
 		_, err = lambda.NewEventSourceMapping(ctx, "cost-aggregator-stream", &lambda.EventSourceMappingArgs{
@@ -1342,13 +1315,34 @@ func main() {
 			return err
 		}
 
+		// Add SQS trigger for federation delivery after other event source mappings
+		_, err = lambda.NewEventSourceMapping(ctx, "federation-delivery-trigger", &lambda.EventSourceMappingArgs{
+			EventSourceArn:                 federationQueue.Arn,
+			FunctionName:                   federationDeliveryLambda.Name,
+			BatchSize:                      pulumi.Int(10),
+			MaximumBatchingWindowInSeconds: pulumi.Int(5),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Add SQS trigger for push notifications
+		_, err = lambda.NewEventSourceMapping(ctx, "push-notification-trigger", &lambda.EventSourceMappingArgs{
+			EventSourceArn:                 pushNotificationQueue.Arn,
+			FunctionName:                   pushDeliveryLambda.Name,
+			BatchSize:                      pulumi.Int(25),
+			MaximumBatchingWindowInSeconds: pulumi.Int(5),
+		})
+		if err != nil {
+			return err
+		}
+
 		// Export important values
 		ctx.Export("apiUrl", pulumi.Sprintf("https://%s", domain))
 		ctx.Export("mediaUrl", pulumi.Sprintf("https://media.%s", domain))
 		ctx.Export("bucketName", mediaBucket.Bucket)
 		ctx.Export("distributionId", mediaDistribution.ID())
 		ctx.Export("apiId", api.ID())
-		ctx.Export("opensearchEndpoint", searchCollection.CollectionEndpoint)
 		ctx.Export("websocketUrl", pulumi.Sprintf("wss://ws.%s", domain))
 
 		return nil

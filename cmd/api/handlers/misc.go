@@ -21,6 +21,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// Define a custom type for context keys to avoid collisions
+type contextKey string
+
+const userIDContextKey contextKey = "user_id"
+
 // HandleSearch performs a search across accounts, statuses, and hashtags
 func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Search can be authenticated or not
@@ -35,7 +40,7 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 			authenticatedUser = claims.Username
 			// Add user ID to context for personalization
-			ctx = context.WithValue(ctx, "user_id", authenticatedUser)
+			ctx = context.WithValue(ctx, userIDContextKey, authenticatedUser)
 		}
 	}
 

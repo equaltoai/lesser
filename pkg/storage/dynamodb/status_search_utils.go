@@ -126,6 +126,10 @@ func extractURLs(content string) []string {
 }
 
 // calculateEngagementBucket determines which engagement bucket a status belongs to
+// TODO: This function is currently unused but is kept for future engagement-based indexing
+// It can be used to create GSI patterns like "ENGAGEMENT#1000#timestamp" for efficient
+// queries of highly-engaged content.
+// nolint:unused
 func calculateEngagementBucket(likes, boosts, replies int) string {
 	total := likes + boosts + replies
 

@@ -29,6 +29,9 @@ type FuzzySearchStrategy struct {
 
 // NewFuzzySearchStrategy creates a new fuzzy search strategy
 func NewFuzzySearchStrategy(service *SearchService) (SearchStrategy, error) {
+	// TEMPORARY: Disable OpenSearch to save costs
+	return nil, fmt.Errorf("OpenSearch is disabled")
+
 	opensearchEndpoint := os.Getenv("OPENSEARCH_ENDPOINT")
 	if opensearchEndpoint == "" {
 		return nil, fmt.Errorf("OPENSEARCH_ENDPOINT environment variable is required")

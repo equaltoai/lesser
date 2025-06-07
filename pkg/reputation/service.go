@@ -52,8 +52,8 @@ func NewService(cfg *Config) (*Service, error) {
 	}
 
 	// Create components
-	calculator := NewCalculator(cfg.DynamoClient, cfg.Logger)
-	verifier := NewVerifier(cfg.InstanceURL, cfg.Logger)
+	calculator := NewCalculator(cfg.DynamoClient, cfg.InstanceURL, cfg.Logger)
+	verifier := NewVerifier(cfg.InstanceURL, cfg.Logger, cfg.Storage)
 	vouchManager := NewVouchManager(cfg.DynamoClient, cfg.VouchTableName, signer, cfg.Logger)
 
 	return &Service{
@@ -164,18 +164,124 @@ func (s *Service) gatherCalculationInput(ctx context.Context, actorID string) (*
 	}
 
 	// Get activity metrics
-	// TODO: Implement these queries
-	input.PostCount = 0     // Placeholder
-	input.FollowerCount = 0 // Placeholder
-	input.LastActive = time.Now()
+	// Get post count
+	postCount, err := s.storage.GetStatusCount(ctx, actorID)
+	if err != nil {
+		s.logger.Warn("Failed to get post count", zap.Error(err))
+		postCount = 0
+	}
+	input.PostCount = postCount
+
+	// Get follower count
+	followerCount, err := s.storage.GetFollowerCount(ctx, actorID)
+	if err != nil {
+		s.logger.Warn("Failed to get follower count", zap.Error(err))
+		input.FollowerCount = 0
+	} else {
+		input.FollowerCount = followerCount
+	}
+
+	// Get last activity time
+	lastStatus, err := s.storage.GetLatestStatus(ctx, actorID)
+	if err != nil {
+		s.logger.Warn("Failed to get last activity", zap.Error(err))
+		input.LastActive = time.Now()
+	} else if lastStatus != nil && !lastStatus.Published.IsZero() {
+		input.LastActive = lastStatus.Published
+	} else {
+		input.LastActive = time.Now()
+	}
 
 	// Get trust relationships
-	// TODO: Query trust graph
-	input.TrustRelationships = []TrustRelationship{}
+	trustRelationships := []TrustRelationship{}
+
+	// Get relationships where this actor trusts others
+	trusting, _, err := s.storage.GetTrustRelationships(ctx, actorID, 100, "")
+	if err != nil {
+		s.logger.Warn("Failed to get trusting relationships", zap.Error(err))
+	} else {
+		for _, rel := range trusting {
+			trustRelationships = append(trustRelationships, TrustRelationship{
+				FromActor:  rel.TrusterID,
+				ToActor:    rel.TrusteeID,
+				TrustScore: rel.Score,
+				Category:   string(rel.Category),
+				UpdatedAt:  rel.Updated,
+			})
+		}
+	}
+
+	// Get relationships where others trust this actor
+	trustedBy, _, err := s.storage.GetTrustedByRelationships(ctx, actorID, 100, "")
+	if err != nil {
+		s.logger.Warn("Failed to get trusted-by relationships", zap.Error(err))
+	} else {
+		for _, rel := range trustedBy {
+			// Avoid duplicates if already added
+			found := false
+			for _, existing := range trustRelationships {
+				if existing.FromActor == rel.TrusterID && existing.ToActor == rel.TrusteeID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				trustRelationships = append(trustRelationships, TrustRelationship{
+					FromActor:  rel.TrusterID,
+					ToActor:    rel.TrusteeID,
+					TrustScore: rel.Score,
+					Category:   string(rel.Category),
+				})
+			}
+		}
+	}
+
+	input.TrustRelationships = trustRelationships
 
 	// Get moderation history
-	// TODO: Query moderation events
-	input.ModerationHistory = []ModerationEvent{}
+	moderationHistory := []ModerationEvent{}
+
+	// Get moderation events where this actor is the subject
+	events, _, err := s.storage.GetModerationEventsByActor(ctx, actorID, 100, "")
+	if err != nil {
+		s.logger.Warn("Failed to get moderation events", zap.Error(err))
+	} else {
+		for _, event := range events {
+			// Convert storage moderation event to reputation moderation event
+			modEvent := ModerationEvent{
+				ID:         event.ID,
+				Type:       string(event.EventType),
+				Outcome:    string(event.EventType), // Use event type as outcome for now
+				OccurredAt: event.Created,
+			}
+
+			// Add severity based on event severity
+			modEvent.Severity = int(event.Severity)
+
+			moderationHistory = append(moderationHistory, modEvent)
+		}
+	}
+
+	// Get reports filed against this actor
+	// GetReportsByTarget already exists in storage interface
+	reports, _, err := s.storage.GetReportsByTarget(ctx, actorID, 100, "")
+	if err != nil {
+		s.logger.Warn("Failed to get reports", zap.Error(err))
+	} else {
+		for _, report := range reports {
+			// Convert report to moderation event
+			modEvent := ModerationEvent{
+				ID:         report.ID,
+				Type:       "report",
+				Outcome:    string(report.Status),
+				OccurredAt: report.CreatedAt,
+				Severity:   2, // Reports are medium severity by default
+			}
+			moderationHistory = append(moderationHistory, modEvent)
+		}
+	}
+
+	input.ModerationHistory = moderationHistory
 
 	// Get vouches
 	vouchesReceived, err := s.vouchManager.GetVouchesForActor(ctx, actorID)
@@ -193,9 +299,34 @@ func (s *Service) gatherCalculationInput(ctx context.Context, actorID string) (*
 	input.VouchesGiven = vouchesGiven
 
 	// Community contributions
-	// TODO: Query community notes and helpful votes
-	input.CommunityNotes = 0
-	input.HelpfulVotes = 0
+	// Query community notes authored by this actor
+	communityNotes, _, err := s.storage.GetCommunityNotesByAuthor(ctx, actorID, 1000, "")
+	if err != nil {
+		s.logger.Warn("Failed to get community notes", zap.Error(err))
+		input.CommunityNotes = 0
+	} else {
+		input.CommunityNotes = len(communityNotes)
+	}
+
+	// Query helpful votes on this actor's community notes
+	helpfulVotes := 0
+	for _, note := range communityNotes {
+		votes, err := s.storage.GetCommunityNoteVotes(ctx, note.ID)
+		if err != nil {
+			s.logger.Warn("Failed to get votes for note",
+				zap.String("note_id", note.ID),
+				zap.Error(err))
+			continue
+		}
+
+		// Count helpful votes
+		for _, vote := range votes {
+			if vote.Helpful {
+				helpfulVotes++
+			}
+		}
+	}
+	input.HelpfulVotes = helpfulVotes
 
 	return input, nil
 }
@@ -313,14 +444,9 @@ func (s *Service) ImportReputation(ctx context.Context, document string) (*Impor
 	}
 
 	// Import vouches
-	vouchesImported := 0
-	for _, vouch := range pr.Vouches {
-		// Verify each vouch is still valid
-		if vouch.Active && !vouch.Revoked && time.Now().Before(vouch.ExpiresAt) {
-			// Store vouch (with verification that it doesn't already exist)
-			// TODO: Implement vouch import
-			vouchesImported++
-		}
+	vouchesImported, err := s.vouchManager.ImportVouches(ctx, pr.Vouches, s.verifier)
+	if err != nil {
+		s.logger.Warn("Some vouches failed to import", zap.Error(err))
 	}
 
 	return &ImportResult{
