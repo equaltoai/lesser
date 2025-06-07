@@ -74,6 +74,14 @@ type Storage interface {
 	ListUsers(ctx context.Context, limit int32, cursor string) ([]*User, string, error)
 	GetActiveUserCount(ctx context.Context, days int) (int64, error)
 
+	// Instance metrics operations
+	GetTotalUserCount(ctx context.Context) (int64, error)
+	GetTotalStatusCount(ctx context.Context) (int64, error)
+	GetTotalDomainCount(ctx context.Context) (int64, error)
+	GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*WeeklyActivity, error)
+	RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error
+	GetContactAccount(ctx context.Context) (*ActorRecord, error)
+
 	// OAuth provider operations
 	GetUserByProviderID(ctx context.Context, provider, providerID string) (*User, error)
 	LinkProviderAccount(ctx context.Context, username, provider, providerID string) error
@@ -1091,6 +1099,8 @@ type UserPreferences struct {
 	DefaultPostingVisibility  string `dynamodbav:"default_posting_visibility"`
 	DefaultMediaSensitive     bool   `dynamodbav:"default_media_sensitive"`
 	ExpandSpoilers            bool   `dynamodbav:"expand_spoilers"`
+	ExpandMedia               string `dynamodbav:"expand_media"`  // "default", "show_all", or "hide_all"
+	AutoplayGifs              bool   `dynamodbav:"autoplay_gifs"` // Whether to autoplay GIFs
 	ShowFollowCounts          bool   `dynamodbav:"show_follow_counts"`
 	PreferredTimelineOrder    string `dynamodbav:"preferred_timeline_order"` // newest, oldest, engagement
 	SearchSuggestionsEnabled  bool   `dynamodbav:"search_suggestions_enabled"`
@@ -1472,4 +1482,12 @@ type RecoveryCodeItem struct {
 	CreatedAt time.Time  `dynamodbav:"created_at"`
 	UsedAt    *time.Time `dynamodbav:"used_at,omitempty"`
 	Position  int        `dynamodbav:"position"` // Position in the list (0-7 typically)
+}
+
+// WeeklyActivity represents activity metrics for a specific week
+type WeeklyActivity struct {
+	Week          int64 `dynamodbav:"week"`          // Unix timestamp of week start
+	Statuses      int64 `dynamodbav:"statuses"`      // Number of statuses created
+	Logins        int64 `dynamodbav:"logins"`        // Number of unique logins
+	Registrations int64 `dynamodbav:"registrations"` // Number of new registrations
 }

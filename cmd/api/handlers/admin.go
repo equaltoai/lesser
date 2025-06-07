@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -53,30 +54,43 @@ func (h *Handler) requireAdmin(ctx context.Context, request events.APIGatewayV2H
 }
 
 // Helper to convert activitypub.Actor to models.Account
-func convertActorToAccount(actor *activitypub.Actor, domain string) models.Account {
-	acct := actor.PreferredUsername
-	// For remote actors, extract domain from ID
-	if strings.Contains(actor.ID, "://") && !strings.Contains(actor.ID, domain) {
-		// Extract domain from actor ID (e.g., https://example.com/users/alice -> example.com)
-		if u, err := url.Parse(actor.ID); err == nil && u.Host != "" {
-			acct = fmt.Sprintf("%s@%s", actor.PreferredUsername, u.Host)
-		}
-	}
+func (h *Handler) convertActorToAccountWithCounts(ctx context.Context, actor *activitypub.Actor) models.Account {
+	// Default avatar and header
+	avatar := fmt.Sprintf("https://%s/avatars/default.png", h.cfg.Domain)
+	header := fmt.Sprintf("https://%s/headers/default.png", h.cfg.Domain)
 
-	avatar := ""
-	if actor.Icon != nil {
+	if actor.Icon != nil && actor.Icon.URL != "" {
 		avatar = actor.Icon.URL
 	}
-
-	header := ""
-	if actor.Image != nil {
+	if actor.Image != nil && actor.Image.URL != "" {
 		header = actor.Image.URL
 	}
 
+	// Get metadata
+	createdAt := time.Now() // Default fallback
+	lastStatusAt := ""
+
+	// Get actor with metadata
+	_, metadata, err := h.store.GetActorWithMetadata(ctx, actor.PreferredUsername)
+	if err == nil && metadata != nil {
+		createdAt = metadata.CreatedAt
+		if metadata.LastStatusAt != nil {
+			lastStatusAt = metadata.LastStatusAt.Format(time.RFC3339)
+		}
+	}
+
+	// Get counts
+	statusesCount, _ := h.store.GetStatusCount(ctx, actor.ID)
+	followersCount, _ := h.store.GetFollowerCount(ctx, actor.ID)
+
+	// Get following count by checking first page
+	following, _, _ := h.store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
+	followingCount := len(following)
+
 	return models.Account{
-		ID:             actor.ID,
+		ID:             actor.PreferredUsername,
 		Username:       actor.PreferredUsername,
-		Acct:           acct,
+		Acct:           actor.PreferredUsername,
 		URL:            actor.URL,
 		DisplayName:    actor.Name,
 		Note:           actor.Summary,
@@ -87,11 +101,11 @@ func convertActorToAccount(actor *activitypub.Actor, domain string) models.Accou
 		Locked:         actor.ManuallyApprovesFollowers,
 		Bot:            actor.Type == "Service",
 		Discoverable:   actor.Discoverable,
-		CreatedAt:      time.Now().Format(time.RFC3339), // TODO: Store actor creation time
-		LastStatusAt:   "",                              // TODO: Track last status time
-		StatusesCount:  0,                               // TODO: Count statuses
-		FollowersCount: 0,                               // TODO: Count followers
-		FollowingCount: 0,                               // TODO: Count following
+		CreatedAt:      createdAt.Format(time.RFC3339),
+		LastStatusAt:   lastStatusAt,
+		StatusesCount:  statusesCount,
+		FollowersCount: followersCount,
+		FollowingCount: followingCount,
 	}
 }
 
@@ -134,14 +148,59 @@ func (h *Handler) HandleAdminGetAccounts(ctx context.Context, request events.API
 			continue
 		}
 
+		// Get IP history from sessions
+		var lastIP *string
+		var ipHistory []models.AdminIP
+
+		sessions, err := h.store.GetUserSessions(ctx, user.Username)
+		if err == nil && len(sessions) > 0 {
+			// Sort sessions by last activity (most recent first)
+			sort.Slice(sessions, func(i, j int) bool {
+				return sessions[i].LastActivity.After(sessions[j].LastActivity)
+			})
+
+			// Get the most recent IP
+			if sessions[0].IPAddress != "" {
+				lastIP = &sessions[0].IPAddress
+			}
+
+			// Build IP history (unique IPs with their usage info)
+			ipMap := make(map[string]*models.AdminIP)
+			for _, sess := range sessions {
+				if sess.IPAddress != "" {
+					if existing, ok := ipMap[sess.IPAddress]; ok {
+						// Update if this session is more recent
+						if sess.LastActivity.After(existing.UsedAt) {
+							existing.UsedAt = sess.LastActivity
+						}
+					} else {
+						ipMap[sess.IPAddress] = &models.AdminIP{
+							IP:     sess.IPAddress,
+							UsedAt: sess.LastActivity,
+						}
+					}
+				}
+			}
+
+			// Convert map to slice
+			for _, ip := range ipMap {
+				ipHistory = append(ipHistory, *ip)
+			}
+
+			// Sort by most recent use
+			sort.Slice(ipHistory, func(i, j int) bool {
+				return ipHistory[i].UsedAt.After(ipHistory[j].UsedAt)
+			})
+		}
+
 		account := models.AdminAccount{
 			ID:        fmt.Sprintf("user-%s", user.Username),
 			Username:  user.Username,
 			Domain:    nil, // Local user
 			CreatedAt: user.CreatedAt,
 			Email:     user.Email,
-			IP:        nil,                // TODO: Track last IP
-			IPs:       []models.AdminIP{}, // TODO: Track IP history
+			IP:        lastIP,
+			IPs:       ipHistory,
 			Locale:    user.Locale,
 			Role: models.Role{
 				ID:          getAdminRoleID(user.Role),
@@ -153,7 +212,7 @@ func (h *Handler) HandleAdminGetAccounts(ctx context.Context, request events.API
 			Silenced:  false, // TODO: Implement silencing
 			Disabled:  !user.Approved,
 			Approved:  user.Approved,
-			Account:   convertActorToAccount(actor, h.cfg.Domain),
+			Account:   h.convertActorToAccountWithCounts(ctx, actor),
 		}
 
 		accounts = append(accounts, account)
@@ -216,14 +275,59 @@ func (h *Handler) HandleAdminGetAccount(ctx context.Context, request events.APIG
 		reportStats = &storage.ReportStats{} // Use empty stats
 	}
 
+	// Get IP history from sessions
+	var lastIP *string
+	var ipHistory []models.AdminIP
+
+	sessions, err := h.store.GetUserSessions(ctx, username)
+	if err == nil && len(sessions) > 0 {
+		// Sort sessions by last activity (most recent first)
+		sort.Slice(sessions, func(i, j int) bool {
+			return sessions[i].LastActivity.After(sessions[j].LastActivity)
+		})
+
+		// Get the most recent IP
+		if sessions[0].IPAddress != "" {
+			lastIP = &sessions[0].IPAddress
+		}
+
+		// Build IP history (unique IPs with their usage info)
+		ipMap := make(map[string]*models.AdminIP)
+		for _, sess := range sessions {
+			if sess.IPAddress != "" {
+				if existing, ok := ipMap[sess.IPAddress]; ok {
+					// Update if this session is more recent
+					if sess.LastActivity.After(existing.UsedAt) {
+						existing.UsedAt = sess.LastActivity
+					}
+				} else {
+					ipMap[sess.IPAddress] = &models.AdminIP{
+						IP:     sess.IPAddress,
+						UsedAt: sess.LastActivity,
+					}
+				}
+			}
+		}
+
+		// Convert map to slice
+		for _, ip := range ipMap {
+			ipHistory = append(ipHistory, *ip)
+		}
+
+		// Sort by most recent use
+		sort.Slice(ipHistory, func(i, j int) bool {
+			return ipHistory[i].UsedAt.After(ipHistory[j].UsedAt)
+		})
+	}
+
 	account := models.AdminAccount{
 		ID:        accountID,
 		Username:  user.Username,
 		Domain:    nil, // Local user
 		CreatedAt: user.CreatedAt,
 		Email:     user.Email,
-		IP:        nil,                // TODO: Track last IP
-		IPs:       []models.AdminIP{}, // TODO: Track IP history
+		IP:        lastIP,
+		IPs:       ipHistory,
 		Locale:    user.Locale,
 		Role: models.Role{
 			ID:          getAdminRoleID(user.Role),
@@ -235,7 +339,7 @@ func (h *Handler) HandleAdminGetAccount(ctx context.Context, request events.APIG
 		Silenced:  false, // TODO: Implement silencing
 		Disabled:  !user.Approved,
 		Approved:  user.Approved,
-		Account:   convertActorToAccount(actor, h.cfg.Domain),
+		Account:   h.convertActorToAccountWithCounts(ctx, actor),
 		// Add report stats to account info
 		ReportsCount:         reportStats.TotalReports,
 		ResolvedReportsCount: reportStats.ResolvedReports,
@@ -582,7 +686,7 @@ func (h *Handler) HandleAdminGetReports(ctx context.Context, request events.APIG
 		if report.AssignedTo != "" {
 			assignedActor, err := h.store.GetActor(ctx, report.AssignedTo)
 			if err == nil {
-				acc := convertActorToAccount(assignedActor, h.cfg.Domain)
+				acc := h.convertActorToAccountWithCounts(ctx, assignedActor)
 				assignedAccount = &acc
 			}
 		}
@@ -592,7 +696,7 @@ func (h *Handler) HandleAdminGetReports(ctx context.Context, request events.APIG
 		if report.ModeratorID != "" {
 			moderatorActor, err := h.store.GetActor(ctx, report.ModeratorID)
 			if err == nil {
-				acc := convertActorToAccount(moderatorActor, h.cfg.Domain)
+				acc := h.convertActorToAccountWithCounts(ctx, moderatorActor)
 				actionTakenByAccount = &acc
 			}
 		}
@@ -606,8 +710,8 @@ func (h *Handler) HandleAdminGetReports(ctx context.Context, request events.APIG
 			Forwarded:            report.Forwarded,
 			CreatedAt:            report.CreatedAt,
 			UpdatedAt:            report.UpdatedAt,
-			Account:              convertActorToAccount(reporterActor, h.cfg.Domain),
-			TargetAccount:        convertActorToAccount(targetActor, h.cfg.Domain),
+			Account:              h.convertActorToAccountWithCounts(ctx, reporterActor),
+			TargetAccount:        h.convertActorToAccountWithCounts(ctx, targetActor),
 			AssignedAccount:      assignedAccount,
 			ActionTakenByAccount: actionTakenByAccount,
 			Statuses:             []models.Status{}, // TODO: Load reported statuses
@@ -677,7 +781,7 @@ func (h *Handler) HandleAdminGetReport(ctx context.Context, request events.APIGa
 	if report.AssignedTo != "" {
 		assignedActor, err := h.store.GetActor(ctx, report.AssignedTo)
 		if err == nil {
-			acc := convertActorToAccount(assignedActor, h.cfg.Domain)
+			acc := h.convertActorToAccountWithCounts(ctx, assignedActor)
 			assignedAccount = &acc
 		} else {
 			h.logger.Warn("failed to get assigned actor",
@@ -691,7 +795,7 @@ func (h *Handler) HandleAdminGetReport(ctx context.Context, request events.APIGa
 	if report.ModeratorID != "" {
 		moderatorActor, err := h.store.GetActor(ctx, report.ModeratorID)
 		if err == nil {
-			acc := convertActorToAccount(moderatorActor, h.cfg.Domain)
+			acc := h.convertActorToAccountWithCounts(ctx, moderatorActor)
 			actionTakenByAccount = &acc
 		} else {
 			h.logger.Warn("failed to get moderator actor",
@@ -709,8 +813,8 @@ func (h *Handler) HandleAdminGetReport(ctx context.Context, request events.APIGa
 		Forwarded:            report.Forwarded,
 		CreatedAt:            report.CreatedAt,
 		UpdatedAt:            report.UpdatedAt,
-		Account:              convertActorToAccount(reporterActor, h.cfg.Domain),
-		TargetAccount:        convertActorToAccount(targetActor, h.cfg.Domain),
+		Account:              h.convertActorToAccountWithCounts(ctx, reporterActor),
+		TargetAccount:        h.convertActorToAccountWithCounts(ctx, targetActor),
 		AssignedAccount:      assignedAccount,
 		ActionTakenByAccount: actionTakenByAccount,
 		Statuses:             []models.Status{}, // TODO: Load reported statuses

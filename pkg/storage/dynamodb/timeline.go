@@ -372,9 +372,7 @@ func (s *dynamoDBStorage) GetHashtagTimeline(ctx context.Context, hashtag string
 	)
 
 	// Normalize hashtag (remove # if present)
-	if strings.HasPrefix(hashtag, "#") {
-		hashtag = hashtag[1:]
-	}
+	hashtag = strings.TrimPrefix(hashtag, "#")
 	hashtag = strings.ToLower(hashtag)
 
 	// Determine which timeline to query

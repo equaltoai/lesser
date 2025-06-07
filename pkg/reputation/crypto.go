@@ -299,7 +299,7 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 		}
 	}
 
-	// TODO: Check if issuer is trusted
+	// Check if issuer is trusted
 	result.IssuerTrusted = v.isInstanceTrusted(pr.Issuer)
 
 	result.Valid = result.SignatureValid && result.NotExpired && result.IssuerTrusted
@@ -367,8 +367,9 @@ func (v *Verifier) isInstanceTrusted(instanceURL string) bool {
 		return true
 	}
 
-	// Check if domain is blocked
 	ctx := context.Background()
+
+	// First, check if domain is blocked
 	isBlocked, block, err := v.storage.IsDomainBlocked(ctx, domain)
 	if err != nil {
 		v.logger.Error("failed to check domain block",
@@ -385,8 +386,43 @@ func (v *Verifier) isInstanceTrusted(instanceURL string) bool {
 		return false
 	}
 
-	// TODO: Check domain allow list if in allow-list mode
-	// For now, if not blocked, it's trusted
+	// Check if we have any domain allows configured (allow-list mode)
+	domainAllows, _, err := v.storage.GetDomainAllows(ctx, 1, "")
+	if err != nil {
+		v.logger.Error("failed to check domain allows",
+			zap.String("domain", domain),
+			zap.Error(err))
+		// On error checking allows, assume open federation
+		return true
+	}
+
+	// If we have domain allows configured, we're in allow-list mode
+	if len(domainAllows) > 0 {
+		// In allow-list mode, check if this specific domain is allowed
+		// We need to check all allows, not just the first one
+		allAllows, _, err := v.storage.GetDomainAllows(ctx, 1000, "")
+		if err != nil {
+			v.logger.Error("failed to get all domain allows",
+				zap.String("domain", domain),
+				zap.Error(err))
+			return false
+		}
+
+		// Check if domain is in the allow list
+		for _, allow := range allAllows {
+			if allow.Domain == domain {
+				v.logger.Debug("domain is in allow list",
+					zap.String("domain", domain))
+				return true
+			}
+		}
+
+		v.logger.Info("domain not in allow list",
+			zap.String("domain", domain))
+		return false
+	}
+
+	// If not blocked and not in allow-list mode, it's trusted
 	return true
 }
 

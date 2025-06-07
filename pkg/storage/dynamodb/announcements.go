@@ -249,7 +249,89 @@ func (s *dynamoDBStorage) DeleteAnnouncement(ctx context.Context, id string) err
 		return fmt.Errorf("failed to delete announcement: %w", err)
 	}
 
-	// TODO: Clean up related dismissals and reactions
+	// Clean up related dismissals and reactions
+	// Note: These are best-effort cleanups - we don't fail the deletion if cleanup fails
+
+	// Clean up reactions
+	reactionInput := &dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		KeyConditionExpression: aws.String("PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ANNOUNCEMENT_REACTION#%s", id)},
+		},
+	}
+
+	reactionPaginator := dynamodb.NewQueryPaginator(s.client, reactionInput)
+	for reactionPaginator.HasMorePages() {
+		page, err := reactionPaginator.NextPage(ctx)
+		if err != nil {
+			s.logger().Warn("failed to query reactions for cleanup",
+				zap.String("announcement_id", id),
+				zap.Error(err))
+			break
+		}
+
+		// Delete each reaction
+		for _, item := range page.Items {
+			pk := item["PK"]
+			sk := item["SK"]
+			if pk != nil && sk != nil {
+				_, deleteErr := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+					TableName: aws.String(s.tableName),
+					Key: map[string]types.AttributeValue{
+						"PK": pk,
+						"SK": sk,
+					},
+				})
+				if deleteErr != nil {
+					s.logger().Warn("failed to delete reaction during cleanup",
+						zap.String("announcement_id", id),
+						zap.Error(deleteErr))
+				}
+			}
+		}
+	}
+
+	// Clean up dismissals
+	// Since dismissals are stored under user keys, we need to scan for them
+	dismissalInput := &dynamodb.ScanInput{
+		TableName:        aws.String(s.tableName),
+		FilterExpression: aws.String("ends_with(SK, :suffix)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":suffix": &types.AttributeValueMemberS{Value: fmt.Sprintf("ANNOUNCEMENT_DISMISSED#%s", id)},
+		},
+	}
+
+	dismissalPaginator := dynamodb.NewScanPaginator(s.client, dismissalInput)
+	for dismissalPaginator.HasMorePages() {
+		page, err := dismissalPaginator.NextPage(ctx)
+		if err != nil {
+			s.logger().Warn("failed to scan dismissals for cleanup",
+				zap.String("announcement_id", id),
+				zap.Error(err))
+			break
+		}
+
+		// Delete each dismissal
+		for _, item := range page.Items {
+			pk := item["PK"]
+			sk := item["SK"]
+			if pk != nil && sk != nil {
+				_, deleteErr := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+					TableName: aws.String(s.tableName),
+					Key: map[string]types.AttributeValue{
+						"PK": pk,
+						"SK": sk,
+					},
+				})
+				if deleteErr != nil {
+					s.logger().Warn("failed to delete dismissal during cleanup",
+						zap.String("announcement_id", id),
+						zap.Error(deleteErr))
+				}
+			}
+		}
+	}
 
 	return nil
 }

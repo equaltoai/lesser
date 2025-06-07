@@ -13,13 +13,12 @@ import (
 	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/zap"
 )
 
 // StatusSearchService provides advanced status search capabilities
 type StatusSearchService struct {
-	dynamo     *dynamodb.Client
+	dynamo     DynamoDBAPI
 	tableName  string
 	logger     *zap.Logger
 	cache      *StatusSearchCache
@@ -31,7 +30,7 @@ type StatusSearchService struct {
 
 // NewStatusSearchService creates a new status search service
 func NewStatusSearchService(
-	dynamo *dynamodb.Client,
+	dynamo DynamoDBAPI,
 	tableName string,
 	logger *zap.Logger,
 	storage *dynamoDBStorage,

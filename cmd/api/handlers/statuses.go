@@ -162,6 +162,13 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 	// Handle reply
 	if req.InReplyToID != "" {
 		note.InReplyTo = req.InReplyToID
+
+		// Record reply engagement for trending
+		if err := h.store.RecordStatusEngagement(ctx, req.InReplyToID, "reply", actor.ID); err != nil {
+			h.logger.Warn("failed to record reply engagement",
+				zap.String("parent_status_id", req.InReplyToID),
+				zap.Error(err))
+		}
 	}
 
 	// Handle poll creation if requested
@@ -253,6 +260,38 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 	if err := h.store.FanOutPost(ctx, createActivity); err != nil {
 		// Log the error but don't fail the request
 		h.logger.Error("failed to fan out post to timelines", zap.Error(err))
+	}
+
+	// Record status creation activity for metrics
+	if err := h.store.RecordActivity(ctx, "status", actor.ID, now); err != nil {
+		// Log the error but don't fail the request
+		h.logger.Warn("failed to record status activity", zap.Error(err))
+	}
+
+	// Record hashtags for trending (using already extracted hashtags)
+	for _, hashtag := range hashtags {
+		// Remove the # prefix if present
+		cleanHashtag := strings.TrimPrefix(hashtag, "#")
+		if err := h.store.RecordHashtagUsage(ctx, cleanHashtag, noteID, actor.ID); err != nil {
+			h.logger.Warn("failed to record hashtag usage",
+				zap.String("hashtag", cleanHashtag),
+				zap.Error(err))
+		}
+	}
+
+	// Extract and record links for trending
+	links := extractLinksFromContent(req.Status)
+	for _, link := range links {
+		if err := h.store.RecordLinkShare(ctx, link, noteID, actor.ID); err != nil {
+			h.logger.Warn("failed to record link share",
+				zap.String("link", link),
+				zap.Error(err))
+		}
+	}
+
+	// Update actor's last status time
+	if err := h.store.UpdateActorLastStatusTime(ctx, claims.Username); err != nil {
+		h.logger.Warn("failed to update actor last status time", zap.Error(err))
 	}
 
 	// Convert hashtags for Mastodon API response
@@ -399,6 +438,13 @@ func (h *Handler) HandleFavourite(ctx context.Context, request events.APIGateway
 	if err := h.store.CreateActivity(ctx, likeActivity); err != nil {
 		h.logger.Error("failed to create like activity", zap.Error(err))
 		return common.InternalServerError(err), nil
+	}
+
+	// Record engagement for trending
+	if err := h.store.RecordStatusEngagement(ctx, statusID, "like", actor.ID); err != nil {
+		h.logger.Warn("failed to record status engagement",
+			zap.String("status_id", statusID),
+			zap.Error(err))
 	}
 
 	// Get object to return status information
@@ -592,6 +638,13 @@ func (h *Handler) HandleReblog(ctx context.Context, request events.APIGatewayV2H
 	if err := h.store.CreateActivity(ctx, announceActivity); err != nil {
 		h.logger.Error("failed to create announce activity", zap.Error(err))
 		return common.InternalServerError(err), nil
+	}
+
+	// Record engagement for trending
+	if err := h.store.RecordStatusEngagement(ctx, statusID, "boost", actor.ID); err != nil {
+		h.logger.Warn("failed to record status engagement",
+			zap.String("status_id", statusID),
+			zap.Error(err))
 	}
 
 	// Get object to return status information
@@ -1351,4 +1404,28 @@ func getStringFromMap(m map[string]interface{}, key, defaultValue string) string
 		return val
 	}
 	return defaultValue
+}
+
+// extractHashtagsFromContent extracts hashtags from a given content
+func extractHashtagsFromContent(content string) []string {
+	hashtags := []string{}
+	words := strings.Fields(content)
+	for _, word := range words {
+		if strings.HasPrefix(word, "#") {
+			hashtags = append(hashtags, strings.Trim(word, "#"))
+		}
+	}
+	return hashtags
+}
+
+// extractLinksFromContent extracts links from a given content
+func extractLinksFromContent(content string) []string {
+	links := []string{}
+	words := strings.Fields(content)
+	for _, word := range words {
+		if strings.HasPrefix(word, "http://") || strings.HasPrefix(word, "https://") {
+			links = append(links, word)
+		}
+	}
+	return links
 }

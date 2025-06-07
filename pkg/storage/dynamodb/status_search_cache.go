@@ -14,7 +14,7 @@ import (
 
 // StatusSearchCache provides caching for status search results
 type StatusSearchCache struct {
-	dynamo    *dynamodb.Client
+	dynamo    DynamoDBAPI
 	tableName string
 
 	// In-memory cache for hot queries
@@ -31,7 +31,7 @@ type statusCacheEntry struct {
 }
 
 // NewStatusSearchCache creates a new status search cache
-func NewStatusSearchCache(dynamo *dynamodb.Client, tableName string) *StatusSearchCache {
+func NewStatusSearchCache(dynamo DynamoDBAPI, tableName string) *StatusSearchCache {
 	cache := &StatusSearchCache{
 		dynamo:    dynamo,
 		tableName: tableName,

@@ -157,7 +157,59 @@ func (s *dynamoDBStorage) UpdateConversationLastStatus(ctx context.Context, id, 
 		return fmt.Errorf("failed to update conversation: %w", err)
 	}
 
-	// TODO: Update participant records with new timestamp for sorting
+	// Get the conversation to get participants
+	conv, err := s.GetConversation(ctx, id)
+	if err != nil {
+		log.Error("failed to get conversation for participant update", zap.Error(err))
+		return fmt.Errorf("failed to get conversation: %w", err)
+	}
+
+	// Update participant records with new timestamp for sorting
+	now := time.Now()
+	for _, participantID := range conv.Participants {
+		// Delete old participant record
+		_, deleteErr := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			TableName: aws.String(s.tableName),
+			Key: map[string]types.AttributeValue{
+				"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)},
+				"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", conv.UpdatedAt.Format(time.RFC3339), id)},
+			},
+		})
+		if deleteErr != nil {
+			log.Warn("failed to delete old participant record",
+				zap.String("participant_id", participantID),
+				zap.Error(deleteErr))
+		}
+
+		// Create new participant record with updated timestamp
+		participantRecord := &ConversationRecord{
+			PK:           fmt.Sprintf("USER_CONVERSATIONS#%s", participantID),
+			SK:           fmt.Sprintf("%s#%s", now.Format(time.RFC3339), id),
+			GSI1PK:       fmt.Sprintf("CONVERSATION#%s", id),
+			GSI1SK:       fmt.Sprintf("PARTICIPANT#%s", participantID),
+			Conversation: conv,
+		}
+		participantRecord.Conversation.UpdatedAt = now
+		participantRecord.Conversation.LastStatusID = lastStatusID
+
+		item, marshalErr := s.MarshalItem(participantRecord)
+		if marshalErr != nil {
+			log.Error("failed to marshal participant record",
+				zap.String("participant_id", participantID),
+				zap.Error(marshalErr))
+			continue
+		}
+
+		_, putErr := s.client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(s.tableName),
+			Item:      item,
+		})
+		if putErr != nil {
+			log.Error("failed to update participant record",
+				zap.String("participant_id", participantID),
+				zap.Error(putErr))
+		}
+	}
 
 	return nil
 }
@@ -203,8 +255,15 @@ func (s *dynamoDBStorage) MarkConversationRead(ctx context.Context, id, username
 func (s *dynamoDBStorage) DeleteConversation(ctx context.Context, id string) error {
 	log := common.Logger().With(zap.String("conversation_id", id))
 
+	// Get the conversation first to get participant list
+	conv, err := s.GetConversation(ctx, id)
+	if err != nil {
+		log.Warn("failed to get conversation for cleanup", zap.Error(err))
+		// Continue with deletion even if we can't get the conversation
+	}
+
 	// Delete main record
-	_, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+	_, err = s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 		TableName: aws.String(s.tableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("CONVERSATION#%s", id)},
@@ -217,7 +276,63 @@ func (s *dynamoDBStorage) DeleteConversation(ctx context.Context, id string) err
 		return fmt.Errorf("failed to delete conversation: %w", err)
 	}
 
-	// TODO: Delete participant records and status records
+	// Delete participant records
+	if conv != nil {
+		for _, participantID := range conv.Participants {
+			// Delete participant record
+			_, deleteErr := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+				TableName: aws.String(s.tableName),
+				Key: map[string]types.AttributeValue{
+					"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)},
+					"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", conv.UpdatedAt.Format(time.RFC3339), id)},
+				},
+			})
+			if deleteErr != nil {
+				log.Warn("failed to delete participant record",
+					zap.String("participant_id", participantID),
+					zap.Error(deleteErr))
+			}
+		}
+	}
+
+	// Delete all status records for this conversation
+	// Query for all status records
+	statusQuery := expression.Key("PK").Equal(expression.Value(fmt.Sprintf("CONVERSATION_STATUS#%s", id)))
+	expr, err := expression.NewBuilder().WithKeyCondition(statusQuery).Build()
+	if err != nil {
+		log.Warn("failed to build status query expression", zap.Error(err))
+		return nil // Main record deleted, don't fail on cleanup
+	}
+
+	result, err := s.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:                 aws.String(s.tableName),
+		KeyConditionExpression:    expr.KeyCondition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	})
+
+	if err != nil {
+		log.Warn("failed to query conversation status records", zap.Error(err))
+		return nil // Main record deleted, don't fail on cleanup
+	}
+
+	// Delete each status record
+	for _, item := range result.Items {
+		pk := item["PK"]
+		sk := item["SK"]
+		if pk != nil && sk != nil {
+			_, deleteErr := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+				TableName: aws.String(s.tableName),
+				Key: map[string]types.AttributeValue{
+					"PK": pk,
+					"SK": sk,
+				},
+			})
+			if deleteErr != nil {
+				log.Warn("failed to delete status record", zap.Error(deleteErr))
+			}
+		}
+	}
 
 	return nil
 }

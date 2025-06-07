@@ -34,6 +34,14 @@ func (s *dynamoDBStorage) SetPreference(ctx context.Context, username string, ke
 		if v, ok := value.(bool); ok {
 			prefs.ExpandSpoilers = v
 		}
+	case "reading:expand:media":
+		if v, ok := value.(string); ok {
+			prefs.ExpandMedia = v
+		}
+	case "reading:autoplay:gifs":
+		if v, ok := value.(bool); ok {
+			prefs.AutoplayGifs = v
+		}
 	case "show_follow_counts":
 		if v, ok := value.(bool); ok {
 			prefs.ShowFollowCounts = v
@@ -85,8 +93,8 @@ func (s *dynamoDBStorage) GetAllPreferences(ctx context.Context, username string
 		"posting:default:sensitive":   prefs.DefaultMediaSensitive,
 		"posting:default:language":    prefs.Language,
 		"reading:expand:spoilers":     prefs.ExpandSpoilers,
-		"reading:expand:media":        "default", // TODO: Add to storage model
-		"reading:autoplay:gifs":       true,      // TODO: Add to storage model
+		"reading:expand:media":        prefs.ExpandMedia,
+		"reading:autoplay:gifs":       prefs.AutoplayGifs,
 		"show_follow_counts":          prefs.ShowFollowCounts,
 		"preferred_timeline_order":    prefs.PreferredTimelineOrder,
 		"search_suggestions_enabled":  prefs.SearchSuggestionsEnabled,
@@ -124,6 +132,14 @@ func (s *dynamoDBStorage) UpdatePreferences(ctx context.Context, username string
 			if v, ok := value.(bool); ok {
 				prefs.ExpandSpoilers = v
 			}
+		case "reading:expand:media":
+			if v, ok := value.(string); ok {
+				prefs.ExpandMedia = v
+			}
+		case "reading:autoplay:gifs":
+			if v, ok := value.(bool); ok {
+				prefs.AutoplayGifs = v
+			}
 		case "show_follow_counts":
 			if v, ok := value.(bool); ok {
 				prefs.ShowFollowCounts = v
@@ -159,9 +175,9 @@ func (s *dynamoDBStorage) getPreferenceValue(prefs *storage.UserPreferences, key
 	case "reading:expand:spoilers":
 		return prefs.ExpandSpoilers
 	case "reading:expand:media":
-		return "default" // TODO: Add to storage model
+		return prefs.ExpandMedia
 	case "reading:autoplay:gifs":
-		return true // TODO: Add to storage model
+		return prefs.AutoplayGifs
 	case "show_follow_counts":
 		return prefs.ShowFollowCounts
 	case "preferred_timeline_order":
@@ -182,6 +198,8 @@ func (s *dynamoDBStorage) getDefaultPreferences() *storage.UserPreferences {
 		DefaultPostingVisibility:  "public",
 		DefaultMediaSensitive:     false,
 		ExpandSpoilers:            false,
+		ExpandMedia:               "default",
+		AutoplayGifs:              true,
 		ShowFollowCounts:          true,
 		PreferredTimelineOrder:    "newest",
 		SearchSuggestionsEnabled:  true,

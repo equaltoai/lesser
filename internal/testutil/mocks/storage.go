@@ -194,6 +194,26 @@ func (m *BaseMockStorage) GetActiveUserCount(ctx context.Context, days int) (int
 	return 10, nil
 }
 
+// Instance metrics operations
+func (m *BaseMockStorage) GetTotalUserCount(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+func (m *BaseMockStorage) GetTotalStatusCount(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+func (m *BaseMockStorage) GetTotalDomainCount(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+func (m *BaseMockStorage) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
+	return &storage.WeeklyActivity{}, nil
+}
+func (m *BaseMockStorage) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
+	return nil
+}
+func (m *BaseMockStorage) GetContactAccount(ctx context.Context) (*storage.ActorRecord, error) {
+	return nil, nil
+}
+
 // OAuth Client operations
 func (m *BaseMockStorage) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
 	return nil
@@ -1302,6 +1322,15 @@ func (m *MockStorage) CreateBlock(ctx context.Context, block *storage.Block) err
 func (m *MockStorage) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
 	args := m.Called(ctx, days)
 	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetContactAccount with mock support
+func (m *MockStorage) GetContactAccount(ctx context.Context) (*storage.ActorRecord, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ActorRecord), args.Error(1)
 }
 
 // GetOAuthClient with mock support

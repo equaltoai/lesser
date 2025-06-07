@@ -128,19 +128,15 @@ func New() (storage.Storage, error) {
 	}
 
 	// Initialize search service with storage reference
-	// For now, search service needs the actual DynamoDB client
-	// TODO: Update search service to use the DynamoDBAPI interface
-	if dc, ok := client.(*dynamodb.Client); ok {
-		searchService := NewSearchService(dc, tableName, common.Logger(), dynStorage, cfg.Get().Domain)
-		dynStorage.searchService = searchService
+	searchService := NewSearchService(client, tableName, common.Logger(), dynStorage, cfg.Get().Domain)
+	dynStorage.searchService = searchService
 
-		// Initialize status search service
-		statusSearchService := NewStatusSearchService(dc, tableName, common.Logger(), dynStorage)
-		statusSearchService.embeddings = embeddingService // Share the embedding service
-		// Initialize AWS Comprehend for language detection
-		statusSearchService.comprehend = comprehend.NewFromConfig(awsCfg)
-		dynStorage.statusSearchService = statusSearchService
-	}
+	// Initialize status search service
+	statusSearchService := NewStatusSearchService(client, tableName, common.Logger(), dynStorage)
+	statusSearchService.embeddings = embeddingService // Share the embedding service
+	// Initialize AWS Comprehend for language detection
+	statusSearchService.comprehend = comprehend.NewFromConfig(awsCfg)
+	dynStorage.statusSearchService = statusSearchService
 
 	// Initialize KMS client for private key encryption
 	dynStorage.kmsClient = kms.NewFromConfig(awsCfg)
@@ -156,15 +152,13 @@ func NewWithClient(client DynamoDBAPI, tableName string) storage.Storage {
 		domain:    cfg.Get().Domain,
 	}
 
-	// For testing, we might not have a real DynamoDB client
-	if dynamoClient, ok := client.(*dynamodb.Client); ok {
-		searchService := NewSearchService(dynamoClient, tableName, common.Logger(), dynStorage, cfg.Get().Domain)
-		dynStorage.searchService = searchService
+	// Initialize search service with storage reference
+	searchService := NewSearchService(client, tableName, common.Logger(), dynStorage, cfg.Get().Domain)
+	dynStorage.searchService = searchService
 
-		// Initialize status search service
-		statusSearchService := NewStatusSearchService(dynamoClient, tableName, common.Logger(), dynStorage)
-		dynStorage.statusSearchService = statusSearchService
-	}
+	// Initialize status search service
+	statusSearchService := NewStatusSearchService(client, tableName, common.Logger(), dynStorage)
+	dynStorage.statusSearchService = statusSearchService
 
 	return dynStorage
 }

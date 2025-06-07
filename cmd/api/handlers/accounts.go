@@ -129,6 +129,12 @@ func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGate
 		return common.InternalServerError(err), nil
 	}
 
+	// Record registration activity for metrics
+	if err := h.store.RecordActivity(ctx, "registration", actor.ID, time.Now()); err != nil {
+		// Log the error but don't fail the request
+		h.logger.Warn("failed to record registration activity", zap.Error(err))
+	}
+
 	// Return response
 	resp := models.AccountRegistrationResponse{
 		ID:       actor.ID,
