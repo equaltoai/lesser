@@ -20,13 +20,13 @@ import (
 
 // SearchAnalytics tracks search queries and user interactions
 type SearchAnalytics struct {
-	dynamo    *dynamodb.Client
+	dynamo    DynamoDBAPI
 	tableName string
 	logger    *zap.Logger
 }
 
 // NewSearchAnalytics creates a new search analytics service
-func NewSearchAnalytics(dynamo *dynamodb.Client, tableName string, logger *zap.Logger) *SearchAnalytics {
+func NewSearchAnalytics(dynamo DynamoDBAPI, tableName string, logger *zap.Logger) *SearchAnalytics {
 	return &SearchAnalytics{
 		dynamo:    dynamo,
 		tableName: tableName,

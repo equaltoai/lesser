@@ -20,7 +20,7 @@ import (
 
 // SearchService provides advanced search capabilities
 type SearchService struct {
-	dynamo    *dynamodb.Client
+	dynamo    DynamoDBAPI
 	tableName string
 	logger    *zap.Logger
 	cache     *SearchCache
@@ -30,7 +30,7 @@ type SearchService struct {
 }
 
 // NewSearchService creates a new search service
-func NewSearchService(dynamo *dynamodb.Client, tableName string, logger *zap.Logger, storage *dynamoDBStorage, domain string) *SearchService {
+func NewSearchService(dynamo DynamoDBAPI, tableName string, logger *zap.Logger, storage *dynamoDBStorage, domain string) *SearchService {
 	return &SearchService{
 		dynamo:    dynamo,
 		tableName: tableName,

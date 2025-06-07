@@ -5,15 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"image"
-	"image/gif"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/media"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -215,73 +212,59 @@ func processImage(ctx context.Context, data []byte, event MediaProcessingEvent, 
 		Sizes: make(map[string]SizeInfo),
 	}
 
-	// Decode image to get dimensions
-	img, format, err := image.Decode(bytes.NewReader(data))
+	// Process image using the new media package
+	processedImages, err := media.ProcessImage(data, mimeType)
 	if err != nil {
-		return result, fmt.Errorf("failed to decode image: %w", err)
+		return result, fmt.Errorf("failed to process image: %w", err)
 	}
 
-	// Get original dimensions
-	bounds := img.Bounds()
-	result.Width = bounds.Dx()
-	result.Height = bounds.Dy()
+	// Get original image info
+	if original, ok := processedImages["original"]; ok {
+		result.Width = original.Width
+		result.Height = original.Height
+		result.Blurhash = original.Blurhash
+	}
 
-	// Process each task
+	// Upload each processed size to S3
+	for sizeName, processed := range processedImages {
+		// Generate S3 key for this size
+		ext := getExtensionFromProcessedFormat(processed.Format)
+		s3Key := fmt.Sprintf("media/%s/%s/%s%s",
+			event.Username, event.MediaID, sizeName, ext)
+
+		// Upload to S3
+		if err := uploadToS3(ctx, s3Key, processed.Data, getMimeTypeFromFormat(processed.Format)); err != nil {
+			logger.Warn("failed to upload image size",
+				zap.String("size", sizeName),
+				zap.Error(err))
+			continue
+		}
+
+		// Build URL
+		url := buildMediaURL(s3Key)
+
+		// Store size info
+		result.Sizes[sizeName] = SizeInfo{
+			Width:  processed.Width,
+			Height: processed.Height,
+			URL:    url,
+			S3Key:  s3Key,
+		}
+
+		// Set preview URL to small size
+		if sizeName == "small" {
+			result.PreviewURL = url
+		}
+	}
+
+	// Process specific tasks that aren't handled by default
 	for _, task := range tasks {
 		taskStr, _ := task.(string)
 		switch taskStr {
-		case "resize":
-			// For now, just save the original with proper URL
-			// In production, would use imaging library to resize
-			logger.Info("resize task - using original for now")
-
-		case "blurhash":
-			// TODO: Implement blurhash generation
-			// For now, return a placeholder
-			result.Blurhash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
-
-		case "dimensions":
-			// Already captured above
-
 		case "exif":
-			// TODO: Extract and strip EXIF data
+			// EXIF stripping is handled automatically by re-encoding
+			logger.Info("EXIF data stripped during processing")
 		}
-	}
-
-	// Generate a simple thumbnail by re-encoding at lower quality
-	// In production, would properly resize
-	var buf bytes.Buffer
-	switch format {
-	case "jpeg":
-		err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: 70})
-	case "png":
-		err = png.Encode(&buf, img)
-	case "gif":
-		err = gif.Encode(&buf, img, nil)
-	default:
-		err = fmt.Errorf("unsupported format: %s", format)
-	}
-
-	if err == nil {
-		s3Key := fmt.Sprintf("media/%s/%s/preview.%s",
-			event.Username, event.MediaID, format)
-
-		if err := uploadToS3(ctx, s3Key, buf.Bytes(), mimeType); err == nil {
-			result.PreviewURL = buildMediaURL(s3Key)
-		}
-	}
-
-	// Set the main URL from the original
-	originalKey := fmt.Sprintf("media/%s/%s/original%s",
-		event.Username, event.MediaID, getExtensionFromMimeType(mimeType))
-	mainURL := buildMediaURL(originalKey)
-
-	// Store original as "large" size
-	result.Sizes["original"] = SizeInfo{
-		Width:  result.Width,
-		Height: result.Height,
-		URL:    mainURL,
-		S3Key:  originalKey,
 	}
 
 	return result, nil
@@ -512,22 +495,32 @@ func getMediaTypeFromMime(mimeType string) string {
 	return "unknown"
 }
 
-func getExtensionFromMimeType(mimeType string) string {
-	extensions := map[string]string{
-		"image/jpeg": ".jpg",
-		"image/png":  ".png",
-		"image/gif":  ".gif",
-		"image/webp": ".webp",
-		"video/mp4":  ".mp4",
-		"video/webm": ".webm",
-		"audio/mpeg": ".mp3",
-		"audio/mp3":  ".mp3",
-		"audio/ogg":  ".ogg",
-		"audio/wav":  ".wav",
+func getExtensionFromProcessedFormat(format string) string {
+	switch format {
+	case "jpeg":
+		return ".jpg"
+	case "png":
+		return ".png"
+	case "gif":
+		return ".gif"
+	case "webp":
+		return ".webp"
+	default:
+		return ".jpg"
 	}
+}
 
-	if ext, ok := extensions[mimeType]; ok {
-		return ext
+func getMimeTypeFromFormat(format string) string {
+	switch format {
+	case "jpeg":
+		return "image/jpeg"
+	case "png":
+		return "image/png"
+	case "gif":
+		return "image/gif"
+	case "webp":
+		return "image/webp"
+	default:
+		return "image/jpeg"
 	}
-	return ".bin"
 }

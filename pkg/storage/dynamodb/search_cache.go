@@ -15,13 +15,13 @@ import (
 
 // SearchCache provides caching for search results using DynamoDB with TTL
 type SearchCache struct {
-	dynamo    *dynamodb.Client
+	dynamo    DynamoDBAPI
 	tableName string
 	ttl       time.Duration
 }
 
 // NewSearchCache creates a new search cache
-func NewSearchCache(dynamo *dynamodb.Client, tableName string) *SearchCache {
+func NewSearchCache(dynamo DynamoDBAPI, tableName string) *SearchCache {
 	return &SearchCache{
 		dynamo:    dynamo,
 		tableName: tableName,

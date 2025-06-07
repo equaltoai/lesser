@@ -109,6 +109,19 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 		common.Logger().Error("failed to record successful login", zap.Error(err))
 	}
 
+	// Get actor ID for activity recording
+	actor, err := as.storage.GetActor(ctx, username)
+	if err != nil {
+		// Log but don't fail login
+		common.Logger().Warn("failed to get actor for activity recording", zap.Error(err))
+	} else {
+		// Record login activity for metrics
+		if err := as.storage.RecordActivity(ctx, "login", actor.ID, time.Now()); err != nil {
+			// Log the error but don't fail the login
+			common.Logger().Warn("failed to record login activity", zap.Error(err))
+		}
+	}
+
 	// Create session
 	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "password")
 	if err != nil {

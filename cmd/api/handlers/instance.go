@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -42,6 +44,56 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 		vapidPublicKey = vapidKeys.PublicKey
 	}
 
+	// Get real instance metrics
+	userCount, err := h.store.GetTotalUserCount(ctx)
+	if err != nil {
+		h.logger.Warn("failed to get user count", zap.Error(err))
+		userCount = 0
+	}
+
+	statusCount, err := h.store.GetTotalStatusCount(ctx)
+	if err != nil {
+		h.logger.Warn("failed to get status count", zap.Error(err))
+		statusCount = 0
+	}
+
+	domainCount, err := h.store.GetTotalDomainCount(ctx)
+	if err != nil {
+		h.logger.Warn("failed to get domain count", zap.Error(err))
+		domainCount = 0
+	}
+
+	// Get contact account (admin)
+	var contactAccount map[string]interface{}
+	adminActor, err := h.store.GetContactAccount(ctx)
+	if err != nil {
+		h.logger.Warn("failed to get contact account", zap.Error(err))
+	} else if adminActor != nil && adminActor.Actor != nil {
+		contactAccount = map[string]interface{}{
+			"id":              adminActor.Actor.ID,
+			"username":        adminActor.Actor.PreferredUsername,
+			"acct":            adminActor.Actor.PreferredUsername,
+			"display_name":    adminActor.Actor.Name,
+			"locked":          adminActor.Actor.ManuallyApprovesFollowers,
+			"bot":             false, // Default to false as Actor doesn't have Bot field
+			"discoverable":    adminActor.Actor.Discoverable,
+			"group":           adminActor.Actor.Type == "Group",
+			"created_at":      adminActor.CreatedAt.Format(time.RFC3339),
+			"note":            adminActor.Actor.Summary,
+			"url":             adminActor.Actor.URL,
+			"uri":             adminActor.Actor.ID,
+			"avatar":          adminActor.Actor.Icon.URL,
+			"avatar_static":   adminActor.Actor.Icon.URL,
+			"header":          adminActor.Actor.Image.URL,
+			"header_static":   adminActor.Actor.Image.URL,
+			"followers_count": 0, // TODO: Get actual count
+			"following_count": 0, // TODO: Get actual count
+			"statuses_count":  0, // TODO: Get actual count
+			"emojis":          []interface{}{},
+			"fields":          adminActor.Fields,
+		}
+	}
+
 	// Build v1 response (flat structure)
 	resp := map[string]interface{}{
 		"uri":               h.cfg.Domain,
@@ -54,16 +106,16 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 			"streaming_api": fmt.Sprintf("wss://ws.%s", h.cfg.Domain),
 		},
 		"stats": map[string]interface{}{
-			"user_count":   1, // TODO: Implement actual counts
-			"status_count": 0,
-			"domain_count": 0,
+			"user_count":   userCount,
+			"status_count": statusCount,
+			"domain_count": domainCount,
 		},
 		"thumbnail":         h.cfg.BaseURL() + "/assets/thumbnail.png",
 		"languages":         instanceConfig.Languages,
 		"registrations":     instanceConfig.RegistrationsOpen,
 		"approval_required": instanceConfig.ApprovalRequired,
 		"invites_enabled":   instanceConfig.InvitesEnabled,
-		"contact_account":   nil, // TODO: Link to admin account
+		"contact_account":   contactAccount,
 
 		// Configuration
 		"configuration": map[string]interface{}{
@@ -143,17 +195,39 @@ func (h *Handler) HandleGetInstanceActivity(ctx context.Context, request events.
 	activity := make([]map[string]interface{}, 12)
 
 	now := time.Now()
-	for i := 0; i < 12; i++ {
-		weekStart := now.AddDate(0, 0, -7*(i+1))
-		weekNum := weekStart.Unix()
+	// Start from Monday of the current week
+	weekStart := now.Truncate(24 * time.Hour)
+	for weekStart.Weekday() != time.Monday {
+		weekStart = weekStart.Add(-24 * time.Hour)
+	}
 
-		// TODO: Get actual activity data from storage
-		// For now, return placeholder data
-		activity[11-i] = map[string]interface{}{
-			"week":          fmt.Sprintf("%d", weekNum),
-			"statuses":      "0",
-			"logins":        "1",
-			"registrations": "0",
+	// Get activity for each of the past 12 weeks
+	for i := 0; i < 12; i++ {
+		// Calculate the start of each week (going backwards)
+		thisWeekStart := weekStart.AddDate(0, 0, -7*i)
+		weekTimestamp := thisWeekStart.Unix()
+
+		// Get activity data from storage
+		weekActivity, err := h.store.GetWeeklyActivity(ctx, weekTimestamp)
+		if err != nil {
+			h.logger.Warn("failed to get weekly activity",
+				zap.Int64("week", weekTimestamp),
+				zap.Error(err))
+			// Use zero values on error
+			weekActivity = &storage.WeeklyActivity{
+				Week:          weekTimestamp,
+				Statuses:      0,
+				Logins:        0,
+				Registrations: 0,
+			}
+		}
+
+		// Format for API response (newest week first)
+		activity[i] = map[string]interface{}{
+			"week":          fmt.Sprintf("%d", weekTimestamp),
+			"statuses":      fmt.Sprintf("%d", weekActivity.Statuses),
+			"logins":        fmt.Sprintf("%d", weekActivity.Logins),
+			"registrations": fmt.Sprintf("%d", weekActivity.Registrations),
 		}
 	}
 
@@ -162,17 +236,31 @@ func (h *Handler) HandleGetInstanceActivity(ctx context.Context, request events.
 
 // HandleGetInstanceDomainBlocks returns public domain blocks
 func (h *Handler) HandleGetInstanceDomainBlocks(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	// TODO: Implement domain blocks storage
-	// For now, return empty array
-	blocks := []map[string]interface{}{}
+	// Get domain blocks from storage
+	domainBlocks, _, err := h.store.ListInstanceDomainBlocks(ctx, 100, "")
+	if err != nil {
+		h.logger.Warn("failed to get domain blocks", zap.Error(err))
+		// Return empty array on error
+		return common.OK([]map[string]interface{}{}), nil
+	}
 
-	// When implemented, each block should have:
-	// {
-	//   "domain": "example.com",
-	//   "digest": "sha256_hash_of_domain",
-	//   "severity": "suspend|silence",
-	//   "comment": "Reason for block"
-	// }
+	// Convert to API format
+	blocks := make([]map[string]interface{}, 0, len(domainBlocks))
+	for _, block := range domainBlocks {
+		// Only include public blocks (not obfuscated)
+		if !block.Obfuscate && block.PublicComment != "" {
+			// Create SHA256 hash of domain for digest
+			hash := sha256.Sum256([]byte(block.Domain))
+			digest := hex.EncodeToString(hash[:])
+
+			blocks = append(blocks, map[string]interface{}{
+				"domain":   block.Domain,
+				"digest":   digest,
+				"severity": block.Severity,
+				"comment":  block.PublicComment,
+			})
+		}
+	}
 
 	return common.OK(blocks), nil
 }

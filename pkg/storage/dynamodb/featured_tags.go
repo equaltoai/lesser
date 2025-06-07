@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,6 +50,9 @@ func (s *dynamoDBStorage) CreateFeaturedTag(ctx context.Context, userID string, 
 		}
 	}
 
+	// Calculate tag statistics
+	statusesCount, lastStatusAt := s.calculateTagStatistics(ctx, userID, tagName)
+
 	// Create new featured tag
 	id := uuid.New().String()
 	featuredTag := &storage.FeaturedTag{
@@ -55,8 +60,8 @@ func (s *dynamoDBStorage) CreateFeaturedTag(ctx context.Context, userID string, 
 		Username:      userID,
 		Name:          tagName,
 		URL:           fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, tagName),
-		StatusesCount: 0,  // TODO: Calculate actual count
-		LastStatusAt:  "", // TODO: Find last status with this tag
+		StatusesCount: statusesCount,
+		LastStatusAt:  lastStatusAt,
 		CreatedAt:     time.Now(),
 	}
 
@@ -154,14 +159,125 @@ func (s *dynamoDBStorage) GetFeaturedTags(ctx context.Context, userID string) ([
 
 // GetTagSuggestions returns suggested tags based on user's usage
 func (s *dynamoDBStorage) GetTagSuggestions(ctx context.Context, userID string, limit int) ([]string, error) {
-	// TODO: Implement actual tag usage tracking and suggestions
-	// For now, return empty list
-	// In a real implementation, this would:
-	// 1. Query the user's posts
-	// 2. Extract hashtags from posts
-	// 3. Count usage frequency
-	// 4. Exclude already featured tags
-	// 5. Return most frequently used tags
+	// Get already featured tags to exclude them
+	featuredTags, err := s.GetFeaturedTags(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get featured tags: %w", err)
+	}
 
-	return []string{}, nil
+	featuredMap := make(map[string]bool)
+	for _, tag := range featuredTags {
+		featuredMap[strings.ToLower(tag.Name)] = true
+	}
+
+	// Query user's recent statuses
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		IndexName:              aws.String("GSI3"),
+		KeyConditionExpression: aws.String("GSI3PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER_STATUS#%s", userID)},
+		},
+		ScanIndexForward: aws.Bool(false), // Most recent first
+		Limit:            aws.Int32(100),  // Analyze last 100 statuses
+	}
+
+	result, err := s.client.Query(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user statuses: %w", err)
+	}
+
+	// Count tag usage
+	tagCount := make(map[string]int)
+	hashtagRegex := regexp.MustCompile(`#[a-zA-Z0-9_]+`)
+
+	for _, item := range result.Items {
+		if contentAttr, ok := item["Content"]; ok {
+			if content, ok := contentAttr.(*types.AttributeValueMemberS); ok {
+				// Extract all hashtags from content
+				matches := hashtagRegex.FindAllString(content.Value, -1)
+				for _, match := range matches {
+					tag := strings.ToLower(strings.TrimPrefix(match, "#"))
+					// Skip if already featured
+					if !featuredMap[tag] {
+						tagCount[tag]++
+					}
+				}
+			}
+		}
+	}
+
+	// Sort tags by usage count
+	type tagFreq struct {
+		tag   string
+		count int
+	}
+
+	tagFreqs := make([]tagFreq, 0, len(tagCount))
+	for tag, count := range tagCount {
+		tagFreqs = append(tagFreqs, tagFreq{tag: tag, count: count})
+	}
+
+	sort.Slice(tagFreqs, func(i, j int) bool {
+		return tagFreqs[i].count > tagFreqs[j].count
+	})
+
+	// Return top suggestions
+	suggestions := make([]string, 0, limit)
+	for i := 0; i < len(tagFreqs) && i < limit; i++ {
+		suggestions = append(suggestions, tagFreqs[i].tag)
+	}
+
+	return suggestions, nil
+}
+
+// calculateTagStatistics calculates the count and last usage time for a tag
+func (s *dynamoDBStorage) calculateTagStatistics(ctx context.Context, userID string, tagName string) (int, string) {
+	// Query user's statuses to find those with the tag
+	// Using GSI3 to get user's statuses
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		IndexName:              aws.String("GSI3"),
+		KeyConditionExpression: aws.String("GSI3PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER_STATUS#%s", userID)},
+		},
+		ScanIndexForward: aws.Bool(false), // Most recent first
+	}
+
+	result, err := s.client.Query(ctx, input)
+	if err != nil {
+		s.logger().Warn("failed to query user statuses for tag statistics",
+			zap.String("user_id", userID),
+			zap.String("tag", tagName),
+			zap.Error(err))
+		return 0, ""
+	}
+
+	count := 0
+	var lastStatusAt string
+	tagPattern := fmt.Sprintf("#%s", tagName)
+
+	for _, item := range result.Items {
+		// Check if status contains the tag
+		if contentAttr, ok := item["Content"]; ok {
+			if content, ok := contentAttr.(*types.AttributeValueMemberS); ok {
+				// Simple case-insensitive check for the hashtag
+				if strings.Contains(strings.ToLower(content.Value), strings.ToLower(tagPattern)) {
+					count++
+
+					// Get the timestamp of the first (most recent) match
+					if lastStatusAt == "" {
+						if publishedAttr, ok := item["Published"]; ok {
+							if published, ok := publishedAttr.(*types.AttributeValueMemberS); ok {
+								lastStatusAt = published.Value
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return count, lastStatusAt
 }

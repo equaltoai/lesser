@@ -3,7 +3,9 @@ package dynamodb
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aron23/lesser/pkg/storage"
@@ -11,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"go.uber.org/zap"
 )
 
 // RecordHashtagUsage records when a hashtag is used in a status
@@ -109,14 +112,11 @@ func (s *dynamoDBStorage) RecordLinkShare(ctx context.Context, url string, statu
 // GetTrendingHashtags returns the top trending hashtags since the given time
 func (s *dynamoDBStorage) GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
 	// Query the trending index for hashtags
-	// For now, return a simple implementation
-	// TODO: Implement proper GSI query for trending hashtags
-
 	timeBucket := time.Now().Format("2006-01-02")
 	input := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
 		IndexName:              aws.String("GSI8"), // Trending index
-		KeyConditionExpression: aws.String("PK = :pk"),
+		KeyConditionExpression: aws.String("GSI8PK = :pk"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TREND_TYPE#HASHTAG#%s", timeBucket)},
 		},
@@ -127,16 +127,55 @@ func (s *dynamoDBStorage) GetTrendingHashtags(ctx context.Context, since time.Ti
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
 		// For now, return empty results if GSI doesn't exist
+		s.logger().Warn("failed to query trending hashtags", zap.Error(err))
 		return []*storage.TrendingHashtag{}, nil
 	}
 
 	trends := make([]*storage.TrendingHashtag, 0, len(result.Items))
 	for _, item := range result.Items {
-		var trend storage.TrendingHashtag
-		if err := attributevalue.UnmarshalMap(item, &trend); err != nil {
-			continue
+		trend := &storage.TrendingHashtag{}
+
+		// Extract fields manually to handle the data properly
+		if name, ok := item["Name"]; ok {
+			if nameStr, ok := name.(*types.AttributeValueMemberS); ok {
+				trend.Name = nameStr.Value
+			}
 		}
-		trends = append(trends, &trend)
+		if url, ok := item["URL"]; ok {
+			if urlStr, ok := url.(*types.AttributeValueMemberS); ok {
+				trend.URL = urlStr.Value
+			}
+		}
+		if usage, ok := item["UsageCount"]; ok {
+			if usageNum, ok := usage.(*types.AttributeValueMemberN); ok {
+				if val, err := strconv.ParseInt(usageNum.Value, 10, 64); err == nil {
+					trend.UsageCount = val
+				}
+			}
+		}
+		if users, ok := item["UniqueUsers"]; ok {
+			if usersNum, ok := users.(*types.AttributeValueMemberN); ok {
+				if val, err := strconv.ParseInt(usersNum.Value, 10, 64); err == nil {
+					trend.UniqueUsers = val
+				}
+			}
+		}
+		if lastUsed, ok := item["LastUsed"]; ok {
+			if lastStr, ok := lastUsed.(*types.AttributeValueMemberS); ok {
+				if t, err := time.Parse(time.RFC3339, lastStr.Value); err == nil {
+					trend.LastUsed = t
+				}
+			}
+		}
+		if firstSeen, ok := item["FirstSeen"]; ok {
+			if firstStr, ok := firstSeen.(*types.AttributeValueMemberS); ok {
+				if t, err := time.Parse(time.RFC3339, firstStr.Value); err == nil {
+					trend.FirstSeen = t
+				}
+			}
+		}
+
+		trends = append(trends, trend)
 	}
 
 	return trends, nil
@@ -144,7 +183,6 @@ func (s *dynamoDBStorage) GetTrendingHashtags(ctx context.Context, since time.Ti
 
 // GetTrendingStatuses returns the top trending statuses since the given time
 func (s *dynamoDBStorage) GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
-	// TODO: Implement proper trending status query
 	timeBucket := time.Now().Format("2006-01-02")
 	input := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
@@ -160,6 +198,7 @@ func (s *dynamoDBStorage) GetTrendingStatuses(ctx context.Context, since time.Ti
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
 		// For now, return empty results if GSI doesn't exist
+		s.logger().Warn("failed to query trending statuses", zap.Error(err))
 		return []*storage.TrendingStatus{}, nil
 	}
 
@@ -211,7 +250,6 @@ func (s *dynamoDBStorage) GetTrendingStatuses(ctx context.Context, since time.Ti
 
 // GetTrendingLinks returns the top trending links since the given time
 func (s *dynamoDBStorage) GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
-	// TODO: Implement proper trending links query
 	timeBucket := time.Now().Format("2006-01-02")
 	input := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
@@ -282,13 +320,6 @@ func (s *dynamoDBStorage) GetTrendingLinks(ctx context.Context, since time.Time,
 // Helper methods for updating trend scores
 
 func (s *dynamoDBStorage) updateHashtagTrendScore(ctx context.Context, hashtag string) error {
-	// TODO: Calculate and update hashtag trend score
-	// This would:
-	// 1. Count recent usage
-	// 2. Count unique users
-	// 3. Calculate trend score
-	// 4. Update trending index entry
-
 	// Query recent usage (last 24 hours)
 	since := time.Now().Add(-24 * time.Hour)
 
@@ -370,13 +401,6 @@ func (s *dynamoDBStorage) updateHashtagTrendScore(ctx context.Context, hashtag s
 }
 
 func (s *dynamoDBStorage) updateStatusTrendScore(ctx context.Context, statusID string) error {
-	// TODO: Calculate and update status trend score
-	// This would:
-	// 1. Count recent engagements
-	// 2. Get author trust score
-	// 3. Calculate trend score
-	// 4. Update trending index entry
-
 	// First, get the status details
 	statusObj, err := s.GetObject(ctx, statusID)
 	if err != nil {
@@ -487,13 +511,6 @@ func (s *dynamoDBStorage) updateStatusTrendScore(ctx context.Context, statusID s
 }
 
 func (s *dynamoDBStorage) updateLinkTrendScore(ctx context.Context, url string) error {
-	// TODO: Calculate and update link trend score
-	// This would:
-	// 1. Count recent shares
-	// 2. Count unique sharers
-	// 3. Calculate trend score
-	// 4. Update trending index entry
-
 	// Query recent link shares
 	queryInput := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
@@ -533,12 +550,23 @@ func (s *dynamoDBStorage) updateLinkTrendScore(ctx context.Context, url string) 
 		}
 	}
 
-	// TODO: Extract link metadata (title, description, image)
-	// For now, use basic metadata
-	title := url
+	// Extract basic link metadata
+	title := extractDomainFromURL(url)
 	description := ""
 	image := ""
 	linkType := "link"
+
+	// Determine link type based on URL patterns
+	lowerURL := strings.ToLower(url)
+	if strings.Contains(lowerURL, "youtube.com") || strings.Contains(lowerURL, "youtu.be") {
+		linkType = "video"
+		title = "YouTube Video"
+	} else if strings.Contains(lowerURL, ".jpg") || strings.Contains(lowerURL, ".png") ||
+		strings.Contains(lowerURL, ".gif") || strings.Contains(lowerURL, ".webp") {
+		linkType = "photo"
+		title = "Image"
+		image = url
+	}
 
 	// Calculate trend score
 	now := time.Now()
@@ -577,4 +605,20 @@ func (s *dynamoDBStorage) updateLinkTrendScore(ctx context.Context, url string) 
 	})
 
 	return err
+}
+
+// extractDomainFromURL extracts the domain name from a URL for use as a title
+func extractDomainFromURL(rawURL string) string {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	domain := parsedURL.Hostname()
+	// Remove www. prefix if present
+	if strings.HasPrefix(domain, "www.") {
+		domain = strings.TrimPrefix(domain, "www.")
+	}
+
+	return domain
 }
