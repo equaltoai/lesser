@@ -127,7 +127,7 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 	undoActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Context:   activitypub.Context,
-			ID:        fmt.Sprintf("https://%s/activities/undo/%d", now.UnixNano()),
+			ID:        fmt.Sprintf("https://%s/activities/undo/%d", r.domain, now.UnixNano()),
 			Type:      activitypub.UndoType,
 			Published: &now,
 		},
@@ -287,6 +287,7 @@ func (r *RelayService) fetchRelayActor(ctx context.Context, relayURL string) (*a
 }
 
 func (r *RelayService) handleRelayAccept(ctx context.Context, activity *activitypub.Activity, relay *RelayInfo) error {
+	_ = activity // Activity details not needed for accept handling
 	r.logger.Info("relay accepted follow request",
 		zap.String("relay_url", relay.URL))
 
@@ -296,6 +297,7 @@ func (r *RelayService) handleRelayAccept(ctx context.Context, activity *activity
 }
 
 func (r *RelayService) handleRelayReject(ctx context.Context, activity *activitypub.Activity, relay *RelayInfo) error {
+	_ = activity // Activity details not needed for reject handling
 	r.logger.Warn("relay rejected follow request",
 		zap.String("relay_url", relay.URL))
 
@@ -304,6 +306,7 @@ func (r *RelayService) handleRelayReject(ctx context.Context, activity *activity
 }
 
 func (r *RelayService) handleRelayAnnounce(ctx context.Context, activity *activitypub.Activity, relay *RelayInfo) error {
+	_ = ctx // Context will be used when processing is implemented
 	// Extract the announced activity
 	var announcedActivity *activitypub.Activity
 
@@ -336,6 +339,7 @@ func (r *RelayService) handleRelayAnnounce(ctx context.Context, activity *activi
 // Storage methods (would use DynamoDB in production)
 
 func (r *RelayService) storeRelayInfo(ctx context.Context, relay *RelayInfo) error {
+	_ = ctx // Will be used when DynamoDB implementation is added
 	// Store in DynamoDB with pattern:
 	// PK: RELAY#<relay_url>
 	// SK: INFO
@@ -344,6 +348,7 @@ func (r *RelayService) storeRelayInfo(ctx context.Context, relay *RelayInfo) err
 }
 
 func (r *RelayService) getRelayInfo(ctx context.Context, relayURL string) (*RelayInfo, error) {
+	_ = ctx // Will be used when DynamoDB implementation is added
 	// Get from DynamoDB
 	r.logger.Debug("getting relay info", zap.String("relay_url", relayURL))
 	return &RelayInfo{
@@ -354,12 +359,14 @@ func (r *RelayService) getRelayInfo(ctx context.Context, relayURL string) (*Rela
 }
 
 func (r *RelayService) removeRelayInfo(ctx context.Context, relayURL string) error {
+	_ = ctx // Will be used when DynamoDB implementation is added
 	// Remove from DynamoDB
 	r.logger.Debug("removing relay info", zap.String("relay_url", relayURL))
 	return nil
 }
 
 func (r *RelayService) getActiveRelays(ctx context.Context) ([]*RelayInfo, error) {
+	_ = ctx // Will be used when DynamoDB implementation is added
 	// Query DynamoDB for active relays
 	// GSI: RELAY_STATUS
 	// PK: ACTIVE#true
