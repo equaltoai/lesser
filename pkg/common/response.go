@@ -116,6 +116,11 @@ func UnprocessableEntity(err error) *events.APIGatewayV2HTTPResponse {
 	return ErrorResponseWithCode(http.StatusUnprocessableEntity, "VALIDATION_ERROR", err)
 }
 
+// TooManyRequests returns a 429 Too Many Requests response
+func TooManyRequests(err error) *events.APIGatewayV2HTTPResponse {
+	return ErrorResponseWithCode(http.StatusTooManyRequests, "RATE_LIMITED", err)
+}
+
 // InternalServerError returns a 500 Internal Server Error response
 func InternalServerError(err error) *events.APIGatewayV2HTTPResponse {
 	// Log the actual error but don't expose internal details

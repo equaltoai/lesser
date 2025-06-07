@@ -289,24 +289,6 @@ func (s *StatusSearchService) selectStrategies(query *AnalyzedStatusQuery, optio
 		strategies = append(strategies, &TrendingSearchStrategy{service: s})
 	}
 
-	// Fuzzy search - if available and query is long enough
-	if len(query.Normalized) >= 3 && s.isFuzzySearchAvailable() {
-		// Fuzzy search requires OpenSearch configuration
-		// Skip if not available
-		s.logger.Debug("fuzzy search not available - OpenSearch not configured")
-	}
-
-	// Semantic search - if available and enabled
-	if len(query.Normalized) >= 5 && s.isSemanticSearchAvailable() {
-		// Use existing embedding service if available
-		if s.embeddings != nil {
-			strategies = append(strategies, &StatusSemanticSearchStrategy{
-				service:    s,
-				embeddings: s.embeddings,
-			})
-		}
-	}
-
 	return strategies
 }
 

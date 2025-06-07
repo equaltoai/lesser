@@ -62,8 +62,6 @@ func (s *Storage) SaveOperationCost(ctx context.Context, cost *OperationCost) er
 		"S3Gets":              &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.S3Gets, 10)},
 		"S3Puts":              &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.S3Puts, 10)},
 		"DataTransferBytes":   &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.DataTransferBytes, 10)},
-		"OpenSearchQueries":   &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.OpenSearchQueries, 10)},
-		"OpenSearchIndexed":   &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.OpenSearchIndexed, 10)},
 		"Type":                &types.AttributeValueMemberS{Value: "OPERATION"},
 	}
 

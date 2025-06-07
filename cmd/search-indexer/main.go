@@ -14,7 +14,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -232,8 +231,6 @@ func (si *SearchIndexer) handleRecord(ctx context.Context, record events.DynamoD
 }
 
 func (si *SearchIndexer) indexActor(ctx context.Context, item map[string]events.DynamoDBAttributeValue) error {
-	// Track OpenSearch indexing for cost purposes
-	cost.TrackOpenSearchIndexContext(ctx, 1)
 
 	// Extract PK to ensure it's an actor
 	pk, ok := item["PK"]
@@ -360,9 +357,6 @@ func (si *SearchIndexer) deleteActor(ctx context.Context, item map[string]events
 		Index:      "actors",
 		DocumentID: actorID,
 	}
-
-	// Track OpenSearch delete operation (counts as indexing for cost purposes)
-	cost.TrackOpenSearchIndexContext(ctx, 1)
 
 	res, err := req.Do(ctx, si.osClient)
 	if err != nil {

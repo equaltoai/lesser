@@ -66,17 +66,3 @@ func TrackDataTransferContext(ctx context.Context, bytes int64) {
 		t.TrackDataTransfer(bytes)
 	})
 }
-
-// TrackOpenSearchQueryContext tracks OpenSearch queries from context
-func TrackOpenSearchQueryContext(ctx context.Context, count int) {
-	Track(ctx, func(t *Tracker) {
-		t.TrackOpenSearchQuery(count)
-	})
-}
-
-// TrackOpenSearchIndexContext tracks OpenSearch indexing from context
-func TrackOpenSearchIndexContext(ctx context.Context, count int) {
-	Track(ctx, func(t *Tracker) {
-		t.TrackOpenSearchIndex(count)
-	})
-}

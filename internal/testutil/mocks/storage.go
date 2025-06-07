@@ -1337,3 +1337,177 @@ func (m *BaseMockStorage) GetCommunityNotesByAuthor(ctx context.Context, authorI
 func (m *BaseMockStorage) GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error) {
 	return nil, nil
 }
+
+// Session management operations
+func (m *BaseMockStorage) CreateSession(ctx context.Context, session *storage.Session) error {
+	return nil
+}
+func (m *BaseMockStorage) GetSession(ctx context.Context, sessionID string) (*storage.Session, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetSessionByRefreshToken(ctx context.Context, refreshToken string) (*storage.Session, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) UpdateSession(ctx context.Context, session *storage.Session) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteSession(ctx context.Context, sessionID string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetUserSessions(ctx context.Context, username string) ([]*storage.Session, error) {
+	return nil, nil
+}
+
+// Device management operations
+func (m *BaseMockStorage) CreateDevice(ctx context.Context, device *storage.Device) error {
+	return nil
+}
+func (m *BaseMockStorage) GetDevice(ctx context.Context, deviceID string) (*storage.Device, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) UpdateDevice(ctx context.Context, device *storage.Device) error {
+	return nil
+}
+func (m *BaseMockStorage) GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error) {
+	return nil, nil
+}
+
+// Rate limiting operations
+func (m *BaseMockStorage) RecordLoginAttempt(ctx context.Context, identifier string, success bool) error {
+	return nil
+}
+func (m *BaseMockStorage) GetLoginAttemptCount(ctx context.Context, identifier string, since time.Time) (int, error) {
+	return 0, nil
+}
+func (m *BaseMockStorage) IsRateLimited(ctx context.Context, identifier string) (bool, time.Time, error) {
+	return false, time.Time{}, nil
+}
+func (m *BaseMockStorage) ClearLoginAttempts(ctx context.Context, identifier string) error {
+	return nil
+}
+
+// WebAuthn operations
+func (m *BaseMockStorage) StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
+	return nil
+}
+func (m *BaseMockStorage) GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetUserWebAuthnCredentials(ctx context.Context, username string) ([]*storage.WebAuthnCredential, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) UpdateWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteWebAuthnCredential(ctx context.Context, credentialID string) error {
+	return nil
+}
+
+// WebAuthn challenge operations
+func (m *BaseMockStorage) StoreWebAuthnChallenge(ctx context.Context, challenge *storage.WebAuthnChallenge) error {
+	return nil
+}
+func (m *BaseMockStorage) GetWebAuthnChallenge(ctx context.Context, challengeID string) (*storage.WebAuthnChallenge, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) DeleteWebAuthnChallenge(ctx context.Context, challengeID string) error {
+	return nil
+}
+
+// Recovery operations
+func (m *BaseMockStorage) StoreTrustee(ctx context.Context, username string, trustee *storage.TrusteeConfig) error {
+	return nil
+}
+func (m *BaseMockStorage) GetTrustees(ctx context.Context, username string) ([]*storage.TrusteeConfig, error) {
+	return []*storage.TrusteeConfig{}, nil
+}
+func (m *BaseMockStorage) DeleteTrustee(ctx context.Context, username, trusteeActorID string) error {
+	return nil
+}
+func (m *BaseMockStorage) UpdateTrusteeConfirmed(ctx context.Context, username, trusteeActorID string, confirmed bool) error {
+	return nil
+}
+func (m *BaseMockStorage) StoreRecoveryRequest(ctx context.Context, request *storage.SocialRecoveryRequest) error {
+	return nil
+}
+func (m *BaseMockStorage) GetRecoveryRequest(ctx context.Context, requestID string) (*storage.SocialRecoveryRequest, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) UpdateRecoveryRequest(ctx context.Context, request *storage.SocialRecoveryRequest) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteRecoveryRequest(ctx context.Context, requestID string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetActiveRecoveryRequests(ctx context.Context, username string) ([]*storage.SocialRecoveryRequest, error) {
+	return []*storage.SocialRecoveryRequest{}, nil
+}
+func (m *BaseMockStorage) StoreRecoveryCode(ctx context.Context, username string, code *storage.RecoveryCodeItem) error {
+	return nil
+}
+func (m *BaseMockStorage) GetRecoveryCodes(ctx context.Context, username string) ([]*storage.RecoveryCodeItem, error) {
+	return []*storage.RecoveryCodeItem{}, nil
+}
+func (m *BaseMockStorage) MarkRecoveryCodeUsed(ctx context.Context, username, codeHash string) error {
+	return nil
+}
+func (m *BaseMockStorage) DeleteAllRecoveryCodes(ctx context.Context, username string) error {
+	return nil
+}
+func (m *BaseMockStorage) CountUnusedRecoveryCodes(ctx context.Context, username string) (int, error) {
+	return 0, nil
+}
+func (m *BaseMockStorage) StoreRecoveryToken(ctx context.Context, key string, data map[string]interface{}) error {
+	return nil
+}
+func (m *BaseMockStorage) GetRecoveryToken(ctx context.Context, key string) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *BaseMockStorage) DeleteRecoveryToken(ctx context.Context, key string) error {
+	return nil
+}
+func (m *BaseMockStorage) StoreWalletChallenge(ctx context.Context, challenge *storage.WalletChallenge) error {
+	return nil
+}
+func (m *BaseMockStorage) GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) DeleteWalletChallenge(ctx context.Context, challengeID string) error {
+	return nil
+}
+func (m *BaseMockStorage) StoreWalletCredential(ctx context.Context, credential *storage.WalletCredential) error {
+	return nil
+}
+func (m *BaseMockStorage) GetWalletCredential(ctx context.Context, walletType, address string) (*storage.WalletCredential, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) DeleteWalletCredential(ctx context.Context, username, address string) error {
+	return nil
+}
+func (m *BaseMockStorage) UpdateWalletLastUsed(ctx context.Context, username, address string) error {
+	return nil
+}
+func (m *BaseMockStorage) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
+	return []string{}, nil
+}
+func (m *BaseMockStorage) GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) LinkProviderAccount(ctx context.Context, username, provider, providerID string) error {
+	return nil
+}
+func (m *BaseMockStorage) UnlinkProviderAccount(ctx context.Context, username, provider string) error {
+	return nil
+}
+func (m *BaseMockStorage) StoreOAuthState(ctx context.Context, state string, data *storage.OAuthState) error {
+	return nil
+}
+func (m *BaseMockStorage) GetOAuthState(ctx context.Context, state string) (*storage.OAuthState, error) {
+	return nil, nil
+}
+func (m *BaseMockStorage) DeleteOAuthState(ctx context.Context, state string) error {
+	return nil
+}

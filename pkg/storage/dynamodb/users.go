@@ -15,8 +15,8 @@ import (
 
 // CreateUser creates a new user in DynamoDB
 func (s *dynamoDBStorage) CreateUser(ctx context.Context, user *storage.User) error {
-	if user.Username == "" || user.Email == "" || user.PasswordHash == "" {
-		return errors.New("username, email, and password_hash are required")
+	if user.Username == "" {
+		return errors.New("username is required")
 	}
 
 	// Set timestamps
@@ -38,8 +38,12 @@ func (s *dynamoDBStorage) CreateUser(ctx context.Context, user *storage.User) er
 	// Add keys
 	av["PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", user.Username)}
 	av["SK"] = &types.AttributeValueMemberS{Value: "METADATA"}
-	av["GSI2PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("EMAIL#%s", user.Email)}
-	av["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("USERNAME#%s", user.Username)}
+
+	// Only add email index if email is provided
+	if user.Email != "" {
+		av["GSI2PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("EMAIL#%s", user.Email)}
+		av["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("USERNAME#%s", user.Username)}
+	}
 
 	// Put item with condition that it doesn't already exist
 	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
@@ -354,4 +358,119 @@ func (s *dynamoDBStorage) GetActiveUserCount(ctx context.Context, days int) (int
 	// For now, this gives us a reasonable approximation of activity level
 
 	return totalCount, nil
+}
+
+// GetUserByProviderID gets a user by their OAuth provider ID
+func (d *dynamoDBStorage) GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error) {
+	// Query using the GSI for provider accounts
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(d.tableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk AND GSI1SK = :sk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("PROVIDER#%s", provider)},
+			":sk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ID#%s", providerID)},
+		},
+	}
+
+	result, err := d.client.Query(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user by provider ID: %w", err)
+	}
+
+	if len(result.Items) == 0 {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	// Extract username from the result
+	var linkRecord struct {
+		Username string `dynamodbav:"Username"`
+	}
+	err = attributevalue.UnmarshalMap(result.Items[0], &linkRecord)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal provider link: %w", err)
+	}
+
+	// Get the actual user
+	return d.GetUser(ctx, linkRecord.Username)
+}
+
+// LinkProviderAccount links an OAuth provider account to a user
+func (d *dynamoDBStorage) LinkProviderAccount(ctx context.Context, username, provider, providerID string) error {
+	item := map[string]interface{}{
+		"PK":         fmt.Sprintf("USER#%s", username),
+		"SK":         fmt.Sprintf("PROVIDER#%s", provider),
+		"GSI1PK":     fmt.Sprintf("PROVIDER#%s", provider),
+		"GSI1SK":     fmt.Sprintf("ID#%s", providerID),
+		"Username":   username,
+		"Provider":   provider,
+		"ProviderID": providerID,
+		"LinkedAt":   time.Now(),
+	}
+
+	av, err := attributevalue.MarshalMap(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal provider link: %w", err)
+	}
+
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(d.tableName),
+		Item:      av,
+	}
+
+	_, err = d.client.PutItem(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to link provider account: %w", err)
+	}
+
+	return nil
+}
+
+// UnlinkProviderAccount unlinks an OAuth provider account from a user
+func (d *dynamoDBStorage) UnlinkProviderAccount(ctx context.Context, username, provider string) error {
+	input := &dynamodb.DeleteItemInput{
+		TableName: aws.String(d.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", username)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PROVIDER#%s", provider)},
+		},
+	}
+
+	_, err := d.client.DeleteItem(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to unlink provider account: %w", err)
+	}
+
+	return nil
+}
+
+// GetLinkedProviders gets all linked OAuth providers for a user
+func (d *dynamoDBStorage) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(d.tableName),
+		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :sk)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", username)},
+			":sk": &types.AttributeValueMemberS{Value: "PROVIDER#"},
+		},
+	}
+
+	result, err := d.client.Query(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query linked providers: %w", err)
+	}
+
+	providers := make([]string, 0, len(result.Items))
+	for _, item := range result.Items {
+		var linkRecord struct {
+			Provider string `dynamodbav:"Provider"`
+		}
+		err = attributevalue.UnmarshalMap(item, &linkRecord)
+		if err != nil {
+			continue // Skip invalid records
+		}
+		providers = append(providers, linkRecord.Provider)
+	}
+
+	return providers, nil
 }

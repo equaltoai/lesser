@@ -97,10 +97,15 @@ func (h *Handler) HandleGetAnnouncements(ctx context.Context, request events.API
 
 			// Check if it's a custom emoji (starts with :)
 			if strings.HasPrefix(emojiName, ":") && strings.HasSuffix(emojiName, ":") {
-				// TODO: Look up custom emoji and set URL fields
-				// reaction.URL = ...
-				// reaction.StaticURL = ...
-				_ = emojiName // Placeholder to satisfy linter
+				// Extract shortcode without colons
+				shortcode := strings.TrimPrefix(strings.TrimSuffix(emojiName, ":"), ":")
+
+				// Look up custom emoji
+				emoji, err := h.store.GetCustomEmoji(ctx, shortcode)
+				if err == nil && emoji != nil && !emoji.Disabled {
+					reaction.URL = emoji.URL
+					reaction.StaticURL = emoji.StaticURL
+				}
 			}
 
 			apiReactions = append(apiReactions, reaction)

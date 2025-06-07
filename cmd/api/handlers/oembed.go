@@ -155,7 +155,7 @@ func (h *Handler) HandleOEmbed(ctx context.Context, request events.APIGatewayV2H
 	}
 
 	// Generate oEmbed response
-	oembed := h.generateOEmbed(note, authorActor, requestedURL, maxWidth)
+	oembed := h.generateOEmbed(note, authorActor, maxWidth)
 
 	// Return based on format
 	switch format {
@@ -209,9 +209,9 @@ func (h *Handler) extractStatusID(urlPath string) string {
 }
 
 // generateOEmbed creates the oEmbed response
-func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Actor, requestedURL string, maxWidth int) *OEmbedResponse {
+func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Actor, maxWidth int) *OEmbedResponse {
 	// Generate HTML embed
-	embedHTML := h.generateEmbedHTML(note, author, maxWidth)
+	embedHTML := h.generateEmbedHTML(note, maxWidth)
 
 	// Calculate height estimate (rough approximation)
 	// Base height + content height + media height
@@ -259,7 +259,7 @@ func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Act
 }
 
 // generateEmbedHTML creates the HTML for embedding
-func (h *Handler) generateEmbedHTML(note *activitypub.Note, author *activitypub.Actor, maxWidth int) string {
+func (h *Handler) generateEmbedHTML(note *activitypub.Note, maxWidth int) string {
 	// Extract clean status ID from note ID
 	statusID := strings.TrimPrefix(note.ID, h.cfg.BaseURL()+"/objects/")
 
