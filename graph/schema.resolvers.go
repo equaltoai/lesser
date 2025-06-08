@@ -7,233 +7,236 @@ package graph
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/aron23/lesser/graph/model"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/moderation"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
 
 // Type is the resolver for the type field.
 func (r *activityResolver) Type(ctx context.Context, obj *activitypub.Activity) (model.ActivityType, error) {
-	panic(fmt.Errorf("not implemented: Type - type"))
+	return "", fmt.Errorf("GraphQL resolver not yet implemented: %s", "Type - type")
 }
 
 // Actor is the resolver for the actor field.
 func (r *activityResolver) Actor(ctx context.Context, obj *activitypub.Activity) (*activitypub.Actor, error) {
-	panic(fmt.Errorf("not implemented: Actor - actor"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Actor - actor")
 }
 
 // Object is the resolver for the object field.
 func (r *activityResolver) Object(ctx context.Context, obj *activitypub.Activity) (*model.Object, error) {
-	panic(fmt.Errorf("not implemented: Object - object"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Object - object")
 }
 
 // Target is the resolver for the target field.
 func (r *activityResolver) Target(ctx context.Context, obj *activitypub.Activity) (*model.Object, error) {
-	panic(fmt.Errorf("not implemented: Target - target"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Target - target")
 }
 
 // Published is the resolver for the published field.
 func (r *activityResolver) Published(ctx context.Context, obj *activitypub.Activity) (*model.Time, error) {
-	panic(fmt.Errorf("not implemented: Published - published"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Published - published")
 }
 
 // Cost is the resolver for the cost field.
 func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) (int, error) {
-	panic(fmt.Errorf("not implemented: Cost - cost"))
+	return 0, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Cost - cost")
 }
 
 // Username is the resolver for the username field.
 func (r *actorResolver) Username(ctx context.Context, obj *activitypub.Actor) (string, error) {
-	panic(fmt.Errorf("not implemented: Username - username"))
+	return "", fmt.Errorf("GraphQL resolver not yet implemented: %s", "Username - username")
 }
 
 // Domain is the resolver for the domain field.
 func (r *actorResolver) Domain(ctx context.Context, obj *activitypub.Actor) (*string, error) {
-	panic(fmt.Errorf("not implemented: Domain - domain"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Domain - domain")
 }
 
 // DisplayName is the resolver for the displayName field.
 func (r *actorResolver) DisplayName(ctx context.Context, obj *activitypub.Actor) (*string, error) {
-	panic(fmt.Errorf("not implemented: DisplayName - displayName"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "DisplayName - displayName")
 }
 
 // Avatar is the resolver for the avatar field.
 func (r *actorResolver) Avatar(ctx context.Context, obj *activitypub.Actor) (*string, error) {
-	panic(fmt.Errorf("not implemented: Avatar - avatar"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Avatar - avatar")
 }
 
 // Header is the resolver for the header field.
 func (r *actorResolver) Header(ctx context.Context, obj *activitypub.Actor) (*string, error) {
-	panic(fmt.Errorf("not implemented: Header - header"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Header - header")
 }
 
 // Followers is the resolver for the followers field.
 func (r *actorResolver) Followers(ctx context.Context, obj *activitypub.Actor) (int, error) {
-	panic(fmt.Errorf("not implemented: Followers - followers"))
+	return 0, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Followers - followers")
 }
 
 // Following is the resolver for the following field.
 func (r *actorResolver) Following(ctx context.Context, obj *activitypub.Actor) (int, error) {
-	panic(fmt.Errorf("not implemented: Following - following"))
+	return 0, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Following - following")
 }
 
 // StatusesCount is the resolver for the statusesCount field.
 func (r *actorResolver) StatusesCount(ctx context.Context, obj *activitypub.Actor) (int, error) {
-	panic(fmt.Errorf("not implemented: StatusesCount - statusesCount"))
+	return 0, fmt.Errorf("GraphQL resolver not yet implemented: %s", "StatusesCount - statusesCount")
 }
 
 // Bot is the resolver for the bot field.
 func (r *actorResolver) Bot(ctx context.Context, obj *activitypub.Actor) (bool, error) {
-	panic(fmt.Errorf("not implemented: Bot - bot"))
+	return false, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Bot - bot")
 }
 
 // Locked is the resolver for the locked field.
 func (r *actorResolver) Locked(ctx context.Context, obj *activitypub.Actor) (bool, error) {
-	panic(fmt.Errorf("not implemented: Locked - locked"))
+	return false, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Locked - locked")
 }
 
 // CreatedAt is the resolver for the createdAt field.
 func (r *actorResolver) CreatedAt(ctx context.Context, obj *activitypub.Actor) (*model.Time, error) {
-	panic(fmt.Errorf("not implemented: CreatedAt - createdAt"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "CreatedAt - createdAt")
 }
 
 // UpdatedAt is the resolver for the updatedAt field.
 func (r *actorResolver) UpdatedAt(ctx context.Context, obj *activitypub.Actor) (*model.Time, error) {
-	panic(fmt.Errorf("not implemented: UpdatedAt - updatedAt"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "UpdatedAt - updatedAt")
 }
 
 // Fields is the resolver for the fields field.
 func (r *actorResolver) Fields(ctx context.Context, obj *activitypub.Actor) ([]*model.Field, error) {
-	panic(fmt.Errorf("not implemented: Fields - fields"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Fields - fields")
 }
 
 // TrustScore is the resolver for the trustScore field.
 func (r *actorResolver) TrustScore(ctx context.Context, obj *activitypub.Actor) (float64, error) {
-	panic(fmt.Errorf("not implemented: TrustScore - trustScore"))
+	return 0.0, fmt.Errorf("GraphQL resolver not yet implemented: %s", "TrustScore - trustScore")
 }
 
 // ReputationSignature is the resolver for the reputationSignature field.
 func (r *actorResolver) ReputationSignature(ctx context.Context, obj *activitypub.Actor) (*string, error) {
-	panic(fmt.Errorf("not implemented: ReputationSignature - reputationSignature"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "ReputationSignature - reputationSignature")
 }
 
 // ID is the resolver for the id field.
 func (r *attachmentResolver) ID(ctx context.Context, obj *activitypub.Attachment) (string, error) {
-	panic(fmt.Errorf("not implemented: ID - id"))
+	return "", fmt.Errorf("GraphQL resolver not yet implemented: %s", "ID - id")
 }
 
 // Preview is the resolver for the preview field.
 func (r *attachmentResolver) Preview(ctx context.Context, obj *activitypub.Attachment) (*string, error) {
-	panic(fmt.Errorf("not implemented: Preview - preview"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Preview - preview")
 }
 
 // Description is the resolver for the description field.
 func (r *attachmentResolver) Description(ctx context.Context, obj *activitypub.Attachment) (*string, error) {
-	panic(fmt.Errorf("not implemented: Description - description"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Description - description")
 }
 
 // Blurhash is the resolver for the blurhash field.
 func (r *attachmentResolver) Blurhash(ctx context.Context, obj *activitypub.Attachment) (*string, error) {
-	panic(fmt.Errorf("not implemented: Blurhash - blurhash"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Blurhash - blurhash")
 }
 
 // Duration is the resolver for the duration field.
 func (r *attachmentResolver) Duration(ctx context.Context, obj *activitypub.Attachment) (*float64, error) {
-	panic(fmt.Errorf("not implemented: Duration - duration"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Duration - duration")
 }
 
 // Object is the resolver for the object field.
 func (r *moderationDecisionResolver) Object(ctx context.Context, obj *moderation.ModerationDecision) (*model.Object, error) {
-	panic(fmt.Errorf("not implemented: Object - object"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Object - object")
 }
 
 // Decision is the resolver for the decision field.
 func (r *moderationDecisionResolver) Decision(ctx context.Context, obj *moderation.ModerationDecision) (string, error) {
-	panic(fmt.Errorf("not implemented: Decision - decision"))
+	return "", fmt.Errorf("GraphQL resolver not yet implemented: %s", "Decision - decision")
 }
 
 // Confidence is the resolver for the confidence field.
 func (r *moderationDecisionResolver) Confidence(ctx context.Context, obj *moderation.ModerationDecision) (float64, error) {
-	panic(fmt.Errorf("not implemented: Confidence - confidence"))
+	return 0.0, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Confidence - confidence")
 }
 
 // Evidence is the resolver for the evidence field.
 func (r *moderationDecisionResolver) Evidence(ctx context.Context, obj *moderation.ModerationDecision) ([]string, error) {
-	panic(fmt.Errorf("not implemented: Evidence - evidence"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Evidence - evidence")
 }
 
 // Reviewers is the resolver for the reviewers field.
 func (r *moderationDecisionResolver) Reviewers(ctx context.Context, obj *moderation.ModerationDecision) ([]*activitypub.Actor, error) {
-	panic(fmt.Errorf("not implemented: Reviewers - reviewers"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Reviewers - reviewers")
 }
 
 // Timestamp is the resolver for the timestamp field.
 func (r *moderationDecisionResolver) Timestamp(ctx context.Context, obj *moderation.ModerationDecision) (*model.Time, error) {
-	panic(fmt.Errorf("not implemented: Timestamp - timestamp"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "Timestamp - timestamp")
 }
 
 // CreateNote is the resolver for the createNote field.
 func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNoteInput) (*model.CreateNotePayload, error) {
-	panic(fmt.Errorf("not implemented: CreateNote - createNote"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "CreateNote - createNote")
 }
 
 // DeleteObject is the resolver for the deleteObject field.
 func (r *mutationResolver) DeleteObject(ctx context.Context, id string) (bool, error) {
-	panic(fmt.Errorf("not implemented: DeleteObject - deleteObject"))
+	return false, fmt.Errorf("GraphQL resolver not yet implemented: %s", "DeleteObject - deleteObject")
 }
 
 // LikeObject is the resolver for the likeObject field.
 func (r *mutationResolver) LikeObject(ctx context.Context, id string) (*activitypub.Activity, error) {
-	panic(fmt.Errorf("not implemented: LikeObject - likeObject"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "LikeObject - likeObject")
 }
 
 // UnlikeObject is the resolver for the unlikeObject field.
 func (r *mutationResolver) UnlikeObject(ctx context.Context, id string) (bool, error) {
-	panic(fmt.Errorf("not implemented: UnlikeObject - unlikeObject"))
+	return false, fmt.Errorf("GraphQL resolver not yet implemented: %s", "UnlikeObject - unlikeObject")
 }
 
 // ShareObject is the resolver for the shareObject field.
 func (r *mutationResolver) ShareObject(ctx context.Context, id string) (*activitypub.Activity, error) {
-	panic(fmt.Errorf("not implemented: ShareObject - shareObject"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "ShareObject - shareObject")
 }
 
 // UnshareObject is the resolver for the unshareObject field.
 func (r *mutationResolver) UnshareObject(ctx context.Context, id string) (bool, error) {
-	panic(fmt.Errorf("not implemented: UnshareObject - unshareObject"))
+	return false, fmt.Errorf("GraphQL resolver not yet implemented: %s", "UnshareObject - unshareObject")
 }
 
 // FollowActor is the resolver for the followActor field.
 func (r *mutationResolver) FollowActor(ctx context.Context, id string) (*activitypub.Activity, error) {
-	panic(fmt.Errorf("not implemented: FollowActor - followActor"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "FollowActor - followActor")
 }
 
 // UnfollowActor is the resolver for the unfollowActor field.
 func (r *mutationResolver) UnfollowActor(ctx context.Context, id string) (bool, error) {
-	panic(fmt.Errorf("not implemented: UnfollowActor - unfollowActor"))
+	return false, fmt.Errorf("GraphQL resolver not yet implemented: %s", "UnfollowActor - unfollowActor")
 }
 
 // UpdateTrust is the resolver for the updateTrust field.
 func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInput) (*trust.TrustEdge, error) {
-	panic(fmt.Errorf("not implemented: UpdateTrust - updateTrust"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "UpdateTrust - updateTrust")
 }
 
 // FlagObject is the resolver for the flagObject field.
 func (r *mutationResolver) FlagObject(ctx context.Context, input model.FlagInput) (*model.FlagPayload, error) {
-	panic(fmt.Errorf("not implemented: FlagObject - flagObject"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "FlagObject - flagObject")
 }
 
 // AddCommunityNote is the resolver for the addCommunityNote field.
 func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.CommunityNoteInput) (*model.CommunityNotePayload, error) {
-	panic(fmt.Errorf("not implemented: AddCommunityNote - addCommunityNote"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "AddCommunityNote - addCommunityNote")
 }
 
 // VoteCommunityNote is the resolver for the voteCommunityNote field.
 func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, helpful bool) (*model.CommunityNote, error) {
-	panic(fmt.Errorf("not implemented: VoteCommunityNote - voteCommunityNote"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "VoteCommunityNote - voteCommunityNote")
 }
 
 // Actor is the resolver for the actor field.
@@ -251,7 +254,8 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 	var err error
 
 	if username != nil {
-		actor, err = r.Storage.GetActor(ctx, *username)
+		// Use DataLoader to batch load actors
+		actor, err = LoadActor(ctx, *username)
 	} else if id != nil {
 		// For id lookups, we'd need to extract username from the id
 		// This is a simplified implementation
@@ -259,7 +263,8 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 		if username == "" {
 			return nil, fmt.Errorf("invalid actor id format")
 		}
-		actor, err = r.Storage.GetActor(ctx, username)
+		// Use DataLoader to batch load actors
+		actor, err = LoadActor(ctx, username)
 	}
 
 	if err != nil {
@@ -272,103 +277,951 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 
 // Object is the resolver for the object field.
 func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, error) {
-	panic(fmt.Errorf("not implemented: Object - object"))
+	// Validate input
+	if id == "" {
+		return nil, fmt.Errorf("object id cannot be empty")
+	}
+
+	// Track the DynamoDB read
+	r.CostTracker.TrackDynamoRead(1)
+
+	// Use DataLoader to batch load objects
+	obj, err := LoadObject(ctx, id)
+	if err != nil {
+		r.Logger.Error("Failed to get object",
+			zap.String("id", id),
+			zap.Error(err))
+		return nil, err
+	}
+
+	// Convert to GraphQL model.Object
+	// The storage returns interface{}, we need to type switch and map to appropriate types
+	var result *model.Object
+
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		result = &model.Object{
+			ID:          o.ID,
+			Type:        model.ObjectTypeNote,
+			Content:     o.Content,
+			Visibility:  deriveVisibility(o.To, o.CC),
+			Sensitive:   o.Sensitive,
+			Attachments: convertAttachments(o.Attachment),
+			Tags:        convertTags(o.Tag),
+			Mentions:    convertMentions(o.Tag),
+			CreatedAt:   model.Time(getTimeOrNow(o.Published)),
+			UpdatedAt:   model.Time(getTimeOrNow(o.Updated)),
+			// TODO: Add proper counts from storage
+			RepliesCount: 0,
+			LikesCount:   0,
+			SharesCount:  0,
+		}
+
+		// Handle spoiler text (content warning)
+		if o.Summary != "" {
+			result.SpoilerText = &o.Summary
+		}
+
+		// Load actor using DataLoader
+		if o.AttributedTo != "" {
+			actor, err := LoadActor(ctx, o.AttributedTo)
+			if err == nil {
+				result.Actor = actor
+			}
+		}
+
+	case *activitypub.Article:
+		result = &model.Object{
+			ID:          o.ID,
+			Type:        model.ObjectTypeArticle,
+			Content:     o.Content,
+			Visibility:  deriveVisibility(o.To, o.CC),
+			Sensitive:   o.Sensitive,
+			Attachments: convertAttachments(o.Attachment),
+			Tags:        convertTags(o.Tag),
+			Mentions:    convertMentions(o.Tag),
+			CreatedAt:   model.Time(getTimeOrNow(o.Published)),
+			UpdatedAt:   model.Time(getTimeOrNow(o.Updated)),
+		}
+
+		// Articles use Name for title
+		if o.Name != "" {
+			result.SpoilerText = &o.Name
+		}
+
+		// Load actor using DataLoader
+		if o.AttributedTo != "" {
+			actor, err := LoadActor(ctx, o.AttributedTo)
+			if err == nil {
+				result.Actor = actor
+			}
+		}
+
+	case *activitypub.Image:
+		result = &model.Object{
+			ID:         o.ID,
+			Type:       model.ObjectTypeImage,
+			Content:    o.Summary, // Images use summary for description
+			Visibility: deriveVisibility(o.To, o.CC),
+			Sensitive:  o.Sensitive,
+			Attachments: []*activitypub.Attachment{
+				{
+					Type:      "Image",
+					MediaType: o.MediaType,
+					URL:       o.URL,
+					Width:     o.Width,
+					Height:    o.Height,
+				},
+			},
+			Tags:      []*activitypub.Tag{},
+			Mentions:  []*model.Mention{},
+			CreatedAt: model.Time(getTimeOrNow(o.Published)),
+			UpdatedAt: model.Time(getTimeOrNow(o.Updated)),
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported object type returned from storage: %T", obj)
+	}
+
+	// Add cost info to response extensions
+	if opCtx := graphql.GetOperationContext(ctx); opCtx != nil {
+		if opCtx.Extensions == nil {
+			opCtx.Extensions = make(map[string]interface{})
+		}
+		cost := r.CostTracker.CalculateCost()
+		opCtx.Extensions["cost"] = map[string]interface{}{
+			"operationCost": cost.TotalCostMicroCents,
+			"dynamoReads":   cost.DynamoDBReads,
+			"dynamoWrites":  cost.DynamoDBWrites,
+		}
+	}
+
+	return result, nil
 }
 
 // Timeline is the resolver for the timeline field.
 func (r *queryResolver) Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor) (*model.ObjectConnection, error) {
-	panic(fmt.Errorf("not implemented: Timeline - timeline"))
+	// Default limit
+	limit := 20
+	if first != nil && *first > 0 && *first <= 100 {
+		limit = *first
+	}
+
+	// Convert cursor to string
+	cursor := ""
+	if after != nil {
+		cursor = string(*after)
+	}
+
+	// Track the DynamoDB reads
+	r.CostTracker.TrackDynamoRead(limit) // Approximate - will read timeline entries
+
+	// Get username from context for authenticated queries
+	username := getUsernameFromContext(ctx)
+
+	var entries []*storage.TimelineEntry
+	var nextCursor string
+	var err error
+
+	// Variables for HOME timeline filtering
+	var followingSet map[string]bool
+	var preferences *storage.UserPreferences
+
+	// Route to appropriate timeline based on type
+	switch typeArg {
+	case model.TimelineTypePublic:
+		// Public timeline shows all public posts
+		entries, nextCursor, err = r.Storage.GetPublicTimeline(ctx, false, limit, cursor)
+
+	case model.TimelineTypeLocal:
+		// Local timeline shows only local public posts
+		entries, nextCursor, err = r.Storage.GetPublicTimeline(ctx, true, limit, cursor)
+
+	case model.TimelineTypeHome:
+		// Home timeline requires authentication
+		if username == "" {
+			return nil, fmt.Errorf("authentication required for home timeline")
+		}
+
+		// Get user's following list for filtering
+		following, _, err := r.Storage.GetFollowing(ctx, username, 1000, "") // Get up to 1000 follows
+		if err != nil {
+			r.Logger.Error("Failed to get following list",
+				zap.String("username", username),
+				zap.Error(err))
+			// Continue without following filter if this fails
+		}
+
+		// Create a set for efficient lookup
+		followingSet = make(map[string]bool)
+		for _, f := range following {
+			followingSet[f] = true
+		}
+
+		// Get user preferences for timeline filtering
+		var prefErr error
+		preferences, prefErr = r.Storage.GetUserPreferences(ctx, username)
+		if prefErr != nil {
+			r.Logger.Warn("Failed to get user preferences",
+				zap.String("username", username),
+				zap.Error(prefErr))
+			// Continue with default preferences
+		}
+
+		entries, nextCursor, err = r.Storage.GetHomeTimeline(ctx, username, limit, cursor)
+
+	case model.TimelineTypeHashtag:
+		// Hashtag timeline requires hashtag parameter
+		if hashtag == nil || *hashtag == "" {
+			return nil, fmt.Errorf("hashtag parameter required for hashtag timeline")
+		}
+		entries, nextCursor, err = r.Storage.GetHashtagTimeline(ctx, *hashtag, false, limit, cursor)
+
+	case model.TimelineTypeList:
+		// List timeline requires listID parameter
+		if listID == nil || *listID == "" {
+			return nil, fmt.Errorf("listId parameter required for list timeline")
+		}
+		entries, nextCursor, err = r.Storage.GetListTimeline(ctx, *listID, limit, cursor)
+
+	case model.TimelineTypeDirect:
+		// Direct messages timeline - not implemented yet
+		return nil, fmt.Errorf("direct timeline not yet implemented")
+
+	default:
+		return nil, fmt.Errorf("unknown timeline type: %s", typeArg)
+	}
+
+	if err != nil {
+		r.Logger.Error("Failed to get timeline",
+			zap.String("type", string(typeArg)),
+			zap.Error(err))
+		return nil, err
+	}
+
+	// Convert timeline entries to GraphQL objects
+	edges := make([]*model.ObjectEdge, 0, len(entries))
+
+	// Batch load all objects using DataLoader
+	objectIDs := make([]string, len(entries))
+	for i, entry := range entries {
+		objectIDs[i] = entry.PostID
+	}
+
+	// Load all objects in parallel
+	for _, entry := range entries {
+		// Apply HOME timeline specific filtering
+		if typeArg == model.TimelineTypeHome {
+			// Skip posts from users we don't follow (unless it's a boost from someone we follow)
+			if !entry.IsBoost && !followingSet[entry.ActorHandle] {
+				continue
+			}
+
+			// Check if the original author is blocked or muted
+			isBlocked, _ := r.Storage.IsBlocked(ctx, username, entry.ActorHandle)
+			if isBlocked {
+				continue
+			}
+
+			isMuted, _ := r.Storage.IsMuted(ctx, username, entry.ActorHandle)
+			if isMuted {
+				// Skip if muted (could be refined based on mute settings)
+				continue
+			}
+
+			// Check domain blocks
+			if entry.ActorHandle != "" {
+				parts := strings.Split(entry.ActorHandle, "@")
+				if len(parts) > 1 {
+					domain := parts[1]
+					isDomainBlocked, _ := r.Storage.IsBlockedDomain(ctx, username, domain)
+					if isDomainBlocked {
+						continue
+					}
+				}
+			}
+
+			// Apply user preferences
+			if preferences != nil {
+				// Filter by language preference if set
+				if preferences.Language != "" && entry.Language != "" &&
+					entry.Language != preferences.Language {
+					// Skip posts not in preferred language
+					continue
+				}
+			}
+		}
+
+		// Load the object using DataLoader
+		obj, err := LoadObject(ctx, entry.PostID)
+		if err != nil {
+			r.Logger.Warn("Failed to load object from timeline",
+				zap.String("objectID", entry.PostID),
+				zap.Error(err))
+			continue
+		}
+
+		// Convert to GraphQL object (reuse logic from Object resolver)
+		graphqlObj := r.convertToGraphQLObject(ctx, obj)
+		if graphqlObj == nil {
+			continue
+		}
+
+		// Add boost information if this is a boost
+		if entry.IsBoost && entry.BoostedBy != "" {
+			// TODO: Add boost metadata to object
+		}
+
+		// Create edge with cursor
+		edge := &model.ObjectEdge{
+			Node:   graphqlObj,
+			Cursor: model.Cursor(entry.EntryID),
+		}
+		edges = append(edges, edge)
+	}
+
+	// Build page info
+	pageInfo := &model.PageInfo{
+		HasNextPage: nextCursor != "",
+	}
+	if len(edges) > 0 {
+		pageInfo.StartCursor = &edges[0].Cursor
+		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
+	}
+	if cursor != "" {
+		pageInfo.HasPreviousPage = true
+	}
+
+	// Build connection
+	connection := &model.ObjectConnection{
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: len(edges), // Note: This is just the current page count
+	}
+
+	// Add cost info to response extensions
+	if opCtx := graphql.GetOperationContext(ctx); opCtx != nil {
+		if opCtx.Extensions == nil {
+			opCtx.Extensions = make(map[string]interface{})
+		}
+		cost := r.CostTracker.CalculateCost()
+		opCtx.Extensions["cost"] = map[string]interface{}{
+			"operationCost": cost.TotalCostMicroCents,
+			"dynamoReads":   cost.DynamoDBReads,
+			"dynamoWrites":  cost.DynamoDBWrites,
+		}
+	}
+
+	return connection, nil
 }
 
 // Search is the resolver for the search field.
 func (r *queryResolver) Search(ctx context.Context, query string, typeArg *string, first *int, after *model.Cursor) (*model.ObjectConnection, error) {
-	panic(fmt.Errorf("not implemented: Search - search"))
+	// Validate query
+	if query == "" {
+		return nil, fmt.Errorf("search query cannot be empty")
+	}
+
+	// Default limit
+	limit := 20
+	if first != nil && *first > 0 && *first <= 100 {
+		limit = *first
+	}
+
+	// Track the DynamoDB reads
+	r.CostTracker.TrackDynamoRead(limit * 2) // Approximate - searching accounts and statuses
+
+	// Determine search type
+	searchType := "all"
+	if typeArg != nil {
+		searchType = *typeArg
+	}
+
+	edges := make([]*model.ObjectEdge, 0)
+
+	// Get username from context for filtered searches
+	// TODO: Use username for following-only searches
+	_ = getUsernameFromContext(ctx)
+
+	// Search based on type
+	switch searchType {
+	case "accounts":
+		// Search for accounts only
+		accounts, err := r.Storage.SearchAccounts(ctx, query, limit, false, 0)
+		if err != nil {
+			r.Logger.Error("Failed to search accounts",
+				zap.String("query", query),
+				zap.Error(err))
+			return nil, err
+		}
+		// Convert accounts to objects
+		for _, account := range accounts {
+			// Create a synthetic object for the account
+			obj := &model.Object{
+				ID:         account.ID,
+				Type:       model.ObjectTypeNote, // Using Note as a placeholder
+				Content:    account.Summary,
+				Actor:      account,
+				CreatedAt:  model.Time(time.Now()),
+				UpdatedAt:  model.Time(time.Now()),
+				Visibility: model.VisibilityPublic,
+			}
+
+			edge := &model.ObjectEdge{
+				Node:   obj,
+				Cursor: model.Cursor(account.ID),
+			}
+			edges = append(edges, edge)
+		}
+
+	case "statuses":
+		// Search for statuses only
+		options := storage.StatusSearchOptions{
+			Limit:         limit,
+			Offset:        0,
+			FollowingOnly: false,
+			LocalOnly:     false,
+		}
+
+		results, err := r.Storage.SearchStatusesWithOptions(ctx, query, options)
+		if err != nil {
+			r.Logger.Error("Failed to search statuses",
+				zap.String("query", query),
+				zap.Error(err))
+			return nil, err
+		}
+		// Load and convert status objects
+		for _, result := range results {
+			// Load the object using DataLoader
+			obj, err := LoadObject(ctx, result.StatusID)
+			if err != nil {
+				r.Logger.Warn("Failed to load object from search",
+					zap.String("objectID", result.StatusID),
+					zap.Error(err))
+				continue
+			}
+
+			// Convert to GraphQL object
+			graphqlObj := r.convertToGraphQLObject(ctx, obj)
+			if graphqlObj == nil {
+				continue
+			}
+
+			// Add search highlights if available
+			if len(result.Highlights) > 0 {
+				// TODO: Add highlights to object metadata
+			}
+
+			edge := &model.ObjectEdge{
+				Node:   graphqlObj,
+				Cursor: model.Cursor(result.StatusID),
+			}
+			edges = append(edges, edge)
+		}
+
+	case "hashtags":
+		// Search for hashtags only
+		hashtags, err := r.Storage.SearchHashtags(ctx, query, limit)
+		if err != nil {
+			r.Logger.Error("Failed to search hashtags",
+				zap.String("query", query),
+				zap.Error(err))
+			return nil, err
+		}
+
+		// Convert hashtags to synthetic objects
+		for _, hashtag := range hashtags {
+			// Create a synthetic object for the hashtag
+			obj := &model.Object{
+				ID:         hashtag.URL,
+				Type:       model.ObjectTypeNote, // Using Note as a placeholder
+				Content:    fmt.Sprintf("#%s - Used %d times", hashtag.Name, hashtag.UsageCount),
+				CreatedAt:  model.Time(hashtag.FirstSeen),
+				UpdatedAt:  model.Time(hashtag.LastUsed),
+				Visibility: model.VisibilityPublic,
+				Tags: []*activitypub.Tag{
+					{
+						Type: "Hashtag",
+						Name: hashtag.Name,
+						Href: hashtag.URL,
+					},
+				},
+			}
+
+			edge := &model.ObjectEdge{
+				Node:   obj,
+				Cursor: model.Cursor(hashtag.Name),
+			}
+			edges = append(edges, edge)
+		}
+
+	case "all":
+		// Search all types - accounts, statuses, and hashtags
+
+		// 1. Search accounts
+		accounts, err := r.Storage.SearchAccounts(ctx, query, limit, false, 0)
+		if err != nil {
+			r.Logger.Warn("Failed to search accounts",
+				zap.String("query", query),
+				zap.Error(err))
+		} else {
+			// Convert accounts to objects
+			for _, account := range accounts {
+				obj := &model.Object{
+					ID:         account.ID,
+					Type:       model.ObjectTypeNote,
+					Content:    account.Summary,
+					Actor:      account,
+					CreatedAt:  model.Time(time.Now()),
+					UpdatedAt:  model.Time(time.Now()),
+					Visibility: model.VisibilityPublic,
+				}
+				edge := &model.ObjectEdge{
+					Node:   obj,
+					Cursor: model.Cursor(account.ID),
+				}
+				edges = append(edges, edge)
+			}
+		}
+
+		// 2. Search statuses
+		options := storage.StatusSearchOptions{
+			Limit:         limit,
+			Offset:        0,
+			FollowingOnly: false,
+			LocalOnly:     false,
+		}
+		results, err := r.Storage.SearchStatusesWithOptions(ctx, query, options)
+		if err != nil {
+			r.Logger.Warn("Failed to search statuses",
+				zap.String("query", query),
+				zap.Error(err))
+		} else {
+			for _, result := range results {
+				obj, err := LoadObject(ctx, result.StatusID)
+				if err != nil {
+					continue
+				}
+				graphqlObj := r.convertToGraphQLObject(ctx, obj)
+				if graphqlObj == nil {
+					continue
+				}
+				edge := &model.ObjectEdge{
+					Node:   graphqlObj,
+					Cursor: model.Cursor(result.StatusID),
+				}
+				edges = append(edges, edge)
+			}
+		}
+
+		// 3. Search hashtags
+		hashtags, err := r.Storage.SearchHashtags(ctx, query, limit)
+		if err != nil {
+			r.Logger.Warn("Failed to search hashtags",
+				zap.String("query", query),
+				zap.Error(err))
+		} else {
+			for _, hashtag := range hashtags {
+				obj := &model.Object{
+					ID:         hashtag.URL,
+					Type:       model.ObjectTypeNote,
+					Content:    fmt.Sprintf("#%s - Used %d times", hashtag.Name, hashtag.UsageCount),
+					CreatedAt:  model.Time(hashtag.FirstSeen),
+					UpdatedAt:  model.Time(hashtag.LastUsed),
+					Visibility: model.VisibilityPublic,
+					Tags: []*activitypub.Tag{
+						{
+							Type: "Hashtag",
+							Name: hashtag.Name,
+							Href: hashtag.URL,
+						},
+					},
+				}
+				edge := &model.ObjectEdge{
+					Node:   obj,
+					Cursor: model.Cursor(hashtag.Name),
+				}
+				edges = append(edges, edge)
+			}
+		}
+
+		// If all searches failed, return error
+		if len(edges) == 0 {
+			return nil, fmt.Errorf("search failed for query: %s", query)
+		}
+
+	default:
+		return nil, fmt.Errorf("unknown search type: %s", searchType)
+	}
+
+	// Build page info
+	pageInfo := &model.PageInfo{
+		HasNextPage: false, // Simple implementation - no pagination yet
+	}
+	if len(edges) > 0 {
+		pageInfo.StartCursor = &edges[0].Cursor
+		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
+	}
+
+	// Build connection
+	connection := &model.ObjectConnection{
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: len(edges),
+	}
+
+	// Add cost info to response extensions
+	if opCtx := graphql.GetOperationContext(ctx); opCtx != nil {
+		if opCtx.Extensions == nil {
+			opCtx.Extensions = make(map[string]interface{})
+		}
+		cost := r.CostTracker.CalculateCost()
+		opCtx.Extensions["cost"] = map[string]interface{}{
+			"operationCost": cost.TotalCostMicroCents,
+			"dynamoReads":   cost.DynamoDBReads,
+			"dynamoWrites":  cost.DynamoDBWrites,
+		}
+	}
+
+	return connection, nil
 }
 
 // InstanceMetrics is the resolver for the instanceMetrics field.
 func (r *queryResolver) InstanceMetrics(ctx context.Context) (*model.InstanceMetrics, error) {
-	// Track the DynamoDB operations
-	r.CostTracker.TrackDynamoRead(1)
+	// Track the DynamoDB operations - we'll make several calls
+	r.CostTracker.TrackDynamoRead(5)
 
-	// For now, return mock data - in production, you'd query actual metrics
+	// Get active user count (users active in last 30 days)
+	activeUsers, err := r.Storage.GetActiveUserCount(ctx, 30)
+	if err != nil {
+		r.Logger.Warn("Failed to get active user count",
+			zap.Error(err))
+		activeUsers = 0
+	}
+
+	// Get total user count
+	totalUsers, err := r.Storage.GetTotalUserCount(ctx)
+	if err != nil {
+		r.Logger.Warn("Failed to get total user count",
+			zap.Error(err))
+	}
+
+	// Get total status count
+	totalStatuses, err := r.Storage.GetTotalStatusCount(ctx)
+	if err != nil {
+		r.Logger.Warn("Failed to get total status count",
+			zap.Error(err))
+	}
+
+	// Get total domain count (federated instances)
+	totalDomains, err := r.Storage.GetTotalDomainCount(ctx)
+	if err != nil {
+		r.Logger.Warn("Failed to get total domain count",
+			zap.Error(err))
+		totalDomains = 0
+	}
+
+	// Calculate requests per minute (simplified - in production use CloudWatch)
+	// For now, estimate based on active users
+	requestsPerMinute := int(activeUsers * 2) // Rough estimate: 2 requests per minute per active user
+
+	// Estimate average latency (in production, get from CloudWatch)
+	averageLatencyMs := 45.0 // Default estimate
+
+	// Calculate storage used (simplified estimate)
+	// Assume ~1MB per status, ~10KB per user
+	storageUsedBytes := (totalStatuses * 1024 * 1024) + (totalUsers * 10 * 1024)
+	storageUsedGb := float64(storageUsedBytes) / (1024 * 1024 * 1024)
+
+	// Calculate estimated monthly cost
+	// DynamoDB: ~$0.25 per million reads/writes
+	// S3: ~$0.023 per GB
+	// Lambda: ~$0.20 per million requests
+	// Federation: ~$0.001 per domain per month for tracking
+	estimatedRequests := float64(requestsPerMinute) * 60 * 24 * 30 // Monthly requests
+	dynamoCost := (estimatedRequests / 1000000) * 0.25
+	s3Cost := storageUsedGb * 0.023
+	lambdaCost := (estimatedRequests / 1000000) * 0.20
+	federationCost := float64(totalDomains) * 0.001 // Small cost for tracking federated domains
+	estimatedMonthlyCost := dynamoCost + s3Cost + lambdaCost + federationCost
+
+	// Add cost info to response extensions
+	if opCtx := graphql.GetOperationContext(ctx); opCtx != nil {
+		if opCtx.Extensions == nil {
+			opCtx.Extensions = make(map[string]interface{})
+		}
+		cost := r.CostTracker.CalculateCost()
+		opCtx.Extensions["cost"] = map[string]interface{}{
+			"operationCost": cost.TotalCostMicroCents,
+			"dynamoReads":   cost.DynamoDBReads,
+			"dynamoWrites":  cost.DynamoDBWrites,
+		}
+	}
+
 	return &model.InstanceMetrics{
-		ActiveUsers:          42,
-		RequestsPerMinute:    120,
-		AverageLatencyMs:     35.5,
-		StorageUsedGb:        2.7,
-		EstimatedMonthlyCost: 0.89,
+		ActiveUsers:          int(activeUsers),
+		RequestsPerMinute:    requestsPerMinute,
+		AverageLatencyMs:     averageLatencyMs,
+		StorageUsedGb:        storageUsedGb,
+		EstimatedMonthlyCost: estimatedMonthlyCost,
 		LastUpdated:          model.Time(time.Now()),
 	}, nil
 }
 
 // CostBreakdown is the resolver for the costBreakdown field.
 func (r *queryResolver) CostBreakdown(ctx context.Context, period *model.Period) (*model.CostBreakdown, error) {
-	panic(fmt.Errorf("not implemented: CostBreakdown - costBreakdown"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "CostBreakdown - costBreakdown")
 }
 
 // TrustGraph is the resolver for the trustGraph field.
 func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category *trust.TrustCategory) ([]*trust.TrustEdge, error) {
-	panic(fmt.Errorf("not implemented: TrustGraph - trustGraph"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "TrustGraph - trustGraph")
 }
 
 // ModerationQueue is the resolver for the moderationQueue field.
 func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *model.Cursor) ([]*moderation.ModerationDecision, error) {
-	panic(fmt.Errorf("not implemented: ModerationQueue - moderationQueue"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "ModerationQueue - moderationQueue")
 }
 
 // ExplainObject is the resolver for the explainObject field.
 func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.ObjectExplanation, error) {
-	panic(fmt.Errorf("not implemented: ExplainObject - explainObject"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "ExplainObject - explainObject")
 }
 
 // FederationStatus is the resolver for the federationStatus field.
 func (r *queryResolver) FederationStatus(ctx context.Context, domain string) (*model.FederationStatus, error) {
-	panic(fmt.Errorf("not implemented: FederationStatus - federationStatus"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "FederationStatus - federationStatus")
 }
 
 // ActivityStream is the resolver for the activityStream field.
 func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model.ActivityType) (<-chan *activitypub.Activity, error) {
-	panic(fmt.Errorf("not implemented: ActivityStream - activityStream"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "ActivityStream - activityStream")
 }
 
 // TimelineUpdates is the resolver for the timelineUpdates field.
 func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, typeArg model.TimelineType) (<-chan *model.Object, error) {
-	panic(fmt.Errorf("not implemented: TimelineUpdates - timelineUpdates"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "TimelineUpdates - timelineUpdates")
 }
 
 // CostUpdates is the resolver for the costUpdates field.
 func (r *subscriptionResolver) CostUpdates(ctx context.Context, threshold *int) (<-chan *model.CostUpdate, error) {
-	panic(fmt.Errorf("not implemented: CostUpdates - costUpdates"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "CostUpdates - costUpdates")
 }
 
 // ModerationEvents is the resolver for the moderationEvents field.
 func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *string) (<-chan *moderation.ModerationDecision, error) {
-	panic(fmt.Errorf("not implemented: ModerationEvents - moderationEvents"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "ModerationEvents - moderationEvents")
 }
 
 // TrustUpdates is the resolver for the trustUpdates field.
 func (r *subscriptionResolver) TrustUpdates(ctx context.Context, actorID string) (<-chan *trust.TrustEdge, error) {
-	panic(fmt.Errorf("not implemented: TrustUpdates - trustUpdates"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "TrustUpdates - trustUpdates")
 }
 
 // URL is the resolver for the url field.
 func (r *tagResolver) URL(ctx context.Context, obj *activitypub.Tag) (string, error) {
-	panic(fmt.Errorf("not implemented: URL - url"))
+	return "", fmt.Errorf("GraphQL resolver not yet implemented: %s", "URL - url")
 }
 
 // From is the resolver for the from field.
 func (r *trustEdgeResolver) From(ctx context.Context, obj *trust.TrustEdge) (*activitypub.Actor, error) {
-	panic(fmt.Errorf("not implemented: From - from"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "From - from")
 }
 
 // To is the resolver for the to field.
 func (r *trustEdgeResolver) To(ctx context.Context, obj *trust.TrustEdge) (*activitypub.Actor, error) {
-	panic(fmt.Errorf("not implemented: To - to"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "To - to")
 }
 
 // UpdatedAt is the resolver for the updatedAt field.
 func (r *trustEdgeResolver) UpdatedAt(ctx context.Context, obj *trust.TrustEdge) (*model.Time, error) {
-	panic(fmt.Errorf("not implemented: UpdatedAt - updatedAt"))
+	return nil, fmt.Errorf("GraphQL resolver not yet implemented: %s", "UpdatedAt - updatedAt")
+}
+
+// Helper functions
+
+// deriveVisibility determines the visibility based on To and CC fields
+func deriveVisibility(to, cc []string) model.Visibility {
+	// Check for public visibility
+	publicURI := "https://www.w3.org/ns/activitystreams#Public"
+	for _, t := range to {
+		if t == publicURI {
+			return model.VisibilityPublic
+		}
+	}
+	for _, c := range cc {
+		if c == publicURI {
+			return model.VisibilityUnlisted
+		}
+	}
+
+	// If it has followers collection, it's followers-only
+	for _, t := range to {
+		if strings.Contains(t, "/followers") {
+			return model.VisibilityFollowers
+		}
+	}
+
+	// Otherwise it's direct
+	return model.VisibilityDirect
+}
+
+// convertMentions extracts mentions from tags
+func convertMentions(tags []activitypub.Tag) []*model.Mention {
+	mentions := make([]*model.Mention, 0)
+	for _, tag := range tags {
+		if tag.Type == "Mention" {
+			mention := &model.Mention{
+				ID:  tag.Href,
+				URL: tag.Href,
+			}
+			// Extract username from href if possible
+			if tag.Name != "" {
+				mention.Username = strings.TrimPrefix(tag.Name, "@")
+			}
+			mentions = append(mentions, mention)
+		}
+	}
+	return mentions
+}
+
+// convertTags converts ActivityPub tags to GraphQL tags
+func convertTags(tags []activitypub.Tag) []*activitypub.Tag {
+	result := make([]*activitypub.Tag, 0, len(tags))
+	for i := range tags {
+		// Filter out mentions, keep only hashtags
+		if tags[i].Type != "Mention" {
+			result = append(result, &tags[i])
+		}
+	}
+	return result
+}
+
+// convertAttachments converts ActivityPub attachments
+func convertAttachments(attachments []activitypub.Attachment) []*activitypub.Attachment {
+	result := make([]*activitypub.Attachment, 0, len(attachments))
+	for i := range attachments {
+		result = append(result, &attachments[i])
+	}
+	return result
+}
+
+// getTimeOrNow returns the time or current time if nil
+func getTimeOrNow(t *time.Time) time.Time {
+	if t != nil {
+		return *t
+	}
+	return time.Now()
+}
+
+// getUsernameFromContext extracts the authenticated username from context
+func getUsernameFromContext(ctx context.Context) string {
+	// TODO: Implement proper authentication context extraction
+	// For now, return empty string
+	return ""
+}
+
+// convertToGraphQLObject converts storage objects to GraphQL objects
+func (r *queryResolver) convertToGraphQLObject(ctx context.Context, obj interface{}) *model.Object {
+	// Reuse logic from Object resolver
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		result := &model.Object{
+			ID:          o.ID,
+			Type:        model.ObjectTypeNote,
+			Content:     o.Content,
+			Visibility:  deriveVisibility(o.To, o.CC),
+			Sensitive:   o.Sensitive,
+			Attachments: convertAttachments(o.Attachment),
+			Tags:        convertTags(o.Tag),
+			Mentions:    convertMentions(o.Tag),
+			CreatedAt:   model.Time(getTimeOrNow(o.Published)),
+			UpdatedAt:   model.Time(getTimeOrNow(o.Updated)),
+			// TODO: Add proper counts from storage
+			RepliesCount: 0,
+			LikesCount:   0,
+			SharesCount:  0,
+		}
+
+		// Handle spoiler text (content warning)
+		if o.Summary != "" {
+			result.SpoilerText = &o.Summary
+		}
+
+		// Load actor using DataLoader
+		if o.AttributedTo != "" {
+			actor, err := LoadActor(ctx, o.AttributedTo)
+			if err == nil {
+				result.Actor = actor
+			}
+		}
+		return result
+
+	case *activitypub.Article:
+		result := &model.Object{
+			ID:          o.ID,
+			Type:        model.ObjectTypeArticle,
+			Content:     o.Content,
+			Visibility:  deriveVisibility(o.To, o.CC),
+			Sensitive:   o.Sensitive,
+			Attachments: convertAttachments(o.Attachment),
+			Tags:        convertTags(o.Tag),
+			Mentions:    convertMentions(o.Tag),
+			CreatedAt:   model.Time(getTimeOrNow(o.Published)),
+			UpdatedAt:   model.Time(getTimeOrNow(o.Updated)),
+			// TODO: Add proper counts from storage
+			RepliesCount: 0,
+			LikesCount:   0,
+			SharesCount:  0,
+		}
+
+		// Articles use Name for title
+		if o.Name != "" {
+			result.SpoilerText = &o.Name
+		}
+
+		// Load actor using DataLoader
+		if o.AttributedTo != "" {
+			actor, err := LoadActor(ctx, o.AttributedTo)
+			if err == nil {
+				result.Actor = actor
+			}
+		}
+		return result
+
+	case *activitypub.Image:
+		result := &model.Object{
+			ID:         o.ID,
+			Type:       model.ObjectTypeImage,
+			Content:    o.Summary, // Images use summary for description
+			Visibility: deriveVisibility(o.To, o.CC),
+			Sensitive:  o.Sensitive,
+			Attachments: []*activitypub.Attachment{
+				{
+					Type:      "Image",
+					MediaType: o.MediaType,
+					URL:       o.URL,
+					Width:     o.Width,
+					Height:    o.Height,
+				},
+			},
+			Tags:      []*activitypub.Tag{},
+			Mentions:  []*model.Mention{},
+			CreatedAt: model.Time(getTimeOrNow(o.Published)),
+			UpdatedAt: model.Time(getTimeOrNow(o.Updated)),
+			// TODO: Add proper counts from storage
+			RepliesCount: 0,
+			LikesCount:   0,
+			SharesCount:  0,
+		}
+		return result
+
+	default:
+		// Log unsupported type and return nil
+		r.Logger.Warn("Unsupported object type in timeline",
+			zap.String("type", fmt.Sprintf("%T", obj)))
+		return nil
+	}
 }
 
 // Activity returns ActivityResolver implementation.

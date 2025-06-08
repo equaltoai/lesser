@@ -7,14 +7,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/media"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -26,9 +29,14 @@ var (
 	logger       *zap.Logger
 	s3Client     *s3.Client
 	dynamoClient *dynamodb.Client
-	tableName    string
-	bucketName   string
-	cdnDomain    string
+	// mediaConvertClient   *mediaconvert.Client // Placeholder - MediaConvert integration not implemented
+	costTracker          *cost.Tracker
+	tableName            string
+	bucketName           string
+	cdnDomain            string
+	mediaConvertEndpoint string
+	mediaConvertRole     string
+	awsConfig            aws.Config
 )
 
 // MediaProcessingEvent represents the event triggered for media processing
@@ -40,12 +48,23 @@ type MediaProcessingEvent struct {
 
 // ProcessingResult stores the results of each processing task
 type ProcessingResult struct {
-	Width      int                 `json:"width,omitempty"`
-	Height     int                 `json:"height,omitempty"`
-	Duration   int                 `json:"duration,omitempty"` // milliseconds
-	Blurhash   string              `json:"blurhash,omitempty"`
-	PreviewURL string              `json:"preview_url,omitempty"`
-	Sizes      map[string]SizeInfo `json:"sizes,omitempty"`
+	Width           int                 `json:"width,omitempty"`
+	Height          int                 `json:"height,omitempty"`
+	Duration        int                 `json:"duration,omitempty"` // milliseconds
+	Blurhash        string              `json:"blurhash,omitempty"`
+	PreviewURL      string              `json:"preview_url,omitempty"`
+	Sizes           map[string]SizeInfo `json:"sizes,omitempty"`
+	ProcessingJobID string              `json:"processing_job_id,omitempty"` // MediaConvert job ID
+}
+
+// MediaConfig represents user's media processing configuration
+type MediaConfig struct {
+	VideoProcessingEnabled   bool  `json:"video_processing_enabled"`
+	AudioProcessingEnabled   bool  `json:"audio_processing_enabled"`
+	VideoThumbnailsEnabled   bool  `json:"video_thumbnails_enabled"`
+	ContentModerationEnabled bool  `json:"content_moderation_enabled"`
+	MaxVideoDuration         int   `json:"max_video_duration"` // seconds
+	UserBudgetMicros         int64 `json:"user_budget_micros"`
 }
 
 // SizeInfo contains information about a processed size variant
@@ -83,6 +102,19 @@ func init() {
 	if tableName == "" {
 		logger.Fatal("DYNAMODB_TABLE_NAME environment variable not set")
 	}
+
+	mediaConvertEndpoint = os.Getenv("MEDIACONVERT_ENDPOINT")
+	if mediaConvertEndpoint == "" {
+		logger.Warn("MEDIACONVERT_ENDPOINT not set, will use default")
+	}
+
+	mediaConvertRole = os.Getenv("MEDIACONVERT_ROLE_ARN")
+	if mediaConvertRole == "" {
+		logger.Warn("MEDIACONVERT_ROLE_ARN not set, MediaConvert jobs will fail")
+	}
+
+	// Initialize cost tracker
+	costTracker = cost.New()
 }
 
 func main() {
@@ -127,11 +159,28 @@ func initializeAWSClients(ctx context.Context) error {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
+	// Store the config
+	awsConfig = cfg
+
 	// Initialize S3 client
 	s3Client = s3.NewFromConfig(cfg)
 
 	// Initialize DynamoDB client
 	dynamoClient = dynamodb.NewFromConfig(cfg)
+
+	// Initialize MediaConvert client - PLACEHOLDER (MediaConvert SDK not available)
+	// TODO: Uncomment when AWS MediaConvert SDK is added to go.mod
+	/*
+		if mediaConvertEndpoint != "" {
+			mediaConvertClient = mediaconvert.NewFromConfig(cfg, func(o *mediaconvert.Options) {
+				o.EndpointResolver = mediaconvert.EndpointResolverFunc(func(region string, options mediaconvert.EndpointResolverOptions) (aws.Endpoint, error) {
+					return aws.Endpoint{URL: mediaConvertEndpoint}, nil
+				})
+			})
+		} else {
+			mediaConvertClient = mediaconvert.NewFromConfig(cfg)
+		}
+	*/
 
 	return nil
 }
@@ -275,19 +324,71 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
 		Sizes: make(map[string]SizeInfo),
 	}
 
-	// TODO: Implement video processing
-	// This would use ffmpeg or similar to:
-	// 1. Extract dimensions and duration
-	// 2. Generate thumbnail from first/middle frame
-	// 3. Transcode if needed
-	// 4. Generate preview clip
+	// 1. Get user's media processing config
+	config, err := getUserMediaConfig(ctx, event.Username)
+	if err != nil {
+		logger.Error("failed to get user media config", zap.Error(err))
+		// Fall back to basic upload
+		return uploadOriginalOnly(ctx, data, event, "video/mp4")
+	}
 
-	logger.Warn("video processing not yet implemented")
+	// 2. Check if video processing is enabled
+	if !config.VideoProcessingEnabled {
+		logger.Info("video processing disabled for user", zap.String("username", event.Username))
+		return uploadOriginalOnly(ctx, data, event, "video/mp4")
+	}
 
-	// For now, return some placeholder data
-	result.Width = 1920
-	result.Height = 1080
-	result.Duration = 30000 // 30 seconds in milliseconds
+	// 3. Check user's remaining budget
+	remainingBudget, err := getUserRemainingBudget(ctx, event.Username)
+	if err != nil {
+		logger.Error("failed to get user budget", zap.Error(err))
+		return uploadOriginalOnly(ctx, data, event, "video/mp4")
+	}
+
+	// 4. Estimate cost for this operation
+	estimatedCost := estimateVideoCost(len(data))
+	if estimatedCost > remainingBudget {
+		logger.Warn("user exceeded media budget",
+			zap.String("username", event.Username),
+			zap.Int64("estimated_cost", estimatedCost),
+			zap.Int64("remaining_budget", remainingBudget))
+
+		// Fallback to basic upload only
+		return uploadOriginalOnly(ctx, data, event, "video/mp4")
+	}
+
+	// 5. Upload to S3 first
+	s3Key := fmt.Sprintf("media/%s/%s/original.mp4", event.Username, event.MediaID)
+	if err := uploadToS3(ctx, s3Key, data, "video/mp4"); err != nil {
+		return result, fmt.Errorf("failed to upload video: %w", err)
+	}
+
+	// 6. Create MediaConvert job for thumbnails and metadata if enabled
+	if config.VideoThumbnailsEnabled && mediaConvertRole != "" {
+		jobID, err := createMediaConvertJob(ctx, s3Key, event)
+		if err != nil {
+			logger.Error("failed to create MediaConvert job", zap.Error(err))
+			// Continue anyway - video is uploaded
+		} else {
+			result.ProcessingJobID = jobID
+			logger.Info("created MediaConvert job",
+				zap.String("job_id", jobID),
+				zap.String("media_id", event.MediaID))
+		}
+	}
+
+	// 7. Track the cost
+	trackUserSpend(ctx, event.Username, estimatedCost, "video_processing")
+
+	result.Sizes["original"] = SizeInfo{
+		URL:   buildMediaURL(s3Key),
+		S3Key: s3Key,
+	}
+
+	// For now, return placeholder dimensions until MediaConvert completes
+	result.Width = 0
+	result.Height = 0
+	result.Duration = 0
 
 	return result, nil
 }
@@ -295,16 +396,58 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
 func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
 	result := ProcessingResult{}
 
-	// TODO: Implement audio processing
-	// This would:
-	// 1. Extract duration and metadata
-	// 2. Generate waveform visualization
-	// 3. Extract/generate cover art
+	// 1. Get user's media processing config
+	config, err := getUserMediaConfig(ctx, event.Username)
+	if err != nil {
+		logger.Error("failed to get user media config", zap.Error(err))
+		return uploadOriginalOnly(ctx, data, event, "audio/mpeg")
+	}
 
-	logger.Warn("audio processing not yet implemented")
+	// 2. Check if audio processing is enabled
+	if !config.AudioProcessingEnabled {
+		logger.Info("audio processing disabled for user", zap.String("username", event.Username))
+		return uploadOriginalOnly(ctx, data, event, "audio/mpeg")
+	}
 
-	// For now, return some placeholder data
-	result.Duration = 180000 // 3 minutes in milliseconds
+	// 3. Check user's remaining budget
+	remainingBudget, err := getUserRemainingBudget(ctx, event.Username)
+	if err != nil {
+		logger.Error("failed to get user budget", zap.Error(err))
+		return uploadOriginalOnly(ctx, data, event, "audio/mpeg")
+	}
+
+	// 4. Upload original audio
+	audioKey := fmt.Sprintf("media/%s/%s/audio.mp3", event.Username, event.MediaID)
+	if err := uploadToS3(ctx, audioKey, data, "audio/mpeg"); err != nil {
+		return result, fmt.Errorf("failed to upload audio: %w", err)
+	}
+
+	result.Sizes = map[string]SizeInfo{
+		"original": {
+			URL:   buildMediaURL(audioKey),
+			S3Key: audioKey,
+		},
+	}
+
+	// 5. Simple duration extraction (without external dependencies)
+	// For production, use github.com/dhowden/tag or github.com/tcolgate/mp3
+	// This is a placeholder that returns 0 duration
+	result.Duration = 0
+	logger.Warn("audio duration extraction not implemented - requires audio metadata library")
+
+	// 6. Track the cost (minimal for audio)
+	audioCost := int64(100) // $0.0001 for basic audio processing
+	if audioCost <= remainingBudget {
+		trackUserSpend(ctx, event.Username, audioCost, "audio_processing")
+	}
+
+	// Track S3 operations
+	costTracker.TrackS3Put(1)
+	costTracker.TrackS3Storage(int64(len(data)))
+
+	logger.Info("audio processing completed",
+		zap.String("media_id", event.MediaID),
+		zap.String("username", event.Username))
 
 	return result, nil
 }
@@ -524,3 +667,167 @@ func getMimeTypeFromFormat(format string) string {
 		return "image/jpeg"
 	}
 }
+
+// Helper functions for cost-aware processing
+
+func getUserMediaConfig(ctx context.Context, username string) (*MediaConfig, error) {
+	// Get user's media config from DynamoDB
+	result, err := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", username)},
+			"SK": &types.AttributeValueMemberS{Value: "MEDIA#CONFIG"},
+		},
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user media config: %w", err)
+	}
+
+	// Check for instance defaults if user config doesn't exist
+	if result.Item == nil {
+		result, err = dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
+			TableName: aws.String(tableName),
+			Key: map[string]types.AttributeValue{
+				"PK": &types.AttributeValueMemberS{Value: "INSTANCE#CONFIG"},
+				"SK": &types.AttributeValueMemberS{Value: "MEDIA#DEFAULTS"},
+			},
+		})
+
+		if err != nil || result.Item == nil {
+			// Return defaults if no config exists
+			return &MediaConfig{
+				VideoProcessingEnabled:   false,
+				AudioProcessingEnabled:   false,
+				VideoThumbnailsEnabled:   false,
+				ContentModerationEnabled: false,
+				MaxVideoDuration:         300,
+				UserBudgetMicros:         5_000_000, // $5 default
+			}, nil
+		}
+	}
+
+	// Parse config
+	var config MediaConfig
+	if err := attributevalue.UnmarshalMap(result.Item, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal media config: %w", err)
+	}
+
+	return &config, nil
+}
+
+func getUserRemainingBudget(ctx context.Context, username string) (int64, error) {
+	// Get current month's spending
+	now := time.Now()
+	monthKey := fmt.Sprintf("USER#%s#SPENDING#%d-%02d", username, now.Year(), now.Month())
+
+	result, err := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: monthKey},
+			"SK": &types.AttributeValueMemberS{Value: "TOTAL"},
+		},
+	})
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user spending: %w", err)
+	}
+
+	var currentSpending int64
+	if result.Item != nil {
+		if v, ok := result.Item["Amount"].(*types.AttributeValueMemberN); ok {
+			currentSpending, _ = strconv.ParseInt(v.Value, 10, 64)
+		}
+	}
+
+	// Get user's budget
+	config, err := getUserMediaConfig(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	remaining := config.UserBudgetMicros - currentSpending
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	return remaining, nil
+}
+
+func uploadOriginalOnly(ctx context.Context, data []byte, event MediaProcessingEvent, mimeType string) (ProcessingResult, error) {
+	result := ProcessingResult{
+		Sizes: make(map[string]SizeInfo),
+	}
+
+	// Determine file extension
+	ext := ".bin"
+	switch mimeType {
+	case "video/mp4":
+		ext = ".mp4"
+	case "audio/mpeg":
+		ext = ".mp3"
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/png":
+		ext = ".png"
+	}
+
+	// Upload original file
+	s3Key := fmt.Sprintf("media/%s/%s/original%s", event.Username, event.MediaID, ext)
+	if err := uploadToS3(ctx, s3Key, data, mimeType); err != nil {
+		return result, fmt.Errorf("failed to upload original: %w", err)
+	}
+
+	result.Sizes["original"] = SizeInfo{
+		URL:   buildMediaURL(s3Key),
+		S3Key: s3Key,
+	}
+
+	// Track minimal cost (just S3 storage)
+	costTracker.TrackS3Put(1)
+	costTracker.TrackS3Storage(int64(len(data)))
+
+	return result, nil
+}
+
+func trackUserSpend(ctx context.Context, username string, amountMicros int64, category string) error {
+	now := time.Now()
+	monthKey := fmt.Sprintf("USER#%s#SPENDING#%d-%02d", username, now.Year(), now.Month())
+
+	// Update monthly total
+	_, err := dynamoClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: monthKey},
+			"SK": &types.AttributeValueMemberS{Value: "TOTAL"},
+		},
+		UpdateExpression: aws.String("ADD Amount :amount SET UpdatedAt = :now, Category = :cat"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":amount": &types.AttributeValueMemberN{Value: strconv.FormatInt(amountMicros, 10)},
+			":now":    &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
+			":cat":    &types.AttributeValueMemberS{Value: category},
+		},
+	})
+
+	return err
+}
+
+func estimateVideoCost(sizeBytes int) int64 {
+	// MediaConvert: ~$0.024 per minute HD
+	// Estimate based on file size (rough approximation)
+	estimatedMinutes := float64(sizeBytes) / (5 * 1024 * 1024) // 5MB per minute estimate
+	costDollars := estimatedMinutes * 0.024
+	return int64(costDollars * 1_000_000) // Convert to microdollars
+}
+
+func createMediaConvertJob(ctx context.Context, s3InputKey string, event MediaProcessingEvent) (string, error) {
+	// This is a placeholder - MediaConvert requires proper configuration
+	// In production, this would create a job to extract thumbnails and metadata
+	logger.Warn("MediaConvert job creation not implemented - requires AWS MediaConvert setup")
+	return "", fmt.Errorf("MediaConvert not configured")
+}
+
+const (
+	rekognitionCostPerImage = 1000 // $0.001 per image in microdollars
+	transcribeCostPerSecond = 400  // $0.0004 per second
+)

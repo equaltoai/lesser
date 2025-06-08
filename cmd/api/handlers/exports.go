@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -310,11 +315,73 @@ func (h *Handler) HandleListExports(ctx context.Context, request events.APIGatew
 }
 
 // Helper to get user's export jobs
-func (h *Handler) getUserExportJobs(_ context.Context, _ string, _ ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
 	// Query GSI1 for user's exports
-	// This would normally use a proper DynamoDB query
-	// For now, return empty to avoid errors
-	return []map[string]interface{}{}, nil
+	// GSI1PK: USER#username, GSI1SK: CREATED#timestamp
+
+	// Check if DynamoDB client is available
+	if h.dynamoClient == nil {
+		h.logger.Error("DynamoDB client not initialized")
+		return nil, errors.New("DynamoDB client not initialized")
+	}
+
+	// Build the query input for GSI1
+	queryInput := &dynamodb.QueryInput{
+		TableName:              aws.String(h.cfg.DynamoTableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", username)},
+		},
+		ScanIndexForward: aws.Bool(false), // Most recent first
+	}
+
+	// If specific statuses requested, add filter
+	if len(statuses) > 0 {
+		filterExpressions := make([]string, 0)
+		for i, status := range statuses {
+			filterExpressions = append(filterExpressions, fmt.Sprintf("#status = :status%d", i))
+			queryInput.ExpressionAttributeValues[fmt.Sprintf(":status%d", i)] = &types.AttributeValueMemberS{Value: status}
+		}
+		queryInput.FilterExpression = aws.String(strings.Join(filterExpressions, " OR "))
+		queryInput.ExpressionAttributeNames = map[string]string{
+			"#status": "Status",
+		}
+	}
+
+	// Execute query
+	result, err := h.dynamoClient.Query(ctx, queryInput)
+	if err != nil {
+		h.logger.Error("failed to query GSI1 for exports",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("query GSI1 for exports: %w", err)
+	}
+
+	// Filter for EXPORT items only (GSI1 may contain other user data)
+	exports := make([]map[string]interface{}, 0)
+	for _, item := range result.Items {
+		// Check if this is an export job by looking at PK
+		if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
+			if strings.HasPrefix(pk.Value, "EXPORT#") {
+				// Convert DynamoDB item to map
+				var jobData map[string]interface{}
+				if err := attributevalue.UnmarshalMap(item, &jobData); err != nil {
+					h.logger.Error("failed to unmarshal export job",
+						zap.String("pk", pk.Value),
+						zap.Error(err))
+					continue
+				}
+				exports = append(exports, jobData)
+			}
+		}
+	}
+
+	h.logger.Info("retrieved export jobs",
+		zap.String("username", username),
+		zap.Int("count", len(exports)))
+
+	return exports, nil
 }
 
 // Helper functions for job data extraction
