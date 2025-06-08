@@ -61,6 +61,8 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 		collectionType = "followers"
 	} else if strings.HasSuffix(path, "/following") {
 		collectionType = "following"
+	} else if strings.HasSuffix(path, "/liked") {
+		collectionType = "liked"
 	} else {
 		return common.NotFound(errors.New("unknown collection")), nil
 	}
@@ -92,12 +94,16 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 
 	// Get relationships based on type
 	var usernames []string
+	var likes []*storage.Like
 	var nextCursor string
 
 	if collectionType == "followers" {
 		usernames, nextCursor, err = store.GetFollowers(ctx, username, limit, cursor)
-	} else {
+	} else if collectionType == "following" {
 		usernames, nextCursor, err = store.GetFollowing(ctx, username, limit, cursor)
+	} else {
+		// For liked collection, we get Like objects
+		likes, nextCursor, err = store.GetActorLikes(ctx, actor.ID, limit, cursor)
 	}
 
 	if err != nil {
@@ -108,7 +114,7 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 	}
 
 	// Build and return page
-	return returnCollectionPage(ctx, actor, collectionType, usernames, cursor, nextCursor, limit)
+	return returnCollectionPage(ctx, actor, collectionType, usernames, likes, cursor, nextCursor, limit)
 }
 
 // returnCollection returns the collection metadata (not a page)
@@ -117,18 +123,33 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 
 	// Get total count (we'll get a small sample to determine if there are any items)
 	// In a production system, you might want to add a count method to storage
-	var usernames []string
-	var err error
+	var hasItems bool
+	var itemCount int
 
 	if collectionType == "followers" {
-		usernames, _, err = store.GetFollowers(ctx, actor.PreferredUsername, 1, "")
+		usernames, _, err := store.GetFollowers(ctx, actor.PreferredUsername, 1, "")
+		if err != nil {
+			log.Error("failed to get count", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+		hasItems = len(usernames) > 0
+		itemCount = len(usernames)
+	} else if collectionType == "following" {
+		usernames, _, err := store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
+		if err != nil {
+			log.Error("failed to get count", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+		hasItems = len(usernames) > 0
+		itemCount = len(usernames)
 	} else {
-		usernames, _, err = store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
-	}
-
-	if err != nil {
-		log.Error("failed to get count", zap.Error(err))
-		return common.InternalServerError(err), nil
+		likes, _, err := store.GetActorLikes(ctx, actor.ID, 1, "")
+		if err != nil {
+			log.Error("failed to get count", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
+		hasItems = len(likes) > 0
+		itemCount = len(likes)
 	}
 
 	// Build collection URL
@@ -142,12 +163,12 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 				ID:      collectionID,
 				Type:    activitypub.OrderedCollectionType,
 			},
-			TotalItems: len(usernames),
+			TotalItems: itemCount,
 		},
 	}
 
 	// Only add first page link if there are items
-	if len(usernames) > 0 {
+	if hasItems {
 		collection.First = fmt.Sprintf("%s?page=true", collectionID)
 	}
 
@@ -155,7 +176,7 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 }
 
 // returnCollectionPage returns a page of the collection
-func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collectionType string, usernames []string, cursor, nextCursor string, limit int) (*events.APIGatewayV2HTTPResponse, error) {
+func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collectionType string, usernames []string, likes []*storage.Like, cursor, nextCursor string, limit int) (*events.APIGatewayV2HTTPResponse, error) {
 	log := common.WithContext(ctx)
 	log.Debug("returning collection page",
 		zap.String("actor", actor.ID),
@@ -169,12 +190,21 @@ func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collect
 		pageID = fmt.Sprintf("%s&cursor=%s", pageID, cursor)
 	}
 
-	// Convert usernames to actor URLs
-	// In a federated system, these might be remote actor URLs
-	// For now, we'll assume they're all local actors
-	orderedItems := make([]interface{}, len(usernames))
-	for i, username := range usernames {
-		orderedItems[i] = fmt.Sprintf("%s/users/%s", cfg.Domain, username)
+	// Convert to appropriate URLs based on collection type
+	var orderedItems []interface{}
+
+	if collectionType == "liked" {
+		// For liked collection, we use the object IDs from likes
+		orderedItems = make([]interface{}, len(likes))
+		for i, like := range likes {
+			orderedItems[i] = like.Object
+		}
+	} else {
+		// For followers/following, convert usernames to actor URLs
+		orderedItems = make([]interface{}, len(usernames))
+		for i, username := range usernames {
+			orderedItems[i] = fmt.Sprintf("%s/users/%s", cfg.Domain, username)
+		}
 	}
 
 	// Build the page

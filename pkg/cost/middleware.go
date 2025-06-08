@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -19,6 +20,11 @@ type HandlerFunc func(ctx context.Context, request events.APIGatewayV2HTTPReques
 var (
 	// Global cost storage instance for the middleware
 	globalCostStorage *Storage
+	// Buffer for cost data that failed to save
+	costBuffer     []*OperationCost
+	costBufferLock sync.Mutex
+	// Max buffer size before we drop old entries
+	maxBufferSize = 100
 )
 
 func init() {
@@ -31,6 +37,54 @@ func init() {
 			// Create a logger for cost storage
 			logger, _ := zap.NewProduction()
 			globalCostStorage = NewStorage(client, tableName, logger)
+		}
+	}
+}
+
+// saveCostWithRetry attempts to save cost data with retry logic
+func saveCostWithRetry(ctx context.Context, cost *OperationCost, logger *zap.Logger) {
+	if globalCostStorage == nil || cost.TotalCostMicroCents == 0 {
+		return
+	}
+
+	// First, try to save any buffered costs
+	costBufferLock.Lock()
+	bufferedCosts := make([]*OperationCost, len(costBuffer))
+	copy(bufferedCosts, costBuffer)
+	costBuffer = costBuffer[:0] // Clear buffer
+	costBufferLock.Unlock()
+
+	// Try to save buffered costs (best effort)
+	for _, bufferedCost := range bufferedCosts {
+		saveCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		globalCostStorage.SaveOperationCost(saveCtx, bufferedCost)
+		cancel()
+	}
+
+	// Now save the current cost with a short timeout
+	saveCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	if err := globalCostStorage.SaveOperationCost(saveCtx, cost); err != nil {
+		// Add to buffer for next attempt
+		costBufferLock.Lock()
+		if len(costBuffer) < maxBufferSize {
+			costBuffer = append(costBuffer, cost)
+		} else if logger != nil {
+			logger.Warn("cost buffer full, dropping oldest entry",
+				zap.String("request_id", costBuffer[0].RequestID),
+			)
+			// Drop oldest and add new
+			costBuffer = append(costBuffer[1:], cost)
+		}
+		costBufferLock.Unlock()
+
+		if logger != nil {
+			logger.Warn("failed to save operation cost, added to buffer",
+				zap.String("request_id", cost.RequestID),
+				zap.Error(err),
+				zap.Int("buffer_size", len(costBuffer)),
+			)
 		}
 	}
 }
@@ -89,24 +143,9 @@ func Middleware(logger *zap.Logger) func(HandlerFunc) HandlerFunc {
 			// Calculate costs
 			costs := tracker.CalculateCost()
 
-			// Save cost data asynchronously if storage is available
-			if globalCostStorage != nil && costs.TotalCostMicroCents > 0 {
-				// Use a goroutine to avoid blocking the response
-				// In Lambda, this will complete before the function is frozen
-				go func() {
-					saveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-					defer cancel()
-
-					if saveErr := globalCostStorage.SaveOperationCost(saveCtx, costs); saveErr != nil {
-						if logger != nil {
-							logger.Error("failed to save operation cost",
-								zap.String("request_id", requestID),
-								zap.Error(saveErr),
-							)
-						}
-					}
-				}()
-			}
+			// Save cost data synchronously with short timeout
+			// This is done synchronously to ensure it runs in the Lambda context
+			saveCostWithRetry(ctx, costs, logger)
 
 			// Add cost headers to response
 			if response != nil {

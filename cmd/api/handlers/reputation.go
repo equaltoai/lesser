@@ -8,11 +8,8 @@ import (
 
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/reputation"
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/zap"
 )
 
@@ -36,6 +33,12 @@ func (h *Handler) HandleGetReputation(ctx context.Context, request events.APIGat
 		return common.Unauthorized(err), nil
 	}
 
+	// Normalize actor ID
+	// If it's just a username, convert to full actor URI
+	if !strings.Contains(actorID, "://") {
+		actorID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, actorID)
+	}
+
 	// Initialize reputation service
 	repService, err := h.getReputationService()
 	if err != nil {
@@ -47,6 +50,12 @@ func (h *Handler) HandleGetReputation(ctx context.Context, request events.APIGat
 	rep, err := repService.GetReputation(ctx, actorID)
 	if err != nil {
 		h.logger.Error("Failed to get reputation", zap.Error(err), zap.String("actor", actorID))
+
+		// Check if it's an actor not found error
+		if strings.Contains(err.Error(), "actor not found") {
+			return common.NotFound(fmt.Errorf("actor not found: %s", actorID)), nil
+		}
+
 		return common.InternalServerError(err), nil
 	}
 
@@ -232,6 +241,12 @@ func (h *Handler) HandleGetVouches(ctx context.Context, request events.APIGatewa
 		return common.Unauthorized(err), nil
 	}
 
+	// Normalize actor ID
+	// If it's just a username, convert to full actor URI
+	if !strings.Contains(actorID, "://") {
+		actorID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, actorID)
+	}
+
 	// Initialize reputation service
 	repService, err := h.getReputationService()
 	if err != nil {
@@ -243,6 +258,12 @@ func (h *Handler) HandleGetVouches(ctx context.Context, request events.APIGatewa
 	vouches, err := repService.GetVouches(ctx, actorID)
 	if err != nil {
 		h.logger.Error("Failed to get vouches", zap.Error(err), zap.String("actor", actorID))
+
+		// Check if it's an actor not found error
+		if strings.Contains(err.Error(), "actor not found") {
+			return common.NotFound(fmt.Errorf("actor not found: %s", actorID)), nil
+		}
+
 		return common.InternalServerError(err), nil
 	}
 
@@ -346,28 +367,12 @@ func (h *Handler) HandleGetReputationKeys(ctx context.Context, request events.AP
 // Helper functions
 
 func (h *Handler) getReputationService() (*reputation.Service, error) {
-	// Create AWS config
-	awsCfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	// Create DynamoDB client
-	db := dynamodb.NewFromConfig(awsCfg)
-
-	// Create cost tracker
-	costTracker := cost.New()
-
-	// Create service config
+	// Create service config using existing store
 	cfg := &reputation.Config{
-		DynamoClient:   db,
-		Storage:        h.store,
-		Logger:         h.logger,
-		CostTracker:    costTracker,
-		InstanceURL:    h.cfg.BaseURL(),
-		PrivateKey:     "",                    // TODO: Load from environment/config
-		RepTableName:   h.cfg.DynamoTableName, // Use the main table
-		VouchTableName: h.cfg.DynamoTableName, // Use the main table
+		Storage:     h.store,
+		Logger:      h.logger,
+		InstanceURL: h.cfg.BaseURL(),
+		PrivateKey:  "", // TODO: Load from environment/config
 	}
 
 	return reputation.NewService(cfg)

@@ -15,6 +15,7 @@ type DynamoDBAPI interface {
 	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
 	Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
 	BatchWriteItem(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
+	BatchGetItem(ctx context.Context, params *dynamodb.BatchGetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchGetItemOutput, error)
 }
 
 // DynamoDBCostWrapper wraps a DynamoDB client to track costs
@@ -163,6 +164,38 @@ func (w *DynamoDBCostWrapper) BatchWriteItem(ctx context.Context, params *dynamo
 		if totalWrites > 0 {
 			// Adjust tracking based on actual consumption
 			TrackDynamoWriteContext(ctx, totalWrites-itemCount)
+		}
+	}
+
+	return output, err
+}
+
+// BatchGetItem tracks the cost of a DynamoDB BatchGetItem operation
+func (w *DynamoDBCostWrapper) BatchGetItem(ctx context.Context, params *dynamodb.BatchGetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchGetItemOutput, error) {
+	// Count items to be read
+	itemCount := 0
+	for _, keys := range params.RequestItems {
+		itemCount += len(keys.Keys)
+	}
+
+	// Track estimated reads
+	if itemCount > 0 {
+		TrackDynamoReadContext(ctx, itemCount)
+	}
+
+	output, err := w.client.BatchGetItem(ctx, params, optFns...)
+
+	// Track consumed capacity if available
+	if output != nil && output.ConsumedCapacity != nil {
+		totalReads := 0
+		for _, cap := range output.ConsumedCapacity {
+			if cap.ReadCapacityUnits != nil {
+				totalReads += int(*cap.ReadCapacityUnits)
+			}
+		}
+		if totalReads > 0 {
+			// Adjust tracking based on actual consumption
+			TrackDynamoReadContext(ctx, totalReads-itemCount)
 		}
 	}
 

@@ -404,6 +404,15 @@ type Storage interface {
 	GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*CommunityNote, string, error)
 	GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*CommunityNoteVote, error)
 
+	// Community note operations
+	CreateCommunityNote(ctx context.Context, note *CommunityNote) error
+	GetCommunityNote(ctx context.Context, noteID string) (*CommunityNote, error)
+	GetVisibleCommunityNotes(ctx context.Context, objectID string) ([]*CommunityNote, error)
+	UpdateCommunityNoteScore(ctx context.Context, noteID string, score float64, status string) error
+	CreateCommunityNoteVote(ctx context.Context, vote *CommunityNoteVote) error
+	GetUserCommunityNoteVotes(ctx context.Context, userID string, noteIDs []string) (map[string]*CommunityNoteVote, error)
+	CheckCommunityNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int, error)
+
 	// Domain block operations (user-level)
 	AddDomainBlock(ctx context.Context, username, domain string) error
 	RemoveDomainBlock(ctx context.Context, username, domain string) error
@@ -516,6 +525,19 @@ type Storage interface {
 	MarkRecoveryCodeUsed(ctx context.Context, username, codeHash string) error
 	DeleteAllRecoveryCodes(ctx context.Context, username string) error
 	CountUnusedRecoveryCodes(ctx context.Context, username string) (int, error)
+
+	// Reputation storage operations
+	StoreReputation(ctx context.Context, actorID string, reputation *Reputation) error
+	GetReputation(ctx context.Context, actorID string) (*Reputation, error)
+	GetReputationHistory(ctx context.Context, actorID string, limit int) ([]*Reputation, error)
+
+	// Vouch operations
+	CreateVouch(ctx context.Context, vouch *Vouch) error
+	GetVouch(ctx context.Context, vouchID string) (*Vouch, error)
+	GetVouchesByActor(ctx context.Context, actorID string, activeOnly bool) ([]*Vouch, error)
+	GetVouchesForActor(ctx context.Context, actorID string, activeOnly bool) ([]*Vouch, error)
+	UpdateVouchStatus(ctx context.Context, vouchID string, active bool, revokedAt *time.Time) error
+	GetMonthlyVouchCount(ctx context.Context, actorID string, year int, month time.Month) (int, error)
 }
 
 // User represents a user account in the system
@@ -1359,6 +1381,8 @@ type CommunityNote struct {
 	ObjectType       string    `dynamodbav:"object_type"`
 	AuthorID         string    `dynamodbav:"author_id"`
 	Content          string    `dynamodbav:"content"`
+	Language         string    `dynamodbav:"language"`
+	Sources          []string  `dynamodbav:"sources"`
 	HelpfulVotes     int       `dynamodbav:"helpful_votes"`
 	NotHelpfulVotes  int       `dynamodbav:"not_helpful_votes"`
 	Score            float64   `dynamodbav:"score"`
@@ -1490,4 +1514,64 @@ type WeeklyActivity struct {
 	Statuses      int64 `dynamodbav:"statuses"`      // Number of statuses created
 	Logins        int64 `dynamodbav:"logins"`        // Number of unique logins
 	Registrations int64 `dynamodbav:"registrations"` // Number of new registrations
+}
+
+// Reputation represents a user's reputation score and evidence
+type Reputation struct {
+	// Identity
+	ActorID     string `json:"@id" dynamodbav:"ActorID"`
+	InstanceURL string `json:"instance" dynamodbav:"InstanceURL"`
+
+	// Scores (0-1000 scale)
+	TrustScore      int `json:"trustScore" dynamodbav:"TrustScore"`
+	ActivityScore   int `json:"activityScore" dynamodbav:"ActivityScore"`
+	ModerationScore int `json:"moderationScore" dynamodbav:"ModerationScore"`
+	CommunityScore  int `json:"communityScore" dynamodbav:"CommunityScore"`
+	TotalScore      int `json:"totalScore" dynamodbav:"TotalScore"`
+
+	// Metadata
+	CalculatedAt time.Time `json:"calculatedAt" dynamodbav:"CalculatedAt"`
+	Version      string    `json:"version" dynamodbav:"Version"`
+
+	// Evidence
+	TotalPosts     int `json:"totalPosts" dynamodbav:"TotalPosts"`
+	TotalFollowers int `json:"totalFollowers" dynamodbav:"TotalFollowers"`
+	AccountAge     int `json:"accountAgeDays" dynamodbav:"AccountAge"`
+	VouchCount     int `json:"vouchCount" dynamodbav:"VouchCount"`
+
+	// Trust graph metrics
+	TrustingActors    int     `json:"trustingActors" dynamodbav:"TrustingActors"`
+	AverageTrustScore float64 `json:"averageTrustScore" dynamodbav:"AverageTrustScore"`
+
+	// Moderation metrics
+	ReportsReceived int `json:"reportsReceived" dynamodbav:"ReportsReceived"`
+	ReportsUpheld   int `json:"reportsUpheld" dynamodbav:"ReportsUpheld"`
+	FalseReports    int `json:"falseReports" dynamodbav:"FalseReports"`
+
+	// Cryptographic proof
+	Signature string `json:"signature,omitempty" dynamodbav:"Signature,omitempty"`
+	PublicKey string `json:"publicKey,omitempty" dynamodbav:"PublicKey,omitempty"`
+}
+
+// Vouch represents one user vouching for another
+type Vouch struct {
+	ID          string    `json:"@id" dynamodbav:"ID"`
+	From        string    `json:"from" dynamodbav:"From"` // Actor who vouched
+	To          string    `json:"to" dynamodbav:"To"`     // Actor being vouched for
+	InstanceURL string    `json:"instance" dynamodbav:"InstanceURL"`
+	CreatedAt   time.Time `json:"createdAt" dynamodbav:"CreatedAt"`
+	ExpiresAt   time.Time `json:"expiresAt" dynamodbav:"ExpiresAt"`
+	Confidence  float64   `json:"confidence" dynamodbav:"Confidence"` // 0.0-1.0
+	Context     string    `json:"context" dynamodbav:"Context"`       // Why vouching
+
+	// Voucher reputation at time of vouch
+	VoucherReputation int `json:"voucherReputation" dynamodbav:"VoucherReputation"`
+
+	// Status
+	Active    bool       `json:"active" dynamodbav:"Active"`
+	Revoked   bool       `json:"revoked" dynamodbav:"Revoked"`
+	RevokedAt *time.Time `json:"revokedAt,omitempty" dynamodbav:"RevokedAt,omitempty"`
+
+	// Cryptographic proof
+	Signature string `json:"signature" dynamodbav:"Signature"`
 }

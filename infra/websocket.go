@@ -203,7 +203,6 @@ func CreateWebSocketInfrastructure(ctx *pulumi.Context, lambdaRole *iam.Role, ta
 
 	// Export WebSocket endpoint
 	ctx.Export("websocketUrl", pulumi.Sprintf("%s/%s", wsApi.ApiEndpoint, stage.Name))
-	ctx.Export("customWebsocketUrl", pulumi.Sprintf("wss://%s/streaming", domain))
 
 	// Export the stream router Lambda ARN for use in main.go
 	ctx.Export("streamRouterLambdaArn", streamRouterLambda.Arn)

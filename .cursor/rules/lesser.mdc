@@ -9,6 +9,6 @@ the goal is to provide a flexible ActivityPub core that can be extended to vario
 
 https://www.w3.org/TR/activitypub/
 
-[README.md](mdc:README.md)
-[DESIGN.md](mdc:DESIGN.md)
-[DEVELOPER_GUIDELINES.md](mdc:DEVELOPER_GUIDELINES.md)
+[README.md](mdc:docs/README.md)
+[DEVELOPER_GUIDELINES.md](mdc:docs/development/DEVELOPER_GUIDELINES.md)
+[SYSTEM_DESIGN.md](mdc:docs/architecture/SYSTEM_DESIGN.md)

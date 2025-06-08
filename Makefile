@@ -279,4 +279,57 @@ gqlgen:
 build-graphql:
 	@echo "Building graphql Lambda..."
 	@GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/bootstrap ./cmd/graphql
-	@cd bin && zip -q graphql.zip bootstrap && rm bootstrap 
+	@cd bin && zip -q graphql.zip bootstrap && rm bootstrap
+
+# k6 Load Testing Commands
+.PHONY: k6-local k6-cloud k6-stream k6-setup
+
+# Run k6 test locally
+k6-local:
+	@echo "Running k6 load test locally..."
+	@if [ -z "$(LESSER_URL)" ]; then \
+		echo "Error: LESSER_URL environment variable is not set"; \
+		echo "Please set it: export LESSER_URL=https://your-instance.com"; \
+		exit 1; \
+	fi
+	@if [ -z "$(LESSER_TOKEN)" ]; then \
+		echo "Warning: LESSER_TOKEN not set, running without authentication"; \
+	fi
+	k6 run tests/load/lesser_load_test.js
+
+# Run k6 test on Grafana Cloud
+k6-cloud:
+	@echo "Running k6 load test on Grafana Cloud..."
+	@if [ -z "$(LESSER_URL)" ]; then \
+		echo "Error: LESSER_URL environment variable is not set"; \
+		echo "Please set it: export LESSER_URL=https://your-instance.com"; \
+		exit 1; \
+	fi
+	k6 cloud run tests/load/lesser_load_test.js
+
+# Run locally but stream results to Grafana Cloud
+k6-stream:
+	@echo "Running k6 locally with cloud streaming..."
+	@if [ -z "$(LESSER_URL)" ]; then \
+		echo "Error: LESSER_URL environment variable is not set"; \
+		echo "Please set it: export LESSER_URL=https://your-instance.com"; \
+		exit 1; \
+	fi
+	k6 run -o cloud tests/load/lesser_load_test.js
+
+# Setup k6 environment file template
+k6-setup:
+	@echo "Creating k6 environment template..."
+	@if [ ! -f .env.k6 ]; then \
+		echo "# Lesser instance configuration" > .env.k6; \
+		echo "export LESSER_URL=\"https://your-lesser-instance.com\"" >> .env.k6; \
+		echo "export LESSER_TOKEN=\"your-access-token\"" >> .env.k6; \
+		echo "" >> .env.k6; \
+		echo "# Grafana Cloud k6 configuration (optional)" >> .env.k6; \
+		echo "export K6_PROJECT_ID=\"your-project-id\"" >> .env.k6; \
+		echo "" >> .env.k6; \
+		echo "Created .env.k6 - Please update with your actual values"; \
+		echo "Then run: source .env.k6"; \
+	else \
+		echo ".env.k6 already exists"; \
+	fi 

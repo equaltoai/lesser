@@ -210,6 +210,7 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 	mediaRecord := map[string]interface{}{
 		"PK":          fmt.Sprintf("MEDIA#%s", mediaID),
 		"SK":          "METADATA",
+		"id":          fmt.Sprintf("MEDIA#%s", mediaID),
 		"MediaID":     mediaID,
 		"Username":    claims.Username,
 		"S3Key":       s3Key,
@@ -244,6 +245,7 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 	jobRecord := map[string]interface{}{
 		"PK":              fmt.Sprintf("JOB#%s", jobID),
 		"SK":              fmt.Sprintf("JOB#%s", jobID),
+		"id":              fmt.Sprintf("JOB#%s", jobID),
 		"GSI1PK":          fmt.Sprintf("USER#%s", claims.Username),
 		"GSI1SK":          fmt.Sprintf("CREATED#%s", now.Format(time.RFC3339)),
 		"GSI2PK":          "STATUS#pending",

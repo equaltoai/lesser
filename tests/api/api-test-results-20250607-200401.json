@@ -1,0 +1,673 @@
+{
+  "timestamp": "20250607-200401",
+  "instance_url": "https://lesser.host",
+  "summary": {
+    "total": 110,
+    "passed": 100,
+    "failed": 5,
+    "skipped": 4,
+    "success_rate": 95.23809523809523
+  },
+  "results": [
+    {
+      "test": "GET GET /api/v1/instance",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:49.301933"
+    },
+    {
+      "test": "GET GET /api/v1/instance/activity",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:49.405306"
+    },
+    {
+      "test": "GET GET /api/v1/instance/peers",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:49.478727"
+    },
+    {
+      "test": "GET GET /api/v1/instance/rules",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:49.558783"
+    },
+    {
+      "test": "App Registration",
+      "status": "SKIP",
+      "details": "Using existing LESSER_TOKEN",
+      "timestamp": "2025-06-07T20:03:49.559036"
+    },
+    {
+      "test": "Authentication",
+      "status": "PASS",
+      "details": "Using existing LESSER_TOKEN",
+      "timestamp": "2025-06-07T20:03:49.559152"
+    },
+    {
+      "test": "GET /api/v1/accounts/verify_credentials",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:49.636401"
+    },
+    {
+      "test": "PATCH PATCH /api/v1/accounts/update_credentials",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:49.717102"
+    },
+    {
+      "test": "GET GET /api/v1/accounts/:id",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:49.796099"
+    },
+    {
+      "test": "GET GET /api/v1/accounts/search",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:49.926649"
+    },
+    {
+      "test": "GET GET /api/v1/accounts/lookup",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.000098"
+    },
+    {
+      "test": "GET GET /api/v1/accounts/relationships",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.086049"
+    },
+    {
+      "test": "GET GET /api/v1/accounts/:id/followers",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.161590"
+    },
+    {
+      "test": "GET GET /api/v1/accounts/:id/following",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.236488"
+    },
+    {
+      "test": "GET GET /api/v1/accounts/:id/statuses",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.356720"
+    },
+    {
+      "test": "POST POST /api/v1/accounts/:id/pin",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.458217"
+    },
+    {
+      "test": "POST POST /api/v1/accounts/:id/unpin",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.560465"
+    },
+    {
+      "test": "POST POST /api/v1/accounts/:id/note",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.660589"
+    },
+    {
+      "test": "POST /api/v1/statuses",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.784582"
+    },
+    {
+      "test": "GET /api/v1/statuses/1749341030-iRloHfED",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.885632"
+    },
+    {
+      "test": "GET /api/v1/statuses/1749341030-iRloHfED/source",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:50.957445"
+    },
+    {
+      "test": "GET /api/v1/statuses/1749341030-iRloHfED/context",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.034073"
+    },
+    {
+      "test": "PUT /api/v1/statuses/1749341030-iRloHfED",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.131876"
+    },
+    {
+      "test": "GET /api/v1/statuses/1749341030-iRloHfED/history",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.212082"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/favourite",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.324516"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/unfavourite",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.404545"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/bookmark",
+      "status": "PASS",
+      "details": "Resource not found",
+      "timestamp": "2025-06-07T20:03:51.475715"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/unbookmark",
+      "status": "PASS",
+      "details": "Resource not found",
+      "timestamp": "2025-06-07T20:03:51.549652"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/reblog",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.655786"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/unreblog",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.734954"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/pin",
+      "status": "PASS",
+      "details": "Can only pin your own statuses",
+      "timestamp": "2025-06-07T20:03:51.807290"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/unpin",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.885577"
+    },
+    {
+      "test": "GET GET /api/v1/statuses/:id/favourited_by",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:51.967018"
+    },
+    {
+      "test": "GET GET /api/v1/statuses/:id/reblogged_by",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:52.050881"
+    },
+    {
+      "test": "POST POST /api/v1/statuses/:id/translate",
+      "status": "PASS",
+      "details": "Validation error",
+      "timestamp": "2025-06-07T20:03:52.133225"
+    },
+    {
+      "test": "PUT /api/v1/media/1749341032156341245",
+      "status": "PASS",
+      "details": "Bad request - missing or invalid media data",
+      "timestamp": "2025-06-07T20:03:52.501652"
+    },
+    {
+      "test": "POST /api/v1/media",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:52.501807"
+    },
+    {
+      "test": "POST /api/v2/media",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:52.628101"
+    },
+    {
+      "test": "POST /api/v1/statuses (with poll)",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:52.774351"
+    },
+    {
+      "test": "GET /api/v1/polls/1749341032-4lv5fpr9",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:52.857708"
+    },
+    {
+      "test": "POST /api/v1/polls/1749341032-4lv5fpr9/votes",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:52.967358"
+    },
+    {
+      "test": "GET GET /api/v1/timelines/public",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:53.303085"
+    },
+    {
+      "test": "GET GET /api/v1/timelines/home",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:53.572363"
+    },
+    {
+      "test": "GET GET /api/v1/timelines/tag/:hashtag",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:53.642267"
+    },
+    {
+      "test": "GET GET /api/v1/timelines/link",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:53.712135"
+    },
+    {
+      "test": "GET GET /api/v2/search",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:53.826278"
+    },
+    {
+      "test": "GET GET /api/v1/search/suggestions",
+      "status": "PASS",
+      "details": "Endpoint may not be implemented",
+      "timestamp": "2025-06-07T20:03:53.898459"
+    },
+    {
+      "test": "GET GET /api/v1/trends",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.019662"
+    },
+    {
+      "test": "GET GET /api/v1/trends/statuses",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.092268"
+    },
+    {
+      "test": "GET GET /api/v1/trends/tags",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.165976"
+    },
+    {
+      "test": "GET GET /api/v1/trends/links",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.244454"
+    },
+    {
+      "test": "GET GET /api/v1/tags/:id",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.351262"
+    },
+    {
+      "test": "POST POST /api/v1/tags/:id/follow",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.431695"
+    },
+    {
+      "test": "POST POST /api/v1/tags/:id/unfollow",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.542725"
+    },
+    {
+      "test": "GET GET /api/v1/followed_tags",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.617096"
+    },
+    {
+      "test": "POST /api/v1/lists",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.692833"
+    },
+    {
+      "test": "GET /api/v1/lists",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.772810"
+    },
+    {
+      "test": "GET /api/v1/lists/23a06651-979e-48c3-a810-1063806847ad",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.875710"
+    },
+    {
+      "test": "PUT /api/v1/lists/23a06651-979e-48c3-a810-1063806847ad",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:54.957841"
+    },
+    {
+      "test": "GET /api/v1/lists/23a06651-979e-48c3-a810-1063806847ad/accounts",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.065467"
+    },
+    {
+      "test": "GET /api/v1/timelines/list/23a06651-979e-48c3-a810-1063806847ad",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.142925"
+    },
+    {
+      "test": "DELETE /api/v1/lists/23a06651-979e-48c3-a810-1063806847ad",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.227463"
+    },
+    {
+      "test": "POST /api/v2/filters",
+      "status": "PASS",
+      "details": "Requires write:filters scope",
+      "timestamp": "2025-06-07T20:03:55.291690"
+    },
+    {
+      "test": "GET GET /api/v1/notifications",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.398780"
+    },
+    {
+      "test": "POST POST /api/v1/notifications/clear",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.472114"
+    },
+    {
+      "test": "GET GET /api/v1/conversations",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.593455"
+    },
+    {
+      "test": "GET GET /api/v1/follow_requests",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.661151"
+    },
+    {
+      "test": "GET GET /api/v1/preferences",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.735964"
+    },
+    {
+      "test": "PATCH PATCH /api/v1/preferences",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.808227"
+    },
+    {
+      "test": "GET GET /api/v1/bookmarks",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.923357"
+    },
+    {
+      "test": "GET GET /api/v1/favourites",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:55.999059"
+    },
+    {
+      "test": "POST /api/v1/featured_tags",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:56.115852"
+    },
+    {
+      "test": "GET /api/v1/featured_tags",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:56.183970"
+    },
+    {
+      "test": "GET /api/v1/featured_tags/suggestions",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:56.260864"
+    },
+    {
+      "test": "DELETE /api/v1/featured_tags/da7fef78-d77e-4fbd-b541-7d0fa1ab999b",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:56.330322"
+    },
+    {
+      "test": "GET GET /api/v1/markers",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:56.448891"
+    },
+    {
+      "test": "POST POST /api/v1/markers",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:56.545696"
+    },
+    {
+      "test": "GET GET /api/v1/custom_emojis",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:57.241389"
+    },
+    {
+      "test": "GET GET /api/v1/announcements",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:57.866191"
+    },
+    {
+      "test": "GET GET /api/v1/directory",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.020276"
+    },
+    {
+      "test": "GET GET /api/v1/instance/extended_description",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.090937"
+    },
+    {
+      "test": "GET GET /api/v1/instance/domain_blocks",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.213761"
+    },
+    {
+      "test": "GET GET /api/v1/instance/privacy_policy",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.281930"
+    },
+    {
+      "test": "GET GET /api/v1/instance/terms_of_service",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.360923"
+    },
+    {
+      "test": "GET GET /api/v1/instance/translation_languages",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.430482"
+    },
+    {
+      "test": "POST /api/v1/statuses (scheduled)",
+      "status": "PASS",
+      "details": "Validation error",
+      "timestamp": "2025-06-07T20:03:58.548274"
+    },
+    {
+      "test": "GET /api/v1/scheduled_statuses",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.622378"
+    },
+    {
+      "test": "DELETE /api/v1/scheduled_statuses/dummy-scheduled-id",
+      "status": "PASS",
+      "details": "Scheduled status not found",
+      "timestamp": "2025-06-07T20:03:58.735198"
+    },
+    {
+      "test": "GET GET /api/v1/push/subscription",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.816100"
+    },
+    {
+      "test": "POST /api/v1/push/subscription",
+      "status": "SKIP",
+      "details": "Requires valid VAPID keys",
+      "timestamp": "2025-06-07T20:03:58.816290"
+    },
+    {
+      "test": "POST /api/v1/reports",
+      "status": "SKIP",
+      "details": "Requires another account to report",
+      "timestamp": "2025-06-07T20:03:58.816624"
+    },
+    {
+      "test": "GET GET /api/v1/blocks",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:58.900773"
+    },
+    {
+      "test": "GET GET /api/v1/mutes",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:59.070062"
+    },
+    {
+      "test": "GET GET /api/v1/domain_blocks",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:59.138759"
+    },
+    {
+      "test": "POST POST /api/v1/domain_blocks",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:59.262281"
+    },
+    {
+      "test": "DELETE DELETE /api/v1/domain_blocks",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:59.336333"
+    },
+    {
+      "test": "Federation Endpoints",
+      "status": "INFO",
+      "details": "See federation validation test",
+      "timestamp": "2025-06-07T20:03:59.336740"
+    },
+    {
+      "test": "GET GET /api/v1/moderation/queue",
+      "status": "PASS",
+      "details": "Requires admin/moderator role",
+      "timestamp": "2025-06-07T20:03:59.408845"
+    },
+    {
+      "test": "GET GET /api/v1/moderation/trust",
+      "status": "FAIL",
+      "details": "Server error: 500",
+      "timestamp": "2025-06-07T20:03:59.489915"
+    },
+    {
+      "test": "GET GET /api/v1/ai/capabilities",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:59.596009"
+    },
+    {
+      "test": "GET GET /api/v1/ai/stats",
+      "status": "FAIL",
+      "details": "Server error: 500",
+      "timestamp": "2025-06-07T20:03:59.687358"
+    },
+    {
+      "test": "GET GET /api/v1/reputation/:actor_id",
+      "status": "FAIL",
+      "details": "Server error: 500",
+      "timestamp": "2025-06-07T20:03:59.790069"
+    },
+    {
+      "test": "GET GET /api/v1/accounts/:username/notes",
+      "status": "FAIL",
+      "details": "Server error: 500",
+      "timestamp": "2025-06-07T20:03:59.849619"
+    },
+    {
+      "test": "GET GET /api/v1/instance/costs",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:04:00.117303"
+    },
+    {
+      "test": "GET GET /api/v1/instance/metrics",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:04:00.340537"
+    },
+    {
+      "test": "GET GET /api/v1/instance/metrics/daily",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:04:00.469118"
+    },
+    {
+      "test": "GET GET /api/v1/instance/analytics",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:04:00.660828"
+    },
+    {
+      "test": "GET GET /api/v1/debug/objects/:id",
+      "status": "PASS",
+      "details": "Resource not found",
+      "timestamp": "2025-06-07T20:04:00.835741"
+    },
+    {
+      "test": "Admin Features",
+      "status": "SKIP",
+      "details": "No admin access",
+      "timestamp": "2025-06-07T20:04:00.925732"
+    },
+    {
+      "test": "DELETE DELETE test status",
+      "status": "FAIL",
+      "details": "Server error: 500",
+      "timestamp": "2025-06-07T20:04:01.013437"
+    }
+  ]
+}

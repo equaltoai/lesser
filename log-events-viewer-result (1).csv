@@ -1,0 +1,401 @@
+timestamp,message,logStreamName
+1749349754099,"INIT_START Runtime Version: provided:al2.v116	Runtime Version ARN: arn:aws:lambda:us-east-1::runtime:79c6cb68b9795cc440a0a014211e54bcf20eabe43ab99b883277bed4b07cb712
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754236,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.231Z"",""caller"":""dynamodb/client.go:86"",""msg"":""DynamoDB client initialized with cost tracking"",""region"":""us-east-1""}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754254,"START RequestId: c06dd000-0dd0-4469-9456-ea919c040c31 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754255,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.255Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/instance"",""http_path"":""/lab/instance"",""path"":""/instance"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f579-09006fba5af015466a2658d9"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754257,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.257Z"",""caller"":""handlers/misc.go:440"",""msg"":""HandleGetInstanceV2 called"",""cfg.Domain"":""lesser.host"",""cfg.BaseURL"":""https://lesser.host"",""instanceConfig.Title"":""Lesser Instance"",""instanceConfig.Version"":""4.0.0 (compatible; Lesser 0.1.0)""}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754324,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.324Z"",""caller"":""handlers/misc.go:554"",""msg"":""HandleGetInstanceV2 response"",""domain"":""lesser.host"",""title"":""Lesser Instance"",""version"":""4.0.0 (compatible; Lesser 0.1.0)"",""full_response_keys"":[""icon"",""languages"",""registrations"",""contact"",""version"",""description"",""thumbnail"",""rules"",""usage"",""domain"",""title"",""source_url"",""configuration"",""api_versions""]}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754353,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.352Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLGg2EIAMEcKg="",""operation"":""GET /lab/instance"",""total_microcents"":337,""total_cents"":0.000337,""dynamodb_reads"":2,""dynamodb_writes"":0,""lambda_duration_ms"":69,""data_transfer_bytes"":1847}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754355,"END RequestId: c06dd000-0dd0-4469-9456-ea919c040c31
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754355,"REPORT RequestId: c06dd000-0dd0-4469-9456-ea919c040c31	Duration: 100.73 ms	Billed Duration: 254 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	Init Duration: 152.56 ms	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754534,"START RequestId: 68d88721-460e-4fbd-9728-e237a3fc6b2a Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754535,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.534Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/instance/activity"",""http_path"":""/lab/instance/activity"",""path"":""/instance/activity"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57a-34872d1e02fe1c82397a242b"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754579,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.579Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLMgu7IAMEc2Q="",""operation"":""GET /lab/instance/activity"",""total_microcents"":190,""total_cents"":0.00019,""dynamodb_reads"":12,""dynamodb_writes"":0,""lambda_duration_ms"":39,""data_transfer_bytes"":1071}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754580,"END RequestId: 68d88721-460e-4fbd-9728-e237a3fc6b2a
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754580,"REPORT RequestId: 68d88721-460e-4fbd-9728-e237a3fc6b2a	Duration: 45.66 ms	Billed Duration: 46 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754653,"START RequestId: 871d245b-e92d-430c-a14d-96f7fc01a9ea Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754654,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.654Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/instance/peers"",""http_path"":""/lab/instance/peers"",""path"":""/instance/peers"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57a-4142e2ae0acfc0316f5a1a2c"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754690,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.690Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLOgWZoAMEcBQ="",""operation"":""GET /lab/instance/peers"",""total_microcents"":151,""total_cents"":0.000151,""dynamodb_reads"":2,""dynamodb_writes"":1,""lambda_duration_ms"":31,""data_transfer_bytes"":229}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754691,"END RequestId: 871d245b-e92d-430c-a14d-96f7fc01a9ea
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754691,"REPORT RequestId: 871d245b-e92d-430c-a14d-96f7fc01a9ea	Duration: 37.73 ms	Billed Duration: 38 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754755,"START RequestId: 1f6a213a-2402-4650-b497-6de5a7098dd9 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754755,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.755Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/instance/rules"",""http_path"":""/lab/instance/rules"",""path"":""/instance/rules"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57a-25f6d7931c35029530108266"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754764,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.764Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLPiYToAMEckQ="",""operation"":""GET /lab/instance/rules"",""total_microcents"":14,""total_cents"":0.000014,""dynamodb_reads"":1,""dynamodb_writes"":0,""lambda_duration_ms"":3,""data_transfer_bytes"":378}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754765,"END RequestId: 1f6a213a-2402-4650-b497-6de5a7098dd9
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754765,"REPORT RequestId: 1f6a213a-2402-4650-b497-6de5a7098dd9	Duration: 9.63 ms	Billed Duration: 10 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754816,"START RequestId: 77c2e343-0f93-425d-97ed-b0592d1c49e3 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754816,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.816Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/accounts/verify_credentials"",""http_path"":""/lab/accounts/verify_credentials"",""path"":""/accounts/verify_credentials"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57a-27fc448752fd09d75336405a"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754821,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.821Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLQiXxoAMEcvQ="",""operation"":""GET /lab/accounts/verify_credentials"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754822,"END RequestId: 77c2e343-0f93-425d-97ed-b0592d1c49e3
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754822,"REPORT RequestId: 77c2e343-0f93-425d-97ed-b0592d1c49e3	Duration: 6.27 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754884,"START RequestId: 28533815-8ea5-4710-b3bd-8bb702c548d8 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754885,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.885Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/accounts/update_credentials"",""http_path"":""/lab/accounts/update_credentials"",""path"":""/accounts/update_credentials"",""method"":""PATCH"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""77"",""content-type"":""application/json"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57a-1071d398712537aa2cf34afe"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754889,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:14.889Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLQh8joAMEceQ="",""operation"":""PATCH /lab/accounts/update_credentials"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754890,"END RequestId: 28533815-8ea5-4710-b3bd-8bb702c548d8
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349754890,"REPORT RequestId: 28533815-8ea5-4710-b3bd-8bb702c548d8	Duration: 6.03 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755022,"START RequestId: 6b86f540-ed8b-4635-b4e1-cc30724b3173 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755023,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.023Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/accounts/search"",""http_path"":""/lab/accounts/search"",""path"":""/accounts/search"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57a-782379f62287a18752315b2a"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755072,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.072Z"",""caller"":""handlers/search.go:123"",""msg"":""account search completed"",""query"":""aron"",""results"":1,""limit"":5,""offset"":0,""authenticated"":false}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755078,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.078Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLRjU2oAMEclQ="",""operation"":""GET /lab/accounts/search"",""total_microcents"":239,""total_cents"":0.000239,""dynamodb_reads"":3,""dynamodb_writes"":1,""lambda_duration_ms"":49,""data_transfer_bytes"":512}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755079,"END RequestId: 6b86f540-ed8b-4635-b4e1-cc30724b3173
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755079,"REPORT RequestId: 6b86f540-ed8b-4635-b4e1-cc30724b3173	Duration: 56.76 ms	Billed Duration: 57 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755349,"START RequestId: 9895eb49-e61e-4076-b826-5d18a3252f83 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755350,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.349Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/accounts/lookup"",""http_path"":""/lab/accounts/lookup"",""path"":""/accounts/lookup"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57b-45b997d70441c283739391eb"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755361,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.361Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLTidHIAMEJGg="",""operation"":""GET /lab/accounts/lookup"",""total_microcents"":29,""total_cents"":0.000029,""dynamodb_reads"":1,""dynamodb_writes"":0,""lambda_duration_ms"":6,""data_transfer_bytes"":720}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755363,"END RequestId: 9895eb49-e61e-4076-b826-5d18a3252f83
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755363,"REPORT RequestId: 9895eb49-e61e-4076-b826-5d18a3252f83	Duration: 13.63 ms	Billed Duration: 14 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755433,"START RequestId: 5c2f1ff1-c490-4254-834e-e438a4a066d4 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755434,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.434Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/statuses"",""http_path"":""/lab/statuses"",""path"":""/statuses"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""153"",""content-type"":""application/json"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57b-3a887de90d712f6758972858"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755439,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.439Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLWgg9IAMEJMw="",""operation"":""POST /lab/statuses"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755440,"END RequestId: 5c2f1ff1-c490-4254-834e-e438a4a066d4
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755440,"REPORT RequestId: 5c2f1ff1-c490-4254-834e-e438a4a066d4	Duration: 6.52 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755542,"START RequestId: 5125c34a-01f0-436c-8927-f1b7a31b9df6 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755542,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.542Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/media"",""http_path"":""/lab/media"",""path"":""/media"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""239"",""content-type"":""multipart/form-data; boundary=c7efc3240c82ff22449b60c42f2a32ae"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57b-1d476797145c1e9059cd42d3"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755548,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.548Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLXg39IAMEJqQ="",""operation"":""POST /lab/media"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755549,"END RequestId: 5125c34a-01f0-436c-8927-f1b7a31b9df6
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755549,"REPORT RequestId: 5125c34a-01f0-436c-8927-f1b7a31b9df6	Duration: 7.33 ms	Billed Duration: 8 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755616,"START RequestId: 375b23e7-45ee-4a07-aaf6-cfa078c5000b Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755616,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.616Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/media"",""http_path"":""/lab/media"",""path"":""/media"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""240"",""content-type"":""multipart/form-data; boundary=d581bd1bd06617441b860b1b50cc2aca"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57b-4aa8e7ec64f539c2674e5deb"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755621,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.621Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLXhIvIAMEJJw="",""operation"":""POST /lab/media"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755623,"END RequestId: 375b23e7-45ee-4a07-aaf6-cfa078c5000b
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755623,"REPORT RequestId: 375b23e7-45ee-4a07-aaf6-cfa078c5000b	Duration: 7.73 ms	Billed Duration: 8 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755687,"START RequestId: 1328880c-c458-449c-a0b8-dc185e06c963 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755687,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.687Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/statuses"",""http_path"":""/lab/statuses"",""path"":""/statuses"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""139"",""content-type"":""application/json"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57b-3214a3ea0844d444031e308c"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755692,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.692Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLYhEtoAMEJaw="",""operation"":""POST /lab/statuses"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755693,"END RequestId: 1328880c-c458-449c-a0b8-dc185e06c963
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755693,"REPORT RequestId: 1328880c-c458-449c-a0b8-dc185e06c963	Duration: 5.98 ms	Billed Duration: 6 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755757,"START RequestId: a8ae3c5a-c8c8-43d6-ac12-58e31c6173e6 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755757,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.757Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/timelines/public"",""http_path"":""/lab/timelines/public"",""path"":""/timelines/public"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57b-66ad047073db33f775d760c3"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755907,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:15.907Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLZj-qIAMEcFg="",""operation"":""GET /lab/timelines/public"",""total_microcents"":710,""total_cents"":0.00071,""dynamodb_reads"":31,""dynamodb_writes"":0,""lambda_duration_ms"":145,""data_transfer_bytes"":7872}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755908,"END RequestId: a8ae3c5a-c8c8-43d6-ac12-58e31c6173e6
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349755908,"REPORT RequestId: a8ae3c5a-c8c8-43d6-ac12-58e31c6173e6	Duration: 151.24 ms	Billed Duration: 152 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756058,"START RequestId: f25c2766-7d45-4e69-ba85-4397369b915d Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756058,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.058Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/timelines/home"",""http_path"":""/lab/timelines/home"",""path"":""/timelines/home"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-0b9e28b3050a1ab80f3e68bc"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756063,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.063Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLchTKIAMEJPw="",""operation"":""GET /lab/timelines/home"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756065,"END RequestId: f25c2766-7d45-4e69-ba85-4397369b915d
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756065,"REPORT RequestId: f25c2766-7d45-4e69-ba85-4397369b915d	Duration: 6.93 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756129,"START RequestId: 2c190676-6cfc-42d3-b698-6510021e0e93 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756129,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.129Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/timelines/tag/test"",""http_path"":""/lab/timelines/tag/test"",""path"":""/timelines/tag/test"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-2a242a6523d3909d4e92d993"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756138,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.138Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLdj3CIAMEcLg="",""operation"":""GET /lab/timelines/tag/test"",""total_microcents"":14,""total_cents"":0.000014,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":3,""data_transfer_bytes"":229}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756140,"END RequestId: 2c190676-6cfc-42d3-b698-6510021e0e93
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756140,"REPORT RequestId: 2c190676-6cfc-42d3-b698-6510021e0e93	Duration: 10.56 ms	Billed Duration: 11 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756226,"START RequestId: adaff5ae-08b7-455c-89b3-e3179cbb813c Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756226,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.226Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/timelines/link"",""http_path"":""/lab/timelines/link"",""path"":""/timelines/link"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-32d9db3463a4c0934aff5811"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756231,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.231Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLdi3QIAMEcGw="",""operation"":""GET /lab/timelines/link"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":229}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756232,"END RequestId: adaff5ae-08b7-455c-89b3-e3179cbb813c
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756232,"REPORT RequestId: adaff5ae-08b7-455c-89b3-e3179cbb813c	Duration: 6.57 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756291,"START RequestId: a5a01517-b102-4567-894a-7fea3672acb0 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756292,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.292Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/search"",""http_path"":""/lab/search"",""path"":""/search"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-02fd875578f4dd01216fbb61"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756326,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.326Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLeinSIAMEcuA="",""operation"":""GET /lab/search"",""total_microcents"":142,""total_cents"":0.000142,""dynamodb_reads"":5,""dynamodb_writes"":1,""lambda_duration_ms"":29,""data_transfer_bytes"":1040}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756327,"END RequestId: a5a01517-b102-4567-894a-7fea3672acb0
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756328,"REPORT RequestId: a5a01517-b102-4567-894a-7fea3672acb0	Duration: 36.14 ms	Billed Duration: 37 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756386,"START RequestId: 5eb03428-855d-4340-a4d9-5f030b7a9db0 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756386,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.386Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/search/suggestions"",""http_path"":""/lab/search/suggestions"",""path"":""/search/suggestions"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-7e39a8c7666f87cc4da3c9bb"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756391,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.391Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLfindIAMEcuA="",""operation"":""GET /lab/search/suggestions"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":325}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756392,"END RequestId: 5eb03428-855d-4340-a4d9-5f030b7a9db0
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756392,"REPORT RequestId: 5eb03428-855d-4340-a4d9-5f030b7a9db0	Duration: 6.43 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756449,"START RequestId: 16702396-8a2b-40cd-bad8-d58e5fd9dd3b Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756449,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.449Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/trends"",""http_path"":""/lab/trends"",""path"":""/trends"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-4b8f813206a7295667b70336"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756471,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.471Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLggaoIAMEJhQ="",""operation"":""GET /lab/trends"",""total_microcents"":78,""total_cents"":0.000078,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":16,""data_transfer_bytes"":229}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756472,"END RequestId: 16702396-8a2b-40cd-bad8-d58e5fd9dd3b
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756472,"REPORT RequestId: 16702396-8a2b-40cd-bad8-d58e5fd9dd3b	Duration: 23.20 ms	Billed Duration: 24 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756604,"START RequestId: f8ffa0d4-83a7-46b2-8a8f-a6735c6b8927 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756604,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.604Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/trends/statuses"",""http_path"":""/lab/trends/statuses"",""path"":""/trends/statuses"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-6e72b7236b4ece2f2dc1e27e"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756615,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.615Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLhgGVoAMEcrQ="",""operation"":""GET /lab/trends/statuses"",""total_microcents"":29,""total_cents"":0.000029,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":6,""data_transfer_bytes"":229}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756616,"END RequestId: f8ffa0d4-83a7-46b2-8a8f-a6735c6b8927
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756616,"REPORT RequestId: f8ffa0d4-83a7-46b2-8a8f-a6735c6b8927	Duration: 12.72 ms	Billed Duration: 13 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756673,"START RequestId: 749cca37-0319-441d-8f87-3b9ecc826c93 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756673,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.673Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/trends/tags"",""http_path"":""/lab/trends/tags"",""path"":""/trends/tags"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-0f5818a547d8d4de27b744d3"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756683,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.683Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLigZSoAMEJzA="",""operation"":""GET /lab/trends/tags"",""total_microcents"":24,""total_cents"":0.000024,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":5,""data_transfer_bytes"":229}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756685,"END RequestId: 749cca37-0319-441d-8f87-3b9ecc826c93
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756685,"REPORT RequestId: 749cca37-0319-441d-8f87-3b9ecc826c93	Duration: 11.82 ms	Billed Duration: 12 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756791,"START RequestId: 0cce53ec-ce2a-4deb-b97d-6d4aa22cc77e Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756791,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.791Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/trends/links"",""http_path"":""/lab/trends/links"",""path"":""/trends/links"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-21ffde6279014d5a15151d4e"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756802,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.802Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLjgbAIAMEcCg="",""operation"":""GET /lab/trends/links"",""total_microcents"":29,""total_cents"":0.000029,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":6,""data_transfer_bytes"":229}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756804,"END RequestId: 0cce53ec-ce2a-4deb-b97d-6d4aa22cc77e
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756804,"REPORT RequestId: 0cce53ec-ce2a-4deb-b97d-6d4aa22cc77e	Duration: 13.02 ms	Billed Duration: 14 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756861,"START RequestId: 5e495172-bb20-4d74-8697-fe8f88f08315 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756861,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.861Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/tags/test"",""http_path"":""/lab/tags/test"",""path"":""/tags/test"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-67c97d372355d42b39c6c8b6"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756866,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.866Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLkj4cIAMEcLg="",""operation"":""GET /lab/tags/test"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":339}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756867,"END RequestId: 5e495172-bb20-4d74-8697-fe8f88f08315
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756867,"REPORT RequestId: 5e495172-bb20-4d74-8697-fe8f88f08315	Duration: 6.17 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756936,"START RequestId: 76d67d97-d76e-43b7-bfff-e93ee1b1b2d0 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756937,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.936Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/tags/test/follow"",""http_path"":""/lab/tags/test/follow"",""path"":""/tags/test/follow"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-746f45ed2f4d4e3f4513f301"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756942,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:16.942Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLlhbboAMEcDQ="",""operation"":""POST /lab/tags/test/follow"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756943,"END RequestId: 76d67d97-d76e-43b7-bfff-e93ee1b1b2d0
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349756943,"REPORT RequestId: 76d67d97-d76e-43b7-bfff-e93ee1b1b2d0	Duration: 7.19 ms	Billed Duration: 8 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757010,"START RequestId: cd341471-43f9-40d4-a8d5-f85ec87f72cd Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757011,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.011Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/tags/test/unfollow"",""http_path"":""/lab/tags/test/unfollow"",""path"":""/tags/test/unfollow"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57c-54e7c2542e773e9a6909b226"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757016,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.016Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLlijtIAMEcHA="",""operation"":""POST /lab/tags/test/unfollow"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757017,"END RequestId: cd341471-43f9-40d4-a8d5-f85ec87f72cd
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757017,"REPORT RequestId: cd341471-43f9-40d4-a8d5-f85ec87f72cd	Duration: 6.37 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757123,"START RequestId: b89f1212-a8a7-41ad-b9ed-97966d952bcb Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757123,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.123Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/followed_tags"",""http_path"":""/lab/followed_tags"",""path"":""/followed_tags"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-48b7ea2a401edb910100f14e"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757128,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.128Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLmjLCoAMEciQ="",""operation"":""GET /lab/followed_tags"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757129,"END RequestId: b89f1212-a8a7-41ad-b9ed-97966d952bcb
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757129,"REPORT RequestId: b89f1212-a8a7-41ad-b9ed-97966d952bcb	Duration: 6.09 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757190,"START RequestId: e7a0e394-69b9-4618-8bfb-df4f115ce5c7 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757190,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.190Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/lists"",""http_path"":""/lab/lists"",""path"":""/lists"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""72"",""content-type"":""application/json"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-281a67f0053a5fe3579980d0"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757195,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.195Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLniMIoAMEcVg="",""operation"":""POST /lab/lists"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757196,"END RequestId: e7a0e394-69b9-4618-8bfb-df4f115ce5c7
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757196,"REPORT RequestId: e7a0e394-69b9-4618-8bfb-df4f115ce5c7	Duration: 6.53 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757302,"START RequestId: aa12ee0a-2a33-44a4-98a2-02fb6642c600 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757303,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.303Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/filters"",""http_path"":""/lab/filters"",""path"":""/filters"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""146"",""content-type"":""application/json"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-616ba52c577520d64d909fe0"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757308,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.308Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLohyyIAMEcYA="",""operation"":""POST /lab/filters"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757310,"END RequestId: aa12ee0a-2a33-44a4-98a2-02fb6642c600
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757310,"REPORT RequestId: aa12ee0a-2a33-44a4-98a2-02fb6642c600	Duration: 7.42 ms	Billed Duration: 8 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757379,"START RequestId: 139bb5f5-345a-4720-bcc3-638f06cf557a Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757379,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.379Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/notifications"",""http_path"":""/lab/notifications"",""path"":""/notifications"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-6ccd883374025b9f48873aab"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757384,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.384Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLpipTIAMEJ0Q="",""operation"":""GET /lab/notifications"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757385,"END RequestId: 139bb5f5-345a-4720-bcc3-638f06cf557a
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757385,"REPORT RequestId: 139bb5f5-345a-4720-bcc3-638f06cf557a	Duration: 6.38 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757442,"START RequestId: 8655c16f-3304-4e57-ba5f-0c57242582ee Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757442,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.442Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/notifications/clear"",""http_path"":""/lab/notifications/clear"",""path"":""/notifications/clear"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-06ab9c186c942a852ab9827c"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757447,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.447Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLqg86IAMEcKg="",""operation"":""POST /lab/notifications/clear"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757448,"END RequestId: 8655c16f-3304-4e57-ba5f-0c57242582ee
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757448,"REPORT RequestId: 8655c16f-3304-4e57-ba5f-0c57242582ee	Duration: 6.77 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757528,"START RequestId: 5a603343-2866-48d4-b6fe-83320295ab5b Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757528,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.528Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/conversations"",""http_path"":""/lab/conversations"",""path"":""/conversations"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-1caf5a7740707bf0197b7661"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757533,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.533Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLqgzooAMEJVw="",""operation"":""GET /lab/conversations"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757534,"END RequestId: 5a603343-2866-48d4-b6fe-83320295ab5b
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757534,"REPORT RequestId: 5a603343-2866-48d4-b6fe-83320295ab5b	Duration: 6.14 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757636,"START RequestId: 5ea69da5-baf5-426f-a48c-7a5708d51427 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757637,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.637Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/follow_requests"",""http_path"":""/lab/follow_requests"",""path"":""/follow_requests"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-169edc863c6446aa048955ef"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757642,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.642Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLsg9NIAMEcKg="",""operation"":""GET /lab/follow_requests"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757643,"END RequestId: 5ea69da5-baf5-426f-a48c-7a5708d51427
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757643,"REPORT RequestId: 5ea69da5-baf5-426f-a48c-7a5708d51427	Duration: 6.36 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757711,"START RequestId: 9759801b-817a-44e2-9a2b-acf33fa63618 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757711,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.711Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/preferences"",""http_path"":""/lab/preferences"",""path"":""/preferences"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-520465b242654d3134f107f5"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757716,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.716Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLsgV2IAMEJmQ="",""operation"":""GET /lab/preferences"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757717,"END RequestId: 9759801b-817a-44e2-9a2b-acf33fa63618
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757717,"REPORT RequestId: 9759801b-817a-44e2-9a2b-acf33fa63618	Duration: 6.31 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757834,"START RequestId: f3c5e4cf-f95b-4d38-8d42-8133a0470fa0 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757835,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.834Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/preferences"",""http_path"":""/lab/preferences"",""path"":""/preferences"",""method"":""PATCH"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""110"",""content-type"":""application/json"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-3209ab217fd9222b757470d5"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757839,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.839Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLuj3VoAMEJMA="",""operation"":""PATCH /lab/preferences"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757840,"END RequestId: f3c5e4cf-f95b-4d38-8d42-8133a0470fa0
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757840,"REPORT RequestId: f3c5e4cf-f95b-4d38-8d42-8133a0470fa0	Duration: 6.09 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757910,"START RequestId: f2496113-b5c1-4387-a53b-8ad2b40e763b Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757910,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.910Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/bookmarks"",""http_path"":""/lab/bookmarks"",""path"":""/bookmarks"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-5a2174d740c68c4e0a2234a2"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757915,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.915Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLuhnXoAMEchQ="",""operation"":""GET /lab/bookmarks"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757916,"END RequestId: f2496113-b5c1-4387-a53b-8ad2b40e763b
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757916,"REPORT RequestId: f2496113-b5c1-4387-a53b-8ad2b40e763b	Duration: 6.78 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757985,"START RequestId: 6e413ad3-bede-4d3b-bde9-7e6ce8afa219 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757985,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.985Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/favourites"",""http_path"":""/lab/favourites"",""path"":""/favourites"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57d-16df23f03a412d6870c2b9ba"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757990,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:17.990Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLvjlsoAMEJrQ="",""operation"":""GET /lab/favourites"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757991,"END RequestId: 6e413ad3-bede-4d3b-bde9-7e6ce8afa219
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349757991,"REPORT RequestId: 6e413ad3-bede-4d3b-bde9-7e6ce8afa219	Duration: 6.01 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758056,"START RequestId: a992368e-c11a-43a8-bab1-d899fc00a4c7 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758056,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:18.056Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/featured_tags"",""http_path"":""/lab/featured_tags"",""path"":""/featured_tags"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""16"",""content-type"":""application/json"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57e-3575585d718f9c422ca5bdad"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758061,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:18.061Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLwgJDIAMEJOQ="",""operation"":""POST /lab/featured_tags"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758062,"END RequestId: a992368e-c11a-43a8-bab1-d899fc00a4c7
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758062,"REPORT RequestId: a992368e-c11a-43a8-bab1-d899fc00a4c7	Duration: 6.22 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758178,"START RequestId: 11a325fb-2e5e-4065-b33b-a35a88758e5d Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758179,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:18.179Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/markers"",""http_path"":""/lab/markers"",""path"":""/markers"",""method"":""GET"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""0"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57e-4dd404b10b84ff4a3654f23b"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758183,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:18.183Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLxgN0IAMEcWg="",""operation"":""GET /lab/markers"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758184,"END RequestId: 11a325fb-2e5e-4065-b33b-a35a88758e5d
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758184,"REPORT RequestId: 11a325fb-2e5e-4065-b33b-a35a88758e5d	Duration: 6.17 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758257,"START RequestId: 1f53053e-6e2e-4942-8000-a0bad7764be4 Version: $LATEST
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758257,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:18.257Z"",""caller"":""api/main.go:151"",""msg"":""API request"",""raw_path"":""/lab/markers"",""http_path"":""/lab/markers"",""path"":""/markers"",""method"":""POST"",""stage"":""lab"",""headers"":{""accept"":""*/*"",""accept-encoding"":""gzip, deflate"",""authorization"":""Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzQ5MzQ5NjM1LCJuYmYiOjE3NDkzNDYwMzUsImlhdCI6MTc0OTM0NjAzNSwidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giLCJhZG1pbiJdLCJjbGllbnRfaWQiOiJmUlViUnJBUFlTaHRBc1dKU0owV3pBPT0ifQ._7E6FmwuIFRL-JNqdJfbxRPEHcQfwA61GIHoyAfXGJw"",""content-length"":""71"",""content-type"":""application/json"",""host"":""lesser.host"",""user-agent"":""python-requests/2.32.3"",""x-amzn-trace-id"":""Root=1-6844f57e-413ca668162a1c2863ca19e0"",""x-forwarded-for"":""74.129.178.19"",""x-forwarded-port"":""443"",""x-forwarded-proto"":""https""}}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758262,"{""level"":""info"",""timestamp"":""2025-06-08T02:29:18.262Z"",""caller"":""cost/middleware.go:172"",""msg"":""request cost tracked"",""request_id"":""L0tLyhbIoAMEcvw="",""operation"":""POST /lab/markers"",""total_microcents"":4,""total_cents"":0.000004,""dynamodb_reads"":0,""dynamodb_writes"":0,""lambda_duration_ms"":1,""data_transfer_bytes"":299}
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758263,"END RequestId: 1f53053e-6e2e-4942-8000-a0bad7764be4
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83
+1749349758263,"REPORT RequestId: 1f53053e-6e2e-4942-8000-a0bad7764be4	Duration: 6.08 ms	Billed Duration: 7 ms	Memory Size: 3008 MB	Max Memory Used: 48 MB	
+",2025/06/08/[$LATEST]9e7c9d12d24d4048ae12c7f761ab9f83

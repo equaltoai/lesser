@@ -338,7 +338,7 @@ func (h *Handler) HandleListImports(ctx context.Context, request events.APIGatew
 }
 
 // Helper to get user's import jobs
-func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserImportJobs(_ context.Context, _ string, _ ...string) ([]map[string]interface{}, error) {
 	// Query GSI1 for user's imports
 	// This would normally use a proper DynamoDB query
 	// For now, return empty to avoid errors

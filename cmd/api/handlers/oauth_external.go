@@ -494,10 +494,3 @@ func (h *Handler) getCurrentUser(request events.APIGatewayV2HTTPRequest) string 
 
 	return ""
 }
-
-// generateSessionID generates a random session ID
-func generateSessionID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	return base64.URLEncoding.EncodeToString(b)
-}

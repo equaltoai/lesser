@@ -2,33 +2,29 @@ package reputation
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 // VouchManager handles vouch creation and management
 type VouchManager struct {
-	db        *dynamodb.Client
-	tableName string
-	signer    *Signer
-	logger    *zap.Logger
+	store       storage.Storage
+	signer      *Signer
+	logger      *zap.Logger
+	instanceURL string
 }
 
 // NewVouchManager creates a new vouch manager
-func NewVouchManager(db *dynamodb.Client, tableName string, signer *Signer, logger *zap.Logger) *VouchManager {
+func NewVouchManager(store storage.Storage, signer *Signer, instanceURL string, logger *zap.Logger) *VouchManager {
 	return &VouchManager{
-		db:        db,
-		tableName: tableName,
-		signer:    signer,
-		logger:    logger,
+		store:       store,
+		signer:      signer,
+		logger:      logger,
+		instanceURL: instanceURL,
 	}
 }
 
@@ -72,7 +68,7 @@ func (vm *VouchManager) CreateVouch(ctx context.Context, input *CreateVouchInput
 		ID:                fmt.Sprintf("vouch_%s", uuid.New().String()),
 		From:              input.FromActorID,
 		To:                input.ToActorID,
-		InstanceURL:       vm.signer.instanceURL,
+		InstanceURL:       vm.instanceURL,
 		CreatedAt:         time.Now(),
 		ExpiresAt:         time.Now().Add(180 * 24 * time.Hour), // 6 months
 		Confidence:        input.Confidence,
@@ -87,26 +83,25 @@ func (vm *VouchManager) CreateVouch(ctx context.Context, input *CreateVouchInput
 		return nil, fmt.Errorf("failed to sign vouch: %w", err)
 	}
 
-	// Store in DynamoDB
-	item, err := attributevalue.MarshalMap(vouch)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal vouch: %w", err)
+	// Convert to storage.Vouch
+	storageVouch := &storage.Vouch{
+		ID:                vouch.ID,
+		From:              vouch.From,
+		To:                vouch.To,
+		InstanceURL:       vouch.InstanceURL,
+		CreatedAt:         vouch.CreatedAt,
+		ExpiresAt:         vouch.ExpiresAt,
+		Confidence:        vouch.Confidence,
+		Context:           vouch.Context,
+		VoucherReputation: vouch.VoucherReputation,
+		Active:            vouch.Active,
+		Revoked:           vouch.Revoked,
+		RevokedAt:         vouch.RevokedAt,
+		Signature:         vouch.Signature,
 	}
 
-	// Add DynamoDB keys
-	item["PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouch.ID)}
-	item["SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouch.ID)}
-	item["GSI1PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("FROM#%s", input.FromActorID)}
-	item["GSI1SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("CREATED#%s", vouch.CreatedAt.Format(time.RFC3339))}
-	item["GSI2PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("TO#%s", input.ToActorID)}
-	item["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("CREATED#%s", vouch.CreatedAt.Format(time.RFC3339))}
-	item["TTL"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", vouch.ExpiresAt.Unix())}
-
-	_, err = vm.db.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(vm.tableName),
-		Item:      item,
-	})
-	if err != nil {
+	// Store using storage interface
+	if err := vm.store.CreateVouch(ctx, storageVouch); err != nil {
 		return nil, fmt.Errorf("failed to store vouch: %w", err)
 	}
 
@@ -132,27 +127,9 @@ func (vm *VouchManager) RevokeVouch(ctx context.Context, vouchID string, actorID
 		return fmt.Errorf("only the voucher can revoke their vouch")
 	}
 
-	// Update vouch
+	// Update vouch status
 	now := time.Now()
-	_, err = vm.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName: aws.String(vm.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouchID)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouchID)},
-		},
-		UpdateExpression: aws.String("SET #active = :false, #revoked = :true, #revokedAt = :now"),
-		ExpressionAttributeNames: map[string]string{
-			"#active":    "Active",
-			"#revoked":   "Revoked",
-			"#revokedAt": "RevokedAt",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":false": &types.AttributeValueMemberBOOL{Value: false},
-			":true":  &types.AttributeValueMemberBOOL{Value: true},
-			":now":   &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
-		},
-	})
-
+	err = vm.store.UpdateVouchStatus(ctx, vouchID, false, &now)
 	if err != nil {
 		return fmt.Errorf("failed to revoke vouch: %w", err)
 	}
@@ -166,80 +143,92 @@ func (vm *VouchManager) RevokeVouch(ctx context.Context, vouchID string, actorID
 
 // GetVouchByID retrieves a vouch by ID
 func (vm *VouchManager) GetVouchByID(ctx context.Context, vouchID string) (*Vouch, error) {
-	result, err := vm.db.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(vm.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouchID)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouchID)},
-		},
-	})
-
+	storageVouch, err := vm.store.GetVouch(ctx, vouchID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vouch: %w", err)
 	}
 
-	if result.Item == nil {
+	if storageVouch == nil {
 		return nil, fmt.Errorf("vouch not found")
 	}
 
-	var vouch Vouch
-	if err := attributevalue.UnmarshalMap(result.Item, &vouch); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal vouch: %w", err)
+	// Convert storage.Vouch to reputation.Vouch
+	vouch := &Vouch{
+		ID:                storageVouch.ID,
+		From:              storageVouch.From,
+		To:                storageVouch.To,
+		InstanceURL:       storageVouch.InstanceURL,
+		CreatedAt:         storageVouch.CreatedAt,
+		ExpiresAt:         storageVouch.ExpiresAt,
+		Confidence:        storageVouch.Confidence,
+		Context:           storageVouch.Context,
+		VoucherReputation: storageVouch.VoucherReputation,
+		Active:            storageVouch.Active,
+		Revoked:           storageVouch.Revoked,
+		RevokedAt:         storageVouch.RevokedAt,
+		Signature:         storageVouch.Signature,
 	}
 
-	return &vouch, nil
+	return vouch, nil
 }
 
 // GetVouchesForActor gets all vouches for an actor
 func (vm *VouchManager) GetVouchesForActor(ctx context.Context, actorID string) ([]Vouch, error) {
-	result, err := vm.db.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(vm.tableName),
-		IndexName:              aws.String("GSI2"),
-		KeyConditionExpression: aws.String("GSI2PK = :pk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TO#%s", actorID)},
-		},
-	})
-
+	storageVouches, err := vm.store.GetVouchesForActor(ctx, actorID, true) // Get only active vouches
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vouches: %w", err)
 	}
 
-	var vouches []Vouch
-	if err := attributevalue.UnmarshalListOfMaps(result.Items, &vouches); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal vouches: %w", err)
-	}
-
-	// Filter out expired and revoked vouches
-	activeVouches := make([]Vouch, 0)
-	now := time.Now()
-	for _, v := range vouches {
-		if v.Active && !v.Revoked && now.Before(v.ExpiresAt) {
-			activeVouches = append(activeVouches, v)
+	// Convert storage.Vouch slice to reputation.Vouch slice
+	vouches := make([]Vouch, 0, len(storageVouches))
+	for _, sv := range storageVouches {
+		vouch := Vouch{
+			ID:                sv.ID,
+			From:              sv.From,
+			To:                sv.To,
+			InstanceURL:       sv.InstanceURL,
+			CreatedAt:         sv.CreatedAt,
+			ExpiresAt:         sv.ExpiresAt,
+			Confidence:        sv.Confidence,
+			Context:           sv.Context,
+			VoucherReputation: sv.VoucherReputation,
+			Active:            sv.Active,
+			Revoked:           sv.Revoked,
+			RevokedAt:         sv.RevokedAt,
+			Signature:         sv.Signature,
 		}
+		vouches = append(vouches, vouch)
 	}
 
-	return activeVouches, nil
+	return vouches, nil
 }
 
 // GetVouchesFromActor gets all vouches created by an actor
 func (vm *VouchManager) GetVouchesFromActor(ctx context.Context, actorID string) ([]Vouch, error) {
-	result, err := vm.db.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(vm.tableName),
-		IndexName:              aws.String("GSI1"),
-		KeyConditionExpression: aws.String("GSI1PK = :pk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("FROM#%s", actorID)},
-		},
-	})
-
+	storageVouches, err := vm.store.GetVouchesByActor(ctx, actorID, false) // Get all vouches, not just active
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vouches: %w", err)
 	}
 
-	var vouches []Vouch
-	if err := attributevalue.UnmarshalListOfMaps(result.Items, &vouches); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal vouches: %w", err)
+	// Convert storage.Vouch slice to reputation.Vouch slice
+	vouches := make([]Vouch, 0, len(storageVouches))
+	for _, sv := range storageVouches {
+		vouch := Vouch{
+			ID:                sv.ID,
+			From:              sv.From,
+			To:                sv.To,
+			InstanceURL:       sv.InstanceURL,
+			CreatedAt:         sv.CreatedAt,
+			ExpiresAt:         sv.ExpiresAt,
+			Confidence:        sv.Confidence,
+			Context:           sv.Context,
+			VoucherReputation: sv.VoucherReputation,
+			Active:            sv.Active,
+			Revoked:           sv.Revoked,
+			RevokedAt:         sv.RevokedAt,
+			Signature:         sv.Signature,
+		}
+		vouches = append(vouches, vouch)
 	}
 
 	return vouches, nil
@@ -247,78 +236,31 @@ func (vm *VouchManager) GetVouchesFromActor(ctx context.Context, actorID string)
 
 // canCreateVouch checks if an actor can create more vouches this month
 func (vm *VouchManager) canCreateVouch(ctx context.Context, actorID string) (bool, error) {
-	// Get vouches created this month
-	startOfMonth := time.Now().AddDate(0, 0, -time.Now().Day()+1).Truncate(24 * time.Hour)
-
-	result, err := vm.db.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(vm.tableName),
-		IndexName:              aws.String("GSI1"),
-		KeyConditionExpression: aws.String("GSI1PK = :pk AND GSI1SK >= :start"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":    &types.AttributeValueMemberS{Value: fmt.Sprintf("FROM#%s", actorID)},
-			":start": &types.AttributeValueMemberS{Value: fmt.Sprintf("CREATED#%s", startOfMonth.Format(time.RFC3339))},
-		},
-	})
-
+	// Get month count using storage interface
+	now := time.Now()
+	count, err := vm.store.GetMonthlyVouchCount(ctx, actorID, now.Year(), now.Month())
 	if err != nil {
-		return false, fmt.Errorf("failed to query vouches: %w", err)
-	}
-
-	// Count active vouches
-	activeCount := 0
-	var vouches []Vouch
-	if err := attributevalue.UnmarshalListOfMaps(result.Items, &vouches); err != nil {
-		return false, fmt.Errorf("failed to unmarshal vouches: %w", err)
-	}
-
-	for _, v := range vouches {
-		if v.Active && !v.Revoked {
-			activeCount++
-		}
+		return false, fmt.Errorf("failed to get monthly vouch count: %w", err)
 	}
 
 	// Allow max 5 vouches per month
-	return activeCount < 5, nil
+	return count < 5, nil
 }
 
 // getActorReputation gets an actor's current reputation score
 func (vm *VouchManager) getActorReputation(ctx context.Context, actorID string) (int, error) {
-	// Query the reputation table for the latest score
-	result, err := vm.db.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(vm.tableName),
-		KeyConditionExpression: aws.String("PK = :pk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorID)},
-		},
-		ScanIndexForward: aws.Bool(false), // Sort descending by SK (timestamp)
-		Limit:            aws.Int32(1),
-	})
-
+	// Get reputation from storage
+	rep, err := vm.store.GetReputation(ctx, actorID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to query reputation: %w", err)
+		return 0, fmt.Errorf("failed to get reputation: %w", err)
 	}
 
-	if len(result.Items) == 0 {
+	if rep == nil {
 		// No reputation history, return 0
 		return 0, nil
 	}
 
-	// Unmarshal reputation data
-	var repData map[string]interface{}
-	if err := attributevalue.UnmarshalMap(result.Items[0], &repData); err != nil {
-		return 0, fmt.Errorf("failed to unmarshal reputation: %w", err)
-	}
-
-	// Get ReputationData field
-	if repDataStr, ok := repData["ReputationData"].(string); ok {
-		var rep Reputation
-		if err := json.Unmarshal([]byte(repDataStr), &rep); err != nil {
-			return 0, fmt.Errorf("failed to unmarshal reputation data: %w", err)
-		}
-		return rep.TotalScore, nil
-	}
-
-	return 0, fmt.Errorf("reputation data not found")
+	return rep.TotalScore, nil
 }
 
 // ImportVouch imports a vouch from another instance
@@ -359,34 +301,27 @@ func (vm *VouchManager) ImportVouch(ctx context.Context, vouch *Vouch, verifier 
 		return fmt.Errorf("voucher had insufficient reputation at time of vouch (%d < 500)", vouch.VoucherReputation)
 	}
 
-	// Store the imported vouch
-	item, err := attributevalue.MarshalMap(vouch)
-	if err != nil {
-		return fmt.Errorf("failed to marshal vouch: %w", err)
+	// Convert to storage.Vouch
+	storageVouch := &storage.Vouch{
+		ID:                vouch.ID,
+		From:              vouch.From,
+		To:                vouch.To,
+		InstanceURL:       vouch.InstanceURL,
+		CreatedAt:         vouch.CreatedAt,
+		ExpiresAt:         vouch.ExpiresAt,
+		Confidence:        vouch.Confidence,
+		Context:           vouch.Context,
+		VoucherReputation: vouch.VoucherReputation,
+		Active:            vouch.Active,
+		Revoked:           vouch.Revoked,
+		RevokedAt:         vouch.RevokedAt,
+		Signature:         vouch.Signature,
 	}
 
-	// Add DynamoDB keys
-	item["PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouch.ID)}
-	item["SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("VOUCH#%s", vouch.ID)}
-	item["GSI1PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("FROM#%s", vouch.From)}
-	item["GSI1SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("CREATED#%s", vouch.CreatedAt.Format(time.RFC3339))}
-	item["GSI2PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("TO#%s", vouch.To)}
-	item["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("CREATED#%s", vouch.CreatedAt.Format(time.RFC3339))}
-	item["TTL"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", vouch.ExpiresAt.Unix())}
-
-	// Mark as imported
-	item["Imported"] = &types.AttributeValueMemberBOOL{Value: true}
-	item["ImportedAt"] = &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)}
-	item["ImportedFrom"] = &types.AttributeValueMemberS{Value: vouch.InstanceURL}
-
-	_, err = vm.db.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName:           aws.String(vm.tableName),
-		Item:                item,
-		ConditionExpression: aws.String("attribute_not_exists(PK)"), // Ensure we don't overwrite
-	})
-	if err != nil {
-		// Check if it's a conditional check failure (duplicate)
-		if _, ok := err.(*types.ConditionalCheckFailedException); ok {
+	// Store the imported vouch
+	if err := vm.store.CreateVouch(ctx, storageVouch); err != nil {
+		// Check if it's a duplicate error
+		if fmt.Sprintf("%v", err) == "vouch already exists" {
 			vm.logger.Debug("Vouch already exists", zap.String("vouch_id", vouch.ID))
 			return nil
 		}

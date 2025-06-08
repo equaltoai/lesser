@@ -489,7 +489,7 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 		"languages": instanceConfig.Languages,
 		"configuration": map[string]interface{}{
 			"urls": map[string]interface{}{
-				"streaming":        fmt.Sprintf("wss://ws.%s", h.cfg.Domain),
+				"streaming":        fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
 				"about":            h.cfg.BaseURL() + "/about",
 				"privacy_policy":   h.cfg.BaseURL() + "/privacy-policy",
 				"terms_of_service": h.cfg.BaseURL() + "/terms",
@@ -840,7 +840,8 @@ func (h *Handler) HandleGetInstanceConfiguration(ctx context.Context, request ev
 	// Build configuration response
 	config := map[string]interface{}{
 		"urls": map[string]interface{}{
-			"streaming": fmt.Sprintf("wss://ws.%s", h.cfg.Domain),
+			// Use Mastodon-compatible streaming endpoint
+			"streaming": fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
 		},
 		"accounts": map[string]interface{}{
 			"max_featured_tags":   20,

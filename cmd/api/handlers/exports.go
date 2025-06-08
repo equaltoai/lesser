@@ -310,7 +310,7 @@ func (h *Handler) HandleListExports(ctx context.Context, request events.APIGatew
 }
 
 // Helper to get user's export jobs
-func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserExportJobs(_ context.Context, _ string, _ ...string) ([]map[string]interface{}, error) {
 	// Query GSI1 for user's exports
 	// This would normally use a proper DynamoDB query
 	// For now, return empty to avoid errors

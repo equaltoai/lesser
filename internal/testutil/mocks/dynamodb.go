@@ -67,3 +67,11 @@ func (m *MockDynamoDBClient) BatchWriteItem(ctx context.Context, params *dynamod
 	}
 	return args.Get(0).(*dynamodb.BatchWriteItemOutput), args.Error(1)
 }
+
+func (m *MockDynamoDBClient) BatchGetItem(ctx context.Context, params *dynamodb.BatchGetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchGetItemOutput, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*dynamodb.BatchGetItemOutput), args.Error(1)
+}

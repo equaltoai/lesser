@@ -82,28 +82,18 @@ func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGateway
 	response := map[string]interface{}{
 		"error":         "SSE not supported in Lambda environment",
 		"message":       "Please use WebSocket endpoint for real-time streaming",
-		"websocket_url": fmt.Sprintf("wss://ws.%s", h.cfg.Domain),
+		"websocket_url": fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
 		"documentation": "https://docs.joinmastodon.org/methods/streaming/",
 		"note":          "Lambda functions cannot maintain long-lived SSE connections. Use our WebSocket endpoint instead.",
 	}
 
-	// Return with appropriate SSE headers even though we can't stream
+	// Return 400 Bad Request with JSON explaining the issue
+	body, _ := json.Marshal(response)
 	return &events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
+		StatusCode: 400,
 		Headers: map[string]string{
-			"Content-Type":      "text/event-stream",
-			"Cache-Control":     "no-cache",
-			"Connection":        "keep-alive",
-			"X-Accel-Buffering": "no",
+			"Content-Type": "application/json",
 		},
-		Body: fmt.Sprintf("event: error\ndata: %s\n\n", mustMarshalJSON(response)),
+		Body: string(body),
 	}, nil
-}
-
-func mustMarshalJSON(v interface{}) string {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return "{}"
-	}
-	return string(data)
 }

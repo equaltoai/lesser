@@ -1,0 +1,337 @@
+{
+  "timestamp": "20250607-200329",
+  "instance_url": "https://lesser.host",
+  "summary": {
+    "total": 54,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 31,
+    "success_rate": 100.0
+  },
+  "results": [
+    {
+      "test": "GET GET /api/v1/instance",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:26.673562"
+    },
+    {
+      "test": "GET GET /api/v1/instance/activity",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:26.777133"
+    },
+    {
+      "test": "GET GET /api/v1/instance/peers",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:26.880784"
+    },
+    {
+      "test": "GET GET /api/v1/instance/rules",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:26.948853"
+    },
+    {
+      "test": "POST /api/v1/apps",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:27.032468"
+    },
+    {
+      "test": "POST /api/v1/oauth/token",
+      "status": "PASS",
+      "details": "OAuth grant type may be disabled",
+      "timestamp": "2025-06-07T20:03:27.761914"
+    },
+    {
+      "test": "Account Operations",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:27.762206"
+    },
+    {
+      "test": "Account Relationships",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:27.762302"
+    },
+    {
+      "test": "Account Actions",
+      "status": "SKIP",
+      "details": "No access token or account ID",
+      "timestamp": "2025-06-07T20:03:27.762395"
+    },
+    {
+      "test": "Status Operations",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:27.762492"
+    },
+    {
+      "test": "Status Interactions",
+      "status": "SKIP",
+      "details": "No access token or status ID",
+      "timestamp": "2025-06-07T20:03:27.762576"
+    },
+    {
+      "test": "Media Operations",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:27.762660"
+    },
+    {
+      "test": "Poll Operations",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:27.762748"
+    },
+    {
+      "test": "GET GET /api/v1/timelines/public",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:27.965801"
+    },
+    {
+      "test": "Timeline Tests (Auth Required)",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:27.965870"
+    },
+    {
+      "test": "Search",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:27.966124"
+    },
+    {
+      "test": "GET GET /api/v1/trends",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:28.065374"
+    },
+    {
+      "test": "GET GET /api/v1/trends/statuses",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:28.138438"
+    },
+    {
+      "test": "GET GET /api/v1/trends/tags",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:28.214236"
+    },
+    {
+      "test": "GET GET /api/v1/trends/links",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:28.287029"
+    },
+    {
+      "test": "Hashtags",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287278"
+    },
+    {
+      "test": "Lists",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287398"
+    },
+    {
+      "test": "Filters",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287499"
+    },
+    {
+      "test": "Notifications",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287572"
+    },
+    {
+      "test": "Conversations",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287649"
+    },
+    {
+      "test": "Follow Requests",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287717"
+    },
+    {
+      "test": "Preferences",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287782"
+    },
+    {
+      "test": "Bookmarks & Favourites",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287847"
+    },
+    {
+      "test": "Featured Tags",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287911"
+    },
+    {
+      "test": "Markers",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.287979"
+    },
+    {
+      "test": "GET GET /api/v1/custom_emojis",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:28.879863"
+    },
+    {
+      "test": "Announcements",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:28.880309"
+    },
+    {
+      "test": "GET GET /api/v1/directory",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:28.944093"
+    },
+    {
+      "test": "GET GET /api/v1/instance/extended_description",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.013597"
+    },
+    {
+      "test": "GET GET /api/v1/instance/domain_blocks",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.082959"
+    },
+    {
+      "test": "GET GET /api/v1/instance/privacy_policy",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.142922"
+    },
+    {
+      "test": "GET GET /api/v1/instance/terms_of_service",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.202612"
+    },
+    {
+      "test": "GET GET /api/v1/instance/translation_languages",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.265668"
+    },
+    {
+      "test": "Scheduled Statuses",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.265864"
+    },
+    {
+      "test": "Push Subscriptions",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.265959"
+    },
+    {
+      "test": "Reports",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.266037"
+    },
+    {
+      "test": "Blocks & Mutes",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.266111"
+    },
+    {
+      "test": "Domain Blocks",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.266189"
+    },
+    {
+      "test": "Federation Endpoints",
+      "status": "INFO",
+      "details": "See federation validation test",
+      "timestamp": "2025-06-07T20:03:29.266257"
+    },
+    {
+      "test": "Moderation Features",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.266322"
+    },
+    {
+      "test": "AI Features",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.266387"
+    },
+    {
+      "test": "Reputation & Vouches",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.266451"
+    },
+    {
+      "test": "Community Notes",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.266515"
+    },
+    {
+      "test": "GET GET /api/v1/instance/costs",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.372070"
+    },
+    {
+      "test": "GET GET /api/v1/instance/metrics",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.552714"
+    },
+    {
+      "test": "GET GET /api/v1/instance/metrics/daily",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.659628"
+    },
+    {
+      "test": "GET GET /api/v1/instance/analytics",
+      "status": "PASS",
+      "details": "Success",
+      "timestamp": "2025-06-07T20:03:29.860678"
+    },
+    {
+      "test": "Debug Endpoints",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.861172"
+    },
+    {
+      "test": "Admin Features",
+      "status": "SKIP",
+      "details": "No access token",
+      "timestamp": "2025-06-07T20:03:29.861408"
+    }
+  ]
+}

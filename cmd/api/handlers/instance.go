@@ -103,7 +103,7 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 		"email":             instanceConfig.Email,
 		"version":           instanceConfig.Version,
 		"urls": map[string]interface{}{
-			"streaming_api": fmt.Sprintf("wss://ws.%s", h.cfg.Domain),
+			"streaming_api": fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
 		},
 		"stats": map[string]interface{}{
 			"user_count":   userCount,
