@@ -387,7 +387,7 @@ func TestReturnCollectionPage(t *testing.T) {
 
 	t.Run("page with next cursor", func(t *testing.T) {
 		usernames := []string{"bob", "carol", "dave"}
-		resp, err := returnCollectionPage(context.Background(), testActor, "followers", usernames, "", "nextcursor", 20)
+		resp, err := returnCollectionPage(context.Background(), testActor, "followers", usernames, nil, "", "nextcursor", 20)
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -401,7 +401,7 @@ func TestReturnCollectionPage(t *testing.T) {
 
 	t.Run("page with cursor (not first page)", func(t *testing.T) {
 		usernames := []string{"eve", "frank"}
-		resp, err := returnCollectionPage(context.Background(), testActor, "following", usernames, "prevcursor", "", 10)
+		resp, err := returnCollectionPage(context.Background(), testActor, "following", usernames, nil, "prevcursor", "", 10)
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 

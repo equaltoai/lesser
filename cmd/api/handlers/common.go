@@ -6,6 +6,7 @@ import (
 	"github.com/aron23/lesser/pkg/mastodon"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/trends"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/zap"
 )
 
@@ -18,6 +19,7 @@ type Handler struct {
 	converter      mastodon.Converter
 	trendService   *trends.Service
 	emojiParser    *mastodon.EmojiParser
+	dynamoClient   *dynamodb.Client
 }
 
 // NewHandler creates a new handler with all dependencies

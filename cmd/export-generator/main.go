@@ -8,14 +8,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/storage"
+	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dynamodbsdk "github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.uber.org/zap"
@@ -23,12 +26,13 @@ import (
 )
 
 var (
-	logger       *zap.Logger
-	s3Client     *s3.Client
-	dynamoClient *dynamodb.Client
-	tableName    string
-	bucketName   string
-	baseURL      string
+	logger        *zap.Logger
+	s3Client      *s3.Client
+	dynamoClient  *dynamodbsdk.Client
+	storageClient storage.Storage
+	tableName     string
+	bucketName    string
+	baseURL       string
 )
 
 // ExportGeneratorEvent represents the event triggered for export generation
@@ -122,7 +126,10 @@ func initializeAWSClients(ctx context.Context) error {
 	s3Client = s3.NewFromConfig(cfg)
 
 	// Initialize DynamoDB client
-	dynamoClient = dynamodb.NewFromConfig(cfg)
+	dynamoClient = dynamodbsdk.NewFromConfig(cfg)
+
+	// Initialize storage client
+	storageClient = dynamodb.NewWithClient(dynamoClient, tableName)
 
 	return nil
 }
@@ -319,6 +326,21 @@ func generateCSVExport(ctx context.Context, event ExportGeneratorEvent) ([]byte,
 				bookmark.StatusURL,
 				bookmark.CreatedAt.Format(time.RFC3339),
 			})
+			recordCount++
+		}
+
+	case "domain_blocks":
+		// Write header
+		writer.Write([]string{"Domain"})
+
+		// Get domain blocks
+		domainBlocks, err := getDomainBlocks(ctx, event.Username)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		for _, domain := range domainBlocks {
+			writer.Write([]string{domain})
 			recordCount++
 		}
 
@@ -535,7 +557,7 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 // Helper functions for data retrieval
 func getActor(ctx context.Context, username string) (*activitypub.Actor, error) {
 	// Get actor from DynamoDB
-	result, err := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
+	result, err := dynamoClient.GetItem(ctx, &dynamodbsdk.GetItemInput{
 		TableName: aws.String(tableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", username)},
@@ -571,23 +593,83 @@ func getActor(ctx context.Context, username string) (*activitypub.Actor, error) 
 }
 
 func getFollowers(ctx context.Context, username string) ([]string, error) {
-	// Query followers from DynamoDB
-	// This would query GSI with pattern FOLLOWER#username
-	// For now, return empty list
-	return []string{}, nil
+	// Query followers from DynamoDB using storage client
+	var allFollowers []string
+	cursor := ""
+
+	for {
+		followers, nextCursor, err := storageClient.GetFollowers(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get followers", zap.String("username", username), zap.Error(err))
+			return nil, fmt.Errorf("get followers: %w", err)
+		}
+
+		// Convert actor IDs to Mastodon handles for CSV export
+		for _, follower := range followers {
+			handle := convertActorIDToHandle(follower)
+			allFollowers = append(allFollowers, handle)
+		}
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allFollowers, nil
 }
 
 func getFollowing(ctx context.Context, username string) ([]string, error) {
-	// Query following from DynamoDB
-	// This would query with pattern USER#username and SK prefix FOLLOWING#
-	// For now, return empty list
-	return []string{}, nil
+	// Query following from DynamoDB using storage client
+	var allFollowing []string
+	cursor := ""
+
+	for {
+		following, nextCursor, err := storageClient.GetFollowing(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get following", zap.String("username", username), zap.Error(err))
+			return nil, fmt.Errorf("get following: %w", err)
+		}
+
+		// Convert actor IDs to Mastodon handles for CSV export
+		for _, follow := range following {
+			handle := convertActorIDToHandle(follow)
+			allFollowing = append(allFollowing, handle)
+		}
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allFollowing, nil
 }
 
 func getBlocks(ctx context.Context, username string) ([]string, error) {
-	// Query blocks from DynamoDB
-	// For now, return empty list
-	return []string{}, nil
+	// Query blocks from DynamoDB using storage client
+	var allBlocks []string
+	cursor := ""
+
+	for {
+		blocks, nextCursor, err := storageClient.GetBlockedActors(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get blocked actors", zap.String("username", username), zap.Error(err))
+			return nil, fmt.Errorf("get blocked actors: %w", err)
+		}
+
+		for _, block := range blocks {
+			handle := convertActorIDToHandle(block.Object)
+			allBlocks = append(allBlocks, handle)
+		}
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allBlocks, nil
 }
 
 type MuteInfo struct {
@@ -596,15 +678,64 @@ type MuteInfo struct {
 }
 
 func getMutes(ctx context.Context, username string) ([]MuteInfo, error) {
-	// Query mutes from DynamoDB
-	// For now, return empty list
-	return []MuteInfo{}, nil
+	// Query mutes from DynamoDB using storage client
+	var allMutes []MuteInfo
+	cursor := ""
+
+	for {
+		mutes, nextCursor, err := storageClient.GetMutedActors(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get muted actors", zap.String("username", username), zap.Error(err))
+			return nil, fmt.Errorf("get muted actors: %w", err)
+		}
+
+		for _, mute := range mutes {
+			allMutes = append(allMutes, MuteInfo{
+				AccountID:         convertActorIDToHandle(mute.Object),
+				HideNotifications: mute.HideNotifications,
+			})
+		}
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allMutes, nil
 }
 
 func getListsWithMembers(ctx context.Context, username string) (map[string][]string, error) {
-	// Query lists and their members from DynamoDB
-	// For now, return empty map
-	return map[string][]string{}, nil
+	// Query lists and their members from DynamoDB using storage client
+	lists, err := storageClient.GetListsForUser(ctx, username)
+	if err != nil {
+		logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
+		return nil, fmt.Errorf("get lists: %w", err)
+	}
+
+	result := make(map[string][]string)
+
+	for _, list := range lists {
+		members, err := storageClient.GetListAccounts(ctx, list.ID)
+		if err != nil {
+			logger.Error("failed to get list members",
+				zap.String("list_id", list.ID),
+				zap.String("list_title", list.Title),
+				zap.Error(err))
+			// Continue with other lists even if one fails
+			continue
+		}
+
+		// Convert member IDs to Mastodon handles
+		var handleMembers []string
+		for _, member := range members {
+			handleMembers = append(handleMembers, convertActorIDToHandle(member))
+		}
+
+		result[list.Title] = handleMembers
+	}
+
+	return result, nil
 }
 
 type BookmarkInfo struct {
@@ -613,46 +744,302 @@ type BookmarkInfo struct {
 }
 
 func getBookmarks(ctx context.Context, username string) ([]BookmarkInfo, error) {
-	// Query bookmarks from DynamoDB
-	// For now, return empty list
-	return []BookmarkInfo{}, nil
+	// Query bookmarks from DynamoDB using storage client
+	var allBookmarks []BookmarkInfo
+	cursor := ""
+
+	for {
+		bookmarkIDs, nextCursor, err := storageClient.GetBookmarks(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get bookmarks", zap.String("username", username), zap.Error(err))
+			return nil, fmt.Errorf("get bookmarks: %w", err)
+		}
+
+		// Convert bookmark IDs to BookmarkInfo
+		// Note: We need to get the actual status objects to get their URLs
+		for _, bookmarkID := range bookmarkIDs {
+			obj, err := storageClient.GetObject(ctx, bookmarkID)
+			if err != nil {
+				logger.Warn("failed to get bookmarked object",
+					zap.String("bookmark_id", bookmarkID),
+					zap.Error(err))
+				continue
+			}
+
+			// Extract URL from the object
+			var statusURL string
+			var createdAt time.Time
+
+			// Handle different object types
+			switch v := obj.(type) {
+			case map[string]interface{}:
+				if url, ok := v["url"].(string); ok {
+					statusURL = url
+				} else if id, ok := v["id"].(string); ok {
+					statusURL = id // Fallback to ID if no URL
+				}
+				if published, ok := v["published"].(string); ok {
+					createdAt, _ = time.Parse(time.RFC3339, published)
+				}
+			case *activitypub.Note:
+				// Notes have ID from BaseObject
+				statusURL = v.ID
+				if v.Published != nil {
+					createdAt = *v.Published
+				} else {
+					createdAt = time.Now()
+				}
+			case *activitypub.Article:
+				// Articles have ID from BaseObject
+				statusURL = v.ID
+				if v.Published != nil {
+					createdAt = *v.Published
+				} else {
+					createdAt = time.Now()
+				}
+			default:
+				// For any other type, try to extract ID
+				if baseObj, ok := v.(*activitypub.BaseObject); ok {
+					statusURL = baseObj.ID
+					if baseObj.Published != nil {
+						createdAt = *baseObj.Published
+					} else {
+						createdAt = time.Now()
+					}
+				}
+			}
+
+			if statusURL != "" {
+				allBookmarks = append(allBookmarks, BookmarkInfo{
+					StatusURL: statusURL,
+					CreatedAt: createdAt,
+				})
+			}
+		}
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allBookmarks, nil
 }
 
 func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]interface{}, int, error) {
-	// Query user's posts from DynamoDB
-	// This would query objects where AttributedTo = user's actor ID
-	// For now, return empty list
-	return []interface{}{}, 0, nil
+	// Query user's posts from DynamoDB using storage client
+	var allActivities []interface{}
+	cursor := ""
+
+	for {
+		activities, nextCursor, err := storageClient.GetOutboxActivities(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get outbox activities", zap.String("username", username), zap.Error(err))
+			return nil, 0, fmt.Errorf("get outbox activities: %w", err)
+		}
+
+		// Filter by date range if specified
+		for _, activity := range activities {
+			if dateRange != nil {
+				// Check if activity is within date range
+				activityTime := activity.Published
+				if activityTime.Before(dateRange.Start) || activityTime.After(dateRange.End) {
+					continue
+				}
+			}
+
+			// Add the activity to results
+			allActivities = append(allActivities, activity)
+		}
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allActivities, len(allActivities), nil
 }
 
 func getFollowingActors(ctx context.Context, username string) ([]string, error) {
-	// Get full actor IDs for following
-	// For now, return empty list
-	return []string{}, nil
+	// Get full actor IDs for following (for ActivityPub export)
+	// This returns the raw actor IDs without conversion to handles
+	var allFollowing []string
+	cursor := ""
+
+	for {
+		following, nextCursor, err := storageClient.GetFollowing(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get following actors", zap.String("username", username), zap.Error(err))
+			return nil, fmt.Errorf("get following actors: %w", err)
+		}
+
+		// Keep raw actor IDs for ActivityPub format
+		allFollowing = append(allFollowing, following...)
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allFollowing, nil
 }
 
 func getFollowersActors(ctx context.Context, username string) ([]string, error) {
-	// Get full actor IDs for followers
-	// For now, return empty list
-	return []string{}, nil
+	// Get full actor IDs for followers (for ActivityPub export)
+	// This returns the raw actor IDs without conversion to handles
+	var allFollowers []string
+	cursor := ""
+
+	for {
+		followers, nextCursor, err := storageClient.GetFollowers(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get follower actors", zap.String("username", username), zap.Error(err))
+			return nil, fmt.Errorf("get follower actors: %w", err)
+		}
+
+		// Keep raw actor IDs for ActivityPub format
+		allFollowers = append(allFollowers, followers...)
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allFollowers, nil
 }
 
 func getLikes(ctx context.Context, username string) ([]interface{}, error) {
-	// Query user's likes from DynamoDB
-	// For now, return empty list
-	return []interface{}{}, nil
+	// Query user's likes from DynamoDB using storage client
+	var allLikes []interface{}
+	cursor := ""
+
+	// First get the actor ID for the username
+	actor, err := storageClient.GetActor(ctx, username)
+	if err != nil {
+		logger.Error("failed to get actor", zap.String("username", username), zap.Error(err))
+		return nil, fmt.Errorf("get actor: %w", err)
+	}
+
+	for {
+		likes, nextCursor, err := storageClient.GetActorLikes(ctx, actor.ID, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get actor likes",
+				zap.String("username", username),
+				zap.String("actor_id", actor.ID),
+				zap.Error(err))
+			return nil, fmt.Errorf("get actor likes: %w", err)
+		}
+
+		// Convert likes to Like activities
+		for _, like := range likes {
+			likeActivity := map[string]interface{}{
+				"@context":  activitypub.Context,
+				"type":      "Like",
+				"id":        like.ID,
+				"actor":     like.Actor,
+				"object":    like.Object,
+				"published": like.Published.Format(time.RFC3339),
+			}
+			allLikes = append(allLikes, likeActivity)
+		}
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allLikes, nil
 }
 
 func getBookmarksForExport(ctx context.Context, username string) ([]interface{}, error) {
 	// Query bookmarks and convert to ActivityPub format
-	// For now, return empty list
-	return []interface{}{}, nil
+	bookmarks, err := getBookmarks(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to ActivityPub bookmark activities
+	var result []interface{}
+	for _, bookmark := range bookmarks {
+		bookmarkActivity := map[string]interface{}{
+			"@context":  activitypub.Context,
+			"type":      "Add",
+			"actor":     fmt.Sprintf("%s/users/%s", baseURL, username),
+			"object":    bookmark.StatusURL,
+			"target":    fmt.Sprintf("%s/users/%s/bookmarks", baseURL, username),
+			"published": bookmark.CreatedAt.Format(time.RFC3339),
+		}
+		result = append(result, bookmarkActivity)
+	}
+
+	return result, nil
 }
 
 func getListsForExport(ctx context.Context, username string) ([]interface{}, error) {
 	// Query lists and convert to export format
-	// For now, return empty list
-	return []interface{}{}, nil
+	lists, err := storageClient.GetListsForUser(ctx, username)
+	if err != nil {
+		logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
+		return nil, fmt.Errorf("get lists: %w", err)
+	}
+
+	// Convert to export format
+	var result []interface{}
+	for _, list := range lists {
+		// Get members for each list
+		members, err := storageClient.GetListAccounts(ctx, list.ID)
+		if err != nil {
+			logger.Warn("failed to get list members",
+				zap.String("list_id", list.ID),
+				zap.String("list_title", list.Title),
+				zap.Error(err))
+			members = []string{} // Empty array if error
+		}
+
+		listExport := map[string]interface{}{
+			"id":             list.ID,
+			"title":          list.Title,
+			"replies_policy": list.RepliesPolicy,
+			"exclusive":      false, // Default value
+			"members":        members,
+			"created_at":     list.CreatedAt.Format(time.RFC3339),
+			"updated_at":     list.UpdatedAt.Format(time.RFC3339),
+		}
+		result = append(result, listExport)
+	}
+
+	return result, nil
+}
+
+func getActorPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+	// Get user preferences from storage
+	prefs, err := storageClient.GetUserPreferences(ctx, username)
+	if err != nil {
+		logger.Error("failed to get user preferences", zap.String("username", username), zap.Error(err))
+		// Return default preferences if not found
+		return map[string]interface{}{
+			"posting:default:visibility": "public",
+			"posting:default:sensitive":  false,
+			"posting:default:language":   "en",
+			"reading:expand:media":       "default",
+			"reading:expand:spoilers":    false,
+			"reading:autoplay:gifs":      true,
+		}, nil
+	}
+
+	// Convert to Mastodon API format
+	return map[string]interface{}{
+		"posting:default:visibility": prefs.DefaultPostingVisibility,
+		"posting:default:sensitive":  prefs.DefaultMediaSensitive,
+		"posting:default:language":   prefs.Language,
+		"reading:expand:media":       prefs.ExpandMedia,
+		"reading:expand:spoilers":    prefs.ExpandSpoilers,
+		"reading:autoplay:gifs":      prefs.AutoplayGifs,
+	}, nil
 }
 
 // Helper functions
@@ -663,6 +1050,42 @@ func addFileToZip(w *zip.Writer, filename string, data []byte) error {
 	}
 	_, err = f.Write(data)
 	return err
+}
+
+// convertActorIDToHandle converts an actor ID like "https://example.com/users/alice"
+// to a Mastodon handle like "@alice@example.com"
+func convertActorIDToHandle(actorID string) string {
+	// Handle local actors (simple usernames)
+	if !strings.Contains(actorID, "://") {
+		return actorID // Already in simple format
+	}
+
+	// Parse the URL
+	parts := strings.Split(actorID, "/")
+	if len(parts) < 3 {
+		return actorID // Can't parse, return as-is
+	}
+
+	// Extract domain from URL (parts[2] is the domain)
+	domain := parts[2]
+
+	// Find username - usually the last part after /users/
+	for i := len(parts) - 2; i >= 0; i-- {
+		if parts[i] == "users" && i+1 < len(parts) {
+			username := parts[i+1]
+			return fmt.Sprintf("@%s@%s", username, domain)
+		}
+	}
+
+	// If we can't find /users/, try the last part
+	if len(parts) > 0 {
+		username := parts[len(parts)-1]
+		if username != "" {
+			return fmt.Sprintf("@%s@%s", username, domain)
+		}
+	}
+
+	return actorID // Fallback to original
 }
 
 func uploadToS3(ctx context.Context, key string, data []byte, contentType string) error {
@@ -717,7 +1140,7 @@ func updateExportStatus(ctx context.Context, exportID, status string, completion
 		exprAttrValues[":error"] = &types.AttributeValueMemberS{Value: errorMsg}
 	}
 
-	_, err := dynamoClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+	_, err := dynamoClient.UpdateItem(ctx, &dynamodbsdk.UpdateItemInput{
 		TableName: aws.String(tableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("EXPORT#%s", exportID)},
@@ -729,4 +1152,27 @@ func updateExportStatus(ctx context.Context, exportID, status string, completion
 	})
 
 	return err
+}
+
+func getDomainBlocks(ctx context.Context, username string) ([]string, error) {
+	// Query domain blocks from DynamoDB using storage client
+	var allDomainBlocks []string
+	cursor := ""
+
+	for {
+		domains, nextCursor, err := storageClient.GetUserDomainBlocks(ctx, username, 1000, cursor)
+		if err != nil {
+			logger.Error("failed to get domain blocks", zap.String("username", username), zap.Error(err))
+			return nil, fmt.Errorf("get domain blocks: %w", err)
+		}
+
+		allDomainBlocks = append(allDomainBlocks, domains...)
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allDomainBlocks, nil
 }

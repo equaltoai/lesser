@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -10,6 +11,7 @@ import (
 	"github.com/aron23/lesser/graph"
 	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/mastodon"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -22,6 +24,7 @@ var (
 	graphqlHandler  *handler.Server
 	playgroundProxy *httpadapter.HandlerAdapter
 	costTracker     *cost.Tracker
+	storageInstance storage.Storage
 )
 
 func init() {
@@ -29,7 +32,8 @@ func init() {
 	logger, _ = zap.NewProduction()
 
 	// Create storage using the package's New() function which uses global config
-	storage, err := dynamodb.New()
+	var err error
+	storageInstance, err = dynamodb.New()
 	if err != nil {
 		logger.Fatal("Failed to create storage", zap.Error(err))
 	}
@@ -46,7 +50,7 @@ func init() {
 
 	// Create resolver with dependencies
 	resolver := &graph.Resolver{
-		Storage:      storage,
+		Storage:      storageInstance,
 		CostTracker:  costTracker,
 		MastodonConv: mastodonConv,
 		Logger:       logger,
@@ -73,8 +77,18 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayProxyRequest) (
 		return playgroundProxy.ProxyWithContext(ctx, request)
 	}
 
+	// Create DataLoader for this request
+	loaders := graph.NewLoaders(storageInstance, logger)
+
+	// Create a wrapper handler that injects loaders into context
+	wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add loaders to request context
+		r = r.WithContext(graph.WithLoaders(r.Context(), loaders))
+		graphqlHandler.ServeHTTP(w, r)
+	})
+
 	// Use httpadapter to convert Lambda event to http.Request for gqlgen
-	adapter := httpadapter.New(graphqlHandler)
+	adapter := httpadapter.New(wrappedHandler)
 	response, err := adapter.ProxyWithContext(ctx, request)
 
 	// Add cost headers

@@ -2,7 +2,6 @@ package mocks
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
@@ -66,1039 +65,498 @@ type BaseMockStorage struct {
 	TimelineMethods
 }
 
-// Actor operations
-func (m *BaseMockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *storage.ActorMetadata, error) {
-	return nil, nil, nil
-}
-func (m *BaseMockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
-	return "", nil
-}
-func (m *BaseMockStorage) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
-	return nil
-}
-func (m *BaseMockStorage) UpdateActorLastStatusTime(ctx context.Context, username string) error {
-	return nil
-}
-func (m *BaseMockStorage) SetActorFields(ctx context.Context, username string, fields []storage.ActorField) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteActor(ctx context.Context, username string) error {
-	return nil
+// MockStorage is a mock implementation of the storage.Storage interface
+// that uses testify's mock framework for testing
+type MockStorage struct {
+	mock.Mock
+	BaseMockStorage
 }
 
-// Activity operations
-func (m *BaseMockStorage) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
-	return nil
-}
-func (m *BaseMockStorage) GetActivity(ctx context.Context, id string) (*activitypub.Activity, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	return nil, "", nil
+// CreateActor mocks the CreateActor method
+func (m *MockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
+	args := m.Called(ctx, actor, privateKey)
+	return args.Error(0)
 }
 
-// Object operations
-func (m *BaseMockStorage) CreateObject(ctx context.Context, object interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) UpdateObject(ctx context.Context, object interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteObject(ctx context.Context, id string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
-	return []interface{}{}, "", nil
+// GetActor mocks the GetActor method
+func (m *MockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*activitypub.Actor), args.Error(1)
 }
 
-// Relationship operations
-func (m *BaseMockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
-	return nil
-}
-func (m *BaseMockStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	return nil
-}
-func (m *BaseMockStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	return nil
-}
-func (m *BaseMockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
-	return false, nil
+// GetActorWithMetadata mocks the GetActorWithMetadata method
+func (m *MockStorage) GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *storage.ActorMetadata, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*activitypub.Actor), args.Get(1).(*storage.ActorMetadata), args.Error(2)
 }
 
-// Collection operations
-func (m *BaseMockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
-	return nil, nil
+// GetActorPrivateKey mocks the GetActorPrivateKey method
+func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
+	args := m.Called(ctx, username)
+	return args.String(0), args.Error(1)
 }
 
-// OAuth operations
-func (m *BaseMockStorage) CreateAuthorizationCode(ctx context.Context, code *storage.AuthorizationCode) error {
-	return nil
-}
-func (m *BaseMockStorage) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) DeleteAuthorizationCode(ctx context.Context, code string) error {
-	return nil
-}
-func (m *BaseMockStorage) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
-	return nil
-}
-func (m *BaseMockStorage) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) DeleteRefreshToken(ctx context.Context, token string) error {
-	return nil
+// UpdateActor mocks the UpdateActor method
+func (m *MockStorage) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
+	args := m.Called(ctx, actor)
+	return args.Error(0)
 }
 
-// User operations
-func (m *BaseMockStorage) CreateUser(ctx context.Context, user *storage.User) error {
-	return nil
-}
-func (m *BaseMockStorage) GetUser(ctx context.Context, username string) (*storage.User, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteUser(ctx context.Context, username string) error {
-	return nil
-}
-func (m *BaseMockStorage) ListUsers(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
-	return 10, nil
+// UpdateActorLastStatusTime mocks the UpdateActorLastStatusTime method
+func (m *MockStorage) UpdateActorLastStatusTime(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
 }
 
-// Instance metrics operations
-func (m *BaseMockStorage) GetTotalUserCount(ctx context.Context) (int64, error) {
-	return 0, nil
-}
-func (m *BaseMockStorage) GetTotalStatusCount(ctx context.Context) (int64, error) {
-	return 0, nil
-}
-func (m *BaseMockStorage) GetTotalDomainCount(ctx context.Context) (int64, error) {
-	return 0, nil
-}
-func (m *BaseMockStorage) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
-	return &storage.WeeklyActivity{}, nil
-}
-func (m *BaseMockStorage) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
-	return nil
-}
-func (m *BaseMockStorage) GetContactAccount(ctx context.Context) (*storage.ActorRecord, error) {
-	return nil, nil
+// SetActorFields mocks the SetActorFields method
+func (m *MockStorage) SetActorFields(ctx context.Context, username string, fields []storage.ActorField) error {
+	args := m.Called(ctx, username, fields)
+	return args.Error(0)
 }
 
-// OAuth Client operations
-func (m *BaseMockStorage) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
-	return nil
-}
-func (m *BaseMockStorage) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteOAuthClient(ctx context.Context, clientID string) error {
-	return nil
-}
-func (m *BaseMockStorage) ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*storage.OAuthClient, string, error) {
-	return nil, "", nil
+// DeleteActor mocks the DeleteActor method
+func (m *MockStorage) DeleteActor(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
 }
 
-// Like operations
-func (m *BaseMockStorage) CreateLike(ctx context.Context, like *storage.Like) error {
-	return nil
-}
-func (m *BaseMockStorage) GetLike(ctx context.Context, actor, object string) (*storage.Like, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) DeleteLike(ctx context.Context, actor, object string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetObjectLikes(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Like, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Like, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) CountObjectLikes(ctx context.Context, objectID string) (int, error) {
-	return 0, nil
+// CreateActivity mocks the CreateActivity method
+func (m *MockStorage) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
+	args := m.Called(ctx, activity)
+	return args.Error(0)
 }
 
-// Announce operations
-func (m *BaseMockStorage) CreateAnnounce(ctx context.Context, announce *storage.Announce) error {
-	return nil
-}
-func (m *BaseMockStorage) GetAnnounce(ctx context.Context, actor, object string) (*storage.Announce, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) DeleteAnnounce(ctx context.Context, actor, object string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetObjectAnnounces(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Announce, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetActorAnnounces(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Announce, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) CountObjectAnnounces(ctx context.Context, objectID string) (int, error) {
-	return 0, nil
+// GetActivity mocks the GetActivity method
+func (m *MockStorage) GetActivity(ctx context.Context, id string) (*activitypub.Activity, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*activitypub.Activity), args.Error(1)
 }
 
-// Delete/Tombstone operations
-func (m *BaseMockStorage) TombstoneObject(ctx context.Context, objectID string, deletedBy string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetTombstone(ctx context.Context, objectID string) (*storage.Tombstone, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) CascadeDeleteLikes(ctx context.Context, objectID string) error {
-	return nil
-}
-func (m *BaseMockStorage) CascadeDeleteAnnounces(ctx context.Context, objectID string) error {
-	return nil
+// GetOutboxActivities mocks the GetOutboxActivities method
+func (m *MockStorage) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
 }
 
-// Update history operations
-func (m *BaseMockStorage) CreateUpdateHistory(ctx context.Context, history *storage.UpdateHistory) error {
-	return nil
-}
-func (m *BaseMockStorage) GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*storage.UpdateHistory, error) {
-	return []*storage.UpdateHistory{}, nil
-}
-
-// Block operations
-func (m *BaseMockStorage) CreateBlock(ctx context.Context, block *storage.Block) error {
-	return nil
-}
-func (m *BaseMockStorage) GetBlock(ctx context.Context, actor, blockedActor string) (*storage.Block, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) DeleteBlock(ctx context.Context, actor, blockedActor string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetBlockedActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetBlockedByActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) IsBlocked(ctx context.Context, actor, targetActor string) (bool, error) {
-	return false, nil
-}
-func (m *BaseMockStorage) IsBlockedBidirectional(ctx context.Context, actor1, actor2 string) (bool, error) {
-	return false, nil
+// GetInboxActivities mocks the GetInboxActivities method
+func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
 }
 
-// Flag operations (content moderation)
-func (m *BaseMockStorage) CreateFlag(ctx context.Context, flag *storage.Flag) error {
-	return nil
-}
-func (m *BaseMockStorage) GetFlag(ctx context.Context, id string) (*storage.Flag, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetFlagsByObject(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Flag, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetFlagsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Flag, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetPendingFlags(ctx context.Context, limit int, cursor string) ([]*storage.Flag, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) UpdateFlagStatus(ctx context.Context, id string, status storage.FlagStatus, reviewedBy string, reviewNote string) error {
-	return nil
-}
-func (m *BaseMockStorage) CountPendingFlags(ctx context.Context) (int, error) {
-	return 0, nil
+// CreateObject mocks the CreateObject method
+func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
+	args := m.Called(ctx, object)
+	return args.Error(0)
 }
 
-// Move operations (account migration)
-func (m *BaseMockStorage) CreateMove(ctx context.Context, move *storage.Move) error {
-	return nil
-}
-func (m *BaseMockStorage) GetMove(ctx context.Context, actor string) (*storage.Move, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) HasMovedFrom(ctx context.Context, oldActor, newActor string) (bool, error) {
-	return false, nil
+// GetObject mocks the GetObject method
+func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0), args.Error(1)
 }
 
-// Collection operations (Add/Remove activities)
-func (m *BaseMockStorage) AddToCollection(ctx context.Context, collection string, item *storage.CollectionItem) error {
-	return nil
-}
-func (m *BaseMockStorage) RemoveFromCollection(ctx context.Context, collection string, itemID string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetCollectionItems(ctx context.Context, collection string, limit int, cursor string) ([]*storage.CollectionItem, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) IsInCollection(ctx context.Context, collection string, itemID string) (bool, error) {
-	return false, nil
-}
-func (m *BaseMockStorage) CountCollectionItems(ctx context.Context, collection string) (int, error) {
-	return 0, nil
+// UpdateObject mocks the UpdateObject method
+func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
+	args := m.Called(ctx, object)
+	return args.Error(0)
 }
 
-// Instance configuration operations
-func (m *BaseMockStorage) GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error) {
-	return []storage.InstanceRule{}, nil
-}
-func (m *BaseMockStorage) SetInstanceRules(ctx context.Context, rules []storage.InstanceRule) error {
-	return nil
-}
-func (m *BaseMockStorage) GetExtendedDescription(ctx context.Context) (string, time.Time, error) {
-	return "", time.Now(), nil
-}
-func (m *BaseMockStorage) SetExtendedDescription(ctx context.Context, description string) error {
-	return nil
+// DeleteObject mocks the DeleteObject method
+func (m *MockStorage) DeleteObject(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
 }
 
-// Bookmark operations
-func (m *BaseMockStorage) CreateBookmark(ctx context.Context, username, objectID string) error {
-	return nil
-}
-func (m *BaseMockStorage) RemoveBookmark(ctx context.Context, username, objectID string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	return []string{}, "", nil
-}
-func (m *BaseMockStorage) IsBookmarked(ctx context.Context, username, objectID string) (bool, error) {
-	return false, nil
+// GetObjectsByActor mocks the GetObjectsByActor method
+func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
+	args := m.Called(ctx, actorID, cursor, limit)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]interface{}), args.String(1), args.Error(2)
 }
 
-// Conversation operations
-func (m *BaseMockStorage) CreateConversation(ctx context.Context, conversation *storage.Conversation) error {
-	return nil
-}
-func (m *BaseMockStorage) GetConversation(ctx context.Context, id string) (*storage.Conversation, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetConversationByParticipants(ctx context.Context, participants []string) (*storage.Conversation, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
-	return nil
-}
-func (m *BaseMockStorage) MarkConversationRead(ctx context.Context, id, username string) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteConversation(ctx context.Context, id string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetUserConversations(ctx context.Context, userID string, limit int, cursor string) ([]*storage.Conversation, string, error) {
-	return []*storage.Conversation{}, "", nil
-}
-func (m *BaseMockStorage) AddParticipantToConversation(ctx context.Context, conversationID, participantID string) error {
-	return nil
+// CreateFollow mocks the CreateFollow method
+func (m *MockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
+	args := m.Called(ctx, followerUsername, followedUsername, followActivityID)
+	return args.Error(0)
 }
 
-// List operations
-func (m *BaseMockStorage) CreateList(ctx context.Context, username, title, repliesPolicy string) (*storage.List, error) {
-	return &storage.List{
-		ID:            "list-123",
-		Username:      username,
-		Title:         title,
-		RepliesPolicy: repliesPolicy,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}, nil
-}
-func (m *BaseMockStorage) GetList(ctx context.Context, listID string) (*storage.List, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetListsForUser(ctx context.Context, username string) ([]*storage.List, error) {
-	return []*storage.List{}, nil
-}
-func (m *BaseMockStorage) UpdateList(ctx context.Context, listID string, updates map[string]interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteList(ctx context.Context, listID string) error {
-	return nil
-}
-func (m *BaseMockStorage) AddAccountsToList(ctx context.Context, listID string, accountIDs []string) error {
-	return nil
-}
-func (m *BaseMockStorage) RemoveAccountsFromList(ctx context.Context, listID string, accountIDs []string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetListAccounts(ctx context.Context, listID string) ([]string, error) {
-	return []string{}, nil
-}
-func (m *BaseMockStorage) IsAccountInList(ctx context.Context, listID, accountID string) (bool, error) {
-	return false, nil
-}
-func (m *BaseMockStorage) GetListsContainingAccount(ctx context.Context, accountID, username string) ([]*storage.List, error) {
-	return []*storage.List{}, nil
+// AcceptFollow mocks the AcceptFollow method
+func (m *MockStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Error(0)
 }
 
-// Notification operations
-func (m *BaseMockStorage) CreateNotification(ctx context.Context, notification *storage.Notification) error {
-	return nil
-}
-func (m *BaseMockStorage) GetNotification(ctx context.Context, id string) (*storage.Notification, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetNotifications(ctx context.Context, username string, limit int, cursor string) ([]*storage.Notification, string, error) {
-	return []*storage.Notification{}, "", nil
-}
-func (m *BaseMockStorage) GetNotificationsFiltered(ctx context.Context, username string, filter *storage.NotificationFilter) ([]*storage.Notification, string, error) {
-	return []*storage.Notification{}, "", nil
-}
-func (m *BaseMockStorage) MarkNotificationAsRead(ctx context.Context, id string) error {
-	return nil
-}
-func (m *BaseMockStorage) MarkAllNotificationsAsRead(ctx context.Context, username string) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteNotification(ctx context.Context, id string) error {
-	return nil
-}
-func (m *BaseMockStorage) ClearNotifications(ctx context.Context, username string) error {
-	return nil
-}
-func (m *BaseMockStorage) CountUnreadNotifications(ctx context.Context, username string) (int, error) {
-	return 0, nil
+// RejectFollow mocks the RejectFollow method
+func (m *MockStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Error(0)
 }
 
-// Search methods
-func (m *BaseMockStorage) SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error) {
-	return []*activitypub.Actor{}, nil
-}
-func (m *BaseMockStorage) GetSearchSuggestions(ctx context.Context, prefix string) ([]storage.SearchSuggestion, error) {
-	return []storage.SearchSuggestion{}, nil
+// RemoveFollow mocks the RemoveFollow method
+func (m *MockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Error(0)
 }
 
-// Status search operations
-func (m *BaseMockStorage) SearchStatuses(ctx context.Context, query string, limit int) ([]*storage.StatusSearchResult, error) {
-	return []*storage.StatusSearchResult{}, nil
-}
-func (m *BaseMockStorage) SearchStatusesWithOptions(ctx context.Context, query string, options storage.StatusSearchOptions) ([]*storage.StatusSearchResult, error) {
-	return []*storage.StatusSearchResult{}, nil
-}
-func (m *BaseMockStorage) SearchStatusesByURL(ctx context.Context, url string) (*storage.StatusSearchResult, error) {
-	return nil, nil
+// GetFollowers mocks the GetFollowers method
+func (m *MockStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]string), args.String(1), args.Error(2)
 }
 
-// Remote actor cache operations
-func (m *BaseMockStorage) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
-	return nil
-}
-func (m *BaseMockStorage) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
-	return nil, fmt.Errorf("not found")
-}
-
-// Push notification operations
-func (m *BaseMockStorage) CreatePushSubscription(ctx context.Context, username string, subscription *storage.PushSubscription) error {
-	return nil
-}
-func (m *BaseMockStorage) GetPushSubscription(ctx context.Context, username, subscriptionID string) (*storage.PushSubscription, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetUserPushSubscriptions(ctx context.Context, username string) ([]*storage.PushSubscription, error) {
-	return []*storage.PushSubscription{}, nil
-}
-func (m *BaseMockStorage) UpdatePushSubscription(ctx context.Context, username, subscriptionID string, alerts storage.PushSubscriptionAlerts) error {
-	return nil
-}
-func (m *BaseMockStorage) DeletePushSubscription(ctx context.Context, username, subscriptionID string) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteAllPushSubscriptions(ctx context.Context, username string) error {
-	return nil
+// GetFollowing mocks the GetFollowing method
+func (m *MockStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]string), args.String(1), args.Error(2)
 }
 
-// Filter operations
-func (m *BaseMockStorage) CreateFilter(ctx context.Context, filter *storage.Filter) error {
-	return nil
-}
-func (m *BaseMockStorage) GetFilter(ctx context.Context, filterID string) (*storage.Filter, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetFiltersForUser(ctx context.Context, username string) ([]*storage.Filter, error) {
-	return []*storage.Filter{}, nil
-}
-func (m *BaseMockStorage) UpdateFilter(ctx context.Context, filterID string, updates map[string]interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteFilter(ctx context.Context, filterID string) error {
-	return nil
-}
-func (m *BaseMockStorage) AddFilterKeyword(ctx context.Context, filterID string, keyword *storage.FilterKeyword) error {
-	return nil
-}
-func (m *BaseMockStorage) GetFilterKeywords(ctx context.Context, filterID string) ([]*storage.FilterKeyword, error) {
-	return []*storage.FilterKeyword{}, nil
-}
-func (m *BaseMockStorage) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
-	return nil
-}
-func (m *BaseMockStorage) AddFilterStatus(ctx context.Context, filterID string, status *storage.FilterStatus) error {
-	return nil
-}
-func (m *BaseMockStorage) GetFilterStatuses(ctx context.Context, filterID string) ([]*storage.FilterStatus, error) {
-	return []*storage.FilterStatus{}, nil
-}
-func (m *BaseMockStorage) DeleteFilterStatus(ctx context.Context, statusID string) error {
-	return nil
+// IsFollowing mocks the IsFollowing method
+func (m *MockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.Bool(0), args.Error(1)
 }
 
-// Mute operations
-func (m *BaseMockStorage) CreateMute(ctx context.Context, mute *storage.Mute) error {
-	return nil
-}
-func (m *BaseMockStorage) GetMute(ctx context.Context, actor, mutedActor string) (*storage.Mute, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) DeleteMute(ctx context.Context, actor, mutedActor string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetMutedActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Mute, string, error) {
-	return []*storage.Mute{}, "", nil
-}
-func (m *BaseMockStorage) IsMuted(ctx context.Context, actor, targetActor string) (bool, error) {
-	return false, nil
+// GetCollection mocks the GetCollection method
+func (m *MockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
+	args := m.Called(ctx, username, collectionType, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*activitypub.OrderedCollectionPage), args.Error(1)
 }
 
-// Poll operations
-func (m *BaseMockStorage) CreatePoll(ctx context.Context, poll *storage.Poll) error {
-	return nil
-}
-func (m *BaseMockStorage) GetPoll(ctx context.Context, pollID string) (*storage.Poll, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetPollByStatusID(ctx context.Context, statusID string) (*storage.Poll, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) VoteOnPoll(ctx context.Context, pollID, voterID string, choices []int) error {
-	return nil
-}
-func (m *BaseMockStorage) GetPollVotes(ctx context.Context, pollID string) (map[string][]int, error) {
-	return map[string][]int{}, nil
-}
-func (m *BaseMockStorage) HasUserVoted(ctx context.Context, pollID string, userID string) (bool, []int, error) {
-	return false, nil, nil
+// CreateFlag mocks the CreateFlag method
+func (m *MockStorage) CreateFlag(ctx context.Context, flag *storage.Flag) error {
+	args := m.Called(ctx, flag)
+	return args.Error(0)
 }
 
-// VAPID key operations
-func (m *BaseMockStorage) GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) SetVAPIDKeys(ctx context.Context, keys *storage.VAPIDKeys) error {
-	return nil
-}
-
-// Status pinning operations
-func (m *BaseMockStorage) CreateStatusPin(ctx context.Context, pin *storage.StatusPin) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteStatusPin(ctx context.Context, username, statusID string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetStatusPins(ctx context.Context, username string) ([]*storage.StatusPin, error) {
-	return []*storage.StatusPin{}, nil
-}
-func (m *BaseMockStorage) IsStatusPinned(ctx context.Context, username, statusID string) (bool, error) {
-	return false, nil
-}
-func (m *BaseMockStorage) CountUserPinnedStatuses(ctx context.Context, username string) (int, error) {
-	return 0, nil
+// GetFlag mocks the GetFlag method
+func (m *MockStorage) GetFlag(ctx context.Context, id string) (*storage.Flag, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Flag), args.Error(1)
 }
 
-// Conversation muting operations
-func (m *BaseMockStorage) CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteConversationMute(ctx context.Context, username, conversationID string) error {
-	return nil
-}
-func (m *BaseMockStorage) IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error) {
-	return false, nil
-}
-func (m *BaseMockStorage) GetMutedConversations(ctx context.Context, username string) ([]string, error) {
-	return []string{}, nil
+// GetFlagsByObject mocks the GetFlagsByObject method
+func (m *MockStorage) GetFlagsByObject(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Flag, string, error) {
+	args := m.Called(ctx, objectID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Flag), args.String(1), args.Error(2)
 }
 
-// Scheduled status operations
-func (m *BaseMockStorage) CreateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error {
-	return nil
-}
-func (m *BaseMockStorage) GetScheduledStatus(ctx context.Context, id string) (*storage.ScheduledStatus, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetScheduledStatuses(ctx context.Context, username string, limit int, cursor string) ([]*storage.ScheduledStatus, string, error) {
-	return []*storage.ScheduledStatus{}, "", nil
-}
-func (m *BaseMockStorage) UpdateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteScheduledStatus(ctx context.Context, id string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetDueScheduledStatuses(ctx context.Context, before time.Time, limit int) ([]*storage.ScheduledStatus, error) {
-	return []*storage.ScheduledStatus{}, nil
-}
-func (m *BaseMockStorage) MarkScheduledStatusPublished(ctx context.Context, id string) error {
-	return nil
+// GetFlagsByActor mocks the GetFlagsByActor method
+func (m *MockStorage) GetFlagsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Flag, string, error) {
+	args := m.Called(ctx, actorID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Flag), args.String(1), args.Error(2)
 }
 
-// Hashtag following operations
-func (m *BaseMockStorage) FollowHashtag(ctx context.Context, userID string, hashtag string) error {
-	return nil
-}
-func (m *BaseMockStorage) UnfollowHashtag(ctx context.Context, userID string, hashtag string) error {
-	return nil
-}
-func (m *BaseMockStorage) IsFollowingHashtag(ctx context.Context, userID string, hashtag string) (bool, error) {
-	return false, nil
-}
-func (m *BaseMockStorage) GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]string, string, error) {
-	return []string{}, "", nil
+// GetPendingFlags mocks the GetPendingFlags method
+func (m *MockStorage) GetPendingFlags(ctx context.Context, limit int, cursor string) ([]*storage.Flag, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Flag), args.String(1), args.Error(2)
 }
 
-// Featured tags operations
-func (m *BaseMockStorage) CreateFeaturedTag(ctx context.Context, userID string, tagName string) (*storage.FeaturedTag, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) DeleteFeaturedTag(ctx context.Context, userID string, featuredTagID string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetFeaturedTags(ctx context.Context, userID string) ([]*storage.FeaturedTag, error) {
-	return []*storage.FeaturedTag{}, nil
-}
-func (m *BaseMockStorage) GetTagSuggestions(ctx context.Context, userID string, limit int) ([]string, error) {
-	return []string{}, nil
+// UpdateFlagStatus mocks the UpdateFlagStatus method
+func (m *MockStorage) UpdateFlagStatus(ctx context.Context, id string, status storage.FlagStatus, reviewedBy string, reviewNote string) error {
+	args := m.Called(ctx, id, status, reviewedBy, reviewNote)
+	return args.Error(0)
 }
 
-// Hashtag operations
-func (m *BaseMockStorage) IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error {
-	return nil
-}
-func (m *BaseMockStorage) SearchHashtags(ctx context.Context, query string, limit int) ([]*storage.Hashtag, error) {
-	return []*storage.Hashtag{}, nil
-}
-func (m *BaseMockStorage) GetHashtagInfo(ctx context.Context, hashtag string) (*storage.Hashtag, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetHashtagUsageHistory(ctx context.Context, hashtag string, days int) ([]int64, error) {
-	return []int64{}, nil
+// CountPendingFlags mocks the CountPendingFlags method
+func (m *MockStorage) CountPendingFlags(ctx context.Context) (int, error) {
+	args := m.Called(ctx)
+	return args.Int(0), args.Error(1)
 }
 
-// Moderation operations
-func (m *BaseMockStorage) CreateModerationEvent(ctx context.Context, event *storage.ModerationEvent) error {
-	return nil
-}
-func (m *BaseMockStorage) GetModerationEvent(ctx context.Context, eventID string) (*storage.ModerationEvent, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*storage.ModerationQueueItem, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetModerationEventsByObject(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetModerationEventsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) AddModerationReview(ctx context.Context, review *storage.ModerationReview) error {
-	return nil
-}
-func (m *BaseMockStorage) GetModerationReviews(ctx context.Context, eventID string) ([]*storage.ModerationReview, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) CreateModerationDecision(ctx context.Context, decision *storage.ModerationDecision) error {
-	return nil
-}
-func (m *BaseMockStorage) GetModerationDecision(ctx context.Context, objectID string) (*storage.ModerationDecision, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetModerationHistory(ctx context.Context, objectID string) (*storage.ModerationHistory, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetModerationEvents(ctx context.Context, filter *storage.ModerationEventFilter, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
-	return []*storage.ModerationEvent{}, "", nil
-}
-func (m *BaseMockStorage) CreateAdminReview(ctx context.Context, eventID string, adminID string, action storage.ActionType, reason string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetReviewerStats(ctx context.Context, reviewerID string) (*storage.ReviewerStats, error) {
-	return &storage.ReviewerStats{}, nil
+// CreateMove mocks the CreateMove method
+func (m *MockStorage) CreateMove(ctx context.Context, move *storage.Move) error {
+	args := m.Called(ctx, move)
+	return args.Error(0)
 }
 
-// Trust operations
-func (m *BaseMockStorage) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
-	return nil
-}
-func (m *BaseMockStorage) GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error {
-	return nil
-}
-func (m *BaseMockStorage) RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error {
-	return nil
-}
-func (m *BaseMockStorage) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
-	return []*storage.TrustRelationship{}, nil
+// GetMove mocks the GetMove method
+func (m *MockStorage) GetMove(ctx context.Context, actor string) (*storage.Move, error) {
+	args := m.Called(ctx, actor)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Move), args.Error(1)
 }
 
-// Account pin operations
-func (m *BaseMockStorage) CreateAccountPin(ctx context.Context, pin *storage.AccountPin) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteAccountPin(ctx context.Context, username, pinnedActorID string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
-	return []*storage.AccountPin{}, nil
-}
-func (m *BaseMockStorage) IsAccountPinned(ctx context.Context, username, pinnedActorID string) (bool, error) {
-	return false, nil
+// GetMoveByTarget mocks the GetMoveByTarget method
+func (m *MockStorage) GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error) {
+	args := m.Called(ctx, target)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Move), args.Error(1)
 }
 
-// Account note operations
-func (m *BaseMockStorage) CreateAccountNote(ctx context.Context, note *storage.AccountNote) error {
-	return nil
-}
-func (m *BaseMockStorage) GetAccountNote(ctx context.Context, username, targetActorID string) (*storage.AccountNote, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) UpdateAccountNote(ctx context.Context, note *storage.AccountNote) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteAccountNote(ctx context.Context, username, targetActorID string) error {
-	return nil
-}
-func (m *BaseMockStorage) RemoveFromFollowers(ctx context.Context, username, followerUsername string) error {
-	return nil
+// HasMovedFrom mocks the HasMovedFrom method
+func (m *MockStorage) HasMovedFrom(ctx context.Context, oldActor, newActor string) (bool, error) {
+	args := m.Called(ctx, oldActor, newActor)
+	return args.Bool(0), args.Error(1)
 }
 
-// Language detection and user preferences mocks
-func (m *BaseMockStorage) GetUserLanguagePreference(ctx context.Context, username string) (string, error) {
-	return "en", nil
-}
-func (m *BaseMockStorage) SetUserLanguagePreference(ctx context.Context, username string, language string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetUserPreferences(ctx context.Context, username string) (*storage.UserPreferences, error) {
-	return &storage.UserPreferences{
-		Language:                  "en",
-		DefaultPostingVisibility:  "public",
-		DefaultMediaSensitive:     false,
-		ExpandSpoilers:            false,
-		ShowFollowCounts:          true,
-		PreferredTimelineOrder:    "newest",
-		SearchSuggestionsEnabled:  true,
-		PersonalizedSearchEnabled: true,
-	}, nil
-}
-func (m *BaseMockStorage) UpdateUserPreferences(ctx context.Context, username string, preferences *storage.UserPreferences) error {
-	return nil
+// CommunityNote operations
+func (m *MockStorage) CreateCommunityNote(ctx context.Context, note *storage.CommunityNote) error {
+	args := m.Called(ctx, note)
+	return args.Error(0)
 }
 
-// Marker operations
-func (m *BaseMockStorage) SaveMarker(ctx context.Context, username, timeline string, lastReadID string, version int) error {
-	return nil
-}
-func (m *BaseMockStorage) GetMarkers(ctx context.Context, username string, timelines []string) (map[string]*storage.Marker, error) {
-	return make(map[string]*storage.Marker), nil
-}
-
-// Domain block operations
-func (m *BaseMockStorage) AddDomainBlock(ctx context.Context, username, domain string) error {
-	return nil
-}
-func (m *BaseMockStorage) RemoveDomainBlock(ctx context.Context, username, domain string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetUserDomainBlocks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	return []string{}, "", nil
-}
-func (m *BaseMockStorage) IsBlockedDomain(ctx context.Context, username, domain string) (bool, error) {
-	return false, nil
+func (m *MockStorage) GetCommunityNote(ctx context.Context, noteID string) (*storage.CommunityNote, error) {
+	args := m.Called(ctx, noteID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.CommunityNote), args.Error(1)
 }
 
-// Extended preferences operations
-func (m *BaseMockStorage) SetPreference(ctx context.Context, username string, key string, value interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) GetPreference(ctx context.Context, username string, key string) (interface{}, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
-	return make(map[string]interface{}), nil
-}
-func (m *BaseMockStorage) UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error {
-	return nil
+func (m *MockStorage) GetVisibleCommunityNotes(ctx context.Context, objectID string) ([]*storage.CommunityNote, error) {
+	args := m.Called(ctx, objectID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.CommunityNote), args.Error(1)
 }
 
-// Search suggestion tracking and analytics mocks
-func (m *BaseMockStorage) TrackSearchQuery(ctx context.Context, userID, query string, resultCount int) error {
-	return nil
-}
-func (m *BaseMockStorage) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
-	return []storage.SearchQueryStats{}, nil
-}
-func (m *BaseMockStorage) GetUserSearchHistory(ctx context.Context, userID string, limit int) ([]storage.SearchHistoryEntry, error) {
-	return []storage.SearchHistoryEntry{}, nil
-}
-func (m *BaseMockStorage) GenerateSearchSuggestions(ctx context.Context, userID, partialQuery string, limit int) ([]string, error) {
-	return []string{}, nil
+func (m *MockStorage) UpdateCommunityNoteScore(ctx context.Context, noteID string, score float64, status string) error {
+	args := m.Called(ctx, noteID, score, status)
+	return args.Error(0)
 }
 
-// Trending operations
-func (m *BaseMockStorage) RecordHashtagUsage(ctx context.Context, hashtag string, statusID string, authorID string) error {
-	return nil
-}
-func (m *BaseMockStorage) RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error {
-	return nil
-}
-func (m *BaseMockStorage) RecordLinkShare(ctx context.Context, url string, statusID string, authorID string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	return []*storage.TrendingHashtag{}, nil
-}
-func (m *BaseMockStorage) GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
-	return []*storage.TrendingStatus{}, nil
-}
-func (m *BaseMockStorage) GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
-	return []*storage.TrendingLink{}, nil
+func (m *MockStorage) CreateCommunityNoteVote(ctx context.Context, vote *storage.CommunityNoteVote) error {
+	args := m.Called(ctx, vote)
+	return args.Error(0)
 }
 
-// Announcement operations
-func (m *BaseMockStorage) CreateAnnouncement(ctx context.Context, announcement *storage.Announcement) error {
-	return nil
-}
-func (m *BaseMockStorage) GetAnnouncement(ctx context.Context, id string) (*storage.Announcement, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetAnnouncements(ctx context.Context, active bool) ([]*storage.Announcement, error) {
-	return []*storage.Announcement{}, nil
-}
-func (m *BaseMockStorage) UpdateAnnouncement(ctx context.Context, announcement *storage.Announcement) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteAnnouncement(ctx context.Context, id string) error {
-	return nil
-}
-func (m *BaseMockStorage) DismissAnnouncement(ctx context.Context, username, announcementID string) error {
-	return nil
-}
-func (m *BaseMockStorage) IsDismissed(ctx context.Context, username, announcementID string) (bool, error) {
-	return false, nil
-}
-func (m *BaseMockStorage) GetDismissedAnnouncements(ctx context.Context, username string) ([]string, error) {
-	return []string{}, nil
-}
-func (m *BaseMockStorage) AddAnnouncementReaction(ctx context.Context, username, announcementID, emojiName string) error {
-	return nil
-}
-func (m *BaseMockStorage) RemoveAnnouncementReaction(ctx context.Context, username, announcementID, emojiName string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetAnnouncementReactions(ctx context.Context, announcementID string) (map[string][]string, error) {
-	return map[string][]string{}, nil
+func (m *MockStorage) GetUserCommunityNoteVotes(ctx context.Context, userID string, noteIDs []string) (map[string]*storage.CommunityNoteVote, error) {
+	args := m.Called(ctx, userID, noteIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]*storage.CommunityNoteVote), args.Error(1)
 }
 
-// Custom emoji operations
-func (m *BaseMockStorage) CreateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error {
-	return nil
-}
-func (m *BaseMockStorage) GetCustomEmoji(ctx context.Context, shortcode string) (*storage.CustomEmoji, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetCustomEmojis(ctx context.Context) ([]*storage.CustomEmoji, error) {
-	return []*storage.CustomEmoji{}, nil
-}
-func (m *BaseMockStorage) UpdateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteCustomEmoji(ctx context.Context, shortcode string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetCustomEmojisByCategory(ctx context.Context, category string) ([]*storage.CustomEmoji, error) {
-	return []*storage.CustomEmoji{}, nil
+func (m *MockStorage) CheckCommunityNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int, error) {
+	args := m.Called(ctx, userID, limit)
+	return args.Bool(0), args.Int(1), args.Error(2)
 }
 
-// Report operations
-func (m *BaseMockStorage) CreateReport(ctx context.Context, report *storage.Report) error {
-	return nil
-}
-func (m *BaseMockStorage) GetReport(ctx context.Context, id string) (*storage.Report, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetUserReports(ctx context.Context, username string, limit int, cursor string) ([]*storage.Report, string, error) {
-	return []*storage.Report{}, "", nil
-}
-func (m *BaseMockStorage) GetReportsByTarget(ctx context.Context, targetAccountID string, limit int, cursor string) ([]*storage.Report, string, error) {
-	return []*storage.Report{}, "", nil
-}
-func (m *BaseMockStorage) GetReportsByStatus(ctx context.Context, status storage.ReportStatus, limit int, cursor string) ([]*storage.Report, string, error) {
-	return []*storage.Report{}, "", nil
-}
-func (m *BaseMockStorage) UpdateReportStatus(ctx context.Context, id string, status storage.ReportStatus, actionTaken string, moderatorID string) error {
-	return nil
-}
-func (m *BaseMockStorage) GetReportStats(ctx context.Context, username string) (*storage.ReportStats, error) {
-	return &storage.ReportStats{}, nil
-}
-func (m *BaseMockStorage) IncrementFalseReports(ctx context.Context, username string) error {
-	return nil
-}
-func (m *BaseMockStorage) AssignReport(ctx context.Context, reportID string, assignedTo string) error {
-	return nil
-}
-func (m *BaseMockStorage) UnassignReport(ctx context.Context, reportID string) error {
-	return nil
+func (m *MockStorage) GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error) {
+	args := m.Called(ctx, authorID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.CommunityNote), args.String(1), args.Error(2)
 }
 
-// Instance domain block operations
-func (m *BaseMockStorage) CreateInstanceDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error {
-	return nil
-}
-func (m *BaseMockStorage) GetInstanceDomainBlock(ctx context.Context, domain string) (*storage.InstanceDomainBlock, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) GetInstanceDomainBlockByID(ctx context.Context, id string) (*storage.InstanceDomainBlock, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) ListInstanceDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.InstanceDomainBlock, string, error) {
-	return []*storage.InstanceDomainBlock{}, "", nil
-}
-func (m *BaseMockStorage) UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteInstanceDomainBlock(ctx context.Context, domain string) error {
-	return nil
-}
-func (m *BaseMockStorage) IsInstanceDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
-	return false, nil, nil
+func (m *MockStorage) GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error) {
+	args := m.Called(ctx, noteID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.CommunityNoteVote), args.Error(1)
 }
 
-// Federation domain management operations (admin-level)
-func (m *BaseMockStorage) GetDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.InstanceDomainBlock, string, error) {
-	return nil, "", nil
-}
-func (m *BaseMockStorage) GetDomainBlock(ctx context.Context, id string) (*storage.InstanceDomainBlock, error) {
-	return nil, nil
-}
-func (m *BaseMockStorage) CreateDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error {
-	return nil
-}
-func (m *BaseMockStorage) UpdateDomainBlock(ctx context.Context, id string, updates map[string]interface{}) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteDomainBlock(ctx context.Context, id string) error {
-	return nil
-}
-func (m *BaseMockStorage) IsDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
-	return false, nil, nil
+// Embed the BaseMockStorage for all other methods not explicitly overridden
+// This allows tests to use MockStorage without implementing every single method
+type embeddedMockStorage struct {
+	BaseMockStorage
 }
 
-// Domain allow operations
-func (m *BaseMockStorage) GetDomainAllows(ctx context.Context, limit int, cursor string) ([]*storage.DomainAllow, string, error) {
-	return []*storage.DomainAllow{}, "", nil
-}
-func (m *BaseMockStorage) CreateDomainAllow(ctx context.Context, allow *storage.DomainAllow) error {
-	return nil
-}
-func (m *BaseMockStorage) DeleteDomainAllow(ctx context.Context, id string) error {
-	return nil
+// Ensure MockStorage can access methods from BaseMockStorage when not explicitly mocked
+func (m *MockStorage) embedDefaults() *embeddedMockStorage {
+	return &embeddedMockStorage{}
 }
 
-// Federation instance tracking
-func (m *BaseMockStorage) GetInstanceInfo(ctx context.Context, domain string) (*storage.InstanceInfo, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (m *BaseMockStorage) UpsertInstanceInfo(ctx context.Context, info *storage.InstanceInfo) error {
-	return nil
-}
-func (m *BaseMockStorage) GetKnownInstances(ctx context.Context, limit int, cursor string) ([]*storage.InstanceInfo, string, error) {
-	return []*storage.InstanceInfo{}, "", nil
-}
-func (m *BaseMockStorage) GetFederationStatistics(ctx context.Context, startTime, endTime time.Time) (*storage.FederationStats, error) {
-	return &storage.FederationStats{}, nil
+// ClearLoginAttempts mocks the ClearLoginAttempts method
+func (m *MockStorage) ClearLoginAttempts(ctx context.Context, identifier string) error {
+	args := m.Called(ctx, identifier)
+	return args.Error(0)
 }
 
-// Email domain blocks
-func (m *BaseMockStorage) CreateEmailDomainBlock(ctx context.Context, block *storage.EmailDomainBlock) error {
-	return nil
-}
-func (m *BaseMockStorage) GetEmailDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.EmailDomainBlock, string, error) {
-	return []*storage.EmailDomainBlock{}, "", nil
-}
-func (m *BaseMockStorage) DeleteEmailDomainBlock(ctx context.Context, id string) error {
-	return nil
+// CountUnusedRecoveryCodes mocks the CountUnusedRecoveryCodes method
+func (m *MockStorage) CountUnusedRecoveryCodes(ctx context.Context, username string) (int, error) {
+	args := m.Called(ctx, username)
+	return args.Int(0), args.Error(1)
 }
 
-// GetMonthlyVouchCount retrieves the number of vouches created by an actor in a specific month
-func (m *BaseMockStorage) GetMonthlyVouchCount(ctx context.Context, actorID string, year int, month time.Month) (int, error) {
-	return 0, nil
+// AddAccountsToList mocks the AddAccountsToList method
+func (m *MockStorage) AddAccountsToList(ctx context.Context, listID string, accountIDs []string) error {
+	args := m.Called(ctx, listID, accountIDs)
+	return args.Error(0)
 }
 
-// StoreReputation stores reputation data for an actor
-func (m *BaseMockStorage) StoreReputation(ctx context.Context, actorID string, reputation *storage.Reputation) error {
-	return nil
+// AddAnnouncementReaction mocks the AddAnnouncementReaction method
+func (m *MockStorage) AddAnnouncementReaction(ctx context.Context, username, announcementID, emojiName string) error {
+	args := m.Called(ctx, username, announcementID, emojiName)
+	return args.Error(0)
 }
 
-// GetReputation retrieves reputation data for an actor
-func (m *BaseMockStorage) GetReputation(ctx context.Context, actorID string) (*storage.Reputation, error) {
-	return &storage.Reputation{
-		ActorID:      actorID,
-		TotalScore:   100,
-		TrustScore:   100,
-		CalculatedAt: time.Now(),
-	}, nil
+// AddDomainBlock mocks the AddDomainBlock method
+func (m *MockStorage) AddDomainBlock(ctx context.Context, username, domain string) error {
+	args := m.Called(ctx, username, domain)
+	return args.Error(0)
+}
+
+// AddFilterKeyword mocks the AddFilterKeyword method
+func (m *MockStorage) AddFilterKeyword(ctx context.Context, filterID string, keyword *storage.FilterKeyword) error {
+	args := m.Called(ctx, filterID, keyword)
+	return args.Error(0)
+}
+
+// AddFilterStatus mocks the AddFilterStatus method
+func (m *MockStorage) AddFilterStatus(ctx context.Context, filterID string, status *storage.FilterStatus) error {
+	args := m.Called(ctx, filterID, status)
+	return args.Error(0)
+}
+
+// AddModerationReview mocks the AddModerationReview method
+func (m *MockStorage) AddModerationReview(ctx context.Context, review *storage.ModerationReview) error {
+	args := m.Called(ctx, review)
+	return args.Error(0)
+}
+
+// AddParticipantToConversation mocks the AddParticipantToConversation method
+func (m *MockStorage) AddParticipantToConversation(ctx context.Context, conversationID, participantID string) error {
+	args := m.Called(ctx, conversationID, participantID)
+	return args.Error(0)
+}
+
+// AddToCollection mocks the AddToCollection method
+func (m *MockStorage) AddToCollection(ctx context.Context, collection string, item *storage.CollectionItem) error {
+	args := m.Called(ctx, collection, item)
+	return args.Error(0)
+}
+
+// AssignReport mocks the AssignReport method
+func (m *MockStorage) AssignReport(ctx context.Context, reportID string, assignedTo string) error {
+	args := m.Called(ctx, reportID, assignedTo)
+	return args.Error(0)
+}
+
+// CacheRemoteActor mocks the CacheRemoteActor method
+func (m *MockStorage) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
+	args := m.Called(ctx, handle, actor, ttl)
+	return args.Error(0)
+}
+
+// CascadeDeleteAnnounces mocks the CascadeDeleteAnnounces method
+func (m *MockStorage) CascadeDeleteAnnounces(ctx context.Context, objectID string) error {
+	args := m.Called(ctx, objectID)
+	return args.Error(0)
+}
+
+// CascadeDeleteLikes mocks the CascadeDeleteLikes method
+func (m *MockStorage) CascadeDeleteLikes(ctx context.Context, objectID string) error {
+	args := m.Called(ctx, objectID)
+	return args.Error(0)
+}
+
+// ClearNotifications mocks the ClearNotifications method
+func (m *MockStorage) ClearNotifications(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+// CountCollectionItems mocks the CountCollectionItems method
+func (m *MockStorage) CountCollectionItems(ctx context.Context, collection string) (int, error) {
+	args := m.Called(ctx, collection)
+	return args.Int(0), args.Error(1)
+}
+
+// CountObjectAnnounces mocks the CountObjectAnnounces method
+func (m *MockStorage) CountObjectAnnounces(ctx context.Context, objectID string) (int, error) {
+	args := m.Called(ctx, objectID)
+	return args.Int(0), args.Error(1)
+}
+
+// CountObjectLikes mocks the CountObjectLikes method
+func (m *MockStorage) CountObjectLikes(ctx context.Context, objectID string) (int, error) {
+	args := m.Called(ctx, objectID)
+	return args.Int(0), args.Error(1)
+}
+
+// Device management operations
+func (m *MockStorage) CreateDevice(ctx context.Context, device *storage.Device) error {
+	args := m.Called(ctx, device)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetDevice(ctx context.Context, deviceID string) (*storage.Device, error) {
+	args := m.Called(ctx, deviceID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Device), args.Error(1)
+}
+
+func (m *MockStorage) UpdateDevice(ctx context.Context, device *storage.Device) error {
+	args := m.Called(ctx, device)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Device), args.Error(1)
 }
 
 // MockStorage is the full mock implementation for tests
+
+// Now implementing BaseMockStorage methods that were missing
+
+// Device management operations for BaseMockStorage
+func (m *BaseMockStorage) CreateDevice(ctx context.Context, device *storage.Device) error {
+	return nil
+}
+
+func (m *BaseMockStorage) GetDevice(ctx context.Context, deviceID string) (*storage.Device, error) {
+	return nil, nil
+}
+
+func (m *BaseMockStorage) UpdateDevice(ctx context.Context, device *storage.Device) error {
+	return nil
+}
+
+func (m *BaseMockStorage) GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error) {
+	return []*storage.Device{}, nil
+}
