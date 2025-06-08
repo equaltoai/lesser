@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/aron23/lesser/cmd/api/models"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 )
@@ -36,31 +38,37 @@ func (h *Handler) HandleBookmark(ctx context.Context, request events.APIGatewayV
 		return common.Forbidden(errors.New("insufficient scope")), nil
 	}
 
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+	}
+
 	// Check if the status exists
-	obj, err := h.store.GetObject(ctx, statusID)
+	obj, err := h.store.GetObject(ctx, objectID)
 	if err != nil {
 		return common.NotFound(fmt.Errorf("status not found: %s", statusID)), nil
 	}
 
 	// Add bookmark
-	if err := h.store.CreateBookmark(ctx, claims.Username, statusID); err != nil {
+	if err := h.store.CreateBookmark(ctx, claims.Username, objectID); err != nil {
 		h.logger.Error("failed to create bookmark",
 			zap.String("username", claims.Username),
 			zap.String("status_id", statusID),
+			zap.String("object_id", objectID),
 			zap.Error(err))
 		return common.InternalServerError(fmt.Errorf("failed to bookmark status")), nil
 	}
 
-	// Convert object to status and set bookmarked flag
-	status, err := h.convertObjectToStatus(ctx, obj, claims.Username)
+	// Convert object to status using the proper converter
+	status, err := h.convertBookmarkedObjectToStatus(ctx, obj, objectID, claims.Username, true)
 	if err != nil {
 		h.logger.Error("failed to convert object to status",
 			zap.String("status_id", statusID),
 			zap.Error(err))
 		return common.InternalServerError(fmt.Errorf("failed to convert status")), nil
 	}
-
-	status.Bookmarked = true
 
 	return common.OK(status), nil
 }
@@ -88,31 +96,37 @@ func (h *Handler) HandleUnbookmark(ctx context.Context, request events.APIGatewa
 		return common.Forbidden(errors.New("insufficient scope")), nil
 	}
 
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+	}
+
 	// Check if the status exists
-	obj, err := h.store.GetObject(ctx, statusID)
+	obj, err := h.store.GetObject(ctx, objectID)
 	if err != nil {
 		return common.NotFound(fmt.Errorf("status not found: %s", statusID)), nil
 	}
 
 	// Remove bookmark
-	if err := h.store.RemoveBookmark(ctx, claims.Username, statusID); err != nil {
+	if err := h.store.RemoveBookmark(ctx, claims.Username, objectID); err != nil {
 		h.logger.Error("failed to remove bookmark",
 			zap.String("username", claims.Username),
 			zap.String("status_id", statusID),
+			zap.String("object_id", objectID),
 			zap.Error(err))
 		return common.InternalServerError(fmt.Errorf("failed to unbookmark status")), nil
 	}
 
-	// Convert object to status and ensure bookmarked is false
-	status, err := h.convertObjectToStatus(ctx, obj, claims.Username)
+	// Convert object to status using the proper converter
+	status, err := h.convertBookmarkedObjectToStatus(ctx, obj, objectID, claims.Username, false)
 	if err != nil {
 		h.logger.Error("failed to convert object to status",
 			zap.String("status_id", statusID),
 			zap.Error(err))
 		return common.InternalServerError(fmt.Errorf("failed to convert status")), nil
 	}
-
-	status.Bookmarked = false
 
 	return common.OK(status), nil
 }
@@ -170,7 +184,7 @@ func (h *Handler) HandleGetBookmarks(ctx context.Context, request events.APIGate
 			continue
 		}
 
-		status, err := h.convertObjectToStatus(ctx, obj, claims.Username)
+		status, err := h.convertBookmarkedObjectToStatus(ctx, obj, objectID, claims.Username, true)
 		if err != nil {
 			h.logger.Warn("failed to convert bookmarked object to status",
 				zap.String("object_id", objectID),
@@ -178,8 +192,6 @@ func (h *Handler) HandleGetBookmarks(ctx context.Context, request events.APIGate
 			continue
 		}
 
-		// Mark as bookmarked
-		status.Bookmarked = true
 		statuses = append(statuses, status)
 	}
 
@@ -194,57 +206,63 @@ func (h *Handler) HandleGetBookmarks(ctx context.Context, request events.APIGate
 	return response, nil
 }
 
-// convertObjectToStatus is a helper method that should be shared across handlers
-// For now, we'll use a simplified version
-func (h *Handler) convertObjectToStatus(ctx context.Context, obj interface{}, currentUsername string) (*models.Status, error) {
-	// This is a simplified conversion - in a real implementation,
-	// this would be more complex and handle different object types
-
-	// Type assert to map for now
-	objMap, ok := obj.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid object type")
+// convertBookmarkedObjectToStatus is a helper that properly converts objects to status format
+func (h *Handler) convertBookmarkedObjectToStatus(ctx context.Context, obj interface{}, objectID string, currentUsername string, isBookmarked bool) (*models.Status, error) {
+	// Extract actor ID from object
+	var attributedTo string
+	switch v := obj.(type) {
+	case *dynamodb.Object:
+		attributedTo = v.AttributedTo
+	case map[string]interface{}:
+		if attr, ok := v["attributedTo"].(string); ok {
+			attributedTo = attr
+		}
+	default:
+		// Try to get the attributed from object metadata
+		if objRecord, ok := obj.(interface{ GetAttributedTo() string }); ok {
+			attributedTo = objRecord.GetAttributedTo()
+		}
 	}
 
-	// Extract basic fields
-	id, _ := objMap["id"].(string)
-	content, _ := objMap["content"].(string)
-	published, _ := objMap["published"].(string)
-	attributedTo, _ := objMap["attributedTo"].(string)
+	if attributedTo == "" {
+		return nil, fmt.Errorf("object has no attributedTo field")
+	}
+
+	// Extract username from actor ID
+	actorUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
+	if actorUsername == "" {
+		return nil, fmt.Errorf("could not extract username from actor ID: %s", attributedTo)
+	}
 
 	// Get the actor
-	actorUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
 	actor, err := h.store.GetActor(ctx, actorUsername)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
 
-	// Create account from actor
-	account := h.converter.ActorToAccount(actor)
+	// Get current user's actor ID
+	currentUserActorID := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), currentUsername)
 
-	// Check if bookmarked
-	bookmarked, _ := h.store.IsBookmarked(ctx, currentUsername, id)
+	// Get counts
+	likeCount, _ := h.store.CountObjectLikes(ctx, objectID)
+	reblogCount, _ := h.store.CountObjectAnnounces(ctx, objectID)
 
-	// Check if favourited
-	// TODO: Implement favourite checking
-
-	// Build status
-	status := &models.Status{
-		ID:               id,
-		CreatedAt:        published,
-		Content:          content,
-		Visibility:       "public", // TODO: Parse from object
-		Language:         "en",     // TODO: Detect language
-		URI:              id,
-		URL:              fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), id),
-		Account:          account,
-		MediaAttachments: []interface{}{},
-		Mentions:         []interface{}{},
-		Tags:             []interface{}{},
-		Emojis:           []interface{}{},
-		Bookmarked:       bookmarked,
-		// TODO: Set other fields
+	// Check if user favorited or reblogged
+	favorited := false
+	if _, err := h.store.GetLike(ctx, currentUserActorID, objectID); err == nil {
+		favorited = true
 	}
 
-	return status, nil
+	reblogged := false
+	if _, err := h.store.GetAnnounce(ctx, currentUserActorID, objectID); err == nil {
+		reblogged = true
+	}
+
+	// Convert to status using the proper converter with all context
+	status := h.converter.ObjectToStatusWithContext(ctx, obj, actor, likeCount, reblogCount, favorited, reblogged, isBookmarked)
+
+	return &status, nil
 }
+
+// Add import for dynamodb package at the top
+// import "github.com/aron23/lesser/pkg/storage/dynamodb"

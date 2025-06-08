@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -441,9 +442,10 @@ func (h *Handler) HandleFavourite(ctx context.Context, request events.APIGateway
 	}
 
 	// Record engagement for trending
-	if err := h.store.RecordStatusEngagement(ctx, statusID, "like", actor.ID); err != nil {
+	if err := h.store.RecordStatusEngagement(ctx, objectID, "like", actor.ID); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
+			zap.String("object_id", objectID),
 			zap.Error(err))
 	}
 
@@ -641,9 +643,10 @@ func (h *Handler) HandleReblog(ctx context.Context, request events.APIGatewayV2H
 	}
 
 	// Record engagement for trending
-	if err := h.store.RecordStatusEngagement(ctx, statusID, "boost", actor.ID); err != nil {
+	if err := h.store.RecordStatusEngagement(ctx, objectID, "boost", actor.ID); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
+			zap.String("object_id", objectID),
 			zap.Error(err))
 	}
 
@@ -832,6 +835,26 @@ func (h *Handler) HandleDeleteStatus(ctx context.Context, request events.APIGate
 		if attr, ok := obj["attributedTo"].(string); ok {
 			attributedTo = attr
 		}
+	default:
+		// Try to handle any object with AttributedTo field using reflection
+		v := reflect.ValueOf(object)
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+
+		if v.Kind() == reflect.Struct {
+			// Try to get AttributedTo field
+			if attrField := v.FieldByName("AttributedTo"); attrField.IsValid() && attrField.Kind() == reflect.String {
+				attributedTo = attrField.String()
+			}
+		}
+
+		if attributedTo == "" {
+			h.logger.Error("unexpected object type or missing AttributedTo",
+				zap.String("type", fmt.Sprintf("%T", object)),
+				zap.Any("object", object))
+			return common.InternalServerError(fmt.Errorf("unexpected object type")), nil
+		}
 	}
 
 	if attributedTo != actor.ID {
@@ -858,9 +881,9 @@ func (h *Handler) HandleDeleteStatus(ctx context.Context, request events.APIGate
 		return common.InternalServerError(err), nil
 	}
 
-	// Delete the object from storage
-	if err := h.store.DeleteObject(ctx, objectID); err != nil {
-		h.logger.Error("failed to delete object", zap.Error(err))
+	// Tombstone the object from storage
+	if err := h.store.TombstoneObject(ctx, objectID, actor.ID); err != nil {
+		h.logger.Error("failed to tombstone object", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
 
@@ -942,7 +965,37 @@ func (h *Handler) HandleUpdateStatus(ctx context.Context, request events.APIGate
 		note = &activitypub.Note{}
 		json.Unmarshal(noteBytes, note)
 	default:
-		return common.InternalServerError(fmt.Errorf("unexpected object type")), nil
+		// Try to handle any object with AttributedTo field using reflection
+		v := reflect.ValueOf(object)
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+
+		var attributedTo string
+		if v.Kind() == reflect.Struct {
+			// Try to get AttributedTo field
+			if attrField := v.FieldByName("AttributedTo"); attrField.IsValid() && attrField.Kind() == reflect.String {
+				attributedTo = attrField.String()
+			}
+		}
+
+		if attributedTo == "" {
+			h.logger.Error("unexpected object type or missing AttributedTo",
+				zap.String("type", fmt.Sprintf("%T", object)),
+				zap.Any("object", object))
+			return common.InternalServerError(fmt.Errorf("unexpected object type")), nil
+		}
+
+		if attributedTo != actor.ID {
+			return common.Forbidden(errors.New("you can only update your own statuses")), nil
+		}
+
+		// Convert to Note via JSON marshaling
+		noteBytes, _ := json.Marshal(object)
+		note = &activitypub.Note{}
+		if err := json.Unmarshal(noteBytes, note); err != nil {
+			return common.InternalServerError(fmt.Errorf("failed to convert object to Note")), nil
+		}
 	}
 
 	// Update the note fields
@@ -1026,6 +1079,26 @@ func (h *Handler) HandleGetStatus(ctx context.Context, request events.APIGateway
 	case map[string]interface{}:
 		if attr, ok := obj["attributedTo"].(string); ok {
 			attributedTo = attr
+		}
+	default:
+		// Try to handle any object with AttributedTo field using reflection
+		v := reflect.ValueOf(object)
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+
+		if v.Kind() == reflect.Struct {
+			// Try to get AttributedTo field
+			if attrField := v.FieldByName("AttributedTo"); attrField.IsValid() && attrField.Kind() == reflect.String {
+				attributedTo = attrField.String()
+			}
+		}
+
+		if attributedTo == "" {
+			h.logger.Warn("object missing AttributedTo field",
+				zap.String("type", fmt.Sprintf("%T", object)),
+				zap.String("object_id", objectID))
+			// Don't fail - just continue without actor info
 		}
 	}
 
@@ -1193,6 +1266,26 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 			if reply, ok := o["inReplyTo"].(string); ok {
 				inReplyTo = reply
 			}
+		default:
+			// Try to handle any object with InReplyTo field using reflection
+			v := reflect.ValueOf(obj)
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+
+			if v.Kind() == reflect.Struct {
+				// Try to get InReplyTo field
+				if replyField := v.FieldByName("InReplyTo"); replyField.IsValid() {
+					// Handle pointer to string
+					if replyField.Kind() == reflect.Ptr && !replyField.IsNil() {
+						if replyField.Elem().Kind() == reflect.String {
+							inReplyTo = replyField.Elem().String()
+						}
+					} else if replyField.Kind() == reflect.String {
+						inReplyTo = replyField.String()
+					}
+				}
+			}
 		}
 
 		if inReplyTo == "" {
@@ -1213,6 +1306,19 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 		case map[string]interface{}:
 			if attr, ok := o["attributedTo"].(string); ok {
 				attributedTo = attr
+			}
+		default:
+			// Try to handle any object with AttributedTo field using reflection
+			v := reflect.ValueOf(parentObj)
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+
+			if v.Kind() == reflect.Struct {
+				// Try to get AttributedTo field
+				if attrField := v.FieldByName("AttributedTo"); attrField.IsValid() && attrField.Kind() == reflect.String {
+					attributedTo = attrField.String()
+				}
 			}
 		}
 
@@ -1404,18 +1510,6 @@ func getStringFromMap(m map[string]interface{}, key, defaultValue string) string
 		return val
 	}
 	return defaultValue
-}
-
-// extractHashtagsFromContent extracts hashtags from a given content
-func extractHashtagsFromContent(content string) []string {
-	hashtags := []string{}
-	words := strings.Fields(content)
-	for _, word := range words {
-		if strings.HasPrefix(word, "#") {
-			hashtags = append(hashtags, strings.Trim(word, "#"))
-		}
-	}
-	return hashtags
 }
 
 // extractLinksFromContent extracts links from a given content

@@ -60,3 +60,6 @@ temp/
 # API documentation
 docs/api/openapi.json
 docs/api/swagger-ui/
+
+
+test-reports*

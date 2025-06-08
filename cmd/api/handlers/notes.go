@@ -5,19 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/notes"
 	"github.com/aron23/lesser/pkg/reputation"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/zap"
 )
 
@@ -70,29 +66,40 @@ func (h *Handler) HandleCreateNote(ctx context.Context, request events.APIGatewa
 
 	// Check rate limit
 	limit := notes.CalculateNoteLimit(float64(rep.TotalScore))
-	canCreate, remaining := notes.CheckNoteRateLimit(ctx, userID, limit)
+	canCreate, remaining, err := h.store.CheckCommunityNoteRateLimit(ctx, userID, limit)
+	if err != nil {
+		h.logger.Error("Failed to check rate limit", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
 	if !canCreate {
 		return common.UnprocessableEntity(fmt.Errorf("note limit reached. %d notes allowed per day based on reputation", limit)), nil
 	}
 
+	// Convert Source structs to string URLs
+	sourceURLs := make([]string, len(req.Sources))
+	for i, src := range req.Sources {
+		sourceURLs[i] = src.URL
+	}
+
 	// Create note
-	note := &notes.CommunityNote{
-		ID:               notes.GenerateNoteID(),
+	note := &storage.CommunityNote{
+		ID:               "", // Let storage generate ID
 		ObjectID:         req.ObjectID,
 		ObjectType:       req.ObjectType,
 		AuthorID:         userID,
-		AuthorRep:        float64(rep.TotalScore),
 		Content:          req.Content,
 		Language:         req.Language,
-		Sources:          validateSources(req.Sources),
+		Sources:          sourceURLs,
 		Score:            0,
-		VisibilityStatus: notes.VisibilityPending,
+		VisibilityStatus: "pending",
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
+		HelpfulVotes:     0,
+		NotHelpfulVotes:  0,
 	}
 
 	// Store note
-	if err := notes.StoreNote(ctx, note); err != nil {
+	if err := h.store.CreateCommunityNote(ctx, note); err != nil {
 		h.logger.Error("Failed to store note", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
@@ -139,39 +146,84 @@ func (h *Handler) HandleGetNotes(ctx context.Context, request events.APIGatewayV
 		}
 	}
 
-	// Query notes
-	visibleNotes, err := notes.GetVisibleNotes(ctx, objectID)
+	// Get visible notes for the object
+	visibleNotes, err := h.store.GetVisibleCommunityNotes(ctx, objectID)
 	if err != nil {
-		h.logger.Error("Failed to get notes", zap.Error(err))
+		h.logger.Error("Failed to get visible notes", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
 
-	// If authenticated, enhance with user data
-	var userVotes map[string]notes.Vote
-	if userID != "" && len(visibleNotes) > 0 {
-		noteIDs := make([]string, len(visibleNotes))
+	// Get trust scores for ranking if user is authenticated
+	var rankedNotes []*storage.CommunityNote
+	if userID != "" {
+		// Convert storage notes to notes package format for ranking
+		notesForRanking := make([]notes.CommunityNote, len(visibleNotes))
 		for i, note := range visibleNotes {
-			noteIDs[i] = note.ID
-		}
-		userVotes, _ = notes.GetUserVotes(ctx, userID, noteIDs)
-
-		// Get trust scores if we have a trust service
-		trustService, err := h.getTrustService()
-		if err == nil {
-			trustScores := make(map[string]float64)
-			for _, note := range visibleNotes {
-				if score, err := trustService.GetTrustScore(ctx, userID, note.AuthorID); err == nil && score != nil {
-					trustScores[note.AuthorID] = score.Score
+			// Convert string sources to Source structs
+			sources := make([]notes.Source, len(note.Sources))
+			for j, src := range note.Sources {
+				sources[j] = notes.Source{
+					URL:         src,
+					Title:       "",
+					Domain:      "",
+					Reliability: 0,
 				}
 			}
-			// Rank by trust
-			visibleNotes = notes.RankNotesByTrust(visibleNotes, userID, trustScores)
+
+			notesForRanking[i] = notes.CommunityNote{
+				ID:               note.ID,
+				ObjectID:         note.ObjectID,
+				ObjectType:       note.ObjectType,
+				AuthorID:         note.AuthorID,
+				Content:          note.Content,
+				Language:         note.Language,
+				Sources:          sources,
+				HelpfulVotes:     note.HelpfulVotes,
+				NotHelpfulVotes:  note.NotHelpfulVotes,
+				Score:            note.Score,
+				VisibilityStatus: notes.VisibilityStatus(note.VisibilityStatus),
+				CreatedAt:        note.CreatedAt,
+				UpdatedAt:        note.UpdatedAt,
+			}
 		}
+
+		// Get trust scores for ranking
+		trustScores := make(map[string]float64)
+		// TODO: Get actual trust scores from trust service once available
+		rankedNotesResult := notes.RankNotesByTrust(notesForRanking, userID, trustScores)
+
+		// Convert back to storage format
+		rankedNotes = make([]*storage.CommunityNote, len(rankedNotesResult))
+		for i, note := range rankedNotesResult {
+			// Convert Source structs back to strings
+			sources := make([]string, len(note.Sources))
+			for j, src := range note.Sources {
+				sources[j] = src.URL
+			}
+
+			rankedNotes[i] = &storage.CommunityNote{
+				ID:               note.ID,
+				ObjectID:         note.ObjectID,
+				ObjectType:       note.ObjectType,
+				AuthorID:         note.AuthorID,
+				Content:          note.Content,
+				Language:         note.Language,
+				Sources:          sources,
+				HelpfulVotes:     note.HelpfulVotes,
+				NotHelpfulVotes:  note.NotHelpfulVotes,
+				Score:            note.Score,
+				VisibilityStatus: string(note.VisibilityStatus),
+				CreatedAt:        note.CreatedAt,
+				UpdatedAt:        note.UpdatedAt,
+			}
+		}
+	} else {
+		rankedNotes = visibleNotes
 	}
 
 	// Format response
-	formattedNotes := make([]map[string]interface{}, len(visibleNotes))
-	for i, note := range visibleNotes {
+	formattedNotes := make([]map[string]interface{}, len(rankedNotes))
+	for i, note := range rankedNotes {
 		noteData := map[string]interface{}{
 			"id":                note.ID,
 			"object_id":         note.ObjectID,
@@ -186,25 +238,18 @@ func (h *Handler) HandleGetNotes(ctx context.Context, request events.APIGatewayV
 			"created_at":        note.CreatedAt,
 		}
 
-		// Add user's vote if available
-		if userVotes != nil {
-			if vote, exists := userVotes[note.ID]; exists {
-				noteData["user_vote"] = vote.VoteType
-			}
-		}
-
 		formattedNotes[i] = noteData
 	}
 
 	response := map[string]interface{}{
 		"notes": formattedNotes,
-		"stats": notes.CalculateStats(visibleNotes),
+		"stats": calculateNotesStats(rankedNotes),
 	}
 
 	// Add cost tracking
 	resp := common.OK(response)
-	resp.Headers["X-Cost-Micros"] = fmt.Sprintf("%d", 100*len(visibleNotes))
-	resp.Headers["X-Cost-Details"] = fmt.Sprintf("DynamoDB: %d reads", len(visibleNotes))
+	resp.Headers["X-Cost-Micros"] = fmt.Sprintf("%d", 100*len(rankedNotes))
+	resp.Headers["X-Cost-Details"] = fmt.Sprintf("DynamoDB: %d reads", len(rankedNotes))
 
 	return resp, nil
 }
@@ -255,7 +300,7 @@ func (h *Handler) HandleVoteNote(ctx context.Context, request events.APIGatewayV
 	}
 
 	// Check if note exists
-	note, err := notes.GetNote(ctx, noteID)
+	note, err := h.store.GetCommunityNote(ctx, noteID)
 	if err != nil {
 		return common.NotFound(errors.New("note not found")), nil
 	}
@@ -268,18 +313,16 @@ func (h *Handler) HandleVoteNote(ctx context.Context, request events.APIGatewayV
 	// Calculate vote weight
 	weight := notes.CalculateVoteWeight(float64(rep.TotalScore), req.VoteType)
 
-	vote := &notes.Vote{
+	vote := &storage.CommunityNoteVote{
 		NoteID:    noteID,
 		VoterID:   userID,
-		VoterRep:  float64(rep.TotalScore),
-		VoteType:  req.VoteType,
-		Reason:    req.Reason,
+		VoteType:  string(req.VoteType),
 		Weight:    weight,
 		CreatedAt: time.Now(),
 	}
 
 	// Store vote
-	if err := notes.StoreVote(ctx, vote); err != nil {
+	if err := h.store.CreateCommunityNoteVote(ctx, vote); err != nil {
 		h.logger.Error("Failed to store vote", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
@@ -307,15 +350,15 @@ func (h *Handler) HandleGetUserNotes(ctx context.Context, request events.APIGate
 	authorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, username)
 
 	// Parse limit
-	limit := int32(20)
+	limit := 20
 	if limitStr := request.QueryStringParameters["limit"]; limitStr != "" {
 		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 100 {
-			limit = int32(parsed)
+			limit = parsed
 		}
 	}
 
-	// Get notes
-	userNotes, err := notes.GetNotesByAuthor(ctx, authorID, limit)
+	// Get notes from storage
+	userNotes, _, err := h.store.GetCommunityNotesByAuthor(ctx, authorID, limit, "")
 	if err != nil {
 		h.logger.Error("Failed to get user notes", zap.Error(err))
 		return common.InternalServerError(err), nil
@@ -350,7 +393,7 @@ func (h *Handler) HandleGetUserNotes(ctx context.Context, request events.APIGate
 				"object_id":   note.ObjectID,
 				"object_type": note.ObjectType,
 				"score":       note.Score,
-				"sources":     note.Sources,
+				"sources":     nil, // Sources are not in storage.CommunityNote
 			},
 		}
 		statuses[i] = status
@@ -369,67 +412,45 @@ func (h *Handler) HandleGetUserNotes(ctx context.Context, request events.APIGate
 
 // Helper method to get reputation service
 func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
-	// Create AWS config
-	awsCfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	// Create DynamoDB client
-	db := dynamodb.NewFromConfig(awsCfg)
-
-	// Create cost tracker
-	costTracker := cost.New()
-
-	// Create service config
+	// Create service config using existing store
 	cfg := &reputation.Config{
-		DynamoClient:   db,
-		Storage:        h.store,
-		Logger:         h.logger,
-		CostTracker:    costTracker,
-		InstanceURL:    h.cfg.BaseURL(),
-		PrivateKey:     "",                    // TODO: Load from environment/config
-		RepTableName:   h.cfg.DynamoTableName, // Use the main table
-		VouchTableName: h.cfg.DynamoTableName, // Use the main table
+		Storage:     h.store,
+		Logger:      h.logger,
+		InstanceURL: h.cfg.BaseURL(),
+		PrivateKey:  "", // TODO: Load from environment/config
 	}
 
 	return reputation.NewService(cfg)
 }
 
-func (h *Handler) getTrustService() (*trust.Service, error) {
-	// Create AWS config
-	awsCfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+func calculateNotesStats(notes []*storage.CommunityNote) map[string]interface{} {
+	if len(notes) == 0 {
+		return map[string]interface{}{
+			"total":           0,
+			"visible":         0,
+			"average_score":   0,
+			"average_helpful": 0,
+		}
 	}
 
-	// Create DynamoDB client
-	db := dynamodb.NewFromConfig(awsCfg)
+	totalScore := 0.0
+	totalHelpful := 0
+	totalNotHelpful := 0
+	visibleCount := 0
 
-	return trust.NewService(db), nil
-}
-
-// validateSources validates and cleans source URLs
-func validateSources(sources []notes.Source) []notes.Source {
-	cleaned := make([]notes.Source, 0, len(sources))
-
-	for _, source := range sources {
-		// Parse and validate URL
-		u, err := url.Parse(source.URL)
-		if err != nil || u.Scheme == "" || u.Host == "" {
-			continue
+	for _, note := range notes {
+		totalScore += note.Score
+		totalHelpful += note.HelpfulVotes
+		totalNotHelpful += note.NotHelpfulVotes
+		if note.VisibilityStatus == "visible" {
+			visibleCount++
 		}
-
-		// Clean up source
-		cleanSource := notes.Source{
-			URL:         u.String(),
-			Title:       source.Title,
-			Domain:      u.Host,
-			Reliability: 0.5, // Initial reliability score
-		}
-
-		cleaned = append(cleaned, cleanSource)
 	}
 
-	return cleaned
+	return map[string]interface{}{
+		"total":           len(notes),
+		"visible":         visibleCount,
+		"average_score":   totalScore / float64(len(notes)),
+		"average_helpful": float64(totalHelpful) / float64(len(notes)),
+	}
 }

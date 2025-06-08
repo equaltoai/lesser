@@ -375,8 +375,8 @@ func (h *Handler) HandleGetAccount(ctx context.Context, request events.APIGatewa
 		CreatedAt:      time.Now().Format(time.RFC3339), // TODO: Store actor creation time
 		Note:           actor.Summary,
 		URL:            actor.URL,
-		Avatar:         actor.Icon.URL,
-		AvatarStatic:   actor.Icon.URL,
+		Avatar:         "", // Default empty avatar
+		AvatarStatic:   "", // Default empty avatar
 		Header:         "", // TODO: Add header support
 		HeaderStatic:   "",
 		FollowersCount: followerCount,
@@ -385,6 +385,12 @@ func (h *Handler) HandleGetAccount(ctx context.Context, request events.APIGatewa
 		LastStatusAt:   "", // TODO: Track last status time
 		Emojis:         []interface{}{},
 		Fields:         []interface{}{}, // TODO: Parse actor.Attachment
+	}
+
+	// Set avatar if icon is present
+	if actor.Icon != nil && actor.Icon.URL != "" {
+		account.Avatar = actor.Icon.URL
+		account.AvatarStatic = actor.Icon.URL
 	}
 
 	// Set default avatar if not present

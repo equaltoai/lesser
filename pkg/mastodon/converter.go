@@ -29,6 +29,9 @@ type Converter interface {
 	// Mute conversions
 	ConvertMuteToRelationship(relationship *models.Relationship, mute *storage.Mute)
 
+	// Notes conversions
+	NotesToStatus(note interface{}) models.Status
+
 	// Utility methods
 	ExtractUsernameFromActorID(actorID string) string
 	ExtractIDFromURL(url string) string

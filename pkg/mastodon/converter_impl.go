@@ -10,6 +10,7 @@ import (
 
 	"github.com/aron23/lesser/cmd/api/models"
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/notes"
 	"github.com/aron23/lesser/pkg/storage"
 )
 
@@ -374,4 +375,114 @@ func (c *converterImpl) contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// NotesToStatus converts a community note to a Mastodon status format
+func (c *converterImpl) NotesToStatus(note interface{}) models.Status {
+	// Handle different note types
+	var content string
+	var createdAt time.Time
+	var id string
+	var authorID string
+
+	// Type switch to handle different note structures
+	switch n := note.(type) {
+	case *notes.CommunityNote:
+		// Handle CommunityNote struct
+		content = n.Content
+		id = n.ID
+		authorID = n.AuthorID
+		createdAt = n.CreatedAt
+	case notes.CommunityNote:
+		// Handle CommunityNote struct (non-pointer)
+		content = n.Content
+		id = n.ID
+		authorID = n.AuthorID
+		createdAt = n.CreatedAt
+	case map[string]interface{}:
+		// Handle map representation (from JSON)
+		content, _ = n["content"].(string)
+		id, _ = n["id"].(string)
+		authorID, _ = n["author_id"].(string)
+		if createdAtStr, ok := n["created_at"].(string); ok {
+			createdAt, _ = time.Parse(time.RFC3339, createdAtStr)
+		} else if createdAtTime, ok := n["created_at"].(time.Time); ok {
+			createdAt = createdAtTime
+		}
+	default:
+		// For other types, create a simple representation
+		content = fmt.Sprintf("%v", note)
+		id = "note-" + time.Now().Format("20060102150405")
+		createdAt = time.Now()
+	}
+
+	// Create a basic status representation for the note
+	status := models.Status{
+		ID:                 id,
+		CreatedAt:          createdAt.Format(time.RFC3339),
+		InReplyToID:        nil,
+		InReplyToAccountID: nil,
+		Sensitive:          false,
+		SpoilerText:        "",
+		Visibility:         "public",
+		Language:           "en", // Default to English
+		URI:                fmt.Sprintf("%s/notes/%s", c.baseURL, id),
+		URL:                fmt.Sprintf("%s/notes/%s", c.baseURL, id),
+		RepliesCount:       0,
+		ReblogsCount:       0,
+		FavouritesCount:    0,
+		Favourited:         false,
+		Reblogged:          false,
+		Muted:              false,
+		Bookmarked:         false,
+		Pinned:             false,
+		Content:            content,
+		Reblog:             nil,
+		Application:        nil,
+		Account:            models.Account{}, // Will be populated by caller if needed
+		MediaAttachments:   []interface{}{},
+		Mentions:           []interface{}{},
+		Tags:               []interface{}{},
+		Emojis:             []interface{}{},
+		Card:               nil,
+		Poll:               nil,
+	}
+
+	// If we have an author ID, set a basic account
+	if authorID != "" {
+		// Extract username from author ID if it's a full URI
+		username := authorID
+		if strings.Contains(authorID, "/users/") {
+			parts := strings.Split(authorID, "/users/")
+			if len(parts) > 1 {
+				username = parts[1]
+			}
+		}
+
+		status.Account = models.Account{
+			ID:             authorID,
+			Username:       username,
+			Acct:           username,
+			URL:            authorID,
+			DisplayName:    username,
+			CreatedAt:      time.Now().Format(time.RFC3339),
+			Avatar:         fmt.Sprintf("%s/avatars/default.png", c.baseURL),
+			AvatarStatic:   fmt.Sprintf("%s/avatars/default.png", c.baseURL),
+			Header:         fmt.Sprintf("%s/headers/default.png", c.baseURL),
+			HeaderStatic:   fmt.Sprintf("%s/headers/default.png", c.baseURL),
+			Locked:         false,
+			Bot:            false,
+			Discoverable:   true,
+			Group:          false,
+			Note:           "",
+			FollowersCount: 0,
+			FollowingCount: 0,
+			StatusesCount:  0,
+			LastStatusAt:   "",
+			Emojis:         []interface{}{},
+			Fields:         []interface{}{},
+		}
+	}
+
+	return status
 }

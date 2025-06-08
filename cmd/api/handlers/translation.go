@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
@@ -46,11 +47,19 @@ func (h *Handler) HandleTranslateStatus(ctx context.Context, request events.APIG
 		return common.Unauthorized(err), nil
 	}
 
+	// Normalize the status ID to a full URL if it's not already
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		// Assume it's a local object ID
+		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+	}
+
 	// Get the status
-	obj, err := h.store.GetObject(ctx, statusID)
+	obj, err := h.store.GetObject(ctx, objectID)
 	if err != nil {
 		h.logger.Error("failed to get status for translation",
 			zap.String("status_id", statusID),
+			zap.String("object_id", objectID),
 			zap.Error(err))
 		return common.NotFound(fmt.Errorf("status not found")), nil
 	}

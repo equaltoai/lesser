@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -793,6 +794,119 @@ func convertToObject(obj interface{}) (*Object, error) {
 	// If it's already an Object, return it
 	if o, ok := obj.(*Object); ok {
 		return o, nil
+	}
+
+	// Handle activitypub.Note type
+	if note, ok := obj.(*activitypub.Note); ok {
+		// Convert attachments
+		attachments := make([]ObjectAttachment, len(note.Attachment))
+		for i, att := range note.Attachment {
+			attachments[i] = ObjectAttachment{
+				Type:      att.Type,
+				URL:       att.URL,
+				MediaType: att.MediaType,
+				Name:      att.Name,
+				Width:     att.Width,
+				Height:    att.Height,
+			}
+		}
+
+		// Convert tags
+		tags := make([]ObjectTag, len(note.Tag))
+		for i, tag := range note.Tag {
+			tags[i] = ObjectTag{
+				Type: tag.Type,
+				Href: tag.Href,
+				Name: tag.Name,
+			}
+		}
+
+		// Create Object from Note
+		object := &Object{
+			ID:             note.ID,
+			Type:           note.Type,
+			AttributedTo:   note.AttributedTo,
+			Content:        note.Content,
+			Published:      *note.Published,
+			To:             note.To,
+			CC:             note.CC,
+			InReplyTo:      nil,
+			Sensitive:      note.Sensitive,
+			Summary:        note.Summary,
+			Attachment:     attachments,
+			Tag:            tags,
+			Context:        note.Context,
+			ConversationID: note.ConversationID,
+		}
+
+		// Handle InReplyTo if it's not empty
+		if note.InReplyTo != "" {
+			object.InReplyTo = &note.InReplyTo
+		}
+
+		// Handle Updated if it's set
+		if note.Updated != nil {
+			object.Updated = *note.Updated
+		}
+
+		return object, nil
+	}
+
+	// Handle activitypub.Article type (which extends Note)
+	if article, ok := obj.(*activitypub.Article); ok {
+		// Convert attachments
+		attachments := make([]ObjectAttachment, len(article.Attachment))
+		for i, att := range article.Attachment {
+			attachments[i] = ObjectAttachment{
+				Type:      att.Type,
+				URL:       att.URL,
+				MediaType: att.MediaType,
+				Name:      att.Name,
+				Width:     att.Width,
+				Height:    att.Height,
+			}
+		}
+
+		// Convert tags
+		tags := make([]ObjectTag, len(article.Tag))
+		for i, tag := range article.Tag {
+			tags[i] = ObjectTag{
+				Type: tag.Type,
+				Href: tag.Href,
+				Name: tag.Name,
+			}
+		}
+
+		// Create Object from Article
+		object := &Object{
+			ID:             article.ID,
+			Type:           article.Type,
+			Name:           article.Name, // Article has a name (title)
+			AttributedTo:   article.AttributedTo,
+			Content:        article.Content,
+			Published:      *article.Published,
+			To:             article.To,
+			CC:             article.CC,
+			InReplyTo:      nil,
+			Sensitive:      article.Sensitive,
+			Summary:        article.Summary,
+			Attachment:     attachments,
+			Tag:            tags,
+			Context:        article.Context,
+			ConversationID: article.ConversationID,
+		}
+
+		// Handle InReplyTo if it's not empty
+		if article.InReplyTo != "" {
+			object.InReplyTo = &article.InReplyTo
+		}
+
+		// Handle Updated if it's set
+		if article.Updated != nil {
+			object.Updated = *article.Updated
+		}
+
+		return object, nil
 	}
 
 	// If it's a map, try to convert it

@@ -466,10 +466,9 @@ func (s *dynamoDBStorage) GetListsContainingAccount(ctx context.Context, account
 	// Query the reverse index
 	queryInput := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
-		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :sk_prefix)"),
+		KeyConditionExpression: aws.String("PK = :pk"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":        &types.AttributeValueMemberS{Value: fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)},
-			":sk_prefix": &types.AttributeValueMemberS{Value: ""}, // Get all lists
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)},
 		},
 	}
 

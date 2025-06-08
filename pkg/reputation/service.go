@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 
 	"github.com/aron23/lesser/pkg/cost"
@@ -45,19 +43,24 @@ type Config struct {
 
 // NewService creates a new reputation service
 func NewService(cfg *Config) (*Service, error) {
+	// Validate config
+	if cfg.Storage == nil {
+		return nil, fmt.Errorf("storage is required")
+	}
+
 	// Create signer
 	signer, err := NewSigner(cfg.PrivateKey, cfg.InstanceURL, cfg.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create signer: %w", err)
 	}
 
-	// Create components
-	calculator := NewCalculator(cfg.DynamoClient, cfg.InstanceURL, cfg.Logger)
+	// Create components using storage interface
+	calculator := NewCalculator(cfg.Storage, cfg.InstanceURL, cfg.Logger)
 	verifier := NewVerifier(cfg.InstanceURL, cfg.Logger, cfg.Storage)
-	vouchManager := NewVouchManager(cfg.DynamoClient, cfg.VouchTableName, signer, cfg.Logger)
+	vouchManager := NewVouchManager(cfg.Storage, signer, cfg.InstanceURL, cfg.Logger)
 
 	return &Service{
-		db:             cfg.DynamoClient,
+		db:             cfg.DynamoClient, // Keep for backward compatibility
 		storage:        cfg.Storage,
 		calculator:     calculator,
 		signer:         signer,
@@ -73,39 +76,39 @@ func NewService(cfg *Config) (*Service, error) {
 
 // GetReputation retrieves the current reputation for an actor
 func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputation, error) {
-	s.costTracker.TrackDynamoRead(1)
-
-	// Query for latest reputation
-	result, err := s.db.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(s.repTableName),
-		KeyConditionExpression: aws.String("PK = :pk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorID)},
-		},
-		ScanIndexForward: aws.Bool(false), // Sort descending
-		Limit:            aws.Int32(1),
-	})
-
+	// Get reputation from storage
+	storedRep, err := s.storage.GetReputation(ctx, actorID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query reputation: %w", err)
+		return nil, fmt.Errorf("failed to get reputation: %w", err)
 	}
 
-	if len(result.Items) == 0 {
+	if storedRep == nil {
 		// No reputation history, calculate new
 		return s.calculateAndStore(ctx, actorID)
 	}
 
-	// Unmarshal reputation
-	var storedRep struct {
-		ReputationData string `dynamodbav:"ReputationData"`
-	}
-	if err := attributevalue.UnmarshalMap(result.Items[0], &storedRep); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal reputation: %w", err)
-	}
-
-	var rep Reputation
-	if err := json.Unmarshal([]byte(storedRep.ReputationData), &rep); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal reputation data: %w", err)
+	// Convert storage.Reputation to reputation.Reputation
+	rep := &Reputation{
+		ActorID:           storedRep.ActorID,
+		InstanceURL:       storedRep.InstanceURL,
+		TrustScore:        storedRep.TrustScore,
+		ActivityScore:     storedRep.ActivityScore,
+		ModerationScore:   storedRep.ModerationScore,
+		CommunityScore:    storedRep.CommunityScore,
+		TotalScore:        storedRep.TotalScore,
+		CalculatedAt:      storedRep.CalculatedAt,
+		Version:           storedRep.Version,
+		TotalPosts:        storedRep.TotalPosts,
+		TotalFollowers:    storedRep.TotalFollowers,
+		AccountAge:        storedRep.AccountAge,
+		VouchCount:        storedRep.VouchCount,
+		TrustingActors:    storedRep.TrustingActors,
+		AverageTrustScore: storedRep.AverageTrustScore,
+		ReportsReceived:   storedRep.ReportsReceived,
+		ReportsUpheld:     storedRep.ReportsUpheld,
+		FalseReports:      storedRep.FalseReports,
+		Signature:         storedRep.Signature,
+		PublicKey:         storedRep.PublicKey,
 	}
 
 	// Check if reputation is stale (older than 24 hours)
@@ -114,7 +117,7 @@ func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputatio
 		return s.calculateAndStore(ctx, actorID)
 	}
 
-	return &rep, nil
+	return rep, nil
 }
 
 // calculateAndStore calculates and stores reputation for an actor
@@ -150,9 +153,36 @@ func (s *Service) gatherCalculationInput(ctx context.Context, actorID string) (*
 		ActorID: actorID,
 	}
 
+	// Extract username from actor ID for storage calls
+	// Actor ID format: https://domain/users/username or https://domain/@username
+	username := actorID
+
+	// Try to extract from /users/ format
+	if idx := strings.LastIndex(actorID, "/users/"); idx != -1 {
+		username = actorID[idx+7:] // 7 is len("/users/")
+	} else if idx := strings.LastIndex(actorID, "/@"); idx != -1 {
+		username = actorID[idx+2:] // 2 is len("/@")
+	} else if strings.HasPrefix(actorID, "@") {
+		username = actorID[1:] // Remove leading @
+	}
+
+	// Remove any trailing slashes or query parameters
+	if idx := strings.IndexAny(username, "/?#"); idx != -1 {
+		username = username[:idx]
+	}
+
+	// Log the extraction for debugging
+	s.logger.Debug("Extracting username from actor ID",
+		zap.String("actorID", actorID),
+		zap.String("extracted_username", username))
+
 	// Get actor data
-	actor, err := s.storage.GetActor(ctx, actorID)
+	actor, err := s.storage.GetActor(ctx, username)
 	if err != nil {
+		s.logger.Error("Failed to get actor",
+			zap.String("actorID", actorID),
+			zap.String("username", username),
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
 
@@ -331,31 +361,33 @@ func (s *Service) gatherCalculationInput(ctx context.Context, actorID string) (*
 	return input, nil
 }
 
-// storeReputation stores reputation in DynamoDB
+// storeReputation stores reputation using the storage layer
 func (s *Service) storeReputation(ctx context.Context, rep *Reputation) error {
-	s.costTracker.TrackDynamoWrite(1)
-
-	// Marshal reputation to JSON
-	repJSON, err := json.Marshal(rep)
-	if err != nil {
-		return fmt.Errorf("failed to marshal reputation: %w", err)
+	// Convert reputation.Reputation to storage.Reputation
+	storedRep := &storage.Reputation{
+		ActorID:           rep.ActorID,
+		InstanceURL:       rep.InstanceURL,
+		TrustScore:        rep.TrustScore,
+		ActivityScore:     rep.ActivityScore,
+		ModerationScore:   rep.ModerationScore,
+		CommunityScore:    rep.CommunityScore,
+		TotalScore:        rep.TotalScore,
+		CalculatedAt:      rep.CalculatedAt,
+		Version:           rep.Version,
+		TotalPosts:        rep.TotalPosts,
+		TotalFollowers:    rep.TotalFollowers,
+		AccountAge:        rep.AccountAge,
+		VouchCount:        rep.VouchCount,
+		TrustingActors:    rep.TrustingActors,
+		AverageTrustScore: rep.AverageTrustScore,
+		ReportsReceived:   rep.ReportsReceived,
+		ReportsUpheld:     rep.ReportsUpheld,
+		FalseReports:      rep.FalseReports,
+		Signature:         rep.Signature,
+		PublicKey:         rep.PublicKey,
 	}
 
-	// Create item
-	item := map[string]types.AttributeValue{
-		"PK":             &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", rep.ActorID)},
-		"SK":             &types.AttributeValueMemberS{Value: fmt.Sprintf("REP#%s", rep.CalculatedAt.Format(time.RFC3339))},
-		"ReputationData": &types.AttributeValueMemberS{Value: string(repJSON)},
-		"Signature":      &types.AttributeValueMemberS{Value: rep.Signature},
-		"TTL":            &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(90*24*time.Hour).Unix())},
-	}
-
-	_, err = s.db.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(s.repTableName),
-		Item:      item,
-	})
-
-	return err
+	return s.storage.StoreReputation(ctx, rep.ActorID, storedRep)
 }
 
 // ExportReputation exports a portable reputation document

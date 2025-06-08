@@ -5,21 +5,21 @@ import (
 	"math"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aron23/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
 // Calculator computes reputation scores for actors
 type Calculator struct {
-	db          *dynamodb.Client
+	store       storage.Storage
 	logger      *zap.Logger
 	instanceURL string
 }
 
 // NewCalculator creates a new reputation calculator
-func NewCalculator(db *dynamodb.Client, instanceURL string, logger *zap.Logger) *Calculator {
+func NewCalculator(store storage.Storage, instanceURL string, logger *zap.Logger) *Calculator {
 	return &Calculator{
-		db:          db,
+		store:       store,
 		logger:      logger,
 		instanceURL: instanceURL,
 	}

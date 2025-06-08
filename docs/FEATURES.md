@@ -62,9 +62,8 @@ Lesser supports authentication methods that are both more secure and more conven
 - **Instant onboarding** - One click to join
 
 #### Traditional Options
-- Email/password (with proper security)
+- username/password (with proper security)
 - OAuth2 (Google, GitHub, etc.)
-- Magic links (passwordless email)
 
 **Real Impact**: Users can join your instance without giving up their privacy or security.
 
@@ -280,6 +279,5 @@ Understand your community without invading privacy:
 
 [Deploy Now](deployment/QUICK_START.md) • [Architecture](architecture/OVERVIEW.md) • [API Docs](api/QUICK_REFERENCE.md)
 
-**Questions?** Join our [Discord](https://discord.gg/lesser) community!
 
 </div> 

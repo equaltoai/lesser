@@ -147,11 +147,16 @@ func (s *dynamoDBStorage) DeleteTrustRelationship(ctx context.Context, trusterID
 
 // GetTrustRelationships retrieves all trust relationships for a truster
 func (s *dynamoDBStorage) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*trust.TrustRelationship, string, error) {
-	input := &dynamodb.QueryInput{
-		TableName:              s.getTableName(),
-		KeyConditionExpression: aws.String("begins_with(PK, :pk)"),
+	// We need to scan instead of query since we want all categories
+	input := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("begins_with(PK, :pk) AND #type = :type"),
+		ExpressionAttributeNames: map[string]string{
+			"#type": "Type",
+		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TRUST#%s#", trusterID)},
+			":pk":   &types.AttributeValueMemberS{Value: fmt.Sprintf("TRUST#%s#", trusterID)},
+			":type": &types.AttributeValueMemberS{Value: "RELATIONSHIP"},
 		},
 		Limit: aws.Int32(int32(limit)),
 	}
@@ -164,9 +169,9 @@ func (s *dynamoDBStorage) GetTrustRelationships(ctx context.Context, trusterID s
 		}
 	}
 
-	result, err := s.client.Query(ctx, input)
+	result, err := s.client.Scan(ctx, input)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query trust relationships: %w", err)
+		return nil, "", fmt.Errorf("failed to scan trust relationships: %w", err)
 	}
 
 	relationships := make([]*trust.TrustRelationship, 0, len(result.Items))
@@ -197,26 +202,30 @@ func (s *dynamoDBStorage) GetTrustRelationships(ctx context.Context, trusterID s
 
 // GetTrustedByRelationships retrieves all relationships where the actor is trusted
 func (s *dynamoDBStorage) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*trust.TrustRelationship, string, error) {
-	input := &dynamodb.QueryInput{
-		TableName:              s.getTableName(),
-		IndexName:              aws.String("GSI1"),
-		KeyConditionExpression: aws.String("begins_with(GSI1PK, :pk)"),
+	// Need to scan with filter instead of query on GSI
+	input := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("begins_with(GSI1PK, :pk) AND #type = :type"),
+		ExpressionAttributeNames: map[string]string{
+			"#type": "Type",
+		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TRUSTED#%s#", trusteeID)},
+			":pk":   &types.AttributeValueMemberS{Value: fmt.Sprintf("TRUSTED#%s#", trusteeID)},
+			":type": &types.AttributeValueMemberS{Value: "RELATIONSHIP"},
 		},
 		Limit: aws.Int32(int32(limit)),
 	}
 
 	if cursor != "" {
 		input.ExclusiveStartKey = map[string]types.AttributeValue{
-			"GSI1PK": &types.AttributeValueMemberS{Value: cursor},
-			"GSI1SK": &types.AttributeValueMemberS{Value: ""},
+			"PK": &types.AttributeValueMemberS{Value: cursor},
+			"SK": &types.AttributeValueMemberS{Value: ""},
 		}
 	}
 
-	result, err := s.client.Query(ctx, input)
+	result, err := s.client.Scan(ctx, input)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query trusted-by relationships: %w", err)
+		return nil, "", fmt.Errorf("failed to scan trusted-by relationships: %w", err)
 	}
 
 	relationships := make([]*trust.TrustRelationship, 0, len(result.Items))
@@ -235,7 +244,7 @@ func (s *dynamoDBStorage) GetTrustedByRelationships(ctx context.Context, trustee
 
 	var nextCursor string
 	if result.LastEvaluatedKey != nil {
-		if pk, ok := result.LastEvaluatedKey["GSI1PK"]; ok {
+		if pk, ok := result.LastEvaluatedKey["PK"]; ok {
 			if pkStr, ok := pk.(*types.AttributeValueMemberS); ok {
 				nextCursor = pkStr.Value
 			}

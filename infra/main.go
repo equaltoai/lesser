@@ -1284,6 +1284,7 @@ func main() {
 			{"/users/{username}/outbox", "POST", outboxLambda},
 			{"/users/{username}/followers", "GET", collectionsLambda},
 			{"/users/{username}/following", "GET", collectionsLambda},
+			{"/users/{username}/liked", "GET", collectionsLambda},
 			{"/objects/{id}", "GET", objectsLambda},
 			{"/oauth/authorize", "GET", authLambda},
 			{"/oauth/authorize", "POST", authLambda},
@@ -1361,6 +1362,23 @@ func main() {
 			return err
 		}
 
+		// Create WebSocket domain
+		wsDomain, err := apigatewayv2.NewDomainName(ctx, "lesser-ws-domain", &apigatewayv2.DomainNameArgs{
+			DomainName: pulumi.Sprintf("ws.%s", domain),
+			DomainNameConfiguration: &apigatewayv2.DomainNameDomainNameConfigurationArgs{
+				CertificateArn: certificateValidation.CertificateArn,
+				EndpointType:   pulumi.String("REGIONAL"),
+				SecurityPolicy: pulumi.String("TLS_1_2"),
+			},
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser WebSocket Domain"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
 		// Map API to domain
 		// Note: Mastodon API has both v1 and v2 endpoints
 		// v2 is used for: /instance, /search, /suggestions, /media
@@ -1398,29 +1416,13 @@ func main() {
 			return err
 		}
 
-		// Create WebSocket domain
-		wsDomain, err := apigatewayv2.NewDomainName(ctx, "lesser-ws-domain", &apigatewayv2.DomainNameArgs{
-			DomainName: pulumi.Sprintf("ws.%s", domain),
-			DomainNameConfiguration: &apigatewayv2.DomainNameDomainNameConfigurationArgs{
-				CertificateArn: certificateValidation.CertificateArn,
-				EndpointType:   pulumi.String("REGIONAL"),
-				SecurityPolicy: pulumi.String("TLS_1_2"),
-			},
-			Tags: pulumi.StringMap{
-				"Name":        pulumi.String("Lesser WebSocket Domain"),
-				"Environment": pulumi.String(environment),
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		// Map WebSocket API to root of subdomain
-		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-websocket-mapping", &apigatewayv2.ApiMappingArgs{
+		// Map WebSocket API to separate ws domain
+		// AWS API Gateway WebSocket limitation: WebSocket APIs cannot be mixed with REST/HTTP APIs on the same domain
+		_, err = apigatewayv2.NewApiMapping(ctx, "lesser-websocket-domain-mapping", &apigatewayv2.ApiMappingArgs{
 			ApiId:         wsApi.ID(),
 			DomainName:    wsDomain.ID(),
 			Stage:         wsStage.ID(),
-			ApiMappingKey: pulumi.String(""), // Empty string maps to root
+			ApiMappingKey: pulumi.String("v1"), // WebSocket available at wss://ws.domain/v1
 		})
 		if err != nil {
 			return err
@@ -1459,6 +1461,7 @@ func main() {
 			return err
 		}
 
+		// Create Route53 record for WebSocket domain
 		_, err = route53.NewRecord(ctx, "ws-record", &route53.RecordArgs{
 			ZoneId: pulumi.String(hostedZoneId),
 			Name:   pulumi.Sprintf("ws.%s", domain),
@@ -1554,7 +1557,7 @@ func main() {
 		ctx.Export("bucketName", mediaBucket.Bucket)
 		ctx.Export("distributionId", mediaDistribution.ID())
 		ctx.Export("apiId", api.ID())
-		ctx.Export("websocketUrl", pulumi.Sprintf("wss://ws.%s", domain))
+		ctx.Export("websocketUrl", pulumi.Sprintf("wss://ws.%s/v1", domain))
 
 		return nil
 	})

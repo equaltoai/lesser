@@ -38,6 +38,13 @@ func (s *Storage) SaveAnalysis(ctx context.Context, analysis *AIAnalysis) error 
 	item["Type"] = &types.AttributeValueMemberS{Value: "AIAnalysis"}
 	item["CreatedAt"] = &types.AttributeValueMemberS{Value: analysis.AnalyzedAt.Format(time.RFC3339)}
 
+	// Add GSI4 attributes for temporal queries (using the Cost Tracking GSI)
+	// GSI4PK: AI analysis by date for cost/stats tracking
+	// GSI4SK: Timestamp for ordering
+	dateStr := analysis.AnalyzedAt.Format("2006-01-02")
+	item["GSI4PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("AI#ANALYSIS#%s", dateStr)}
+	item["GSI4SK"] = &types.AttributeValueMemberS{Value: analysis.AnalyzedAt.Format(time.RFC3339Nano)}
+
 	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(s.tableName),
 		Item:      item,
@@ -123,28 +130,10 @@ func (s *Storage) GetStats(ctx context.Context, period string) (*AIStats, error)
 		startTime = now.Add(-24 * time.Hour) // Default to day
 	}
 
-	// Query using GSI on CreatedAt
-	resp, err := s.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(s.tableName),
-		IndexName:              aws.String("CreatedAtIndex"),
-		KeyConditionExpression: aws.String("#type = :type AND CreatedAt >= :start"),
-		ExpressionAttributeNames: map[string]string{
-			"#type": "Type",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":type":  &types.AttributeValueMemberS{Value: "AIAnalysis"},
-			":start": &types.AttributeValueMemberS{Value: startTime.Format(time.RFC3339)},
-		},
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Calculate statistics
+	// Initialize stats
 	stats := &AIStats{
 		Period:            period,
-		TotalAnalyses:     int(resp.Count),
+		TotalAnalyses:     0,
 		ToxicContent:      0,
 		SpamDetected:      0,
 		AIGenerated:       0,
@@ -153,36 +142,70 @@ func (s *Storage) GetStats(ctx context.Context, period string) (*AIStats, error)
 		ModerationActions: make(map[string]int),
 	}
 
-	for _, item := range resp.Items {
-		var analysis AIAnalysis
-		err := attributevalue.UnmarshalMap(item, &analysis)
+	// Query each day in the period using GSI4
+	currentDate := startTime
+	for currentDate.Before(now) {
+		dateStr := currentDate.Format("2006-01-02")
+
+		// Query using GSI4 for this specific day
+		resp, err := s.client.Query(ctx, &dynamodb.QueryInput{
+			TableName:              aws.String(s.tableName),
+			IndexName:              aws.String("GSI4"),
+			KeyConditionExpression: aws.String("GSI4PK = :pk AND GSI4SK >= :start"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":pk":    &types.AttributeValueMemberS{Value: fmt.Sprintf("AI#ANALYSIS#%s", dateStr)},
+				":start": &types.AttributeValueMemberS{Value: startTime.Format(time.RFC3339)},
+			},
+		})
+
 		if err != nil {
+			// Continue with next day if query fails
+			currentDate = currentDate.Add(24 * time.Hour)
 			continue
 		}
 
-		// Count various detections
-		if analysis.TextAnalysis != nil && analysis.TextAnalysis.ToxicityScore > 0.5 {
-			stats.ToxicContent++
+		// Process items for this day
+		for _, item := range resp.Items {
+			var analysis AIAnalysis
+			err := attributevalue.UnmarshalMap(item, &analysis)
+			if err != nil {
+				continue
+			}
+
+			// Only count if within our time range
+			if analysis.AnalyzedAt.Before(startTime) || analysis.AnalyzedAt.After(now) {
+				continue
+			}
+
+			stats.TotalAnalyses++
+
+			// Count various detections
+			if analysis.TextAnalysis != nil && analysis.TextAnalysis.ToxicityScore > 0.5 {
+				stats.ToxicContent++
+			}
+
+			if analysis.SpamAnalysis != nil && analysis.SpamAnalysis.SpamScore > 0.5 {
+				stats.SpamDetected++
+			}
+
+			if analysis.AIDetection != nil && analysis.AIDetection.AIGeneratedProbability > 0.5 {
+				stats.AIGenerated++
+			}
+
+			if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW {
+				stats.NSFWContent++
+			}
+
+			if analysis.TextAnalysis != nil && analysis.TextAnalysis.ContainsPII {
+				stats.PIIDetected++
+			}
+
+			// Count moderation actions
+			stats.ModerationActions[analysis.ModerationAction]++
 		}
 
-		if analysis.SpamAnalysis != nil && analysis.SpamAnalysis.SpamScore > 0.5 {
-			stats.SpamDetected++
-		}
-
-		if analysis.AIDetection != nil && analysis.AIDetection.AIGeneratedProbability > 0.5 {
-			stats.AIGenerated++
-		}
-
-		if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW {
-			stats.NSFWContent++
-		}
-
-		if analysis.TextAnalysis != nil && analysis.TextAnalysis.ContainsPII {
-			stats.PIIDetected++
-		}
-
-		// Count moderation actions
-		stats.ModerationActions[analysis.ModerationAction]++
+		// Move to next day
+		currentDate = currentDate.Add(24 * time.Hour)
 	}
 
 	// Calculate rates

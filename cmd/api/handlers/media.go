@@ -223,6 +223,7 @@ func (h *Handler) HandleMediaUpload(ctx context.Context, request events.APIGatew
 	mediaRecord := map[string]interface{}{
 		"PK":          fmt.Sprintf("MEDIA#%s", mediaID),
 		"SK":          "METADATA",
+		"id":          fmt.Sprintf("MEDIA#%s", mediaID), // CreateObject expects an 'id' field
 		"MediaID":     mediaID,
 		"Username":    claims.Username,
 		"URL":         mediaURL,

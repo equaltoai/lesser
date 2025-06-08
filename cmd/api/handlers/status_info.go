@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -30,29 +31,62 @@ func (h *Handler) HandleGetStatusSource(ctx context.Context, request events.APIG
 		return common.NotFound(fmt.Errorf("status not found")), nil
 	}
 
-	// Extract source information based on object type
-	var source models.StatusSource
+	// Debug logging to see what type we're getting
+	h.logger.Info("GetStatusSource: object type info",
+		zap.String("status_id", statusID),
+		zap.String("object_id", objectID),
+		zap.String("type", fmt.Sprintf("%T", object)),
+	)
+
+	// Extract content based on type
+	var content string
+	var spoilerText string
+
 	switch obj := object.(type) {
 	case *activitypub.Note:
-		source = models.StatusSource{
-			ID:          statusID,
-			Text:        obj.Content,
-			SpoilerText: obj.Summary,
-		}
+		content = obj.Content
+		spoilerText = obj.Summary
 	case map[string]interface{}:
-		// Extract from map
-		if content, ok := obj["content"].(string); ok {
-			source.Text = content
+		if c, ok := obj["content"].(string); ok {
+			content = c
 		}
-		if summary, ok := obj["summary"].(string); ok {
-			source.SpoilerText = summary
+		if s, ok := obj["summary"].(string); ok {
+			spoilerText = s
 		}
-		source.ID = statusID
 	default:
-		return common.InternalServerError(fmt.Errorf("unexpected object type")), nil
+		// Try to handle any object with Content field using reflection
+		v := reflect.ValueOf(object)
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+
+		if v.Kind() == reflect.Struct {
+			// Try to get Content field
+			if contentField := v.FieldByName("Content"); contentField.IsValid() && contentField.Kind() == reflect.String {
+				content = contentField.String()
+			}
+			// Try to get Summary field
+			if summaryField := v.FieldByName("Summary"); summaryField.IsValid() && summaryField.Kind() == reflect.String {
+				spoilerText = summaryField.String()
+			}
+		} else {
+			h.logger.Error("unexpected object type",
+				zap.String("type", fmt.Sprintf("%T", object)),
+				zap.Any("object", object))
+			return common.InternalServerError(fmt.Errorf("unexpected object type")), nil
+		}
 	}
 
-	// Return source response
+	// For source endpoint, we return the raw content without stripping HTML
+	// The source should show the original markdown/plain text
+
+	// Return source
+	source := &models.StatusSource{
+		ID:          statusID,
+		Text:        content,
+		SpoilerText: spoilerText,
+	}
+
 	return common.OK(source), nil
 }
 
@@ -119,10 +153,24 @@ func (h *Handler) HandleGetStatusHistory(ctx context.Context, request events.API
 	// Build history response
 	edits := make([]models.StatusEdit, 0, len(histories)+1)
 
+	// Prepare account for edits
+	var editAccount models.Account
+	if actor != nil {
+		editAccount = h.converter.ActorToAccount(actor)
+	} else {
+		// Create a minimal account for unknown actors
+		editAccount = models.Account{
+			ID:       "unknown",
+			Username: "unknown",
+			Acct:     "unknown",
+			URL:      "",
+		}
+	}
+
 	// Add current version as the latest edit
 	currentEdit := models.StatusEdit{
 		CreatedAt:        time.Now().Format(time.RFC3339),
-		Account:          h.converter.ActorToAccount(actor),
+		Account:          editAccount,
 		Poll:             nil, // TODO: Add poll support
 		MediaAttachments: []interface{}{},
 		Emojis:           []interface{}{},
@@ -162,7 +210,7 @@ func (h *Handler) HandleGetStatusHistory(ctx context.Context, request events.API
 	for _, history := range histories {
 		edit := models.StatusEdit{
 			CreatedAt:        history.UpdatedAt.Format(time.RFC3339),
-			Account:          h.converter.ActorToAccount(actor),
+			Account:          editAccount,
 			MediaAttachments: []interface{}{},
 			Emojis:           []interface{}{},
 		}
