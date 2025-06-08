@@ -321,13 +321,44 @@ func (h *Handler) HandleGetUserNotes(ctx context.Context, request events.APIGate
 		return common.InternalServerError(err), nil
 	}
 
-	response := map[string]interface{}{
-		"notes": userNotes,
-		"stats": notes.CalculateStats(userNotes),
+	// Convert notes to Mastodon status format
+	statuses := make([]interface{}, len(userNotes))
+	for i, note := range userNotes {
+		// Convert note to status-like format
+		status := map[string]interface{}{
+			"id":         note.ID,
+			"content":    fmt.Sprintf("<p>Community Note: %s</p>", note.Content),
+			"created_at": note.CreatedAt.Format(time.RFC3339),
+			"account": map[string]interface{}{
+				"id":       note.AuthorID,
+				"username": username,
+				"acct":     username,
+			},
+			"visibility":        "public",
+			"sensitive":         false,
+			"spoiler_text":      "",
+			"media_attachments": []interface{}{},
+			"mentions":          []interface{}{},
+			"tags":              []interface{}{},
+			"emojis":            []interface{}{},
+			"reblogs_count":     0,
+			"favourites_count":  note.HelpfulVotes,
+			"replies_count":     note.NotHelpfulVotes,
+			"url":               fmt.Sprintf("https://%s/notes/%s", h.cfg.Domain, note.ID),
+			"card": map[string]interface{}{
+				"type":        "note",
+				"object_id":   note.ObjectID,
+				"object_type": note.ObjectType,
+				"score":       note.Score,
+				"sources":     note.Sources,
+			},
+		}
+		statuses[i] = status
 	}
 
+	// Return as an array of statuses (Mastodon format)
 	// Add cost tracking
-	resp := common.OK(response)
+	resp := common.OK(statuses)
 	resp.Headers["X-Cost-Micros"] = fmt.Sprintf("%d", 100*len(userNotes))
 	resp.Headers["X-Cost-Details"] = fmt.Sprintf("DynamoDB: %d reads", len(userNotes))
 
@@ -357,9 +388,9 @@ func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
 		Logger:         h.logger,
 		CostTracker:    costTracker,
 		InstanceURL:    h.cfg.BaseURL(),
-		PrivateKey:     "", // TODO: Load from environment/config
-		RepTableName:   "ReputationTable",
-		VouchTableName: "VouchTable",
+		PrivateKey:     "",                    // TODO: Load from environment/config
+		RepTableName:   h.cfg.DynamoTableName, // Use the main table
+		VouchTableName: h.cfg.DynamoTableName, // Use the main table
 	}
 
 	return reputation.NewService(cfg)

@@ -365,9 +365,9 @@ func (h *Handler) getReputationService() (*reputation.Service, error) {
 		Logger:         h.logger,
 		CostTracker:    costTracker,
 		InstanceURL:    h.cfg.BaseURL(),
-		PrivateKey:     "", // TODO: Load from environment/config
-		RepTableName:   "ReputationTable",
-		VouchTableName: "VouchTable",
+		PrivateKey:     "",                    // TODO: Load from environment/config
+		RepTableName:   h.cfg.DynamoTableName, // Use the main table
+		VouchTableName: h.cfg.DynamoTableName, // Use the main table
 	}
 
 	return reputation.NewService(cfg)
