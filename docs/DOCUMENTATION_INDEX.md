@@ -32,6 +32,7 @@
 - **[Developer Guidelines](development/DEVELOPER_GUIDELINES.md)** - Setup and standards
 - **[Testing Guide](development/TESTING.md)** - Test suite documentation
 - **[Test Guide](development/TEST_GUIDE.md)** - Quick testing reference
+- **[AI Orchestration Methodology](AI_ORCHESTRATION_METHODOLOGY.md)** - How Lesser was built in 5 days
 - **[Contributing](../CONTRIBUTING.md)** - How to contribute
 
 ## 🔐 Security

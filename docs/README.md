@@ -35,11 +35,11 @@ For easy navigation, see our **[Complete Documentation Index](DOCUMENTATION_INDE
 - [Server Implementation Plan](api/SERVER_IMPLEMENTATION_PLAN.md) - Implementation roadmap
 
 ### Development
-- [Developer Guidelines](development/DEVELOPER_GUIDELINES.md) - Coding standards and setup
-- [Testing Guide](development/TESTING.md) - How to test Lesser
-- [Test Guide](development/TEST_GUIDE.md) - Quick testing reference
-- [AI Implementation Guide](development/AI_IMPLEMENTATION_GUIDE.md) - Implementing AI features
-- [Contributing](../CONTRIBUTING.md) - How to contribute
+- **[Developer Guidelines](development/DEVELOPER_GUIDELINES.md)** - Coding standards and setup
+- **[Testing Guide](development/TESTING.md)** - How to test Lesser
+- **[Test Guide](development/TEST_GUIDE.md)** - Quick testing reference
+- **[AI Orchestration Methodology](AI_ORCHESTRATION_METHODOLOGY.md)** - The revolutionary development approach
+- **[Contributing](../CONTRIBUTING.md)** - How to contribute
 
 ### Features
 - [Feature List](FEATURES.md) - Complete feature documentation
