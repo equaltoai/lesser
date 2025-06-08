@@ -560,3 +560,2316 @@ func (m *BaseMockStorage) UpdateDevice(ctx context.Context, device *storage.Devi
 func (m *BaseMockStorage) GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error) {
 	return []*storage.Device{}, nil
 }
+// Generated mock methods for storage.Storage interface
+// Generated mock methods for storage.Storage interface
+
+// CountUnreadNotifications mocks the CountUnreadNotifications method
+func (m *MockStorage) CountUnreadNotifications(ctx context.Context, username string) (int, error) {
+	args := m.Called(ctx, username)
+	return args.Int(0), args.Error(1)
+}
+
+// CountUserPinnedStatuses mocks the CountUserPinnedStatuses method
+func (m *MockStorage) CountUserPinnedStatuses(ctx context.Context, username string) (int, error) {
+	args := m.Called(ctx, username)
+	return args.Int(0), args.Error(1)
+}
+
+// CreateAccountNote mocks the CreateAccountNote method
+func (m *MockStorage) CreateAccountNote(ctx context.Context, note *storage.AccountNote) error {
+	args := m.Called(ctx, note)
+	return args.Error(0)
+}
+
+// CreateAccountPin mocks the CreateAccountPin method
+func (m *MockStorage) CreateAccountPin(ctx context.Context, pin *storage.AccountPin) error {
+	args := m.Called(ctx, pin)
+	return args.Error(0)
+}
+
+// CreateAdminReview mocks the CreateAdminReview method
+func (m *MockStorage) CreateAdminReview(ctx context.Context, eventID string, adminID string, action storage.ActionType, reason string) error {
+	args := m.Called(ctx, eventID, adminID, action, reason)
+	return args.Error(0)
+}
+
+// CreateAnnounce mocks the CreateAnnounce method
+func (m *MockStorage) CreateAnnounce(ctx context.Context, announce *storage.Announce) error {
+	args := m.Called(ctx, announce)
+	return args.Error(0)
+}
+
+// CreateAnnouncement mocks the CreateAnnouncement method
+func (m *MockStorage) CreateAnnouncement(ctx context.Context, announcement *storage.Announcement) error {
+	args := m.Called(ctx, announcement)
+	return args.Error(0)
+}
+
+// CreateAuthorizationCode mocks the CreateAuthorizationCode method
+func (m *MockStorage) CreateAuthorizationCode(ctx context.Context, code *storage.AuthorizationCode) error {
+	args := m.Called(ctx, code)
+	return args.Error(0)
+}
+
+// CreateBlock mocks the CreateBlock method
+func (m *MockStorage) CreateBlock(ctx context.Context, block *storage.Block) error {
+	args := m.Called(ctx, block)
+	return args.Error(0)
+}
+
+// CreateBookmark mocks the CreateBookmark method
+func (m *MockStorage) CreateBookmark(ctx context.Context, username string, objectID string) error {
+	args := m.Called(ctx, username, objectID)
+	return args.Error(0)
+}
+
+// CreateConversation mocks the CreateConversation method
+func (m *MockStorage) CreateConversation(ctx context.Context, conversation *storage.Conversation) error {
+	args := m.Called(ctx, conversation)
+	return args.Error(0)
+}
+
+// CreateConversationMute mocks the CreateConversationMute method
+func (m *MockStorage) CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error {
+	args := m.Called(ctx, mute)
+	return args.Error(0)
+}
+
+// CreateCustomEmoji mocks the CreateCustomEmoji method
+func (m *MockStorage) CreateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error {
+	args := m.Called(ctx, emoji)
+	return args.Error(0)
+}
+
+// CreateDomainAllow mocks the CreateDomainAllow method
+func (m *MockStorage) CreateDomainAllow(ctx context.Context, allow *storage.DomainAllow) error {
+	args := m.Called(ctx, allow)
+	return args.Error(0)
+}
+
+// CreateDomainBlock mocks the CreateDomainBlock method
+func (m *MockStorage) CreateDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error {
+	args := m.Called(ctx, block)
+	return args.Error(0)
+}
+
+// CreateEmailDomainBlock mocks the CreateEmailDomainBlock method
+func (m *MockStorage) CreateEmailDomainBlock(ctx context.Context, block *storage.EmailDomainBlock) error {
+	args := m.Called(ctx, block)
+	return args.Error(0)
+}
+
+// CreateFeaturedTag mocks the CreateFeaturedTag method
+func (m *MockStorage) CreateFeaturedTag(ctx context.Context, userID string, tagName string) (*storage.FeaturedTag, error) {
+	args := m.Called(ctx, userID, tagName)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.FeaturedTag), args.Error(1)
+}
+
+// CreateFilter mocks the CreateFilter method
+func (m *MockStorage) CreateFilter(ctx context.Context, filter *storage.Filter) error {
+	args := m.Called(ctx, filter)
+	return args.Error(0)
+}
+
+// CreateInstanceDomainBlock mocks the CreateInstanceDomainBlock method
+func (m *MockStorage) CreateInstanceDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error {
+	args := m.Called(ctx, block)
+	return args.Error(0)
+}
+
+// CreateLike mocks the CreateLike method
+func (m *MockStorage) CreateLike(ctx context.Context, like *storage.Like) error {
+	args := m.Called(ctx, like)
+	return args.Error(0)
+}
+
+// CreateList mocks the CreateList method
+func (m *MockStorage) CreateList(ctx context.Context, username string, title string, repliesPolicy string) (*storage.List, error) {
+	args := m.Called(ctx, username, title, repliesPolicy)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.List), args.Error(1)
+}
+
+// CreateModerationDecision mocks the CreateModerationDecision method
+func (m *MockStorage) CreateModerationDecision(ctx context.Context, decision *storage.ModerationDecision) error {
+	args := m.Called(ctx, decision)
+	return args.Error(0)
+}
+
+// CreateModerationEvent mocks the CreateModerationEvent method
+func (m *MockStorage) CreateModerationEvent(ctx context.Context, event *storage.ModerationEvent) error {
+	args := m.Called(ctx, event)
+	return args.Error(0)
+}
+
+// CreateMute mocks the CreateMute method
+func (m *MockStorage) CreateMute(ctx context.Context, mute *storage.Mute) error {
+	args := m.Called(ctx, mute)
+	return args.Error(0)
+}
+
+// CreateNotification mocks the CreateNotification method
+func (m *MockStorage) CreateNotification(ctx context.Context, notification *storage.Notification) error {
+	args := m.Called(ctx, notification)
+	return args.Error(0)
+}
+
+// CreateOAuthClient mocks the CreateOAuthClient method
+func (m *MockStorage) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
+	args := m.Called(ctx, client)
+	return args.Error(0)
+}
+
+// CreatePoll mocks the CreatePoll method
+func (m *MockStorage) CreatePoll(ctx context.Context, poll *storage.Poll) error {
+	args := m.Called(ctx, poll)
+	return args.Error(0)
+}
+
+// CreatePushSubscription mocks the CreatePushSubscription method
+func (m *MockStorage) CreatePushSubscription(ctx context.Context, username string, subscription *storage.PushSubscription) error {
+	args := m.Called(ctx, username, subscription)
+	return args.Error(0)
+}
+
+// CreateRefreshToken mocks the CreateRefreshToken method
+func (m *MockStorage) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
+	args := m.Called(ctx, token)
+	return args.Error(0)
+}
+
+// CreateReport mocks the CreateReport method
+func (m *MockStorage) CreateReport(ctx context.Context, report *storage.Report) error {
+	args := m.Called(ctx, report)
+	return args.Error(0)
+}
+
+// CreateScheduledStatus mocks the CreateScheduledStatus method
+func (m *MockStorage) CreateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error {
+	args := m.Called(ctx, scheduled)
+	return args.Error(0)
+}
+
+// CreateSession mocks the CreateSession method
+func (m *MockStorage) CreateSession(ctx context.Context, session *storage.Session) error {
+	args := m.Called(ctx, session)
+	return args.Error(0)
+}
+
+// CreateStatusPin mocks the CreateStatusPin method
+func (m *MockStorage) CreateStatusPin(ctx context.Context, pin *storage.StatusPin) error {
+	args := m.Called(ctx, pin)
+	return args.Error(0)
+}
+
+// CreateTrustRelationship mocks the CreateTrustRelationship method
+func (m *MockStorage) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
+	args := m.Called(ctx, relationship)
+	return args.Error(0)
+}
+
+// CreateUpdateHistory mocks the CreateUpdateHistory method
+func (m *MockStorage) CreateUpdateHistory(ctx context.Context, history *storage.UpdateHistory) error {
+	args := m.Called(ctx, history)
+	return args.Error(0)
+}
+
+// CreateUser mocks the CreateUser method
+func (m *MockStorage) CreateUser(ctx context.Context, user *storage.User) error {
+	args := m.Called(ctx, user)
+	return args.Error(0)
+}
+
+// CreateVouch mocks the CreateVouch method
+func (m *MockStorage) CreateVouch(ctx context.Context, vouch *storage.Vouch) error {
+	args := m.Called(ctx, vouch)
+	return args.Error(0)
+}
+
+// DeleteAccountNote mocks the DeleteAccountNote method
+func (m *MockStorage) DeleteAccountNote(ctx context.Context, username string, targetActorID string) error {
+	args := m.Called(ctx, username, targetActorID)
+	return args.Error(0)
+}
+
+// DeleteAccountPin mocks the DeleteAccountPin method
+func (m *MockStorage) DeleteAccountPin(ctx context.Context, username string, pinnedActorID string) error {
+	args := m.Called(ctx, username, pinnedActorID)
+	return args.Error(0)
+}
+
+// DeleteAllPushSubscriptions mocks the DeleteAllPushSubscriptions method
+func (m *MockStorage) DeleteAllPushSubscriptions(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+// DeleteAllRecoveryCodes mocks the DeleteAllRecoveryCodes method
+func (m *MockStorage) DeleteAllRecoveryCodes(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+// DeleteAnnounce mocks the DeleteAnnounce method
+func (m *MockStorage) DeleteAnnounce(ctx context.Context, actor string, object string) error {
+	args := m.Called(ctx, actor, object)
+	return args.Error(0)
+}
+
+// DeleteAnnouncement mocks the DeleteAnnouncement method
+func (m *MockStorage) DeleteAnnouncement(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// DeleteAuthorizationCode mocks the DeleteAuthorizationCode method
+func (m *MockStorage) DeleteAuthorizationCode(ctx context.Context, code string) error {
+	args := m.Called(ctx, code)
+	return args.Error(0)
+}
+
+// DeleteBlock mocks the DeleteBlock method
+func (m *MockStorage) DeleteBlock(ctx context.Context, actor string, blockedActor string) error {
+	args := m.Called(ctx, actor, blockedActor)
+	return args.Error(0)
+}
+
+// DeleteConversation mocks the DeleteConversation method
+func (m *MockStorage) DeleteConversation(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// DeleteConversationMute mocks the DeleteConversationMute method
+func (m *MockStorage) DeleteConversationMute(ctx context.Context, username string, conversationID string) error {
+	args := m.Called(ctx, username, conversationID)
+	return args.Error(0)
+}
+
+// DeleteCustomEmoji mocks the DeleteCustomEmoji method
+func (m *MockStorage) DeleteCustomEmoji(ctx context.Context, shortcode string) error {
+	args := m.Called(ctx, shortcode)
+	return args.Error(0)
+}
+
+// DeleteDomainAllow mocks the DeleteDomainAllow method
+func (m *MockStorage) DeleteDomainAllow(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// DeleteDomainBlock mocks the DeleteDomainBlock method
+func (m *MockStorage) DeleteDomainBlock(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// DeleteEmailDomainBlock mocks the DeleteEmailDomainBlock method
+func (m *MockStorage) DeleteEmailDomainBlock(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// DeleteExpiredTimelineEntries mocks the DeleteExpiredTimelineEntries method
+func (m *MockStorage) DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error {
+	args := m.Called(ctx, before)
+	return args.Error(0)
+}
+
+// DeleteFeaturedTag mocks the DeleteFeaturedTag method
+func (m *MockStorage) DeleteFeaturedTag(ctx context.Context, userID string, featuredTagID string) error {
+	args := m.Called(ctx, userID, featuredTagID)
+	return args.Error(0)
+}
+
+// DeleteFilter mocks the DeleteFilter method
+func (m *MockStorage) DeleteFilter(ctx context.Context, filterID string) error {
+	args := m.Called(ctx, filterID)
+	return args.Error(0)
+}
+
+// DeleteFilterKeyword mocks the DeleteFilterKeyword method
+func (m *MockStorage) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
+	args := m.Called(ctx, keywordID)
+	return args.Error(0)
+}
+
+// DeleteFilterStatus mocks the DeleteFilterStatus method
+func (m *MockStorage) DeleteFilterStatus(ctx context.Context, statusID string) error {
+	args := m.Called(ctx, statusID)
+	return args.Error(0)
+}
+
+// DeleteFromTimeline mocks the DeleteFromTimeline method
+func (m *MockStorage) DeleteFromTimeline(ctx context.Context, timelineType string, timelineID string, entryID string) error {
+	args := m.Called(ctx, timelineType, timelineID, entryID)
+	return args.Error(0)
+}
+
+// DeleteInstanceDomainBlock mocks the DeleteInstanceDomainBlock method
+func (m *MockStorage) DeleteInstanceDomainBlock(ctx context.Context, domain string) error {
+	args := m.Called(ctx, domain)
+	return args.Error(0)
+}
+
+// DeleteLike mocks the DeleteLike method
+func (m *MockStorage) DeleteLike(ctx context.Context, actor string, object string) error {
+	args := m.Called(ctx, actor, object)
+	return args.Error(0)
+}
+
+// DeleteList mocks the DeleteList method
+func (m *MockStorage) DeleteList(ctx context.Context, listID string) error {
+	args := m.Called(ctx, listID)
+	return args.Error(0)
+}
+
+// DeleteMute mocks the DeleteMute method
+func (m *MockStorage) DeleteMute(ctx context.Context, actor string, mutedActor string) error {
+	args := m.Called(ctx, actor, mutedActor)
+	return args.Error(0)
+}
+
+// DeleteNotification mocks the DeleteNotification method
+func (m *MockStorage) DeleteNotification(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// DeleteOAuthClient mocks the DeleteOAuthClient method
+func (m *MockStorage) DeleteOAuthClient(ctx context.Context, clientID string) error {
+	args := m.Called(ctx, clientID)
+	return args.Error(0)
+}
+
+// DeleteOAuthState mocks the DeleteOAuthState method
+func (m *MockStorage) DeleteOAuthState(ctx context.Context, state string) error {
+	args := m.Called(ctx, state)
+	return args.Error(0)
+}
+
+// DeletePushSubscription mocks the DeletePushSubscription method
+func (m *MockStorage) DeletePushSubscription(ctx context.Context, username string, subscriptionID string) error {
+	args := m.Called(ctx, username, subscriptionID)
+	return args.Error(0)
+}
+
+// DeleteRecoveryRequest mocks the DeleteRecoveryRequest method
+func (m *MockStorage) DeleteRecoveryRequest(ctx context.Context, requestID string) error {
+	args := m.Called(ctx, requestID)
+	return args.Error(0)
+}
+
+// DeleteRecoveryToken mocks the DeleteRecoveryToken method
+func (m *MockStorage) DeleteRecoveryToken(ctx context.Context, key string) error {
+	args := m.Called(ctx, key)
+	return args.Error(0)
+}
+
+// DeleteRefreshToken mocks the DeleteRefreshToken method
+func (m *MockStorage) DeleteRefreshToken(ctx context.Context, token string) error {
+	args := m.Called(ctx, token)
+	return args.Error(0)
+}
+
+// DeleteScheduledStatus mocks the DeleteScheduledStatus method
+func (m *MockStorage) DeleteScheduledStatus(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// DeleteSession mocks the DeleteSession method
+func (m *MockStorage) DeleteSession(ctx context.Context, sessionID string) error {
+	args := m.Called(ctx, sessionID)
+	return args.Error(0)
+}
+
+// DeleteStatusPin mocks the DeleteStatusPin method
+func (m *MockStorage) DeleteStatusPin(ctx context.Context, username string, statusID string) error {
+	args := m.Called(ctx, username, statusID)
+	return args.Error(0)
+}
+
+// DeleteTrustRelationship mocks the DeleteTrustRelationship method
+func (m *MockStorage) DeleteTrustRelationship(ctx context.Context, trusterID string, trusteeID string, category string) error {
+	args := m.Called(ctx, trusterID, trusteeID, category)
+	return args.Error(0)
+}
+
+// DeleteTrustee mocks the DeleteTrustee method
+func (m *MockStorage) DeleteTrustee(ctx context.Context, username string, trusteeActorID string) error {
+	args := m.Called(ctx, username, trusteeActorID)
+	return args.Error(0)
+}
+
+// DeleteUser mocks the DeleteUser method
+func (m *MockStorage) DeleteUser(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+// DeleteWalletChallenge mocks the DeleteWalletChallenge method
+func (m *MockStorage) DeleteWalletChallenge(ctx context.Context, challengeID string) error {
+	args := m.Called(ctx, challengeID)
+	return args.Error(0)
+}
+
+// DeleteWalletCredential mocks the DeleteWalletCredential method
+func (m *MockStorage) DeleteWalletCredential(ctx context.Context, username string, address string) error {
+	args := m.Called(ctx, username, address)
+	return args.Error(0)
+}
+
+// DeleteWebAuthnChallenge mocks the DeleteWebAuthnChallenge method
+func (m *MockStorage) DeleteWebAuthnChallenge(ctx context.Context, challengeID string) error {
+	args := m.Called(ctx, challengeID)
+	return args.Error(0)
+}
+
+// DeleteWebAuthnCredential mocks the DeleteWebAuthnCredential method
+func (m *MockStorage) DeleteWebAuthnCredential(ctx context.Context, credentialID string) error {
+	args := m.Called(ctx, credentialID)
+	return args.Error(0)
+}
+
+// DismissAnnouncement mocks the DismissAnnouncement method
+func (m *MockStorage) DismissAnnouncement(ctx context.Context, username string, announcementID string) error {
+	args := m.Called(ctx, username, announcementID)
+	return args.Error(0)
+}
+
+// FanOutPost mocks the FanOutPost method
+func (m *MockStorage) FanOutPost(ctx context.Context, activity *activitypub.Activity) error {
+	args := m.Called(ctx, activity)
+	return args.Error(0)
+}
+
+// FollowHashtag mocks the FollowHashtag method
+func (m *MockStorage) FollowHashtag(ctx context.Context, userID string, hashtag string) error {
+	args := m.Called(ctx, userID, hashtag)
+	return args.Error(0)
+}
+
+// GenerateSearchSuggestions mocks the GenerateSearchSuggestions method
+func (m *MockStorage) GenerateSearchSuggestions(ctx context.Context, userID string, partialQuery string, limit int) ([]string, error) {
+	args := m.Called(ctx, userID, partialQuery, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+// GetAccountNote mocks the GetAccountNote method
+func (m *MockStorage) GetAccountNote(ctx context.Context, username string, targetActorID string) (*storage.AccountNote, error) {
+	args := m.Called(ctx, username, targetActorID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.AccountNote), args.Error(1)
+}
+
+// GetAccountPins mocks the GetAccountPins method
+func (m *MockStorage) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.AccountPin), args.Error(1)
+}
+
+// GetActiveRecoveryRequests mocks the GetActiveRecoveryRequests method
+func (m *MockStorage) GetActiveRecoveryRequests(ctx context.Context, username string) ([]*storage.SocialRecoveryRequest, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.SocialRecoveryRequest), args.Error(1)
+}
+
+// GetActiveUserCount mocks the GetActiveUserCount method
+func (m *MockStorage) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
+	args := m.Called(ctx, days)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetActorAnnounces mocks the GetActorAnnounces method
+func (m *MockStorage) GetActorAnnounces(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Announce, string, error) {
+	args := m.Called(ctx, actorID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Announce), args.String(1), args.Error(2)
+}
+
+// GetActorLikes mocks the GetActorLikes method
+func (m *MockStorage) GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Like, string, error) {
+	args := m.Called(ctx, actorID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Like), args.String(1), args.Error(2)
+}
+
+// GetAllPreferences mocks the GetAllPreferences method
+func (m *MockStorage) GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+
+// GetAllTrustRelationships mocks the GetAllTrustRelationships method
+func (m *MockStorage) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
+	args := m.Called(ctx, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.TrustRelationship), args.Error(1)
+}
+
+// GetAnnounce mocks the GetAnnounce method
+func (m *MockStorage) GetAnnounce(ctx context.Context, actor string, object string) (*storage.Announce, error) {
+	args := m.Called(ctx, actor, object)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Announce), args.Error(1)
+}
+
+// GetAnnouncement mocks the GetAnnouncement method
+func (m *MockStorage) GetAnnouncement(ctx context.Context, id string) (*storage.Announcement, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Announcement), args.Error(1)
+}
+
+// GetAnnouncementReactions mocks the GetAnnouncementReactions method
+func (m *MockStorage) GetAnnouncementReactions(ctx context.Context, announcementID string) (map[string][]string, error) {
+	args := m.Called(ctx, announcementID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string][]string), args.Error(1)
+}
+
+// GetAnnouncements mocks the GetAnnouncements method
+func (m *MockStorage) GetAnnouncements(ctx context.Context, active bool) ([]*storage.Announcement, error) {
+	args := m.Called(ctx, active)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Announcement), args.Error(1)
+}
+
+// GetAuthorizationCode mocks the GetAuthorizationCode method
+func (m *MockStorage) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
+	args := m.Called(ctx, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.AuthorizationCode), args.Error(1)
+}
+
+// GetBlock mocks the GetBlock method
+func (m *MockStorage) GetBlock(ctx context.Context, actor string, blockedActor string) (*storage.Block, error) {
+	args := m.Called(ctx, actor, blockedActor)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Block), args.Error(1)
+}
+
+// GetBlockedActors mocks the GetBlockedActors method
+func (m *MockStorage) GetBlockedActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
+	args := m.Called(ctx, actor, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Block), args.String(1), args.Error(2)
+}
+
+// GetBlockedByActors mocks the GetBlockedByActors method
+func (m *MockStorage) GetBlockedByActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
+	args := m.Called(ctx, actor, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Block), args.String(1), args.Error(2)
+}
+
+// GetBookmarks mocks the GetBookmarks method
+func (m *MockStorage) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]string), args.String(1), args.Error(2)
+}
+
+// GetCachedRemoteActor mocks the GetCachedRemoteActor method
+func (m *MockStorage) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
+	args := m.Called(ctx, handle)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*activitypub.Actor), args.Error(1)
+}
+
+// GetCollectionItems mocks the GetCollectionItems method
+func (m *MockStorage) GetCollectionItems(ctx context.Context, collection string, limit int, cursor string) ([]*storage.CollectionItem, string, error) {
+	args := m.Called(ctx, collection, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.CollectionItem), args.String(1), args.Error(2)
+}
+
+// GetContactAccount mocks the GetContactAccount method
+func (m *MockStorage) GetContactAccount(ctx context.Context) (*storage.ActorRecord, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ActorRecord), args.Error(1)
+}
+
+// GetConversation mocks the GetConversation method
+func (m *MockStorage) GetConversation(ctx context.Context, id string) (*storage.Conversation, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Conversation), args.Error(1)
+}
+
+// GetConversationByParticipants mocks the GetConversationByParticipants method
+func (m *MockStorage) GetConversationByParticipants(ctx context.Context, participants []string) (*storage.Conversation, error) {
+	args := m.Called(ctx, participants)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Conversation), args.Error(1)
+}
+
+// GetCustomEmoji mocks the GetCustomEmoji method
+func (m *MockStorage) GetCustomEmoji(ctx context.Context, shortcode string) (*storage.CustomEmoji, error) {
+	args := m.Called(ctx, shortcode)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.CustomEmoji), args.Error(1)
+}
+
+// GetCustomEmojis mocks the GetCustomEmojis method
+func (m *MockStorage) GetCustomEmojis(ctx context.Context) ([]*storage.CustomEmoji, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.CustomEmoji), args.Error(1)
+}
+
+// GetCustomEmojisByCategory mocks the GetCustomEmojisByCategory method
+func (m *MockStorage) GetCustomEmojisByCategory(ctx context.Context, category string) ([]*storage.CustomEmoji, error) {
+	args := m.Called(ctx, category)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.CustomEmoji), args.Error(1)
+}
+
+// GetDismissedAnnouncements mocks the GetDismissedAnnouncements method
+func (m *MockStorage) GetDismissedAnnouncements(ctx context.Context, username string) ([]string, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+// GetDomainAllows mocks the GetDomainAllows method
+func (m *MockStorage) GetDomainAllows(ctx context.Context, limit int, cursor string) ([]*storage.DomainAllow, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.DomainAllow), args.String(1), args.Error(2)
+}
+
+// GetDomainBlock mocks the GetDomainBlock method
+func (m *MockStorage) GetDomainBlock(ctx context.Context, id string) (*storage.InstanceDomainBlock, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.InstanceDomainBlock), args.Error(1)
+}
+
+// GetDomainBlocks mocks the GetDomainBlocks method
+func (m *MockStorage) GetDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.InstanceDomainBlock, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.InstanceDomainBlock), args.String(1), args.Error(2)
+}
+
+// GetDueScheduledStatuses mocks the GetDueScheduledStatuses method
+func (m *MockStorage) GetDueScheduledStatuses(ctx context.Context, before time.Time, limit int) ([]*storage.ScheduledStatus, error) {
+	args := m.Called(ctx, before, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.ScheduledStatus), args.Error(1)
+}
+
+// GetEmailDomainBlocks mocks the GetEmailDomainBlocks method
+func (m *MockStorage) GetEmailDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.EmailDomainBlock, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.EmailDomainBlock), args.String(1), args.Error(2)
+}
+
+// GetExtendedDescription mocks the GetExtendedDescription method
+func (m *MockStorage) GetExtendedDescription(ctx context.Context) (string, time.Time, error) {
+	args := m.Called(ctx)
+	return args.String(0), args.Get(1).(time.Time), args.Error(2)
+}
+
+// GetFeaturedTags mocks the GetFeaturedTags method
+func (m *MockStorage) GetFeaturedTags(ctx context.Context, userID string) ([]*storage.FeaturedTag, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.FeaturedTag), args.Error(1)
+}
+
+// GetFederationStatistics mocks the GetFederationStatistics method
+func (m *MockStorage) GetFederationStatistics(ctx context.Context, startTime time.Time, endTime time.Time) (*storage.FederationStats, error) {
+	args := m.Called(ctx, startTime, endTime)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.FederationStats), args.Error(1)
+}
+
+// GetFilter mocks the GetFilter method
+func (m *MockStorage) GetFilter(ctx context.Context, filterID string) (*storage.Filter, error) {
+	args := m.Called(ctx, filterID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Filter), args.Error(1)
+}
+
+// GetFilterKeywords mocks the GetFilterKeywords method
+func (m *MockStorage) GetFilterKeywords(ctx context.Context, filterID string) ([]*storage.FilterKeyword, error) {
+	args := m.Called(ctx, filterID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.FilterKeyword), args.Error(1)
+}
+
+// GetFilterStatuses mocks the GetFilterStatuses method
+func (m *MockStorage) GetFilterStatuses(ctx context.Context, filterID string) ([]*storage.FilterStatus, error) {
+	args := m.Called(ctx, filterID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.FilterStatus), args.Error(1)
+}
+
+// GetFiltersForUser mocks the GetFiltersForUser method
+func (m *MockStorage) GetFiltersForUser(ctx context.Context, username string) ([]*storage.Filter, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Filter), args.Error(1)
+}
+
+// GetFollowedHashtags mocks the GetFollowedHashtags method
+func (m *MockStorage) GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]string, string, error) {
+	args := m.Called(ctx, userID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]string), args.String(1), args.Error(2)
+}
+
+// GetFollowerCount mocks the GetFollowerCount method
+func (m *MockStorage) GetFollowerCount(ctx context.Context, actorID string) (int, error) {
+	args := m.Called(ctx, actorID)
+	return args.Int(0), args.Error(1)
+}
+
+// GetHashtagInfo mocks the GetHashtagInfo method
+func (m *MockStorage) GetHashtagInfo(ctx context.Context, hashtag string) (*storage.Hashtag, error) {
+	args := m.Called(ctx, hashtag)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Hashtag), args.Error(1)
+}
+
+// GetHashtagTimeline mocks the GetHashtagTimeline method
+func (m *MockStorage) GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	args := m.Called(ctx, hashtag, local, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
+}
+
+// GetHashtagUsageHistory mocks the GetHashtagUsageHistory method
+func (m *MockStorage) GetHashtagUsageHistory(ctx context.Context, hashtag string, days int) ([]int64, error) {
+	args := m.Called(ctx, hashtag, days)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]int64), args.Error(1)
+}
+
+// GetHomeTimeline mocks the GetHomeTimeline method
+func (m *MockStorage) GetHomeTimeline(ctx context.Context, username string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
+}
+
+// GetInstanceDomainBlock mocks the GetInstanceDomainBlock method
+func (m *MockStorage) GetInstanceDomainBlock(ctx context.Context, domain string) (*storage.InstanceDomainBlock, error) {
+	args := m.Called(ctx, domain)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.InstanceDomainBlock), args.Error(1)
+}
+
+// GetInstanceDomainBlockByID mocks the GetInstanceDomainBlockByID method
+func (m *MockStorage) GetInstanceDomainBlockByID(ctx context.Context, id string) (*storage.InstanceDomainBlock, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.InstanceDomainBlock), args.Error(1)
+}
+
+// GetInstanceInfo mocks the GetInstanceInfo method
+func (m *MockStorage) GetInstanceInfo(ctx context.Context, domain string) (*storage.InstanceInfo, error) {
+	args := m.Called(ctx, domain)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.InstanceInfo), args.Error(1)
+}
+
+// GetInstanceRules mocks the GetInstanceRules method
+func (m *MockStorage) GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.InstanceRule), args.Error(1)
+}
+
+// GetKnownInstances mocks the GetKnownInstances method
+func (m *MockStorage) GetKnownInstances(ctx context.Context, limit int, cursor string) ([]*storage.InstanceInfo, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.InstanceInfo), args.String(1), args.Error(2)
+}
+
+// GetLatestStatus mocks the GetLatestStatus method
+func (m *MockStorage) GetLatestStatus(ctx context.Context, actorID string) (*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, actorID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.StatusSearchResult), args.Error(1)
+}
+
+// GetLike mocks the GetLike method
+func (m *MockStorage) GetLike(ctx context.Context, actor string, object string) (*storage.Like, error) {
+	args := m.Called(ctx, actor, object)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Like), args.Error(1)
+}
+
+// GetLinkedProviders mocks the GetLinkedProviders method
+func (m *MockStorage) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+// GetList mocks the GetList method
+func (m *MockStorage) GetList(ctx context.Context, listID string) (*storage.List, error) {
+	args := m.Called(ctx, listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.List), args.Error(1)
+}
+
+// GetListAccounts mocks the GetListAccounts method
+func (m *MockStorage) GetListAccounts(ctx context.Context, listID string) ([]string, error) {
+	args := m.Called(ctx, listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+// GetListTimeline mocks the GetListTimeline method
+func (m *MockStorage) GetListTimeline(ctx context.Context, listID string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	args := m.Called(ctx, listID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
+}
+
+// GetListsContainingAccount mocks the GetListsContainingAccount method
+func (m *MockStorage) GetListsContainingAccount(ctx context.Context, accountID string, username string) ([]*storage.List, error) {
+	args := m.Called(ctx, accountID, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.List), args.Error(1)
+}
+
+// GetListsForUser mocks the GetListsForUser method
+func (m *MockStorage) GetListsForUser(ctx context.Context, username string) ([]*storage.List, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.List), args.Error(1)
+}
+
+// GetLoginAttemptCount mocks the GetLoginAttemptCount method
+func (m *MockStorage) GetLoginAttemptCount(ctx context.Context, identifier string, since time.Time) (int, error) {
+	args := m.Called(ctx, identifier, since)
+	return args.Int(0), args.Error(1)
+}
+
+// GetMarkers mocks the GetMarkers method
+func (m *MockStorage) GetMarkers(ctx context.Context, username string, timelines []string) (map[string]*storage.Marker, error) {
+	args := m.Called(ctx, username, timelines)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]*storage.Marker), args.Error(1)
+}
+
+// GetModerationDecision mocks the GetModerationDecision method
+func (m *MockStorage) GetModerationDecision(ctx context.Context, objectID string) (*storage.ModerationDecision, error) {
+	args := m.Called(ctx, objectID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ModerationDecision), args.Error(1)
+}
+
+// GetModerationEvent mocks the GetModerationEvent method
+func (m *MockStorage) GetModerationEvent(ctx context.Context, eventID string) (*storage.ModerationEvent, error) {
+	args := m.Called(ctx, eventID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ModerationEvent), args.Error(1)
+}
+
+// GetModerationEvents mocks the GetModerationEvents method
+func (m *MockStorage) GetModerationEvents(ctx context.Context, filter *storage.ModerationEventFilter, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
+	args := m.Called(ctx, filter, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.ModerationEvent), args.String(1), args.Error(2)
+}
+
+// GetModerationEventsByActor mocks the GetModerationEventsByActor method
+func (m *MockStorage) GetModerationEventsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
+	args := m.Called(ctx, actorID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.ModerationEvent), args.String(1), args.Error(2)
+}
+
+// GetModerationEventsByObject mocks the GetModerationEventsByObject method
+func (m *MockStorage) GetModerationEventsByObject(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
+	args := m.Called(ctx, objectID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.ModerationEvent), args.String(1), args.Error(2)
+}
+
+// GetModerationHistory mocks the GetModerationHistory method
+func (m *MockStorage) GetModerationHistory(ctx context.Context, objectID string) (*storage.ModerationHistory, error) {
+	args := m.Called(ctx, objectID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ModerationHistory), args.Error(1)
+}
+
+// GetModerationQueue mocks the GetModerationQueue method
+func (m *MockStorage) GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*storage.ModerationQueueItem, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.ModerationQueueItem), args.String(1), args.Error(2)
+}
+
+// GetModerationReviews mocks the GetModerationReviews method
+func (m *MockStorage) GetModerationReviews(ctx context.Context, eventID string) ([]*storage.ModerationReview, error) {
+	args := m.Called(ctx, eventID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.ModerationReview), args.Error(1)
+}
+
+// GetMonthlyVouchCount mocks the GetMonthlyVouchCount method
+func (m *MockStorage) GetMonthlyVouchCount(ctx context.Context, actorID string, year int, month time.Month) (int, error) {
+	args := m.Called(ctx, actorID, year, month)
+	return args.Int(0), args.Error(1)
+}
+
+// GetMute mocks the GetMute method
+func (m *MockStorage) GetMute(ctx context.Context, actor string, mutedActor string) (*storage.Mute, error) {
+	args := m.Called(ctx, actor, mutedActor)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Mute), args.Error(1)
+}
+
+// GetMutedActors mocks the GetMutedActors method
+func (m *MockStorage) GetMutedActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Mute, string, error) {
+	args := m.Called(ctx, actor, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Mute), args.String(1), args.Error(2)
+}
+
+// GetMutedConversations mocks the GetMutedConversations method
+func (m *MockStorage) GetMutedConversations(ctx context.Context, username string) ([]string, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+// GetNotification mocks the GetNotification method
+func (m *MockStorage) GetNotification(ctx context.Context, id string) (*storage.Notification, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Notification), args.Error(1)
+}
+
+// GetNotifications mocks the GetNotifications method
+func (m *MockStorage) GetNotifications(ctx context.Context, username string, limit int, cursor string) ([]*storage.Notification, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Notification), args.String(1), args.Error(2)
+}
+
+// GetNotificationsFiltered mocks the GetNotificationsFiltered method
+func (m *MockStorage) GetNotificationsFiltered(ctx context.Context, username string, filter *storage.NotificationFilter) ([]*storage.Notification, string, error) {
+	args := m.Called(ctx, username, filter)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Notification), args.String(1), args.Error(2)
+}
+
+// GetOAuthClient mocks the GetOAuthClient method
+func (m *MockStorage) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
+	args := m.Called(ctx, clientID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.OAuthClient), args.Error(1)
+}
+
+// GetOAuthState mocks the GetOAuthState method
+func (m *MockStorage) GetOAuthState(ctx context.Context, state string) (*storage.OAuthState, error) {
+	args := m.Called(ctx, state)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.OAuthState), args.Error(1)
+}
+
+// GetObjectAnnounces mocks the GetObjectAnnounces method
+func (m *MockStorage) GetObjectAnnounces(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Announce, string, error) {
+	args := m.Called(ctx, objectID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Announce), args.String(1), args.Error(2)
+}
+
+// GetObjectLikes mocks the GetObjectLikes method
+func (m *MockStorage) GetObjectLikes(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Like, string, error) {
+	args := m.Called(ctx, objectID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Like), args.String(1), args.Error(2)
+}
+
+// GetPoll mocks the GetPoll method
+func (m *MockStorage) GetPoll(ctx context.Context, pollID string) (*storage.Poll, error) {
+	args := m.Called(ctx, pollID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Poll), args.Error(1)
+}
+
+// GetPollByStatusID mocks the GetPollByStatusID method
+func (m *MockStorage) GetPollByStatusID(ctx context.Context, statusID string) (*storage.Poll, error) {
+	args := m.Called(ctx, statusID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Poll), args.Error(1)
+}
+
+// GetPollVotes mocks the GetPollVotes method
+func (m *MockStorage) GetPollVotes(ctx context.Context, pollID string) (map[string][]int, error) {
+	args := m.Called(ctx, pollID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string][]int), args.Error(1)
+}
+
+// GetPopularSearchQueries mocks the GetPopularSearchQueries method
+func (m *MockStorage) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
+	args := m.Called(ctx, limit, timeWindow)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.SearchQueryStats), args.Error(1)
+}
+
+// GetPreference mocks the GetPreference method
+func (m *MockStorage) GetPreference(ctx context.Context, username string, key string) (interface{}, error) {
+	args := m.Called(ctx, username, key)
+	return args.Get(0).(interface{}), args.Error(1)
+}
+
+// GetPublicTimeline mocks the GetPublicTimeline method
+func (m *MockStorage) GetPublicTimeline(ctx context.Context, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	args := m.Called(ctx, local, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
+}
+
+// GetPushSubscription mocks the GetPushSubscription method
+func (m *MockStorage) GetPushSubscription(ctx context.Context, username string, subscriptionID string) (*storage.PushSubscription, error) {
+	args := m.Called(ctx, username, subscriptionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.PushSubscription), args.Error(1)
+}
+
+// GetRecoveryCodes mocks the GetRecoveryCodes method
+func (m *MockStorage) GetRecoveryCodes(ctx context.Context, username string) ([]*storage.RecoveryCodeItem, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.RecoveryCodeItem), args.Error(1)
+}
+
+// GetRecoveryRequest mocks the GetRecoveryRequest method
+func (m *MockStorage) GetRecoveryRequest(ctx context.Context, requestID string) (*storage.SocialRecoveryRequest, error) {
+	args := m.Called(ctx, requestID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.SocialRecoveryRequest), args.Error(1)
+}
+
+// GetRecoveryToken mocks the GetRecoveryToken method
+func (m *MockStorage) GetRecoveryToken(ctx context.Context, key string) (map[string]interface{}, error) {
+	args := m.Called(ctx, key)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+
+// GetRefreshToken mocks the GetRefreshToken method
+func (m *MockStorage) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
+	args := m.Called(ctx, token)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.RefreshToken), args.Error(1)
+}
+
+// GetReport mocks the GetReport method
+func (m *MockStorage) GetReport(ctx context.Context, id string) (*storage.Report, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Report), args.Error(1)
+}
+
+// GetReportStats mocks the GetReportStats method
+func (m *MockStorage) GetReportStats(ctx context.Context, username string) (*storage.ReportStats, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ReportStats), args.Error(1)
+}
+
+// GetReportsByStatus mocks the GetReportsByStatus method
+func (m *MockStorage) GetReportsByStatus(ctx context.Context, status storage.ReportStatus, limit int, cursor string) ([]*storage.Report, string, error) {
+	args := m.Called(ctx, status, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Report), args.String(1), args.Error(2)
+}
+
+// GetReportsByTarget mocks the GetReportsByTarget method
+func (m *MockStorage) GetReportsByTarget(ctx context.Context, targetAccountID string, limit int, cursor string) ([]*storage.Report, string, error) {
+	args := m.Called(ctx, targetAccountID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Report), args.String(1), args.Error(2)
+}
+
+// GetReputation mocks the GetReputation method
+func (m *MockStorage) GetReputation(ctx context.Context, actorID string) (*storage.Reputation, error) {
+	args := m.Called(ctx, actorID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Reputation), args.Error(1)
+}
+
+// GetReputationHistory mocks the GetReputationHistory method
+func (m *MockStorage) GetReputationHistory(ctx context.Context, actorID string, limit int) ([]*storage.Reputation, error) {
+	args := m.Called(ctx, actorID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Reputation), args.Error(1)
+}
+
+// GetReviewerStats mocks the GetReviewerStats method
+func (m *MockStorage) GetReviewerStats(ctx context.Context, reviewerID string) (*storage.ReviewerStats, error) {
+	args := m.Called(ctx, reviewerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ReviewerStats), args.Error(1)
+}
+
+// GetScheduledStatus mocks the GetScheduledStatus method
+func (m *MockStorage) GetScheduledStatus(ctx context.Context, id string) (*storage.ScheduledStatus, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ScheduledStatus), args.Error(1)
+}
+
+// GetScheduledStatuses mocks the GetScheduledStatuses method
+func (m *MockStorage) GetScheduledStatuses(ctx context.Context, username string, limit int, cursor string) ([]*storage.ScheduledStatus, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.ScheduledStatus), args.String(1), args.Error(2)
+}
+
+// GetSearchSuggestions mocks the GetSearchSuggestions method
+func (m *MockStorage) GetSearchSuggestions(ctx context.Context, prefix string) ([]storage.SearchSuggestion, error) {
+	args := m.Called(ctx, prefix)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.SearchSuggestion), args.Error(1)
+}
+
+// GetSession mocks the GetSession method
+func (m *MockStorage) GetSession(ctx context.Context, sessionID string) (*storage.Session, error) {
+	args := m.Called(ctx, sessionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Session), args.Error(1)
+}
+
+// GetSessionByRefreshToken mocks the GetSessionByRefreshToken method
+func (m *MockStorage) GetSessionByRefreshToken(ctx context.Context, refreshToken string) (*storage.Session, error) {
+	args := m.Called(ctx, refreshToken)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Session), args.Error(1)
+}
+
+// GetStatusCount mocks the GetStatusCount method
+func (m *MockStorage) GetStatusCount(ctx context.Context, actorID string) (int, error) {
+	args := m.Called(ctx, actorID)
+	return args.Int(0), args.Error(1)
+}
+
+// GetStatusPins mocks the GetStatusPins method
+func (m *MockStorage) GetStatusPins(ctx context.Context, username string) ([]*storage.StatusPin, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusPin), args.Error(1)
+}
+
+// GetTagSuggestions mocks the GetTagSuggestions method
+func (m *MockStorage) GetTagSuggestions(ctx context.Context, userID string, limit int) ([]string, error) {
+	args := m.Called(ctx, userID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+// GetTombstone mocks the GetTombstone method
+func (m *MockStorage) GetTombstone(ctx context.Context, objectID string) (*storage.Tombstone, error) {
+	args := m.Called(ctx, objectID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Tombstone), args.Error(1)
+}
+
+// GetTotalDomainCount mocks the GetTotalDomainCount method
+func (m *MockStorage) GetTotalDomainCount(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetTotalStatusCount mocks the GetTotalStatusCount method
+func (m *MockStorage) GetTotalStatusCount(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetTotalUserCount mocks the GetTotalUserCount method
+func (m *MockStorage) GetTotalUserCount(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetTrendingHashtags mocks the GetTrendingHashtags method
+func (m *MockStorage) GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
+	args := m.Called(ctx, since, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.TrendingHashtag), args.Error(1)
+}
+
+// GetTrendingLinks mocks the GetTrendingLinks method
+func (m *MockStorage) GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
+	args := m.Called(ctx, since, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.TrendingLink), args.Error(1)
+}
+
+// GetTrendingStatuses mocks the GetTrendingStatuses method
+func (m *MockStorage) GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
+	args := m.Called(ctx, since, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.TrendingStatus), args.Error(1)
+}
+
+// GetTrustRelationship mocks the GetTrustRelationship method
+func (m *MockStorage) GetTrustRelationship(ctx context.Context, trusterID string, trusteeID string, category string) (*storage.TrustRelationship, error) {
+	args := m.Called(ctx, trusterID, trusteeID, category)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.TrustRelationship), args.Error(1)
+}
+
+// GetTrustRelationships mocks the GetTrustRelationships method
+func (m *MockStorage) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
+	args := m.Called(ctx, trusterID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TrustRelationship), args.String(1), args.Error(2)
+}
+
+// GetTrustScore mocks the GetTrustScore method
+func (m *MockStorage) GetTrustScore(ctx context.Context, actorID string, category string) (*storage.TrustScore, error) {
+	args := m.Called(ctx, actorID, category)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.TrustScore), args.Error(1)
+}
+
+// GetTrustedByRelationships mocks the GetTrustedByRelationships method
+func (m *MockStorage) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
+	args := m.Called(ctx, trusteeID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TrustRelationship), args.String(1), args.Error(2)
+}
+
+// GetTrustees mocks the GetTrustees method
+func (m *MockStorage) GetTrustees(ctx context.Context, username string) ([]*storage.TrusteeConfig, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.TrusteeConfig), args.Error(1)
+}
+
+// GetUpdateHistory mocks the GetUpdateHistory method
+func (m *MockStorage) GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*storage.UpdateHistory, error) {
+	args := m.Called(ctx, objectID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.UpdateHistory), args.Error(1)
+}
+
+// GetUser mocks the GetUser method
+func (m *MockStorage) GetUser(ctx context.Context, username string) (*storage.User, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.User), args.Error(1)
+}
+
+// GetUserByEmail mocks the GetUserByEmail method
+func (m *MockStorage) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
+	args := m.Called(ctx, email)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.User), args.Error(1)
+}
+
+// GetUserByProviderID mocks the GetUserByProviderID method
+func (m *MockStorage) GetUserByProviderID(ctx context.Context, provider string, providerID string) (*storage.User, error) {
+	args := m.Called(ctx, provider, providerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.User), args.Error(1)
+}
+
+// GetUserConversations mocks the GetUserConversations method
+func (m *MockStorage) GetUserConversations(ctx context.Context, username string, limit int, cursor string) ([]*storage.Conversation, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Conversation), args.String(1), args.Error(2)
+}
+
+// GetUserDomainBlocks mocks the GetUserDomainBlocks method
+func (m *MockStorage) GetUserDomainBlocks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]string), args.String(1), args.Error(2)
+}
+
+// GetUserLanguagePreference mocks the GetUserLanguagePreference method
+func (m *MockStorage) GetUserLanguagePreference(ctx context.Context, username string) (string, error) {
+	args := m.Called(ctx, username)
+	return args.String(0), args.Error(1)
+}
+
+// GetUserPreferences mocks the GetUserPreferences method
+func (m *MockStorage) GetUserPreferences(ctx context.Context, username string) (*storage.UserPreferences, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.UserPreferences), args.Error(1)
+}
+
+// GetUserPushSubscriptions mocks the GetUserPushSubscriptions method
+func (m *MockStorage) GetUserPushSubscriptions(ctx context.Context, username string) ([]*storage.PushSubscription, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.PushSubscription), args.Error(1)
+}
+
+// GetUserReports mocks the GetUserReports method
+func (m *MockStorage) GetUserReports(ctx context.Context, username string, limit int, cursor string) ([]*storage.Report, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Report), args.String(1), args.Error(2)
+}
+
+// GetUserSearchHistory mocks the GetUserSearchHistory method
+func (m *MockStorage) GetUserSearchHistory(ctx context.Context, userID string, limit int) ([]storage.SearchHistoryEntry, error) {
+	args := m.Called(ctx, userID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.SearchHistoryEntry), args.Error(1)
+}
+
+// GetUserSessions mocks the GetUserSessions method
+func (m *MockStorage) GetUserSessions(ctx context.Context, username string) ([]*storage.Session, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Session), args.Error(1)
+}
+
+// GetUserWalletCredentials mocks the GetUserWalletCredentials method
+func (m *MockStorage) GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.WalletCredential), args.Error(1)
+}
+
+// GetUserWebAuthnCredentials mocks the GetUserWebAuthnCredentials method
+func (m *MockStorage) GetUserWebAuthnCredentials(ctx context.Context, username string) ([]*storage.WebAuthnCredential, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.WebAuthnCredential), args.Error(1)
+}
+
+// GetVAPIDKeys mocks the GetVAPIDKeys method
+func (m *MockStorage) GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.VAPIDKeys), args.Error(1)
+}
+
+// GetVouch mocks the GetVouch method
+func (m *MockStorage) GetVouch(ctx context.Context, vouchID string) (*storage.Vouch, error) {
+	args := m.Called(ctx, vouchID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.Vouch), args.Error(1)
+}
+
+// GetVouchesByActor mocks the GetVouchesByActor method
+func (m *MockStorage) GetVouchesByActor(ctx context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error) {
+	args := m.Called(ctx, actorID, activeOnly)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Vouch), args.Error(1)
+}
+
+// GetVouchesForActor mocks the GetVouchesForActor method
+func (m *MockStorage) GetVouchesForActor(ctx context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error) {
+	args := m.Called(ctx, actorID, activeOnly)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Vouch), args.Error(1)
+}
+
+// GetWalletChallenge mocks the GetWalletChallenge method
+func (m *MockStorage) GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error) {
+	args := m.Called(ctx, challengeID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.WalletChallenge), args.Error(1)
+}
+
+// GetWalletCredential mocks the GetWalletCredential method
+func (m *MockStorage) GetWalletCredential(ctx context.Context, walletType string, address string) (*storage.WalletCredential, error) {
+	args := m.Called(ctx, walletType, address)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.WalletCredential), args.Error(1)
+}
+
+// GetWebAuthnChallenge mocks the GetWebAuthnChallenge method
+func (m *MockStorage) GetWebAuthnChallenge(ctx context.Context, challengeID string) (*storage.WebAuthnChallenge, error) {
+	args := m.Called(ctx, challengeID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.WebAuthnChallenge), args.Error(1)
+}
+
+// GetWebAuthnCredential mocks the GetWebAuthnCredential method
+func (m *MockStorage) GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error) {
+	args := m.Called(ctx, credentialID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.WebAuthnCredential), args.Error(1)
+}
+
+// GetWeeklyActivity mocks the GetWeeklyActivity method
+func (m *MockStorage) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
+	args := m.Called(ctx, weekTimestamp)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.WeeklyActivity), args.Error(1)
+}
+
+// HasUserVoted mocks the HasUserVoted method
+func (m *MockStorage) HasUserVoted(ctx context.Context, pollID string, userID string) (bool, []int, error) {
+	args := m.Called(ctx, pollID, userID)
+	if args.Get(1) == nil {
+		return args.Bool(0), nil, args.Error(2)
+	}
+	return args.Bool(0), args.Get(1).([]int), args.Error(2)
+}
+
+// IncrementFalseReports mocks the IncrementFalseReports method
+func (m *MockStorage) IncrementFalseReports(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+// IndexHashtag mocks the IndexHashtag method
+func (m *MockStorage) IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error {
+	args := m.Called(ctx, hashtag, statusID, authorID, visibility)
+	return args.Error(0)
+}
+
+// IsAccountInList mocks the IsAccountInList method
+func (m *MockStorage) IsAccountInList(ctx context.Context, listID string, accountID string) (bool, error) {
+	args := m.Called(ctx, listID, accountID)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsAccountPinned mocks the IsAccountPinned method
+func (m *MockStorage) IsAccountPinned(ctx context.Context, username string, actorID string) (bool, error) {
+	args := m.Called(ctx, username, actorID)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsBlocked mocks the IsBlocked method
+func (m *MockStorage) IsBlocked(ctx context.Context, actor string, targetActor string) (bool, error) {
+	args := m.Called(ctx, actor, targetActor)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsBlockedBidirectional mocks the IsBlockedBidirectional method
+func (m *MockStorage) IsBlockedBidirectional(ctx context.Context, actor1 string, actor2 string) (bool, error) {
+	args := m.Called(ctx, actor1, actor2)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsBlockedDomain mocks the IsBlockedDomain method
+func (m *MockStorage) IsBlockedDomain(ctx context.Context, username string, domain string) (bool, error) {
+	args := m.Called(ctx, username, domain)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsBookmarked mocks the IsBookmarked method
+func (m *MockStorage) IsBookmarked(ctx context.Context, username string, objectID string) (bool, error) {
+	args := m.Called(ctx, username, objectID)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsConversationMuted mocks the IsConversationMuted method
+func (m *MockStorage) IsConversationMuted(ctx context.Context, username string, conversationID string) (bool, error) {
+	args := m.Called(ctx, username, conversationID)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsDismissed mocks the IsDismissed method
+func (m *MockStorage) IsDismissed(ctx context.Context, username string, announcementID string) (bool, error) {
+	args := m.Called(ctx, username, announcementID)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsDomainBlocked mocks the IsDomainBlocked method
+func (m *MockStorage) IsDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
+	args := m.Called(ctx, domain)
+	if args.Get(1) == nil {
+		return args.Bool(0), nil, args.Error(2)
+	}
+	return args.Bool(0), args.Get(1).(*storage.InstanceDomainBlock), args.Error(2)
+}
+
+// IsFollowingHashtag mocks the IsFollowingHashtag method
+func (m *MockStorage) IsFollowingHashtag(ctx context.Context, userID string, hashtag string) (bool, error) {
+	args := m.Called(ctx, userID, hashtag)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsInCollection mocks the IsInCollection method
+func (m *MockStorage) IsInCollection(ctx context.Context, collection string, itemID string) (bool, error) {
+	args := m.Called(ctx, collection, itemID)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsInstanceDomainBlocked mocks the IsInstanceDomainBlocked method
+func (m *MockStorage) IsInstanceDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
+	args := m.Called(ctx, domain)
+	if args.Get(1) == nil {
+		return args.Bool(0), nil, args.Error(2)
+	}
+	return args.Bool(0), args.Get(1).(*storage.InstanceDomainBlock), args.Error(2)
+}
+
+// IsMuted mocks the IsMuted method
+func (m *MockStorage) IsMuted(ctx context.Context, actor string, targetActor string) (bool, error) {
+	args := m.Called(ctx, actor, targetActor)
+	return args.Bool(0), args.Error(1)
+}
+
+// IsRateLimited mocks the IsRateLimited method
+func (m *MockStorage) IsRateLimited(ctx context.Context, identifier string) (bool, time.Time, error) {
+	args := m.Called(ctx, identifier)
+	return args.Bool(0), args.Get(1).(time.Time), args.Error(2)
+}
+
+// IsStatusPinned mocks the IsStatusPinned method
+func (m *MockStorage) IsStatusPinned(ctx context.Context, username string, statusID string) (bool, error) {
+	args := m.Called(ctx, username, statusID)
+	return args.Bool(0), args.Error(1)
+}
+
+// LinkProviderAccount mocks the LinkProviderAccount method
+func (m *MockStorage) LinkProviderAccount(ctx context.Context, username string, provider string, providerID string) error {
+	args := m.Called(ctx, username, provider, providerID)
+	return args.Error(0)
+}
+
+// ListInstanceDomainBlocks mocks the ListInstanceDomainBlocks method
+func (m *MockStorage) ListInstanceDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.InstanceDomainBlock, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.InstanceDomainBlock), args.String(1), args.Error(2)
+}
+
+// ListOAuthClients mocks the ListOAuthClients method
+func (m *MockStorage) ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*storage.OAuthClient, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.OAuthClient), args.String(1), args.Error(2)
+}
+
+// ListUsers mocks the ListUsers method
+func (m *MockStorage) ListUsers(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.User), args.String(1), args.Error(2)
+}
+
+// MarkAllNotificationsAsRead mocks the MarkAllNotificationsAsRead method
+func (m *MockStorage) MarkAllNotificationsAsRead(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+// MarkConversationRead mocks the MarkConversationRead method
+func (m *MockStorage) MarkConversationRead(ctx context.Context, id string, username string) error {
+	args := m.Called(ctx, id, username)
+	return args.Error(0)
+}
+
+// MarkNotificationAsRead mocks the MarkNotificationAsRead method
+func (m *MockStorage) MarkNotificationAsRead(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// MarkRecoveryCodeUsed mocks the MarkRecoveryCodeUsed method
+func (m *MockStorage) MarkRecoveryCodeUsed(ctx context.Context, username string, codeHash string) error {
+	args := m.Called(ctx, username, codeHash)
+	return args.Error(0)
+}
+
+// MarkScheduledStatusPublished mocks the MarkScheduledStatusPublished method
+func (m *MockStorage) MarkScheduledStatusPublished(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// RecordActivity mocks the RecordActivity method
+func (m *MockStorage) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
+	args := m.Called(ctx, activityType, actorID, timestamp)
+	return args.Error(0)
+}
+
+// RecordHashtagUsage mocks the RecordHashtagUsage method
+func (m *MockStorage) RecordHashtagUsage(ctx context.Context, hashtag string, statusID string, authorID string) error {
+	args := m.Called(ctx, hashtag, statusID, authorID)
+	return args.Error(0)
+}
+
+// RecordLinkShare mocks the RecordLinkShare method
+func (m *MockStorage) RecordLinkShare(ctx context.Context, url string, statusID string, authorID string) error {
+	args := m.Called(ctx, url, statusID, authorID)
+	return args.Error(0)
+}
+
+// RecordLoginAttempt mocks the RecordLoginAttempt method
+func (m *MockStorage) RecordLoginAttempt(ctx context.Context, identifier string, success bool) error {
+	args := m.Called(ctx, identifier, success)
+	return args.Error(0)
+}
+
+// RecordStatusEngagement mocks the RecordStatusEngagement method
+func (m *MockStorage) RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error {
+	args := m.Called(ctx, statusID, engagementType, userID)
+	return args.Error(0)
+}
+
+// RecordTrustUpdate mocks the RecordTrustUpdate method
+func (m *MockStorage) RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error {
+	args := m.Called(ctx, update)
+	return args.Error(0)
+}
+
+// RemoveAccountsFromList mocks the RemoveAccountsFromList method
+func (m *MockStorage) RemoveAccountsFromList(ctx context.Context, listID string, accountIDs []string) error {
+	args := m.Called(ctx, listID, accountIDs)
+	return args.Error(0)
+}
+
+// RemoveAnnouncementReaction mocks the RemoveAnnouncementReaction method
+func (m *MockStorage) RemoveAnnouncementReaction(ctx context.Context, username string, announcementID string, emojiName string) error {
+	args := m.Called(ctx, username, announcementID, emojiName)
+	return args.Error(0)
+}
+
+// RemoveBookmark mocks the RemoveBookmark method
+func (m *MockStorage) RemoveBookmark(ctx context.Context, username string, objectID string) error {
+	args := m.Called(ctx, username, objectID)
+	return args.Error(0)
+}
+
+// RemoveDomainBlock mocks the RemoveDomainBlock method
+func (m *MockStorage) RemoveDomainBlock(ctx context.Context, username string, domain string) error {
+	args := m.Called(ctx, username, domain)
+	return args.Error(0)
+}
+
+// RemoveFromCollection mocks the RemoveFromCollection method
+func (m *MockStorage) RemoveFromCollection(ctx context.Context, collection string, itemID string) error {
+	args := m.Called(ctx, collection, itemID)
+	return args.Error(0)
+}
+
+// RemoveFromFollowers mocks the RemoveFromFollowers method
+func (m *MockStorage) RemoveFromFollowers(ctx context.Context, username string, followerUsername string) error {
+	args := m.Called(ctx, username, followerUsername)
+	return args.Error(0)
+}
+
+// SaveMarker mocks the SaveMarker method
+func (m *MockStorage) SaveMarker(ctx context.Context, username string, timeline string, lastReadID string, version int) error {
+	args := m.Called(ctx, username, timeline, lastReadID, version)
+	return args.Error(0)
+}
+
+// SearchAccounts mocks the SearchAccounts method
+func (m *MockStorage) SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error) {
+	args := m.Called(ctx, query, limit, followingOnly, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*activitypub.Actor), args.Error(1)
+}
+
+// SearchHashtags mocks the SearchHashtags method
+func (m *MockStorage) SearchHashtags(ctx context.Context, query string, limit int) ([]*storage.Hashtag, error) {
+	args := m.Called(ctx, query, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Hashtag), args.Error(1)
+}
+
+// SearchStatuses mocks the SearchStatuses method
+func (m *MockStorage) SearchStatuses(ctx context.Context, query string, limit int) ([]*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, query, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
+}
+
+// SearchStatusesByURL mocks the SearchStatusesByURL method
+func (m *MockStorage) SearchStatusesByURL(ctx context.Context, url string) (*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, url)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.StatusSearchResult), args.Error(1)
+}
+
+// SearchStatusesWithOptions mocks the SearchStatusesWithOptions method
+func (m *MockStorage) SearchStatusesWithOptions(ctx context.Context, query string, options storage.StatusSearchOptions) ([]*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, query, options)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
+}
+
+// SetExtendedDescription mocks the SetExtendedDescription method
+func (m *MockStorage) SetExtendedDescription(ctx context.Context, description string) error {
+	args := m.Called(ctx, description)
+	return args.Error(0)
+}
+
+// SetInstanceRules mocks the SetInstanceRules method
+func (m *MockStorage) SetInstanceRules(ctx context.Context, rules []storage.InstanceRule) error {
+	args := m.Called(ctx, rules)
+	return args.Error(0)
+}
+
+// SetPreference mocks the SetPreference method
+func (m *MockStorage) SetPreference(ctx context.Context, username string, key string, value interface{}) error {
+	args := m.Called(ctx, username, key, value)
+	return args.Error(0)
+}
+
+// SetUserLanguagePreference mocks the SetUserLanguagePreference method
+func (m *MockStorage) SetUserLanguagePreference(ctx context.Context, username string, language string) error {
+	args := m.Called(ctx, username, language)
+	return args.Error(0)
+}
+
+// SetVAPIDKeys mocks the SetVAPIDKeys method
+func (m *MockStorage) SetVAPIDKeys(ctx context.Context, keys *storage.VAPIDKeys) error {
+	args := m.Called(ctx, keys)
+	return args.Error(0)
+}
+
+// StoreOAuthState mocks the StoreOAuthState method
+func (m *MockStorage) StoreOAuthState(ctx context.Context, state string, data *storage.OAuthState) error {
+	args := m.Called(ctx, state, data)
+	return args.Error(0)
+}
+
+// StoreRecoveryCode mocks the StoreRecoveryCode method
+func (m *MockStorage) StoreRecoveryCode(ctx context.Context, username string, code *storage.RecoveryCodeItem) error {
+	args := m.Called(ctx, username, code)
+	return args.Error(0)
+}
+
+// StoreRecoveryRequest mocks the StoreRecoveryRequest method
+func (m *MockStorage) StoreRecoveryRequest(ctx context.Context, request *storage.SocialRecoveryRequest) error {
+	args := m.Called(ctx, request)
+	return args.Error(0)
+}
+
+// StoreRecoveryToken mocks the StoreRecoveryToken method
+func (m *MockStorage) StoreRecoveryToken(ctx context.Context, key string, data map[string]interface{}) error {
+	args := m.Called(ctx, key, data)
+	return args.Error(0)
+}
+
+// StoreReputation mocks the StoreReputation method
+func (m *MockStorage) StoreReputation(ctx context.Context, actorID string, reputation *storage.Reputation) error {
+	args := m.Called(ctx, actorID, reputation)
+	return args.Error(0)
+}
+
+// StoreTrustee mocks the StoreTrustee method
+func (m *MockStorage) StoreTrustee(ctx context.Context, username string, trustee *storage.TrusteeConfig) error {
+	args := m.Called(ctx, username, trustee)
+	return args.Error(0)
+}
+
+// StoreWalletChallenge mocks the StoreWalletChallenge method
+func (m *MockStorage) StoreWalletChallenge(ctx context.Context, challenge *storage.WalletChallenge) error {
+	args := m.Called(ctx, challenge)
+	return args.Error(0)
+}
+
+// StoreWalletCredential mocks the StoreWalletCredential method
+func (m *MockStorage) StoreWalletCredential(ctx context.Context, credential *storage.WalletCredential) error {
+	args := m.Called(ctx, credential)
+	return args.Error(0)
+}
+
+// StoreWebAuthnChallenge mocks the StoreWebAuthnChallenge method
+func (m *MockStorage) StoreWebAuthnChallenge(ctx context.Context, challenge *storage.WebAuthnChallenge) error {
+	args := m.Called(ctx, challenge)
+	return args.Error(0)
+}
+
+// StoreWebAuthnCredential mocks the StoreWebAuthnCredential method
+func (m *MockStorage) StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
+	args := m.Called(ctx, credential)
+	return args.Error(0)
+}
+
+// TombstoneObject mocks the TombstoneObject method
+func (m *MockStorage) TombstoneObject(ctx context.Context, objectID string, deletedBy string) error {
+	args := m.Called(ctx, objectID, deletedBy)
+	return args.Error(0)
+}
+
+// TrackSearchQuery mocks the TrackSearchQuery method
+func (m *MockStorage) TrackSearchQuery(ctx context.Context, userID string, query string, resultCount int) error {
+	args := m.Called(ctx, userID, query, resultCount)
+	return args.Error(0)
+}
+
+// UnassignReport mocks the UnassignReport method
+func (m *MockStorage) UnassignReport(ctx context.Context, reportID string) error {
+	args := m.Called(ctx, reportID)
+	return args.Error(0)
+}
+
+// UnfollowHashtag mocks the UnfollowHashtag method
+func (m *MockStorage) UnfollowHashtag(ctx context.Context, userID string, hashtag string) error {
+	args := m.Called(ctx, userID, hashtag)
+	return args.Error(0)
+}
+
+// UnlinkProviderAccount mocks the UnlinkProviderAccount method
+func (m *MockStorage) UnlinkProviderAccount(ctx context.Context, username string, provider string) error {
+	args := m.Called(ctx, username, provider)
+	return args.Error(0)
+}
+
+// UpdateAccountNote mocks the UpdateAccountNote method
+func (m *MockStorage) UpdateAccountNote(ctx context.Context, note *storage.AccountNote) error {
+	args := m.Called(ctx, note)
+	return args.Error(0)
+}
+
+// UpdateAnnouncement mocks the UpdateAnnouncement method
+func (m *MockStorage) UpdateAnnouncement(ctx context.Context, announcement *storage.Announcement) error {
+	args := m.Called(ctx, announcement)
+	return args.Error(0)
+}
+
+// UpdateConversationLastStatus mocks the UpdateConversationLastStatus method
+func (m *MockStorage) UpdateConversationLastStatus(ctx context.Context, id string, lastStatusID string) error {
+	args := m.Called(ctx, id, lastStatusID)
+	return args.Error(0)
+}
+
+// UpdateCustomEmoji mocks the UpdateCustomEmoji method
+func (m *MockStorage) UpdateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error {
+	args := m.Called(ctx, emoji)
+	return args.Error(0)
+}
+
+// UpdateDomainBlock mocks the UpdateDomainBlock method
+func (m *MockStorage) UpdateDomainBlock(ctx context.Context, id string, updates map[string]interface{}) error {
+	args := m.Called(ctx, id, updates)
+	return args.Error(0)
+}
+
+// UpdateFilter mocks the UpdateFilter method
+func (m *MockStorage) UpdateFilter(ctx context.Context, filterID string, updates map[string]interface{}) error {
+	args := m.Called(ctx, filterID, updates)
+	return args.Error(0)
+}
+
+// UpdateFilterKeyword mocks the UpdateFilterKeyword method
+func (m *MockStorage) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]interface{}) error {
+	args := m.Called(ctx, keywordID, updates)
+	return args.Error(0)
+}
+
+// UpdateInstanceDomainBlock mocks the UpdateInstanceDomainBlock method
+func (m *MockStorage) UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]interface{}) error {
+	args := m.Called(ctx, domain, updates)
+	return args.Error(0)
+}
+
+// UpdateList mocks the UpdateList method
+func (m *MockStorage) UpdateList(ctx context.Context, listID string, updates map[string]interface{}) error {
+	args := m.Called(ctx, listID, updates)
+	return args.Error(0)
+}
+
+// UpdateOAuthClient mocks the UpdateOAuthClient method
+func (m *MockStorage) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]interface{}) error {
+	args := m.Called(ctx, clientID, updates)
+	return args.Error(0)
+}
+
+// UpdatePreferences mocks the UpdatePreferences method
+func (m *MockStorage) UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error {
+	args := m.Called(ctx, username, prefs)
+	return args.Error(0)
+}
+
+// UpdatePushSubscription mocks the UpdatePushSubscription method
+func (m *MockStorage) UpdatePushSubscription(ctx context.Context, username string, subscriptionID string, alerts storage.PushSubscriptionAlerts) error {
+	args := m.Called(ctx, username, subscriptionID, alerts)
+	return args.Error(0)
+}
+
+// UpdateRecoveryRequest mocks the UpdateRecoveryRequest method
+func (m *MockStorage) UpdateRecoveryRequest(ctx context.Context, request *storage.SocialRecoveryRequest) error {
+	args := m.Called(ctx, request)
+	return args.Error(0)
+}
+
+// UpdateReportStatus mocks the UpdateReportStatus method
+func (m *MockStorage) UpdateReportStatus(ctx context.Context, id string, status storage.ReportStatus, actionTaken string, moderatorID string) error {
+	args := m.Called(ctx, id, status, actionTaken, moderatorID)
+	return args.Error(0)
+}
+
+// UpdateScheduledStatus mocks the UpdateScheduledStatus method
+func (m *MockStorage) UpdateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error {
+	args := m.Called(ctx, scheduled)
+	return args.Error(0)
+}
+
+// UpdateSession mocks the UpdateSession method
+func (m *MockStorage) UpdateSession(ctx context.Context, session *storage.Session) error {
+	args := m.Called(ctx, session)
+	return args.Error(0)
+}
+
+// UpdateTrustRelationship mocks the UpdateTrustRelationship method
+func (m *MockStorage) UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
+	args := m.Called(ctx, relationship)
+	return args.Error(0)
+}
+
+// UpdateTrustScore mocks the UpdateTrustScore method
+func (m *MockStorage) UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error {
+	args := m.Called(ctx, score)
+	return args.Error(0)
+}
+
+// UpdateTrusteeConfirmed mocks the UpdateTrusteeConfirmed method
+func (m *MockStorage) UpdateTrusteeConfirmed(ctx context.Context, username string, trusteeActorID string, confirmed bool) error {
+	args := m.Called(ctx, username, trusteeActorID, confirmed)
+	return args.Error(0)
+}
+
+// UpdateUser mocks the UpdateUser method
+func (m *MockStorage) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
+	args := m.Called(ctx, username, updates)
+	return args.Error(0)
+}
+
+// UpdateUserPreferences mocks the UpdateUserPreferences method
+func (m *MockStorage) UpdateUserPreferences(ctx context.Context, username string, preferences *storage.UserPreferences) error {
+	args := m.Called(ctx, username, preferences)
+	return args.Error(0)
+}
+
+// UpdateVouchStatus mocks the UpdateVouchStatus method
+func (m *MockStorage) UpdateVouchStatus(ctx context.Context, vouchID string, active bool, revokedAt *time.Time) error {
+	args := m.Called(ctx, vouchID, active, revokedAt)
+	return args.Error(0)
+}
+
+// UpdateWalletLastUsed mocks the UpdateWalletLastUsed method
+func (m *MockStorage) UpdateWalletLastUsed(ctx context.Context, username string, address string) error {
+	args := m.Called(ctx, username, address)
+	return args.Error(0)
+}
+
+// UpdateWebAuthnCredential mocks the UpdateWebAuthnCredential method
+func (m *MockStorage) UpdateWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
+	args := m.Called(ctx, credential)
+	return args.Error(0)
+}
+
+// UpsertInstanceInfo mocks the UpsertInstanceInfo method
+func (m *MockStorage) UpsertInstanceInfo(ctx context.Context, info *storage.InstanceInfo) error {
+	args := m.Called(ctx, info)
+	return args.Error(0)
+}
+
+// VoteOnPoll mocks the VoteOnPoll method
+func (m *MockStorage) VoteOnPoll(ctx context.Context, pollID string, voterID string, choices []int) error {
+	args := m.Called(ctx, pollID, voterID, choices)
+	return args.Error(0)
+}
+
+// WriteToTimeline mocks the WriteToTimeline method
+func (m *MockStorage) WriteToTimeline(ctx context.Context, timeline *storage.TimelineEntry) error {
+	args := m.Called(ctx, timeline)
+	return args.Error(0)
+}
+
+// WriteToTimelines mocks the WriteToTimelines method
+func (m *MockStorage) WriteToTimelines(ctx context.Context, entries []*storage.TimelineEntry) error {
+	args := m.Called(ctx, entries)
+	return args.Error(0)
+}
+

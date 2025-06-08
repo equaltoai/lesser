@@ -40,3 +40,6 @@ models:
   Cursor:
     model:
       - github.com/aron23/lesser/graph/model.Cursor
+  Duration:
+    model:
+      - github.com/aron23/lesser/graph/model.Duration

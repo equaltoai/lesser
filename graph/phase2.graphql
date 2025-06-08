@@ -1,0 +1,362 @@
+# Lesser GraphQL Schema - Phase 2 Federation Enhancements
+
+# Cost Analytics Dashboard Types
+type FederationCost {
+  domain: String!
+  ingressBytes: Int!
+  egressBytes: Int!
+  requestCount: Int!
+  errorRate: Float!
+  monthlyCostUSD: Float!
+  healthScore: Float!
+  recommendation: String
+  lastUpdated: Time!
+  breakdown: CostBreakdown!
+}
+
+type FederationCostConnection {
+  edges: [FederationCostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type FederationCostEdge {
+  node: FederationCost!
+  cursor: Cursor!
+}
+
+type InstanceHealthReport {
+  domain: String!
+  status: InstanceHealthStatus!
+  metrics: InstanceHealthMetrics!
+  issues: [HealthIssue!]!
+  recommendations: [String!]!
+  lastChecked: Time!
+}
+
+enum InstanceHealthStatus {
+  HEALTHY
+  WARNING
+  CRITICAL
+  OFFLINE
+  UNKNOWN
+}
+
+type InstanceHealthMetrics {
+  responseTime: Float!
+  errorRate: Float!
+  federationDelay: Float!
+  queueDepth: Int!
+  costEfficiency: Float!
+}
+
+type HealthIssue {
+  type: String!
+  severity: IssueSeverity!
+  description: String!
+  detectedAt: Time!
+  impact: String!
+}
+
+enum IssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+# Media Streaming Integration Types
+type MediaStream {
+  id: ID!
+  url: String!
+  hlsPlaylistUrl: String
+  dashManifestUrl: String
+  thumbnailUrl: String!
+  duration: Int!
+  bitrates: [Bitrate!]!
+  expiresAt: Time!
+}
+
+type Bitrate {
+  quality: StreamQuality!
+  bitsPerSecond: Int!
+  width: Int!
+  height: Int!
+  codec: String!
+}
+
+enum StreamQuality {
+  AUTO
+  LOW     # 480p
+  MEDIUM  # 720p
+  HIGH    # 1080p
+  ULTRA   # 4K
+}
+
+# Advanced Moderation Tools Types
+type ModerationPattern {
+  id: ID!
+  pattern: String!
+  type: PatternType!
+  severity: ModerationSeverity!
+  matchCount: Int!
+  falsePositiveRate: Float!
+  createdAt: Time!
+  updatedAt: Time!
+  createdBy: Actor!
+  active: Boolean!
+}
+
+enum PatternType {
+  REGEX
+  KEYWORD
+  PHRASE
+  ML_PATTERN
+}
+
+enum ModerationSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+type TrainingResult {
+  success: Boolean!
+  modelVersion: String!
+  accuracy: Float!
+  precision: Float!
+  recall: Float!
+  samplesUsed: Int!
+  trainingTime: Int!
+  improvements: [String!]!
+}
+
+type ModerationAlert {
+  id: ID!
+  severity: ModerationSeverity!
+  pattern: ModerationPattern
+  content: Object!
+  matchedText: String!
+  confidence: Float!
+  suggestedAction: ModerationAction!
+  timestamp: Time!
+  handled: Boolean!
+}
+
+# Federation Management Types
+type FederationLimit {
+  domain: String!
+  ingressLimitMB: Int!
+  egressLimitMB: Int!
+  requestsPerMinute: Int!
+  monthlyBudgetUSD: Float
+  active: Boolean!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type FederationManagementStatus {
+  domain: String!
+  status: FederationState!
+  reason: String
+  pausedUntil: Time
+  limits: FederationLimit
+  metrics: FederationMetrics!
+}
+
+enum FederationState {
+  ACTIVE
+  PAUSED
+  LIMITED
+  BLOCKED
+  ERROR
+}
+
+type FederationMetrics {
+  currentMonthCostUSD: Float!
+  currentMonthRequests: Int!
+  currentMonthBandwidthMB: Int!
+  averageResponseTime: Float!
+  errorRate: Float!
+}
+
+type InstanceBudget {
+  domain: String!
+  monthlyBudgetUSD: Float!
+  currentSpendUSD: Float!
+  remainingBudgetUSD: Float!
+  projectedOverspend: Float
+  alertThreshold: Float!
+  autoLimit: Boolean!
+  period: String!
+}
+
+# Input Types for Phase 2
+input ModerationPatternInput {
+  pattern: String!
+  type: PatternType!
+  severity: ModerationSeverity!
+  active: Boolean
+}
+
+input ModerationSample {
+  content: String!
+  label: ModerationSeverity!
+  confidence: Float!
+}
+
+input FederationLimitInput {
+  ingressLimitMB: Int
+  egressLimitMB: Int
+  requestsPerMinute: Int
+  monthlyBudgetUSD: Float
+}
+
+# Phase 2 Query Extensions
+extend type Query {
+  # Cost Analytics
+  federationCosts(first: Int, after: String, orderBy: CostOrderBy): FederationCostConnection!
+  instanceHealthReport(domain: String!): InstanceHealthReport!
+  costProjections(period: Period!): CostProjection!
+  
+  # Media Streaming
+  mediaStreamUrl(mediaId: ID!): MediaStream!
+  supportedBitrates(mediaId: ID!): [Bitrate!]!
+  
+  # Advanced Moderation
+  moderationPatterns(active: Boolean, severity: ModerationSeverity, first: Int, after: String): [ModerationPattern!]!
+  moderationEffectiveness(patternId: ID!, period: Period!): ModerationEffectiveness!
+  
+  # Federation Management
+  federationLimits(active: Boolean, first: Int, after: String): [FederationLimit!]!
+  instanceBudgets(exceeded: Boolean): [InstanceBudget!]!
+  federationHealth(threshold: Float): [FederationManagementStatus!]!
+}
+
+# Phase 2 Mutation Extensions
+extend type Mutation {
+  # Media Streaming
+  requestStreamingUrl(mediaId: ID!, quality: StreamQuality): MediaStream!
+  preloadMedia(mediaIds: [ID!]!): [MediaStream!]!
+  
+  # Advanced Moderation
+  createModerationPattern(input: ModerationPatternInput!): ModerationPattern!
+  updateModerationPattern(id: ID!, input: ModerationPatternInput!): ModerationPattern!
+  deleteModerationPattern(id: ID!): Boolean!
+  trainModerationModel(samples: [ModerationSample!]!): TrainingResult!
+  
+  # Federation Management
+  setFederationLimit(domain: String!, limit: FederationLimitInput!): FederationLimit!
+  pauseFederation(domain: String!, reason: String!, until: Time): FederationManagementStatus!
+  resumeFederation(domain: String!): FederationManagementStatus!
+  setInstanceBudget(domain: String!, monthlyUSD: Float!, autoLimit: Boolean): InstanceBudget!
+  
+  # Cost Management
+  optimizeFederationCosts(threshold: Float!): CostOptimizationResult!
+}
+
+# Phase 2 Subscription Extensions
+extend type Subscription {
+  # Moderation Alerts
+  moderationAlerts(severity: ModerationSeverity): ModerationAlert!
+  
+  # Cost Alerts
+  costAlerts(thresholdUSD: Float!): CostAlert!
+  budgetAlerts(domain: String): BudgetAlert!
+  
+  # Federation Health
+  federationHealthUpdates(domain: String): FederationHealthUpdate!
+}
+
+# Additional Phase 2 Types
+type CostProjection {
+  period: Period!
+  currentCost: Float!
+  projectedCost: Float!
+  variance: Float!
+  topCostDrivers: [CostDriver!]!
+  recommendations: [String!]!
+}
+
+type CostDriver {
+  type: String!
+  domain: String
+  cost: Float!
+  percentOfTotal: Float!
+  trend: Trend!
+}
+
+enum Trend {
+  INCREASING
+  STABLE
+  DECREASING
+}
+
+type ModerationEffectiveness {
+  patternId: ID!
+  matchCount: Int!
+  truePositives: Int!
+  falsePositives: Int!
+  missedCount: Int!
+  precision: Float!
+  recall: Float!
+  f1Score: Float!
+}
+
+type CostOptimizationResult {
+  optimized: Int!
+  savedMonthlyUSD: Float!
+  actions: [OptimizationAction!]!
+}
+
+type OptimizationAction {
+  domain: String!
+  action: String!
+  savingsUSD: Float!
+  impact: String!
+}
+
+type CostAlert {
+  id: ID!
+  type: String!
+  amount: Float!
+  threshold: Float!
+  domain: String
+  message: String!
+  timestamp: Time!
+}
+
+type BudgetAlert {
+  id: ID!
+  domain: String!
+  budgetUSD: Float!
+  spentUSD: Float!
+  percentUsed: Float!
+  projectedOverspend: Float
+  alertLevel: AlertLevel!
+  timestamp: Time!
+}
+
+enum AlertLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+type FederationHealthUpdate {
+  domain: String!
+  previousStatus: InstanceHealthStatus!
+  currentStatus: InstanceHealthStatus!
+  issues: [HealthIssue!]!
+  timestamp: Time!
+}
+
+enum CostOrderBy {
+  TOTAL_COST_DESC
+  TOTAL_COST_ASC
+  ERROR_RATE_DESC
+  REQUEST_COUNT_DESC
+  DOMAIN_ASC
+} 

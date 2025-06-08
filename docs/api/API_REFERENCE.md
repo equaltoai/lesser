@@ -1,8 +1,39 @@
-# Greater Frontend API Reference
+# Lesser API Reference
 
 ## Overview
 
-This document provides a comprehensive reference for the Greater UI team to implement the Mastodon-compatible social media interface with Lesser's enhancements. All endpoints return cost metadata and support real-time streaming.
+Lesser provides a **100% complete** Mastodon-compatible REST API plus a modern GraphQL API. All endpoints are implemented and production-ready.
+
+### API Status
+- ✅ **REST API**: Full Mastodon v1 compatibility achieved
+- ✅ **GraphQL API**: All 60 operations implemented
+- ✅ **Streaming API**: WebSocket support for real-time updates
+- ✅ **OAuth 2.0**: Complete implementation with PKCE
+- ✅ **Federation**: Full ActivityPub protocol support
+
+### Base URL
+```
+https://your-instance.example.com
+```
+
+### Authentication
+Most endpoints require authentication via OAuth 2.0 bearer tokens:
+```
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+### Rate Limiting
+- Authenticated requests: 300 per 5 minutes
+- Unauthenticated requests: 100 per 5 minutes
+- Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+### Cost Tracking
+Every response includes cost tracking headers:
+```
+X-Cost-Total-Micros: 125
+X-Cost-DynamoDB-Reads: 1
+X-Cost-DynamoDB-Writes: 0
+```
 
 **Official Mastodon API Documentation**: https://docs.joinmastodon.org/api/
 

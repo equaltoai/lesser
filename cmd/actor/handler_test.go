@@ -16,141 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Mock storage for testing
-type mockStorage struct {
-	mock.Mock
-	mocks.BaseMockStorage // Embed all base methods
-}
-
-func (m *mockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
-	args := m.Called(ctx, actor, privateKey)
-	return args.Error(0)
-}
-
-func (m *mockStorage) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	args := m.Called(ctx, username)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.Actor), args.Error(1)
-}
-
-func (m *mockStorage) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
-	args := m.Called(ctx, actor)
-	return args.Error(0)
-}
-
-func (m *mockStorage) DeleteActor(ctx context.Context, username string) error {
-	args := m.Called(ctx, username)
-	return args.Error(0)
-}
-
-func (m *mockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
-	args := m.Called(ctx, username)
-	return args.String(0), args.Error(1)
-}
-
-func (m *mockStorage) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
-	args := m.Called(ctx, activity)
-	return args.Error(0)
-}
-
-func (m *mockStorage) GetActivity(ctx context.Context, id string) (*activitypub.Activity, error) {
-	args := m.Called(ctx, id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.Activity), args.Error(1)
-}
-
-func (m *mockStorage) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
-}
-
-func (m *mockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
-}
-
-// Object operations
-func (m *mockStorage) CreateObject(ctx context.Context, object interface{}) error {
-	args := m.Called(ctx, object)
-	return args.Error(0)
-}
-
-func (m *mockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
-	args := m.Called(ctx, id)
-	return args.Get(0), args.Error(1)
-}
-
-func (m *mockStorage) UpdateObject(ctx context.Context, object interface{}) error {
-	args := m.Called(ctx, object)
-	return args.Error(0)
-}
-
-func (m *mockStorage) DeleteObject(ctx context.Context, id string) error {
-	args := m.Called(ctx, id)
-	return args.Error(0)
-}
-
-// Relationship operations
-func (m *mockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
-	args := m.Called(ctx, followerUsername, followedUsername, followActivityID)
-	return args.Error(0)
-}
-
-func (m *mockStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	args := m.Called(ctx, followerUsername, followedUsername)
-	return args.Error(0)
-}
-
-func (m *mockStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	args := m.Called(ctx, followerUsername, followedUsername)
-	return args.Error(0)
-}
-
-func (m *mockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
-	args := m.Called(ctx, followerUsername, followedUsername)
-	return args.Error(0)
-}
-
-func (m *mockStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]string), args.String(1), args.Error(2)
-}
-
-func (m *mockStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	args := m.Called(ctx, username, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]string), args.String(1), args.Error(2)
-}
-
-func (m *mockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
-	args := m.Called(ctx, followerUsername, followedUsername)
-	return args.Bool(0), args.Error(1)
-}
-
-// Collection operations
-func (m *mockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
-	args := m.Called(ctx, username, collectionType, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.OrderedCollectionPage), args.Error(1)
-}
-
 func TestHandler(t *testing.T) {
 	// Test actor
 	testActor := &activitypub.Actor{
@@ -182,7 +47,7 @@ func TestHandler(t *testing.T) {
 	tests := []struct {
 		name           string
 		request        events.APIGatewayV2HTTPRequest
-		setupMock      func(*mockStorage)
+		setupMock      func(*mocks.MockStorage)
 		wantStatusCode int
 		wantHeaders    map[string]string
 		checkBody      func(*testing.T, string)
@@ -193,7 +58,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"Accept": "application/activity+json"},
 			},
-			setupMock: func(m *mockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 			},
 			wantStatusCode: 200,
@@ -212,7 +77,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"Accept": "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""},
 			},
-			setupMock: func(m *mockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 			},
 			wantStatusCode: 200,
@@ -226,7 +91,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"Accept": "text/html"},
 			},
-			setupMock: func(m *mockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 			},
 			wantStatusCode: 200,
@@ -246,7 +111,7 @@ func TestHandler(t *testing.T) {
 			request: events.APIGatewayV2HTTPRequest{
 				PathParameters: map[string]string{"username": "alice"},
 			},
-			setupMock: func(m *mockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 			},
 			wantStatusCode: 200,
@@ -260,7 +125,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{"username": "nonexistent"},
 				Headers:        map[string]string{"Accept": "application/activity+json"},
 			},
-			setupMock: func(m *mockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "nonexistent").Return(nil, common.ActorNotFoundError{Username: "nonexistent"})
 			},
 			wantStatusCode: 404,
@@ -274,7 +139,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{},
 				Headers:        map[string]string{"Accept": "application/activity+json"},
 			},
-			setupMock:      func(m *mockStorage) {},
+			setupMock:      func(m *mocks.MockStorage) {},
 			wantStatusCode: 400,
 			checkBody: func(t *testing.T, body string) {
 				assert.Contains(t, body, "missing username")
@@ -286,7 +151,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"Accept": "application/activity+json"},
 			},
-			setupMock: func(m *mockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(nil, errors.New("database error"))
 			},
 			wantStatusCode: 500,
@@ -300,7 +165,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{"username": "bob"},
 				Headers:        map[string]string{"Accept": "text/html"},
 			},
-			setupMock: func(m *mockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				actorNoAvatar := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
@@ -328,7 +193,7 @@ func TestHandler(t *testing.T) {
 				PathParameters: map[string]string{"username": "alice"},
 				Headers:        map[string]string{"accept": "application/activity+json"},
 			},
-			setupMock: func(m *mockStorage) {
+			setupMock: func(m *mocks.MockStorage) {
 				m.On("GetActor", mock.Anything, "alice").Return(testActor, nil)
 			},
 			wantStatusCode: 200,
@@ -341,7 +206,7 @@ func TestHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock storage
-			mockStore := new(mockStorage)
+			mockStore := new(mocks.MockStorage)
 			tt.setupMock(mockStore)
 
 			// Replace global store with mock

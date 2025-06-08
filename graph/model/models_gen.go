@@ -9,13 +9,138 @@ import (
 	"strconv"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/moderation"
 	"github.com/aron23/lesser/pkg/trust"
 )
+
+// AI Analysis types
+type AIAnalysis struct {
+	ID               string           `json:"id"`
+	ObjectID         string           `json:"objectId"`
+	ObjectType       string           `json:"objectType"`
+	TextAnalysis     *TextAnalysis    `json:"textAnalysis,omitempty"`
+	ImageAnalysis    *ImageAnalysis   `json:"imageAnalysis,omitempty"`
+	AiDetection      *AIDetection     `json:"aiDetection,omitempty"`
+	SpamAnalysis     *SpamAnalysis    `json:"spamAnalysis,omitempty"`
+	OverallRisk      float64          `json:"overallRisk"`
+	ModerationAction ModerationAction `json:"moderationAction"`
+	Confidence       float64          `json:"confidence"`
+	AnalyzedAt       Time             `json:"analyzedAt"`
+}
+
+type AIAnalysisRequest struct {
+	Message       string `json:"message"`
+	ObjectID      string `json:"objectId"`
+	EstimatedTime string `json:"estimatedTime"`
+}
+
+type AICapabilities struct {
+	TextAnalysis      *TextAnalysisCapabilities  `json:"textAnalysis"`
+	ImageAnalysis     *ImageAnalysisCapabilities `json:"imageAnalysis"`
+	AiDetection       *AIDetectionCapabilities   `json:"aiDetection"`
+	ModerationActions []string                   `json:"moderationActions"`
+	CostPerAnalysis   *CostBreakdown             `json:"costPerAnalysis"`
+}
+
+type AIDetection struct {
+	AiGeneratedProbability float64  `json:"aiGeneratedProbability"`
+	GenerationModel        *string  `json:"generationModel,omitempty"`
+	PatternConsistency     float64  `json:"patternConsistency"`
+	StyleDeviation         float64  `json:"styleDeviation"`
+	SemanticCoherence      float64  `json:"semanticCoherence"`
+	SuspiciousPatterns     []string `json:"suspiciousPatterns"`
+}
+
+type AIDetectionCapabilities struct {
+	AiGeneratedContent bool `json:"aiGeneratedContent"`
+	PatternAnalysis    bool `json:"patternAnalysis"`
+	StyleConsistency   bool `json:"styleConsistency"`
+}
+
+type AIStats struct {
+	Period            string                  `json:"period"`
+	TotalAnalyses     int                     `json:"totalAnalyses"`
+	ToxicContent      int                     `json:"toxicContent"`
+	SpamDetected      int                     `json:"spamDetected"`
+	AiGenerated       int                     `json:"aiGenerated"`
+	NsfwContent       int                     `json:"nsfwContent"`
+	PiiDetected       int                     `json:"piiDetected"`
+	ToxicityRate      float64                 `json:"toxicityRate"`
+	SpamRate          float64                 `json:"spamRate"`
+	AiContentRate     float64                 `json:"aiContentRate"`
+	NsfwRate          float64                 `json:"nsfwRate"`
+	ModerationActions *ModerationActionCounts `json:"moderationActions"`
+}
 
 type AccessLog struct {
 	Timestamp Time   `json:"timestamp"`
 	Operation string `json:"operation"`
 	Cost      int    `json:"cost"`
+}
+
+type AcknowledgePayload struct {
+	Success             bool                 `json:"success"`
+	SeveredRelationship *SeveredRelationship `json:"severedRelationship"`
+	Acknowledged        bool                 `json:"acknowledged"`
+}
+
+type AffectedRelationship struct {
+	Actor            *activitypub.Actor `json:"actor"`
+	RelationshipType string             `json:"relationshipType"`
+	EstablishedAt    Time               `json:"establishedAt"`
+	LastInteraction  *Time              `json:"lastInteraction,omitempty"`
+}
+
+type AffectedRelationshipConnection struct {
+	Edges      []*AffectedRelationshipEdge `json:"edges"`
+	PageInfo   *PageInfo                   `json:"pageInfo"`
+	TotalCount int                         `json:"totalCount"`
+}
+
+type AffectedRelationshipEdge struct {
+	Node   *AffectedRelationship `json:"node"`
+	Cursor Cursor                `json:"cursor"`
+}
+
+type BandwidthReport struct {
+	Period    TimePeriod          `json:"period"`
+	TotalGb   float64             `json:"totalGB"`
+	PeakMbps  float64             `json:"peakMbps"`
+	AvgMbps   float64             `json:"avgMbps"`
+	ByQuality []*QualityBandwidth `json:"byQuality"`
+	ByHour    []*HourlyBandwidth  `json:"byHour"`
+	Cost      float64             `json:"cost"`
+}
+
+type Bitrate struct {
+	Quality       StreamQuality `json:"quality"`
+	BitsPerSecond int           `json:"bitsPerSecond"`
+	Width         int           `json:"width"`
+	Height        int           `json:"height"`
+	Codec         string        `json:"codec"`
+}
+
+type BudgetAlert struct {
+	ID                 string     `json:"id"`
+	Domain             string     `json:"domain"`
+	BudgetUsd          float64    `json:"budgetUSD"`
+	SpentUsd           float64    `json:"spentUSD"`
+	PercentUsed        float64    `json:"percentUsed"`
+	ProjectedOverspend *float64   `json:"projectedOverspend,omitempty"`
+	AlertLevel         AlertLevel `json:"alertLevel"`
+	Timestamp          Time       `json:"timestamp"`
+}
+
+type CategoryStats struct {
+	Category string  `json:"category"`
+	Count    int     `json:"count"`
+	Accuracy float64 `json:"accuracy"`
+}
+
+type Celebrity struct {
+	Name       string   `json:"name"`
+	Confidence float64  `json:"confidence"`
+	Urls       []string `json:"urls"`
 }
 
 type CommunityNote struct {
@@ -47,6 +172,21 @@ type ContentMapInput struct {
 	Content  string `json:"content"`
 }
 
+type Coordinates struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+type CostAlert struct {
+	ID        string  `json:"id"`
+	Type      string  `json:"type"`
+	Amount    float64 `json:"amount"`
+	Threshold float64 `json:"threshold"`
+	Domain    *string `json:"domain,omitempty"`
+	Message   string  `json:"message"`
+	Timestamp Time    `json:"timestamp"`
+}
+
 type CostBreakdown struct {
 	Period           Period      `json:"period"`
 	TotalCost        float64     `json:"totalCost"`
@@ -57,10 +197,33 @@ type CostBreakdown struct {
 	Breakdown        []*CostItem `json:"breakdown"`
 }
 
+type CostDriver struct {
+	Type           string  `json:"type"`
+	Domain         *string `json:"domain,omitempty"`
+	Cost           float64 `json:"cost"`
+	PercentOfTotal float64 `json:"percentOfTotal"`
+	Trend          Trend   `json:"trend"`
+}
+
 type CostItem struct {
 	Operation string  `json:"operation"`
 	Count     int     `json:"count"`
 	Cost      float64 `json:"cost"`
+}
+
+type CostOptimizationResult struct {
+	Optimized       int                   `json:"optimized"`
+	SavedMonthlyUsd float64               `json:"savedMonthlyUSD"`
+	Actions         []*OptimizationAction `json:"actions"`
+}
+
+type CostProjection struct {
+	Period          Period        `json:"period"`
+	CurrentCost     float64       `json:"currentCost"`
+	ProjectedCost   float64       `json:"projectedCost"`
+	Variance        float64       `json:"variance"`
+	TopCostDrivers  []*CostDriver `json:"topCostDrivers"`
+	Recommendations []string      `json:"recommendations"`
 }
 
 type CostUpdate struct {
@@ -85,6 +248,133 @@ type CreateNotePayload struct {
 	Object   *Object               `json:"object"`
 	Activity *activitypub.Activity `json:"activity"`
 	Cost     *CostUpdate           `json:"cost"`
+}
+
+type CreateQuoteNoteInput struct {
+	Content     string      `json:"content"`
+	QuoteURL    string      `json:"quoteUrl"`
+	QuoteType   *QuoteType  `json:"quoteType,omitempty"`
+	Visibility  *Visibility `json:"visibility,omitempty"`
+	Quoteable   *bool       `json:"quoteable,omitempty"`
+	Sensitive   *bool       `json:"sensitive,omitempty"`
+	SpoilerText *string     `json:"spoilerText,omitempty"`
+	MediaIds    []string    `json:"mediaIds,omitempty"`
+}
+
+type DatabaseStatus struct {
+	Name        string       `json:"name"`
+	Type        string       `json:"type"`
+	Status      HealthStatus `json:"status"`
+	Connections int          `json:"connections"`
+	Latency     Duration     `json:"latency"`
+	Throughput  float64      `json:"throughput"`
+}
+
+type Entity struct {
+	Type  string  `json:"type"`
+	Text  string  `json:"text"`
+	Score float64 `json:"score"`
+}
+
+type FederationCost struct {
+	Domain         string         `json:"domain"`
+	IngressBytes   int            `json:"ingressBytes"`
+	EgressBytes    int            `json:"egressBytes"`
+	RequestCount   int            `json:"requestCount"`
+	ErrorRate      float64        `json:"errorRate"`
+	MonthlyCostUsd float64        `json:"monthlyCostUSD"`
+	HealthScore    float64        `json:"healthScore"`
+	Recommendation *string        `json:"recommendation,omitempty"`
+	LastUpdated    Time           `json:"lastUpdated"`
+	Breakdown      *CostBreakdown `json:"breakdown"`
+}
+
+type FederationCostConnection struct {
+	Edges      []*FederationCostEdge `json:"edges"`
+	PageInfo   *PageInfo             `json:"pageInfo"`
+	TotalCount int                   `json:"totalCount"`
+}
+
+type FederationCostEdge struct {
+	Node   *FederationCost `json:"node"`
+	Cursor Cursor          `json:"cursor"`
+}
+
+type FederationEdge struct {
+	Source        string  `json:"source"`
+	Target        string  `json:"target"`
+	Weight        float64 `json:"weight"`
+	VolumePerDay  int     `json:"volumePerDay"`
+	ErrorRate     float64 `json:"errorRate"`
+	Latency       float64 `json:"latency"`
+	Bidirectional bool    `json:"bidirectional"`
+	HealthScore   float64 `json:"healthScore"`
+}
+
+type FederationFlow struct {
+	TopSources      []*FlowNode     `json:"topSources"`
+	TopDestinations []*FlowNode     `json:"topDestinations"`
+	VolumeByHour    []*HourlyVolume `json:"volumeByHour"`
+	CostByInstance  []*InstanceCost `json:"costByInstance"`
+}
+
+type FederationGraph struct {
+	Nodes       []*InstanceNode    `json:"nodes"`
+	Edges       []*FederationEdge  `json:"edges"`
+	Clusters    []*InstanceCluster `json:"clusters"`
+	HealthScore float64            `json:"healthScore"`
+}
+
+type FederationHealthUpdate struct {
+	Domain         string               `json:"domain"`
+	PreviousStatus InstanceHealthStatus `json:"previousStatus"`
+	CurrentStatus  InstanceHealthStatus `json:"currentStatus"`
+	Issues         []*HealthIssue       `json:"issues"`
+	Timestamp      Time                 `json:"timestamp"`
+}
+
+type FederationLimit struct {
+	Domain            string   `json:"domain"`
+	IngressLimitMb    int      `json:"ingressLimitMB"`
+	EgressLimitMb     int      `json:"egressLimitMB"`
+	RequestsPerMinute int      `json:"requestsPerMinute"`
+	MonthlyBudgetUsd  *float64 `json:"monthlyBudgetUSD,omitempty"`
+	Active            bool     `json:"active"`
+	CreatedAt         Time     `json:"createdAt"`
+	UpdatedAt         Time     `json:"updatedAt"`
+}
+
+type FederationLimitInput struct {
+	IngressLimitMb    *int     `json:"ingressLimitMB,omitempty"`
+	EgressLimitMb     *int     `json:"egressLimitMB,omitempty"`
+	RequestsPerMinute *int     `json:"requestsPerMinute,omitempty"`
+	MonthlyBudgetUsd  *float64 `json:"monthlyBudgetUSD,omitempty"`
+}
+
+type FederationManagementStatus struct {
+	Domain      string             `json:"domain"`
+	Status      FederationState    `json:"status"`
+	Reason      *string            `json:"reason,omitempty"`
+	PausedUntil *Time              `json:"pausedUntil,omitempty"`
+	Limits      *FederationLimit   `json:"limits,omitempty"`
+	Metrics     *FederationMetrics `json:"metrics"`
+}
+
+type FederationMetrics struct {
+	CurrentMonthCostUsd     float64 `json:"currentMonthCostUSD"`
+	CurrentMonthRequests    int     `json:"currentMonthRequests"`
+	CurrentMonthBandwidthMb int     `json:"currentMonthBandwidthMB"`
+	AverageResponseTime     float64 `json:"averageResponseTime"`
+	ErrorRate               float64 `json:"errorRate"`
+}
+
+type FederationRecommendation struct {
+	Type            RecommendationType `json:"type"`
+	Priority        Priority           `json:"priority"`
+	Domain          *string            `json:"domain,omitempty"`
+	Reason          string             `json:"reason"`
+	PotentialImpact string             `json:"potentialImpact"`
+	Action          string             `json:"action"`
 }
 
 type FederationStatus struct {
@@ -114,6 +404,213 @@ type FlagPayload struct {
 	Queued       bool   `json:"queued"`
 }
 
+type FlowNode struct {
+	Domain         string  `json:"domain"`
+	Volume         int     `json:"volume"`
+	Percentage     float64 `json:"percentage"`
+	Trend          Trend   `json:"trend"`
+	AvgMessageSize int     `json:"avgMessageSize"`
+}
+
+type Hashtag struct {
+	Name                 string                       `json:"name"`
+	DisplayName          string                       `json:"displayName"`
+	URL                  string                       `json:"url"`
+	FollowerCount        int                          `json:"followerCount"`
+	PostCount            int                          `json:"postCount"`
+	TrendingScore        float64                      `json:"trendingScore"`
+	IsFollowing          bool                         `json:"isFollowing"`
+	FollowedAt           *Time                        `json:"followedAt,omitempty"`
+	NotificationSettings *HashtagNotificationSettings `json:"notificationSettings,omitempty"`
+	Posts                *PostConnection              `json:"posts"`
+	RelatedHashtags      []*Hashtag                   `json:"relatedHashtags"`
+	Analytics            *HashtagAnalytics            `json:"analytics"`
+}
+
+type HashtagActivityUpdate struct {
+	Hashtag   string             `json:"hashtag"`
+	Post      *Object            `json:"post"`
+	Author    *activitypub.Actor `json:"author"`
+	Timestamp Time               `json:"timestamp"`
+}
+
+type HashtagAnalytics struct {
+	HourlyPosts []int                `json:"hourlyPosts"`
+	DailyPosts  []int                `json:"dailyPosts"`
+	TopPosters  []*activitypub.Actor `json:"topPosters"`
+	Sentiment   float64              `json:"sentiment"`
+	Engagement  float64              `json:"engagement"`
+}
+
+type HashtagConnection struct {
+	Edges      []*HashtagEdge `json:"edges"`
+	PageInfo   *PageInfo      `json:"pageInfo"`
+	TotalCount int            `json:"totalCount"`
+}
+
+type HashtagEdge struct {
+	Node   *Hashtag `json:"node"`
+	Cursor Cursor   `json:"cursor"`
+}
+
+type HashtagFollowPayload struct {
+	Success bool     `json:"success"`
+	Hashtag *Hashtag `json:"hashtag"`
+}
+
+type HashtagNotificationSettings struct {
+	Level      NotificationLevel     `json:"level"`
+	Muted      bool                  `json:"muted"`
+	MutedUntil *Time                 `json:"mutedUntil,omitempty"`
+	Filters    []*NotificationFilter `json:"filters"`
+}
+
+type HashtagNotificationSettingsInput struct {
+	Level      NotificationLevel          `json:"level"`
+	Muted      *bool                      `json:"muted,omitempty"`
+	MutedUntil *Time                      `json:"mutedUntil,omitempty"`
+	Filters    []*NotificationFilterInput `json:"filters,omitempty"`
+}
+
+type HashtagSuggestion struct {
+	Hashtag *Hashtag `json:"hashtag"`
+	Reason  string   `json:"reason"`
+	Score   float64  `json:"score"`
+}
+
+type HealthIssue struct {
+	Type        string        `json:"type"`
+	Severity    IssueSeverity `json:"severity"`
+	Description string        `json:"description"`
+	DetectedAt  Time          `json:"detectedAt"`
+	Impact      string        `json:"impact"`
+}
+
+type HourlyBandwidth struct {
+	Hour     Time    `json:"hour"`
+	TotalGb  float64 `json:"totalGB"`
+	PeakMbps float64 `json:"peakMbps"`
+}
+
+type HourlyVolume struct {
+	Hour       Time    `json:"hour"`
+	Inbound    int     `json:"inbound"`
+	Outbound   int     `json:"outbound"`
+	Errors     int     `json:"errors"`
+	AvgLatency float64 `json:"avgLatency"`
+}
+
+type ImageAnalysis struct {
+	ModerationLabels []*ModerationLabel `json:"moderationLabels"`
+	IsNsfw           bool               `json:"isNSFW"`
+	NsfwConfidence   float64            `json:"nsfwConfidence"`
+	ViolenceScore    float64            `json:"violenceScore"`
+	WeaponsDetected  bool               `json:"weaponsDetected"`
+	DetectedText     []string           `json:"detectedText"`
+	TextToxicity     float64            `json:"textToxicity"`
+	CelebrityFaces   []*Celebrity       `json:"celebrityFaces"`
+	DeepfakeScore    float64            `json:"deepfakeScore"`
+}
+
+type ImageAnalysisCapabilities struct {
+	NsfwDetection        bool `json:"nsfwDetection"`
+	ViolenceDetection    bool `json:"violenceDetection"`
+	TextExtraction       bool `json:"textExtraction"`
+	CelebrityRecognition bool `json:"celebrityRecognition"`
+	DeepfakeDetection    bool `json:"deepfakeDetection"`
+}
+
+type InfrastructureAlert struct {
+	ID        string        `json:"id"`
+	Service   string        `json:"service"`
+	Severity  AlertSeverity `json:"severity"`
+	Message   string        `json:"message"`
+	Timestamp Time          `json:"timestamp"`
+	Resolved  bool          `json:"resolved"`
+}
+
+type InfrastructureEvent struct {
+	ID          string                  `json:"id"`
+	Type        InfrastructureEventType `json:"type"`
+	Service     string                  `json:"service"`
+	Description string                  `json:"description"`
+	Impact      string                  `json:"impact"`
+	Timestamp   Time                    `json:"timestamp"`
+}
+
+type InfrastructureStatus struct {
+	Healthy   bool                   `json:"healthy"`
+	Services  []*ServiceStatus       `json:"services"`
+	Databases []*DatabaseStatus      `json:"databases"`
+	Queues    []*QueueStatus         `json:"queues"`
+	Alerts    []*InfrastructureAlert `json:"alerts"`
+}
+
+type InstanceBudget struct {
+	Domain             string   `json:"domain"`
+	MonthlyBudgetUsd   float64  `json:"monthlyBudgetUSD"`
+	CurrentSpendUsd    float64  `json:"currentSpendUSD"`
+	RemainingBudgetUsd float64  `json:"remainingBudgetUSD"`
+	ProjectedOverspend *float64 `json:"projectedOverspend,omitempty"`
+	AlertThreshold     float64  `json:"alertThreshold"`
+	AutoLimit          bool     `json:"autoLimit"`
+	Period             string   `json:"period"`
+}
+
+type InstanceCluster struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Members        []string `json:"members"`
+	Commonality    string   `json:"commonality"`
+	AvgHealthScore float64  `json:"avgHealthScore"`
+	TotalVolume    int      `json:"totalVolume"`
+	Description    string   `json:"description"`
+}
+
+type InstanceConnection struct {
+	Domain         string         `json:"domain"`
+	ConnectionType ConnectionType `json:"connectionType"`
+	Strength       float64        `json:"strength"`
+	VolumeIn       int            `json:"volumeIn"`
+	VolumeOut      int            `json:"volumeOut"`
+	SharedUsers    int            `json:"sharedUsers"`
+	LastActivity   Time           `json:"lastActivity"`
+}
+
+type InstanceCost struct {
+	Domain     string         `json:"domain"`
+	CostUsd    float64        `json:"costUSD"`
+	Percentage float64        `json:"percentage"`
+	Breakdown  *CostBreakdown `json:"breakdown"`
+}
+
+type InstanceHealthMetrics struct {
+	ResponseTime    float64 `json:"responseTime"`
+	ErrorRate       float64 `json:"errorRate"`
+	FederationDelay float64 `json:"federationDelay"`
+	QueueDepth      int     `json:"queueDepth"`
+	CostEfficiency  float64 `json:"costEfficiency"`
+}
+
+type InstanceHealthReport struct {
+	Domain          string                 `json:"domain"`
+	Status          InstanceHealthStatus   `json:"status"`
+	Metrics         *InstanceHealthMetrics `json:"metrics"`
+	Issues          []*HealthIssue         `json:"issues"`
+	Recommendations []string               `json:"recommendations"`
+	LastChecked     Time                   `json:"lastChecked"`
+}
+
+type InstanceMetadata struct {
+	FirstSeen          Time    `json:"firstSeen"`
+	LastActivity       Time    `json:"lastActivity"`
+	MonthlyActiveUsers int     `json:"monthlyActiveUsers"`
+	RegistrationsOpen  bool    `json:"registrationsOpen"`
+	ApprovalRequired   bool    `json:"approvalRequired"`
+	PrimaryLanguage    string  `json:"primaryLanguage"`
+	Description        *string `json:"description,omitempty"`
+}
+
 type InstanceMetrics struct {
 	ActiveUsers          int     `json:"activeUsers"`
 	RequestsPerMinute    int     `json:"requestsPerMinute"`
@@ -123,6 +620,40 @@ type InstanceMetrics struct {
 	LastUpdated          Time    `json:"lastUpdated"`
 }
 
+type InstanceNode struct {
+	Domain         string               `json:"domain"`
+	DisplayName    string               `json:"displayName"`
+	Software       string               `json:"software"`
+	Version        string               `json:"version"`
+	UserCount      int                  `json:"userCount"`
+	StatusCount    int                  `json:"statusCount"`
+	FederatingWith int                  `json:"federatingWith"`
+	HealthStatus   InstanceHealthStatus `json:"healthStatus"`
+	Coordinates    *Coordinates         `json:"coordinates"`
+	Metadata       *InstanceMetadata    `json:"metadata"`
+}
+
+type InstanceRelations struct {
+	Domain              string                      `json:"domain"`
+	DirectConnections   []*InstanceConnection       `json:"directConnections"`
+	IndirectConnections []*InstanceConnection       `json:"indirectConnections"`
+	BlockedBy           []string                    `json:"blockedBy"`
+	Blocking            []string                    `json:"blocking"`
+	FederationScore     float64                     `json:"federationScore"`
+	Recommendations     []*FederationRecommendation `json:"recommendations"`
+}
+
+type MediaStream struct {
+	ID              string     `json:"id"`
+	URL             string     `json:"url"`
+	HlsPlaylistURL  *string    `json:"hlsPlaylistUrl,omitempty"`
+	DashManifestURL *string    `json:"dashManifestUrl,omitempty"`
+	ThumbnailURL    string     `json:"thumbnailUrl"`
+	Duration        int        `json:"duration"`
+	Bitrates        []*Bitrate `json:"bitrates"`
+	ExpiresAt       Time       `json:"expiresAt"`
+}
+
 type Mention struct {
 	ID       string  `json:"id"`
 	Username string  `json:"username"`
@@ -130,30 +661,179 @@ type Mention struct {
 	URL      string  `json:"url"`
 }
 
+type ModerationActionCounts struct {
+	None      int `json:"none"`
+	Flag      int `json:"flag"`
+	Hide      int `json:"hide"`
+	Remove    int `json:"remove"`
+	ShadowBan int `json:"shadowBan"`
+	Review    int `json:"review"`
+}
+
+type ModerationAlert struct {
+	ID              string             `json:"id"`
+	Severity        ModerationSeverity `json:"severity"`
+	Pattern         *ModerationPattern `json:"pattern,omitempty"`
+	Content         *Object            `json:"content"`
+	MatchedText     string             `json:"matchedText"`
+	Confidence      float64            `json:"confidence"`
+	SuggestedAction ModerationAction   `json:"suggestedAction"`
+	Timestamp       Time               `json:"timestamp"`
+	Handled         bool               `json:"handled"`
+}
+
+type ModerationDashboard struct {
+	PendingReviews      int                              `json:"pendingReviews"`
+	RecentDecisions     []*moderation.ModerationDecision `json:"recentDecisions"`
+	TopPatterns         []*PatternStats                  `json:"topPatterns"`
+	FalsePositiveRate   float64                          `json:"falsePositiveRate"`
+	AverageResponseTime Duration                         `json:"averageResponseTime"`
+	ThreatTrends        []*ThreatTrend                   `json:"threatTrends"`
+}
+
+type ModerationEffectiveness struct {
+	PatternID      string  `json:"patternId"`
+	MatchCount     int     `json:"matchCount"`
+	TruePositives  int     `json:"truePositives"`
+	FalsePositives int     `json:"falsePositives"`
+	MissedCount    int     `json:"missedCount"`
+	Precision      float64 `json:"precision"`
+	Recall         float64 `json:"recall"`
+	F1Score        float64 `json:"f1Score"`
+}
+
+type ModerationFilter struct {
+	Severity   *ModerationSeverity `json:"severity,omitempty"`
+	AssignedTo *string             `json:"assignedTo,omitempty"`
+	Priority   *Priority           `json:"priority,omitempty"`
+	Unhandled  *bool               `json:"unhandled,omitempty"`
+}
+
+type ModerationItem struct {
+	ID          string             `json:"id"`
+	Content     *Object            `json:"content"`
+	ReportCount int                `json:"reportCount"`
+	Severity    ModerationSeverity `json:"severity"`
+	Priority    Priority           `json:"priority"`
+	AssignedTo  *activitypub.Actor `json:"assignedTo,omitempty"`
+	Deadline    Time               `json:"deadline"`
+}
+
+type ModerationLabel struct {
+	Name       string  `json:"name"`
+	Confidence float64 `json:"confidence"`
+	ParentName *string `json:"parentName,omitempty"`
+}
+
+type ModerationPattern struct {
+	ID                string             `json:"id"`
+	Pattern           string             `json:"pattern"`
+	Type              PatternType        `json:"type"`
+	Severity          ModerationSeverity `json:"severity"`
+	MatchCount        int                `json:"matchCount"`
+	FalsePositiveRate float64            `json:"falsePositiveRate"`
+	CreatedAt         Time               `json:"createdAt"`
+	UpdatedAt         Time               `json:"updatedAt"`
+	CreatedBy         *activitypub.Actor `json:"createdBy"`
+	Active            bool               `json:"active"`
+}
+
+type ModerationPatternInput struct {
+	Pattern  string             `json:"pattern"`
+	Type     PatternType        `json:"type"`
+	Severity ModerationSeverity `json:"severity"`
+	Active   *bool              `json:"active,omitempty"`
+}
+
+type ModerationSample struct {
+	Content    string             `json:"content"`
+	Label      ModerationSeverity `json:"label"`
+	Confidence float64            `json:"confidence"`
+}
+
+type ModeratorStats struct {
+	ModeratorID     string           `json:"moderatorId"`
+	Period          TimePeriod       `json:"period"`
+	DecisionsCount  int              `json:"decisionsCount"`
+	AvgResponseTime Duration         `json:"avgResponseTime"`
+	Accuracy        float64          `json:"accuracy"`
+	Overturned      int              `json:"overturned"`
+	Categories      []*CategoryStats `json:"categories"`
+}
+
 type Mutation struct {
 }
 
+type MuteHashtagPayload struct {
+	Success    bool     `json:"success"`
+	Hashtag    *Hashtag `json:"hashtag"`
+	MutedUntil *Time    `json:"mutedUntil,omitempty"`
+}
+
+type Notification struct {
+	ID        string             `json:"id"`
+	Type      string             `json:"type"`
+	Account   *activitypub.Actor `json:"account"`
+	Status    *Object            `json:"status,omitempty"`
+	Read      bool               `json:"read"`
+	CreatedAt Time               `json:"createdAt"`
+}
+
+type NotificationConnection struct {
+	Edges      []*NotificationEdge `json:"edges"`
+	PageInfo   *PageInfo           `json:"pageInfo"`
+	TotalCount int                 `json:"totalCount"`
+}
+
+type NotificationEdge struct {
+	Node   *Notification `json:"node"`
+	Cursor Cursor        `json:"cursor"`
+}
+
+type NotificationFilter struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type NotificationFilterInput struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type NotificationPreferences struct {
+	Email  bool            `json:"email"`
+	Push   bool            `json:"push"`
+	InApp  bool            `json:"inApp"`
+	Digest DigestFrequency `json:"digest"`
+}
+
 type Object struct {
-	ID              string                    `json:"id"`
-	Type            ObjectType                `json:"type"`
-	Actor           *activitypub.Actor        `json:"actor"`
-	Content         string                    `json:"content"`
-	ContentMap      []*ContentMap             `json:"contentMap"`
-	InReplyTo       *Object                   `json:"inReplyTo,omitempty"`
-	Visibility      Visibility                `json:"visibility"`
-	Sensitive       bool                      `json:"sensitive"`
-	SpoilerText     *string                   `json:"spoilerText,omitempty"`
-	Attachments     []*activitypub.Attachment `json:"attachments"`
-	Tags            []*activitypub.Tag        `json:"tags"`
-	Mentions        []*Mention                `json:"mentions"`
-	CreatedAt       Time                      `json:"createdAt"`
-	UpdatedAt       Time                      `json:"updatedAt"`
-	RepliesCount    int                       `json:"repliesCount"`
-	LikesCount      int                       `json:"likesCount"`
-	SharesCount     int                       `json:"sharesCount"`
-	EstimatedCost   int                       `json:"estimatedCost"`
-	ModerationScore *float64                  `json:"moderationScore,omitempty"`
-	CommunityNotes  []*CommunityNote          `json:"communityNotes"`
+	ID               string                    `json:"id"`
+	Type             ObjectType                `json:"type"`
+	Actor            *activitypub.Actor        `json:"actor"`
+	Content          string                    `json:"content"`
+	ContentMap       []*ContentMap             `json:"contentMap"`
+	InReplyTo        *Object                   `json:"inReplyTo,omitempty"`
+	Visibility       Visibility                `json:"visibility"`
+	Sensitive        bool                      `json:"sensitive"`
+	SpoilerText      *string                   `json:"spoilerText,omitempty"`
+	Attachments      []*activitypub.Attachment `json:"attachments"`
+	Tags             []*activitypub.Tag        `json:"tags"`
+	Mentions         []*Mention                `json:"mentions"`
+	CreatedAt        Time                      `json:"createdAt"`
+	UpdatedAt        Time                      `json:"updatedAt"`
+	RepliesCount     int                       `json:"repliesCount"`
+	LikesCount       int                       `json:"likesCount"`
+	SharesCount      int                       `json:"sharesCount"`
+	EstimatedCost    int                       `json:"estimatedCost"`
+	ModerationScore  *float64                  `json:"moderationScore,omitempty"`
+	CommunityNotes   []*CommunityNote          `json:"communityNotes"`
+	QuoteURL         *string                   `json:"quoteUrl,omitempty"`
+	Quoteable        bool                      `json:"quoteable"`
+	QuotePermissions QuotePermission           `json:"quotePermissions"`
+	QuoteContext     *activitypub.QuoteContext `json:"quoteContext,omitempty"`
+	QuoteCount       int                       `json:"quoteCount"`
+	Quotes           *QuoteConnection          `json:"quotes"`
 }
 
 type ObjectConnection struct {
@@ -175,6 +855,13 @@ type ObjectExplanation struct {
 	AccessPattern   []*AccessLog `json:"accessPattern"`
 }
 
+type OptimizationAction struct {
+	Domain     string  `json:"domain"`
+	Action     string  `json:"action"`
+	SavingsUsd float64 `json:"savingsUSD"`
+	Impact     string  `json:"impact"`
+}
+
 type PageInfo struct {
 	HasNextPage     bool    `json:"hasNextPage"`
 	HasPreviousPage bool    `json:"hasPreviousPage"`
@@ -182,16 +869,414 @@ type PageInfo struct {
 	EndCursor       *Cursor `json:"endCursor,omitempty"`
 }
 
+type PatternStats struct {
+	Pattern    *ModerationPattern `json:"pattern"`
+	MatchCount int                `json:"matchCount"`
+	Accuracy   float64            `json:"accuracy"`
+	LastMatch  Time               `json:"lastMatch"`
+	Trend      Trend              `json:"trend"`
+}
+
+type PerformanceAlert struct {
+	ID          string          `json:"id"`
+	Service     ServiceCategory `json:"service"`
+	Metric      string          `json:"metric"`
+	Threshold   float64         `json:"threshold"`
+	ActualValue float64         `json:"actualValue"`
+	Severity    AlertSeverity   `json:"severity"`
+	Timestamp   Time            `json:"timestamp"`
+}
+
+type PerformanceReport struct {
+	Service    ServiceCategory `json:"service"`
+	P50Latency Duration        `json:"p50Latency"`
+	P95Latency Duration        `json:"p95Latency"`
+	P99Latency Duration        `json:"p99Latency"`
+	ErrorRate  float64         `json:"errorRate"`
+	Throughput float64         `json:"throughput"`
+	ColdStarts int             `json:"coldStarts"`
+	Period     TimePeriod      `json:"period"`
+}
+
+type PortableReputation struct {
+	Context     []string    `json:"context"`
+	Type        string      `json:"type"`
+	Actor       string      `json:"actor"`
+	Reputation  *Reputation `json:"reputation"`
+	Vouches     []*Vouch    `json:"vouches"`
+	IssuedAt    Time        `json:"issuedAt"`
+	ExpiresAt   Time        `json:"expiresAt"`
+	Issuer      string      `json:"issuer"`
+	IssuerProof string      `json:"issuerProof"`
+}
+
+type PostConnection struct {
+	Edges      []*PostEdge `json:"edges"`
+	PageInfo   *PageInfo   `json:"pageInfo"`
+	TotalCount int         `json:"totalCount"`
+}
+
+type PostEdge struct {
+	Node   *Object `json:"node"`
+	Cursor Cursor  `json:"cursor"`
+}
+
+type PrivacyPreferences struct {
+	DefaultVisibility Visibility `json:"defaultVisibility"`
+	Indexable         bool       `json:"indexable"`
+	ShowOnlineStatus  bool       `json:"showOnlineStatus"`
+}
+
+type QualityBandwidth struct {
+	Quality    StreamQuality `json:"quality"`
+	TotalGb    float64       `json:"totalGB"`
+	Percentage float64       `json:"percentage"`
+}
+
+type QualityStats struct {
+	Quality      StreamQuality `json:"quality"`
+	ViewCount    int           `json:"viewCount"`
+	Percentage   float64       `json:"percentage"`
+	AvgBandwidth float64       `json:"avgBandwidth"`
+}
+
 type Query struct {
 }
 
+type QueryPerformance struct {
+	Query       string   `json:"query"`
+	Count       int      `json:"count"`
+	AvgDuration Duration `json:"avgDuration"`
+	P95Duration Duration `json:"p95Duration"`
+	ErrorCount  int      `json:"errorCount"`
+	LastSeen    Time     `json:"lastSeen"`
+}
+
+type QueueStatus struct {
+	Name           string  `json:"name"`
+	Depth          int     `json:"depth"`
+	ProcessingRate float64 `json:"processingRate"`
+	OldestMessage  *Time   `json:"oldestMessage,omitempty"`
+	DlqCount       int     `json:"dlqCount"`
+}
+
+type QuoteActivityUpdate struct {
+	Type      string             `json:"type"`
+	Quote     *Object            `json:"quote,omitempty"`
+	Quoter    *activitypub.Actor `json:"quoter,omitempty"`
+	Timestamp Time               `json:"timestamp"`
+}
+
+type QuoteConnection struct {
+	Edges      []*QuoteEdge `json:"edges"`
+	PageInfo   *PageInfo    `json:"pageInfo"`
+	TotalCount int          `json:"totalCount"`
+}
+
+type QuoteEdge struct {
+	Node   *Object `json:"node"`
+	Cursor Cursor  `json:"cursor"`
+}
+
+type ReconnectionPayload struct {
+	Success             bool                 `json:"success"`
+	SeveredRelationship *SeveredRelationship `json:"severedRelationship"`
+	Reconnected         int                  `json:"reconnected"`
+	Failed              int                  `json:"failed"`
+	Errors              []string             `json:"errors,omitempty"`
+}
+
+type Reputation struct {
+	ActorID         string              `json:"actorId"`
+	Instance        string              `json:"instance"`
+	TotalScore      int                 `json:"totalScore"`
+	TrustScore      int                 `json:"trustScore"`
+	ActivityScore   int                 `json:"activityScore"`
+	ModerationScore int                 `json:"moderationScore"`
+	CommunityScore  int                 `json:"communityScore"`
+	CalculatedAt    Time                `json:"calculatedAt"`
+	Version         string              `json:"version"`
+	Evidence        *ReputationEvidence `json:"evidence"`
+	Signature       *string             `json:"signature,omitempty"`
+}
+
+type ReputationEvidence struct {
+	TotalPosts        int     `json:"totalPosts"`
+	TotalFollowers    int     `json:"totalFollowers"`
+	AccountAge        int     `json:"accountAge"`
+	VouchCount        int     `json:"vouchCount"`
+	TrustingActors    int     `json:"trustingActors"`
+	AverageTrustScore float64 `json:"averageTrustScore"`
+}
+
+type ReputationImportResult struct {
+	Success         bool    `json:"success"`
+	ActorID         string  `json:"actorId"`
+	PreviousScore   int     `json:"previousScore"`
+	ImportedScore   int     `json:"importedScore"`
+	VouchesImported int     `json:"vouchesImported"`
+	Message         *string `json:"message,omitempty"`
+	Error           *string `json:"error,omitempty"`
+}
+
+type ReputationVerificationResult struct {
+	Valid          bool    `json:"valid"`
+	ActorID        string  `json:"actorId"`
+	Issuer         string  `json:"issuer"`
+	IssuedAt       Time    `json:"issuedAt"`
+	ExpiresAt      Time    `json:"expiresAt"`
+	SignatureValid bool    `json:"signatureValid"`
+	NotExpired     bool    `json:"notExpired"`
+	IssuerTrusted  bool    `json:"issuerTrusted"`
+	Error          *string `json:"error,omitempty"`
+}
+
+type SentimentScores struct {
+	Positive float64 `json:"positive"`
+	Negative float64 `json:"negative"`
+	Neutral  float64 `json:"neutral"`
+	Mixed    float64 `json:"mixed"`
+}
+
+type ServiceStatus struct {
+	Name        string          `json:"name"`
+	Type        ServiceCategory `json:"type"`
+	Status      HealthStatus    `json:"status"`
+	Uptime      float64         `json:"uptime"`
+	LastRestart *Time           `json:"lastRestart,omitempty"`
+	ErrorRate   float64         `json:"errorRate"`
+}
+
+type SeveranceDetails struct {
+	Description  string   `json:"description"`
+	Metadata     []string `json:"metadata"`
+	AdminNotes   *string  `json:"adminNotes,omitempty"`
+	AutoDetected bool     `json:"autoDetected"`
+}
+
+type SeveredRelationship struct {
+	ID                string            `json:"id"`
+	LocalInstance     string            `json:"localInstance"`
+	RemoteInstance    string            `json:"remoteInstance"`
+	Reason            SeveranceReason   `json:"reason"`
+	AffectedFollowers int               `json:"affectedFollowers"`
+	AffectedFollowing int               `json:"affectedFollowing"`
+	Timestamp         Time              `json:"timestamp"`
+	Reversible        bool              `json:"reversible"`
+	Details           *SeveranceDetails `json:"details,omitempty"`
+}
+
+type SeveredRelationshipConnection struct {
+	Edges      []*SeveredRelationshipEdge `json:"edges"`
+	PageInfo   *PageInfo                  `json:"pageInfo"`
+	TotalCount int                        `json:"totalCount"`
+}
+
+type SeveredRelationshipEdge struct {
+	Node   *SeveredRelationship `json:"node"`
+	Cursor Cursor               `json:"cursor"`
+}
+
+type SpamAnalysis struct {
+	SpamScore       float64          `json:"spamScore"`
+	SpamIndicators  []*SpamIndicator `json:"spamIndicators"`
+	PostingVelocity float64          `json:"postingVelocity"`
+	RepetitionScore float64          `json:"repetitionScore"`
+	LinkDensity     float64          `json:"linkDensity"`
+	FollowerRatio   float64          `json:"followerRatio"`
+	InteractionRate float64          `json:"interactionRate"`
+	AccountAgeDays  int              `json:"accountAgeDays"`
+}
+
+type SpamIndicator struct {
+	Type        string  `json:"type"`
+	Description string  `json:"description"`
+	Severity    float64 `json:"severity"`
+}
+
+type Stream struct {
+	ID         string        `json:"id"`
+	MediaID    string        `json:"mediaId"`
+	Title      string        `json:"title"`
+	Thumbnail  string        `json:"thumbnail"`
+	Duration   Duration      `json:"duration"`
+	ViewCount  int           `json:"viewCount"`
+	Quality    StreamQuality `json:"quality"`
+	Popularity float64       `json:"popularity"`
+	CreatedAt  Time          `json:"createdAt"`
+}
+
+type StreamConnection struct {
+	Edges      []*StreamEdge `json:"edges"`
+	PageInfo   *PageInfo     `json:"pageInfo"`
+	TotalCount int           `json:"totalCount"`
+}
+
+type StreamEdge struct {
+	Node   *Stream `json:"node"`
+	Cursor Cursor  `json:"cursor"`
+}
+
+type StreamingAnalytics struct {
+	TotalViews          int             `json:"totalViews"`
+	UniqueViewers       int             `json:"uniqueViewers"`
+	AverageWatchTime    Duration        `json:"averageWatchTime"`
+	QualityDistribution []*QualityStats `json:"qualityDistribution"`
+	BufferingEvents     int             `json:"bufferingEvents"`
+	CompletionRate      float64         `json:"completionRate"`
+}
+
+type StreamingPreferences struct {
+	DefaultQuality StreamQuality `json:"defaultQuality"`
+	AutoQuality    bool          `json:"autoQuality"`
+	PreloadNext    bool          `json:"preloadNext"`
+	DataSaver      bool          `json:"dataSaver"`
+}
+
+type StreamingPreferencesInput struct {
+	DefaultQuality StreamQuality `json:"defaultQuality"`
+	AutoQuality    bool          `json:"autoQuality"`
+	PreloadNext    bool          `json:"preloadNext"`
+	DataSaver      bool          `json:"dataSaver"`
+}
+
+type StreamingQualityInput struct {
+	MediaID         string        `json:"mediaId"`
+	Quality         StreamQuality `json:"quality"`
+	BufferingEvents int           `json:"bufferingEvents"`
+	WatchTime       int           `json:"watchTime"`
+}
+
+type StreamingQualityReport struct {
+	Success  bool          `json:"success"`
+	MediaID  string        `json:"mediaId"`
+	Quality  StreamQuality `json:"quality"`
+	ReportID string        `json:"reportId"`
+}
+
 type Subscription struct {
+}
+
+type SyncRepliesPayload struct {
+	Success       bool           `json:"success"`
+	SyncedReplies int            `json:"syncedReplies"`
+	Thread        *ThreadContext `json:"thread"`
+}
+
+type SyncThreadPayload struct {
+	Success     bool           `json:"success"`
+	Thread      *ThreadContext `json:"thread"`
+	SyncedPosts int            `json:"syncedPosts"`
+	Errors      []string       `json:"errors,omitempty"`
+}
+
+type TextAnalysis struct {
+	Sentiment        Sentiment        `json:"sentiment"`
+	SentimentScores  *SentimentScores `json:"sentimentScores"`
+	ToxicityScore    float64          `json:"toxicityScore"`
+	ToxicityLabels   []string         `json:"toxicityLabels"`
+	ContainsPii      bool             `json:"containsPII"`
+	DominantLanguage string           `json:"dominantLanguage"`
+	Entities         []*Entity        `json:"entities"`
+	KeyPhrases       []string         `json:"keyPhrases"`
+}
+
+type TextAnalysisCapabilities struct {
+	SentimentAnalysis bool `json:"sentimentAnalysis"`
+	ToxicityDetection bool `json:"toxicityDetection"`
+	SpamDetection     bool `json:"spamDetection"`
+	PiiDetection      bool `json:"piiDetection"`
+	EntityExtraction  bool `json:"entityExtraction"`
+	LanguageDetection bool `json:"languageDetection"`
+}
+
+type ThreadContext struct {
+	RootNote         *Object    `json:"rootNote"`
+	ReplyCount       int        `json:"replyCount"`
+	ParticipantCount int        `json:"participantCount"`
+	LastActivity     Time       `json:"lastActivity"`
+	MissingPosts     int        `json:"missingPosts"`
+	SyncStatus       SyncStatus `json:"syncStatus"`
+}
+
+type ThreatAlert struct {
+	ID                string             `json:"id"`
+	Type              string             `json:"type"`
+	Severity          ModerationSeverity `json:"severity"`
+	Source            string             `json:"source"`
+	Description       string             `json:"description"`
+	AffectedInstances []string           `json:"affectedInstances"`
+	MitigationSteps   []string           `json:"mitigationSteps"`
+	Timestamp         Time               `json:"timestamp"`
+}
+
+type ThreatTrend struct {
+	Type      string             `json:"type"`
+	Severity  ModerationSeverity `json:"severity"`
+	Count     int                `json:"count"`
+	Change    float64            `json:"change"`
+	Instances []string           `json:"instances"`
+}
+
+type TrainingResult struct {
+	Success      bool     `json:"success"`
+	ModelVersion string   `json:"modelVersion"`
+	Accuracy     float64  `json:"accuracy"`
+	Precision    float64  `json:"precision"`
+	Recall       float64  `json:"recall"`
+	SamplesUsed  int      `json:"samplesUsed"`
+	TrainingTime int      `json:"trainingTime"`
+	Improvements []string `json:"improvements"`
 }
 
 type TrustInput struct {
 	TargetActorID string              `json:"targetActorId"`
 	Category      trust.TrustCategory `json:"category"`
 	Score         float64             `json:"score"`
+}
+
+type UnfollowHashtagPayload struct {
+	Success bool     `json:"success"`
+	Hashtag *Hashtag `json:"hashtag"`
+}
+
+type UpdateHashtagNotificationsPayload struct {
+	Success  bool                         `json:"success"`
+	Hashtag  *Hashtag                     `json:"hashtag"`
+	Settings *HashtagNotificationSettings `json:"settings"`
+}
+
+type UpdateQuotePermissionsPayload struct {
+	Success        bool    `json:"success"`
+	Note           *Object `json:"note"`
+	AffectedQuotes int     `json:"affectedQuotes"`
+}
+
+type UserPreferences struct {
+	ActorID       string                   `json:"actorId"`
+	Streaming     *StreamingPreferences    `json:"streaming"`
+	Notifications *NotificationPreferences `json:"notifications"`
+	Privacy       *PrivacyPreferences      `json:"privacy"`
+}
+
+type Vouch struct {
+	ID                string             `json:"id"`
+	From              *activitypub.Actor `json:"from"`
+	To                *activitypub.Actor `json:"to"`
+	Confidence        float64            `json:"confidence"`
+	Context           string             `json:"context"`
+	VoucherReputation int                `json:"voucherReputation"`
+	CreatedAt         Time               `json:"createdAt"`
+	ExpiresAt         Time               `json:"expiresAt"`
+	Active            bool               `json:"active"`
+	Revoked           bool               `json:"revoked"`
+	RevokedAt         *Time              `json:"revokedAt,omitempty"`
+}
+
+type WithdrawQuotePayload struct {
+	Success        bool    `json:"success"`
+	Note           *Object `json:"note"`
+	WithdrawnCount int     `json:"withdrawnCount"`
 }
 
 type ActivityType string
@@ -326,6 +1411,844 @@ func (e ActorType) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type AlertLevel string
+
+const (
+	AlertLevelInfo     AlertLevel = "INFO"
+	AlertLevelWarning  AlertLevel = "WARNING"
+	AlertLevelCritical AlertLevel = "CRITICAL"
+)
+
+var AllAlertLevel = []AlertLevel{
+	AlertLevelInfo,
+	AlertLevelWarning,
+	AlertLevelCritical,
+}
+
+func (e AlertLevel) IsValid() bool {
+	switch e {
+	case AlertLevelInfo, AlertLevelWarning, AlertLevelCritical:
+		return true
+	}
+	return false
+}
+
+func (e AlertLevel) String() string {
+	return string(e)
+}
+
+func (e *AlertLevel) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = AlertLevel(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid AlertLevel", str)
+	}
+	return nil
+}
+
+func (e AlertLevel) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *AlertLevel) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e AlertLevel) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type AlertSeverity string
+
+const (
+	AlertSeverityInfo     AlertSeverity = "INFO"
+	AlertSeverityWarning  AlertSeverity = "WARNING"
+	AlertSeverityError    AlertSeverity = "ERROR"
+	AlertSeverityCritical AlertSeverity = "CRITICAL"
+)
+
+var AllAlertSeverity = []AlertSeverity{
+	AlertSeverityInfo,
+	AlertSeverityWarning,
+	AlertSeverityError,
+	AlertSeverityCritical,
+}
+
+func (e AlertSeverity) IsValid() bool {
+	switch e {
+	case AlertSeverityInfo, AlertSeverityWarning, AlertSeverityError, AlertSeverityCritical:
+		return true
+	}
+	return false
+}
+
+func (e AlertSeverity) String() string {
+	return string(e)
+}
+
+func (e *AlertSeverity) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = AlertSeverity(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid AlertSeverity", str)
+	}
+	return nil
+}
+
+func (e AlertSeverity) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *AlertSeverity) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e AlertSeverity) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ConnectionType string
+
+const (
+	ConnectionTypeFollows  ConnectionType = "FOLLOWS"
+	ConnectionTypeMentions ConnectionType = "MENTIONS"
+	ConnectionTypeReplies  ConnectionType = "REPLIES"
+	ConnectionTypeBoosts   ConnectionType = "BOOSTS"
+	ConnectionTypeQuotes   ConnectionType = "QUOTES"
+	ConnectionTypeMixed    ConnectionType = "MIXED"
+)
+
+var AllConnectionType = []ConnectionType{
+	ConnectionTypeFollows,
+	ConnectionTypeMentions,
+	ConnectionTypeReplies,
+	ConnectionTypeBoosts,
+	ConnectionTypeQuotes,
+	ConnectionTypeMixed,
+}
+
+func (e ConnectionType) IsValid() bool {
+	switch e {
+	case ConnectionTypeFollows, ConnectionTypeMentions, ConnectionTypeReplies, ConnectionTypeBoosts, ConnectionTypeQuotes, ConnectionTypeMixed:
+		return true
+	}
+	return false
+}
+
+func (e ConnectionType) String() string {
+	return string(e)
+}
+
+func (e *ConnectionType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ConnectionType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ConnectionType", str)
+	}
+	return nil
+}
+
+func (e ConnectionType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ConnectionType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ConnectionType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type CostOrderBy string
+
+const (
+	CostOrderByTotalCostDesc    CostOrderBy = "TOTAL_COST_DESC"
+	CostOrderByTotalCostAsc     CostOrderBy = "TOTAL_COST_ASC"
+	CostOrderByErrorRateDesc    CostOrderBy = "ERROR_RATE_DESC"
+	CostOrderByRequestCountDesc CostOrderBy = "REQUEST_COUNT_DESC"
+	CostOrderByDomainAsc        CostOrderBy = "DOMAIN_ASC"
+)
+
+var AllCostOrderBy = []CostOrderBy{
+	CostOrderByTotalCostDesc,
+	CostOrderByTotalCostAsc,
+	CostOrderByErrorRateDesc,
+	CostOrderByRequestCountDesc,
+	CostOrderByDomainAsc,
+}
+
+func (e CostOrderBy) IsValid() bool {
+	switch e {
+	case CostOrderByTotalCostDesc, CostOrderByTotalCostAsc, CostOrderByErrorRateDesc, CostOrderByRequestCountDesc, CostOrderByDomainAsc:
+		return true
+	}
+	return false
+}
+
+func (e CostOrderBy) String() string {
+	return string(e)
+}
+
+func (e *CostOrderBy) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = CostOrderBy(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid CostOrderBy", str)
+	}
+	return nil
+}
+
+func (e CostOrderBy) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *CostOrderBy) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e CostOrderBy) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type DigestFrequency string
+
+const (
+	DigestFrequencyNever   DigestFrequency = "NEVER"
+	DigestFrequencyDaily   DigestFrequency = "DAILY"
+	DigestFrequencyWeekly  DigestFrequency = "WEEKLY"
+	DigestFrequencyMonthly DigestFrequency = "MONTHLY"
+)
+
+var AllDigestFrequency = []DigestFrequency{
+	DigestFrequencyNever,
+	DigestFrequencyDaily,
+	DigestFrequencyWeekly,
+	DigestFrequencyMonthly,
+}
+
+func (e DigestFrequency) IsValid() bool {
+	switch e {
+	case DigestFrequencyNever, DigestFrequencyDaily, DigestFrequencyWeekly, DigestFrequencyMonthly:
+		return true
+	}
+	return false
+}
+
+func (e DigestFrequency) String() string {
+	return string(e)
+}
+
+func (e *DigestFrequency) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = DigestFrequency(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid DigestFrequency", str)
+	}
+	return nil
+}
+
+func (e DigestFrequency) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *DigestFrequency) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e DigestFrequency) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type FederationState string
+
+const (
+	FederationStateActive  FederationState = "ACTIVE"
+	FederationStatePaused  FederationState = "PAUSED"
+	FederationStateLimited FederationState = "LIMITED"
+	FederationStateBlocked FederationState = "BLOCKED"
+	FederationStateError   FederationState = "ERROR"
+)
+
+var AllFederationState = []FederationState{
+	FederationStateActive,
+	FederationStatePaused,
+	FederationStateLimited,
+	FederationStateBlocked,
+	FederationStateError,
+}
+
+func (e FederationState) IsValid() bool {
+	switch e {
+	case FederationStateActive, FederationStatePaused, FederationStateLimited, FederationStateBlocked, FederationStateError:
+		return true
+	}
+	return false
+}
+
+func (e FederationState) String() string {
+	return string(e)
+}
+
+func (e *FederationState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = FederationState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid FederationState", str)
+	}
+	return nil
+}
+
+func (e FederationState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *FederationState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e FederationState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type HashtagMode string
+
+const (
+	HashtagModeAny HashtagMode = "ANY"
+	HashtagModeAll HashtagMode = "ALL"
+)
+
+var AllHashtagMode = []HashtagMode{
+	HashtagModeAny,
+	HashtagModeAll,
+}
+
+func (e HashtagMode) IsValid() bool {
+	switch e {
+	case HashtagModeAny, HashtagModeAll:
+		return true
+	}
+	return false
+}
+
+func (e HashtagMode) String() string {
+	return string(e)
+}
+
+func (e *HashtagMode) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = HashtagMode(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid HashtagMode", str)
+	}
+	return nil
+}
+
+func (e HashtagMode) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *HashtagMode) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e HashtagMode) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type HealthStatus string
+
+const (
+	HealthStatusHealthy  HealthStatus = "HEALTHY"
+	HealthStatusDegraded HealthStatus = "DEGRADED"
+	HealthStatusDown     HealthStatus = "DOWN"
+	HealthStatusUnknown  HealthStatus = "UNKNOWN"
+)
+
+var AllHealthStatus = []HealthStatus{
+	HealthStatusHealthy,
+	HealthStatusDegraded,
+	HealthStatusDown,
+	HealthStatusUnknown,
+}
+
+func (e HealthStatus) IsValid() bool {
+	switch e {
+	case HealthStatusHealthy, HealthStatusDegraded, HealthStatusDown, HealthStatusUnknown:
+		return true
+	}
+	return false
+}
+
+func (e HealthStatus) String() string {
+	return string(e)
+}
+
+func (e *HealthStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = HealthStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid HealthStatus", str)
+	}
+	return nil
+}
+
+func (e HealthStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *HealthStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e HealthStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type InfrastructureEventType string
+
+const (
+	InfrastructureEventTypeDeployment  InfrastructureEventType = "DEPLOYMENT"
+	InfrastructureEventTypeScaling     InfrastructureEventType = "SCALING"
+	InfrastructureEventTypeFailure     InfrastructureEventType = "FAILURE"
+	InfrastructureEventTypeRecovery    InfrastructureEventType = "RECOVERY"
+	InfrastructureEventTypeMaintenance InfrastructureEventType = "MAINTENANCE"
+)
+
+var AllInfrastructureEventType = []InfrastructureEventType{
+	InfrastructureEventTypeDeployment,
+	InfrastructureEventTypeScaling,
+	InfrastructureEventTypeFailure,
+	InfrastructureEventTypeRecovery,
+	InfrastructureEventTypeMaintenance,
+}
+
+func (e InfrastructureEventType) IsValid() bool {
+	switch e {
+	case InfrastructureEventTypeDeployment, InfrastructureEventTypeScaling, InfrastructureEventTypeFailure, InfrastructureEventTypeRecovery, InfrastructureEventTypeMaintenance:
+		return true
+	}
+	return false
+}
+
+func (e InfrastructureEventType) String() string {
+	return string(e)
+}
+
+func (e *InfrastructureEventType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = InfrastructureEventType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid InfrastructureEventType", str)
+	}
+	return nil
+}
+
+func (e InfrastructureEventType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *InfrastructureEventType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e InfrastructureEventType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type InstanceHealthStatus string
+
+const (
+	InstanceHealthStatusHealthy  InstanceHealthStatus = "HEALTHY"
+	InstanceHealthStatusWarning  InstanceHealthStatus = "WARNING"
+	InstanceHealthStatusCritical InstanceHealthStatus = "CRITICAL"
+	InstanceHealthStatusOffline  InstanceHealthStatus = "OFFLINE"
+	InstanceHealthStatusUnknown  InstanceHealthStatus = "UNKNOWN"
+)
+
+var AllInstanceHealthStatus = []InstanceHealthStatus{
+	InstanceHealthStatusHealthy,
+	InstanceHealthStatusWarning,
+	InstanceHealthStatusCritical,
+	InstanceHealthStatusOffline,
+	InstanceHealthStatusUnknown,
+}
+
+func (e InstanceHealthStatus) IsValid() bool {
+	switch e {
+	case InstanceHealthStatusHealthy, InstanceHealthStatusWarning, InstanceHealthStatusCritical, InstanceHealthStatusOffline, InstanceHealthStatusUnknown:
+		return true
+	}
+	return false
+}
+
+func (e InstanceHealthStatus) String() string {
+	return string(e)
+}
+
+func (e *InstanceHealthStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = InstanceHealthStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid InstanceHealthStatus", str)
+	}
+	return nil
+}
+
+func (e InstanceHealthStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *InstanceHealthStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e InstanceHealthStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type IssueSeverity string
+
+const (
+	IssueSeverityLow      IssueSeverity = "LOW"
+	IssueSeverityMedium   IssueSeverity = "MEDIUM"
+	IssueSeverityHigh     IssueSeverity = "HIGH"
+	IssueSeverityCritical IssueSeverity = "CRITICAL"
+)
+
+var AllIssueSeverity = []IssueSeverity{
+	IssueSeverityLow,
+	IssueSeverityMedium,
+	IssueSeverityHigh,
+	IssueSeverityCritical,
+}
+
+func (e IssueSeverity) IsValid() bool {
+	switch e {
+	case IssueSeverityLow, IssueSeverityMedium, IssueSeverityHigh, IssueSeverityCritical:
+		return true
+	}
+	return false
+}
+
+func (e IssueSeverity) String() string {
+	return string(e)
+}
+
+func (e *IssueSeverity) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = IssueSeverity(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid IssueSeverity", str)
+	}
+	return nil
+}
+
+func (e IssueSeverity) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *IssueSeverity) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e IssueSeverity) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ModerationAction string
+
+const (
+	ModerationActionNone      ModerationAction = "NONE"
+	ModerationActionFlag      ModerationAction = "FLAG"
+	ModerationActionHide      ModerationAction = "HIDE"
+	ModerationActionRemove    ModerationAction = "REMOVE"
+	ModerationActionShadowBan ModerationAction = "SHADOW_BAN"
+	ModerationActionReview    ModerationAction = "REVIEW"
+)
+
+var AllModerationAction = []ModerationAction{
+	ModerationActionNone,
+	ModerationActionFlag,
+	ModerationActionHide,
+	ModerationActionRemove,
+	ModerationActionShadowBan,
+	ModerationActionReview,
+}
+
+func (e ModerationAction) IsValid() bool {
+	switch e {
+	case ModerationActionNone, ModerationActionFlag, ModerationActionHide, ModerationActionRemove, ModerationActionShadowBan, ModerationActionReview:
+		return true
+	}
+	return false
+}
+
+func (e ModerationAction) String() string {
+	return string(e)
+}
+
+func (e *ModerationAction) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ModerationAction(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ModerationAction", str)
+	}
+	return nil
+}
+
+func (e ModerationAction) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ModerationAction) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ModerationAction) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ModerationSeverity string
+
+const (
+	ModerationSeverityInfo     ModerationSeverity = "INFO"
+	ModerationSeverityLow      ModerationSeverity = "LOW"
+	ModerationSeverityMedium   ModerationSeverity = "MEDIUM"
+	ModerationSeverityHigh     ModerationSeverity = "HIGH"
+	ModerationSeverityCritical ModerationSeverity = "CRITICAL"
+)
+
+var AllModerationSeverity = []ModerationSeverity{
+	ModerationSeverityInfo,
+	ModerationSeverityLow,
+	ModerationSeverityMedium,
+	ModerationSeverityHigh,
+	ModerationSeverityCritical,
+}
+
+func (e ModerationSeverity) IsValid() bool {
+	switch e {
+	case ModerationSeverityInfo, ModerationSeverityLow, ModerationSeverityMedium, ModerationSeverityHigh, ModerationSeverityCritical:
+		return true
+	}
+	return false
+}
+
+func (e ModerationSeverity) String() string {
+	return string(e)
+}
+
+func (e *ModerationSeverity) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ModerationSeverity(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ModerationSeverity", str)
+	}
+	return nil
+}
+
+func (e ModerationSeverity) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ModerationSeverity) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ModerationSeverity) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type NotificationLevel string
+
+const (
+	NotificationLevelAll       NotificationLevel = "ALL"
+	NotificationLevelMutuals   NotificationLevel = "MUTUALS"
+	NotificationLevelFollowing NotificationLevel = "FOLLOWING"
+	NotificationLevelNone      NotificationLevel = "NONE"
+)
+
+var AllNotificationLevel = []NotificationLevel{
+	NotificationLevelAll,
+	NotificationLevelMutuals,
+	NotificationLevelFollowing,
+	NotificationLevelNone,
+}
+
+func (e NotificationLevel) IsValid() bool {
+	switch e {
+	case NotificationLevelAll, NotificationLevelMutuals, NotificationLevelFollowing, NotificationLevelNone:
+		return true
+	}
+	return false
+}
+
+func (e NotificationLevel) String() string {
+	return string(e)
+}
+
+func (e *NotificationLevel) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = NotificationLevel(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid NotificationLevel", str)
+	}
+	return nil
+}
+
+func (e NotificationLevel) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *NotificationLevel) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e NotificationLevel) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type ObjectType string
 
 const (
@@ -386,6 +2309,65 @@ func (e *ObjectType) UnmarshalJSON(b []byte) error {
 }
 
 func (e ObjectType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PatternType string
+
+const (
+	PatternTypeRegex     PatternType = "REGEX"
+	PatternTypeKeyword   PatternType = "KEYWORD"
+	PatternTypePhrase    PatternType = "PHRASE"
+	PatternTypeMlPattern PatternType = "ML_PATTERN"
+)
+
+var AllPatternType = []PatternType{
+	PatternTypeRegex,
+	PatternTypeKeyword,
+	PatternTypePhrase,
+	PatternTypeMlPattern,
+}
+
+func (e PatternType) IsValid() bool {
+	switch e {
+	case PatternTypeRegex, PatternTypeKeyword, PatternTypePhrase, PatternTypeMlPattern:
+		return true
+	}
+	return false
+}
+
+func (e PatternType) String() string {
+	return string(e)
+}
+
+func (e *PatternType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PatternType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PatternType", str)
+	}
+	return nil
+}
+
+func (e PatternType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PatternType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PatternType) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -452,6 +2434,604 @@ func (e Period) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type Priority string
+
+const (
+	PriorityLow      Priority = "LOW"
+	PriorityMedium   Priority = "MEDIUM"
+	PriorityHigh     Priority = "HIGH"
+	PriorityCritical Priority = "CRITICAL"
+)
+
+var AllPriority = []Priority{
+	PriorityLow,
+	PriorityMedium,
+	PriorityHigh,
+	PriorityCritical,
+}
+
+func (e Priority) IsValid() bool {
+	switch e {
+	case PriorityLow, PriorityMedium, PriorityHigh, PriorityCritical:
+		return true
+	}
+	return false
+}
+
+func (e Priority) String() string {
+	return string(e)
+}
+
+func (e *Priority) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = Priority(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid Priority", str)
+	}
+	return nil
+}
+
+func (e Priority) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *Priority) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e Priority) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type QuotePermission string
+
+const (
+	QuotePermissionEveryone  QuotePermission = "EVERYONE"
+	QuotePermissionFollowers QuotePermission = "FOLLOWERS"
+	QuotePermissionNone      QuotePermission = "NONE"
+)
+
+var AllQuotePermission = []QuotePermission{
+	QuotePermissionEveryone,
+	QuotePermissionFollowers,
+	QuotePermissionNone,
+}
+
+func (e QuotePermission) IsValid() bool {
+	switch e {
+	case QuotePermissionEveryone, QuotePermissionFollowers, QuotePermissionNone:
+		return true
+	}
+	return false
+}
+
+func (e QuotePermission) String() string {
+	return string(e)
+}
+
+func (e *QuotePermission) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = QuotePermission(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid QuotePermission", str)
+	}
+	return nil
+}
+
+func (e QuotePermission) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *QuotePermission) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e QuotePermission) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type QuoteType string
+
+const (
+	QuoteTypeFull       QuoteType = "FULL"
+	QuoteTypePartial    QuoteType = "PARTIAL"
+	QuoteTypeCommentary QuoteType = "COMMENTARY"
+	QuoteTypeReaction   QuoteType = "REACTION"
+)
+
+var AllQuoteType = []QuoteType{
+	QuoteTypeFull,
+	QuoteTypePartial,
+	QuoteTypeCommentary,
+	QuoteTypeReaction,
+}
+
+func (e QuoteType) IsValid() bool {
+	switch e {
+	case QuoteTypeFull, QuoteTypePartial, QuoteTypeCommentary, QuoteTypeReaction:
+		return true
+	}
+	return false
+}
+
+func (e QuoteType) String() string {
+	return string(e)
+}
+
+func (e *QuoteType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = QuoteType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid QuoteType", str)
+	}
+	return nil
+}
+
+func (e QuoteType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *QuoteType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e QuoteType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type RecommendationType string
+
+const (
+	RecommendationTypePerformance  RecommendationType = "PERFORMANCE"
+	RecommendationTypeCost         RecommendationType = "COST"
+	RecommendationTypeSecurity     RecommendationType = "SECURITY"
+	RecommendationTypeConnectivity RecommendationType = "CONNECTIVITY"
+	RecommendationTypeContent      RecommendationType = "CONTENT"
+)
+
+var AllRecommendationType = []RecommendationType{
+	RecommendationTypePerformance,
+	RecommendationTypeCost,
+	RecommendationTypeSecurity,
+	RecommendationTypeConnectivity,
+	RecommendationTypeContent,
+}
+
+func (e RecommendationType) IsValid() bool {
+	switch e {
+	case RecommendationTypePerformance, RecommendationTypeCost, RecommendationTypeSecurity, RecommendationTypeConnectivity, RecommendationTypeContent:
+		return true
+	}
+	return false
+}
+
+func (e RecommendationType) String() string {
+	return string(e)
+}
+
+func (e *RecommendationType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = RecommendationType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid RecommendationType", str)
+	}
+	return nil
+}
+
+func (e RecommendationType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *RecommendationType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e RecommendationType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type Sentiment string
+
+const (
+	SentimentPositive Sentiment = "POSITIVE"
+	SentimentNegative Sentiment = "NEGATIVE"
+	SentimentNeutral  Sentiment = "NEUTRAL"
+	SentimentMixed    Sentiment = "MIXED"
+)
+
+var AllSentiment = []Sentiment{
+	SentimentPositive,
+	SentimentNegative,
+	SentimentNeutral,
+	SentimentMixed,
+}
+
+func (e Sentiment) IsValid() bool {
+	switch e {
+	case SentimentPositive, SentimentNegative, SentimentNeutral, SentimentMixed:
+		return true
+	}
+	return false
+}
+
+func (e Sentiment) String() string {
+	return string(e)
+}
+
+func (e *Sentiment) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = Sentiment(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid Sentiment", str)
+	}
+	return nil
+}
+
+func (e Sentiment) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *Sentiment) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e Sentiment) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ServiceCategory string
+
+const (
+	ServiceCategoryGraphqlAPI         ServiceCategory = "GRAPHQL_API"
+	ServiceCategoryFederationDelivery ServiceCategory = "FEDERATION_DELIVERY"
+	ServiceCategoryMediaProcessor     ServiceCategory = "MEDIA_PROCESSOR"
+	ServiceCategoryModerationEngine   ServiceCategory = "MODERATION_ENGINE"
+	ServiceCategorySearchIndexer      ServiceCategory = "SEARCH_INDEXER"
+	ServiceCategoryStreamingService   ServiceCategory = "STREAMING_SERVICE"
+)
+
+var AllServiceCategory = []ServiceCategory{
+	ServiceCategoryGraphqlAPI,
+	ServiceCategoryFederationDelivery,
+	ServiceCategoryMediaProcessor,
+	ServiceCategoryModerationEngine,
+	ServiceCategorySearchIndexer,
+	ServiceCategoryStreamingService,
+}
+
+func (e ServiceCategory) IsValid() bool {
+	switch e {
+	case ServiceCategoryGraphqlAPI, ServiceCategoryFederationDelivery, ServiceCategoryMediaProcessor, ServiceCategoryModerationEngine, ServiceCategorySearchIndexer, ServiceCategoryStreamingService:
+		return true
+	}
+	return false
+}
+
+func (e ServiceCategory) String() string {
+	return string(e)
+}
+
+func (e *ServiceCategory) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ServiceCategory(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ServiceCategory", str)
+	}
+	return nil
+}
+
+func (e ServiceCategory) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ServiceCategory) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ServiceCategory) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SeveranceReason string
+
+const (
+	SeveranceReasonDomainBlock     SeveranceReason = "DOMAIN_BLOCK"
+	SeveranceReasonInstanceDown    SeveranceReason = "INSTANCE_DOWN"
+	SeveranceReasonDefederation    SeveranceReason = "DEFEDERATION"
+	SeveranceReasonPolicyViolation SeveranceReason = "POLICY_VIOLATION"
+	SeveranceReasonOther           SeveranceReason = "OTHER"
+)
+
+var AllSeveranceReason = []SeveranceReason{
+	SeveranceReasonDomainBlock,
+	SeveranceReasonInstanceDown,
+	SeveranceReasonDefederation,
+	SeveranceReasonPolicyViolation,
+	SeveranceReasonOther,
+}
+
+func (e SeveranceReason) IsValid() bool {
+	switch e {
+	case SeveranceReasonDomainBlock, SeveranceReasonInstanceDown, SeveranceReasonDefederation, SeveranceReasonPolicyViolation, SeveranceReasonOther:
+		return true
+	}
+	return false
+}
+
+func (e SeveranceReason) String() string {
+	return string(e)
+}
+
+func (e *SeveranceReason) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SeveranceReason(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SeveranceReason", str)
+	}
+	return nil
+}
+
+func (e SeveranceReason) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SeveranceReason) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SeveranceReason) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type StreamQuality string
+
+const (
+	StreamQualityAuto   StreamQuality = "AUTO"
+	StreamQualityLow    StreamQuality = "LOW"
+	StreamQualityMedium StreamQuality = "MEDIUM"
+	StreamQualityHigh   StreamQuality = "HIGH"
+	StreamQualityUltra  StreamQuality = "ULTRA"
+)
+
+var AllStreamQuality = []StreamQuality{
+	StreamQualityAuto,
+	StreamQualityLow,
+	StreamQualityMedium,
+	StreamQualityHigh,
+	StreamQualityUltra,
+}
+
+func (e StreamQuality) IsValid() bool {
+	switch e {
+	case StreamQualityAuto, StreamQualityLow, StreamQualityMedium, StreamQualityHigh, StreamQualityUltra:
+		return true
+	}
+	return false
+}
+
+func (e StreamQuality) String() string {
+	return string(e)
+}
+
+func (e *StreamQuality) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = StreamQuality(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid StreamQuality", str)
+	}
+	return nil
+}
+
+func (e StreamQuality) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *StreamQuality) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e StreamQuality) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SyncStatus string
+
+const (
+	SyncStatusComplete SyncStatus = "COMPLETE"
+	SyncStatusPartial  SyncStatus = "PARTIAL"
+	SyncStatusSyncing  SyncStatus = "SYNCING"
+	SyncStatusFailed   SyncStatus = "FAILED"
+)
+
+var AllSyncStatus = []SyncStatus{
+	SyncStatusComplete,
+	SyncStatusPartial,
+	SyncStatusSyncing,
+	SyncStatusFailed,
+}
+
+func (e SyncStatus) IsValid() bool {
+	switch e {
+	case SyncStatusComplete, SyncStatusPartial, SyncStatusSyncing, SyncStatusFailed:
+		return true
+	}
+	return false
+}
+
+func (e SyncStatus) String() string {
+	return string(e)
+}
+
+func (e *SyncStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SyncStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SyncStatus", str)
+	}
+	return nil
+}
+
+func (e SyncStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SyncStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SyncStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type TimePeriod string
+
+const (
+	TimePeriodHour  TimePeriod = "HOUR"
+	TimePeriodDay   TimePeriod = "DAY"
+	TimePeriodWeek  TimePeriod = "WEEK"
+	TimePeriodMonth TimePeriod = "MONTH"
+)
+
+var AllTimePeriod = []TimePeriod{
+	TimePeriodHour,
+	TimePeriodDay,
+	TimePeriodWeek,
+	TimePeriodMonth,
+}
+
+func (e TimePeriod) IsValid() bool {
+	switch e {
+	case TimePeriodHour, TimePeriodDay, TimePeriodWeek, TimePeriodMonth:
+		return true
+	}
+	return false
+}
+
+func (e TimePeriod) String() string {
+	return string(e)
+}
+
+func (e *TimePeriod) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = TimePeriod(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid TimePeriod", str)
+	}
+	return nil
+}
+
+func (e TimePeriod) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *TimePeriod) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e TimePeriod) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type TimelineType string
 
 const (
@@ -510,6 +3090,63 @@ func (e *TimelineType) UnmarshalJSON(b []byte) error {
 }
 
 func (e TimelineType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type Trend string
+
+const (
+	TrendIncreasing Trend = "INCREASING"
+	TrendStable     Trend = "STABLE"
+	TrendDecreasing Trend = "DECREASING"
+)
+
+var AllTrend = []Trend{
+	TrendIncreasing,
+	TrendStable,
+	TrendDecreasing,
+}
+
+func (e Trend) IsValid() bool {
+	switch e {
+	case TrendIncreasing, TrendStable, TrendDecreasing:
+		return true
+	}
+	return false
+}
+
+func (e Trend) String() string {
+	return string(e)
+}
+
+func (e *Trend) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = Trend(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid Trend", str)
+	}
+	return nil
+}
+
+func (e Trend) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *Trend) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e Trend) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
