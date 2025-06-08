@@ -91,6 +91,22 @@ type Note struct {
 	ConversationID string       `json:"conversationId,omitempty"` // For tracking conversation threads
 }
 
+// QuoteNote represents a note that quotes another note
+type QuoteNote struct {
+	Note
+	QuoteURL           string        `json:"quoteUrl"`
+	Quoteable          bool          `json:"_:quoteable"`
+	QuoteNotifications bool          `json:"_:quoteNotifications"`
+	QuoteContext       *QuoteContext `json:"_:quoteContext,omitempty"`
+}
+
+// QuoteContext provides metadata about a quoted note
+type QuoteContext struct {
+	OriginalAuthor  string `json:"originalAuthor"`
+	QuoteCount      int    `json:"quoteCount"`
+	AllowWithdrawal bool   `json:"allowWithdrawal"`
+}
+
 // Article represents long-form content
 type Article struct {
 	Note

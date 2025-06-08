@@ -120,6 +120,14 @@ type Object {
   estimatedCost: Int!
   moderationScore: Float
   communityNotes: [CommunityNote!]!
+  
+  # Quote Posts extensions
+  quoteUrl: String
+  quoteable: Boolean!
+  quotePermissions: QuotePermission!
+  quoteContext: QuoteContext
+  quoteCount: Int!
+  quotes(first: Int, after: String): QuoteConnection!
 }
 
 type ContentMap {
@@ -236,6 +244,74 @@ type CommunityNote {
   createdAt: Time!
 }
 
+# Notification type
+type Notification {
+  id: ID!
+  type: String! # follow, mention, favourite, reblog
+  account: Actor! # Who triggered the notification
+  status: Object # Related status (if any)
+  read: Boolean!
+  createdAt: Time!
+}
+
+# Notification connection for pagination
+type NotificationConnection {
+  edges: [NotificationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type NotificationEdge {
+  node: Notification!
+  cursor: Cursor!
+}
+
+# Quote Posts types
+type QuoteContext {
+  originalAuthor: Actor!
+  originalNote: Object
+  quoteAllowed: Boolean!
+  quoteType: QuoteType!
+  withdrawn: Boolean!
+}
+
+enum QuotePermission {
+  EVERYONE
+  FOLLOWERS
+  NONE
+}
+
+enum QuoteType {
+  FULL
+  PARTIAL
+  COMMENTARY
+  REACTION
+}
+
+type QuoteConnection {
+  edges: [QuoteEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type QuoteEdge {
+  node: Object!
+  cursor: Cursor!
+}
+
+# Quote Posts payloads
+type WithdrawQuotePayload {
+  success: Boolean!
+  note: Object!
+  withdrawnCount: Int!
+}
+
+type UpdateQuotePermissionsPayload {
+  success: Boolean!
+  note: Object!
+  affectedQuotes: Int!
+}
+
 # Input Types
 input CreateNoteInput {
   content: String!
@@ -271,6 +347,17 @@ input CommunityNoteInput {
   content: String!
 }
 
+input CreateQuoteNoteInput {
+  content: String!
+  quoteUrl: String!
+  quoteType: QuoteType
+  visibility: Visibility
+  quoteable: Boolean
+  sensitive: Boolean
+  spoilerText: String
+  mediaIds: [ID!]
+}
+
 # Payloads
 type CreateNotePayload {
   object: Object!
@@ -302,6 +389,7 @@ type Query {
   object(id: ID!): Object
   timeline(type: TimelineType!, hashtag: String, listId: ID, first: Int = 20, after: Cursor): ObjectConnection!
   search(query: String!, type: String, first: Int = 20, after: Cursor): ObjectConnection!
+  notifications(types: [String!], excludeTypes: [String!], first: Int = 20, after: Cursor): NotificationConnection!
   
   # Lesser enhancements
   instanceMetrics: InstanceMetrics!
@@ -317,6 +405,32 @@ type Query {
   aiAnalysis(objectId: ID!): AIAnalysis
   aiStats(period: Period!): AIStats!
   aiCapabilities: AICapabilities!
+  
+  # Hashtag Following queries
+  hashtag(name: String!): Hashtag
+  followedHashtags(first: Int, after: String): HashtagConnection!
+  hashtagTimeline(hashtag: String!, first: Int, after: String): PostConnection!
+  multiHashtagTimeline(
+    hashtags: [String!]!
+    mode: HashtagMode!
+    first: Int
+    after: String
+  ): PostConnection!
+  suggestedHashtags(limit: Int): [HashtagSuggestion!]!
+  
+  # Thread Synchronization queries
+  threadContext(noteId: ID!): ThreadContext
+  
+  # Severed Relationships queries
+  severedRelationships(
+    instance: String
+    first: Int
+    after: String
+  ): SeveredRelationshipConnection!
+  
+  affectedRelationships(
+    severedRelationshipId: ID!
+  ): AffectedRelationshipConnection!
 }
 
 # Mutations
@@ -339,6 +453,32 @@ type Mutation {
   
   # AI Analysis
   requestAIAnalysis(objectId: ID!, objectType: String, force: Boolean): AIAnalysisRequest!
+  
+  # Quote Posts mutations
+  createQuoteNote(input: CreateQuoteNoteInput!): CreateNotePayload!
+  withdrawFromQuotes(noteId: ID!): WithdrawQuotePayload!
+  updateQuotePermissions(
+    noteId: ID!
+    quoteable: Boolean!
+    permission: QuotePermission!
+  ): UpdateQuotePermissionsPayload!
+  
+  # Hashtag Following mutations
+  followHashtag(hashtag: String!, notifyLevel: NotificationLevel): HashtagFollowPayload!
+  unfollowHashtag(hashtag: String!): UnfollowHashtagPayload!
+  updateHashtagNotifications(
+    hashtag: String!
+    settings: HashtagNotificationSettingsInput!
+  ): UpdateHashtagNotificationsPayload!
+  muteHashtag(hashtag: String!, until: Time): MuteHashtagPayload!
+  
+  # Thread Synchronization mutations
+  syncThread(noteUrl: String!, depth: Int): SyncThreadPayload!
+  syncMissingReplies(noteId: ID!): SyncRepliesPayload!
+  
+  # Severed Relationships mutations
+  acknowledgeSeverance(id: ID!): AcknowledgePayload!
+  attemptReconnection(id: ID!): ReconnectionPayload!
 }
 
 # Subscriptions (via WebSocket Lambda)
@@ -354,6 +494,138 @@ type Subscription {
   
   # AI Analysis
   aiAnalysisUpdates(objectId: ID): AIAnalysis!
+  
+  # Quote Posts subscription
+  quoteActivity(noteId: ID!): QuoteActivityUpdate!
+  
+  # Hashtag Following subscription
+  hashtagActivity(hashtags: [String!]!): HashtagActivityUpdate!
+}
+
+# Quote activity update type
+type QuoteActivityUpdate {
+  type: String! # "quoted", "withdrawn", "permission_changed"
+  quote: Object
+  quoter: Actor
+  timestamp: Time!
+}
+
+# Hashtag Following types
+type Hashtag {
+  name: String!
+  displayName: String!
+  url: String!
+  followerCount: Int!
+  postCount: Int!
+  trendingScore: Float!
+  isFollowing: Boolean!
+  followedAt: Time
+  notificationSettings: HashtagNotificationSettings
+  posts(first: Int, after: String): PostConnection!
+  relatedHashtags: [Hashtag!]!
+  analytics: HashtagAnalytics!
+}
+
+type HashtagNotificationSettings {
+  level: NotificationLevel!
+  muted: Boolean!
+  mutedUntil: Time
+  filters: [NotificationFilter!]!
+}
+
+enum NotificationLevel {
+  ALL
+  MUTUALS
+  FOLLOWING
+  NONE
+}
+
+type NotificationFilter {
+  type: String!
+  value: String!
+}
+
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type PostEdge {
+  node: Object!
+  cursor: Cursor!
+}
+
+type HashtagConnection {
+  edges: [HashtagEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type HashtagEdge {
+  node: Hashtag!
+  cursor: Cursor!
+}
+
+type HashtagSuggestion {
+  hashtag: Hashtag!
+  reason: String!
+  score: Float!
+}
+
+type HashtagAnalytics {
+  hourlyPosts: [Int!]!
+  dailyPosts: [Int!]!
+  topPosters: [Actor!]!
+  sentiment: Float!
+  engagement: Float!
+}
+
+enum HashtagMode {
+  ANY    # Posts with any of the hashtags
+  ALL    # Posts with all of the hashtags
+}
+
+# Hashtag Following payloads
+type HashtagFollowPayload {
+  success: Boolean!
+  hashtag: Hashtag!
+}
+
+type UnfollowHashtagPayload {
+  success: Boolean!
+  hashtag: Hashtag!
+}
+
+type UpdateHashtagNotificationsPayload {
+  success: Boolean!
+  hashtag: Hashtag!
+  settings: HashtagNotificationSettings!
+}
+
+type MuteHashtagPayload {
+  success: Boolean!
+  hashtag: Hashtag!
+  mutedUntil: Time
+}
+
+type HashtagActivityUpdate {
+  hashtag: String!
+  post: Object!
+  author: Actor!
+  timestamp: Time!
+}
+
+input HashtagNotificationSettingsInput {
+  level: NotificationLevel!
+  muted: Boolean
+  mutedUntil: Time
+  filters: [NotificationFilterInput!]
+}
+
+input NotificationFilterInput {
+  type: String!
+  value: String!
 }
 
 # Debug types
@@ -619,4 +891,105 @@ type AIDetectionCapabilities {
   aiGeneratedContent: Boolean!
   patternAnalysis: Boolean!
   styleConsistency: Boolean!
+}
+
+# Thread Synchronization types
+type ThreadContext {
+  rootNote: Object!
+  replyCount: Int!
+  participantCount: Int!
+  lastActivity: Time!
+  missingPosts: Int!
+  syncStatus: SyncStatus!
+}
+
+enum SyncStatus {
+  COMPLETE
+  PARTIAL
+  SYNCING
+  FAILED
+}
+
+type SyncThreadPayload {
+  success: Boolean!
+  thread: ThreadContext!
+  syncedPosts: Int!
+  errors: [String!]
+}
+
+type SyncRepliesPayload {
+  success: Boolean!
+  syncedReplies: Int!
+  thread: ThreadContext!
+}
+
+# Severed Relationships types
+type SeveredRelationship {
+  id: ID!
+  localInstance: String!
+  remoteInstance: String!
+  reason: SeveranceReason!
+  affectedFollowers: Int!
+  affectedFollowing: Int!
+  timestamp: Time!
+  reversible: Boolean!
+  details: SeveranceDetails
+}
+
+enum SeveranceReason {
+  DOMAIN_BLOCK
+  INSTANCE_DOWN
+  DEFEDERATION
+  POLICY_VIOLATION
+  OTHER
+}
+
+type SeveranceDetails {
+  description: String!
+  metadata: [String!]!
+  adminNotes: String
+  autoDetected: Boolean!
+}
+
+type SeveredRelationshipConnection {
+  edges: [SeveredRelationshipEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type SeveredRelationshipEdge {
+  node: SeveredRelationship!
+  cursor: Cursor!
+}
+
+type AffectedRelationship {
+  actor: Actor!
+  relationshipType: String! # "follower" or "following"
+  establishedAt: Time!
+  lastInteraction: Time
+}
+
+type AffectedRelationshipConnection {
+  edges: [AffectedRelationshipEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type AffectedRelationshipEdge {
+  node: AffectedRelationship!
+  cursor: Cursor!
+}
+
+type AcknowledgePayload {
+  success: Boolean!
+  severedRelationship: SeveredRelationship!
+  acknowledged: Boolean!
+}
+
+type ReconnectionPayload {
+  success: Boolean!
+  severedRelationship: SeveredRelationship!
+  reconnected: Int!
+  failed: Int!
+  errors: [String!]
 } 

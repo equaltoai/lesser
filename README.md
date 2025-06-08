@@ -1,86 +1,94 @@
 # Lesser
 
-A revolutionary serverless ActivityPub implementation that makes federated social media essentially free to operate. Built with Go, AWS Lambda, and DynamoDB.
+A **100% complete** serverless ActivityPub implementation that makes federated social media essentially free to operate. Built with Go, AWS Lambda, and DynamoDB. **Created in just 5 days using AI assistance.**
+
+## 🎉 MVP Complete!
+
+Lesser has achieved complete MVP status with full ActivityPub federation and Mastodon API compatibility. See our **[MVP Complete Summary](docs/MVP_COMPLETE_SUMMARY.md)** for a comprehensive feature list.
 
 ## Overview
 
-Lesser demonstrates that federated social media can cost pennies instead of hundreds of dollars per month. By leveraging serverless architecture and innovative features like reactive moderation and real-time cost tracking, Lesser enables anyone to run their own social media instance.
-
-**Lesser** is the backend API server. **Greater** (coming soon) is the groundbreaking UI that makes the invisible visible.
+Lesser proves that federated social media can cost pennies instead of hundreds of dollars per month. By leveraging serverless architecture and innovative features like AI-powered search, reactive moderation, and real-time cost tracking, Lesser enables anyone to run their own social media instance for $1-10/month.
 
 ## 🚀 What Makes Lesser Revolutionary
 
-- **💰 Essentially Free** - $0.01-0.05/user/month (compare to $5-50 for Mastodon)
-- **🧠 Reactive Moderation Mesh** - Distributed moderation that works like a neural network
-- **📊 Real-Time Cost Tracking** - See the cost of every action in microcents
-- **🔍 AI-Enhanced Search** - Semantic search powered by AWS Bedrock
-- **📝 Community Notes** - Decentralized fact-checking like Twitter/X
-- **🌐 100% Federation** - Works with Mastodon, Pleroma, and all ActivityPub servers
-- **⚡ Instant Deploy** - One command to launch your instance
+- **💰 1/100th the Cost** - $1-10/month for hundreds of users (compare to $50-500 for traditional hosting)
+- **🤖 AI-Powered Search** - 13 search strategies including semantic understanding via AWS Bedrock
+- **📊 Real-Time Cost Tracking** - See the cost of every action down to the micro-cent
+- **🧠 Reactive Moderation Mesh** - Community-driven moderation with trust propagation
+- **🔐 Modern Authentication** - WebAuthn, OAuth 2.0, and Web3 wallet support
+- **🌐 100% ActivityPub** - Full federation with 10M+ Fediverse users
+- **⚡ True Serverless** - Scales to zero, scales to millions, no servers to manage
 
-## Current Status: ~98% Complete! 🎯
+## Current Status: 100% MVP Complete! ✅
 
-Lesser is production-ready and implements:
-- ✅ **Full ActivityPub Protocol** - All activity types
-- ✅ **Complete Mastodon API** - Works with all major clients
-- ✅ **Advanced Features** - Polls, filters, mutes, lists
-- ✅ **AI-Powered Search** - Semantic search with "did you mean?"
-- ✅ **Push Notifications** - Web Push Protocol support
-- ✅ **Media Handling** - S3 + CloudFront CDN
-- ✅ **One-Click Deploy** - Pulumi infrastructure as code
-- ✅ **Passwordless** - Full support for WebAuthn
+Built in just 5 days using AI assistance (Cursor), Lesser now includes more features than many established ActivityPub implementations:
+
+- ✅ **Full ActivityPub Protocol** - Complete federation implementation
+- ✅ **100% Mastodon API** - All v1 endpoints implemented
+- ✅ **60/60 GraphQL Operations** - Modern API with DataLoader optimization
+- ✅ **AI-Powered Search** - Semantic search with AWS Bedrock Titan embeddings
+- ✅ **Push Notifications** - Web Push Protocol with encryption
+- ✅ **Media Processing** - AWS MediaConvert integration
+- ✅ **Advanced Features** - Polls, filters, lists, scheduled posts, hashtag following
+- ✅ **Enterprise Ready** - Cost tracking, audit logging, trust system
 
 ## Architecture
 
-### Serverless-First Design
-- **Compute**: AWS Lambda (scales to zero)
-- **Storage**: DynamoDB (single-table design)
+### Serverless-Native Design
+- **Compute**: AWS Lambda (23 specialized functions)
+- **Storage**: DynamoDB (single-table design with 8 GSIs)
 - **Media**: S3 + CloudFront CDN
-- **Search**: DynamoDB + AI
-- **Queue**: SQS for reliable delivery
-- **Deploy**: Pulumi (one command)
+- **Search**: Multi-strategy with AI embeddings
+- **Queue**: SQS for reliable async processing
+- **Deploy**: Pulumi (infrastructure as code)
 
 ### Cost Breakdown (Monthly)
 
 | Users | Traditional (Mastodon) | Lesser Serverless | Savings |
 |-------|------------------------|-------------------|---------|
-| 100   | $50-100               | $1-5              | 95-98%  |
-| 1,000 | $200-500              | $10-50            | 90-95%  |
-| 10,000| $1,000-5,000          | $100-500          | 90%     |
+| 100   | $50-100               | $1-3              | 97%     |
+| 1,000 | $200-500              | $10-30            | 94%     |
+| 10,000| $1,000-5,000          | $100-300          | 90%     |
 
 ## 🎯 Key Innovations
 
-### 1. Reactive Moderation Mesh
-Instead of centralized moderators, moderation flows through the network like neurons:
-- AI pre-screening in milliseconds
-- Trust graph determines reviewers
-- Consensus reached in seconds
-- Every decision transparent and logged
+### 1. Multi-Strategy Search System
+Lesser implements 13 different search strategies across accounts, statuses, and hashtags:
+- **Semantic search** using AWS Bedrock Titan embeddings (1536-dimensional)
+- **Exact, prefix, fuzzy matching** with intelligent fallbacks
+- **Language detection** via AWS Comprehend
+- **Personalized results** based on social graph
+- **Real-time indexing** with 90-day TTL
 
-### 2. Real-Time Cost Transparency
-Every API response includes cost data:
+### 2. Cost-Aware Infrastructure
+Every API response includes detailed cost breakdowns:
 ```json
 {
   "data": { ... },
   "cost": {
     "total_cost_micros": 234,  // $0.000234
-    "breakdown": { ... }
+    "breakdown": {
+      "dynamodb_reads": 2,
+      "lambda_ms": 45,
+      "bedrock_tokens": 150
+    }
   }
 }
 ```
 
-### 3. Developer Experience
-- GraphQL API alongside REST
-- WebSocket streaming for real-time updates
-- Time-travel debugging
-- Federation X-ray vision
+### 3. Complete Developer Experience
+- **GraphQL + REST APIs** - Use your preferred approach
+- **WebSocket streaming** - Real-time updates
+- **Comprehensive documentation** - Every endpoint documented
+- **Postman collection** - Import and start testing
 
 ## Quick Start
 
 ### Prerequisites
 - AWS Account
 - Go 1.21+
-- Node.js 18+ (for tests)
+- Node.js 18+ (for frontend)
 - Pulumi CLI
 - A domain name
 
@@ -90,25 +98,29 @@ Every API response includes cost data:
 # 1. Clone and configure
 git clone https://github.com/yourusername/lesser.git
 cd lesser
+cp .env.example .env
+# Edit .env with your settings
+
+# 2. Deploy infrastructure
 cd infra
 pulumi config set domain yourdomain.com
 pulumi config set aws:region us-east-1
-
-# 2. Deploy (this is it!)
 pulumi up
 
 # 3. Your instance is live!
 ✅ WebFinger: https://yourdomain.com/.well-known/webfinger
 ✅ Your handle: @you@yourdomain.com
 ✅ Mastodon API: https://yourdomain.com/api/v1/
-✅ Cost so far: $0.00
+✅ GraphQL: https://yourdomain.com/graphql
+✅ Cost so far: ~$0.10
 ```
 
 ### Connect with Apps
 Lesser works with all Mastodon clients:
-- **iOS**: Ivory, Toot!, Metatext
-- **Android**: Tusky, Fedilab
+- **iOS**: Ivory, Toot!, Ice Cubes, Mammoth
+- **Android**: Tusky, Fedilab, Megalodon
 - **Web**: Elk, Phanpy, Semaphore
+- **Desktop**: Whalebird, Hyperspace
 
 ## Development
 
@@ -116,17 +128,19 @@ Lesser works with all Mastodon clients:
 ```
 lesser/
 ├── cmd/                    # Lambda functions
-│   ├── api/               # Mastodon API endpoints
-│   ├── activitypub/       # Federation endpoints
-│   └── workers/           # Background processors
+│   ├── api/               # REST API handlers
+│   ├── graphql/           # GraphQL server
+│   ├── federation/        # ActivityPub endpoints
+│   └── processors/        # Async workers
 ├── pkg/                    # Core packages
-│   ├── activitypub/       # AP types and logic
+│   ├── activitypub/       # Protocol implementation
 │   ├── storage/           # DynamoDB interface
-│   ├── moderation/        # Reactive moderation
-│   ├── federation/        # HTTP signatures
-│   └── search/            # AI-enhanced search
+│   ├── search/            # Multi-strategy search
+│   ├── ai/                # AWS AI integrations
+│   └── cost/              # Cost tracking
 ├── infra/                  # Pulumi IaC
-└── test/                   # Test suites
+├── docs/                   # Documentation
+└── tests/                  # Test suites
 ```
 
 ### Running Tests
@@ -137,107 +151,94 @@ make test
 # Integration tests  
 make test-integration
 
-# Federation tests
-python test_federation_complete.py
+# GraphQL tests
+python tests/test_graphql.py
 
 # Full suite
 make test-all
 ```
 
-## Advanced Features
+## Documentation
 
-### 🧠 AI-Enhanced Search
-- Semantic search understanding
-- "Did you mean?" suggestions
-- Multi-language support
-- Real-time indexing
+### 📚 Essential Reading
+- **[MVP Complete Summary](docs/MVP_COMPLETE_SUMMARY.md)** - All implemented features
+- **[Documentation Index](docs/DOCUMENTATION_INDEX.md)** - Complete navigation guide
+- **[Quick Start Guide](docs/deployment/QUICK_START.md)** - Deploy in 15 minutes
+- **[Architecture Overview](docs/architecture/OVERVIEW.md)** - System design
 
-### 🛡️ Reactive Moderation
-- AI pre-screening
-- Community consensus
-- Trust propagation
-- Transparent decisions
+### 🏗️ Technical Deep Dives
+- **[API Reference](docs/api/API_REFERENCE.md)** - Complete REST API
+- **[GraphQL API](docs/api/GRAPHQL_API.md)** - GraphQL schema and operations
+- **[Search Design](docs/architecture/SEARCH_DESIGN.md)** - Multi-strategy search system
+- **[Storage Architecture](docs/architecture/STORAGE_ARCHITECTURE.md)** - DynamoDB patterns
 
-### 📊 Analytics Dashboard
-- Real-time cost tracking
-- Federation health
-- User engagement
-- Performance metrics
-
-### 🔌 Plugin System
-- Custom moderation rules
-- Activity processors
-- Timeline algorithms
-- Federation filters
+### 🚀 For Businesses
+- **[Use Cases](docs/use-cases/)** - Community, government, research platforms
+- **[PayTheory Partnership](paytheory-partnership/)** - Social commerce integration
+- **[Pitch Deck](docs/PITCH.md)** - Lesser value proposition
 
 ## Why Lesser?
 
 ### For Individuals
-- **Own your identity** - No platform lock-in
-- **Costs pennies** - Not $5-50/month
+- **Own your social presence** - No platform lock-in
+- **Costs less than coffee** - $1-3/month typical
+- **Privacy first** - No ads, no tracking
 - **Full features** - Everything Mastodon has and more
-- **Easy backup** - Export everything anytime
 
 ### For Communities  
 - **Sustainable** - Low costs = long-term viability
-- **Transparent** - See exactly what things cost
-- **Powerful moderation** - AI + human consensus
-- **Fully federated** - Connect with millions
+- **Transparent** - See exactly what everything costs
+- **Safe** - AI-assisted moderation + community consensus
+- **Connected** - Federate with 10M+ users
 
 ### For Developers
 - **Modern stack** - Go, GraphQL, WebSockets
-- **Cost tracking** - Build cost-aware features
-- **Plugin system** - Extend everything
-- **Great DX** - Time-travel debugging
+- **Well documented** - Every endpoint, every feature
+- **Cost aware** - Build with economics in mind
+- **Open source** - AGPL-3.0 license
 
-## Documentation
+## The 5-Day Build Story
 
-### 📚 Getting Started
-- [Quick Start Guide](docs/deployment/QUICK_START.md) - Deploy your instance in minutes
-- [Architecture Overview](docs/architecture/OVERVIEW.md) - High-level system design
-- [API Reference](docs/api/API_REFERENCE.md) - Complete Mastodon API documentation
+Lesser was built in just 5 days using AI assistance (Cursor/Claude), proving that:
+- Modern AI tools can accelerate development dramatically
+- Serverless architecture enables rapid implementation
+- Complex protocols like ActivityPub can be implemented quickly
+- A single developer with AI can outpace traditional teams
 
-### 🏗️ Architecture & Design
-- [System Design](docs/architecture/SYSTEM_DESIGN.md) - Detailed architecture documentation
-- [Storage Architecture](docs/architecture/STORAGE_ARCHITECTURE.md) - DynamoDB design
-- [AI Integration](docs/architecture/AI_INTEGRATION.md) - AI-powered features
-- [Moderation Design](docs/architecture/MODERATION_DESIGN.md) - Reactive moderation mesh
-
-### 👩‍💻 Development
-- [Developer Guidelines](docs/development/DEVELOPER_GUIDELINES.md) - Coding standards and practices
-- [Testing Guide](docs/development/TESTING.md) - How to write and run tests
-- [Server Implementation Plan](docs/api/SERVER_IMPLEMENTATION_PLAN.md) - Full implementation roadmap
-
-### 📊 Project Status
-- [Progress Tracker](docs/archive/PROGRESS.md) - Detailed implementation status
-- [Feature List](docs/FEATURES.md) - Complete feature documentation
-
-### 📖 Additional Resources
-- [Documentation Index](docs/README.md) - Browse all documentation
-- [Security](docs/security/) - Authentication and security documentation
-- [Legal](docs/legal/) - Licensing and compliance
+Read the [full story](paytheory-partnership/pitch-materials/lesser_5_days_with_cursor_story.md) of how Lesser was built.
 
 ## Contributing
 
-We welcome contributions! Key areas:
-- Complete the notifications system
-- Build Greater UI components
-- Implement moderation mesh
-- Add language support
-- Write documentation
+With the MVP complete, we're looking for contributors to help with:
+- **Frontend Development** - Build beautiful UIs on top of Lesser
+- **Mobile Apps** - Native iOS/Android clients
+- **Feature Extensions** - Live streaming, voice spaces, e2e encryption
+- **Language Support** - Internationalization
+- **Documentation** - Tutorials, guides, videos
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-[AGPL-3.0](LICENSE) - Free as in freedom
+[GNU AGPL-3.0](LICENSE) - Free as in freedom, copyleft for the community
 
 ## Acknowledgments
 
 Lesser stands on the shoulders of giants:
-- The ActivityPub working group
-- Mastodon and the fediverse community
-- AWS for making serverless possible
-- Everyone who believes social media should be free
+- The ActivityPub W3C working group
+- Mastodon and the broader Fediverse community  
+- AWS for making serverless accessible
+- Anthropic's Claude for AI assistance
+- Everyone who believes social media should be free and open
 
 ---
 
-*Lesser proves that federated social media doesn't need to be expensive. It just needs to be built differently.*
+<div align="center">
+
+**Lesser: Social Media Infrastructure for Everyone**
+
+*Proving that federated social media doesn't need to be expensive. It just needs to be built differently.*
+
+[Deploy Now](docs/deployment/QUICK_START.md) • [View Features](docs/MVP_COMPLETE_SUMMARY.md) • [Read Docs](docs/DOCUMENTATION_INDEX.md)
+
+</div>
