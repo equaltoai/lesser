@@ -189,7 +189,7 @@ func (s *dynamoDBStorage) GetFollowedHashtags(ctx context.Context, userID string
 			":pk":     &types.AttributeValueMemberS{Value: s.userPK(userID)},
 			":prefix": &types.AttributeValueMemberS{Value: "HASHTAG_FOLLOW#"},
 		},
-		Limit:             aws.Int32(int32(limit)),
+		Limit:             safeInt32(limit),
 		ExclusiveStartKey: exclusiveStartKey,
 		ConsistentRead:    aws.Bool(false),
 	}
@@ -239,7 +239,7 @@ func (s *dynamoDBStorage) GetHashtagFollowers(ctx context.Context, hashtag strin
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("HASHTAG#%s", hashtag)},
 		},
-		Limit:             aws.Int32(int32(limit)),
+		Limit:             safeInt32(limit),
 		ExclusiveStartKey: exclusiveStartKey,
 		ConsistentRead:    aws.Bool(false),
 	}

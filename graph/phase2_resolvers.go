@@ -2,8 +2,9 @@ package graph
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"time"
 
 	"github.com/aron23/lesser/graph/model"
@@ -46,7 +47,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 		}
 
 		// Calculate health score based on metrics
-		errorRate := rand.Float64() * 0.1 // 0-10% error rate
+		errorRate := randomFloat64() * 0.1 // 0-10% error rate
 		healthScore := (1.0 - errorRate) * 100
 
 		// Generate recommendation based on health
@@ -61,14 +62,14 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 
 		cost := &model.FederationCost{
 			Domain:         domain,
-			IngressBytes:   rand.Intn(1000000000), // Up to 1GB
-			EgressBytes:    rand.Intn(500000000),  // Up to 500MB
-			RequestCount:   rand.Intn(100000),
+			IngressBytes:   randomInt(1000000000), // Up to 1GB
+			EgressBytes:    randomInt(500000000),  // Up to 500MB
+			RequestCount:   randomInt(100000),
 			ErrorRate:      errorRate,
-			MonthlyCostUsd: rand.Float64() * 100, // $0-100
+			MonthlyCostUsd: randomFloat64() * 100, // $0-100
 			HealthScore:    healthScore,
 			Recommendation: &recommendation,
-			LastUpdated:    model.Time(time.Now().Add(-time.Duration(rand.Intn(60)) * time.Minute)),
+			LastUpdated:    model.Time(time.Now().Add(-time.Duration(randomInt(60)) * time.Minute)),
 		}
 
 		// Add cost breakdown
@@ -166,11 +167,11 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 		Domain: domain,
 		Status: status,
 		Metrics: &model.InstanceHealthMetrics{
-			ResponseTime:    rand.Float64() * 5, // 0-5 seconds
-			ErrorRate:       rand.Float64() * 0.1,
-			FederationDelay: rand.Float64() * 10,
-			QueueDepth:      rand.Intn(1000),
-			CostEfficiency:  0.8 + rand.Float64()*0.2, // 80-100%
+			ResponseTime:    randomFloat64() * 5, // 0-5 seconds
+			ErrorRate:       randomFloat64() * 0.1,
+			FederationDelay: randomFloat64() * 10,
+			QueueDepth:      randomInt(1000),
+			CostEfficiency:  0.8 + randomFloat64()*0.2, // 80-100%
 		},
 		Issues:          issues,
 		Recommendations: recommendations,
@@ -950,7 +951,7 @@ func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD floa
 				return
 			case <-ticker.C:
 				// Generate sample alert if threshold exceeded
-				currentCost := rand.Float64() * 200 // $0-200
+				currentCost := randomFloat64() * 200 // $0-200
 				if currentCost > thresholdUSD {
 					alert := &model.CostAlert{
 						ID:        fmt.Sprintf("cost-alert-%s", generateUniqueID()),
@@ -995,7 +996,7 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 			case <-ticker.C:
 				// Generate sample budget alert
 				budgetUSD := 100.0
-				spentUSD := rand.Float64() * 150 // $0-150
+				spentUSD := randomFloat64() * 150 // $0-150
 				percentUsed := (spentUSD / budgetUSD) * 100
 
 				alertLevel := model.AlertLevelInfo
@@ -1068,7 +1069,7 @@ func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, doma
 					model.InstanceHealthStatusCritical,
 				}
 
-				currentStatus := statuses[rand.Intn(len(statuses))]
+				currentStatus := statuses[randomInt(len(statuses))]
 
 				// Only send update if status changed
 				if currentStatus != previousStatus {
@@ -1118,4 +1119,21 @@ func stringPtr(s string) *string {
 
 func floatPtr(f float64) *float64 {
 	return &f
+}
+
+func randomInt(max int) int {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		// Fallback for safety, though error is unlikely
+		return 0
+	}
+	return int(n.Int64())
+}
+
+func randomFloat64() float64 {
+	n, err := rand.Int(rand.Reader, big.NewInt(1<<53))
+	if err != nil {
+		return 0.0
+	}
+	return float64(n.Int64()) / (1 << 53)
 }

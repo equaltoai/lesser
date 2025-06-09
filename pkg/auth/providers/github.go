@@ -1,11 +1,13 @@
 package providers
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+
+	"github.com/aron23/lesser/pkg/common"
 )
 
 // GitHubProvider implements OAuth for GitHub
@@ -47,7 +49,7 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, accessToken string) (*
 		AvatarURL string `json:"avatar_url"`
 	}
 
-	if err := json.Unmarshal(userData, &githubUser); err != nil {
+	if err := common.ParseHTTPResponse(bytes.NewReader(userData), &githubUser); err != nil {
 		return nil, fmt.Errorf("failed to parse user info: %w", err)
 	}
 
@@ -61,7 +63,7 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, accessToken string) (*
 				Verified bool   `json:"verified"`
 			}
 
-			if err := json.Unmarshal(emailData, &emails); err == nil {
+			if err := common.ParseHTTPResponse(bytes.NewReader(emailData), &emails); err == nil {
 				// Find primary verified email
 				for _, email := range emails {
 					if email.Primary && email.Verified {

@@ -123,7 +123,7 @@ func (s *dynamoDBStorage) GetUserReports(ctx context.Context, username string, l
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", username)},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 
@@ -169,7 +169,7 @@ func (s *dynamoDBStorage) GetReportsByTarget(ctx context.Context, targetAccountI
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("REPORTED#%s", targetAccountID)},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 
@@ -215,7 +215,7 @@ func (s *dynamoDBStorage) GetReportsByStatus(ctx context.Context, status storage
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("STATUS#%s", status)},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 

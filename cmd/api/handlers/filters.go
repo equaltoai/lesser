@@ -172,7 +172,7 @@ func (h *Handler) HandleCreateFilter(ctx context.Context, request events.APIGate
 		KeywordsAttributes []map[string]interface{} `json:"keywords_attributes"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &params); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &params); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -306,7 +306,7 @@ func (h *Handler) HandleUpdateFilter(ctx context.Context, request events.APIGate
 
 	// Parse request body
 	var params map[string]interface{}
-	if err := json.Unmarshal([]byte(request.Body), &params); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &params); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -567,7 +567,7 @@ func (h *Handler) HandleAddFilterKeyword(ctx context.Context, request events.API
 		WholeWord bool   `json:"whole_word"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &params); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &params); err != nil {
 		return common.BadRequest(err), nil
 	}
 

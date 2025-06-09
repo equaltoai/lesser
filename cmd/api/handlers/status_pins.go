@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -196,7 +195,7 @@ func (h *Handler) HandleMuteConversation(ctx context.Context, request events.API
 		Duration int `json:"duration"` // Duration in seconds (0 = indefinite)
 	}
 	if request.Body != "" {
-		json.Unmarshal([]byte(request.Body), &params)
+		common.ParseRequestBody([]byte(request.Body), &params)
 	}
 
 	// Create conversation mute

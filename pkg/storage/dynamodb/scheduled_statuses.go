@@ -112,7 +112,7 @@ func (s *dynamoDBStorage) GetScheduledStatuses(ctx context.Context, username str
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s#SCHEDULED", username)},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: safeInt32(limit),
 	}
 
 	// Add cursor if provided
@@ -236,7 +236,7 @@ func (s *dynamoDBStorage) GetDueScheduledStatuses(ctx context.Context, before ti
 			":pk": &types.AttributeValueMemberS{Value: "SCHEDULED#DUE"},
 			":sk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TIME#%s", before.Format(time.RFC3339Nano))},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: safeInt32(limit),
 	}
 
 	result, err := s.client.Query(ctx, input)

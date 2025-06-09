@@ -358,7 +358,7 @@ func (h *Handler) HandleAdminAccountAction(ctx context.Context, request events.A
 
 	// Parse request body
 	var req models.AdminAccountActionRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -1088,7 +1088,7 @@ func (h *Handler) HandleAdminOverrideModerationEvent(ctx context.Context, reques
 		Decision string `json:"decision"` // "approve" or "reject"
 		Reason   string `json:"reason"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -1234,7 +1234,7 @@ func (h *Handler) HandleAdminUpdateTrust(ctx context.Context, request events.API
 		Category string  `json:"category,omitempty"` // Optional category, defaults to "general"
 		Reason   string  `json:"reason"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

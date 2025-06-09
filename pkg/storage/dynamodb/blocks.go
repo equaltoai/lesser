@@ -176,7 +176,7 @@ func (s *dynamoDBStorage) GetBlockedActors(ctx context.Context, actor string, li
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(limit)),
+		Limit:                     safeInt32(limit),
 	}
 
 	// Add cursor if provided
@@ -251,7 +251,7 @@ func (s *dynamoDBStorage) GetBlockedByActors(ctx context.Context, actor string, 
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(limit)),
+		Limit:                     safeInt32(limit),
 	}
 
 	// Add cursor if provided

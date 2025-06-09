@@ -67,10 +67,11 @@ import (
 )
 
 var (
-	cfg     *config.Config
-	store   storage.Storage
-	logger  *zap.Logger
-	handler *handlers.Handler
+	cfg            *config.Config
+	store          storage.Storage
+	logger         *zap.Logger
+	handler        *handlers.Handler
+	authMiddleware *auth.Middleware
 )
 
 func init() {
@@ -84,7 +85,7 @@ func init() {
 	}
 
 	// Initialize auth middleware
-	authMiddleware, err := auth.GetMiddleware()
+	authMiddleware, err = auth.GetMiddleware()
 	if err != nil {
 		logger.Fatal("failed to initialize auth middleware", zap.Error(err))
 	}
@@ -94,8 +95,12 @@ func init() {
 }
 
 func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	// Wrap the actual handler with cost tracking
-	return cost.WrapHandler(handleRequest, logger)(ctx, request)
+	// Create chi router
+	router := NewRouter(handler, *authMiddleware, logger)
+
+	// Use the router-based handler with cost tracking
+	routerHandler := LambdaHandlerWithRouter(router)
+	return cost.WrapHandler(routerHandler, logger)(ctx, request)
 }
 
 func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {

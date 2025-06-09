@@ -42,7 +42,7 @@ func (s *dynamoDBStorage) GetDomainBlocks(ctx context.Context, limit int, cursor
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: "DOMAIN_BLOCKS"},
 		},
-		Limit:             aws.Int32(int32(limit)),
+		Limit:             safeInt32(limit),
 		ExclusiveStartKey: startKey,
 		ScanIndexForward:  aws.Bool(false), // Newest first
 	}
@@ -271,7 +271,7 @@ func (s *dynamoDBStorage) GetDomainAllows(ctx context.Context, limit int, cursor
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: "DOMAIN_ALLOWS"},
 		},
-		Limit:             aws.Int32(int32(limit)),
+		Limit:             safeInt32(limit),
 		ExclusiveStartKey: startKey,
 		ScanIndexForward:  aws.Bool(false), // Newest first
 	}
@@ -495,7 +495,7 @@ func (s *dynamoDBStorage) GetKnownInstances(ctx context.Context, limit int, curs
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: "FEDERATION_ACTIVE"},
 		},
-		Limit:             aws.Int32(int32(limit)),
+		Limit:             safeInt32(limit),
 		ExclusiveStartKey: startKey,
 		ScanIndexForward:  aws.Bool(false), // Most recently active first
 	}
@@ -575,7 +575,7 @@ func (s *dynamoDBStorage) GetEmailDomainBlocks(ctx context.Context, limit int, c
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: "EMAIL_DOMAIN_BLOCKS"},
 		},
-		Limit:             aws.Int32(int32(limit)),
+		Limit:             safeInt32(limit),
 		ExclusiveStartKey: startKey,
 		ScanIndexForward:  aws.Bool(false), // Newest first
 	}

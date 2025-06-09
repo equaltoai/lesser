@@ -1,3 +1,6 @@
+//go:build !production
+// +build !production
+
 package common
 
 import (

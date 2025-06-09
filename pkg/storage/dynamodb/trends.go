@@ -121,7 +121,7 @@ func (s *dynamoDBStorage) GetTrendingHashtags(ctx context.Context, since time.Ti
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TREND_TYPE#HASHTAG#%s", timeBucket)},
 		},
 		ScanIndexForward: aws.Bool(false), // Sort by score descending
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	}
 
 	result, err := s.client.Query(ctx, input)
@@ -192,7 +192,7 @@ func (s *dynamoDBStorage) GetTrendingStatuses(ctx context.Context, since time.Ti
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TREND_TYPE#STATUS#%s", timeBucket)},
 		},
 		ScanIndexForward: aws.Bool(false), // Sort by score descending
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	}
 
 	result, err := s.client.Query(ctx, input)
@@ -259,7 +259,7 @@ func (s *dynamoDBStorage) GetTrendingLinks(ctx context.Context, since time.Time,
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TREND_TYPE#LINK#%s", timeBucket)},
 		},
 		ScanIndexForward: aws.Bool(false), // Sort by score descending
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	}
 
 	result, err := s.client.Query(ctx, input)

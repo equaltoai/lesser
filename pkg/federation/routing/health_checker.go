@@ -151,10 +151,19 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *Instance) (*HealthStatus,
 
 	// Parse additional health info from headers if available
 	if backlog := resp.Header.Get("X-Inbox-Backlog"); backlog != "" {
-		fmt.Sscanf(backlog, "%d", &health.InboxBacklog)
+		if _, err := fmt.Sscanf(backlog, "%d", &health.InboxBacklog); err != nil {
+			hc.logger.Warn("failed to parse X-Inbox-Backlog header",
+				zap.String("value", backlog),
+				zap.Error(err))
+		}
 	}
 	if delay := resp.Header.Get("X-Processing-Delay"); delay != "" {
-		duration, _ := time.ParseDuration(delay)
+		duration, err := time.ParseDuration(delay)
+		if err != nil {
+			hc.logger.Warn("failed to parse X-Processing-Delay header",
+				zap.String("value", delay),
+				zap.Error(err))
+		}
 		health.ProcessingDelay = duration
 	}
 
@@ -385,24 +394,34 @@ func (hc *InstanceHealthChecker) parseHealthStatus(item map[string]types.Attribu
 	}
 	if v, ok := item["ResponseTime"].(*types.AttributeValueMemberN); ok {
 		var ms int64
-		fmt.Sscanf(v.Value, "%d", &ms)
+		if _, err := fmt.Sscanf(v.Value, "%d", &ms); err != nil {
+			hc.logger.Warn("failed to parse ResponseTime", zap.String("value", v.Value), zap.Error(err))
+		}
 		health.ResponseTime = time.Duration(ms) * time.Millisecond
 	}
 	if v, ok := item["StatusCode"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &health.StatusCode)
+		if _, err := fmt.Sscanf(v.Value, "%d", &health.StatusCode); err != nil {
+			hc.logger.Warn("failed to parse StatusCode", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["ErrorRate"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%f", &health.ErrorRate)
+		if _, err := fmt.Sscanf(v.Value, "%f", &health.ErrorRate); err != nil {
+			hc.logger.Warn("failed to parse ErrorRate", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["ErrorMessage"].(*types.AttributeValueMemberS); ok {
 		health.ErrorMessage = v.Value
 	}
 	if v, ok := item["InboxBacklog"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &health.InboxBacklog)
+		if _, err := fmt.Sscanf(v.Value, "%d", &health.InboxBacklog); err != nil {
+			hc.logger.Warn("failed to parse InboxBacklog", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["ProcessingDelay"].(*types.AttributeValueMemberN); ok {
 		var ms int64
-		fmt.Sscanf(v.Value, "%d", &ms)
+		if _, err := fmt.Sscanf(v.Value, "%d", &ms); err != nil {
+			hc.logger.Warn("failed to parse ProcessingDelay", zap.String("value", v.Value), zap.Error(err))
+		}
 		health.ProcessingDelay = time.Duration(ms) * time.Millisecond
 	}
 	if v, ok := item["Timestamp"].(*types.AttributeValueMemberS); ok {

@@ -349,7 +349,7 @@ func (qo *QueryOptimizer) queryMetricsInRange(ctx context.Context, routeID strin
 			":end":   &types.AttributeValueMemberS{Value: fmt.Sprintf("RESULT#%d", end.UnixNano())},
 		},
 		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            aws.Int32(safeIntToInt32(limit)),
 	}
 
 	result, err := qo.db.Query(ctx, queryInput)

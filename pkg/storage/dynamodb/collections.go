@@ -127,7 +127,7 @@ func (s *dynamoDBStorage) GetCollectionItems(ctx context.Context, collection str
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(limit)),
+		Limit:                     safeInt32(limit),
 		ScanIndexForward:          aws.Bool(false), // Most recent first
 	}
 

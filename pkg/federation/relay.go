@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/httpclient"
 	"github.com/aron23/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
@@ -17,7 +19,7 @@ import (
 type RelayService struct {
 	store      storage.Storage
 	logger     *zap.Logger
-	httpClient *http.Client
+	httpClient *httpclient.SecureClient
 	domain     string
 }
 
@@ -26,9 +28,10 @@ func NewRelayService(store storage.Storage, domain string, logger *zap.Logger) *
 	return &RelayService{
 		store:  store,
 		logger: logger,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		httpClient: httpclient.NewSecureClient(
+			httpclient.WithTimeout(10*time.Second),
+			httpclient.WithLogger(logger),
+		),
 		domain: domain,
 	}
 }
@@ -274,7 +277,7 @@ func (r *RelayService) fetchRelayActor(ctx context.Context, relayURL string) (*a
 	}
 
 	var actor activitypub.Actor
-	if err := json.NewDecoder(resp.Body).Decode(&actor); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
 		return nil, err
 	}
 

@@ -23,6 +23,9 @@ const (
 	// SignatureHeader is the HTTP header containing the signature
 	SignatureHeader = "Signature"
 
+	// SignatureInputHeader is the new draft header for signature input
+	SignatureInputHeader = "Signature-Input"
+
 	// DigestHeader is the HTTP header containing the body digest
 	DigestHeader = "Digest"
 
@@ -34,6 +37,15 @@ const (
 
 	// Maximum clock skew allowed (5 minutes)
 	MaxClockSkew = 5 * time.Minute
+)
+
+// Supported algorithms
+const (
+	AlgorithmHS2019      = "hs2019"       // Recommended in newer drafts
+	AlgorithmRSASHA256   = "rsa-sha256"   // Legacy RSA
+	AlgorithmRSASHA512   = "rsa-sha512"   // RSA with SHA-512
+	AlgorithmECDSASHA256 = "ecdsa-sha256" // ECDSA support
+	AlgorithmEd25519     = "ed25519"      // EdDSA support
 )
 
 // HTTPSignature represents a parsed HTTP signature

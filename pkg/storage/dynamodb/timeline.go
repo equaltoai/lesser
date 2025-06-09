@@ -183,8 +183,8 @@ func (s *dynamoDBStorage) GetHomeTimeline(ctx context.Context, username string, 
 		TableName:                 aws.String(s.tableName),
 		KeyConditionExpression:    aws.String(keyCondition),
 		ExpressionAttributeValues: expressionAttributeValues,
-		Limit:                     aws.Int32(int32(limit + 1)), // Get one extra to determine if there are more
-		ScanIndexForward:          aws.Bool(false),             // Newest first
+		Limit:                     safeInt32(limit + 1), // Get one extra to determine if there are more
+		ScanIndexForward:          aws.Bool(false),      // Newest first
 	}
 
 	output, err := s.client.Query(ctx, input)
@@ -261,7 +261,7 @@ func (s *dynamoDBStorage) GetPublicTimeline(ctx context.Context, local bool, lim
 		IndexName:                 aws.String("GSI1"),
 		KeyConditionExpression:    aws.String(keyCondition),
 		ExpressionAttributeValues: expressionAttributeValues,
-		Limit:                     aws.Int32(int32(limit + 1)),
+		Limit:                     safeInt32(limit + 1),
 		ScanIndexForward:          aws.Bool(false), // Newest first
 	}
 
@@ -330,7 +330,7 @@ func (s *dynamoDBStorage) GetListTimeline(ctx context.Context, listID string, li
 		TableName:                 aws.String(s.tableName),
 		KeyConditionExpression:    aws.String(keyCondition),
 		ExpressionAttributeValues: expressionAttributeValues,
-		Limit:                     aws.Int32(int32(limit + 1)),
+		Limit:                     safeInt32(limit + 1),
 		ScanIndexForward:          aws.Bool(false),
 	}
 
@@ -403,7 +403,7 @@ func (s *dynamoDBStorage) GetHashtagTimeline(ctx context.Context, hashtag string
 		TableName:                 aws.String(s.tableName),
 		KeyConditionExpression:    aws.String(keyCondition),
 		ExpressionAttributeValues: expressionAttributeValues,
-		Limit:                     aws.Int32(int32(limit + 1)),
+		Limit:                     safeInt32(limit + 1),
 		ScanIndexForward:          aws.Bool(false), // Newest first
 	}
 

@@ -114,7 +114,12 @@ func (s *dynamoDBStorage) GetOAuthState(ctx context.Context, state string) (*sto
 	}
 	if val, ok := result.Item["ExpiresAt"].(*types.AttributeValueMemberN); ok {
 		var expiresUnix int64
-		fmt.Sscanf(val.Value, "%d", &expiresUnix)
+		if _, err := fmt.Sscanf(val.Value, "%d", &expiresUnix); err != nil {
+			log.Warn("failed to parse ExpiresAt for OAuth state",
+				zap.String("state", state),
+				zap.String("value", val.Value),
+				zap.Error(err))
+		}
 		oauthState.ExpiresAt = time.Unix(expiresUnix, 0)
 	}
 

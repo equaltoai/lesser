@@ -40,6 +40,10 @@
 - **[Infrastructure Security](security/INFRASTRUCTURE_SECURITY.md)** - AWS security
 - **[Content Signatures](security/CONTENT_SIGNATURES.md)** - ActivityPub signatures
 - **[Security Enhancement Summary](security/SECURITY_ENHANCEMENT_SUMMARY.md)** - Recent improvements
+- **[Security Audit](../SECURITY_AUDIT.md)** - Comprehensive security findings
+- **[Security Update Plan](../SECURITY_UPDATE_PLAN.md)** - Remediation roadmap
+- **[Security Checklist](../SECURITY_CHECKLIST.md)** - Developer implementation guide
+- **[Security Tracking](../SECURITY_TRACKING.md)** - Remediation progress dashboard
 
 ### Authentication
 - **[Modern Auth Summary](security/authentication/MODERN_AUTH_SUMMARY.md)** - Auth overview

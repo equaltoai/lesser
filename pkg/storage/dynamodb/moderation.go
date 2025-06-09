@@ -122,7 +122,7 @@ func (s *dynamoDBStorage) GetModerationQueue(ctx context.Context, limit int, cur
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)},
 		},
 		ScanIndexForward: aws.Bool(false), // Newest first
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	}
 
 	if cursor != "" {
@@ -180,7 +180,7 @@ func (s *dynamoDBStorage) GetModerationEventsByObject(ctx context.Context, objec
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("EVENT#%s", objectID)},
 		},
 		ScanIndexForward: aws.Bool(false), // Newest first
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	}
 
 	if cursor != "" {
@@ -231,7 +231,7 @@ func (s *dynamoDBStorage) GetModerationEventsByActor(ctx context.Context, actorI
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorID)},
 		},
 		ScanIndexForward: aws.Bool(false), // Newest first
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	}
 
 	if cursor != "" {
@@ -531,7 +531,7 @@ func (s *dynamoDBStorage) GetModerationEvents(ctx context.Context, filter *stora
 				":pk": &types.AttributeValueMemberS{Value: gsi2pk},
 			},
 			ScanIndexForward: aws.Bool(false), // Newest first
-			Limit:            aws.Int32(int32(limit)),
+			Limit:            safeInt32(limit),
 		}
 
 		if cursor != "" {
@@ -590,7 +590,7 @@ func (s *dynamoDBStorage) scanAllModerationEvents(ctx context.Context, filter *s
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":type": &types.AttributeValueMemberS{Value: "EVENT"},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: safeInt32(limit),
 	}
 
 	if cursor != "" {

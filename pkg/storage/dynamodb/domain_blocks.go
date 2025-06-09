@@ -80,7 +80,7 @@ func (s *dynamoDBStorage) GetUserDomainBlocks(ctx context.Context, username stri
 			":pk":     &types.AttributeValueMemberS{Value: s.userPK(username)},
 			":prefix": &types.AttributeValueMemberS{Value: "DOMAIN_BLOCK#"},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: safeInt32(limit),
 	}
 
 	if cursor != "" {
@@ -281,7 +281,7 @@ func (s *dynamoDBStorage) ListInstanceDomainBlocks(ctx context.Context, limit in
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: "DOMAIN_BLOCKS"},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 

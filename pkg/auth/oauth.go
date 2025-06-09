@@ -31,6 +31,8 @@ var (
 	ErrInvalidCodeChallenge = errors.New("invalid_code_challenge")
 	// ErrInvalidScope is returned when requested scopes are invalid
 	ErrInvalidScope = errors.New("invalid_scope")
+	// ErrInvalidAPIKey is returned when the API key is invalid
+	ErrInvalidAPIKey = errors.New("invalid_api_key")
 )
 
 // Scopes define the permissions that can be granted
@@ -102,19 +104,14 @@ func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redire
 	// Check if the redirect URI is valid for this client
 	validURI := false
 	for _, uri := range client.RedirectURIs {
+		// Exact match
 		if uri == redirectURI {
 			validURI = true
 			break
 		}
-		// Support prefix matching for native apps
-		if strings.HasPrefix(redirectURI, uri) && strings.Contains(uri, "://") {
-			validURI = true
-			break
-		}
-		// Support web clients that include instance domain in the path
-		// e.g., registered: https://elk.zone/api/oauth
-		//       actual: https://elk.zone/api/lesser.host/oauth/...
-		if strings.Contains(redirectURI, uri) {
+
+		// PKCE for native apps allows prefix matching on the scheme
+		if strings.HasPrefix(redirectURI, uri) && (strings.HasPrefix(uri, "http://localhost") || strings.HasPrefix(uri, "urn:ietf:wg:oauth:2.0:oob")) {
 			validURI = true
 			break
 		}

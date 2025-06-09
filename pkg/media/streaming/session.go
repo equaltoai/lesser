@@ -302,13 +302,19 @@ func (sm *SessionManager) parseSession(item map[string]types.AttributeValue) (*S
 		session.StartTime, _ = time.Parse(time.RFC3339, v.Value)
 	}
 	if v, ok := item["LastSegmentIndex"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &session.LastSegmentIndex)
+		if _, err := fmt.Sscanf(v.Value, "%d", &session.LastSegmentIndex); err != nil {
+			sm.logger.Warn("failed to parse LastSegmentIndex", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["BytesTransferred"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &session.BytesTransferred)
+		if _, err := fmt.Sscanf(v.Value, "%d", &session.BytesTransferred); err != nil {
+			sm.logger.Warn("failed to parse BytesTransferred", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["BufferHealth"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%f", &session.BufferHealth)
+		if _, err := fmt.Sscanf(v.Value, "%f", &session.BufferHealth); err != nil {
+			sm.logger.Warn("failed to parse BufferHealth", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 
 	return session, nil

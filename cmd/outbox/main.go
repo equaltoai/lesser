@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -58,7 +59,7 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 	// Route based on HTTP method
 	switch request.RequestContext.HTTP.Method {
 	case http.MethodGet:
-		return handleGetOutbox(ctx, log, username, request.QueryStringParameters)
+		return handleGetOutbox(ctx, log, username, request.QueryStringParameters, request.Headers)
 	case http.MethodPost:
 		return handlePostOutbox(ctx, log, username, request)
 	default:
@@ -67,7 +68,7 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 }
 
 // handleGetOutbox handles GET requests to retrieve outbox activities
-func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, queryParams map[string]string) (*events.APIGatewayV2HTTPResponse, error) {
+func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, queryParams map[string]string, headers map[string]string) (*events.APIGatewayV2HTTPResponse, error) {
 	log.Info("received outbox GET request",
 		zap.String("username", username),
 		zap.Any("query_params", queryParams))
@@ -97,14 +98,8 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 
 	// If no page parameter, return the collection with metadata
 	if page == "" && cursor == "" {
-		// Get first page to calculate total items (this is a simplification)
-		activities, _, err := store.GetOutboxActivities(ctx, username, 1, "")
-		if err != nil {
-			log.Error("failed to get outbox count", zap.Error(err))
-			return common.InternalServerError(err), nil
-		}
-
-		// Build the collection response
+		// For collection metadata, we don't need to filter by visibility
+		// Just return the structure with the first page link
 		collection := &activitypub.OrderedCollection{
 			Collection: activitypub.Collection{
 				BaseObject: activitypub.BaseObject{
@@ -112,7 +107,7 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 					ID:      actor.Outbox,
 					Type:    activitypub.OrderedCollectionType,
 				},
-				TotalItems: len(activities), // This is approximate
+				TotalItems: 0, // We don't reveal the total count for privacy
 				First:      fmt.Sprintf("%s?page=true", actor.Outbox),
 			},
 		}
@@ -133,6 +128,64 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 		}, nil
 	}
 
+	// For actual page requests, we need to determine visibility
+
+	// Attempt to authenticate the requester (may be nil for public access)
+	var requesterUsername string
+	authHeader := headers["Authorization"]
+	if authHeader == "" {
+		authHeader = headers["authorization"]
+	}
+
+	// Check for Authorization header in the request
+	if authHeader != "" {
+		// Create a mock request for auth middleware
+		mockRequest := events.APIGatewayV2HTTPRequest{
+			Headers: headers,
+		}
+
+		claims, err := authMiddleware.RequireAuth(ctx, mockRequest)
+		if err == nil && claims != nil {
+			requesterUsername = claims.Username
+			log.Info("authenticated requester", zap.String("requester", requesterUsername))
+		}
+	}
+
+	// Determine what visibility types the requester can see
+	allowedVisibility := make(map[string]bool)
+	if requesterUsername == "" {
+		// Unauthenticated: only public posts
+		allowedVisibility["public"] = true
+		log.Info("unauthenticated access, showing only public posts")
+	} else if requesterUsername == actor.PreferredUsername {
+		// Owner: see everything
+		allowedVisibility["public"] = true
+		allowedVisibility["unlisted"] = true
+		allowedVisibility["followers"] = true
+		allowedVisibility["direct"] = true
+		log.Info("owner access, showing all posts")
+	} else {
+		// Check if requester is a follower
+		isFollower, err := store.IsFollowing(ctx, requesterUsername, actor.PreferredUsername)
+		if err != nil {
+			log.Warn("failed to check follower status", zap.Error(err))
+			// Default to public only on error
+			allowedVisibility["public"] = true
+			allowedVisibility["unlisted"] = true
+		} else if isFollower {
+			// Follower: see public, unlisted, and followers-only
+			allowedVisibility["public"] = true
+			allowedVisibility["unlisted"] = true
+			allowedVisibility["followers"] = true
+			log.Info("follower access, showing public, unlisted, and followers-only posts")
+		} else {
+			// Authenticated but not follower: public and unlisted
+			allowedVisibility["public"] = true
+			allowedVisibility["unlisted"] = true
+			log.Info("authenticated non-follower access, showing public and unlisted posts")
+		}
+	}
+
 	// Get activities for the page
 	activities, nextCursor, err := store.GetOutboxActivities(ctx, username, limit, cursor)
 	if err != nil {
@@ -140,9 +193,26 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 		return common.InternalServerError(err), nil
 	}
 
+	// Filter activities based on visibility
+	filteredActivities := make([]*activitypub.Activity, 0, len(activities))
+	for _, activity := range activities {
+		// Determine visibility of the activity
+		visibility := determineActivityVisibility(activity)
+
+		// Check if this visibility type is allowed for the requester
+		if allowedVisibility[visibility] {
+			filteredActivities = append(filteredActivities, activity)
+		} else {
+			log.Debug("filtering out activity due to visibility",
+				zap.String("activity_id", activity.ID),
+				zap.String("visibility", visibility),
+				zap.String("requester", requesterUsername))
+		}
+	}
+
 	// Convert activities to ordered items
-	orderedItems := make([]interface{}, len(activities))
-	for i, activity := range activities {
+	orderedItems := make([]interface{}, len(filteredActivities))
+	for i, activity := range filteredActivities {
 		orderedItems[i] = activity
 	}
 
@@ -224,12 +294,25 @@ func handlePostOutbox(ctx context.Context, log *zap.Logger, username string, req
 		return common.InternalServerError(err), nil
 	}
 
-	// Parse the activity
-	body := []byte(request.Body)
+	// Parse the activity with size limit
+	body, err := common.ReadRequestBody(strings.NewReader(request.Body), common.MaxActivitySize)
+	if err != nil {
+		if strings.Contains(err.Error(), "too large") {
+			log.Warn("request body too large", zap.Error(err))
+			return &events.APIGatewayV2HTTPResponse{
+				StatusCode: 413, // Payload Too Large
+				Body:       fmt.Sprintf(`{"error": "%s"}`, err.Error()),
+			}, nil
+		}
+		log.Warn("failed to read request body", zap.Error(err))
+		return common.BadRequest(common.ValidationError{Field: "body", Message: "failed to read request body"}), nil
+	}
+
+	// Safe JSON parsing for ActivityPub objects
 	var activity activitypub.Activity
-	if err := json.Unmarshal(body, &activity); err != nil {
+	if err := common.ParseActivityPubObject(body, &activity); err != nil {
 		log.Warn("failed to parse activity", zap.Error(err))
-		return common.BadRequest(common.ValidationError{Field: "body", Message: "invalid JSON"}), nil
+		return common.BadRequest(common.ValidationError{Field: "body", Message: err.Error()}), nil
 	}
 
 	log.Info("processing outbox activity",
@@ -393,12 +476,26 @@ func generateActivityID(actorID, activityType string) string {
 	return fmt.Sprintf("%s/activities/%s", baseURL, timestamp)
 }
 
-// generateRandomString generates a random string of the specified length
+// generateRandomString generates a cryptographically secure random string of the specified length
 func generateRandomString(length int) string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	result := make([]byte, length)
+
+	// Use crypto/rand for secure random generation
+	randomBytes := make([]byte, length)
+	if _, err := rand.Read(randomBytes); err != nil {
+		// Fallback to less secure but still better than time-based
+		logger.Error("Failed to generate secure random bytes", zap.Error(err))
+		// This should rarely happen, but we handle it gracefully
+		for i := range result {
+			result[i] = chars[int(randomBytes[i])%len(chars)]
+		}
+		return string(result)
+	}
+
+	// Map random bytes to our character set
 	for i := range result {
-		result[i] = chars[time.Now().UnixNano()%int64(len(chars))]
+		result[i] = chars[int(randomBytes[i])%len(chars)]
 	}
 	return string(result)
 }
@@ -981,8 +1078,8 @@ func validateObject(obj map[string]interface{}) error {
 		}
 		// Content length validation
 		content, _ := obj["content"].(string)
-		if len(content) > 500 {
-			return common.ValidationError{Field: "object.content", Message: "Note content must not exceed 500 characters"}
+		if len(content) > 5000 {
+			return common.ValidationError{Field: "object.content", Message: "Note content must not exceed 5000 characters"}
 		}
 	case activitypub.ArticleType:
 		if obj["name"] == nil || obj["name"] == "" {
@@ -1040,8 +1137,8 @@ func validateObject(obj map[string]interface{}) error {
 			}
 			// Validate content length based on object type
 			if contentStr, ok := content.(string); ok {
-				if objType == activitypub.NoteType && len(contentStr) > 500 {
-					return common.ValidationError{Field: fmt.Sprintf("object.contentMap.%s", lang), Message: "Note content must not exceed 500 characters"}
+				if objType == activitypub.NoteType && len(contentStr) > 5000 {
+					return common.ValidationError{Field: fmt.Sprintf("object.contentMap.%s", lang), Message: "Note content must not exceed 5000 characters"}
 				} else if objType == activitypub.ArticleType && len(contentStr) > 50000 {
 					return common.ValidationError{Field: fmt.Sprintf("object.contentMap.%s", lang), Message: "Article content must not exceed 50000 characters"}
 				}
@@ -1154,6 +1251,50 @@ func extractUsernameFromActorID(actorID string) string {
 		return ""
 	}
 	return parts[len(parts)-1]
+}
+
+// determineActivityVisibility determines the visibility of an activity based on its addressing
+func determineActivityVisibility(activity *activitypub.Activity) string {
+	// Check if it's a direct message
+	if len(activity.To) > 0 && !contains(activity.To, activitypub.PublicAddress) &&
+		(activity.CC == nil || len(activity.CC) == 0 || !contains(activity.CC, activitypub.PublicAddress)) {
+		return "direct"
+	}
+
+	// Check if it's public
+	if contains(activity.To, activitypub.PublicAddress) {
+		return "public"
+	}
+
+	// Check if it's unlisted (public in CC)
+	if contains(activity.CC, activitypub.PublicAddress) {
+		return "unlisted"
+	}
+
+	// Check if it's followers-only
+	for _, addr := range activity.To {
+		if strings.HasSuffix(addr, "/followers") {
+			return "followers"
+		}
+	}
+	for _, addr := range activity.CC {
+		if strings.HasSuffix(addr, "/followers") {
+			return "followers"
+		}
+	}
+
+	// Default to private/direct
+	return "direct"
+}
+
+// contains checks if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
 // processBlockActivity processes a Block activity and validates its object
@@ -1301,8 +1442,36 @@ func shouldDeliverRemotely(activityType string) bool {
 func deliverActivityRemotely(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) {
 	log := common.WithContext(ctx)
 
-	// Create delivery service
-	deliveryService := federation.NewDeliveryService(store)
+	// Get the actor's block list
+	blockedActors, _, err := store.GetBlockedActors(ctx, actor.PreferredUsername, 1000, "")
+	if err != nil {
+		log.Error("Failed to get blocked actors", zap.Error(err))
+		// Fail closed - don't deliver if we can't check blocks
+		log.Warn("Skipping delivery due to block list retrieval failure")
+		return
+	}
+
+	// Create a map for efficient lookup
+	blockedMap := make(map[string]bool)
+	for _, blocked := range blockedActors {
+		// Block both the actor ID (Object field contains the blocked actor)
+		blockedMap[blocked.Object] = true
+		// Also extract username from the actor ID if possible
+		if blockedUsername := extractUsernameFromActorID(blocked.Object); blockedUsername != "" {
+			blockedMap[blockedUsername] = true
+		}
+	}
+
+	log.Info("Retrieved block list",
+		zap.Int("blocked_count", len(blockedActors)),
+		zap.String("actor", actor.PreferredUsername))
+
+	// Create a filtered delivery service that checks blocks
+	deliveryService := &filteredDeliveryService{
+		baseService: federation.NewDeliveryService(store),
+		blockedMap:  blockedMap,
+		logger:      log,
+	}
 
 	// Deliver to followers if the activity is public or addressed to followers
 	if isAddressedToFollowers(activity, actor) {
@@ -1317,6 +1486,175 @@ func deliverActivityRemotely(ctx context.Context, activity *activitypub.Activity
 			log.Error("failed to deliver to recipients", zap.Error(err))
 		}
 	}
+}
+
+// filteredDeliveryService wraps the federation delivery service to filter blocked users
+type filteredDeliveryService struct {
+	baseService *federation.DeliveryService
+	blockedMap  map[string]bool
+	logger      *zap.Logger
+}
+
+// DeliverToFollowers delivers to followers excluding blocked users
+func (f *filteredDeliveryService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	log := f.logger.With(
+		zap.String("activity_id", activity.ID),
+		zap.String("actor", actor.ID),
+	)
+
+	log.Info("delivering activity to followers with block filtering")
+
+	// Get all followers
+	followerUsernames, _, err := store.GetFollowers(ctx, actor.PreferredUsername, 1000, "")
+	if err != nil {
+		log.Error("failed to get followers", zap.Error(err))
+		return fmt.Errorf("failed to get followers: %w", err)
+	}
+
+	log.Info("found followers before filtering", zap.Int("count", len(followerUsernames)))
+
+	// Filter out blocked followers
+	filteredFollowers := []string{}
+	blockedCount := 0
+	for _, followerUsername := range followerUsernames {
+		// Check if follower is blocked
+		if f.blockedMap[followerUsername] {
+			blockedCount++
+			log.Debug("Skipping blocked follower", zap.String("follower", followerUsername))
+			continue
+		}
+
+		// Get follower actor details to check their ID
+		follower, err := store.GetActor(ctx, followerUsername)
+		if err != nil {
+			log.Warn("failed to get follower actor",
+				zap.String("username", followerUsername),
+				zap.Error(err))
+			continue
+		}
+
+		// Check if follower's actor ID is blocked
+		if f.blockedMap[follower.ID] {
+			blockedCount++
+			log.Debug("Skipping blocked follower by ID",
+				zap.String("follower", followerUsername),
+				zap.String("actor_id", follower.ID))
+			continue
+		}
+
+		filteredFollowers = append(filteredFollowers, followerUsername)
+	}
+
+	log.Info("Filtered followers",
+		zap.Int("original_count", len(followerUsernames)),
+		zap.Int("filtered_count", len(filteredFollowers)),
+		zap.Int("blocked_count", blockedCount))
+
+	// Group followers by shared inbox for efficient delivery
+	// We'll call the base service's DeliverActivity directly for each non-blocked follower
+
+	// Group followers by shared inbox
+	inboxMap := make(map[string][]*activitypub.Actor) // inbox URL -> actors
+
+	for _, followerUsername := range filteredFollowers {
+		// Get follower actor details
+		follower, err := store.GetActor(ctx, followerUsername)
+		if err != nil {
+			log.Warn("failed to get follower actor",
+				zap.String("username", followerUsername),
+				zap.Error(err))
+			continue
+		}
+
+		// Skip local followers
+		if isLocalActor(follower.ID, actor.ID) {
+			continue
+		}
+
+		// Determine inbox URL (prefer shared inbox)
+		inboxURL := follower.Inbox
+		if follower.Endpoints != nil && follower.Endpoints.SharedInbox != "" {
+			inboxURL = follower.Endpoints.SharedInbox
+		}
+
+		inboxMap[inboxURL] = append(inboxMap[inboxURL], follower)
+	}
+
+	// Deliver to each unique inbox
+	var deliveryErrors []error
+	for inbox, followers := range inboxMap {
+		log.Info("delivering to inbox",
+			zap.String("inbox", inbox),
+			zap.Int("follower_count", len(followers)))
+
+		if err := f.baseService.DeliverActivity(ctx, activity, inbox, actor); err != nil {
+			log.Error("failed to deliver to inbox",
+				zap.String("inbox", inbox),
+				zap.Error(err))
+			deliveryErrors = append(deliveryErrors, fmt.Errorf("failed to deliver to %s: %w", inbox, err))
+		}
+	}
+
+	if len(deliveryErrors) > 0 {
+		return fmt.Errorf("failed to deliver to %d inboxes", len(deliveryErrors))
+	}
+
+	return nil
+}
+
+// DeliverToRecipients delivers to specific recipients excluding blocked users
+func (f *filteredDeliveryService) DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	// Filter recipients before passing to base service
+	filteredActivity := *activity // Copy the activity
+
+	// Helper to filter addresses
+	filterAddresses := func(addresses []string) []string {
+		filtered := []string{}
+		for _, addr := range addresses {
+			// Skip if blocked
+			if f.blockedMap[addr] {
+				f.logger.Debug("Filtering blocked recipient", zap.String("recipient", addr))
+				continue
+			}
+			filtered = append(filtered, addr)
+		}
+		return filtered
+	}
+
+	// Filter all recipient fields
+	filteredActivity.To = filterAddresses(activity.To)
+	filteredActivity.CC = filterAddresses(activity.CC)
+	filteredActivity.BTo = filterAddresses(activity.BTo)
+	filteredActivity.BCC = filterAddresses(activity.BCC)
+
+	f.logger.Info("Filtered recipients",
+		zap.Int("to_original", len(activity.To)),
+		zap.Int("to_filtered", len(filteredActivity.To)),
+		zap.Int("cc_original", len(activity.CC)),
+		zap.Int("cc_filtered", len(filteredActivity.CC)))
+
+	// Use the base service with filtered recipients
+	return f.baseService.DeliverToRecipients(ctx, &filteredActivity, actor)
+}
+
+// isLocalActor checks if an actor ID belongs to the same instance
+func isLocalActor(actorID, localActorID string) bool {
+	// Extract domain from actor IDs
+	localDomain := extractDomain(localActorID)
+	actorDomain := extractDomain(actorID)
+	return localDomain == actorDomain
+}
+
+// extractDomain extracts the domain from an actor ID
+func extractDomain(actorID string) string {
+	// Simple extraction - in production, use proper URL parsing
+	if len(actorID) > 8 && actorID[:8] == "https://" {
+		parts := actorID[8:]
+		if idx := strings.IndexByte(parts, '/'); idx > 0 {
+			return parts[:idx]
+		}
+	}
+	return actorID
 }
 
 // isAddressedToFollowers checks if an activity is addressed to followers

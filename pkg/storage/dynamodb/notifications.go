@@ -136,7 +136,7 @@ func (s *dynamoDBStorage) GetNotifications(ctx context.Context, username string,
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: pk},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 

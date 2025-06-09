@@ -145,7 +145,7 @@ func (s *dynamoDBStorage) GetOutboxActivities(ctx context.Context, username stri
 			":pk":        &types.AttributeValueMemberS{Value: storage.ActorPKPrefix + username},
 			":sk_prefix": &types.AttributeValueMemberS{Value: storage.ActivitySKPrefix},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 
@@ -215,7 +215,7 @@ func (s *dynamoDBStorage) GetInboxActivities(ctx context.Context, username strin
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":gsi1pk": &types.AttributeValueMemberS{Value: storage.InboxGSI1PKPrefix + username},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 

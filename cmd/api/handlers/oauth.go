@@ -60,6 +60,15 @@ func (h *Handler) HandleOAuthAuthorize(ctx context.Context, request events.APIGa
 		return common.BadRequest(errors.New("invalid redirect_uri")), nil
 	}
 
+	// Additional validation to prevent open redirects
+	if err := common.ValidateRedirectURL(redirectURI, request.Headers["Host"]); err != nil {
+		h.logger.Error("potentially malicious redirect URI",
+			zap.String("client_id", clientID),
+			zap.String("redirect_uri", redirectURI),
+			zap.Error(err))
+		return common.BadRequest(errors.New("redirect_uri not allowed")), nil
+	}
+
 	// Check if user is authenticated (from cookie or header)
 	username := h.getUserFromSession(request)
 
@@ -171,7 +180,7 @@ func (h *Handler) HandleOAuthToken(ctx context.Context, request events.APIGatewa
 		req.Scope = params["scope"]
 	} else {
 		// Also support JSON for compatibility
-		if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 			return h.tokenError("invalid_request", "Failed to parse request"), nil
 		}
 	}
@@ -354,7 +363,7 @@ func (h *Handler) HandleOAuthRevoke(ctx context.Context, request events.APIGatew
 		req.ClientID = params["client_id"]
 		req.ClientSecret = params["client_secret"]
 	} else {
-		if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 			return common.BadRequest(err), nil
 		}
 	}
@@ -459,22 +468,14 @@ func (h *Handler) getUserFromSession(request events.APIGatewayV2HTTPRequest) str
 		}
 	}
 
-	// Try session cookie
-	cookies := request.Headers["Cookie"]
-	if cookies == "" {
-		cookies = request.Headers["cookie"]
-	}
-
-	// Simple cookie parsing (in production, use a proper parser)
-	for _, cookie := range strings.Split(cookies, ";") {
-		parts := strings.SplitN(strings.TrimSpace(cookie), "=", 2)
-		if len(parts) == 2 && parts[0] == "lesser_session" {
-			// Validate session token
-			authService, _ := auth.NewAuthService(h.store)
-			claims, err := authService.ValidateAccessToken(parts[1])
-			if err == nil {
-				return claims.Username
-			}
+	// Try session cookie using secure cookie parser
+	sessionToken := common.GetCookie(request.Headers, "lesser_session")
+	if sessionToken != "" {
+		// Validate session token
+		authService, _ := auth.NewAuthService(h.store)
+		claims, err := authService.ValidateAccessToken(sessionToken)
+		if err == nil {
+			return claims.Username
 		}
 	}
 

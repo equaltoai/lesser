@@ -2,12 +2,13 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/aron23/lesser/pkg/common"
 )
 
 // Provider represents an OAuth provider interface
@@ -111,7 +112,7 @@ func (p *baseProvider) ExchangeCode(ctx context.Context, code, redirectURI strin
 	}
 
 	var tokenResp TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to decode token response: %w", err)
 	}
 

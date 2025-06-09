@@ -521,27 +521,37 @@ func (rm *RoutingMetrics) aggregateRouteMetric(metrics *RouteMetrics, item map[s
 	// Parse and aggregate stored metrics
 	if v, ok := item["MessageCount"].(*types.AttributeValueMemberN); ok {
 		var count int64
-		fmt.Sscanf(v.Value, "%d", &count)
+		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
+			rm.logger.Warn("failed to parse MessageCount", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.TotalMessages += count
 	}
 	if v, ok := item["SuccessCount"].(*types.AttributeValueMemberN); ok {
 		var count int64
-		fmt.Sscanf(v.Value, "%d", &count)
+		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
+			rm.logger.Warn("failed to parse SuccessCount", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.SuccessfulCount += count
 	}
 	if v, ok := item["FailureCount"].(*types.AttributeValueMemberN); ok {
 		var count int64
-		fmt.Sscanf(v.Value, "%d", &count)
+		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
+			rm.logger.Warn("failed to parse FailureCount", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.FailedCount += count
 	}
 	if v, ok := item["TotalBytes"].(*types.AttributeValueMemberN); ok {
 		var bytes int64
-		fmt.Sscanf(v.Value, "%d", &bytes)
+		if _, err := fmt.Sscanf(v.Value, "%d", &bytes); err != nil {
+			rm.logger.Warn("failed to parse TotalBytes", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.TotalBytes += bytes
 	}
 	if v, ok := item["TotalCost"].(*types.AttributeValueMemberN); ok {
 		var cost float64
-		fmt.Sscanf(v.Value, "%f", &cost)
+		if _, err := fmt.Sscanf(v.Value, "%f", &cost); err != nil {
+			rm.logger.Warn("failed to parse TotalCost", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.TotalCost += cost
 	}
 }
@@ -550,16 +560,22 @@ func (rm *RoutingMetrics) aggregateInstanceMetric(metrics *InstanceMetrics, item
 	// Parse and aggregate instance metrics
 	if v, ok := item["TotalMessages"].(*types.AttributeValueMemberN); ok {
 		var count int64
-		fmt.Sscanf(v.Value, "%d", &count)
+		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
+			rm.logger.Warn("failed to parse TotalMessages", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.TotalMessages += count
 	}
 	if v, ok := item["TotalBytes"].(*types.AttributeValueMemberN); ok {
 		var bytes int64
-		fmt.Sscanf(v.Value, "%d", &bytes)
+		if _, err := fmt.Sscanf(v.Value, "%d", &bytes); err != nil {
+			rm.logger.Warn("failed to parse TotalBytes", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.TotalBytes += bytes
 	}
 	if v, ok := item["Availability"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%f", &metrics.Availability)
+		if _, err := fmt.Sscanf(v.Value, "%f", &metrics.Availability); err != nil {
+			rm.logger.Warn("failed to parse Availability", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 }
 
@@ -567,17 +583,23 @@ func (rm *RoutingMetrics) aggregateGlobalMetric(metrics *GlobalMetrics, item map
 	// Parse and aggregate global metrics
 	if v, ok := item["TotalMessages"].(*types.AttributeValueMemberN); ok {
 		var count int64
-		fmt.Sscanf(v.Value, "%d", &count)
+		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
+			rm.logger.Warn("failed to parse TotalMessages", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.TotalMessages += count
 	}
 	if v, ok := item["TotalBytes"].(*types.AttributeValueMemberN); ok {
 		var bytes int64
-		fmt.Sscanf(v.Value, "%d", &bytes)
+		if _, err := fmt.Sscanf(v.Value, "%d", &bytes); err != nil {
+			rm.logger.Warn("failed to parse TotalBytes", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.TotalBytes += bytes
 	}
 	if v, ok := item["TotalCost"].(*types.AttributeValueMemberN); ok {
 		var cost float64
-		fmt.Sscanf(v.Value, "%f", &cost)
+		if _, err := fmt.Sscanf(v.Value, "%f", &cost); err != nil {
+			rm.logger.Warn("failed to parse TotalCost", zap.String("value", v.Value), zap.Error(err))
+		}
 		metrics.TotalCost += cost
 	}
 }

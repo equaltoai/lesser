@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/trust"
+	"go.uber.org/zap"
 )
 
 // StorageInterface defines the storage operations needed by the consensus engine
@@ -196,7 +198,13 @@ func (e *ConsensusEngine) updateTrustScores(ctx context.Context, decision *Moder
 			EventID:  decision.EventID,
 		}
 
-		e.storage.RecordTrustUpdate(ctx, update)
+		if err := e.storage.RecordTrustUpdate(ctx, update); err != nil {
+			// Since this is in a goroutine, we can only log the error
+			common.Logger().Error("failed to record trust update",
+				zap.String("reviewer", review.ReviewerID),
+				zap.String("event", decision.EventID),
+				zap.Error(err))
+		}
 	}
 }
 

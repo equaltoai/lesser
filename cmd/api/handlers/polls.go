@@ -151,7 +151,7 @@ func (h *Handler) HandleVoteOnPoll(ctx context.Context, request events.APIGatewa
 
 	// Parse request
 	var req models.PollVoteRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -82,7 +81,7 @@ func handleSQSEvent(ctx context.Context, sqsEvent events.SQSEvent) error {
 func processDeliveryMessage(ctx context.Context, record events.SQSMessage) error {
 	// Parse the message
 	var msg FederationDeliveryMessage
-	if err := json.Unmarshal([]byte(record.Body), &msg); err != nil {
+	if err := common.ParseRequestBody([]byte(record.Body), &msg); err != nil {
 		return fmt.Errorf("failed to parse message: %w", err)
 	}
 

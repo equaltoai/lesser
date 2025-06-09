@@ -237,7 +237,7 @@ func handleMessage(ctx context.Context, event events.APIGatewayWebsocketProxyReq
 
 	// Parse incoming message
 	var message StreamMessage
-	if err := json.Unmarshal([]byte(event.Body), &message); err != nil {
+	if err := common.ParseRequestBody([]byte(event.Body), &message); err != nil {
 		log.Error("failed to parse message", zap.Error(err))
 		return sendError(event.RequestContext.ConnectionID, "Invalid message format")
 	}

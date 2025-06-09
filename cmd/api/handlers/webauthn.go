@@ -66,7 +66,7 @@ func (h *WebAuthnHandler) FinishRegistration(ctx context.Context, request events
 		Response       json.RawMessage `json:"response"`
 		CredentialName string          `json:"credential_name"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 
@@ -92,7 +92,7 @@ func (h *WebAuthnHandler) BeginLogin(ctx context.Context, request events.APIGate
 	var req struct {
 		Username string `json:"username"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 
@@ -132,7 +132,7 @@ func (h *WebAuthnHandler) FinishLogin(ctx context.Context, request events.APIGat
 		Response   json.RawMessage `json:"response"`
 		DeviceName string          `json:"device_name"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 
@@ -247,7 +247,7 @@ func (h *WebAuthnHandler) UpdateCredentialName(ctx context.Context, request even
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 

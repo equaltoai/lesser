@@ -106,7 +106,7 @@ func (s *dynamoDBStorage) GetSeveredRelationships(ctx context.Context, localInst
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("SEVERED#%s#", localInstance)},
 		},
-		Limit:             aws.Int32(int32(limit)),
+		Limit:             safeInt32(limit),
 		ExclusiveStartKey: exclusiveStartKey,
 		ScanIndexForward:  aws.Bool(false), // Most recent first
 	}
@@ -294,7 +294,7 @@ func (s *dynamoDBStorage) GetSeveranceHistory(ctx context.Context, localInstance
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("SEVERED#%s#%s", localInstance, remoteInstance)},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Most recent first
 	}
 

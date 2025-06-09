@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -130,7 +129,7 @@ func (h *Handler) HandleCreatePushSubscription(ctx context.Context, request even
 
 	// Parse request
 	var req models.PushSubscriptionRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -233,7 +232,7 @@ func (h *Handler) HandleUpdatePushSubscription(ctx context.Context, request even
 	var req struct {
 		Data models.PushSubscriptionAlerts `json:"data"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

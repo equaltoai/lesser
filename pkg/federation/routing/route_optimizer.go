@@ -331,14 +331,20 @@ func (sro *SmartRouteOptimizer) GetRouteMetrics(ctx context.Context, routeID str
 			success = v.Value
 		}
 		if v, ok := item["Duration"].(*types.AttributeValueMemberN); ok {
-			fmt.Sscanf(v.Value, "%d", &duration)
+			if _, err := fmt.Sscanf(v.Value, "%d", &duration); err != nil {
+				sro.logger.Warn("failed to parse duration", zap.String("value", v.Value), zap.Error(err))
+			}
 			latencies = append(latencies, time.Duration(duration)*time.Millisecond)
 		}
 		if v, ok := item["BytesSent"].(*types.AttributeValueMemberN); ok {
-			fmt.Sscanf(v.Value, "%d", &bytesSent)
+			if _, err := fmt.Sscanf(v.Value, "%d", &bytesSent); err != nil {
+				sro.logger.Warn("failed to parse bytes sent", zap.String("value", v.Value), zap.Error(err))
+			}
 		}
 		if v, ok := item["Cost"].(*types.AttributeValueMemberN); ok {
-			fmt.Sscanf(v.Value, "%f", &cost)
+			if _, err := fmt.Sscanf(v.Value, "%f", &cost); err != nil {
+				sro.logger.Warn("failed to parse cost", zap.String("value", v.Value), zap.Error(err))
+			}
 		}
 
 		// Update counters

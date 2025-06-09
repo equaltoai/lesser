@@ -563,7 +563,12 @@ func (pm *PatternMatcher) parsePattern(item map[string]types.AttributeValue) (*M
 		pattern.Active = v.Value
 	}
 	if v, ok := item["HitCount"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &pattern.HitCount)
+		if _, err := fmt.Sscanf(v.Value, "%d", &pattern.HitCount); err != nil {
+			pm.logger.Warn("failed to parse HitCount for pattern",
+				zap.String("patternID", pattern.ID),
+				zap.String("value", v.Value),
+				zap.Error(err))
+		}
 	}
 
 	// Parse timestamps

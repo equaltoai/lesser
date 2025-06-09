@@ -251,7 +251,7 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 			}
 		} else {
 			// JSON request
-			if err := json.Unmarshal([]byte(body), &req); err != nil {
+			if err := common.ParseRequestBody([]byte(body), &req); err != nil {
 				return common.BadRequest(err), nil
 			}
 		}
@@ -581,7 +581,7 @@ func handleToken(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*
 		zap.Bool("is_json", strings.Contains(contentType, "application/json")))
 
 	if strings.Contains(contentType, "application/json") {
-		if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 			logger.Error("failed to parse JSON", zap.Error(err))
 			return returnTokenError("invalid_request", "Invalid JSON"), nil
 		}

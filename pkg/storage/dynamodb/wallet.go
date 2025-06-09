@@ -131,13 +131,18 @@ func (s *dynamoDBStorage) StoreWalletCredential(ctx context.Context, credential 
 
 	if _, err = s.client.PutItem(ctx, reverseInput); err != nil {
 		// Try to clean up the first item
-		s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		if _, cleanupErr := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 			TableName: s.getTableName(),
 			Key: map[string]types.AttributeValue{
 				"PK": &types.AttributeValueMemberS{Value: s.userPK(credential.Username)},
 				"SK": &types.AttributeValueMemberS{Value: "WALLET#" + address},
 			},
-		})
+		}); cleanupErr != nil {
+			s.log.Warn("failed to cleanup wallet credential after index failure",
+				zap.String("username", credential.Username),
+				zap.String("address", address),
+				zap.Error(cleanupErr))
+		}
 		return fmt.Errorf("failed to store wallet index: %w", err)
 	}
 

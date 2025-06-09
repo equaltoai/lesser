@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -97,7 +96,7 @@ func (h *Handler) HandleCreateDomainBlock(ctx context.Context, request events.AP
 
 	// Parse request body
 	var req CreateDomainBlockRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		h.logger.Debug("invalid domain block request", zap.Error(err))
 		return common.BadRequest(errors.New("invalid request")), nil
 	}

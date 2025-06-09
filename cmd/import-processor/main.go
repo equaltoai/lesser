@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -91,7 +92,7 @@ func handleImportProcessing(ctx context.Context, sqsEvent events.SQSEvent) error
 	// Process each message
 	for _, message := range sqsEvent.Records {
 		var event ImportProcessorEvent
-		if err := json.Unmarshal([]byte(message.Body), &event); err != nil {
+		if err := common.ParseRequestBody([]byte(message.Body), &event); err != nil {
 			logger.Error("failed to unmarshal event",
 				zap.String("message_id", message.MessageId),
 				zap.Error(err))
@@ -191,7 +192,7 @@ func processImportJob(ctx context.Context, event ImportProcessorEvent) error {
 func detectFormat(data []byte) string {
 	// Try to parse as JSON first
 	var jsonTest interface{}
-	if err := json.Unmarshal(data, &jsonTest); err == nil {
+	if err := common.ParseActivityPubObject(data, &jsonTest); err == nil {
 		// Check if it's an ActivityPub collection
 		if jsonMap, ok := jsonTest.(map[string]interface{}); ok {
 			if _, hasContext := jsonMap["@context"]; hasContext {
@@ -406,7 +407,7 @@ func processJSONImport(ctx context.Context, event ImportProcessorEvent, data []b
 	case "lists":
 		// Import lists with members
 		var lists map[string][]string
-		if err := json.Unmarshal(data, &lists); err != nil {
+		if err := common.ParseActivityPubObject(data, &lists); err != nil {
 			return result, fmt.Errorf("failed to parse lists JSON: %w", err)
 		}
 
@@ -456,7 +457,7 @@ func processActivityPubImport(ctx context.Context, event ImportProcessorEvent, d
 	// For now, we'll just count the items
 
 	var collection map[string]interface{}
-	if err := json.Unmarshal(data, &collection); err != nil {
+	if err := common.ParseActivityPubObject(data, &collection); err != nil {
 		return result, fmt.Errorf("failed to parse ActivityPub collection: %w", err)
 	}
 

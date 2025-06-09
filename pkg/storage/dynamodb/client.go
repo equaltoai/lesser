@@ -43,6 +43,7 @@ type dynamoDBStorage struct {
 	embeddingService    *EmbeddingService
 	domain              string
 	kmsClient           *kms.Client
+	log                 *zap.Logger
 }
 
 var (
@@ -109,6 +110,7 @@ func New() (storage.Storage, error) {
 		client:    client,
 		tableName: tableName,
 		domain:    cfg.Get().Domain,
+		log:       common.Logger(),
 	}
 
 	// Get AWS config for services that need it
@@ -151,6 +153,7 @@ func NewWithClient(client DynamoDBAPI, tableName string) storage.Storage {
 		client:    client,
 		tableName: tableName,
 		domain:    cfg.Get().Domain,
+		log:       common.Logger(),
 	}
 
 	// Initialize search service with storage reference

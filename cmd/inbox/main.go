@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/federation"
+	"github.com/aron23/lesser/pkg/httpclient"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
@@ -246,12 +248,31 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		return common.InternalServerError(err), nil
 	}
 
-	// Parse the activity
-	body := []byte(request.Body)
+	// Parse the activity with size limit
+	body, err := common.ReadRequestBody(strings.NewReader(request.Body), common.MaxActivitySize)
+	if err != nil {
+		if strings.Contains(err.Error(), "too large") {
+			log.Warn("request body too large", zap.Error(err))
+			return &events.APIGatewayV2HTTPResponse{
+				StatusCode: 413, // Payload Too Large
+				Body:       fmt.Sprintf(`{"error": "%s"}`, err.Error()),
+			}, nil
+		}
+		log.Warn("failed to read request body", zap.Error(err))
+		return common.BadRequest(common.ValidationError{Field: "body", Message: "failed to read request body"}), nil
+	}
+
+	// Safe JSON parsing for ActivityPub objects
 	var activity activitypub.Activity
-	if err := json.Unmarshal(body, &activity); err != nil {
+	if err := common.ParseActivityPubObject(body, &activity); err != nil {
 		log.Warn("failed to parse activity", zap.Error(err))
-		return common.BadRequest(common.ValidationError{Field: "body", Message: "invalid JSON"}), nil
+		return common.BadRequest(common.ValidationError{Field: "body", Message: err.Error()}), nil
+	}
+
+	// Sanitize any embedded objects in the activity
+	if objMap, ok := activity.Object.(map[string]interface{}); ok {
+		common.SanitizeActivityPubObjectDefault(objMap)
+		activity.Object = objMap
 	}
 
 	log.Info("processing activity",
@@ -496,10 +517,12 @@ func convertLambdaRequest(request *events.APIGatewayV2HTTPRequest, body []byte) 
 func fetchActorPublicKey(ctx context.Context, actorURL string) (crypto.PublicKey, error) {
 	log := common.WithContext(ctx)
 
-	// Create HTTP client
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
+	// Create secure HTTP client with DNS caching
+	client := httpclient.NewSecureClient(
+		httpclient.WithTimeout(10*time.Second),
+		httpclient.WithLogger(log),
+		httpclient.WithStorage(store),
+	)
 
 	// Create request with ActivityPub Accept header
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorURL, nil)
@@ -528,7 +551,7 @@ func fetchActorPublicKey(ctx context.Context, actorURL string) (crypto.PublicKey
 
 	// Parse actor
 	var actor activitypub.Actor
-	if err := json.NewDecoder(resp.Body).Decode(&actor); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
 		return nil, fmt.Errorf("failed to parse actor: %w", err)
 	}
 
@@ -658,6 +681,9 @@ func processRemoteCreateActivity(ctx context.Context, activity *activitypub.Acti
 		return nil
 	}
 
+	// Sanitize the object content to prevent XSS
+	common.SanitizeActivityPubObjectDefault(objMap)
+
 	// Store the object if it's a Note
 	if objType, _ := objMap["type"].(string); objType == activitypub.NoteType {
 		// Convert to Note object
@@ -667,7 +693,7 @@ func processRemoteCreateActivity(ctx context.Context, activity *activitypub.Acti
 		}
 
 		var note activitypub.Note
-		if err := json.Unmarshal(objJSON, &note); err != nil {
+		if err := common.ParseActivityPubObject(objJSON, &note); err != nil {
 			return err
 		}
 
@@ -692,6 +718,9 @@ func processRemoteUpdateActivity(ctx context.Context, activity *activitypub.Acti
 		return nil
 	}
 
+	// Sanitize the object content to prevent XSS
+	common.SanitizeActivityPubObjectDefault(objMap)
+
 	// Update the object if it's a Note
 	if objType, _ := objMap["type"].(string); objType == activitypub.NoteType {
 		// Convert to Note object
@@ -701,7 +730,7 @@ func processRemoteUpdateActivity(ctx context.Context, activity *activitypub.Acti
 		}
 
 		var note activitypub.Note
-		if err := json.Unmarshal(objJSON, &note); err != nil {
+		if err := common.ParseActivityPubObject(objJSON, &note); err != nil {
 			return err
 		}
 
@@ -768,7 +797,7 @@ func processUndoActivity(ctx context.Context, activity *activitypub.Activity, ta
 		}
 
 		originalActivity = &activitypub.Activity{}
-		if err := json.Unmarshal(objJSON, originalActivity); err != nil {
+		if err := common.ParseActivityPubObject(objJSON, originalActivity); err != nil {
 			return err
 		}
 	default:
@@ -832,8 +861,22 @@ func generateActivityID() string {
 func generateRandomString(length int) string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	result := make([]byte, length)
+
+	// Use crypto/rand for secure random generation
+	randomBytes := make([]byte, length)
+	if _, err := rand.Read(randomBytes); err != nil {
+		// This should rarely happen, but we handle it gracefully
+		logger.Error("Failed to generate secure random bytes", zap.Error(err))
+		// Still return something random-ish as a fallback
+		for i := range result {
+			result[i] = chars[i%len(chars)]
+		}
+		return string(result)
+	}
+
+	// Map random bytes to our character set
 	for i := range result {
-		result[i] = chars[time.Now().UnixNano()%int64(len(chars))]
+		result[i] = chars[int(randomBytes[i])%len(chars)]
 	}
 	return string(result)
 }

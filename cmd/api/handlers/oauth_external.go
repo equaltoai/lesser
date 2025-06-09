@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -287,7 +286,7 @@ func (h *Handler) HandleLinkOAuthProvider(ctx context.Context, request events.AP
 		RedirectURI string `json:"redirect_uri"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

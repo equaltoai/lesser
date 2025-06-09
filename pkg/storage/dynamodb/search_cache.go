@@ -2,7 +2,7 @@ package dynamodb
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"fmt"
 	"strconv"
 	"time"
@@ -49,7 +49,7 @@ func (c *SearchCache) BuildKey(query string, options SearchOptions) string {
 		options.FollowingOnly,
 		options.Language)
 
-	hash := md5.Sum([]byte(data))
+	hash := sha256.Sum256([]byte(data))
 	return fmt.Sprintf("%x", hash)
 }
 

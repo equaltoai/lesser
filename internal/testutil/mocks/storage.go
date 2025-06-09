@@ -560,6 +560,16 @@ func (m *BaseMockStorage) UpdateDevice(ctx context.Context, device *storage.Devi
 func (m *BaseMockStorage) GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error) {
 	return []*storage.Device{}, nil
 }
+
+// DNS cache operations for BaseMockStorage
+func (m *BaseMockStorage) GetDNSCache(ctx context.Context, hostname string) (*storage.DNSCacheEntry, error) {
+	return nil, nil
+}
+
+func (m *BaseMockStorage) SetDNSCache(ctx context.Context, entry *storage.DNSCacheEntry) error {
+	return nil
+}
+
 // Generated mock methods for storage.Storage interface
 // Generated mock methods for storage.Storage interface
 
@@ -2873,3 +2883,17 @@ func (m *MockStorage) WriteToTimelines(ctx context.Context, entries []*storage.T
 	return args.Error(0)
 }
 
+// GetDNSCache mocks the GetDNSCache method
+func (m *MockStorage) GetDNSCache(ctx context.Context, hostname string) (*storage.DNSCacheEntry, error) {
+	args := m.Called(ctx, hostname)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.DNSCacheEntry), args.Error(1)
+}
+
+// SetDNSCache mocks the SetDNSCache method
+func (m *MockStorage) SetDNSCache(ctx context.Context, entry *storage.DNSCacheEntry) error {
+	args := m.Called(ctx, entry)
+	return args.Error(0)
+}

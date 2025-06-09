@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
@@ -365,7 +364,7 @@ func (h *Handler) HandleUpdateMedia(ctx context.Context, request events.APIGatew
 		Description string `json:"description"`
 		Focus       string `json:"focus"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &updateReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &updateReq); err != nil {
 		return common.BadRequest(err), nil
 	}
 

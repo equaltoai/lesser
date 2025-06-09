@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/aron23/lesser/cmd/api/models"
@@ -77,7 +76,7 @@ func (h *Handler) HandleCreateCustomEmoji(ctx context.Context, request events.AP
 
 	// Parse request
 	var req models.CreateCustomEmojiRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -164,7 +163,7 @@ func (h *Handler) HandleUpdateCustomEmoji(ctx context.Context, request events.AP
 
 	// Parse request
 	var req models.UpdateCustomEmojiRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

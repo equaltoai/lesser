@@ -1,8 +1,9 @@
 package routing
 
 import (
+	"crypto/rand"
 	"math"
-	"math/rand"
+	"math/big"
 	"sort"
 	"sync"
 	"time"
@@ -182,9 +183,19 @@ func (alb *AdaptiveLoadBalancer) weightedRandom(routes []*Route, load int) map[s
 	}
 
 	// Distribute load based on weights
-	rand.Seed(time.Now().UnixNano())
 	for i := 0; i < load; i++ {
-		r := rand.Float64() * totalWeight
+		// Use crypto/rand for secure random number generation
+		randVal, err := rand.Int(rand.Reader, big.NewInt(int64(totalWeight*1000)))
+		if err != nil {
+			// Fallback to less random source on error, or handle error appropriately
+			alb.logger.Error("failed to generate random number for load balancing", zap.Error(err))
+			// Simple fallback to round-robin for this iteration
+			route := routes[i%len(routes)]
+			distribution[route.ID]++
+			continue
+		}
+
+		r := float64(randVal.Int64()) / 1000.0
 		cumWeight := 0.0
 
 		for j, weight := range weights {

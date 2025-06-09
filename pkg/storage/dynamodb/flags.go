@@ -135,7 +135,7 @@ func (s *dynamoDBStorage) GetFlagsByObject(ctx context.Context, objectID string,
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(limit)),
+		Limit:                     safeInt32(limit),
 		ScanIndexForward:          aws.Bool(false), // Most recent first
 	}
 
@@ -214,7 +214,7 @@ func (s *dynamoDBStorage) GetFlagsByActor(ctx context.Context, actorID string, l
 		FilterExpression:          expr.Filter(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(limit)),
+		Limit:                     safeInt32(limit),
 	}
 
 	if cursor != "" {
@@ -295,7 +295,7 @@ func (s *dynamoDBStorage) GetPendingFlags(ctx context.Context, limit int, cursor
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(limit)),
+		Limit:                     safeInt32(limit),
 		ScanIndexForward:          aws.Bool(false), // Most recent first
 	}
 

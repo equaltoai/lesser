@@ -7,9 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"go.uber.org/zap"
 )
 
 // StatusSearchCache provides caching for status search results
@@ -174,6 +176,11 @@ func (c *StatusSearchCache) Clear() {
 // parseFloat64 safely parses a string to float64
 func parseFloat64(s string) float64 {
 	var f float64
-	fmt.Sscanf(s, "%f", &f)
+	if _, err := fmt.Sscanf(s, "%f", &f); err != nil {
+		common.Logger().Warn("failed to parse float64 from string",
+			zap.String("string", s),
+			zap.Error(err))
+		return 0.0
+	}
 	return f
 }

@@ -468,22 +468,34 @@ func (dcb *DistributedCircuitBreaker) loadState(state *circuitState) error {
 		state.Status = CircuitStatus(v.Value)
 	}
 	if v, ok := result.Item["FailureCount"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &state.FailureCount)
+		if _, err := fmt.Sscanf(v.Value, "%d", &state.FailureCount); err != nil {
+			dcb.logger.Warn("failed to parse FailureCount", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := result.Item["SuccessCount"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &state.SuccessCount)
+		if _, err := fmt.Sscanf(v.Value, "%d", &state.SuccessCount); err != nil {
+			dcb.logger.Warn("failed to parse SuccessCount", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := result.Item["ConsecutiveFails"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &state.ConsecutiveFails)
+		if _, err := fmt.Sscanf(v.Value, "%d", &state.ConsecutiveFails); err != nil {
+			dcb.logger.Warn("failed to parse ConsecutiveFails", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := result.Item["TotalRequests"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &state.TotalRequests)
+		if _, err := fmt.Sscanf(v.Value, "%d", &state.TotalRequests); err != nil {
+			dcb.logger.Warn("failed to parse TotalRequests", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := result.Item["TotalFailures"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &state.TotalFailures)
+		if _, err := fmt.Sscanf(v.Value, "%d", &state.TotalFailures); err != nil {
+			dcb.logger.Warn("failed to parse TotalFailures", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := result.Item["TotalSuccesses"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &state.TotalSuccesses)
+		if _, err := fmt.Sscanf(v.Value, "%d", &state.TotalSuccesses); err != nil {
+			dcb.logger.Warn("failed to parse TotalSuccesses", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 
 	// Parse timestamps
@@ -503,7 +515,9 @@ func (dcb *DistributedCircuitBreaker) loadState(state *circuitState) error {
 	// Parse backoff duration
 	if v, ok := result.Item["BackoffDuration"].(*types.AttributeValueMemberN); ok {
 		var nanos int64
-		fmt.Sscanf(v.Value, "%d", &nanos)
+		if _, err := fmt.Sscanf(v.Value, "%d", &nanos); err != nil {
+			dcb.logger.Warn("failed to parse BackoffDuration", zap.String("value", v.Value), zap.Error(err))
+		}
 		state.BackoffDuration = time.Duration(nanos)
 	}
 

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -47,7 +46,7 @@ func NewAuthHandler() (*AuthHandler, error) {
 func (h *AuthHandler) HandleLogin(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Parse request body
 	var loginReq LoginRequest
-	if err := json.Unmarshal([]byte(request.Body), &loginReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &loginReq); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 
@@ -102,7 +101,7 @@ func (h *AuthHandler) HandleLogin(ctx context.Context, request events.APIGateway
 func (h *AuthHandler) HandleRefreshToken(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Parse request body
 	var refreshReq RefreshTokenRequest
-	if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &refreshReq); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 
@@ -292,7 +291,7 @@ func (h *AuthHandler) HandleChangePassword(ctx context.Context, request events.A
 
 	// Parse request body
 	var changeReq ChangePasswordRequest
-	if err := json.Unmarshal([]byte(request.Body), &changeReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &changeReq); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 

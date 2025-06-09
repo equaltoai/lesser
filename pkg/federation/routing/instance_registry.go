@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -11,6 +12,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 )
+
+// safeIntToInt32 safely converts int to int32, capping at math.MaxInt32
+func safeIntToInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n)
+}
 
 // InstanceRegistry manages federated instance data with optimized queries
 type InstanceRegistry struct {
@@ -309,7 +318,7 @@ func (ir *InstanceRegistry) GetInstancesByTier(ctx context.Context, tier TierLev
 		},
 		// Sort by usage (ascending) to get least used first
 		ScanIndexForward: aws.Bool(true),
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            aws.Int32(safeIntToInt32(limit)),
 	}
 
 	result, err := ir.db.Query(ctx, queryInput)
@@ -430,8 +439,12 @@ func (ir *InstanceRegistry) UpdateInstanceUsage(ctx context.Context, instanceID 
 	if usage, ok := result.Attributes["CurrentUsage"]; ok {
 		if quota, ok := result.Attributes["MonthlyQuota"]; ok {
 			var currentUsage, monthlyQuota int64
-			fmt.Sscanf(usage.(*types.AttributeValueMemberN).Value, "%d", &currentUsage)
-			fmt.Sscanf(quota.(*types.AttributeValueMemberN).Value, "%d", &monthlyQuota)
+			if _, err := fmt.Sscanf(usage.(*types.AttributeValueMemberN).Value, "%d", &currentUsage); err != nil {
+				ir.logger.Warn("failed to parse current usage", zap.Error(err))
+			}
+			if _, err := fmt.Sscanf(quota.(*types.AttributeValueMemberN).Value, "%d", &monthlyQuota); err != nil {
+				ir.logger.Warn("failed to parse monthly quota", zap.Error(err))
+			}
 
 			if currentUsage > monthlyQuota {
 				// Queue for batch update
@@ -487,14 +500,20 @@ func (ir *InstanceRegistry) parseInstance(item map[string]types.AttributeValue) 
 	// Parse metrics
 	if v, ok := item["AvgResponseTime"].(*types.AttributeValueMemberN); ok {
 		var ms int64
-		fmt.Sscanf(v.Value, "%d", &ms)
+		if _, err := fmt.Sscanf(v.Value, "%d", &ms); err != nil {
+			ir.logger.Warn("failed to parse AvgResponseTime", zap.String("value", v.Value), zap.Error(err))
+		}
 		instance.AvgResponseTime = time.Duration(ms) * time.Millisecond
 	}
 	if v, ok := item["SuccessRate"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%f", &instance.SuccessRate)
+		if _, err := fmt.Sscanf(v.Value, "%f", &instance.SuccessRate); err != nil {
+			ir.logger.Warn("failed to parse SuccessRate", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["ErrorRate"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%f", &instance.ErrorRate)
+		if _, err := fmt.Sscanf(v.Value, "%f", &instance.ErrorRate); err != nil {
+			ir.logger.Warn("failed to parse ErrorRate", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 
 	// Parse cost tracking
@@ -502,10 +521,14 @@ func (ir *InstanceRegistry) parseInstance(item map[string]types.AttributeValue) 
 		instance.TierLevel = TierLevel(v.Value)
 	}
 	if v, ok := item["MonthlyQuota"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &instance.MonthlyQuota)
+		if _, err := fmt.Sscanf(v.Value, "%d", &instance.MonthlyQuota); err != nil {
+			ir.logger.Warn("failed to parse MonthlyQuota", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["CurrentUsage"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &instance.CurrentUsage)
+		if _, err := fmt.Sscanf(v.Value, "%d", &instance.CurrentUsage); err != nil {
+			ir.logger.Warn("failed to parse CurrentUsage", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 
 	// Parse capabilities
@@ -522,19 +545,29 @@ func (ir *InstanceRegistry) parseInstance(item map[string]types.AttributeValue) 
 	if v, ok := item["RateLimits"].(*types.AttributeValueMemberM); ok {
 		limits := &RateLimits{}
 		if rpm, ok := v.Value["MessagesPerMinute"].(*types.AttributeValueMemberN); ok {
-			fmt.Sscanf(rpm.Value, "%d", &limits.MessagesPerMinute)
+			if _, err := fmt.Sscanf(rpm.Value, "%d", &limits.MessagesPerMinute); err != nil {
+				ir.logger.Warn("failed to parse MessagesPerMinute", zap.String("value", rpm.Value), zap.Error(err))
+			}
 		}
 		if rph, ok := v.Value["MessagesPerHour"].(*types.AttributeValueMemberN); ok {
-			fmt.Sscanf(rph.Value, "%d", &limits.MessagesPerHour)
+			if _, err := fmt.Sscanf(rph.Value, "%d", &limits.MessagesPerHour); err != nil {
+				ir.logger.Warn("failed to parse MessagesPerHour", zap.String("value", rph.Value), zap.Error(err))
+			}
 		}
 		if bpm, ok := v.Value["BytesPerMinute"].(*types.AttributeValueMemberN); ok {
-			fmt.Sscanf(bpm.Value, "%d", &limits.BytesPerMinute)
+			if _, err := fmt.Sscanf(bpm.Value, "%d", &limits.BytesPerMinute); err != nil {
+				ir.logger.Warn("failed to parse BytesPerMinute", zap.String("value", bpm.Value), zap.Error(err))
+			}
 		}
 		if bph, ok := v.Value["BytesPerHour"].(*types.AttributeValueMemberN); ok {
-			fmt.Sscanf(bph.Value, "%d", &limits.BytesPerHour)
+			if _, err := fmt.Sscanf(bph.Value, "%d", &limits.BytesPerHour); err != nil {
+				ir.logger.Warn("failed to parse BytesPerHour", zap.String("value", bph.Value), zap.Error(err))
+			}
 		}
 		if bs, ok := v.Value["BurstSize"].(*types.AttributeValueMemberN); ok {
-			fmt.Sscanf(bs.Value, "%d", &limits.BurstSize)
+			if _, err := fmt.Sscanf(bs.Value, "%d", &limits.BurstSize); err != nil {
+				ir.logger.Warn("failed to parse BurstSize", zap.String("value", bs.Value), zap.Error(err))
+			}
 		}
 		instance.RateLimits = *limits
 	}

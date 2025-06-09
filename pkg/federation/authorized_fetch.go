@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/httpclient"
 	"github.com/aron23/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
@@ -16,7 +18,7 @@ import (
 type AuthorizedFetchService struct {
 	store      storage.Storage
 	logger     *zap.Logger
-	httpClient *http.Client
+	httpClient *httpclient.SecureClient
 	domain     string
 }
 
@@ -25,9 +27,10 @@ func NewAuthorizedFetchService(store storage.Storage, domain string, logger *zap
 	return &AuthorizedFetchService{
 		store:  store,
 		logger: logger,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		httpClient: httpclient.NewSecureClient(
+			httpclient.WithTimeout(10*time.Second),
+			httpclient.WithLogger(logger),
+		),
 		domain: domain,
 	}
 }
@@ -79,7 +82,7 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 
 	// Decode the response
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -116,7 +119,7 @@ func (f *AuthorizedFetchService) FetchActor(ctx context.Context, actorURL string
 	}
 
 	var actor activitypub.Actor
-	if err := json.Unmarshal(data, &actor); err != nil {
+	if err := common.ParseActivityPubObject(data, &actor); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal actor: %w", err)
 	}
 
@@ -226,7 +229,7 @@ func (f *AuthorizedFetchService) fetchActorWithoutAuth(ctx context.Context, acto
 	}
 
 	var actor activitypub.Actor
-	if err := json.NewDecoder(resp.Body).Decode(&actor); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
 		return nil, err
 	}
 

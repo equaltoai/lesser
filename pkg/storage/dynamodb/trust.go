@@ -147,6 +147,9 @@ func (s *dynamoDBStorage) DeleteTrustRelationship(ctx context.Context, trusterID
 
 // GetTrustRelationships retrieves all trust relationships for a truster
 func (s *dynamoDBStorage) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*trust.TrustRelationship, string, error) {
+	if limit > math.MaxInt32 {
+		limit = math.MaxInt32
+	}
 	// We need to scan instead of query since we want all categories
 	input := &dynamodb.ScanInput{
 		TableName:        s.getTableName(),
@@ -158,7 +161,7 @@ func (s *dynamoDBStorage) GetTrustRelationships(ctx context.Context, trusterID s
 			":pk":   &types.AttributeValueMemberS{Value: fmt.Sprintf("TRUST#%s#", trusterID)},
 			":type": &types.AttributeValueMemberS{Value: "RELATIONSHIP"},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: safeInt32(limit),
 	}
 
 	if cursor != "" {
@@ -202,6 +205,9 @@ func (s *dynamoDBStorage) GetTrustRelationships(ctx context.Context, trusterID s
 
 // GetTrustedByRelationships retrieves all relationships where the actor is trusted
 func (s *dynamoDBStorage) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*trust.TrustRelationship, string, error) {
+	if limit > math.MaxInt32 {
+		limit = math.MaxInt32
+	}
 	// Need to scan with filter instead of query on GSI
 	input := &dynamodb.ScanInput{
 		TableName:        s.getTableName(),
@@ -213,7 +219,7 @@ func (s *dynamoDBStorage) GetTrustedByRelationships(ctx context.Context, trustee
 			":pk":   &types.AttributeValueMemberS{Value: fmt.Sprintf("TRUSTED#%s#", trusteeID)},
 			":type": &types.AttributeValueMemberS{Value: "RELATIONSHIP"},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: safeInt32(limit),
 	}
 
 	if cursor != "" {
@@ -285,7 +291,13 @@ func (s *dynamoDBStorage) GetTrustScore(ctx context.Context, actorID, category s
 	}
 
 	// Cache the score
-	s.UpdateTrustScore(ctx, score)
+	if err := s.UpdateTrustScore(ctx, score); err != nil {
+		// Log the error but return the calculated score as it's still valid
+		s.log.Warn("failed to cache updated trust score",
+			zap.String("actorID", actorID),
+			zap.String("category", category),
+			zap.Error(err))
+	}
 
 	return score, nil
 }

@@ -75,3 +75,11 @@ func (m *MockDynamoDBClient) BatchGetItem(ctx context.Context, params *dynamodb.
 	}
 	return args.Get(0).(*dynamodb.BatchGetItemOutput), args.Error(1)
 }
+
+func (m *MockDynamoDBClient) TransactWriteItems(ctx context.Context, params *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*dynamodb.TransactWriteItemsOutput), args.Error(1)
+}

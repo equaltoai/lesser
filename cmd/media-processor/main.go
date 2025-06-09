@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/media"
 	"github.com/aws/aws-lambda-go/events"
@@ -75,6 +76,31 @@ type SizeInfo struct {
 	S3Key  string `json:"s3_key"`
 }
 
+// Allowed MIME types for processing
+var allowedMimeTypes = map[string]bool{
+	"image/jpeg":      true,
+	"image/jpg":       true,
+	"image/png":       true,
+	"image/gif":       true,
+	"image/webp":      true,
+	"video/mp4":       true,
+	"video/webm":      true,
+	"video/quicktime": true,
+	"audio/mpeg":      true,
+	"audio/mp3":       true,
+	"audio/ogg":       true,
+	"audio/wav":       true,
+	"audio/webm":      true,
+}
+
+// Maximum file sizes by type (in bytes)
+const (
+	maxImageSize = 10 * 1024 * 1024 // 10MB for images
+	maxVideoSize = 50 * 1024 * 1024 // 50MB for videos
+	maxAudioSize = 20 * 1024 * 1024 // 20MB for audio
+	maxGifSize   = 15 * 1024 * 1024 // 15MB for GIFs
+)
+
 func init() {
 	// Initialize logger
 	cfg := zap.NewProductionConfig()
@@ -131,7 +157,7 @@ func handleMediaProcessing(ctx context.Context, sqsEvent events.SQSEvent) error 
 	// Process each message
 	for _, message := range sqsEvent.Records {
 		var event MediaProcessingEvent
-		if err := json.Unmarshal([]byte(message.Body), &event); err != nil {
+		if err := common.ParseRequestBody([]byte(message.Body), &event); err != nil {
 			logger.Error("failed to unmarshal event",
 				zap.String("message_id", message.MessageId),
 				zap.Error(err))
@@ -212,6 +238,11 @@ func processMediaJob(ctx context.Context, event MediaProcessingEvent) error {
 		return fmt.Errorf("failed to download original: %w", err)
 	}
 
+	// Validate file type
+	if err := validateFileType(originalData, mimeType); err != nil {
+		return fmt.Errorf("file type validation failed: %w", err)
+	}
+
 	// Process based on media type
 	var result ProcessingResult
 	mediaType := getMediaTypeFromMime(mimeType)
@@ -261,8 +292,20 @@ func processImage(ctx context.Context, data []byte, event MediaProcessingEvent, 
 		Sizes: make(map[string]SizeInfo),
 	}
 
-	// Process image using the new media package
-	processedImages, err := media.ProcessImage(data, mimeType)
+	// Check resources before processing
+	monitor := common.GetLambdaMonitor()
+	if err := monitor.CheckResources("image-processing-start"); err != nil {
+		logger.Error("resource limit approaching", zap.Error(err))
+		return result, err
+	}
+
+	// Process image using the new media package with resource monitoring
+	var processedImages map[string]*media.ProcessedImage
+	err := monitor.WrapWithResourceCheck("image-resize", func() error {
+		var procErr error
+		processedImages, procErr = media.ProcessImage(data, mimeType)
+		return procErr
+	})
 	if err != nil {
 		return result, fmt.Errorf("failed to process image: %w", err)
 	}
@@ -278,8 +321,17 @@ func processImage(ctx context.Context, data []byte, event MediaProcessingEvent, 
 	for sizeName, processed := range processedImages {
 		// Generate S3 key for this size
 		ext := getExtensionFromProcessedFormat(processed.Format)
-		s3Key := fmt.Sprintf("media/%s/%s/%s%s",
-			event.Username, event.MediaID, sizeName, ext)
+		filename := sizeName + ext
+
+		// Sanitize S3 key to prevent path traversal
+		s3Key, err := sanitizeS3Key(event.Username, event.MediaID, filename)
+		if err != nil {
+			logger.Error("failed to sanitize S3 key",
+				zap.String("username", event.Username),
+				zap.String("media_id", event.MediaID),
+				zap.Error(err))
+			continue
+		}
 
 		// Upload to S3
 		if err := uploadToS3(ctx, s3Key, processed.Data, getMimeTypeFromFormat(processed.Format)); err != nil {
@@ -358,7 +410,10 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
 	}
 
 	// 5. Upload to S3 first
-	s3Key := fmt.Sprintf("media/%s/%s/original.mp4", event.Username, event.MediaID)
+	s3Key, err := sanitizeS3Key(event.Username, event.MediaID, "original.mp4")
+	if err != nil {
+		return result, fmt.Errorf("failed to sanitize S3 key: %w", err)
+	}
 	if err := uploadToS3(ctx, s3Key, data, "video/mp4"); err != nil {
 		return result, fmt.Errorf("failed to upload video: %w", err)
 	}
@@ -417,7 +472,10 @@ func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, 
 	}
 
 	// 4. Upload original audio
-	audioKey := fmt.Sprintf("media/%s/%s/audio.mp3", event.Username, event.MediaID)
+	audioKey, err := sanitizeS3Key(event.Username, event.MediaID, "audio.mp3")
+	if err != nil {
+		return result, fmt.Errorf("failed to sanitize S3 key: %w", err)
+	}
 	if err := uploadToS3(ctx, audioKey, data, "audio/mpeg"); err != nil {
 		return result, fmt.Errorf("failed to upload audio: %w", err)
 	}
@@ -464,7 +522,15 @@ func downloadFromS3(ctx context.Context, key string) ([]byte, error) {
 	}
 	defer result.Body.Close()
 
-	return io.ReadAll(result.Body)
+	// Use common.ReadRequestBody to enforce size limits
+	// Use the maximum allowed size across all media types
+	maxSize := int64(maxVideoSize) // 50MB is the largest allowed
+	data, err := common.ReadRequestBody(result.Body, maxSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read S3 object: %w", err)
+	}
+
+	return data, nil
 }
 
 func uploadToS3(ctx context.Context, key string, data []byte, contentType string) error {
@@ -773,7 +839,11 @@ func uploadOriginalOnly(ctx context.Context, data []byte, event MediaProcessingE
 	}
 
 	// Upload original file
-	s3Key := fmt.Sprintf("media/%s/%s/original%s", event.Username, event.MediaID, ext)
+	filename := "original" + ext
+	s3Key, err := sanitizeS3Key(event.Username, event.MediaID, filename)
+	if err != nil {
+		return result, fmt.Errorf("failed to sanitize S3 key: %w", err)
+	}
 	if err := uploadToS3(ctx, s3Key, data, mimeType); err != nil {
 		return result, fmt.Errorf("failed to upload original: %w", err)
 	}
@@ -831,3 +901,94 @@ const (
 	rekognitionCostPerImage = 1000 // $0.001 per image in microdollars
 	transcribeCostPerSecond = 400  // $0.0004 per second
 )
+
+// validateFileType checks if the file type is allowed and matches content
+func validateFileType(data []byte, claimedMimeType string) error {
+	// Check size first to avoid processing huge files
+	if len(data) == 0 {
+		return fmt.Errorf("empty file")
+	}
+
+	// Detect actual MIME type from file content
+	detectedType := http.DetectContentType(data)
+
+	// Clean up detected type (remove charset info)
+	if idx := strings.Index(detectedType, ";"); idx > 0 {
+		detectedType = detectedType[:idx]
+	}
+
+	// Check if detected type is allowed
+	if !allowedMimeTypes[detectedType] {
+		logger.Warn("file type not allowed",
+			zap.String("detected_type", detectedType),
+			zap.String("claimed_type", claimedMimeType))
+		return fmt.Errorf("file type not allowed: %s", detectedType)
+	}
+
+	// Warn if claimed type doesn't match detected type
+	if claimedMimeType != "" && claimedMimeType != detectedType {
+		logger.Warn("MIME type mismatch",
+			zap.String("claimed", claimedMimeType),
+			zap.String("detected", detectedType))
+	}
+
+	// Check file size limits based on type
+	if err := checkFileSizeLimit(data, detectedType); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkFileSizeLimit checks if file size is within allowed limits
+func checkFileSizeLimit(data []byte, mimeType string) error {
+	size := len(data)
+	var maxSize int
+	var fileType string
+
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		if mimeType == "image/gif" {
+			maxSize = maxGifSize
+			fileType = "GIF"
+		} else {
+			maxSize = maxImageSize
+			fileType = "image"
+		}
+	case strings.HasPrefix(mimeType, "video/"):
+		maxSize = maxVideoSize
+		fileType = "video"
+	case strings.HasPrefix(mimeType, "audio/"):
+		maxSize = maxAudioSize
+		fileType = "audio"
+	default:
+		return fmt.Errorf("unknown file type: %s", mimeType)
+	}
+
+	if size > maxSize {
+		return fmt.Errorf("%s file too large: %d bytes (max: %d bytes)", fileType, size, maxSize)
+	}
+
+	return nil
+}
+
+// sanitizeS3Key ensures the S3 key doesn't contain path traversal attempts
+func sanitizeS3Key(username, mediaID, filename string) (string, error) {
+	// Validate username doesn't contain path traversal
+	if strings.Contains(username, "..") || strings.Contains(username, "/") {
+		return "", fmt.Errorf("invalid username for S3 key")
+	}
+
+	// Validate mediaID
+	if strings.Contains(mediaID, "..") || strings.Contains(mediaID, "/") {
+		return "", fmt.Errorf("invalid media ID for S3 key")
+	}
+
+	// Validate filename
+	if strings.Contains(filename, "..") || strings.Contains(filename, "/") {
+		return "", fmt.Errorf("invalid filename for S3 key")
+	}
+
+	// Construct safe S3 key
+	return fmt.Sprintf("media/%s/%s/%s", username, mediaID, filename), nil
+}

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -83,7 +82,7 @@ func (h *Handler) HandleCreateList(ctx context.Context, request events.APIGatewa
 
 	// Parse request
 	var req models.CreateListRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(fmt.Errorf("invalid request body: %w", err)), nil
 	}
 
@@ -197,7 +196,7 @@ func (h *Handler) HandleUpdateList(ctx context.Context, request events.APIGatewa
 
 	// Parse request
 	var req models.UpdateListRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(fmt.Errorf("invalid request body: %w", err)), nil
 	}
 
@@ -378,7 +377,7 @@ func (h *Handler) HandleAddAccountsToList(ctx context.Context, request events.AP
 
 	// Parse request
 	var req models.AddAccountsRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(fmt.Errorf("invalid request body: %w", err)), nil
 	}
 
@@ -435,7 +434,7 @@ func (h *Handler) HandleRemoveAccountsFromList(ctx context.Context, request even
 
 	// Parse request
 	var req models.RemoveAccountsRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(fmt.Errorf("invalid request body: %w", err)), nil
 	}
 

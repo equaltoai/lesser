@@ -3,16 +3,12 @@ package activitypub
 import (
 	"fmt"
 	"net/url"
-	"regexp"
-	"strings"
 
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/microcosm-cc/bluemonday"
 )
 
 var (
-	// usernameRegex validates usernames (alphanumeric, underscore, hyphen)
-	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-
 	// Maximum lengths
 	maxUsernameLength    = 64
 	maxDisplayNameLength = 255
@@ -20,30 +16,24 @@ var (
 	maxContentLength     = 100000
 )
 
-// ValidateUsername validates an actor username
-func ValidateUsername(username string) error {
-	if username == "" {
-		return common.ValidationError{
-			Field:   "username",
-			Message: "cannot be empty",
-		}
-	}
+// Create strict sanitizers for user-generated content
+var (
+	strictSanitizer  *bluemonday.Policy
+	relaxedSanitizer *bluemonday.Policy
+)
 
-	if len(username) > maxUsernameLength {
-		return common.ValidationError{
-			Field:   "username",
-			Message: "too long (max 64 characters)",
-		}
-	}
+func init() {
+	// Initialize strict sanitizer for user-generated content
+	strictSanitizer = bluemonday.UGCPolicy()
+	// Allow rel attribute on links (for rel="nofollow" etc)
+	strictSanitizer.AllowAttrs("rel").Matching(bluemonday.SpaceSeparatedTokens).OnElements("a")
+	// Allow class attribute on spans for styling
+	strictSanitizer.AllowAttrs("class").Matching(bluemonday.SpaceSeparatedTokens).OnElements("span")
 
-	if !usernameRegex.MatchString(username) {
-		return common.ValidationError{
-			Field:   "username",
-			Message: "can only contain letters, numbers, underscores, and hyphens",
-		}
-	}
-
-	return nil
+	// Initialize relaxed sanitizer for more trusted content
+	relaxedSanitizer = bluemonday.UGCPolicy()
+	relaxedSanitizer.AllowAttrs("class").Matching(bluemonday.SpaceSeparatedTokens).OnElements("div", "span", "p")
+	relaxedSanitizer.AllowAttrs("rel").Matching(bluemonday.SpaceSeparatedTokens).OnElements("a")
 }
 
 // ValidateActor validates an Actor object
@@ -290,14 +280,20 @@ func ValidateAddressing(addresses []string, fieldName string) error {
 }
 
 // SanitizeHTML removes potentially dangerous HTML from content
-// This is a basic implementation - consider using a proper HTML sanitizer
+// Uses bluemonday for robust XSS prevention
 func SanitizeHTML(content string) string {
-	// For now, just escape basic HTML entities
-	content = strings.ReplaceAll(content, "<script", "&lt;script")
-	content = strings.ReplaceAll(content, "</script>", "&lt;/script&gt;")
-	content = strings.ReplaceAll(content, "javascript:", "")
-	content = strings.ReplaceAll(content, "onerror=", "")
-	content = strings.ReplaceAll(content, "onclick=", "")
+	if content == "" {
+		return ""
+	}
+	// Use strict sanitizer for all user-generated content
+	return strictSanitizer.Sanitize(content)
+}
 
-	return content
+// SanitizeHTMLRelaxed applies a more relaxed sanitization policy
+// Only use this for content from trusted sources
+func SanitizeHTMLRelaxed(content string) string {
+	if content == "" {
+		return ""
+	}
+	return relaxedSanitizer.Sanitize(content)
 }
