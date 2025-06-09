@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -55,7 +54,7 @@ func (h *Handler) HandleCreateNote(ctx context.Context, request events.APIGatewa
 
 	// Parse request
 	var req notes.CreateNoteRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 
@@ -282,7 +281,7 @@ func (h *Handler) HandleVoteNote(ctx context.Context, request events.APIGatewayV
 
 	// Parse vote
 	var req notes.VoteRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 

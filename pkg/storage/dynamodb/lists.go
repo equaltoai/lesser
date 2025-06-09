@@ -69,7 +69,11 @@ func (s *dynamoDBStorage) CreateList(ctx context.Context, username, title, repli
 
 	if _, err := s.client.PutItem(ctx, putUserListItem); err != nil {
 		// Try to clean up the list metadata
-		s.DeleteList(ctx, list.ID)
+		if cleanupErr := s.DeleteList(ctx, list.ID); cleanupErr != nil {
+			s.log.Warn("failed to cleanup list after index creation failure",
+				zap.String("list_id", list.ID),
+				zap.Error(cleanupErr))
+		}
 		return nil, fmt.Errorf("failed to create user list index: %w", err)
 	}
 
@@ -283,7 +287,12 @@ func (s *dynamoDBStorage) DeleteList(ctx context.Context, listID string) error {
 				"SK": &types.AttributeValueMemberS{Value: accountID.Value},
 			},
 		}
-		s.client.DeleteItem(ctx, deleteMember)
+		if _, err := s.client.DeleteItem(ctx, deleteMember); err != nil {
+			log.Warn("failed to delete list member",
+				zap.String("list_id", listID),
+				zap.String("account_id", accountID.Value),
+				zap.Error(err))
+		}
 
 		// Delete reverse index
 		deleteReverse := &dynamodb.DeleteItemInput{
@@ -293,7 +302,12 @@ func (s *dynamoDBStorage) DeleteList(ctx context.Context, listID string) error {
 				"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", listID, list.Username)},
 			},
 		}
-		s.client.DeleteItem(ctx, deleteReverse)
+		if _, err := s.client.DeleteItem(ctx, deleteReverse); err != nil {
+			log.Warn("failed to delete list member reverse index",
+				zap.String("list_id", listID),
+				zap.String("account_id", accountID.Value),
+				zap.Error(err))
+		}
 	}
 
 	return nil

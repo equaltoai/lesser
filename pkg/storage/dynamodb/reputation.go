@@ -160,7 +160,7 @@ func (s *dynamoDBStorage) GetCommunityNotesByAuthor(ctx context.Context, authorI
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("AUTHOR#%s#NOTES", authorID)},
 		},
 		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	}
 
 	// Add cursor if provided
@@ -344,7 +344,7 @@ func (s *dynamoDBStorage) GetReputationHistory(ctx context.Context, actorID stri
 			":sk_prefix": &types.AttributeValueMemberS{Value: "REP#"},
 		},
 		ScanIndexForward: aws.Bool(false), // Sort descending
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	})
 
 	if err != nil {

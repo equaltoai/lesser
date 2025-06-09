@@ -3,16 +3,17 @@ package federation
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/httpclient"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -24,7 +25,7 @@ import (
 // DeliveryService handles sending activities to remote instances
 type DeliveryService struct {
 	store      storage.Storage
-	httpClient *http.Client
+	httpClient *httpclient.SecureClient
 	logger     *zap.Logger
 	sqsClient  *sqs.Client
 	queueURL   string
@@ -35,11 +36,9 @@ func NewDeliveryService(store storage.Storage) *DeliveryService {
 	logger := common.Logger()
 
 	svc := &DeliveryService{
-		store: store,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		logger: logger,
+		store:      store,
+		httpClient: httpclient.NewSecureClient(httpclient.WithLogger(logger)),
+		logger:     logger,
 	}
 
 	// Initialize SQS client if queue URL is configured
@@ -292,7 +291,7 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 		return cached, nil
 	}
 
-	// Fetch from remote
+	// Fetch from remote using secure client
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -313,7 +312,7 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 	}
 
 	var actor activitypub.Actor
-	if err := json.NewDecoder(resp.Body).Decode(&actor); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
 		return nil, fmt.Errorf("failed to decode actor: %w", err)
 	}
 
@@ -431,7 +430,11 @@ func (d *DeliveryService) getQueueURL() string {
 // generateDeliveryID generates a unique delivery ID
 func generateDeliveryID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	_, err := rand.Read(b)
+	if err != nil {
+		// Fallback to less random source on error
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
 	return fmt.Sprintf("%x", b)
 }
 

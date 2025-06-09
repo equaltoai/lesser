@@ -51,7 +51,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 
 	// Parse request
 	var req models.CreateStatusRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -944,7 +944,7 @@ func (h *Handler) HandleUpdateStatus(ctx context.Context, request events.APIGate
 
 	// Parse request
 	var req models.UpdateStatusRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
@@ -326,10 +327,9 @@ func (v *Verifier) getInstancePublicKey(instanceURL string) (ed25519.PublicKey, 
 	}
 
 	var keys struct {
-		PublicKey string `json:"publicKey"`
+		PublicKey string `json:"public_key"`
 	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&keys); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &keys); err != nil {
 		return nil, fmt.Errorf("failed to decode keys: %w", err)
 	}
 

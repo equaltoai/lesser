@@ -136,8 +136,8 @@ func (s *dynamoDBStorage) GetBookmarks(ctx context.Context, username string, lim
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("BOOKMARK#%s", username)},
 		},
-		Limit:            aws.Int32(int32(limit + 1)), // Request one extra to determine if there's a next page
-		ScanIndexForward: aws.Bool(false),             // Newest first
+		Limit:            safeInt32(limit + 1), // Request one extra to determine if there's a next page
+		ScanIndexForward: aws.Bool(false),      // Newest first
 	}
 
 	// Add cursor if provided

@@ -9,8 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"go.uber.org/zap"
 )
 
 // S3MediaStorage implements MediaStorage using S3
@@ -266,7 +268,12 @@ func (s *S3MediaStorage) extractSegmentIndex(key string) int {
 	}
 
 	var index int
-	fmt.Sscanf(parts[0], "segment%03d", &index)
+	if _, err := fmt.Sscanf(parts[0], "segment%03d", &index); err != nil {
+		common.Logger().Warn("failed to parse segment index",
+			zap.String("key", key),
+			zap.Error(err))
+		return -1
+	}
 	return index
 }
 

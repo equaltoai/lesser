@@ -374,7 +374,13 @@ func (mm *ModerationMetrics) aggregateStats(item map[string]types.AttributeValue
 	if typeVal, ok := item["Type"].(*types.AttributeValueMemberS); ok {
 		if countVal, ok := item["Count"].(*types.AttributeValueMemberN); ok {
 			var count int64
-			fmt.Sscanf(countVal.Value, "%d", &count)
+			if _, err := fmt.Sscanf(countVal.Value, "%d", &count); err != nil {
+				mm.logger.Warn("failed to parse metric count",
+					zap.String("type", typeVal.Value),
+					zap.String("value", countVal.Value),
+					zap.Error(err))
+				return
+			}
 
 			// Aggregate by type
 			switch {

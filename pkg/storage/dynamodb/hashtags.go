@@ -49,7 +49,12 @@ func (s *dynamoDBStorage) IndexHashtag(ctx context.Context, hashtag string, stat
 		// Extract existing values
 		if count, ok := getResult.Item["UsageCount"]; ok {
 			if n, ok := count.(*types.AttributeValueMemberN); ok {
-				fmt.Sscanf(n.Value, "%d", &existingCount)
+				if _, err := fmt.Sscanf(n.Value, "%d", &existingCount); err != nil {
+					common.Logger().Warn("failed to parse existing hashtag count",
+						zap.String("hashtag", tagLower),
+						zap.String("value", n.Value),
+						zap.Error(err))
+				}
 			}
 		}
 		if fs, ok := getResult.Item["FirstSeen"]; ok {
@@ -165,7 +170,7 @@ func (s *dynamoDBStorage) SearchHashtags(ctx context.Context, query string, limi
 			KeyConditionExpression:    expr.KeyCondition(),
 			ExpressionAttributeNames:  expr.Names(),
 			ExpressionAttributeValues: expr.Values(),
-			Limit:                     aws.Int32(int32(limit - len(results))),
+			Limit:                     safeInt32(limit - len(results)),
 		}
 
 		queryResult, err := s.client.Query(ctx, queryInput)

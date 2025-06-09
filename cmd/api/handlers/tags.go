@@ -348,7 +348,7 @@ func (h *Handler) HandleCreateFeaturedTag(ctx context.Context, request events.AP
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

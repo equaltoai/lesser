@@ -167,6 +167,6 @@ The answer changes everything.
 
 *"AI doesn't replace expertise. It amplifies it. The difference between someone who knows what to build and someone who doesn't isn't 2x or 10x anymore. It's infinite."*
 
-**- Aron Price**  
+**- Aron Price**
 **June 8, 2025**  
 **Built with certainty, accelerated by AI** 

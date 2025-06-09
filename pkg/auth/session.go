@@ -14,10 +14,9 @@ import (
 
 // Session errors
 var (
-	ErrSessionNotFound     = errors.New("session not found")
-	ErrSessionExpired      = errors.New("session expired")
-	ErrInvalidRefreshToken = errors.New("invalid refresh token")
-	ErrDeviceNotFound      = errors.New("device not found")
+	ErrSessionNotFound = errors.New("session not found")
+	ErrSessionExpired  = errors.New("session expired")
+	ErrDeviceNotFound  = errors.New("device not found")
 )
 
 // Session constants

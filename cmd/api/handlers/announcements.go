@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -379,7 +378,7 @@ func (h *Handler) HandleCreateAnnouncement(ctx context.Context, request events.A
 
 	// Parse request
 	var req models.CreateAnnouncementRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

@@ -361,7 +361,7 @@ func (s *dynamoDBStorage) GetUserConversations(ctx context.Context, userID strin
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(limit + 1)),
+		Limit:                     safeInt32(limit + 1),
 		ScanIndexForward:          aws.Bool(false), // Most recent first
 	})
 

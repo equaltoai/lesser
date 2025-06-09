@@ -13,6 +13,14 @@ import (
 	"go.uber.org/zap"
 )
 
+// safeIntToInt32 safely converts int to int32, capping at math.MaxInt32
+func safeIntToInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n)
+}
+
 // ReputationScorer manages user reputation scoring
 type ReputationScorer struct {
 	db        *dynamodb.Client
@@ -171,7 +179,7 @@ func (rs *ReputationScorer) GetReputationHistory(ctx context.Context, actorID st
 			":prefix": &types.AttributeValueMemberS{Value: "EVENT#"},
 		},
 		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            aws.Int32(safeIntToInt32(limit)),
 	}
 
 	result, err := rs.db.Query(ctx, queryInput)
@@ -203,7 +211,7 @@ func (rs *ReputationScorer) GetActorsByReputation(ctx context.Context, minScore,
 			":min": &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", minScore)},
 			":max": &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", maxScore)},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: aws.Int32(safeIntToInt32(limit)),
 	}
 
 	result, err := rs.db.Scan(ctx, scanInput)
@@ -448,16 +456,24 @@ func (rs *ReputationScorer) parseReputationScore(item map[string]types.Attribute
 
 	// Parse numeric fields
 	if v, ok := item["Score"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%f", &score.Score)
+		if _, err := fmt.Sscanf(v.Value, "%f", &score.Score); err != nil {
+			rs.logger.Warn("failed to parse Score", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["ViolationCount"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &score.ViolationCount)
+		if _, err := fmt.Sscanf(v.Value, "%d", &score.ViolationCount); err != nil {
+			rs.logger.Warn("failed to parse ViolationCount", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["FalsePositiveCount"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &score.FalsePositiveCount)
+		if _, err := fmt.Sscanf(v.Value, "%d", &score.FalsePositiveCount); err != nil {
+			rs.logger.Warn("failed to parse FalsePositiveCount", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["ContentCount"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &score.ContentCount)
+		if _, err := fmt.Sscanf(v.Value, "%d", &score.ContentCount); err != nil {
+			rs.logger.Warn("failed to parse ContentCount", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 
 	// Parse string fields
@@ -483,7 +499,9 @@ func (rs *ReputationScorer) parseReputationScore(item map[string]types.Attribute
 					factor.Factor = f.Value
 				}
 				if i, ok := factorMap.Value["Impact"].(*types.AttributeValueMemberN); ok {
-					fmt.Sscanf(i.Value, "%f", &factor.Impact)
+					if _, err := fmt.Sscanf(i.Value, "%f", &factor.Impact); err != nil {
+						rs.logger.Warn("failed to parse Impact", zap.String("value", i.Value), zap.Error(err))
+					}
 				}
 				if d, ok := factorMap.Value["Description"].(*types.AttributeValueMemberS); ok {
 					factor.Description = d.Value
@@ -519,7 +537,9 @@ func (rs *ReputationScorer) parseHistoryItem(item map[string]types.AttributeValu
 		histItem.Description = v.Value
 	}
 	if v, ok := item["Impact"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%f", &histItem.Impact)
+		if _, err := fmt.Sscanf(v.Value, "%f", &histItem.Impact); err != nil {
+			rs.logger.Warn("failed to parse Impact", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["Timestamp"].(*types.AttributeValueMemberS); ok {
 		histItem.Timestamp, _ = time.Parse(time.RFC3339, v.Value)

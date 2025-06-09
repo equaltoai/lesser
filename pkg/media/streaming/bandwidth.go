@@ -396,16 +396,24 @@ func (bt *BandwidthTracker) parseBandwidthStats(item map[string]types.AttributeV
 
 	// Parse numeric fields
 	if v, ok := item["TotalBytes"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &stats.TotalBytes)
+		if _, err := fmt.Sscanf(v.Value, "%d", &stats.TotalBytes); err != nil {
+			bt.logger.Warn("failed to parse TotalBytes", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["SessionBytes"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &stats.SessionBytes)
+		if _, err := fmt.Sscanf(v.Value, "%d", &stats.SessionBytes); err != nil {
+			bt.logger.Warn("failed to parse SessionBytes", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["AverageBandwidth"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &stats.AverageBandwidth)
+		if _, err := fmt.Sscanf(v.Value, "%d", &stats.AverageBandwidth); err != nil {
+			bt.logger.Warn("failed to parse AverageBandwidth", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 	if v, ok := item["PeakBandwidth"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &stats.PeakBandwidth)
+		if _, err := fmt.Sscanf(v.Value, "%d", &stats.PeakBandwidth); err != nil {
+			bt.logger.Warn("failed to parse PeakBandwidth", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 
 	// Parse timestamp
@@ -426,7 +434,9 @@ func (bt *BandwidthTracker) parseBandwidthMeasurement(item map[string]types.Attr
 
 	// Parse bandwidth
 	if v, ok := item["Bandwidth"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &measurement.Bandwidth)
+		if _, err := fmt.Sscanf(v.Value, "%d", &measurement.Bandwidth); err != nil {
+			bt.logger.Warn("failed to parse Bandwidth", zap.String("value", v.Value), zap.Error(err))
+		}
 	}
 
 	// Parse timestamp

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"go.uber.org/zap"
 )
 
 // ContentWordSearchStrategy searches by indexed words using GSI5
@@ -52,7 +53,7 @@ func (s *ContentWordSearchStrategy) Search(ctx context.Context, query string, op
 			KeyConditionExpression:    expr.KeyCondition(),
 			ExpressionAttributeNames:  expr.Names(),
 			ExpressionAttributeValues: expr.Values(),
-			Limit:                     aws.Int32(int32(options.Limit * 2)), // Get more to filter later
+			Limit:                     safeInt32(options.Limit * 2), // Get more to filter later
 		}
 
 		result, err := s.service.dynamo.Query(ctx, queryInput)
@@ -140,7 +141,7 @@ func (s *HashtagSearchStrategy) Search(ctx context.Context, query string, option
 			KeyConditionExpression:    expr.KeyCondition(),
 			ExpressionAttributeNames:  expr.Names(),
 			ExpressionAttributeValues: expr.Values(),
-			Limit:                     aws.Int32(int32(options.Limit)),
+			Limit:                     safeInt32(options.Limit),
 			ScanIndexForward:          aws.Bool(false), // Most recent first
 		}
 
@@ -285,7 +286,7 @@ func (s *AuthorSearchStrategy) Search(ctx context.Context, query string, options
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(options.Limit)),
+		Limit:                     safeInt32(options.Limit),
 		ScanIndexForward:          aws.Bool(false), // Most recent first
 	}
 
@@ -353,7 +354,12 @@ func (s *TrendingSearchStrategy) Search(ctx context.Context, query string, optio
 		filteredBuckets := []string{}
 		for _, bucket := range buckets {
 			var bucketValue int
-			fmt.Sscanf(bucket, "%d", &bucketValue)
+			if _, err := fmt.Sscanf(bucket, "%d", &bucketValue); err != nil {
+				s.service.logger.Warn("failed to parse engagement bucket",
+					zap.String("bucket", bucket),
+					zap.Error(err))
+				continue
+			}
 			if bucketValue >= options.MinEngagement {
 				filteredBuckets = append(filteredBuckets, bucket)
 			}
@@ -383,7 +389,7 @@ func (s *TrendingSearchStrategy) Search(ctx context.Context, query string, optio
 			KeyConditionExpression:    expr.KeyCondition(),
 			ExpressionAttributeNames:  expr.Names(),
 			ExpressionAttributeValues: expr.Values(),
-			Limit:                     aws.Int32(int32(options.Limit)),
+			Limit:                     safeInt32(options.Limit),
 			ScanIndexForward:          aws.Bool(false), // Highest scores first
 		}
 

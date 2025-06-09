@@ -232,10 +232,14 @@ func (m *Manager) UpdateInstanceHealth(instanceID string, health *HealthStatus) 
 
 	// Update circuit breaker based on health
 	if !health.Reachable || health.ErrorRate > 0.5 {
-		m.circuitBreaker.RecordFailure(instanceID, fmt.Errorf("unhealthy: reachable=%v, errorRate=%.2f",
-			health.Reachable, health.ErrorRate))
+		if err := m.circuitBreaker.RecordFailure(instanceID, fmt.Errorf("unhealthy: reachable=%v, errorRate=%.2f",
+			health.Reachable, health.ErrorRate)); err != nil {
+			m.logger.Error("failed to record circuit breaker failure", zap.Error(err))
+		}
 	} else {
-		m.circuitBreaker.RecordSuccess(instanceID)
+		if err := m.circuitBreaker.RecordSuccess(instanceID); err != nil {
+			m.logger.Error("failed to record circuit breaker success", zap.Error(err))
+		}
 	}
 
 	// Clear relevant caches
@@ -430,9 +434,13 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *FederationMessage
 
 			// Update circuit breaker
 			if result.Success {
-				m.circuitBreaker.RecordSuccess(route.InstanceID)
+				if err := m.circuitBreaker.RecordSuccess(route.InstanceID); err != nil {
+					m.logger.Error("failed to record circuit breaker success", zap.Error(err))
+				}
 			} else {
-				m.circuitBreaker.RecordFailure(route.InstanceID, fmt.Errorf(result.ErrorMessage))
+				if err := m.circuitBreaker.RecordFailure(route.InstanceID, fmt.Errorf(result.ErrorMessage)); err != nil {
+					m.logger.Error("failed to record circuit breaker failure", zap.Error(err))
+				}
 			}
 		}(routeID, targets)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -226,7 +227,7 @@ func (ti *ThreatIntelligence) GetThreatsByType(ctx context.Context, threatType s
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TYPE#%s", threatType)},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: aws.Int32(safeIntToInt32(limit)),
 	}
 
 	result, err := ti.db.Query(ctx, queryInput)
@@ -479,24 +480,42 @@ func (ti *ThreatIntelligence) parseThreat(item map[string]types.AttributeValue) 
 		threat.SourceDomain = v.Value
 	}
 	if v, ok := item["HitCount"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%d", &threat.HitCount)
+		hitCount, err := strconv.ParseInt(v.Value, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing HitCount: %w", err)
+		}
+		threat.HitCount = hitCount
 	}
 	if v, ok := item["Confidence"].(*types.AttributeValueMemberN); ok {
-		fmt.Sscanf(v.Value, "%f", &threat.Confidence)
+		confidence, err := strconv.ParseFloat(v.Value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing Confidence: %w", err)
+		}
+		threat.Confidence = confidence
 	}
 
 	// Parse timestamps
 	if v, ok := item["FirstSeen"].(*types.AttributeValueMemberS); ok {
-		threat.FirstSeen, _ = time.Parse(time.RFC3339, v.Value)
+		var err error
+		threat.FirstSeen, err = time.Parse(time.RFC3339, v.Value)
+		if err != nil {
+			return nil, fmt.Errorf("parsing FirstSeen: %w", err)
+		}
 	}
 	if v, ok := item["LastSeen"].(*types.AttributeValueMemberS); ok {
-		threat.LastSeen, _ = time.Parse(time.RFC3339, v.Value)
+		var err error
+		threat.LastSeen, err = time.Parse(time.RFC3339, v.Value)
+		if err != nil {
+			return nil, fmt.Errorf("parsing LastSeen: %w", err)
+		}
 	}
 
 	// Parse TTL
 	if v, ok := item["TTL"].(*types.AttributeValueMemberN); ok {
-		var ttlUnix int64
-		fmt.Sscanf(v.Value, "%d", &ttlUnix)
+		ttlUnix, err := strconv.ParseInt(v.Value, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing TTL: %w", err)
+		}
 		threat.TTL = time.Until(time.Unix(ttlUnix, 0))
 	}
 

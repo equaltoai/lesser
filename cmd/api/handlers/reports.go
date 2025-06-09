@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -53,7 +52,7 @@ func (h *Handler) HandleCreateReport(ctx context.Context, request events.APIGate
 
 	// Parse request body
 	var req CreateReportRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		h.logger.Debug("invalid report request", zap.Error(err))
 		return common.BadRequest(errors.New("invalid request")), nil
 	}

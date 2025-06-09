@@ -264,7 +264,7 @@ func (a *SearchAnalytics) GetPopularQueries(ctx context.Context, limit int) ([]s
 			":pk": &types.AttributeValueMemberS{Value: "POPULAR_QUERIES"},
 		},
 		ScanIndexForward: aws.Bool(false), // Sort descending
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 	})
 
 	if err != nil {
@@ -559,7 +559,7 @@ func (s *dynamoDBStorage) GetUserSearchHistory(ctx context.Context, userID strin
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 		ScanIndexForward:          aws.Bool(false), // Most recent first
-		Limit:                     aws.Int32(int32(limit)),
+		Limit:                     safeInt32(limit),
 	}
 
 	result, err := s.client.Query(ctx, input)

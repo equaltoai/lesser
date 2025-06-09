@@ -39,7 +39,7 @@ func (h *Handler) HandleModerationFlag(ctx context.Context, request events.APIGa
 
 	// Parse request
 	var req models.FlagRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -215,7 +215,7 @@ func (h *Handler) HandleModerationReview(ctx context.Context, request events.API
 
 	// Parse request
 	var req models.ReviewRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -279,9 +279,15 @@ func (h *Handler) HandleModerationHistory(ctx context.Context, request events.AP
 
 	// Validate token
 	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
-	_, err = oauthSvc.ValidateAccessToken(token)
+	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return common.Unauthorized(err), nil
+	}
+
+	// Check if user is moderator or admin
+	user, err := h.store.GetUser(ctx, claims.Username)
+	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
+		return common.Forbidden(errors.New("requires admin or moderator role")), nil
 	}
 
 	// Get moderation history
@@ -502,7 +508,7 @@ func (h *Handler) HandleUpdateTrust(ctx context.Context, request events.APIGatew
 
 	// Parse request
 	var req models.UpdateTrustRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -584,9 +590,15 @@ func (h *Handler) HandleGetTrustScore(ctx context.Context, request events.APIGat
 
 	// Validate token
 	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
-	_, err = oauthSvc.ValidateAccessToken(token)
+	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return common.Unauthorized(err), nil
+	}
+
+	// Check if user is moderator or admin
+	user, err := h.store.GetUser(ctx, claims.Username)
+	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
+		return common.Forbidden(errors.New("requires admin or moderator role")), nil
 	}
 
 	// Clean up actor ID (remove @ prefix if present)

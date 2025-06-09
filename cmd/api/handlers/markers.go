@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -105,7 +104,7 @@ func (h *Handler) HandleSaveMarkers(ctx context.Context, request events.APIGatew
 	var req map[string]struct {
 		LastReadID string `json:"last_read_id"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

@@ -175,7 +175,11 @@ MERGE:
 	}
 
 	// Cache results
-	s.cache.Set(ctx, cacheKey, finalResults)
+	if err := s.cache.Set(ctx, cacheKey, finalResults); err != nil {
+		s.logger.Warn("failed to cache search results",
+			zap.String("cacheKey", cacheKey),
+			zap.Error(err))
+	}
 
 	return finalResults, nil
 }
@@ -397,7 +401,7 @@ func (s *PrefixSearchStrategy) Search(ctx context.Context, query string, options
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(options.Limit)),
+		Limit:                     safeInt32(options.Limit),
 	}
 
 	result, err := s.service.dynamo.Query(ctx, queryInput)
@@ -492,7 +496,7 @@ func (s *DisplayNameSearchStrategy) Search(ctx context.Context, query string, op
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(options.Limit)),
+		Limit:                     safeInt32(options.Limit),
 	}
 
 	result, err := s.service.dynamo.Query(ctx, queryInput)

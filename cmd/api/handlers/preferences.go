@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/aron23/lesser/cmd/api/models"
@@ -93,7 +92,7 @@ func (h *Handler) HandleUpdatePreferences(ctx context.Context, request events.AP
 
 	// Parse request body - using map to handle partial updates
 	var updateReq map[string]interface{}
-	if err := json.Unmarshal([]byte(request.Body), &updateReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &updateReq); err != nil {
 		return common.BadRequest(err), nil
 	}
 

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/storage"
 	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
@@ -90,7 +91,7 @@ func handleSQSEvent(ctx context.Context, sqsEvent events.SQSEvent) error {
 func processMessage(ctx context.Context, messageBody string) error {
 	// Parse the message
 	var msg PushMessage
-	if err := json.Unmarshal([]byte(messageBody), &msg); err != nil {
+	if err := common.ParseRequestBody([]byte(messageBody), &msg); err != nil {
 		return fmt.Errorf("failed to parse message: %w", err)
 	}
 
@@ -356,7 +357,12 @@ func encryptPayload(payload []byte, p256dhBase64, authBase64 string) (string, st
 	// Derive keys using HKDF
 	prk := hkdf(authSecret, sharedSecret, []byte("Content-Encoding: auth\x00"))
 	cek := hkdf(salt, prk, buildInfo("aesgcm", clientPublicKeyBytes, serverPublicKeyBytes))[:16]
-	nonce := hkdf(salt, prk, buildInfo("nonce", clientPublicKeyBytes, serverPublicKeyBytes))[:12]
+
+	// Generate a random nonce for each encryption
+	nonce := make([]byte, 12)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", "", "", fmt.Errorf("failed to generate nonce: %w", err)
+	}
 
 	// Encrypt the payload
 	block, err := aes.NewCipher(cek)

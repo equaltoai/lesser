@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"go.uber.org/zap"
 )
 
 // CreateUser creates a new user in DynamoDB
@@ -243,13 +244,19 @@ func (s *dynamoDBStorage) DeleteUser(ctx context.Context, username string) error
 
 	if result, err := s.client.Query(ctx, userDataQuery); err == nil {
 		for _, item := range result.Items {
-			s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			if _, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 				TableName: aws.String(s.tableName),
 				Key: map[string]types.AttributeValue{
 					"PK": item["PK"],
 					"SK": item["SK"],
 				},
-			})
+			}); err != nil {
+				s.log.Warn("failed to delete user data item during cascade delete",
+					zap.String("username", username),
+					zap.Any("item_pk", item["PK"]),
+					zap.Any("item_sk", item["SK"]),
+					zap.Error(err))
+			}
 		}
 	}
 

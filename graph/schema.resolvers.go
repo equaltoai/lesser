@@ -537,8 +537,8 @@ func (r *moderationDecisionResolver) Timestamp(ctx context.Context, obj *moderat
 // CreateNote is the resolver for the createNote field.
 func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNoteInput) (*model.CreateNotePayload, error) {
 	// 1. Authenticate (most mutations require auth)
-	username := getUsernameFromContext(ctx)
-	if username == "" {
+	currentUsername := getUsernameFromContext(ctx)
+	if currentUsername == "" {
 		return nil, fmt.Errorf("authentication required")
 	}
 
@@ -554,10 +554,10 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	// 4. Get actor details
-	actor, err := r.Storage.GetActor(ctx, username)
+	actor, err := r.Storage.GetActor(ctx, currentUsername)
 	if err != nil {
 		r.Logger.Error("Failed to get actor",
-			zap.String("username", username),
+			zap.String("username", currentUsername),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
@@ -649,9 +649,9 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	// 9. Update actor's last status time
-	if err := r.Storage.UpdateActorLastStatusTime(ctx, username); err != nil {
+	if err := r.Storage.UpdateActorLastStatusTime(ctx, currentUsername); err != nil {
 		r.Logger.Warn("Failed to update actor last status time",
-			zap.String("username", username),
+			zap.String("username", currentUsername),
 			zap.Error(err))
 		// Non-critical, continue
 	}
@@ -2048,8 +2048,8 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 	}
 
 	// 6. Check author's trust score (only trusted users can add notes)
-	trustScore, err := r.Storage.GetTrustScore(ctx, author.ID, string(trust.TrustCategoryContent))
-	if err != nil || trustScore == nil || trustScore.Score < 0.5 {
+	trustScore, trustErr := r.Storage.GetTrustScore(ctx, author.ID, string(trust.TrustCategoryContent))
+	if trustErr != nil || trustScore == nil || trustScore.Score < 0.5 {
 		return nil, fmt.Errorf("insufficient trust score to add community notes")
 	}
 

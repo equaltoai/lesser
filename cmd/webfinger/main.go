@@ -36,31 +36,19 @@ func init() {
 // parseWebFingerResource parses a WebFinger resource identifier
 // Expected format: acct:username@domain
 func parseWebFingerResource(resource string) (username, domain string, err error) {
-	if !strings.HasPrefix(resource, "acct:") {
+	// Validate webfinger format using comprehensive validation
+	if err := activitypub.ValidateWebfinger(resource); err != nil {
 		return "", "", common.ValidationError{
 			Field:   "resource",
-			Message: "must start with 'acct:'",
+			Message: err.Error(),
 		}
 	}
 
+	// Extract username and domain
 	acct := strings.TrimPrefix(resource, "acct:")
 	parts := strings.Split(acct, "@")
-	if len(parts) != 2 {
-		return "", "", common.ValidationError{
-			Field:   "resource",
-			Message: "invalid format, expected acct:username@domain",
-		}
-	}
-
 	username = parts[0]
 	domain = parts[1]
-
-	if username == "" {
-		return "", "", common.ValidationError{
-			Field:   "resource",
-			Message: "username cannot be empty",
-		}
-	}
 
 	return username, domain, nil
 }

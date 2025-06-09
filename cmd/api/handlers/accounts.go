@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/mail"
-	"regexp"
 	"strings"
 	"time"
 
@@ -25,7 +24,7 @@ import (
 func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Parse request
 	var req models.AccountRegistrationRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -33,6 +32,36 @@ func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGate
 	if err := h.validateRegistrationRequest(req); err != nil {
 		errResp := map[string]interface{}{
 			"error": err.Error(),
+		}
+		body, _ := json.Marshal(errResp)
+		return &events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Headers:    common.Headers(),
+			Body:       string(body),
+		}, nil
+	}
+
+	// Validate password strength
+	if err := auth.ValidatePassword(req.Password, req.Username); err != nil {
+		errResp := map[string]interface{}{
+			"error": err.Error(),
+		}
+		body, _ := json.Marshal(errResp)
+		return &events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Headers:    common.Headers(),
+			Body:       string(body),
+		}, nil
+	}
+
+	// Check password strength
+	strength := auth.PasswordStrength(req.Password)
+	if strength < 3 {
+		hints := auth.GeneratePasswordHint(req.Password)
+		errResp := map[string]interface{}{
+			"error": fmt.Sprintf("Password is too weak (%s). Suggestions: %s",
+				auth.PasswordStrengthLabel(strength),
+				strings.Join(hints, ", ")),
 		}
 		body, _ := json.Marshal(errResp)
 		return &events.APIGatewayV2HTTPResponse{
@@ -256,7 +285,7 @@ func (h *Handler) HandleUpdateCredentials(ctx context.Context, request events.AP
 
 	// Parse request body
 	var updateReq models.UpdateCredentialsRequest
-	if err := json.Unmarshal([]byte(request.Body), &updateReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &updateReq); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -444,15 +473,9 @@ func (h *Handler) HandleAccountLookup(ctx context.Context, request events.APIGat
 
 // validateRegistrationRequest validates a registration request
 func (h *Handler) validateRegistrationRequest(req models.AccountRegistrationRequest) error {
-	// Validate username
-	if req.Username == "" {
-		return errors.New("username is required")
-	}
-	if len(req.Username) < 3 || len(req.Username) > 30 {
-		return errors.New("username must be between 3 and 30 characters")
-	}
-	if !isValidUsername(req.Username) {
-		return errors.New("username can only contain letters, numbers, and underscores")
+	// Validate username using comprehensive validation
+	if err := activitypub.ValidateUsername(req.Username); err != nil {
+		return err
 	}
 
 	// Validate email
@@ -474,13 +497,6 @@ func (h *Handler) validateRegistrationRequest(req models.AccountRegistrationRequ
 	}
 
 	return nil
-}
-
-// isValidUsername checks if a username is valid
-func isValidUsername(username string) bool {
-	// Username regex: alphanumeric and underscores only
-	match, _ := regexp.MatchString("^[a-zA-Z0-9_]+$", username)
-	return match
 }
 
 // HandleGetAccountFollowers retrieves the list of accounts following the given account
@@ -847,7 +863,7 @@ func (h *Handler) HandleSetAccountNote(ctx context.Context, request events.APIGa
 	var req struct {
 		Comment string `json:"comment"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

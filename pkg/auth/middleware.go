@@ -97,6 +97,14 @@ func (m *Middleware) RequireAuth(ctx context.Context, request events.APIGatewayV
 	// Validate token
 	claims, err := m.oauthService.ValidateAccessToken(token)
 	if err != nil {
+		// Log authentication failure
+		ip := request.Headers["X-Forwarded-For"]
+		if ip == "" {
+			ip = request.RequestContext.HTTP.SourceIP
+		}
+		userAgent := request.Headers["User-Agent"]
+
+		common.LogAuthFailure(err.Error(), "", ip, userAgent)
 		return nil, err
 	}
 

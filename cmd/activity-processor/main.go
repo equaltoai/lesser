@@ -162,7 +162,7 @@ func parseActivityRecord(image map[string]events.DynamoDBAttributeValue) (*activ
 
 	// Unmarshal activity
 	var activity activitypub.Activity
-	if err := json.Unmarshal(activityJSON, &activity); err != nil {
+	if err := common.ParseActivityPubObject(activityJSON, &activity); err != nil {
 		return nil, "", "", fmt.Errorf("failed to unmarshal activity: %w", err)
 	}
 
@@ -1459,7 +1459,7 @@ func fetchRemoteActor(ctx context.Context, actorURL string) (*activitypub.Actor,
 	}
 
 	var actor activitypub.Actor
-	if err := json.NewDecoder(resp.Body).Decode(&actor); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
 		return nil, fmt.Errorf("failed to decode actor: %w", err)
 	}
 

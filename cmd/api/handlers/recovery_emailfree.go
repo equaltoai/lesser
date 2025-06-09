@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -106,7 +105,7 @@ func (h *EmailFreeRecoveryHandler) HandleInitiateSocialRecovery(ctx context.Cont
 		Username string `json:"username"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -145,7 +144,7 @@ func (h *EmailFreeRecoveryHandler) HandleConfirmSocialRecovery(ctx context.Conte
 		TrusteeID string `json:"trustee_id"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -188,7 +187,7 @@ func (h *EmailFreeRecoveryHandler) HandleUseRecoveryCode(ctx context.Context, re
 		Code     string `json:"code"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -227,7 +226,7 @@ func (h *EmailFreeRecoveryHandler) HandleAddTrustee(ctx context.Context, request
 		TrusteeActorID string `json:"trustee_actor_id"` // @username@instance
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -302,7 +301,7 @@ func (h *EmailFreeRecoveryHandler) HandleDeviceRecovery(ctx context.Context, req
 		DeviceID string `json:"device_id"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

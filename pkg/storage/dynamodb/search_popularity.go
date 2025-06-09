@@ -68,7 +68,7 @@ func (s *PopularitySearchStrategy) Search(ctx context.Context, query string, opt
 			KeyConditionExpression:    expr.KeyCondition(),
 			ExpressionAttributeNames:  expr.Names(),
 			ExpressionAttributeValues: expr.Values(),
-			Limit:                     aws.Int32(int32(options.Limit)),
+			Limit:                     safeInt32(options.Limit),
 			ScanIndexForward:          aws.Bool(false), // Sort by follower count descending
 		}
 

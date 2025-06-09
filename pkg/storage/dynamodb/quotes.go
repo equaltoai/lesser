@@ -111,7 +111,7 @@ func (s *dynamoDBStorage) GetQuotesForNote(ctx context.Context, noteID string, l
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("QUOTE_TARGET#%s", noteID)},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Most recent first
 	}
 

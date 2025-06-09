@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
@@ -95,7 +96,7 @@ func handleExportGeneration(ctx context.Context, sqsEvent events.SQSEvent) error
 	// Process each message
 	for _, message := range sqsEvent.Records {
 		var event ExportGeneratorEvent
-		if err := json.Unmarshal([]byte(message.Body), &event); err != nil {
+		if err := common.ParseRequestBody([]byte(message.Body), &event); err != nil {
 			logger.Error("failed to unmarshal event",
 				zap.String("message_id", message.MessageId),
 				zap.Error(err))

@@ -8,7 +8,9 @@ import (
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/aron23/lesser/cmd/graphql/middleware"
 	"github.com/aron23/lesser/graph"
+	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/mastodon"
 	"github.com/aron23/lesser/pkg/storage"
@@ -25,6 +27,7 @@ var (
 	playgroundProxy *httpadapter.HandlerAdapter
 	costTracker     *cost.Tracker
 	storageInstance storage.Storage
+	authMiddleware  *auth.Middleware
 )
 
 func init() {
@@ -36,6 +39,12 @@ func init() {
 	storageInstance, err = dynamodb.New()
 	if err != nil {
 		logger.Fatal("Failed to create storage", zap.Error(err))
+	}
+
+	// Initialize auth middleware
+	authMiddleware, err = auth.GetMiddleware()
+	if err != nil {
+		logger.Fatal("Failed to initialize auth middleware", zap.Error(err))
 	}
 
 	// Create cost tracker
@@ -80,15 +89,18 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayProxyRequest) (
 	// Create DataLoader for this request
 	loaders := graph.NewLoaders(storageInstance, logger)
 
-	// Create a wrapper handler that injects loaders into context
+	// Create a wrapper handler that injects loaders into context and applies authentication
 	wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Add loaders to request context
 		r = r.WithContext(graph.WithLoaders(r.Context(), loaders))
 		graphqlHandler.ServeHTTP(w, r)
 	})
 
+	// Apply authentication middleware
+	authenticatedHandler := middleware.AuthMiddleware(authMiddleware, logger)(wrappedHandler)
+
 	// Use httpadapter to convert Lambda event to http.Request for gqlgen
-	adapter := httpadapter.New(wrappedHandler)
+	adapter := httpadapter.New(authenticatedHandler)
 	response, err := adapter.ProxyWithContext(ctx, request)
 
 	// Add cost headers

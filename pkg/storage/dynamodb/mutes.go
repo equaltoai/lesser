@@ -123,7 +123,7 @@ func (s *dynamoDBStorage) GetMutedActors(ctx context.Context, actor string, limi
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("MUTE#%s", actor)},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 

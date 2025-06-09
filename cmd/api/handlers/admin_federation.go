@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -146,7 +145,7 @@ func (h *Handler) HandleCreateAdminDomainBlock(ctx context.Context, request even
 
 	// Parse request body
 	var req AdminDomainBlockRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		h.logger.Debug("invalid domain block request", zap.Error(err))
 		return common.BadRequest(errors.New("invalid request")), nil
 	}
@@ -234,7 +233,7 @@ func (h *Handler) HandleUpdateAdminDomainBlock(ctx context.Context, request even
 
 	// Parse request body
 	var req AdminDomainBlockRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		h.logger.Debug("invalid domain block update request", zap.Error(err))
 		return common.BadRequest(errors.New("invalid request")), nil
 	}
@@ -402,7 +401,7 @@ func (h *Handler) HandleCreateAdminDomainAllow(ctx context.Context, request even
 	var req struct {
 		Domain string `json:"domain"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		h.logger.Debug("invalid domain allow request", zap.Error(err))
 		return common.BadRequest(errors.New("invalid request")), nil
 	}
@@ -736,7 +735,7 @@ func (h *Handler) HandleCreateEmailDomainBlock(ctx context.Context, request even
 	var req struct {
 		Domain string `json:"domain"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		h.logger.Debug("invalid email domain block request", zap.Error(err))
 		return common.BadRequest(errors.New("invalid request")), nil
 	}

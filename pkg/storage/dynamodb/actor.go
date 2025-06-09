@@ -751,7 +751,7 @@ func (s *dynamoDBStorage) SearchAccounts(ctx context.Context, query string, limi
 		FilterExpression:          expr.Filter(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		Limit:                     aws.Int32(int32(limit + offset)), // Get extra for offset
+		Limit:                     safeInt32(limit + offset), // Get extra for offset
 	}
 
 	result, err := s.client.Scan(ctx, scanInput)
@@ -851,13 +851,18 @@ func (s *dynamoDBStorage) deleteActorActivities(ctx context.Context, actorID str
 	for _, item := range result.Items {
 		if pkAttr, ok := item["PK"]; ok {
 			if skAttr, ok := item["SK"]; ok {
-				s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+				if _, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 					TableName: s.getTableName(),
 					Key: map[string]types.AttributeValue{
 						"PK": pkAttr,
 						"SK": skAttr,
 					},
-				})
+				}); err != nil {
+					s.log.Warn("failed to delete item during actor cascade delete",
+						zap.String("function", "deleteActorActivities"),
+						zap.Any("pk", pkAttr),
+						zap.Error(err))
+				}
 			}
 		}
 	}
@@ -883,13 +888,18 @@ func (s *dynamoDBStorage) deleteActorObjects(ctx context.Context, actorID string
 
 	// Delete each object
 	for _, item := range result.Items {
-		s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		if _, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 			TableName: s.getTableName(),
 			Key: map[string]types.AttributeValue{
 				"PK": item["PK"],
 				"SK": item["SK"],
 			},
-		})
+		}); err != nil {
+			s.log.Warn("failed to delete item during actor cascade delete",
+				zap.String("function", "deleteActorObjects"),
+				zap.Any("pk", item["PK"]),
+				zap.Error(err))
+		}
 	}
 
 	return nil
@@ -908,13 +918,18 @@ func (s *dynamoDBStorage) deleteActorFollowRelationships(ctx context.Context, us
 
 	if result, err := s.client.Query(ctx, followingQuery); err == nil {
 		for _, item := range result.Items {
-			s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			if _, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 				TableName: s.getTableName(),
 				Key: map[string]types.AttributeValue{
 					"PK": item["PK"],
 					"SK": item["SK"],
 				},
-			})
+			}); err != nil {
+				s.log.Warn("failed to delete item during actor cascade delete",
+					zap.String("function", "deleteActorFollowRelationships"),
+					zap.Any("pk", item["PK"]),
+					zap.Error(err))
+			}
 		}
 	}
 
@@ -933,13 +948,18 @@ func (s *dynamoDBStorage) deleteActorFollowRelationships(ctx context.Context, us
 		for _, item := range result.Items {
 			if pkAttr, ok := item["PK"]; ok {
 				if skAttr, ok := item["SK"]; ok {
-					s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+					if _, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 						TableName: s.getTableName(),
 						Key: map[string]types.AttributeValue{
 							"PK": pkAttr,
 							"SK": skAttr,
 						},
-					})
+					}); err != nil {
+						s.log.Warn("failed to delete item during actor cascade delete",
+							zap.String("function", "deleteActorFollowRelationships (followers)"),
+							zap.Any("pk", pkAttr),
+							zap.Error(err))
+					}
 				}
 			}
 		}
@@ -1117,13 +1137,17 @@ func (s *dynamoDBStorage) deleteItemsFromQuery(ctx context.Context, query *dynam
 	for _, item := range result.Items {
 		if pkAttr, ok := item["PK"]; ok {
 			if skAttr, ok := item["SK"]; ok {
-				s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+				if _, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 					TableName: s.getTableName(),
 					Key: map[string]types.AttributeValue{
 						"PK": pkAttr,
 						"SK": skAttr,
 					},
-				})
+				}); err != nil {
+					s.log.Warn("failed to delete item in deleteItemsFromQuery",
+						zap.Any("pk", pkAttr),
+						zap.Error(err))
+				}
 			}
 		}
 	}

@@ -367,31 +367,193 @@ func TestSanitizeHTML(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "normal text",
-			input:    "Hello, world!",
-			expected: "Hello, world!",
-		},
-		{
 			name:     "script tag",
-			input:    "Hello <script>alert('xss')</script> world",
-			expected: "Hello &lt;script>alert('xss')&lt;/script&gt; world",
+			input:    `<script>alert('xss')</script>`,
+			expected: ``,
 		},
 		{
 			name:     "javascript protocol",
 			input:    `<a href="javascript:alert('xss')">link</a>`,
-			expected: `<a href="alert('xss')">link</a>`,
+			expected: `link`,
 		},
 		{
-			name:     "event handlers",
-			input:    `<img src="x" onerror="alert('xss')" onclick="alert('xss')">`,
-			expected: `<img src="x" "alert('xss')" "alert('xss')">`,
+			name:     "javascript protocol with encoding",
+			input:    `<a href="java&#115;cript:alert('xss')">link</a>`,
+			expected: `link`,
+		},
+		{
+			name:     "event handler",
+			input:    `<img src="x" onerror="alert('xss')">`,
+			expected: `<img src="x">`,
+		},
+		{
+			name:     "data uri script",
+			input:    `<img src="data:text/html,<script>alert('xss')</script>">`,
+			expected: ``,
+		},
+		{
+			name:     "svg with script",
+			input:    `<svg onload="alert('xss')"></svg>`,
+			expected: ``,
+		},
+		{
+			name:     "iframe",
+			input:    `<iframe src="javascript:alert('xss')"></iframe>`,
+			expected: ``,
+		},
+		{
+			name:     "form with action",
+			input:    `<form action="javascript:alert('xss')"><input type="submit"></form>`,
+			expected: ``,
+		},
+		{
+			name:     "style tag with expression",
+			input:    `<style>body{background:url("javascript:alert('xss')")}</style>`,
+			expected: ``,
+		},
+		{
+			name:     "object tag",
+			input:    `<object data="javascript:alert('xss')"></object>`,
+			expected: ``,
+		},
+		{
+			name:     "embed tag",
+			input:    `<embed src="javascript:alert('xss')">`,
+			expected: ``,
+		},
+		{
+			name:     "meta refresh",
+			input:    `<meta http-equiv="refresh" content="0;url=javascript:alert('xss')">`,
+			expected: ``,
+		},
+		{
+			name:     "input with javascript",
+			input:    `<input type="image" src="javascript:alert('xss')">`,
+			expected: ``,
+		},
+		{
+			name:     "link tag",
+			input:    `<link rel="stylesheet" href="javascript:alert('xss')">`,
+			expected: ``,
+		},
+		{
+			name:     "base tag",
+			input:    `<base href="javascript:alert('xss')">`,
+			expected: ``,
+		},
+		{
+			name:     "bgsound",
+			input:    `<bgsound src="javascript:alert('xss')">`,
+			expected: ``,
+		},
+		{
+			name:     "expression in style attribute",
+			input:    `<div style="background-image: expression(alert('xss'))">test</div>`,
+			expected: `<div>test</div>`,
+		},
+		{
+			name:     "vbscript protocol",
+			input:    `<a href="vbscript:alert('xss')">link</a>`,
+			expected: `link`,
+		},
+		{
+			name:     "data protocol with base64",
+			input:    `<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgneHNzJyk8L3NjcmlwdD4=">link</a>`,
+			expected: `link`,
+		},
+		{
+			name:     "nested tags",
+			input:    `<div><script><img src="x" onerror="alert('xss')"></script></div>`,
+			expected: `<div></div>`,
+		},
+		// Test that safe HTML is preserved
+		{
+			name:     "safe link with rel",
+			input:    `<a href="https://example.com" rel="nofollow">Safe Link</a>`,
+			expected: `<a href="https://example.com" rel="nofollow">Safe Link</a>`,
+		},
+		{
+			name:     "safe paragraph",
+			input:    `<p>This is a <strong>safe</strong> paragraph with <em>emphasis</em>.</p>`,
+			expected: `<p>This is a <strong>safe</strong> paragraph with <em>emphasis</em>.</p>`,
+		},
+		{
+			name:     "safe list",
+			input:    `<ul><li>Item 1</li><li>Item 2</li></ul>`,
+			expected: `<ul><li>Item 1</li><li>Item 2</li></ul>`,
+		},
+		{
+			name:     "safe image",
+			input:    `<img src="https://example.com/image.jpg" alt="Safe Image">`,
+			expected: `<img src="https://example.com/image.jpg" alt="Safe Image">`,
+		},
+		{
+			name:     "safe span with class",
+			input:    `<span class="highlight">Highlighted text</span>`,
+			expected: `<span class="highlight">Highlighted text</span>`,
+		},
+		{
+			name:     "blockquote",
+			input:    `<blockquote>This is a quote</blockquote>`,
+			expected: `<blockquote>This is a quote</blockquote>`,
+		},
+		{
+			name:     "code block",
+			input:    `<pre><code>console.log('hello');</code></pre>`,
+			expected: `<pre><code>console.log(&#39;hello&#39;);</code></pre>`,
+		},
+		{
+			name:     "empty input",
+			input:    ``,
+			expected: ``,
+		},
+		{
+			name:     "plain text",
+			input:    `Just plain text with no HTML`,
+			expected: `Just plain text with no HTML`,
+		},
+		{
+			name:     "escaped entities",
+			input:    `&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;`,
+			expected: `&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := SanitizeHTML(tt.input)
-			assert.Equal(t, tt.expected, result)
+			got := SanitizeHTML(tt.input)
+			assert.Equal(t, tt.expected, got, "SanitizeHTML(%q) = %q, want %q", tt.input, got, tt.expected)
+		})
+	}
+}
+
+func TestSanitizeHTMLRelaxed(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "div with class",
+			input:    `<div class="container">Content</div>`,
+			expected: `<div class="container">Content</div>`,
+		},
+		{
+			name:     "still blocks script",
+			input:    `<div><script>alert('xss')</script></div>`,
+			expected: `<div></div>`,
+		},
+		{
+			name:     "still blocks event handlers",
+			input:    `<div onclick="alert('xss')">Click me</div>`,
+			expected: `<div>Click me</div>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SanitizeHTMLRelaxed(tt.input)
+			assert.Equal(t, tt.expected, got, "SanitizeHTMLRelaxed(%q) = %q, want %q", tt.input, got, tt.expected)
 		})
 	}
 }

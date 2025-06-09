@@ -125,7 +125,7 @@ func (h *Handler) HandleRequestAIAnalysis(ctx context.Context, request events.AP
 		Force      bool   `json:"force"` // Force re-analysis
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 

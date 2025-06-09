@@ -33,6 +33,17 @@ Built in just 5 days using AI assistance (Cursor), Lesser now includes more feat
 - ✅ **Advanced Features** - Polls, filters, lists, scheduled posts, hashtag following
 - ✅ **Enterprise Ready** - Cost tracking, audit logging, trust system
 
+## ⚠️ Security Status
+
+A comprehensive security audit has been conducted on the Lesser prototype. We are actively addressing all findings:
+
+- **33 security findings** identified and documented
+- **5-week remediation plan** in progress
+- **Critical issues** being addressed first
+- See [SECURITY_UPDATE_PLAN.md](SECURITY_UPDATE_PLAN.md) for details
+
+**Important**: Lesser is currently in prototype phase. Do not deploy to production until security remediation is complete.
+
 ## Architecture
 
 ### Serverless-Native Design

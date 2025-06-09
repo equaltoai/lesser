@@ -2,7 +2,6 @@ package federation
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/httpclient"
 	"github.com/aron23/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
@@ -18,18 +18,16 @@ import (
 // RemoteSearchService handles remote actor discovery via WebFinger and ActivityPub
 type RemoteSearchService struct {
 	store      storage.Storage
-	httpClient *http.Client
+	httpClient *httpclient.SecureClient
 	logger     *zap.Logger
 }
 
 // NewRemoteSearchService creates a new remote search service
 func NewRemoteSearchService(store storage.Storage) *RemoteSearchService {
 	return &RemoteSearchService{
-		store: store,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		logger: common.Logger(),
+		store:      store,
+		httpClient: httpclient.NewSecureClient(httpclient.WithTimeout(30 * time.Second)),
+		logger:     common.Logger(),
 	}
 }
 
@@ -134,7 +132,7 @@ func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, dom
 
 	// Parse WebFinger response
 	var webfingerResp activitypub.WebFingerResource
-	if err := json.NewDecoder(resp.Body).Decode(&webfingerResp); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &webfingerResp); err != nil {
 		return "", fmt.Errorf("failed to parse webfinger response: %w", err)
 	}
 
@@ -168,7 +166,7 @@ func (s *RemoteSearchService) fetchRemoteActor(ctx context.Context, actorURL str
 	}
 
 	var actor activitypub.Actor
-	if err := json.NewDecoder(resp.Body).Decode(&actor); err != nil {
+	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
 		return nil, fmt.Errorf("failed to decode actor: %w", err)
 	}
 
@@ -208,11 +206,26 @@ func parseHandle(handle string) (username, domain string, err error) {
 	parts := strings.Split(handle, "@")
 
 	if len(parts) == 1 {
-		// Local user
-		return parts[0], "", nil
+		// Local user - validate username
+		username = parts[0]
+		if err := activitypub.ValidateUsername(username); err != nil {
+			return "", "", fmt.Errorf("invalid username: %w", err)
+		}
+		return username, "", nil
 	} else if len(parts) == 2 {
-		// Remote user
-		return parts[0], parts[1], nil
+		// Remote user - validate both username and domain
+		username = parts[0]
+		domain = parts[1]
+
+		if err := activitypub.ValidateUsername(username); err != nil {
+			return "", "", fmt.Errorf("invalid username: %w", err)
+		}
+
+		if err := activitypub.ValidateDomain(domain); err != nil {
+			return "", "", fmt.Errorf("invalid domain: %w", err)
+		}
+
+		return username, domain, nil
 	}
 
 	return "", "", fmt.Errorf("invalid handle format: %s", handle)

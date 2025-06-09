@@ -226,7 +226,7 @@ func (s *dynamoDBStorage) GetFollowers(ctx context.Context, username string, lim
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s%s", storage.FollowPKPrefix, username)},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: safeInt32(limit),
 	}
 
 	// Add filter for accepted relationships only
@@ -290,7 +290,7 @@ func (s *dynamoDBStorage) GetFollowing(ctx context.Context, username string, lim
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s%s", storage.FollowPKPrefix, username)},
 		},
-		Limit: aws.Int32(int32(limit)),
+		Limit: safeInt32(limit),
 	}
 
 	// Add filter for accepted relationships only

@@ -2,7 +2,7 @@ package translation
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -178,8 +178,8 @@ type LanguageInfo struct {
 
 // generateCacheKey creates a consistent cache key for translations
 func (s *Service) generateCacheKey(text, sourceLang, targetLang string) string {
-	// Use MD5 hash of text to keep key size reasonable
-	h := md5.New()
+	// Use SHA256 hash of text to keep key size reasonable
+	h := sha256.New()
 	h.Write([]byte(text))
 	textHash := hex.EncodeToString(h.Sum(nil))
 

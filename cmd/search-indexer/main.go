@@ -90,7 +90,10 @@ func NewSearchIndexer() (*SearchIndexer, error) {
 		Addresses: []string{opensearchEndpoint},
 		Signer:    signer,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: false,
+				MinVersion:         tls.VersionTLS12,
+			},
 		},
 	})
 	if err != nil {

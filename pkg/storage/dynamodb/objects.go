@@ -660,7 +660,7 @@ func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string,
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s#OBJECTS", username)},
 		},
-		Limit:            aws.Int32(int32(limit + 1)), // Request one extra to determine if there's a next page
+		Limit:            safeInt32(limit + 1), // Request one extra to determine if there's a next page
 		ScanIndexForward: aws.Bool(false),             // Newest first
 	}
 
@@ -764,7 +764,7 @@ func (s *dynamoDBStorage) GetUpdateHistory(ctx context.Context, objectID string,
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s#HISTORY", objectID)},
 			":sk": &types.AttributeValueMemberS{Value: "VERSION#"},
 		},
-		Limit:            aws.Int32(int32(limit)),
+		Limit:            safeInt32(limit),
 		ScanIndexForward: aws.Bool(false), // Newest first
 	}
 

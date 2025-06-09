@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -33,7 +32,7 @@ type ResetPasswordRequest struct {
 // POST /auth/recovery/initiate
 func (h *Handler) HandleInitiateRecovery(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	var req RecoveryRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -154,7 +153,7 @@ func (h *Handler) HandleVerifyRecoveryToken(ctx context.Context, request events.
 // POST /auth/recovery/complete
 func (h *Handler) HandleCompleteRecovery(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	var req ResetPasswordRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 
@@ -287,7 +286,7 @@ func (h *Handler) HandleSendRecoveryCode(ctx context.Context, request events.API
 		Method     string `json:"method"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(err), nil
 	}
 

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -133,7 +132,7 @@ func (h *Handler) HandleImportReputation(ctx context.Context, request events.API
 	var importReq struct {
 		Document string `json:"document"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &importReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &importReq); err != nil {
 		return common.BadRequest(fmt.Errorf("invalid request body: %w", err)), nil
 	}
 
@@ -180,7 +179,7 @@ func (h *Handler) HandleCreateVouch(ctx context.Context, request events.APIGatew
 		Confidence float64 `json:"confidence"`
 		Context    string  `json:"context"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &vouchReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &vouchReq); err != nil {
 		return common.BadRequest(fmt.Errorf("invalid request body: %w", err)), nil
 	}
 
@@ -325,7 +324,7 @@ func (h *Handler) HandleVerifyReputation(ctx context.Context, request events.API
 	var verifyReq struct {
 		Document string `json:"document"`
 	}
-	if err := json.Unmarshal([]byte(request.Body), &verifyReq); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &verifyReq); err != nil {
 		return common.BadRequest(fmt.Errorf("invalid request body: %w", err)), nil
 	}
 

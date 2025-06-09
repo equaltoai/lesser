@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -33,7 +32,7 @@ func (h *WalletHandler) CreateChallenge(ctx context.Context, request events.APIG
 		Username string `json:"username,omitempty"` // Optional, for linking to existing account
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 
@@ -76,7 +75,7 @@ func (h *WalletHandler) CreateChallenge(ctx context.Context, request events.APIG
 // VerifySignature handles POST /auth/wallet/verify
 func (h *WalletHandler) VerifySignature(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	var req auth.WalletVerifyRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 
@@ -139,7 +138,7 @@ func (h *WalletHandler) LinkWallet(ctx context.Context, request events.APIGatewa
 		Message     string `json:"message"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
 		return common.BadRequest(errors.New("invalid request body")), nil
 	}
 

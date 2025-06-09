@@ -538,6 +538,10 @@ type Storage interface {
 	GetVouchesForActor(ctx context.Context, actorID string, activeOnly bool) ([]*Vouch, error)
 	UpdateVouchStatus(ctx context.Context, vouchID string, active bool, revokedAt *time.Time) error
 	GetMonthlyVouchCount(ctx context.Context, actorID string, year int, month time.Month) (int, error)
+
+	// DNS cache operations
+	GetDNSCache(ctx context.Context, hostname string) (*DNSCacheEntry, error)
+	SetDNSCache(ctx context.Context, entry *DNSCacheEntry) error
 }
 
 // User represents a user account in the system
@@ -1574,4 +1578,12 @@ type Vouch struct {
 
 	// Cryptographic proof
 	Signature string `json:"signature" dynamodbav:"Signature"`
+}
+
+// DNSCacheEntry represents a cached DNS lookup result
+type DNSCacheEntry struct {
+	Hostname   string    `json:"hostname" dynamodbav:"hostname"`
+	IPs        []string  `json:"ips" dynamodbav:"ips"`
+	ResolvedAt time.Time `json:"resolved_at" dynamodbav:"resolved_at"`
+	TTL        int       `json:"ttl" dynamodbav:"ttl"` // seconds
 }
