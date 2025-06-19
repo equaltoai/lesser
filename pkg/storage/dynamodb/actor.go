@@ -25,11 +25,11 @@ import (
 func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, privateKey string) (string, error) {
 	log := common.WithContext(ctx)
 
-	// Get KMS key ID from config, fallback to AWS managed key
+	// Get KMS key ID from config
 	keyID := cfg.Get().KMSKeyID
 	if keyID == "" {
-		keyID = "alias/aws/dynamodb"
-		log.Debug("using default AWS managed key for encryption")
+		log.Warn("KMS_KEY_ID not configured, storing private key in plaintext")
+		return privateKey, nil
 	}
 
 	// Create KMS client if not already created

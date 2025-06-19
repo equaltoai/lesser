@@ -8,6 +8,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/acm"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/apigatewayv2"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudfront"
+	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/kms"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/dynamodb"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
@@ -23,8 +24,8 @@ import (
 func sanitizePermissionName(path string, method string) string {
 	// Replace special characters with underscores
 	sanitized := strings.ReplaceAll(path, "/", "_")
-	sanitized = strings.ReplaceAll(sanitized, "{", "_")
-	sanitized = strings.ReplaceAll(sanitized, "}", "_")
+	sanitized = strings.ReplaceAll(sanitized, "{", "PARAM_")
+	sanitized = strings.ReplaceAll(sanitized, "}", "")
 	sanitized = strings.ReplaceAll(sanitized, "+", "plus")
 	sanitized = strings.ReplaceAll(sanitized, ".", "_")
 	sanitized = strings.ReplaceAll(sanitized, "-", "_")
@@ -35,7 +36,7 @@ func sanitizePermissionName(path string, method string) string {
 		sanitized = strings.ReplaceAll(sanitized, "__", "_")
 	}
 
-	return fmt.Sprintf("%s_%s_permission", sanitized, method)
+	return fmt.Sprintf("%s_%s", sanitized, method)
 }
 
 func main() {
@@ -169,6 +170,28 @@ func main() {
 
 		// Export the cost history table name
 		ctx.Export("costHistoryTableName", costHistoryTable.Name)
+
+		// Create KMS key for encrypting Lesser actor private keys
+		kmsKey, err := kms.NewKey(ctx, "lesser-encryption-key", &kms.KeyArgs{
+			Description: pulumi.String("KMS key for encrypting Lesser actor private keys"),
+			Tags: pulumi.StringMap{
+				"Name":        pulumi.String("Lesser Encryption Key"),
+				"Environment": pulumi.String(environment),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create KMS alias for the key
+		_, err = kms.NewAlias(ctx, "lesser-encryption-key-alias", &kms.AliasArgs{
+			Name:        pulumi.Sprintf("alias/lesser-%s", environment),
+			TargetKeyId: kmsKey.ID(),
+		})
+		if err != nil {
+			return err
+		}
+
 
 		// Create S3 bucket for media storage
 		mediaBucket, err := s3.NewBucket(ctx, "lesser-media", &s3.BucketArgs{
@@ -555,6 +578,35 @@ func main() {
 			return err
 		}
 
+		// Create KMS policy for Lambda
+		kmsPolicy := kmsKey.Arn.ApplyT(func(arn string) (string, error) {
+			policy := map[string]interface{}{
+				"Version": "2012-10-17",
+				"Statement": []interface{}{
+					map[string]interface{}{
+						"Effect": "Allow",
+						"Action": []string{
+							"kms:Encrypt",
+							"kms:Decrypt",
+							"kms:GenerateDataKey",
+							"kms:DescribeKey",
+						},
+						"Resource": arn,
+					},
+				},
+			}
+			policyJSON, err := json.Marshal(policy)
+			return string(policyJSON), err
+		})
+
+		_, err = iam.NewRolePolicy(ctx, "lambda-kms", &iam.RolePolicyArgs{
+			Role:   lambdaRole.Name,
+			Policy: kmsPolicy,
+		})
+		if err != nil {
+			return err
+		}
+
 		// OpenSearch data access policy removed - using DynamoDB search instead
 
 		// Lambda environment variables
@@ -564,6 +616,7 @@ func main() {
 			"CDN_DOMAIN":        pulumi.Sprintf("media.%s", domain),
 			"DOMAIN":            pulumi.String(domain),
 			"JWT_SECRET":        jwtSecret,
+			"KMS_KEY_ID":        pulumi.Sprintf("alias/lesser-%s", environment),
 			// OpenSearch removed - using DynamoDB search
 			"COST_HISTORY_TABLE_NAME": costHistoryTable.Name,
 			// SQS Queue URLs
@@ -663,11 +716,7 @@ func main() {
 			return err
 		}
 
-		// Create media Lambda
-		mediaLambda, err := createLambda("media", "media", 60)
-		if err != nil {
-			return err
-		}
+		// Media processing is handled by media-processor Lambda (below)
 
 		// Create GraphQL Lambda
 		graphqlLambda, err := createLambda("graphql", "graphql", 60)
@@ -1289,11 +1338,20 @@ func main() {
 			{"/oauth/authorize", "GET", authLambda},
 			{"/oauth/authorize", "POST", authLambda},
 			{"/oauth/token", "POST", authLambda},
+			{"/oauth/revoke", "POST", authLambda},
+			{"/oauth/register", "GET", authLambda},
+			{"/oauth/accounts", "POST", authLambda},
 			{"/.well-known/oauth-authorization-server", "GET", authLambda},
-			// Auth API routes for WebAuthn, wallet auth, and email-free recovery
-			{"/api/v1/auth/webauthn/{proxy+}", "GET", authApiLambda},
-			{"/api/v1/auth/webauthn/{proxy+}", "POST", authApiLambda},
-			{"/api/v1/auth/webauthn/{proxy+}", "DELETE", authApiLambda},
+			{"/api/v1/accounts", "POST", authLambda},
+			{"/api/v1/auth/webauthn/login/begin", "POST", authLambda},
+			{"/api/v1/auth/webauthn/login/finish", "POST", authLambda},
+			{"/api/v1/auth/webauthn/register/begin", "POST", authLambda},
+			{"/api/v1/auth/webauthn/register/finish", "POST", authLambda},
+			{"/auth/webauthn/login/begin", "POST", authLambda},
+			{"/auth/webauthn/login/finish", "POST", authLambda},
+			{"/auth/webauthn/register/begin", "POST", authLambda},
+			{"/auth/webauthn/register/finish", "POST", authLambda},
+			// Auth API routes for wallet auth and email-free recovery
 			{"/api/v1/auth/wallet/{proxy+}", "GET", authApiLambda},
 			{"/api/v1/auth/wallet/{proxy+}", "POST", authApiLambda},
 			{"/api/v1/auth/wallet/{proxy+}", "DELETE", authApiLambda},
@@ -1306,8 +1364,8 @@ func main() {
 			{"/api/v1/auth/devices", "GET", authApiLambda},
 			{"/api/v1/auth/devices/{proxy+}", "DELETE", authApiLambda},
 			// Media API routes
-			{"/api/v1/media", "POST", mediaLambda},
-			{"/api/v2/media", "POST", mediaLambda},
+			{"/api/v1/media", "POST", mediaProcessorLambda},
+			{"/api/v2/media", "POST", mediaProcessorLambda},
 			// GraphQL API route
 			{"/api/graphql", "POST", graphqlLambda},
 			{"/api/graphql", "GET", graphqlLambda},

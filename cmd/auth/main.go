@@ -13,9 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/federation"
 	"github.com/aron23/lesser/pkg/storage"
 	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
@@ -24,10 +26,11 @@ import (
 )
 
 var (
-	cfg      *config.Config
-	store    storage.Storage
-	logger   *zap.Logger
-	oauthSvc *auth.OAuthService
+	cfg          *config.Config
+	store        storage.Storage
+	logger       *zap.Logger
+	oauthSvc     *auth.OAuthService
+	webAuthnSvc  *auth.WebAuthnService
 )
 
 func init() {
@@ -49,10 +52,25 @@ func init() {
 	}
 	oauthSvc = auth.NewOAuthService(jwtSecret, store)
 
+	// Initialize WebAuthn service
+	domain := cfg.Domain
+	if domain == "" {
+		domain = "lesser.host"
+	}
+	webAuthnSvc, err = auth.NewWebAuthnService(store, domain, "Lesser")
+	if err != nil {
+		logger.Error("failed to initialize WebAuthn service", zap.Error(err))
+		// WebAuthn is optional, so we don't fail here
+	}
+
 	// Create default client for development if it doesn't exist
 	ctx := context.Background()
 	defaultClientID := "lesser-web"
-	if _, err := store.GetOAuthClient(ctx, defaultClientID); err != nil {
+	existingClient, err := store.GetOAuthClient(ctx, defaultClientID)
+	if err != nil {
+		logger.Info("creating default OAuth client", 
+			zap.String("client_id", defaultClientID),
+			zap.String("redirect_uri", cfg.BaseURL() + "/auth/callback"))
 		// Create default client
 		defaultClient := &storage.OAuthClient{
 			ClientID:     defaultClientID,
@@ -62,7 +80,13 @@ func init() {
 		}
 		if err := store.CreateOAuthClient(ctx, defaultClient); err != nil {
 			logger.Warn("failed to create default OAuth client", zap.Error(err))
+		} else {
+			logger.Info("created default OAuth client successfully")
 		}
+	} else {
+		logger.Info("default OAuth client exists", 
+			zap.String("client_id", defaultClientID),
+			zap.Strings("redirect_uris", existingClient.RedirectURIs))
 	}
 }
 
@@ -133,6 +157,9 @@ type LoginRequest struct {
 func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Get the path, removing the stage prefix if present
 	path := request.RawPath
+	if path == "" {
+		path = request.RequestContext.HTTP.Path
+	}
 	if request.RequestContext.Stage != "" && strings.HasPrefix(path, "/"+request.RequestContext.Stage) {
 		path = strings.TrimPrefix(path, "/"+request.RequestContext.Stage)
 	}
@@ -141,7 +168,10 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 	logger.Info("OAuth request",
 		zap.String("raw_path", request.RawPath),
 		zap.String("path", path),
-		zap.String("method", request.RequestContext.HTTP.Method))
+		zap.String("method", request.RequestContext.HTTP.Method),
+		zap.String("stage", request.RequestContext.Stage),
+		zap.Any("path_parameters", request.PathParameters),
+		zap.String("request_context_path", request.RequestContext.HTTP.Path))
 
 	// Route based on path
 	switch path {
@@ -153,7 +183,23 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 		return handleRevoke(ctx, request)
 	case "/oauth/.well-known/oauth-authorization-server":
 		return handleDiscovery(ctx, request)
+	case "/api/v1/auth/webauthn/login/begin", "/auth/webauthn/login/begin":
+		return handleWebAuthnLoginBegin(ctx, request)
+	case "/api/v1/auth/webauthn/login/finish", "/auth/webauthn/login/finish":
+		return handleWebAuthnLoginFinish(ctx, request)
+	case "/oauth/register":
+		return handleRegister(ctx, request)
+	case "/oauth/accounts", "/api/v1/accounts", "/accounts":
+		return handleAccountCreation(ctx, request)
+	case "/api/v1/auth/webauthn/register/begin", "/auth/webauthn/register/begin":
+		return handleWebAuthnRegisterBegin(ctx, request)
+	case "/api/v1/auth/webauthn/register/finish", "/auth/webauthn/register/finish":
+		return handleWebAuthnRegisterFinish(ctx, request)
 	default:
+		logger.Error("unknown OAuth endpoint",
+			zap.String("path", path),
+			zap.String("raw_path", request.RawPath),
+			zap.String("request_context_path", request.RequestContext.HTTP.Path))
 		return common.NotFound(errors.New("unknown OAuth endpoint")), nil
 	}
 }
@@ -186,7 +232,16 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 			zap.String("redirect_uri", req.RedirectURI),
 			zap.String("state", req.State),
 			zap.String("code_challenge", req.CodeChallenge),
-			zap.String("scope", req.Scope))
+			zap.String("scope", req.Scope),
+			zap.Any("all_params", request.QueryStringParameters))
+		
+		// Validate required parameters
+		if req.RedirectURI == "" {
+			loginErr = "Invalid request: redirect_uri is required"
+			logger.Error("redirect_uri is missing from request", 
+				zap.Any("query_params", request.QueryStringParameters),
+				zap.String("raw_query", request.RawQueryString))
+		}
 	} else if request.RequestContext.HTTP.Method == http.MethodPost {
 		// Check if this is a login form submission
 		contentType := request.Headers["content-type"]
@@ -221,6 +276,7 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 			// Handle login
 			username := values.Get("username")
 			password := values.Get("password")
+			webauthnResponse := values.Get("webauthn_response")
 
 			// Reconstruct OAuth request from form fields
 			req = AuthorizeRequest{
@@ -233,21 +289,54 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 				Scope:               values.Get("scope"),
 			}
 
-			// Validate credentials
-			user, err := validateUserCredentials(ctx, username, password)
-			if err != nil {
-				logger.Warn("login failed", zap.String("username", username), zap.Error(err))
-				loginErr = "Invalid username or password"
-			} else if user.Suspended {
-				loginErr = "Account is suspended"
-			} else if !user.Approved {
-				loginErr = "Account is pending approval"
+			var user *storage.User
+
+			// Check if this is a WebAuthn authentication
+			if webauthnResponse != "" {
+				logger.Info("handling WebAuthn authentication", zap.String("username", username))
+				
+				// Parse WebAuthn response
+				var webauthnData struct {
+					Challenge  string                 `json:"challenge"`
+					Credential map[string]interface{} `json:"credential"`
+				}
+				if err := json.Unmarshal([]byte(webauthnResponse), &webauthnData); err != nil {
+					logger.Error("failed to parse WebAuthn response", zap.Error(err))
+					loginErr = "Invalid authentication response"
+				} else {
+					// Verify WebAuthn authentication
+					var authErr error
+					user, authErr = validateWebAuthnCredentials(ctx, username, webauthnData.Challenge, webauthnData.Credential)
+					if authErr != nil {
+						logger.Warn("WebAuthn authentication failed", zap.String("username", username), zap.Error(authErr))
+						loginErr = "Authentication failed"
+					}
+				}
+			} else if password != "" {
+				// Fall back to password authentication
+				var authErr error
+				user, authErr = validateUserCredentials(ctx, username, password)
+				if authErr != nil {
+					logger.Warn("login failed", zap.String("username", username), zap.Error(authErr))
+					loginErr = "Invalid username or password"
+				}
 			} else {
-				// Login successful, continue with OAuth flow
-				logger.Info("login successful, completing authorization",
-					zap.String("username", user.Username),
-					zap.String("client_id", req.ClientID))
-				return completeAuthorization(ctx, req, user.Username)
+				loginErr = "Authentication required"
+			}
+
+			// Check user status
+			if user != nil && loginErr == "" {
+				if user.Suspended {
+					loginErr = "Account is suspended"
+				} else if !user.Approved {
+					loginErr = "Account is pending approval"
+				} else {
+					// Login successful, continue with OAuth flow
+					logger.Info("login successful, completing authorization",
+						zap.String("username", user.Username),
+						zap.String("client_id", req.ClientID))
+					return completeAuthorization(ctx, req, user.Username)
+				}
 			}
 		} else {
 			// JSON request
@@ -342,6 +431,52 @@ func validateUserCredentials(ctx context.Context, username, password string) (*s
 	}
 
 	logger.Info("password verified successfully")
+
+	return user, nil
+}
+
+func validateWebAuthnCredentials(ctx context.Context, username string, challenge string, credential map[string]interface{}) (*storage.User, error) {
+	if webAuthnSvc == nil {
+		return nil, errors.New("WebAuthn service not available")
+	}
+
+	logger.Info("validating WebAuthn credentials", zap.String("username", username))
+
+	// Get user from storage first to validate they exist
+	user, err := store.GetUser(ctx, username)
+	if err != nil {
+		logger.Error("failed to get user", zap.Error(err))
+		return nil, errors.New("invalid credentials")
+	}
+
+	// Convert credential map to JSON for the WebAuthn service
+	credentialJSON, err := json.Marshal(credential)
+	if err != nil {
+		logger.Error("failed to marshal credential", zap.Error(err))
+		return nil, errors.New("invalid credential format")
+	}
+
+	// Use the WebAuthn service to finish login verification
+	_, err = webAuthnSvc.FinishLogin(ctx, username, challenge, credentialJSON)
+	if err != nil {
+		logger.Error("WebAuthn verification failed", 
+			zap.String("username", username),
+			zap.Error(err))
+		
+		switch err {
+		case auth.ErrChallengeNotFound:
+			return nil, errors.New("invalid or expired challenge")
+		case auth.ErrInvalidCredential:
+			return nil, errors.New("invalid credential")
+		case auth.ErrUserHasNoCredentials:
+			return nil, errors.New("no passkeys registered for this account")
+		default:
+			return nil, errors.New("authentication failed")
+		}
+	}
+
+	logger.Info("WebAuthn authentication successful", 
+		zap.String("username", username))
 
 	return user, nil
 }
@@ -477,9 +612,35 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2
         button:hover {
             background-color: #45a049;
         }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .primary-button {
+            background-color: #2196F3;
+        }
+        .primary-button:hover {
+            background-color: #1976D2;
+        }
+        .secondary-button {
+            background-color: #757575;
+            font-size: 0.875rem;
+            padding: 0.5rem;
+        }
+        .secondary-button:hover {
+            background-color: #616161;
+        }
         .error {
             background-color: #fee;
             color: #c33;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
             padding: 0.75rem;
             border-radius: 4px;
             margin-bottom: 1rem;
@@ -491,6 +652,45 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2
             text-align: center;
             margin-top: 1rem;
         }
+        .webauthn-section {
+            text-align: center;
+            padding: 1.5rem 0;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 1.5rem;
+        }
+        .webauthn-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 1rem;
+            background-color: #e3f2fd;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .or-divider {
+            text-align: center;
+            margin: 1.5rem 0;
+            color: #999;
+            font-size: 0.875rem;
+        }
+        .hidden {
+            display: none;
+        }
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #333;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -499,7 +699,46 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2
         {{if .Error}}
         <div class="error">{{.Error}}</div>
         {{end}}
-        <form method="POST" action="{{.ActionURL}}">
+        
+        <!-- Hidden form to submit OAuth data -->
+        <form id="oauthForm" method="POST" action="{{.ActionURL}}" style="display: none;">
+            <input type="hidden" name="response_type" value="{{.ResponseType}}">
+            <input type="hidden" name="client_id" value="{{.ClientID}}">
+            <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
+            <input type="hidden" name="state" value="{{.State}}">
+            <input type="hidden" name="code_challenge" value="{{.CodeChallenge}}">
+            <input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
+            <input type="hidden" name="scope" value="{{.Scope}}">
+            <input type="hidden" name="username" id="hiddenUsername">
+            <input type="hidden" name="webauthn_response" id="webauthnResponse">
+        </form>
+        
+        <!-- WebAuthn Section (Primary) -->
+        <div class="webauthn-section" id="webauthnSection">
+            <div class="webauthn-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2196F3" stroke-width="2">
+                    <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/>
+                </svg>
+            </div>
+            
+            <div class="form-group">
+                <label for="webauthnUsername">Username</label>
+                <input type="text" id="webauthnUsername" name="webauthnUsername" required autofocus>
+            </div>
+            
+            <button type="button" id="webauthnButton" class="primary-button" onclick="loginWithPasskey()">
+                Sign in with Passkey
+            </button>
+            
+            <p style="margin-top: 0.5rem; font-size: 0.75rem; color: #666;">
+                Secure, passwordless authentication
+            </p>
+        </div>
+        
+        <div class="or-divider">or use password</div>
+        
+        <!-- Password login (fallback) -->
+        <form method="POST" action="{{.ActionURL}}" id="passwordForm">
             <input type="hidden" name="response_type" value="{{.ResponseType}}">
             <input type="hidden" name="client_id" value="{{.ClientID}}">
             <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
@@ -509,8 +748,8 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2
             <input type="hidden" name="scope" value="{{.Scope}}">
             
             <div class="form-group">
-                <label for="username">Username or Email</label>
-                <input type="text" id="username" name="username" required autofocus>
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
             </div>
             
             <div class="form-group">
@@ -518,13 +757,174 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2
                 <input type="password" id="password" name="password" required>
             </div>
             
-            <button type="submit">Sign In</button>
+            <button type="submit" class="secondary-button">Sign in with Password</button>
         </form>
         
+        <div id="webauthnWarning" class="warning hidden" style="margin-top: 1rem;">
+            WebAuthn is not supported in your browser. Please use a modern browser or sign in with password.
+        </div>
+        
         <p class="info">
-            Don't have an account? <a href="/register">Sign up</a>
+            Don't have an account? <a href="/oauth/register" id="registerLink">Create one</a>
         </p>
     </div>
+    
+    <script>
+        // Set up registration link with OAuth parameters
+        document.addEventListener('DOMContentLoaded', function() {
+            const registerLink = document.getElementById('registerLink');
+            if (registerLink) {
+                // Get current URL parameters
+                const urlParams = new URLSearchParams(window.location.search);
+                
+                // Build registration URL with OAuth parameters
+                const registerParams = new URLSearchParams();
+                if (urlParams.get('client_id')) registerParams.append('client_id', urlParams.get('client_id'));
+                if (urlParams.get('redirect_uri')) registerParams.append('redirect_uri', urlParams.get('redirect_uri'));
+                if (urlParams.get('state')) registerParams.append('state', urlParams.get('state'));
+                if (urlParams.get('scope')) registerParams.append('scope', urlParams.get('scope'));
+                if (urlParams.get('response_type')) registerParams.append('response_type', urlParams.get('response_type'));
+                if (urlParams.get('code_challenge')) registerParams.append('code_challenge', urlParams.get('code_challenge'));
+                if (urlParams.get('code_challenge_method')) registerParams.append('code_challenge_method', urlParams.get('code_challenge_method'));
+                
+                if (registerParams.toString()) {
+                    registerLink.href = '/oauth/register?' + registerParams.toString();
+                }
+            }
+        });
+        
+        // Check WebAuthn support
+        if (!window.PublicKeyCredential) {
+            document.getElementById('webauthnSection').style.display = 'none';
+            document.getElementById('webauthnWarning').classList.remove('hidden');
+            document.querySelector('.or-divider').style.display = 'none';
+        }
+        
+        // Sync username fields
+        document.getElementById('webauthnUsername').addEventListener('input', function(e) {
+            document.getElementById('username').value = e.target.value;
+        });
+        document.getElementById('username').addEventListener('input', function(e) {
+            document.getElementById('webauthnUsername').value = e.target.value;
+        });
+        
+        async function loginWithPasskey() {
+            const username = document.getElementById('webauthnUsername').value;
+            if (!username) {
+                alert('Please enter your username');
+                return;
+            }
+            
+            const button = document.getElementById('webauthnButton');
+            button.disabled = true;
+            button.innerHTML = '<span class="loading"></span>Authenticating...';
+            
+            try {
+                // Begin WebAuthn authentication
+                console.log('Starting WebAuthn login for user:', username);
+                const beginResponse = await fetch('/api/v1/auth/webauthn/login/begin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                
+                console.log('Begin response status:', beginResponse.status);
+                if (!beginResponse.ok) {
+                    const error = await beginResponse.json();
+                    console.error('Begin login error:', error);
+                    throw new Error(error.error || 'Failed to start authentication');
+                }
+                
+                const beginData = await beginResponse.json();
+                console.log('Begin login data:', beginData);
+                
+                // Convert base64 to ArrayBuffer
+                const publicKeyOptions = beginData.publicKey;
+                
+                // Check if challenge exists in publicKeyOptions
+                if (!publicKeyOptions.challenge) {
+                    console.error('Challenge missing from publicKeyOptions:', publicKeyOptions);
+                    throw new Error('Invalid authentication data received from server');
+                }
+                
+                publicKeyOptions.challenge = base64ToArrayBuffer(publicKeyOptions.challenge);
+                
+                if (publicKeyOptions.allowCredentials) {
+                    publicKeyOptions.allowCredentials = publicKeyOptions.allowCredentials.map(cred => ({
+                        ...cred,
+                        id: base64ToArrayBuffer(cred.id)
+                    }));
+                }
+                
+                // Get credential
+                const credential = await navigator.credentials.get({
+                    publicKey: publicKeyOptions
+                });
+                
+                // Prepare response
+                const credentialResponse = {
+                    id: credential.id,
+                    rawId: arrayBufferToBase64(credential.rawId),
+                    type: credential.type,
+                    response: {
+                        clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                        authenticatorData: arrayBufferToBase64(credential.response.authenticatorData),
+                        signature: arrayBufferToBase64(credential.response.signature),
+                        userHandle: credential.response.userHandle ? 
+                            arrayBufferToBase64(credential.response.userHandle) : null
+                    }
+                };
+                
+                // Submit OAuth form with WebAuthn response
+                document.getElementById('hiddenUsername').value = username;
+                document.getElementById('webauthnResponse').value = JSON.stringify({
+                    challenge: beginData.challenge,
+                    credential: credentialResponse
+                });
+                document.getElementById('oauthForm').submit();
+                
+            } catch (error) {
+                console.error('WebAuthn error:', error);
+                button.disabled = false;
+                button.innerHTML = 'Sign in with Passkey';
+                
+                if (error.name === 'NotAllowedError') {
+                    alert('Authentication was cancelled or timed out. Please try again.');
+                } else {
+                    alert('Authentication failed: ' + error.message);
+                }
+            }
+        }
+        
+        function base64ToArrayBuffer(base64) {
+            if (!base64) {
+                throw new Error('base64ToArrayBuffer: input is null or undefined');
+            }
+            // Convert base64url to base64
+            let base64String = base64.replace(/-/g, '+').replace(/_/g, '/');
+            // Add padding if necessary
+            while (base64String.length % 4) {
+                base64String += '=';
+            }
+            const binaryString = window.atob(base64String);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+        
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            // Convert to base64 then to base64url
+            const base64 = window.btoa(binary);
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+    </script>
 </body>
 </html>`
 
@@ -1154,6 +1554,841 @@ func returnTokenError(error, description string) *events.APIGatewayV2HTTPRespons
 		},
 		Body: string(body),
 	}
+}
+
+// handleRegister shows the registration page
+func handleRegister(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	if request.RequestContext.HTTP.Method != http.MethodGet {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
+	}
+
+	// Extract OAuth parameters from query string
+	params := request.QueryStringParameters
+	oauthParams := OAuthParams{
+		ClientID:            params["client_id"],
+		RedirectURI:         params["redirect_uri"],
+		State:               params["state"],
+		Scope:               params["scope"],
+		ResponseType:        params["response_type"],
+		CodeChallenge:       params["code_challenge"],
+		CodeChallengeMethod: params["code_challenge_method"],
+	}
+
+	return renderRegistrationPage("", oauthParams), nil
+}
+
+// OAuthParams holds OAuth parameters to preserve across registration
+type OAuthParams struct {
+	ClientID            string
+	RedirectURI         string
+	State               string
+	Scope               string
+	ResponseType        string
+	CodeChallenge       string
+	CodeChallengeMethod string
+}
+
+// renderRegistrationPage returns an HTML registration page
+func renderRegistrationPage(errorMsg string, oauthParams OAuthParams) *events.APIGatewayV2HTTPResponse {
+	// Template data
+	type RegistrationPageData struct {
+		Error       string
+		OAuthParams OAuthParams
+	}
+
+	data := RegistrationPageData{
+		Error:       errorMsg,
+		OAuthParams: oauthParams,
+	}
+
+	registrationHTML := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account - Lesser</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .register-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 2rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #555;
+            font-weight: 500;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        button:hover {
+            background-color: #1976D2;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            background-color: #fee;
+            color: #c33;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .info {
+            color: #666;
+            font-size: 0.875rem;
+            text-align: center;
+            margin-top: 1rem;
+        }
+        .webauthn-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 1.5rem;
+            background-color: #e3f2fd;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .step {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .step-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background-color: #e0e0e0;
+            color: #666;
+            border-radius: 50%;
+            line-height: 30px;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        .step-number.active {
+            background-color: #2196F3;
+            color: white;
+        }
+        .step-number.completed {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .hidden {
+            display: none;
+        }
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #2196F3;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <h1>Create Your Account</h1>
+        
+        <div id="errorMessage" class="error hidden"></div>
+        <div id="successMessage" class="success hidden"></div>
+        
+        <!-- Hidden OAuth parameters -->
+        <input type="hidden" id="oauth_client_id" value="{{.OAuthParams.ClientID}}">
+        <input type="hidden" id="oauth_redirect_uri" value="{{.OAuthParams.RedirectURI}}">
+        <input type="hidden" id="oauth_response_type" value="{{.OAuthParams.ResponseType}}">
+        <input type="hidden" id="oauth_scope" value="{{.OAuthParams.Scope}}">
+        <input type="hidden" id="oauth_state" value="{{.OAuthParams.State}}">
+        <input type="hidden" id="oauth_code_challenge" value="{{.OAuthParams.CodeChallenge}}">
+        <input type="hidden" id="oauth_code_challenge_method" value="{{.OAuthParams.CodeChallengeMethod}}">
+        
+        <!-- Step 1: Username -->
+        <div id="step1" class="step-content">
+            <div class="step">
+                <div class="step-number active">1</div>
+                <p>Choose your username</p>
+            </div>
+            
+            <form id="usernameForm" onsubmit="createAccount(event)">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required autofocus
+                           pattern="[a-zA-Z0-9_\\-]+" minlength="3" maxlength="30"
+                           title="Username can only contain letters, numbers, underscore and hyphen">
+                    <p style="margin-top: 0.5rem; font-size: 0.75rem; color: #666;">
+                        Your handle will be @<span id="usernamePreview">username</span>@lesser.host
+                    </p>
+                </div>
+                
+                <button type="submit" id="createAccountBtn">
+                    Create Account & Set Up Passkey
+                </button>
+            </form>
+        </div>
+        
+        <!-- Step 2: WebAuthn Setup -->
+        <div id="step2" class="step-content hidden">
+            <div class="step">
+                <div class="step-number completed">1</div>
+                <div class="step-number active">2</div>
+                <p>Set up your passkey</p>
+            </div>
+            
+            <div class="webauthn-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2196F3" stroke-width="2">
+                    <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/>
+                </svg>
+            </div>
+            
+            <p style="text-align: center; margin-bottom: 1.5rem;">
+                Follow your browser's prompts to create a passkey
+            </p>
+            
+            <button onclick="setupPasskey()" id="setupPasskeyBtn">
+                Set Up Passkey
+            </button>
+        </div>
+        
+        <p class="info">
+            Already have an account? <a href="/oauth/authorize">Sign in</a>
+        </p>
+    </div>
+    
+    <script>
+        let currentUsername = '';
+        let accessToken = '';
+        
+        // Update username preview
+        document.getElementById('username').addEventListener('input', function(e) {
+            document.getElementById('usernamePreview').textContent = e.target.value || 'username';
+        });
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => errorDiv.classList.add('hidden'), 5000);
+        }
+        
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.classList.remove('hidden');
+        }
+        
+        async function createAccount(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const button = document.getElementById('createAccountBtn');
+            
+            button.disabled = true;
+            button.innerHTML = '<span class="loading"></span>Creating account...';
+            
+            try {
+                // Create account
+                const response = await fetch('/oauth/accounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: username,
+                        locale: 'en',
+                        agreement: true,
+                        reason: 'OAuth registration'
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to create account');
+                }
+                
+                const accountData = await response.json();
+                currentUsername = username;
+                
+                // Store the access token for WebAuthn registration
+                if (!accountData.access_token) {
+                    throw new Error('No access token received from server');
+                }
+                accessToken = accountData.access_token;
+                
+                // Move to step 2
+                document.getElementById('step1').classList.add('hidden');
+                document.getElementById('step2').classList.remove('hidden');
+                showSuccess('Account created! Now set up your passkey.');
+                
+            } catch (error) {
+                showError(error.message);
+                button.disabled = false;
+                button.innerHTML = 'Create Account & Set Up Passkey';
+            }
+        }
+        
+        async function setupPasskey() {
+            const button = document.getElementById('setupPasskeyBtn');
+            button.disabled = true;
+            button.innerHTML = '<span class="loading"></span>Setting up passkey...';
+            
+            try {
+                // Begin WebAuthn registration
+                const beginResponse = await fetch('/api/v1/auth/webauthn/register/begin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + accessToken
+                    }
+                });
+                
+                if (!beginResponse.ok) {
+                    throw new Error('Failed to start passkey setup');
+                }
+                
+                const beginData = await beginResponse.json();
+                console.log('Begin registration data:', beginData);
+                
+                // Convert base64 to ArrayBuffer
+                const publicKeyOptions = beginData.publicKey;
+                
+                // Check if challenge exists in publicKeyOptions
+                if (!publicKeyOptions.challenge) {
+                    console.error('Challenge missing from publicKeyOptions:', publicKeyOptions);
+                    throw new Error('Invalid registration data received from server');
+                }
+                
+                publicKeyOptions.challenge = base64ToArrayBuffer(publicKeyOptions.challenge);
+                // The server sends user.id as base64, convert it to ArrayBuffer
+                publicKeyOptions.user.id = base64ToArrayBuffer(publicKeyOptions.user.id);
+                
+                if (publicKeyOptions.excludeCredentials) {
+                    publicKeyOptions.excludeCredentials = publicKeyOptions.excludeCredentials.map(cred => ({
+                        ...cred,
+                        id: base64ToArrayBuffer(cred.id)
+                    }));
+                }
+                
+                // Create credential
+                const credential = await navigator.credentials.create({
+                    publicKey: publicKeyOptions
+                });
+                
+                // Prepare response
+                const credentialResponse = {
+                    id: credential.id,
+                    rawId: arrayBufferToBase64(credential.rawId),
+                    type: credential.type,
+                    response: {
+                        clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                        attestationObject: arrayBufferToBase64(credential.response.attestationObject)
+                    }
+                };
+                
+                // Finish registration
+                const finishResponse = await fetch('/api/v1/auth/webauthn/register/finish', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + accessToken
+                    },
+                    body: JSON.stringify({
+                        challenge: beginData.challenge,
+                        response: credentialResponse,
+                        credential_name: 'Primary Passkey'
+                    })
+                });
+                
+                if (!finishResponse.ok) {
+                    throw new Error('Failed to complete passkey setup');
+                }
+                
+                showSuccess('Passkey created successfully! Redirecting to login...');
+                
+                // Redirect to login with OAuth parameters after 2 seconds
+                setTimeout(() => {
+                    const params = new URLSearchParams();
+                    
+                    // Get OAuth parameters from hidden fields or use defaults
+                    const clientId = document.getElementById('oauth_client_id')?.value || 'lesser-web';
+                    const redirectUri = document.getElementById('oauth_redirect_uri')?.value || window.location.origin + '/auth/callback';
+                    const responseType = document.getElementById('oauth_response_type')?.value || 'code';
+                    const scope = document.getElementById('oauth_scope')?.value || 'read write follow push';
+                    const state = document.getElementById('oauth_state')?.value || Math.random().toString(36).substring(7);
+                    const codeChallenge = document.getElementById('oauth_code_challenge')?.value || '';
+                    const codeChallengeMethod = document.getElementById('oauth_code_challenge_method')?.value || '';
+                    
+                    params.append('response_type', responseType);
+                    params.append('client_id', clientId);
+                    params.append('redirect_uri', redirectUri);
+                    params.append('scope', scope);
+                    params.append('state', state);
+                    
+                    if (codeChallenge) {
+                        params.append('code_challenge', codeChallenge);
+                        params.append('code_challenge_method', codeChallengeMethod);
+                    }
+                    
+                    window.location.href = '/oauth/authorize?' + params.toString();
+                }, 2000);
+                
+            } catch (error) {
+                showError(error.message);
+                button.disabled = false;
+                button.innerHTML = 'Set Up Passkey';
+            }
+        }
+        
+        function base64ToArrayBuffer(base64) {
+            if (!base64) {
+                throw new Error('base64ToArrayBuffer: input is null or undefined');
+            }
+            // Convert base64url to base64
+            let base64String = base64.replace(/-/g, '+').replace(/_/g, '/');
+            // Add padding if necessary
+            while (base64String.length % 4) {
+                base64String += '=';
+            }
+            const binaryString = window.atob(base64String);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+        
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            // Convert to base64 then to base64url
+            const base64 = window.btoa(binary);
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+        
+        // Check WebAuthn support
+        if (!window.PublicKeyCredential) {
+            showError('WebAuthn is not supported in your browser. Please use a modern browser.');
+            document.getElementById('createAccountBtn').disabled = true;
+        }
+    </script>
+</body>
+</html>`
+
+	// Parse and execute template
+	tmpl, err := template.New("registration").Parse(registrationHTML)
+	if err != nil {
+		logger.Error("failed to parse registration template", zap.Error(err))
+		return common.InternalServerError(err)
+	}
+
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, data); err != nil {
+		logger.Error("failed to execute registration template", zap.Error(err))
+		return common.InternalServerError(err)
+	}
+
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type": "text/html; charset=utf-8",
+		},
+		Body: buf.String(),
+	}
+}
+
+// handleAccountCreation creates a new user account
+func handleAccountCreation(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	if request.RequestContext.HTTP.Method != http.MethodPost {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
+	}
+
+	// Parse request
+	var req struct {
+		Username  string `json:"username"`
+		Locale    string `json:"locale"`
+		Agreement bool   `json:"agreement"`
+		Reason    string `json:"reason"`
+	}
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
+		return common.BadRequest(errors.New("invalid request body")), nil
+	}
+
+	// Validate username
+	if req.Username == "" || len(req.Username) < 3 {
+		return common.BadRequest(errors.New("username must be at least 3 characters")), nil
+	}
+
+	// Check if user already exists
+	_, err := store.GetUser(ctx, req.Username)
+	if err == nil {
+		return common.BadRequest(errors.New("username already taken")), nil
+	}
+
+	// Create user
+	user := &storage.User{
+		Username:  req.Username,
+		Approved:  true, // Auto-approve for now
+		Suspended: false,
+		Role:      "user",
+		Locale:    req.Locale,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	if err := store.CreateUser(ctx, user); err != nil {
+		logger.Error("failed to create user", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to create account")), nil
+	}
+
+	// Create actor (ActivityPub profile)
+	if err := createActorForUser(ctx, user.Username); err != nil {
+		logger.Error("failed to create actor", zap.Error(err))
+		// Don't fail the request, actor can be created later
+	}
+
+	// For OAuth registration flow, we need to return a temporary token
+	// that allows WebAuthn registration
+	tempToken, _, err := oauthSvc.GenerateTokens(user.Username, "oauth-register", []string{"write"})
+	if err != nil {
+		logger.Error("failed to generate temporary token", zap.Error(err))
+		return common.InternalServerError(errors.New("account created but token generation failed")), nil
+	}
+
+	return common.OK(map[string]interface{}{
+		"id":           user.Username,
+		"username":     user.Username,
+		"created_at":   user.CreatedAt,
+		"access_token": tempToken, // Temporary token for WebAuthn setup
+	}), nil
+}
+
+// createActorForUser creates an ActivityPub actor for a user
+func createActorForUser(ctx context.Context, username string) error {
+	// Generate RSA key pair
+	privateKey, err := federation.GenerateRSAKeyPair(2048)
+	if err != nil {
+		return fmt.Errorf("failed to generate key pair: %w", err)
+	}
+
+	// Encode keys to PEM format
+	publicKeyPEM, err := federation.EncodePublicKeyPEM(&privateKey.PublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to encode public key: %w", err)
+	}
+	
+	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to encode private key: %w", err)
+	}
+
+	domain := cfg.Domain
+	if domain == "" {
+		domain = "lesser.host"
+	}
+
+	// Create actor
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			Context: []interface{}{
+				"https://www.w3.org/ns/activitystreams",
+				"https://w3id.org/security/v1",
+			},
+			Type: "Person",
+			ID:   fmt.Sprintf("https://%s/users/%s", domain, username),
+		},
+		Inbox:     fmt.Sprintf("https://%s/users/%s/inbox", domain, username),
+		Outbox:    fmt.Sprintf("https://%s/users/%s/outbox", domain, username),
+		Following: fmt.Sprintf("https://%s/users/%s/following", domain, username),
+		Followers: fmt.Sprintf("https://%s/users/%s/followers", domain, username),
+		Liked:     fmt.Sprintf("https://%s/users/%s/liked", domain, username),
+		PreferredUsername: username,
+		Name:      username,
+		Summary:   "New Lesser user",
+		URL:       fmt.Sprintf("https://%s/@%s", domain, username),
+		ManuallyApprovesFollowers: false,
+		Discoverable: true,
+		PublicKey: &activitypub.PublicKey{
+			ID:           fmt.Sprintf("https://%s/users/%s#main-key", domain, username),
+			Owner:        fmt.Sprintf("https://%s/users/%s", domain, username),
+			PublicKeyPem: string(publicKeyPEM),
+		},
+		Endpoints: &activitypub.Endpoints{
+			SharedInbox: fmt.Sprintf("https://%s/inbox", domain),
+		},
+	}
+
+	// Store actor using the storage interface
+	if err := store.CreateActor(ctx, actor, string(privateKeyPEM)); err != nil {
+		return fmt.Errorf("failed to store actor: %w", err)
+	}
+
+	return nil
+}
+
+// prepareWebAuthnResponse handles the common logic for preparing WebAuthn responses
+// It extracts nested publicKey fields if necessary and returns a properly structured response
+func prepareWebAuthnResponse(options interface{}, challenge string) (map[string]interface{}, error) {
+	// The go-webauthn library might return nested structure
+	// We need to structure the response properly for the client
+	optionsJSON, err := json.Marshal(options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal options: %w", err)
+	}
+	
+	var optionsData map[string]interface{}
+	if err := json.Unmarshal(optionsJSON, &optionsData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal options: %w", err)
+	}
+	
+	// Check if it has a nested publicKey field
+	var publicKeyData interface{}
+	if pk, exists := optionsData["publicKey"]; exists {
+		publicKeyData = pk
+	} else {
+		publicKeyData = optionsData
+	}
+	
+	// Return the properly structured response
+	return map[string]interface{}{
+		"publicKey": publicKeyData,
+		"challenge": challenge,
+	}, nil
+}
+
+// handleWebAuthnLoginBegin starts the WebAuthn login process for OAuth flow
+func handleWebAuthnLoginBegin(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	if request.RequestContext.HTTP.Method != http.MethodPost {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
+	}
+
+	// Parse request body
+	var req struct {
+		Username string `json:"username"`
+	}
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
+		return common.BadRequest(errors.New("invalid request body")), nil
+	}
+
+	if req.Username == "" {
+		return common.BadRequest(errors.New("username required")), nil
+	}
+
+	if webAuthnSvc == nil {
+		return common.InternalServerError(errors.New("WebAuthn service not available")), nil
+	}
+
+	// Begin WebAuthn login
+	options, challenge, err := webAuthnSvc.BeginLogin(ctx, req.Username)
+	if err != nil {
+		logger.Error("failed to begin WebAuthn login", 
+			zap.String("username", req.Username),
+			zap.Error(err))
+		if err == auth.ErrUserHasNoCredentials {
+			return common.BadRequest(errors.New("no passkeys registered for this user")), nil
+		}
+		return common.InternalServerError(errors.New("failed to begin login")), nil
+	}
+	
+	logger.Info("WebAuthn login begin successful",
+		zap.String("username", req.Username),
+		zap.String("challenge", challenge))
+
+	// Debug: Log the options structure
+	optionsJSON, _ := json.Marshal(options)
+	logger.Info("WebAuthn options structure",
+		zap.String("options", string(optionsJSON)))
+
+	// Prepare the response using the common helper
+	response, err := prepareWebAuthnResponse(options, challenge)
+	if err != nil {
+		logger.Error("failed to prepare WebAuthn response", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to prepare response")), nil
+	}
+
+	body, _ := json.Marshal(response)
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type":                "application/json",
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
+		},
+		Body: string(body),
+	}, nil
+}
+
+// handleWebAuthnLoginFinish completes the WebAuthn login process for OAuth flow
+func handleWebAuthnLoginFinish(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	if request.RequestContext.HTTP.Method != http.MethodPost {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
+	}
+
+	// This endpoint is not used in the OAuth flow
+	// The OAuth flow handles WebAuthn completion in the main authorize endpoint
+	return common.BadRequest(errors.New("use OAuth authorize endpoint for WebAuthn login")), nil
+}
+
+// handleWebAuthnRegisterBegin starts the WebAuthn registration process
+func handleWebAuthnRegisterBegin(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	if request.RequestContext.HTTP.Method != http.MethodPost {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
+	}
+
+	// Extract username from JWT token
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(errors.New("authorization required")), nil
+	}
+
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(errors.New("invalid token")), nil
+	}
+
+	username := claims.Username
+	if username == "" {
+		return common.Unauthorized(errors.New("invalid token claims")), nil
+	}
+
+	// Begin WebAuthn registration
+	options, challenge, err := webAuthnSvc.BeginRegistration(ctx, username)
+	if err != nil {
+		logger.Error("failed to begin WebAuthn registration", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to begin registration")), nil
+	}
+
+	// Prepare the response using the common helper
+	response, err := prepareWebAuthnResponse(options, challenge)
+	if err != nil {
+		logger.Error("failed to prepare WebAuthn response", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to prepare response")), nil
+	}
+	
+	body, _ := json.Marshal(response)
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Headers: map[string]string{
+			"Content-Type":                "application/json",
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
+		},
+		Body: string(body),
+	}, nil
+}
+
+// handleWebAuthnRegisterFinish completes the WebAuthn registration process
+func handleWebAuthnRegisterFinish(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	if request.RequestContext.HTTP.Method != http.MethodPost {
+		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
+	}
+
+	// Extract username from JWT token
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(errors.New("authorization required")), nil
+	}
+
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(errors.New("invalid token")), nil
+	}
+
+	username := claims.Username
+	if username == "" {
+		return common.Unauthorized(errors.New("invalid token claims")), nil
+	}
+
+	// Parse request body
+	var req struct {
+		Challenge      string          `json:"challenge"`
+		Response       json.RawMessage `json:"response"`
+		CredentialName string          `json:"credential_name"`
+	}
+	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
+		return common.BadRequest(errors.New("invalid request body")), nil
+	}
+
+	// Finish registration
+	err = webAuthnSvc.FinishRegistration(ctx, username, req.Challenge, req.Response, req.CredentialName)
+	if err != nil {
+		logger.Error("failed to finish WebAuthn registration", zap.Error(err))
+		if err == auth.ErrChallengeNotFound {
+			return common.BadRequest(errors.New("invalid or expired challenge")), nil
+		}
+		return common.InternalServerError(errors.New("failed to complete registration")), nil
+	}
+
+	return common.OK(map[string]string{
+		"message": "passkey registered successfully",
+	}), nil
 }
 
 // methodNotAllowed returns a 405 Method Not Allowed response

@@ -41,48 +41,53 @@ func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGate
 		}, nil
 	}
 
-	// Validate password strength
-	if err := auth.ValidatePassword(req.Password, req.Username); err != nil {
-		errResp := map[string]interface{}{
-			"error": err.Error(),
+	// Handle password if provided (optional for WebAuthn registration)
+	var passwordHash string
+	if req.Password != "" {
+		// Validate password strength
+		if err := auth.ValidatePassword(req.Password, req.Username); err != nil {
+			errResp := map[string]interface{}{
+				"error": err.Error(),
+			}
+			body, _ := json.Marshal(errResp)
+			return &events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusUnprocessableEntity,
+				Headers:    common.Headers(),
+				Body:       string(body),
+			}, nil
 		}
-		body, _ := json.Marshal(errResp)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusUnprocessableEntity,
-			Headers:    common.Headers(),
-			Body:       string(body),
-		}, nil
-	}
 
-	// Check password strength
-	strength := auth.PasswordStrength(req.Password)
-	if strength < 3 {
-		hints := auth.GeneratePasswordHint(req.Password)
-		errResp := map[string]interface{}{
-			"error": fmt.Sprintf("Password is too weak (%s). Suggestions: %s",
-				auth.PasswordStrengthLabel(strength),
-				strings.Join(hints, ", ")),
+		// Check password strength
+		strength := auth.PasswordStrength(req.Password)
+		if strength < 3 {
+			hints := auth.GeneratePasswordHint(req.Password)
+			errResp := map[string]interface{}{
+				"error": fmt.Sprintf("Password is too weak (%s). Suggestions: %s",
+					auth.PasswordStrengthLabel(strength),
+					strings.Join(hints, ", ")),
+			}
+			body, _ := json.Marshal(errResp)
+			return &events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusUnprocessableEntity,
+				Headers:    common.Headers(),
+				Body:       string(body),
+			}, nil
 		}
-		body, _ := json.Marshal(errResp)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusUnprocessableEntity,
-			Headers:    common.Headers(),
-			Body:       string(body),
-		}, nil
-	}
 
-	// Hash password
-	passwordHash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		errResp := map[string]interface{}{
-			"error": err.Error(),
+		// Hash password
+		hash, err := auth.HashPassword(req.Password)
+		if err != nil {
+			errResp := map[string]interface{}{
+				"error": err.Error(),
+			}
+			body, _ := json.Marshal(errResp)
+			return &events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusUnprocessableEntity,
+				Headers:    common.Headers(),
+				Body:       string(body),
+			}, nil
 		}
-		body, _ := json.Marshal(errResp)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusUnprocessableEntity,
-			Headers:    common.Headers(),
-			Body:       string(body),
-		}, nil
+		passwordHash = hash
 	}
 
 	// Create user
@@ -356,13 +361,10 @@ func (h *Handler) HandleUpdateCredentials(ctx context.Context, request events.AP
 	}, nil
 }
 
-// HandleGetAccount retrieves account information by ID (username)
+// HandleGetAccount retrieves account information by ID (username or URL)
 func (h *Handler) HandleGetAccount(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
-	// In our implementation, account ID is the username
-	username := accountID
-
-	// Get the actor
-	actor, err := h.store.GetActor(ctx, username)
+	// Resolve account ID to actor
+	actor, err := h.resolveAccountID(ctx, accountID)
 	if err != nil {
 		return common.NotFound(fmt.Errorf("account not found")), nil
 	}
@@ -373,14 +375,14 @@ func (h *Handler) HandleGetAccount(ctx context.Context, request events.APIGatewa
 	statusesCount := 0
 
 	// Get followers count (approximate - just get first page)
-	followers, _, err := h.store.GetFollowers(ctx, username, 1, "")
+	followers, _, err := h.store.GetFollowers(ctx, actor.PreferredUsername, 1, "")
 	if err == nil && len(followers) > 0 {
 		// This is approximate - in production you'd want actual counts
 		followerCount = len(followers)
 	}
 
 	// Get following count
-	following, _, err := h.store.GetFollowing(ctx, username, 1, "")
+	following, _, err := h.store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
 	if err == nil && len(following) > 0 {
 		followingCount = len(following)
 	}
@@ -393,9 +395,9 @@ func (h *Handler) HandleGetAccount(ctx context.Context, request events.APIGatewa
 
 	// Convert to Mastodon account format
 	account := models.Account{
-		ID:             username,
-		Username:       username,
-		Acct:           username,
+		ID:             actor.PreferredUsername,
+		Username:       actor.PreferredUsername,
+		Acct:           actor.PreferredUsername,
 		DisplayName:    actor.Name,
 		Locked:         false, // TODO: Check actor.ManuallyApprovesFollowers
 		Bot:            false, // TODO: Check actor.Type
@@ -478,18 +480,15 @@ func (h *Handler) validateRegistrationRequest(req models.AccountRegistrationRequ
 		return err
 	}
 
-	// Validate email
-	if req.Email == "" {
-		return errors.New("email is required")
-	}
-	if _, err := mail.ParseAddress(req.Email); err != nil {
-		return errors.New("invalid email address")
+	// Validate email (optional for email-free auth)
+	if req.Email != "" {
+		if _, err := mail.ParseAddress(req.Email); err != nil {
+			return errors.New("invalid email address")
+		}
 	}
 
-	// Validate password
-	if req.Password == "" {
-		return errors.New("password is required")
-	}
+	// Validate password (optional for WebAuthn/passkey auth)
+	// Password is only required if not using alternative auth methods
 
 	// Validate agreement
 	if !req.Agreement {
