@@ -19,6 +19,7 @@ type FunctionPermissions struct {
 	AllowS3Write         bool
 	AllowAIServices      bool
 	AllowWebSocket       bool
+	AllowKMS             bool
 	CustomPolicies       []string
 }
 
@@ -28,15 +29,18 @@ var functionPermissionsMap = map[string]FunctionPermissions{
 		DynamoDBTables:  []string{"read", "write"}, // Main table access
 		DynamoDBIndices: []string{"query"},         // Query GSI indices
 		S3Buckets:       []string{"read"},          // Read media
+		AllowKMS:        true,                      // Encrypt/decrypt actor private keys
 	},
 	"auth": {
 		DynamoDBTables: []string{"read", "write"}, // User/session management
+		AllowKMS:       true,                      // Encrypt/decrypt actor private keys
 	},
 	"webfinger": {
 		DynamoDBTables: []string{"read"}, // Read actor info only
 	},
 	"actor": {
 		DynamoDBTables: []string{"read", "write"}, // Actor management
+		AllowKMS:       true,                      // Encrypt/decrypt actor private keys
 	},
 	"inbox": {
 		DynamoDBTables: []string{"read", "write"}, // Store activities
@@ -129,7 +133,7 @@ var functionPermissionsMap = map[string]FunctionPermissions{
 func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.StringOutput,
 	costTableArn pulumi.StringOutput, bucketArn pulumi.StringOutput,
 	federationQueueArn pulumi.StringOutput, pushQueueArn pulumi.StringOutput,
-	wsTableArns []pulumi.StringOutput) (*iam.Role, error) {
+	wsTableArns []pulumi.StringOutput, kmsKeyArn pulumi.StringOutput) (*iam.Role, error) {
 
 	// Create the base Lambda execution role
 	role, err := iam.NewRole(ctx, fmt.Sprintf("lesser-%s-role", functionName), &iam.RoleArgs{
@@ -427,6 +431,37 @@ func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.
 		}
 	}
 
+	// Add KMS permissions if needed
+	if perms.AllowKMS {
+		kmsPolicy := kmsKeyArn.ApplyT(func(arn string) (string, error) {
+			policy := map[string]interface{}{
+				"Version": "2012-10-17",
+				"Statement": []interface{}{
+					map[string]interface{}{
+						"Effect": "Allow",
+						"Action": []string{
+							"kms:Encrypt",
+							"kms:Decrypt",
+							"kms:GenerateDataKey",
+							"kms:DescribeKey",
+						},
+						"Resource": arn,
+					},
+				},
+			}
+			policyJSON, err := json.Marshal(policy)
+			return string(policyJSON), err
+		})
+
+		_, err = iam.NewRolePolicy(ctx, fmt.Sprintf("%s-kms", functionName), &iam.RolePolicyArgs{
+			Role:   role.Name,
+			Policy: kmsPolicy,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return role, nil
 }
 
@@ -435,11 +470,11 @@ func CreateLambdaWithRole(ctx *pulumi.Context, name string, handler string, time
 	tableArn pulumi.StringOutput, costTableArn pulumi.StringOutput,
 	bucketArn pulumi.StringOutput, federationQueueArn pulumi.StringOutput,
 	pushQueueArn pulumi.StringOutput, wsTableArns []pulumi.StringOutput,
-	lambdaEnv pulumi.StringMap) (*lambda.Function, error) {
+	kmsKeyArn pulumi.StringOutput, lambdaEnv pulumi.StringMap) (*lambda.Function, error) {
 
 	// Create role for this specific function
 	role, err := CreateLambdaRole(ctx, name, tableArn, costTableArn, bucketArn,
-		federationQueueArn, pushQueueArn, wsTableArns)
+		federationQueueArn, pushQueueArn, wsTableArns, kmsKeyArn)
 	if err != nil {
 		return nil, err
 	}

@@ -1446,6 +1446,8 @@ type WebAuthnCredential struct {
 	AAGUID          []byte    `dynamodbav:"aaguid"`
 	SignCount       uint32    `dynamodbav:"sign_count"`
 	CloneWarning    bool      `dynamodbav:"clone_warning"`
+	BackupEligible  bool      `dynamodbav:"backup_eligible"`
+	BackupState     bool      `dynamodbav:"backup_state"`
 	CreatedAt       time.Time `dynamodbav:"created_at"`
 	LastUsedAt      time.Time `dynamodbav:"last_used_at"`
 	Name            string    `dynamodbav:"name"` // User-friendly name

@@ -1,0 +1,26 @@
+{
+  "PK": {
+    "S": "USER#aron"
+  },
+  "SK": {
+    "S": "USER#aron"
+  },
+  "username": {
+    "S": "aron"
+  },
+  "created_at": {
+    "S": "2025-06-19T02:19:58.908Z"
+  },
+  "updated_at": {
+    "S": "2025-06-19T02:19:58.908Z"
+  },
+  "approved": {
+    "BOOL": true
+  },
+  "suspended": {
+    "BOOL": false
+  },
+  "role": {
+    "S": "admin"
+  }
+}

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -62,10 +64,6 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 		})
 	})
 
-	// Initialize CSRF manager
-	csrfStore := auth.NewMemoryCSRFStore()
-	csrfManager := auth.NewCSRFManager(csrfStore)
-	csrfMiddleware := auth.CSRFMiddleware(csrfManager)
 
 	// Convert auth middleware to chi middleware
 	authMiddlewareFunc := func(next http.Handler) http.Handler {
@@ -97,8 +95,7 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 		r.Post("/accounts", wrapHandler(h.HandleRegistration))
 
 		// Instance information
-		// TODO: Implement instance handlers
-		// r.Get("/instance", wrapHandler(h.HandleGetInstance))
+		r.Get("/instance", wrapHandler(h.HandleGetInstanceV1))
 		r.Get("/instance/activity", wrapHandler(h.HandleGetInstanceActivity))
 		r.Get("/instance/peers", wrapHandler(h.HandleGetInstancePeers))
 		// r.Get("/instance/rules", wrapHandler(h.HandleGetInstanceRules))
@@ -114,6 +111,27 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 
 		// Custom emojis
 		r.Get("/custom_emojis", wrapHandler(h.HandleGetCustomEmojis))
+		
+		// Streaming endpoints (SSE/WebSocket)
+		r.Get("/streaming/{stream}", func(w http.ResponseWriter, r *http.Request) {
+			streamType := chi.URLParam(r, "stream")
+			lambdaReq := httpToLambdaRequest(r)
+			resp, err := h.HandleSSEStream(r.Context(), lambdaReq, streamType)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeLambdaResponse(w, resp)
+		})
+		r.Get("/streaming", func(w http.ResponseWriter, r *http.Request) {
+			lambdaReq := httpToLambdaRequest(r)
+			resp, err := h.HandleSSEStream(r.Context(), lambdaReq)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeLambdaResponse(w, resp)
+		})
 	})
 
 	// Authenticated routes (read-only)
@@ -166,15 +184,10 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 		r.Get("/trends/links", wrapHandler(h.HandleGetTrendingLinks))
 	})
 
-	// Authenticated routes (write operations - need CSRF)
+	// Authenticated routes (write operations)
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddlewareFunc)
-		r.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(csrfMiddleware(next.ServeHTTP))
-		})
 
-		// CSRF token endpoint
-		r.Get("/auth/csrf", http.HandlerFunc(auth.GenerateCSRFTokenHandler(csrfManager)))
 
 		// Account updates
 		r.Patch("/accounts/update_credentials", wrapHandler(h.HandleUpdateCredentials))
@@ -242,9 +255,6 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 	// Admin routes (require admin role)
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddlewareFunc)
-		r.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(csrfMiddleware(next.ServeHTTP))
-		})
 		r.Use(requireAdminMiddleware)
 
 		r.Route("/admin", func(r chi.Router) {
@@ -258,8 +268,15 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 // wrapHandler converts Lambda handler to http.Handler
 func wrapHandler(fn func(context.Context, events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Convert http.Request to Lambda request
-		lambdaReq := httpToLambdaRequest(r)
+		// Try to get the original Lambda request from context
+		var lambdaReq events.APIGatewayV2HTTPRequest
+		if origReq, ok := r.Context().Value(lambdaRequestKey).(events.APIGatewayV2HTTPRequest); ok {
+			// Use the original Lambda request which has the correct body
+			lambdaReq = origReq
+		} else {
+			// Fallback to converting from HTTP request (for tests)
+			lambdaReq = httpToLambdaRequest(r)
+		}
 
 		// Call handler
 		resp, err := fn(r.Context(), lambdaReq)
@@ -279,8 +296,15 @@ func wrapHandlerWithParam(fn func(context.Context, events.APIGatewayV2HTTPReques
 		// Get parameter from chi context
 		paramValue := chi.URLParam(r, param)
 
-		// Convert http.Request to Lambda request
-		lambdaReq := httpToLambdaRequest(r)
+		// Try to get the original Lambda request from context
+		var lambdaReq events.APIGatewayV2HTTPRequest
+		if origReq, ok := r.Context().Value(lambdaRequestKey).(events.APIGatewayV2HTTPRequest); ok {
+			// Use the original Lambda request which has the correct body
+			lambdaReq = origReq
+		} else {
+			// Fallback to converting from HTTP request (for tests)
+			lambdaReq = httpToLambdaRequest(r)
+		}
 
 		// Call handler
 		resp, err := fn(r.Context(), lambdaReq, paramValue)
@@ -323,10 +347,13 @@ func httpToLambdaRequest(r *http.Request) events.APIGatewayV2HTTPRequest {
 
 	// Read body
 	body := ""
+	isBase64Encoded := false
 	if r.Body != nil {
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err == nil {
 			body = string(bodyBytes)
+			// Reset the body so it can be read again by handlers if needed
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 	}
 
@@ -334,6 +361,7 @@ func httpToLambdaRequest(r *http.Request) events.APIGatewayV2HTTPRequest {
 		Headers:               headers,
 		QueryStringParameters: queryParams,
 		Body:                  body,
+		IsBase64Encoded:       isBase64Encoded,
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
 			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
 				Method: r.Method,
@@ -361,9 +389,15 @@ func writeLambdaResponse(w http.ResponseWriter, resp *events.APIGatewayV2HTTPRes
 	}
 }
 
+// Context key for storing the original Lambda request
+type contextKey string
+
+const lambdaRequestKey contextKey = "lambdaRequest"
+
 // LambdaHandlerWithRouter creates a Lambda handler that uses the chi router
 func LambdaHandlerWithRouter(router *chi.Mux) func(context.Context, events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	return func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+
 		// Create http.Request from Lambda request
 		path := request.RequestContext.HTTP.Path
 
@@ -373,8 +407,29 @@ func LambdaHandlerWithRouter(router *chi.Mux) func(context.Context, events.APIGa
 			path = strings.TrimPrefix(path, stagePrefix)
 		}
 
+		// Decode body if base64 encoded
+		bodyReader := strings.NewReader(request.Body)
+		actualBody := request.Body
+		
+		// Try to detect base64 even if flag not set (API Gateway bug)
+		// Always try base64 decode if body looks like base64
+		if request.Body != "" {
+			// Try decoding regardless of flag
+			decodedBytes, err := base64.StdEncoding.DecodeString(request.Body)
+			if err == nil {
+				// Successfully decoded, use the decoded body
+				actualBody = string(decodedBytes)
+				bodyReader = strings.NewReader(actualBody)
+			}
+		}
+
+		// Store the original Lambda request in context with potentially decoded body
+		lambdaReqWithDecodedBody := request
+		lambdaReqWithDecodedBody.Body = actualBody
+		ctx = context.WithValue(ctx, lambdaRequestKey, lambdaReqWithDecodedBody)
+
 		// Create request
-		httpReq, err := http.NewRequestWithContext(ctx, request.RequestContext.HTTP.Method, path, strings.NewReader(request.Body))
+		httpReq, err := http.NewRequestWithContext(ctx, request.RequestContext.HTTP.Method, path, bodyReader)
 		if err != nil {
 			return common.InternalServerError(err), nil
 		}
@@ -410,3 +465,4 @@ func LambdaHandlerWithRouter(router *chi.Mux) func(context.Context, events.APIGa
 		}, nil
 	}
 }
+

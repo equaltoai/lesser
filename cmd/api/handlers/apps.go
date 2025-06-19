@@ -18,34 +18,33 @@ import (
 
 // HandleAppRegistration handles OAuth app registration requests
 func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	// Get content type
-	contentType := request.Headers["content-type"]
-	if contentType == "" {
-		contentType = request.Headers["Content-Type"]
+	// Get content type - check multiple variations
+	contentType := ""
+	for k, v := range request.Headers {
+		if strings.ToLower(k) == "content-type" {
+			contentType = v
+			break
+		}
 	}
+	
+	// Normalize content type to lowercase for comparison
+	contentTypeLower := strings.ToLower(contentType)
 
 	// Log the raw request for debugging
 	h.logger.Info("raw app registration request",
 		zap.String("content_type", contentType),
 		zap.Bool("is_base64_encoded", request.IsBase64Encoded),
 		zap.String("body", request.Body),
-		zap.Int("body_length", len(request.Body)))
+		zap.Int("body_length", len(request.Body)),
+		zap.Any("all_headers", request.Headers))
 
-	// Decode body if base64 encoded
+	// The body should already be decoded by the router if it was base64 encoded
 	body := request.Body
-	if request.IsBase64Encoded {
-		decodedBytes, err := base64.StdEncoding.DecodeString(request.Body)
-		if err != nil {
-			h.logger.Error("failed to decode base64 body", zap.Error(err))
-			return common.BadRequest(fmt.Errorf("failed to decode body: %w", err)), nil
-		}
-		body = string(decodedBytes)
-	}
 
 	var req models.AppRegistrationRequest
 
 	// Parse request based on content type
-	if strings.Contains(contentType, "multipart/form-data") {
+	if strings.Contains(contentTypeLower, "multipart/form-data") {
 		// Parse multipart form data (used by Mastodon clients like Ivory)
 		params, err := common.ParseMultipartForm(body, contentType)
 		if err != nil {
@@ -57,7 +56,7 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 		req.RedirectURIs = params["redirect_uris"]
 		req.Scopes = params["scopes"]
 		req.Website = params["website"]
-	} else if strings.Contains(contentType, "application/x-www-form-urlencoded") {
+	} else if strings.Contains(contentTypeLower, "application/x-www-form-urlencoded") {
 		// Parse URL-encoded form data
 		params, err := common.ParseFormURLEncoded(body)
 		if err != nil {
@@ -69,11 +68,39 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 		req.RedirectURIs = params["redirect_uris"]
 		req.Scopes = params["scopes"]
 		req.Website = params["website"]
+		
+		// Log parsed params for debugging
+		h.logger.Info("parsed form params",
+			zap.Any("params", params),
+			zap.String("client_name_from_params", params["client_name"]))
 	} else {
-		// Default to JSON for backward compatibility
-		if err := json.Unmarshal([]byte(body), &req); err != nil {
-			h.logger.Error("failed to parse JSON", zap.Error(err))
-			return common.BadRequest(err), nil
+		// First, try to parse as form data (common for browser-based requests)
+		params, formErr := common.ParseFormURLEncoded(body)
+		if formErr == nil && (params["client_name"] != "" || len(params) > 0) {
+			// Successfully parsed as form data
+			req.ClientName = params["client_name"]
+			req.RedirectURIs = params["redirect_uris"]
+			req.Scopes = params["scopes"]
+			req.Website = params["website"]
+			
+			h.logger.Info("parsed as form data (fallback)",
+				zap.Any("params", params),
+				zap.String("detected_content_type", "application/x-www-form-urlencoded"))
+		} else {
+			// Try JSON as last resort
+			var jsonReq models.AppRegistrationRequest
+			if jsonErr := json.Unmarshal([]byte(body), &jsonReq); jsonErr == nil && jsonReq.ClientName != "" {
+				req = jsonReq
+				h.logger.Info("parsed as JSON (fallback)",
+					zap.String("detected_content_type", "application/json"))
+			} else {
+				// Log both errors for debugging
+				h.logger.Error("failed to parse request body",
+					zap.Error(formErr),
+					zap.Error(jsonErr),
+					zap.String("body_preview", truncateString(body, 200)))
+				return common.BadRequest(fmt.Errorf("unable to parse request body as form data or JSON")), nil
+			}
 		}
 	}
 
@@ -181,6 +208,15 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 
 	return common.OK(resp), nil
 }
+
+// truncateString truncates a string to a maximum length
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
+}
+
 
 // HandleAppVerifyCredentials verifies OAuth app credentials
 func (h *Handler) HandleAppVerifyCredentials(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {

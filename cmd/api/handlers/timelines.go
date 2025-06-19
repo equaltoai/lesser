@@ -65,6 +65,11 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 		h.logger.Error("failed to get home timeline", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
+	
+	h.logger.Info("timeline entries fetched",
+		zap.String("username", claims.Username),
+		zap.Int("count", len(entries)),
+		zap.String("cursor", cursor))
 
 	// Convert objects to statuses
 	statuses := []models.Status{}
@@ -75,6 +80,10 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 			h.logger.Warn("failed to get object from timeline", zap.String("id", entry.PostID), zap.Error(err))
 			continue
 		}
+		
+		h.logger.Debug("fetched object from timeline",
+			zap.String("post_id", entry.PostID),
+			zap.Any("object_type", fmt.Sprintf("%T", obj)))
 
 		// Get the actor who created the object
 		var attributedTo string
@@ -98,6 +107,11 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 		}
 
 		status := h.converter.ObjectToStatus(obj, objActor)
+		
+		h.logger.Debug("converted to status",
+			zap.String("status_id", status.ID),
+			zap.String("content", status.Content),
+			zap.String("created_at", status.CreatedAt))
 
 		// Check if blocked
 		if objActor != nil {

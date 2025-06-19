@@ -49,6 +49,8 @@ See TODO comments throughout this file for specific endpoints that need implemen
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -95,6 +97,34 @@ func init() {
 }
 
 func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Log POST /statuses requests for debugging
+	if request.RequestContext.HTTP.Method == "POST" && strings.Contains(request.RequestContext.HTTP.Path, "statuses") {
+		logger.Info("lambdaHandler received POST /statuses",
+			zap.String("body", request.Body),
+			zap.Bool("is_base64", request.IsBase64Encoded),
+			zap.Any("headers", request.Headers),
+			zap.Int("body_length", len(request.Body)),
+			zap.Any("request_context", request.RequestContext),
+			zap.Any("raw_path", request.RawPath),
+			zap.Any("raw_query", request.RawQueryString))
+		
+		// Log the entire request struct for debugging
+		requestJSON, _ := json.Marshal(request)
+		logger.Info("Full request JSON", zap.String("request", string(requestJSON)))
+		
+		// Try base64 decode even if flag is false
+		if request.Body != "" {
+			decoded, err := base64.StdEncoding.DecodeString(request.Body)
+			if err == nil {
+				logger.Info("Base64 decode succeeded",
+					zap.String("decoded", string(decoded)))
+			} else {
+				logger.Info("Base64 decode failed",
+					zap.Error(err))
+			}
+		}
+	}
+	
 	// Create chi router
 	router := NewRouter(handler, *authMiddleware, logger)
 
@@ -1250,7 +1280,15 @@ func handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 		return handler.HandleCreateReport(ctx, request)
 	}
 
-	// Streaming API endpoints
+	// Streaming API endpoints (Mastodon-compatible)
+	// Note: These are SSE endpoints that Mastodon clients expect
+	if strings.HasPrefix(path, "/streaming/") && method == http.MethodGet {
+		// Handle all streaming endpoints with the same handler
+		// The handler will parse the specific stream type from the path
+		return handler.HandleSSEStream(ctx, request)
+	}
+	
+	// Legacy streaming endpoint
 	if path == "/streaming/events" && method == http.MethodGet {
 		return handler.HandleSSEStream(ctx, request)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 )
 
@@ -207,4 +208,12 @@ func ParseActivityPubObject(body []byte, v interface{}) error {
 func ParseHTTPResponse(r io.Reader, v interface{}) error {
 	decoder := NewSafeJSONDecoder(r)
 	return decoder.Decode(v)
+}
+
+// ParseFormValues parses URL-encoded form data
+func ParseFormValues(body string) (url.Values, error) {
+	if body == "" {
+		return url.Values{}, fmt.Errorf("empty form body")
+	}
+	return url.ParseQuery(body)
 }

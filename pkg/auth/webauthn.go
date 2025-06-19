@@ -181,6 +181,8 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 		AAGUID:          credential.Authenticator.AAGUID,
 		SignCount:       credential.Authenticator.SignCount,
 		CloneWarning:    credential.Authenticator.CloneWarning,
+		BackupEligible:  credential.Flags.BackupEligible,
+		BackupState:     credential.Flags.BackupState,
 		CreatedAt:       time.Now(),
 		LastUsedAt:      time.Now(),
 		Name:            credentialName,
@@ -310,9 +312,10 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 		return nil, ErrCredentialNotFound
 	}
 
-	// Update credential sign count and last used time
+	// Update credential sign count, backup state, and last used time
 	usedCredential.SignCount = credential.Authenticator.SignCount
 	usedCredential.CloneWarning = credential.Authenticator.CloneWarning
+	usedCredential.BackupState = credential.Flags.BackupState
 	usedCredential.LastUsedAt = time.Now()
 
 	if err := s.storage.UpdateWebAuthnCredential(ctx, usedCredential); err != nil {
@@ -414,6 +417,12 @@ func ToWebAuthnCredential(c *storage.WebAuthnCredential) *webauthn.Credential {
 		ID:              credID,
 		PublicKey:       c.PublicKey,
 		AttestationType: c.AttestationType,
+		Flags: webauthn.CredentialFlags{
+			UserPresent:    true, // Always true for WebAuthn
+			UserVerified:   true, // We require user verification
+			BackupEligible: c.BackupEligible,
+			BackupState:    c.BackupState,
+		},
 		Authenticator: webauthn.Authenticator{
 			AAGUID:       c.AAGUID,
 			SignCount:    c.SignCount,

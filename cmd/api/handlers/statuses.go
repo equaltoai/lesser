@@ -49,10 +49,61 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		return common.Forbidden(errors.New("insufficient scope")), nil
 	}
 
-	// Parse request
+	// The body should already be decoded by the router if it was base64 encoded
+	body := request.Body
+
+	// Check content type for form data
+	contentType := request.Headers["content-type"]
+	if contentType == "" {
+		contentType = request.Headers["Content-Type"]
+	}
+
 	var req models.CreateStatusRequest
-	if err := common.ParseRequestBody([]byte(request.Body), &req); err != nil {
-		return common.BadRequest(err), nil
+	
+	// Handle form data
+	if strings.Contains(contentType, "application/x-www-form-urlencoded") {
+		// Parse form data
+		values, err := common.ParseFormValues(body)
+		if err != nil {
+			h.logger.Error("failed to parse form data",
+				zap.Error(err),
+				zap.String("body", body))
+			return common.BadRequest(fmt.Errorf("invalid form data: %w", err)), nil
+		}
+		
+		// Map form fields to request struct
+		req.Status = values.Get("status")
+		req.InReplyToID = values.Get("in_reply_to_id")
+		req.Visibility = values.Get("visibility")
+		req.Sensitive = values.Get("sensitive") == "true"
+		req.SpoilerText = values.Get("spoiler_text")
+		req.Language = values.Get("language")
+		
+		// Handle media IDs
+		if mediaIDs := values.Get("media_ids[]"); mediaIDs != "" {
+			req.MediaIDs = strings.Split(mediaIDs, ",")
+		}
+		
+		// Handle poll
+		if values.Get("poll[options][]") != "" {
+			// TODO: Implement poll parsing
+		}
+		
+		// Handle scheduled_at
+		if scheduledAt := values.Get("scheduled_at"); scheduledAt != "" {
+			req.ScheduledAt = &scheduledAt
+		}
+	} else {
+		// Parse as JSON
+		if err := common.ParseRequestBody([]byte(body), &req); err != nil {
+			h.logger.Error("failed to parse create status request",
+				zap.Error(err),
+				zap.String("body", body),
+				zap.String("original_body", request.Body),
+				zap.Bool("is_base64", request.IsBase64Encoded),
+				zap.String("content_type", contentType))
+			return common.BadRequest(fmt.Errorf("invalid request format: %w", err)), nil
+		}
 	}
 
 	// Validate content
@@ -372,13 +423,13 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		// TODO: Extract account ID from the replied-to status
 	}
 
-	body, _ := json.Marshal(resp)
+	respBody, _ := json.Marshal(resp)
 	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusCreated,
 		Headers: map[string]string{
 			"Content-Type": "application/json",
 		},
-		Body: string(body),
+		Body: string(respBody),
 	}, nil
 }
 
@@ -1386,11 +1437,8 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 
 // HandleGetAccountStatuses retrieves statuses for a specific account
 func (h *Handler) HandleGetAccountStatuses(ctx context.Context, request events.APIGatewayV2HTTPRequest, accountID string) (*events.APIGatewayV2HTTPResponse, error) {
-	// In our implementation, account ID is the username
-	username := accountID
-
-	// Get the actor
-	actor, err := h.store.GetActor(ctx, username)
+	// Resolve account ID to actor
+	actor, err := h.resolveAccountID(ctx, accountID)
 	if err != nil {
 		return common.NotFound(fmt.Errorf("account not found")), nil
 	}

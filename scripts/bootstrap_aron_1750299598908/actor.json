@@ -1,0 +1,90 @@
+{
+  "PK": {
+    "S": "ACTOR#aron"
+  },
+  "SK": {
+    "S": "PROFILE"
+  },
+  "Actor": {
+    "M": {
+      "@context": {
+        "L": [
+          {
+            "S": "https://www.w3.org/ns/activitystreams"
+          },
+          {
+            "S": "https://w3id.org/security/v1"
+          }
+        ]
+      },
+      "type": {
+        "S": "Person"
+      },
+      "id": {
+        "S": "https://lesser.host/users/aron"
+      },
+      "inbox": {
+        "S": "https://lesser.host/users/aron/inbox"
+      },
+      "outbox": {
+        "S": "https://lesser.host/users/aron/outbox"
+      },
+      "following": {
+        "S": "https://lesser.host/users/aron/following"
+      },
+      "followers": {
+        "S": "https://lesser.host/users/aron/followers"
+      },
+      "liked": {
+        "S": "https://lesser.host/users/aron/liked"
+      },
+      "preferredUsername": {
+        "S": "aron"
+      },
+      "name": {
+        "S": "aron"
+      },
+      "summary": {
+        "S": "Administrator account"
+      },
+      "url": {
+        "S": "https://lesser.host/@aron"
+      },
+      "manuallyApprovesFollowers": {
+        "BOOL": false
+      },
+      "discoverable": {
+        "BOOL": true
+      },
+      "publicKey": {
+        "M": {
+          "id": {
+            "S": "https://lesser.host/users/aron#main-key"
+          },
+          "owner": {
+            "S": "https://lesser.host/users/aron"
+          },
+          "publicKeyPem": {
+            "S": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4p7VsK/ZIvXA2wd5ASSj\njj9A9nGTvLm9Md+0scQiy+nj3HBQR2KuVe7SNaSAdyqPCV774/w2zWGbLP89ZWkr\niJ+8q4yWIgFpA7735aHX6xz/1h/DjWWX5l8oIKA1Nt0vbgbodpWPMjJJ3BPoF7Y2\nCLPWkQTF+dF2Tzq/yfVkh5uUoXRVO97NqoXVnfGLvwY/fY8EyJKzf8pyhbW3f0f5\nQwwdCFp8KwnbHGOM+Ge8nxtT07+170VH6NYLJCg57eA0RjPANzgoLOeYCbMt/OFV\n2Jucq1oXkek3fEVMS7KnHxJaAek5ZmP165zrT2bwPzko6g9ZUXp9mGkaepeo03tL\nsQIDAQAB\n-----END PUBLIC KEY-----\n"
+          }
+        }
+      },
+      "endpoints": {
+        "M": {
+          "sharedInbox": {
+            "S": "https://lesser.host/inbox"
+          }
+        }
+      }
+    }
+  },
+  "PrivateKey": {
+    "S": "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA4p7VsK/ZIvXA2wd5ASSjjj9A9nGTvLm9Md+0scQiy+nj3HBQ\nR2KuVe7SNaSAdyqPCV774/w2zWGbLP89ZWkriJ+8q4yWIgFpA7735aHX6xz/1h/D\njWWX5l8oIKA1Nt0vbgbodpWPMjJJ3BPoF7Y2CLPWkQTF+dF2Tzq/yfVkh5uUoXRV\nO97NqoXVnfGLvwY/fY8EyJKzf8pyhbW3f0f5QwwdCFp8KwnbHGOM+Ge8nxtT07+1\n70VH6NYLJCg57eA0RjPANzgoLOeYCbMt/OFV2Jucq1oXkek3fEVMS7KnHxJaAek5\nZmP165zrT2bwPzko6g9ZUXp9mGkaepeo03tLsQIDAQABAoIBAATgm0PGvRsiA+kS\n45lRMw30MY88SYw1ySsiH+71hDQ0T/mmFyw6JPtnfPG3nSYzbcmrWCuDeaB4+dCB\nm84rccrqeTKN/4sy0ZJJkWdJUO7X/G+c1mYcKiVEpgXxvMN2BjfNgUJQHLldWLaa\nXRPpkYcla7hKTIKAbhXtc0RC+ktq1OoU13gAwFcLWJCfqCV9wlJx5a+dCmU7L1VJ\n/0SsmwFqOSITlPJx0qTXa2RB8T6r47aaD+vFaJomdSi3CSGxAT+tWQ6aUEzpo9gC\nUVWDT8Tj+t3V8dowDtOfoxnrfOIbvSnpM8e5AsvRUtZxO/bqEJstPEd9dzcdKWtG\nvvD/7WMCgYEA/TO0WI0aIRMRnEgMj9LgjgMH+JUhEMP47A6pxqc6U6BCaVezej3R\n6pn4KM7pS6UitAeXsMeCttloYyEprKGXVzsyj4k25DehYHJwJYIPimgdAGNqKypI\ndJeOn/+Rim0lykp3fCtZGXmKuQpKa7sVI7J3p84oYAHLmz9nioR+wzMCgYEA5R/u\ntpAONWLJU2K9jOkrcbyNYFKHgRuLAJ3TqqooYpHGygznby6whwfOt8ywWi2VGDi7\nTMkkDY5Ie/e0zTvs2xqvvym3xvUDShOOp5d4LN21vRMQvXbMlwd6Azk803Gm/8Nb\nSi0DsEhOJw9I6Qm3ZC+56dOWl8+3ztQRfy7LdYsCgYEAto3XwlyBcUVBVi8wN2Xw\nFxOiZJyIyYCx8Oglih+50t9h4nej5Ee8GGxIWovL8okuOySaPo+p89FODOK1HE0p\nQ3Bf5NMma2aciGAZ8UETmVO1TTlgK50BvmYjI8JsmaRWMcJ84V6Tj+VsmjsMKx4o\ngKNE2AywWYAR323YZitfBbcCgYEAycc0X3w/tw4XRKL5UQXq54/oZUJo6O9Lm7Bi\nPrL5O80rZra0ffp9JX1ftAfD6ranzZvwfq/IW1PJS7sac39pmI9I5K2llcYiLnNI\ntxiykbhym18V5/SeOgcwkXQvt/on2qe9VnaMAAu9H7LbP7b51XYeYOigf3NDaRbj\njcC1Fv8CgYEAtAjZzZoOxpPCZSJ1SKkuqOKUU7TaZGMVETsZuZgVGmp60L+Ghoer\nHwfEZ05v3WTkfN3vz5FFBgqGhOWr42h4xwSWWEf8Y5WVCrQ/Gt5+8oP58JOJjfUt\nqvs6tdlq9BTYOOIfqfA/F5nQaNl9M59if9W+TgUpaS7lCGIuxKN/XRA=\n-----END RSA PRIVATE KEY-----\n"
+  },
+  "CreatedAt": {
+    "S": "2025-06-19T02:19:58.908Z"
+  },
+  "UpdatedAt": {
+    "S": "2025-06-19T02:19:58.908Z"
+  }
+}

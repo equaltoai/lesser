@@ -1,0 +1,131 @@
+timestamp,message,logStreamName
+1750363019844,"INIT_START Runtime Version: provided:al2.v116	Runtime Version ARN: arn:aws:lambda:us-east-1::runtime:79c6cb68b9795cc440a0a014211e54bcf20eabe43ab99b883277bed4b07cb712
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363019975,"{""level"":""info"",""timestamp"":""2025-06-19T19:56:59.973Z"",""caller"":""dynamodb/client.go:87"",""msg"":""DynamoDB client initialized with cost tracking"",""region"":""us-east-1""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020042,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:00.042Z"",""caller"":""auth/main.go:71"",""msg"":""creating default OAuth client"",""client_id"":""lesser-web"",""redirect_uri"":""https://lesser.host/auth/callback""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020048,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:00.048Z"",""caller"":""auth/main.go:84"",""msg"":""created default OAuth client successfully""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020050,"START RequestId: 408b8558-75c6-47f1-b34d-d0325903cb67 Version: $LATEST
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020051,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:00.051Z"",""caller"":""auth/main.go:168"",""msg"":""OAuth request"",""raw_path"":""/lab/oauth/authorize"",""path"":""/oauth/authorize"",""method"":""GET"",""stage"":""lab"",""path_parameters"":null,""request_context_path"":""/lab/oauth/authorize""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020051,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:00.051Z"",""caller"":""auth/main.go:209"",""msg"":""raw authorize request details"",""query_params"":{""client_id"":""eoARFZCtsF7Maw92TMHgCA=="",""code_challenge"":""pXYUiUsNiXKNapX8rwE_rvjr2AK2V3QvPzbJNRO5Tn8"",""code_challenge_method"":""S256"",""redirect_uri"":""https://dev.greater.website/auth/callback"",""response_type"":""code"",""scope"":""read write follow push"",""state"":""7e21d97bfbe5478bf13a14f6259cbbd36dd5f9cd0e595b995d77ad7e2c361a12""},""raw_query_string"":""client_id=eoARFZCtsF7Maw92TMHgCA%3D%3D&response_type=code&redirect_uri=https%3A%2F%2Fdev.greater.website%2Fauth%2Fcallback&scope=read+write+follow+push&code_challenge=pXYUiUsNiXKNapX8rwE_rvjr2AK2V3QvPzbJNRO5Tn8&code_challenge_method=S256&state=7e21d97bfbe5478bf13a14f6259cbbd36dd5f9cd0e595b995d77ad7e2c361a12"",""raw_path"":""/lab/oauth/authorize""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020051,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:00.051Z"",""caller"":""auth/main.go:229"",""msg"":""parsed OAuth authorize request"",""response_type"":""code"",""client_id"":""eoARFZCtsF7Maw92TMHgCA=="",""redirect_uri"":""https://dev.greater.website/auth/callback"",""state"":""7e21d97bfbe5478bf13a14f6259cbbd36dd5f9cd0e595b995d77ad7e2c361a12"",""code_challenge"":""pXYUiUsNiXKNapX8rwE_rvjr2AK2V3QvPzbJNRO5Tn8"",""scope"":""read write follow push"",""all_params"":{""client_id"":""eoARFZCtsF7Maw92TMHgCA=="",""code_challenge"":""pXYUiUsNiXKNapX8rwE_rvjr2AK2V3QvPzbJNRO5Tn8"",""code_challenge_method"":""S256"",""redirect_uri"":""https://dev.greater.website/auth/callback"",""response_type"":""code"",""scope"":""read write follow push"",""state"":""7e21d97bfbe5478bf13a14f6259cbbd36dd5f9cd0e595b995d77ad7e2c361a12""}}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020051,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:00.051Z"",""caller"":""auth/main.go:368"",""msg"":""validating client and redirect URI"",""client_id"":""eoARFZCtsF7Maw92TMHgCA=="",""redirect_uri"":""https://dev.greater.website/auth/callback""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020054,"ValidateRedirectURI - Client eoARFZCtsF7Maw92TMHgCA== registered URIs: [https://dev.greater.website/auth/callback]
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020054,"ValidateRedirectURI - Requested URI: https://dev.greater.website/auth/callback
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020055,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:00.054Z"",""caller"":""auth/main.go:384"",""msg"":""PKCE enabled"",""code_challenge_method"":""S256""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020055,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:00.054Z"",""caller"":""auth/main.go:398"",""msg"":""rendering login page"",""client_id"":""eoARFZCtsF7Maw92TMHgCA=="",""redirect_uri"":""https://dev.greater.website/auth/callback""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020058,"END RequestId: 408b8558-75c6-47f1-b34d-d0325903cb67
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363020058,"REPORT RequestId: 408b8558-75c6-47f1-b34d-d0325903cb67	Duration: 7.42 ms	Billed Duration: 214 ms	Memory Size: 3008 MB	Max Memory Used: 44 MB	Init Duration: 205.61 ms	
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363022542,"START RequestId: c5eceb15-0889-4660-9f28-015dc7de1461 Version: $LATEST
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363022543,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:02.543Z"",""caller"":""auth/main.go:168"",""msg"":""OAuth request"",""raw_path"":""/lab/oauth/register"",""path"":""/oauth/register"",""method"":""GET"",""stage"":""lab"",""path_parameters"":null,""request_context_path"":""/lab/oauth/register""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363022544,"END RequestId: c5eceb15-0889-4660-9f28-015dc7de1461
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363022544,"REPORT RequestId: c5eceb15-0889-4660-9f28-015dc7de1461	Duration: 1.28 ms	Billed Duration: 2 ms	Memory Size: 3008 MB	Max Memory Used: 45 MB	
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363026191,"START RequestId: c310c39b-1d5e-4622-bcca-36ed463f5081 Version: $LATEST
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363026191,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:06.191Z"",""caller"":""auth/main.go:168"",""msg"":""OAuth request"",""raw_path"":""/lab/oauth/accounts"",""path"":""/oauth/accounts"",""method"":""POST"",""stage"":""lab"",""path_parameters"":null,""request_context_path"":""/lab/oauth/accounts""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363026661,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:06.661Z"",""caller"":""dynamodb/actor.go:194"",""msg"":""actor created successfully"",""request_id"":""c310c39b-1d5e-4622-bcca-36ed463f5081"",""function_name"":""lesser-auth-2f165c6"",""function_version"":""$LATEST"",""username"":""aron"",""actor_id"":""https://lesser.host/users/aron""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363026662,"END RequestId: c310c39b-1d5e-4622-bcca-36ed463f5081
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363026662,"REPORT RequestId: c310c39b-1d5e-4622-bcca-36ed463f5081	Duration: 471.24 ms	Billed Duration: 472 ms	Memory Size: 3008 MB	Max Memory Used: 45 MB	
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363028192,"START RequestId: 25ff746c-09d7-47de-aec3-98c7c3b2bcfe Version: $LATEST
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363028193,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:08.193Z"",""caller"":""auth/main.go:168"",""msg"":""OAuth request"",""raw_path"":""/lab/auth/webauthn/register/begin"",""path"":""/auth/webauthn/register/begin"",""method"":""POST"",""stage"":""lab"",""path_parameters"":null,""request_context_path"":""/lab/auth/webauthn/register/begin""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363028203,"END RequestId: 25ff746c-09d7-47de-aec3-98c7c3b2bcfe
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363028203,"REPORT RequestId: 25ff746c-09d7-47de-aec3-98c7c3b2bcfe	Duration: 11.06 ms	Billed Duration: 12 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363032875,"START RequestId: edff94cd-d3e1-4e37-87e3-114bafe1ac00 Version: $LATEST
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363032875,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:12.875Z"",""caller"":""auth/main.go:168"",""msg"":""OAuth request"",""raw_path"":""/lab/auth/webauthn/register/finish"",""path"":""/auth/webauthn/register/finish"",""method"":""POST"",""stage"":""lab"",""path_parameters"":null,""request_context_path"":""/lab/auth/webauthn/register/finish""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363032915,"END RequestId: edff94cd-d3e1-4e37-87e3-114bafe1ac00
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363032916,"REPORT RequestId: edff94cd-d3e1-4e37-87e3-114bafe1ac00	Duration: 40.80 ms	Billed Duration: 41 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035020,"START RequestId: 63b24d79-efb3-41f0-9a4a-cfcb80c704ea Version: $LATEST
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035020,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:15.020Z"",""caller"":""auth/main.go:168"",""msg"":""OAuth request"",""raw_path"":""/lab/oauth/authorize"",""path"":""/oauth/authorize"",""method"":""GET"",""stage"":""lab"",""path_parameters"":null,""request_context_path"":""/lab/oauth/authorize""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035020,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:15.020Z"",""caller"":""auth/main.go:209"",""msg"":""raw authorize request details"",""query_params"":{""client_id"":""lesser-web"",""redirect_uri"":""https://lesser.host/auth/callback"",""response_type"":""code"",""scope"":""read write follow push"",""state"":""jg8s8i""},""raw_query_string"":""response_type=code&client_id=lesser-web&redirect_uri=https%3A%2F%2Flesser.host%2Fauth%2Fcallback&scope=read+write+follow+push&state=jg8s8i"",""raw_path"":""/lab/oauth/authorize""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035020,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:15.020Z"",""caller"":""auth/main.go:229"",""msg"":""parsed OAuth authorize request"",""response_type"":""code"",""client_id"":""lesser-web"",""redirect_uri"":""https://lesser.host/auth/callback"",""state"":""jg8s8i"",""code_challenge"":"""",""scope"":""read write follow push"",""all_params"":{""client_id"":""lesser-web"",""redirect_uri"":""https://lesser.host/auth/callback"",""response_type"":""code"",""scope"":""read write follow push"",""state"":""jg8s8i""}}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035020,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:15.020Z"",""caller"":""auth/main.go:368"",""msg"":""validating client and redirect URI"",""client_id"":""lesser-web"",""redirect_uri"":""https://lesser.host/auth/callback""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035023,"ValidateRedirectURI - Client lesser-web registered URIs: [https://lesser.host/auth/callback]
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035023,"ValidateRedirectURI - Requested URI: https://lesser.host/auth/callback
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035023,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:15.023Z"",""caller"":""auth/main.go:382"",""msg"":""PKCE not used for this request""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035023,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:15.023Z"",""caller"":""auth/main.go:398"",""msg"":""rendering login page"",""client_id"":""lesser-web"",""redirect_uri"":""https://lesser.host/auth/callback""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035024,"END RequestId: 63b24d79-efb3-41f0-9a4a-cfcb80c704ea
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363035024,"REPORT RequestId: 63b24d79-efb3-41f0-9a4a-cfcb80c704ea	Duration: 4.32 ms	Billed Duration: 5 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363037146,"START RequestId: 83490964-f4b0-453c-87ca-0050f31208e2 Version: $LATEST
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363037147,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:17.147Z"",""caller"":""auth/main.go:168"",""msg"":""OAuth request"",""raw_path"":""/lab/auth/webauthn/login/begin"",""path"":""/auth/webauthn/login/begin"",""method"":""POST"",""stage"":""lab"",""path_parameters"":null,""request_context_path"":""/lab/auth/webauthn/login/begin""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363037153,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:17.153Z"",""caller"":""auth/main.go:2156"",""msg"":""WebAuthn login begin successful"",""username"":""aron"",""challenge"":""G6EP3hY8hF4IpYIHSJHkNohVBMfqy-PsrBGYOoMNrps""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363037153,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:17.153Z"",""caller"":""auth/main.go:2162"",""msg"":""WebAuthn options structure"",""options"":""{\""publicKey\"":{\""challenge\"":\""G6EP3hY8hF4IpYIHSJHkNohVBMfqy-PsrBGYOoMNrps\"",\""timeout\"":300000,\""rpId\"":\""lesser.host\"",\""allowCredentials\"":[{\""type\"":\""public-key\"",\""id\"":\""naLQk_lUGvJ1JMfllruEHzSD57E\""}]}}""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363037155,"END RequestId: 83490964-f4b0-453c-87ca-0050f31208e2
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363037155,"REPORT RequestId: 83490964-f4b0-453c-87ca-0050f31208e2	Duration: 8.76 ms	Billed Duration: 9 ms	Memory Size: 3008 MB	Max Memory Used: 47 MB	
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041770,"START RequestId: ed157e9f-b9d1-4ad8-a1f7-dd678bf019cf Version: $LATEST
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041770,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.770Z"",""caller"":""auth/main.go:168"",""msg"":""OAuth request"",""raw_path"":""/lab/oauth/authorize"",""path"":""/oauth/authorize"",""method"":""POST"",""stage"":""lab"",""path_parameters"":null,""request_context_path"":""/lab/oauth/authorize""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041770,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.770Z"",""caller"":""auth/main.go:209"",""msg"":""raw authorize request details"",""query_params"":null,""raw_query_string"":"""",""raw_path"":""/lab/oauth/authorize""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041771,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.770Z"",""caller"":""auth/main.go:263"",""msg"":""processing POST request"",""content_type"":""application/x-www-form-urlencoded"",""is_base64"":true,""body"":""response_type=code&client_id=lesser-web&redirect_uri=https%3A%2F%2Flesser.host%2Fauth%2Fcallback&state=jg8s8i&code_challenge=&code_challenge_method=&scope=read+write+follow+push&username=aron&webauthn_response=%7B%22challenge%22%3A%22G6EP3hY8hF4IpYIHSJHkNohVBMfqy-PsrBGYOoMNrps%22%2C%22credential%22%3A%7B%22id%22%3A%22naLQk_lUGvJ1JMfllruEHzSD57E%22%2C%22rawId%22%3A%22naLQk_lUGvJ1JMfllruEHzSD57E%22%2C%22type%22%3A%22public-key%22%2C%22response%22%3A%7B%22clientDataJSON%22%3A%22eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRzZFUDNoWThoRjRJcFlJSFNKSGtOb2hWQk1mcXktUHNyQkdZT29NTnJwcyIsIm9yaWdpbiI6Imh0dHBzOi8vbGVzc2VyLmhvc3QiLCJjcm9zc09yaWdpbiI6ZmFsc2V9%22%2C%22authenticatorData%22%3A%22YiIFY95SbVVrHXlpIXUODRABkOVEMRxbjqbgcfwGh24dAAAAAA%22%2C%22signature%22%3A%22MEQCIGmBgquNrCv24xy0Xr_vkfaW9GKigsp0L0izJVnoJJzhAiBgK1OWWqRTDPaEr8L2u2Y5rfF3W9g3IUnz4imqebDsTQ%22%2C%22userHandle%22%3A%22YXJvbg%22%7D%7D%7D""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041771,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.771Z"",""caller"":""auth/main.go:296"",""msg"":""handling WebAuthn authentication"",""username"":""aron""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041771,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.771Z"",""caller"":""auth/main.go:443"",""msg"":""validating WebAuthn credentials"",""username"":""aron""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041788,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.788Z"",""caller"":""auth/main.go:478"",""msg"":""WebAuthn authentication successful"",""username"":""aron""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041788,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.788Z"",""caller"":""auth/main.go:335"",""msg"":""login successful, completing authorization"",""username"":""aron"",""client_id"":""lesser-web""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041788,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.788Z"",""caller"":""auth/main.go:486"",""msg"":""starting authorization completion"",""username"":""aron"",""client_id"":""lesser-web""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041788,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.788Z"",""caller"":""auth/main.go:497"",""msg"":""generating authorization code""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041788,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.788Z"",""caller"":""auth/main.go:503"",""msg"":""authorization code generated"",""code"":""jPZagI5ePTFNmBEueDI8h1ywK0lgrmHzgovZ_L8TU6g=""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041788,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.788Z"",""caller"":""auth/main.go:515"",""msg"":""storing authorization code in DynamoDB""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041793,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.793Z"",""caller"":""auth/main.go:520"",""msg"":""authorization code stored successfully""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041793,"{""level"":""info"",""timestamp"":""2025-06-19T19:57:21.793Z"",""caller"":""auth/main.go:531"",""msg"":""redirecting with authorization code"",""redirect_url"":""https://lesser.host/auth/callback?code=jPZagI5ePTFNmBEueDI8h1ywK0lgrmHzgovZ_L8TU6g%3D&state=jg8s8i""}
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041794,"END RequestId: ed157e9f-b9d1-4ad8-a1f7-dd678bf019cf
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386
+1750363041794,"REPORT RequestId: ed157e9f-b9d1-4ad8-a1f7-dd678bf019cf	Duration: 24.34 ms	Billed Duration: 25 ms	Memory Size: 3008 MB	Max Memory Used: 49 MB	
+",2025/06/19/[$LATEST]f5138c9290c44f0583ac9bc8b5dcc386

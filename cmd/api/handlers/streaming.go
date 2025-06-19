@@ -9,6 +9,7 @@ import (
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
+	"go.uber.org/zap"
 )
 
 // SSE event structure that matches Mastodon's format
@@ -19,8 +20,10 @@ type SSEEvent struct {
 
 // HandleSSEStream handles Server-Sent Events streaming
 // This provides an alternative to WebSocket for clients that prefer SSE
-func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	h.logger.Info("HandleSSEStream called")
+func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGatewayV2HTTPRequest, streamParam ...string) (*events.APIGatewayV2HTTPResponse, error) {
+	h.logger.Info("HandleSSEStream called", 
+		zap.String("path", request.RequestContext.HTTP.Path),
+		zap.Any("query_params", request.QueryStringParameters))
 
 	// Extract access token from query parameters or Authorization header
 	token := request.QueryStringParameters["access_token"]
@@ -43,10 +46,29 @@ func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGateway
 		return common.Unauthorized(err), nil
 	}
 
-	// Extract stream type from query parameters
-	stream := request.QueryStringParameters["stream"]
+	// Extract stream type from route parameter, path, or query parameters
+	stream := ""
+	
+	// First check if stream was passed as a route parameter
+	if len(streamParam) > 0 && streamParam[0] != "" {
+		stream = streamParam[0]
+	} else {
+		// Parse stream type from path like /api/v1/streaming/user or /streaming/user
+		path := request.RequestContext.HTTP.Path
+		if strings.Contains(path, "/streaming/") {
+			parts := strings.Split(path, "/streaming/")
+			if len(parts) > 1 {
+				stream = parts[1]
+			}
+		}
+	}
+	
+	// Fall back to query parameter if not found
 	if stream == "" {
-		stream = "user" // Default to user stream
+		stream = request.QueryStringParameters["stream"]
+		if stream == "" {
+			stream = "user" // Default to user stream
+		}
 	}
 
 	// Validate stream type
@@ -71,29 +93,45 @@ func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGateway
 		}
 	}
 
-	// For Lambda, we can't actually maintain a long-lived connection
-	// This is a limitation of Lambda + API Gateway
-	// In a real SSE implementation, you'd need:
-	// 1. Lambda Function URLs with response streaming
-	// 2. Or use API Gateway v2 with WebSockets (which we already have)
-	// 3. Or use a container/EC2 for long-lived connections
-
-	// For now, return a response explaining the limitation and directing to WebSocket
-	response := map[string]interface{}{
-		"error":         "SSE not supported in Lambda environment",
-		"message":       "Please use WebSocket endpoint for real-time streaming",
-		"websocket_url": fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
-		"documentation": "https://docs.joinmastodon.org/methods/streaming/",
-		"note":          "Lambda functions cannot maintain long-lived SSE connections. Use our WebSocket endpoint instead.",
+	// For Mastodon compatibility, we need to return a proper redirect to WebSocket
+	// Build the WebSocket URL with the appropriate stream and token
+	wsURL := fmt.Sprintf("wss://ws.%s/v1?stream=%s&access_token=%s", h.cfg.Domain, stream, token)
+	
+	// Some Mastodon clients expect different behavior:
+	// 1. Some expect a redirect to WebSocket
+	// 2. Some expect an error message
+	// 3. Some try SSE first, then fall back to WebSocket
+	
+	// Check if client explicitly wants SSE (rare, but some clients do)
+	acceptHeader := request.Headers["Accept"]
+	if acceptHeader == "" {
+		acceptHeader = request.Headers["accept"]
 	}
-
-	// Return 400 Bad Request with JSON explaining the issue
-	body, _ := json.Marshal(response)
+	
+	// If client explicitly requests SSE, return an error
+	if strings.Contains(acceptHeader, "text/event-stream") {
+		// Return 501 Not Implemented for SSE
+		response := map[string]interface{}{
+			"error": "Streaming API requires WebSocket",
+			"websocket_url": wsURL,
+		}
+		body, _ := json.Marshal(response)
+		return &events.APIGatewayV2HTTPResponse{
+			StatusCode: 501,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+				"X-Websocket-Url": wsURL,
+			},
+			Body: string(body),
+		}, nil
+	}
+	
+	// Default: Return redirect to WebSocket endpoint
 	return &events.APIGatewayV2HTTPResponse{
-		StatusCode: 400,
+		StatusCode: 301,
 		Headers: map[string]string{
-			"Content-Type": "application/json",
+			"Location": wsURL,
+			"X-Websocket-Url": wsURL,
 		},
-		Body: string(body),
 	}, nil
 }
