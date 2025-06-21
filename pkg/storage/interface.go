@@ -14,6 +14,7 @@ type Storage interface {
 	// Actor operations
 	CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error
 	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+	GetActorByNumericID(ctx context.Context, numericID string) (*activitypub.Actor, error)
 	GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *ActorMetadata, error)
 	GetActorPrivateKey(ctx context.Context, username string) (string, error)
 	UpdateActor(ctx context.Context, actor *activitypub.Actor) error

@@ -26,11 +26,11 @@ import (
 )
 
 var (
-	cfg          *config.Config
-	store        storage.Storage
-	logger       *zap.Logger
-	oauthSvc     *auth.OAuthService
-	webAuthnSvc  *auth.WebAuthnService
+	cfg         *config.Config
+	store       storage.Storage
+	logger      *zap.Logger
+	oauthSvc    *auth.OAuthService
+	webAuthnSvc *auth.WebAuthnService
 )
 
 func init() {
@@ -68,9 +68,9 @@ func init() {
 	defaultClientID := "lesser-web"
 	existingClient, err := store.GetOAuthClient(ctx, defaultClientID)
 	if err != nil {
-		logger.Info("creating default OAuth client", 
+		logger.Info("creating default OAuth client",
 			zap.String("client_id", defaultClientID),
-			zap.String("redirect_uri", cfg.BaseURL() + "/auth/callback"))
+			zap.String("redirect_uri", cfg.BaseURL()+"/auth/callback"))
 		// Create default client
 		defaultClient := &storage.OAuthClient{
 			ClientID:     defaultClientID,
@@ -84,7 +84,7 @@ func init() {
 			logger.Info("created default OAuth client successfully")
 		}
 	} else {
-		logger.Info("default OAuth client exists", 
+		logger.Info("default OAuth client exists",
 			zap.String("client_id", defaultClientID),
 			zap.Strings("redirect_uris", existingClient.RedirectURIs))
 	}
@@ -234,11 +234,11 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 			zap.String("code_challenge", req.CodeChallenge),
 			zap.String("scope", req.Scope),
 			zap.Any("all_params", request.QueryStringParameters))
-		
+
 		// Validate required parameters
 		if req.RedirectURI == "" {
 			loginErr = "Invalid request: redirect_uri is required"
-			logger.Error("redirect_uri is missing from request", 
+			logger.Error("redirect_uri is missing from request",
 				zap.Any("query_params", request.QueryStringParameters),
 				zap.String("raw_query", request.RawQueryString))
 		}
@@ -294,7 +294,7 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 			// Check if this is a WebAuthn authentication
 			if webauthnResponse != "" {
 				logger.Info("handling WebAuthn authentication", zap.String("username", username))
-				
+
 				// Parse WebAuthn response
 				var webauthnData struct {
 					Challenge  string                 `json:"challenge"`
@@ -459,10 +459,10 @@ func validateWebAuthnCredentials(ctx context.Context, username string, challenge
 	// Use the WebAuthn service to finish login verification
 	_, err = webAuthnSvc.FinishLogin(ctx, username, challenge, credentialJSON)
 	if err != nil {
-		logger.Error("WebAuthn verification failed", 
+		logger.Error("WebAuthn verification failed",
 			zap.String("username", username),
 			zap.Error(err))
-		
+
 		switch err {
 		case auth.ErrChallengeNotFound:
 			return nil, errors.New("invalid or expired challenge")
@@ -475,7 +475,7 @@ func validateWebAuthnCredentials(ctx context.Context, username string, challenge
 		}
 	}
 
-	logger.Info("WebAuthn authentication successful", 
+	logger.Info("WebAuthn authentication successful",
 		zap.String("username", username))
 
 	return user, nil
@@ -920,9 +920,8 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2
             for (let i = 0; i < bytes.byteLength; i++) {
                 binary += String.fromCharCode(bytes[i]);
             }
-            // Convert to base64 then to base64url
-            const base64 = window.btoa(binary);
-            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            // Return standard base64 (not base64url)
+            return window.btoa(binary);
         }
     </script>
 </body>
@@ -2018,9 +2017,8 @@ func renderRegistrationPage(errorMsg string, oauthParams OAuthParams) *events.AP
             for (let i = 0; i < bytes.byteLength; i++) {
                 binary += String.fromCharCode(bytes[i]);
             }
-            // Convert to base64 then to base64url
-            const base64 = window.btoa(binary);
-            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            // Return standard base64 (not base64url)
+            return window.btoa(binary);
         }
         
         // Check WebAuthn support
@@ -2133,7 +2131,7 @@ func createActorForUser(ctx context.Context, username string) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode public key: %w", err)
 	}
-	
+
 	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
 	if err != nil {
 		return fmt.Errorf("failed to encode private key: %w", err)
@@ -2154,17 +2152,17 @@ func createActorForUser(ctx context.Context, username string) error {
 			Type: "Person",
 			ID:   fmt.Sprintf("https://%s/users/%s", domain, username),
 		},
-		Inbox:     fmt.Sprintf("https://%s/users/%s/inbox", domain, username),
-		Outbox:    fmt.Sprintf("https://%s/users/%s/outbox", domain, username),
-		Following: fmt.Sprintf("https://%s/users/%s/following", domain, username),
-		Followers: fmt.Sprintf("https://%s/users/%s/followers", domain, username),
-		Liked:     fmt.Sprintf("https://%s/users/%s/liked", domain, username),
-		PreferredUsername: username,
-		Name:      username,
-		Summary:   "New Lesser user",
-		URL:       fmt.Sprintf("https://%s/@%s", domain, username),
+		Inbox:                     fmt.Sprintf("https://%s/users/%s/inbox", domain, username),
+		Outbox:                    fmt.Sprintf("https://%s/users/%s/outbox", domain, username),
+		Following:                 fmt.Sprintf("https://%s/users/%s/following", domain, username),
+		Followers:                 fmt.Sprintf("https://%s/users/%s/followers", domain, username),
+		Liked:                     fmt.Sprintf("https://%s/users/%s/liked", domain, username),
+		PreferredUsername:         username,
+		Name:                      username,
+		Summary:                   "New Lesser user",
+		URL:                       fmt.Sprintf("https://%s/@%s", domain, username),
 		ManuallyApprovesFollowers: false,
-		Discoverable: true,
+		Discoverable:              true,
 		PublicKey: &activitypub.PublicKey{
 			ID:           fmt.Sprintf("https://%s/users/%s#main-key", domain, username),
 			Owner:        fmt.Sprintf("https://%s/users/%s", domain, username),
@@ -2192,12 +2190,12 @@ func prepareWebAuthnResponse(options interface{}, challenge string) (map[string]
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal options: %w", err)
 	}
-	
+
 	var optionsData map[string]interface{}
 	if err := json.Unmarshal(optionsJSON, &optionsData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal options: %w", err)
 	}
-	
+
 	// Check if it has a nested publicKey field
 	var publicKeyData interface{}
 	if pk, exists := optionsData["publicKey"]; exists {
@@ -2205,7 +2203,7 @@ func prepareWebAuthnResponse(options interface{}, challenge string) (map[string]
 	} else {
 		publicKeyData = optionsData
 	}
-	
+
 	// Return the properly structured response
 	return map[string]interface{}{
 		"publicKey": publicKeyData,
@@ -2238,7 +2236,7 @@ func handleWebAuthnLoginBegin(ctx context.Context, request events.APIGatewayV2HT
 	// Begin WebAuthn login
 	options, challenge, err := webAuthnSvc.BeginLogin(ctx, req.Username)
 	if err != nil {
-		logger.Error("failed to begin WebAuthn login", 
+		logger.Error("failed to begin WebAuthn login",
 			zap.String("username", req.Username),
 			zap.Error(err))
 		if err == auth.ErrUserHasNoCredentials {
@@ -2246,7 +2244,7 @@ func handleWebAuthnLoginBegin(ctx context.Context, request events.APIGatewayV2HT
 		}
 		return common.InternalServerError(errors.New("failed to begin login")), nil
 	}
-	
+
 	logger.Info("WebAuthn login begin successful",
 		zap.String("username", req.Username),
 		zap.String("challenge", challenge))
@@ -2267,8 +2265,8 @@ func handleWebAuthnLoginBegin(ctx context.Context, request events.APIGatewayV2HT
 	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
-			"Content-Type":                "application/json",
-			"Access-Control-Allow-Origin": "*",
+			"Content-Type":                 "application/json",
+			"Access-Control-Allow-Origin":  "*",
 			"Access-Control-Allow-Headers": "Content-Type, Authorization",
 		},
 		Body: string(body),
@@ -2326,13 +2324,13 @@ func handleWebAuthnRegisterBegin(ctx context.Context, request events.APIGatewayV
 		logger.Error("failed to prepare WebAuthn response", zap.Error(err))
 		return common.InternalServerError(errors.New("failed to prepare response")), nil
 	}
-	
+
 	body, _ := json.Marshal(response)
 	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
 		Headers: map[string]string{
-			"Content-Type":                "application/json",
-			"Access-Control-Allow-Origin": "*",
+			"Content-Type":                 "application/json",
+			"Access-Control-Allow-Origin":  "*",
 			"Access-Control-Allow-Headers": "Content-Type, Authorization",
 		},
 		Body: string(body),
