@@ -87,6 +87,15 @@ func (m *MockStorage) GetActor(ctx context.Context, username string) (*activityp
 	return args.Get(0).(*activitypub.Actor), args.Error(1)
 }
 
+// GetActorByNumericID mocks the GetActorByNumericID method
+func (m *MockStorage) GetActorByNumericID(ctx context.Context, numericID string) (*activitypub.Actor, error) {
+	args := m.Called(ctx, numericID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*activitypub.Actor), args.Error(1)
+}
+
 // GetActorWithMetadata mocks the GetActorWithMetadata method
 func (m *MockStorage) GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *storage.ActorMetadata, error) {
 	args := m.Called(ctx, username)

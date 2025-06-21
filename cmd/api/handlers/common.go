@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	
 	"github.com/aron23/lesser/pkg/activitypub"
@@ -44,7 +45,7 @@ func NewHandler(cfg *config.Config, store storage.Storage, logger *zap.Logger, a
 	}
 }
 
-// resolveAccountID resolves an account ID (which can be a username or URL) to an actor
+// resolveAccountID resolves an account ID (which can be a username, numeric ID, or URL) to an actor
 func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
 	// Handle different account ID formats
 	if strings.HasPrefix(accountID, "http://") || strings.HasPrefix(accountID, "https://") {
@@ -60,6 +61,12 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 		}
 		// Remote actor - not supported yet
 		return nil, fmt.Errorf("remote accounts not yet supported")
+	}
+	
+	// Check if it's a numeric ID (Mastodon compatibility)
+	if _, err := strconv.ParseInt(accountID, 10, 64); err == nil && len(accountID) >= 10 {
+		// It's a numeric ID - use the dedicated lookup method
+		return h.store.GetActorByNumericID(ctx, accountID)
 	}
 	
 	// Assume it's a username for local accounts

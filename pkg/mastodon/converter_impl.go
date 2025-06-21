@@ -32,7 +32,7 @@ func (c *converterImpl) ActorToAccount(actor *activitypub.Actor) models.Account 
 // ActorToAccountWithCounts converts an Actor to Account with follower/following/status counts
 func (c *converterImpl) ActorToAccountWithCounts(actor *activitypub.Actor, followers, following, statuses int) models.Account {
 	account := models.Account{
-		ID:             actor.PreferredUsername,
+		ID:             GenerateNumericID(actor.PreferredUsername), // Generate stable numeric ID
 		Username:       actor.PreferredUsername,
 		Acct:           actor.PreferredUsername,
 		DisplayName:    actor.Name,
@@ -76,7 +76,7 @@ func (c *converterImpl) ActorToAccountWithCounts(actor *activitypub.Actor, follo
 // ActorToAccountWithMetadata converts an Actor to Account with metadata
 func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, metadata *storage.ActorMetadata, followers, following, statuses int) models.Account {
 	account := models.Account{
-		ID:             actor.PreferredUsername,
+		ID:             GenerateNumericID(actor.PreferredUsername), // Generate stable numeric ID
 		Username:       actor.PreferredUsername,
 		Acct:           actor.PreferredUsername,
 		DisplayName:    actor.Name,

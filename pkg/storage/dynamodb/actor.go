@@ -11,6 +11,7 @@ import (
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	cfg "github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/mastodon"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -195,6 +196,33 @@ func (s *dynamoDBStorage) CreateActor(ctx context.Context, actor *activitypub.Ac
 		zap.String("username", username),
 		zap.String("actor_id", actor.ID))
 
+	// Create numeric ID mapping for Mastodon compatibility
+	numericID := mastodon.GenerateNumericID(username)
+	numericIDItem := map[string]types.AttributeValue{
+		"PK":        &types.AttributeValueMemberS{Value: fmt.Sprintf("NUMERIC_ID#%s", numericID)},
+		"SK":        &types.AttributeValueMemberS{Value: "METADATA"},
+		"username":  &types.AttributeValueMemberS{Value: username},
+		"actorID":   &types.AttributeValueMemberS{Value: actor.ID},
+		"createdAt": &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
+		"type":      &types.AttributeValueMemberS{Value: "NumericIDMapping"},
+	}
+
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: s.getTableName(),
+		Item:      numericIDItem,
+	})
+	if err != nil {
+		// Log error but don't fail actor creation
+		log.Error("failed to create numeric ID mapping",
+			zap.String("username", username),
+			zap.String("numericID", numericID),
+			zap.Error(err))
+	} else {
+		log.Info("numeric ID mapping created",
+			zap.String("username", username),
+			zap.String("numeric_id", numericID))
+	}
+
 	return nil
 }
 
@@ -336,6 +364,49 @@ func (s *dynamoDBStorage) GetActorPrivateKey(ctx context.Context, username strin
 	}
 
 	return decryptedKey, nil
+}
+
+// GetActorByNumericID retrieves an actor by its numeric ID (for Mastodon API compatibility)
+func (s *dynamoDBStorage) GetActorByNumericID(ctx context.Context, numericID string) (*activitypub.Actor, error) {
+	log := common.WithContext(ctx)
+
+	// Build the key for numeric ID lookup
+	pk := fmt.Sprintf("NUMERIC_ID#%s", numericID)
+	sk := "METADATA"
+
+	// Get the numeric ID mapping item
+	result, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: s.getTableName(),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: pk},
+			"SK": &types.AttributeValueMemberS{Value: sk},
+		},
+	})
+
+	if err != nil {
+		log.Error("failed to get numeric ID mapping",
+			zap.String("numericID", numericID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get numeric ID mapping: %w", err)
+	}
+
+	if result.Item == nil {
+		return nil, fmt.Errorf("actor not found: %s", numericID)
+	}
+
+	// Extract username from the mapping
+	usernameAttr, ok := result.Item["username"]
+	if !ok {
+		return nil, fmt.Errorf("invalid numeric ID mapping: missing username")
+	}
+
+	usernameStr, ok := usernameAttr.(*types.AttributeValueMemberS)
+	if !ok || usernameStr.Value == "" {
+		return nil, fmt.Errorf("invalid numeric ID mapping: invalid username")
+	}
+
+	// Now get the actual actor using the username
+	return s.GetActor(ctx, usernameStr.Value)
 }
 
 // UpdateActor updates an existing actor in DynamoDB
