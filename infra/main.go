@@ -67,6 +67,8 @@ func main() {
 				&dynamodb.TableAttributeArgs{Name: pulumi.String("GSI4SK"), Type: pulumi.String("S")},
 				&dynamodb.TableAttributeArgs{Name: pulumi.String("GSI5PK"), Type: pulumi.String("S")},
 				&dynamodb.TableAttributeArgs{Name: pulumi.String("GSI5SK"), Type: pulumi.String("S")},
+				&dynamodb.TableAttributeArgs{Name: pulumi.String("GSI6PK"), Type: pulumi.String("S")},
+				&dynamodb.TableAttributeArgs{Name: pulumi.String("GSI6SK"), Type: pulumi.String("S")},
 			},
 			GlobalSecondaryIndexes: dynamodb.TableGlobalSecondaryIndexArray{
 				&dynamodb.TableGlobalSecondaryIndexArgs{
@@ -97,6 +99,12 @@ func main() {
 					Name:           pulumi.String("GSI5"),
 					HashKey:        pulumi.String("GSI5PK"),
 					RangeKey:       pulumi.String("GSI5SK"),
+					ProjectionType: pulumi.String("ALL"),
+				},
+				&dynamodb.TableGlobalSecondaryIndexArgs{
+					Name:           pulumi.String("GSI6"),
+					HashKey:        pulumi.String("GSI6PK"),
+					RangeKey:       pulumi.String("GSI6SK"),
 					ProjectionType: pulumi.String("ALL"),
 				},
 			},

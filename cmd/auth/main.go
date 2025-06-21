@@ -900,7 +900,7 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2
             if (!base64) {
                 throw new Error('base64ToArrayBuffer: input is null or undefined');
             }
-            // Convert base64url to base64
+            // Handle both base64 and base64url
             let base64String = base64.replace(/-/g, '+').replace(/_/g, '/');
             // Add padding if necessary
             while (base64String.length % 4) {
@@ -920,8 +920,11 @@ func renderLoginPage(req AuthorizeRequest, errorMsg string) *events.APIGatewayV2
             for (let i = 0; i < bytes.byteLength; i++) {
                 binary += String.fromCharCode(bytes[i]);
             }
-            // Return standard base64 (not base64url)
-            return window.btoa(binary);
+            // Return base64url encoding (WebAuthn standard)
+            return window.btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
         }
     </script>
 </body>
@@ -1997,7 +2000,7 @@ func renderRegistrationPage(errorMsg string, oauthParams OAuthParams) *events.AP
             if (!base64) {
                 throw new Error('base64ToArrayBuffer: input is null or undefined');
             }
-            // Convert base64url to base64
+            // Handle both base64 and base64url
             let base64String = base64.replace(/-/g, '+').replace(/_/g, '/');
             // Add padding if necessary
             while (base64String.length % 4) {
@@ -2017,8 +2020,11 @@ func renderRegistrationPage(errorMsg string, oauthParams OAuthParams) *events.AP
             for (let i = 0; i < bytes.byteLength; i++) {
                 binary += String.fromCharCode(bytes[i]);
             }
-            // Return standard base64 (not base64url)
-            return window.btoa(binary);
+            // Return base64url encoding (WebAuthn standard)
+            return window.btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
         }
         
         // Check WebAuthn support

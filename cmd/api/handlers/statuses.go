@@ -288,6 +288,16 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		h.logger.Error("failed to create note object", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
+	
+	// If this is a reply, increment the reply count on the parent
+	if req.InReplyToID != "" {
+		if err := h.store.IncrementReplyCount(ctx, req.InReplyToID); err != nil {
+			// Log but don't fail the request
+			h.logger.Warn("failed to increment reply count",
+				zap.String("parent_id", req.InReplyToID),
+				zap.Error(err))
+		}
+	}
 
 	// Create a Create activity
 	createActivity := &activitypub.Activity{
@@ -405,7 +415,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 			URL:            actor.URL,
 			CreatedAt:      now.Format("2006-01-02T15:04:05.000Z"),
 			Note:           actor.Summary,
-			Avatar:         "", // TODO: Implement avatars
+			Avatar:         "",
 			AvatarStatic:   "",
 			Header:         "",
 			HeaderStatic:   "",
@@ -415,6 +425,18 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 			Emojis:         []interface{}{},
 			Fields:         []interface{}{},
 		},
+	}
+
+	// Populate avatar from actor Icon
+	if actor.Icon != nil && actor.Icon.URL != "" {
+		resp.Account.Avatar = actor.Icon.URL
+		resp.Account.AvatarStatic = actor.Icon.URL
+	}
+
+	// Populate header from actor Image
+	if actor.Image != nil && actor.Image.URL != "" {
+		resp.Account.Header = actor.Image.URL
+		resp.Account.HeaderStatic = actor.Image.URL
 	}
 
 	// Handle reply fields
@@ -1387,37 +1409,42 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 
 	// Get descendants (replies to this status)
 	descendants := []models.Status{}
-	// TODO: Implement GetReplies in storage
-	// For now, just return empty descendants
-	/*
-		replies, _, err := h.store.GetReplies(ctx, objectID, 20, "")
-		if err == nil {
-			for _, reply := range replies {
-				// Get actor for reply
-				var replyActor *activitypub.Actor
-				var attributedTo string
-				switch o := reply.(type) {
-				case *activitypub.Note:
-					attributedTo = o.AttributedTo
-				case map[string]interface{}:
-					if attr, ok := o["attributedTo"].(string); ok {
-						attributedTo = attr
-					}
+	
+	// Fetch replies to this status
+	replies, _, err := h.store.GetReplies(ctx, objectID, 100, "") // Get up to 100 replies
+	if err != nil {
+		h.logger.Warn("failed to get replies for context",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+	} else {
+		for _, reply := range replies {
+			// Get actor for reply
+			var replyActor *activitypub.Actor
+			var attributedTo string
+			switch o := reply.(type) {
+			case *activitypub.Note:
+				attributedTo = o.AttributedTo
+			case map[string]interface{}:
+				if attr, ok := o["attributedTo"].(string); ok {
+					attributedTo = attr
 				}
-
-				if attributedTo != "" {
-					parts := strings.Split(attributedTo, "/")
-					if len(parts) > 0 {
-						username := parts[len(parts)-1]
-						replyActor, _ = h.store.GetActor(ctx, username)
-					}
-				}
-
-				status := ObjectToStatus(reply, replyActor)
-				descendants = append(descendants, status)
 			}
+
+			if attributedTo != "" {
+				username := h.converter.ExtractUsernameFromActorID(attributedTo)
+				if username != "" {
+					replyActor, _ = h.store.GetActor(ctx, username)
+				}
+			}
+
+			status := h.converter.ObjectToStatus(reply, replyActor)
+			descendants = append(descendants, status)
 		}
-	*/
+		
+		h.logger.Debug("fetched descendants for context",
+			zap.String("object_id", objectID),
+			zap.Int("count", len(descendants)))
+	}
 
 	// Return context response
 	resp := models.StatusContext{

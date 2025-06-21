@@ -74,16 +74,19 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 	// Convert objects to statuses
 	statuses := []models.Status{}
 	for _, entry := range entries {
+		// Extract object ID from PostID URL
+		objectID := h.converter.ExtractIDFromURL(entry.PostID)
+		
 		// Get the actual object
-		obj, err := h.store.GetObject(ctx, entry.PostID)
+		obj, err := h.store.GetObject(ctx, objectID)
 		if err != nil {
-			h.logger.Warn("failed to get object from timeline", zap.String("id", entry.PostID), zap.Error(err))
+			h.logger.Warn("failed to get object from timeline", 
+				zap.String("post_id", entry.PostID),
+				zap.String("object_id", objectID),
+				zap.Error(err))
 			continue
 		}
 		
-		h.logger.Debug("fetched object from timeline",
-			zap.String("post_id", entry.PostID),
-			zap.Any("object_type", fmt.Sprintf("%T", obj)))
 
 		// Get the actor who created the object
 		var attributedTo string
@@ -107,11 +110,6 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 		}
 
 		status := h.converter.ObjectToStatus(obj, objActor)
-		
-		h.logger.Debug("converted to status",
-			zap.String("status_id", status.ID),
-			zap.String("content", status.Content),
-			zap.String("created_at", status.CreatedAt))
 
 		// Check if blocked
 		if objActor != nil {
@@ -121,22 +119,21 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 			}
 		}
 
-		// Get interaction counts
-		objectID := entry.PostID
-		if objectID != "" {
-			likeCount, _ := h.store.CountObjectLikes(ctx, objectID)
-			announceCount, _ := h.store.CountObjectAnnounces(ctx, objectID)
+		// Get interaction counts using the full PostID URL
+		if entry.PostID != "" {
+			likeCount, _ := h.store.CountObjectLikes(ctx, entry.PostID)
+			announceCount, _ := h.store.CountObjectAnnounces(ctx, entry.PostID)
 			status.FavouritesCount = likeCount
 			status.ReblogsCount = announceCount
 
 			// Check if current user has interacted
-			if _, err := h.store.GetLike(ctx, actor.ID, objectID); err == nil {
+			if _, err := h.store.GetLike(ctx, actor.ID, entry.PostID); err == nil {
 				status.Favourited = true
 			}
-			if _, err := h.store.GetAnnounce(ctx, actor.ID, objectID); err == nil {
+			if _, err := h.store.GetAnnounce(ctx, actor.ID, entry.PostID); err == nil {
 				status.Reblogged = true
 			}
-			bookmarked, _ := h.store.IsBookmarked(ctx, actor.PreferredUsername, objectID)
+			bookmarked, _ := h.store.IsBookmarked(ctx, actor.PreferredUsername, entry.PostID)
 			status.Bookmarked = bookmarked
 		}
 

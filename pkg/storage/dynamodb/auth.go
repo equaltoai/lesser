@@ -645,7 +645,7 @@ func (s *dynamoDBStorage) StoreWebAuthnChallenge(ctx context.Context, challenge 
 	// Add DynamoDB keys
 	item["PK"] = &types.AttributeValueMemberS{Value: "CHALLENGE#" + challenge.Challenge}
 	item["SK"] = &types.AttributeValueMemberS{Value: "WEBAUTHN"}
-	item["Type"] = &types.AttributeValueMemberS{Value: "WebAuthnChallenge"}
+	item["ItemType"] = &types.AttributeValueMemberS{Value: "WebAuthnChallenge"}
 	// TTL for automatic cleanup
 	item["TTL"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", challenge.ExpiresAt.Unix())}
 
@@ -664,27 +664,51 @@ func (s *dynamoDBStorage) StoreWebAuthnChallenge(ctx context.Context, challenge 
 
 // GetWebAuthnChallenge retrieves a WebAuthn challenge
 func (s *dynamoDBStorage) GetWebAuthnChallenge(ctx context.Context, challengeID string) (*storage.WebAuthnChallenge, error) {
+	primaryKey := "CHALLENGE#" + challengeID
+	common.Logger().Info("GetWebAuthnChallenge called",
+		zap.String("challengeID", challengeID),
+		zap.String("primaryKey", primaryKey))
+
 	input := &dynamodb.GetItemInput{
 		TableName: s.getTableName(),
 		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: "CHALLENGE#" + challengeID},
+			"PK": &types.AttributeValueMemberS{Value: primaryKey},
 			"SK": &types.AttributeValueMemberS{Value: "WEBAUTHN"},
 		},
 	}
 
+	common.Logger().Info("DynamoDB GetItem input",
+		zap.String("tableName", *s.getTableName()),
+		zap.String("PK", primaryKey),
+		zap.String("SK", "WEBAUTHN"))
+
 	result, err := s.client.GetItem(ctx, input)
 	if err != nil {
+		common.Logger().Error("DynamoDB GetItem failed",
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to get challenge: %w", err)
 	}
 
+	common.Logger().Info("DynamoDB GetItem result",
+		zap.Int("itemCount", len(result.Item)))
+
 	if len(result.Item) == 0 {
+		common.Logger().Warn("Challenge not found in DynamoDB",
+			zap.String("primaryKey", primaryKey))
 		return nil, fmt.Errorf("challenge not found")
 	}
 
 	var challenge storage.WebAuthnChallenge
 	if err := s.UnmarshalItem(result.Item, &challenge); err != nil {
+		common.Logger().Error("Failed to unmarshal challenge",
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to unmarshal challenge: %w", err)
 	}
+
+	common.Logger().Info("Successfully retrieved and unmarshaled challenge",
+		zap.String("challenge", challenge.Challenge),
+		zap.String("userID", challenge.UserID),
+		zap.String("type", challenge.Type))
 
 	return &challenge, nil
 }

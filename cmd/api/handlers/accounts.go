@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/mail"
+	"os"
 	"strings"
 	"time"
 
@@ -17,6 +22,10 @@ import (
 	"github.com/aron23/lesser/pkg/federation"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"go.uber.org/zap"
 )
 
@@ -230,7 +239,7 @@ func (h *Handler) HandleVerifyCredentials(ctx context.Context, request events.AP
 		EmailVerified:  true, // TODO: Implement email verification
 		Note:           actor.Summary,
 		URL:            actor.URL,
-		Avatar:         "", // TODO: Implement avatars
+		Avatar:         "",
 		AvatarStatic:   "",
 		Header:         "",
 		HeaderStatic:   "",
@@ -245,6 +254,18 @@ func (h *Handler) HandleVerifyCredentials(ctx context.Context, request events.AP
 			"language":  user.Locale,
 			"fields":    []interface{}{},
 		},
+	}
+
+	// Populate avatar from actor Icon
+	if actor.Icon != nil && actor.Icon.URL != "" {
+		resp.Avatar = actor.Icon.URL
+		resp.AvatarStatic = actor.Icon.URL
+	}
+
+	// Populate header from actor Image
+	if actor.Image != nil && actor.Image.URL != "" {
+		resp.Header = actor.Image.URL
+		resp.HeaderStatic = actor.Image.URL
 	}
 
 	body, _ := json.Marshal(resp)
@@ -288,10 +309,173 @@ func (h *Handler) HandleUpdateCredentials(ctx context.Context, request events.AP
 		return common.NotFound(err), nil
 	}
 
-	// Parse request body
+	// Check content type
+	contentType := request.Headers["Content-Type"]
+	if contentType == "" {
+		contentType = request.Headers["content-type"]
+	}
+
 	var updateReq models.UpdateCredentialsRequest
-	if err := common.ParseRequestBody([]byte(request.Body), &updateReq); err != nil {
-		return common.BadRequest(err), nil
+	var avatarData []byte
+	var avatarContentType string
+	var headerData []byte
+	var headerContentType string
+
+	// Handle multipart/form-data
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		// Check for empty body
+		if len(request.Body) == 0 {
+			return common.BadRequest(errors.New("empty request body")), nil
+		}
+		
+		// Log request info for debugging
+		h.logger.Info("handling multipart request",
+			zap.Bool("is_base64", request.IsBase64Encoded),
+			zap.Int("body_length", len(request.Body)),
+			zap.String("content_type", contentType))
+		
+		// Parse multipart form data
+		var bodyBytes []byte
+		
+		// Try to decode as base64 first (API Gateway typically encodes binary data)
+		decoded, err := base64.StdEncoding.DecodeString(request.Body)
+		if err == nil {
+			// Successfully decoded - use the decoded bytes
+			bodyBytes = decoded
+			h.logger.Debug("successfully decoded base64 body", zap.Int("decoded_length", len(bodyBytes)))
+		} else {
+			// Failed to decode - check if it's raw multipart data
+			if strings.Contains(request.Body[:min(200, len(request.Body))], "------WebKitFormBoundary") {
+				// Looks like raw multipart data
+				bodyBytes = []byte(request.Body)
+				h.logger.Debug("using raw body as multipart data", zap.Int("body_length", len(bodyBytes)))
+			} else {
+				// Neither base64 nor raw multipart - return error
+				h.logger.Error("unable to parse request body",
+					zap.Error(err),
+					zap.String("body_preview", request.Body[:min(50, len(request.Body))]))
+				return common.BadRequest(fmt.Errorf("unable to parse request body: not valid base64 or multipart data")), nil
+			}
+		}
+
+		// Parse boundary from content type
+		_, params, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			return common.BadRequest(fmt.Errorf("invalid content type: %w", err)), nil
+		}
+
+		boundary := params["boundary"]
+		if boundary == "" {
+			return common.BadRequest(errors.New("missing boundary in content type")), nil
+		}
+
+		// Create multipart reader
+		reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
+
+		// Read form fields and files
+		for {
+			part, err := reader.NextPart()
+			if err != nil {
+				break
+			}
+			defer part.Close()
+
+			switch part.FormName() {
+			case "display_name":
+				buf := new(bytes.Buffer)
+				buf.ReadFrom(part)
+				updateReq.DisplayName = buf.String()
+			case "note":
+				buf := new(bytes.Buffer)
+				buf.ReadFrom(part)
+				updateReq.Note = buf.String()
+			case "locked":
+				buf := new(bytes.Buffer)
+				buf.ReadFrom(part)
+				updateReq.Locked = buf.String() == "true"
+			case "bot":
+				buf := new(bytes.Buffer)
+				buf.ReadFrom(part)
+				updateReq.Bot = buf.String() == "true"
+			case "discoverable":
+				buf := new(bytes.Buffer)
+				buf.ReadFrom(part)
+				updateReq.Discoverable = buf.String() == "true"
+			case "avatar":
+				if part.FileName() != "" {
+					buf := new(bytes.Buffer)
+					buf.ReadFrom(part)
+					avatarData = buf.Bytes()
+					avatarContentType = part.Header.Get("Content-Type")
+				}
+			case "header":
+				if part.FileName() != "" {
+					buf := new(bytes.Buffer)
+					buf.ReadFrom(part)
+					headerData = buf.Bytes()
+					headerContentType = part.Header.Get("Content-Type")
+				}
+			}
+		}
+	} else {
+		// Parse JSON request body
+		if err := common.ParseRequestBody([]byte(request.Body), &updateReq); err != nil {
+			return common.BadRequest(err), nil
+		}
+	}
+
+	// Handle avatar upload if provided
+	if len(avatarData) > 0 {
+		// Validate file size (10MB limit)
+		maxSize := int64(10 * 1024 * 1024)
+		if int64(len(avatarData)) > maxSize {
+			return common.UnprocessableEntity(fmt.Errorf("avatar file size exceeds %dMB limit", maxSize/1024/1024)), nil
+		}
+
+		// Validate MIME type
+		if !isAllowedImageMimeType(avatarContentType) {
+			return common.UnprocessableEntity(fmt.Errorf("unsupported avatar file type: %s", avatarContentType)), nil
+		}
+
+		// Upload avatar to S3
+		avatarURL, err := h.uploadProfileImage(ctx, claims.Username, "avatar", avatarData, avatarContentType)
+		if err != nil {
+			h.logger.Error("failed to upload avatar", zap.Error(err))
+			return common.InternalServerError(errors.New("failed to upload avatar")), nil
+		}
+
+		// Initialize Icon if nil
+		if actor.Icon == nil {
+			actor.Icon = &activitypub.Image{}
+		}
+		actor.Icon.URL = avatarURL
+	}
+
+	// Handle header upload if provided
+	if len(headerData) > 0 {
+		// Validate file size (10MB limit)
+		maxSize := int64(10 * 1024 * 1024)
+		if int64(len(headerData)) > maxSize {
+			return common.UnprocessableEntity(fmt.Errorf("header file size exceeds %dMB limit", maxSize/1024/1024)), nil
+		}
+
+		// Validate MIME type
+		if !isAllowedImageMimeType(headerContentType) {
+			return common.UnprocessableEntity(fmt.Errorf("unsupported header file type: %s", headerContentType)), nil
+		}
+
+		// Upload header to S3
+		headerURL, err := h.uploadProfileImage(ctx, claims.Username, "header", headerData, headerContentType)
+		if err != nil {
+			h.logger.Error("failed to upload header", zap.Error(err))
+			return common.InternalServerError(errors.New("failed to upload header")), nil
+		}
+
+		// Initialize Image if nil
+		if actor.Image == nil {
+			actor.Image = &activitypub.Image{}
+		}
+		actor.Image.URL = headerURL
 	}
 
 	// Update actor information (only fields that exist)
@@ -303,6 +487,9 @@ func (h *Handler) HandleUpdateCredentials(ctx context.Context, request events.AP
 	}
 	if updateReq.Avatar != "" && actor.Icon != nil {
 		actor.Icon.URL = updateReq.Avatar
+	}
+	if updateReq.Header != "" && actor.Image != nil {
+		actor.Image.URL = updateReq.Header
 	}
 	// Update actor flags
 	actor.ManuallyApprovesFollowers = updateReq.Locked
@@ -349,6 +536,11 @@ func (h *Handler) HandleUpdateCredentials(ctx context.Context, request events.AP
 	if actor.Icon != nil {
 		resp.Avatar = actor.Icon.URL
 		resp.AvatarStatic = actor.Icon.URL
+	}
+
+	if actor.Image != nil {
+		resp.Header = actor.Image.URL
+		resp.HeaderStatic = actor.Image.URL
 	}
 
 	body, _ := json.Marshal(resp)
@@ -1010,4 +1202,95 @@ func (h *Handler) getRelationshipMap(ctx context.Context, currentUsername, targe
 	}
 
 	return relationship, nil
+}
+
+// uploadProfileImage uploads a profile image (avatar or header) to S3
+func (h *Handler) uploadProfileImage(ctx context.Context, username, imageType string, data []byte, contentType string) (string, error) {
+	// Generate unique ID based on timestamp
+	imageID := fmt.Sprintf("%d", time.Now().UnixNano())
+	
+	// Get file extension
+	ext := getExtensionFromImageMimeType(contentType)
+	
+	// Generate S3 key
+	s3Key := fmt.Sprintf("media/%s/%s/%s%s", username, imageType, imageID, ext)
+	
+	// Initialize S3 client
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	s3Client := s3.NewFromConfig(awsCfg)
+	
+	// Upload to S3
+	bucketName := h.cfg.S3BucketName
+	if bucketName == "" {
+		return "", errors.New("S3 bucket not configured")
+	}
+	
+	putInput := &s3.PutObjectInput{
+		Bucket:       aws.String(bucketName),
+		Key:          aws.String(s3Key),
+		Body:         bytes.NewReader(data),
+		ContentType:  aws.String(contentType),
+		ACL:          types.ObjectCannedACLPrivate, // Use CloudFront for access
+		CacheControl: aws.String("public, max-age=31536000, immutable"),
+	}
+	
+	_, err = s3Client.PutObject(ctx, putInput)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload to S3: %w", err)
+	}
+	
+	// Build URL (using CDN if configured)
+	cdnDomain := os.Getenv("CDN_DOMAIN")
+	var imageURL string
+	if cdnDomain != "" {
+		imageURL = fmt.Sprintf("https://%s/%s", cdnDomain, s3Key)
+	} else {
+		// Fallback to S3 URL if no CDN
+		imageURL = fmt.Sprintf("https://%s.s3.amazonaws.com/%s", bucketName, s3Key)
+	}
+	
+	return imageURL, nil
+}
+
+// isAllowedImageMimeType checks if the mime type is allowed for images
+func isAllowedImageMimeType(mimeType string) bool {
+	allowed := []string{
+		"image/jpeg",
+		"image/png",
+		"image/gif",
+		"image/webp",
+	}
+	
+	for _, t := range allowed {
+		if t == mimeType {
+			return true
+		}
+	}
+	return false
+}
+
+// getExtensionFromImageMimeType returns the file extension for an image mime type
+func getExtensionFromImageMimeType(mimeType string) string {
+	extensions := map[string]string{
+		"image/jpeg": ".jpg",
+		"image/png":  ".png",
+		"image/gif":  ".gif",
+		"image/webp": ".webp",
+	}
+	
+	if ext, ok := extensions[mimeType]; ok {
+		return ext
+	}
+	return ".jpg" // Default to jpg
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
