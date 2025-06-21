@@ -46,6 +46,11 @@ type dynamoDBStorage struct {
 	log                 *zap.Logger
 }
 
+// getDomainURL returns the full domain URL
+func (s *dynamoDBStorage) getDomainURL() string {
+	return fmt.Sprintf("https://%s", s.domain)
+}
+
 var (
 	// globalClient is reused across Lambda invocations
 	globalClient DynamoDBAPI

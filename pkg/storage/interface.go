@@ -543,6 +543,11 @@ type Storage interface {
 	// DNS cache operations
 	GetDNSCache(ctx context.Context, hostname string) (*DNSCacheEntry, error)
 	SetDNSCache(ctx context.Context, entry *DNSCacheEntry) error
+
+	// Reply operations
+	GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error)
+	CountReplies(ctx context.Context, objectID string) (int, error)
+	IncrementReplyCount(ctx context.Context, objectID string) error
 }
 
 // User represents a user account in the system

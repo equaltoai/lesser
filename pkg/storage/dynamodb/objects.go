@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
@@ -15,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 )
+
 
 // Object represents a generic ActivityPub object stored in DynamoDB
 type Object struct {
@@ -60,6 +62,8 @@ type ObjectRecord struct {
 	SK        string    `dynamodbav:"SK"`
 	GSI1PK    string    `dynamodbav:"GSI1PK,omitempty"` // For actor's objects timeline
 	GSI1SK    string    `dynamodbav:"GSI1SK,omitempty"` // Published timestamp
+	GSI6PK    string    `dynamodbav:"GSI6PK,omitempty"` // For replies index: REPLIES#<parent-object-id>
+	GSI6SK    string    `dynamodbav:"GSI6SK,omitempty"` // Reply timestamp and ID
 	Object    *Object   `dynamodbav:"Object"`
 	CreatedAt time.Time `dynamodbav:"CreatedAt"`
 	UpdatedAt time.Time `dynamodbav:"UpdatedAt"`
@@ -147,6 +151,12 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 	if username != "" {
 		record.GSI1PK = fmt.Sprintf("ACTOR#%s#OBJECTS", username)
 		record.GSI1SK = obj.Published.Format(time.RFC3339)
+	}
+	
+	// Add GSI6 fields if this is a reply
+	if obj.InReplyTo != nil && *obj.InReplyTo != "" {
+		record.GSI6PK = fmt.Sprintf("REPLIES#%s", *obj.InReplyTo)
+		record.GSI6SK = fmt.Sprintf("%s#%s", obj.Published.Format(time.RFC3339), obj.ID)
 	}
 
 	av, err := s.MarshalItem(record)
@@ -236,11 +246,17 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
 	log := common.WithContext(ctx)
 
+	// If the ID doesn't start with http, construct the full URL
+	objectKey := id
+	if !strings.HasPrefix(id, "http") {
+		objectKey = fmt.Sprintf("%s/objects/%s", s.getDomainURL(), id)
+	}
+
 	// First check if it's a tombstone
 	result, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: s.getTableName(),
 		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", id)},
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", objectKey)},
 			"SK": &types.AttributeValueMemberS{Value: "TOMBSTONE"},
 		},
 	})
@@ -259,7 +275,7 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 	result, err = s.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: s.getTableName(),
 		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", id)},
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", objectKey)},
 			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
 		},
 	})
@@ -282,6 +298,7 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to unmarshal object: %w", err)
 	}
+	
 
 	// If Object is still nil after unmarshaling, try direct conversion
 	if record.Object == nil {
@@ -299,6 +316,61 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 		return nil, fmt.Errorf("object data is missing or invalid")
 	}
 
+	// Convert the Object to a map[string]interface{} for compatibility with the converter
+	if record.Object != nil {
+		objMap := map[string]interface{}{
+			"id":           record.Object.ID,
+			"type":         record.Object.Type,
+			"attributedTo": record.Object.AttributedTo,
+			"content":      record.Object.Content,
+			"name":         record.Object.Name,
+			"summary":      record.Object.Summary,
+			"url":          record.Object.URL,
+			"published":    record.Object.Published.Format(time.RFC3339),
+			"to":           record.Object.To,
+			"cc":           record.Object.CC,
+			"sensitive":    record.Object.Sensitive,
+		}
+		
+		if record.Object.InReplyTo != nil {
+			objMap["inReplyTo"] = *record.Object.InReplyTo
+		}
+		
+		if !record.Object.Updated.IsZero() {
+			objMap["updated"] = record.Object.Updated.Format(time.RFC3339)
+		}
+		
+		if len(record.Object.Attachment) > 0 {
+			attachments := make([]interface{}, len(record.Object.Attachment))
+			for i, att := range record.Object.Attachment {
+				attachments[i] = map[string]interface{}{
+					"type":      att.Type,
+					"url":       att.URL,
+					"mediaType": att.MediaType,
+					"name":      att.Name,
+					"width":     att.Width,
+					"height":    att.Height,
+				}
+			}
+			objMap["attachment"] = attachments
+		}
+		
+		if len(record.Object.Tag) > 0 {
+			tags := make([]interface{}, len(record.Object.Tag))
+			for i, tag := range record.Object.Tag {
+				tags[i] = map[string]interface{}{
+					"type": tag.Type,
+					"href": tag.Href,
+					"name": tag.Name,
+				}
+			}
+			objMap["tag"] = tags
+		}
+		
+		
+		return objMap, nil
+	}
+	
 	return record.Object, nil
 }
 

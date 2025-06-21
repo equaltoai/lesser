@@ -1,0 +1,16 @@
+curl 'https://lesser.host/api/v1/timelines/home' \
+  -H 'accept: */*' \
+  -H 'accept-language: en-US,en;q=0.5' \
+  -H 'authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhcm9uIiwiZXhwIjoxNzUwNTE1NDkzLCJuYmYiOjE3NTA1MTE4OTMsImlhdCI6MTc1MDUxMTg5MywidXNlcm5hbWUiOiJhcm9uIiwic2NvcGVzIjpbInJlYWQiLCJ3cml0ZSIsImZvbGxvdyIsInB1c2giXSwiY2xpZW50X2lkIjoiNEVieUhKY2UtSE04a1oxZHFxU2tPQT09In0.4rIYgd_lAKBRY_mwn2Cj9Yx0UZqcZhZUw_R6SuXXzwE' \
+  -H 'content-type: application/json' \
+  -H 'origin: https://dev.greater.website' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://dev.greater.website/' \
+  -H 'sec-ch-ua: "Brave";v="137", "Chromium";v="137", "Not/A)Brand";v="24"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "macOS"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: cross-site' \
+  -H 'sec-gpc: 1' \
+  -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
