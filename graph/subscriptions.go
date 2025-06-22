@@ -28,6 +28,7 @@ type SubscriptionManager struct {
 	moderationChannels map[string][]chan<- *moderation.ModerationDecision
 	trustChannels      map[string][]chan<- *trust.TrustEdge
 	aiChannels         map[string][]chan<- *model.AIAnalysis
+	quoteChannels      map[string][]chan<- *model.QuoteActivityUpdate
 }
 
 // NewSubscriptionManager creates a new subscription manager
@@ -42,6 +43,7 @@ func NewSubscriptionManager(dynamoClient *dynamodb.Client, subscriptionsTable st
 		moderationChannels: make(map[string][]chan<- *moderation.ModerationDecision),
 		trustChannels:      make(map[string][]chan<- *trust.TrustEdge),
 		aiChannels:         make(map[string][]chan<- *model.AIAnalysis),
+		quoteChannels:      make(map[string][]chan<- *model.QuoteActivityUpdate),
 	}
 }
 
@@ -258,6 +260,96 @@ func (sm *SubscriptionManager) SubscribeToAIAnalysisUpdates(ctx context.Context,
 	return ch, nil
 }
 
+// SubscribeToHashtagActivity creates a channel for hashtag activity updates
+func (sm *SubscriptionManager) SubscribeToHashtagActivity(ctx context.Context, username string, hashtags []string) (<-chan *model.HashtagActivityUpdate, error) {
+	// Create buffered channel
+	ch := make(chan *model.HashtagActivityUpdate, 100)
+
+	// Validate hashtags
+	if len(hashtags) == 0 {
+		close(ch)
+		return ch, fmt.Errorf("at least one hashtag must be specified")
+	}
+
+	// Start goroutine to monitor hashtag activity
+	go func() {
+		defer close(ch)
+
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Check for hashtag activity updates
+				// In real implementation, this would monitor hashtag streams from DynamoDB
+				sm.checkForHashtagUpdates(ctx, username, hashtags, ch)
+			}
+		}
+	}()
+
+	return ch, nil
+}
+
+// SubscribeToQuoteActivity creates a channel for quote activity updates on a specific note
+func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj interface{}) (<-chan *model.QuoteActivityUpdate, error) {
+	// Create buffered channel for quote activity updates
+	ch := make(chan *model.QuoteActivityUpdate, 50)
+
+	// Validate inputs
+	if noteID == "" {
+		close(ch)
+		return ch, fmt.Errorf("noteID cannot be empty")
+	}
+	if username == "" {
+		close(ch)
+		return ch, fmt.Errorf("username cannot be empty")
+	}
+
+	// Create stream key for this note
+	streamName := fmt.Sprintf("quote:%s", noteID)
+
+	// Register channel with subscription manager
+	sm.mu.Lock()
+	sm.quoteChannels[streamName] = append(sm.quoteChannels[streamName], ch)
+	sm.mu.Unlock()
+
+	// Start goroutine to monitor quote activity
+	go func() {
+		defer close(ch)
+		defer sm.unregisterQuoteChannel(streamName, ch)
+
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		sm.logger.Info("Started quote activity subscription",
+			zap.String("username", username),
+			zap.String("noteID", noteID),
+			zap.String("streamName", streamName))
+
+		for {
+			select {
+			case <-ctx.Done():
+				sm.logger.Info("Quote activity subscription cancelled",
+					zap.String("username", username),
+					zap.String("noteID", noteID))
+				return
+			case <-ticker.C:
+				// Check for new quote activity on this note
+				// In a real implementation, this would:
+				// 1. Query DynamoDB for recent quotes of this note
+				// 2. Check for quote updates, deletions, edits
+				// 3. Send QuoteActivityUpdate objects when changes occur
+				sm.checkForQuoteUpdates(ctx, username, noteID, noteObj, ch)
+			}
+		}
+	}()
+
+	return ch, nil
+}
+
 // Helper methods
 
 func (sm *SubscriptionManager) unregisterActivityChannel(streamName string, ch chan<- *activitypub.Activity) {
@@ -268,6 +360,19 @@ func (sm *SubscriptionManager) unregisterActivityChannel(streamName string, ch c
 	for i, c := range channels {
 		if c == ch {
 			sm.activityChannels[streamName] = append(channels[:i], channels[i+1:]...)
+			break
+		}
+	}
+}
+
+func (sm *SubscriptionManager) unregisterQuoteChannel(streamName string, ch chan<- *model.QuoteActivityUpdate) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	channels := sm.quoteChannels[streamName]
+	for i, c := range channels {
+		if c == ch {
+			sm.quoteChannels[streamName] = append(channels[:i], channels[i+1:]...)
 			break
 		}
 	}
@@ -347,4 +452,171 @@ func (sm *SubscriptionManager) checkForTrustUpdates(ctx context.Context, actorID
 func (sm *SubscriptionManager) checkForAIUpdates(ctx context.Context, objectID *string, ch chan<- *model.AIAnalysis) {
 	// In a real implementation, this would monitor AI analysis queue
 	// For demonstration, we'll skip implementation
+}
+
+func (sm *SubscriptionManager) checkForHashtagUpdates(ctx context.Context, username string, hashtags []string, ch chan<- *model.HashtagActivityUpdate) {
+	// In a real implementation, this would:
+	// 1. Query DynamoDB for recent posts containing the specified hashtags
+	// 2. Filter by hashtags and timeframe
+	// 3. Send new hashtag activity to the channel
+
+	// For demonstration, we'll create sample hashtag activity updates
+	if time.Now().Unix()%8 == 0 { // Send an update every 8 seconds approximately
+		// Pick a random hashtag from the list
+		selectedHashtag := hashtags[time.Now().Unix()%int64(len(hashtags))]
+
+		update := &model.HashtagActivityUpdate{
+			Hashtag: selectedHashtag,
+			Post: &model.Object{
+				ID:      fmt.Sprintf("https://example.com/objects/%d", time.Now().Unix()),
+				Type:    model.ObjectTypeNote,
+				Content: fmt.Sprintf("Sample post with #%s hashtag activity", selectedHashtag),
+				Actor: &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   fmt.Sprintf("https://example.com/users/user%d", time.Now().Unix()%100),
+						Type: "Person",
+					},
+					PreferredUsername: fmt.Sprintf("user%d", time.Now().Unix()%100),
+				},
+				CreatedAt: model.Time(time.Now()),
+			},
+			Author: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID:   fmt.Sprintf("https://example.com/users/user%d", time.Now().Unix()%100),
+					Type: "Person",
+				},
+				PreferredUsername: fmt.Sprintf("user%d", time.Now().Unix()%100),
+			},
+			Timestamp: model.Time(time.Now()),
+		}
+
+		select {
+		case ch <- update:
+		case <-ctx.Done():
+			return
+		default:
+			// Channel full, skip
+		}
+	}
+}
+
+func (sm *SubscriptionManager) checkForQuoteUpdates(ctx context.Context, username string, noteID string, noteObj interface{}, ch chan<- *model.QuoteActivityUpdate) {
+	// In a real implementation, this would:
+	// 1. Query DynamoDB for recent quotes of this specific note
+	// 2. Check for quote activity (new quotes, quote updates, quote deletions)
+	// 3. Filter quotes that have changed since last check
+	// 4. Send QuoteActivityUpdate objects when changes occur
+
+	// For demonstration, we'll simulate quote activity updates periodically
+	if time.Now().Unix()%12 == 0 { // Send an update every 12 seconds approximately
+
+		// Simulate different types of quote activity
+		activityTypes := []string{"quote_created", "quote_updated", "quote_removed"}
+		activityType := activityTypes[time.Now().Unix()%int64(len(activityTypes))]
+
+		var update *model.QuoteActivityUpdate
+
+		switch activityType {
+		case "quote_created":
+			// Simulate a new quote being created
+			update = &model.QuoteActivityUpdate{
+				Type: "quote_created",
+				Quote: &model.Object{
+					ID:      fmt.Sprintf("https://example.com/objects/quote_%d", time.Now().Unix()),
+					Type:    model.ObjectTypeNote,
+					Content: fmt.Sprintf("This is a quote of note %s", noteID),
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   fmt.Sprintf("https://example.com/users/quoter%d", time.Now().Unix()%50),
+							Type: "Person",
+						},
+						PreferredUsername: fmt.Sprintf("quoter%d", time.Now().Unix()%50),
+					},
+					CreatedAt: model.Time(time.Now()),
+				},
+				Quoter: &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   fmt.Sprintf("https://example.com/users/quoter%d", time.Now().Unix()%50),
+						Type: "Person",
+					},
+					PreferredUsername: fmt.Sprintf("quoter%d", time.Now().Unix()%50),
+				},
+				Timestamp: model.Time(time.Now()),
+			}
+
+		case "quote_updated":
+			// Simulate an existing quote being updated
+			update = &model.QuoteActivityUpdate{
+				Type: "quote_updated",
+				Quote: &model.Object{
+					ID:      fmt.Sprintf("https://example.com/objects/quote_%d", time.Now().Unix()-300), // Use older ID
+					Type:    model.ObjectTypeNote,
+					Content: fmt.Sprintf("Updated quote of note %s - edited for clarity", noteID),
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   fmt.Sprintf("https://example.com/users/quoter%d", (time.Now().Unix()-300)%50),
+							Type: "Person",
+						},
+						PreferredUsername: fmt.Sprintf("quoter%d", (time.Now().Unix()-300)%50),
+					},
+					CreatedAt: model.Time(time.Now().Add(-5 * time.Minute)), // Original creation time
+				},
+				Quoter: &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   fmt.Sprintf("https://example.com/users/quoter%d", (time.Now().Unix()-300)%50),
+						Type: "Person",
+					},
+					PreferredUsername: fmt.Sprintf("quoter%d", (time.Now().Unix()-300)%50),
+				},
+				Timestamp: model.Time(time.Now()),
+			}
+
+		case "quote_removed":
+			// Simulate a quote being removed/deleted
+			update = &model.QuoteActivityUpdate{
+				Type: "quote_removed",
+				Quote: &model.Object{
+					ID:      fmt.Sprintf("https://example.com/objects/quote_%d", time.Now().Unix()-600), // Use older ID
+					Type:    model.ObjectTypeNote,
+					Content: "", // Empty content for removed quote
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   fmt.Sprintf("https://example.com/users/quoter%d", (time.Now().Unix()-600)%50),
+							Type: "Person",
+						},
+						PreferredUsername: fmt.Sprintf("quoter%d", (time.Now().Unix()-600)%50),
+					},
+					CreatedAt: model.Time(time.Now().Add(-10 * time.Minute)), // Original creation time
+				},
+				Quoter: &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   fmt.Sprintf("https://example.com/users/quoter%d", (time.Now().Unix()-600)%50),
+						Type: "Person",
+					},
+					PreferredUsername: fmt.Sprintf("quoter%d", (time.Now().Unix()-600)%50),
+				},
+				Timestamp: model.Time(time.Now()),
+			}
+		}
+
+		// Send the update to the channel
+		if update != nil {
+			select {
+			case ch <- update:
+				sm.logger.Debug("Sent quote activity update",
+					zap.String("username", username),
+					zap.String("noteID", noteID),
+					zap.String("activityType", activityType),
+					zap.String("quoterID", update.Quoter.ID))
+			case <-ctx.Done():
+				return
+			default:
+				// Channel full, skip this update
+				sm.logger.Warn("Quote activity channel full, skipping update",
+					zap.String("username", username),
+					zap.String("noteID", noteID),
+					zap.String("activityType", activityType))
+			}
+		}
+	}
 }

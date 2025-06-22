@@ -446,11 +446,12 @@ func (h *Handler) HandleGetTrustRelationships(ctx context.Context, request event
 	var relationships []*trust.TrustRelationship
 	var nextCursor string
 
-	if direction == "outgoing" {
+	switch direction {
+	case "outgoing":
 		relationships, nextCursor, err = h.store.GetTrustRelationships(ctx, actor.ID, 100, "")
-	} else if direction == "incoming" {
+	case "incoming":
 		relationships, nextCursor, err = h.store.GetTrustedByRelationships(ctx, actor.ID, 100, "")
-	} else {
+	default:
 		return common.BadRequest(errors.New("direction must be 'outgoing' or 'incoming'")), nil
 	}
 

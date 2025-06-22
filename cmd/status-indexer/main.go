@@ -415,12 +415,17 @@ func calculateAndIndexEngagement(ctx context.Context, statusID string, status in
 		EngagementBucket: engagementBucket,
 	}
 
-	// TODO: Add StoreEngagementMetrics method to storage interface
-	_ = engagement // For now, just acknowledge we created it
+	// Store engagement metrics
+	if err := store.StoreEngagementMetrics(ctx, engagement); err != nil {
+		logger.Error("failed to store engagement metrics", zap.Error(err))
+		return err
+	}
 
 	// Index by engagement bucket for discovery
-	// TODO: Add IndexByEngagement method to storage interface
-	_ = engagementBucket // For now, just acknowledge the bucket
+	if err := store.IndexByEngagement(ctx, statusID, engagementBucket); err != nil {
+		logger.Error("failed to index by engagement", zap.Error(err))
+		return err
+	}
 
 	logger.Debug("calculated engagement",
 		zap.String("statusID", statusID),

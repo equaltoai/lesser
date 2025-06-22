@@ -1879,7 +1879,7 @@ func (m *MockStorage) GetPopularSearchQueries(ctx context.Context, limit int, ti
 // GetPreference mocks the GetPreference method
 func (m *MockStorage) GetPreference(ctx context.Context, username string, key string) (interface{}, error) {
 	args := m.Called(ctx, username, key)
-	return args.Get(0).(interface{}), args.Error(1)
+	return args.Get(0), args.Error(1)
 }
 
 // GetPublicTimeline mocks the GetPublicTimeline method
@@ -3584,4 +3584,232 @@ func (m *MockStorage) GetBoostCount(ctx context.Context, statusID string) (int64
 func (m *MockStorage) GetReplyCount(ctx context.Context, statusID string) (int64, error) {
 	args := m.Called(ctx, statusID)
 	return args.Get(0).(int64), args.Error(1)
+}
+
+// StoreEngagementMetrics mocks the StoreEngagementMetrics method
+func (m *MockStorage) StoreEngagementMetrics(ctx context.Context, metrics *storage.EngagementMetrics) error {
+	args := m.Called(ctx, metrics)
+	return args.Error(0)
+}
+
+// IndexByEngagement mocks the IndexByEngagement method
+func (m *MockStorage) IndexByEngagement(ctx context.Context, statusID string, bucket string) error {
+	args := m.Called(ctx, statusID, bucket)
+	return args.Error(0)
+}
+
+// GetEngagementMetrics mocks the GetEngagementMetrics method
+func (m *MockStorage) GetEngagementMetrics(ctx context.Context, statusID string) (*storage.EngagementMetrics, error) {
+	args := m.Called(ctx, statusID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.EngagementMetrics), args.Error(1)
+}
+
+// Enhanced search operations for GraphQL
+func (m *MockStorage) SearchAll(ctx context.Context, query string, limit int, accountID string) (*storage.SearchResults, error) {
+	args := m.Called(ctx, query, limit, accountID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.SearchResults), args.Error(1)
+}
+
+func (m *MockStorage) SearchAccountsAdvanced(ctx context.Context, query string, resolve bool, limit int, offset int, following bool, accountID string) ([]*activitypub.Actor, error) {
+	args := m.Called(ctx, query, resolve, limit, offset, following, accountID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*activitypub.Actor), args.Error(1)
+}
+
+func (m *MockStorage) SearchStatusesAdvanced(ctx context.Context, query string, limit int, maxID, minID *string, accountID string) ([]*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, query, limit, maxID, minID, accountID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
+}
+
+func (m *MockStorage) SearchHashtagsAdvanced(ctx context.Context, query string, limit int, accountID string) ([]*storage.HashtagSearchResult, error) {
+	args := m.Called(ctx, query, limit, accountID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.HashtagSearchResult), args.Error(1)
+}
+
+// Enhanced notification operations for GraphQL
+func (m *MockStorage) GetNotificationsAdvanced(ctx context.Context, userID string, excludeTypes []string, maxID, sinceID, minID *string, limit int, includeFiltered bool) ([]*storage.Notification, error) {
+	args := m.Called(ctx, userID, excludeTypes, maxID, sinceID, minID, limit, includeFiltered)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Notification), args.Error(1)
+}
+
+func (m *MockStorage) GetNotificationsByAccount(ctx context.Context, userID, accountID string, limit int) ([]*storage.Notification, error) {
+	args := m.Called(ctx, userID, accountID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Notification), args.Error(1)
+}
+
+func (m *MockStorage) GetUnreadNotificationCount(ctx context.Context, userID string) (int64, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// Enhanced hashtag operations for GraphQL
+func (m *MockStorage) UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, notify bool) error {
+	args := m.Called(ctx, userID, hashtag, notify)
+	return args.Error(0)
+}
+
+func (m *MockStorage) MuteHashtag(ctx context.Context, userID, hashtag string) error {
+	args := m.Called(ctx, userID, hashtag)
+	return args.Error(0)
+}
+
+func (m *MockStorage) IsHashtagMuted(ctx context.Context, userID, hashtag string) (bool, error) {
+	args := m.Called(ctx, userID, hashtag)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStorage) GetHashtagTimelineAdvanced(ctx context.Context, hashtag string, maxID *string, limit int, userID string) ([]*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, hashtag, maxID, limit, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
+}
+
+func (m *MockStorage) GetMultiHashtagTimeline(ctx context.Context, hashtags []string, maxID *string, limit int, userID string) ([]*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, hashtags, maxID, limit, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
+}
+
+func (m *MockStorage) GetSuggestedHashtags(ctx context.Context, userID string, limit int) ([]*storage.HashtagSearchResult, error) {
+	args := m.Called(ctx, userID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.HashtagSearchResult), args.Error(1)
+}
+
+func (m *MockStorage) GetHashtagActivity(ctx context.Context, hashtag string, since time.Time) ([]*storage.Activity, error) {
+	args := m.Called(ctx, hashtag, since)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.Activity), args.Error(1)
+}
+
+// Enhanced quote operations for GraphQL
+func (m *MockStorage) WithdrawStatusFromQuotes(ctx context.Context, statusID string) error {
+	args := m.Called(ctx, statusID)
+	return args.Error(0)
+}
+
+func (m *MockStorage) UpdateQuotePermissions(ctx context.Context, statusID string, permissions *storage.QuotePermissions) error {
+	args := m.Called(ctx, statusID, permissions)
+	return args.Error(0)
+}
+
+func (m *MockStorage) IsQuoteAllowed(ctx context.Context, statusID, quoterID string) (bool, error) {
+	args := m.Called(ctx, statusID, quoterID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStorage) GetQuoteType(ctx context.Context, statusID string) (string, error) {
+	args := m.Called(ctx, statusID)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockStorage) IsWithdrawnFromQuotes(ctx context.Context, statusID string) (bool, error) {
+	args := m.Called(ctx, statusID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStorage) GetQuotesOfStatus(ctx context.Context, statusID string, limit int) ([]*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, statusID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
+}
+
+// Thread synchronization operations for GraphQL
+func (m *MockStorage) SyncThreadFromRemote(ctx context.Context, statusID string) (*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, statusID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.StatusSearchResult), args.Error(1)
+}
+
+func (m *MockStorage) SyncMissingRepliesFromRemote(ctx context.Context, statusID string) ([]*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, statusID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
+}
+
+func (m *MockStorage) GetThreadContext(ctx context.Context, statusID string) (*storage.ThreadContext, error) {
+	args := m.Called(ctx, statusID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ThreadContext), args.Error(1)
+}
+
+func (m *MockStorage) MarkThreadAsSynced(ctx context.Context, statusID string) error {
+	args := m.Called(ctx, statusID)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetMissingReplies(ctx context.Context, statusID string) ([]*storage.StatusSearchResult, error) {
+	args := m.Called(ctx, statusID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
+}
+
+// Federation severance operations for GraphQL
+func (m *MockStorage) AcknowledgeSeverance(ctx context.Context, userID, domain string) error {
+	args := m.Called(ctx, userID, domain)
+	return args.Error(0)
+}
+
+func (m *MockStorage) AttemptReconnection(ctx context.Context, userID, domain string) error {
+	args := m.Called(ctx, userID, domain)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetUserSeveredRelationships(ctx context.Context, userID string) ([]*storage.SeveredRelationship, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.SeveredRelationship), args.Error(1)
+}
+
+func (m *MockStorage) GetAffectedRelationships(ctx context.Context, userID, domain string) ([]*storage.RelationshipRecord, error) {
+	args := m.Called(ctx, userID, domain)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.RelationshipRecord), args.Error(1)
+}
+
+func (m *MockStorage) TrackFederationIssue(ctx context.Context, domain, issueType string) error {
+	args := m.Called(ctx, domain, issueType)
+	return args.Error(0)
 }

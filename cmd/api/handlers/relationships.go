@@ -152,7 +152,7 @@ func (h *Handler) buildRelationship(ctx context.Context, actor, targetActor *act
 	}
 
 	// Implement domain blocking, endorsements, and notes
-	relationship.DomainBlocking = false // TODO: Fix signature mismatch with isDomainBlocked
+	relationship.DomainBlocking = h.isDomainBlocked(ctx, currentUsername, targetUsername)
 	relationship.Endorsed = h.isEndorsed(ctx, currentUsername, targetUsername)
 	relationship.Note = h.getRelationshipNote(ctx, currentUsername, targetUsername)
 

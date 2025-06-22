@@ -75,7 +75,8 @@ func (h *Handler) HandleGetDirectory(ctx context.Context, request events.APIGate
 	}
 
 	// Apply ordering based on parameter
-	if order == "active" {
+	switch order {
+	case "active":
 		// Sort by recent activity - this would need last_activity_at field
 		// For now, sort by last_status_at
 		sort.Slice(accounts, func(i, j int) bool {
@@ -83,7 +84,7 @@ func (h *Handler) HandleGetDirectory(ctx context.Context, request events.APIGate
 			lastStatusJ, _ := accounts[j]["last_status_at"].(string)
 			return lastStatusI > lastStatusJ
 		})
-	} else if order == "new" {
+	case "new":
 		// Sort by account creation date
 		sort.Slice(accounts, func(i, j int) bool {
 			createdI, _ := accounts[i]["created_at"].(string)

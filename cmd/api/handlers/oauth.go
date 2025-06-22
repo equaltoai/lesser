@@ -543,7 +543,7 @@ func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID 
 	return true
 }
 
-func (h *Handler) showConsentScreen(ctx context.Context, request events.APIGatewayV2HTTPRequest, authState *storage.OAuthState) (*events.APIGatewayV2HTTPResponse, error) {
+func (h *Handler) showConsentScreen(ctx context.Context, _ events.APIGatewayV2HTTPRequest, authState *storage.OAuthState) (*events.APIGatewayV2HTTPResponse, error) {
 	// Get app details for consent screen
 	app, err := h.store.GetOAuthApp(ctx, authState.ClientID)
 	if err != nil {
