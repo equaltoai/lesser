@@ -30,6 +30,12 @@ type Storage interface {
 	SearchStatusesWithOptions(ctx context.Context, query string, options StatusSearchOptions) ([]*StatusSearchResult, error)
 	SearchStatusesByURL(ctx context.Context, url string) (*StatusSearchResult, error)
 
+	// Enhanced search operations for GraphQL
+	SearchAll(ctx context.Context, query string, limit int, accountID string) (*SearchResults, error)
+	SearchAccountsAdvanced(ctx context.Context, query string, resolve bool, limit int, offset int, following bool, accountID string) ([]*activitypub.Actor, error)
+	SearchStatusesAdvanced(ctx context.Context, query string, limit int, maxID, minID *string, accountID string) ([]*StatusSearchResult, error)
+	SearchHashtagsAdvanced(ctx context.Context, query string, limit int, accountID string) ([]*HashtagSearchResult, error)
+
 	// Activity operations
 	CreateActivity(ctx context.Context, activity *activitypub.Activity) error
 	GetActivity(ctx context.Context, id string) (*activitypub.Activity, error)
@@ -219,6 +225,11 @@ type Storage interface {
 	ClearNotifications(ctx context.Context, username string) error
 	CountUnreadNotifications(ctx context.Context, username string) (int, error)
 
+	// Enhanced notification operations for GraphQL
+	GetNotificationsAdvanced(ctx context.Context, userID string, excludeTypes []string, maxID, sinceID, minID *string, limit int, includeFiltered bool) ([]*Notification, error)
+	GetNotificationsByAccount(ctx context.Context, userID, accountID string, limit int) ([]*Notification, error)
+	GetUnreadNotificationCount(ctx context.Context, userID string) (int64, error)
+
 	// Remote actor caching operations
 	CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error
 	GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error)
@@ -336,6 +347,15 @@ type Storage interface {
 	IsFollowingHashtag(ctx context.Context, userID string, hashtag string) (bool, error)
 	GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]string, string, error)
 
+	// Enhanced hashtag operations for GraphQL
+	UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, notify bool) error
+	MuteHashtag(ctx context.Context, userID, hashtag string) error
+	IsHashtagMuted(ctx context.Context, userID, hashtag string) (bool, error)
+	GetHashtagTimelineAdvanced(ctx context.Context, hashtag string, maxID *string, limit int, userID string) ([]*StatusSearchResult, error)
+	GetMultiHashtagTimeline(ctx context.Context, hashtags []string, maxID *string, limit int, userID string) ([]*StatusSearchResult, error)
+	GetSuggestedHashtags(ctx context.Context, userID string, limit int) ([]*HashtagSearchResult, error)
+	GetHashtagActivity(ctx context.Context, hashtag string, since time.Time) ([]*Activity, error)
+
 	// Featured tags
 	CreateFeaturedTag(ctx context.Context, userID string, tagName string) (*FeaturedTag, error)
 	DeleteFeaturedTag(ctx context.Context, userID string, featuredTagID string) error
@@ -367,6 +387,11 @@ type Storage interface {
 	GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*TrendingHashtag, error)
 	GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*TrendingStatus, error)
 	GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*TrendingLink, error)
+
+	// Engagement metrics operations
+	StoreEngagementMetrics(ctx context.Context, metrics *EngagementMetrics) error
+	IndexByEngagement(ctx context.Context, statusID string, bucket string) error
+	GetEngagementMetrics(ctx context.Context, statusID string) (*EngagementMetrics, error)
 
 	// Announcement operations
 	CreateAnnouncement(ctx context.Context, announcement *Announcement) error
@@ -594,6 +619,13 @@ type Storage interface {
 	CountReplies(ctx context.Context, objectID string) (int, error)
 	IncrementReplyCount(ctx context.Context, objectID string) error
 
+	// Thread synchronization operations for GraphQL
+	SyncThreadFromRemote(ctx context.Context, statusID string) (*StatusSearchResult, error)
+	SyncMissingRepliesFromRemote(ctx context.Context, statusID string) ([]*StatusSearchResult, error)
+	GetThreadContext(ctx context.Context, statusID string) (*ThreadContext, error)
+	MarkThreadAsSynced(ctx context.Context, statusID string) error
+	GetMissingReplies(ctx context.Context, statusID string) ([]*StatusSearchResult, error)
+
 	// Reblog operations
 	IncrementReblogCount(ctx context.Context, objectID string) error
 
@@ -603,6 +635,14 @@ type Storage interface {
 	IsQuoted(ctx context.Context, actorID, noteID string) (bool, error)
 	WithdrawQuote(ctx context.Context, quoteNoteID string) error
 	CountQuotes(ctx context.Context, noteID string) (int, error)
+
+	// Enhanced quote operations for GraphQL
+	WithdrawStatusFromQuotes(ctx context.Context, statusID string) error
+	UpdateQuotePermissions(ctx context.Context, statusID string, permissions *QuotePermissions) error
+	IsQuoteAllowed(ctx context.Context, statusID, quoterID string) (bool, error)
+	GetQuoteType(ctx context.Context, statusID string) (string, error)
+	IsWithdrawnFromQuotes(ctx context.Context, statusID string) (bool, error)
+	GetQuotesOfStatus(ctx context.Context, statusID string, limit int) ([]*StatusSearchResult, error)
 
 	// Additional missing methods for resolving compilation errors
 	IsNotificationEnabled(ctx context.Context, userID, targetID string) (bool, error)
@@ -662,6 +702,13 @@ type Storage interface {
 	GetActiveRelays(ctx context.Context) ([]*RelayInfo, error)
 	GetAllRelays(ctx context.Context, limit int, cursor string) ([]*RelayInfo, string, error)
 	UpdateRelayStatus(ctx context.Context, relayURL string, active bool) error
+
+	// Federation severance operations for GraphQL
+	AcknowledgeSeverance(ctx context.Context, userID, domain string) error
+	AttemptReconnection(ctx context.Context, userID, domain string) error
+	GetUserSeveredRelationships(ctx context.Context, userID string) ([]*SeveredRelationship, error)
+	GetAffectedRelationships(ctx context.Context, userID, domain string) ([]*RelationshipRecord, error)
+	TrackFederationIssue(ctx context.Context, domain, issueType string) error
 }
 
 // User represents a user account in the system
@@ -674,6 +721,7 @@ type User struct {
 	UpdatedAt    time.Time `dynamodbav:"updated_at"`
 	Approved     bool      `dynamodbav:"approved"`
 	Suspended    bool      `dynamodbav:"suspended"`
+	Silenced     bool      `dynamodbav:"silenced"`
 	Role         string    `dynamodbav:"role"` // user, moderator, admin
 	Locale       string    `dynamodbav:"locale,omitempty"`
 
@@ -2049,4 +2097,54 @@ type RelayInfo struct {
 	Status     string    `json:"status,omitempty" dynamodbav:"status,omitempty"` // pending/active/rejected/error
 	ErrorCount int       `json:"error_count,omitempty" dynamodbav:"error_count,omitempty"`
 	TTL        int64     `json:"ttl,omitempty" dynamodbav:"ttl,omitempty"` // For automatic cleanup
+}
+
+// Enhanced types for GraphQL operations
+
+// SearchResults combines all search result types
+type SearchResults struct {
+	Accounts []*activitypub.Actor   `json:"accounts"`
+	Statuses []*StatusSearchResult  `json:"statuses"`
+	Hashtags []*HashtagSearchResult `json:"hashtags"`
+}
+
+// HashtagSearchResult represents a hashtag search result
+type HashtagSearchResult struct {
+	Name      string             `json:"name"`
+	URL       string             `json:"url"`
+	History   []*TrendingHashtag `json:"history"`
+	Following *bool              `json:"following,omitempty"`
+}
+
+// Activity represents an activity for hashtag tracking
+type Activity struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Actor     string    `json:"actor"`
+	Object    string    `json:"object"`
+	Published time.Time `json:"published"`
+	Content   string    `json:"content,omitempty"`
+}
+
+// QuotePermissions represents quote permissions for a status
+type QuotePermissions struct {
+	AllowPublic    bool     `json:"allow_public"`
+	AllowFollowers bool     `json:"allow_followers"`
+	AllowMentioned bool     `json:"allow_mentioned"`
+	BlockList      []string `json:"block_list"`
+}
+
+// ThreadContext represents the context of a status thread
+type ThreadContext struct {
+	Ancestors   []*StatusSearchResult `json:"ancestors"`
+	Descendants []*StatusSearchResult `json:"descendants"`
+}
+
+// SeveredRelationship represents a severed federation relationship
+type SeveredRelationship struct {
+	Domain       string    `json:"domain"`
+	SeveredAt    time.Time `json:"severed_at"`
+	Acknowledged bool      `json:"acknowledged"`
+	Reason       string    `json:"reason"`
+	Type         string    `json:"type"` // domain_block, suspension, etc.
 }

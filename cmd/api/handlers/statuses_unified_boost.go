@@ -69,7 +69,7 @@ func (h *Handler) HandleUnifiedReblog(ctx context.Context, request events.APIGat
 	// Check if this is a quote boost
 	if req.Comment != nil && *req.Comment != "" {
 		// Create a quote boost
-		return h.createQuoteBoost(ctx, statusID, objectID, *req.Comment, req.Visibility, claims, actor)
+		return h.createQuoteBoost(ctx, statusID, objectID, *req.Comment, req.Visibility, actor)
 	}
 
 	// Traditional boost - create Announce activity
@@ -175,7 +175,7 @@ func (h *Handler) extractContentFromObject(obj interface{}) string {
 }
 
 // createQuoteBoost creates a new status with a quote relationship
-func (h *Handler) createQuoteBoost(ctx context.Context, statusID, objectID, comment, visibility string, claims *auth.Claims, actor *activitypub.Actor) (*events.APIGatewayV2HTTPResponse, error) {
+func (h *Handler) createQuoteBoost(ctx context.Context, statusID, objectID, comment, visibility string, actor *activitypub.Actor) (*events.APIGatewayV2HTTPResponse, error) {
 	// Default visibility if not specified
 	if visibility == "" {
 		visibility = "public"

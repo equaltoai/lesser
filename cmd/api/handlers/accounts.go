@@ -1465,8 +1465,18 @@ func (h *Handler) extractDomainFromActorID(actorID string) string {
 
 // getFieldVerificationTime gets the verification time for a profile field
 func (h *Handler) getFieldVerificationTime(ctx context.Context, username, fieldName string) interface{} {
-	// Field verification is not yet implemented in the storage layer
-	// For now, return nil to indicate no verification
-	// TODO: Implement GetFieldVerification in storage interface when needed
+	field, err := h.store.GetFieldVerification(ctx, username, fieldName)
+	if err != nil {
+		h.logger.Warn("failed to get field verification",
+			zap.String("username", username),
+			zap.String("field_name", fieldName),
+			zap.Error(err))
+		return nil
+	}
+
+	if field.VerifiedAt != nil {
+		return field.VerifiedAt.Format("2006-01-02T15:04:05.000Z")
+	}
+
 	return nil
 }

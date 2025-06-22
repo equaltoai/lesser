@@ -17,6 +17,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.43.1
 	github.com/aws/aws-sdk-go-v2/service/kms v1.38.2
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.72.0
+	github.com/aws/aws-sdk-go-v2/service/mediaconvert v1.30.0
 	github.com/aws/aws-sdk-go-v2/service/rekognition v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.80.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.35.7
@@ -26,6 +27,7 @@ require (
 	github.com/awslabs/aws-lambda-go-api-proxy v0.16.2
 	github.com/bbrks/go-blurhash v1.1.1
 	github.com/bytedance/sonic v1.13.3
+	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8
 	github.com/disintegration/imaging v1.6.2
 	github.com/ethereum/go-ethereum v1.13.15
 	github.com/go-chi/chi/v5 v5.2.1

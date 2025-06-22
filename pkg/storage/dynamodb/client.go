@@ -108,8 +108,8 @@ func (s *dynamoDBStorage) GetRecentHashtags(ctx context.Context, since time.Time
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":type": &types.AttributeValueMemberS{Value: "HASHTAG_ACTIVITY"},
 		},
-		ScanIndexForward: aws.Bool(false), // Recent first
-		Limit:            safeInt32(limit),
+		ScanIndexForward: aws.Bool(false),       // Recent first
+		Limit:            safeInt32(limit * 10), // Get more to calculate real counts
 	}
 
 	result, err := s.client.Query(ctx, input)
@@ -118,23 +118,38 @@ func (s *dynamoDBStorage) GetRecentHashtags(ctx context.Context, since time.Time
 		return []*storage.TrendingHashtag{}, nil
 	}
 
-	hashtags := make([]*storage.TrendingHashtag, 0, len(result.Items))
-	seen := make(map[string]bool)
-
+	// Count usage for each hashtag
+	usageCounts := make(map[string]int)
 	for _, item := range result.Items {
 		if tagVal, ok := item["Hashtag"]; ok {
 			if tagStr, ok := tagVal.(*types.AttributeValueMemberS); ok {
 				tag := tagStr.Value
-				if !seen[tag] {
-					hashtag := &storage.TrendingHashtag{
-						Name:       tag,
-						UsageCount: 1, // Default value - could be enhanced with actual counts
-					}
-					hashtags = append(hashtags, hashtag)
-					seen[tag] = true
-				}
+				usageCounts[tag]++
 			}
 		}
+	}
+
+	// Create trending hashtags with real counts
+	hashtags := make([]*storage.TrendingHashtag, 0, len(usageCounts))
+	for tag, count := range usageCounts {
+		hashtag := &storage.TrendingHashtag{
+			Name:       tag,
+			UsageCount: int64(count),
+		}
+		hashtags = append(hashtags, hashtag)
+	}
+
+	// Sort by usage count (descending) and limit results
+	for i := 0; i < len(hashtags)-1; i++ {
+		for j := i + 1; j < len(hashtags); j++ {
+			if hashtags[i].UsageCount < hashtags[j].UsageCount {
+				hashtags[i], hashtags[j] = hashtags[j], hashtags[i]
+			}
+		}
+	}
+
+	if len(hashtags) > limit {
+		hashtags = hashtags[:limit]
 	}
 
 	return hashtags, nil
@@ -150,8 +165,8 @@ func (s *dynamoDBStorage) GetRecentLinks(ctx context.Context, since time.Time, l
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":type": &types.AttributeValueMemberS{Value: "LINK_ACTIVITY"},
 		},
-		ScanIndexForward: aws.Bool(false), // Recent first
-		Limit:            safeInt32(limit),
+		ScanIndexForward: aws.Bool(false),       // Recent first
+		Limit:            safeInt32(limit * 10), // Get more to calculate real counts
 	}
 
 	result, err := s.client.Query(ctx, input)
@@ -160,23 +175,38 @@ func (s *dynamoDBStorage) GetRecentLinks(ctx context.Context, since time.Time, l
 		return []*storage.TrendingLink{}, nil
 	}
 
-	links := make([]*storage.TrendingLink, 0, len(result.Items))
-	seen := make(map[string]bool)
-
+	// Count shares for each link
+	shareCounts := make(map[string]int)
 	for _, item := range result.Items {
 		if urlVal, ok := item["URL"]; ok {
 			if urlStr, ok := urlVal.(*types.AttributeValueMemberS); ok {
 				url := urlStr.Value
-				if !seen[url] {
-					link := &storage.TrendingLink{
-						URL:        url,
-						ShareCount: 1, // Default value - could be enhanced with actual counts
-					}
-					links = append(links, link)
-					seen[url] = true
-				}
+				shareCounts[url]++
 			}
 		}
+	}
+
+	// Create trending links with real counts
+	links := make([]*storage.TrendingLink, 0, len(shareCounts))
+	for url, count := range shareCounts {
+		link := &storage.TrendingLink{
+			URL:        url,
+			ShareCount: int64(count),
+		}
+		links = append(links, link)
+	}
+
+	// Sort by share count (descending) and limit results
+	for i := 0; i < len(links)-1; i++ {
+		for j := i + 1; j < len(links); j++ {
+			if links[i].ShareCount < links[j].ShareCount {
+				links[i], links[j] = links[j], links[i]
+			}
+		}
+	}
+
+	if len(links) > limit {
+		links = links[:limit]
 	}
 
 	return links, nil
@@ -192,8 +222,8 @@ func (s *dynamoDBStorage) GetRecentStatusesWithEngagement(ctx context.Context, s
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":type": &types.AttributeValueMemberS{Value: "STATUS_ENGAGEMENT"},
 		},
-		ScanIndexForward: aws.Bool(false), // Recent first
-		Limit:            safeInt32(limit),
+		ScanIndexForward: aws.Bool(false),      // Recent first
+		Limit:            safeInt32(limit * 5), // Get more to calculate real engagement
 	}
 
 	result, err := s.client.Query(ctx, input)
@@ -202,7 +232,7 @@ func (s *dynamoDBStorage) GetRecentStatusesWithEngagement(ctx context.Context, s
 		return []*storage.TrendingStatus{}, nil
 	}
 
-	statuses := make([]*storage.TrendingStatus, 0, len(result.Items))
+	statuses := make([]*storage.TrendingStatus, 0)
 	seen := make(map[string]bool)
 
 	for _, item := range result.Items {
@@ -210,15 +240,47 @@ func (s *dynamoDBStorage) GetRecentStatusesWithEngagement(ctx context.Context, s
 			if statusStr, ok := statusVal.(*types.AttributeValueMemberS); ok {
 				statusID := statusStr.Value
 				if !seen[statusID] {
+					// Calculate real engagement metrics
+					likes := int64(0)
+					boosts := int64(0)
+					replies := int64(0)
+
+					// Try to get real counts (best effort)
+					if l, err := s.GetLikeCount(ctx, statusID); err == nil {
+						likes = l
+					}
+					if b, err := s.GetBoostCount(ctx, statusID); err == nil {
+						boosts = b
+					}
+					if r, err := s.GetReplyCount(ctx, statusID); err == nil {
+						replies = r
+					}
+
+					// Calculate engagement score: likes * 1 + boosts * 2 + replies * 3
+					engagementScore := likes + (boosts * 2) + (replies * 3)
+
 					status := &storage.TrendingStatus{
 						ID:          statusID,
-						Engagements: 1, // Default value - could be enhanced with actual counts
+						Engagements: engagementScore,
 					}
 					statuses = append(statuses, status)
 					seen[statusID] = true
 				}
 			}
 		}
+	}
+
+	// Sort by engagement score (descending) and limit results
+	for i := 0; i < len(statuses)-1; i++ {
+		for j := i + 1; j < len(statuses); j++ {
+			if statuses[i].Engagements < statuses[j].Engagements {
+				statuses[i], statuses[j] = statuses[j], statuses[i]
+			}
+		}
+	}
+
+	if len(statuses) > limit {
+		statuses = statuses[:limit]
 	}
 
 	return statuses, nil
@@ -1424,6 +1486,89 @@ func attributeValueToInterface(av types.AttributeValue) interface{} {
 }
 
 // GetCollection is implemented in collection.go
+
+// StoreEngagementMetrics stores engagement metrics for a status
+func (s *dynamoDBStorage) StoreEngagementMetrics(ctx context.Context, metrics *storage.EngagementMetrics) error {
+	ttl := time.Now().Add(90 * 24 * time.Hour).Unix() // 90 days TTL
+
+	item := map[string]types.AttributeValue{
+		"PK":               &types.AttributeValueMemberS{Value: fmt.Sprintf("STATUS#%s", metrics.StatusID)},
+		"SK":               &types.AttributeValueMemberS{Value: "ENGAGEMENT#METRICS"},
+		"StatusID":         &types.AttributeValueMemberS{Value: metrics.StatusID},
+		"LikeCount":        &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.LikeCount)},
+		"BoostCount":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.BoostCount)},
+		"ReplyCount":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.ReplyCount)},
+		"Score":            &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", metrics.Score)},
+		"EngagementBucket": &types.AttributeValueMemberS{Value: metrics.EngagementBucket},
+		"TTL":              &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", ttl)},
+	}
+
+	_, err := s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(s.tableName),
+		Item:      item,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to store engagement metrics: %w", err)
+	}
+
+	return nil
+}
+
+// IndexByEngagement creates an index entry for engagement-based discovery
+func (s *dynamoDBStorage) IndexByEngagement(ctx context.Context, statusID string, bucket string) error {
+	timestamp := time.Now().Unix()
+	ttl := time.Now().Add(90 * 24 * time.Hour).Unix() // 90 days TTL
+
+	item := map[string]types.AttributeValue{
+		"PK":               &types.AttributeValueMemberS{Value: fmt.Sprintf("ENGAGEMENT#%s", bucket)},
+		"SK":               &types.AttributeValueMemberS{Value: fmt.Sprintf("STATUS#%d#%s", timestamp, statusID)},
+		"GSI8PK":           &types.AttributeValueMemberS{Value: "ENGAGEMENT_INDEX"},
+		"GSI8SK":           &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%d#%s", bucket, timestamp, statusID)},
+		"StatusID":         &types.AttributeValueMemberS{Value: statusID},
+		"EngagementBucket": &types.AttributeValueMemberS{Value: bucket},
+		"IndexedAt":        &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", timestamp)},
+		"TTL":              &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", ttl)},
+	}
+
+	_, err := s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(s.tableName),
+		Item:      item,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to index by engagement: %w", err)
+	}
+
+	return nil
+}
+
+// GetEngagementMetrics retrieves stored engagement metrics for a status
+func (s *dynamoDBStorage) GetEngagementMetrics(ctx context.Context, statusID string) (*storage.EngagementMetrics, error) {
+	input := &dynamodb.GetItemInput{
+		TableName: aws.String(s.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("STATUS#%s", statusID)},
+			"SK": &types.AttributeValueMemberS{Value: "ENGAGEMENT#METRICS"},
+		},
+	}
+
+	result, err := s.client.GetItem(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engagement metrics: %w", err)
+	}
+
+	if result.Item == nil {
+		return nil, nil // No metrics stored
+	}
+
+	var metrics storage.EngagementMetrics
+	if err := s.UnmarshalItem(result.Item, &metrics); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal engagement metrics: %w", err)
+	}
+
+	return &metrics, nil
+}
 
 // Helper methods for key construction
 func (s *dynamoDBStorage) userPK(username string) string {

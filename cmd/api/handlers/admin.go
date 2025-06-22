@@ -209,7 +209,7 @@ func (h *Handler) HandleAdminGetAccounts(ctx context.Context, request events.API
 			},
 			Confirmed: user.Approved,
 			Suspended: user.Suspended,
-			Silenced:  false, // TODO: Add Silenced field to User struct
+			Silenced:  user.Silenced,
 			Disabled:  !user.Approved,
 			Approved:  user.Approved,
 			Account:   h.convertActorToAccountWithCounts(ctx, actor),
@@ -336,7 +336,7 @@ func (h *Handler) HandleAdminGetAccount(ctx context.Context, request events.APIG
 		},
 		Confirmed: user.Approved,
 		Suspended: user.Suspended,
-		Silenced:  false, // TODO: Add Silenced field to User struct
+		Silenced:  user.Silenced,
 		Disabled:  !user.Approved,
 		Approved:  user.Approved,
 		Account:   h.convertActorToAccountWithCounts(ctx, actor),

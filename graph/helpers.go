@@ -11,6 +11,7 @@ import (
 	"github.com/aron23/lesser/graph/model"
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
+	"github.com/aron23/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -457,4 +458,95 @@ func (r *queryResolver) getObjectShareCount(ctx context.Context, objectID string
 		return 0
 	}
 	return count
+}
+
+// calculateMissingPosts calculates the number of missing posts in a thread
+func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *storage.ThreadContext) int {
+	if threadContext == nil {
+		return 0
+	}
+	
+	// Count gaps in the thread by looking for missing replies
+	// This is a simplified implementation - a more sophisticated version would:
+	// 1. Analyze reply chains for gaps
+	// 2. Check for orphaned replies (replies without visible parents)
+	// 3. Compare with known reply counts from remote servers
+	
+	missingCount := 0
+	
+	// Check if we have ancestors/descendants that reference missing posts
+	// StatusSearchResult doesn't have Object field, so we check if we can retrieve the actual object
+	for _, ancestor := range threadContext.Ancestors {
+		if ancestor.StatusID != "" {
+			if _, err := r.Storage.GetObject(ctx, ancestor.StatusID); err != nil {
+				missingCount++
+			}
+		}
+	}
+	
+	for _, descendant := range threadContext.Descendants {
+		if descendant.StatusID != "" {
+			if _, err := r.Storage.GetObject(ctx, descendant.StatusID); err != nil {
+				missingCount++
+			}
+		}
+	}
+	
+	// Additional heuristic: if we have very few replies but the post seems popular
+	// (based on likes/shares), there might be missing replies
+	totalPosts := len(threadContext.Ancestors) + len(threadContext.Descendants)
+	if totalPosts < 3 {
+		// For small threads, estimate missing posts based on engagement
+		// This is a rough heuristic and could be improved with more sophisticated analysis
+		avgEngagement := r.calculateAverageEngagement(ctx, threadContext)
+		if avgEngagement > 10 { // High engagement suggests missing replies
+			missingCount += int(avgEngagement / 20) // Rough estimate
+		}
+	}
+	
+	return missingCount
+}
+
+// calculateAverageEngagement calculates average engagement for posts in the thread
+func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext *storage.ThreadContext) float64 {
+	if threadContext == nil {
+		return 0
+	}
+	
+	totalEngagement := 0
+	postCount := 0
+	
+	// Sum engagement from all posts in the thread
+	allPosts := append(threadContext.Ancestors, threadContext.Descendants...)
+	for _, post := range allPosts {
+		if post.StatusID != "" {
+			// Get engagement metrics for this post using StatusID
+			likes, _ := r.Storage.CountObjectLikes(ctx, post.StatusID)
+			shares, _ := r.Storage.CountObjectAnnounces(ctx, post.StatusID)
+			replies, _ := r.Storage.CountObjectReplies(ctx, post.StatusID)
+			
+			totalEngagement += likes + shares + replies
+			postCount++
+		}
+	}
+	
+	if postCount == 0 {
+		return 0
+	}
+	
+	return float64(totalEngagement) / float64(postCount)
+}
+
+// getObjectID extracts the ID from an ActivityPub object
+func (r *Resolver) getObjectID(obj interface{}) string {
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		return o.ID
+	case *activitypub.Article:
+		return o.ID
+	case *activitypub.Image:
+		return o.ID
+	default:
+		return ""
+	}
 }

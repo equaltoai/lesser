@@ -582,7 +582,7 @@ func (h *Handler) GetMediaProcessingStatus(ctx context.Context, mediaID string) 
 }
 
 // generateThumbnailURL generates a thumbnail URL for media
-func (h *Handler) generateThumbnailURL(ctx context.Context, originalURL, mimeType string) string {
+func (h *Handler) generateThumbnailURL(_ context.Context, originalURL, mimeType string) string {
 	// For images, generate a thumbnail
 	if strings.HasPrefix(mimeType, "image/") && mimeType != "image/gif" {
 		// Extract the base URL and add thumbnail suffix
@@ -609,7 +609,7 @@ func (h *Handler) generateThumbnailURL(ctx context.Context, originalURL, mimeTyp
 }
 
 // getMediaDimensions extracts dimensions from media file data
-func (h *Handler) getMediaDimensions(ctx context.Context, fileData []byte, mimeType string) map[string]interface{} {
+func (h *Handler) getMediaDimensions(_ context.Context, fileData []byte, mimeType string) map[string]interface{} {
 	// For images, try to extract dimensions using proper image decoding
 	if strings.HasPrefix(mimeType, "image/") {
 		img, err := h.decodeImage(fileData, mimeType)
@@ -748,7 +748,7 @@ func (h *Handler) extractWebPDimensions(data []byte) (int, int) {
 }
 
 // generateBlurhash generates a blurhash string for the image
-func (h *Handler) generateBlurhash(ctx context.Context, fileData []byte, mimeType string) string {
+func (h *Handler) generateBlurhash(_ context.Context, fileData []byte, mimeType string) string {
 	if !strings.HasPrefix(mimeType, "image/") {
 		return "" // Only generate blurhash for images
 	}

@@ -236,7 +236,7 @@ func (h *Handler) deliverActivityPubActivity(ctx context.Context, activity map[s
 	return nil
 }
 
-func (h *Handler) createHTTPSignature(ctx context.Context, method, url string, body []byte) (string, error) {
+func (h *Handler) createHTTPSignature(_ context.Context, _ string, _ string, _ []byte) (string, error) {
 	// Simplified HTTP signature creation
 	// In production, would use proper HTTP signature library
 	return "keyId=\"#main-key\",algorithm=\"rsa-sha256\",headers=\"(request-target) date digest\"", nil

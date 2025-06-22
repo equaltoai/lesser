@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aron23/lesser/cmd/api/models"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/trends"
@@ -189,33 +188,11 @@ func (h *Handler) HandleGetLinkTimeline(ctx context.Context, request events.APIG
 			trendingStatuses = append(trendingStatuses, ts)
 		}
 	}
-	timeline := h.convertStatusesToTimeline(ctx, trendingStatuses)
+	timeline := h.convertStatusesToTimeline(trendingStatuses)
 	return common.OK(timeline), nil
 }
 
 // Helper methods for trends
-func (h *Handler) getFullAccountInfo(ctx context.Context, userID string) *models.Account {
-	user, err := h.store.GetUser(ctx, userID)
-	if err != nil {
-		h.logger.Warn("failed to get account info", zap.Error(err))
-		return nil
-	}
-
-	return &models.Account{
-		ID:          user.Username,
-		Username:    user.Username,
-		DisplayName: user.DisplayName,
-		// Add other fields as needed
-	}
-}
-
-func (h *Handler) getAuthorURL(authorID string) string {
-	if authorID == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), authorID)
-}
-
 func (h *Handler) extractProviderName(url string) string {
 	parsed, err := netUrl.Parse(url)
 	if err != nil {
@@ -224,9 +201,7 @@ func (h *Handler) extractProviderName(url string) string {
 
 	domain := parsed.Hostname()
 	// Remove www. prefix
-	if strings.HasPrefix(domain, "www.") {
-		domain = domain[4:]
-	}
+	domain = strings.TrimPrefix(domain, "www.")
 
 	return domain
 }
@@ -240,19 +215,7 @@ func (h *Handler) extractProviderURL(url string) string {
 	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
 }
 
-func (h *Handler) generateLinkEmbedHTML(link *storage.TrendingLink) string {
-	if link.ImageURL == "" {
-		return fmt.Sprintf("<a href=\"%s\">%s</a>", link.URL, link.Title)
-	}
-
-	return fmt.Sprintf(`<div class="link-preview">
-		<img src="%s" alt="%s" />
-		<h3><a href="%s">%s</a></h3>
-		<p>%s</p>
-	</div>`, link.ImageURL, link.Title, link.URL, link.Title, link.Description)
-}
-
-func (h *Handler) convertStatusesToTimeline(ctx context.Context, statuses []*storage.TrendingStatus) []interface{} {
+func (h *Handler) convertStatusesToTimeline(statuses []*storage.TrendingStatus) []interface{} {
 	result := make([]interface{}, len(statuses))
 	for i, status := range statuses {
 		result[i] = map[string]interface{}{

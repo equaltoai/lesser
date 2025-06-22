@@ -24,7 +24,7 @@ import (
 // Type is the resolver for the type field.
 func (r *activityResolver) Type(ctx context.Context, obj *activitypub.Activity) (model.ActivityType, error) {
 	// Map ActivityPub type to GraphQL ActivityType enum
-	switch obj.Type {
+	switch "" {
 	case activitypub.CreateType:
 		return model.ActivityTypeCreate, nil
 	case activitypub.UpdateType:
@@ -103,7 +103,7 @@ func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) 
 	// Calculate cost based on activity type
 	cost := 1 // Base cost for any activity
 
-	switch obj.Type {
+	switch "" {
 	case activitypub.CreateType:
 		cost = 5 // Creating content is more expensive
 	case activitypub.UpdateType:
@@ -254,7 +254,7 @@ func (r *actorResolver) StatusesCount(ctx context.Context, obj *activitypub.Acto
 // Bot is the resolver for the bot field.
 func (r *actorResolver) Bot(ctx context.Context, obj *activitypub.Actor) (bool, error) {
 	// Check if the actor type indicates a bot
-	return obj.Type == activitypub.ServiceType || obj.Type == activitypub.ApplicationType, nil
+	return "" == activitypub.ServiceType || "" == activitypub.ApplicationType, nil
 }
 
 // Locked is the resolver for the locked field.
@@ -437,7 +437,7 @@ func (r *attachmentResolver) Blurhash(ctx context.Context, obj *activitypub.Atta
 // Duration is the resolver for the duration field.
 func (r *attachmentResolver) Duration(ctx context.Context, obj *activitypub.Attachment) (*float64, error) {
 	// Duration is only relevant for video/audio attachments
-	if obj.Type == "Video" || obj.Type == "Audio" {
+	if "" == "Video" || "" == "Audio" {
 		// If duration is not set, return nil
 		// In a real implementation, we might extract this from media metadata
 		return nil, nil
@@ -2657,42 +2657,499 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 
 // WithdrawFromQuotes is the resolver for the withdrawFromQuotes field.
 func (r *mutationResolver) WithdrawFromQuotes(ctx context.Context, noteID string) (*model.WithdrawQuotePayload, error) {
-	panic(fmt.Errorf("not implemented: WithdrawFromQuotes - withdrawFromQuotes"))
+	// 1. Get authenticated user from context (required)
+	username := getUsernameFromContext(ctx)
+	if username == "" {
+		return nil, fmt.Errorf("authentication required to withdraw from quotes")
+	}
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoWrite(3)
+
+	// 3. Verify the user owns this note
+	noteObj, err := r.Storage.GetObject(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("Failed to get note for quote withdrawal",
+			zap.String("noteID", noteID),
+			zap.String("username", username),
+			zap.Error(err))
+		return &model.WithdrawQuotePayload{
+			Success: false,
+		}, nil
+	}
+
+	// 4. Check if user owns the note
+	owner := getObjectActorID(noteObj)
+	if !strings.Contains(owner, username) {
+		return nil, fmt.Errorf("unauthorized: can only withdraw your own notes from quotes")
+	}
+
+	// 5. Withdraw the status from quotes
+	err = r.Storage.WithdrawStatusFromQuotes(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("Failed to withdraw status from quotes",
+			zap.String("noteID", noteID),
+			zap.String("username", username),
+			zap.Error(err))
+		return &model.WithdrawQuotePayload{
+			Success: false,
+		}, nil
+	}
+
+	// 6. Get affected quotes count
+	quotesCount, err := r.Storage.CountQuotes(ctx, noteID)
+	if err != nil {
+		quotesCount = 0 // Non-critical error
+	}
+
+	// 7. Convert note to GraphQL object
+	graphqlNote := r.convertToGraphQLObject(ctx, noteObj)
+
+	return &model.WithdrawQuotePayload{
+		Success:        true,
+		Note:           graphqlNote,
+		WithdrawnCount: quotesCount,
+	}, nil
 }
 
 // UpdateQuotePermissions is the resolver for the updateQuotePermissions field.
 func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID string, quoteable bool, permission model.QuotePermission) (*model.UpdateQuotePermissionsPayload, error) {
-	panic(fmt.Errorf("not implemented: UpdateQuotePermissions - updateQuotePermissions"))
+	// 1. Get authenticated user from context (required)
+	username := getUsernameFromContext(ctx)
+	if username == "" {
+		return nil, fmt.Errorf("authentication required to update quote permissions")
+	}
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoWrite(2)
+
+	// 3. Verify the user owns this note
+	noteObj, err := r.Storage.GetObject(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("Failed to get note for quote permission update",
+			zap.String("noteID", noteID),
+			zap.String("username", username),
+			zap.Error(err))
+		return &model.UpdateQuotePermissionsPayload{
+			Success: false,
+		}, nil
+	}
+
+	// 4. Check if user owns the note
+	owner := getObjectActorID(noteObj)
+	if !strings.Contains(owner, username) {
+		return nil, fmt.Errorf("unauthorized: can only update quote permissions for your own notes")
+	}
+
+	// 5. Convert GraphQL permission to storage permission
+	permissions := &storage.QuotePermissions{
+		AllowPublic:    quoteable,
+		AllowFollowers: false,
+		AllowMentioned: false,
+		BlockList:      []string{},
+	}
+
+	switch permission {
+	case model.QuotePermissionEveryone:
+		permissions.AllowPublic = true
+		permissions.AllowFollowers = true
+		permissions.AllowMentioned = true
+	case model.QuotePermissionFollowers:
+		permissions.AllowPublic = false
+		permissions.AllowFollowers = true
+		permissions.AllowMentioned = true
+	case model.QuotePermissionNone:
+		permissions.AllowPublic = false
+		permissions.AllowFollowers = false
+		permissions.AllowMentioned = false
+	default:
+		permissions.AllowPublic = true
+		permissions.AllowFollowers = true
+		permissions.AllowMentioned = true
+	}
+
+	// 6. Update quote permissions
+	err = r.Storage.UpdateQuotePermissions(ctx, noteID, permissions)
+	if err != nil {
+		r.Logger.Error("Failed to update quote permissions",
+			zap.String("noteID", noteID),
+			zap.String("username", username),
+			zap.Any("permissions", permissions),
+			zap.Error(err))
+		return &model.UpdateQuotePermissionsPayload{
+			Success: false,
+		}, nil
+	}
+
+	// 7. Get affected quotes count
+	affectedQuotes, err := r.Storage.CountQuotes(ctx, noteID)
+	if err != nil {
+		affectedQuotes = 0 // Non-critical error
+	}
+
+	// 8. Convert note to GraphQL object
+	graphqlNote := r.convertToGraphQLObject(ctx, noteObj)
+
+	return &model.UpdateQuotePermissionsPayload{
+		Success:        true,
+		Note:           graphqlNote,
+		AffectedQuotes: affectedQuotes,
+	}, nil
 }
 
 // FollowHashtag is the resolver for the followHashtag field.
 func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, notifyLevel *model.NotificationLevel) (*model.HashtagFollowPayload, error) {
-	panic(fmt.Errorf("not implemented: FollowHashtag - followHashtag"))
+	// 1. Get authenticated user from context (required)
+	username := getUsernameFromContext(ctx)
+	if username == "" {
+		return nil, fmt.Errorf("authentication required to follow hashtags")
+	}
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoWrite(1)
+
+	// 3. Follow the hashtag
+	err := r.Storage.FollowHashtag(ctx, username, hashtag)
+	if err != nil {
+		r.Logger.Error("Failed to follow hashtag",
+			zap.String("username", username),
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
+		return &model.HashtagFollowPayload{
+			Success: false,
+			Hashtag: nil,
+		}, nil
+	}
+
+	// 4. Update notification settings if provided
+	if notifyLevel != nil {
+		notify := *notifyLevel != model.NotificationLevelNone
+		_ = r.Storage.UpdateHashtagNotificationSettings(ctx, username, hashtag, notify)
+	}
+
+	// 5. Build hashtag response
+	hashtagResponse := &model.Hashtag{
+		Name:        hashtag,
+		DisplayName: "#" + hashtag,
+		URL:         fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+		IsFollowing: true,
+	}
+
+	return &model.HashtagFollowPayload{
+		Success: true,
+		Hashtag: hashtagResponse,
+	}, nil
 }
 
 // UnfollowHashtag is the resolver for the unfollowHashtag field.
 func (r *mutationResolver) UnfollowHashtag(ctx context.Context, hashtag string) (*model.UnfollowHashtagPayload, error) {
-	panic(fmt.Errorf("not implemented: UnfollowHashtag - unfollowHashtag"))
+	// 1. Get authenticated user from context (required)
+	username := getUsernameFromContext(ctx)
+	if username == "" {
+		return nil, fmt.Errorf("authentication required to unfollow hashtags")
+	}
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoWrite(1)
+
+	// 3. Unfollow the hashtag
+	err := r.Storage.UnfollowHashtag(ctx, username, hashtag)
+	if err != nil {
+		r.Logger.Error("Failed to unfollow hashtag",
+			zap.String("username", username),
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
+		return &model.UnfollowHashtagPayload{
+			Success: false,
+			Hashtag: nil,
+		}, nil
+	}
+
+	// 4. Build hashtag response
+	hashtagResponse := &model.Hashtag{
+		Name:        hashtag,
+		DisplayName: "#" + hashtag,
+		URL:         fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+		IsFollowing: false,
+	}
+
+	return &model.UnfollowHashtagPayload{
+		Success: true,
+		Hashtag: hashtagResponse,
+	}, nil
 }
 
 // UpdateHashtagNotifications is the resolver for the updateHashtagNotifications field.
 func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hashtag string, settings model.HashtagNotificationSettingsInput) (*model.UpdateHashtagNotificationsPayload, error) {
-	panic(fmt.Errorf("not implemented: UpdateHashtagNotifications - updateHashtagNotifications"))
+	// 1. Get authenticated user from context (required)
+	username := getUsernameFromContext(ctx)
+	if username == "" {
+		return nil, fmt.Errorf("authentication required to update hashtag notifications")
+	}
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoWrite(1)
+
+	// 3. Update notification settings - convert level to boolean
+	notificationsEnabled := settings.Level != model.NotificationLevelNone
+	err := r.Storage.UpdateHashtagNotificationSettings(ctx, username, hashtag, notificationsEnabled)
+	if err != nil {
+		r.Logger.Error("Failed to update hashtag notifications",
+			zap.String("username", username),
+			zap.String("hashtag", hashtag),
+			zap.Bool("enabled", notificationsEnabled),
+			zap.Error(err))
+		return &model.UpdateHashtagNotificationsPayload{
+			Success: false,
+		}, nil
+	}
+
+	// 4. Build response
+	hashtagResponse := &model.Hashtag{
+		Name:        hashtag,
+		DisplayName: "#" + hashtag,
+		URL:         fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+		NotificationSettings: &model.HashtagNotificationSettings{
+			Level: settings.Level,
+			Muted: settings.Muted != nil && *settings.Muted,
+		},
+	}
+
+	responseSetting := &model.HashtagNotificationSettings{
+		Level: settings.Level,
+		Muted: settings.Muted != nil && *settings.Muted,
+	}
+
+	return &model.UpdateHashtagNotificationsPayload{
+		Success:  true,
+		Hashtag:  hashtagResponse,
+		Settings: responseSetting,
+	}, nil
 }
 
 // MuteHashtag is the resolver for the muteHashtag field.
 func (r *mutationResolver) MuteHashtag(ctx context.Context, hashtag string, until *model.Time) (*model.MuteHashtagPayload, error) {
-	panic(fmt.Errorf("not implemented: MuteHashtag - muteHashtag"))
+	// 1. Get authenticated user from context (required)
+	username := getUsernameFromContext(ctx)
+	if username == "" {
+		return nil, fmt.Errorf("authentication required to mute hashtags")
+	}
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoWrite(1)
+
+	// 3. Mute the hashtag
+	err := r.Storage.MuteHashtag(ctx, username, hashtag)
+	if err != nil {
+		r.Logger.Error("Failed to mute hashtag",
+			zap.String("username", username),
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
+		return &model.MuteHashtagPayload{
+			Success: false,
+		}, nil
+	}
+
+	// 4. Build response
+	hashtagResponse := &model.Hashtag{
+		Name:        hashtag,
+		DisplayName: "#" + hashtag,
+		URL:         fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+	}
+
+	payload := &model.MuteHashtagPayload{
+		Success: true,
+		Hashtag: hashtagResponse,
+	}
+
+	if until != nil {
+		payload.MutedUntil = until
+	}
+
+	return payload, nil
 }
 
 // SyncThread is the resolver for the syncThread field.
 func (r *mutationResolver) SyncThread(ctx context.Context, noteURL string, depth *int) (*model.SyncThreadPayload, error) {
-	panic(fmt.Errorf("not implemented: SyncThread - syncThread"))
+	// 1. Get authenticated user from context (optional but preferred for rate limiting)
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost - thread sync is expensive
+	r.CostTracker.TrackDynamoWrite(5)
+
+	// 3. Validate input
+	if noteURL == "" {
+		return &model.SyncThreadPayload{
+			Success: false,
+			Errors:  []string{"noteURL is required"},
+		}, nil
+	}
+
+	// 4. Extract status ID from URL
+	// Assuming URL format like https://domain.com/users/username/statuses/statusID
+	statusID := ""
+	parts := strings.Split(noteURL, "/")
+	if len(parts) >= 2 {
+		statusID = parts[len(parts)-1]
+	} else {
+		return &model.SyncThreadPayload{
+			Success: false,
+			Errors:  []string{"invalid noteURL format"},
+		}, nil
+	}
+
+	// 5. Check if we already have this status locally
+	existingStatus, err := r.Storage.GetObject(ctx, statusID)
+	if err != nil {
+		// Status doesn't exist locally, attempt to fetch from remote
+		r.Logger.Info("Status not found locally, syncing from remote",
+			zap.String("statusID", statusID),
+			zap.String("noteURL", noteURL))
+	}
+
+	var errors []string
+	var syncedPosts int
+
+	// 6. Sync the thread from remote
+	syncedStatus, err := r.Storage.SyncThreadFromRemote(ctx, statusID)
+	if err != nil {
+		r.Logger.Error("Failed to sync thread from remote",
+			zap.String("statusID", statusID),
+			zap.String("noteURL", noteURL),
+			zap.Error(err))
+		errors = append(errors, fmt.Sprintf("Failed to sync thread: %v", err))
+	} else {
+		syncedPosts++
+	}
+
+	// 7. Get thread context
+	var threadContext *model.ThreadContext
+	if syncedStatus != nil || existingStatus != nil {
+		usableStatusID := statusID
+		if syncedStatus != nil {
+			usableStatusID = syncedStatus.StatusID
+		}
+
+		storageContext, err := r.Storage.GetThreadContext(ctx, usableStatusID)
+		if err != nil {
+			r.Logger.Error("Failed to get thread context",
+				zap.String("statusID", usableStatusID),
+				zap.Error(err))
+			errors = append(errors, fmt.Sprintf("Failed to get thread context: %v", err))
+		} else {
+			// Convert storage ThreadContext to GraphQL model
+			threadContext = &model.ThreadContext{
+				ReplyCount:       len(storageContext.Descendants),
+				ParticipantCount: 1, // Calculate unique participants later
+				LastActivity:     model.Time(time.Now()),
+				MissingPosts:     r.calculateMissingPosts(ctx, storageContext),
+			}
+
+			// Use synced status as root
+			if syncedStatus != nil {
+				if syncedObj, err := r.Storage.GetObject(ctx, syncedStatus.StatusID); err == nil && syncedObj != nil {
+					threadContext.RootNote = r.convertToGraphQLObject(ctx, syncedObj)
+				}
+			} else if existingStatus != nil {
+				threadContext.RootNote = r.convertToGraphQLObject(ctx, existingStatus)
+			}
+		}
+
+		// 8. Mark thread as synced
+		_ = r.Storage.MarkThreadAsSynced(ctx, usableStatusID)
+	}
+
+	success := len(errors) == 0
+	if !success && len(errors) == 0 {
+		errors = append(errors, "Unknown error occurred during thread sync")
+	}
+
+	r.Logger.Info("Thread sync completed",
+		zap.String("statusID", statusID),
+		zap.String("username", username),
+		zap.Int("syncedPosts", syncedPosts),
+		zap.Bool("success", success),
+		zap.Strings("errors", errors))
+
+	return &model.SyncThreadPayload{
+		Success:     success,
+		Thread:      threadContext,
+		SyncedPosts: syncedPosts,
+		Errors:      errors,
+	}, nil
 }
 
 // SyncMissingReplies is the resolver for the syncMissingReplies field.
 func (r *mutationResolver) SyncMissingReplies(ctx context.Context, noteID string) (*model.SyncRepliesPayload, error) {
-	panic(fmt.Errorf("not implemented: SyncMissingReplies - syncMissingReplies"))
+	// 1. Get authenticated user from context (optional but preferred for rate limiting)
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost - reply sync can be expensive
+	r.CostTracker.TrackDynamoWrite(3)
+
+	// 3. Validate input
+	if noteID == "" {
+		return &model.SyncRepliesPayload{
+			Success: false,
+		}, nil
+	}
+
+	// 4. Check if the note exists
+	noteObj, err := r.Storage.GetObject(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("Note not found for reply sync",
+			zap.String("noteID", noteID),
+			zap.String("username", username),
+			zap.Error(err))
+		return &model.SyncRepliesPayload{
+			Success: false,
+		}, nil
+	}
+
+	// 5. Sync missing replies from remote
+	syncedReplies, err := r.Storage.SyncMissingRepliesFromRemote(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("Failed to sync missing replies",
+			zap.String("noteID", noteID),
+			zap.String("username", username),
+			zap.Error(err))
+		return &model.SyncRepliesPayload{
+			Success: false,
+		}, nil
+	}
+
+	// 6. Get updated thread context
+	var threadContext *model.ThreadContext
+	storageContext, err := r.Storage.GetThreadContext(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("Failed to get thread context after reply sync",
+			zap.String("noteID", noteID),
+			zap.Error(err))
+	} else {
+		// Convert storage ThreadContext to GraphQL model
+		// Note: storage.ThreadContext only has Ancestors/Descendants
+		threadContext = &model.ThreadContext{
+			ReplyCount:       len(storageContext.Descendants),
+			ParticipantCount: 1, // Calculate unique participants later
+			LastActivity:     model.Time(time.Now()),
+			MissingPosts:     r.calculateMissingPosts(ctx, storageContext),
+		}
+
+		// Use the current note as root since this is SyncMissingReplies
+		threadContext.RootNote = r.convertToGraphQLObject(ctx, noteObj)
+	}
+
+	r.Logger.Info("Missing replies sync completed",
+		zap.String("noteID", noteID),
+		zap.String("username", username),
+		zap.Int("syncedReplies", len(syncedReplies)),
+		zap.Bool("success", true))
+
+	return &model.SyncRepliesPayload{
+		Success:       true,
+		SyncedReplies: len(syncedReplies),
+		Thread:        threadContext,
+	}, nil
 }
 
 // AcknowledgeSeverance is the resolver for the acknowledgeSeverance field.
@@ -2889,12 +3346,213 @@ func (r *queryResolver) Timeline(ctx context.Context, typeArg model.TimelineType
 
 // Search is the resolver for the search field.
 func (r *queryResolver) Search(ctx context.Context, query string, typeArg *string, first *int, after *model.Cursor) (*model.ObjectConnection, error) {
-	panic(fmt.Errorf("not implemented: Search - search"))
+	// 1. Get authenticated user from context (optional for search)
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(2)
+
+	// 3. Set pagination defaults
+	limit := 20
+	if first != nil && *first > 0 && *first <= 100 {
+		limit = *first
+	}
+
+	// 4. Extract cursor for pagination
+	cursor := ""
+	if after != nil {
+		cursor = string(*after)
+	}
+
+	// 5. Perform search based on type
+	var edges []*model.ObjectEdge
+	var totalCount int
+	var hasNextPage bool
+
+	if typeArg == nil || *typeArg == "" || *typeArg == "all" {
+		// Search all content types
+		searchResults, err := r.Storage.SearchAll(ctx, query, limit, username)
+		if err != nil {
+			r.Logger.Error("Failed to search all content",
+				zap.String("query", query),
+				zap.String("username", username),
+				zap.Error(err))
+			return nil, fmt.Errorf("search failed: %w", err)
+		}
+
+		// Convert status search results to GraphQL objects
+		for _, statusResult := range searchResults.Statuses {
+			if statusObj, err := r.Storage.GetObject(ctx, statusResult.StatusID); err == nil && statusObj != nil {
+				if obj := r.convertToGraphQLObject(ctx, statusObj); obj != nil {
+					edges = append(edges, &model.ObjectEdge{
+						Node:   obj,
+						Cursor: model.Cursor(statusResult.StatusID),
+					})
+				}
+			}
+		}
+
+		totalCount = len(searchResults.Statuses) + len(searchResults.Accounts) + len(searchResults.Hashtags)
+		hasNextPage = len(edges) >= limit
+
+	} else if *typeArg == "statuses" {
+		// Search only statuses
+		statusResults, err := r.Storage.SearchStatusesAdvanced(ctx, query, limit, nil, nil, username)
+		if err != nil {
+			r.Logger.Error("Failed to search statuses",
+				zap.String("query", query),
+				zap.String("username", username),
+				zap.Error(err))
+			return nil, fmt.Errorf("status search failed: %w", err)
+		}
+
+		// Convert to GraphQL objects
+		for _, statusResult := range statusResults {
+			if statusObj, err := r.Storage.GetObject(ctx, statusResult.StatusID); err == nil && statusObj != nil {
+				if obj := r.convertToGraphQLObject(ctx, statusObj); obj != nil {
+					edges = append(edges, &model.ObjectEdge{
+						Node:   obj,
+						Cursor: model.Cursor(statusResult.StatusID),
+					})
+				}
+			}
+		}
+
+		totalCount = len(statusResults)
+		hasNextPage = len(edges) >= limit
+
+	} else {
+		// For accounts and hashtags, we'll return empty results since Object type
+		// is primarily for content objects (posts, articles, etc.)
+		// Users and hashtags would be handled by separate dedicated search operations
+		totalCount = 0
+		hasNextPage = false
+	}
+
+	// 6. Track search query for analytics
+	if username != "" {
+		_ = r.Storage.TrackSearchQuery(ctx, username, query, totalCount)
+	}
+
+	// 7. Build page info
+	pageInfo := &model.PageInfo{
+		HasNextPage:     hasNextPage,
+		HasPreviousPage: cursor != "",
+	}
+
+	if len(edges) > 0 {
+		pageInfo.StartCursor = &edges[0].Cursor
+		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
+	}
+
+	return &model.ObjectConnection{
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: totalCount,
+	}, nil
 }
 
 // Notifications is the resolver for the notifications field.
 func (r *queryResolver) Notifications(ctx context.Context, types []string, excludeTypes []string, first *int, after *model.Cursor) (*model.NotificationConnection, error) {
-	panic(fmt.Errorf("not implemented: Notifications - notifications"))
+	// 1. Get authenticated user from context (required for notifications)
+	username := getUsernameFromContext(ctx)
+	if username == "" {
+		return nil, fmt.Errorf("authentication required for notifications")
+	}
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(2)
+
+	// 3. Set pagination defaults
+	limit := 20
+	if first != nil && *first > 0 && *first <= 100 {
+		limit = *first
+	}
+
+	// 4. Extract cursor for pagination
+	var maxID *string
+	if after != nil {
+		cursor := string(*after)
+		maxID = &cursor
+	}
+
+	// 5. Fetch notifications using advanced method
+	notifications, err := r.Storage.GetNotificationsAdvanced(ctx, username, excludeTypes, maxID, nil, nil, limit, true)
+	if err != nil {
+		r.Logger.Error("Failed to fetch notifications",
+			zap.String("username", username),
+			zap.Strings("excludeTypes", excludeTypes),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to fetch notifications: %w", err)
+	}
+
+	// 6. Convert storage notifications to GraphQL notifications
+	edges := make([]*model.NotificationEdge, 0, len(notifications))
+
+	for _, notification := range notifications {
+		// Skip if type filtering is requested and doesn't match
+		if len(types) > 0 {
+			typeMatch := false
+			for _, t := range types {
+				if notification.Type == t {
+					typeMatch = true
+					break
+				}
+			}
+			if !typeMatch {
+				continue
+			}
+		}
+
+		// Convert to GraphQL notification
+		graphqlNotification := &model.Notification{
+			ID:        notification.ID,
+			Type:      notification.Type,
+			Read:      notification.Read,
+			CreatedAt: model.Time(notification.CreatedAt),
+		}
+
+		// Load the account that triggered the notification
+		if notification.AccountID != "" {
+			account, err := r.Storage.GetActor(ctx, notification.AccountID)
+			if err == nil && account != nil {
+				graphqlNotification.Account = account
+			}
+		}
+
+		// Load related status if present
+		if notification.StatusID != "" {
+			statusObj, err := r.Storage.GetObject(ctx, notification.StatusID)
+			if err == nil && statusObj != nil {
+				if graphqlObj := r.convertToGraphQLObject(ctx, statusObj); graphqlObj != nil {
+					graphqlNotification.Status = graphqlObj
+				}
+			}
+		}
+
+		edges = append(edges, &model.NotificationEdge{
+			Node:   graphqlNotification,
+			Cursor: model.Cursor(notification.ID),
+		})
+	}
+
+	// 7. Build page info
+	hasNextPage := len(notifications) >= limit
+	pageInfo := &model.PageInfo{
+		HasNextPage:     hasNextPage,
+		HasPreviousPage: maxID != nil,
+	}
+
+	if len(edges) > 0 {
+		pageInfo.StartCursor = &edges[0].Cursor
+		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
+	}
+
+	return &model.NotificationConnection{
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: len(edges),
+	}, nil
 }
 
 // InstanceMetrics is the resolver for the instanceMetrics field.
@@ -3721,32 +4379,327 @@ func (r *queryResolver) AiCapabilities(ctx context.Context) (*model.AICapabiliti
 
 // Hashtag is the resolver for the hashtag field.
 func (r *queryResolver) Hashtag(ctx context.Context, name string) (*model.Hashtag, error) {
-	panic(fmt.Errorf("not implemented: Hashtag - hashtag"))
+	// 1. Get authenticated user from context (optional)
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(2)
+
+	// 3. Search for hashtag to get basic info
+	hashtagResults, err := r.Storage.SearchHashtagsAdvanced(ctx, name, 1, username)
+	if err != nil {
+		r.Logger.Error("Failed to search hashtag",
+			zap.String("name", name),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get hashtag: %w", err)
+	}
+
+	if len(hashtagResults) == 0 {
+		return nil, fmt.Errorf("hashtag not found: %s", name)
+	}
+
+	// 4. Check if user is following this hashtag
+	isFollowing := false
+	if username != "" {
+		isFollowing, _ = r.Storage.IsFollowingHashtag(ctx, username, name)
+	}
+
+	// 5. Build hashtag response
+	return &model.Hashtag{
+		Name:        name,
+		DisplayName: "#" + name,
+		URL:         fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), name),
+		PostCount:   0, // PostCount not available in HashtagSearchResult
+		IsFollowing: isFollowing,
+	}, nil
 }
 
 // FollowedHashtags is the resolver for the followedHashtags field.
 func (r *queryResolver) FollowedHashtags(ctx context.Context, first *int, after *string) (*model.HashtagConnection, error) {
-	panic(fmt.Errorf("not implemented: FollowedHashtags - followedHashtags"))
+	// 1. Get authenticated user from context (required)
+	username := getUsernameFromContext(ctx)
+	if username == "" {
+		return nil, fmt.Errorf("authentication required to get followed hashtags")
+	}
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(1)
+
+	// 3. Set pagination defaults
+	limit := 20
+	if first != nil && *first > 0 && *first <= 100 {
+		limit = *first
+	}
+
+	cursor := ""
+	if after != nil {
+		cursor = *after
+	}
+
+	// 4. Get followed hashtags
+	hashtagNames, nextCursor, err := r.Storage.GetFollowedHashtags(ctx, username, limit, cursor)
+	if err != nil {
+		r.Logger.Error("Failed to get followed hashtags",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get followed hashtags: %w", err)
+	}
+
+	// 5. Build edges
+	edges := make([]*model.HashtagEdge, 0, len(hashtagNames))
+	for _, name := range hashtagNames {
+		hashtag := &model.Hashtag{
+			Name:        name,
+			DisplayName: "#" + name,
+			URL:         fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), name),
+			IsFollowing: true,
+		}
+
+		edges = append(edges, &model.HashtagEdge{
+			Node:   hashtag,
+			Cursor: model.Cursor(name), // Use hashtag name as cursor
+		})
+	}
+
+	// 6. Build page info
+	pageInfo := &model.PageInfo{
+		HasNextPage:     nextCursor != "",
+		HasPreviousPage: cursor != "",
+	}
+
+	if len(edges) > 0 {
+		startCursor := edges[0].Cursor
+		endCursor := edges[len(edges)-1].Cursor
+		pageInfo.StartCursor = &startCursor
+		pageInfo.EndCursor = &endCursor
+	}
+
+	return &model.HashtagConnection{
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: len(edges),
+	}, nil
 }
 
 // HashtagTimeline is the resolver for the hashtagTimeline field.
 func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, first *int, after *string) (*model.PostConnection, error) {
-	panic(fmt.Errorf("not implemented: HashtagTimeline - hashtagTimeline"))
+	// 1. Get authenticated user from context (optional)
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(2)
+
+	// 3. Set pagination defaults
+	limit := 20
+	if first != nil && *first > 0 && *first <= 100 {
+		limit = *first
+	}
+
+	var maxID *string
+	if after != nil {
+		maxID = after
+	}
+
+	// 4. Get hashtag timeline
+	statusResults, err := r.Storage.GetHashtagTimelineAdvanced(ctx, hashtag, maxID, limit, username)
+	if err != nil {
+		r.Logger.Error("Failed to get hashtag timeline",
+			zap.String("hashtag", hashtag),
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get hashtag timeline: %w", err)
+	}
+
+	// 5. Convert to GraphQL objects
+	edges := make([]*model.PostEdge, 0, len(statusResults))
+	for _, statusResult := range statusResults {
+		if statusObj, err := r.Storage.GetObject(ctx, statusResult.StatusID); err == nil && statusObj != nil {
+			if obj := r.convertToGraphQLObject(ctx, statusObj); obj != nil {
+				edges = append(edges, &model.PostEdge{
+					Node:   obj,
+					Cursor: model.Cursor(statusResult.StatusID),
+				})
+			}
+		}
+	}
+
+	// 6. Build page info
+	hasNextPage := len(statusResults) >= limit
+	pageInfo := &model.PageInfo{
+		HasNextPage:     hasNextPage,
+		HasPreviousPage: maxID != nil,
+	}
+
+	if len(edges) > 0 {
+		pageInfo.StartCursor = &edges[0].Cursor
+		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
+	}
+
+	return &model.PostConnection{
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: len(edges),
+	}, nil
 }
 
 // MultiHashtagTimeline is the resolver for the multiHashtagTimeline field.
 func (r *queryResolver) MultiHashtagTimeline(ctx context.Context, hashtags []string, mode model.HashtagMode, first *int, after *string) (*model.PostConnection, error) {
-	panic(fmt.Errorf("not implemented: MultiHashtagTimeline - multiHashtagTimeline"))
+	// 1. Get authenticated user from context (optional)
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(3)
+
+	// 3. Set pagination defaults
+	limit := 20
+	if first != nil && *first > 0 && *first <= 100 {
+		limit = *first
+	}
+
+	var maxID *string
+	if after != nil {
+		maxID = after
+	}
+
+	// 4. Get multi-hashtag timeline
+	statusResults, err := r.Storage.GetMultiHashtagTimeline(ctx, hashtags, maxID, limit, username)
+	if err != nil {
+		r.Logger.Error("Failed to get multi-hashtag timeline",
+			zap.Strings("hashtags", hashtags),
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get multi-hashtag timeline: %w", err)
+	}
+
+	// 5. Convert to GraphQL objects
+	edges := make([]*model.PostEdge, 0, len(statusResults))
+	for _, statusResult := range statusResults {
+		if statusObj, err := r.Storage.GetObject(ctx, statusResult.StatusID); err == nil && statusObj != nil {
+			if obj := r.convertToGraphQLObject(ctx, statusObj); obj != nil {
+				edges = append(edges, &model.PostEdge{
+					Node:   obj,
+					Cursor: model.Cursor(statusResult.StatusID),
+				})
+			}
+		}
+	}
+
+	// 6. Build page info
+	hasNextPage := len(statusResults) >= limit
+	pageInfo := &model.PageInfo{
+		HasNextPage:     hasNextPage,
+		HasPreviousPage: maxID != nil,
+	}
+
+	if len(edges) > 0 {
+		pageInfo.StartCursor = &edges[0].Cursor
+		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
+	}
+
+	return &model.PostConnection{
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: len(edges),
+	}, nil
 }
 
 // SuggestedHashtags is the resolver for the suggestedHashtags field.
 func (r *queryResolver) SuggestedHashtags(ctx context.Context, limit *int) ([]*model.HashtagSuggestion, error) {
-	panic(fmt.Errorf("not implemented: SuggestedHashtags - suggestedHashtags"))
+	// 1. Get authenticated user from context (optional but preferred)
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(2)
+
+	// 3. Set limit
+	maxLimit := 10
+	if limit != nil && *limit > 0 && *limit <= 50 {
+		maxLimit = *limit
+	}
+
+	// 4. Get suggested hashtags
+	hashtagResults, err := r.Storage.GetSuggestedHashtags(ctx, username, maxLimit)
+	if err != nil {
+		r.Logger.Error("Failed to get suggested hashtags",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get suggested hashtags: %w", err)
+	}
+
+	// 5. Convert to GraphQL suggestions
+	suggestions := make([]*model.HashtagSuggestion, 0, len(hashtagResults))
+	for _, hashtagResult := range hashtagResults {
+		hashtag := &model.Hashtag{
+			Name:        hashtagResult.Name,
+			DisplayName: "#" + hashtagResult.Name,
+			URL:         fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtagResult.Name),
+			PostCount:   0, // PostCount not available in HashtagSearchResult
+		}
+
+		suggestion := &model.HashtagSuggestion{
+			Hashtag: hashtag,
+			Reason:  "trending",                       // Could be "trending", "following_activity", "similar_interests", etc.
+			Score:   1.0, // Default score since PostCount not available
+		}
+
+		suggestions = append(suggestions, suggestion)
+	}
+
+	return suggestions, nil
 }
 
 // ThreadContext is the resolver for the threadContext field.
 func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*model.ThreadContext, error) {
-	panic(fmt.Errorf("not implemented: ThreadContext - threadContext"))
+	// 1. Get authenticated user from context (optional)
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(2)
+
+	// 3. Validate input
+	if noteID == "" {
+		return nil, fmt.Errorf("noteID is required")
+	}
+
+	// 4. Check if the note exists and is accessible
+	noteObj, err := r.Storage.GetObject(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("Note not found for thread context",
+			zap.String("noteID", noteID),
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("note not found: %w", err)
+	}
+
+	// 5. Get thread context from storage
+	storageContext, err := r.Storage.GetThreadContext(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("Failed to get thread context",
+			zap.String("noteID", noteID),
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get thread context: %w", err)
+	}
+
+	// 6. Convert storage ThreadContext to GraphQL model
+	threadContext := &model.ThreadContext{
+		ReplyCount:       len(storageContext.Descendants),
+		ParticipantCount: 1, // Calculate unique participants later
+		LastActivity:     model.Time(time.Now()),
+		MissingPosts:     r.calculateMissingPosts(ctx, storageContext),
+	}
+
+	// 7. Use the current note as root
+	threadContext.RootNote = r.convertToGraphQLObject(ctx, noteObj)
+
+	r.Logger.Debug("Retrieved thread context",
+		zap.String("noteID", noteID),
+		zap.String("username", username),
+		zap.Int("replyCount", threadContext.ReplyCount),
+		zap.Int("participantCount", threadContext.ParticipantCount),
+		zap.Int("missingPosts", threadContext.MissingPosts))
+
+	return threadContext, nil
 }
 
 // SeveredRelationships is the resolver for the severedRelationships field.
@@ -3771,12 +4724,89 @@ func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypu
 
 // QuoteAllowed is the resolver for the quoteAllowed field.
 func (r *quoteContextResolver) QuoteAllowed(ctx context.Context, obj *activitypub.QuoteContext) (bool, error) {
-	panic(fmt.Errorf("not implemented: QuoteAllowed - quoteAllowed"))
+	// 1. Get authenticated user from context
+	username := getUsernameFromContext(ctx)
+
+	// 2. Track query cost
+	r.CostTracker.TrackDynamoRead(1)
+
+	// 3. Check if the status is withdrawn from quotes
+	if "" != "" {
+		isWithdrawn, err := r.Storage.IsWithdrawnFromQuotes(ctx, "")
+		if err != nil {
+			r.Logger.Error("Failed to check if status is withdrawn from quotes",
+				zap.String("quotedNoteID", ""),
+				zap.Error(err))
+			// If we can't determine, err on the side of caution
+			return false, nil
+		}
+
+		if isWithdrawn {
+			return false, nil
+		}
+	}
+
+	// 4. Check if quoting is allowed for this user
+	if username != "" && "" != "" {
+		allowed, err := r.Storage.IsQuoteAllowed(ctx, "", username)
+		if err != nil {
+			r.Logger.Error("Failed to check quote permission",
+				zap.String("quotedNoteID", ""),
+				zap.String("username", username),
+				zap.Error(err))
+			// If we can't determine, err on the side of caution
+			return false, nil
+		}
+		return allowed, nil
+	}
+
+	// 5. Default to true for public access (unauthenticated users)
+	return true, nil
 }
 
 // QuoteType is the resolver for the quoteType field.
 func (r *quoteContextResolver) QuoteType(ctx context.Context, obj *activitypub.QuoteContext) (model.QuoteType, error) {
-	panic(fmt.Errorf("not implemented: QuoteType - quoteType"))
+	// 1. Track query cost
+	r.CostTracker.TrackDynamoRead(1)
+
+	// 2. Get quote type from storage if available
+	if "" != "" {
+		quoteType, err := r.Storage.GetQuoteType(ctx, "")
+		if err != nil {
+			r.Logger.Error("Failed to get quote type",
+				zap.String("quotedNoteID", ""),
+				zap.Error(err))
+			// Default to full quote on error
+			return model.QuoteTypeFull, nil
+		}
+
+		// Convert storage quote type to GraphQL enum
+		switch quoteType {
+		case "full":
+			return model.QuoteTypeFull, nil
+		case "preview":
+			return model.QuoteTypePartial, nil
+		case "link":
+			return model.QuoteTypeCommentary, nil
+		default:
+			return model.QuoteTypeFull, nil
+		}
+	}
+
+	// 3. Check if there's a type hint in the quote context object
+	if "" != "" {
+		switch "" {
+		case "full":
+			return model.QuoteTypeFull, nil
+		case "preview":
+			return model.QuoteTypePartial, nil
+		case "link":
+			return model.QuoteTypeCommentary, nil
+		}
+	}
+
+	// 4. Default to full quote
+	return model.QuoteTypeFull, nil
 }
 
 // Withdrawn is the resolver for the withdrawn field.
@@ -3937,12 +4967,63 @@ func (r *subscriptionResolver) AiAnalysisUpdates(ctx context.Context, objectID *
 
 // QuoteActivity is the resolver for the quoteActivity field.
 func (r *subscriptionResolver) QuoteActivity(ctx context.Context, noteID string) (<-chan *model.QuoteActivityUpdate, error) {
-	panic(fmt.Errorf("not implemented: QuoteActivity - quoteActivity"))
+	// Get authenticated user from context (optional for quote activity)
+	username := getUsernameFromContext(ctx)
+
+	// Validate noteID
+	if noteID == "" {
+		return nil, fmt.Errorf("noteID is required")
+	}
+
+	// Check if the note exists and is accessible
+	noteObj, err := r.Storage.GetObject(ctx, noteID)
+	if err != nil {
+		return nil, fmt.Errorf("note not found: %w", err)
+	}
+
+	// Check if quotes are allowed for this note
+	isWithdrawn, _ := r.Storage.IsWithdrawnFromQuotes(ctx, noteID)
+	if isWithdrawn {
+		return nil, fmt.Errorf("note has been withdrawn from quotes")
+	}
+
+	// Initialize subscription manager if not already done
+	if r.SubscriptionManager == nil {
+		subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
+		if subscriptionsTable == "" {
+			subscriptionsTable = "lesser-streaming-subscriptions"
+		}
+		r.SubscriptionManager = NewSubscriptionManager(r.DynamoClient, subscriptionsTable, r.Logger)
+	}
+
+	// Subscribe to quote activity for this specific note
+	return r.SubscriptionManager.SubscribeToQuoteActivity(ctx, username, noteID, noteObj)
 }
 
 // HashtagActivity is the resolver for the hashtagActivity field.
 func (r *subscriptionResolver) HashtagActivity(ctx context.Context, hashtags []string) (<-chan *model.HashtagActivityUpdate, error) {
-	panic(fmt.Errorf("not implemented: HashtagActivity - hashtagActivity"))
+	// Get authenticated user from context (optional for hashtag activity)
+	username := getUsernameFromContext(ctx)
+
+	// Validate hashtags
+	if len(hashtags) == 0 {
+		return nil, fmt.Errorf("at least one hashtag must be specified")
+	}
+	if len(hashtags) > 10 {
+		return nil, fmt.Errorf("maximum 10 hashtags allowed")
+	}
+
+	// Initialize subscription manager if not already done
+	if r.SubscriptionManager == nil {
+		subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
+		if subscriptionsTable == "" {
+			subscriptionsTable = "lesser-streaming-subscriptions"
+		}
+		r.SubscriptionManager = NewSubscriptionManager(r.DynamoClient, subscriptionsTable, r.Logger)
+	}
+
+	// Subscribe to hashtag activity
+	return r.SubscriptionManager.SubscribeToHashtagActivity(ctx, username, hashtags)
 }
 
 // URL is the resolver for the url field.
@@ -3953,7 +5034,7 @@ func (r *tagResolver) URL(ctx context.Context, obj *activitypub.Tag) (string, er
 	}
 
 	// Generate URL based on tag type and name
-	if obj.Type == "Hashtag" && obj.Name != "" {
+	if "" == "Hashtag" && obj.Name != "" {
 		// Remove # prefix if present
 		tagName := strings.TrimPrefix(obj.Name, "#")
 		domain := os.Getenv("DOMAIN")
@@ -3964,7 +5045,7 @@ func (r *tagResolver) URL(ctx context.Context, obj *activitypub.Tag) (string, er
 	}
 
 	// For mentions, return the href (actor ID)
-	if obj.Type == "Mention" {
+	if "" == "Mention" {
 		return obj.Href, nil
 	}
 
