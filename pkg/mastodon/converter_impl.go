@@ -240,8 +240,12 @@ func (c *converterImpl) populateStatusFromNote(status *models.Status, note *acti
 		status.MediaAttachments = c.processAttachments(note.Attachment)
 	}
 
-	// Determine visibility
-	status.Visibility = c.determineVisibility(note.To, note.CC)
+	// Use explicit visibility if available, otherwise determine from To/CC
+	if note.Visibility != "" {
+		status.Visibility = note.Visibility
+	} else {
+		status.Visibility = c.determineVisibility(note.To, note.CC)
+	}
 }
 
 func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[string]interface{}) {
@@ -275,23 +279,28 @@ func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[str
 		status.MediaAttachments = c.processAttachmentsFromMap(attachments)
 	}
 
-	// Determine visibility from to/cc fields
-	var to, cc []string
-	if toField, ok := obj["to"].([]interface{}); ok {
-		for _, t := range toField {
-			if str, ok := t.(string); ok {
-				to = append(to, str)
+	// Check for explicit visibility field first
+	if visibility, ok := obj["visibility"].(string); ok && visibility != "" {
+		status.Visibility = visibility
+	} else {
+		// Fallback to determining visibility from to/cc fields
+		var to, cc []string
+		if toField, ok := obj["to"].([]interface{}); ok {
+			for _, t := range toField {
+				if str, ok := t.(string); ok {
+					to = append(to, str)
+				}
 			}
 		}
-	}
-	if ccField, ok := obj["cc"].([]interface{}); ok {
-		for _, c := range ccField {
-			if str, ok := c.(string); ok {
-				cc = append(cc, str)
+		if ccField, ok := obj["cc"].([]interface{}); ok {
+			for _, c := range ccField {
+				if str, ok := c.(string); ok {
+					cc = append(cc, str)
+				}
 			}
 		}
+		status.Visibility = c.determineVisibility(to, cc)
 	}
-	status.Visibility = c.determineVisibility(to, cc)
 }
 
 func (c *converterImpl) processAttachments(attachments []activitypub.Attachment) []interface{} {

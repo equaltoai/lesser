@@ -37,6 +37,7 @@ type Object struct {
 	Tag            []ObjectTag        `dynamodbav:"tag,omitempty" json:"tag,omitempty"`
 	Context        interface{}        `dynamodbav:"@context,omitempty" json:"@context,omitempty"`
 	ConversationID string             `dynamodbav:"conversationId,omitempty" json:"conversationId,omitempty"`
+	Visibility     string             `dynamodbav:"visibility,omitempty" json:"visibility,omitempty"`
 }
 
 // ObjectAttachment represents an attachment on an object
@@ -330,6 +331,7 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 			"to":           record.Object.To,
 			"cc":           record.Object.CC,
 			"sensitive":    record.Object.Sensitive,
+			"visibility":   record.Object.Visibility,
 		}
 		
 		if record.Object.InReplyTo != nil {
@@ -909,6 +911,7 @@ func convertToObject(obj interface{}) (*Object, error) {
 			Tag:            tags,
 			Context:        note.Context,
 			ConversationID: note.ConversationID,
+			Visibility:     note.Visibility,
 		}
 
 		// Handle InReplyTo if it's not empty

@@ -89,6 +89,7 @@ type Note struct {
 	Attachment     []Attachment `json:"attachment,omitempty"`
 	Tag            []Tag        `json:"tag,omitempty"`
 	ConversationID string       `json:"conversationId,omitempty"` // For tracking conversation threads
+	Visibility     string       `json:"_:visibility,omitempty"`     // Lesser extension for preserving visibility
 }
 
 // QuoteNote represents a note that quotes another note

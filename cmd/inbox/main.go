@@ -303,8 +303,21 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		}), nil
 	}
 
+	// Track start time for response time measurement
+	startTime := time.Now()
+
 	// Extract domain from actor URL
 	actorDomain := extractDomainFromURL(activity.Actor)
+	
+	// Record federation activity for cost tracking
+	federationActivity := &storage.FederationActivity{
+		Domain:       actorDomain,
+		Type:         "ingress",
+		ActivityType: activity.Type,
+		ByteSize:     int64(len(body)),
+		Timestamp:    startTime,
+	}
+	
 	if actorDomain != "" {
 		// Check if the domain is blocked at the instance level
 		isBlocked, block, err := store.IsDomainBlocked(ctx, actorDomain)
@@ -321,6 +334,11 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 
 			// For suspended domains, reject completely
 			if block.Severity == "suspend" {
+				federationActivity.Success = false
+				federationActivity.ErrorMessage = "Domain is suspended"
+				federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+				go store.RecordFederationActivity(context.Background(), federationActivity)
+				
 				return &events.APIGatewayV2HTTPResponse{
 					StatusCode: http.StatusForbidden,
 					Body:       `{"error": "Domain is suspended"}`,
@@ -338,6 +356,12 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		log.Error("failed to fetch actor public key",
 			zap.String("actor", activity.Actor),
 			zap.Error(err))
+		
+		federationActivity.Success = false
+		federationActivity.ErrorMessage = fmt.Sprintf("Failed to fetch actor public key: %v", err)
+		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		go store.RecordFederationActivity(context.Background(), federationActivity)
+		
 		return common.BadRequest(common.ValidationError{
 			Field:   "actor",
 			Message: "unable to verify sender",
@@ -349,6 +373,12 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		log.Warn("signature verification failed",
 			zap.String("actor", activity.Actor),
 			zap.Error(err))
+		
+		federationActivity.Success = false
+		federationActivity.ErrorMessage = fmt.Sprintf("Signature verification failed: %v", err)
+		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		go store.RecordFederationActivity(context.Background(), federationActivity)
+		
 		return common.Unauthorized(err), nil
 	}
 
@@ -418,6 +448,11 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		zap.String("id", activity.ID),
 		zap.String("type", activity.Type),
 		zap.String("from", activity.Actor))
+
+	// Record successful federation activity
+	federationActivity.Success = true
+	federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+	go store.RecordFederationActivity(context.Background(), federationActivity)
 
 	// Return 202 Accepted
 	return &events.APIGatewayV2HTTPResponse{

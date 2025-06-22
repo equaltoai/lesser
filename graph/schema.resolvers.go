@@ -2766,7 +2766,125 @@ func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, e
 
 // Timeline is the resolver for the timeline field.
 func (r *queryResolver) Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor) (*model.ObjectConnection, error) {
-	panic(fmt.Errorf("not implemented: Timeline - timeline"))
+	// 1. Get authenticated user from context
+	username := getUsernameFromContext(ctx)
+	
+	// 2. Check authentication requirements
+	switch typeArg {
+	case model.TimelineTypeHome, model.TimelineTypeList, model.TimelineTypeDirect:
+		if username == "" {
+			return nil, fmt.Errorf("authentication required for %s timeline", typeArg)
+		}
+	}
+	
+	// 3. Track query cost
+	r.CostTracker.TrackDynamoRead(1)
+	
+	// 4. Set pagination defaults
+	limit := 20
+	if first != nil && *first > 0 && *first <= 100 {
+		limit = *first
+	}
+	
+	cursor := ""
+	if after != nil {
+		cursor = string(*after)
+	}
+	
+	// 5. Fetch timeline entries based on type
+	var entries []*storage.TimelineEntry
+	var nextCursor string
+	var err error
+	
+	switch typeArg {
+	case model.TimelineTypeHome:
+		entries, nextCursor, err = r.Storage.GetHomeTimeline(ctx, username, limit, cursor)
+		
+	case model.TimelineTypePublic:
+		// Public timeline shows all federated content
+		entries, nextCursor, err = r.Storage.GetPublicTimeline(ctx, false, limit, cursor)
+		
+	case model.TimelineTypeLocal:
+		// Local timeline shows only local instance content
+		entries, nextCursor, err = r.Storage.GetPublicTimeline(ctx, true, limit, cursor)
+		
+	case model.TimelineTypeHashtag:
+		if hashtag == nil || *hashtag == "" {
+			return nil, fmt.Errorf("hashtag parameter required for hashtag timeline")
+		}
+		entries, nextCursor, err = r.Storage.GetHashtagTimeline(ctx, *hashtag, false, limit, cursor)
+		
+	case model.TimelineTypeList:
+		if listID == nil || *listID == "" {
+			return nil, fmt.Errorf("listID parameter required for list timeline")
+		}
+		entries, nextCursor, err = r.Storage.GetListTimeline(ctx, *listID, limit, cursor)
+		
+	case model.TimelineTypeDirect:
+		// Direct messages timeline - not implemented yet
+		return nil, fmt.Errorf("direct timeline not yet implemented")
+		
+	default:
+		return nil, fmt.Errorf("unsupported timeline type: %s", typeArg)
+	}
+	
+	if err != nil {
+		r.Logger.Error("Failed to fetch timeline",
+			zap.String("type", string(typeArg)),
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to fetch timeline: %w", err)
+	}
+	
+	// 6. Convert timeline entries to GraphQL objects
+	edges := make([]*model.ObjectEdge, 0, len(entries))
+	
+	// Fetch each object individually
+	for _, entry := range entries {
+		obj, err := r.Storage.GetObject(ctx, entry.PostID)
+		if err != nil {
+			r.Logger.Warn("Failed to fetch timeline object",
+				zap.String("post_id", entry.PostID),
+				zap.Error(err))
+			continue // Skip objects that can't be fetched
+		}
+		
+		// Convert to GraphQL object
+		graphQLObj := r.convertToGraphQLObject(ctx, obj)
+		if graphQLObj != nil {
+			edge := &model.ObjectEdge{
+				Node:   graphQLObj,
+				Cursor: model.Cursor(entry.PostID),
+			}
+			edges = append(edges, edge)
+		}
+	}
+	
+	// 7. Build page info
+	pageInfo := &model.PageInfo{
+		HasNextPage:     nextCursor != "",
+		HasPreviousPage: cursor != "", // Simplified - we know there are previous pages if we used a cursor
+	}
+	
+	if len(edges) > 0 {
+		pageInfo.StartCursor = &edges[0].Cursor
+		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
+	}
+	
+	// 8. Build connection
+	connection := &model.ObjectConnection{
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: len(edges), // Note: This is count of current page, not total
+	}
+	
+	r.Logger.Info("Timeline fetched",
+		zap.String("type", string(typeArg)),
+		zap.String("username", username),
+		zap.Int("count", len(edges)),
+		zap.Bool("hasMore", nextCursor != ""))
+	
+	return connection, nil
 }
 
 // Search is the resolver for the search field.
@@ -2969,60 +3087,57 @@ func (r *queryResolver) CostBreakdown(ctx context.Context, period *model.Period)
 // TrustGraph is the resolver for the trustGraph field.
 func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category *trust.TrustCategory) ([]*trust.TrustEdge, error) {
 	// Track the query cost
-	r.CostTracker.TrackDynamoRead(1)
-
-	// In a real implementation, this would query the trust edges from storage
-	// For now, we'll return sample trust edges
+	r.CostTracker.TrackDynamoRead(2) // We'll query both outgoing and incoming relationships
 
 	edges := []*trust.TrustEdge{}
 
-	// Create some sample trust edges
-	// In production, these would come from the trust service
-
-	// Simulate some trust relationships
-	sampleActors := []string{
-		"https://example.com/users/alice",
-		"https://example.com/users/bob",
-		"https://mastodon.social/users/carol",
-		"https://fosstodon.org/users/dave",
-	}
-
-	// Create outgoing trust edges
-	for i, targetActor := range sampleActors {
-		// Default to all categories if not specified
-		categories := []trust.TrustCategory{
-			trust.TrustCategoryContent,
-			trust.TrustCategoryBehavior,
-			trust.TrustCategoryTechnical,
-		}
-
-		if category != nil {
-			categories = []trust.TrustCategory{*category}
-		}
-
-		for _, cat := range categories {
+	// Get outgoing trust relationships (where this actor trusts others)
+	outgoingRelationships, _, err := r.Storage.GetTrustRelationships(ctx, actorID, 100, "")
+	if err != nil {
+		r.Logger.Error("Failed to get outgoing trust relationships",
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		// Continue without outgoing relationships
+	} else {
+		for _, rel := range outgoingRelationships {
+			// Filter by category if specified
+			if category != nil && rel.Category != *category {
+				continue
+			}
+			
 			edge := &trust.TrustEdge{
-				From:       actorID,
-				To:         targetActor,
-				Category:   cat,
-				Score:      0.5 + float64(i)*0.1, // Varying trust scores
-				Confidence: 0.8,                  // High confidence
-				Weight:     (0.5 + float64(i)*0.1) * 0.8,
+				From:       rel.TrusterID,
+				To:         rel.TrusteeID,
+				Category:   rel.Category,
+				Score:      rel.Score,
+				Confidence: rel.Confidence,
+				Weight:     rel.Score * rel.Confidence,
 			}
 			edges = append(edges, edge)
 		}
 	}
 
-	// Also add some incoming trust edges
-	for i, sourceActor := range sampleActors[:2] {
-		if category == nil || *category == trust.TrustCategoryContent {
+	// Get incoming trust relationships (where others trust this actor)
+	incomingRelationships, _, err := r.Storage.GetTrustedByRelationships(ctx, actorID, 100, "")
+	if err != nil {
+		r.Logger.Error("Failed to get incoming trust relationships",
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		// Continue without incoming relationships
+	} else {
+		for _, rel := range incomingRelationships {
+			// Filter by category if specified
+			if category != nil && rel.Category != *category {
+				continue
+			}
+			
 			edge := &trust.TrustEdge{
-				From:       sourceActor,
-				To:         actorID,
-				Category:   trust.TrustCategoryContent,
-				Score:      0.6 + float64(i)*0.15,
-				Confidence: 0.9,
-				Weight:     (0.6 + float64(i)*0.15) * 0.9,
+				From:       rel.TrusterID,
+				To:         rel.TrusteeID,
+				Category:   rel.Category,
+				Score:      rel.Score,
+				Confidence: rel.Confidence,
+				Weight:     rel.Score * rel.Confidence,
 			}
 			edges = append(edges, edge)
 		}
