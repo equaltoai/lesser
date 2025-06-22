@@ -26,7 +26,6 @@ type Config struct {
 	// Security
 	JWTSecret            string // For client authentication
 	KMSKeyID             string // AWS KMS key ID for encryption (optional)
-	PrivateKey           string // Private key for ActivityPub signatures
 	ReputationPrivateKey string // Private key for reputation system
 
 	// ActivityPub URLs
@@ -70,7 +69,6 @@ func loadConfig() *Config {
 
 		JWTSecret:            getEnvOrPanic("JWT_SECRET"),
 		KMSKeyID:             getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
-		PrivateKey:           getEnvOrPanic("PRIVATE_KEY"),
 		ReputationPrivateKey: getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
 
 		MaxUploadSize:     getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
