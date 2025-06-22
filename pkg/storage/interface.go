@@ -175,6 +175,7 @@ type Storage interface {
 	GetHomeTimeline(ctx context.Context, username string, limit int, cursor string) ([]*TimelineEntry, string, error)
 	GetPublicTimeline(ctx context.Context, local bool, limit int, cursor string) ([]*TimelineEntry, string, error)
 	GetListTimeline(ctx context.Context, listID string, limit int, cursor string) ([]*TimelineEntry, string, error)
+	GetDirectTimeline(ctx context.Context, username string, limit int, cursor string) ([]*TimelineEntry, string, error)
 	GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*TimelineEntry, string, error)
 	DeleteFromTimeline(ctx context.Context, timelineType, timelineID, entryID string) error
 	DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error

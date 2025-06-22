@@ -362,6 +362,71 @@ func (s *dynamoDBStorage) GetListTimeline(ctx context.Context, listID string, li
 	return entries, nextCursor, nil
 }
 
+// GetDirectTimeline retrieves direct messages timeline for a user
+func (s *dynamoDBStorage) GetDirectTimeline(ctx context.Context, username string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	log := common.Logger().With(
+		zap.String("username", username),
+		zap.Int("limit", limit),
+		zap.String("cursor", cursor),
+	)
+
+	pk := s.timelinePK("DIRECT", username)
+
+	var keyCondition string
+	var expressionAttributeValues map[string]types.AttributeValue
+
+	if cursor == "" {
+		keyCondition = "PK = :pk"
+		expressionAttributeValues = map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: pk},
+		}
+	} else {
+		keyCondition = "PK = :pk AND SK < :cursor"
+		expressionAttributeValues = map[string]types.AttributeValue{
+			":pk":     &types.AttributeValueMemberS{Value: pk},
+			":cursor": &types.AttributeValueMemberS{Value: cursor},
+		}
+	}
+
+	input := &dynamodb.QueryInput{
+		TableName:                 aws.String(s.tableName),
+		KeyConditionExpression:    aws.String(keyCondition),
+		ExpressionAttributeValues: expressionAttributeValues,
+		Limit:                     safeInt32(limit + 1),
+		ScanIndexForward:          aws.Bool(false),
+	}
+
+	output, err := s.client.Query(ctx, input)
+	if err != nil {
+		log.Error("failed to query direct timeline", zap.Error(err))
+		return nil, "", fmt.Errorf("failed to query direct timeline: %w", err)
+	}
+
+	entries := make([]*storage.TimelineEntry, 0, len(output.Items))
+	for _, item := range output.Items {
+		var record TimelineRecord
+		if err := s.UnmarshalItem(item, &record); err != nil {
+			log.Warn("failed to unmarshal timeline record", zap.Error(err))
+			continue
+		}
+		// Only include entries with direct visibility
+		if record.Entry.Visibility == "direct" {
+			entries = append(entries, record.Entry)
+		}
+	}
+
+	var nextCursor string
+	if len(entries) > limit {
+		entries = entries[:limit]
+		if len(entries) > 0 {
+			lastEntry := entries[len(entries)-1]
+			nextCursor = s.timelineSK(lastEntry.TimelineAt, lastEntry.PostID)
+		}
+	}
+
+	return entries, nextCursor, nil
+}
+
 // GetHashtagTimeline retrieves posts with a specific hashtag
 func (s *dynamoDBStorage) GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
 	log := common.Logger().With(

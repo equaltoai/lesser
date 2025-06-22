@@ -98,6 +98,15 @@ func getUsernameFromContext(ctx context.Context) string {
 	return ""
 }
 
+// GetUserID extracts user ID from authentication context
+func GetUserID(ctx context.Context) string {
+	// Try to get claims from context
+	if claims, ok := ctx.Value(auth.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
+		return claims.Username // In this system, username is used as user ID
+	}
+	return ""
+}
+
 // convertToGraphQLObject converts storage objects to GraphQL model objects
 func (r *queryResolver) convertToGraphQLObject(ctx context.Context, obj interface{}) *model.Object {
 	// Reuse logic from Object resolver
@@ -465,15 +474,15 @@ func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *sto
 	if threadContext == nil {
 		return 0
 	}
-	
+
 	// Count gaps in the thread by looking for missing replies
 	// This is a simplified implementation - a more sophisticated version would:
 	// 1. Analyze reply chains for gaps
 	// 2. Check for orphaned replies (replies without visible parents)
 	// 3. Compare with known reply counts from remote servers
-	
+
 	missingCount := 0
-	
+
 	// Check if we have ancestors/descendants that reference missing posts
 	// StatusSearchResult doesn't have Object field, so we check if we can retrieve the actual object
 	for _, ancestor := range threadContext.Ancestors {
@@ -483,7 +492,7 @@ func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *sto
 			}
 		}
 	}
-	
+
 	for _, descendant := range threadContext.Descendants {
 		if descendant.StatusID != "" {
 			if _, err := r.Storage.GetObject(ctx, descendant.StatusID); err != nil {
@@ -491,7 +500,7 @@ func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *sto
 			}
 		}
 	}
-	
+
 	// Additional heuristic: if we have very few replies but the post seems popular
 	// (based on likes/shares), there might be missing replies
 	totalPosts := len(threadContext.Ancestors) + len(threadContext.Descendants)
@@ -503,7 +512,7 @@ func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *sto
 			missingCount += int(avgEngagement / 20) // Rough estimate
 		}
 	}
-	
+
 	return missingCount
 }
 
@@ -512,10 +521,10 @@ func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext
 	if threadContext == nil {
 		return 0
 	}
-	
+
 	totalEngagement := 0
 	postCount := 0
-	
+
 	// Sum engagement from all posts in the thread
 	allPosts := append(threadContext.Ancestors, threadContext.Descendants...)
 	for _, post := range allPosts {
@@ -524,16 +533,16 @@ func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext
 			likes, _ := r.Storage.CountObjectLikes(ctx, post.StatusID)
 			shares, _ := r.Storage.CountObjectAnnounces(ctx, post.StatusID)
 			replies, _ := r.Storage.CountObjectReplies(ctx, post.StatusID)
-			
+
 			totalEngagement += likes + shares + replies
 			postCount++
 		}
 	}
-	
+
 	if postCount == 0 {
 		return 0
 	}
-	
+
 	return float64(totalEngagement) / float64(postCount)
 }
 

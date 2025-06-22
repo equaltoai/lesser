@@ -81,34 +81,7 @@ const signature = await ethereum.request({
 // Verify with Lesser
 ```
 
-### 3. OAuth2 Social Login 🌐
-
-**Why**: Users already have these accounts, low friction
-
-**Providers**:
-- GitHub (developers)
-- Discord (communities)
-- Google (mainstream)
-- Custom OAuth2 providers
-
-**Implementation**:
-```go
-// API Endpoints
-GET  /api/v1/auth/oauth/{provider}/authorize
-GET  /api/v1/auth/oauth/{provider}/callback
-POST /api/v1/auth/oauth/{provider}/refresh
-
-// Store provider tokens securely
-PK: USER#username
-SK: OAUTH#github#user-id
-    provider: "github"
-    providerUserId: "123456"
-    accessToken: "encrypted..."
-    refreshToken: "encrypted..."
-    expiresAt: "2025-01-16T..."
-```
-
-### 4. API Keys (For Bots/Automation) 🤖
+### 3. API Keys (For Bots/Automation) 🤖
 
 **Why**: Developers need programmatic access
 
@@ -178,10 +151,9 @@ SK: MFA#TOTP
 
 1. **Passkey Recovery**: Built-in platform sync (iCloud, Google Password Manager)
 2. **Wallet Recovery**: Self-sovereign identity via crypto wallet
-3. **OAuth Provider Recovery**: Let GitHub/Discord handle it
-4. **Social Recovery**: Trusted contacts via ActivityPub (revolutionary!)
-5. **Recovery Codes**: Optional backup codes
-6. **Trusted Device Recovery**: Use an existing trusted device
+3. **Social Recovery**: Trusted contacts via ActivityPub (revolutionary!)
+4. **Recovery Codes**: Optional backup codes
+5. **Trusted Device Recovery**: Use an existing trusted device
 
 ### Email-Free Recovery Endpoints
 ```go
@@ -355,9 +327,7 @@ SK: SECURITY#lockout
 - Complete HTML/JavaScript demo (wallet_auth_demo.html)
 
 ### Week 4: OAuth2 & Polish ✅ COMPLETED
-- [x] OAuth2 provider framework
-- [x] GitHub integration
-- [x] Account linking
+- [x] OAuth2 authorization server framework
 - [x] Recovery flows
 
 **Implemented Features:**
@@ -365,9 +335,7 @@ SK: SECURITY#lockout
 - Authorization endpoint with PKCE support
 - Token endpoint with authorization_code and refresh_token grants
 - Token revocation endpoint
-- External OAuth provider framework
-- GitHub OAuth integration
-- Provider account linking/unlinking
+- OAuth framework maintained for ActivityPub federation
 - Account recovery via email
 - Recovery token generation and verification
 - Password reset functionality

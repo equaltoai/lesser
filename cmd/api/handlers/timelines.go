@@ -567,3 +567,145 @@ func (h *Handler) HandleListTimeline(ctx context.Context, request events.APIGate
 
 	return response, nil
 }
+
+// HandleDirectTimeline retrieves the direct messages timeline for the authenticated user
+func (h *Handler) HandleDirectTimeline(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Extract token from Authorization header
+	authHeader := request.Headers["Authorization"]
+	if authHeader == "" {
+		authHeader = request.Headers["authorization"]
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.Unauthorized(err), nil
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return common.Forbidden(errors.New("insufficient scope")), nil
+	}
+
+	// Get the user's actor
+	actor, err := h.store.GetActor(ctx, claims.Username) 
+	if err != nil {
+		h.logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Parse query parameters
+	limit := 20
+	if limitStr := request.QueryStringParameters["limit"]; limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
+			limit = parsedLimit
+		}
+	}
+
+	maxID := request.QueryStringParameters["max_id"]
+
+	// Get direct timeline items
+	entries, cursor, err := h.store.GetDirectTimeline(ctx, claims.Username, limit, maxID)
+	if err != nil {
+		h.logger.Error("failed to get direct timeline", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	h.logger.Info("direct timeline entries fetched",
+		zap.String("username", claims.Username),
+		zap.Int("count", len(entries)),
+		zap.String("cursor", cursor))
+
+	// Convert objects to statuses
+	statuses := []models.Status{}
+	for _, entry := range entries {
+		// Extract object ID from PostID URL
+		objectID := h.converter.ExtractIDFromURL(entry.PostID)
+
+		// Get the actual object
+		obj, err := h.store.GetObject(ctx, objectID)
+		if err != nil {
+			h.logger.Warn("failed to get object from direct timeline",
+				zap.String("post_id", entry.PostID),
+				zap.String("object_id", objectID),
+				zap.Error(err))
+			continue
+		}
+
+		// Get the actor who created the object
+		var attributedTo string
+		var objActor *activitypub.Actor
+
+		switch o := obj.(type) {
+		case *activitypub.Note:
+			attributedTo = o.AttributedTo
+		case map[string]interface{}:
+			if attr, ok := o["attributedTo"].(string); ok {
+				attributedTo = attr
+			}
+		}
+
+		if attributedTo != "" {
+			// Extract username from actor ID
+			username := h.converter.ExtractUsernameFromActorID(attributedTo)
+			if username != "" {
+				objActor, _ = h.store.GetActor(ctx, username)
+			}
+		}
+
+		status := h.converter.ObjectToStatus(obj, objActor)
+
+		// Check if blocked
+		if objActor != nil {
+			if _, err := h.store.GetBlock(ctx, actor.ID, objActor.ID); err == nil {
+				// Blocked user, skip
+				continue
+			}
+		}
+
+		// Get interaction counts using the full PostID URL
+		if entry.PostID != "" {
+			likeCount, _ := h.store.CountObjectLikes(ctx, entry.PostID)
+			announceCount, _ := h.store.CountObjectAnnounces(ctx, entry.PostID)
+			status.FavouritesCount = likeCount
+			status.ReblogsCount = announceCount
+
+			// Check if current user has interacted
+			if _, err := h.store.GetLike(ctx, actor.ID, entry.PostID); err == nil {
+				status.Favourited = true
+			}
+			if _, err := h.store.GetAnnounce(ctx, actor.ID, entry.PostID); err == nil {
+				status.Reblogged = true
+			}
+			bookmarked, _ := h.store.IsBookmarked(ctx, claims.Username, entry.PostID)
+			status.Bookmarked = bookmarked
+		}
+
+		statuses = append(statuses, status)
+	}
+
+	// Use common headers
+	headers := common.GetAPIHeaders()
+
+	// Add Link header for pagination if there's a cursor
+	if cursor != "" {
+		params := make(map[string]string)
+		if limit != 20 {
+			params["limit"] = strconv.Itoa(limit)
+		}
+		common.AddLinkHeader(headers, h.cfg.BaseURL(), "/api/v1/timelines/direct", cursor, params)
+	}
+
+	body, _ := json.Marshal(statuses)
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Headers:    headers,
+		Body:       string(body),
+	}, nil
+}
