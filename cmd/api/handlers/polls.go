@@ -92,7 +92,7 @@ func (h *Handler) HandleGetPoll(ctx context.Context, request events.APIGatewayV2
 		Voted:       voted,
 		OwnVotes:    ownVotes,
 		OptionsData: optionsData,
-		Emojis:      []interface{}{}, // TODO: Support custom emojis
+		Emojis:      h.extractCustomEmojis(ctx, poll.Options),
 	}
 
 	// Hide totals if requested and poll hasn't expired
@@ -209,7 +209,7 @@ func (h *Handler) HandleVoteOnPoll(ctx context.Context, request events.APIGatewa
 		Voted:       true,
 		OwnVotes:    req.Choices,
 		OptionsData: optionsData,
-		Emojis:      []interface{}{},
+		Emojis:      h.extractCustomEmojis(ctx, poll.Options),
 	}
 
 	// Hide totals if requested and poll hasn't expired
@@ -260,3 +260,75 @@ func extractUsernameFromActorID(actorID string) string {
 	}
 	return ""
 }
+
+// extractCustomEmojis extracts custom emojis from poll options
+func (h *Handler) extractCustomEmojis(ctx context.Context, options []string) []interface{} {
+	emojis := make([]interface{}, 0)
+	emojiMap := make(map[string]bool) // To avoid duplicates
+
+	for _, option := range options {
+		// Look for custom emoji patterns like :custom_emoji:
+		if emojiCodes := h.findEmojiCodes(option); len(emojiCodes) > 0 {
+			for _, code := range emojiCodes {
+				if !emojiMap[code] {
+					// Get emoji data from storage
+					if emoji, err := h.store.GetCustomEmoji(ctx, code); err == nil {
+						emojis = append(emojis, map[string]interface{}{
+							"shortcode":         emoji.Shortcode,
+							"url":               emoji.URL,
+							"static_url":        emoji.StaticURL,
+							"visible_in_picker": emoji.VisibleInPicker,
+						})
+						emojiMap[code] = true
+					}
+				}
+			}
+		}
+	}
+
+	return emojis
+}
+
+// findEmojiCodes finds custom emoji codes in text
+func (h *Handler) findEmojiCodes(text string) []string {
+	codes := make([]string, 0)
+
+	// Simple regex-like pattern matching for :emoji_code:
+	start := 0
+	for {
+		startIdx := strings.Index(text[start:], ":")
+		if startIdx == -1 {
+			break
+		}
+		startIdx += start
+
+		endIdx := strings.Index(text[startIdx+1:], ":")
+		if endIdx == -1 {
+			break
+		}
+		endIdx += startIdx + 1
+
+		code := text[startIdx+1 : endIdx]
+		if len(code) > 0 && isValidEmojiCode(code) {
+			codes = append(codes, code)
+		}
+
+		start = endIdx + 1
+	}
+
+	return codes
+}
+
+// isValidEmojiCode checks if an emoji code is valid
+func isValidEmojiCode(code string) bool {
+	// Valid emoji codes contain only letters, numbers, and underscores
+	for _, r := range code {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_') {
+			return false
+		}
+	}
+	return len(code) >= 2 && len(code) <= 32
+}
+
+// generateRandomString is defined in statuses.go to avoid duplication

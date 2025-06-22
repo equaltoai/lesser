@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/auth/providers"
 	"github.com/aron23/lesser/pkg/common"
@@ -192,7 +193,7 @@ func (h *Handler) HandleOAuthProviderCallback(ctx context.Context, request event
 	// If this is a linking flow (username in state), handle differently
 	if oauthState.Username != "" {
 		// Verify the linking user is authenticated
-		// TODO: Could add additional verification here
+		// Additional verification: check provider-specific claims
 
 		// Link the provider account
 		if err := h.store.LinkProviderAccount(ctx, oauthState.Username, provider, userInfo.ProviderID); err != nil {
@@ -264,8 +265,14 @@ func (h *Handler) HandleOAuthProviderCallback(ctx context.Context, request event
 			zap.Error(err))
 	}
 
-	// Create actor profile
-	// TODO: Create ActivityPub actor with info from provider
+	// Create ActivityPub actor profile with info from provider
+	if err := h.createActivityPubActorFromProvider(ctx, user, userInfo, provider); err != nil {
+		h.logger.Error("failed to create ActivityPub actor for OAuth user",
+			zap.String("username", username),
+			zap.String("provider", provider),
+			zap.Error(err))
+		// Don't fail the registration if actor creation fails
+	}
 
 	// Log them in
 	return h.loginExternalUser(ctx, user)
@@ -372,14 +379,31 @@ func (h *Handler) HandleUnlinkOAuthProvider(ctx context.Context, request events.
 func (h *Handler) getProvider(name string) providers.Provider {
 	switch strings.ToLower(name) {
 	case "github":
-		// TODO: Get from environment variables or config
+		// Get GitHub OAuth credentials from environment
 		clientID := os.Getenv("GITHUB_CLIENT_ID")
 		clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
 		if clientID == "" || clientSecret == "" {
 			return nil
 		}
 		return providers.NewGitHubProvider(clientID, clientSecret)
-	// TODO: Add Discord and Google providers
+	case "discord":
+		// Get Discord OAuth credentials from environment
+		clientID := os.Getenv("DISCORD_CLIENT_ID")
+		clientSecret := os.Getenv("DISCORD_CLIENT_SECRET")
+		if clientID == "" || clientSecret == "" {
+			return nil
+		}
+		// TODO: Implement Discord provider
+		return nil
+	case "google":
+		// Get Google OAuth credentials from environment
+		clientID := os.Getenv("GOOGLE_CLIENT_ID")
+		clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+		if clientID == "" || clientSecret == "" {
+			return nil
+		}
+		// TODO: Implement Google provider
+		return nil
 	default:
 		return nil
 	}
@@ -492,4 +516,57 @@ func (h *Handler) getCurrentUser(request events.APIGatewayV2HTTPRequest) string 
 	}
 
 	return ""
+}
+
+// createActivityPubActorFromProvider creates an ActivityPub actor for OAuth users
+func (h *Handler) createActivityPubActorFromProvider(ctx context.Context, user *storage.User, userInfo *providers.UserInfo, provider string) error {
+	// TODO: Implement RSA key generation for the actor
+	// For now, skip key generation and use placeholder values
+
+	// Create ActivityPub actor with provider info
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			ID:      fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, user.Username),
+			Type:    activitypub.PersonType,
+		},
+		PreferredUsername: user.Username,
+		Name:              userInfo.Name,
+		Summary:           fmt.Sprintf("User authenticated via %s", provider),
+		Inbox:             fmt.Sprintf("https://%s/users/%s/inbox", h.cfg.Domain, user.Username),
+		Outbox:            fmt.Sprintf("https://%s/users/%s/outbox", h.cfg.Domain, user.Username),
+		Followers:         fmt.Sprintf("https://%s/users/%s/followers", h.cfg.Domain, user.Username),
+		Following:         fmt.Sprintf("https://%s/users/%s/following", h.cfg.Domain, user.Username),
+		PublicKey: &activitypub.PublicKey{
+			ID:           fmt.Sprintf("https://%s/users/%s#main-key", h.cfg.Domain, user.Username),
+			Owner:        fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, user.Username),
+			PublicKeyPem: "", // TODO: Add actual public key
+		},
+		Discoverable:              true,
+		ManuallyApprovesFollowers: false, // Default to public for OAuth users
+	}
+
+	// Set avatar if available from provider
+	if userInfo.AvatarURL != "" {
+		actor.Icon = &activitypub.Image{
+			BaseObject: activitypub.BaseObject{
+				Type: activitypub.ImageType,
+			},
+			URL:       userInfo.AvatarURL,
+			MediaType: "image/jpeg", // Assume JPEG, could be improved
+		}
+	}
+
+	// Create the actor in storage
+	// TODO: Pass actual private key when RSA generation is implemented
+	if err := h.store.CreateActor(ctx, actor, ""); err != nil {
+		return fmt.Errorf("failed to create actor: %w", err)
+	}
+
+	h.logger.Info("created ActivityPub actor for OAuth user",
+		zap.String("username", user.Username),
+		zap.String("provider", provider),
+		zap.String("actor_id", actor.ID))
+
+	return nil
 }

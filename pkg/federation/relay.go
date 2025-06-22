@@ -15,6 +15,16 @@ import (
 	"go.uber.org/zap"
 )
 
+// DynamoDBAPI defines the subset of DynamoDB operations we use for relay storage (disabled to break circular dependency)
+/*
+type DynamoDBAPI interface {
+	PutItem(ctx context.Context, params *dynamodbsvc.PutItemInput, optFns ...func(*dynamodbsvc.Options)) (*dynamodbsvc.PutItemOutput, error)
+	GetItem(ctx context.Context, params *dynamodbsvc.GetItemInput, optFns ...func(*dynamodbsvc.Options)) (*dynamodbsvc.GetItemOutput, error)
+	DeleteItem(ctx context.Context, params *dynamodbsvc.DeleteItemInput, optFns ...func(*dynamodbsvc.Options)) (*dynamodbsvc.DeleteItemOutput, error)
+	Query(ctx context.Context, params *dynamodbsvc.QueryInput, optFns ...func(*dynamodbsvc.Options)) (*dynamodbsvc.QueryOutput, error)
+}
+*/
+
 // RelayService handles ActivityPub relay functionality
 type RelayService struct {
 	store      storage.Storage
@@ -342,37 +352,55 @@ func (r *RelayService) handleRelayAnnounce(ctx context.Context, activity *activi
 // Storage methods (would use DynamoDB in production)
 
 func (r *RelayService) storeRelayInfo(ctx context.Context, relay *RelayInfo) error {
-	_ = ctx // Will be used when DynamoDB implementation is added
-	// Store in DynamoDB with pattern:
-	// PK: RELAY#<relay_url>
-	// SK: INFO
-	r.logger.Debug("storing relay info", zap.String("relay_url", relay.URL))
-	return nil
+	// Convert federation RelayInfo to storage RelayInfo
+	storageRelay := &storage.RelayInfo{
+		URL:        relay.URL,
+		InboxURL:   relay.InboxURL,
+		Active:     relay.Active,
+		CreatedAt:  relay.CreatedAt,
+		LastSeenAt: relay.LastSeenAt,
+	}
+
+	return r.store.StoreRelayInfo(ctx, storageRelay)
 }
 
 func (r *RelayService) getRelayInfo(ctx context.Context, relayURL string) (*RelayInfo, error) {
-	_ = ctx // Will be used when DynamoDB implementation is added
-	// Get from DynamoDB
-	r.logger.Debug("getting relay info", zap.String("relay_url", relayURL))
+	storageRelay, err := r.store.GetRelayInfo(ctx, relayURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert storage RelayInfo to federation RelayInfo
 	return &RelayInfo{
-		URL:      relayURL,
-		InboxURL: relayURL + "/inbox",
-		Active:   true,
+		URL:        storageRelay.URL,
+		InboxURL:   storageRelay.InboxURL,
+		Active:     storageRelay.Active,
+		CreatedAt:  storageRelay.CreatedAt,
+		LastSeenAt: storageRelay.LastSeenAt,
 	}, nil
 }
 
 func (r *RelayService) removeRelayInfo(ctx context.Context, relayURL string) error {
-	_ = ctx // Will be used when DynamoDB implementation is added
-	// Remove from DynamoDB
-	r.logger.Debug("removing relay info", zap.String("relay_url", relayURL))
-	return nil
+	return r.store.RemoveRelayInfo(ctx, relayURL)
 }
 
 func (r *RelayService) getActiveRelays(ctx context.Context) ([]*RelayInfo, error) {
-	_ = ctx // Will be used when DynamoDB implementation is added
-	// Query DynamoDB for active relays
-	// GSI: RELAY_STATUS
-	// PK: ACTIVE#true
-	r.logger.Debug("getting active relays")
-	return []*RelayInfo{}, nil
+	storageRelays, err := r.store.GetActiveRelays(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert storage RelayInfo slice to federation RelayInfo slice
+	relays := make([]*RelayInfo, len(storageRelays))
+	for i, sr := range storageRelays {
+		relays[i] = &RelayInfo{
+			URL:        sr.URL,
+			InboxURL:   sr.InboxURL,
+			Active:     sr.Active,
+			CreatedAt:  sr.CreatedAt,
+			LastSeenAt: sr.LastSeenAt,
+		}
+	}
+
+	return relays, nil
 }

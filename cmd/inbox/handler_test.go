@@ -271,7 +271,7 @@ func TestHandler(t *testing.T) {
 	tests := []struct {
 		name          string
 		setupRequest  func(senderBaseURL string) (*events.APIGatewayV2HTTPRequest, error)
-		setupMock func(*mocks.MockStorage)
+		setupMock     func(*mocks.MockStorage)
 		setupServer   func() (*httptest.Server, *activitypub.Actor)
 		expectedCode  int
 		expectedError string
@@ -680,7 +680,7 @@ func TestGetInbox(t *testing.T) {
 		username      string
 		headers       map[string]string
 		queryParams   map[string]string
-		setupMock func(*mocks.MockStorage)
+		setupMock     func(*mocks.MockStorage)
 		expectedCode  int
 		expectedError string
 		validateBody  func(*testing.T, string)

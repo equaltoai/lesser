@@ -18,6 +18,21 @@ import (
 	"go.uber.org/zap"
 )
 
+// ContextKey type for context keys to avoid collisions
+type ContextKey string
+
+// Context keys for authentication
+const (
+	ContextKeyClaims ContextKey = "claims"
+)
+
+// Claims represents JWT claims for authentication context
+type Claims struct {
+	Username string   `json:"username"`
+	Scopes   []string `json:"scopes"`
+	ClientID string   `json:"client_id"`
+}
+
 // SearchService provides advanced search capabilities
 type SearchService struct {
 	dynamo    DynamoDBAPI
@@ -155,7 +170,7 @@ MERGE:
 	finalResults := s.mergeAndRankResults(allResults, options.Limit)
 
 	// Apply filters if needed
-	userID := "" // TODO: Extract from context when we implement auth
+	userID := extractUserIDFromContext(ctx)
 	if options.FollowingOnly || !options.IncludeRemote {
 		var err error
 		finalResults, err = ApplySearchFilters(ctx, finalResults, options, userID, s.storage, s.domain, s.logger)
@@ -192,7 +207,7 @@ func (s *SearchService) analyzeQuery(ctx context.Context, query string) *Analyze
 	analyzed := &AnalyzedQuery{
 		Original: query,
 		Query:    strings.ToLower(strings.TrimSpace(query)),
-		Language: "en", // TODO: Detect language
+		Language: detectQueryLanguage(query),
 	}
 
 	// Check if it's a handle query
@@ -717,4 +732,58 @@ func (s *SearchService) GetSuggestions(ctx context.Context, prefix string) ([]Su
 	}
 
 	return suggestions, nil
+}
+
+// extractUserIDFromContext extracts the user ID from authentication context
+func extractUserIDFromContext(ctx context.Context) string {
+	// Try to get claims from context
+	if claims, ok := ctx.Value(ContextKeyClaims).(*Claims); ok && claims != nil {
+		return claims.Username
+	}
+	return ""
+}
+
+// detectQueryLanguage performs simple heuristic-based language detection for search queries
+func detectQueryLanguage(query string) string {
+	// For short queries, default to English
+	if len(query) < 3 {
+		return "en"
+	}
+
+	// Simple heuristic: check for non-ASCII characters
+	hasNonASCII := false
+	for _, r := range query {
+		if r > 127 {
+			hasNonASCII = true
+			break
+		}
+	}
+
+	// If all ASCII, likely English or European language - default to English
+	if !hasNonASCII {
+		return "en"
+	}
+
+	// Basic character range detection for common languages
+	for _, r := range query {
+		switch {
+		case r >= 0x3040 && r <= 0x309F: // Hiragana
+			return "ja"
+		case r >= 0x30A0 && r <= 0x30FF: // Katakana
+			return "ja"
+		case r >= 0x4E00 && r <= 0x9FAF: // CJK Ideographs (Chinese/Japanese)
+			return "zh" // Default to Chinese, could be refined
+		case r >= 0xAC00 && r <= 0xD7AF: // Hangul (Korean)
+			return "ko"
+		case r >= 0x0400 && r <= 0x04FF: // Cyrillic
+			return "ru"
+		case r >= 0x0590 && r <= 0x05FF: // Hebrew
+			return "he"
+		case r >= 0x0600 && r <= 0x06FF: // Arabic
+			return "ar"
+		}
+	}
+
+	// Default to English if no specific patterns detected
+	return "en"
 }

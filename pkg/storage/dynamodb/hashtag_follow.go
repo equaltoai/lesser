@@ -273,7 +273,7 @@ func (s *dynamoDBStorage) GetHashtagFollowers(ctx context.Context, hashtag strin
 }
 
 // GetHashtagStats retrieves statistics for a hashtag
-func (s *dynamoDBStorage) GetHashtagStats(ctx context.Context, hashtag string) (*HashtagStats, error) {
+func (s *dynamoDBStorage) GetHashtagStats(ctx context.Context, hashtag string) (interface{}, error) {
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(s.tableName),
 		Key: map[string]types.AttributeValue{

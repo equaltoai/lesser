@@ -110,8 +110,27 @@ func (h *Handler) HandleOAuthAuthorize(ctx context.Context, request events.APIGa
 		return h.oauthError("invalid_scope", "One or more requested scopes are invalid", redirectURI, state), nil
 	}
 
-	// TODO: Show consent screen if user hasn't consented to this app
-	// For now, auto-approve
+	// Check if user has previously consented to this app
+	if !h.hasUserConsentedToApp(ctx, username, clientID, scopes) {
+		// Store authorization request state for consent flow
+		authState := &storage.OAuthState{
+			State:               state,
+			ClientID:            clientID,
+			Username:            username,
+			Scopes:              scopes,
+			RedirectURI:         redirectURI,
+			CodeChallenge:       codeChallenge,
+			CodeChallengeMethod: codeChallengeMethod,
+			ExpiresAt:           time.Now().Add(10 * time.Minute),
+		}
+
+		if err := h.store.SaveOAuthState(ctx, authState); err != nil {
+			h.logger.Error("failed to save OAuth state", zap.Error(err))
+			return h.oauthError("server_error", "Failed to save authorization state", redirectURI, state), nil
+		}
+
+		return h.showConsentScreen(ctx, request, authState)
+	}
 
 	// Generate authorization code
 	code, err := oauthSvc.GenerateAuthorizationCode()
@@ -220,7 +239,7 @@ func (h *Handler) handleAuthorizationCodeGrant(ctx context.Context, req models.O
 	// Check if code is expired
 	if time.Now().After(authCode.ExpiresAt) {
 		if err := h.store.DeleteAuthorizationCode(ctx, req.Code); err != nil {
-			h.logger.Error("failed to delete expired authorization code", 
+			h.logger.Error("failed to delete expired authorization code",
 				zap.String("code", req.Code),
 				zap.Error(err))
 		}
@@ -267,7 +286,7 @@ func (h *Handler) handleAuthorizationCodeGrant(ctx context.Context, req models.O
 
 	// Delete used authorization code
 	if err := h.store.DeleteAuthorizationCode(ctx, req.Code); err != nil {
-		h.logger.Error("failed to delete used authorization code", 
+		h.logger.Error("failed to delete used authorization code",
 			zap.String("code", req.Code),
 			zap.Error(err))
 		// Continue execution - tokens were already generated successfully
@@ -302,7 +321,7 @@ func (h *Handler) handleRefreshTokenGrant(ctx context.Context, req models.OAuthT
 	// Check if token is expired
 	if time.Now().After(refreshToken.ExpiresAt) {
 		if err := h.store.DeleteRefreshToken(ctx, req.RefreshToken); err != nil {
-			h.logger.Error("failed to delete expired refresh token", 
+			h.logger.Error("failed to delete expired refresh token",
 				zap.String("token", req.RefreshToken),
 				zap.Error(err))
 		}
@@ -392,7 +411,7 @@ func (h *Handler) HandleOAuthRevoke(ctx context.Context, request events.APIGatew
 		refreshToken, err := h.store.GetRefreshToken(ctx, req.Token)
 		if err == nil && refreshToken != nil && refreshToken.ClientID == req.ClientID {
 			if err := h.store.DeleteRefreshToken(ctx, req.Token); err != nil {
-				h.logger.Error("failed to delete refresh token during revocation", 
+				h.logger.Error("failed to delete refresh token during revocation",
 					zap.String("token", req.Token),
 					zap.Error(err))
 				// Continue execution - revocation can still be considered successful
@@ -498,4 +517,149 @@ func (h *Handler) getUserFromSession(request events.APIGatewayV2HTTPRequest) str
 	}
 
 	return ""
+}
+
+// Helper methods for consent screen functionality
+func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID string, scopes []string) bool {
+	consent, err := h.store.GetUserAppConsent(ctx, username, clientID)
+	if err != nil || consent == nil {
+		return false
+	}
+
+	// Check if all requested scopes are already consented to
+	for _, requestedScope := range scopes {
+		found := false
+		for _, consentedScope := range consent.Scopes {
+			if consentedScope == requestedScope {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (h *Handler) showConsentScreen(ctx context.Context, request events.APIGatewayV2HTTPRequest, authState *storage.OAuthState) (*events.APIGatewayV2HTTPResponse, error) {
+	// Get app details for consent screen
+	app, err := h.store.GetOAuthApp(ctx, authState.ClientID)
+	if err != nil {
+		return h.oauthError("invalid_client", "Application not found", "", authState.State), nil
+	}
+
+	// Return consent screen HTML or redirect to consent page
+	consentURL := fmt.Sprintf("%s/consent?state=%s&client_id=%s&scopes=%s&app_name=%s",
+		h.cfg.BaseURL(),
+		authState.State,
+		authState.ClientID,
+		strings.Join(authState.Scopes, ","),
+		url.QueryEscape(app.Name))
+
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: 302,
+		Headers: map[string]string{
+			"Location": consentURL,
+		},
+	}, nil
+}
+
+// HandleOAuthConsent handles the consent form submission
+// POST /oauth/consent
+func (h *Handler) HandleOAuthConsent(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+	// Parse form data
+	params, err := common.ParseFormURLEncoded(request.Body)
+	if err != nil {
+		return common.BadRequest(errors.New("invalid form data")), nil
+	}
+
+	state := params["state"]
+	decision := params["decision"] // "approve" or "deny"
+
+	if state == "" {
+		return common.BadRequest(errors.New("state parameter is required")), nil
+	}
+
+	// Get stored OAuth state
+	authState, err := h.store.GetOAuthState(ctx, state)
+	if err != nil || authState == nil {
+		return common.BadRequest(errors.New("invalid or expired authorization request")), nil
+	}
+
+	// Check if state is expired
+	if time.Now().After(authState.ExpiresAt) {
+		h.store.DeleteOAuthState(ctx, state)
+		return common.BadRequest(errors.New("authorization request has expired")), nil
+	}
+
+	// Handle denial
+	if decision != "approve" {
+		// Clean up state
+		h.store.DeleteOAuthState(ctx, state)
+
+		// Redirect with error
+		if authState.RedirectURI != "" {
+			return h.oauthError("access_denied", "User denied the request", authState.RedirectURI, authState.State), nil
+		}
+		return common.BadRequest(errors.New("authorization denied")), nil
+	}
+
+	// User approved - store consent
+	consent := &storage.UserAppConsent{
+		UserID:    authState.Username,
+		AppID:     authState.ClientID,
+		Scopes:    authState.Scopes,
+		CreatedAt: time.Now(),
+	}
+
+	if err := h.store.SaveUserAppConsent(ctx, consent); err != nil {
+		h.logger.Error("failed to save user consent", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to save consent")), nil
+	}
+
+	// Initialize OAuth service
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+
+	// Generate authorization code
+	code, err := oauthSvc.GenerateAuthorizationCode()
+	if err != nil {
+		h.logger.Error("failed to generate authorization code", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to generate authorization code")), nil
+	}
+
+	// Store authorization code
+	authCode := &storage.AuthorizationCode{
+		Code:          code,
+		ClientID:      authState.ClientID,
+		Username:      authState.Username,
+		CodeChallenge: authState.CodeChallenge,
+		ExpiresAt:     time.Now().Add(10 * time.Minute),
+		Scopes:        authState.Scopes,
+	}
+
+	if err := h.store.CreateAuthorizationCode(ctx, authCode); err != nil {
+		h.logger.Error("failed to store authorization code", zap.Error(err))
+		return common.InternalServerError(errors.New("failed to store authorization code")), nil
+	}
+
+	// Clean up OAuth state
+	h.store.DeleteOAuthState(ctx, state)
+
+	// Build redirect URL
+	u, _ := url.Parse(authState.RedirectURI)
+	q := u.Query()
+	q.Set("code", code)
+	if authState.State != "" {
+		q.Set("state", authState.State)
+	}
+	u.RawQuery = q.Encode()
+
+	return &events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusFound,
+		Headers: map[string]string{
+			"Location": u.String(),
+		},
+	}, nil
 }

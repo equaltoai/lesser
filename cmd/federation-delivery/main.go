@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -10,9 +11,13 @@ import (
 	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/federation"
 	"github.com/aron23/lesser/pkg/storage"
-	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
+	dynamodbStorage "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +26,8 @@ var (
 	store           storage.Storage
 	deliveryService *federation.DeliveryService
 	cfg             *config.Config
+	sqsClient       *sqs.Client
+	queueURL        string
 )
 
 func init() {
@@ -28,12 +35,25 @@ func init() {
 	logger = common.Logger()
 	cfg = config.Get()
 
-	store, err = storageDB.New()
+	store, err = dynamodbStorage.New()
 	if err != nil {
 		logger.Fatal("Failed to initialize storage", zap.Error(err))
 	}
 
 	deliveryService = federation.NewDeliveryService(store)
+
+	// Initialize AWS SQS client
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
+	sqsClient = sqs.NewFromConfig(awsCfg)
+
+	// Get queue URL from environment
+	queueURL = cfg.FederationDeliveryQueueURL
+	if queueURL == "" {
+		logger.Fatal("FEDERATION_DELIVERY_QUEUE_URL environment variable is required")
+	}
 }
 
 // FederationDeliveryMessage represents a message from the SQS queue
@@ -207,26 +227,96 @@ func calculateBackoff(retryCount int) int {
 
 // requeueDelivery sends the message back to the queue with a delay
 func requeueDelivery(ctx context.Context, msg *FederationDeliveryMessage, delayMinutes int) error {
-	// In production, this would use SQS SendMessage with DelaySeconds
-	// For now, we'll rely on the NextRetryAfter field
-	logger.Debug("would requeue message with delay",
+	// Marshal the updated message
+	messageBody, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Calculate delay seconds (SQS DelaySeconds max is 900 seconds / 15 minutes)
+	delaySeconds := delayMinutes * 60
+	if delaySeconds > 900 {
+		delaySeconds = 900 // Max SQS delay
+	}
+
+	// Send message to SQS with delay
+	_, err = sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:     aws.String(queueURL),
+		MessageBody:  aws.String(string(messageBody)),
+		DelaySeconds: int32(delaySeconds),
+		MessageAttributes: map[string]types.MessageAttributeValue{
+			"retry_count": {
+				StringValue: aws.String(fmt.Sprintf("%d", msg.RetryCount)),
+				DataType:    aws.String("Number"),
+			},
+			"delivery_id": {
+				StringValue: aws.String(msg.DeliveryID),
+				DataType:    aws.String("String"),
+			},
+		},
+	})
+
+	if err != nil {
+		logger.Error("failed to send message to SQS",
+			zap.String("delivery_id", msg.DeliveryID),
+			zap.Int("delay_minutes", delayMinutes),
+			zap.Error(err))
+		return fmt.Errorf("failed to requeue message: %w", err)
+	}
+
+	logger.Info("message requeued with delay",
 		zap.String("delivery_id", msg.DeliveryID),
-		zap.Int("delay_minutes", delayMinutes))
+		zap.Int("delay_minutes", delayMinutes),
+		zap.Int("delay_seconds", delaySeconds))
+
 	return nil
 }
 
 // storeDeliveryStatus stores the delivery status in DynamoDB
 func storeDeliveryStatus(ctx context.Context, status *DeliveryStatus) error {
-	// Store in DynamoDB with appropriate TTL
-	// This would use a pattern like:
-	// PK: DELIVERY#<delivery_id>
-	// SK: STATUS
-	// With a TTL of 7 days for successful deliveries, 30 days for failures
+	// Calculate TTL based on status
+	var ttl time.Time
+	if status.Status == "delivered" {
+		ttl = time.Now().Add(7 * 24 * time.Hour) // 7 days for successful deliveries
+	} else {
+		ttl = time.Now().Add(30 * 24 * time.Hour) // 30 days for failures
+	}
+
+	// Create delivery status record using the same DynamoDB table structure
+	deliveryRecord := map[string]interface{}{
+		"PK":            fmt.Sprintf("DELIVERY#%s", status.DeliveryID),
+		"SK":            "STATUS",
+		"Type":          "DELIVERY_STATUS",
+		"DeliveryID":    status.DeliveryID,
+		"TargetInbox":   status.TargetInbox,
+		"Status":        status.Status,
+		"Attempts":      status.Attempts,
+		"LastAttemptAt": status.LastAttemptAt.Format(time.RFC3339),
+		"LastError":     status.LastError,
+		"TTL":           ttl.Unix(),
+		"CreatedAt":     time.Now().Format(time.RFC3339),
+		"UpdatedAt":     time.Now().Format(time.RFC3339),
+	}
+
+	// Add DeliveredAt if present
+	if status.DeliveredAt != nil {
+		deliveryRecord["DeliveredAt"] = status.DeliveredAt.Format(time.RFC3339)
+	}
 
 	logger.Debug("storing delivery status",
 		zap.String("delivery_id", status.DeliveryID),
-		zap.String("status", status.Status))
+		zap.String("status", status.Status),
+		zap.String("pk", deliveryRecord["PK"].(string)),
+		zap.String("sk", deliveryRecord["SK"].(string)))
 
-	// TODO: Implement actual DynamoDB storage
-	return nil
+	// Use a generic storage method to store the record
+	// This leverages the existing DynamoDB infrastructure
+	return storeDeliveryRecord(ctx, deliveryRecord)
+}
+
+// storeDeliveryRecord stores a delivery record in DynamoDB
+func storeDeliveryRecord(ctx context.Context, record map[string]interface{}) error {
+	// Use the CreateObject method to store the delivery status record
+	// The storage layer will handle the DynamoDB operations internally
+	return store.CreateObject(ctx, record)
 }

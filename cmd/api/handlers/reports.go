@@ -128,7 +128,7 @@ func (h *Handler) HandleCreateReport(ctx context.Context, request events.APIGate
 		CreatedAt:     report.CreatedAt.Format(time.RFC3339),
 		StatusIDs:     report.StatusIDs,
 		RuleIDs:       report.RuleIDs,
-		TargetAccount: nil, // TODO: Load target account if needed
+		TargetAccount: h.loadTargetAccount(ctx, report.TargetAccountID),
 	}
 
 	return common.OK(response), nil
@@ -171,5 +171,26 @@ func (h *Handler) createBasicModerationEvent(ctx context.Context, report *storag
 		// Update the report with the moderation event ID
 		report.ModerationEventID = moderationEvent.ID
 		_ = h.store.UpdateReportStatus(ctx, report.ID, report.Status, "", "")
+	}
+}
+
+// Helper method to load target account for reports
+func (h *Handler) loadTargetAccount(ctx context.Context, targetAccountID string) *models.Account {
+	if targetAccountID == "" {
+		return nil
+	}
+
+	account, err := h.store.GetUser(ctx, targetAccountID)
+	if err != nil {
+		h.logger.Warn("failed to load target account", zap.Error(err))
+		return nil
+	}
+
+	// Convert to models.Account format
+	return &models.Account{
+		ID:          account.Username,
+		Username:    account.Username,
+		DisplayName: account.DisplayName,
+		// Add other fields as needed
 	}
 }

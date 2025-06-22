@@ -26,7 +26,7 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 			break
 		}
 	}
-	
+
 	// Normalize content type to lowercase for comparison
 	contentTypeLower := strings.ToLower(contentType)
 
@@ -68,7 +68,7 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 		req.RedirectURIs = params["redirect_uris"]
 		req.Scopes = params["scopes"]
 		req.Website = params["website"]
-		
+
 		// Log parsed params for debugging
 		h.logger.Info("parsed form params",
 			zap.Any("params", params),
@@ -82,7 +82,7 @@ func (h *Handler) HandleAppRegistration(ctx context.Context, request events.APIG
 			req.RedirectURIs = params["redirect_uris"]
 			req.Scopes = params["scopes"]
 			req.Website = params["website"]
-			
+
 			h.logger.Info("parsed as form data (fallback)",
 				zap.Any("params", params),
 				zap.String("detected_content_type", "application/x-www-form-urlencoded"))
@@ -216,7 +216,6 @@ func truncateString(s string, maxLen int) string {
 	}
 	return s[:maxLen]
 }
-
 
 // HandleAppVerifyCredentials verifies OAuth app credentials
 func (h *Handler) HandleAppVerifyCredentials(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {

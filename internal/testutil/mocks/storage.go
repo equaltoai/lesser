@@ -72,6 +72,33 @@ type MockStorage struct {
 	BaseMockStorage
 }
 
+// GetLocalPostCount mocks the GetLocalPostCount method
+func (m *MockStorage) GetLocalPostCount(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetOAuthApp mocks the GetOAuthApp method
+func (m *MockStorage) GetOAuthApp(ctx context.Context, clientID string) (*storage.OAuthApp, error) {
+	args := m.Called(ctx, clientID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.OAuthApp), args.Error(1)
+}
+
+// SaveOAuthState mocks the SaveOAuthState method
+func (m *MockStorage) SaveOAuthState(ctx context.Context, state *storage.OAuthState) error {
+	args := m.Called(ctx, state)
+	return args.Error(0)
+}
+
+// SaveUserAppConsent mocks the SaveUserAppConsent method
+func (m *MockStorage) SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error {
+	args := m.Called(ctx, consent)
+	return args.Error(0)
+}
+
 // CreateActor mocks the CreateActor method
 func (m *MockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
 	args := m.Called(ctx, actor, privateKey)
@@ -192,6 +219,12 @@ func (m *MockStorage) DeleteObject(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
+// CountObjectReplies mocks the CountObjectReplies method
+func (m *MockStorage) CountObjectReplies(ctx context.Context, objectID string) (int, error) {
+	args := m.Called(ctx, objectID)
+	return args.Int(0), args.Error(1)
+}
+
 // GetObjectsByActor mocks the GetObjectsByActor method
 func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
 	args := m.Called(ctx, actorID, cursor, limit)
@@ -217,6 +250,21 @@ func (m *MockStorage) AcceptFollow(ctx context.Context, followerUsername, follow
 func (m *MockStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
 	args := m.Called(ctx, followerUsername, followedUsername)
 	return args.Error(0)
+}
+
+// GetFollowRequestState mocks the GetFollowRequestState method
+func (m *MockStorage) GetFollowRequestState(ctx context.Context, followerUsername, followedUsername string) (string, error) {
+	args := m.Called(ctx, followerUsername, followedUsername)
+	return args.String(0), args.Error(1)
+}
+
+// GetPendingFollowRequests mocks the GetPendingFollowRequests method
+func (m *MockStorage) GetPendingFollowRequests(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]string), args.String(1), args.Error(2)
 }
 
 // RemoveFollow mocks the RemoveFollow method
@@ -402,7 +450,6 @@ func (m *MockStorage) GetCommunityNoteVotes(ctx context.Context, noteID string) 
 	}
 	return args.Get(0).([]*storage.CommunityNoteVote), args.Error(1)
 }
-
 
 // ClearLoginAttempts mocks the ClearLoginAttempts method
 func (m *MockStorage) ClearLoginAttempts(ctx context.Context, identifier string) error {
@@ -1439,8 +1486,14 @@ func (m *MockStorage) GetFollowedHashtags(ctx context.Context, userID string, li
 	return args.Get(0).([]string), args.String(1), args.Error(2)
 }
 
-// GetFollowerCount mocks the GetFollowerCount method
-func (m *MockStorage) GetFollowerCount(ctx context.Context, actorID string) (int, error) {
+// GetFollowersCount mocks the GetFollowersCount method
+func (m *MockStorage) GetFollowersCount(ctx context.Context, actorID string) (int, error) {
+	args := m.Called(ctx, actorID)
+	return args.Int(0), args.Error(1)
+}
+
+// GetFollowingCount mocks the GetFollowingCount method
+func (m *MockStorage) GetFollowingCount(ctx context.Context, actorID string) (int, error) {
 	args := m.Called(ctx, actorID)
 	return args.Int(0), args.Error(1)
 }
@@ -3198,4 +3251,337 @@ func (m *MockStorage) UpdateInstanceMetadata(ctx context.Context, metadata *stor
 func (m *MockStorage) WithdrawQuote(ctx context.Context, quoteNoteID string) error {
 	args := m.Called(ctx, quoteNoteID)
 	return args.Error(0)
+}
+
+// AcceptFollowRequest mocks the AcceptFollowRequest method
+func (m *MockStorage) AcceptFollowRequest(ctx context.Context, followerID, targetID string) error {
+	args := m.Called(ctx, followerID, targetID)
+	return args.Error(0)
+}
+
+// DeleteOldHashtagTrends mocks the DeleteOldHashtagTrends method
+func (m *MockStorage) DeleteOldHashtagTrends(ctx context.Context, before time.Time) error {
+	args := m.Called(ctx, before)
+	return args.Error(0)
+}
+
+// DeleteOldLinkTrends mocks the DeleteOldLinkTrends method
+func (m *MockStorage) DeleteOldLinkTrends(ctx context.Context, before time.Time) error {
+	args := m.Called(ctx, before)
+	return args.Error(0)
+}
+
+// DeleteOldStatusTrends mocks the DeleteOldStatusTrends method
+func (m *MockStorage) DeleteOldStatusTrends(ctx context.Context, before time.Time) error {
+	args := m.Called(ctx, before)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error) {
+	args := m.Called(ctx, userID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*activitypub.Actor), args.Error(1)
+}
+
+// Relay operations
+func (m *MockStorage) StoreRelayInfo(ctx context.Context, relay *storage.RelayInfo) error {
+	args := m.Called(ctx, relay)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetRelayInfo(ctx context.Context, relayURL string) (*storage.RelayInfo, error) {
+	args := m.Called(ctx, relayURL)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.RelayInfo), args.Error(1)
+}
+
+func (m *MockStorage) RemoveRelayInfo(ctx context.Context, relayURL string) error {
+	args := m.Called(ctx, relayURL)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetActiveRelays(ctx context.Context) ([]*storage.RelayInfo, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.RelayInfo), args.Error(1)
+}
+
+func (m *MockStorage) GetAllRelays(ctx context.Context, limit int, cursor string) ([]*storage.RelayInfo, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.RelayInfo), args.String(1), args.Error(2)
+}
+
+func (m *MockStorage) UpdateRelayStatus(ctx context.Context, relayURL string, active bool) error {
+	args := m.Called(ctx, relayURL, active)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetDailyActiveUserCount(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockStorage) GetDomainStats(ctx context.Context, domain string) (interface{}, error) {
+	args := m.Called(ctx, domain)
+	return args.Get(0), args.Error(1)
+}
+
+func (m *MockStorage) GetFieldVerification(ctx context.Context, username string, fieldName string) (*storage.ActorField, error) {
+	args := m.Called(ctx, username, fieldName)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ActorField), args.Error(1)
+}
+
+func (m *MockStorage) GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error) {
+	args := m.Called(ctx, followerID, targetID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.RelationshipRecord), args.Error(1)
+}
+
+// Batch adding multiple missing methods
+func (m *MockStorage) GetHashtagStats(ctx context.Context, hashtag string) (interface{}, error) {
+	args := m.Called(ctx, hashtag)
+	return args.Get(0), args.Error(1)
+}
+
+func (m *MockStorage) GetUserMedia(ctx context.Context, username string) ([]interface{}, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]interface{}), args.Error(1)
+}
+
+func (m *MockStorage) UpdateMediaAttachment(ctx context.Context, id string, updates map[string]interface{}) error {
+	args := m.Called(ctx, id, updates)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetConversationLastReadTime(ctx context.Context, conversationID, username string) (time.Time, error) {
+	args := m.Called(ctx, conversationID, username)
+	return args.Get(0).(time.Time), args.Error(1)
+}
+
+func (m *MockStorage) ListUsersByRole(ctx context.Context, role string) ([]*storage.User, error) {
+	args := m.Called(ctx, role)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.User), args.Error(1)
+}
+
+func (m *MockStorage) GetReportedStatuses(ctx context.Context, reportID string) ([]interface{}, error) {
+	args := m.Called(ctx, reportID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]interface{}), args.Error(1)
+}
+
+func (m *MockStorage) VerifyFieldLink(ctx context.Context, username, fieldName, url string) error {
+	args := m.Called(ctx, username, fieldName, url)
+	return args.Error(0)
+}
+
+// Missing methods from MOCK_STORAGE_INDEX.md
+
+func (m *MockStorage) RejectFollowRequest(ctx context.Context, followerID, targetID string) error {
+	args := m.Called(ctx, followerID, targetID)
+	return args.Error(0)
+}
+
+func (m *MockStorage) HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
+	args := m.Called(ctx, requesterID, targetID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStorage) HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
+	args := m.Called(ctx, requesterID, targetID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStorage) IsNotificationEnabled(ctx context.Context, userID, targetID string) (bool, error) {
+	args := m.Called(ctx, userID, targetID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStorage) IsNotificationMuted(ctx context.Context, userID, targetID string) (bool, error) {
+	args := m.Called(ctx, userID, targetID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStorage) GetModerationQueueCount(ctx context.Context) (int, error) {
+	args := m.Called(ctx)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockStorage) GetOpenReportsCount(ctx context.Context) (int, error) {
+	args := m.Called(ctx)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockStorage) GetUserTrustScore(ctx context.Context, userID string) (float64, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).(float64), args.Error(1)
+}
+
+func (m *MockStorage) RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error {
+	args := m.Called(ctx, userID, targetID)
+	return args.Error(0)
+}
+
+func (m *MockStorage) IsEndorsed(ctx context.Context, userID, targetID string) (bool, error) {
+	args := m.Called(ctx, userID, targetID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStorage) GetRelationshipNote(ctx context.Context, userID, targetID string) (*storage.AccountNote, error) {
+	args := m.Called(ctx, userID, targetID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.AccountNote), args.Error(1)
+}
+
+func (m *MockStorage) GetStatusReplyCount(ctx context.Context, statusID string) (int, error) {
+	args := m.Called(ctx, statusID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockStorage) GetUserStatusCount(ctx context.Context, userID string) (int, error) {
+	args := m.Called(ctx, userID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockStorage) GetStorageUsage(ctx context.Context) (interface{}, error) {
+	args := m.Called(ctx)
+	return args.Get(0), args.Error(1)
+}
+
+func (m *MockStorage) GetStorageHistory(ctx context.Context, days int) ([]interface{}, error) {
+	args := m.Called(ctx, days)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]interface{}), args.Error(1)
+}
+
+func (m *MockStorage) GetUserGrowthHistory(ctx context.Context, days int) ([]interface{}, error) {
+	args := m.Called(ctx, days)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]interface{}), args.Error(1)
+}
+
+func (m *MockStorage) GetStatus(ctx context.Context, statusID string) (interface{}, error) {
+	args := m.Called(ctx, statusID)
+	return args.Get(0), args.Error(1)
+}
+
+func (m *MockStorage) GetRulesByCategory(ctx context.Context, category string) ([]storage.InstanceRule, error) {
+	args := m.Called(ctx, category)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.InstanceRule), args.Error(1)
+}
+
+func (m *MockStorage) GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
+	args := m.Called(ctx, userID, appID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.UserAppConsent), args.Error(1)
+}
+
+func (m *MockStorage) GetScheduledStatusMedia(ctx context.Context, statusID string) ([]interface{}, error) {
+	args := m.Called(ctx, statusID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]interface{}), args.Error(1)
+}
+
+func (m *MockStorage) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
+	args := m.Called(ctx, since, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.TrendingHashtag), args.Error(1)
+}
+
+func (m *MockStorage) StoreHashtagTrend(ctx context.Context, trend interface{}) error {
+	args := m.Called(ctx, trend)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
+	args := m.Called(ctx, since, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.TrendingStatus), args.Error(1)
+}
+
+func (m *MockStorage) StoreStatusTrend(ctx context.Context, trend interface{}) error {
+	args := m.Called(ctx, trend)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
+	args := m.Called(ctx, since, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.TrendingLink), args.Error(1)
+}
+
+func (m *MockStorage) StoreLinkTrend(ctx context.Context, trend interface{}) error {
+	args := m.Called(ctx, trend)
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]interface{}, error) {
+	args := m.Called(ctx, linkURL, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]interface{}), args.Error(1)
+}
+
+func (m *MockStorage) UnmarkAllMediaAsSensitive(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+// GetLikeCount mocks the GetLikeCount method
+func (m *MockStorage) GetLikeCount(ctx context.Context, statusID string) (int64, error) {
+	args := m.Called(ctx, statusID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetBoostCount mocks the GetBoostCount method
+func (m *MockStorage) GetBoostCount(ctx context.Context, statusID string) (int64, error) {
+	args := m.Called(ctx, statusID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetReplyCount mocks the GetReplyCount method
+func (m *MockStorage) GetReplyCount(ctx context.Context, statusID string) (int64, error) {
+	args := m.Called(ctx, statusID)
+	return args.Get(0).(int64), args.Error(1)
 }

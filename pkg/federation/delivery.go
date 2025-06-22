@@ -165,7 +165,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		log.Info("activity delivered successfully",
 			zap.Int("status_code", resp.StatusCode),
 			zap.String("response", string(respBody)))
-		
+
 		federationActivity.Success = true
 		go d.store.RecordFederationActivity(context.Background(), federationActivity)
 		return nil

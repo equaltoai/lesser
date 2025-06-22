@@ -33,12 +33,12 @@ func NewModerator(store ModerationStorage, aiAnalyzer *AIAnalyzer) *Moderator {
 // ModerateContent performs comprehensive content moderation
 func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmission) (*ModerationResult, error) {
 	result := &ModerationResult{
-		ContentID:    content.ID,
-		ContentType:  content.Type,
-		SubmittedAt:  content.SubmittedAt,
-		ProcessedAt:  time.Now(),
-		Action:       "allow", // Default to allow
-		Confidence:   0.0,
+		ContentID:   content.ID,
+		ContentType: content.Type,
+		SubmittedAt: content.SubmittedAt,
+		ProcessedAt: time.Now(),
+		Action:      "allow", // Default to allow
+		Confidence:  0.0,
 	}
 
 	// Step 1: Pattern matching
@@ -133,7 +133,7 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 		patternScore, patternAction := m.evaluatePatternMatches(result.PatternMatches)
 		scores = append(scores, patternScore)
 		actions = append(actions, patternAction)
-		
+
 		for _, match := range result.PatternMatches {
 			reasons = append(reasons, fmt.Sprintf("Pattern match: %s (%s)", match.PatternName, match.Severity))
 		}
@@ -144,13 +144,13 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 		aiScore, aiAction := m.evaluateAIAnalysis(result.AIAnalysis)
 		scores = append(scores, aiScore)
 		actions = append(actions, aiAction)
-		
+
 		if result.AIAnalysis.TextAnalysis != nil {
-			reasons = append(reasons, fmt.Sprintf("Text AI score: %.1f (%s)", 
+			reasons = append(reasons, fmt.Sprintf("Text AI score: %.1f (%s)",
 				result.AIAnalysis.TextAnalysis.ModerationScore,
 				result.AIAnalysis.TextAnalysis.RiskLevel))
 		}
-		
+
 		if result.AIAnalysis.ImageAnalysis != nil {
 			reasons = append(reasons, fmt.Sprintf("Image AI score: %.1f (%s)",
 				result.AIAnalysis.ImageAnalysis.ModerationScore,
@@ -162,7 +162,7 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 	if len(scores) > 0 {
 		var totalWeight float64
 		var weightedSum float64
-		
+
 		for i, score := range scores {
 			weight := 1.0
 			if i == 0 { // Pattern matching gets higher weight for precision
@@ -171,19 +171,19 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 			weightedSum += score * weight
 			totalWeight += weight
 		}
-		
+
 		result.Score = weightedSum / totalWeight
 	}
 
 	// Determine final action based on highest severity action
 	result.Action = m.determineHighestSeverityAction(actions)
-	
+
 	// Set confidence based on agreement between methods
 	result.Confidence = m.calculateConfidence(actions, scores)
-	
+
 	// Set reasons
 	result.Reasons = reasons
-	
+
 	// Add recommendations
 	result.Recommendations = m.generateRecommendations(result)
 }
@@ -295,17 +295,17 @@ func (m *Moderator) calculateConfidence(actions []string, scores []float64) floa
 	if len(scores) > 1 {
 		var scoreVariance float64
 		var scoreMean float64
-		
+
 		for _, score := range scores {
 			scoreMean += score
 		}
 		scoreMean /= float64(len(scores))
-		
+
 		for _, score := range scores {
 			scoreVariance += (score - scoreMean) * (score - scoreMean)
 		}
 		scoreVariance /= float64(len(scores))
-		
+
 		if scoreVariance > 400 { // High variance threshold
 			scoreAgreement = false
 		}
@@ -363,7 +363,7 @@ func (m *Moderator) generateRecommendations(result *ModerationResult) []string {
 func (m *Moderator) recordModerationDecision(ctx context.Context, result *ModerationResult) error {
 	// This would store the moderation decision in the database
 	// For audit trail and effectiveness tracking
-	
+
 	decision := &ModerationResult{
 		ContentID:       result.ContentID,
 		Action:          result.Action,
@@ -425,24 +425,23 @@ type ContentSubmission struct {
 }
 
 type ModerationResult struct {
-	ContentID       string              `json:"content_id"`
-	ContentType     string              `json:"content_type"`
-	Action          string              `json:"action"` // allow/flag/hide/escalate/block
-	Score           float64             `json:"score"`
-	Confidence      float64             `json:"confidence"`
-	Reasons         []string            `json:"reasons"`
-	Recommendations []string            `json:"recommendations"`
-	PatternMatches  []*PatternMatch     `json:"pattern_matches,omitempty"`
-	AIAnalysis      *AIAnalysisResult   `json:"ai_analysis,omitempty"`
-	SubmittedAt     time.Time           `json:"submitted_at"`
-	ProcessedAt     time.Time           `json:"processed_at"`
+	ContentID       string            `json:"content_id"`
+	ContentType     string            `json:"content_type"`
+	Action          string            `json:"action"` // allow/flag/hide/escalate/block
+	Score           float64           `json:"score"`
+	Confidence      float64           `json:"confidence"`
+	Reasons         []string          `json:"reasons"`
+	Recommendations []string          `json:"recommendations"`
+	PatternMatches  []*PatternMatch   `json:"pattern_matches,omitempty"`
+	AIAnalysis      *AIAnalysisResult `json:"ai_analysis,omitempty"`
+	SubmittedAt     time.Time         `json:"submitted_at"`
+	ProcessedAt     time.Time         `json:"processed_at"`
 }
 
 type AIAnalysisResult struct {
 	TextAnalysis  *TextAnalysis  `json:"text_analysis,omitempty"`
 	ImageAnalysis *ImageAnalysis `json:"image_analysis,omitempty"`
 }
-
 
 type ModerationFilter struct {
 	Action      string    `json:"action,omitempty"`
@@ -465,16 +464,16 @@ type ModerationQueueItem struct {
 }
 
 type ModerationReview struct {
-	ContentID       string                       `json:"content_id"`
-	ReviewerID      string                       `json:"reviewer_id"`
-	Decision        string                       `json:"decision"` // approve/reject/modify
-	Action          string                       `json:"action,omitempty"`
-	Comments        string                       `json:"comments,omitempty"`
-	PatternFeedback map[string]*PatternFeedback  `json:"pattern_feedback,omitempty"`
-	ReviewedAt      time.Time                    `json:"reviewed_at"`
+	ContentID       string                      `json:"content_id"`
+	ReviewerID      string                      `json:"reviewer_id"`
+	Decision        string                      `json:"decision"` // approve/reject/modify
+	Action          string                      `json:"action,omitempty"`
+	Comments        string                      `json:"comments,omitempty"`
+	PatternFeedback map[string]*PatternFeedback `json:"pattern_feedback,omitempty"`
+	ReviewedAt      time.Time                   `json:"reviewed_at"`
 }
 
 type PatternFeedback struct {
-	WasMatch          bool `json:"was_match"`
-	WasFalsePositive  bool `json:"was_false_positive"`
+	WasMatch         bool `json:"was_match"`
+	WasFalsePositive bool `json:"was_false_positive"`
 }

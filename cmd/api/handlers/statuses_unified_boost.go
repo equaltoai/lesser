@@ -95,6 +95,19 @@ func (h *Handler) createPureBoost(ctx context.Context, statusID, objectID string
 	now := time.Now()
 	announceActivity.Published = &now
 
+	// Create the Announce record in dedicated storage
+	announce := &storage.Announce{
+		Actor:     actor.ID,
+		Object:    objectID,
+		ID:        announceActivity.ID,
+		Published: *announceActivity.Published,
+	}
+
+	if err := h.store.CreateAnnounce(ctx, announce); err != nil {
+		h.logger.Error("failed to create announce", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
 	// Store the activity in the outbox (this will trigger delivery)
 	if err := h.store.CreateActivity(ctx, announceActivity); err != nil {
 		h.logger.Error("failed to create announce activity", zap.Error(err))
@@ -133,6 +146,32 @@ func (h *Handler) createPureBoost(ctx context.Context, statusID, objectID string
 		},
 		Body: string(body),
 	}, nil
+}
+
+// extractActorIDFromObject extracts actor ID from an object
+func (h *Handler) extractActorIDFromObject(obj interface{}) string {
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		return o.AttributedTo
+	case map[string]interface{}:
+		if attributedTo, ok := o["attributedTo"].(string); ok {
+			return attributedTo
+		}
+	}
+	return ""
+}
+
+// extractContentFromObject extracts content from an object
+func (h *Handler) extractContentFromObject(obj interface{}) string {
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		return o.Content
+	case map[string]interface{}:
+		if content, ok := o["content"].(string); ok {
+			return content
+		}
+	}
+	return ""
 }
 
 // createQuoteBoost creates a new status with a quote relationship
@@ -239,14 +278,20 @@ func (h *Handler) createQuoteBoost(ctx context.Context, statusID, objectID, comm
 
 	// Get the quoted status to include in response
 	var quotedStatus *models.Status
-	if _, getErr := h.store.GetObject(ctx, objectID); getErr == nil {
-		// Convert to status (simplified for now)
-		// TODO: properly convert quotedObj to models.Status
-		quotedStatus = &models.Status{
-			ID:      statusID,
-			URI:     objectID,
-			URL:     objectID,
-			Content: "", // Would be populated from object
+	if quotedObj, getErr := h.store.GetObject(ctx, objectID); getErr == nil {
+		// Properly convert quotedObj to models.Status
+		quotedActor, err := h.store.GetActor(ctx, h.extractActorIDFromObject(quotedObj))
+		if err == nil {
+			status := h.converter.ObjectToStatus(quotedObj, quotedActor)
+			quotedStatus = &status
+		} else {
+			// Fallback if actor lookup fails
+			quotedStatus = &models.Status{
+				ID:      statusID,
+				URI:     objectID,
+				URL:     objectID,
+				Content: h.extractContentFromObject(quotedObj),
+			}
 		}
 	}
 

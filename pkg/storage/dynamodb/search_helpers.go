@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // GetFollowerCountBucket returns the appropriate bucket for a given follower count
@@ -52,7 +54,7 @@ type ActorCounts struct {
 }
 
 // GetActorCountsFromItem extracts counts from a DynamoDB item
-// For now returns zeros since we don't have users yet
+// GetActorCountsFromItem extracts follower, following, and status counts from a DynamoDB item
 func GetActorCountsFromItem(item map[string]interface{}) ActorCounts {
 	counts := ActorCounts{
 		FollowerCount:  0,
@@ -60,10 +62,26 @@ func GetActorCountsFromItem(item map[string]interface{}) ActorCounts {
 		StatusCount:    0,
 	}
 
-	// TODO: Extract from item attributes once we implement follower tracking
-	// counts.FollowerCount = extractIntAttribute(item, "FollowerCount")
-	// counts.FollowingCount = extractIntAttribute(item, "FollowingCount")
-	// counts.StatusCount = extractIntAttribute(item, "StatusCount")
+	// Extract FollowerCount
+	if fc, ok := item["FollowerCount"]; ok {
+		if fcNum, ok := fc.(*types.AttributeValueMemberN); ok {
+			counts.FollowerCount, _ = strconv.Atoi(fcNum.Value)
+		}
+	}
+
+	// Extract FollowingCount
+	if fc, ok := item["FollowingCount"]; ok {
+		if fcNum, ok := fc.(*types.AttributeValueMemberN); ok {
+			counts.FollowingCount, _ = strconv.Atoi(fcNum.Value)
+		}
+	}
+
+	// Extract StatusCount
+	if sc, ok := item["StatusCount"]; ok {
+		if scNum, ok := sc.(*types.AttributeValueMemberN); ok {
+			counts.StatusCount, _ = strconv.Atoi(scNum.Value)
+		}
+	}
 
 	return counts
 }

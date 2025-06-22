@@ -3,11 +3,13 @@ package dynamodb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -119,10 +121,52 @@ func (s *dynamoDBStorage) GetConversation(ctx context.Context, id string) (*stor
 func (s *dynamoDBStorage) GetConversationByParticipants(ctx context.Context, participants []string) (*storage.Conversation, error) {
 	log := common.Logger().With(zap.Any("participants", participants))
 
-	// This is a complex query that would require a GSI or scan
-	// For now, return not found - would need to implement proper indexing
-	log.Debug("GetConversationByParticipants not fully implemented")
-	return nil, fmt.Errorf("conversation not found")
+	// Sort participants to create a consistent lookup key
+	// This ensures conversation lookup works regardless of participant order
+	sortedParticipants := make([]string, len(participants))
+	copy(sortedParticipants, participants)
+	// Simple sort for deterministic order
+	for i := 0; i < len(sortedParticipants)-1; i++ {
+		for j := i + 1; j < len(sortedParticipants); j++ {
+			if sortedParticipants[i] > sortedParticipants[j] {
+				sortedParticipants[i], sortedParticipants[j] = sortedParticipants[j], sortedParticipants[i]
+			}
+		}
+	}
+
+	// Create a consistent participant key
+	participantKey := strings.Join(sortedParticipants, ",")
+
+	// Query by participant key using GSI
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey)},
+		},
+		Limit: aws.Int32(1),
+	}
+
+	result, err := s.client.Query(ctx, input)
+	if err != nil {
+		log.Error("failed to query conversation by participants", zap.Error(err))
+		return nil, fmt.Errorf("failed to query conversation: %w", err)
+	}
+
+	if len(result.Items) == 0 {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	// Parse the conversation from the result
+	var record ConversationRecord
+	err = attributevalue.UnmarshalMap(result.Items[0], &record)
+	if err != nil {
+		log.Error("failed to unmarshal conversation", zap.Error(err))
+		return nil, fmt.Errorf("failed to parse conversation: %w", err)
+	}
+
+	return record.Conversation, nil
 }
 
 // UpdateConversationLastStatus updates the last status in a conversation

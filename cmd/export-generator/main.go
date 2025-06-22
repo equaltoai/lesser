@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -444,7 +445,16 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 			return nil, 0, err
 		}
 
-		// TODO: Add media files if IncludeMedia is true
+		// Add media files if IncludeMedia is true
+		if event.IncludeMedia {
+			mediaCount, err := includeMediaFiles(ctx, zipWriter, event.Username, event.DateRange)
+			if err != nil {
+				logger.Error("failed to include media files", zap.Error(err))
+				// Don't fail the export, just log the error
+			} else {
+				logger.Info("included media files in export", zap.Int("count", mediaCount))
+			}
+		}
 	}
 
 	zipWriter.Close()
@@ -548,7 +558,16 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 			return nil, 0, err
 		}
 
-		// TODO: Add media_attachments directory if IncludeMedia is true
+		// Add media_attachments directory if IncludeMedia is true
+		if event.IncludeMedia {
+			mediaCount, err := includeMediaFiles(ctx, zipWriter, event.Username, event.DateRange)
+			if err != nil {
+				logger.Error("failed to include media files", zap.Error(err))
+				// Don't fail the export, just log the error
+			} else {
+				logger.Info("included media files in export", zap.Int("count", mediaCount))
+			}
+		}
 	}
 
 	zipWriter.Close()
@@ -1016,7 +1035,6 @@ func getListsForExport(ctx context.Context, username string) ([]interface{}, err
 	return result, nil
 }
 
-
 // Helper functions
 func addFileToZip(w *zip.Writer, filename string, data []byte) error {
 	f, err := w.Create(filename)
@@ -1150,4 +1168,132 @@ func getDomainBlocks(ctx context.Context, username string) ([]string, error) {
 	}
 
 	return allDomainBlocks, nil
+}
+
+// includeMediaFiles downloads and includes user's media files in the export ZIP
+func includeMediaFiles(ctx context.Context, zipWriter *zip.Writer, username string, dateRange *DateRange) (int, error) {
+	// Query user's media files from DynamoDB
+	var allMediaKeys []string
+	cursor := ""
+
+	for {
+		// Query media files for the user
+		queryInput := &dynamodbsdk.QueryInput{
+			TableName:              aws.String(tableName),
+			IndexName:              aws.String("GSI1"), // Assuming GSI1 is used for media queries
+			KeyConditionExpression: aws.String("GSI1PK = :pk"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("MEDIA_USER#%s", username)},
+			},
+			Limit: aws.Int32(100),
+		}
+
+		if cursor != "" {
+			// Add cursor for pagination
+			queryInput.ExclusiveStartKey = map[string]types.AttributeValue{
+				"GSI1PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("MEDIA_USER#%s", username)},
+				"GSI1SK": &types.AttributeValueMemberS{Value: cursor},
+			}
+		}
+
+		result, err := dynamoClient.Query(ctx, queryInput)
+		if err != nil {
+			logger.Error("failed to query media files", zap.String("username", username), zap.Error(err))
+			return 0, fmt.Errorf("query media files: %w", err)
+		}
+
+		// Process each media item
+		for _, item := range result.Items {
+			// Extract S3 key from the media item
+			if s3KeyAttr, exists := item["S3Key"]; exists {
+				if s3Key, ok := s3KeyAttr.(*types.AttributeValueMemberS); ok {
+					// Check date range if specified
+					if dateRange != nil {
+						if createdAtAttr, exists := item["CreatedAt"]; exists {
+							if createdAt, ok := createdAtAttr.(*types.AttributeValueMemberS); ok {
+								mediaDate, err := time.Parse(time.RFC3339, createdAt.Value)
+								if err == nil {
+									if mediaDate.Before(dateRange.Start) || mediaDate.After(dateRange.End) {
+										continue // Skip media outside date range
+									}
+								}
+							}
+						}
+					}
+
+					allMediaKeys = append(allMediaKeys, s3Key.Value)
+				}
+			}
+		}
+
+		// Check for more results
+		if result.LastEvaluatedKey == nil {
+			break
+		}
+
+		// Extract cursor for next iteration
+		if cursorAttr, exists := result.LastEvaluatedKey["GSI1SK"]; exists {
+			if cursorVal, ok := cursorAttr.(*types.AttributeValueMemberS); ok {
+				cursor = cursorVal.Value
+			} else {
+				break
+			}
+		} else {
+			break
+		}
+	}
+
+	logger.Info("found media files for export",
+		zap.String("username", username),
+		zap.Int("count", len(allMediaKeys)))
+
+	// Download and add each media file to the ZIP
+	mediaCount := 0
+	for _, s3Key := range allMediaKeys {
+		// Download from S3
+		getObjectInput := &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(s3Key),
+		}
+
+		getObjectResult, err := s3Client.GetObject(ctx, getObjectInput)
+		if err != nil {
+			logger.Warn("failed to download media file",
+				zap.String("s3_key", s3Key),
+				zap.Error(err))
+			continue // Skip this file and continue
+		}
+
+		// Read the file content
+		defer getObjectResult.Body.Close()
+		mediaData, err := io.ReadAll(getObjectResult.Body)
+		if err != nil {
+			logger.Warn("failed to read media file content",
+				zap.String("s3_key", s3Key),
+				zap.Error(err))
+			continue
+		}
+
+		// Extract filename from S3 key (media/username/filename.ext)
+		pathParts := strings.Split(s3Key, "/")
+		filename := pathParts[len(pathParts)-1]
+
+		// Add to ZIP under media_attachments directory
+		zipPath := fmt.Sprintf("media_attachments/%s", filename)
+		if err := addFileToZip(zipWriter, zipPath, mediaData); err != nil {
+			logger.Warn("failed to add media file to ZIP",
+				zap.String("zip_path", zipPath),
+				zap.Error(err))
+			continue
+		}
+
+		mediaCount++
+
+		// Add a small delay to avoid overwhelming S3
+		if mediaCount%10 == 0 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	return mediaCount, nil
 }

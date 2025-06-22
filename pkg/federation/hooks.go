@@ -166,13 +166,13 @@ type InboxActivity struct {
 }
 
 type InstanceDiscovery struct {
-	Domain      string
-	DisplayName string
-	Description string
-	Software    string
-	Version     string
-	UserCount   int64
-	StatusCount int64
+	Domain       string
+	DisplayName  string
+	Description  string
+	Software     string
+	Version      string
+	UserCount    int64
+	StatusCount  int64
 	DiscoveredAt time.Time
 }
 

@@ -1231,3 +1231,248 @@ func (s *dynamoDBStorage) deleteItemsFromQuery(ctx context.Context, query *dynam
 
 	return nil
 }
+
+// GetAccountSuggestions returns account suggestions for a user based on follows and activity
+func (s *dynamoDBStorage) GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error) {
+	log := common.WithContext(ctx)
+
+	// Step 1: Get users that the current user's followers also follow
+	// This implements "friends of friends" algorithm
+	following, _, err := s.GetFollowing(ctx, userID, 100, "")
+	if err != nil {
+		log.Error("failed to get user following for suggestions", zap.Error(err))
+		// Fall back to discoverable users if we can't get following
+		return s.getDiscoverableActors(ctx, limit)
+	}
+
+	suggestionCandidates := make(map[string]int) // actorID -> score
+	processedActors := make(map[string]bool)
+
+	// Get who the user already follows to exclude them
+	userFollows := make(map[string]bool)
+	for _, followedID := range following {
+		userFollows[followedID] = true
+	}
+	userFollows[userID] = true // Exclude self
+
+	// For each user the current user follows, get who they follow
+	for _, followedUserID := range following {
+		if len(following) > 20 { // Limit to prevent excessive API calls
+			break
+		}
+
+		followedUsername := s.extractUsernameFromActorID(followedUserID)
+		if followedUsername == "" {
+			continue
+		}
+
+		// Get who this followed user follows
+		theirFollowing, _, err := s.GetFollowing(ctx, followedUsername, 50, "")
+		if err != nil {
+			continue // Skip if we can't get their following
+		}
+
+		// Score each of their follows
+		for _, candidate := range theirFollowing {
+			if userFollows[candidate] || processedActors[candidate] {
+				continue // Skip if user already follows or we've processed
+			}
+
+			// Check if user has dismissed this suggestion
+			dismissedKey := fmt.Sprintf("dismissed_suggestion:%s", candidate)
+			dismissed, _ := s.GetPreference(ctx, userID, dismissedKey)
+			if dismissed != nil {
+				if isDismissed, ok := dismissed.(bool); ok && isDismissed {
+					continue // Skip dismissed suggestions
+				}
+			}
+
+			suggestionCandidates[candidate]++
+			processedActors[candidate] = true
+		}
+	}
+
+	// Step 2: Get actors with high scores (multiple mutual connections)
+	type scoredActor struct {
+		actorID string
+		score   int
+	}
+
+	var scored []scoredActor
+	for actorID, score := range suggestionCandidates {
+		scored = append(scored, scoredActor{actorID: actorID, score: score})
+	}
+
+	// Sort by score (highest first)
+	for i := 0; i < len(scored)-1; i++ {
+		for j := i + 1; j < len(scored); j++ {
+			if scored[i].score < scored[j].score {
+				scored[i], scored[j] = scored[j], scored[i]
+			}
+		}
+	}
+
+	// Step 3: Get actor details for top suggestions
+	var suggestions []*activitypub.Actor
+	for _, scored := range scored {
+		if len(suggestions) >= limit {
+			break
+		}
+
+		username := s.extractUsernameFromActorID(scored.actorID)
+		if username == "" {
+			continue
+		}
+
+		actor, err := s.GetActor(ctx, username)
+		if err != nil {
+			continue // Skip if we can't get actor details
+		}
+
+		// Only suggest discoverable accounts
+		if actor.Discoverable {
+			suggestions = append(suggestions, actor)
+		}
+	}
+
+	// Step 4: Fill remaining slots with discoverable users if needed
+	if len(suggestions) < limit {
+		remaining := limit - len(suggestions)
+		discoverable, err := s.getDiscoverableActors(ctx, remaining*2) // Get more to filter
+		if err == nil {
+			for _, actor := range discoverable {
+				if len(suggestions) >= limit {
+					break
+				}
+
+				// Skip if already in suggestions or user follows them
+				skip := false
+				for _, existing := range suggestions {
+					if existing.ID == actor.ID {
+						skip = true
+						break
+					}
+				}
+				if skip || userFollows[actor.ID] {
+					continue
+				}
+
+				suggestions = append(suggestions, actor)
+			}
+		}
+	}
+
+	log.Info("generated account suggestions",
+		zap.String("user_id", userID),
+		zap.Int("requested_limit", limit),
+		zap.Int("returned_count", len(suggestions)))
+
+	return suggestions, nil
+}
+
+// getDiscoverableActors returns actors marked as discoverable
+func (s *dynamoDBStorage) getDiscoverableActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
+	// Use the existing SearchAccounts method with empty query to get discoverable accounts
+	actors, err := s.SearchAccounts(ctx, "", limit*2, false, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get discoverable actors: %w", err)
+	}
+
+	// Filter for discoverable only
+	var discoverable []*activitypub.Actor
+	for _, actor := range actors {
+		if actor.Discoverable && len(discoverable) < limit {
+			discoverable = append(discoverable, actor)
+		}
+	}
+
+	return discoverable, nil
+}
+
+// extractUsernameFromActorID extracts username from actor ID
+func (s *dynamoDBStorage) extractUsernameFromActorID(actorID string) string {
+	// For local actors: https://domain.com/users/username -> username
+	if strings.Contains(actorID, "/users/") {
+		parts := strings.Split(actorID, "/users/")
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+
+	// For simple usernames without URL
+	if !strings.Contains(actorID, "://") {
+		return actorID
+	}
+
+	return "" // Unable to extract
+}
+
+// RemoveAccountSuggestion removes an account from suggestions for a user
+func (s *dynamoDBStorage) RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error {
+	log := common.WithContext(ctx)
+
+	// Store the dismissed suggestion in user preferences
+	// This prevents the account from being suggested again
+	dismissedKey := fmt.Sprintf("dismissed_suggestion:%s", targetID)
+	err := s.SetPreference(ctx, userID, dismissedKey, true)
+	if err != nil {
+		log.Error("failed to store dismissed suggestion preference",
+			zap.String("user_id", userID),
+			zap.String("target_id", targetID),
+			zap.Error(err))
+		return fmt.Errorf("failed to remove account suggestion: %w", err)
+	}
+
+	log.Info("account suggestion removed",
+		zap.String("user_id", userID),
+		zap.String("target_id", targetID))
+
+	return nil
+}
+
+// GetFieldVerification gets the verification status of a specific actor field
+func (s *dynamoDBStorage) GetFieldVerification(ctx context.Context, username, fieldName string) (*storage.ActorField, error) {
+	log := common.WithContext(ctx)
+
+	// Get the actor's fields
+	actor, err := s.GetActor(ctx, username)
+	if err != nil {
+		log.Error("failed to get actor for field verification",
+			zap.String("username", username),
+			zap.String("field_name", fieldName),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get actor: %w", err)
+	}
+
+	// Search through the actor's attachment fields
+	for _, field := range actor.Attachment {
+		if field.Name == fieldName {
+			// Convert the field to ActorField format
+			actorField := &storage.ActorField{
+				Name:  field.Name,
+				Value: field.Value,
+			}
+
+			// Check if this field has been verified
+			// In a full implementation, you'd query a verification record
+			// For now, we'll check if the field looks like a verified website
+			if s.isFieldVerified(field.Value) {
+				now := time.Now()
+				actorField.VerifiedAt = &now
+			}
+
+			return actorField, nil
+		}
+	}
+
+	// Field not found
+	return nil, fmt.Errorf("field '%s' not found for user '%s'", fieldName, username)
+}
+
+// isFieldVerified checks if a field value appears to be verified
+// This is a simplified implementation - a full version would check actual verification records
+func (s *dynamoDBStorage) isFieldVerified(value string) bool {
+	// Simple heuristic: if it's a URL that starts with https, consider it potentially verified
+	// In a real implementation, this would check against actual verification records
+	return strings.HasPrefix(value, "https://")
+}

@@ -12,15 +12,28 @@ type Config struct {
 	InstanceName string // e.g., "My ActivityPub Server"
 
 	// AWS configuration
-	Region              string
-	DynamoTableName     string
-	S3BucketName        string
-	SQSQueueURL         string
-	ReputationTableName string // For reputation/vouch storage
+	Region                     string
+	DynamoTableName            string
+	S3BucketName               string
+	SQSQueueURL                string
+	FederationDeliveryQueueURL string // Federation delivery SQS queue URL
+	ReputationTableName        string // For reputation/vouch storage
+	AWSAccountID               string // AWS Account ID
+	ExportProcessorQueueURL    string // Export processor SQS queue URL
+	ImportProcessorQueueURL    string // Import processor SQS queue URL
+	MediaProcessorQueueURL     string // Media processor SQS queue URL
 
 	// Security
-	JWTSecret string // For client authentication
-	KMSKeyID  string // AWS KMS key ID for encryption (optional)
+	JWTSecret            string // For client authentication
+	KMSKeyID             string // AWS KMS key ID for encryption (optional)
+	PrivateKey           string // Private key for ActivityPub signatures
+	ReputationPrivateKey string // Private key for reputation system
+
+	// ActivityPub URLs
+	InboxURL     string // Inbox URL pattern
+	OutboxURL    string // Outbox URL pattern
+	FollowersURL string // Followers URL pattern
+	FollowingURL string // Following URL pattern
 
 	// Features
 	MaxUploadSize     int64 // Maximum file upload size in bytes
@@ -44,14 +57,21 @@ func loadConfig() *Config {
 		Domain:       getEnvOrDefault("DOMAIN", "localhost"),
 		InstanceName: getEnvOrDefault("INSTANCE_NAME", "Lesser ActivityPub Server"),
 
-		Region:              getEnvOrDefault("AWS_REGION", "us-east-1"),
-		DynamoTableName:     getEnvOrDefault("DYNAMO_TABLE_NAME", "lesser-main"),
-		S3BucketName:        getEnvOrDefault("S3_BUCKET_NAME", "lesser-media"),
-		SQSQueueURL:         getEnvOrDefault("SQS_QUEUE_URL", ""),
-		ReputationTableName: getEnvOrDefault("REPUTATION_TABLE_NAME", "lesser-reputation"),
+		Region:                     getEnvOrDefault("AWS_REGION", "us-east-1"),
+		DynamoTableName:            getEnvOrDefault("DYNAMO_TABLE_NAME", "lesser-main"),
+		S3BucketName:               getEnvOrDefault("S3_BUCKET_NAME", "lesser-media"),
+		SQSQueueURL:                getEnvOrDefault("SQS_QUEUE_URL", ""),
+		FederationDeliveryQueueURL: getEnvOrDefault("FEDERATION_DELIVERY_QUEUE_URL", ""),
+		ExportProcessorQueueURL:    getEnvOrDefault("EXPORT_PROCESSOR_QUEUE_URL", ""),
+		ImportProcessorQueueURL:    getEnvOrDefault("IMPORT_PROCESSOR_QUEUE_URL", ""),
+		MediaProcessorQueueURL:     getEnvOrDefault("MEDIA_PROCESSOR_QUEUE_URL", ""),
+		ReputationTableName:        getEnvOrDefault("REPUTATION_TABLE_NAME", "lesser-reputation"),
+		AWSAccountID:               getEnvOrDefault("AWS_ACCOUNT_ID", ""),
 
-		JWTSecret: getEnvOrPanic("JWT_SECRET"),
-		KMSKeyID:  getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
+		JWTSecret:            getEnvOrPanic("JWT_SECRET"),
+		KMSKeyID:             getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
+		PrivateKey:           getEnvOrPanic("PRIVATE_KEY"),
+		ReputationPrivateKey: getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
 
 		MaxUploadSize:     getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
 		PageSize:          getEnvAsIntOrDefault("PAGE_SIZE", 20),

@@ -15,10 +15,10 @@ import (
 
 // QuoteRelationshipRecord represents how quote relationships are stored in DynamoDB
 type QuoteRelationshipRecord struct {
-	PK               string     `dynamodbav:"PK"` // QUOTE#targetNoteID
-	SK               string     `dynamodbav:"SK"` // QUOTE#quoteNoteID
+	PK                string                     `dynamodbav:"PK"` // QUOTE#targetNoteID
+	SK                string                     `dynamodbav:"SK"` // QUOTE#quoteNoteID
 	QuoteRelationship *storage.QuoteRelationship `dynamodbav:"QuoteRelationship"`
-	
+
 	// GSI attributes
 	GSI1PK string `dynamodbav:"GSI1PK"` // QUOTE_TARGET#targetNoteID (for quotes-by-target GSI)
 	GSI1SK string `dynamodbav:"GSI1SK"` // TIMESTAMP#timestamp
@@ -170,8 +170,8 @@ func (s *dynamoDBStorage) WithdrawQuote(ctx context.Context, quoteNoteID string)
 		TableName:        aws.String(s.tableName),
 		FilterExpression: aws.String("begins_with(PK, :pkPrefix) AND begins_with(SK, :skPrefix) AND QuoteRelationship.QuoterNoteID = :quoteNoteID"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pkPrefix":     &types.AttributeValueMemberS{Value: "QUOTE#"},
-			":skPrefix":     &types.AttributeValueMemberS{Value: "QUOTE#"},
+			":pkPrefix":    &types.AttributeValueMemberS{Value: "QUOTE#"},
+			":skPrefix":    &types.AttributeValueMemberS{Value: "QUOTE#"},
 			":quoteNoteID": &types.AttributeValueMemberS{Value: quoteNoteID},
 		},
 		Limit: aws.Int32(1),
@@ -191,7 +191,7 @@ func (s *dynamoDBStorage) WithdrawQuote(ctx context.Context, quoteNoteID string)
 	if err := s.UnmarshalItem(result.Items[0], &record); err != nil {
 		return fmt.Errorf("failed to unmarshal quote relationship: %w", err)
 	}
-	
+
 	quote := record.QuoteRelationship
 
 	// Update the quote relationship to mark as withdrawn

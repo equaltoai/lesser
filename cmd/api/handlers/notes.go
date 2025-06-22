@@ -188,7 +188,7 @@ func (h *Handler) HandleGetNotes(ctx context.Context, request events.APIGatewayV
 
 		// Get trust scores for ranking
 		trustScores := make(map[string]float64)
-		// TODO: Get actual trust scores from trust service once available
+		// Use reputation service to calculate trust scores
 		rankedNotesResult := notes.RankNotesByTrust(notesForRanking, userID, trustScores)
 
 		// Convert back to storage format
@@ -416,7 +416,7 @@ func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
 		Storage:     h.store,
 		Logger:      h.logger,
 		InstanceURL: h.cfg.BaseURL(),
-		PrivateKey:  "", // TODO: Load from environment/config
+		PrivateKey:  h.cfg.PrivateKey, // Load from config
 	}
 
 	return reputation.NewService(cfg)

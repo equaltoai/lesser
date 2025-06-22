@@ -41,7 +41,6 @@ var DefaultPolicy = PasswordPolicy{
 
 // Note: Common passwords are now defined in common_passwords.go
 
-
 // HashPassword hashes a password using bcrypt
 func HashPassword(password string) (string, error) {
 	// Validate password length

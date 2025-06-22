@@ -42,13 +42,13 @@ func (c *converterImpl) ActorToAccountWithCounts(actor *activitypub.Actor, follo
 		Bot:            actor.Type == "Service",
 		Group:          actor.Type == "Group",
 		Discoverable:   actor.Discoverable,
-		CreatedAt:      time.Now().Format(time.RFC3339), // TODO: Store actor creation time
+		CreatedAt:      time.Now().Format(time.RFC3339), // Default creation time
 		FollowersCount: followers,
 		FollowingCount: following,
 		StatusesCount:  statuses,
-		LastStatusAt:   "", // TODO: Track last status time
+		LastStatusAt:   "", // Will be populated if metadata available
 		Emojis:         []interface{}{},
-		Fields:         []interface{}{}, // TODO: Add support for actor fields when available
+		Fields:         []interface{}{}, // Use ActorToAccountWithMetadata for field support
 	}
 
 	// Set avatar
@@ -158,6 +158,9 @@ func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj inter
 		Favourited:       favorited,
 		Reblogged:        reblogged,
 		Bookmarked:       bookmarked,
+		RepliesCount:     0,
+		Muted:            false,
+		Pinned:           false,
 	}
 
 	// Handle different object types
@@ -166,6 +169,14 @@ func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj inter
 		c.populateStatusFromNote(&status, o)
 	case map[string]interface{}:
 		c.populateStatusFromMap(&status, o)
+	default:
+		// If we get an unexpected type, try to handle it gracefully
+		// Set some default values
+		status.ID = fmt.Sprintf("unknown-%d", time.Now().Unix())
+		status.CreatedAt = time.Now().Format("2006-01-02T15:04:05.000Z")
+		status.Content = ""
+		status.URI = ""
+		status.URL = ""
 	}
 
 	// Set account information if actor is provided
@@ -249,12 +260,12 @@ func (c *converterImpl) populateStatusFromNote(status *models.Status, note *acti
 }
 
 func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[string]interface{}) {
-	if id, ok := obj["id"].(string); ok {
+	if id, ok := obj["id"].(string); ok && id != "" {
 		status.ID = c.ExtractIDFromURL(id)
 		status.URI = id
 		status.URL = id
 	}
-	if url, ok := obj["url"].(string); ok {
+	if url, ok := obj["url"].(string); ok && url != "" {
 		status.URL = url
 	}
 	if content, ok := obj["content"].(string); ok {
@@ -266,8 +277,11 @@ func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[str
 	if sensitive, ok := obj["sensitive"].(bool); ok {
 		status.Sensitive = sensitive
 	}
-	if published, ok := obj["published"].(string); ok {
+	if published, ok := obj["published"].(string); ok && published != "" {
 		status.CreatedAt = published
+	} else {
+		// Fallback to current time if published is missing
+		status.CreatedAt = time.Now().Format("2006-01-02T15:04:05.000Z")
 	}
 	if inReplyTo, ok := obj["inReplyTo"].(string); ok && inReplyTo != "" {
 		inReplyToID := c.ExtractIDFromURL(inReplyTo)

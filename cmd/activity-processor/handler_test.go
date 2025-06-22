@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/aron23/lesser/internal/testutil/mocks"
 	"context"
 	"encoding/json"
+	"github.com/aron23/lesser/internal/testutil/mocks"
 	"net/http"
 	"net/http/httptest"
 	"testing"

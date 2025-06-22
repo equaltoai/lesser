@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,9 +12,12 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -156,8 +160,11 @@ func (h *Handler) HandleCreateExport(ctx context.Context, request events.APIGate
 		return common.InternalServerError(errors.New("failed to create export job")), nil
 	}
 
-	// TODO: Trigger export generator Lambda
-	// This would normally be done via SQS or EventBridge
+	// Trigger export generator Lambda via SQS
+	if err := h.triggerExportProcessor(ctx, exportID, claims.Username, req.Type); err != nil {
+		h.logger.Error("failed to trigger export processor", zap.Error(err))
+		// Don't fail the request, export can be retried later
+	}
 
 	// Return job status
 	job := ExportJob{
@@ -420,4 +427,63 @@ func getTimeFromJobData(data map[string]interface{}, key string) time.Time {
 		return val
 	}
 	return time.Time{}
+}
+
+// triggerExportProcessor sends a message to SQS to trigger export processing
+func (h *Handler) triggerExportProcessor(ctx context.Context, exportID, username, exportType string) error {
+	// Initialize SQS client
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	sqsClient := sqs.NewFromConfig(awsCfg)
+
+	// Create message payload
+	message := map[string]interface{}{
+		"exportID":  exportID,
+		"username":  username,
+		"type":      exportType,
+		"timestamp": time.Now().Unix(),
+	}
+
+	messageBody, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Get SQS queue URL from environment or config
+	queueURL := h.cfg.ExportProcessorQueueURL
+	if queueURL == "" {
+		// Default queue name pattern
+		queueURL = fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/export-processor-queue",
+			awsCfg.Region, h.cfg.AWSAccountID)
+	}
+
+	// Send message to SQS
+	_, err = sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    &queueURL,
+		MessageBody: aws.String(string(messageBody)),
+		MessageAttributes: map[string]sqstypes.MessageAttributeValue{
+			"JobType": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String("data-export"),
+			},
+			"ExportType": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(exportType),
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to send SQS message: %w", err)
+	}
+
+	h.logger.Info("export processing job queued",
+		zap.String("export_id", exportID),
+		zap.String("username", username),
+		zap.String("type", exportType),
+		zap.String("queue_url", queueURL))
+
+	return nil
 }

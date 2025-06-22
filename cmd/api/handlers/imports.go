@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,6 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -181,8 +184,11 @@ func (h *Handler) HandleCreateImport(ctx context.Context, request events.APIGate
 		return common.InternalServerError(errors.New("failed to create import job")), nil
 	}
 
-	// TODO: Trigger import processor Lambda
-	// This would normally be done via SQS or EventBridge
+	// Trigger import processor Lambda via SQS
+	if err := h.triggerImportProcessor(ctx, importID, claims.Username, req.Type); err != nil {
+		h.logger.Error("failed to trigger import processor", zap.Error(err))
+		// Don't fail the request, import can be retried later
+	}
 
 	// Return job status
 	job := ImportJob{
@@ -408,4 +414,63 @@ func (h *Handler) getUserImportJobs(ctx context.Context, username string, status
 		zap.Int("count", len(imports)))
 
 	return imports, nil
+}
+
+// triggerImportProcessor sends a message to SQS to trigger import processing
+func (h *Handler) triggerImportProcessor(ctx context.Context, importID, username, importType string) error {
+	// Initialize SQS client
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	sqsClient := sqs.NewFromConfig(awsCfg)
+
+	// Create message payload
+	message := map[string]interface{}{
+		"importID":  importID,
+		"username":  username,
+		"type":      importType,
+		"timestamp": time.Now().Unix(),
+	}
+
+	messageBody, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Get SQS queue URL from environment or config
+	queueURL := h.cfg.ImportProcessorQueueURL
+	if queueURL == "" {
+		// Default queue name pattern
+		queueURL = fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/import-processor-queue",
+			awsCfg.Region, h.cfg.AWSAccountID)
+	}
+
+	// Send message to SQS
+	_, err = sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    &queueURL,
+		MessageBody: aws.String(string(messageBody)),
+		MessageAttributes: map[string]sqstypes.MessageAttributeValue{
+			"JobType": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String("data-import"),
+			},
+			"ImportType": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(importType),
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to send SQS message: %w", err)
+	}
+
+	h.logger.Info("import processing job queued",
+		zap.String("import_id", importID),
+		zap.String("username", username),
+		zap.String("type", importType),
+		zap.String("queue_url", queueURL))
+
+	return nil
 }

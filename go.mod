@@ -11,13 +11,18 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.7.82
 	github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.2
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.7.2
+	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.46.3
+	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.45.3
 	github.com/aws/aws-sdk-go-v2/service/comprehend v1.36.4
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.43.1
 	github.com/aws/aws-sdk-go-v2/service/kms v1.38.2
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.72.0
 	github.com/aws/aws-sdk-go-v2/service/rekognition v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.80.0
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.35.7
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.5
 	github.com/aws/aws-sdk-go-v2/service/translate v1.29.2
+	github.com/aws/aws-xray-sdk-go v1.8.5
 	github.com/awslabs/aws-lambda-go-api-proxy v0.16.2
 	github.com/bbrks/go-blurhash v1.1.1
 	github.com/bytedance/sonic v1.13.3
@@ -27,6 +32,7 @@ require (
 	github.com/go-webauthn/webauthn v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/mux v1.8.1
 	github.com/graph-gophers/dataloader v5.0.0+incompatible
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
@@ -49,19 +55,15 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.36 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.1 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.34 // indirect
-	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.46.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.45.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.25.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.7.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.10.15 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.15 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.15 // indirect
-	github.com/aws/aws-sdk-go-v2/service/lambda v1.72.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.24.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.32.2 // indirect
-	github.com/aws/aws-xray-sdk-go v1.8.5 // indirect
 	github.com/aws/smithy-go v1.22.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bits-and-blooms/bitset v1.10.0 // indirect
@@ -78,10 +80,8 @@ require (
 	github.com/fxamacker/cbor/v2 v2.8.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/go-webauthn/x v0.1.21 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-tpm v0.9.5 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
-	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect

@@ -144,7 +144,7 @@ func (s *dynamoDBStorage) GetModerationQueue(ctx context.Context, filter *storag
 			conditionExpr = "GSI2SK <= :end_time"
 			input.ExpressionAttributeValues[":end_time"] = &types.AttributeValueMemberS{Value: filter.EndTime.Format(time.RFC3339)}
 		}
-		
+
 		if input.FilterExpression == nil {
 			input.FilterExpression = aws.String(conditionExpr)
 		} else {
@@ -965,7 +965,7 @@ func (s *dynamoDBStorage) UpdateModerationDecision(ctx context.Context, contentI
 		ConsensusScore:   review.Confidence,
 		ReviewerCount:    1,
 		TrustWeightTotal: review.Weight,
-		Reviews:          []*moderation.Review{
+		Reviews: []*moderation.Review{
 			{
 				ID:         fmt.Sprintf("rev_%s", generateRandomString(12)),
 				EventID:    currentDecision.EventID,

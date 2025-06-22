@@ -10,6 +10,7 @@ import (
 
 	"github.com/aron23/lesser/graph/model"
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/auth"
 	"go.uber.org/zap"
 )
 
@@ -88,9 +89,11 @@ func getTimeOrNow(t *time.Time) time.Time {
 }
 
 // getUsernameFromContext extracts username from authentication context
-func getUsernameFromContext(_ context.Context) string {
-	// TODO: Implement proper authentication context extraction
-	// For now, return empty string
+func getUsernameFromContext(ctx context.Context) string {
+	// Extract claims from context
+	if claims, ok := ctx.Value(auth.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
+		return claims.Username
+	}
 	return ""
 }
 
@@ -110,10 +113,10 @@ func (r *queryResolver) convertToGraphQLObject(ctx context.Context, obj interfac
 			Mentions:    convertMentions(o.Tag),
 			CreatedAt:   model.Time(getTimeOrNow(o.Published)),
 			UpdatedAt:   model.Time(getTimeOrNow(o.Updated)),
-			// TODO: Add proper counts from storage
-			RepliesCount: 0,
-			LikesCount:   0,
-			SharesCount:  0,
+			// Get interaction counts from storage
+			RepliesCount: r.getObjectReplyCount(ctx, o.ID),
+			LikesCount:   r.getObjectLikeCount(ctx, o.ID),
+			SharesCount:  r.getObjectShareCount(ctx, o.ID),
 		}
 
 		// Handle spoiler text (content warning)
@@ -142,10 +145,10 @@ func (r *queryResolver) convertToGraphQLObject(ctx context.Context, obj interfac
 			Mentions:    convertMentions(o.Tag),
 			CreatedAt:   model.Time(getTimeOrNow(o.Published)),
 			UpdatedAt:   model.Time(getTimeOrNow(o.Updated)),
-			// TODO: Add proper counts from storage
-			RepliesCount: 0,
-			LikesCount:   0,
-			SharesCount:  0,
+			// Get interaction counts from storage
+			RepliesCount: r.getObjectReplyCount(ctx, o.ID),
+			LikesCount:   r.getObjectLikeCount(ctx, o.ID),
+			SharesCount:  r.getObjectShareCount(ctx, o.ID),
 		}
 
 		// Articles use Name for title
@@ -182,10 +185,10 @@ func (r *queryResolver) convertToGraphQLObject(ctx context.Context, obj interfac
 			Mentions:  []*model.Mention{},
 			CreatedAt: model.Time(getTimeOrNow(o.Published)),
 			UpdatedAt: model.Time(getTimeOrNow(o.Updated)),
-			// TODO: Add proper counts from storage
-			RepliesCount: 0,
-			LikesCount:   0,
-			SharesCount:  0,
+			// Get interaction counts from storage
+			RepliesCount: r.getObjectReplyCount(ctx, o.ID),
+			LikesCount:   r.getObjectLikeCount(ctx, o.ID),
+			SharesCount:  r.getObjectShareCount(ctx, o.ID),
 		}
 		return result
 
@@ -426,4 +429,32 @@ func determineModerationCategory(reason string) string {
 	}
 
 	return "other"
+}
+
+// Helper methods for getting object interaction counts
+func (r *queryResolver) getObjectReplyCount(ctx context.Context, objectID string) int {
+	count, err := r.Storage.CountObjectReplies(ctx, objectID)
+	if err != nil {
+		r.Logger.Error("failed to get reply count", zap.Error(err), zap.String("objectID", objectID))
+		return 0
+	}
+	return count
+}
+
+func (r *queryResolver) getObjectLikeCount(ctx context.Context, objectID string) int {
+	count, err := r.Storage.CountObjectLikes(ctx, objectID)
+	if err != nil {
+		r.Logger.Error("failed to get like count", zap.Error(err), zap.String("objectID", objectID))
+		return 0
+	}
+	return count
+}
+
+func (r *queryResolver) getObjectShareCount(ctx context.Context, objectID string) int {
+	count, err := r.Storage.CountObjectAnnounces(ctx, objectID)
+	if err != nil {
+		r.Logger.Error("failed to get share count", zap.Error(err), zap.String("objectID", objectID))
+		return 0
+	}
+	return count
 }

@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/notes"
+	"github.com/aron23/lesser/pkg/storage"
+	dynamodbstorage "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -21,6 +27,7 @@ import (
 
 var (
 	logger           *zap.Logger
+	store            storage.Storage
 	dynamoClient     *dynamodb.Client
 	comprehendClient *comprehend.Client
 	apiGatewayClient *apigatewaymanagementapi.Client
@@ -42,6 +49,12 @@ func init() {
 
 	dynamoClient = dynamodb.NewFromConfig(cfg)
 	comprehendClient = comprehend.NewFromConfig(cfg)
+
+	// Initialize storage
+	store, err = dynamodbstorage.New()
+	if err != nil {
+		logger.Fatal("failed to initialize storage", zap.Error(err))
+	}
 
 	// Set DynamoDB client for notes package
 	notes.SetDynamoClient(dynamoClient)
@@ -169,10 +182,30 @@ func processNewNoteByID(ctx context.Context, noteID string) error {
 
 	// 7. Check if should federate
 	if initialScore >= notes.FederationThreshold {
-		// TODO: Queue for federation
-		logger.Info("note eligible for federation",
-			zap.String("note_id", note.ID),
-			zap.Float64("score", initialScore))
+		// Queue for federation by creating activity in outbox
+		now := time.Now()
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:        fmt.Sprintf("%s/activities/%s", getDomainURL(), generateID()),
+				Type:      activitypub.CreateType,
+				Published: &now,
+				To:        []string{"https://www.w3.org/ns/activitystreams#Public"},
+				CC:        []string{},
+			},
+			Actor:  note.AuthorID,
+			Object: note,
+		}
+
+		if err := store.CreateActivity(ctx, activity); err != nil {
+			logger.Error("failed to queue note for federation",
+				zap.String("note_id", note.ID),
+				zap.Error(err))
+		} else {
+			logger.Info("note queued for federation",
+				zap.String("note_id", note.ID),
+				zap.String("activity_id", activity.ID),
+				zap.Float64("score", initialScore))
+		}
 	}
 
 	return nil
@@ -182,9 +215,10 @@ func analyzeContent(ctx context.Context, note *notes.CommunityNote) (*notes.Anal
 	// Use AWS Comprehend for analysis
 
 	// Detect sentiment
+	languageCode := convertToComprehendLanguageCode(note.Language)
 	sentimentResp, err := comprehendClient.DetectSentiment(ctx, &comprehend.DetectSentimentInput{
 		Text:         &note.Content,
-		LanguageCode: types.LanguageCodeEn, // TODO: Use note.Language
+		LanguageCode: languageCode,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect sentiment: %w", err)
@@ -404,6 +438,56 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func generateID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based ID if crypto/rand fails
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
+func getDomainURL() string {
+	domain := getEnv("DOMAIN_NAME", "localhost:8080")
+	if strings.HasPrefix(domain, "http") {
+		return domain
+	}
+	return "https://" + domain
+}
+
+func convertToComprehendLanguageCode(language string) types.LanguageCode {
+	// Convert common language codes to AWS Comprehend LanguageCode enum
+	switch strings.ToLower(language) {
+	case "en", "english":
+		return types.LanguageCodeEn
+	case "es", "spanish", "español":
+		return types.LanguageCodeEs
+	case "fr", "french", "français":
+		return types.LanguageCodeFr
+	case "de", "german", "deutsch":
+		return types.LanguageCodeDe
+	case "it", "italian", "italiano":
+		return types.LanguageCodeIt
+	case "pt", "portuguese", "português":
+		return types.LanguageCodePt
+	case "ar", "arabic", "العربية":
+		return types.LanguageCodeAr
+	case "hi", "hindi", "हिन्दी":
+		return types.LanguageCodeHi
+	case "ja", "japanese", "日本語":
+		return types.LanguageCodeJa
+	case "ko", "korean", "한국어":
+		return types.LanguageCodeKo
+	case "zh", "chinese", "中文":
+		return types.LanguageCodeZh
+	case "zh-tw", "traditional chinese", "繁體中文":
+		return types.LanguageCodeZhTw
+	default:
+		// Default to English if language not supported
+		return types.LanguageCodeEn
+	}
 }
 
 func main() {

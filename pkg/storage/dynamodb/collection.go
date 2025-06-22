@@ -84,8 +84,64 @@ func (s *dynamoDBStorage) GetCollection(ctx context.Context, username, collectio
 		// Get total count (approximate)
 		page.TotalItems = len(items)
 
+	case activitypub.LikedCollection:
+		// Get the liked posts for this user
+		likes, nextCursor, err := s.GetActorLikes(ctx, fmt.Sprintf("%s/users/%s", baseURL, username), limit, cursor)
+		if err != nil {
+			log.Error("failed to get liked posts", zap.Error(err))
+			return nil, fmt.Errorf("failed to get liked posts: %w", err)
+		}
+
+		// Convert likes to object IDs
+		items := make([]interface{}, len(likes))
+		for i, like := range likes {
+			items[i] = like.Object
+		}
+		page.OrderedItems = items
+
+		// Set pagination info
+		if nextCursor != "" {
+			page.Next = fmt.Sprintf("%s?cursor=%s&limit=%d", collectionID, nextCursor, limit)
+		}
+
+		// Get total count (approximate)
+		page.TotalItems = len(items)
+
+	case activitypub.InboxCollection, activitypub.OutboxCollection:
+		// For inbox/outbox collections, get activities
+		var activities []*activitypub.Activity
+		var nextCursor string
+		var err error
+
+		if collectionType == activitypub.InboxCollection {
+			activities, nextCursor, err = s.GetInboxActivities(ctx, username, limit, cursor)
+		} else {
+			activities, nextCursor, err = s.GetOutboxActivities(ctx, username, limit, cursor)
+		}
+
+		if err != nil {
+			log.Error("failed to get activities", zap.Error(err))
+			return nil, fmt.Errorf("failed to get activities: %w", err)
+		}
+
+		// Convert activities to interfaces
+		items := make([]interface{}, len(activities))
+		for i, activity := range activities {
+			items[i] = activity
+		}
+		page.OrderedItems = items
+
+		// Set pagination info
+		if nextCursor != "" {
+			page.Next = fmt.Sprintf("%s?cursor=%s&limit=%d", collectionID, nextCursor, limit)
+		}
+
+		// Get total count (approximate)
+		page.TotalItems = len(items)
+
 	default:
-		// For other collection types (liked, etc.), return empty for now
+		// For unknown collection types, return empty
+		log.Warn("unknown collection type requested", zap.String("type", collectionType))
 		page.OrderedItems = []interface{}{}
 		page.TotalItems = 0
 	}

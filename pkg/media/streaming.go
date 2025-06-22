@@ -35,15 +35,15 @@ type StreamingURL struct {
 
 // StreamingAnalytics contains analytics for a media item
 type StreamingAnalytics struct {
-	MediaID           string            `json:"media_id"`
-	ViewCount         int64             `json:"view_count"`
-	BandwidthUsed     int64             `json:"bandwidth_used"` // bytes
-	QualityBreakdown  map[string]int64  `json:"quality_breakdown"`
-	GeographicData    map[string]int64  `json:"geographic_data"`
-	BufferingEvents   int64             `json:"buffering_events"`
-	AverageWatchTime  float64           `json:"average_watch_time"` // seconds
-	PeakConcurrent    int64             `json:"peak_concurrent"`
-	LastUpdated       time.Time         `json:"last_updated"`
+	MediaID          string           `json:"media_id"`
+	ViewCount        int64            `json:"view_count"`
+	BandwidthUsed    int64            `json:"bandwidth_used"` // bytes
+	QualityBreakdown map[string]int64 `json:"quality_breakdown"`
+	GeographicData   map[string]int64 `json:"geographic_data"`
+	BufferingEvents  int64            `json:"buffering_events"`
+	AverageWatchTime float64          `json:"average_watch_time"` // seconds
+	PeakConcurrent   int64            `json:"peak_concurrent"`
+	LastUpdated      time.Time        `json:"last_updated"`
 }
 
 // StreamingEvent represents a streaming event for analytics
@@ -53,7 +53,7 @@ type StreamingEvent struct {
 	EventType   string    `json:"event_type"` // play, pause, buffer, quality_change, error
 	Quality     string    `json:"quality"`
 	Timestamp   time.Time `json:"timestamp"`
-	Duration    float64   `json:"duration,omitempty"`    // seconds
+	Duration    float64   `json:"duration,omitempty"` // seconds
 	BytesLoaded int64     `json:"bytes_loaded,omitempty"`
 	Country     string    `json:"country,omitempty"`
 	UserAgent   string    `json:"user_agent,omitempty"`
@@ -61,11 +61,11 @@ type StreamingEvent struct {
 
 // HLSManifest represents HLS streaming manifest
 type HLSManifest struct {
-	MediaID   string               `json:"media_id"`
-	MasterURL string               `json:"master_url"`
-	Variants  []HLSVariant         `json:"variants"`
-	Duration  float64              `json:"duration"`
-	CreatedAt time.Time            `json:"created_at"`
+	MediaID   string       `json:"media_id"`
+	MasterURL string       `json:"master_url"`
+	Variants  []HLSVariant `json:"variants"`
+	Duration  float64      `json:"duration"`
+	CreatedAt time.Time    `json:"created_at"`
 }
 
 // HLSVariant represents a quality variant in HLS
@@ -79,12 +79,12 @@ type HLSVariant struct {
 
 // DASHManifest represents DASH streaming manifest
 type DASHManifest struct {
-	MediaID         string            `json:"media_id"`
-	ManifestURL     string            `json:"manifest_url"`
-	VideoTracks     []DASHTrack       `json:"video_tracks"`
-	AudioTracks     []DASHTrack       `json:"audio_tracks"`
-	Duration        float64           `json:"duration"`
-	CreatedAt       time.Time         `json:"created_at"`
+	MediaID     string      `json:"media_id"`
+	ManifestURL string      `json:"manifest_url"`
+	VideoTracks []DASHTrack `json:"video_tracks"`
+	AudioTracks []DASHTrack `json:"audio_tracks"`
+	Duration    float64     `json:"duration"`
+	CreatedAt   time.Time   `json:"created_at"`
 }
 
 // DASHTrack represents a track in DASH
@@ -128,7 +128,7 @@ func (s *streamingService) GenerateStreamingURL(mediaID string, quality string) 
 	// Determine the object path based on quality
 	var objectPath string
 	var protocol string
-	
+
 	switch quality {
 	case "4k", "2160p":
 		objectPath = fmt.Sprintf("media/%s/4k/index.m3u8", mediaID)
@@ -156,10 +156,10 @@ func (s *streamingService) GenerateStreamingURL(mediaID string, quality string) 
 
 	// Generate expiry time (1 hour from now)
 	expiresAt := time.Now().Add(time.Hour)
-	
+
 	// Create the URL to sign
 	baseURL := fmt.Sprintf("https://%s/%s", s.distributionDomain, objectPath)
-	
+
 	// Sign the URL
 	signedURL, err := s.signURL(baseURL, expiresAt)
 	if err != nil {
@@ -216,18 +216,18 @@ func (s *streamingService) createSignature(policy string) (string, error) {
 	h := hmac.New(sha256.New, s.privateKey)
 	h.Write([]byte(policy))
 	signature := h.Sum(nil)
-	
+
 	// Base64 encode and make URL safe
 	encoded := base64.StdEncoding.EncodeToString(signature)
 	encoded = url.QueryEscape(encoded)
-	
+
 	return encoded, nil
 }
 
 // GenerateHLSManifest generates an HLS master manifest
 func (s *streamingService) GenerateHLSManifest(mediaID string) (*HLSManifest, error) {
 	baseURL := fmt.Sprintf("https://%s/media/%s", s.distributionDomain, mediaID)
-	
+
 	variants := []HLSVariant{
 		{
 			Quality:    "480p",
@@ -271,7 +271,7 @@ func (s *streamingService) GenerateHLSManifest(mediaID string) (*HLSManifest, er
 // GenerateDASHManifest generates a DASH manifest
 func (s *streamingService) GenerateDASHManifest(mediaID string) (*DASHManifest, error) {
 	baseURL := fmt.Sprintf("https://%s/media/%s", s.distributionDomain, mediaID)
-	
+
 	videoTracks := []DASHTrack{
 		{
 			ID:         "video-480p",
@@ -301,7 +301,7 @@ func (s *streamingService) GenerateDASHManifest(mediaID string) (*DASHManifest, 
 			URL:        fmt.Sprintf("%s/1080p/video.mp4", baseURL),
 		},
 	}
-	
+
 	audioTracks := []DASHTrack{
 		{
 			ID:        "audio-128k",
@@ -335,10 +335,10 @@ func (s *streamingService) GenerateDASHManifest(mediaID string) (*DASHManifest, 
 func (s *streamingService) GetStreamingAnalytics(mediaID string) (*StreamingAnalytics, error) {
 	// This would typically query from a database or analytics service
 	// For now, return a placeholder with CloudWatch metrics
-	
+
 	endTime := time.Now()
 	startTime := endTime.Add(-24 * time.Hour)
-	
+
 	// Query CloudWatch for basic metrics
 	input := &cloudwatch.GetMetricStatisticsInput{
 		Namespace:  &[]string{"AWS/CloudFront"}[0],
@@ -354,12 +354,12 @@ func (s *streamingService) GetStreamingAnalytics(mediaID string) (*StreamingAnal
 		Period:     &[]int32{3600}[0], // 1 hour periods
 		Statistics: []types.Statistic{types.StatisticSum},
 	}
-	
+
 	result, err := s.cloudWatch.GetMetricStatistics(context.TODO(), input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get CloudWatch metrics: %w", err)
 	}
-	
+
 	var totalViews int64
 	if len(result.Datapoints) > 0 {
 		for _, point := range result.Datapoints {
@@ -370,10 +370,10 @@ func (s *streamingService) GetStreamingAnalytics(mediaID string) (*StreamingAnal
 	}
 
 	return &StreamingAnalytics{
-		MediaID:     mediaID,
-		ViewCount:   totalViews,
+		MediaID:   mediaID,
+		ViewCount: totalViews,
 		QualityBreakdown: map[string]int64{
-			"480p":  totalViews * 30 / 100,  // Estimated breakdown
+			"480p":  totalViews * 30 / 100, // Estimated breakdown
 			"720p":  totalViews * 40 / 100,
 			"1080p": totalViews * 25 / 100,
 			"4k":    totalViews * 5 / 100,
@@ -415,7 +415,7 @@ func (s *streamingService) RecordStreamingEvent(event *StreamingEvent) error {
 			Unit:      types.StandardUnitCount,
 		},
 	}
-	
+
 	if event.BytesLoaded > 0 {
 		metricData = append(metricData, types.MetricDatum{
 			MetricName: &[]string{"BytesLoaded"}[0],
@@ -434,16 +434,16 @@ func (s *streamingService) RecordStreamingEvent(event *StreamingEvent) error {
 			Unit:      types.StandardUnitBytes,
 		})
 	}
-	
+
 	input := &cloudwatch.PutMetricDataInput{
 		Namespace:  &[]string{"Lesser/Streaming"}[0],
 		MetricData: metricData,
 	}
-	
+
 	_, err := s.cloudWatch.PutMetricData(context.TODO(), input)
 	if err != nil {
 		return fmt.Errorf("failed to record streaming event: %w", err)
 	}
-	
+
 	return nil
 }

@@ -36,16 +36,16 @@ func (s *dynamoDBStorage) GetStreamingPreferences(ctx context.Context, username 
 	if result.Item == nil {
 		// Return default preferences if none exist
 		return &storage.StreamingPreferences{
-			Username:        username,
-			DefaultQuality:  "auto",
-			AutoQuality:     true,
-			PreloadNext:     true,
-			DataSaverMode:   false,
-			PreferredCodec:  "h264",
-			MaxBandwidthMbps: 0, // 0 means unlimited
+			Username:          username,
+			DefaultQuality:    "auto",
+			AutoQuality:       true,
+			PreloadNext:       true,
+			DataSaverMode:     false,
+			PreferredCodec:    "h264",
+			MaxBandwidthMbps:  0, // 0 means unlimited
 			BufferSizeSeconds: 10,
-			Version:         1,
-			UpdatedAt:       time.Now(),
+			Version:           1,
+			UpdatedAt:         time.Now(),
 		}, nil
 	}
 
@@ -82,15 +82,15 @@ func (s *dynamoDBStorage) UpdateStreamingPreferences(ctx context.Context, prefs 
 	// Add DynamoDB keys
 	item["PK"] = &types.AttributeValueMemberS{Value: streamingPrefsPrefix + prefs.Username}
 	item["SK"] = &types.AttributeValueMemberS{Value: "CURRENT"}
-	
+
 	// Add GSI for device sync queries
 	item["GSI1PK"] = &types.AttributeValueMemberS{Value: "USER#" + prefs.Username}
 	item["GSI1SK"] = &types.AttributeValueMemberS{Value: "STREAMING_PREFS#" + prefs.UpdatedAt.Format(time.RFC3339)}
 
 	// Update with version check
 	input := &dynamodb.PutItemInput{
-		TableName: aws.String(s.tableName),
-		Item:      item,
+		TableName:           aws.String(s.tableName),
+		Item:                item,
 		ConditionExpression: aws.String("attribute_not_exists(PK) OR Version = :currentVersion"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":currentVersion": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", currentPrefs.Version)},
@@ -123,7 +123,7 @@ func (s *dynamoDBStorage) storePreferenceVersion(ctx context.Context, prefs *sto
 	// Add version history keys
 	item["PK"] = &types.AttributeValueMemberS{Value: streamingPrefsPrefix + prefs.Username}
 	item["SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("VERSION#%d#%s", prefs.Version, prefs.UpdatedAt.Format(time.RFC3339))}
-	
+
 	// Set TTL to 30 days
 	ttl := time.Now().Add(30 * 24 * time.Hour).Unix()
 	item["TTL"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", ttl)}
@@ -192,7 +192,7 @@ func (s *dynamoDBStorage) UpdateDeviceStreamingPreferences(ctx context.Context, 
 	// Add DynamoDB keys
 	item["PK"] = &types.AttributeValueMemberS{Value: streamingPrefsPrefix + prefs.Username}
 	item["SK"] = &types.AttributeValueMemberS{Value: "DEVICE#" + deviceID}
-	
+
 	// Add GSI for device queries
 	item["GSI2PK"] = &types.AttributeValueMemberS{Value: "DEVICE#" + deviceID}
 	item["GSI2SK"] = &types.AttributeValueMemberS{Value: "STREAMING_PREFS#" + prefs.Username}
@@ -219,7 +219,7 @@ func (s *dynamoDBStorage) GetStreamingPreferenceHistory(ctx context.Context, use
 			":version": &types.AttributeValueMemberS{Value: "VERSION#"},
 		},
 		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:           safeInt32(limit),
+		Limit:            safeInt32(limit),
 	}
 
 	result, err := s.client.Query(ctx, input)
@@ -262,7 +262,7 @@ func (s *dynamoDBStorage) SyncStreamingPreferences(ctx context.Context, username
 		// Create a copy of preferences for this device
 		devicePrefs := *sourcePrefs
 		devicePrefs.DeviceID = device.DeviceID
-		
+
 		if err := s.UpdateDeviceStreamingPreferences(ctx, &devicePrefs, device.DeviceID); err != nil {
 			// Log error but continue with other devices
 			fmt.Printf("failed to sync preferences to device %s: %v\n", device.DeviceID, err)
@@ -294,7 +294,7 @@ func (s *dynamoDBStorage) ResolvePreferenceConflict(ctx context.Context, usernam
 
 	// Find the preference to use based on strategy
 	var selectedPrefs *storage.StreamingPreferences
-	
+
 	switch strategy {
 	case storage.ConflictResolutionLatest:
 		// Find the most recently updated preference
@@ -309,7 +309,7 @@ func (s *dynamoDBStorage) ResolvePreferenceConflict(ctx context.Context, usernam
 				selectedPrefs = &prefs
 			}
 		}
-		
+
 	case storage.ConflictResolutionHighestQuality:
 		// Select preferences with highest quality setting
 		qualityOrder := map[string]int{
@@ -319,7 +319,7 @@ func (s *dynamoDBStorage) ResolvePreferenceConflict(ctx context.Context, usernam
 			"480p":  1,
 			"auto":  0,
 		}
-		
+
 		highestQuality := -1
 		for _, item := range result.Items {
 			var prefs storage.StreamingPreferences
@@ -331,7 +331,7 @@ func (s *dynamoDBStorage) ResolvePreferenceConflict(ctx context.Context, usernam
 				selectedPrefs = &prefs
 			}
 		}
-		
+
 	case storage.ConflictResolutionLowestBandwidth:
 		// Select preferences with lowest bandwidth usage
 		lowestBandwidth := int64(999999)
@@ -399,7 +399,7 @@ func (s *dynamoDBStorage) backupPreferencesBeforeMigration(ctx context.Context, 
 	// Add backup keys
 	item["PK"] = &types.AttributeValueMemberS{Value: streamingPrefsPrefix + username}
 	item["SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("BACKUP#%s", time.Now().Format(time.RFC3339))}
-	
+
 	// Set TTL to 90 days
 	ttl := time.Now().Add(90 * 24 * time.Hour).Unix()
 	item["TTL"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", ttl)}
@@ -428,7 +428,7 @@ func (s *dynamoDBStorage) applyPreferenceMigration(prefs *storage.StreamingPrefe
 			if migratedPrefs.BufferSizeSeconds == 0 {
 				migratedPrefs.BufferSizeSeconds = 10
 			}
-			
+
 		case 2:
 			// Migration from v2 to v3: Add HDR support
 			if migratedPrefs.HDREnabled == nil {
@@ -438,7 +438,7 @@ func (s *dynamoDBStorage) applyPreferenceMigration(prefs *storage.StreamingPrefe
 			if migratedPrefs.ColorSpace == "" {
 				migratedPrefs.ColorSpace = "bt709"
 			}
-			
+
 		case 3:
 			// Migration from v3 to v4: Add subtitle preferences
 			if migratedPrefs.SubtitleLanguage == "" {
@@ -448,7 +448,7 @@ func (s *dynamoDBStorage) applyPreferenceMigration(prefs *storage.StreamingPrefe
 				enabled := false
 				migratedPrefs.SubtitleEnabled = &enabled
 			}
-			
+
 		case 4:
 			// Migration from v4 to v5: Add accessibility features
 			if migratedPrefs.AudioDescriptionEnabled == nil {
@@ -459,7 +459,7 @@ func (s *dynamoDBStorage) applyPreferenceMigration(prefs *storage.StreamingPrefe
 				enabled := false
 				migratedPrefs.ClosedCaptionsEnabled = &enabled
 			}
-			
+
 		default:
 			return nil, fmt.Errorf("unsupported migration from version %d", version)
 		}
@@ -483,7 +483,7 @@ func (s *dynamoDBStorage) restorePreferencesFromBackup(ctx context.Context, user
 			":backup": &types.AttributeValueMemberS{Value: "BACKUP#"},
 		},
 		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:           aws.Int32(1),
+		Limit:            aws.Int32(1),
 	}
 
 	result, err := s.client.Query(ctx, input)
@@ -504,11 +504,10 @@ func (s *dynamoDBStorage) restorePreferencesFromBackup(ctx context.Context, user
 	return s.UpdateStreamingPreferences(ctx, &backupPrefs)
 }
 
-
 // CleanupOldPreferenceVersions removes old preference versions beyond retention period
 func (s *dynamoDBStorage) CleanupOldPreferenceVersions(ctx context.Context, username string, retentionDays int) error {
 	cutoffTime := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
-	
+
 	// Query old versions
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),

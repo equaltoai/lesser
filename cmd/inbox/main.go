@@ -305,7 +305,7 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 
 	// Extract domain from actor URL
 	actorDomain := extractDomainFromURL(activity.Actor)
-	
+
 	// Record federation activity for cost tracking
 	federationActivity := &storage.FederationActivity{
 		Domain:       actorDomain,
@@ -314,7 +314,7 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		ByteSize:     int64(len(body)),
 		Timestamp:    startTime,
 	}
-	
+
 	if actorDomain != "" {
 		// Check if the domain is blocked at the instance level
 		isBlocked, block, err := store.IsDomainBlocked(ctx, actorDomain)
@@ -334,8 +334,12 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 				federationActivity.Success = false
 				federationActivity.ErrorMessage = "Domain is suspended"
 				federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-				go store.RecordFederationActivity(context.Background(), federationActivity)
-				
+				go func() {
+					if err := store.RecordFederationActivity(context.Background(), federationActivity); err != nil {
+						log.Warn("failed to record federation activity", zap.Error(err))
+					}
+				}()
+
 				return &events.APIGatewayV2HTTPResponse{
 					StatusCode: http.StatusForbidden,
 					Body:       `{"error": "Domain is suspended"}`,
@@ -353,12 +357,16 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		log.Error("failed to fetch actor public key",
 			zap.String("actor", activity.Actor),
 			zap.Error(err))
-		
+
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = fmt.Sprintf("Failed to fetch actor public key: %v", err)
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go store.RecordFederationActivity(context.Background(), federationActivity)
-		
+		go func() {
+			if err := store.RecordFederationActivity(context.Background(), federationActivity); err != nil {
+				log.Warn("failed to record federation activity", zap.Error(err))
+			}
+		}()
+
 		return common.BadRequest(common.ValidationError{
 			Field:   "actor",
 			Message: "unable to verify sender",
@@ -370,12 +378,16 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 		log.Warn("signature verification failed",
 			zap.String("actor", activity.Actor),
 			zap.Error(err))
-		
+
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = fmt.Sprintf("Signature verification failed: %v", err)
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go store.RecordFederationActivity(context.Background(), federationActivity)
-		
+		go func() {
+			if err := store.RecordFederationActivity(context.Background(), federationActivity); err != nil {
+				log.Warn("failed to record federation activity", zap.Error(err))
+			}
+		}()
+
 		return common.Unauthorized(err), nil
 	}
 
@@ -570,7 +582,11 @@ func fetchActorPublicKey(ctx context.Context, actorURL string) (crypto.PublicKey
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch actor: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn("failed to close response body", zap.Error(err))
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -619,12 +635,43 @@ func processFollowActivity(ctx context.Context, activity *activitypub.Activity, 
 		return err
 	}
 
-	// For now, auto-accept all follows (TODO: implement manual approval option)
+	// Check if the target actor requires manual approval for follows
+	if targetActor.ManuallyApprovesFollowers {
+		log.Info("follow request pending manual approval",
+			zap.String("follower", followerHandle),
+			zap.String("target", targetActor.PreferredUsername))
+
+		// Send notification to the target user about pending follow request
+		notification := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				Context:   activitypub.Context,
+				ID:        fmt.Sprintf("%s/notifications/%s", targetActor.ID, generateActivityID()),
+				Type:      "Notification",
+				Published: timePtr(time.Now()),
+			},
+			Actor:  activity.Actor,
+			Object: activity.ID,
+		}
+
+		// Store notification for follow request
+		if err := store.CreateActivity(ctx, notification); err != nil {
+			log.Warn("failed to create follow request notification", zap.Error(err))
+		}
+
+		// Follow request stays in pending state - no further action needed
+		return nil
+	}
+
+	// Auto-accept follows for non-locked accounts
 	err = store.AcceptFollow(ctx, followerHandle, targetActor.PreferredUsername)
 	if err != nil {
 		log.Error("failed to accept follow", zap.Error(err))
 		return err
 	}
+
+	log.Info("follow request auto-accepted",
+		zap.String("follower", followerHandle),
+		zap.String("target", targetActor.PreferredUsername))
 
 	// Send Accept activity back to the follower
 	acceptActivity := &activitypub.Activity{
@@ -876,7 +923,6 @@ func extractHandleFromActorID(actorID string) string {
 
 	return fmt.Sprintf("@%s@%s", username, domain)
 }
-
 
 func generateActivityID() string {
 	return fmt.Sprintf("%d-%s", time.Now().UnixNano(), generateRandomString(8))

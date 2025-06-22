@@ -70,11 +70,11 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 			zap.Any("request_context", request.RequestContext),
 			zap.Any("raw_path", request.RawPath),
 			zap.Any("raw_query", request.RawQueryString))
-		
+
 		// Log the entire request struct for debugging
 		requestJSON, _ := json.Marshal(request)
 		logger.Info("Full request JSON", zap.String("request", string(requestJSON)))
-		
+
 		// Try base64 decode even if flag is false
 		if request.Body != "" {
 			decoded, err := base64.StdEncoding.DecodeString(request.Body)
@@ -87,7 +87,7 @@ func lambdaHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) 
 			}
 		}
 	}
-	
+
 	// Create chi router
 	router := NewRouter(handler, *authMiddleware, logger)
 

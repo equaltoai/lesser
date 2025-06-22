@@ -56,9 +56,8 @@ func (h *Handler) HandleGetScheduledStatuses(ctx context.Context, request events
 	if maxID != "" {
 		cursor = fmt.Sprintf("ID#%s", maxID)
 	} else if minID != "" {
-		// For min_id, we'd need to implement reverse pagination
-		// For now, just use forward pagination
-		cursor = fmt.Sprintf("ID#%s", minID)
+		// min_id requests newer posts, so we need reverse pagination
+		cursor = fmt.Sprintf("MIN#%s", minID)
 	}
 
 	// Get scheduled statuses
@@ -84,9 +83,9 @@ func (h *Handler) HandleGetScheduledStatuses(ctx context.Context, request events
 				Visibility:  scheduled.Visibility,
 				Language:    scheduled.Language,
 				InReplyToID: scheduled.InReplyToID,
-				Poll:        nil, // TODO: Convert poll data
+				Poll:        h.convertScheduledPoll(scheduled.Poll),
 			},
-			MediaAttachments: []interface{}{}, // TODO: Load media attachments
+			MediaAttachments: h.loadScheduledMediaAttachments(ctx, scheduled.ID),
 		}
 
 		// Add application ID if present
@@ -160,9 +159,9 @@ func (h *Handler) HandleGetScheduledStatus(ctx context.Context, request events.A
 			Visibility:  scheduled.Visibility,
 			Language:    scheduled.Language,
 			InReplyToID: scheduled.InReplyToID,
-			Poll:        nil, // TODO: Convert poll data
+			Poll:        h.convertScheduledPoll(scheduled.Poll),
 		},
-		MediaAttachments: []interface{}{}, // TODO: Load media attachments
+		MediaAttachments: h.loadScheduledMediaAttachments(ctx, scheduled.ID),
 	}
 
 	if scheduled.ApplicationID != "" {
@@ -249,9 +248,9 @@ func (h *Handler) HandleUpdateScheduledStatus(ctx context.Context, request event
 			Visibility:  existing.Visibility,
 			Language:    existing.Language,
 			InReplyToID: existing.InReplyToID,
-			Poll:        nil, // TODO: Convert poll data
+			Poll:        h.convertScheduledPoll(existing.Poll),
 		},
-		MediaAttachments: []interface{}{}, // TODO: Load media attachments
+		MediaAttachments: h.loadScheduledMediaAttachments(ctx, existing.ID),
 	}
 
 	if existing.ApplicationID != "" {
@@ -378,7 +377,7 @@ func (h *Handler) HandleScheduleStatus(ctx context.Context, claims *auth.Claims,
 			InReplyToID: scheduled.InReplyToID,
 			Poll:        req.Poll,
 		},
-		MediaAttachments: []interface{}{}, // TODO: Load media attachments
+		MediaAttachments: h.loadScheduledMediaAttachments(ctx, scheduled.ID),
 	}
 
 	if scheduled.ApplicationID != "" {
@@ -386,4 +385,83 @@ func (h *Handler) HandleScheduleStatus(ctx context.Context, claims *auth.Claims,
 	}
 
 	return common.OK(apiStatus), nil
+}
+
+// Helper methods for scheduled statuses
+func (h *Handler) convertScheduledPoll(pollData map[string]interface{}) *models.Poll {
+	if pollData == nil {
+		return nil
+	}
+
+	poll := &models.Poll{
+		ID:         "", // Will be set when poll is actually created
+		Multiple:   false,
+		VotesCount: 0,
+		Voted:      false, // Scheduled polls haven't been voted on yet
+	}
+
+	// Extract options and populate OptionsData (for responses)
+	if optionsRaw, ok := pollData["options"]; ok {
+		if optionsList, ok := optionsRaw.([]interface{}); ok {
+			optionsData := make([]models.PollOption, len(optionsList))
+			for i, optRaw := range optionsList {
+				if optStr, ok := optRaw.(string); ok {
+					optionsData[i] = models.PollOption{
+						Title:      optStr,
+						VotesCount: 0,
+					}
+				}
+			}
+			poll.OptionsData = optionsData
+		}
+	}
+
+	// Extract expires_at
+	if expiresAtRaw, ok := pollData["expires_at"]; ok {
+		if expiresAtStr, ok := expiresAtRaw.(string); ok {
+			poll.ExpiresAt = expiresAtStr
+		} else if expiresAtTime, ok := expiresAtRaw.(time.Time); ok {
+			poll.ExpiresAt = expiresAtTime.Format(time.RFC3339)
+		}
+	}
+
+	// Extract multiple
+	if multipleRaw, ok := pollData["multiple"]; ok {
+		if multiple, ok := multipleRaw.(bool); ok {
+			poll.Multiple = multiple
+		}
+	}
+
+	// Set expired status
+	if poll.ExpiresAt != "" {
+		if expiryTime, err := time.Parse(time.RFC3339, poll.ExpiresAt); err == nil {
+			poll.Expired = time.Now().After(expiryTime)
+		}
+	}
+
+	return poll
+}
+
+func (h *Handler) loadScheduledMediaAttachments(ctx context.Context, scheduledStatusID string) []interface{} {
+	attachments, err := h.store.GetScheduledStatusMedia(ctx, scheduledStatusID)
+	if err != nil {
+		h.logger.Warn("failed to load scheduled media attachments", zap.Error(err))
+		return []interface{}{}
+	}
+
+	result := make([]interface{}, len(attachments))
+	for i, attachment := range attachments {
+		// Handle interface{} type by asserting to map[string]interface{}
+		if attachmentMap, ok := attachment.(map[string]interface{}); ok {
+			result[i] = map[string]interface{}{
+				"id":          attachmentMap["id"],
+				"type":        attachmentMap["type"],
+				"url":         attachmentMap["url"],
+				"preview_url": attachmentMap["preview_url"],
+				"description": attachmentMap["description"],
+			}
+		}
+	}
+
+	return result
 }

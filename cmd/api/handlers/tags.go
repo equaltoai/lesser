@@ -15,6 +15,7 @@ import (
 	"github.com/aron23/lesser/cmd/api/models"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/storage"
 )
 
 // TagInfo represents detailed information about a hashtag
@@ -47,22 +48,56 @@ type FeaturedTag struct {
 
 // HandleGetTag retrieves information about a specific hashtag
 func (h *Handler) HandleGetTag(ctx context.Context, request events.APIGatewayV2HTTPRequest, tagName string) (*events.APIGatewayV2HTTPResponse, error) {
-	// For now, return a mock response
-	// TODO: Implement actual tag statistics tracking
-	tag := models.Tag{
-		Name: tagName,
-		URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
-		History: []struct {
+	// Get actual tag statistics from storage
+	tagStatsRaw, err := h.store.GetHashtagStats(ctx, tagName)
+	var tagStats *storage.HashtagStats
+	if err != nil || tagStatsRaw == nil {
+		h.logger.Error("failed to get hashtag stats", zap.Error(err))
+		// Fall back to empty stats
+		tagStats = &storage.HashtagStats{
+			Name:          tagName,
+			TotalUses:     0,
+			TotalAccounts: 0,
+			History:       []storage.HashtagHistoryEntry{},
+		}
+	} else {
+		// Type assert the interface{} to *storage.HashtagStats
+		var ok bool
+		tagStats, ok = tagStatsRaw.(*storage.HashtagStats)
+		if !ok {
+			// Fall back to empty stats if type assertion fails
+			tagStats = &storage.HashtagStats{
+				Name:          tagName,
+				TotalUses:     0,
+				TotalAccounts: 0,
+				History:       []storage.HashtagHistoryEntry{},
+			}
+		}
+	}
+
+	// Convert history to API format
+	history := make([]struct {
+		Day      string `json:"day"`
+		Uses     string `json:"uses"`
+		Accounts string `json:"accounts"`
+	}, len(tagStats.History))
+
+	for i, entry := range tagStats.History {
+		history[i] = struct {
 			Day      string `json:"day"`
 			Uses     string `json:"uses"`
 			Accounts string `json:"accounts"`
 		}{
-			{
-				Day:      "1668556800", // Unix timestamp as string
-				Uses:     "0",
-				Accounts: "0",
-			},
-		},
+			Day:      strconv.FormatInt(entry.Date.Unix(), 10),
+			Uses:     strconv.FormatInt(entry.UsageCount, 10),
+			Accounts: strconv.FormatInt(entry.UserCount, 10),
+		}
+	}
+
+	tag := models.Tag{
+		Name:    tagName,
+		URL:     fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
+		History: history,
 	}
 
 	// Check if user is following this tag (if authenticated)
@@ -83,7 +118,7 @@ func (h *Handler) HandleGetTag(ctx context.Context, request events.APIGatewayV2H
 				response := map[string]interface{}{
 					"name":      tag.Name,
 					"url":       tag.URL,
-					"history":   tag.History,
+					"history":   history,
 					"following": following,
 				}
 				return common.OK(response), nil
@@ -437,8 +472,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestions(ctx context.Context, request e
 		return common.Unauthorized(err), nil
 	}
 
-	// Get suggestions (for now, return empty array)
-	// TODO: Implement actual tag usage tracking and suggestions
+	// Get tag suggestions based on user's posting history
 	suggestions, err := h.store.GetTagSuggestions(ctx, claims.Username, 10)
 	if err != nil {
 		h.logger.Error("failed to get tag suggestions", zap.Error(err))

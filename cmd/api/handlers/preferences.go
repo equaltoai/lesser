@@ -57,9 +57,9 @@ func (h *Handler) HandleGetPreferences(ctx context.Context, request events.APIGa
 		PostingDefaultVisibility: prefs.DefaultPostingVisibility,
 		PostingDefaultSensitive:  prefs.DefaultMediaSensitive,
 		PostingDefaultLanguage:   prefs.Language,
-		ReadingExpandMedia:       "default", // TODO: Map from preferences
+		ReadingExpandMedia:       h.mapExpandMediaPreference(prefs.ExpandMedia),
 		ReadingExpandSpoilers:    prefs.ExpandSpoilers,
-		ReadingAutoplayGifs:      true, // TODO: Add to storage preferences
+		ReadingAutoplayGifs:      prefs.AutoplayGifs,
 	}
 
 	return common.OK(preferences), nil
@@ -135,7 +135,17 @@ func (h *Handler) HandleUpdatePreferences(ctx context.Context, request events.AP
 			prefs.ExpandSpoilers = boolVal
 		}
 	}
-	// TODO: Map other Mastodon preferences to our storage model
+	// Map additional Mastodon preferences
+	if val, ok := updateReq["reading:expand:media"]; ok {
+		if strVal, ok := val.(string); ok {
+			prefs.ExpandMedia = strVal
+		}
+	}
+	if val, ok := updateReq["reading:autoplay:gifs"]; ok {
+		if boolVal, ok := val.(bool); ok {
+			prefs.AutoplayGifs = boolVal
+		}
+	}
 
 	// Save updated preferences
 	if err := h.store.UpdateUserPreferences(ctx, claims.Username, prefs); err != nil {
@@ -148,10 +158,22 @@ func (h *Handler) HandleUpdatePreferences(ctx context.Context, request events.AP
 		PostingDefaultVisibility: prefs.DefaultPostingVisibility,
 		PostingDefaultSensitive:  prefs.DefaultMediaSensitive,
 		PostingDefaultLanguage:   prefs.Language,
-		ReadingExpandMedia:       "default",
+		ReadingExpandMedia:       h.mapExpandMediaPreference(prefs.ExpandMedia),
 		ReadingExpandSpoilers:    prefs.ExpandSpoilers,
-		ReadingAutoplayGifs:      true,
+		ReadingAutoplayGifs:      prefs.AutoplayGifs,
 	}
 
 	return common.OK(preferences), nil
+}
+
+// Helper method to map expand media preference
+func (h *Handler) mapExpandMediaPreference(expandMedia string) string {
+	switch expandMedia {
+	case "show_all":
+		return "show_all"
+	case "hide_all":
+		return "hide_all"
+	default:
+		return "default"
+	}
 }

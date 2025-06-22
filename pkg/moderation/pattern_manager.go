@@ -80,12 +80,12 @@ func (pm *PatternManager) MatchContent(ctx context.Context, content *ContentToMo
 	}
 
 	var matches []*PatternMatch
-	
+
 	for _, pattern := range patterns {
 		match := pm.matchPattern(pattern, content)
 		if match != nil {
 			matches = append(matches, match)
-			
+
 			// Record the match
 			if err := pm.recordMatch(ctx, pattern.ID, true); err != nil {
 				// Log error but don't fail the matching
@@ -110,7 +110,7 @@ func (pm *PatternManager) UpdatePatternStats(ctx context.Context, patternID stri
 			pattern.FalsePositiveCount++
 		}
 	}
-	
+
 	pattern.UpdatedAt = time.Now()
 	pattern.Effectiveness = pm.calculateEffectiveness(pattern)
 
@@ -136,15 +136,15 @@ func (pm *PatternManager) AnalyzePatternEffectiveness(ctx context.Context) (*Pat
 
 	for _, pattern := range patterns {
 		analysis := &PatternAnalysis{
-			PatternID:        pattern.ID,
-			PatternType:      pattern.Type,
-			Severity:         pattern.Severity,
-			MatchCount:       pattern.MatchCount,
+			PatternID:          pattern.ID,
+			PatternType:        pattern.Type,
+			Severity:           pattern.Severity,
+			MatchCount:         pattern.MatchCount,
 			FalsePositiveCount: pattern.FalsePositiveCount,
-			Effectiveness:    pattern.Effectiveness,
-			TruePositiveRate: pm.calculateTruePositiveRate(pattern),
-			LastMatch:        pattern.LastMatch,
-			CreatedAt:        pattern.CreatedAt,
+			Effectiveness:      pattern.Effectiveness,
+			TruePositiveRate:   pm.calculateTruePositiveRate(pattern),
+			LastMatch:          pattern.LastMatch,
+			CreatedAt:          pattern.CreatedAt,
 		}
 
 		// Categorize pattern performance
@@ -161,7 +161,7 @@ func (pm *PatternManager) AnalyzePatternEffectiveness(ctx context.Context) (*Pat
 		analysis.Recommendations = pm.generatePatternRecommendations(pattern)
 
 		report.PatternAnalysis = append(report.PatternAnalysis, analysis)
-		
+
 		totalMatches += pattern.MatchCount
 		totalFalsePositives += pattern.FalsePositiveCount
 		effectivenessSum += pattern.Effectiveness
@@ -171,13 +171,13 @@ func (pm *PatternManager) AnalyzePatternEffectiveness(ctx context.Context) (*Pat
 	if len(patterns) > 0 {
 		report.AverageEffectiveness = effectivenessSum / float64(len(patterns))
 	}
-	
+
 	if totalMatches > 0 {
 		report.OverallFalsePositiveRate = float64(totalFalsePositives) / float64(totalMatches)
 	}
 
 	report.InefficientPatterns = len(ineffectivePatterns)
-	
+
 	// Generate overall recommendations
 	report.Recommendations = pm.generateOverallRecommendations(patterns, ineffectivePatterns)
 
@@ -209,15 +209,15 @@ func (pm *PatternManager) validatePattern(pattern *ModerationPattern) error {
 	if pattern.Name == "" {
 		return fmt.Errorf("pattern name is required")
 	}
-	
+
 	if pattern.Content == "" {
 		return fmt.Errorf("pattern content is required")
 	}
-	
+
 	if pattern.Type == "" {
 		return fmt.Errorf("pattern type is required")
 	}
-	
+
 	validTypes := []string{"keyword", "regex", "phrase", "domain", "ip", "hash"}
 	validType := false
 	for _, vt := range validTypes {
@@ -229,7 +229,7 @@ func (pm *PatternManager) validatePattern(pattern *ModerationPattern) error {
 	if !validType {
 		return fmt.Errorf("invalid pattern type: %s", pattern.Type)
 	}
-	
+
 	validSeverities := []string{"low", "medium", "high", "critical"}
 	validSeverity := false
 	for _, vs := range validSeverities {
@@ -254,23 +254,23 @@ func (pm *PatternManager) matchPattern(pattern *ModerationPattern, content *Cont
 	case "keyword":
 		matched, matchedText = pm.matchKeyword(pattern.Content, content.Text)
 		confidence = 0.8
-		
+
 	case "regex":
 		matched, matchedText = pm.matchRegex(pattern.Content, content.Text)
 		confidence = 0.9
-		
+
 	case "phrase":
 		matched, matchedText = pm.matchPhrase(pattern.Content, content.Text)
 		confidence = 0.85
-		
+
 	case "domain":
 		matched, matchedText = pm.matchDomain(pattern.Content, content.Text)
 		confidence = 0.95
-		
+
 	case "ip":
 		matched, matchedText = pm.matchIP(pattern.Content, content.Text)
 		confidence = 0.95
-		
+
 	case "hash":
 		matched, matchedText = pm.matchHash(pattern.Content, content)
 		confidence = 1.0
@@ -281,21 +281,21 @@ func (pm *PatternManager) matchPattern(pattern *ModerationPattern, content *Cont
 	}
 
 	return &PatternMatch{
-		PatternID:    pattern.ID,
-		PatternName:  pattern.Name,
-		PatternType:  pattern.Type,
-		Severity:     pattern.Severity,
-		Confidence:   confidence,
-		MatchedText:  matchedText,
-		Action:       pattern.Action,
-		MatchedAt:    time.Now(),
+		PatternID:   pattern.ID,
+		PatternName: pattern.Name,
+		PatternType: pattern.Type,
+		Severity:    pattern.Severity,
+		Confidence:  confidence,
+		MatchedText: matchedText,
+		Action:      pattern.Action,
+		MatchedAt:   time.Now(),
 	}
 }
 
 func (pm *PatternManager) matchKeyword(keyword, text string) (bool, string) {
 	lowerText := strings.ToLower(text)
 	lowerKeyword := strings.ToLower(keyword)
-	
+
 	if strings.Contains(lowerText, lowerKeyword) {
 		return true, keyword
 	}
@@ -307,7 +307,7 @@ func (pm *PatternManager) matchRegex(regexPattern, text string) (bool, string) {
 	if err != nil {
 		return false, ""
 	}
-	
+
 	match := re.FindString(text)
 	if match != "" {
 		return true, match
@@ -318,7 +318,7 @@ func (pm *PatternManager) matchRegex(regexPattern, text string) (bool, string) {
 func (pm *PatternManager) matchPhrase(phrase, text string) (bool, string) {
 	lowerText := strings.ToLower(text)
 	lowerPhrase := strings.ToLower(phrase)
-	
+
 	if strings.Contains(lowerText, lowerPhrase) {
 		return true, phrase
 	}
@@ -353,14 +353,14 @@ func (pm *PatternManager) calculateEffectiveness(pattern *ModerationPattern) flo
 	if pattern.MatchCount == 0 {
 		return 0.5 // Neutral for new patterns
 	}
-	
+
 	truePositives := pattern.MatchCount - pattern.FalsePositiveCount
 	if truePositives < 0 {
 		truePositives = 0
 	}
-	
+
 	effectiveness := float64(truePositives) / float64(pattern.MatchCount)
-	
+
 	// Adjust for recency - patterns that haven't matched recently are less effective
 	if !pattern.LastMatch.IsZero() {
 		daysSinceLastMatch := time.Since(pattern.LastMatch).Hours() / 24
@@ -368,7 +368,7 @@ func (pm *PatternManager) calculateEffectiveness(pattern *ModerationPattern) flo
 			effectiveness *= 0.5 // Reduce effectiveness for stale patterns
 		}
 	}
-	
+
 	return effectiveness
 }
 
@@ -376,12 +376,12 @@ func (pm *PatternManager) calculateTruePositiveRate(pattern *ModerationPattern) 
 	if pattern.MatchCount == 0 {
 		return 0
 	}
-	
+
 	truePositives := pattern.MatchCount - pattern.FalsePositiveCount
 	if truePositives < 0 {
 		truePositives = 0
 	}
-	
+
 	return float64(truePositives) / float64(pattern.MatchCount)
 }
 
@@ -391,47 +391,47 @@ func (pm *PatternManager) recordMatch(ctx context.Context, patternID string, mat
 
 func (pm *PatternManager) generatePatternRecommendations(pattern *ModerationPattern) []string {
 	var recommendations []string
-	
+
 	if pattern.Effectiveness < 0.3 {
 		recommendations = append(recommendations, "Consider disabling or refining this pattern due to low effectiveness")
 	}
-	
+
 	if pattern.FalsePositiveCount > pattern.MatchCount/2 {
 		recommendations = append(recommendations, "High false positive rate - consider making pattern more specific")
 	}
-	
+
 	if pattern.MatchCount == 0 && time.Since(pattern.CreatedAt) > 7*24*time.Hour {
 		recommendations = append(recommendations, "Pattern has no matches after 7 days - consider reviewing relevance")
 	}
-	
+
 	if time.Since(pattern.LastMatch) > 30*24*time.Hour && pattern.MatchCount > 0 {
 		recommendations = append(recommendations, "No recent matches - pattern may be outdated")
 	}
-	
+
 	return recommendations
 }
 
 func (pm *PatternManager) generateOverallRecommendations(patterns, ineffectivePatterns []*ModerationPattern) []string {
 	var recommendations []string
-	
+
 	if len(ineffectivePatterns) > len(patterns)/4 {
 		recommendations = append(recommendations, "High number of ineffective patterns - consider pattern cleanup")
 	}
-	
+
 	// Count patterns by type
 	typeCount := make(map[string]int)
 	for _, pattern := range patterns {
 		typeCount[pattern.Type]++
 	}
-	
+
 	if typeCount["regex"] > len(patterns)/2 {
 		recommendations = append(recommendations, "High number of regex patterns - consider performance impact")
 	}
-	
+
 	if len(patterns) < 10 {
 		recommendations = append(recommendations, "Consider adding more patterns for comprehensive moderation")
 	}
-	
+
 	return recommendations
 }
 
@@ -439,13 +439,13 @@ func (pm *PatternManager) analyzePatternForOptimization(pattern *ModerationPatte
 	if pattern.Effectiveness > 0.7 {
 		return nil // Pattern is already effective
 	}
-	
+
 	optimization := &PatternOptimization{
-		PatternID:   pattern.ID,
-		PatternName: pattern.Name,
+		PatternID:            pattern.ID,
+		PatternName:          pattern.Name,
 		CurrentEffectiveness: pattern.Effectiveness,
 	}
-	
+
 	// Generate optimization suggestions based on pattern type and performance
 	if pattern.Type == "keyword" && pattern.FalsePositiveCount > 0 {
 		optimization.Suggestions = append(optimization.Suggestions, OptimizationSuggestion{
@@ -454,7 +454,7 @@ func (pm *PatternManager) analyzePatternForOptimization(pattern *ModerationPatte
 			Impact:      "medium",
 		})
 	}
-	
+
 	if pattern.MatchCount == 0 {
 		optimization.Suggestions = append(optimization.Suggestions, OptimizationSuggestion{
 			Type:        "relevance",
@@ -462,7 +462,7 @@ func (pm *PatternManager) analyzePatternForOptimization(pattern *ModerationPatte
 			Impact:      "high",
 		})
 	}
-	
+
 	if pattern.FalsePositiveCount > pattern.MatchCount/3 {
 		optimization.Suggestions = append(optimization.Suggestions, OptimizationSuggestion{
 			Type:        "precision",
@@ -470,11 +470,11 @@ func (pm *PatternManager) analyzePatternForOptimization(pattern *ModerationPatte
 			Impact:      "high",
 		})
 	}
-	
+
 	if len(optimization.Suggestions) == 0 {
 		return nil
 	}
-	
+
 	return optimization
 }
 
@@ -487,7 +487,7 @@ type ModerationPattern struct {
 	Type               string    `json:"type" dynamodbav:"type"` // keyword/regex/phrase/domain/ip/hash
 	Content            string    `json:"content" dynamodbav:"content"`
 	Severity           string    `json:"severity" dynamodbav:"severity"` // low/medium/high/critical
-	Action             string    `json:"action" dynamodbav:"action"` // flag/hide/block/escalate
+	Action             string    `json:"action" dynamodbav:"action"`     // flag/hide/block/escalate
 	Active             bool      `json:"active" dynamodbav:"active"`
 	MatchCount         int64     `json:"match_count" dynamodbav:"match_count"`
 	FalsePositiveCount int64     `json:"false_positive_count" dynamodbav:"false_positive_count"`
@@ -500,12 +500,12 @@ type ModerationPattern struct {
 }
 
 type ContentToModerate struct {
-	ID        string `json:"id"`
-	Text      string `json:"text"`
-	ImageHash string `json:"image_hash,omitempty"`
-	TextHash  string `json:"text_hash,omitempty"`
-	Author    string `json:"author"`
-	Type      string `json:"type"` // post/comment/message/profile
+	ID        string                 `json:"id"`
+	Text      string                 `json:"text"`
+	ImageHash string                 `json:"image_hash,omitempty"`
+	TextHash  string                 `json:"text_hash,omitempty"`
+	Author    string                 `json:"author"`
+	Type      string                 `json:"type"` // post/comment/message/profile
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -552,7 +552,7 @@ type PatternOptimization struct {
 }
 
 type OptimizationSuggestion struct {
-	Type        string `json:"type"`        // specificity/relevance/precision/performance
+	Type        string `json:"type"` // specificity/relevance/precision/performance
 	Description string `json:"description"`
-	Impact      string `json:"impact"`      // low/medium/high
+	Impact      string `json:"impact"` // low/medium/high
 }

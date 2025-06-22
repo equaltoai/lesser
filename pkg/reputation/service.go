@@ -203,7 +203,7 @@ func (s *Service) gatherCalculationInput(ctx context.Context, actorID string) (*
 	input.PostCount = postCount
 
 	// Get follower count
-	followerCount, err := s.storage.GetFollowerCount(ctx, actorID)
+	followerCount, err := s.storage.GetFollowersCount(ctx, actorID)
 	if err != nil {
 		s.logger.Warn("Failed to get follower count", zap.Error(err))
 		input.FollowerCount = 0

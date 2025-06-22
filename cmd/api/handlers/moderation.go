@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -161,7 +162,7 @@ func (h *Handler) HandleModerationQueue(ctx context.Context, request events.APIG
 			ID:              item.Event.ID,
 			ObjectID:        item.Event.ObjectID,
 			ObjectType:      item.Event.ObjectType,
-			ObjectPreview:   "", // TODO: Fetch object preview
+			ObjectPreview:   h.getObjectPreview(ctx, item.Event.ObjectID, item.Event.ObjectType),
 			AuthorID:        item.Event.ActorID,
 			Category:        string(item.Event.Category),
 			Severity:        int(item.Event.Severity),
@@ -380,7 +381,7 @@ func (h *Handler) HandleGetConsensus(ctx context.Context, request events.APIGate
 
 		reviewResponses[i] = &models.ConsensusReview{
 			ReviewerID:     review.ReviewerID,
-			ReviewerDomain: "", // TODO: Extract domain from reviewer ID
+			ReviewerDomain: h.extractDomainFromActor(review.ReviewerID),
 			Action:         string(review.Action),
 			Confidence:     review.Confidence,
 			TrustWeight:    trustScore,
@@ -464,7 +465,7 @@ func (h *Handler) HandleGetTrustRelationships(ctx context.Context, request event
 		response[i] = models.TrustRelationshipResponse{
 			ID:            rel.ID,
 			TrusteeID:     rel.TrusteeID,
-			TrusteeDomain: "", // TODO: Extract domain from trustee ID
+			TrusteeDomain: h.extractDomainFromActor(rel.TrusteeID),
 			Category:      string(rel.Category),
 			Score:         rel.Score,
 			Confidence:    rel.Confidence,
@@ -656,4 +657,47 @@ func (h *Handler) HandleGetTrustScore(ctx context.Context, request events.APIGat
 	}
 
 	return common.OK(resp), nil
+}
+
+// Helper methods for moderation
+func (h *Handler) getObjectPreview(ctx context.Context, objectID, objectType string) string {
+	switch objectType {
+	case "status":
+		statusInterface, err := h.store.GetStatus(ctx, objectID)
+		if err != nil {
+			return ""
+		}
+
+		// Handle interface{} type with safe type assertion
+		if statusMap, ok := statusInterface.(map[string]interface{}); ok {
+			if content, ok := statusMap["Content"].(string); ok {
+				if len(content) > 100 {
+					return content[:100] + "..."
+				}
+				return content
+			}
+		}
+		return ""
+	case "account":
+		user, err := h.store.GetUser(ctx, objectID)
+		if err != nil {
+			return ""
+		}
+		return fmt.Sprintf("@%s - %s", user.Username, user.DisplayName)
+	default:
+		return ""
+	}
+}
+
+func (h *Handler) extractDomainFromActor(actorID string) string {
+	if strings.Contains(actorID, "://") {
+		parsed, err := url.Parse(actorID)
+		if err != nil {
+			return ""
+		}
+		return parsed.Host
+	}
+
+	// If actorID is just a username, assume local domain
+	return h.cfg.Domain
 }

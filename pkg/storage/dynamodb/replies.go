@@ -16,17 +16,17 @@ import (
 // GetReplies retrieves all replies to a given object
 func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error) {
 	log := common.WithContext(ctx)
-	
+
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	
+
 	// Ensure we have the full object URL for GSI6 key
 	parentID := objectID
 	if !strings.HasPrefix(objectID, "http") {
 		parentID = fmt.Sprintf("%s/objects/%s", s.getDomainURL(), objectID)
 	}
-	
+
 	// Use GSI6 to efficiently query replies
 	input := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
@@ -38,7 +38,7 @@ func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit
 		Limit:            aws.Int32(int32(limit)),
 		ScanIndexForward: aws.Bool(true), // Oldest replies first
 	}
-	
+
 	// Add pagination if cursor provided
 	if cursor != "" {
 		// Cursor is in format "timestamp#objectID"
@@ -47,7 +47,7 @@ func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit
 			"GSI6SK": &types.AttributeValueMemberS{Value: cursor},
 		}
 	}
-	
+
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
 		log.Error("failed to query for replies",
@@ -55,9 +55,9 @@ func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query for replies: %w", err)
 	}
-	
+
 	// Cost tracking is handled automatically by the wrapped DynamoDB client
-	
+
 	replies := make([]interface{}, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record ObjectRecord
@@ -66,16 +66,16 @@ func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit
 				zap.Error(err))
 			continue
 		}
-		
+
 		// Convert Object to interface{} format expected by converter
 		if record.Object != nil {
 			objMap := s.objectToMap(record.Object)
 			replies = append(replies, objMap)
 		}
 	}
-	
+
 	// No need to sort - GSI6 already returns in timestamp order
-	
+
 	var nextCursor string
 	if result.LastEvaluatedKey != nil {
 		// Extract GSI6SK for cursor (format: timestamp#objectID)
@@ -83,36 +83,36 @@ func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit
 			nextCursor = sk.Value
 		}
 	}
-	
+
 	log.Debug("found replies",
 		zap.String("object_id", objectID),
 		zap.Int("count", len(replies)),
 		zap.String("next_cursor", nextCursor))
-	
+
 	return replies, nextCursor, nil
 }
 
 // CountReplies counts the number of replies to an object
 func (s *dynamoDBStorage) CountReplies(ctx context.Context, objectID string) (int, error) {
 	log := common.WithContext(ctx)
-	
+
 	// Construct full object key for stats lookup
 	objectKey := objectID
 	if !strings.HasPrefix(objectID, "http") {
 		objectKey = fmt.Sprintf("%s/objects/%s", s.getDomainURL(), objectID)
 	}
-	
+
 	// First check if we have a cached count
 	countKey := map[string]types.AttributeValue{
 		"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", objectKey)},
 		"SK": &types.AttributeValueMemberS{Value: "STATS"},
 	}
-	
+
 	getResult, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: s.getTableName(),
 		Key:       countKey,
 	})
-	
+
 	if err == nil && getResult.Item != nil {
 		// Extract reply_count if it exists
 		if countAttr, ok := getResult.Item["reply_count"]; ok {
@@ -123,17 +123,17 @@ func (s *dynamoDBStorage) CountReplies(ctx context.Context, objectID string) (in
 			}
 		}
 	}
-	
+
 	// Use GSI6 to efficiently count replies
 	var count int
 	var lastEvaluatedKey map[string]types.AttributeValue
-	
+
 	// Ensure we have the full object URL for GSI6 key
 	parentID := objectID
 	if !strings.HasPrefix(objectID, "http") {
 		parentID = fmt.Sprintf("%s/objects/%s", s.getDomainURL(), objectID)
 	}
-	
+
 	for {
 		input := &dynamodb.QueryInput{
 			TableName:              s.getTableName(),
@@ -144,11 +144,11 @@ func (s *dynamoDBStorage) CountReplies(ctx context.Context, objectID string) (in
 			},
 			Select: types.SelectCount,
 		}
-		
+
 		if lastEvaluatedKey != nil {
 			input.ExclusiveStartKey = lastEvaluatedKey
 		}
-		
+
 		result, err := s.client.Query(ctx, input)
 		if err != nil {
 			log.Error("failed to count replies",
@@ -156,31 +156,31 @@ func (s *dynamoDBStorage) CountReplies(ctx context.Context, objectID string) (in
 				zap.Error(err))
 			return 0, fmt.Errorf("failed to count replies: %w", err)
 		}
-		
+
 		count += int(result.Count)
-		
+
 		if result.LastEvaluatedKey == nil {
 			break
 		}
 		lastEvaluatedKey = result.LastEvaluatedKey
 	}
-	
+
 	// Cache the count for future use
 	s.updateReplyCount(ctx, objectID, count)
-	
+
 	return count, nil
 }
 
 // IncrementReplyCount increments the reply count for an object
 func (s *dynamoDBStorage) IncrementReplyCount(ctx context.Context, objectID string) error {
 	log := common.WithContext(ctx)
-	
+
 	// Construct full object key
 	objectKey := objectID
 	if !strings.HasPrefix(objectID, "http") {
 		objectKey = fmt.Sprintf("%s/objects/%s", s.getDomainURL(), objectID)
 	}
-	
+
 	input := &dynamodb.UpdateItemInput{
 		TableName: s.getTableName(),
 		Key: map[string]types.AttributeValue{
@@ -193,7 +193,7 @@ func (s *dynamoDBStorage) IncrementReplyCount(ctx context.Context, objectID stri
 			":now": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 		},
 	}
-	
+
 	_, err := s.client.UpdateItem(ctx, input)
 	if err != nil {
 		log.Error("failed to increment reply count",
@@ -201,20 +201,20 @@ func (s *dynamoDBStorage) IncrementReplyCount(ctx context.Context, objectID stri
 			zap.Error(err))
 		return fmt.Errorf("failed to increment reply count: %w", err)
 	}
-	
+
 	return nil
 }
 
 // IncrementReblogCount increments the reblog count for an object
 func (s *dynamoDBStorage) IncrementReblogCount(ctx context.Context, objectID string) error {
 	log := common.WithContext(ctx)
-	
+
 	// Construct full object key
 	objectKey := objectID
 	if !strings.HasPrefix(objectID, "http") {
 		objectKey = fmt.Sprintf("%s/objects/%s", s.getDomainURL(), objectID)
 	}
-	
+
 	input := &dynamodb.UpdateItemInput{
 		TableName: s.getTableName(),
 		Key: map[string]types.AttributeValue{
@@ -227,7 +227,7 @@ func (s *dynamoDBStorage) IncrementReblogCount(ctx context.Context, objectID str
 			":now": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 		},
 	}
-	
+
 	_, err := s.client.UpdateItem(ctx, input)
 	if err != nil {
 		log.Error("failed to increment reblog count",
@@ -235,7 +235,7 @@ func (s *dynamoDBStorage) IncrementReblogCount(ctx context.Context, objectID str
 			zap.Error(err))
 		return fmt.Errorf("failed to increment reblog count: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -246,7 +246,7 @@ func (s *dynamoDBStorage) updateReplyCount(ctx context.Context, objectID string,
 	if !strings.HasPrefix(objectID, "http") {
 		objectKey = fmt.Sprintf("%s/objects/%s", s.getDomainURL(), objectID)
 	}
-	
+
 	input := &dynamodb.UpdateItemInput{
 		TableName: s.getTableName(),
 		Key: map[string]types.AttributeValue{
@@ -259,7 +259,7 @@ func (s *dynamoDBStorage) updateReplyCount(ctx context.Context, objectID string,
 			":now":   &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 		},
 	}
-	
+
 	s.client.UpdateItem(ctx, input)
 }
 
@@ -278,15 +278,15 @@ func (s *dynamoDBStorage) objectToMap(obj *Object) map[string]interface{} {
 		"cc":           obj.CC,
 		"sensitive":    obj.Sensitive,
 	}
-	
+
 	if obj.InReplyTo != nil {
 		objMap["inReplyTo"] = *obj.InReplyTo
 	}
-	
+
 	if !obj.Updated.IsZero() {
 		objMap["updated"] = obj.Updated.Format(time.RFC3339)
 	}
-	
+
 	if len(obj.Attachment) > 0 {
 		attachments := make([]interface{}, len(obj.Attachment))
 		for i, att := range obj.Attachment {
@@ -301,7 +301,7 @@ func (s *dynamoDBStorage) objectToMap(obj *Object) map[string]interface{} {
 		}
 		objMap["attachment"] = attachments
 	}
-	
+
 	if len(obj.Tag) > 0 {
 		tags := make([]interface{}, len(obj.Tag))
 		for i, tag := range obj.Tag {
@@ -313,7 +313,6 @@ func (s *dynamoDBStorage) objectToMap(obj *Object) map[string]interface{} {
 		}
 		objMap["tag"] = tags
 	}
-	
+
 	return objMap
 }
-
