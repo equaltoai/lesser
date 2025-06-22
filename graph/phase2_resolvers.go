@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/aron23/lesser/graph/model"
@@ -24,35 +25,40 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 		limit = *first
 	}
 
-	// In production, this would fetch from Team 1's federation cost infrastructure
-	// For now, generate sample data
-	edges := make([]*model.FederationCostEdge, 0, limit)
-
-	// Sample domains
-	domains := []string{
-		"mastodon.social",
-		"fosstodon.org",
-		"hachyderm.io",
-		"social.vivaldi.net",
-		"mstdn.jp",
-		"mas.to",
-		"infosec.exchange",
-		"techhub.social",
+	// Get cursor for pagination
+	cursor := ""
+	if after != nil {
+		cursor = string(*after)
 	}
 
-	// Generate federation cost data for each domain
-	for i, domain := range domains {
-		if i >= limit {
-			break
-		}
+	// Fetch real federation costs from storage
+	endTime := time.Now()
+	startTime := endTime.AddDate(0, -1, 0) // Last month
+	
+	costs, nextCursor, err := r.Storage.GetFederationCosts(ctx, startTime, endTime, limit, cursor)
+	if err != nil {
+		r.Logger.Error("Failed to get federation costs", zap.Error(err))
+		// Return empty result instead of error for better UX
+		return &model.FederationCostConnection{
+			Edges: []*model.FederationCostEdge{},
+			PageInfo: &model.PageInfo{
+				HasNextPage:     false,
+				HasPreviousPage: false,
+			},
+			TotalCount: 0,
+		}, nil
+	}
 
-		// Calculate health score based on metrics
-		errorRate := randomFloat64() * 0.1 // 0-10% error rate
-		healthScore := (1.0 - errorRate) * 100
+	// Convert to GraphQL model
+	edges := make([]*model.FederationCostEdge, 0, len(costs))
+	
+	for i, cost := range costs {
+		// Calculate health score based on error rate
+		healthScore := (1.0 - cost.ErrorRate) * 100
 
-		// Generate recommendation based on health
+		// Generate recommendation based on metrics
 		var recommendation string
-		if errorRate > 0.05 {
+		if cost.ErrorRate > 0.05 {
 			recommendation = "Consider rate limiting due to high error rate"
 		} else if healthScore > 95 {
 			recommendation = "Healthy federation, no action needed"
@@ -60,68 +66,73 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 			recommendation = "Monitor federation health"
 		}
 
-		cost := &model.FederationCost{
-			Domain:         domain,
-			IngressBytes:   randomInt(1000000000), // Up to 1GB
-			EgressBytes:    randomInt(500000000),  // Up to 500MB
-			RequestCount:   randomInt(100000),
-			ErrorRate:      errorRate,
-			MonthlyCostUsd: randomFloat64() * 100, // $0-100
+		federationCost := &model.FederationCost{
+			Domain:         cost.Domain,
+			IngressBytes:   int(cost.IngressBytes),
+			EgressBytes:    int(cost.EgressBytes),
+			RequestCount:   int(cost.RequestCount),
+			ErrorRate:      cost.ErrorRate,
+			MonthlyCostUsd: cost.EstimatedCostUSD,
 			HealthScore:    healthScore,
 			Recommendation: &recommendation,
-			LastUpdated:    model.Time(time.Now().Add(-time.Duration(randomInt(60)) * time.Minute)),
+			LastUpdated:    model.Time(cost.LastUpdated),
 		}
 
 		// Add cost breakdown
-		cost.Breakdown = &model.CostBreakdown{
+		federationCost.Breakdown = &model.CostBreakdown{
 			Period:           model.PeriodMonth,
-			TotalCost:        cost.MonthlyCostUsd,
-			DynamoDBCost:     cost.MonthlyCostUsd * 0.3,
-			S3StorageCost:    cost.MonthlyCostUsd * 0.2,
-			LambdaCost:       cost.MonthlyCostUsd * 0.4,
-			DataTransferCost: cost.MonthlyCostUsd * 0.1,
+			TotalCost:        cost.EstimatedCostUSD,
+			DynamoDBCost:     cost.EstimatedCostUSD * 0.3,
+			S3StorageCost:    cost.EstimatedCostUSD * 0.2,
+			LambdaCost:       cost.EstimatedCostUSD * 0.4,
+			DataTransferCost: cost.EstimatedCostUSD * 0.1,
 			Breakdown: []*model.CostItem{
 				{
 					Operation: "Federation Ingress",
-					Count:     cost.RequestCount / 2,
-					Cost:      cost.MonthlyCostUsd * 0.4,
+					Count:     int(cost.IngressBytes / 1000000), // Convert to MB
+					Cost:      cost.EstimatedCostUSD * 0.4,
 				},
 				{
 					Operation: "Federation Egress",
-					Count:     cost.RequestCount / 2,
-					Cost:      cost.MonthlyCostUsd * 0.3,
+					Count:     int(cost.EgressBytes / 1000000), // Convert to MB
+					Cost:      cost.EstimatedCostUSD * 0.3,
 				},
 				{
-					Operation: "Storage",
-					Count:     cost.IngressBytes / 1000000, // MB
-					Cost:      cost.MonthlyCostUsd * 0.2,
+					Operation: "Request Processing",
+					Count:     int(cost.RequestCount),
+					Cost:      cost.EstimatedCostUSD * 0.3,
 				},
 			},
 		}
 
 		edge := &model.FederationCostEdge{
-			Node:   cost,
-			Cursor: model.Cursor(fmt.Sprintf("cursor-%d", i)),
+			Node:   federationCost,
+			Cursor: model.Cursor(fmt.Sprintf("%s#%d", cost.Domain, i)),
 		}
 		edges = append(edges, edge)
 	}
 
+	// Create page info
+	pageInfo := &model.PageInfo{
+		HasNextPage:     nextCursor != "",
+		HasPreviousPage: cursor != "",
+	}
+	
+	if len(edges) > 0 {
+		pageInfo.StartCursor = &edges[0].Cursor
+		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
+	}
+
 	// Create connection
-	hasNext := len(domains) > limit
 	connection := &model.FederationCostConnection{
-		Edges: edges,
-		PageInfo: &model.PageInfo{
-			HasNextPage:     hasNext,
-			HasPreviousPage: after != nil && *after != "",
-			StartCursor:     &edges[0].Cursor,
-			EndCursor:       &edges[len(edges)-1].Cursor,
-		},
-		TotalCount: len(domains),
+		Edges:      edges,
+		PageInfo:   pageInfo,
+		TotalCount: len(edges),
 	}
 
 	r.Logger.Info("Federation costs queried",
 		zap.Int("count", len(edges)),
-		zap.Bool("hasNext", hasNext))
+		zap.Bool("hasNext", nextCursor != ""))
 
 	return connection, nil
 }
@@ -131,54 +142,110 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 	// Track the query
 	r.CostTracker.TrackDynamoRead(2) // Multiple reads for detailed report
 
-	// Determine health status based on domain
-	status := model.InstanceHealthStatusHealthy
-	var issues []*model.HealthIssue
-	recommendations := []string{}
-
-	// Simulate different health scenarios
-	if domain == "problematic.instance" {
-		status = model.InstanceHealthStatusCritical
-		issues = append(issues, &model.HealthIssue{
-			Type:        "HIGH_ERROR_RATE",
-			Severity:    model.IssueSeverityCritical,
-			Description: "Error rate exceeds 10%",
-			DetectedAt:  model.Time(time.Now().Add(-2 * time.Hour)),
-			Impact:      "Federation may be unreliable",
-		})
-		recommendations = append(recommendations, "Consider blocking this instance temporarily")
-	} else if domain == "slow.instance" {
-		status = model.InstanceHealthStatusWarning
-		issues = append(issues, &model.HealthIssue{
-			Type:        "SLOW_RESPONSE",
-			Severity:    model.IssueSeverityMedium,
-			Description: "Average response time > 5s",
-			DetectedAt:  model.Time(time.Now().Add(-30 * time.Minute)),
-			Impact:      "Delayed federation activities",
-		})
-		recommendations = append(recommendations, "Enable request caching for this instance")
+	// Get health report from storage (last 24 hours)
+	healthReport, err := r.Storage.GetInstanceHealthReport(ctx, domain, 24*time.Hour)
+	if err != nil {
+		r.Logger.Error("Failed to get instance health report", 
+			zap.String("domain", domain),
+			zap.Error(err))
+		
+		// Return a default report on error
+		return &model.InstanceHealthReport{
+			Domain: domain,
+			Status: model.InstanceHealthStatusUnknown,
+			Metrics: &model.InstanceHealthMetrics{
+				ResponseTime:    0,
+				ErrorRate:       0,
+				FederationDelay: 0,
+				QueueDepth:      0,
+				CostEfficiency:  0,
+			},
+			Issues:          []*model.HealthIssue{},
+			Recommendations: []string{"Unable to retrieve health data"},
+			LastChecked:     model.Time(time.Now()),
+		}, nil
 	}
 
-	if len(recommendations) == 0 {
-		recommendations = append(recommendations, "No action needed, instance is healthy")
+	// Convert storage model to GraphQL model
+	status := model.InstanceHealthStatusHealthy
+	switch healthReport.Status {
+	case "critical":
+		status = model.InstanceHealthStatusCritical
+	case "warning":
+		status = model.InstanceHealthStatusWarning
+	case "healthy":
+		status = model.InstanceHealthStatusHealthy
+	default:
+		status = model.InstanceHealthStatusUnknown
+	}
+
+	// Convert issues to GraphQL model
+	issues := make([]*model.HealthIssue, 0, len(healthReport.Issues))
+	for _, issue := range healthReport.Issues {
+		// Determine severity based on issue content
+		severity := model.IssueSeverityLow
+		if strings.Contains(issue, "High error rate") || strings.Contains(issue, "critical") {
+			severity = model.IssueSeverityCritical
+		} else if strings.Contains(issue, "Elevated") || strings.Contains(issue, "warning") {
+			severity = model.IssueSeverityMedium
+		}
+
+		healthIssue := &model.HealthIssue{
+			Type:        determineIssueType(issue),
+			Severity:    severity,
+			Description: issue,
+			DetectedAt:  model.Time(healthReport.LastChecked),
+			Impact:      determineImpact(issue),
+		}
+		issues = append(issues, healthIssue)
+	}
+
+	// Calculate cost efficiency based on error rate and response time
+	costEfficiency := 1.0 - healthReport.ErrorRate
+	if healthReport.ResponseTime > 1000 { // Penalize slow responses
+		costEfficiency *= (1000 / healthReport.ResponseTime)
 	}
 
 	report := &model.InstanceHealthReport{
 		Domain: domain,
 		Status: status,
 		Metrics: &model.InstanceHealthMetrics{
-			ResponseTime:    randomFloat64() * 5, // 0-5 seconds
-			ErrorRate:       randomFloat64() * 0.1,
-			FederationDelay: randomFloat64() * 10,
-			QueueDepth:      randomInt(1000),
-			CostEfficiency:  0.8 + randomFloat64()*0.2, // 80-100%
+			ResponseTime:    healthReport.ResponseTime / 1000, // Convert ms to seconds
+			ErrorRate:       healthReport.ErrorRate,
+			FederationDelay: healthReport.FederationDelay,
+			QueueDepth:      healthReport.QueueDepth,
+			CostEfficiency:  costEfficiency,
 		},
 		Issues:          issues,
-		Recommendations: recommendations,
-		LastChecked:     model.Time(time.Now()),
+		Recommendations: healthReport.Recommendations,
+		LastChecked:     model.Time(healthReport.LastChecked),
 	}
 
 	return report, nil
+}
+
+// Helper function to determine issue type from description
+func determineIssueType(issue string) string {
+	if strings.Contains(issue, "error rate") {
+		return "HIGH_ERROR_RATE"
+	} else if strings.Contains(issue, "response time") {
+		return "SLOW_RESPONSE"
+	} else if strings.Contains(issue, "queue") {
+		return "QUEUE_BACKLOG"
+	}
+	return "GENERAL_ISSUE"
+}
+
+// Helper function to determine impact from issue
+func determineImpact(issue string) string {
+	if strings.Contains(issue, "error rate") {
+		return "Federation may be unreliable"
+	} else if strings.Contains(issue, "response time") {
+		return "Delayed federation activities"
+	} else if strings.Contains(issue, "queue") {
+		return "Processing delays expected"
+	}
+	return "May affect federation performance"
 }
 
 // CostProjections returns cost projections for the specified period
@@ -186,40 +253,60 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 	// Track the query
 	r.CostTracker.TrackDynamoRead(1)
 
-	currentCost := 1250.50
-	projectedCost := currentCost * 1.15 // 15% growth projection
+	// Get cost projections from storage
+	periodStr := string(period)
+	projections, err := r.Storage.GetCostProjections(ctx, periodStr)
+	if err != nil {
+		r.Logger.Error("Failed to get cost projections",
+			zap.String("period", periodStr),
+			zap.Error(err))
+		
+		// Return default projections on error
+		return &model.CostProjection{
+			Period:        period,
+			CurrentCost:   0,
+			ProjectedCost: 0,
+			Variance:      0,
+			TopCostDrivers: []*model.CostDriver{},
+			Recommendations: []string{"Unable to generate projections"},
+		}, nil
+	}
+
+	// Convert storage model to GraphQL model
+	topDrivers := make([]*model.CostDriver, 0, len(projections.TopDrivers))
+	for _, driver := range projections.TopDrivers {
+		// Determine trend
+		trend := model.TrendStable
+		switch driver.Trend {
+		case "increasing":
+			trend = model.TrendIncreasing
+		case "decreasing":
+			trend = model.TrendDecreasing
+		}
+
+		costDriver := &model.CostDriver{
+			Type:           driver.Type,
+			Domain:         &driver.Domain,
+			Cost:           driver.Cost,
+			PercentOfTotal: driver.PercentOfTotal,
+			Trend:          trend,
+		}
+		
+		// Only set domain if it's not empty
+		if driver.Domain == "" {
+			costDriver.Domain = nil
+		}
+		
+		topDrivers = append(topDrivers, costDriver)
+	}
 
 	projection := &model.CostProjection{
-		Period:        period,
-		CurrentCost:   currentCost,
-		ProjectedCost: projectedCost,
-		Variance:      0.15,
-		TopCostDrivers: []*model.CostDriver{
-			{
-				Type:           "Federation Traffic",
-				Domain:         stringPtr("mastodon.social"),
-				Cost:           450.0,
-				PercentOfTotal: 36.0,
-				Trend:          model.TrendIncreasing,
-			},
-			{
-				Type:           "Media Storage",
-				Cost:           380.0,
-				PercentOfTotal: 30.4,
-				Trend:          model.TrendStable,
-			},
-			{
-				Type:           "AI Processing",
-				Cost:           220.0,
-				PercentOfTotal: 17.6,
-				Trend:          model.TrendIncreasing,
-			},
-		},
-		Recommendations: []string{
-			"Enable progressive media loading to reduce bandwidth costs",
-			"Implement federation rate limiting for high-traffic instances",
-			"Consider archiving old media to cheaper storage tiers",
-		},
+		Period:          period,
+		CurrentCost:     projections.CurrentCost,
+		ProjectedCost:   projections.ProjectedCost,
+		Variance:        projections.Variance,
+		TopCostDrivers:  topDrivers,
+		Recommendations: projections.Recommendations,
 	}
 
 	return projection, nil

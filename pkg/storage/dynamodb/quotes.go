@@ -6,24 +6,19 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 )
 
-// QuoteRelationship represents a quote relationship between notes
-type QuoteRelationship struct {
-	PK             string     `dynamodbav:"PK"` // QUOTE#targetNoteID
-	SK             string     `dynamodbav:"SK"` // QUOTE#quoteNoteID
-	TargetNoteID   string     `dynamodbav:"TargetNoteID"`
-	QuoteNoteID    string     `dynamodbav:"QuoteNoteID"`
-	QuoterID       string     `dynamodbav:"QuoterID"`
-	TargetAuthorID string     `dynamodbav:"TargetAuthorID"`
-	Timestamp      time.Time  `dynamodbav:"Timestamp"`
-	Withdrawn      bool       `dynamodbav:"Withdrawn"`
-	WithdrawnAt    *time.Time `dynamodbav:"WithdrawnAt,omitempty"`
-
+// QuoteRelationshipRecord represents how quote relationships are stored in DynamoDB
+type QuoteRelationshipRecord struct {
+	PK               string     `dynamodbav:"PK"` // QUOTE#targetNoteID
+	SK               string     `dynamodbav:"SK"` // QUOTE#quoteNoteID
+	QuoteRelationship *storage.QuoteRelationship `dynamodbav:"QuoteRelationship"`
+	
 	// GSI attributes
 	GSI1PK string `dynamodbav:"GSI1PK"` // QUOTE_TARGET#targetNoteID (for quotes-by-target GSI)
 	GSI1SK string `dynamodbav:"GSI1SK"` // TIMESTAMP#timestamp
@@ -39,21 +34,27 @@ type QuoteStats struct {
 }
 
 // CreateQuoteRelationship creates a new quote relationship and updates stats
-func (s *dynamoDBStorage) CreateQuoteRelationship(ctx context.Context, quote *QuoteRelationship) error {
+func (s *dynamoDBStorage) CreateQuoteRelationship(ctx context.Context, quote *storage.QuoteRelationship) error {
 	// Validate input
-	if quote.TargetNoteID == "" || quote.QuoteNoteID == "" {
-		return fmt.Errorf("target note ID and quote note ID are required")
+	if quote.TargetNoteID == "" || quote.QuoterNoteID == "" {
+		return fmt.Errorf("target note ID and quoter note ID are required")
 	}
 
-	// Set timestamps and keys
-	quote.Timestamp = time.Now()
-	quote.PK = fmt.Sprintf("QUOTE#%s", quote.TargetNoteID)
-	quote.SK = fmt.Sprintf("QUOTE#%s", quote.QuoteNoteID)
-	quote.GSI1PK = fmt.Sprintf("QUOTE_TARGET#%s", quote.TargetNoteID)
-	quote.GSI1SK = fmt.Sprintf("TIMESTAMP#%d", quote.Timestamp.Unix())
+	// Set timestamps
+	now := time.Now()
+	quote.Timestamp = now
 
-	// Marshal the quote relationship
-	av, err := s.MarshalItem(quote)
+	// Create the record with proper keys
+	record := QuoteRelationshipRecord{
+		PK:                fmt.Sprintf("QUOTE#%s", quote.TargetNoteID),
+		SK:                fmt.Sprintf("QUOTE#%s", quote.QuoterNoteID),
+		QuoteRelationship: quote,
+		GSI1PK:            fmt.Sprintf("QUOTE_TARGET#%s", quote.TargetNoteID),
+		GSI1SK:            fmt.Sprintf("TIMESTAMP#%d", now.Unix()),
+	}
+
+	// Marshal the record
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal quote relationship: %w", err)
 	}
@@ -102,11 +103,11 @@ func (s *dynamoDBStorage) CreateQuoteRelationship(ctx context.Context, quote *Qu
 }
 
 // GetQuotesForNote retrieves quotes for a specific note with pagination
-func (s *dynamoDBStorage) GetQuotesForNote(ctx context.Context, noteID string, limit int, cursor string) ([]*QuoteRelationship, string, error) {
+func (s *dynamoDBStorage) GetQuotesForNote(ctx context.Context, noteID string, limit int, cursor string) ([]*storage.QuoteRelationship, string, error) {
 	// Build query input using GSI
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
-		IndexName:              aws.String("quotes-by-target"),
+		IndexName:              aws.String("GSI1"),
 		KeyConditionExpression: aws.String("GSI1PK = :pk"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("QUOTE_TARGET#%s", noteID)},
@@ -134,9 +135,9 @@ func (s *dynamoDBStorage) GetQuotesForNote(ctx context.Context, noteID string, l
 	}
 
 	// Unmarshal results
-	quotes := make([]*QuoteRelationship, 0, len(result.Items))
+	quotes := make([]*storage.QuoteRelationship, 0, len(result.Items))
 	for _, item := range result.Items {
-		var quote QuoteRelationship
+		var quote storage.QuoteRelationship
 		if err := s.UnmarshalItem(item, &quote); err != nil {
 			s.logger().Warn("failed to unmarshal quote", zap.Error(err))
 			continue
@@ -159,16 +160,46 @@ func (s *dynamoDBStorage) GetQuotesForNote(ctx context.Context, noteID string, l
 	return quotes, nextCursor, nil
 }
 
-// WithdrawQuote marks a quote as withdrawn (soft delete)
-func (s *dynamoDBStorage) WithdrawQuote(ctx context.Context, noteID, quoteID string) error {
+// WithdrawQuote marks a quote as withdrawn (soft delete) by quote note ID
+func (s *dynamoDBStorage) WithdrawQuote(ctx context.Context, quoteNoteID string) error {
 	now := time.Now()
+
+	// First, we need to find the quote relationship by quote note ID
+	// We need to scan for the quote since we only have the quote note ID
+	scanInput := &dynamodb.ScanInput{
+		TableName:        aws.String(s.tableName),
+		FilterExpression: aws.String("begins_with(PK, :pkPrefix) AND begins_with(SK, :skPrefix) AND QuoteRelationship.QuoterNoteID = :quoteNoteID"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pkPrefix":     &types.AttributeValueMemberS{Value: "QUOTE#"},
+			":skPrefix":     &types.AttributeValueMemberS{Value: "QUOTE#"},
+			":quoteNoteID": &types.AttributeValueMemberS{Value: quoteNoteID},
+		},
+		Limit: aws.Int32(1),
+	}
+
+	result, err := s.client.Scan(ctx, scanInput)
+	if err != nil {
+		return fmt.Errorf("failed to find quote relationship: %w", err)
+	}
+
+	if len(result.Items) == 0 {
+		return fmt.Errorf("quote relationship not found")
+	}
+
+	// Extract the quote record
+	var record QuoteRelationshipRecord
+	if err := s.UnmarshalItem(result.Items[0], &record); err != nil {
+		return fmt.Errorf("failed to unmarshal quote relationship: %w", err)
+	}
+	
+	quote := record.QuoteRelationship
 
 	// Update the quote relationship to mark as withdrawn
 	updateInput := &dynamodb.UpdateItemInput{
 		TableName: aws.String(s.tableName),
 		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("QUOTE#%s", noteID)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("QUOTE#%s", quoteID)},
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("QUOTE#%s", quote.TargetNoteID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("QUOTE#%s", quoteNoteID)},
 		},
 		UpdateExpression: aws.String("SET Withdrawn = :true, WithdrawnAt = :now"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
@@ -178,7 +209,7 @@ func (s *dynamoDBStorage) WithdrawQuote(ctx context.Context, noteID, quoteID str
 		ConditionExpression: aws.String("attribute_exists(PK) AND attribute_exists(SK)"),
 	}
 
-	_, err := s.client.UpdateItem(ctx, updateInput)
+	_, err = s.client.UpdateItem(ctx, updateInput)
 	if err != nil {
 		var ccf *types.ConditionalCheckFailedException
 		if errors.As(err, &ccf) {
@@ -191,7 +222,7 @@ func (s *dynamoDBStorage) WithdrawQuote(ctx context.Context, noteID, quoteID str
 	updateStatsInput := &dynamodb.UpdateItemInput{
 		TableName: aws.String(s.tableName),
 		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", noteID)},
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", quote.TargetNoteID)},
 			"SK": &types.AttributeValueMemberS{Value: "STATS#QUOTES"},
 		},
 		UpdateExpression:    aws.String("ADD QuoteCount :dec SET UpdatedAt = :now"),
@@ -207,15 +238,15 @@ func (s *dynamoDBStorage) WithdrawQuote(ctx context.Context, noteID, quoteID str
 	if err != nil {
 		s.logger().Warn("failed to update quote count on withdrawal",
 			zap.Error(err),
-			zap.String("targetNoteID", noteID))
+			zap.String("targetNoteID", quote.TargetNoteID))
 	}
 
 	// Cost tracking is handled automatically by the wrapped DynamoDB client
 
 	// Create audit trail entry
 	s.logger().Info("quote withdrawn",
-		zap.String("targetNoteID", noteID),
-		zap.String("quoteNoteID", quoteID),
+		zap.String("targetNoteID", quote.TargetNoteID),
+		zap.String("quoteNoteID", quoteNoteID),
 		zap.Time("withdrawnAt", now))
 
 	return nil
@@ -288,4 +319,36 @@ func (s *dynamoDBStorage) IsQuoteable(ctx context.Context, noteID string) (bool,
 	// Cost tracking is handled automatically by the wrapped DynamoDB client
 
 	return true, nil // Default to quoteable
+}
+
+// CountQuotes returns the number of quotes for a given note
+func (s *dynamoDBStorage) CountQuotes(ctx context.Context, noteID string) (int, error) {
+	stats, err := s.GetQuoteStats(ctx, noteID)
+	if err != nil {
+		return 0, err
+	}
+	return stats.QuoteCount, nil
+}
+
+// IsQuoted checks if an actor has quoted a specific note
+func (s *dynamoDBStorage) IsQuoted(ctx context.Context, actorID, noteID string) (bool, error) {
+	// Query for quotes by this actor on this note
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk"),
+		FilterExpression:       aws.String("QuoterID = :actor"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk":    &types.AttributeValueMemberS{Value: fmt.Sprintf("QUOTE_TARGET#%s", noteID)},
+			":actor": &types.AttributeValueMemberS{Value: actorID},
+		},
+		Limit: aws.Int32(1),
+	}
+
+	result, err := s.client.Query(ctx, input)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if quoted: %w", err)
+	}
+
+	return len(result.Items) > 0, nil
 }

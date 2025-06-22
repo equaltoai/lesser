@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -71,6 +72,12 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 
 	log.Info("delivering activity to remote inbox")
 
+	// Track start time for response time measurement
+	startTime := time.Now()
+
+	// Extract domain from target inbox URL
+	domain := extractDomainFromURL(targetInbox)
+
 	// Serialize the activity
 	body, err := json.Marshal(activity)
 	if err != nil {
@@ -78,10 +85,23 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		return fmt.Errorf("failed to marshal activity: %w", err)
 	}
 
+	// Record federation activity for cost tracking
+	federationActivity := &storage.FederationActivity{
+		Domain:       domain,
+		Type:         "egress",
+		ActivityType: activity.Type,
+		ByteSize:     int64(len(body)),
+		Timestamp:    startTime,
+	}
+
 	// Create the request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetInbox, bytes.NewReader(body))
 	if err != nil {
 		log.Error("failed to create request", zap.Error(err))
+		federationActivity.Success = false
+		federationActivity.ErrorMessage = err.Error()
+		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		go d.store.RecordFederationActivity(context.Background(), federationActivity)
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -94,6 +114,10 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	privateKeyPEM, err := d.store.GetActorPrivateKey(ctx, signingActor.PreferredUsername)
 	if err != nil {
 		log.Error("failed to get private key", zap.Error(err))
+		federationActivity.Success = false
+		federationActivity.ErrorMessage = err.Error()
+		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		go d.store.RecordFederationActivity(context.Background(), federationActivity)
 		return fmt.Errorf("failed to get private key: %w", err)
 	}
 
@@ -101,12 +125,20 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	privateKey, err := ParsePrivateKeyPEM([]byte(privateKeyPEM))
 	if err != nil {
 		log.Error("failed to parse private key", zap.Error(err))
+		federationActivity.Success = false
+		federationActivity.ErrorMessage = err.Error()
+		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		go d.store.RecordFederationActivity(context.Background(), federationActivity)
 		return fmt.Errorf("failed to parse private key: %w", err)
 	}
 
 	// Sign the request
 	if err := SignHTTPRequest(req, privateKey, signingActor.PublicKey.ID); err != nil {
 		log.Error("failed to sign request", zap.Error(err))
+		federationActivity.Success = false
+		federationActivity.ErrorMessage = err.Error()
+		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		go d.store.RecordFederationActivity(context.Background(), federationActivity)
 		return fmt.Errorf("failed to sign request: %w", err)
 	}
 
@@ -114,6 +146,10 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	resp, err := d.httpClient.Do(req)
 	if err != nil {
 		log.Error("failed to send request", zap.Error(err))
+		federationActivity.Success = false
+		federationActivity.ErrorMessage = err.Error()
+		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		go d.store.RecordFederationActivity(context.Background(), federationActivity)
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -121,17 +157,28 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	// Read the response body for logging
 	respBody, _ := io.ReadAll(resp.Body)
 
+	// Record response time
+	federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+
 	// Check the response
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		log.Info("activity delivered successfully",
 			zap.Int("status_code", resp.StatusCode),
 			zap.String("response", string(respBody)))
+		
+		federationActivity.Success = true
+		go d.store.RecordFederationActivity(context.Background(), federationActivity)
 		return nil
 	}
 
 	log.Warn("activity delivery failed",
 		zap.Int("status_code", resp.StatusCode),
 		zap.String("response", string(respBody)))
+
+	// Record failure
+	federationActivity.Success = false
+	federationActivity.ErrorMessage = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody))
+	go d.store.RecordFederationActivity(context.Background(), federationActivity)
 
 	// Return error for non-2xx status codes
 	return fmt.Errorf("delivery failed with status %d: %s", resp.StatusCode, string(respBody))
@@ -447,4 +494,13 @@ func extractHandleFromActorID(actorID, preferredUsername string) string {
 		return ""
 	}
 	return fmt.Sprintf("@%s@%s", preferredUsername, domain)
+}
+
+// extractDomainFromURL extracts the domain from a URL
+func extractDomainFromURL(urlStr string) string {
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
+		return "unknown"
+	}
+	return parsedURL.Host
 }

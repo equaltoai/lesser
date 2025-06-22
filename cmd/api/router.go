@@ -200,7 +200,7 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 		// Status interactions
 		r.Post("/statuses/{id}/favourite", wrapHandlerWithParam(h.HandleFavourite, "id"))
 		r.Post("/statuses/{id}/unfavourite", wrapHandlerWithParam(h.HandleUnfavourite, "id"))
-		r.Post("/statuses/{id}/reblog", wrapHandlerWithParam(h.HandleReblog, "id"))
+		r.Post("/statuses/{id}/reblog", wrapHandlerWithParam(h.HandleUnifiedReblog, "id"))
 		r.Post("/statuses/{id}/unreblog", wrapHandlerWithParam(h.HandleUnreblog, "id"))
 		r.Post("/statuses/{id}/bookmark", wrapHandlerWithParam(h.HandleBookmark, "id"))
 		r.Post("/statuses/{id}/unbookmark", wrapHandlerWithParam(h.HandleUnbookmark, "id"))

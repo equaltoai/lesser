@@ -77,6 +77,12 @@ type CreateStatusRequest struct {
 	ScheduledAt *string  `json:"scheduled_at,omitempty"`   // ISO 8601 datetime for scheduling
 }
 
+// ReblogRequest represents an enhanced reblog request that supports optional commentary
+type ReblogRequest struct {
+	Comment    *string `json:"comment,omitempty"`    // Optional commentary for quote boost
+	Visibility string  `json:"visibility,omitempty"` // Visibility for quote boost (defaults to public)
+}
+
 // Poll represents a poll in a status
 // Note: This struct is used for both requests and responses.
 // For requests, Options field contains simple strings.
@@ -141,6 +147,11 @@ type Status struct {
 	Emojis             []interface{}          `json:"emojis"`
 	Card               *interface{}           `json:"card"`
 	Poll               *Poll                  `json:"poll"`
+	
+	// Quote boost extensions
+	IsQuoteBoost     bool    `json:"is_quote_boost,omitempty"`
+	QuotedStatus     *Status `json:"quoted_status,omitempty"`
+	QuotedStatusID   *string `json:"quoted_status_id,omitempty"`
 }
 
 // Account represents a Mastodon-compatible account

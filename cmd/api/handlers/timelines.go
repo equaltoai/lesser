@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/aron23/lesser/cmd/api/models"
 	"github.com/aron23/lesser/pkg/activitypub"
@@ -230,14 +229,6 @@ func (h *Handler) HandlePublicTimeline(ctx context.Context, request events.APIGa
 			if username != "" {
 				objActor, _ = h.store.GetActor(ctx, username)
 			}
-		}
-
-		// Apply local/remote filter
-		if local && !strings.HasPrefix(attributedTo, h.cfg.BaseURL()) {
-			continue
-		}
-		if remote && strings.HasPrefix(attributedTo, h.cfg.BaseURL()) {
-			continue
 		}
 
 		// Check if blocked (only if authenticated)

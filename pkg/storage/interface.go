@@ -447,6 +447,12 @@ type Storage interface {
 	UpsertInstanceInfo(ctx context.Context, info *InstanceInfo) error
 	GetKnownInstances(ctx context.Context, limit int, cursor string) ([]*InstanceInfo, string, error)
 	GetFederationStatistics(ctx context.Context, startTime, endTime time.Time) (*FederationStats, error)
+	
+	// Federation cost tracking
+	RecordFederationActivity(ctx context.Context, activity *FederationActivity) error
+	GetFederationCosts(ctx context.Context, startTime, endTime time.Time, limit int, cursor string) ([]*FederationCost, string, error)
+	GetInstanceHealthReport(ctx context.Context, domain string, period time.Duration) (*InstanceHealthReport, error)
+	GetCostProjections(ctx context.Context, period string) (*CostProjection, error)
 
 	// Email domain blocks
 	CreateEmailDomainBlock(ctx context.Context, block *EmailDomainBlock) error
@@ -548,6 +554,16 @@ type Storage interface {
 	GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error)
 	CountReplies(ctx context.Context, objectID string) (int, error)
 	IncrementReplyCount(ctx context.Context, objectID string) error
+	
+	// Reblog operations
+	IncrementReblogCount(ctx context.Context, objectID string) error
+
+	// Quote operations
+	CreateQuoteRelationship(ctx context.Context, quote *QuoteRelationship) error
+	GetQuotesForNote(ctx context.Context, noteID string, limit int, cursor string) ([]*QuoteRelationship, string, error)
+	IsQuoted(ctx context.Context, actorID, noteID string) (bool, error)
+	WithdrawQuote(ctx context.Context, quoteNoteID string) error
+	CountQuotes(ctx context.Context, noteID string) (int, error)
 }
 
 // User represents a user account in the system
@@ -1594,4 +1610,75 @@ type DNSCacheEntry struct {
 	IPs        []string  `json:"ips" dynamodbav:"ips"`
 	ResolvedAt time.Time `json:"resolved_at" dynamodbav:"resolved_at"`
 	TTL        int       `json:"ttl" dynamodbav:"ttl"` // seconds
+}
+
+// QuoteRelationship represents a quote relationship between notes
+type QuoteRelationship struct {
+	ID             string     `json:"id" dynamodbav:"id"`
+	QuoterNoteID   string     `json:"quoter_note_id" dynamodbav:"quoter_note_id"`
+	TargetNoteID   string     `json:"target_note_id" dynamodbav:"target_note_id"`
+	QuoterID       string     `json:"quoter_id" dynamodbav:"quoter_id"`
+	TargetAuthorID string     `json:"target_author_id" dynamodbav:"target_author_id,omitempty"`
+	Timestamp      time.Time  `json:"timestamp" dynamodbav:"timestamp"`
+	Withdrawn      bool       `json:"withdrawn" dynamodbav:"withdrawn"`
+	WithdrawnAt    *time.Time `json:"withdrawn_at,omitempty" dynamodbav:"withdrawn_at,omitempty"`
+}
+
+// FederationActivity represents a single federation activity for cost tracking
+type FederationActivity struct {
+	ID            string    `json:"id" dynamodbav:"id"`
+	Domain        string    `json:"domain" dynamodbav:"domain"`
+	Type          string    `json:"type" dynamodbav:"type"` // ingress/egress
+	ActivityType  string    `json:"activity_type" dynamodbav:"activity_type"` // Create/Update/Delete/Follow/etc
+	ByteSize      int64     `json:"byte_size" dynamodbav:"byte_size"`
+	Success       bool      `json:"success" dynamodbav:"success"`
+	ResponseTime  int64     `json:"response_time" dynamodbav:"response_time"` // milliseconds
+	ErrorMessage  string    `json:"error_message,omitempty" dynamodbav:"error_message,omitempty"`
+	Timestamp     time.Time `json:"timestamp" dynamodbav:"timestamp"`
+}
+
+// FederationCost represents aggregated cost data for a domain
+type FederationCost struct {
+	Domain         string    `json:"domain" dynamodbav:"domain"`
+	Period         string    `json:"period" dynamodbav:"period"` // daily/monthly
+	IngressBytes   int64     `json:"ingress_bytes" dynamodbav:"ingress_bytes"`
+	EgressBytes    int64     `json:"egress_bytes" dynamodbav:"egress_bytes"`
+	RequestCount   int64     `json:"request_count" dynamodbav:"request_count"`
+	ErrorCount     int64     `json:"error_count" dynamodbav:"error_count"`
+	ErrorRate      float64   `json:"error_rate" dynamodbav:"error_rate"`
+	AvgResponseTime float64  `json:"avg_response_time" dynamodbav:"avg_response_time"`
+	EstimatedCostUSD float64 `json:"estimated_cost_usd" dynamodbav:"estimated_cost_usd"`
+	LastUpdated    time.Time `json:"last_updated" dynamodbav:"last_updated"`
+}
+
+// InstanceHealthReport represents health metrics for a federated instance
+type InstanceHealthReport struct {
+	Domain         string    `json:"domain" dynamodbav:"domain"`
+	Status         string    `json:"status" dynamodbav:"status"` // healthy/warning/critical
+	ResponseTime   float64   `json:"response_time" dynamodbav:"response_time"`
+	ErrorRate      float64   `json:"error_rate" dynamodbav:"error_rate"`
+	FederationDelay float64  `json:"federation_delay" dynamodbav:"federation_delay"`
+	QueueDepth     int       `json:"queue_depth" dynamodbav:"queue_depth"`
+	Issues         []string  `json:"issues" dynamodbav:"issues"`
+	Recommendations []string `json:"recommendations" dynamodbav:"recommendations"`
+	LastChecked    time.Time `json:"last_checked" dynamodbav:"last_checked"`
+}
+
+// CostProjection represents projected costs for federation
+type CostProjection struct {
+	Period        string               `json:"period" dynamodbav:"period"`
+	CurrentCost   float64              `json:"current_cost" dynamodbav:"current_cost"`
+	ProjectedCost float64              `json:"projected_cost" dynamodbav:"projected_cost"`
+	Variance      float64              `json:"variance" dynamodbav:"variance"`
+	TopDrivers    []CostDriver         `json:"top_drivers" dynamodbav:"top_drivers"`
+	Recommendations []string           `json:"recommendations" dynamodbav:"recommendations"`
+}
+
+// CostDriver represents a major cost contributor
+type CostDriver struct {
+	Type           string  `json:"type" dynamodbav:"type"`
+	Domain         string  `json:"domain,omitempty" dynamodbav:"domain,omitempty"`
+	Cost           float64 `json:"cost" dynamodbav:"cost"`
+	PercentOfTotal float64 `json:"percent_of_total" dynamodbav:"percent_of_total"`
+	Trend          string  `json:"trend" dynamodbav:"trend"` // increasing/stable/decreasing
 }

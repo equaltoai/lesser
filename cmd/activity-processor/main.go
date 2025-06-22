@@ -1836,11 +1836,22 @@ func fanOutToTimelines(ctx context.Context, activity *activitypub.Activity) erro
 
 	// 1. Write to public timeline if public
 	if visibility == "public" {
-		publicEntry := *baseEntry
-		publicEntry.TimelineType = "PUBLIC"
-		publicEntry.TimelineID = "LOCAL" // Local posts
-		publicEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
-		timelineEntries = append(timelineEntries, &publicEntry)
+		// Add to FEDERATED timeline
+		federatedEntry := *baseEntry
+		federatedEntry.TimelineType = "PUBLIC"
+		federatedEntry.TimelineID = "FEDERATED"
+		federatedEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
+		timelineEntries = append(timelineEntries, &federatedEntry)
+		
+		// Also add to LOCAL timeline since this is a local post
+		cfg := config.Get()
+		if strings.HasPrefix(activity.Actor, cfg.BaseURL()) {
+			localEntry := *baseEntry
+			localEntry.TimelineType = "PUBLIC"
+			localEntry.TimelineID = "LOCAL"
+			localEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
+			timelineEntries = append(timelineEntries, &localEntry)
+		}
 	}
 
 	// 2. Fan-out to followers' home timelines
@@ -1950,11 +1961,22 @@ func fanOutAnnounceToTimelines(ctx context.Context, activity *activitypub.Activi
 
 	// 1. Write to public timeline if the boost is public
 	if isPubliclyAddressed(activity.To, activity.CC) {
-		publicEntry := *baseEntry
-		publicEntry.TimelineType = "PUBLIC"
-		publicEntry.TimelineID = "LOCAL"
-		publicEntry.EntryID = fmt.Sprintf("%d#announce#%s", now.Unix(), activity.ID)
-		timelineEntries = append(timelineEntries, &publicEntry)
+		// Add to FEDERATED timeline
+		federatedEntry := *baseEntry
+		federatedEntry.TimelineType = "PUBLIC"
+		federatedEntry.TimelineID = "FEDERATED"
+		federatedEntry.EntryID = fmt.Sprintf("%d#announce#%s", now.Unix(), activity.ID)
+		timelineEntries = append(timelineEntries, &federatedEntry)
+		
+		// Only add to LOCAL timeline if the announcer is a local user
+		cfg := config.Get()
+		if strings.HasPrefix(activity.Actor, cfg.BaseURL()) {
+			localEntry := *baseEntry
+			localEntry.TimelineType = "PUBLIC"
+			localEntry.TimelineID = "LOCAL"
+			localEntry.EntryID = fmt.Sprintf("%d#announce#%s", now.Unix(), activity.ID)
+			timelineEntries = append(timelineEntries, &localEntry)
+		}
 	}
 
 	// 2. Fan-out to followers' home timelines

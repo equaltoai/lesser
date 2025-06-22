@@ -210,6 +210,9 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		// TODO: Extract mentions and add to To field
 		note.To = []string{}
 	}
+	
+	// Store visibility explicitly
+	note.Visibility = req.Visibility
 
 	// Handle reply
 	if req.InReplyToID != "" {

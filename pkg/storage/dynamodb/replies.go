@@ -205,6 +205,40 @@ func (s *dynamoDBStorage) IncrementReplyCount(ctx context.Context, objectID stri
 	return nil
 }
 
+// IncrementReblogCount increments the reblog count for an object
+func (s *dynamoDBStorage) IncrementReblogCount(ctx context.Context, objectID string) error {
+	log := common.WithContext(ctx)
+	
+	// Construct full object key
+	objectKey := objectID
+	if !strings.HasPrefix(objectID, "http") {
+		objectKey = fmt.Sprintf("%s/objects/%s", s.getDomainURL(), objectID)
+	}
+	
+	input := &dynamodb.UpdateItemInput{
+		TableName: s.getTableName(),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", objectKey)},
+			"SK": &types.AttributeValueMemberS{Value: "STATS"},
+		},
+		UpdateExpression: aws.String("ADD reblog_count :inc SET updated_at = :now"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":inc": &types.AttributeValueMemberN{Value: "1"},
+			":now": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+		},
+	}
+	
+	_, err := s.client.UpdateItem(ctx, input)
+	if err != nil {
+		log.Error("failed to increment reblog count",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return fmt.Errorf("failed to increment reblog count: %w", err)
+	}
+	
+	return nil
+}
+
 // Helper to update reply count (for caching)
 func (s *dynamoDBStorage) updateReplyCount(ctx context.Context, objectID string, count int) {
 	// Construct full object key
