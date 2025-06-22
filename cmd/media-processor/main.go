@@ -170,7 +170,11 @@ func handleMediaProcessing(ctx context.Context, sqsEvent events.SQSEvent) error 
 				zap.Error(err))
 			// Don't return error to avoid reprocessing
 			// Update job status as failed
-			updateJobStatus(ctx, event.JobID, "failed", nil, err.Error())
+			if updateErr := updateJobStatus(ctx, event.JobID, "failed", nil, err.Error()); updateErr != nil {
+				logger.Error("Failed to update job status",
+					zap.String("jobID", event.JobID),
+					zap.Error(updateErr))
+			}
 		}
 	}
 

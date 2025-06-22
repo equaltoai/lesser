@@ -3,6 +3,7 @@ package cost
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -57,7 +58,10 @@ func saveCostWithRetry(ctx context.Context, cost *OperationCost, logger *zap.Log
 	// Try to save buffered costs (best effort)
 	for _, bufferedCost := range bufferedCosts {
 		saveCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-		globalCostStorage.SaveOperationCost(saveCtx, bufferedCost)
+		if err := globalCostStorage.SaveOperationCost(saveCtx, bufferedCost); err != nil {
+			// Log error but continue - this is best effort
+			log.Printf("Warning: failed to save buffered operation cost: %v", err)
+		}
 		cancel()
 	}
 

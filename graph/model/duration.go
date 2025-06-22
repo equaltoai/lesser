@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"time"
 )
@@ -43,7 +44,11 @@ func (d *Duration) UnmarshalGQL(v interface{}) error {
 
 // MarshalGQL implements the graphql.Marshaler interface
 func (d Duration) MarshalGQL(w io.Writer) {
-	fmt.Fprintf(w, "%d", d)
+	if _, err := fmt.Fprintf(w, "%d", d); err != nil {
+		// Log error but don't return it as the interface doesn't support it
+		// This is typical for GraphQL marshalers
+		log.Printf("Warning: failed to write duration to GraphQL response: %v", err)
+	}
 }
 
 // String returns a formatted duration string

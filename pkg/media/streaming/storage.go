@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path"
 	"strings"
 	"sync"
@@ -74,7 +75,11 @@ func (s *S3MediaStorage) GetMediaMetadata(mediaID string) (*MediaMetadata, error
 	if err != nil {
 		return nil, fmt.Errorf("get metadata from S3: %w", err)
 	}
-	defer result.Body.Close()
+	defer func() {
+		if closeErr := result.Body.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close S3 object body: %v", closeErr)
+		}
+	}()
 
 	// Parse metadata
 	var metadata MediaMetadata

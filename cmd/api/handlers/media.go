@@ -195,7 +195,10 @@ func (h *Handler) HandleMediaUpload(ctx context.Context, request events.APIGatew
 	// Parse focus if provided
 	var focusX, focusY float64
 	if focus != "" {
-		fmt.Sscanf(focus, "%f,%f", &focusX, &focusY)
+		if n, err := fmt.Sscanf(focus, "%f,%f", &focusX, &focusY); err != nil || n != 2 {
+			h.logger.Warn("failed to parse focus coordinates", zap.String("focus", focus), zap.Error(err))
+			focusX, focusY = 0, 0
+		}
 	}
 
 	// Create MediaAttachment response
@@ -290,10 +293,11 @@ func (h *Handler) HandleGetMedia(ctx context.Context, request events.APIGatewayV
 		// Add focus if present
 		if focus := getStringFromMediaData(mediaData, "Focus"); focus != "" {
 			var focusX, focusY float64
-			fmt.Sscanf(focus, "%f,%f", &focusX, &focusY)
-			attachment.Meta["focus"] = map[string]interface{}{
-				"x": focusX,
-				"y": focusY,
+			if n, err := fmt.Sscanf(focus, "%f,%f", &focusX, &focusY); err == nil && n == 2 {
+				attachment.Meta["focus"] = map[string]interface{}{
+					"x": focusX,
+					"y": focusY,
+				}
 			}
 		}
 
@@ -324,10 +328,11 @@ func (h *Handler) HandleGetMedia(ctx context.Context, request events.APIGatewayV
 	// Add focus if present
 	if focus := getStringFromMediaData(mediaData, "Focus"); focus != "" {
 		var focusX, focusY float64
-		fmt.Sscanf(focus, "%f,%f", &focusX, &focusY)
-		attachment.Meta["focus"] = map[string]interface{}{
-			"x": focusX,
-			"y": focusY,
+		if n, err := fmt.Sscanf(focus, "%f,%f", &focusX, &focusY); err == nil && n == 2 {
+			attachment.Meta["focus"] = map[string]interface{}{
+				"x": focusX,
+				"y": focusY,
+			}
 		}
 	}
 
@@ -421,10 +426,11 @@ func (h *Handler) HandleUpdateMedia(ctx context.Context, request events.APIGatew
 	// Parse focus if provided
 	if updateReq.Focus != "" {
 		var focusX, focusY float64
-		fmt.Sscanf(updateReq.Focus, "%f,%f", &focusX, &focusY)
-		attachment.Meta["focus"] = map[string]interface{}{
-			"x": focusX,
-			"y": focusY,
+		if n, err := fmt.Sscanf(updateReq.Focus, "%f,%f", &focusX, &focusY); err == nil && n == 2 {
+			attachment.Meta["focus"] = map[string]interface{}{
+				"x": focusX,
+				"y": focusY,
+			}
 		}
 	}
 

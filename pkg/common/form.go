@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"mime/multipart"
 	"net/url"
@@ -49,7 +50,9 @@ func ParseMultipartForm(body string, contentType string) (map[string]string, err
 			values[fieldName] = buf.String()
 		}
 
-		part.Close()
+		if closeErr := part.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close multipart part: %v", closeErr)
+		}
 	}
 
 	return values, nil

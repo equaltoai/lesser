@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"io"
+	"log"
 	"time"
 )
 
@@ -26,7 +27,11 @@ func (t *Time) UnmarshalGQL(v interface{}) error {
 
 // MarshalGQL implements the graphql.Marshaler interface
 func (t Time) MarshalGQL(w io.Writer) {
-	w.Write([]byte(`"` + time.Time(t).Format(time.RFC3339) + `"`))
+	if _, err := w.Write([]byte(`"` + time.Time(t).Format(time.RFC3339) + `"`)); err != nil {
+		// Log error but don't return it as the interface doesn't support it
+		// This is typical for GraphQL marshalers
+		log.Printf("Warning: failed to write time to GraphQL response: %v", err)
+	}
 }
 
 // Cursor is a custom GraphQL scalar for pagination
@@ -45,5 +50,9 @@ func (c *Cursor) UnmarshalGQL(v interface{}) error {
 
 // MarshalGQL implements the graphql.Marshaler interface
 func (c Cursor) MarshalGQL(w io.Writer) {
-	w.Write([]byte(`"` + string(c) + `"`))
+	if _, err := w.Write([]byte(`"` + string(c) + `"`)); err != nil {
+		// Log error but don't return it as the interface doesn't support it
+		// This is typical for GraphQL marshalers
+		log.Printf("Warning: failed to write cursor to GraphQL response: %v", err)
+	}
 }
