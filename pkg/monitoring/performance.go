@@ -344,7 +344,9 @@ func (pm *PerformanceMonitor) AddXRayMetadata(ctx context.Context, namespace str
 // RecordXRayError records an error in the current X-Ray segment
 func (pm *PerformanceMonitor) RecordXRayError(ctx context.Context, err error) {
 	if err != nil {
-		xray.AddError(ctx, err)
+		if xrayErr := xray.AddError(ctx, err); xrayErr != nil {
+			fmt.Printf("Warning: failed to add X-Ray error: %v\n", xrayErr)
+		}
 	}
 }
 
@@ -353,8 +355,12 @@ func (pm *PerformanceMonitor) TraceDBQuery(ctx context.Context, operation string
 	ctx, seg := xray.BeginSubsegment(ctx, "DynamoDB "+operation)
 	defer seg.Close(nil)
 	
-	seg.AddAnnotation("operation", operation)
-	seg.AddAnnotation("table_name", tableName)
+	if err := seg.AddAnnotation("operation", operation); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray annotation 'operation': %v\n", err)
+	}
+	if err := seg.AddAnnotation("table_name", tableName); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray annotation 'table_name': %v\n", err)
+	}
 	seg.Namespace = "aws"
 	
 	start := time.Now()
@@ -366,7 +372,9 @@ func (pm *PerformanceMonitor) TraceDBQuery(ctx context.Context, operation string
 		pm.RecordError(ctx, "db_query", err.Error())
 	}
 	
-	seg.AddMetadata("dynamodb", map[string]interface{}{"duration_ms": duration.Milliseconds()})
+	if err := seg.AddMetadata("dynamodb", map[string]interface{}{"duration_ms": duration.Milliseconds()}); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray metadata 'dynamodb': %v\n", err)
+	}
 	pm.RecordLatency(ctx, "db_query_"+operation, float64(duration.Milliseconds()))
 	
 	return err
@@ -377,8 +385,12 @@ func (pm *PerformanceMonitor) TraceFederationCall(ctx context.Context, domain st
 	ctx, seg := xray.BeginSubsegment(ctx, "Federation "+operation)
 	defer seg.Close(nil)
 	
-	seg.AddAnnotation("domain", domain)
-	seg.AddAnnotation("operation", operation)
+	if err := seg.AddAnnotation("domain", domain); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray annotation 'domain': %v\n", err)
+	}
+	if err := seg.AddAnnotation("operation", operation); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray annotation 'operation': %v\n", err)
+	}
 	seg.Namespace = "remote"
 	
 	start := time.Now()
@@ -390,10 +402,12 @@ func (pm *PerformanceMonitor) TraceFederationCall(ctx context.Context, domain st
 		seg.AddError(err)
 	}
 	
-	seg.AddMetadata("federation", map[string]interface{}{
+	if err := seg.AddMetadata("federation", map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
 		"success": success,
-	})
+	}); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray metadata 'federation': %v\n", err)
+	}
 	
 	pm.RecordFederationPerformance(ctx, domain, operation, float64(duration.Milliseconds()), success)
 	
@@ -405,8 +419,12 @@ func (pm *PerformanceMonitor) TraceGraphQLQuery(ctx context.Context, queryName s
 	ctx, seg := xray.BeginSubsegment(ctx, "GraphQL "+queryName)
 	defer seg.Close(nil)
 	
-	seg.AddAnnotation("query_name", queryName)
-	seg.AddAnnotation("complexity", complexity)
+	if err := seg.AddAnnotation("query_name", queryName); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray annotation 'query_name': %v\n", err)
+	}
+	if err := seg.AddAnnotation("complexity", complexity); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray annotation 'complexity': %v\n", err)
+	}
 	seg.Namespace = "graphql"
 	
 	start := time.Now()
@@ -418,10 +436,12 @@ func (pm *PerformanceMonitor) TraceGraphQLQuery(ctx context.Context, queryName s
 		pm.RecordError(ctx, "graphql_query", err.Error())
 	}
 	
-	seg.AddMetadata("graphql", map[string]interface{}{
+	if err := seg.AddMetadata("graphql", map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
 		"complexity": complexity,
-	})
+	}); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray metadata 'graphql': %v\n", err)
+	}
 	
 	pm.RecordLatency(ctx, "graphql_"+queryName, float64(duration.Milliseconds()))
 	pm.RecordQueryComplexity(ctx, queryName, complexity)
@@ -434,15 +454,21 @@ func (pm *PerformanceMonitor) TraceLambdaHandler(ctx context.Context, functionNa
 	ctx, seg := xray.BeginSegment(ctx, functionName)
 	defer seg.Close(nil)
 	
-	seg.AddAnnotation("function_name", functionName)
-	seg.AddAnnotation("environment", pm.environment)
+	if err := seg.AddAnnotation("function_name", functionName); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray annotation 'function_name': %v\n", err)
+	}
+	if err := seg.AddAnnotation("environment", pm.environment); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray annotation 'environment': %v\n", err)
+	}
 	
 	// Detect cold start (simplified - in real implementation you'd check if this is the first invocation)
 	coldStart := false // This would be determined by Lambda runtime
 	initDuration := 0.0 // This would come from Lambda runtime environment
 	
 	if coldStart {
-		seg.AddAnnotation("cold_start", true)
+		if err := seg.AddAnnotation("cold_start", true); err != nil {
+			fmt.Printf("Warning: failed to add X-Ray annotation 'cold_start': %v\n", err)
+		}
 		pm.RecordLambdaColdStart(ctx, functionName, coldStart, initDuration)
 	}
 	
@@ -455,10 +481,12 @@ func (pm *PerformanceMonitor) TraceLambdaHandler(ctx context.Context, functionNa
 		pm.RecordError(ctx, "lambda_handler", err.Error())
 	}
 	
-	seg.AddMetadata("lambda", map[string]interface{}{
+	if err := seg.AddMetadata("lambda", map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
 		"cold_start": coldStart,
-	})
+	}); err != nil {
+		fmt.Printf("Warning: failed to add X-Ray metadata 'lambda': %v\n", err)
+	}
 	
 	pm.RecordLatency(ctx, "lambda_"+functionName, float64(duration.Milliseconds()))
 	

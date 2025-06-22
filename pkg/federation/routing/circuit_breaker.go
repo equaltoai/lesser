@@ -210,7 +210,13 @@ func (dcb *DistributedCircuitBreaker) CanAttempt(instanceID string) bool {
 		// Check if it's time to test
 		if time.Now().After(state.NextRetry) {
 			// Transition to half-open (async)
-			go dcb.HalfOpen(instanceID)
+			go func() {
+				if err := dcb.HalfOpen(instanceID); err != nil {
+					dcb.logger.Error("Failed to transition to half-open state",
+						zap.String("instanceID", instanceID),
+						zap.Error(err))
+				}
+			}()
 			return true
 		}
 		return false
@@ -290,7 +296,13 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 			state.NextRetry = time.Now().Add(dcb.config.OpenTimeout)
 
 			reason := fmt.Sprintf("consecutive failures: %d, error: %v", state.ConsecutiveFails, errorType)
-			go dcb.persistState(state, reason)
+			go func() {
+				if err := dcb.persistState(state, reason); err != nil {
+					dcb.logger.Error("Failed to persist circuit state",
+						zap.String("instanceID", instanceID),
+						zap.Error(err))
+				}
+			}()
 
 			dcb.logger.Warn("circuit opened due to failures",
 				zap.String("instanceID", instanceID),
@@ -306,7 +318,13 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 		state.SuccessCount = 0
 
 		reason := fmt.Sprintf("half-open test failed: %v", errorType)
-		go dcb.persistState(state, reason)
+		go func() {
+			if err := dcb.persistState(state, reason); err != nil {
+				dcb.logger.Error("Failed to persist circuit state",
+					zap.String("instanceID", instanceID),
+					zap.Error(err))
+			}
+		}()
 
 		dcb.logger.Warn("circuit reopened",
 			zap.String("instanceID", instanceID),

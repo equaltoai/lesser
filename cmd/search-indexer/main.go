@@ -105,7 +105,11 @@ func NewSearchIndexer() (*SearchIndexer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to ping OpenSearch: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			logger.Warn("Failed to close response body", zap.Error(err))
+		}
+	}()
 
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("OpenSearch ping failed with status: %d", res.StatusCode)
@@ -135,7 +139,11 @@ func (si *SearchIndexer) ensureIndex(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			si.logger.Warn("Failed to close response body", zap.Error(err))
+		}
+	}()
 
 	// If index doesn't exist, create it
 	if res.StatusCode == 404 {
@@ -209,7 +217,11 @@ func (si *SearchIndexer) ensureIndex(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
-		defer res.Body.Close()
+		defer func() {
+		if err := res.Body.Close(); err != nil {
+			si.logger.Warn("Failed to close response body", zap.Error(err))
+		}
+	}()
 
 		if res.IsError() {
 			return fmt.Errorf("failed to create index: %s", res.String())
@@ -335,7 +347,11 @@ func (si *SearchIndexer) indexActor(ctx context.Context, item map[string]events.
 	if err != nil {
 		return fmt.Errorf("failed to index actor: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			si.logger.Warn("Failed to close response body", zap.Error(err))
+		}
+	}()
 
 	if res.IsError() {
 		return fmt.Errorf("failed to index actor %s: %s", doc.ID, res.String())
@@ -365,7 +381,11 @@ func (si *SearchIndexer) deleteActor(ctx context.Context, item map[string]events
 	if err != nil {
 		return fmt.Errorf("failed to delete actor: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			si.logger.Warn("Failed to close response body", zap.Error(err))
+		}
+	}()
 
 	if res.IsError() && res.StatusCode != 404 {
 		return fmt.Errorf("failed to delete actor %s: %s", actorID, res.String())

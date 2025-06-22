@@ -196,7 +196,11 @@ func (b *bandwidthAnalytics) processLogFile(ctx context.Context, bucket, key str
 	if err != nil {
 		return fmt.Errorf("failed to get log file: %w", err)
 	}
-	defer result.Body.Close()
+	defer func() {
+		if closeErr := result.Body.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close S3 object body: %v", closeErr)
+		}
+	}()
 
 	// Parse log entries
 	scanner := bufio.NewScanner(result.Body)

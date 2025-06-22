@@ -256,7 +256,10 @@ func extractDomainFromActorID(actorID string) string {
 // generateUniqueID generates a unique ID for objects
 func generateUniqueID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based ID if crypto/rand fails
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
 	return hex.EncodeToString(b)
 }
 

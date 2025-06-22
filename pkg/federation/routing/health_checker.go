@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -132,7 +133,11 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *Instance) (*HealthStatus,
 		health.ErrorMessage = fmt.Sprintf("request failed: %v", err)
 		return health, nil
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Printf("Warning: Failed to close HTTP response body for instance %s: %v", instance.ID, closeErr)
+		}
+	}()
 
 	// Update health status
 	health.Reachable = true

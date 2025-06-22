@@ -351,7 +351,9 @@ func TestHandler(t *testing.T) {
 
 	// Initialize auth middleware with test secret
 	originalAuthMiddleware := authMiddleware
-	os.Setenv("JWT_SECRET", "test-secret")
+	if err := os.Setenv("JWT_SECRET", "test-secret"); err != nil {
+		t.Fatalf("Failed to set JWT_SECRET: %v", err)
+	}
 	authMiddleware = auth.NewMiddleware()
 	defer func() {
 		authMiddleware = originalAuthMiddleware

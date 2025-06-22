@@ -210,7 +210,11 @@ func (m *Manager) RegisterInstance(instance *Instance) error {
 	}
 
 	// Initialize circuit breaker
-	m.circuitBreaker.Close(instance.ID)
+	if err := m.circuitBreaker.Close(instance.ID); err != nil {
+		m.logger.Error("Failed to close circuit breaker",
+			zap.String("instanceID", instance.ID),
+			zap.Error(err))
+	}
 
 	// Clear route cache for the domain
 	m.clearRouteCache(instance.Domain)
@@ -430,7 +434,11 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *FederationMessage
 			resultsMu.Unlock()
 
 			// Record result for learning
-			m.optimizer.RecordDeliveryResult(ctx, result)
+			if err := m.optimizer.RecordDeliveryResult(ctx, result); err != nil {
+				m.logger.Error("Failed to record delivery result",
+					zap.String("instanceID", route.InstanceID),
+					zap.Error(err))
+			}
 
 			// Update circuit breaker
 			if result.Success {

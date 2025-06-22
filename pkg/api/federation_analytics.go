@@ -84,10 +84,13 @@ func (fah *FederationAnalyticsHandler) GetFederationNodes(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"nodes": nodes,
 		"count": len(nodes),
-	})
+	}); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 // GetFederationEdges returns federation graph edges
@@ -116,10 +119,13 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"edges": edges,
 		"count": len(edges),
-	})
+	}); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 // GetFederationClusters returns federation clusters
@@ -131,10 +137,13 @@ func (fah *FederationAnalyticsHandler) GetFederationClusters(w http.ResponseWrit
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"clusters": clusters,
 		"count":    len(clusters),
-	})
+	}); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 // GetRelationshipAnalysis returns analysis of relationship between two domains

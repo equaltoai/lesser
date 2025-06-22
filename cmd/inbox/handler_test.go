@@ -663,7 +663,9 @@ func createTestAuthHeader(username string) map[string]string {
 func TestGetInbox(t *testing.T) {
 	// Initialize logger and auth middleware
 	logger = zap.NewNop()
-	os.Setenv("JWT_SECRET", "test-secret")
+	if err := os.Setenv("JWT_SECRET", "test-secret"); err != nil {
+		t.Fatalf("Failed to set JWT_SECRET: %v", err)
+	}
 	authMiddleware = auth.NewMiddleware()
 
 	// Setup
