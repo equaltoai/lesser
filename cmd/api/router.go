@@ -151,6 +151,7 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 		// Timelines
 		r.Get("/timelines/home", wrapHandler(h.HandleHomeTimeline))
 		r.Get("/timelines/list/{id}", wrapHandlerWithParam(h.HandleListTimeline, "id"))
+		r.Get("/timelines/direct", wrapHandler(h.HandleDirectTimeline))
 
 		// Statuses
 		r.Get("/statuses/{id}", wrapHandlerWithParam(h.HandleGetStatus, "id"))

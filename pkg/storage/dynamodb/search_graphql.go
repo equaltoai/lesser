@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/federation"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -97,9 +98,28 @@ func (s *dynamoDBStorage) SearchAccountsAdvanced(ctx context.Context, query stri
 	}
 
 	// If resolve is true and we have few results, attempt remote resolution
-	if resolve && len(accounts) < limit && strings.Contains(query, "@") {
-		// TODO: Implement remote actor resolution
-		s.logger().Debug("remote resolution not implemented yet", zap.String("query", query))
+	if resolve && len(accounts) < limit && isValidFederatedHandle(query) {
+		// Create remote search service
+		remoteSearchSvc := federation.NewRemoteSearchService(s)
+		
+		// Search for remote actors
+		remoteResults, err := remoteSearchSvc.SearchRemoteActors(ctx, query, limit-len(accounts))
+		if err != nil {
+			s.logger().Debug("remote actor resolution failed",
+				zap.String("query", query),
+				zap.Error(err))
+		} else if len(remoteResults) > 0 {
+			// Add remote actors to results
+			for _, result := range remoteResults {
+				if result.Actor != nil {
+					accounts = append(accounts, result.Actor)
+				}
+			}
+			
+			s.logger().Debug("remote actors resolved",
+				zap.String("query", query),
+				zap.Int("remote_results", len(remoteResults)))
+		}
 	}
 
 	return accounts, nil
@@ -263,4 +283,22 @@ func (s *dynamoDBStorage) fallbackHashtagSearch(ctx context.Context, query strin
 	}
 
 	return hashtagResults, nil
+}
+
+// isValidFederatedHandle checks if a query is a valid federated handle (@user@domain)
+func isValidFederatedHandle(query string) bool {
+	// Simple check for @user@domain pattern
+	if len(query) < 5 {
+		return false
+	}
+
+	atCount := 0
+	for _, ch := range query {
+		if ch == '@' {
+			atCount++
+		}
+	}
+
+	// Should have exactly 2 @ symbols for federated handle or 1 @ at the start
+	return atCount == 2 || (atCount == 1 && query[0] == '@')
 }

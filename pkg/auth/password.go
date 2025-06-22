@@ -148,7 +148,7 @@ func hasSequentialPattern(password string) bool {
 
 // hasRepeatedPattern checks for repeated character patterns
 func hasRepeatedPattern(password string) bool {
-	repeatedPattern := regexp.MustCompile(`(.)\1{2,}`)
+	repeatedPattern := regexp.MustCompile(`(.)(\1{2,})`)
 	return repeatedPattern.MatchString(password)
 }
 

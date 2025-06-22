@@ -3,8 +3,10 @@ package dynamodb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -142,12 +144,61 @@ func (s *dynamoDBStorage) IsQuoteAllowed(ctx context.Context, statusID, quoterID
 		return true, nil
 	}
 
-	// TODO: Check if quoter is a follower (AllowFollowers)
-	// TODO: Check if quoter is mentioned in the status (AllowMentioned)
-	// These would require additional queries
+	// Check if quoter is a follower (AllowFollowers)
+	if permissions.AllowFollowers {
+		// Get the status to find its author
+		statusObj, err := s.GetObject(ctx, statusID)
+		if err != nil {
+			s.logger().Warn("failed to get status for follower check",
+				zap.String("status_id", statusID),
+				zap.Error(err))
+		} else {
+			var authorID string
+			switch obj := statusObj.(type) {
+			case *activitypub.Note:
+				authorID = obj.AttributedTo
+			case map[string]interface{}:
+				if attr, ok := obj["attributedTo"].(string); ok {
+					authorID = attr
+				}
+			}
+			
+			if authorID != "" {
+				// Check if quoter follows the status author
+				isFollowing, err := s.IsFollowing(ctx, quoterID, authorID)
+				if err == nil && isFollowing {
+					// Quoter follows the author, allow quote
+					return true, nil
+				}
+			}
+		}
+	}
+	
+	// Check if quoter is mentioned in the status (AllowMentioned)
+	if permissions.AllowMentioned {
+		// Get the status to check for mentions
+		statusObj, err := s.GetObject(ctx, statusID)
+		if err != nil {
+			s.logger().Warn("failed to get status for mention check",
+				zap.String("status_id", statusID),
+				zap.Error(err))
+		} else {
+			// Check if quoter is mentioned in the status
+			isMentioned, err := s.isUserMentionedInStatus(ctx, quoterID, statusObj)
+			if err != nil {
+				s.logger().Warn("failed to check mentions",
+					zap.String("status_id", statusID),
+					zap.String("quoter_id", quoterID),
+					zap.Error(err))
+			} else if isMentioned {
+				// Quoter is mentioned, allow quote
+				return true, nil
+			}
+		}
+	}
 
-	// For now, default to allowing if not explicitly blocked
-	return true, nil
+	// If none of the permission conditions are met, deny
+	return false, nil
 }
 
 // GetQuoteType returns the quote type for a status
@@ -279,4 +330,64 @@ func (s *dynamoDBStorage) fallbackGetQuotesOfStatus(ctx context.Context, statusI
 	}
 
 	return quotes, nil
+}
+
+// isUserMentionedInStatus checks if a user is mentioned in a status
+func (s *dynamoDBStorage) isUserMentionedInStatus(ctx context.Context, userID string, statusObj interface{}) (bool, error) {
+	// Get the user's actor to find their handle
+	userActor, err := s.GetActor(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get user actor: %w", err)
+	}
+	
+	// Extract possible mention formats for this user
+	possibleMentions := []string{
+		userActor.PreferredUsername,                    // @username
+		fmt.Sprintf("@%s", userActor.PreferredUsername), // @username
+		userActor.ID,                                   // full actor ID
+	}
+	
+	// Extract content and tags from the status
+	var content string
+	var tags []interface{}
+	
+	switch obj := statusObj.(type) {
+	case *activitypub.Note:
+		content = obj.Content
+		if obj.Tag != nil {
+			for _, tag := range obj.Tag {
+				tags = append(tags, tag)
+			}
+		}
+	case map[string]interface{}:
+		if c, ok := obj["content"].(string); ok {
+			content = c
+		}
+		if tagArray, ok := obj["tag"].([]interface{}); ok {
+			tags = tagArray
+		}
+	}
+	
+	// Check tags for mentions (ActivityPub Mention type)
+	for _, tag := range tags {
+		if tagMap, ok := tag.(map[string]interface{}); ok {
+			if tagType, ok := tagMap["type"].(string); ok && tagType == "Mention" {
+				if href, ok := tagMap["href"].(string); ok {
+					// Check if the href matches the user's actor ID
+					if href == userActor.ID {
+						return true, nil
+					}
+				}
+			}
+		}
+	}
+	
+	// Check content for mention patterns
+	for _, mention := range possibleMentions {
+		if strings.Contains(content, mention) {
+			return true, nil
+		}
+	}
+	
+	return false, nil
 }

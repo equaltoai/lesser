@@ -43,6 +43,11 @@ func (m *TimelineMethods) GetHashtagTimeline(ctx context.Context, hashtag string
 	return []*storage.TimelineEntry{}, "", nil
 }
 
+// GetDirectTimeline is a mock implementation
+func (m *TimelineMethods) GetDirectTimeline(ctx context.Context, username string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	return []*storage.TimelineEntry{}, "", nil
+}
+
 // DeleteFromTimeline is a mock implementation
 func (m *TimelineMethods) DeleteFromTimeline(ctx context.Context, timelineType, timelineID, entryID string) error {
 	return nil
@@ -1510,6 +1515,15 @@ func (m *MockStorage) GetHashtagInfo(ctx context.Context, hashtag string) (*stor
 // GetHashtagTimeline mocks the GetHashtagTimeline method
 func (m *MockStorage) GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
 	args := m.Called(ctx, hashtag, local, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
+}
+
+// GetDirectTimeline mocks the GetDirectTimeline method
+func (m *MockStorage) GetDirectTimeline(ctx context.Context, username string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
 	if args.Get(0) == nil {
 		return nil, args.String(1), args.Error(2)
 	}
