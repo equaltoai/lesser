@@ -89,7 +89,11 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 		if err != nil {
 			break
 		}
-		defer part.Close()
+		defer func() {
+			if err := part.Close(); err != nil {
+				// Log error but don't fail the request
+			}
+		}()
 
 		switch part.FormName() {
 		case "file":

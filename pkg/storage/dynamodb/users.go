@@ -204,12 +204,8 @@ func (s *dynamoDBStorage) DeleteUser(ctx context.Context, username string) error
 
 	// Delete associated actor and all its data first
 	// This will cascade delete all activities, objects, follows, etc.
-	if err := s.DeleteActor(ctx, username); err != nil {
-		// Log the error but continue with user deletion
-		// The actor might not exist for some users
-		// We don't need to check the error type, just continue
-		// as the actor might not exist for all users
-	}
+	// The actor might not exist for some users, so we ignore any errors
+	_ = s.DeleteActor(ctx, username)
 
 	// Delete main user record
 	_, err = s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{

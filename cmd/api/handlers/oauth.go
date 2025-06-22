@@ -219,7 +219,11 @@ func (h *Handler) handleAuthorizationCodeGrant(ctx context.Context, req models.O
 
 	// Check if code is expired
 	if time.Now().After(authCode.ExpiresAt) {
-		h.store.DeleteAuthorizationCode(ctx, req.Code)
+		if err := h.store.DeleteAuthorizationCode(ctx, req.Code); err != nil {
+			h.logger.Error("failed to delete expired authorization code", 
+				zap.String("code", req.Code),
+				zap.Error(err))
+		}
 		return h.tokenError("invalid_grant", "Authorization code has expired"), nil
 	}
 
@@ -262,7 +266,12 @@ func (h *Handler) handleAuthorizationCodeGrant(ctx context.Context, req models.O
 	}
 
 	// Delete used authorization code
-	h.store.DeleteAuthorizationCode(ctx, req.Code)
+	if err := h.store.DeleteAuthorizationCode(ctx, req.Code); err != nil {
+		h.logger.Error("failed to delete used authorization code", 
+			zap.String("code", req.Code),
+			zap.Error(err))
+		// Continue execution - tokens were already generated successfully
+	}
 
 	// Return tokens
 	resp := models.OAuthTokenResponse{
@@ -292,7 +301,11 @@ func (h *Handler) handleRefreshTokenGrant(ctx context.Context, req models.OAuthT
 
 	// Check if token is expired
 	if time.Now().After(refreshToken.ExpiresAt) {
-		h.store.DeleteRefreshToken(ctx, req.RefreshToken)
+		if err := h.store.DeleteRefreshToken(ctx, req.RefreshToken); err != nil {
+			h.logger.Error("failed to delete expired refresh token", 
+				zap.String("token", req.RefreshToken),
+				zap.Error(err))
+		}
 		return h.tokenError("invalid_grant", "Refresh token has expired"), nil
 	}
 
@@ -378,7 +391,12 @@ func (h *Handler) HandleOAuthRevoke(ctx context.Context, request events.APIGatew
 	if req.TokenTypeHint == "" || req.TokenTypeHint == "refresh_token" {
 		refreshToken, err := h.store.GetRefreshToken(ctx, req.Token)
 		if err == nil && refreshToken != nil && refreshToken.ClientID == req.ClientID {
-			h.store.DeleteRefreshToken(ctx, req.Token)
+			if err := h.store.DeleteRefreshToken(ctx, req.Token); err != nil {
+				h.logger.Error("failed to delete refresh token during revocation", 
+					zap.String("token", req.Token),
+					zap.Error(err))
+				// Continue execution - revocation can still be considered successful
+			}
 			return common.OK(nil), nil
 		}
 	}

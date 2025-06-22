@@ -148,7 +148,7 @@ func (h *Handler) HandleModerationQueue(ctx context.Context, request events.APIG
 	cursor := request.QueryStringParameters["cursor"]
 
 	// Get queue items from storage
-	queueItems, nextCursor, err := h.store.GetModerationQueue(ctx, limit, cursor)
+	queueItems, nextCursor, err := h.store.GetModerationQueuePaginated(ctx, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get moderation queue", zap.Error(err))
 		return common.InternalServerError(err), nil

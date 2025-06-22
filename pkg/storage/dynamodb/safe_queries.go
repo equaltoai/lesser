@@ -8,6 +8,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 )
 
+// toString converts a value to string for string operations
+func toString(value interface{}) string {
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return fmt.Sprint(value)
+}
+
 // Safe attribute name validation
 var safeAttributeRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*$`)
 
@@ -75,9 +83,9 @@ func (q *SafeQueryBuilder) WithFilter(attribute string, op string, value interfa
 	case "<=":
 		q.filter = attr.LessThanEqual(expression.Value(value))
 	case "contains":
-		q.filter = attr.Contains(fmt.Sprintf("%v", value))
+		q.filter = attr.Contains(toString(value))
 	case "begins_with":
-		q.filter = attr.BeginsWith(fmt.Sprintf("%v", value))
+		q.filter = attr.BeginsWith(toString(value))
 	case "exists":
 		q.filter = attr.AttributeExists()
 	case "not_exists":
@@ -112,9 +120,9 @@ func (q *SafeQueryBuilder) AddFilter(attribute string, op string, value interfac
 	case "<=":
 		newCondition = attr.LessThanEqual(expression.Value(value))
 	case "contains":
-		newCondition = attr.Contains(fmt.Sprintf("%v", value))
+		newCondition = attr.Contains(toString(value))
 	case "begins_with":
-		newCondition = attr.BeginsWith(fmt.Sprintf("%v", value))
+		newCondition = attr.BeginsWith(toString(value))
 	case "exists":
 		newCondition = attr.AttributeExists()
 	case "not_exists":
@@ -221,9 +229,8 @@ func BuildSafeUpdateExpression(updates map[string]interface{}) (expression.Updat
 
 // SafeScanBuilder provides safe scanning with filters
 type SafeScanBuilder struct {
-	filter     expression.ConditionBuilder
-	projection expression.ProjectionBuilder
-	hasFilter  bool
+	filter    expression.ConditionBuilder
+	hasFilter bool
 }
 
 func NewSafeScan() *SafeScanBuilder {

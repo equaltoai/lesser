@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-// HashtagRegex matches hashtags in text
+// hashtagRegex matches hashtags in text
 // Supports Unicode characters, numbers, and underscores
 // Uses spaces as padding to ensure proper boundary matching
-var HashtagRegex = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])#([\p{L}\p{N}_]+)`)
+var hashtagRegex = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])#([\p{L}\p{N}_]+)`)
 
-// URLRegex matches URLs to remove them before hashtag extraction
-var URLRegex = regexp.MustCompile(`https?://[^\s<]+`)
+// urlRegex matches URLs to remove them before hashtag extraction
+var urlRegex = regexp.MustCompile(`https?://[^\s<]+`)
 
 // ExtractHashtags extracts hashtags from HTML or plain text content
 // Returns a slice of unique hashtag names (without the # prefix)
@@ -26,13 +26,13 @@ func ExtractHashtags(content string) []string {
 	plainText := htmlTagRegex.ReplaceAllString(unescaped, " ")
 
 	// Remove URLs to avoid matching hashtags within them
-	plainText = URLRegex.ReplaceAllString(plainText, " ")
+	plainText = urlRegex.ReplaceAllString(plainText, " ")
 
 	// Add space padding to ensure proper boundary detection
 	plainText = " " + plainText + " "
 
 	// Find all hashtag matches
-	matches := HashtagRegex.FindAllStringSubmatch(plainText, -1)
+	matches := hashtagRegex.FindAllStringSubmatch(plainText, -1)
 
 	// Use a map to ensure uniqueness
 	tagMap := make(map[string]bool)
@@ -67,13 +67,13 @@ func ExtractHashtagsWithCase(content string) []string {
 	plainText := htmlTagRegex.ReplaceAllString(unescaped, " ")
 
 	// Remove URLs to avoid matching hashtags within them
-	plainText = URLRegex.ReplaceAllString(plainText, " ")
+	plainText = urlRegex.ReplaceAllString(plainText, " ")
 
 	// Add space padding to ensure proper boundary detection
 	plainText = " " + plainText + " "
 
 	// Find all hashtag matches
-	matches := HashtagRegex.FindAllStringSubmatch(plainText, -1)
+	matches := hashtagRegex.FindAllStringSubmatch(plainText, -1)
 
 	// Use a map to ensure uniqueness (case-insensitive key, case-sensitive value)
 	tagMap := make(map[string]string)

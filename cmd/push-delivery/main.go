@@ -214,7 +214,11 @@ func sendWebPush(ctx context.Context, subscription *storage.PushSubscription, ms
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Warn("failed to close response body", zap.Error(err))
+		}
+	}()
 
 	if resp.StatusCode >= 400 {
 		// Handle different error codes

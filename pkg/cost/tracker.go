@@ -1,7 +1,6 @@
 package cost
 
 import (
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -56,7 +55,6 @@ type OperationCost struct {
 
 // Tracker provides thread-safe cost tracking for operations
 type Tracker struct {
-	mu                sync.RWMutex
 	dynamoReads       atomic.Int64
 	dynamoWrites      atomic.Int64
 	dynamoStorage     atomic.Int64

@@ -403,16 +403,6 @@ func (m *MockStorage) GetCommunityNoteVotes(ctx context.Context, noteID string) 
 	return args.Get(0).([]*storage.CommunityNoteVote), args.Error(1)
 }
 
-// Embed the BaseMockStorage for all other methods not explicitly overridden
-// This allows tests to use MockStorage without implementing every single method
-type embeddedMockStorage struct {
-	BaseMockStorage
-}
-
-// Ensure MockStorage can access methods from BaseMockStorage when not explicitly mocked
-func (m *MockStorage) embedDefaults() *embeddedMockStorage {
-	return &embeddedMockStorage{}
-}
 
 // ClearLoginAttempts mocks the ClearLoginAttempts method
 func (m *MockStorage) ClearLoginAttempts(ctx context.Context, identifier string) error {
@@ -518,6 +508,18 @@ func (m *MockStorage) CountObjectAnnounces(ctx context.Context, objectID string)
 
 // CountObjectLikes mocks the CountObjectLikes method
 func (m *MockStorage) CountObjectLikes(ctx context.Context, objectID string) (int, error) {
+	args := m.Called(ctx, objectID)
+	return args.Int(0), args.Error(1)
+}
+
+// CountQuotes mocks the CountQuotes method
+func (m *MockStorage) CountQuotes(ctx context.Context, noteID string) (int, error) {
+	args := m.Called(ctx, noteID)
+	return args.Int(0), args.Error(1)
+}
+
+// CountReplies mocks the CountReplies method
+func (m *MockStorage) CountReplies(ctx context.Context, objectID string) (int, error) {
 	args := m.Called(ctx, objectID)
 	return args.Int(0), args.Error(1)
 }
@@ -1383,6 +1385,15 @@ func (m *MockStorage) GetFederationStatistics(ctx context.Context, startTime tim
 	return args.Get(0).(*storage.FederationStats), args.Error(1)
 }
 
+// CalculateFederationClusters mocks the CalculateFederationClusters method
+func (m *MockStorage) CalculateFederationClusters(ctx context.Context) ([]*storage.InstanceCluster, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.InstanceCluster), args.Error(1)
+}
+
 // GetFilter mocks the GetFilter method
 func (m *MockStorage) GetFilter(ctx context.Context, filterID string) (*storage.Filter, error) {
 	args := m.Called(ctx, filterID)
@@ -1657,12 +1668,18 @@ func (m *MockStorage) GetModerationHistory(ctx context.Context, objectID string)
 }
 
 // GetModerationQueue mocks the GetModerationQueue method
-func (m *MockStorage) GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*storage.ModerationQueueItem, string, error) {
-	args := m.Called(ctx, limit, cursor)
+func (m *MockStorage) GetModerationQueue(ctx context.Context, filter *storage.ModerationFilter) ([]*storage.ModerationQueueItem, error) {
+	args := m.Called(ctx, filter)
 	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
+		return nil, args.Error(1)
 	}
-	return args.Get(0).([]*storage.ModerationQueueItem), args.String(1), args.Error(2)
+	return args.Get(0).([]*storage.ModerationQueueItem), args.Error(1)
+}
+
+// StoreModerationDecision mocks the StoreModerationDecision method
+func (m *MockStorage) StoreModerationDecision(ctx context.Context, decision *storage.ModerationDecision) error {
+	args := m.Called(ctx, decision)
+	return args.Error(0)
 }
 
 // GetModerationReviews mocks the GetModerationReviews method
@@ -2904,5 +2921,281 @@ func (m *MockStorage) GetDNSCache(ctx context.Context, hostname string) (*storag
 // SetDNSCache mocks the SetDNSCache method
 func (m *MockStorage) SetDNSCache(ctx context.Context, entry *storage.DNSCacheEntry) error {
 	args := m.Called(ctx, entry)
+	return args.Error(0)
+}
+
+// CreateModerationPattern mocks the CreateModerationPattern method
+func (m *MockStorage) CreateModerationPattern(ctx context.Context, pattern *storage.ModerationPattern) error {
+	args := m.Called(ctx, pattern)
+	return args.Error(0)
+}
+
+// UpdateModerationDecision mocks the UpdateModerationDecision method
+func (m *MockStorage) UpdateModerationDecision(ctx context.Context, contentID string, review *storage.ModerationReview) error {
+	args := m.Called(ctx, contentID, review)
+	return args.Error(0)
+}
+
+// CreateQuoteRelationship mocks the CreateQuoteRelationship method
+func (m *MockStorage) CreateQuoteRelationship(ctx context.Context, quote *storage.QuoteRelationship) error {
+	args := m.Called(ctx, quote)
+	return args.Error(0)
+}
+
+// DeleteModerationPattern mocks the DeleteModerationPattern method
+func (m *MockStorage) DeleteModerationPattern(ctx context.Context, patternID string) error {
+	args := m.Called(ctx, patternID)
+	return args.Error(0)
+}
+
+// GetCostProjections mocks the GetCostProjections method
+func (m *MockStorage) GetCostProjections(ctx context.Context, period string) (*storage.CostProjection, error) {
+	args := m.Called(ctx, period)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.CostProjection), args.Error(1)
+}
+
+// GetFederationCosts mocks the GetFederationCosts method
+func (m *MockStorage) GetFederationCosts(ctx context.Context, startTime, endTime time.Time, limit int, cursor string) ([]*storage.FederationCost, string, error) {
+	args := m.Called(ctx, startTime, endTime, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.FederationCost), args.String(1), args.Error(2)
+}
+
+// GetFederationEdges mocks the GetFederationEdges method
+func (m *MockStorage) GetFederationEdges(ctx context.Context, domains []string) ([]*storage.FederationEdge, error) {
+	args := m.Called(ctx, domains)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.FederationEdge), args.Error(1)
+}
+
+// GetFederationNodes mocks the GetFederationNodes method
+func (m *MockStorage) GetFederationNodes(ctx context.Context, depth int) ([]*storage.FederationNode, error) {
+	args := m.Called(ctx, depth)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.FederationNode), args.Error(1)
+}
+
+// GetInstanceConnections mocks the GetInstanceConnections method
+func (m *MockStorage) GetInstanceConnections(ctx context.Context, domain string, connectionType string) ([]*storage.InstanceConnection, error) {
+	args := m.Called(ctx, domain, connectionType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.InstanceConnection), args.Error(1)
+}
+
+// GetInstanceMetadata mocks the GetInstanceMetadata method
+func (m *MockStorage) GetInstanceMetadata(ctx context.Context, domain string) (*storage.InstanceMetadata, error) {
+	args := m.Called(ctx, domain)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.InstanceMetadata), args.Error(1)
+}
+
+// GetInstanceHealthReport mocks the GetInstanceHealthReport method
+func (m *MockStorage) GetInstanceHealthReport(ctx context.Context, domain string, period time.Duration) (*storage.InstanceHealthReport, error) {
+	args := m.Called(ctx, domain, period)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.InstanceHealthReport), args.Error(1)
+}
+
+// RecordFederationActivity mocks the RecordFederationActivity method
+func (m *MockStorage) RecordFederationActivity(ctx context.Context, activity *storage.FederationActivity) error {
+	args := m.Called(ctx, activity)
+	return args.Error(0)
+}
+
+// GetModerationPattern mocks the GetModerationPattern method
+func (m *MockStorage) GetModerationPattern(ctx context.Context, patternID string) (*storage.ModerationPattern, error) {
+	args := m.Called(ctx, patternID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.ModerationPattern), args.Error(1)
+}
+
+// GetModerationPatterns mocks the GetModerationPatterns method
+func (m *MockStorage) GetModerationPatterns(ctx context.Context, active bool, severity string, limit int) ([]*storage.ModerationPattern, error) {
+	args := m.Called(ctx, active, severity, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.ModerationPattern), args.Error(1)
+}
+
+// UpdateModerationPattern mocks the UpdateModerationPattern method
+func (m *MockStorage) UpdateModerationPattern(ctx context.Context, pattern *storage.ModerationPattern) error {
+	args := m.Called(ctx, pattern)
+	return args.Error(0)
+}
+
+// RecordPatternMatch mocks the RecordPatternMatch method
+func (m *MockStorage) RecordPatternMatch(ctx context.Context, patternID string, matched bool, timestamp time.Time) error {
+	args := m.Called(ctx, patternID, matched, timestamp)
+	return args.Error(0)
+}
+
+// GetModerationQueuePaginated mocks the GetModerationQueuePaginated method
+func (m *MockStorage) GetModerationQueuePaginated(ctx context.Context, limit int, cursor string) ([]*storage.ModerationQueueItem, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.ModerationQueueItem), args.String(1), args.Error(2)
+}
+
+// GetQuotesForNote mocks the GetQuotesForNote method
+func (m *MockStorage) GetQuotesForNote(ctx context.Context, noteID string, limit int, cursor string) ([]*storage.QuoteRelationship, string, error) {
+	args := m.Called(ctx, noteID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.QuoteRelationship), args.String(1), args.Error(2)
+}
+
+// IsQuoted mocks the IsQuoted method
+func (m *MockStorage) IsQuoted(ctx context.Context, actorID, noteID string) (bool, error) {
+	args := m.Called(ctx, actorID, noteID)
+	return args.Bool(0), args.Error(1)
+}
+
+// GetRecentInstanceConnections mocks the GetRecentInstanceConnections method
+func (m *MockStorage) GetRecentInstanceConnections(ctx context.Context, domain string, since time.Duration) ([]*storage.InstanceConnection, error) {
+	args := m.Called(ctx, domain, since)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.InstanceConnection), args.Error(1)
+}
+
+// GetReplies mocks the GetReplies method
+func (m *MockStorage) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error) {
+	args := m.Called(ctx, objectID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]interface{}), args.String(1), args.Error(2)
+}
+
+// GetStreamingPreferenceHistory mocks the GetStreamingPreferenceHistory method
+func (m *MockStorage) GetStreamingPreferenceHistory(ctx context.Context, username string, limit int) ([]*storage.StreamingPreferences, error) {
+	args := m.Called(ctx, username, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.StreamingPreferences), args.Error(1)
+}
+
+// GetStreamingPreferences mocks the GetStreamingPreferences method
+func (m *MockStorage) GetStreamingPreferences(ctx context.Context, username string) (*storage.StreamingPreferences, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.StreamingPreferences), args.Error(1)
+}
+
+// UpdateStreamingPreferences mocks the UpdateStreamingPreferences method
+func (m *MockStorage) UpdateStreamingPreferences(ctx context.Context, prefs *storage.StreamingPreferences) error {
+	args := m.Called(ctx, prefs)
+	return args.Error(0)
+}
+
+// GetStreamingPreferencesByDevice mocks the GetStreamingPreferencesByDevice method
+func (m *MockStorage) GetStreamingPreferencesByDevice(ctx context.Context, username, deviceID string) (*storage.StreamingPreferences, error) {
+	args := m.Called(ctx, username, deviceID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.StreamingPreferences), args.Error(1)
+}
+
+// UpdateDeviceStreamingPreferences mocks the UpdateDeviceStreamingPreferences method
+func (m *MockStorage) UpdateDeviceStreamingPreferences(ctx context.Context, prefs *storage.StreamingPreferences, deviceID string) error {
+	args := m.Called(ctx, prefs, deviceID)
+	return args.Error(0)
+}
+
+// SyncStreamingPreferences mocks the SyncStreamingPreferences method
+func (m *MockStorage) SyncStreamingPreferences(ctx context.Context, username string, sourceDeviceID string) error {
+	args := m.Called(ctx, username, sourceDeviceID)
+	return args.Error(0)
+}
+
+// ResolvePreferenceConflict mocks the ResolvePreferenceConflict method
+func (m *MockStorage) ResolvePreferenceConflict(ctx context.Context, username string, strategy storage.ConflictResolutionStrategy) (*storage.StreamingPreferences, error) {
+	args := m.Called(ctx, username, strategy)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.StreamingPreferences), args.Error(1)
+}
+
+// GetStrongestConnectionsByType mocks the GetStrongestConnectionsByType method
+func (m *MockStorage) GetStrongestConnectionsByType(ctx context.Context, connectionType string, limit int) ([]*storage.FederationEdge, error) {
+	args := m.Called(ctx, connectionType, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.FederationEdge), args.Error(1)
+}
+
+// IncrementReblogCount mocks the IncrementReblogCount method
+func (m *MockStorage) IncrementReblogCount(ctx context.Context, objectID string) error {
+	args := m.Called(ctx, objectID)
+	return args.Error(0)
+}
+
+// IncrementReplyCount mocks the IncrementReplyCount method
+func (m *MockStorage) IncrementReplyCount(ctx context.Context, objectID string) error {
+	args := m.Called(ctx, objectID)
+	return args.Error(0)
+}
+
+// StoreFederationTimeSeries mocks the StoreFederationTimeSeries method
+func (m *MockStorage) StoreFederationTimeSeries(ctx context.Context, data *storage.FederationTimeSeries) error {
+	args := m.Called(ctx, data)
+	return args.Error(0)
+}
+
+// StoreInstanceCluster mocks the StoreInstanceCluster method
+func (m *MockStorage) StoreInstanceCluster(ctx context.Context, cluster *storage.InstanceCluster) error {
+	args := m.Called(ctx, cluster)
+	return args.Error(0)
+}
+
+// UpdateFederationEdge mocks the UpdateFederationEdge method
+func (m *MockStorage) UpdateFederationEdge(ctx context.Context, edge *storage.FederationEdge) error {
+	args := m.Called(ctx, edge)
+	return args.Error(0)
+}
+
+// UpdateFederationNode mocks the UpdateFederationNode method
+func (m *MockStorage) UpdateFederationNode(ctx context.Context, node *storage.FederationNode) error {
+	args := m.Called(ctx, node)
+	return args.Error(0)
+}
+
+// UpdateInstanceMetadata mocks the UpdateInstanceMetadata method
+func (m *MockStorage) UpdateInstanceMetadata(ctx context.Context, metadata *storage.InstanceMetadata) error {
+	args := m.Called(ctx, metadata)
+	return args.Error(0)
+}
+
+// WithdrawQuote mocks the WithdrawQuote method
+func (m *MockStorage) WithdrawQuote(ctx context.Context, quoteNoteID string) error {
+	args := m.Called(ctx, quoteNoteID)
 	return args.Error(0)
 }

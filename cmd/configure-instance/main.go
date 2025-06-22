@@ -94,7 +94,9 @@ func main() {
 		domain := os.Getenv("DOMAIN")
 		if domain == "" {
 			fmt.Print("Enter your instance domain (e.g., example.com): ")
-			fmt.Scanln(&domain)
+			if _, err := fmt.Scanln(&domain); err != nil {
+				log.Fatalf("Failed to read domain input: %v", err)
+			}
 		}
 
 		// Create VAPID keys object

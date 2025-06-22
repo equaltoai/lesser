@@ -129,7 +129,9 @@ func (h *Handler) HandleVerifyRecoveryToken(ctx context.Context, request events.
 	// Check if token is expired
 	expiresAt := int64(recoveryData["expiresAt"].(float64))
 	if time.Now().Unix() > expiresAt {
-		h.store.DeleteRecoveryToken(ctx, recoveryKey)
+		if err := h.store.DeleteRecoveryToken(ctx, recoveryKey); err != nil {
+			h.logger.Warn("failed to delete expired recovery token", zap.Error(err))
+		}
 		return common.BadRequest(fmt.Errorf("token expired")), nil
 	}
 
@@ -172,7 +174,9 @@ func (h *Handler) HandleCompleteRecovery(ctx context.Context, request events.API
 	// Check if token is expired
 	expiresAt := int64(recoveryData["expiresAt"].(float64))
 	if time.Now().Unix() > expiresAt {
-		h.store.DeleteRecoveryToken(ctx, recoveryKey)
+		if err := h.store.DeleteRecoveryToken(ctx, recoveryKey); err != nil {
+			h.logger.Warn("failed to delete expired recovery token", zap.Error(err))
+		}
 		return common.BadRequest(fmt.Errorf("token expired")), nil
 	}
 
@@ -203,13 +207,18 @@ func (h *Handler) HandleCompleteRecovery(ctx context.Context, request events.API
 
 	// Mark token as used
 	recoveryData["used"] = true
-	h.store.StoreRecoveryToken(ctx, recoveryKey, recoveryData)
+	if err := h.store.StoreRecoveryToken(ctx, recoveryKey, recoveryData); err != nil {
+		h.logger.Warn("failed to mark recovery token as used", zap.Error(err))
+	}
 
 	// Revoke all existing sessions for security
 	sessions, err := h.store.GetUserSessions(ctx, username)
 	if err == nil {
 		for _, session := range sessions {
-			h.store.DeleteSession(ctx, session.SessionID)
+			if err := h.store.DeleteSession(ctx, session.SessionID); err != nil {
+				h.logger.Warn("failed to delete session during password reset", 
+					zap.String("session_id", session.SessionID), zap.Error(err))
+			}
 		}
 	}
 

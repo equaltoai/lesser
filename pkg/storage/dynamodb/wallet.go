@@ -260,7 +260,7 @@ func (s *dynamoDBStorage) DeleteWalletCredential(ctx context.Context, username, 
 		return fmt.Errorf("failed to get wallet credential: %w", err)
 	}
 
-	var walletType string = "ethereum" // default
+	var walletType = "ethereum" // default
 	if len(credResult.Item) > 0 {
 		var credential storage.WalletCredential
 		if err := s.UnmarshalItem(credResult.Item, &credential); err == nil {

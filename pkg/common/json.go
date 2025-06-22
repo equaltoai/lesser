@@ -6,8 +6,8 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-// JSONConfig is optimized for ActivityPub JSON processing
-var JSONConfig = sonic.Config{
+// jsonConfig is optimized for ActivityPub JSON processing
+var jsonConfig = sonic.Config{
 	EscapeHTML:       false, // ActivityPub doesn't need HTML escaping
 	SortMapKeys:      false, // Preserve order for signatures
 	CompactMarshaler: true,  // Smaller output for network efficiency
@@ -17,27 +17,27 @@ var JSONConfig = sonic.Config{
 
 // Marshal serializes v to JSON with ActivityPub optimizations
 func Marshal(v interface{}) ([]byte, error) {
-	return JSONConfig.Marshal(v)
+	return jsonConfig.Marshal(v)
 }
 
 // Unmarshal deserializes JSON data with ActivityPub optimizations
 func Unmarshal(data []byte, v interface{}) error {
-	return JSONConfig.Unmarshal(data, v)
+	return jsonConfig.Unmarshal(data, v)
 }
 
 // MarshalString is optimized for string output
 func MarshalString(v interface{}) (string, error) {
-	return JSONConfig.MarshalToString(v)
+	return jsonConfig.MarshalToString(v)
 }
 
 // NewEncoder creates a streaming JSON encoder
 func NewEncoder(w io.Writer) sonic.Encoder {
-	return JSONConfig.NewEncoder(w)
+	return jsonConfig.NewEncoder(w)
 }
 
 // NewDecoder creates a streaming JSON decoder
 func NewDecoder(r io.Reader) sonic.Decoder {
-	return JSONConfig.NewDecoder(r)
+	return jsonConfig.NewDecoder(r)
 }
 
 // Benchmark comparisons:

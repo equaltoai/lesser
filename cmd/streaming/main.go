@@ -58,7 +58,6 @@ var (
 	subscriptionsTable string
 	log                *zap.Logger
 	domain             string
-	authMiddleware     *auth.Middleware
 )
 
 func init() {
@@ -74,11 +73,6 @@ func init() {
 
 	dynamoClient = dynamodb.NewFromConfig(globalCfg)
 
-	// Initialize auth middleware
-	authMiddleware, err = auth.GetMiddleware()
-	if err != nil {
-		log.Fatal("failed to initialize auth middleware", zap.Error(err))
-	}
 
 	// Get environment variables
 	connectionsTable = os.Getenv("CONNECTIONS_TABLE")

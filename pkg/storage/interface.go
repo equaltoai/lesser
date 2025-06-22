@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
@@ -267,7 +268,7 @@ type Storage interface {
 	// Moderation operations
 	CreateModerationEvent(ctx context.Context, event *ModerationEvent) error
 	GetModerationEvent(ctx context.Context, eventID string) (*ModerationEvent, error)
-	GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*ModerationQueueItem, string, error)
+	GetModerationQueuePaginated(ctx context.Context, limit int, cursor string) ([]*ModerationQueueItem, string, error)
 	GetModerationEventsByObject(ctx context.Context, objectID string, limit int, cursor string) ([]*ModerationEvent, string, error)
 	GetModerationEventsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*ModerationEvent, string, error)
 	AddModerationReview(ctx context.Context, review *ModerationReview) error
@@ -454,6 +455,31 @@ type Storage interface {
 	GetInstanceHealthReport(ctx context.Context, domain string, period time.Duration) (*InstanceHealthReport, error)
 	GetCostProjections(ctx context.Context, period string) (*CostProjection, error)
 
+	// Federation graph methods
+	GetFederationNodes(ctx context.Context, depth int) ([]*FederationNode, error)
+	GetFederationEdges(ctx context.Context, domains []string) ([]*FederationEdge, error)
+	GetInstanceMetadata(ctx context.Context, domain string) (*InstanceMetadata, error)
+	CalculateFederationClusters(ctx context.Context) ([]*InstanceCluster, error)
+	GetInstanceConnections(ctx context.Context, domain string, connectionType string) ([]*InstanceConnection, error)
+	GetRecentInstanceConnections(ctx context.Context, domain string, since time.Duration) ([]*InstanceConnection, error)
+	UpdateFederationNode(ctx context.Context, node *FederationNode) error
+	UpdateFederationEdge(ctx context.Context, edge *FederationEdge) error
+	UpdateInstanceMetadata(ctx context.Context, metadata *InstanceMetadata) error
+	GetStrongestConnectionsByType(ctx context.Context, connectionType string, limit int) ([]*FederationEdge, error)
+	StoreFederationTimeSeries(ctx context.Context, data *FederationTimeSeries) error
+	StoreInstanceCluster(ctx context.Context, cluster *InstanceCluster) error
+
+	// Moderation pattern management
+	CreateModerationPattern(ctx context.Context, pattern *ModerationPattern) error
+	GetModerationPattern(ctx context.Context, patternID string) (*ModerationPattern, error)
+	GetModerationPatterns(ctx context.Context, active bool, severity string, limit int) ([]*ModerationPattern, error)
+	UpdateModerationPattern(ctx context.Context, pattern *ModerationPattern) error
+	DeleteModerationPattern(ctx context.Context, patternID string) error
+	RecordPatternMatch(ctx context.Context, patternID string, matched bool, timestamp time.Time) error
+	StoreModerationDecision(ctx context.Context, decision *ModerationDecision) error
+	UpdateModerationDecision(ctx context.Context, contentID string, review *ModerationReview) error
+	GetModerationQueue(ctx context.Context, filter *ModerationFilter) ([]*ModerationQueueItem, error)
+
 	// Email domain blocks
 	CreateEmailDomainBlock(ctx context.Context, block *EmailDomainBlock) error
 	GetEmailDomainBlocks(ctx context.Context, limit int, cursor string) ([]*EmailDomainBlock, string, error)
@@ -468,6 +494,15 @@ type Storage interface {
 	GetPreference(ctx context.Context, username string, key string) (interface{}, error)
 	GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error)
 	UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error
+
+	// Streaming preferences operations
+	GetStreamingPreferences(ctx context.Context, username string) (*StreamingPreferences, error)
+	UpdateStreamingPreferences(ctx context.Context, prefs *StreamingPreferences) error
+	GetStreamingPreferencesByDevice(ctx context.Context, username, deviceID string) (*StreamingPreferences, error)
+	UpdateDeviceStreamingPreferences(ctx context.Context, prefs *StreamingPreferences, deviceID string) error
+	GetStreamingPreferenceHistory(ctx context.Context, username string, limit int) ([]*StreamingPreferences, error)
+	SyncStreamingPreferences(ctx context.Context, username string, sourceDeviceID string) error
+	ResolvePreferenceConflict(ctx context.Context, username string, strategy ConflictResolutionStrategy) (*StreamingPreferences, error)
 
 	// Session management operations
 	CreateSession(ctx context.Context, session *Session) error
@@ -1681,4 +1716,172 @@ type CostDriver struct {
 	Cost           float64 `json:"cost" dynamodbav:"cost"`
 	PercentOfTotal float64 `json:"percent_of_total" dynamodbav:"percent_of_total"`
 	Trend          string  `json:"trend" dynamodbav:"trend"` // increasing/stable/decreasing
+}
+
+// FederationNode represents an instance in the federation graph
+type FederationNode struct {
+	Domain         string                 `json:"domain" dynamodbav:"domain"`
+	DisplayName    string                 `json:"display_name" dynamodbav:"display_name"`
+	Description    string                 `json:"description,omitempty" dynamodbav:"description,omitempty"`
+	Software       string                 `json:"software" dynamodbav:"software"`
+	Version        string                 `json:"version" dynamodbav:"version"`
+	UserCount      int64                  `json:"user_count" dynamodbav:"user_count"`
+	StatusCount    int64                  `json:"status_count" dynamodbav:"status_count"`
+	ActiveUsers    int64                  `json:"active_users" dynamodbav:"active_users"`
+	FirstSeen      time.Time              `json:"first_seen" dynamodbav:"first_seen"`
+	LastSeen       time.Time              `json:"last_seen" dynamodbav:"last_seen"`
+	Health            string                 `json:"health" dynamodbav:"health"` // healthy/warning/critical/unknown
+	ErrorRate         float64                `json:"error_rate" dynamodbav:"error_rate"`
+	ResponseTime      float64                `json:"response_time" dynamodbav:"response_time"`
+	ConnectionType    string                 `json:"connection_type" dynamodbav:"connection_type"` // direct/relay/blocked
+	TotalConnections  int64                  `json:"total_connections,omitempty" dynamodbav:"total_connections,omitempty"`
+	ActiveConnections int64                  `json:"active_connections,omitempty" dynamodbav:"active_connections,omitempty"`
+	ActivityVolume    int64                  `json:"activity_volume,omitempty" dynamodbav:"activity_volume,omitempty"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty" dynamodbav:"metadata,omitempty"`
+}
+
+// FederationEdge represents a connection between two instances
+type FederationEdge struct {
+	SourceDomain   string    `json:"source_domain" dynamodbav:"source_domain"`
+	TargetDomain   string    `json:"target_domain" dynamodbav:"target_domain"`
+	ConnectionType string    `json:"connection_type" dynamodbav:"connection_type"` // follows/mentions/boosts/replies
+	VolumeIn       int64     `json:"volume_in" dynamodbav:"volume_in"`
+	VolumeOut      int64     `json:"volume_out" dynamodbav:"volume_out"`
+	Strength       float64   `json:"strength" dynamodbav:"strength"` // 0.0-1.0 based on activity volume
+	LastActivity   time.Time `json:"last_activity" dynamodbav:"last_activity"`
+	SharedUsers    int64     `json:"shared_users" dynamodbav:"shared_users"`
+	ErrorCount     int64     `json:"error_count" dynamodbav:"error_count"`
+	SuccessRate    float64   `json:"success_rate" dynamodbav:"success_rate"`
+}
+
+// InstanceMetadata contains detailed metadata about a federated instance
+type InstanceMetadata struct {
+	Domain          string    `json:"domain" dynamodbav:"domain"`
+	DisplayName     string    `json:"display_name,omitempty" dynamodbav:"display_name,omitempty"`
+	Description     string    `json:"description,omitempty" dynamodbav:"description,omitempty"`
+	Software        string    `json:"software,omitempty" dynamodbav:"software,omitempty"`
+	Version         string    `json:"version,omitempty" dynamodbav:"version,omitempty"`
+	UserCount       int64     `json:"user_count,omitempty" dynamodbav:"user_count,omitempty"`
+	StatusCount     int64     `json:"status_count,omitempty" dynamodbav:"status_count,omitempty"`
+	NodeInfo        string    `json:"nodeinfo" dynamodbav:"nodeinfo"` // JSON string of nodeinfo response
+	InstanceInfo    string    `json:"instance_info" dynamodbav:"instance_info"` // JSON string of instance API response
+	AdminContact    string    `json:"admin_contact,omitempty" dynamodbav:"admin_contact,omitempty"`
+	Rules           []string  `json:"rules,omitempty" dynamodbav:"rules,omitempty"`
+	Languages       []string  `json:"languages,omitempty" dynamodbav:"languages,omitempty"`
+	Categories      []string  `json:"categories,omitempty" dynamodbav:"categories,omitempty"`
+	FederationNotes string    `json:"federation_notes,omitempty" dynamodbav:"federation_notes,omitempty"`
+	LastUpdated     time.Time `json:"last_updated" dynamodbav:"last_updated"`
+}
+
+// InstanceCluster represents a group of closely connected instances
+type InstanceCluster struct {
+	ClusterID    string    `json:"cluster_id" dynamodbav:"cluster_id"`
+	Name         string    `json:"name" dynamodbav:"name"`
+	Instances    []string  `json:"instances" dynamodbav:"instances"`
+	CenterNode   string    `json:"center_node" dynamodbav:"center_node"` // Most connected instance
+	Cohesion     float64   `json:"cohesion" dynamodbav:"cohesion"` // How tightly connected (0.0-1.0)
+	Size         int       `json:"size" dynamodbav:"size"`
+	Description  string    `json:"description,omitempty" dynamodbav:"description,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at" dynamodbav:"updated_at"`
+}
+
+// InstanceConnection represents a specific connection type between instances
+type InstanceConnection struct {
+	Domain         string    `json:"domain" dynamodbav:"domain"`
+	TargetDomain   string    `json:"target_domain" dynamodbav:"target_domain"`
+	Direction      string    `json:"direction" dynamodbav:"direction"` // inbound/outbound
+	ConnectionType string    `json:"connection_type" dynamodbav:"connection_type"`
+	VolumeIn       int64     `json:"volume_in" dynamodbav:"volume_in"`
+	VolumeOut      int64     `json:"volume_out" dynamodbav:"volume_out"`
+	LastActivity   time.Time `json:"last_activity" dynamodbav:"last_activity"`
+	Success        bool      `json:"success" dynamodbav:"success"`
+	ResponseTimeMs float64   `json:"response_time_ms" dynamodbav:"response_time_ms"`
+	Health         string    `json:"health" dynamodbav:"health"`
+}
+
+// FederationTimeSeries represents time-series federation metrics
+type FederationTimeSeries struct {
+	Domain         string    `json:"domain" dynamodbav:"domain"`
+	Timestamp      time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	Period         string    `json:"period" dynamodbav:"period"` // hourly/daily/weekly
+	InboundVolume  int64     `json:"inbound_volume" dynamodbav:"inbound_volume"`
+	OutboundVolume int64     `json:"outbound_volume" dynamodbav:"outbound_volume"`
+	ErrorRate      float64   `json:"error_rate" dynamodbav:"error_rate"`
+	ResponseTime   float64   `json:"response_time" dynamodbav:"response_time"`
+	ActivePeers    int       `json:"active_peers" dynamodbav:"active_peers"`
+	TTL            int64     `json:"ttl,omitempty" dynamodbav:"ttl,omitempty"` // For automatic cleanup
+}
+
+// StreamingPreferences represents user preferences for media streaming
+type StreamingPreferences struct {
+	Username          string    `json:"username" dynamodbav:"username"`
+	DefaultQuality    string    `json:"default_quality" dynamodbav:"default_quality"` // auto/4k/1080p/720p/480p
+	AutoQuality       bool      `json:"auto_quality" dynamodbav:"auto_quality"`
+	PreloadNext       bool      `json:"preload_next" dynamodbav:"preload_next"`
+	DataSaverMode     bool      `json:"data_saver_mode" dynamodbav:"data_saver_mode"`
+	PreferredCodec    string    `json:"preferred_codec" dynamodbav:"preferred_codec"` // h264/h265/vp9/av1
+	MaxBandwidthMbps  int64     `json:"max_bandwidth_mbps" dynamodbav:"max_bandwidth_mbps"`
+	BufferSizeSeconds int       `json:"buffer_size_seconds" dynamodbav:"buffer_size_seconds"`
+	HDREnabled               *bool     `json:"hdr_enabled,omitempty" dynamodbav:"hdr_enabled,omitempty"`
+	ColorSpace               string    `json:"color_space,omitempty" dynamodbav:"color_space,omitempty"` // bt709/bt2020/p3
+	SubtitleLanguage         string    `json:"subtitle_language,omitempty" dynamodbav:"subtitle_language,omitempty"`
+	SubtitleEnabled          *bool     `json:"subtitle_enabled,omitempty" dynamodbav:"subtitle_enabled,omitempty"`
+	AudioDescriptionEnabled  *bool     `json:"audio_description_enabled,omitempty" dynamodbav:"audio_description_enabled,omitempty"`
+	ClosedCaptionsEnabled    *bool     `json:"closed_captions_enabled,omitempty" dynamodbav:"closed_captions_enabled,omitempty"`
+	SchemaVersion            int       `json:"schema_version,omitempty" dynamodbav:"schema_version,omitempty"`
+	DeviceID                 string    `json:"device_id,omitempty" dynamodbav:"device_id,omitempty"`
+	Version                  int       `json:"version" dynamodbav:"version"`
+	UpdatedAt                time.Time `json:"updated_at" dynamodbav:"updated_at"`
+}
+
+// ConflictResolutionStrategy defines how to resolve preference conflicts
+type ConflictResolutionStrategy string
+
+const (
+	ConflictResolutionLatest          ConflictResolutionStrategy = "latest"
+	ConflictResolutionHighestQuality  ConflictResolutionStrategy = "highest_quality"
+	ConflictResolutionLowestBandwidth ConflictResolutionStrategy = "lowest_bandwidth"
+)
+
+// ErrVersionConflict indicates a version conflict during update
+var ErrVersionConflict = fmt.Errorf("version conflict")
+
+// ModerationPattern represents a content moderation pattern
+type ModerationPattern struct {
+	ID                 string    `json:"id" dynamodbav:"id"`
+	Name               string    `json:"name" dynamodbav:"name"`
+	Description        string    `json:"description" dynamodbav:"description"`
+	Type               string    `json:"type" dynamodbav:"type"` // keyword/regex/phrase/domain/ip/hash
+	Content            string    `json:"content" dynamodbav:"content"`
+	Severity           string    `json:"severity" dynamodbav:"severity"` // low/medium/high/critical
+	Action             string    `json:"action" dynamodbav:"action"` // flag/hide/block/escalate
+	Active             bool      `json:"active" dynamodbav:"active"`
+	MatchCount         int64     `json:"match_count" dynamodbav:"match_count"`
+	FalsePositiveCount int64     `json:"false_positive_count" dynamodbav:"false_positive_count"`
+	Effectiveness      float64   `json:"effectiveness" dynamodbav:"effectiveness"`
+	LastMatch          time.Time `json:"last_match" dynamodbav:"last_match"`
+	CreatedAt          time.Time `json:"created_at" dynamodbav:"created_at"`
+	CreatedBy          string    `json:"created_by" dynamodbav:"created_by"`
+	UpdatedAt          time.Time `json:"updated_at" dynamodbav:"updated_at"`
+	Tags               []string  `json:"tags,omitempty" dynamodbav:"tags,omitempty"`
+}
+
+
+// ModerationFilter represents filters for querying moderation decisions
+type ModerationFilter struct {
+	Action      string    `json:"action,omitempty"`
+	MinScore    float64   `json:"min_score,omitempty"`
+	MaxScore    float64   `json:"max_score,omitempty"`
+	StartTime   time.Time `json:"start_time,omitempty"`
+	EndTime     time.Time `json:"end_time,omitempty"`
+	ContentType string    `json:"content_type,omitempty"`
+	Limit       int       `json:"limit,omitempty"`
+}
+
+
+
+// PatternFeedback represents feedback on pattern effectiveness
+type PatternFeedback struct {
+	WasMatch          bool `json:"was_match" dynamodbav:"was_match"`
+	WasFalsePositive  bool `json:"was_false_positive" dynamodbav:"was_false_positive"`
 }

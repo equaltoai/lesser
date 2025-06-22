@@ -295,38 +295,3 @@ func isCompatible(algorithm, keyType string) bool {
 }
 
 // getKeyType returns the type of a crypto key
-func getKeyType(key crypto.PrivateKey) string {
-	switch key.(type) {
-	case *rsa.PrivateKey:
-		return "RSA"
-	case *ecdsa.PrivateKey:
-		return "ECDSA"
-	case ed25519.PrivateKey:
-		return "Ed25519"
-	default:
-		return "unknown"
-	}
-}
-
-// verifyHS2019Timestamp checks created/expires timestamps for hs2019
-func verifyHS2019Timestamp(created, expires int64) error {
-	now := time.Now().Unix()
-
-	if created > 0 {
-		// Check if created is not in the future (with clock skew)
-		if created > now+int64(MaxClockSkew.Seconds()) {
-			return common.AuthenticationError{Message: "signature created in the future"}
-		}
-
-		// Check if signature is not too old
-		if created < now-int64(MaxClockSkew.Seconds()) {
-			return common.AuthenticationError{Message: "signature too old"}
-		}
-	}
-
-	if expires > 0 && expires < now {
-		return common.AuthenticationError{Message: "signature expired"}
-	}
-
-	return nil
-}

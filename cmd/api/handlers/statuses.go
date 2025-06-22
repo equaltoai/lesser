@@ -1037,9 +1037,16 @@ func (h *Handler) HandleUpdateStatus(ctx context.Context, request events.APIGate
 			return common.Forbidden(errors.New("you can only update your own statuses")), nil
 		}
 		// Convert map to Note
-		noteBytes, _ := json.Marshal(obj)
+		noteBytes, err := json.Marshal(obj)
+		if err != nil {
+			h.logger.Error("failed to marshal object to JSON", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
 		note = &activitypub.Note{}
-		json.Unmarshal(noteBytes, note)
+		if err := json.Unmarshal(noteBytes, note); err != nil {
+			h.logger.Error("failed to unmarshal JSON to Note", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
 	default:
 		// Try to handle any object with AttributedTo field using reflection
 		v := reflect.ValueOf(object)

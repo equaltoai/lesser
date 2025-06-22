@@ -50,7 +50,7 @@ func extractSignificantWords(content string) []string {
 
 	// Split into words
 	words := strings.FieldsFunc(content, func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 	})
 
 	// Filter out stop words and short words
@@ -125,33 +125,6 @@ func extractURLs(content string) []string {
 	return urls
 }
 
-// calculateEngagementBucket determines which engagement bucket a status belongs to
-// TODO: This function is currently unused but is kept for future engagement-based indexing
-// It can be used to create GSI patterns like "ENGAGEMENT#1000#timestamp" for efficient
-// queries of highly-engaged content.
-// nolint:unused
-func calculateEngagementBucket(likes, boosts, replies int) string {
-	total := likes + boosts + replies
-
-	switch {
-	case total >= 10000:
-		return "10000"
-	case total >= 5000:
-		return "5000"
-	case total >= 1000:
-		return "1000"
-	case total >= 500:
-		return "500"
-	case total >= 100:
-		return "100"
-	case total >= 50:
-		return "50"
-	case total >= 10:
-		return "10"
-	default:
-		return "0"
-	}
-}
 
 // highlightMatch creates a highlighted version of text with the match emphasized
 func highlightMatch(text, query string, maxLength int) string {

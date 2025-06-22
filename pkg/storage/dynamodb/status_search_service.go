@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -417,7 +416,7 @@ func (s *StatusSearchService) loadUserFollowing(ctx context.Context, userID stri
 func (s *StatusSearchService) mergeAndRankResults(
 	results []*StatusSearchResult,
 	context SearchContext,
-	options StatusSearchOptions,
+	_ StatusSearchOptions,
 ) []*StatusSearchResult {
 	// Deduplicate by status ID
 	seen := make(map[string]*StatusSearchResult)
@@ -554,15 +553,6 @@ func (s *StatusSearchService) buildCacheKey(query string, options StatusSearchOp
 	return fmt.Sprintf("status_search:%s:%+v", query, options)
 }
 
-func (s *StatusSearchService) isFuzzySearchAvailable() bool {
-	// Check if OpenSearch is configured
-	return os.Getenv("OPENSEARCH_ENDPOINT") != ""
-}
-
-func (s *StatusSearchService) isSemanticSearchAvailable() bool {
-	// Check if embeddings service is available
-	return s.embeddings != nil
-}
 
 func (s *StatusSearchService) isLocalStatus(statusID string) bool {
 	// Check if status ID belongs to local instance

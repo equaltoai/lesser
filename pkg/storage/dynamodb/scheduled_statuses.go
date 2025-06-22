@@ -137,7 +137,7 @@ func (s *dynamoDBStorage) GetScheduledStatuses(ctx context.Context, username str
 			continue
 		}
 		// Skip published statuses
-		if !record.Published {
+		if !record.ScheduledStatus.Published {
 			statuses = append(statuses, &record.ScheduledStatus)
 		}
 	}
@@ -253,7 +253,7 @@ func (s *dynamoDBStorage) GetDueScheduledStatuses(ctx context.Context, before ti
 			continue
 		}
 		// Only include unpublished statuses
-		if !record.Published {
+		if !record.ScheduledStatus.Published {
 			statuses = append(statuses, &record.ScheduledStatus)
 		}
 	}

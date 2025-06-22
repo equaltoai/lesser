@@ -378,40 +378,58 @@ func (h *Handler) HandleUpdateCredentials(ctx context.Context, request events.AP
 			if err != nil {
 				break
 			}
-			defer part.Close()
+			defer func() {
+				if err := part.Close(); err != nil {
+					// Log error but don't fail the request
+				}
+			}()
 
 			switch part.FormName() {
 			case "display_name":
 				buf := new(bytes.Buffer)
-				buf.ReadFrom(part)
+				if _, err := buf.ReadFrom(part); err != nil {
+					continue
+				}
 				updateReq.DisplayName = buf.String()
 			case "note":
 				buf := new(bytes.Buffer)
-				buf.ReadFrom(part)
+				if _, err := buf.ReadFrom(part); err != nil {
+					continue
+				}
 				updateReq.Note = buf.String()
 			case "locked":
 				buf := new(bytes.Buffer)
-				buf.ReadFrom(part)
+				if _, err := buf.ReadFrom(part); err != nil {
+					continue
+				}
 				updateReq.Locked = buf.String() == "true"
 			case "bot":
 				buf := new(bytes.Buffer)
-				buf.ReadFrom(part)
+				if _, err := buf.ReadFrom(part); err != nil {
+					continue
+				}
 				updateReq.Bot = buf.String() == "true"
 			case "discoverable":
 				buf := new(bytes.Buffer)
-				buf.ReadFrom(part)
+				if _, err := buf.ReadFrom(part); err != nil {
+					continue
+				}
 				updateReq.Discoverable = buf.String() == "true"
 			case "avatar":
 				if part.FileName() != "" {
 					buf := new(bytes.Buffer)
-					buf.ReadFrom(part)
+					if _, err := buf.ReadFrom(part); err != nil {
+					continue
+				}
 					avatarData = buf.Bytes()
 					avatarContentType = part.Header.Get("Content-Type")
 				}
 			case "header":
 				if part.FileName() != "" {
 					buf := new(bytes.Buffer)
-					buf.ReadFrom(part)
+					if _, err := buf.ReadFrom(part); err != nil {
+					continue
+				}
 					headerData = buf.Bytes()
 					headerContentType = part.Header.Get("Content-Type")
 				}

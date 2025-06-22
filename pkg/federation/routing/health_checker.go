@@ -29,10 +29,9 @@ type InstanceHealthChecker struct {
 }
 
 type monitor struct {
-	instance  *Instance
-	ticker    *time.Ticker
-	stopChan  chan struct{}
-	lastCheck time.Time
+	instance *Instance
+	ticker   *time.Ticker
+	stopChan chan struct{}
 }
 
 type healthCheckResult struct {

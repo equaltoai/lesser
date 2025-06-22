@@ -8,7 +8,6 @@ import (
 	"github.com/aron23/lesser/cmd/api/handlers"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
@@ -17,7 +16,6 @@ import (
 )
 
 var (
-	cfg             *config.Config
 	logger          *zap.Logger
 	authHandler     *handlers.AuthHandler
 	webAuthnHandler *handlers.WebAuthnHandler
@@ -26,7 +24,6 @@ var (
 )
 
 func init() {
-	cfg = config.Get()
 	logger = common.Logger()
 
 	// Initialize storage

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -385,7 +386,10 @@ func writeLambdaResponse(w http.ResponseWriter, resp *events.APIGatewayV2HTTPRes
 
 	// Write body
 	if resp.Body != "" {
-		w.Write([]byte(resp.Body))
+		if _, err := w.Write([]byte(resp.Body)); err != nil {
+			// Log the error but we can't return it since this is the final write
+			log.Printf("Failed to write response body: %v", err)
+		}
 	}
 }
 

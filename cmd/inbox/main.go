@@ -16,7 +16,6 @@ import (
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
 	"github.com/aron23/lesser/pkg/federation"
 	"github.com/aron23/lesser/pkg/httpclient"
 	"github.com/aron23/lesser/pkg/storage"
@@ -27,14 +26,12 @@ import (
 )
 
 var (
-	cfg            *config.Config
 	store          storage.Storage
 	logger         *zap.Logger
 	authMiddleware *auth.Middleware
 )
 
 func init() {
-	cfg = config.Get()
 	logger = common.Logger()
 
 	// Initialize storage
@@ -880,14 +877,6 @@ func extractHandleFromActorID(actorID string) string {
 	return fmt.Sprintf("@%s@%s", username, domain)
 }
 
-func extractUsernameFromHandle(handle string) string {
-	// Extract username from handle @username@domain
-	parts := strings.Split(handle, "@")
-	if len(parts) >= 2 {
-		return parts[1]
-	}
-	return handle
-}
 
 func generateActivityID() string {
 	return fmt.Sprintf("%d-%s", time.Now().UnixNano(), generateRandomString(8))

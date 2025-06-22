@@ -15,19 +15,6 @@ type ActivityPubSanitizer struct {
 var (
 	// Global sanitizer instance
 	defaultSanitizer *ActivityPubSanitizer
-
-	// Allowed HTML tags for ActivityPub content
-	allowedTags = []string{
-		"p", "br", "span", "a", "del", "pre", "code",
-		"em", "strong", "b", "i", "u", "s", "strike",
-		"blockquote", "ul", "ol", "li",
-	}
-
-	// Regex for Mastodon-style mentions
-	mentionRegex = regexp.MustCompile(`@[a-zA-Z0-9_]+(@[a-zA-Z0-9\.\-]+)?`)
-
-	// Regex for hashtags
-	hashtagRegex = regexp.MustCompile(`#[a-zA-Z0-9_]+`)
 )
 
 func init() {

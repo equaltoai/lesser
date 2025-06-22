@@ -204,14 +204,14 @@ const (
 
 // PII types
 const (
-	PIIEmail         = "EMAIL"
-	PIIPhone         = "PHONE"
-	PIIAddress       = "ADDRESS"
-	PIISSN           = "SSN"
-	PIICreditCard    = "CREDIT_CARD"
-	PIIBankAccount   = "BANK_ACCOUNT"
-	PIIDriverLicense = "DRIVER_LICENSE"
-	PIIPassport      = "PASSPORT"
-	PIIName          = "NAME"
-	PIIAge           = "AGE"
+	PiiEmail         = "EMAIL"
+	PiiPhone         = "PHONE"
+	PiiAddress       = "ADDRESS"
+	PiiSsn           = "SSN"
+	PiiCreditCard    = "CREDIT_CARD"
+	PiiBankAccount   = "BANK_ACCOUNT"
+	PiiDriverLicense = "DRIVER_LICENSE"
+	PiiPassport      = "PASSPORT"
+	PiiName          = "NAME"
+	PiiAge           = "AGE"
 )
