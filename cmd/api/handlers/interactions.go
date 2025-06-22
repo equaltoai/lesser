@@ -305,7 +305,9 @@ func (h *Handler) HandleBlock(ctx context.Context, request events.APIGatewayV2HT
 			},
 		}
 		undoFollowActivity.Published = &now
-		h.store.CreateActivity(ctx, undoFollowActivity)
+		if err := h.store.CreateActivity(ctx, undoFollowActivity); err != nil {
+			// Log error but continue with the response
+		}
 	}
 
 	// Convert to Mastodon relationship format

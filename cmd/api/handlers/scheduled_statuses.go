@@ -338,9 +338,16 @@ func (h *Handler) HandleScheduleStatus(ctx context.Context, claims *auth.Claims,
 
 	// Store poll data if present
 	if req.Poll != nil {
-		pollData, _ := json.Marshal(req.Poll)
+		pollData, err := json.Marshal(req.Poll)
+		if err != nil {
+			h.logger.Error("failed to marshal poll data", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
 		var pollMap map[string]interface{}
-		json.Unmarshal(pollData, &pollMap)
+		if err := json.Unmarshal(pollData, &pollMap); err != nil {
+			h.logger.Error("failed to unmarshal poll data", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
 		scheduled.Poll = pollMap
 	}
 

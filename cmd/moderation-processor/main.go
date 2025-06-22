@@ -43,7 +43,7 @@ func (s *storageAdapter) CreateModerationDecision(ctx context.Context, decision 
 }
 
 func (s *storageAdapter) GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*moderation.QueueItem, string, error) {
-	return s.storage.GetModerationQueue(ctx, limit, cursor)
+	return s.storage.GetModerationQueuePaginated(ctx, limit, cursor)
 }
 
 func (s *storageAdapter) GetTrustScore(ctx context.Context, actorID, category string) (*trust.TrustScore, error) {

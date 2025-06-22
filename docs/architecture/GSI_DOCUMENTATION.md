@@ -104,8 +104,13 @@ GSI1 is our most versatile index, supporting numerous access patterns:
 
 17. **Active Federation**
     - GSI1PK: `FEDERATION_ACTIVE`
-    - GSI1SK: `<last-seen-timestamp>`
+    - GSI1SK: `<last-seen-timestamp>#<domain>`
     - Used for: Active federated instances
+
+21. **Federation Graph Nodes**
+    - GSI1PK: `FEDERATION_GRAPH#NODES`
+    - GSI1SK: `<health>#<domain>`
+    - Used for: Federation node discovery by health status
 
 18. **Actor Objects**
     - GSI1PK: `ACTOR#<username>#OBJECTS`
@@ -155,6 +160,16 @@ GSI1 is our most versatile index, supporting numerous access patterns:
    - GSI2SK: `FROM#<from-user>`
    - Used for: Trust/reputation system
 
+7. **Instance Connections**
+   - GSI2PK: `INSTANCE#<domain>#CONNECTIONS#<type>`
+   - GSI2SK: `<timestamp>#<target-domain>`
+   - Used for: Instance connection queries by type
+
+8. **Federation Edges by Volume**
+   - GSI2PK: `FEDERATION_EDGES#<connection-type>`
+   - GSI2SK: `VOLUME#<padded-volume>#<source>#<target>`
+   - Used for: Finding strongest connections by type
+
 ### GSI3 - Author, Content, and Categorization
 
 #### Access Patterns:
@@ -197,6 +212,16 @@ GSI1 is our most versatile index, supporting numerous access patterns:
    - GSI3PK: `TRUST#NOTABLE`
    - GSI3SK: `SCORE#<score>#ACTOR#<actor>`
    - Used for: High-trust actors
+
+9. **Federation Domain Metadata**
+   - GSI3PK: `DOMAIN#<domain>`
+   - GSI3SK: `FEDERATION_NODE`
+   - Used for: Domain federation lookups
+
+10. **Instance Clusters**
+    - GSI3PK: `FEDERATION_CLUSTER#<cluster-id>`
+    - GSI3SK: `MEMBER#<domain>`
+    - Used for: Cluster membership queries
 
 ### GSI4 - Actor Metrics and Temporal Queries
 

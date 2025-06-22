@@ -113,9 +113,3 @@ func (d *dynamoDBStorage) SetDNSCache(ctx context.Context, entry *storage.DNSCac
 	return nil
 }
 
-// cleanupExpiredDNSCache removes expired DNS cache entries (optional maintenance function)
-func (d *dynamoDBStorage) cleanupExpiredDNSCache(ctx context.Context) error {
-	// This is handled automatically by DynamoDB TTL, but we can implement manual cleanup if needed
-	// The ExpiresAt field should be configured as the TTL attribute in DynamoDB table settings
-	return nil
-}

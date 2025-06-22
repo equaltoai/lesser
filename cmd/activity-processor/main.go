@@ -32,9 +32,7 @@ const (
 var (
 	store       storage.Storage
 	logger      *zap.Logger
-	log         *zap.Logger
 	httpClient  *http.Client
-	cfg         *config.Config
 	pushService *notifications.PushService
 )
 
@@ -44,9 +42,6 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
-	log = logger
-
-	cfg = config.Get()
 
 	store, err = dynamodb.New()
 	if err != nil {

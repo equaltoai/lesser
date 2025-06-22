@@ -3181,7 +3181,7 @@ func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *
 	// 4. Get pending moderation items from storage
 	// In a real implementation, this would query the moderation queue from storage
 	// For now, return sample data
-	items, nextKey, err := r.Storage.GetModerationQueue(ctx, limit, startKey)
+	items, nextKey, err := r.Storage.GetModerationQueuePaginated(ctx, limit, startKey)
 	if err != nil {
 		r.Logger.Warn("Failed to get moderation queue, returning empty list",
 			zap.Error(err))

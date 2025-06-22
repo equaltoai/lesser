@@ -321,7 +321,7 @@ func (vm *VouchManager) ImportVouch(ctx context.Context, vouch *Vouch, verifier 
 	// Store the imported vouch
 	if err := vm.store.CreateVouch(ctx, storageVouch); err != nil {
 		// Check if it's a duplicate error
-		if fmt.Sprintf("%v", err) == "vouch already exists" {
+		if err.Error() == "vouch already exists" {
 			vm.logger.Debug("Vouch already exists", zap.String("vouch_id", vouch.ID))
 			return nil
 		}

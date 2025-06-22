@@ -195,7 +195,10 @@ func (h *Handler) HandleMuteConversation(ctx context.Context, request events.API
 		Duration int `json:"duration"` // Duration in seconds (0 = indefinite)
 	}
 	if request.Body != "" {
-		common.ParseRequestBody([]byte(request.Body), &params)
+		if err := common.ParseRequestBody([]byte(request.Body), &params); err != nil {
+			h.logger.Warn("failed to parse request body for mute duration", zap.Error(err))
+			// Continue with default values
+		}
 	}
 
 	// Create conversation mute
@@ -214,8 +217,13 @@ func (h *Handler) HandleMuteConversation(ctx context.Context, request events.API
 	if err := h.store.CreateConversationMute(ctx, mute); err != nil {
 		if strings.Contains(err.Error(), "already muted") {
 			// Update existing mute (idempotent)
-			h.store.DeleteConversationMute(ctx, claims.Username, conversationID)
-			h.store.CreateConversationMute(ctx, mute)
+			if err := h.store.DeleteConversationMute(ctx, claims.Username, conversationID); err != nil {
+				h.logger.Warn("failed to delete existing conversation mute", zap.Error(err))
+			}
+			if err := h.store.CreateConversationMute(ctx, mute); err != nil {
+				h.logger.Error("failed to recreate conversation mute", zap.Error(err))
+				return common.InternalServerError(err), nil
+			}
 		} else {
 			h.logger.Error("failed to mute conversation", zap.Error(err))
 			return common.InternalServerError(err), nil

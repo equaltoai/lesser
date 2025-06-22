@@ -616,9 +616,7 @@ func extractDomainFromURL(rawURL string) string {
 
 	domain := parsedURL.Hostname()
 	// Remove www. prefix if present
-	if strings.HasPrefix(domain, "www.") {
-		domain = strings.TrimPrefix(domain, "www.")
-	}
+	domain = strings.TrimPrefix(domain, "www.")
 
 	return domain
 }

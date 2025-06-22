@@ -37,7 +37,6 @@ var (
 	cdnDomain            string
 	mediaConvertEndpoint string
 	mediaConvertRole     string
-	awsConfig            aws.Config
 )
 
 // MediaProcessingEvent represents the event triggered for media processing
@@ -184,9 +183,6 @@ func initializeAWSClients(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
-
-	// Store the config
-	awsConfig = cfg
 
 	// Initialize S3 client
 	s3Client = s3.NewFromConfig(cfg)
@@ -897,10 +893,6 @@ func createMediaConvertJob(ctx context.Context, s3InputKey string, event MediaPr
 	return "", fmt.Errorf("MediaConvert not configured")
 }
 
-const (
-	rekognitionCostPerImage = 1000 // $0.001 per image in microdollars
-	transcribeCostPerSecond = 400  // $0.0004 per second
-)
 
 // validateFileType checks if the file type is allowed and matches content
 func validateFileType(data []byte, claimedMimeType string) error {

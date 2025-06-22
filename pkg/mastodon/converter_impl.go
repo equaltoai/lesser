@@ -420,7 +420,7 @@ func (c *converterImpl) NotesToStatus(note interface{}) models.Status {
 		}
 	default:
 		// For other types, create a simple representation
-		content = fmt.Sprintf("%v", note)
+		content = fmt.Sprint(note)
 		id = "note-" + time.Now().Format("20060102150405")
 		createdAt = time.Now()
 	}

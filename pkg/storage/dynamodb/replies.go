@@ -317,10 +317,3 @@ func (s *dynamoDBStorage) objectToMap(obj *Object) map[string]interface{} {
 	return objMap
 }
 
-// Helper to extract ID from PK
-func extractIDFromPK(pk string) string {
-	if strings.HasPrefix(pk, "OBJECT#") {
-		return strings.TrimPrefix(pk, "OBJECT#")
-	}
-	return ""
-}

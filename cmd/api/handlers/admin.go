@@ -962,7 +962,7 @@ func (h *Handler) HandleAdminModerationOverview(ctx context.Context, request eve
 	}
 
 	// Get moderation queue count
-	queueItems, _, err := h.store.GetModerationQueue(ctx, 1, "")
+	queueItems, err := h.store.GetModerationQueue(ctx, &storage.ModerationFilter{Limit: 1})
 	queueCount := 0
 	if err == nil && len(queueItems) > 0 {
 		// TODO: Get actual total count

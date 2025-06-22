@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"strconv"
 	"strings"
 
@@ -166,7 +167,12 @@ func (h *Handler) processRecord(ctx context.Context, record events.DynamoDBEvent
 func main() {
 	// Initialize logger
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			// Can't use logger here since it might be the source of the error
+			log.Printf("Failed to sync logger: %v", err)
+		}
+	}()
 
 	// Get configuration
 	cfg := config.Get()

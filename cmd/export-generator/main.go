@@ -1016,32 +1016,6 @@ func getListsForExport(ctx context.Context, username string) ([]interface{}, err
 	return result, nil
 }
 
-func getActorPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
-	// Get user preferences from storage
-	prefs, err := storageClient.GetUserPreferences(ctx, username)
-	if err != nil {
-		logger.Error("failed to get user preferences", zap.String("username", username), zap.Error(err))
-		// Return default preferences if not found
-		return map[string]interface{}{
-			"posting:default:visibility": "public",
-			"posting:default:sensitive":  false,
-			"posting:default:language":   "en",
-			"reading:expand:media":       "default",
-			"reading:expand:spoilers":    false,
-			"reading:autoplay:gifs":      true,
-		}, nil
-	}
-
-	// Convert to Mastodon API format
-	return map[string]interface{}{
-		"posting:default:visibility": prefs.DefaultPostingVisibility,
-		"posting:default:sensitive":  prefs.DefaultMediaSensitive,
-		"posting:default:language":   prefs.Language,
-		"reading:expand:media":       prefs.ExpandMedia,
-		"reading:expand:spoilers":    prefs.ExpandSpoilers,
-		"reading:autoplay:gifs":      prefs.AutoplayGifs,
-	}, nil
-}
 
 // Helper functions
 func addFileToZip(w *zip.Writer, filename string, data []byte) error {

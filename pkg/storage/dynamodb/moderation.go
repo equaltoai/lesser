@@ -113,7 +113,95 @@ func (s *dynamoDBStorage) GetModerationEvent(ctx context.Context, eventID string
 }
 
 // GetModerationQueue retrieves pending moderation events
-func (s *dynamoDBStorage) GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*moderation.QueueItem, string, error) {
+func (s *dynamoDBStorage) GetModerationQueue(ctx context.Context, filter *storage.ModerationFilter) ([]*storage.ModerationQueueItem, error) {
+	limit := 50 // Default limit
+	if filter.Limit > 0 {
+		limit = filter.Limit
+	}
+
+	input := &dynamodb.QueryInput{
+		TableName:              s.getTableName(),
+		IndexName:              aws.String("GSI2"),
+		KeyConditionExpression: aws.String("GSI2PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)},
+		},
+		ScanIndexForward: aws.Bool(false), // Newest first
+		Limit:            safeInt32(limit),
+	}
+
+	// Apply time filters
+	if !filter.StartTime.IsZero() || !filter.EndTime.IsZero() {
+		var conditionExpr string
+		if !filter.StartTime.IsZero() && !filter.EndTime.IsZero() {
+			conditionExpr = "GSI2SK BETWEEN :start_time AND :end_time"
+			input.ExpressionAttributeValues[":start_time"] = &types.AttributeValueMemberS{Value: filter.StartTime.Format(time.RFC3339)}
+			input.ExpressionAttributeValues[":end_time"] = &types.AttributeValueMemberS{Value: filter.EndTime.Format(time.RFC3339)}
+		} else if !filter.StartTime.IsZero() {
+			conditionExpr = "GSI2SK >= :start_time"
+			input.ExpressionAttributeValues[":start_time"] = &types.AttributeValueMemberS{Value: filter.StartTime.Format(time.RFC3339)}
+		} else if !filter.EndTime.IsZero() {
+			conditionExpr = "GSI2SK <= :end_time"
+			input.ExpressionAttributeValues[":end_time"] = &types.AttributeValueMemberS{Value: filter.EndTime.Format(time.RFC3339)}
+		}
+		
+		if input.FilterExpression == nil {
+			input.FilterExpression = aws.String(conditionExpr)
+		} else {
+			input.FilterExpression = aws.String(*input.FilterExpression + " AND " + conditionExpr)
+		}
+	}
+
+	result, err := s.client.Query(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query moderation queue: %w", err)
+	}
+
+	items := make([]*storage.ModerationQueueItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		var record ModerationRecord
+		err = s.UnmarshalItem(item, &record)
+		if err != nil {
+			common.Logger().Error("Failed to unmarshal moderation record", zap.Error(err))
+			continue
+		}
+
+		if record.Event != nil {
+			// Apply score filters
+			if filter.MinScore > 0 && record.Event.ConfidenceScore < filter.MinScore {
+				continue
+			}
+			if filter.MaxScore > 0 && record.Event.ConfidenceScore > filter.MaxScore {
+				continue
+			}
+
+			// Apply content type filter
+			if filter.ContentType != "" && record.Event.ObjectType != filter.ContentType {
+				continue
+			}
+
+			// Apply action filter
+			if filter.Action != "" && string(record.Event.EventType) != filter.Action {
+				continue
+			}
+
+			// Get review count for this event
+			reviewCount, _ := s.countReviews(ctx, record.Event.ID)
+
+			queueItem := &storage.ModerationQueueItem{
+				Event:       record.Event,
+				Priority:    float64(record.Event.Severity) * record.Event.ConfidenceScore,
+				ReviewCount: reviewCount,
+			}
+			items = append(items, queueItem)
+		}
+	}
+
+	return items, nil
+}
+
+// GetModerationQueuePaginated retrieves pending moderation events with pagination
+func (s *dynamoDBStorage) GetModerationQueuePaginated(ctx context.Context, limit int, cursor string) ([]*storage.ModerationQueueItem, string, error) {
 	input := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
 		IndexName:              aws.String("GSI2"),
@@ -137,7 +225,7 @@ func (s *dynamoDBStorage) GetModerationQueue(ctx context.Context, limit int, cur
 		return nil, "", fmt.Errorf("failed to query moderation queue: %w", err)
 	}
 
-	items := make([]*moderation.QueueItem, 0, len(result.Items))
+	items := make([]*storage.ModerationQueueItem, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record ModerationRecord
 		err = s.UnmarshalItem(item, &record)
@@ -150,7 +238,7 @@ func (s *dynamoDBStorage) GetModerationQueue(ctx context.Context, limit int, cur
 			// Get review count for this event
 			reviewCount, _ := s.countReviews(ctx, record.Event.ID)
 
-			queueItem := &moderation.QueueItem{
+			queueItem := &storage.ModerationQueueItem{
 				Event:       record.Event,
 				Priority:    float64(record.Event.Severity) * record.Event.ConfidenceScore,
 				ReviewCount: reviewCount,
@@ -821,4 +909,90 @@ func (s *dynamoDBStorage) countReviews(ctx context.Context, eventID string) (int
 	}
 
 	return int(result.Count), nil
+}
+
+// StoreModerationDecision stores a moderation decision
+func (s *dynamoDBStorage) StoreModerationDecision(ctx context.Context, decision *moderation.ModerationDecision) error {
+	if decision.ID == "" {
+		decision.ID = fmt.Sprintf("dec_%s", generateRandomString(12))
+	}
+	decision.Decided = time.Now()
+
+	record := &ModerationRecord{
+		PK:        fmt.Sprintf("DECISION#%s", decision.EventID),
+		SK:        fmt.Sprintf("TIME#%s", decision.Decided.Format(time.RFC3339)),
+		Type:      "DECISION",
+		Decision:  decision,
+		CreatedAt: decision.Decided,
+		TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(), // Keep decisions longer
+	}
+
+	av, err := s.MarshalItem(record)
+	if err != nil {
+		return fmt.Errorf("failed to marshal moderation decision: %w", err)
+	}
+
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: s.getTableName(),
+		Item:      av,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to store moderation decision: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateModerationDecision updates a moderation decision based on a review
+func (s *dynamoDBStorage) UpdateModerationDecision(ctx context.Context, contentID string, review *storage.ModerationReview) error {
+	// Get the current decision for the content
+	currentDecision, err := s.GetModerationDecision(ctx, contentID)
+	if err != nil {
+		return fmt.Errorf("failed to get current moderation decision: %w", err)
+	}
+
+	// If no decision exists, we cannot update it
+	if currentDecision == nil {
+		return fmt.Errorf("no moderation decision exists for content ID: %s", contentID)
+	}
+
+	// Create a new moderation decision based on the review
+	newDecision := &moderation.ModerationDecision{
+		ID:               fmt.Sprintf("dec_%s", generateRandomString(12)),
+		EventID:          currentDecision.EventID,
+		ObjectID:         contentID,
+		Action:           review.Action,
+		ConsensusScore:   review.Confidence,
+		ReviewerCount:    1,
+		TrustWeightTotal: review.Weight,
+		Reviews:          []*moderation.Review{
+			{
+				ID:         fmt.Sprintf("rev_%s", generateRandomString(12)),
+				EventID:    currentDecision.EventID,
+				ReviewerID: review.ReviewerID,
+				Action:     review.Action,
+				Category:   review.Category,
+				Severity:   review.Severity,
+				Confidence: review.Confidence,
+				Notes:      review.Notes,
+				Weight:     review.Weight,
+				Created:    time.Now(),
+			},
+		},
+		Decided: time.Now(),
+	}
+
+	// Create the updated decision
+	if err := s.CreateModerationDecision(ctx, newDecision); err != nil {
+		return fmt.Errorf("failed to create updated moderation decision: %w", err)
+	}
+
+	common.Logger().Info("Updated moderation decision",
+		zap.String("content_id", contentID),
+		zap.String("reviewer", review.ReviewerID),
+		zap.String("action", string(review.Action)),
+		zap.Float64("confidence", review.Confidence),
+	)
+
+	return nil
 }

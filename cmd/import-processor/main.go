@@ -105,7 +105,11 @@ func handleImportProcessing(ctx context.Context, sqsEvent events.SQSEvent) error
 				zap.String("username", event.Username),
 				zap.Error(err))
 			// Update job status as failed
-			updateImportStatus(ctx, event.ImportID, "failed", nil, err.Error())
+			if updateErr := updateImportStatus(ctx, event.ImportID, "failed", nil, err.Error()); updateErr != nil {
+				logger.Error("failed to update import status to failed",
+					zap.String("import_id", event.ImportID),
+					zap.Error(updateErr))
+			}
 		}
 	}
 
@@ -267,7 +271,11 @@ func processCSVImport(ctx context.Context, event ImportProcessorEvent, data []by
 			}
 
 			// Update progress
-			updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+			if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
+				logger.Warn("failed to update import progress", 
+					zap.String("import_id", event.ImportID), 
+					zap.Error(err))
+			}
 
 			// Follow the account
 			if err := followAccount(ctx, event.Username, accountAddress); err != nil {
@@ -300,7 +308,11 @@ func processCSVImport(ctx context.Context, event ImportProcessorEvent, data []by
 			}
 
 			// Update progress
-			updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+			if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
+				logger.Warn("failed to update import progress", 
+					zap.String("import_id", event.ImportID), 
+					zap.Error(err))
+			}
 
 			// Block the account
 			if err := blockAccount(ctx, event.Username, accountAddress); err != nil {
@@ -346,7 +358,11 @@ func processCSVImport(ctx context.Context, event ImportProcessorEvent, data []by
 			}
 
 			// Update progress
-			updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+			if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
+				logger.Warn("failed to update import progress", 
+					zap.String("import_id", event.ImportID), 
+					zap.Error(err))
+			}
 
 			// Mute the account
 			if err := muteAccount(ctx, event.Username, accountAddress, hideNotifications); err != nil {
@@ -379,7 +395,11 @@ func processCSVImport(ctx context.Context, event ImportProcessorEvent, data []by
 			}
 
 			// Update progress
-			updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+			if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
+				logger.Warn("failed to update import progress", 
+					zap.String("import_id", event.ImportID), 
+					zap.Error(err))
+			}
 
 			// Bookmark the status
 			if err := bookmarkStatus(ctx, event.Username, statusURL); err != nil {
@@ -422,7 +442,11 @@ func processJSONImport(ctx context.Context, event ImportProcessorEvent, data []b
 
 			// Add members to list
 			for _, member := range members {
-				updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+				if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
+					logger.Warn("failed to update import progress", 
+						zap.String("import_id", event.ImportID), 
+						zap.Error(err))
+				}
 
 				if err := addToList(ctx, event.Username, listID, member); err != nil {
 					result.Failed++

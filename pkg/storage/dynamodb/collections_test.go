@@ -141,7 +141,8 @@ func TestCollectionOperations(t *testing.T) {
 
 		// Ensure no duplicate items
 		allItemIDs := make(map[string]bool)
-		for _, item := range append(append(items1, items2...), items3...) {
+		allItems := append(items1, append(items2, items3...)...)
+		for _, item := range allItems {
 			assert.False(t, allItemIDs[item.ItemID], "Duplicate item found: %s", item.ItemID)
 			allItemIDs[item.ItemID] = true
 		}

@@ -68,14 +68,10 @@ type queryBatch struct {
 
 type batchedQuery struct {
 	key        string
-	attributes []string
 	resultChan chan interface{}
 }
 
 type batchResult struct {
-	key   string
-	value interface{}
-	err   error
 }
 
 // NewQueryOptimizer creates a new query optimizer

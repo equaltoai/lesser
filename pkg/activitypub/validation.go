@@ -10,7 +10,6 @@ import (
 
 var (
 	// Maximum lengths
-	maxUsernameLength    = 64
 	maxDisplayNameLength = 255
 	maxSummaryLength     = 5000
 	maxContentLength     = 100000

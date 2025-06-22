@@ -41,14 +41,6 @@ var DefaultPolicy = PasswordPolicy{
 
 // Note: Common passwords are now defined in common_passwords.go
 
-// Sequential patterns to detect
-var sequentialPatterns = []string{
-	"012", "123", "234", "345", "456", "567", "678", "789", "890",
-	"987", "876", "765", "654", "543", "432", "321", "210",
-	"abc", "bcd", "cde", "def", "efg", "fgh", "ghi", "hij", "ijk", "jkl",
-	"klm", "lmn", "mno", "nop", "opq", "pqr", "qrs", "rst", "stu", "tuv",
-	"uvw", "vwx", "wxy", "xyz",
-}
 
 // HashPassword hashes a password using bcrypt
 func HashPassword(password string) (string, error) {

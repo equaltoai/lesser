@@ -10,7 +10,6 @@ import (
 
 	"github.com/aron23/lesser/pkg/ai"
 	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/trust"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -22,7 +21,6 @@ import (
 var (
 	dynamoClient *dynamodb.Client
 	aiService    *ai.AIService
-	trustService *trust.Service
 	tableName    string
 )
 
@@ -52,7 +50,6 @@ func init() {
 		S3Bucket:            os.Getenv("S3_BUCKET_NAME"),
 	}
 	aiService = ai.NewAIService(cfg, aiConfig)
-	trustService = trust.NewService(dynamoClient)
 }
 
 func handler(ctx context.Context, event events.DynamoDBEvent) error {
