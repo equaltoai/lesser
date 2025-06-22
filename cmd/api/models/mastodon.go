@@ -27,7 +27,12 @@ type AccountRegistrationResponse struct {
 type VerifyCredentialsResponse struct {
 	ID             string                 `json:"id"`
 	Username       string                 `json:"username"`
+	Acct           string                 `json:"acct"`
 	DisplayName    string                 `json:"display_name"`
+	Locked         bool                   `json:"locked"`
+	Bot            bool                   `json:"bot"`
+	Discoverable   bool                   `json:"discoverable"`
+	Group          bool                   `json:"group"`
 	Email          string                 `json:"email"`
 	EmailVerified  bool                   `json:"email_verified"`
 	Note           string                 `json:"note"`
@@ -39,7 +44,9 @@ type VerifyCredentialsResponse struct {
 	FollowersCount int                    `json:"followers_count"`
 	FollowingCount int                    `json:"following_count"`
 	StatusesCount  int                    `json:"statuses_count"`
-	LastStatusAt   string                 `json:"last_status_at,omitempty"`
+	LastStatusAt   string                 `json:"last_status_at"`
+	Emojis         []interface{}          `json:"emojis"`
+	Fields         []interface{}          `json:"fields"`
 	CreatedAt      string                 `json:"created_at"`
 	Role           string                 `json:"role"`
 	Source         map[string]interface{} `json:"source"`
@@ -147,11 +154,11 @@ type Status struct {
 	Emojis             []interface{}          `json:"emojis"`
 	Card               *interface{}           `json:"card"`
 	Poll               *Poll                  `json:"poll"`
-	
+
 	// Quote boost extensions
-	IsQuoteBoost     bool    `json:"is_quote_boost,omitempty"`
-	QuotedStatus     *Status `json:"quoted_status,omitempty"`
-	QuotedStatusID   *string `json:"quoted_status_id,omitempty"`
+	IsQuoteBoost   bool    `json:"is_quote_boost,omitempty"`
+	QuotedStatus   *Status `json:"quoted_status,omitempty"`
+	QuotedStatusID *string `json:"quoted_status_id,omitempty"`
 }
 
 // Account represents a Mastodon-compatible account

@@ -493,7 +493,7 @@ func (h *Handler) HandleDebugObjectExplain(ctx context.Context, request events.A
 	response.References = map[string]interface{}{
 		"likes":     likeCount,
 		"announces": announceCount,
-		"replies":   0, // TODO: Implement reply counting
+		"replies":   h.countStatusReplies(ctx, objectID),
 	}
 
 	// Add cost breakdown
@@ -518,4 +518,14 @@ func (h *Handler) HandleDebugObjectExplain(ctx context.Context, request events.A
 		},
 		Body: string(body),
 	}, nil
+}
+
+// Helper method to count status replies
+func (h *Handler) countStatusReplies(ctx context.Context, statusID string) int {
+	count, err := h.store.GetStatusReplyCount(ctx, statusID)
+	if err != nil {
+		h.logger.Warn("failed to count status replies", zap.Error(err))
+		return 0
+	}
+	return count
 }

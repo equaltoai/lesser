@@ -57,9 +57,12 @@ type Actor struct {
 	Endpoints         *Endpoints `json:"endpoints,omitempty"`
 
 	// Mastodon-specific fields
-	ManuallyApprovesFollowers bool   `json:"manuallyApprovesFollowers,omitempty"`
-	Discoverable              bool   `json:"discoverable,omitempty"`
-	Featured                  string `json:"featured,omitempty"`
+	ManuallyApprovesFollowers bool         `json:"manuallyApprovesFollowers,omitempty"`
+	Discoverable              bool         `json:"discoverable,omitempty"`
+	Featured                  string       `json:"featured,omitempty"`
+	LastStatusAt              *time.Time   `json:"lastStatusAt,omitempty"`
+	CreatedAt                 *time.Time   `json:"createdAt,omitempty"`
+	Attachment                []Attachment `json:"attachment,omitempty"`
 }
 
 // PublicKey represents an actor's public key for HTTP signatures
@@ -77,8 +80,11 @@ type Endpoints struct {
 // Activity represents an ActivityPub activity
 type Activity struct {
 	BaseObject
-	Actor  string      `json:"actor"`
-	Object interface{} `json:"object"`
+	Actor      string      `json:"actor"`
+	Object     interface{} `json:"object"`
+	Target     string      `json:"target,omitempty"`     // For Add/Remove activities
+	Origin     string      `json:"origin,omitempty"`     // For Move activities
+	Instrument string      `json:"instrument,omitempty"` // For various activities
 }
 
 // Note represents a basic text post
@@ -89,7 +95,7 @@ type Note struct {
 	Attachment     []Attachment `json:"attachment,omitempty"`
 	Tag            []Tag        `json:"tag,omitempty"`
 	ConversationID string       `json:"conversationId,omitempty"` // For tracking conversation threads
-	Visibility     string       `json:"_:visibility,omitempty"`     // Lesser extension for preserving visibility
+	Visibility     string       `json:"_:visibility,omitempty"`   // Lesser extension for preserving visibility
 }
 
 // QuoteNote represents a note that quotes another note
@@ -129,6 +135,7 @@ type Attachment struct {
 	MediaType string `json:"mediaType"`
 	URL       string `json:"url"`
 	Name      string `json:"name,omitempty"`
+	Value     string `json:"value,omitempty"` // For profile metadata
 	Width     int    `json:"width,omitempty"`
 	Height    int    `json:"height,omitempty"`
 }

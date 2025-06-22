@@ -112,4 +112,3 @@ func (d *dynamoDBStorage) SetDNSCache(ctx context.Context, entry *storage.DNSCac
 
 	return nil
 }
-

@@ -186,9 +186,9 @@ func (fah *FederationAnalyticsHandler) GetRecommendations(w http.ResponseWriter,
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"recommendations": recommendations,
-		"count":          len(recommendations),
-		"domain":         domain,
-		"generated_at":   time.Now(),
+		"count":           len(recommendations),
+		"domain":          domain,
+		"generated_at":    time.Now(),
 	})
 }
 
@@ -221,8 +221,8 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"metadata":    metadata,
-		"connections": connections,
+		"metadata":     metadata,
+		"connections":  connections,
 		"retrieved_at": time.Now(),
 	})
 }
@@ -245,10 +245,10 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 	// Parse time range
 	startStr := r.URL.Query().Get("start")
 	endStr := r.URL.Query().Get("end")
-	
+
 	var startTime, endTime time.Time
 	var err error
-	
+
 	if startStr != "" {
 		startTime, err = time.Parse(time.RFC3339, startStr)
 		if err != nil {
@@ -259,7 +259,7 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 		// Default to last 30 days
 		startTime = time.Now().Add(-30 * 24 * time.Hour)
 	}
-	
+
 	if endStr != "" {
 		endTime, err = time.Parse(time.RFC3339, endStr)
 		if err != nil {

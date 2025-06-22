@@ -297,3 +297,122 @@ func (s *dynamoDBStorage) GetContactAccount(ctx context.Context) (*storage.Actor
 
 	return &actorRecord, nil
 }
+
+// GetDailyActiveUserCount returns the count of daily active users
+func (s *dynamoDBStorage) GetDailyActiveUserCount(ctx context.Context) (int64, error) {
+	// Calculate the start of today in UTC
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	// Query for user activities within the last 24 hours
+	// This looks for ACTIVITY records with timestamps from today
+	input := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("begins_with(PK, :activity_prefix) AND CreatedAt >= :today"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":activity_prefix": &types.AttributeValueMemberS{Value: "ACTIVITY#"},
+			":today":           &types.AttributeValueMemberS{Value: today.Format(time.RFC3339)},
+		},
+		ProjectionExpression: aws.String("ActorID"),
+	}
+
+	result, err := s.client.Scan(ctx, input)
+	if err != nil {
+		return 0, fmt.Errorf("failed to scan for daily active users: %w", err)
+	}
+
+	// Count unique users who have been active today
+	activeUsers := make(map[string]bool)
+	for _, item := range result.Items {
+		if actorID, ok := item["ActorID"].(*types.AttributeValueMemberS); ok {
+			activeUsers[actorID.Value] = true
+		}
+	}
+
+	return int64(len(activeUsers)), nil
+}
+
+// GetDomainStats returns federation statistics for a specific domain
+func (s *dynamoDBStorage) GetDomainStats(ctx context.Context, domain string) (interface{}, error) {
+	// Create a structure to hold domain statistics
+	stats := map[string]interface{}{
+		"domain":         domain,
+		"total_users":    0,
+		"active_users":   0,
+		"total_statuses": 0,
+		"last_activity":  nil,
+		"software":       "unknown",
+		"version":        "unknown",
+	}
+
+	// Query for actors from this domain
+	actorInput := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("begins_with(PK, :actor_prefix) AND contains(#domain, :domain)"),
+		ExpressionAttributeNames: map[string]string{
+			"#domain": "Domain",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":actor_prefix": &types.AttributeValueMemberS{Value: "ACTOR#"},
+			":domain":       &types.AttributeValueMemberS{Value: domain},
+		},
+		ProjectionExpression: aws.String("PK, ActorID, CreatedAt"),
+	}
+
+	actorResult, err := s.client.Scan(ctx, actorInput)
+	if err != nil {
+		return stats, fmt.Errorf("failed to query actors for domain %s: %w", domain, err)
+	}
+
+	stats["total_users"] = len(actorResult.Items)
+
+	// Query for statuses from users of this domain
+	statusInput := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("begins_with(PK, :status_prefix) AND contains(AuthorID, :domain)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":status_prefix": &types.AttributeValueMemberS{Value: "STATUS#"},
+			":domain":        &types.AttributeValueMemberS{Value: domain},
+		},
+		ProjectionExpression: aws.String("PK, CreatedAt"),
+	}
+
+	statusResult, err := s.client.Scan(ctx, statusInput)
+	if err != nil {
+		return stats, fmt.Errorf("failed to query statuses for domain %s: %w", domain, err)
+	}
+
+	stats["total_statuses"] = len(statusResult.Items)
+
+	// Find most recent activity
+	var lastActivity *time.Time
+	for _, item := range statusResult.Items {
+		if createdAt, ok := item["CreatedAt"].(*types.AttributeValueMemberS); ok {
+			if t, err := time.Parse(time.RFC3339, createdAt.Value); err == nil {
+				if lastActivity == nil || t.After(*lastActivity) {
+					lastActivity = &t
+				}
+			}
+		}
+	}
+
+	if lastActivity != nil {
+		stats["last_activity"] = lastActivity.Format(time.RFC3339)
+	}
+
+	// Count active users (users with activity in last 30 days)
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+	activeCount := 0
+	for _, item := range statusResult.Items {
+		if createdAt, ok := item["CreatedAt"].(*types.AttributeValueMemberS); ok {
+			if t, err := time.Parse(time.RFC3339, createdAt.Value); err == nil {
+				if t.After(thirtyDaysAgo) {
+					activeCount++
+				}
+			}
+		}
+	}
+	stats["active_users"] = activeCount
+
+	return stats, nil
+}

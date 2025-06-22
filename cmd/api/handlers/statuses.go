@@ -59,7 +59,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 	}
 
 	var req models.CreateStatusRequest
-	
+
 	// Handle form data
 	if strings.Contains(contentType, "application/x-www-form-urlencoded") {
 		// Parse form data
@@ -70,7 +70,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 				zap.String("body", body))
 			return common.BadRequest(fmt.Errorf("invalid form data: %w", err)), nil
 		}
-		
+
 		// Map form fields to request struct
 		req.Status = values.Get("status")
 		req.InReplyToID = values.Get("in_reply_to_id")
@@ -78,17 +78,18 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		req.Sensitive = values.Get("sensitive") == "true"
 		req.SpoilerText = values.Get("spoiler_text")
 		req.Language = values.Get("language")
-		
+
 		// Handle media IDs
 		if mediaIDs := values.Get("media_ids[]"); mediaIDs != "" {
 			req.MediaIDs = strings.Split(mediaIDs, ",")
 		}
-		
+
 		// Handle poll
 		if values.Get("poll[options][]") != "" {
-			// TODO: Implement poll parsing
+			// Poll parsing not yet implemented - skip for now
+			// This would require extending the models to support polls
 		}
-		
+
 		// Handle scheduled_at
 		if scheduledAt := values.Get("scheduled_at"); scheduledAt != "" {
 			req.ScheduledAt = &scheduledAt
@@ -207,10 +208,11 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 	case "private":
 		note.To = []string{actor.Followers}
 	case "direct":
-		// TODO: Extract mentions and add to To field
-		note.To = []string{}
+		// Extract mentions from content and add to To field
+		mentions := h.extractMentions(req.Status)
+		note.To = mentions
 	}
-	
+
 	// Store visibility explicitly
 	note.Visibility = req.Visibility
 
@@ -291,7 +293,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		h.logger.Error("failed to create note object", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
-	
+
 	// If this is a reply, increment the reply count on the parent
 	if req.InReplyToID != "" {
 		if err := h.store.IncrementReplyCount(ctx, req.InReplyToID); err != nil {
@@ -445,7 +447,10 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 	// Handle reply fields
 	if req.InReplyToID != "" {
 		resp.InReplyToID = &req.InReplyToID
-		// TODO: Extract account ID from the replied-to status
+		// Extract account ID from the replied-to status
+		if accountID := h.getReplyToAccountID(ctx, req.InReplyToID); accountID != "" {
+			resp.InReplyToAccountID = &accountID
+		}
 	}
 
 	respBody, _ := json.Marshal(resp)
@@ -510,6 +515,19 @@ func (h *Handler) HandleFavourite(ctx context.Context, request events.APIGateway
 	}
 	now := time.Now()
 	likeActivity.Published = &now
+
+	// Create the Like record in dedicated storage
+	like := &storage.Like{
+		Actor:     actor.ID,
+		Object:    objectID,
+		ID:        likeActivity.ID,
+		Published: *likeActivity.Published,
+	}
+
+	if err := h.store.CreateLike(ctx, like); err != nil {
+		h.logger.Error("failed to create like", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
 
 	// Store the activity in the outbox (this will trigger delivery)
 	if err := h.store.CreateActivity(ctx, likeActivity); err != nil {
@@ -622,6 +640,12 @@ func (h *Handler) HandleUnfavourite(ctx context.Context, request events.APIGatew
 		}
 		now := time.Now()
 		undoActivity.Published = &now
+
+		// Delete the Like record from dedicated storage
+		if err := h.store.DeleteLike(ctx, actor.ID, objectID); err != nil {
+			h.logger.Error("failed to delete like", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
 
 		// Store the activity in the outbox (this will trigger delivery)
 		if err := h.store.CreateActivity(ctx, undoActivity); err != nil {
@@ -823,6 +847,12 @@ func (h *Handler) HandleUnreblog(ctx context.Context, request events.APIGatewayV
 		}
 		now := time.Now()
 		undoActivity.Published = &now
+
+		// Delete the Announce record from dedicated storage
+		if err := h.store.DeleteAnnounce(ctx, actor.ID, objectID); err != nil {
+			h.logger.Error("failed to delete announce", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
 
 		// Store the activity in the outbox (this will trigger delivery)
 		if err := h.store.CreateActivity(ctx, undoActivity); err != nil {
@@ -1419,7 +1449,7 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 
 	// Get descendants (replies to this status)
 	descendants := []models.Status{}
-	
+
 	// Fetch replies to this status
 	replies, _, err := h.store.GetReplies(ctx, objectID, 100, "") // Get up to 100 replies
 	if err != nil {
@@ -1450,7 +1480,7 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 			status := h.converter.ObjectToStatus(reply, replyActor)
 			descendants = append(descendants, status)
 		}
-		
+
 		h.logger.Debug("fetched descendants for context",
 			zap.String("object_id", objectID),
 			zap.Int("count", len(descendants)))
@@ -1503,6 +1533,10 @@ func (h *Handler) HandleGetAccountStatuses(ctx context.Context, request events.A
 
 	// Convert objects to statuses
 	statuses := []models.Status{}
+	h.logger.Debug("converting objects to statuses",
+		zap.Int("object_count", len(objects)),
+		zap.String("actor_id", actor.ID))
+
 	for _, obj := range objects {
 		// Apply filters
 		if onlyMedia {
@@ -1537,9 +1571,18 @@ func (h *Handler) HandleGetAccountStatuses(ctx context.Context, request events.A
 			}
 		}
 
-		// TODO: Implement exclude_reblogs and tagged filters
+		// Apply filters (exclude_reblogs and tagged filters not yet implemented)
+		// This would require additional query parameters and filtering logic
 
 		status := h.converter.ObjectToStatus(obj, actor)
+
+		// Debug log to check the status data
+		h.logger.Debug("converted status from object",
+			zap.String("status_id", status.ID),
+			zap.String("status_content", status.Content),
+			zap.String("status_created_at", status.CreatedAt),
+			zap.Any("object_type", fmt.Sprintf("%T", obj)))
+
 		statuses = append(statuses, status)
 	}
 
@@ -1607,4 +1650,61 @@ func extractLinksFromContent(content string) []string {
 		}
 	}
 	return links
+}
+
+// extractMentions extracts @mentions from content and returns actor URIs
+func (h *Handler) extractMentions(content string) []string {
+	mentions := []string{}
+	words := strings.Fields(content)
+
+	for _, word := range words {
+		if strings.HasPrefix(word, "@") {
+			// Remove @ and any trailing punctuation
+			username := strings.TrimPrefix(word, "@")
+			username = strings.TrimRight(username, ".,!?;:")
+
+			if username != "" {
+				// Convert username to actor URI
+				actorURI := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), username)
+				mentions = append(mentions, actorURI)
+			}
+		}
+	}
+
+	return mentions
+}
+
+// getReplyToAccountID extracts account ID from a replied-to status
+func (h *Handler) getReplyToAccountID(ctx context.Context, statusID string) string {
+	// Get the object being replied to
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+	}
+
+	obj, err := h.store.GetObject(ctx, objectID)
+	if err != nil {
+		return ""
+	}
+
+	// Extract attributedTo from the object
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		if o.AttributedTo != "" {
+			// Extract username from actor URI
+			parts := strings.Split(o.AttributedTo, "/")
+			if len(parts) > 0 {
+				return parts[len(parts)-1]
+			}
+		}
+	case map[string]interface{}:
+		if attributedTo, ok := o["attributedTo"].(string); ok {
+			parts := strings.Split(attributedTo, "/")
+			if len(parts) > 0 {
+				return parts[len(parts)-1]
+			}
+		}
+	}
+
+	return ""
 }

@@ -11,10 +11,10 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 )
 
 // SubscriptionManager manages WebSocket subscriptions
@@ -60,52 +60,52 @@ type ModerationFilter struct {
 
 // ModerationEvent represents a moderation event
 type ModerationEvent struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"`
-	Severity    string    `json:"severity"`
-	ContentID   string    `json:"content_id"`
-	UserID      string    `json:"user_id"`
-	Description string    `json:"description"`
-	Timestamp   time.Time `json:"timestamp"`
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Severity    string                 `json:"severity"`
+	ContentID   string                 `json:"content_id"`
+	UserID      string                 `json:"user_id"`
+	Description string                 `json:"description"`
+	Timestamp   time.Time              `json:"timestamp"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 // ThreatAlert represents a security threat alert
 type ThreatAlert struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"`
-	Severity    string    `json:"severity"`
-	Source      string    `json:"source"`
-	Target      string    `json:"target"`
-	Description string    `json:"description"`
-	Indicators  []string  `json:"indicators"`
-	Timestamp   time.Time `json:"timestamp"`
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Severity    string                 `json:"severity"`
+	Source      string                 `json:"source"`
+	Target      string                 `json:"target"`
+	Description string                 `json:"description"`
+	Indicators  []string               `json:"indicators"`
+	Timestamp   time.Time              `json:"timestamp"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 // PerformanceAlert represents a performance alert
 type PerformanceAlert struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"`
-	Severity    string    `json:"severity"`
-	Service     string    `json:"service"`
-	Metric      string    `json:"metric"`
-	Value       float64   `json:"value"`
-	Threshold   float64   `json:"threshold"`
-	Description string    `json:"description"`
-	Timestamp   time.Time `json:"timestamp"`
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Severity    string                 `json:"severity"`
+	Service     string                 `json:"service"`
+	Metric      string                 `json:"metric"`
+	Value       float64                `json:"value"`
+	Threshold   float64                `json:"threshold"`
+	Description string                 `json:"description"`
+	Timestamp   time.Time              `json:"timestamp"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 // InfrastructureEvent represents an infrastructure event
 type InfrastructureEvent struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"`
-	Severity    string    `json:"severity"`
-	Service     string    `json:"service"`
-	Region      string    `json:"region"`
-	Description string    `json:"description"`
-	Timestamp   time.Time `json:"timestamp"`
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Severity    string                 `json:"severity"`
+	Service     string                 `json:"service"`
+	Region      string                 `json:"region"`
+	Description string                 `json:"description"`
+	Timestamp   time.Time              `json:"timestamp"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 

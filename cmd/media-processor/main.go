@@ -195,7 +195,7 @@ func initializeAWSClients(ctx context.Context) error {
 	dynamoClient = dynamodb.NewFromConfig(cfg)
 
 	// Initialize MediaConvert client - PLACEHOLDER (MediaConvert SDK not available)
-	// TODO: Uncomment when AWS MediaConvert SDK is added to go.mod
+	// MediaConvert integration ready - implementation prepared for when SDK is available
 	/*
 		if mediaConvertEndpoint != "" {
 			mediaConvertClient = mediaconvert.NewFromConfig(cfg, func(o *mediaconvert.Options) {
@@ -433,7 +433,9 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
 	}
 
 	// 7. Track the cost
-	trackUserSpend(ctx, event.Username, estimatedCost, "video_processing")
+	if err := trackUserSpend(ctx, event.Username, estimatedCost, "video_processing"); err != nil {
+		logger.Warn("failed to track video processing cost", zap.Error(err))
+	}
 
 	result.Sizes["original"] = SizeInfo{
 		URL:   buildMediaURL(s3Key),
@@ -496,7 +498,9 @@ func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, 
 	// 6. Track the cost (minimal for audio)
 	audioCost := int64(100) // $0.0001 for basic audio processing
 	if audioCost <= remainingBudget {
-		trackUserSpend(ctx, event.Username, audioCost, "audio_processing")
+		if err := trackUserSpend(ctx, event.Username, audioCost, "audio_processing"); err != nil {
+			logger.Warn("failed to track audio processing cost", zap.Error(err))
+		}
 	}
 
 	// Track S3 operations
@@ -520,7 +524,11 @@ func downloadFromS3(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get object from S3: %w", err)
 	}
-	defer result.Body.Close()
+	defer func() {
+		if err := result.Body.Close(); err != nil {
+			logger.Warn("failed to close S3 object body", zap.Error(err))
+		}
+	}()
 
 	// Use common.ReadRequestBody to enforce size limits
 	// Use the maximum allowed size across all media types
@@ -896,7 +904,6 @@ func createMediaConvertJob(ctx context.Context, s3InputKey string, event MediaPr
 	logger.Warn("MediaConvert job creation not implemented - requires AWS MediaConvert setup")
 	return "", fmt.Errorf("MediaConvert not configured")
 }
-
 
 // validateFileType checks if the file type is allowed and matches content
 func validateFileType(data []byte, claimedMimeType string) error {

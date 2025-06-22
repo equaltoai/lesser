@@ -57,8 +57,49 @@ func (s *dynamoDBStorage) GetStatusCount(ctx context.Context, actorID string) (i
 	return count, nil
 }
 
-// GetFollowerCount retrieves the exact follower count for an actor
-func (s *dynamoDBStorage) GetFollowerCount(ctx context.Context, actorID string) (int, error) {
+// GetFollowingCount retrieves the exact following count for an actor
+func (s *dynamoDBStorage) GetFollowingCount(ctx context.Context, actorID string) (int, error) {
+	// Extract username from actorID
+	username := extractUsernameFromActorID(actorID)
+
+	// Build the key
+	pk := fmt.Sprintf("ACTOR#%s", username)
+	sk := "PROFILE"
+
+	// Get the actor profile to retrieve the following count
+	result, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: s.getTableName(),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: pk},
+			"SK": &types.AttributeValueMemberS{Value: sk},
+		},
+		ProjectionExpression: aws.String("FollowingCount"),
+	})
+
+	if err != nil {
+		s.logger().Error("failed to get following count",
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		return 0, fmt.Errorf("failed to get following count: %w", err)
+	}
+
+	if result.Item == nil {
+		return 0, nil // Actor not found, return 0
+	}
+
+	// Extract following count
+	count := 0
+	if fc, ok := result.Item["FollowingCount"]; ok {
+		if fcNum, ok := fc.(*types.AttributeValueMemberN); ok {
+			count, _ = strconv.Atoi(fcNum.Value)
+		}
+	}
+
+	return count, nil
+}
+
+// GetFollowersCount retrieves the exact followers count for an actor (who follows you)
+func (s *dynamoDBStorage) GetFollowersCount(ctx context.Context, actorID string) (int, error) {
 	// Extract username from actorID
 	username := extractUsernameFromActorID(actorID)
 

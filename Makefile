@@ -130,6 +130,8 @@ help:
 	@echo "  deploy-functions - Deploy Lambda functions"
 	@echo "  local-dynamodb  - Start local DynamoDB"
 	@echo "  dev-init        - Initialize development environment"
+	@echo "  init-deploy     - Initialize deployment (VAPID keys + admin account)"
+	@echo "  build-init-deploy - Build init-deploy tool only"
 	@echo "  tidy            - Run go mod tidy"
 	@echo "  vendor          - Vendor dependencies"
 	@echo "  help            - Show this help"
@@ -333,3 +335,24 @@ k6-setup:
 	else \
 		echo ".env.k6 already exists"; \
 	fi 
+
+# Initial deployment setup - generates VAPID keys and admin account
+.PHONY: init-deploy
+init-deploy:
+	@echo "Building init-deploy tool..."
+	@GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
+		go build -ldflags="-s -w" -o bin/init-deploy ./cmd/init-deploy
+	@echo "Running initial deployment setup..."
+	@if [ -z "$(DOMAIN)" ]; then \
+		echo "Error: DOMAIN environment variable is required"; \
+		echo "Usage: make init-deploy DOMAIN=your-domain.com"; \
+		exit 1; \
+	fi
+	@bin/init-deploy $(DOMAIN)
+
+# Build init-deploy tool only
+.PHONY: build-init-deploy
+build-init-deploy:
+	@echo "Building init-deploy tool..."
+	@GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
+		go build -ldflags="-s -w" -o bin/init-deploy ./cmd/init-deploy

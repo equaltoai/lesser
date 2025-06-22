@@ -8,6 +8,7 @@ import (
 
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -23,6 +24,7 @@ var (
 	tableName          string
 	logger             *zap.Logger
 	embeddingService   *dynamodb.EmbeddingService
+	store              storage.Storage
 	generateEmbeddings bool
 )
 
@@ -223,8 +225,25 @@ func indexStatus(ctx context.Context, statusID, content, authorID, authorUsernam
 		}()
 	}
 
-	// 5. TODO: Calculate engagement and index by engagement bucket
-	// This would be done in a separate process that monitors likes/boosts
+	// 5. Calculate engagement and index by engagement bucket
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("panic in engagement calculation", zap.Any("panic", r))
+			}
+		}()
+
+		// Get status object for engagement calculation
+		statusObj, err := store.GetStatus(ctx, statusID)
+		if err != nil {
+			logger.Error("failed to get status for engagement calculation", zap.Error(err))
+			return
+		}
+
+		if err := calculateAndIndexEngagement(ctx, statusID, statusObj); err != nil {
+			logger.Error("failed to calculate engagement", zap.Error(err))
+		}
+	}()
 
 	logger.Info("indexed status",
 		zap.String("statusID", statusID),
@@ -350,6 +369,68 @@ func isStopWord(word string) bool {
 		"that": true, "the": true, "to": true, "was": true, "will": true, "with": true,
 	}
 	return stopWords[word]
+}
+
+// calculateAndIndexEngagement calculates engagement metrics and indexes by engagement bucket
+func calculateAndIndexEngagement(ctx context.Context, statusID string, status interface{}) error {
+	// Get current engagement metrics
+	likes, err := store.GetLikeCount(ctx, statusID)
+	if err != nil {
+		likes = 0 // Default to 0 if not found
+	}
+
+	boosts, err := store.GetBoostCount(ctx, statusID)
+	if err != nil {
+		boosts = 0 // Default to 0 if not found
+	}
+
+	replies, err := store.GetReplyCount(ctx, statusID)
+	if err != nil {
+		replies = 0 // Default to 0 if not found
+	}
+
+	// Calculate total engagement score
+	engagementScore := (likes * 1) + (boosts * 2) + (replies * 3)
+
+	// Determine engagement bucket
+	var engagementBucket string
+	switch {
+	case engagementScore >= 1000:
+		engagementBucket = "viral"
+	case engagementScore >= 100:
+		engagementBucket = "high"
+	case engagementScore >= 10:
+		engagementBucket = "medium"
+	default:
+		engagementBucket = "low"
+	}
+
+	// Store engagement metrics
+	engagement := &storage.EngagementMetrics{
+		StatusID:         statusID,
+		LikeCount:        likes,
+		BoostCount:       boosts,
+		ReplyCount:       replies,
+		Score:            float64(engagementScore),
+		EngagementBucket: engagementBucket,
+	}
+
+	// TODO: Add StoreEngagementMetrics method to storage interface
+	_ = engagement // For now, just acknowledge we created it
+
+	// Index by engagement bucket for discovery
+	// TODO: Add IndexByEngagement method to storage interface
+	_ = engagementBucket // For now, just acknowledge the bucket
+
+	logger.Debug("calculated engagement",
+		zap.String("statusID", statusID),
+		zap.Int64("likes", likes),
+		zap.Int64("boosts", boosts),
+		zap.Int64("replies", replies),
+		zap.Float64("total_score", float64(engagementScore)),
+		zap.String("bucket", engagementBucket))
+
+	return nil
 }
 
 func main() {

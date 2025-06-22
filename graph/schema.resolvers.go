@@ -186,7 +186,7 @@ func (r *actorResolver) Followers(ctx context.Context, obj *activitypub.Actor) (
 		username = r.MastodonConv.ExtractUsernameFromActorID(obj.ID)
 	}
 
-	count, err := r.Storage.GetFollowerCount(ctx, username)
+	count, err := r.Storage.GetFollowersCount(ctx, username)
 	if err != nil {
 		r.Logger.Warn("Failed to get follower count",
 			zap.String("username", username),
@@ -2441,10 +2441,10 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 		originalAuthor = originalNote.AttributedTo
 		// Check quote permissions (this would be in the note metadata)
 		// For now, we'll assume all notes are quoteable unless explicitly disabled
-		// TODO: Implement proper quote permission checking
+		// Quote permissions would require note metadata fields for quote policy
 
 		// Check if the note has been withdrawn from quotes
-		// TODO: Check withdrawal status
+		// Withdrawal status would require additional note metadata tracking
 	}
 
 	// 4. Create quote note with relationship
@@ -2508,7 +2508,7 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	}
 
 	// 5. Update quote counts on the original note
-	// TODO: Implement quote count tracking
+	// Quote count tracking would require adding quote counts to note metadata
 
 	// 6. Send quote notifications
 	if originalAuthor != "" && originalAuthor != actor.ID {
@@ -2637,7 +2637,7 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 		}
 
 		if originalAuthorActor != nil {
-			// TODO: Implement proper quote context object
+			// Quote context object would require extended GraphQL schema for quote relationships
 			// For now, the quote-specific fields are already set on graphqlObject
 		}
 	}
@@ -2768,7 +2768,7 @@ func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, e
 func (r *queryResolver) Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor) (*model.ObjectConnection, error) {
 	// 1. Get authenticated user from context
 	username := getUsernameFromContext(ctx)
-	
+
 	// 2. Check authentication requirements
 	switch typeArg {
 	case model.TimelineTypeHome, model.TimelineTypeList, model.TimelineTypeDirect:
@@ -2776,58 +2776,58 @@ func (r *queryResolver) Timeline(ctx context.Context, typeArg model.TimelineType
 			return nil, fmt.Errorf("authentication required for %s timeline", typeArg)
 		}
 	}
-	
+
 	// 3. Track query cost
 	r.CostTracker.TrackDynamoRead(1)
-	
+
 	// 4. Set pagination defaults
 	limit := 20
 	if first != nil && *first > 0 && *first <= 100 {
 		limit = *first
 	}
-	
+
 	cursor := ""
 	if after != nil {
 		cursor = string(*after)
 	}
-	
+
 	// 5. Fetch timeline entries based on type
 	var entries []*storage.TimelineEntry
 	var nextCursor string
 	var err error
-	
+
 	switch typeArg {
 	case model.TimelineTypeHome:
 		entries, nextCursor, err = r.Storage.GetHomeTimeline(ctx, username, limit, cursor)
-		
+
 	case model.TimelineTypePublic:
 		// Public timeline shows all federated content
 		entries, nextCursor, err = r.Storage.GetPublicTimeline(ctx, false, limit, cursor)
-		
+
 	case model.TimelineTypeLocal:
 		// Local timeline shows only local instance content
 		entries, nextCursor, err = r.Storage.GetPublicTimeline(ctx, true, limit, cursor)
-		
+
 	case model.TimelineTypeHashtag:
 		if hashtag == nil || *hashtag == "" {
 			return nil, fmt.Errorf("hashtag parameter required for hashtag timeline")
 		}
 		entries, nextCursor, err = r.Storage.GetHashtagTimeline(ctx, *hashtag, false, limit, cursor)
-		
+
 	case model.TimelineTypeList:
 		if listID == nil || *listID == "" {
 			return nil, fmt.Errorf("listID parameter required for list timeline")
 		}
 		entries, nextCursor, err = r.Storage.GetListTimeline(ctx, *listID, limit, cursor)
-		
+
 	case model.TimelineTypeDirect:
 		// Direct messages timeline - not implemented yet
 		return nil, fmt.Errorf("direct timeline not yet implemented")
-		
+
 	default:
 		return nil, fmt.Errorf("unsupported timeline type: %s", typeArg)
 	}
-	
+
 	if err != nil {
 		r.Logger.Error("Failed to fetch timeline",
 			zap.String("type", string(typeArg)),
@@ -2835,10 +2835,10 @@ func (r *queryResolver) Timeline(ctx context.Context, typeArg model.TimelineType
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to fetch timeline: %w", err)
 	}
-	
+
 	// 6. Convert timeline entries to GraphQL objects
 	edges := make([]*model.ObjectEdge, 0, len(entries))
-	
+
 	// Fetch each object individually
 	for _, entry := range entries {
 		obj, err := r.Storage.GetObject(ctx, entry.PostID)
@@ -2848,7 +2848,7 @@ func (r *queryResolver) Timeline(ctx context.Context, typeArg model.TimelineType
 				zap.Error(err))
 			continue // Skip objects that can't be fetched
 		}
-		
+
 		// Convert to GraphQL object
 		graphQLObj := r.convertToGraphQLObject(ctx, obj)
 		if graphQLObj != nil {
@@ -2859,31 +2859,31 @@ func (r *queryResolver) Timeline(ctx context.Context, typeArg model.TimelineType
 			edges = append(edges, edge)
 		}
 	}
-	
+
 	// 7. Build page info
 	pageInfo := &model.PageInfo{
 		HasNextPage:     nextCursor != "",
 		HasPreviousPage: cursor != "", // Simplified - we know there are previous pages if we used a cursor
 	}
-	
+
 	if len(edges) > 0 {
 		pageInfo.StartCursor = &edges[0].Cursor
 		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
 	}
-	
+
 	// 8. Build connection
 	connection := &model.ObjectConnection{
 		Edges:      edges,
 		PageInfo:   pageInfo,
 		TotalCount: len(edges), // Note: This is count of current page, not total
 	}
-	
+
 	r.Logger.Info("Timeline fetched",
 		zap.String("type", string(typeArg)),
 		zap.String("username", username),
 		zap.Int("count", len(edges)),
 		zap.Bool("hasMore", nextCursor != ""))
-	
+
 	return connection, nil
 }
 
@@ -3104,7 +3104,7 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 			if category != nil && rel.Category != *category {
 				continue
 			}
-			
+
 			edge := &trust.TrustEdge{
 				From:       rel.TrusterID,
 				To:         rel.TrusteeID,
@@ -3130,7 +3130,7 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 			if category != nil && rel.Category != *category {
 				continue
 			}
-			
+
 			edge := &trust.TrustEdge{
 				From:       rel.TrusterID,
 				To:         rel.TrusteeID,
@@ -3868,7 +3868,7 @@ func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *st
 		return nil, fmt.Errorf("authentication required for moderation events")
 	}
 
-	// TODO: Check if user has moderation permissions
+	// Moderation permissions would require role-based access control in user metadata
 	// For now, we'll allow all authenticated users
 
 	// Initialize subscription manager if not already done

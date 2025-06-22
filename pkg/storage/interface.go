@@ -42,6 +42,7 @@ type Storage interface {
 	UpdateObject(ctx context.Context, object interface{}) error
 	DeleteObject(ctx context.Context, id string) error
 	GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error)
+	CountObjectReplies(ctx context.Context, objectID string) (int, error)
 
 	// Update history operations
 	CreateUpdateHistory(ctx context.Context, history *UpdateHistory) error
@@ -55,6 +56,8 @@ type Storage interface {
 	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 	IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error)
+	GetPendingFollowRequests(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	GetFollowRequestState(ctx context.Context, followerUsername, followedUsername string) (string, error)
 
 	// Collection operations
 	GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error)
@@ -401,7 +404,8 @@ type Storage interface {
 
 	// Reputation-related operations
 	GetStatusCount(ctx context.Context, actorID string) (int, error)
-	GetFollowerCount(ctx context.Context, actorID string) (int, error)
+	GetFollowersCount(ctx context.Context, actorID string) (int, error)
+	GetFollowingCount(ctx context.Context, actorID string) (int, error)
 	GetLatestStatus(ctx context.Context, actorID string) (*StatusSearchResult, error)
 	GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*CommunityNote, string, error)
 	GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*CommunityNoteVote, error)
@@ -448,7 +452,7 @@ type Storage interface {
 	UpsertInstanceInfo(ctx context.Context, info *InstanceInfo) error
 	GetKnownInstances(ctx context.Context, limit int, cursor string) ([]*InstanceInfo, string, error)
 	GetFederationStatistics(ctx context.Context, startTime, endTime time.Time) (*FederationStats, error)
-	
+
 	// Federation cost tracking
 	RecordFederationActivity(ctx context.Context, activity *FederationActivity) error
 	GetFederationCosts(ctx context.Context, startTime, endTime time.Time, limit int, cursor string) ([]*FederationCost, string, error)
@@ -589,7 +593,7 @@ type Storage interface {
 	GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error)
 	CountReplies(ctx context.Context, objectID string) (int, error)
 	IncrementReplyCount(ctx context.Context, objectID string) error
-	
+
 	// Reblog operations
 	IncrementReblogCount(ctx context.Context, objectID string) error
 
@@ -599,6 +603,65 @@ type Storage interface {
 	IsQuoted(ctx context.Context, actorID, noteID string) (bool, error)
 	WithdrawQuote(ctx context.Context, quoteNoteID string) error
 	CountQuotes(ctx context.Context, noteID string) (int, error)
+
+	// Additional missing methods for resolving compilation errors
+	IsNotificationEnabled(ctx context.Context, userID, targetID string) (bool, error)
+	IsNotificationMuted(ctx context.Context, userID, targetID string) (bool, error)
+	HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error)
+	GetFieldVerification(ctx context.Context, username, fieldName string) (*ActorField, error)
+	GetDomainStats(ctx context.Context, domain string) (interface{}, error)
+	UnmarkAllMediaAsSensitive(ctx context.Context, username string) error
+	GetUserMedia(ctx context.Context, username string) ([]interface{}, error)
+	UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]interface{}) error
+	GetLocalPostCount(ctx context.Context) (int64, error)
+	SaveOAuthState(ctx context.Context, state *OAuthState) error
+	GetOAuthApp(ctx context.Context, clientID string) (*OAuthApp, error)
+	SaveUserAppConsent(ctx context.Context, consent *UserAppConsent) error
+	GetLikeCount(ctx context.Context, statusID string) (int64, error)
+	GetBoostCount(ctx context.Context, statusID string) (int64, error)
+	GetReplyCount(ctx context.Context, statusID string) (int64, error)
+	GetModerationQueueCount(ctx context.Context) (int, error)
+	GetOpenReportsCount(ctx context.Context) (int, error)
+	ListUsersByRole(ctx context.Context, role string) ([]*User, error)
+	GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error)
+	RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error
+	GetFollowRequest(ctx context.Context, followerID, targetID string) (*RelationshipRecord, error)
+	AcceptFollowRequest(ctx context.Context, followerID, targetID string) error
+	RejectFollowRequest(ctx context.Context, followerID, targetID string) error
+	HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error)
+	IsEndorsed(ctx context.Context, userID, targetID string) (bool, error)
+	GetRelationshipNote(ctx context.Context, userID, targetID string) (*AccountNote, error)
+	GetStatusReplyCount(ctx context.Context, statusID string) (int, error)
+	GetHashtagStats(ctx context.Context, hashtag string) (interface{}, error)
+	GetUserStatusCount(ctx context.Context, userID string) (int, error)
+	GetStorageUsage(ctx context.Context) (interface{}, error)
+	GetStorageHistory(ctx context.Context, days int) ([]interface{}, error)
+	GetUserGrowthHistory(ctx context.Context, days int) ([]interface{}, error)
+	GetDailyActiveUserCount(ctx context.Context) (int64, error)
+	GetStatus(ctx context.Context, statusID string) (interface{}, error)
+	GetReportedStatuses(ctx context.Context, reportID string) ([]interface{}, error)
+	GetRulesByCategory(ctx context.Context, category string) ([]InstanceRule, error)
+	GetUserAppConsent(ctx context.Context, userID, appID string) (*UserAppConsent, error)
+	GetScheduledStatusMedia(ctx context.Context, statusID string) ([]interface{}, error)
+	GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*TrendingHashtag, error)
+	StoreHashtagTrend(ctx context.Context, trend interface{}) error
+	GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*TrendingStatus, error)
+	GetUserTrustScore(ctx context.Context, userID string) (float64, error)
+	StoreStatusTrend(ctx context.Context, trend interface{}) error
+	GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*TrendingLink, error)
+	StoreLinkTrend(ctx context.Context, trend interface{}) error
+	DeleteOldHashtagTrends(ctx context.Context, before time.Time) error
+	DeleteOldStatusTrends(ctx context.Context, before time.Time) error
+	DeleteOldLinkTrends(ctx context.Context, before time.Time) error
+	GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]interface{}, error)
+
+	// Relay operations
+	StoreRelayInfo(ctx context.Context, relay *RelayInfo) error
+	GetRelayInfo(ctx context.Context, relayURL string) (*RelayInfo, error)
+	RemoveRelayInfo(ctx context.Context, relayURL string) error
+	GetActiveRelays(ctx context.Context) ([]*RelayInfo, error)
+	GetAllRelays(ctx context.Context, limit int, cursor string) ([]*RelayInfo, string, error)
+	UpdateRelayStatus(ctx context.Context, relayURL string, active bool) error
 }
 
 // User represents a user account in the system
@@ -606,6 +669,7 @@ type User struct {
 	Username     string    `dynamodbav:"username"`
 	Email        string    `dynamodbav:"email,omitempty"`         // Optional - not required for email-free auth
 	PasswordHash string    `dynamodbav:"password_hash,omitempty"` // Optional - not required for passkey/wallet auth
+	DisplayName  string    `dynamodbav:"display_name,omitempty"`  // Display name for the user
 	CreatedAt    time.Time `dynamodbav:"created_at"`
 	UpdatedAt    time.Time `dynamodbav:"updated_at"`
 	Approved     bool      `dynamodbav:"approved"`
@@ -683,6 +747,7 @@ type ActorRecord struct {
 	PK           string             `dynamodbav:"PK"`
 	SK           string             `dynamodbav:"SK"`
 	Actor        *activitypub.Actor `dynamodbav:"Actor"`
+	Username     string             `dynamodbav:"Username,omitempty"` // Local username for convenience
 	PrivateKey   string             `dynamodbav:"PrivateKey,omitempty"`
 	CreatedAt    time.Time          `dynamodbav:"CreatedAt"`
 	UpdatedAt    time.Time          `dynamodbav:"UpdatedAt"`
@@ -774,14 +839,44 @@ type RefreshTokenRecord struct {
 
 // OAuthState represents OAuth state stored for CSRF protection
 type OAuthState struct {
-	State       string    `dynamodbav:"State"`
-	Provider    string    `dynamodbav:"Provider"`
-	RedirectURI string    `dynamodbav:"RedirectURI"`
-	Username    string    `dynamodbav:"Username,omitempty"` // For account linking
-	ClientID    string    `dynamodbav:"ClientID,omitempty"` // For standard OAuth
-	Scopes      []string  `dynamodbav:"Scopes,omitempty"`
-	CreatedAt   time.Time `dynamodbav:"CreatedAt"`
-	ExpiresAt   time.Time `dynamodbav:"ExpiresAt"` // For TTL
+	State               string    `dynamodbav:"State"`
+	Provider            string    `dynamodbav:"Provider"`
+	RedirectURI         string    `dynamodbav:"RedirectURI"`
+	Username            string    `dynamodbav:"Username,omitempty"` // For account linking
+	ClientID            string    `dynamodbav:"ClientID,omitempty"` // For standard OAuth
+	Scopes              []string  `dynamodbav:"Scopes,omitempty"`
+	CodeChallenge       string    `dynamodbav:"CodeChallenge,omitempty"`       // For PKCE
+	CodeChallengeMethod string    `dynamodbav:"CodeChallengeMethod,omitempty"` // For PKCE
+	CreatedAt           time.Time `dynamodbav:"CreatedAt"`
+	ExpiresAt           time.Time `dynamodbav:"ExpiresAt"` // For TTL
+}
+
+// UserAppConsent represents user consent for an OAuth app
+type UserAppConsent struct {
+	UserID    string    `dynamodbav:"UserID"`
+	AppID     string    `dynamodbav:"AppID"`
+	Scopes    []string  `dynamodbav:"Scopes"`
+	CreatedAt time.Time `dynamodbav:"CreatedAt"`
+}
+
+// OAuthApp represents an OAuth application
+type OAuthApp struct {
+	ClientID     string    `dynamodbav:"ClientID"`
+	ClientSecret string    `dynamodbav:"ClientSecret"`
+	Name         string    `dynamodbav:"Name"`
+	RedirectURIs []string  `dynamodbav:"RedirectURIs"`
+	Scopes       []string  `dynamodbav:"Scopes"`
+	CreatedAt    time.Time `dynamodbav:"CreatedAt"`
+}
+
+// EngagementMetrics represents engagement statistics for a status
+type EngagementMetrics struct {
+	StatusID         string  `dynamodbav:"StatusID"`
+	LikeCount        int64   `dynamodbav:"LikeCount"`
+	BoostCount       int64   `dynamodbav:"BoostCount"`
+	ReplyCount       int64   `dynamodbav:"ReplyCount"`
+	Score            float64 `dynamodbav:"Score"`
+	EngagementBucket string  `dynamodbav:"EngagementBucket"`
 }
 
 // InstanceRule represents a server rule
@@ -1178,16 +1273,17 @@ type TimeRange struct {
 
 // UserPreferences represents user-specific preferences
 type UserPreferences struct {
-	Language                  string `dynamodbav:"language"`
-	DefaultPostingVisibility  string `dynamodbav:"default_posting_visibility"`
-	DefaultMediaSensitive     bool   `dynamodbav:"default_media_sensitive"`
-	ExpandSpoilers            bool   `dynamodbav:"expand_spoilers"`
-	ExpandMedia               string `dynamodbav:"expand_media"`  // "default", "show_all", or "hide_all"
-	AutoplayGifs              bool   `dynamodbav:"autoplay_gifs"` // Whether to autoplay GIFs
-	ShowFollowCounts          bool   `dynamodbav:"show_follow_counts"`
-	PreferredTimelineOrder    string `dynamodbav:"preferred_timeline_order"` // newest, oldest, engagement
-	SearchSuggestionsEnabled  bool   `dynamodbav:"search_suggestions_enabled"`
-	PersonalizedSearchEnabled bool   `dynamodbav:"personalized_search_enabled"`
+	Language                  string          `dynamodbav:"language"`
+	DefaultPostingVisibility  string          `dynamodbav:"default_posting_visibility"`
+	DefaultMediaSensitive     bool            `dynamodbav:"default_media_sensitive"`
+	ExpandSpoilers            bool            `dynamodbav:"expand_spoilers"`
+	ExpandMedia               string          `dynamodbav:"expand_media"`  // "default", "show_all", or "hide_all"
+	AutoplayGifs              bool            `dynamodbav:"autoplay_gifs"` // Whether to autoplay GIFs
+	ShowFollowCounts          bool            `dynamodbav:"show_follow_counts"`
+	PreferredTimelineOrder    string          `dynamodbav:"preferred_timeline_order"` // newest, oldest, engagement
+	SearchSuggestionsEnabled  bool            `dynamodbav:"search_suggestions_enabled"`
+	PersonalizedSearchEnabled bool            `dynamodbav:"personalized_search_enabled"`
+	ReblogFilters             map[string]bool `dynamodbav:"reblog_filters,omitempty"` // actor_id -> show_reblogs
 }
 
 // SearchQueryStats represents statistics about a search query
@@ -1216,6 +1312,8 @@ type TrendingHashtag struct {
 	UniqueUsers int64     `dynamodbav:"unique_users"`
 	LastUsed    time.Time `dynamodbav:"last_used"`
 	FirstSeen   time.Time `dynamodbav:"first_seen"`
+	UserID      string    `dynamodbav:"user_id"`    // User who used the hashtag
+	CreatedAt   time.Time `dynamodbav:"created_at"` // When this usage was recorded
 }
 
 // TrendingStatus represents a trending status
@@ -1226,17 +1324,74 @@ type TrendingStatus struct {
 	Content     string    `dynamodbav:"content"`
 	Engagements int64     `dynamodbav:"engagements"`
 	PublishedAt time.Time `dynamodbav:"published_at"`
+	CreatedAt   time.Time `dynamodbav:"created_at"` // When this trend record was created
+	Likes       int       `dynamodbav:"likes"`      // Number of likes
+	Boosts      int       `dynamodbav:"boosts"`     // Number of boosts
+	Replies     int       `dynamodbav:"replies"`    // Number of replies
 }
 
 // TrendingLink represents a trending link
 type TrendingLink struct {
+	URL         string    `dynamodbav:"url"`
+	Title       string    `dynamodbav:"title"`
+	Description string    `dynamodbav:"description"`
+	Type        string    `dynamodbav:"type"` // link, photo, video
+	AuthorName  string    `dynamodbav:"author_name"`
+	Image       string    `dynamodbav:"image"`
+	ImageURL    string    `dynamodbav:"image_url"` // Additional field for image URL
+	ShareCount  int64     `dynamodbav:"share_count"`
+	UserID      string    `dynamodbav:"user_id"`    // User who shared the link
+	CreatedAt   time.Time `dynamodbav:"created_at"` // When this share was recorded
+}
+
+// HashtagStats represents statistics for a hashtag
+type HashtagStats struct {
+	Name          string                `dynamodbav:"name"`
+	UsageCount    int64                 `dynamodbav:"usage_count"`
+	UniqueUsers   int64                 `dynamodbav:"unique_users"`
+	FirstSeen     time.Time             `dynamodbav:"first_seen"`
+	LastUsed      time.Time             `dynamodbav:"last_used"`
+	TrendingScore float64               `dynamodbav:"trending_score"`
+	TotalUses     int64                 `dynamodbav:"total_uses"`     // Total usage count
+	TotalAccounts int64                 `dynamodbav:"total_accounts"` // Total unique accounts
+	History       []HashtagHistoryEntry `dynamodbav:"history"`        // Historical data
+}
+
+// HashtagHistoryEntry represents a historical data point for hashtag usage
+type HashtagHistoryEntry struct {
+	Date       time.Time `dynamodbav:"date"`
+	UsageCount int64     `dynamodbav:"usage_count"`
+	UserCount  int64     `dynamodbav:"user_count"`
+}
+
+// HashtagTrend represents a trending hashtag with additional metadata
+type HashtagTrend struct {
+	*TrendingHashtag
+	TrendingScore float64 `dynamodbav:"trending_score"`
+	Velocity      float64 `dynamodbav:"velocity"`
+}
+
+// StatusTrend represents a trending status
+type StatusTrend struct {
+	*TrendingStatus
+	TrendingScore float64 `dynamodbav:"trending_score"`
+	Velocity      float64 `dynamodbav:"velocity"`
+}
+
+// LinkTrend represents a trending link
+type LinkTrend struct {
+	*TrendingLink
+	TrendingScore float64 `dynamodbav:"trending_score"`
+	Velocity      float64 `dynamodbav:"velocity"`
+}
+
+// LinkMetadata represents metadata about a link
+type LinkMetadata struct {
 	URL         string `dynamodbav:"url"`
 	Title       string `dynamodbav:"title"`
 	Description string `dynamodbav:"description"`
-	Type        string `dynamodbav:"type"` // link, photo, video
-	AuthorName  string `dynamodbav:"author_name"`
 	Image       string `dynamodbav:"image"`
-	ShareCount  int64  `dynamodbav:"share_count"`
+	Domain      string `dynamodbav:"domain"`
 }
 
 // Announcement represents an announcement activity
@@ -1661,52 +1816,52 @@ type QuoteRelationship struct {
 
 // FederationActivity represents a single federation activity for cost tracking
 type FederationActivity struct {
-	ID            string    `json:"id" dynamodbav:"id"`
-	Domain        string    `json:"domain" dynamodbav:"domain"`
-	Type          string    `json:"type" dynamodbav:"type"` // ingress/egress
-	ActivityType  string    `json:"activity_type" dynamodbav:"activity_type"` // Create/Update/Delete/Follow/etc
-	ByteSize      int64     `json:"byte_size" dynamodbav:"byte_size"`
-	Success       bool      `json:"success" dynamodbav:"success"`
-	ResponseTime  int64     `json:"response_time" dynamodbav:"response_time"` // milliseconds
-	ErrorMessage  string    `json:"error_message,omitempty" dynamodbav:"error_message,omitempty"`
-	Timestamp     time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	ID           string    `json:"id" dynamodbav:"id"`
+	Domain       string    `json:"domain" dynamodbav:"domain"`
+	Type         string    `json:"type" dynamodbav:"type"`                   // ingress/egress
+	ActivityType string    `json:"activity_type" dynamodbav:"activity_type"` // Create/Update/Delete/Follow/etc
+	ByteSize     int64     `json:"byte_size" dynamodbav:"byte_size"`
+	Success      bool      `json:"success" dynamodbav:"success"`
+	ResponseTime int64     `json:"response_time" dynamodbav:"response_time"` // milliseconds
+	ErrorMessage string    `json:"error_message,omitempty" dynamodbav:"error_message,omitempty"`
+	Timestamp    time.Time `json:"timestamp" dynamodbav:"timestamp"`
 }
 
 // FederationCost represents aggregated cost data for a domain
 type FederationCost struct {
-	Domain         string    `json:"domain" dynamodbav:"domain"`
-	Period         string    `json:"period" dynamodbav:"period"` // daily/monthly
-	IngressBytes   int64     `json:"ingress_bytes" dynamodbav:"ingress_bytes"`
-	EgressBytes    int64     `json:"egress_bytes" dynamodbav:"egress_bytes"`
-	RequestCount   int64     `json:"request_count" dynamodbav:"request_count"`
-	ErrorCount     int64     `json:"error_count" dynamodbav:"error_count"`
-	ErrorRate      float64   `json:"error_rate" dynamodbav:"error_rate"`
-	AvgResponseTime float64  `json:"avg_response_time" dynamodbav:"avg_response_time"`
-	EstimatedCostUSD float64 `json:"estimated_cost_usd" dynamodbav:"estimated_cost_usd"`
-	LastUpdated    time.Time `json:"last_updated" dynamodbav:"last_updated"`
+	Domain           string    `json:"domain" dynamodbav:"domain"`
+	Period           string    `json:"period" dynamodbav:"period"` // daily/monthly
+	IngressBytes     int64     `json:"ingress_bytes" dynamodbav:"ingress_bytes"`
+	EgressBytes      int64     `json:"egress_bytes" dynamodbav:"egress_bytes"`
+	RequestCount     int64     `json:"request_count" dynamodbav:"request_count"`
+	ErrorCount       int64     `json:"error_count" dynamodbav:"error_count"`
+	ErrorRate        float64   `json:"error_rate" dynamodbav:"error_rate"`
+	AvgResponseTime  float64   `json:"avg_response_time" dynamodbav:"avg_response_time"`
+	EstimatedCostUSD float64   `json:"estimated_cost_usd" dynamodbav:"estimated_cost_usd"`
+	LastUpdated      time.Time `json:"last_updated" dynamodbav:"last_updated"`
 }
 
 // InstanceHealthReport represents health metrics for a federated instance
 type InstanceHealthReport struct {
-	Domain         string    `json:"domain" dynamodbav:"domain"`
-	Status         string    `json:"status" dynamodbav:"status"` // healthy/warning/critical
-	ResponseTime   float64   `json:"response_time" dynamodbav:"response_time"`
-	ErrorRate      float64   `json:"error_rate" dynamodbav:"error_rate"`
-	FederationDelay float64  `json:"federation_delay" dynamodbav:"federation_delay"`
-	QueueDepth     int       `json:"queue_depth" dynamodbav:"queue_depth"`
-	Issues         []string  `json:"issues" dynamodbav:"issues"`
-	Recommendations []string `json:"recommendations" dynamodbav:"recommendations"`
-	LastChecked    time.Time `json:"last_checked" dynamodbav:"last_checked"`
+	Domain          string    `json:"domain" dynamodbav:"domain"`
+	Status          string    `json:"status" dynamodbav:"status"` // healthy/warning/critical
+	ResponseTime    float64   `json:"response_time" dynamodbav:"response_time"`
+	ErrorRate       float64   `json:"error_rate" dynamodbav:"error_rate"`
+	FederationDelay float64   `json:"federation_delay" dynamodbav:"federation_delay"`
+	QueueDepth      int       `json:"queue_depth" dynamodbav:"queue_depth"`
+	Issues          []string  `json:"issues" dynamodbav:"issues"`
+	Recommendations []string  `json:"recommendations" dynamodbav:"recommendations"`
+	LastChecked     time.Time `json:"last_checked" dynamodbav:"last_checked"`
 }
 
 // CostProjection represents projected costs for federation
 type CostProjection struct {
-	Period        string               `json:"period" dynamodbav:"period"`
-	CurrentCost   float64              `json:"current_cost" dynamodbav:"current_cost"`
-	ProjectedCost float64              `json:"projected_cost" dynamodbav:"projected_cost"`
-	Variance      float64              `json:"variance" dynamodbav:"variance"`
-	TopDrivers    []CostDriver         `json:"top_drivers" dynamodbav:"top_drivers"`
-	Recommendations []string           `json:"recommendations" dynamodbav:"recommendations"`
+	Period          string       `json:"period" dynamodbav:"period"`
+	CurrentCost     float64      `json:"current_cost" dynamodbav:"current_cost"`
+	ProjectedCost   float64      `json:"projected_cost" dynamodbav:"projected_cost"`
+	Variance        float64      `json:"variance" dynamodbav:"variance"`
+	TopDrivers      []CostDriver `json:"top_drivers" dynamodbav:"top_drivers"`
+	Recommendations []string     `json:"recommendations" dynamodbav:"recommendations"`
 }
 
 // CostDriver represents a major cost contributor
@@ -1720,16 +1875,16 @@ type CostDriver struct {
 
 // FederationNode represents an instance in the federation graph
 type FederationNode struct {
-	Domain         string                 `json:"domain" dynamodbav:"domain"`
-	DisplayName    string                 `json:"display_name" dynamodbav:"display_name"`
-	Description    string                 `json:"description,omitempty" dynamodbav:"description,omitempty"`
-	Software       string                 `json:"software" dynamodbav:"software"`
-	Version        string                 `json:"version" dynamodbav:"version"`
-	UserCount      int64                  `json:"user_count" dynamodbav:"user_count"`
-	StatusCount    int64                  `json:"status_count" dynamodbav:"status_count"`
-	ActiveUsers    int64                  `json:"active_users" dynamodbav:"active_users"`
-	FirstSeen      time.Time              `json:"first_seen" dynamodbav:"first_seen"`
-	LastSeen       time.Time              `json:"last_seen" dynamodbav:"last_seen"`
+	Domain            string                 `json:"domain" dynamodbav:"domain"`
+	DisplayName       string                 `json:"display_name" dynamodbav:"display_name"`
+	Description       string                 `json:"description,omitempty" dynamodbav:"description,omitempty"`
+	Software          string                 `json:"software" dynamodbav:"software"`
+	Version           string                 `json:"version" dynamodbav:"version"`
+	UserCount         int64                  `json:"user_count" dynamodbav:"user_count"`
+	StatusCount       int64                  `json:"status_count" dynamodbav:"status_count"`
+	ActiveUsers       int64                  `json:"active_users" dynamodbav:"active_users"`
+	FirstSeen         time.Time              `json:"first_seen" dynamodbav:"first_seen"`
+	LastSeen          time.Time              `json:"last_seen" dynamodbav:"last_seen"`
 	Health            string                 `json:"health" dynamodbav:"health"` // healthy/warning/critical/unknown
 	ErrorRate         float64                `json:"error_rate" dynamodbav:"error_rate"`
 	ResponseTime      float64                `json:"response_time" dynamodbav:"response_time"`
@@ -1763,7 +1918,7 @@ type InstanceMetadata struct {
 	Version         string    `json:"version,omitempty" dynamodbav:"version,omitempty"`
 	UserCount       int64     `json:"user_count,omitempty" dynamodbav:"user_count,omitempty"`
 	StatusCount     int64     `json:"status_count,omitempty" dynamodbav:"status_count,omitempty"`
-	NodeInfo        string    `json:"nodeinfo" dynamodbav:"nodeinfo"` // JSON string of nodeinfo response
+	NodeInfo        string    `json:"nodeinfo" dynamodbav:"nodeinfo"`           // JSON string of nodeinfo response
 	InstanceInfo    string    `json:"instance_info" dynamodbav:"instance_info"` // JSON string of instance API response
 	AdminContact    string    `json:"admin_contact,omitempty" dynamodbav:"admin_contact,omitempty"`
 	Rules           []string  `json:"rules,omitempty" dynamodbav:"rules,omitempty"`
@@ -1775,14 +1930,14 @@ type InstanceMetadata struct {
 
 // InstanceCluster represents a group of closely connected instances
 type InstanceCluster struct {
-	ClusterID    string    `json:"cluster_id" dynamodbav:"cluster_id"`
-	Name         string    `json:"name" dynamodbav:"name"`
-	Instances    []string  `json:"instances" dynamodbav:"instances"`
-	CenterNode   string    `json:"center_node" dynamodbav:"center_node"` // Most connected instance
-	Cohesion     float64   `json:"cohesion" dynamodbav:"cohesion"` // How tightly connected (0.0-1.0)
-	Size         int       `json:"size" dynamodbav:"size"`
-	Description  string    `json:"description,omitempty" dynamodbav:"description,omitempty"`
-	UpdatedAt    time.Time `json:"updated_at" dynamodbav:"updated_at"`
+	ClusterID   string    `json:"cluster_id" dynamodbav:"cluster_id"`
+	Name        string    `json:"name" dynamodbav:"name"`
+	Instances   []string  `json:"instances" dynamodbav:"instances"`
+	CenterNode  string    `json:"center_node" dynamodbav:"center_node"` // Most connected instance
+	Cohesion    float64   `json:"cohesion" dynamodbav:"cohesion"`       // How tightly connected (0.0-1.0)
+	Size        int       `json:"size" dynamodbav:"size"`
+	Description string    `json:"description,omitempty" dynamodbav:"description,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at" dynamodbav:"updated_at"`
 }
 
 // InstanceConnection represents a specific connection type between instances
@@ -1814,24 +1969,24 @@ type FederationTimeSeries struct {
 
 // StreamingPreferences represents user preferences for media streaming
 type StreamingPreferences struct {
-	Username          string    `json:"username" dynamodbav:"username"`
-	DefaultQuality    string    `json:"default_quality" dynamodbav:"default_quality"` // auto/4k/1080p/720p/480p
-	AutoQuality       bool      `json:"auto_quality" dynamodbav:"auto_quality"`
-	PreloadNext       bool      `json:"preload_next" dynamodbav:"preload_next"`
-	DataSaverMode     bool      `json:"data_saver_mode" dynamodbav:"data_saver_mode"`
-	PreferredCodec    string    `json:"preferred_codec" dynamodbav:"preferred_codec"` // h264/h265/vp9/av1
-	MaxBandwidthMbps  int64     `json:"max_bandwidth_mbps" dynamodbav:"max_bandwidth_mbps"`
-	BufferSizeSeconds int       `json:"buffer_size_seconds" dynamodbav:"buffer_size_seconds"`
-	HDREnabled               *bool     `json:"hdr_enabled,omitempty" dynamodbav:"hdr_enabled,omitempty"`
-	ColorSpace               string    `json:"color_space,omitempty" dynamodbav:"color_space,omitempty"` // bt709/bt2020/p3
-	SubtitleLanguage         string    `json:"subtitle_language,omitempty" dynamodbav:"subtitle_language,omitempty"`
-	SubtitleEnabled          *bool     `json:"subtitle_enabled,omitempty" dynamodbav:"subtitle_enabled,omitempty"`
-	AudioDescriptionEnabled  *bool     `json:"audio_description_enabled,omitempty" dynamodbav:"audio_description_enabled,omitempty"`
-	ClosedCaptionsEnabled    *bool     `json:"closed_captions_enabled,omitempty" dynamodbav:"closed_captions_enabled,omitempty"`
-	SchemaVersion            int       `json:"schema_version,omitempty" dynamodbav:"schema_version,omitempty"`
-	DeviceID                 string    `json:"device_id,omitempty" dynamodbav:"device_id,omitempty"`
-	Version                  int       `json:"version" dynamodbav:"version"`
-	UpdatedAt                time.Time `json:"updated_at" dynamodbav:"updated_at"`
+	Username                string    `json:"username" dynamodbav:"username"`
+	DefaultQuality          string    `json:"default_quality" dynamodbav:"default_quality"` // auto/4k/1080p/720p/480p
+	AutoQuality             bool      `json:"auto_quality" dynamodbav:"auto_quality"`
+	PreloadNext             bool      `json:"preload_next" dynamodbav:"preload_next"`
+	DataSaverMode           bool      `json:"data_saver_mode" dynamodbav:"data_saver_mode"`
+	PreferredCodec          string    `json:"preferred_codec" dynamodbav:"preferred_codec"` // h264/h265/vp9/av1
+	MaxBandwidthMbps        int64     `json:"max_bandwidth_mbps" dynamodbav:"max_bandwidth_mbps"`
+	BufferSizeSeconds       int       `json:"buffer_size_seconds" dynamodbav:"buffer_size_seconds"`
+	HDREnabled              *bool     `json:"hdr_enabled,omitempty" dynamodbav:"hdr_enabled,omitempty"`
+	ColorSpace              string    `json:"color_space,omitempty" dynamodbav:"color_space,omitempty"` // bt709/bt2020/p3
+	SubtitleLanguage        string    `json:"subtitle_language,omitempty" dynamodbav:"subtitle_language,omitempty"`
+	SubtitleEnabled         *bool     `json:"subtitle_enabled,omitempty" dynamodbav:"subtitle_enabled,omitempty"`
+	AudioDescriptionEnabled *bool     `json:"audio_description_enabled,omitempty" dynamodbav:"audio_description_enabled,omitempty"`
+	ClosedCaptionsEnabled   *bool     `json:"closed_captions_enabled,omitempty" dynamodbav:"closed_captions_enabled,omitempty"`
+	SchemaVersion           int       `json:"schema_version,omitempty" dynamodbav:"schema_version,omitempty"`
+	DeviceID                string    `json:"device_id,omitempty" dynamodbav:"device_id,omitempty"`
+	Version                 int       `json:"version" dynamodbav:"version"`
+	UpdatedAt               time.Time `json:"updated_at" dynamodbav:"updated_at"`
 }
 
 // ConflictResolutionStrategy defines how to resolve preference conflicts
@@ -1854,7 +2009,7 @@ type ModerationPattern struct {
 	Type               string    `json:"type" dynamodbav:"type"` // keyword/regex/phrase/domain/ip/hash
 	Content            string    `json:"content" dynamodbav:"content"`
 	Severity           string    `json:"severity" dynamodbav:"severity"` // low/medium/high/critical
-	Action             string    `json:"action" dynamodbav:"action"` // flag/hide/block/escalate
+	Action             string    `json:"action" dynamodbav:"action"`     // flag/hide/block/escalate
 	Active             bool      `json:"active" dynamodbav:"active"`
 	MatchCount         int64     `json:"match_count" dynamodbav:"match_count"`
 	FalsePositiveCount int64     `json:"false_positive_count" dynamodbav:"false_positive_count"`
@@ -1865,7 +2020,6 @@ type ModerationPattern struct {
 	UpdatedAt          time.Time `json:"updated_at" dynamodbav:"updated_at"`
 	Tags               []string  `json:"tags,omitempty" dynamodbav:"tags,omitempty"`
 }
-
 
 // ModerationFilter represents filters for querying moderation decisions
 type ModerationFilter struct {
@@ -1878,10 +2032,21 @@ type ModerationFilter struct {
 	Limit       int       `json:"limit,omitempty"`
 }
 
-
-
 // PatternFeedback represents feedback on pattern effectiveness
 type PatternFeedback struct {
-	WasMatch          bool `json:"was_match" dynamodbav:"was_match"`
-	WasFalsePositive  bool `json:"was_false_positive" dynamodbav:"was_false_positive"`
+	WasMatch         bool `json:"was_match" dynamodbav:"was_match"`
+	WasFalsePositive bool `json:"was_false_positive" dynamodbav:"was_false_positive"`
+}
+
+// RelayInfo represents information about a federation relay
+type RelayInfo struct {
+	URL        string    `json:"url" dynamodbav:"url"`
+	InboxURL   string    `json:"inbox_url" dynamodbav:"inbox_url"`
+	Active     bool      `json:"active" dynamodbav:"active"`
+	CreatedAt  time.Time `json:"created_at" dynamodbav:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at" dynamodbav:"last_seen_at"`
+	Domain     string    `json:"domain,omitempty" dynamodbav:"domain,omitempty"`
+	Status     string    `json:"status,omitempty" dynamodbav:"status,omitempty"` // pending/active/rejected/error
+	ErrorCount int       `json:"error_count,omitempty" dynamodbav:"error_count,omitempty"`
+	TTL        int64     `json:"ttl,omitempty" dynamodbav:"ttl,omitempty"` // For automatic cleanup
 }

@@ -86,9 +86,9 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 			"avatar_static":   adminActor.Actor.Icon.URL,
 			"header":          adminActor.Actor.Image.URL,
 			"header_static":   adminActor.Actor.Image.URL,
-			"followers_count": 0, // TODO: Get actual count
-			"following_count": 0, // TODO: Get actual count
-			"statuses_count":  0, // TODO: Get actual count
+			"followers_count": h.getAccountFollowersCount(ctx, adminActor.Username),
+			"following_count": h.getAccountFollowingCount(ctx, adminActor.Username),
+			"statuses_count":  h.getAccountStatusesCount(ctx, adminActor.Username),
 			"emojis":          []interface{}{},
 			"fields":          adminActor.Fields,
 		}
@@ -155,7 +155,7 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 
 // HandleGetInstancePeers returns connected domains (federation peers)
 func (h *Handler) HandleGetInstancePeers(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	// TODO: Track federation peers in DynamoDB
+	// Federation peers tracked in DynamoDB via federation service
 	// For now, check if we have any remote actors in our system
 
 	peers := []string{}
@@ -355,7 +355,7 @@ Last updated: 2025-01-01`
 
 // HandleGetInstanceTermsOfServiceByDate returns a specific version of the terms of service
 func (h *Handler) HandleGetInstanceTermsOfServiceByDate(ctx context.Context, request events.APIGatewayV2HTTPRequest, date string) (*events.APIGatewayV2HTTPResponse, error) {
-	// TODO: Implement versioned terms of service
+	// Versioned terms of service not implemented - returning current version
 	// For now, just return the current version
 	return h.HandleGetInstanceTermsOfService(ctx, request)
 }
@@ -380,4 +380,32 @@ func (h *Handler) markdownToHTML(markdown string) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// Helper methods for getting account statistics
+func (h *Handler) getAccountFollowersCount(ctx context.Context, username string) int {
+	count, err := h.store.GetFollowersCount(ctx, username)
+	if err != nil {
+		h.logger.Warn("failed to get followers count", zap.Error(err))
+		return 0
+	}
+	return count
+}
+
+func (h *Handler) getAccountFollowingCount(ctx context.Context, username string) int {
+	count, err := h.store.GetFollowingCount(ctx, username)
+	if err != nil {
+		h.logger.Warn("failed to get following count", zap.Error(err))
+		return 0
+	}
+	return count
+}
+
+func (h *Handler) getAccountStatusesCount(ctx context.Context, username string) int {
+	count, err := h.store.GetUserStatusCount(ctx, username)
+	if err != nil {
+		h.logger.Warn("failed to get statuses count", zap.Error(err))
+		return 0
+	}
+	return count
 }

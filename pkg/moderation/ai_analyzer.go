@@ -15,7 +15,7 @@ import (
 
 // AIAnalyzer provides AI-powered content analysis for moderation
 type AIAnalyzer struct {
-	comprehend *comprehend.Client
+	comprehend  *comprehend.Client
 	rekognition *rekognition.Client
 }
 
@@ -30,10 +30,10 @@ func NewAIAnalyzer(cfg aws.Config) *AIAnalyzer {
 // AnalyzeText analyzes text content for moderation using AWS Comprehend
 func (ai *AIAnalyzer) AnalyzeText(ctx context.Context, content *TextContent) (*TextAnalysis, error) {
 	analysis := &TextAnalysis{
-		ContentID:   content.ID,
-		Text:        content.Text,
-		Language:    "en", // Default to English
-		AnalyzedAt:  time.Now(),
+		ContentID:  content.ID,
+		Text:       content.Text,
+		Language:   "en", // Default to English
+		AnalyzedAt: time.Now(),
 	}
 
 	// Detect language
@@ -92,7 +92,7 @@ func (ai *AIAnalyzer) AnalyzeImage(ctx context.Context, content *ImageContent) (
 	// Detect text in image
 	if text, err := ai.detectTextInImage(ctx, content.ImageBytes); err == nil {
 		analysis.DetectedText = text
-		
+
 		// If text was found, analyze it too
 		if len(text) > 0 {
 			combinedText := strings.Join(text, " ")
@@ -151,11 +151,11 @@ func (ai *AIAnalyzer) detectSentiment(ctx context.Context, text, language string
 	}
 
 	return &SentimentAnalysis{
-		Sentiment:        string(result.Sentiment),
-		PositiveScore:    *result.SentimentScore.Positive,
-		NegativeScore:    *result.SentimentScore.Negative,
-		NeutralScore:     *result.SentimentScore.Neutral,
-		MixedScore:       *result.SentimentScore.Mixed,
+		Sentiment:     string(result.Sentiment),
+		PositiveScore: *result.SentimentScore.Positive,
+		NegativeScore: *result.SentimentScore.Negative,
+		NeutralScore:  *result.SentimentScore.Neutral,
+		MixedScore:    *result.SentimentScore.Mixed,
 	}, nil
 }
 
@@ -173,9 +173,9 @@ func (ai *AIAnalyzer) detectEntities(ctx context.Context, text, language string)
 	var entities []*EntityDetection
 	for _, entity := range result.Entities {
 		entities = append(entities, &EntityDetection{
-			Text:       *entity.Text,
-			Type:       string(entity.Type),
-			Score:      *entity.Score,
+			Text:        *entity.Text,
+			Type:        string(entity.Type),
+			Score:       *entity.Score,
 			BeginOffset: *entity.BeginOffset,
 			EndOffset:   *entity.EndOffset,
 		})
@@ -365,9 +365,9 @@ func (ai *AIAnalyzer) calculateTextModerationScore(analysis *TextAnalysis) float
 
 	// Entity analysis - check for potentially harmful entities
 	harmfulEntityTypes := map[string]float64{
-		"PERSON":        5.0,
-		"LOCATION":      3.0,
-		"ORGANIZATION":  2.0,
+		"PERSON":       5.0,
+		"LOCATION":     3.0,
+		"ORGANIZATION": 2.0,
 	}
 
 	for _, entity := range analysis.Entities {
@@ -482,31 +482,31 @@ type ImageContent struct {
 }
 
 type TextAnalysis struct {
-	ContentID        string               `json:"content_id"`
-	Text             string               `json:"text"`
-	Language         string               `json:"language"`
-	Sentiment        *SentimentAnalysis   `json:"sentiment,omitempty"`
-	Entities         []*EntityDetection   `json:"entities,omitempty"`
-	KeyPhrases       []*KeyPhrase         `json:"key_phrases,omitempty"`
-	PIIEntities      []*PIIEntity         `json:"pii_entities,omitempty"`
-	ModerationScore  float64              `json:"moderation_score"`
-	RiskLevel        string               `json:"risk_level"`
-	Recommendations  []string             `json:"recommendations"`
-	AnalyzedAt       time.Time            `json:"analyzed_at"`
+	ContentID       string             `json:"content_id"`
+	Text            string             `json:"text"`
+	Language        string             `json:"language"`
+	Sentiment       *SentimentAnalysis `json:"sentiment,omitempty"`
+	Entities        []*EntityDetection `json:"entities,omitempty"`
+	KeyPhrases      []*KeyPhrase       `json:"key_phrases,omitempty"`
+	PIIEntities     []*PIIEntity       `json:"pii_entities,omitempty"`
+	ModerationScore float64            `json:"moderation_score"`
+	RiskLevel       string             `json:"risk_level"`
+	Recommendations []string           `json:"recommendations"`
+	AnalyzedAt      time.Time          `json:"analyzed_at"`
 }
 
 type ImageAnalysis struct {
-	ContentID        string              `json:"content_id"`
-	ImageURL         string              `json:"image_url"`
-	ModerationLabels []*ModerationLabel  `json:"moderation_labels,omitempty"`
-	Labels           []*ImageLabel       `json:"labels,omitempty"`
-	DetectedText     []string            `json:"detected_text,omitempty"`
-	Faces            []*FaceDetection    `json:"faces,omitempty"`
-	TextAnalysis     *TextAnalysis       `json:"text_analysis,omitempty"`
-	ModerationScore  float64             `json:"moderation_score"`
-	RiskLevel        string              `json:"risk_level"`
-	Recommendations  []string            `json:"recommendations"`
-	AnalyzedAt       time.Time           `json:"analyzed_at"`
+	ContentID        string             `json:"content_id"`
+	ImageURL         string             `json:"image_url"`
+	ModerationLabels []*ModerationLabel `json:"moderation_labels,omitempty"`
+	Labels           []*ImageLabel      `json:"labels,omitempty"`
+	DetectedText     []string           `json:"detected_text,omitempty"`
+	Faces            []*FaceDetection   `json:"faces,omitempty"`
+	TextAnalysis     *TextAnalysis      `json:"text_analysis,omitempty"`
+	ModerationScore  float64            `json:"moderation_score"`
+	RiskLevel        string             `json:"risk_level"`
+	Recommendations  []string           `json:"recommendations"`
+	AnalyzedAt       time.Time          `json:"analyzed_at"`
 }
 
 type SentimentAnalysis struct {

@@ -73,7 +73,6 @@ func init() {
 
 	dynamoClient = dynamodb.NewFromConfig(globalCfg)
 
-
 	// Get environment variables
 	connectionsTable = os.Getenv("CONNECTIONS_TABLE")
 	if connectionsTable == "" {

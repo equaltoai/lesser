@@ -94,6 +94,7 @@ type ModerationDecision struct {
 	EventID          string     `json:"event_id"`
 	ObjectID         string     `json:"object_id"`
 	Action           ActionType `json:"action"`
+	Reason           string     `json:"reason,omitempty"`   // Reason for the decision
 	ConsensusScore   float64    `json:"consensus_score"`    // Agreement percentage
 	ReviewerCount    int        `json:"reviewer_count"`     // Number of reviewers
 	TrustWeightTotal float64    `json:"trust_weight_total"` // Total trust weight

@@ -1,6 +1,7 @@
 package cost
 
 import (
+	"context"
 	"sync/atomic"
 	"time"
 )
@@ -259,4 +260,18 @@ func (t *Tracker) Clone() *Tracker {
 	clone.dataTransfer.Store(t.dataTransfer.Load())
 
 	return clone
+}
+
+// TrackWrite tracks DynamoDB write operations (convenience function for storage layer)
+func TrackWrite(ctx context.Context, tracker *Tracker, operation string, items int) {
+	if tracker != nil {
+		tracker.TrackDynamoWrite(items)
+	}
+}
+
+// TrackRead tracks DynamoDB read operations (convenience function for storage layer)
+func TrackRead(ctx context.Context, tracker *Tracker, operation string, items int64) {
+	if tracker != nil {
+		tracker.TrackDynamoRead(int(items))
+	}
 }

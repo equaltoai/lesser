@@ -34,21 +34,47 @@ func (h *Handler) HandleGetFollowRequests(ctx context.Context, request events.AP
 		return common.Forbidden(errors.New("insufficient scope")), nil
 	}
 
-	// TODO: Implement locked accounts and pending follow requests
-	// For now, Lesser doesn't support locked accounts, so we always return an empty array
+	// Check if the user has a locked account
+	actor, err := h.store.GetActor(ctx, claims.Username)
+	if err != nil {
+		h.logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
 
-	// When implementing locked accounts:
-	// 1. Check if the authenticated user has a locked account
-	// 2. Query for follow relationships with State="pending" where followed=user
-	// 3. Convert the follower actors to accounts
-	// 4. Return the list with pagination
+	// If account is not locked, return empty array
+	if !actor.ManuallyApprovesFollowers {
+		return common.OK([]interface{}{}), nil
+	}
 
-	h.logger.Info("follow requests requested",
+	// Get pending follow requests
+	pendingRequests, _, err := h.store.GetPendingFollowRequests(ctx, claims.Username, 100, "")
+	if err != nil {
+		h.logger.Error("failed to get pending follow requests", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert to account format
+	accounts := make([]map[string]interface{}, 0, len(pendingRequests))
+	for _, followerID := range pendingRequests {
+		// Get follower actor
+		followerActor, err := h.store.GetActor(ctx, followerID)
+		if err != nil {
+			h.logger.Warn("failed to get follower actor",
+				zap.String("follower_id", followerID),
+				zap.Error(err))
+			continue
+		}
+
+		// Convert to account
+		account := h.convertActorToAccount(ctx, followerActor)
+		accounts = append(accounts, account)
+	}
+
+	h.logger.Info("follow requests retrieved",
 		zap.String("username", claims.Username),
-		zap.String("note", "locked accounts not yet implemented"))
+		zap.Int("count", len(accounts)))
 
-	// Return empty array for now
-	return common.OK([]interface{}{}), nil
+	return common.OK(accounts), nil
 }
 
 // HandleAuthorizeFollowRequest handles POST /api/v1/follow_requests/:account_id/authorize
@@ -75,34 +101,53 @@ func (h *Handler) HandleAuthorizeFollowRequest(ctx context.Context, request even
 		return common.Forbidden(errors.New("insufficient scope")), nil
 	}
 
-	// TODO: Implement locked accounts and follow request authorization
-	// For now, since Lesser doesn't support locked accounts, this is a no-op
+	// Check if the user has a locked account
+	actor, err := h.store.GetActor(ctx, claims.Username)
+	if err != nil {
+		h.logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
 
-	// When implementing:
-	// 1. Check if the authenticated user has a locked account
-	// 2. Find the pending follow relationship from accountID to user
-	// 3. Update the relationship state from "pending" to "accepted"
-	// 4. Send an Accept activity to the follower
-	// 5. Build and return the relationship
+	// Only locked accounts can have follow requests
+	if !actor.ManuallyApprovesFollowers {
+		return common.BadRequest(errors.New("account is not locked")), nil
+	}
 
-	h.logger.Info("follow request authorization attempted",
+	// Find the pending follow request
+	_, err = h.store.GetFollowRequest(ctx, accountID, claims.Username)
+	if err != nil {
+		return common.NotFound(errors.New("follow request not found")), nil
+	}
+
+	// Update the relationship state to accepted
+	if err := h.store.AcceptFollowRequest(ctx, accountID, claims.Username); err != nil {
+		h.logger.Error("failed to accept follow request", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Send Accept activity to the follower
+	go func() {
+		if err := h.sendAcceptActivity(ctx, accountID, claims.Username); err != nil {
+			h.logger.Error("failed to send accept activity", zap.Error(err))
+		}
+	}()
+
+	h.logger.Info("follow request authorized",
 		zap.String("username", claims.Username),
-		zap.String("account_id", accountID),
-		zap.String("note", "locked accounts not yet implemented"))
+		zap.String("follower_id", accountID))
 
-	// For now, build a default relationship response
-	// In a real implementation, this would reflect the actual relationship
+	// Build relationship response
 	relationship := map[string]interface{}{
 		"id":                   accountID,
 		"following":            false,
 		"showing_reblogs":      true,
 		"notifying":            false,
-		"followed_by":          true, // They were trying to follow us
+		"followed_by":          true, // Now following after authorization
 		"blocking":             false,
 		"blocked_by":           false,
 		"muting":               false,
 		"muting_notifications": false,
-		"requested":            false, // No longer requested after authorization
+		"requested":            false, // No longer requested
 		"domain_blocking":      false,
 		"endorsed":             false,
 		"note":                 "",
@@ -135,33 +180,53 @@ func (h *Handler) HandleRejectFollowRequest(ctx context.Context, request events.
 		return common.Forbidden(errors.New("insufficient scope")), nil
 	}
 
-	// TODO: Implement locked accounts and follow request rejection
-	// For now, since Lesser doesn't support locked accounts, this is a no-op
+	// Check if the user has a locked account
+	actor, err := h.store.GetActor(ctx, claims.Username)
+	if err != nil {
+		h.logger.Error("failed to get actor", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
 
-	// When implementing:
-	// 1. Check if the authenticated user has a locked account
-	// 2. Find the pending follow relationship from accountID to user
-	// 3. Delete the relationship or update state to "rejected"
-	// 4. Optionally send a Reject activity to the follower
-	// 5. Build and return the relationship
+	// Only locked accounts can have follow requests
+	if !actor.ManuallyApprovesFollowers {
+		return common.BadRequest(errors.New("account is not locked")), nil
+	}
 
-	h.logger.Info("follow request rejection attempted",
+	// Find the pending follow request
+	_, err = h.store.GetFollowRequest(ctx, accountID, claims.Username)
+	if err != nil {
+		return common.NotFound(errors.New("follow request not found")), nil
+	}
+
+	// Delete/reject the follow request
+	if err := h.store.RejectFollowRequest(ctx, accountID, claims.Username); err != nil {
+		h.logger.Error("failed to reject follow request", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Send Reject activity to the follower
+	go func() {
+		if err := h.sendRejectActivity(ctx, accountID, claims.Username); err != nil {
+			h.logger.Error("failed to send reject activity", zap.Error(err))
+		}
+	}()
+
+	h.logger.Info("follow request rejected",
 		zap.String("username", claims.Username),
-		zap.String("account_id", accountID),
-		zap.String("note", "locked accounts not yet implemented"))
+		zap.String("follower_id", accountID))
 
-	// For now, build a default relationship response
+	// Build relationship response
 	relationship := map[string]interface{}{
 		"id":                   accountID,
 		"following":            false,
 		"showing_reblogs":      false,
 		"notifying":            false,
-		"followed_by":          false, // They're no longer following after rejection
+		"followed_by":          false, // No longer following after rejection
 		"blocking":             false,
 		"blocked_by":           false,
 		"muting":               false,
 		"muting_notifications": false,
-		"requested":            false, // No longer requested after rejection
+		"requested":            false, // No longer requested
 		"domain_blocking":      false,
 		"endorsed":             false,
 		"note":                 "",

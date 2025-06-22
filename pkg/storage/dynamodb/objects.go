@@ -17,7 +17,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // Object represents a generic ActivityPub object stored in DynamoDB
 type Object struct {
 	ID             string             `dynamodbav:"id" json:"id"`
@@ -153,7 +152,7 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 		record.GSI1PK = fmt.Sprintf("ACTOR#%s#OBJECTS", username)
 		record.GSI1SK = obj.Published.Format(time.RFC3339)
 	}
-	
+
 	// Add GSI6 fields if this is a reply
 	if obj.InReplyTo != nil && *obj.InReplyTo != "" {
 		record.GSI6PK = fmt.Sprintf("REPLIES#%s", *obj.InReplyTo)
@@ -299,7 +298,6 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to unmarshal object: %w", err)
 	}
-	
 
 	// If Object is still nil after unmarshaling, try direct conversion
 	if record.Object == nil {
@@ -319,60 +317,10 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 
 	// Convert the Object to a map[string]interface{} for compatibility with the converter
 	if record.Object != nil {
-		objMap := map[string]interface{}{
-			"id":           record.Object.ID,
-			"type":         record.Object.Type,
-			"attributedTo": record.Object.AttributedTo,
-			"content":      record.Object.Content,
-			"name":         record.Object.Name,
-			"summary":      record.Object.Summary,
-			"url":          record.Object.URL,
-			"published":    record.Object.Published.Format(time.RFC3339),
-			"to":           record.Object.To,
-			"cc":           record.Object.CC,
-			"sensitive":    record.Object.Sensitive,
-			"visibility":   record.Object.Visibility,
-		}
-		
-		if record.Object.InReplyTo != nil {
-			objMap["inReplyTo"] = *record.Object.InReplyTo
-		}
-		
-		if !record.Object.Updated.IsZero() {
-			objMap["updated"] = record.Object.Updated.Format(time.RFC3339)
-		}
-		
-		if len(record.Object.Attachment) > 0 {
-			attachments := make([]interface{}, len(record.Object.Attachment))
-			for i, att := range record.Object.Attachment {
-				attachments[i] = map[string]interface{}{
-					"type":      att.Type,
-					"url":       att.URL,
-					"mediaType": att.MediaType,
-					"name":      att.Name,
-					"width":     att.Width,
-					"height":    att.Height,
-				}
-			}
-			objMap["attachment"] = attachments
-		}
-		
-		if len(record.Object.Tag) > 0 {
-			tags := make([]interface{}, len(record.Object.Tag))
-			for i, tag := range record.Object.Tag {
-				tags[i] = map[string]interface{}{
-					"type": tag.Type,
-					"href": tag.Href,
-					"name": tag.Name,
-				}
-			}
-			objMap["tag"] = tags
-		}
-		
-		
+		objMap := s.convertObjectToMap(record.Object)
 		return objMap, nil
 	}
-	
+
 	return record.Object, nil
 }
 
@@ -479,9 +427,8 @@ func (s *dynamoDBStorage) UpdateObject(ctx context.Context, object interface{}) 
 
 // DeleteObject soft deletes an object by creating a tombstone
 func (s *dynamoDBStorage) DeleteObject(ctx context.Context, id string) error {
-	// This is a placeholder - the actual deletion should be done through TombstoneObject
-	// which requires the actor who is deleting it
-	return fmt.Errorf("use TombstoneObject instead of DeleteObject")
+	// Delete by tombstoning with system as the deleting actor
+	return s.TombstoneObject(ctx, id, "system")
 }
 
 // TombstoneObject creates a tombstone for a deleted object
@@ -735,7 +682,7 @@ func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string,
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s#OBJECTS", username)},
 		},
 		Limit:            safeInt32(limit + 1), // Request one extra to determine if there's a next page
-		ScanIndexForward: aws.Bool(false),             // Newest first
+		ScanIndexForward: aws.Bool(false),      // Newest first
 	}
 
 	// Add cursor if provided
@@ -771,7 +718,35 @@ func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string,
 			continue
 		}
 
-		objects = append(objects, record.Object)
+		// Convert the Object to a map[string]interface{} for compatibility with the converter
+		if record.Object != nil {
+			// Log the object data for debugging
+			log.Debug("processing object record",
+				zap.String("object_id", record.Object.ID),
+				zap.String("object_type", record.Object.Type),
+				zap.Bool("has_content", record.Object.Content != ""),
+				zap.Bool("has_published", !record.Object.Published.IsZero()))
+
+			objMap := s.convertObjectToMap(record.Object)
+			objects = append(objects, objMap)
+		} else {
+			log.Warn("object record has nil Object field",
+				zap.String("pk", record.PK),
+				zap.String("sk", record.SK))
+
+			// Try to get the object directly using the PK
+			if record.PK != "" {
+				// Extract object ID from PK (format: OBJECT#<id>)
+				if len(record.PK) > 7 && record.PK[:7] == "OBJECT#" {
+					objectID := record.PK[7:]
+					if directObj, err := s.GetObject(ctx, objectID); err == nil {
+						log.Info("fetched object directly",
+							zap.String("object_id", objectID))
+						objects = append(objects, directObj)
+					}
+				}
+			}
+		}
 	}
 
 	// Determine next cursor
@@ -779,9 +754,11 @@ func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string,
 	if len(result.Items) > limit {
 		// There are more items, use the timestamp of the last item we're returning
 		if len(objects) > 0 {
-			// Type assert to get the Published field
-			if obj, ok := objects[len(objects)-1].(*Object); ok {
-				nextCursor = obj.Published.Format(time.RFC3339)
+			// Get the published field from the map
+			if objMap, ok := objects[len(objects)-1].(map[string]interface{}); ok {
+				if published, ok := objMap["published"].(string); ok {
+					nextCursor = published
+				}
 			}
 		}
 	}
@@ -1000,4 +977,81 @@ func convertToObject(obj interface{}) (*Object, error) {
 	}
 
 	return nil, fmt.Errorf("unsupported object type: %T", obj)
+}
+
+// convertObjectToMap converts an Object to a map for compatibility with the converter
+func (s *dynamoDBStorage) convertObjectToMap(obj *Object) map[string]interface{} {
+	objMap := map[string]interface{}{
+		"id":           obj.ID,
+		"type":         obj.Type,
+		"attributedTo": obj.AttributedTo,
+		"content":      obj.Content,
+		"name":         obj.Name,
+		"summary":      obj.Summary,
+		"sensitive":    obj.Sensitive,
+		"visibility":   obj.Visibility,
+	}
+
+	// Set URL - use ID if URL is empty
+	if obj.URL != "" {
+		objMap["url"] = obj.URL
+	} else if obj.ID != "" {
+		objMap["url"] = obj.ID
+	}
+
+	// Handle published time
+	if !obj.Published.IsZero() {
+		objMap["published"] = obj.Published.Format(time.RFC3339)
+	}
+
+	// Handle arrays that might be nil
+	if obj.To != nil {
+		objMap["to"] = obj.To
+	}
+	if obj.CC != nil {
+		objMap["cc"] = obj.CC
+	}
+
+	if obj.InReplyTo != nil {
+		objMap["inReplyTo"] = *obj.InReplyTo
+	}
+
+	if !obj.Updated.IsZero() {
+		objMap["updated"] = obj.Updated.Format(time.RFC3339)
+	}
+
+	if len(obj.Attachment) > 0 {
+		attachments := make([]interface{}, len(obj.Attachment))
+		for i, att := range obj.Attachment {
+			attachments[i] = map[string]interface{}{
+				"type":      att.Type,
+				"url":       att.URL,
+				"mediaType": att.MediaType,
+				"name":      att.Name,
+				"width":     att.Width,
+				"height":    att.Height,
+			}
+		}
+		objMap["attachment"] = attachments
+	}
+
+	if len(obj.Tag) > 0 {
+		tags := make([]interface{}, len(obj.Tag))
+		for i, tag := range obj.Tag {
+			tags[i] = map[string]interface{}{
+				"type": tag.Type,
+				"href": tag.Href,
+				"name": tag.Name,
+			}
+		}
+		objMap["tag"] = tags
+	}
+
+	return objMap
+}
+
+// CountObjectReplies counts the number of replies to an object
+func (s *dynamoDBStorage) CountObjectReplies(ctx context.Context, objectID string) (int, error) {
+	// Delegate to the existing CountReplies method
+	return s.CountReplies(ctx, objectID)
 }

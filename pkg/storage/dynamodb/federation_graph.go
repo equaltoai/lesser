@@ -14,11 +14,11 @@ import (
 
 // Federation graph constants
 const (
-	federationNodePrefix     = "FEDERATION_NODE#"
-	federationEdgePrefix     = "FEDERATION_EDGE#"
-	instanceMetadataPrefix   = "INSTANCE_META#"
-	federationClusterPrefix  = "FEDERATION_CLUSTER#"
-	connectionPrefix         = "CONNECTION#"
+	federationNodePrefix    = "FEDERATION_NODE#"
+	federationEdgePrefix    = "FEDERATION_EDGE#"
+	instanceMetadataPrefix  = "INSTANCE_META#"
+	federationClusterPrefix = "FEDERATION_CLUSTER#"
+	connectionPrefix        = "CONNECTION#"
 )
 
 // GetFederationNodes retrieves federation nodes up to a certain depth
@@ -31,7 +31,7 @@ func (s *dynamoDBStorage) GetFederationNodes(ctx context.Context, depth int) ([]
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: "FEDERATION_ACTIVE"},
 		},
-		Limit:            aws.Int32(100), // Limit to 100 nodes initially
+		Limit:            aws.Int32(100),  // Limit to 100 nodes initially
 		ScanIndexForward: aws.Bool(false), // Most recently seen first
 	}
 
@@ -244,7 +244,7 @@ func (s *dynamoDBStorage) GetStrongestConnectionsByType(ctx context.Context, con
 func (s *dynamoDBStorage) CalculateFederationClusters(ctx context.Context) ([]*storage.InstanceCluster, error) {
 	// This is a complex operation that would typically be done in a batch job
 	// For now, return pre-calculated clusters stored in DynamoDB
-	
+
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
 		KeyConditionExpression: aws.String("PK = :pk"),
@@ -321,7 +321,7 @@ func (s *dynamoDBStorage) UpdateFederationNode(ctx context.Context, node *storag
 	// Add DynamoDB keys
 	item["PK"] = &types.AttributeValueMemberS{Value: federationNodePrefix + node.Domain}
 	item["SK"] = &types.AttributeValueMemberS{Value: "NODE"}
-	
+
 	// Add GSI1 attributes for active federation tracking
 	item["GSI1PK"] = &types.AttributeValueMemberS{Value: "FEDERATION_ACTIVE"}
 	item["GSI1SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("%d#%s", node.LastSeen.Unix(), node.Domain)}
@@ -341,12 +341,12 @@ func (s *dynamoDBStorage) UpdateFederationNode(ctx context.Context, node *storag
 
 	// Also create a health index item for efficient health-based queries
 	healthItem := map[string]types.AttributeValue{
-		"PK": &types.AttributeValueMemberS{Value: federationNodePrefix + node.Domain},
-		"SK": &types.AttributeValueMemberS{Value: "HEALTH_INDEX"},
-		"GSI1PK": &types.AttributeValueMemberS{Value: "FEDERATION_GRAPH#NODES"},
-		"GSI1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", node.Health, node.Domain)},
-		"Domain": &types.AttributeValueMemberS{Value: node.Domain},
-		"Health": &types.AttributeValueMemberS{Value: node.Health},
+		"PK":        &types.AttributeValueMemberS{Value: federationNodePrefix + node.Domain},
+		"SK":        &types.AttributeValueMemberS{Value: "HEALTH_INDEX"},
+		"GSI1PK":    &types.AttributeValueMemberS{Value: "FEDERATION_GRAPH#NODES"},
+		"GSI1SK":    &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", node.Health, node.Domain)},
+		"Domain":    &types.AttributeValueMemberS{Value: node.Domain},
+		"Health":    &types.AttributeValueMemberS{Value: node.Health},
 		"UpdatedAt": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 	}
 
@@ -377,7 +377,7 @@ func (s *dynamoDBStorage) UpdateFederationEdge(ctx context.Context, edge *storag
 	// Add DynamoDB keys
 	item["PK"] = &types.AttributeValueMemberS{Value: federationEdgePrefix + edge.SourceDomain}
 	item["SK"] = &types.AttributeValueMemberS{Value: edge.TargetDomain}
-	
+
 	// Add GSI2 attributes for connection queries
 	item["GSI2PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("INSTANCE#%s#CONNECTIONS#%s", edge.SourceDomain, edge.ConnectionType)}
 	item["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("%d#%s", edge.LastActivity.Unix(), edge.TargetDomain)}
@@ -397,17 +397,17 @@ func (s *dynamoDBStorage) UpdateFederationEdge(ctx context.Context, edge *storag
 	// Also create a volume index item for efficient volume-based queries
 	totalVolume := edge.VolumeIn + edge.VolumeOut
 	paddedVolume := fmt.Sprintf("%020d", totalVolume)
-	
+
 	volumeItem := map[string]types.AttributeValue{
-		"PK": &types.AttributeValueMemberS{Value: federationEdgePrefix + edge.SourceDomain},
-		"SK": &types.AttributeValueMemberS{Value: "VOLUME#" + edge.ConnectionType + "#" + edge.TargetDomain},
-		"GSI2PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("FEDERATION_EDGES#%s", edge.ConnectionType)},
-		"GSI2SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("VOLUME#%s#%s#%s", paddedVolume, edge.SourceDomain, edge.TargetDomain)},
-		"SourceDomain": &types.AttributeValueMemberS{Value: edge.SourceDomain},
-		"TargetDomain": &types.AttributeValueMemberS{Value: edge.TargetDomain},
+		"PK":             &types.AttributeValueMemberS{Value: federationEdgePrefix + edge.SourceDomain},
+		"SK":             &types.AttributeValueMemberS{Value: "VOLUME#" + edge.ConnectionType + "#" + edge.TargetDomain},
+		"GSI2PK":         &types.AttributeValueMemberS{Value: fmt.Sprintf("FEDERATION_EDGES#%s", edge.ConnectionType)},
+		"GSI2SK":         &types.AttributeValueMemberS{Value: fmt.Sprintf("VOLUME#%s#%s#%s", paddedVolume, edge.SourceDomain, edge.TargetDomain)},
+		"SourceDomain":   &types.AttributeValueMemberS{Value: edge.SourceDomain},
+		"TargetDomain":   &types.AttributeValueMemberS{Value: edge.TargetDomain},
 		"ConnectionType": &types.AttributeValueMemberS{Value: edge.ConnectionType},
-		"TotalVolume": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", totalVolume)},
-		"UpdatedAt": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+		"TotalVolume":    &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", totalVolume)},
+		"UpdatedAt":      &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 	}
 
 	volumeInput := &dynamodb.PutItemInput{
@@ -456,7 +456,7 @@ func (s *dynamoDBStorage) UpdateInstanceMetadata(ctx context.Context, metadata *
 // GetRecentInstanceConnections retrieves connections for an instance within a time window
 func (s *dynamoDBStorage) GetRecentInstanceConnections(ctx context.Context, domain string, since time.Duration) ([]*storage.InstanceConnection, error) {
 	cutoffTime := time.Now().Add(-since)
-	
+
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
 		IndexName:              aws.String("GSI2"),
@@ -512,7 +512,7 @@ func (s *dynamoDBStorage) StoreFederationTimeSeries(ctx context.Context, data *s
 	// Add DynamoDB keys
 	item["PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("TIMESERIES#%s#%s", data.Domain, data.Period)}
 	item["SK"] = &types.AttributeValueMemberS{Value: data.Timestamp.Format(time.RFC3339)}
-	
+
 	// Add GSI for period-based queries
 	item["GSI1PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("TIMESERIES#%s", data.Period)}
 	item["GSI1SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", data.Timestamp.Format(time.RFC3339), data.Domain)}
@@ -547,7 +547,7 @@ func (s *dynamoDBStorage) StoreInstanceCluster(ctx context.Context, cluster *sto
 	// Add DynamoDB keys
 	item["PK"] = &types.AttributeValueMemberS{Value: federationClusterPrefix + "CLUSTERS"}
 	item["SK"] = &types.AttributeValueMemberS{Value: cluster.ClusterID}
-	
+
 	// Add GSI for size-based queries
 	item["GSI1PK"] = &types.AttributeValueMemberS{Value: "CLUSTERS_BY_SIZE"}
 	item["GSI1SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("%05d#%s", cluster.Size, cluster.ClusterID)}

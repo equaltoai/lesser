@@ -620,3 +620,164 @@ func extractDomainFromURL(rawURL string) string {
 
 	return domain
 }
+
+// DeleteOldHashtagTrends deletes hashtag trend records older than the specified time
+func (s *dynamoDBStorage) DeleteOldHashtagTrends(ctx context.Context, before time.Time) error {
+	// Query for old hashtag trends
+	input := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("begins_with(PK, :pk_prefix) AND CreatedAt < :before"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk_prefix": &types.AttributeValueMemberS{Value: "HASHTAG_TREND#"},
+			":before":    &types.AttributeValueMemberS{Value: before.Format(time.RFC3339)},
+		},
+		ProjectionExpression: aws.String("PK, SK"),
+	}
+
+	result, err := s.client.Scan(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to scan for old hashtag trends: %w", err)
+	}
+
+	// Delete items in batches
+	for len(result.Items) > 0 {
+		writeRequests := make([]types.WriteRequest, 0, min(25, len(result.Items)))
+
+		for i := 0; i < min(25, len(result.Items)); i++ {
+			item := result.Items[i]
+			writeRequests = append(writeRequests, types.WriteRequest{
+				DeleteRequest: &types.DeleteRequest{
+					Key: map[string]types.AttributeValue{
+						"PK": item["PK"],
+						"SK": item["SK"],
+					},
+				},
+			})
+		}
+
+		// Batch delete
+		_, err := s.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]types.WriteRequest{
+				*s.getTableName(): writeRequests,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to batch delete old hashtag trends: %w", err)
+		}
+
+		// Remove processed items
+		result.Items = result.Items[len(writeRequests):]
+	}
+
+	return nil
+}
+
+// DeleteOldLinkTrends deletes link trend records older than the specified time
+func (s *dynamoDBStorage) DeleteOldLinkTrends(ctx context.Context, before time.Time) error {
+	// Query for old link trends
+	input := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("begins_with(PK, :pk_prefix) AND CreatedAt < :before"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk_prefix": &types.AttributeValueMemberS{Value: "LINK_TREND#"},
+			":before":    &types.AttributeValueMemberS{Value: before.Format(time.RFC3339)},
+		},
+		ProjectionExpression: aws.String("PK, SK"),
+	}
+
+	result, err := s.client.Scan(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to scan for old link trends: %w", err)
+	}
+
+	// Delete items in batches
+	for len(result.Items) > 0 {
+		writeRequests := make([]types.WriteRequest, 0, min(25, len(result.Items)))
+
+		for i := 0; i < min(25, len(result.Items)); i++ {
+			item := result.Items[i]
+			writeRequests = append(writeRequests, types.WriteRequest{
+				DeleteRequest: &types.DeleteRequest{
+					Key: map[string]types.AttributeValue{
+						"PK": item["PK"],
+						"SK": item["SK"],
+					},
+				},
+			})
+		}
+
+		// Batch delete
+		_, err := s.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]types.WriteRequest{
+				*s.getTableName(): writeRequests,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to batch delete old link trends: %w", err)
+		}
+
+		// Remove processed items
+		result.Items = result.Items[len(writeRequests):]
+	}
+
+	return nil
+}
+
+// DeleteOldStatusTrends deletes status trend records older than the specified time
+func (s *dynamoDBStorage) DeleteOldStatusTrends(ctx context.Context, before time.Time) error {
+	// Query for old status trends
+	input := &dynamodb.ScanInput{
+		TableName:        s.getTableName(),
+		FilterExpression: aws.String("begins_with(PK, :pk_prefix) AND CreatedAt < :before"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk_prefix": &types.AttributeValueMemberS{Value: "STATUS_TREND#"},
+			":before":    &types.AttributeValueMemberS{Value: before.Format(time.RFC3339)},
+		},
+		ProjectionExpression: aws.String("PK, SK"),
+	}
+
+	result, err := s.client.Scan(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to scan for old status trends: %w", err)
+	}
+
+	// Delete items in batches
+	for len(result.Items) > 0 {
+		writeRequests := make([]types.WriteRequest, 0, min(25, len(result.Items)))
+
+		for i := 0; i < min(25, len(result.Items)); i++ {
+			item := result.Items[i]
+			writeRequests = append(writeRequests, types.WriteRequest{
+				DeleteRequest: &types.DeleteRequest{
+					Key: map[string]types.AttributeValue{
+						"PK": item["PK"],
+						"SK": item["SK"],
+					},
+				},
+			})
+		}
+
+		// Batch delete
+		_, err := s.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]types.WriteRequest{
+				*s.getTableName(): writeRequests,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to batch delete old status trends: %w", err)
+		}
+
+		// Remove processed items
+		result.Items = result.Items[len(writeRequests):]
+	}
+
+	return nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

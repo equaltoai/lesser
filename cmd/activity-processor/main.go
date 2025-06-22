@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,9 @@ import (
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"go.uber.org/zap"
 )
 
@@ -30,10 +34,11 @@ const (
 )
 
 var (
-	store       storage.Storage
-	logger      *zap.Logger
-	httpClient  *http.Client
-	pushService *notifications.PushService
+	store            storage.Storage
+	logger           *zap.Logger
+	httpClient       *http.Client
+	pushService      *notifications.PushService
+	comprehendClient *comprehend.Client
 )
 
 func init() {
@@ -57,6 +62,14 @@ func init() {
 	pushService, err = notifications.NewPushService()
 	if err != nil {
 		logger.Warn("Failed to initialize push service, push notifications will be disabled", zap.Error(err))
+	}
+
+	// Initialize AWS Comprehend client for language detection
+	cfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		logger.Warn("Failed to load AWS config, language detection will be disabled", zap.Error(err))
+	} else {
+		comprehendClient = comprehend.NewFromConfig(cfg)
 	}
 }
 
@@ -1366,11 +1379,284 @@ func extractAllRecipients(activity *activitypub.Activity) []string {
 }
 
 func deliverToRecipient(ctx context.Context, activity *activitypub.Activity, recipientURL string) error {
-	// TODO: Resolve collections (followers, following) to individual actors
-	// For now, we assume recipientURL is an actor URL
+	// Check if recipientURL is a collection that needs to be resolved
+	if isCollectionURL(recipientURL) {
+		return resolveAndDeliverToCollection(ctx, activity, recipientURL)
+	}
 
+	// Handle direct actor URL
+	return deliverToActor(ctx, activity, recipientURL)
+}
+
+func isCollectionURL(url string) bool {
+	// Check if URL ends with known collection types
+	return strings.HasSuffix(url, "/followers") ||
+		strings.HasSuffix(url, "/following") ||
+		strings.Contains(url, "/collections/")
+}
+
+func resolveAndDeliverToCollection(ctx context.Context, activity *activitypub.Activity, collectionURL string) error {
+	log := logger.With(zap.String("collection_url", collectionURL))
+
+	// Extract actor from collection URL (e.g., https://example.com/users/alice/followers -> alice)
+	actorUsername := extractActorFromCollectionURL(collectionURL)
+	if actorUsername == "" {
+		log.Warn("could not extract actor from collection URL")
+		return fmt.Errorf("invalid collection URL: %s", collectionURL)
+	}
+
+	var recipients []string
+	var err error
+
+	if strings.HasSuffix(collectionURL, "/followers") {
+		// Get all followers of the actor
+		recipients, _, err = store.GetFollowers(ctx, actorUsername, 1000, "")
+		if err != nil {
+			return fmt.Errorf("failed to get followers for collection: %w", err)
+		}
+	} else if strings.HasSuffix(collectionURL, "/following") {
+		// Get all users the actor is following
+		recipients, _, err = store.GetFollowing(ctx, actorUsername, 1000, "")
+		if err != nil {
+			return fmt.Errorf("failed to get following for collection: %w", err)
+		}
+	} else {
+		// For other collections, try to fetch and parse the collection
+		return fetchAndDeliverToRemoteCollection(ctx, activity, collectionURL)
+	}
+
+	// Deliver to each recipient in the collection
+	for _, recipientUsername := range recipients {
+		recipientActor, err := store.GetActor(ctx, recipientUsername)
+		if err != nil {
+			log.Warn("failed to get recipient actor", zap.String("username", recipientUsername), zap.Error(err))
+			continue
+		}
+
+		if err := deliverToActor(ctx, activity, recipientActor.ID); err != nil {
+			log.Warn("failed to deliver to collection member",
+				zap.String("recipient", recipientActor.ID),
+				zap.Error(err))
+		}
+	}
+
+	return nil
+}
+
+func extractActorFromCollectionURL(collectionURL string) string {
+	// Parse URL to extract username (e.g., https://example.com/users/alice/followers -> alice)
+	parts := strings.Split(collectionURL, "/")
+	for i, part := range parts {
+		if part == "users" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
+func fetchAndDeliverToRemoteCollection(ctx context.Context, activity *activitypub.Activity, collectionURL string) error {
+	log := logger.With(zap.String("collection_url", collectionURL))
+
+	log.Info("fetching remote collection for delivery")
+
+	// Create request to fetch the collection
+	req, err := http.NewRequestWithContext(ctx, "GET", collectionURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create collection request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/activity+json")
+
+	// Fetch the collection
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch collection: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("collection fetch failed with status %d", resp.StatusCode)
+	}
+
+	// Parse the collection
+	var collection map[string]interface{}
+	if err := common.ParseHTTPResponse(resp.Body, &collection); err != nil {
+		return fmt.Errorf("failed to parse collection: %w", err)
+	}
+
+	// Check collection type
+	collType, ok := collection["type"].(string)
+	if !ok {
+		return fmt.Errorf("collection missing type field")
+	}
+
+	var members []string
+
+	switch collType {
+	case "Collection":
+		// Direct Collection - get items
+		if items, ok := collection["items"].([]interface{}); ok {
+			for _, item := range items {
+				if itemStr, ok := item.(string); ok {
+					members = append(members, itemStr)
+				}
+			}
+		}
+
+	case "OrderedCollection":
+		// OrderedCollection - get orderedItems
+		if items, ok := collection["orderedItems"].([]interface{}); ok {
+			for _, item := range items {
+				if itemStr, ok := item.(string); ok {
+					members = append(members, itemStr)
+				}
+			}
+		}
+
+	case "CollectionPage", "OrderedCollectionPage":
+		// This is a paginated collection
+		return fetchAndDeliverToPaginatedCollection(ctx, activity, collection)
+
+	default:
+		return fmt.Errorf("unsupported collection type: %s", collType)
+	}
+
+	// If this is a paginated collection with a first page, fetch that
+	if first, ok := collection["first"].(string); ok && len(members) == 0 {
+		return fetchAndDeliverToRemoteCollection(ctx, activity, first)
+	}
+
+	// Deliver to each member
+	var deliveryErrors []error
+	for _, memberURL := range members {
+		if err := deliverToActor(ctx, activity, memberURL); err != nil {
+			log.Warn("failed to deliver to collection member",
+				zap.String("member", memberURL),
+				zap.Error(err))
+			deliveryErrors = append(deliveryErrors, err)
+		}
+	}
+
+	log.Info("collection delivery completed",
+		zap.Int("total_members", len(members)),
+		zap.Int("delivery_errors", len(deliveryErrors)))
+
+	if len(deliveryErrors) > 0 {
+		return fmt.Errorf("delivery failed to %d out of %d collection members", len(deliveryErrors), len(members))
+	}
+
+	return nil
+}
+
+// fetchAndDeliverToPaginatedCollection handles paginated collections
+func fetchAndDeliverToPaginatedCollection(ctx context.Context, activity *activitypub.Activity, page map[string]interface{}) error {
+	log := logger.With(zap.String("operation", "paginated_collection"))
+
+	var allMembers []string
+	currentPage := page
+	pageCount := 0
+	maxPages := 50 // Reasonable limit to prevent infinite loops
+
+	for pageCount < maxPages {
+		pageCount++
+		log.Debug("processing collection page", zap.Int("page_number", pageCount))
+
+		// Extract members from current page
+		var pageMembers []string
+		pageType, ok := currentPage["type"].(string)
+		if !ok {
+			break
+		}
+
+		switch pageType {
+		case "CollectionPage":
+			if items, ok := currentPage["items"].([]interface{}); ok {
+				for _, item := range items {
+					if itemStr, ok := item.(string); ok {
+						pageMembers = append(pageMembers, itemStr)
+					}
+				}
+			}
+		case "OrderedCollectionPage":
+			if items, ok := currentPage["orderedItems"].([]interface{}); ok {
+				for _, item := range items {
+					if itemStr, ok := item.(string); ok {
+						pageMembers = append(pageMembers, itemStr)
+					}
+				}
+			}
+		}
+
+		allMembers = append(allMembers, pageMembers...)
+
+		// Check for next page
+		nextURL, hasNext := currentPage["next"].(string)
+		if !hasNext || nextURL == "" {
+			break
+		}
+
+		// Fetch next page
+		req, err := http.NewRequestWithContext(ctx, "GET", nextURL, nil)
+		if err != nil {
+			log.Warn("failed to create next page request", zap.String("next_url", nextURL), zap.Error(err))
+			break
+		}
+
+		req.Header.Set("Accept", "application/activity+json")
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			log.Warn("failed to fetch next page", zap.String("next_url", nextURL), zap.Error(err))
+			break
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			log.Warn("next page fetch failed", zap.String("next_url", nextURL), zap.Int("status", resp.StatusCode))
+			break
+		}
+
+		var nextPage map[string]interface{}
+		if err := common.ParseHTTPResponse(resp.Body, &nextPage); err != nil {
+			resp.Body.Close()
+			log.Warn("failed to parse next page", zap.String("next_url", nextURL), zap.Error(err))
+			break
+		}
+		resp.Body.Close()
+
+		currentPage = nextPage
+	}
+
+	if pageCount >= maxPages {
+		log.Warn("reached maximum page limit for collection", zap.Int("max_pages", maxPages))
+	}
+
+	// Deliver to all collected members
+	var deliveryErrors []error
+	for _, memberURL := range allMembers {
+		if err := deliverToActor(ctx, activity, memberURL); err != nil {
+			log.Warn("failed to deliver to paginated collection member",
+				zap.String("member", memberURL),
+				zap.Error(err))
+			deliveryErrors = append(deliveryErrors, err)
+		}
+	}
+
+	log.Info("paginated collection delivery completed",
+		zap.Int("total_pages", pageCount),
+		zap.Int("total_members", len(allMembers)),
+		zap.Int("delivery_errors", len(deliveryErrors)))
+
+	if len(deliveryErrors) > 0 {
+		return fmt.Errorf("delivery failed to %d out of %d paginated collection members", len(deliveryErrors), len(allMembers))
+	}
+
+	return nil
+}
+
+func deliverToActor(ctx context.Context, activity *activitypub.Activity, actorURL string) error {
 	// Fetch the recipient actor to get their inbox
-	actor, err := fetchRemoteActor(ctx, recipientURL)
+	actor, err := fetchRemoteActor(ctx, actorURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch recipient actor: %w", err)
 	}
@@ -1837,7 +2123,7 @@ func fanOutToTimelines(ctx context.Context, activity *activitypub.Activity) erro
 		federatedEntry.TimelineID = "FEDERATED"
 		federatedEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
 		timelineEntries = append(timelineEntries, &federatedEntry)
-		
+
 		// Also add to LOCAL timeline since this is a local post
 		cfg := config.Get()
 		if strings.HasPrefix(activity.Actor, cfg.BaseURL()) {
@@ -1850,19 +2136,36 @@ func fanOutToTimelines(ctx context.Context, activity *activitypub.Activity) erro
 	}
 
 	// 2. Fan-out to followers' home timelines
-	followers, _, err := store.GetFollowers(ctx, actorUsername, 1000, "") // TODO: Handle pagination for users with many followers
-	if err != nil {
-		log.Error("failed to get followers for timeline fan-out",
-			zap.String("actor", actorUsername),
-			zap.Error(err))
-	} else {
-		for _, followerUsername := range followers {
-			followerEntry := *baseEntry
-			followerEntry.TimelineType = "HOME"
-			followerEntry.TimelineID = followerUsername
-			followerEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
-			timelineEntries = append(timelineEntries, &followerEntry)
+	allFollowers := make([]string, 0)
+	cursor := ""
+
+	// Paginate through all followers
+	for {
+		followers, nextCursor, err := store.GetFollowers(ctx, actorUsername, 1000, cursor)
+		if err != nil {
+			log.Error("failed to get followers for timeline fan-out",
+				zap.String("actor", actorUsername),
+				zap.String("cursor", cursor),
+				zap.Error(err))
+			break
 		}
+
+		allFollowers = append(allFollowers, followers...)
+
+		// If no more pages, break
+		if nextCursor == "" || len(followers) < 1000 {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	// Create timeline entries for all followers
+	for _, followerUsername := range allFollowers {
+		followerEntry := *baseEntry
+		followerEntry.TimelineType = "HOME"
+		followerEntry.TimelineID = followerUsername
+		followerEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
+		timelineEntries = append(timelineEntries, &followerEntry)
 	}
 
 	// 3. Also add to the author's own home timeline
@@ -1937,7 +2240,7 @@ func fanOutAnnounceToTimelines(ctx context.Context, activity *activitypub.Activi
 			IsBoost:     true,
 			BoostedBy:   activity.Actor,
 			Visibility:  determineVisibility(obj.To, obj.CC),
-			Language:    "en", // TODO: Extract from object
+			Language:    detectLanguage(ctx, obj.Content),
 			Sensitive:   obj.Sensitive,
 			SpoilerText: obj.Summary,
 			CreatedAt:   obj.Published,
@@ -1962,7 +2265,7 @@ func fanOutAnnounceToTimelines(ctx context.Context, activity *activitypub.Activi
 		federatedEntry.TimelineID = "FEDERATED"
 		federatedEntry.EntryID = fmt.Sprintf("%d#announce#%s", now.Unix(), activity.ID)
 		timelineEntries = append(timelineEntries, &federatedEntry)
-		
+
 		// Only add to LOCAL timeline if the announcer is a local user
 		cfg := config.Get()
 		if strings.HasPrefix(activity.Actor, cfg.BaseURL()) {
@@ -2096,6 +2399,79 @@ func extractHandleFromActorID(actorID string) string {
 		}
 	}
 	return "@unknown"
+}
+
+// detectLanguage uses AWS Comprehend to detect the language of content
+func detectLanguage(ctx context.Context, content string) string {
+	// Return default language if no comprehend client
+	if comprehendClient == nil {
+		return "en"
+	}
+
+	// Clean content for language detection
+	cleanContent := cleanTextForLanguageDetection(content)
+
+	// Skip detection for very short content
+	if len(cleanContent) < 10 {
+		return "en"
+	}
+
+	// Truncate to Comprehend's limit (5000 bytes for language detection)
+	if len(cleanContent) > 5000 {
+		cleanContent = cleanContent[:5000]
+	}
+
+	// Call AWS Comprehend
+	input := &comprehend.DetectDominantLanguageInput{
+		Text: aws.String(cleanContent),
+	}
+
+	result, err := comprehendClient.DetectDominantLanguage(ctx, input)
+	if err != nil {
+		logger.Debug("language detection failed, using default",
+			zap.String("content_preview", cleanContent[:min(50, len(cleanContent))]),
+			zap.Error(err))
+		return "en"
+	}
+
+	// Find the highest confidence language
+	if len(result.Languages) > 0 {
+		bestLang := result.Languages[0]
+		for _, lang := range result.Languages {
+			if lang.Score != nil && bestLang.Score != nil && *lang.Score > *bestLang.Score {
+				bestLang = lang
+			}
+		}
+
+		// Only use the detected language if confidence is reasonable
+		if bestLang.LanguageCode != nil && bestLang.Score != nil && *bestLang.Score > 0.5 {
+			return *bestLang.LanguageCode
+		}
+	}
+
+	// Default to English if detection fails or confidence is low
+	return "en"
+}
+
+// cleanTextForLanguageDetection removes HTML tags and extra whitespace
+func cleanTextForLanguageDetection(content string) string {
+	// Remove HTML tags
+	htmlTagRegex := regexp.MustCompile(`<[^>]*>`)
+	cleaned := htmlTagRegex.ReplaceAllString(content, " ")
+
+	// Remove extra whitespace
+	spaceRegex := regexp.MustCompile(`\s+`)
+	cleaned = spaceRegex.ReplaceAllString(cleaned, " ")
+
+	return strings.TrimSpace(cleaned)
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func main() {

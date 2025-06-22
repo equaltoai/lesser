@@ -278,7 +278,7 @@ func (s *WalletService) verifyEthereumSignature(address, message, signature stri
 	recoveredAddr := crypto.PubkeyToAddress(*pubKey)
 
 	// Compare addresses (case-insensitive)
-	if strings.ToLower(recoveredAddr.Hex()) != strings.ToLower(address) {
+	if !strings.EqualFold(recoveredAddr.Hex(), address) {
 		return fmt.Errorf("signature address mismatch: expected %s, got %s", address, recoveredAddr.Hex())
 	}
 

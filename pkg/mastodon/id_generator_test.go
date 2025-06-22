@@ -32,29 +32,29 @@ func TestGenerateNumericID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			id1 := GenerateNumericID(tt.username)
 			id2 := GenerateNumericID(tt.username)
-			
+
 			// IDs should be stable (same username = same ID)
 			if id1 != id2 {
 				t.Errorf("GenerateNumericID() not stable: %s != %s", id1, id2)
 			}
-			
+
 			// ID should be numeric
 			if _, err := strconv.ParseInt(id1, 10, 64); err != nil {
 				t.Errorf("GenerateNumericID() returned non-numeric ID: %s", id1)
 			}
-			
+
 			// ID should have minimum length
 			if len(id1) < tt.wantLen {
 				t.Errorf("GenerateNumericID() ID too short: got %d chars, want at least %d", len(id1), tt.wantLen)
 			}
-			
+
 			// ID should not exceed 15 digits (to avoid client overflow)
 			if len(id1) > 15 {
 				t.Errorf("GenerateNumericID() ID too long: got %d chars, want max 15", len(id1))
 			}
 		})
 	}
-	
+
 	// Test that different usernames produce different IDs
 	id1 := GenerateNumericID("user1")
 	id2 := GenerateNumericID("user2")
@@ -95,7 +95,7 @@ func TestGenerateNumericIDFromActorID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			id := GenerateNumericIDFromActorID(tt.actorID)
 			expectedID := GenerateNumericID(tt.username)
-			
+
 			if id != expectedID {
 				t.Errorf("GenerateNumericIDFromActorID() = %s, want %s", id, expectedID)
 			}

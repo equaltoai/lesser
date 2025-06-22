@@ -67,26 +67,26 @@ type DataPoint struct {
 
 // CostBreakdown provides detailed cost analysis
 type CostBreakdown struct {
-	StartTime       time.Time              `json:"start_time"`
-	EndTime         time.Time              `json:"end_time"`
-	TotalCost       float64                `json:"total_cost"`
-	BandwidthCost   float64                `json:"bandwidth_cost"`
-	RequestCost     float64                `json:"request_cost"`
-	StorageCost     float64                `json:"storage_cost"`
-	ByService       map[string]float64     `json:"by_service"`
-	ByMedia         map[string]float64     `json:"by_media"`
-	ByUser          map[string]UserCost    `json:"by_user"`
-	Recommendations []CostRecommendation   `json:"recommendations"`
-	Projections     CostProjection         `json:"projections"`
+	StartTime       time.Time            `json:"start_time"`
+	EndTime         time.Time            `json:"end_time"`
+	TotalCost       float64              `json:"total_cost"`
+	BandwidthCost   float64              `json:"bandwidth_cost"`
+	RequestCost     float64              `json:"request_cost"`
+	StorageCost     float64              `json:"storage_cost"`
+	ByService       map[string]float64   `json:"by_service"`
+	ByMedia         map[string]float64   `json:"by_media"`
+	ByUser          map[string]UserCost  `json:"by_user"`
+	Recommendations []CostRecommendation `json:"recommendations"`
+	Projections     CostProjection       `json:"projections"`
 }
 
 // UserCost represents cost attribution to a user
 type UserCost struct {
-	UserID      string  `json:"user_id"`
-	TotalCost   float64 `json:"total_cost"`
-	Bandwidth   int64   `json:"bandwidth"`
-	Requests    int64   `json:"requests"`
-	MediaItems  int     `json:"media_items"`
+	UserID     string  `json:"user_id"`
+	TotalCost  float64 `json:"total_cost"`
+	Bandwidth  int64   `json:"bandwidth"`
+	Requests   int64   `json:"requests"`
+	MediaItems int     `json:"media_items"`
 }
 
 // CostRecommendation suggests cost optimization
@@ -119,18 +119,18 @@ type BandwidthUsage struct {
 
 // CloudFrontLogEntry represents a parsed CloudFront log entry
 type CloudFrontLogEntry struct {
-	Date       string
-	Time       string
+	Date         string
+	Time         string
 	EdgeLocation string
-	Bytes      int64
-	ClientIP   string
-	Method     string
-	Host       string
-	URI        string
-	Status     int
-	Referrer   string
-	UserAgent  string
-	QueryString string
+	Bytes        int64
+	ClientIP     string
+	Method       string
+	Host         string
+	URI          string
+	Status       int
+	Referrer     string
+	UserAgent    string
+	QueryString  string
 }
 
 // bandwidthAnalytics implements BandwidthAnalytics
@@ -320,7 +320,7 @@ func (b *bandwidthAnalytics) extractRegion(edgeLocation string) string {
 		// Map common edge location codes to regions
 		regionMap := map[string]string{
 			"IAD": "us-east-1",
-			"DFW": "us-east-2", 
+			"DFW": "us-east-2",
 			"SEA": "us-west-1",
 			"SFO": "us-west-2",
 			"FRA": "eu-central-1",
@@ -432,24 +432,24 @@ func (b *bandwidthAnalytics) GetBandwidthReport(ctx context.Context, period stri
 
 	for _, usage := range usageData {
 		totalBytes += usage.Bytes
-		
+
 		// By media
 		media := byMedia[usage.MediaID]
 		media.MediaID = usage.MediaID
 		media.Bytes += usage.Bytes
 		media.Requests++
 		byMedia[usage.MediaID] = media
-		
+
 		// By quality
 		byQuality[usage.Quality] += usage.Bytes
-		
+
 		// By region
 		region := byRegion[usage.Region]
 		region.Region = usage.Region
 		region.Bytes += usage.Bytes
 		region.Requests++
 		byRegion[usage.Region] = region
-		
+
 		// By user
 		if usage.UserID != "" {
 			byUser[usage.UserID] += usage.Bytes
@@ -501,9 +501,9 @@ func (b *bandwidthAnalytics) GetCostBreakdown(ctx context.Context, start, end ti
 	}
 
 	// Calculate cost breakdown
-	bandwidthCost := report.TotalCost * 0.85  // 85% bandwidth
-	requestCost := report.TotalCost * 0.10    // 10% requests
-	storageCost := report.TotalCost * 0.05    // 5% storage
+	bandwidthCost := report.TotalCost * 0.85 // 85% bandwidth
+	requestCost := report.TotalCost * 0.10   // 10% requests
+	storageCost := report.TotalCost * 0.05   // 5% storage
 
 	byService := map[string]float64{
 		"CloudFront": bandwidthCost + requestCost,
@@ -524,10 +524,10 @@ func (b *bandwidthAnalytics) GetCostBreakdown(ctx context.Context, start, end ti
 	yearlyRate := monthlyRate * 12
 
 	projections := CostProjection{
-		Monthly: monthlyRate,
-		Yearly:  yearlyRate,
-		PerUser: monthlyRate / float64(len(report.ByUser)), // Rough estimate
-		Trending: "stable", // Would require historical data
+		Monthly:  monthlyRate,
+		Yearly:   yearlyRate,
+		PerUser:  monthlyRate / float64(len(report.ByUser)), // Rough estimate
+		Trending: "stable",                                  // Would require historical data
 	}
 
 	return &CostBreakdown{
@@ -568,7 +568,7 @@ func (b *bandwidthAnalytics) generateRecommendations(report *BandwidthReport) []
 
 	if report.ByQuality["4k"] > totalBytes/4 { // More than 25% is 4K
 		recommendations = append(recommendations, CostRecommendation{
-			Type:        "quality_optimization", 
+			Type:        "quality_optimization",
 			Description: "High percentage of 4K streaming detected. Consider encouraging adaptive bitrate or lower default quality.",
 			Savings:     report.TotalCost * 0.4, // 4K can use 4x bandwidth
 			Priority:    "medium",

@@ -65,7 +65,6 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 		})
 	})
 
-
 	// Convert auth middleware to chi middleware
 	authMiddlewareFunc := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -106,13 +105,13 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 		r.Get("/timelines/tag/{hashtag}", wrapHandlerWithParam(h.HandleHashtagTimeline, "hashtag"))
 
 		// Webfinger and nodeinfo
-		// TODO: Implement webfinger and nodeinfo handlers
-		// r.Get("/.well-known/webfinger", wrapHandler(h.HandleWebFinger))
-		// r.Get("/.well-known/nodeinfo", wrapHandler(h.HandleNodeInfo))
+		r.Get("/.well-known/webfinger", wrapHandler(h.HandleWebFinger))
+		r.Get("/.well-known/nodeinfo", wrapHandler(h.HandleNodeInfoWellKnown))
+		r.Get("/nodeinfo/2.0", wrapHandler(h.HandleNodeInfo))
 
 		// Custom emojis
 		r.Get("/custom_emojis", wrapHandler(h.HandleGetCustomEmojis))
-		
+
 		// Streaming endpoints (SSE/WebSocket)
 		r.Get("/streaming/{stream}", func(w http.ResponseWriter, r *http.Request) {
 			streamType := chi.URLParam(r, "stream")
@@ -188,7 +187,6 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 	// Authenticated routes (write operations)
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddlewareFunc)
-
 
 		// Account updates
 		r.Patch("/accounts/update_credentials", wrapHandler(h.HandleUpdateCredentials))
@@ -414,7 +412,7 @@ func LambdaHandlerWithRouter(router *chi.Mux) func(context.Context, events.APIGa
 		// Decode body if base64 encoded
 		bodyReader := strings.NewReader(request.Body)
 		actualBody := request.Body
-		
+
 		// Try to detect base64 even if flag not set (API Gateway bug)
 		// Always try base64 decode if body looks like base64
 		if request.Body != "" {
@@ -469,4 +467,3 @@ func LambdaHandlerWithRouter(router *chi.Mux) func(context.Context, events.APIGa
 		}, nil
 	}
 }
-

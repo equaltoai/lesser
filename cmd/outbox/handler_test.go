@@ -366,7 +366,7 @@ func TestHandler(t *testing.T) {
 		body           string
 		queryParams    map[string]string
 		headers        map[string]string
-		setupMocks func(*mocks.MockStorage)
+		setupMocks     func(*mocks.MockStorage)
 		expectedStatus int
 		expectedError  bool
 		validateBody   func(*testing.T, string)

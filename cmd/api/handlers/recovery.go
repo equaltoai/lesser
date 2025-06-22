@@ -50,7 +50,7 @@ func (h *Handler) HandleInitiateRecovery(ctx context.Context, request events.API
 
 	// Always return success to prevent user enumeration
 	successResponse := common.OK(map[string]string{
-		"message": "If the account exists, a recovery email has been sent",
+		"message": "If the account exists, recovery has been initiated",
 	})
 
 	if err != nil || user == nil {
@@ -60,12 +60,8 @@ func (h *Handler) HandleInitiateRecovery(ctx context.Context, request events.API
 		return successResponse, nil
 	}
 
-	// Check if user has email
-	if user.Email == "" {
-		h.logger.Info("recovery requested for account without email",
-			zap.String("username", user.Username))
-		return successResponse, nil
-	}
+	// Note: Email/SMS recovery removed as per requirements
+	// Recovery now only works through OAuth providers or admin assistance
 
 	// Generate recovery token
 	tokenBytes := make([]byte, 32)
@@ -90,19 +86,16 @@ func (h *Handler) HandleInitiateRecovery(ctx context.Context, request events.API
 		return successResponse, nil
 	}
 
-	// Send recovery email
+	// Log recovery token generation (email/SMS removed as per requirements)
 	recoveryURL := fmt.Sprintf("%s/auth/recovery/verify?token=%s", h.cfg.BaseURL(), token)
-
-	// TODO: Implement email sending
-	// For now, log the recovery URL
-	h.logger.Info("recovery email would be sent",
-		zap.String("email", user.Email),
+	h.logger.Info("recovery token generated",
+		zap.String("username", user.Username),
 		zap.String("recovery_url", recoveryURL))
 
 	// In development, include the token in response
 	if os.Getenv("ENVIRONMENT") == "development" {
 		return common.OK(map[string]interface{}{
-			"message": "Recovery email sent (dev mode)",
+			"message": "Recovery token generated (dev mode)",
 			"token":   token,
 			"url":     recoveryURL,
 		}), nil
@@ -216,7 +209,7 @@ func (h *Handler) HandleCompleteRecovery(ctx context.Context, request events.API
 	if err == nil {
 		for _, session := range sessions {
 			if err := h.store.DeleteSession(ctx, session.SessionID); err != nil {
-				h.logger.Warn("failed to delete session during password reset", 
+				h.logger.Warn("failed to delete session during password reset",
 					zap.String("session_id", session.SessionID), zap.Error(err))
 			}
 		}
@@ -261,10 +254,7 @@ func (h *Handler) HandleAccountRecoveryOptions(ctx context.Context, request even
 
 	options := []string{}
 
-	// Check available recovery methods
-	if user.Email != "" {
-		options = append(options, "email")
-	}
+	// Email recovery removed as per requirements
 
 	// Check linked OAuth providers
 	linkedProviders, err := h.store.GetLinkedProviders(ctx, user.Username)
@@ -274,8 +264,8 @@ func (h *Handler) HandleAccountRecoveryOptions(ctx context.Context, request even
 		}
 	}
 
-	// Check if user has trusted contacts (social recovery)
-	// TODO: Implement social recovery
+	// Social recovery and admin assistance available
+	options = append(options, "admin_assistance")
 
 	if len(options) == 0 {
 		return common.OK(defaultOptions), nil
@@ -311,7 +301,7 @@ func (h *Handler) HandleSendRecoveryCode(ctx context.Context, request events.API
 
 	// Always return success to prevent enumeration
 	successResponse := common.OK(map[string]string{
-		"message": "Recovery code sent if the account exists",
+		"message": "Recovery processed if the account exists",
 	})
 
 	if err != nil || user == nil {
@@ -336,26 +326,17 @@ func (h *Handler) HandleSendRecoveryCode(ctx context.Context, request events.API
 		return successResponse, nil
 	}
 
-	switch req.Method {
-	case "email":
-		if user.Email != "" {
-			// TODO: Send email with code
-			h.logger.Info("would send recovery code via email",
-				zap.String("email", user.Email),
-				zap.String("code", code))
-		}
-	case "sms":
-		// TODO: Implement SMS recovery
-	default:
-		h.logger.Warn("unsupported recovery method",
-			zap.String("method", req.Method))
-	}
+	// Email/SMS recovery methods removed as per requirements
+	// Recovery now handled through OAuth providers only
+	h.logger.Info("recovery method requested but email/SMS removed",
+		zap.String("method", req.Method),
+		zap.String("username", user.Username))
 
-	// In development, return the code
+	// In development, return info about removed recovery methods
 	if os.Getenv("ENVIRONMENT") == "development" {
 		return common.OK(map[string]interface{}{
-			"message": "Recovery code sent (dev mode)",
-			"code":    code,
+			"message": "Email/SMS recovery disabled - use OAuth providers",
+			"method":  req.Method,
 		}), nil
 	}
 

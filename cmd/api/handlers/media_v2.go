@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
@@ -19,6 +20,8 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -274,8 +277,11 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 		// Don't fail the request, media is uploaded
 	}
 
-	// TODO: Trigger media processor Lambda
-	// This would normally be done via SQS or EventBridge
+	// Trigger media processor Lambda via SQS
+	if err := h.triggerMediaProcessor(ctx, jobID, mediaID, s3Key, mimeType); err != nil {
+		h.logger.Error("failed to trigger media processor", zap.Error(err))
+		// Don't fail the request, processing can be retried later
+	}
 
 	// Parse focus if provided
 	var focusX, focusY float64
@@ -303,4 +309,64 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 	}
 
 	return common.Accepted(attachment), nil
+}
+
+// triggerMediaProcessor sends a message to SQS to trigger media processing
+func (h *Handler) triggerMediaProcessor(ctx context.Context, jobID, mediaID, s3Key, mimeType string) error {
+	// Initialize SQS client
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	sqsClient := sqs.NewFromConfig(awsCfg)
+
+	// Create message payload
+	message := map[string]interface{}{
+		"jobID":     jobID,
+		"mediaID":   mediaID,
+		"s3Key":     s3Key,
+		"bucket":    h.cfg.S3BucketName,
+		"mimeType":  mimeType,
+		"timestamp": time.Now().Unix(),
+	}
+
+	messageBody, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Get SQS queue URL from environment or config
+	queueURL := h.cfg.MediaProcessorQueueURL
+	if queueURL == "" {
+		// Default queue name pattern
+		queueURL = fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/media-processor-queue",
+			awsCfg.Region, h.cfg.AWSAccountID)
+	}
+
+	// Send message to SQS
+	_, err = sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    &queueURL,
+		MessageBody: aws.String(string(messageBody)),
+		MessageAttributes: map[string]sqstypes.MessageAttributeValue{
+			"JobType": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String("media-processing"),
+			},
+			"MediaType": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(getMediaType(mimeType)),
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to send SQS message: %w", err)
+	}
+
+	h.logger.Info("media processing job queued",
+		zap.String("job_id", jobID),
+		zap.String("media_id", mediaID),
+		zap.String("queue_url", queueURL))
+
+	return nil
 }

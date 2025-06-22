@@ -19,14 +19,14 @@ type FederationTimeSeriesProcessor struct {
 
 // TimeSeriesEvent represents an event for time-series processing
 type TimeSeriesEvent struct {
-	Domain        string    `json:"domain"`
-	ActivityType  string    `json:"activity_type"`
-	Direction     string    `json:"direction"` // inbound/outbound
-	Success       bool      `json:"success"`
-	ResponseTime  float64   `json:"response_time"`
-	Timestamp     time.Time `json:"timestamp"`
-	SourceDomain  string    `json:"source_domain,omitempty"`
-	TargetDomain  string    `json:"target_domain,omitempty"`
+	Domain       string    `json:"domain"`
+	ActivityType string    `json:"activity_type"`
+	Direction    string    `json:"direction"` // inbound/outbound
+	Success      bool      `json:"success"`
+	ResponseTime float64   `json:"response_time"`
+	Timestamp    time.Time `json:"timestamp"`
+	SourceDomain string    `json:"source_domain,omitempty"`
+	TargetDomain string    `json:"target_domain,omitempty"`
 }
 
 func (ftsp *FederationTimeSeriesProcessor) HandleSQSEvent(ctx context.Context, event events.SQSEvent) error {
@@ -49,7 +49,7 @@ func (ftsp *FederationTimeSeriesProcessor) HandleSQSEvent(ctx context.Context, e
 func (ftsp *FederationTimeSeriesProcessor) HandleScheduledEvent(ctx context.Context, event events.CloudWatchEvent) error {
 	// Process scheduled aggregation
 	var aggregationConfig struct {
-		Period string `json:"period"`
+		Period  string   `json:"period"`
 		Domains []string `json:"domains,omitempty"`
 	}
 
@@ -64,7 +64,7 @@ func (ftsp *FederationTimeSeriesProcessor) HandleScheduledEvent(ctx context.Cont
 func (ftsp *FederationTimeSeriesProcessor) processTimeSeriesEvent(ctx context.Context, event *TimeSeriesEvent) error {
 	// Get current hour aggregation bucket
 	hourBucket := event.Timestamp.Truncate(time.Hour)
-	
+
 	// Create or update hourly aggregation
 	timeSeries := &storage.FederationTimeSeries{
 		Domain:         event.Domain,
@@ -120,7 +120,7 @@ func (ftsp *FederationTimeSeriesProcessor) aggregateHourlyData(ctx context.Conte
 		if err != nil {
 			return fmt.Errorf("failed to get federation nodes: %w", err)
 		}
-		
+
 		for _, node := range nodes {
 			domains = append(domains, node.Domain)
 		}
@@ -146,11 +146,11 @@ func (ftsp *FederationTimeSeriesProcessor) aggregateHourlyData(ctx context.Conte
 				outboundVolume += conn.VolumeOut
 				totalResponseTime += conn.ResponseTimeMs
 				totalCount++
-				
+
 				if !conn.Success {
 					errorCount++
 				}
-				
+
 				uniquePeers[conn.TargetDomain] = true
 			}
 		}
@@ -193,7 +193,7 @@ func (ftsp *FederationTimeSeriesProcessor) aggregateDailyData(ctx context.Contex
 		if err != nil {
 			return fmt.Errorf("failed to get federation nodes: %w", err)
 		}
-		
+
 		for _, node := range nodes {
 			domains = append(domains, node.Domain)
 		}
@@ -209,7 +209,7 @@ func (ftsp *FederationTimeSeriesProcessor) aggregateDailyData(ctx context.Contex
 		// Get hourly data for the previous day
 		for hour := 0; hour < 24; hour++ {
 			_ = previousDay.Add(time.Duration(hour) * time.Hour) // hourTimestamp
-			
+
 			// This would require implementing GetFederationTimeSeries
 			// For now, we'll create a placeholder
 			hourCount++
@@ -253,7 +253,7 @@ func (ftsp *FederationTimeSeriesProcessor) aggregateWeeklyData(ctx context.Conte
 		if err != nil {
 			return fmt.Errorf("failed to get federation nodes: %w", err)
 		}
-		
+
 		for _, node := range nodes {
 			domains = append(domains, node.Domain)
 		}
@@ -269,7 +269,7 @@ func (ftsp *FederationTimeSeriesProcessor) aggregateWeeklyData(ctx context.Conte
 		// Get daily data for the previous week
 		for day := 0; day < 7; day++ {
 			_ = previousWeek.Add(time.Duration(day) * 24 * time.Hour) // dayTimestamp
-			
+
 			// This would require implementing GetFederationTimeSeries
 			// For now, we'll create a placeholder
 			dayCount++
@@ -308,7 +308,7 @@ func (ftsp *FederationTimeSeriesProcessor) DetectAnomalies(ctx context.Context, 
 
 	// This would implement anomaly detection algorithms
 	// For now, return placeholder data
-	
+
 	anomalies = append(anomalies, &AnomalyDetection{
 		Domain:      domain,
 		Metric:      "response_time",
@@ -335,7 +335,7 @@ func main() {
 
 	// Determine handler based on event source
 	eventSource := getEnv("EVENT_SOURCE", "sqs")
-	
+
 	switch eventSource {
 	case "sqs":
 		lambda.Start(processor.HandleSQSEvent)

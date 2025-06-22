@@ -52,19 +52,19 @@ func (ta *TrendAnalyzer) AnalyzeTrends(ctx context.Context, domain string, perio
 
 	// Analyze volume trends
 	analysis.VolumeTrend = ta.analyzeVolumeTrend(relevantConnections, startTime, endTime)
-	
+
 	// Analyze response time trends
 	analysis.ResponseTimeTrend = ta.analyzeResponseTimeTrend(relevantConnections, startTime, endTime)
-	
+
 	// Analyze error rate trends
 	analysis.ErrorRateTrend = ta.analyzeErrorRateTrend(relevantConnections, startTime, endTime)
-	
+
 	// Identify trending instances
 	analysis.TrendingInstances = ta.identifyTrendingInstances(relevantConnections)
-	
+
 	// Detect patterns
 	analysis.Patterns = ta.detectPatterns(relevantConnections, startTime, endTime)
-	
+
 	// Calculate trend scores
 	analysis.OverallTrendScore = ta.calculateOverallTrendScore(analysis)
 
@@ -76,7 +76,7 @@ func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConne
 	// Group connections by time buckets (e.g., hourly)
 	bucketSize := time.Hour
 	buckets := make(map[time.Time]int64)
-	
+
 	for _, conn := range connections {
 		bucket := conn.LastActivity.Truncate(bucketSize)
 		buckets[bucket] += conn.VolumeIn + conn.VolumeOut
@@ -85,14 +85,14 @@ func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConne
 	// Convert to sorted time series
 	var times []time.Time
 	var volumes []int64
-	
+
 	for t := range buckets {
 		times = append(times, t)
 	}
 	sort.Slice(times, func(i, j int) bool {
 		return times[i].Before(times[j])
 	})
-	
+
 	for _, t := range times {
 		volumes = append(volumes, buckets[t])
 	}
@@ -116,14 +116,14 @@ func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConne
 		slope, r2 := ta.calculateLinearRegression(volumes)
 		trend.Slope = slope
 		trend.R2 = r2
-		
+
 		// Determine direction based on slope
 		if slope > 0.1 {
 			trend.Direction = "increasing"
 		} else if slope < -0.1 {
 			trend.Direction = "decreasing"
 		}
-		
+
 		// Calculate peak and total volume
 		var total, peak int64
 		for _, v := range volumes {
@@ -144,7 +144,7 @@ func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.Instanc
 	// Group by time buckets and calculate average response times
 	bucketSize := time.Hour
 	buckets := make(map[time.Time][]float64)
-	
+
 	for _, conn := range connections {
 		if conn.ResponseTimeMs > 0 {
 			bucket := conn.LastActivity.Truncate(bucketSize)
@@ -155,14 +155,14 @@ func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.Instanc
 	// Calculate averages
 	var times []time.Time
 	var avgResponseTimes []float64
-	
+
 	for t := range buckets {
 		times = append(times, t)
 	}
 	sort.Slice(times, func(i, j int) bool {
 		return times[i].Before(times[j])
 	})
-	
+
 	for _, t := range times {
 		responseTimes := buckets[t]
 		if len(responseTimes) > 0 {
@@ -190,18 +190,18 @@ func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.Instanc
 
 	if len(avgResponseTimes) > 1 {
 		slope, _ := ta.calculateLinearRegression(ta.convertToInt64(avgResponseTimes))
-		
+
 		if slope > 10 { // 10ms increase per hour
 			trend.Direction = "degrading"
 		} else if slope < -10 {
 			trend.Direction = "improving"
 		}
-		
+
 		// Calculate statistics
 		var sum, min, max float64
 		min = math.Inf(1)
 		max = math.Inf(-1)
-		
+
 		for _, rt := range avgResponseTimes {
 			sum += rt
 			if rt < min {
@@ -211,7 +211,7 @@ func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.Instanc
 				max = rt
 			}
 		}
-		
+
 		trend.AverageResponseTime = sum / float64(len(avgResponseTimes))
 		trend.MinResponseTime = min
 		trend.MaxResponseTime = max
@@ -226,7 +226,7 @@ func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceCo
 	bucketSize := time.Hour
 	successBuckets := make(map[time.Time]int64)
 	totalBuckets := make(map[time.Time]int64)
-	
+
 	for _, conn := range connections {
 		bucket := conn.LastActivity.Truncate(bucketSize)
 		totalBuckets[bucket]++
@@ -238,14 +238,14 @@ func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceCo
 	// Calculate error rates
 	var times []time.Time
 	var errorRates []float64
-	
+
 	for t := range totalBuckets {
 		times = append(times, t)
 	}
 	sort.Slice(times, func(i, j int) bool {
 		return times[i].Before(times[j])
 	})
-	
+
 	for _, t := range times {
 		total := totalBuckets[t]
 		success := successBuckets[t]
@@ -271,18 +271,18 @@ func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceCo
 
 	if len(errorRates) > 1 {
 		slope, _ := ta.calculateLinearRegression(ta.convertToInt64(errorRates))
-		
+
 		if slope > 0.01 { // 1% increase per hour
 			trend.Direction = "increasing"
 		} else if slope < -0.01 {
 			trend.Direction = "decreasing"
 		}
-		
+
 		// Calculate statistics
 		var sum, min, max float64
 		min = math.Inf(1)
 		max = math.Inf(-1)
-		
+
 		for _, er := range errorRates {
 			sum += er
 			if er < min {
@@ -292,7 +292,7 @@ func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceCo
 				max = er
 			}
 		}
-		
+
 		trend.AverageErrorRate = sum / float64(len(errorRates))
 		trend.MinErrorRate = min
 		trend.MaxErrorRate = max
@@ -305,23 +305,23 @@ func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceCo
 func (ta *TrendAnalyzer) identifyTrendingInstances(connections []*storage.InstanceConnection) []*TrendingInstance {
 	// Group connections by domain
 	domainStats := make(map[string]*DomainStats)
-	
+
 	for _, conn := range connections {
 		if _, exists := domainStats[conn.TargetDomain]; !exists {
 			domainStats[conn.TargetDomain] = &DomainStats{
 				Domain: conn.TargetDomain,
 			}
 		}
-		
+
 		stats := domainStats[conn.TargetDomain]
 		stats.TotalVolume += conn.VolumeIn + conn.VolumeOut
 		stats.ConnectionCount++
 		stats.TotalResponseTime += conn.ResponseTimeMs
-		
+
 		if !conn.Success {
 			stats.ErrorCount++
 		}
-		
+
 		if conn.LastActivity.After(stats.LastActivity) {
 			stats.LastActivity = conn.LastActivity
 		}
@@ -329,42 +329,42 @@ func (ta *TrendAnalyzer) identifyTrendingInstances(connections []*storage.Instan
 
 	// Calculate trend scores and identify trending instances
 	var trending []*TrendingInstance
-	
+
 	for domain, stats := range domainStats {
 		if stats.ConnectionCount == 0 {
 			continue
 		}
-		
+
 		avgResponseTime := stats.TotalResponseTime / float64(stats.ConnectionCount)
 		errorRate := float64(stats.ErrorCount) / float64(stats.ConnectionCount)
-		
+
 		// Calculate trend score based on volume, recency, and quality
 		volumeScore := float64(stats.TotalVolume) / 100.0 // Normalize
 		if volumeScore > 10 {
 			volumeScore = 10
 		}
-		
+
 		recencyScore := 10.0 - (time.Since(stats.LastActivity).Hours() / 24.0) // Decay over days
 		if recencyScore < 0 {
 			recencyScore = 0
 		}
-		
+
 		qualityScore := 10.0 * (1.0 - errorRate) // Higher score for lower error rate
 		if avgResponseTime > 5000 {
 			qualityScore *= 0.5 // Penalize high response times
 		}
-		
+
 		trendScore := volumeScore*0.4 + recencyScore*0.3 + qualityScore*0.3
-		
+
 		if trendScore > 5.0 { // Threshold for "trending"
 			trending = append(trending, &TrendingInstance{
-				Domain:          domain,
-				TrendScore:      trendScore,
-				VolumeChange:    stats.TotalVolume, // This would be calculated vs previous period
-				ResponseTime:    avgResponseTime,
-				ErrorRate:       errorRate,
-				LastActivity:    stats.LastActivity,
-				TrendReason:     ta.determineTrendReason(stats, trendScore),
+				Domain:       domain,
+				TrendScore:   trendScore,
+				VolumeChange: stats.TotalVolume, // This would be calculated vs previous period
+				ResponseTime: avgResponseTime,
+				ErrorRate:    errorRate,
+				LastActivity: stats.LastActivity,
+				TrendReason:  ta.determineTrendReason(stats, trendScore),
 			})
 		}
 	}
@@ -460,7 +460,7 @@ func (ta *TrendAnalyzer) calculateLinearRegression(values []int64) (slope, r2 fl
 	// Convert to float64
 	x := make([]float64, len(values))
 	y := make([]float64, len(values))
-	
+
 	for i, v := range values {
 		x[i] = float64(i)
 		y[i] = float64(v)
@@ -490,7 +490,7 @@ func (ta *TrendAnalyzer) calculateLinearRegression(values []int64) (slope, r2 fl
 	}
 
 	slope = numerator / xDenominator
-	
+
 	if yDenominator == 0 {
 		r2 = 0
 	} else {
@@ -562,16 +562,16 @@ func (ta *TrendAnalyzer) determineTrendReason(stats *DomainStats, score float64)
 // Types for trend analysis
 
 type TrendAnalysis struct {
-	Domain              string                 `json:"domain"`
-	Period              time.Duration          `json:"period"`
-	StartTime           time.Time              `json:"start_time"`
-	EndTime             time.Time              `json:"end_time"`
-	VolumeTrend         *VolumeTrend          `json:"volume_trend"`
-	ResponseTimeTrend   *ResponseTimeTrend    `json:"response_time_trend"`
-	ErrorRateTrend      *ErrorRateTrend       `json:"error_rate_trend"`
-	TrendingInstances   []*TrendingInstance   `json:"trending_instances"`
-	Patterns            []*ActivityPattern    `json:"patterns"`
-	OverallTrendScore   float64               `json:"overall_trend_score"`
+	Domain            string              `json:"domain"`
+	Period            time.Duration       `json:"period"`
+	StartTime         time.Time           `json:"start_time"`
+	EndTime           time.Time           `json:"end_time"`
+	VolumeTrend       *VolumeTrend        `json:"volume_trend"`
+	ResponseTimeTrend *ResponseTimeTrend  `json:"response_time_trend"`
+	ErrorRateTrend    *ErrorRateTrend     `json:"error_rate_trend"`
+	TrendingInstances []*TrendingInstance `json:"trending_instances"`
+	Patterns          []*ActivityPattern  `json:"patterns"`
+	OverallTrendScore float64             `json:"overall_trend_score"`
 }
 
 type VolumeTrend struct {

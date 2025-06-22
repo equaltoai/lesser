@@ -218,10 +218,10 @@ func (si *SearchIndexer) ensureIndex(ctx context.Context) error {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 		defer func() {
-		if err := res.Body.Close(); err != nil {
-			si.logger.Warn("Failed to close response body", zap.Error(err))
-		}
-	}()
+			if err := res.Body.Close(); err != nil {
+				si.logger.Warn("Failed to close response body", zap.Error(err))
+			}
+		}()
 
 		if res.IsError() {
 			return fmt.Errorf("failed to create index: %s", res.String())
@@ -285,13 +285,19 @@ func (si *SearchIndexer) indexActor(ctx context.Context, item map[string]events.
 
 	// Extract counts
 	if val, ok := item["FollowersCount"]; ok {
-		fmt.Sscanf(val.Number(), "%d", &doc.FollowersCount)
+		if _, err := fmt.Sscanf(val.Number(), "%d", &doc.FollowersCount); err != nil {
+			si.logger.Warn("failed to parse followers count", zap.Error(err))
+		}
 	}
 	if val, ok := item["FollowingCount"]; ok {
-		fmt.Sscanf(val.Number(), "%d", &doc.FollowingCount)
+		if _, err := fmt.Sscanf(val.Number(), "%d", &doc.FollowingCount); err != nil {
+			si.logger.Warn("failed to parse following count", zap.Error(err))
+		}
 	}
 	if val, ok := item["StatusesCount"]; ok {
-		fmt.Sscanf(val.Number(), "%d", &doc.StatusesCount)
+		if _, err := fmt.Sscanf(val.Number(), "%d", &doc.StatusesCount); err != nil {
+			si.logger.Warn("failed to parse statuses count", zap.Error(err))
+		}
 	}
 
 	// Extract timestamps

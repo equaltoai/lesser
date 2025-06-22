@@ -51,8 +51,8 @@ func (s *dynamoDBStorage) CreateModerationPattern(ctx context.Context, pattern *
 	item["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", pattern.UpdatedAt.Format(time.RFC3339), pattern.ID)}
 
 	input := &dynamodb.PutItemInput{
-		TableName: aws.String(s.tableName),
-		Item:      item,
+		TableName:           aws.String(s.tableName),
+		Item:                item,
 		ConditionExpression: aws.String("attribute_not_exists(PK)"),
 	}
 
@@ -104,7 +104,7 @@ func (s *dynamoDBStorage) GetModerationPatterns(ctx context.Context, active bool
 				":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("MODERATION_PATTERNS#%s", severity)},
 			},
 			ScanIndexForward: aws.Bool(false), // Most recent first
-			Limit:           safeInt32(limit),
+			Limit:            safeInt32(limit),
 		}
 	} else if active {
 		// Query by active status only
@@ -142,7 +142,7 @@ func (s *dynamoDBStorage) GetModerationPatterns(ctx context.Context, active bool
 // scanModerationPatterns scans for patterns when query is not efficient
 func (s *dynamoDBStorage) scanModerationPatterns(ctx context.Context, severity string, limit int) ([]*storage.ModerationPattern, error) {
 	input := &dynamodb.ScanInput{
-		TableName: aws.String(s.tableName),
+		TableName:        aws.String(s.tableName),
 		FilterExpression: aws.String("begins_with(PK, :pk_prefix) AND SK = :sk"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk_prefix": &types.AttributeValueMemberS{Value: moderationPatternPrefix},
@@ -288,7 +288,7 @@ func (s *dynamoDBStorage) GetPatternMatches(ctx context.Context, patternID strin
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("PATTERN_MATCHES#%s", patternID)},
 		},
 		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:           safeInt32(limit),
+		Limit:            safeInt32(limit),
 	}
 
 	result, err := s.client.Query(ctx, input)

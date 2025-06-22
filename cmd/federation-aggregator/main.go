@@ -18,7 +18,7 @@ type FederationAggregator struct {
 
 // AggregationEvent represents the input for the aggregation job
 type AggregationEvent struct {
-	Type      string    `json:"type"`      // "daily", "hourly", "realtime"
+	Type      string    `json:"type"` // "daily", "hourly", "realtime"
 	StartTime time.Time `json:"startTime"`
 	EndTime   time.Time `json:"endTime"`
 }
@@ -72,7 +72,7 @@ func (fa *FederationAggregator) aggregateDailyMetrics(ctx context.Context, start
 				totalInbound += conn.VolumeIn
 				totalOutbound += conn.VolumeOut
 				connectionTypes[conn.ConnectionType]++
-				
+
 				if conn.Success {
 					successCount++
 				} else {
@@ -120,13 +120,13 @@ func (fa *FederationAggregator) aggregateHourlyMetrics(ctx context.Context, star
 
 		// Calculate hourly metrics
 		hourlyData := &storage.FederationTimeSeries{
-			Domain:       node.Domain,
-			Timestamp:    startTime,
-			Period:       "hourly",
-			InboundVolume: 0,
+			Domain:         node.Domain,
+			Timestamp:      startTime,
+			Period:         "hourly",
+			InboundVolume:  0,
 			OutboundVolume: 0,
-			ErrorRate:    0,
-			ResponseTime: 0,
+			ErrorRate:      0,
+			ResponseTime:   0,
 		}
 
 		var totalResponseTime float64
@@ -161,7 +161,7 @@ func (fa *FederationAggregator) aggregateHourlyMetrics(ctx context.Context, star
 func (fa *FederationAggregator) aggregateRealtimeMetrics(ctx context.Context) error {
 	// This would process real-time events from SQS/DynamoDB Streams
 	// For now, just update active connection counts
-	
+
 	nodes, err := fa.storage.GetFederationNodes(ctx, 1)
 	if err != nil {
 		return fmt.Errorf("failed to get federation nodes: %w", err)
@@ -207,7 +207,7 @@ func (fa *FederationAggregator) calculateHealthScore(success, errors, inbound, o
 func (fa *FederationAggregator) updateEdgeStrengths(ctx context.Context, domain string, connections []*storage.InstanceConnection) error {
 	// Group connections by target domain
 	edgeMap := make(map[string]*storage.FederationEdge)
-	
+
 	for _, conn := range connections {
 		key := conn.TargetDomain
 		if edge, exists := edgeMap[key]; exists {
@@ -238,12 +238,12 @@ func (fa *FederationAggregator) updateEdgeStrengths(ctx context.Context, domain 
 		if reciprocity > 1 {
 			reciprocity = 1 / reciprocity // Normalize to 0-1
 		}
-		
+
 		daysSinceActivity := time.Since(edge.LastActivity).Hours() / 24
 		freshness := 1.0 / (1.0 + daysSinceActivity/30) // Decay over 30 days
-		
+
 		edge.Strength = (totalVolume/1000)*0.5 + reciprocity*0.3 + freshness*0.2
-		
+
 		if err := fa.storage.UpdateFederationEdge(ctx, edge); err != nil {
 			return fmt.Errorf("failed to update edge %s->%s: %w", edge.SourceDomain, edge.TargetDomain, err)
 		}
@@ -261,18 +261,18 @@ func (fa *FederationAggregator) calculateAndStoreClusters(ctx context.Context) e
 
 	// Simple clustering algorithm - connected components
 	clusters := fa.findConnectedComponents(strongEdges)
-	
+
 	// Store clusters
 	for i, cluster := range clusters {
 		instanceCluster := &storage.InstanceCluster{
-			ClusterID:   fmt.Sprintf("cluster-%d-%s", i, time.Now().Format("20060102")),
-			Name:        fmt.Sprintf("Federation Cluster %d", i+1),
-			Instances:   cluster,
-			CenterNode:  fa.findCenterNode(cluster, strongEdges),
-			Cohesion:    fa.calculateCohesion(cluster, strongEdges),
-			UpdatedAt:   time.Now(),
+			ClusterID:  fmt.Sprintf("cluster-%d-%s", i, time.Now().Format("20060102")),
+			Name:       fmt.Sprintf("Federation Cluster %d", i+1),
+			Instances:  cluster,
+			CenterNode: fa.findCenterNode(cluster, strongEdges),
+			Cohesion:   fa.calculateCohesion(cluster, strongEdges),
+			UpdatedAt:  time.Now(),
 		}
-		
+
 		if err := fa.storage.StoreInstanceCluster(ctx, instanceCluster); err != nil {
 			fmt.Printf("failed to store cluster %s: %v\n", instanceCluster.ClusterID, err)
 		}
@@ -322,7 +322,7 @@ func (fa *FederationAggregator) dfs(node string, graph map[string][]string, visi
 func (fa *FederationAggregator) findCenterNode(cluster []string, edges []*storage.FederationEdge) string {
 	// Find node with highest total connection strength within cluster
 	strengthMap := make(map[string]float64)
-	
+
 	for _, edge := range edges {
 		if contains(cluster, edge.SourceDomain) && contains(cluster, edge.TargetDomain) {
 			strengthMap[edge.SourceDomain] += edge.Strength
@@ -380,4 +380,3 @@ func main() {
 
 	lambda.Start(aggregator.HandleRequest)
 }
-

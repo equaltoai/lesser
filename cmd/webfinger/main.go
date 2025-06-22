@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/reputation"
 	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
@@ -16,9 +18,10 @@ import (
 )
 
 var (
-	cfg    *config.Config
-	store  storage.Storage
-	logger *zap.Logger
+	cfg        *config.Config
+	store      storage.Storage
+	logger     *zap.Logger
+	repService *reputation.Service
 )
 
 func init() {
@@ -30,6 +33,17 @@ func init() {
 	store, err = dynamodb.New()
 	if err != nil {
 		logger.Fatal("failed to initialize storage", zap.Error(err))
+	}
+
+	// Initialize reputation service
+	repService, err = reputation.NewService(&reputation.Config{
+		Storage:     store,
+		Logger:      logger,
+		InstanceURL: cfg.BaseURL(),
+		PrivateKey:  cfg.ReputationPrivateKey,
+	})
+	if err != nil {
+		logger.Fatal("failed to initialize reputation service", zap.Error(err))
 	}
 }
 
@@ -195,13 +209,17 @@ func handleNodeInfoDiscovery(ctx context.Context, request events.APIGatewayV2HTT
 // handleNodeInfo20 returns nodeinfo 2.0 format
 func handleNodeInfo20(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
 	// Explicitly ignore unused parameters
-	_ = ctx
 	_ = request
 
 	log.Info("handling nodeinfo 2.0 request")
 
-	// TODO: implement user counting
-	userCount := 1
+	// Get actual user count from storage
+	userCount64, err := store.GetTotalUserCount(ctx)
+	if err != nil {
+		log.Warn("failed to get user count, using default", zap.Error(err))
+		userCount64 = 1
+	}
+	userCount := int(userCount64)
 
 	nodeinfo := map[string]interface{}{
 		"version": "2.0",
@@ -218,7 +236,14 @@ func handleNodeInfo20(ctx context.Context, request events.APIGatewayV2HTTPReques
 			"users": map[string]interface{}{
 				"total": userCount,
 			},
-			"localPosts": 0, // TODO: implement post counting
+			"localPosts": func() int {
+				postCount64, err := store.GetTotalStatusCount(ctx)
+				if err != nil {
+					log.Warn("failed to get post count, using default", zap.Error(err))
+					return 0
+				}
+				return int(postCount64)
+			}(),
 		},
 		"openRegistrations": true,
 		"metadata": map[string]interface{}{
@@ -236,13 +261,17 @@ func handleNodeInfo20(ctx context.Context, request events.APIGatewayV2HTTPReques
 // handleNodeInfo21 returns nodeinfo 2.1 format
 func handleNodeInfo21(ctx context.Context, request events.APIGatewayV2HTTPRequest, log *zap.Logger) (*events.APIGatewayV2HTTPResponse, error) {
 	// Explicitly ignore unused parameters
-	_ = ctx
 	_ = request
 
 	log.Info("handling nodeinfo 2.1 request")
 
-	// TODO: implement user counting
-	userCount := 1
+	// Get actual user count from storage
+	userCount64, err := store.GetTotalUserCount(ctx)
+	if err != nil {
+		log.Warn("failed to get user count, using default", zap.Error(err))
+		userCount64 = 1
+	}
+	userCount := int(userCount64)
 
 	nodeinfo := map[string]interface{}{
 		"version": "2.1",
@@ -258,11 +287,32 @@ func handleNodeInfo21(ctx context.Context, request events.APIGatewayV2HTTPReques
 		},
 		"usage": map[string]interface{}{
 			"users": map[string]interface{}{
-				"total":          userCount,
-				"activeMonth":    userCount, // TODO: implement proper active user counting
-				"activeHalfyear": userCount,
+				"total": userCount,
+				"activeMonth": func() int {
+					activeCount, err := store.GetActiveUserCount(ctx, 30)
+					if err != nil {
+						log.Warn("failed to get active user count, using total", zap.Error(err))
+						return userCount
+					}
+					return int(activeCount)
+				}(),
+				"activeHalfyear": func() int {
+					activeCount, err := store.GetActiveUserCount(ctx, 180)
+					if err != nil {
+						log.Warn("failed to get active user count, using total", zap.Error(err))
+						return userCount
+					}
+					return int(activeCount)
+				}(),
 			},
-			"localPosts": 0, // TODO: implement post counting
+			"localPosts": func() int {
+				postCount64, err := store.GetTotalStatusCount(ctx)
+				if err != nil {
+					log.Warn("failed to get post count, using default", zap.Error(err))
+					return 0
+				}
+				return int(postCount64)
+			}(),
 		},
 		"openRegistrations": true,
 		"metadata": map[string]interface{}{
@@ -285,14 +335,23 @@ func handleReputationKeys(ctx context.Context, request events.APIGatewayV2HTTPRe
 
 	log.Info("handling reputation keys request")
 
-	// TODO: Implement actual key retrieval from reputation service
-	// For now, return a placeholder response
+	// Get the actual public key from the reputation service
+	publicKeyBase64 := repService.GetPublicKey()
+	if publicKeyBase64 == "" {
+		log.Error("reputation service returned empty public key")
+		return common.InternalServerError(fmt.Errorf("reputation service unavailable")), nil
+	}
+
 	keys := map[string]interface{}{
-		"publicKey": "Ed25519PublicKeyBase64EncodedHere",
+		"publicKey": publicKeyBase64,
 		"algorithm": "Ed25519",
 		"keyId":     cfg.BaseURL() + "#reputation-key",
-		"created":   "2024-01-01T00:00:00Z",
+		"created":   time.Now().UTC().Format(time.RFC3339),
 	}
+
+	log.Debug("returning reputation keys",
+		zap.String("keyId", keys["keyId"].(string)),
+		zap.String("publicKey", publicKeyBase64[:20]+"..."))
 
 	resp := common.JSONResponse(200, keys)
 	resp.Headers["Cache-Control"] = "max-age=3600" // Cache for 1 hour

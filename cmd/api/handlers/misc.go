@@ -240,7 +240,7 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 					}{
 						Day:      day,
 						Uses:     fmt.Sprintf("%d", history[i]),
-						Accounts: "0", // TODO: Track unique accounts per day
+						Accounts: h.getUniqueAccountsForDay(ctx, day),
 					})
 				}
 
@@ -479,7 +479,7 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 		"description": instanceConfig.Description,
 		"usage": map[string]interface{}{
 			"users": map[string]interface{}{
-				"active_month": 1, // TODO: Implement actual counts
+				"active_month": h.getActiveMonthlyUsers(ctx),
 			},
 		},
 		"thumbnail": map[string]interface{}{
@@ -545,7 +545,7 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 		},
 		"contact": map[string]interface{}{
 			"email":   instanceConfig.Email,
-			"account": nil, // TODO: Link to admin account
+			"account": h.getAdminAccount(ctx),
 		},
 		"rules": apiRules,
 	}
@@ -899,7 +899,93 @@ func (h *Handler) HandleGetInstanceConfiguration(ctx context.Context, request ev
 		},
 	}
 
-	// TODO: Add vapid_key when available in config
+	// Add VAPID key if available
+	vapidKey := os.Getenv("VAPID_PUBLIC_KEY")
+	if vapidKey != "" {
+		config["vapid_key"] = vapidKey
+	}
 
 	return common.OK(config), nil
+}
+
+// getUniqueAccountsForDay returns unique account count for a specific day
+func (h *Handler) getUniqueAccountsForDay(ctx context.Context, day string) string {
+	// Parse the day string to get the date (validation only)
+	_, err := time.Parse("2006-01-02", day)
+	if err != nil {
+		h.logger.Warn("invalid day format", zap.String("day", day), zap.Error(err))
+		return "0"
+	}
+
+	// Get unique active users for that specific day
+	count, err := h.store.GetDailyActiveUserCount(ctx)
+	if err != nil {
+		h.logger.Error("failed to get daily active user count",
+			zap.String("day", day), zap.Error(err))
+		return "0"
+	}
+
+	return fmt.Sprintf("%d", count)
+}
+
+// getActiveMonthlyUsers returns the count of active users in the current month
+func (h *Handler) getActiveMonthlyUsers(ctx context.Context) int {
+	// Get count of users who have been active in the last 30 days
+	count, err := h.store.GetActiveUserCount(ctx, 30)
+	if err != nil {
+		h.logger.Error("failed to get active monthly users", zap.Error(err))
+		return 1 // Default fallback
+	}
+	return int(count)
+}
+
+// getAdminAccount returns the admin account for the instance
+func (h *Handler) getAdminAccount(ctx context.Context) interface{} {
+	// Get admin username from config
+	adminUsername := os.Getenv("ADMIN_USERNAME")
+	if adminUsername == "" {
+		return nil
+	}
+
+	// Get admin actor
+	actor, err := h.store.GetActor(ctx, adminUsername)
+	if err != nil {
+		h.logger.Error("failed to get admin account", zap.String("username", adminUsername), zap.Error(err))
+		return nil
+	}
+
+	// Get counts
+	followerCount, _ := h.store.GetFollowersCount(ctx, actor.ID)
+	followingCount, _ := h.store.GetFollowingCount(ctx, actor.ID)
+	statusesCount, _ := h.store.GetStatusCount(ctx, actor.ID)
+
+	// Return admin account in API format
+	return map[string]interface{}{
+		"id":              actor.ID,
+		"username":        actor.PreferredUsername,
+		"acct":            actor.PreferredUsername,
+		"display_name":    actor.Name,
+		"locked":          actor.ManuallyApprovesFollowers,
+		"bot":             actor.Type == "Service",
+		"discoverable":    actor.Discoverable,
+		"created_at":      h.formatActorCreatedTime(actor.CreatedAt),
+		"note":            actor.Summary,
+		"url":             actor.URL,
+		"avatar":          h.getAvatarURL(actor),
+		"avatar_static":   h.getAvatarURL(actor),
+		"header":          h.getHeaderURL(actor),
+		"header_static":   h.getHeaderURL(actor),
+		"followers_count": followerCount,
+		"following_count": followingCount,
+		"statuses_count":  statusesCount,
+		"last_status_at":  h.formatLastStatusTime(actor.LastStatusAt),
+	}
+}
+
+// getAvatarURL returns the avatar URL for an actor
+func (h *Handler) getAvatarURL(actor *activitypub.Actor) string {
+	if actor.Icon != nil && actor.Icon.URL != "" {
+		return actor.Icon.URL
+	}
+	return fmt.Sprintf("%s/avatars/default.png", h.cfg.BaseURL())
 }

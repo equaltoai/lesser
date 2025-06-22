@@ -6,7 +6,6 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 )
 
-
 // Configuration for different cookie types
 var (
 	// SessionCookieConfig for short-lived session tokens

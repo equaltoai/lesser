@@ -16,15 +16,15 @@ import (
 
 // FederationCostRecord represents how federation costs are stored in DynamoDB
 type FederationCostRecord struct {
-	PK        string                  `dynamodbav:"PK"`
-	SK        string                  `dynamodbav:"SK"`
-	GSI1PK    string                  `dynamodbav:"GSI1PK,omitempty"`
-	GSI1SK    string                  `dynamodbav:"GSI1SK,omitempty"`
-	Type      string                  `dynamodbav:"Type"`
+	PK        string                      `dynamodbav:"PK"`
+	SK        string                      `dynamodbav:"SK"`
+	GSI1PK    string                      `dynamodbav:"GSI1PK,omitempty"`
+	GSI1SK    string                      `dynamodbav:"GSI1SK,omitempty"`
+	Type      string                      `dynamodbav:"Type"`
 	Activity  *storage.FederationActivity `dynamodbav:"Activity,omitempty"`
 	Cost      *storage.FederationCost     `dynamodbav:"Cost,omitempty"`
-	TTL       int64                   `dynamodbav:"TTL,omitempty"`
-	CreatedAt time.Time               `dynamodbav:"CreatedAt"`
+	TTL       int64                       `dynamodbav:"TTL,omitempty"`
+	CreatedAt time.Time                   `dynamodbav:"CreatedAt"`
 }
 
 // RecordFederationActivity records a single federation activity for cost tracking
@@ -84,7 +84,7 @@ func (s *dynamoDBStorage) GetFederationCosts(ctx context.Context, startTime, end
 
 	// Query aggregated monthly costs
 	pk := fmt.Sprintf("FEDERATION_COSTS#%s", startTime.Format("2006-01"))
-	
+
 	input := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
 		KeyConditionExpression: aws.String("PK = :pk"),
@@ -147,7 +147,7 @@ func (s *dynamoDBStorage) GetInstanceHealthReport(ctx context.Context, domain st
 
 	// Query recent activities for this domain
 	pk := fmt.Sprintf("FEDERATION#%s#%s", domain, startTime.Format("2006-01"))
-	
+
 	input := &dynamodb.QueryInput{
 		TableName:              s.getTableName(),
 		KeyConditionExpression: aws.String("PK = :pk AND SK > :start"),
@@ -282,7 +282,7 @@ func (s *dynamoDBStorage) GetCostProjections(ctx context.Context, period string)
 
 	// Identify top cost drivers
 	topDrivers := []storage.CostDriver{}
-	
+
 	// Sort domains by cost
 	for domain, cost := range domainCosts {
 		driver := storage.CostDriver{
@@ -342,9 +342,9 @@ func (s *dynamoDBStorage) updateAggregatedCosts(ctx context.Context, activity *s
 	if err != nil || result.Item == nil {
 		// Create new cost record
 		cost = storage.FederationCost{
-			Domain:       activity.Domain,
-			Period:       "monthly",
-			LastUpdated:  time.Now(),
+			Domain:      activity.Domain,
+			Period:      "monthly",
+			LastUpdated: time.Now(),
 		}
 	} else {
 		// Unmarshal existing record

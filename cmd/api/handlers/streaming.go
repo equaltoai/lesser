@@ -21,7 +21,7 @@ type SSEEvent struct {
 // HandleSSEStream handles Server-Sent Events streaming
 // This provides an alternative to WebSocket for clients that prefer SSE
 func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGatewayV2HTTPRequest, streamParam ...string) (*events.APIGatewayV2HTTPResponse, error) {
-	h.logger.Info("HandleSSEStream called", 
+	h.logger.Info("HandleSSEStream called",
 		zap.String("path", request.RequestContext.HTTP.Path),
 		zap.Any("query_params", request.QueryStringParameters))
 
@@ -48,7 +48,7 @@ func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGateway
 
 	// Extract stream type from route parameter, path, or query parameters
 	stream := ""
-	
+
 	// First check if stream was passed as a route parameter
 	if len(streamParam) > 0 && streamParam[0] != "" {
 		stream = streamParam[0]
@@ -62,7 +62,7 @@ func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGateway
 			}
 		}
 	}
-	
+
 	// Fall back to query parameter if not found
 	if stream == "" {
 		stream = request.QueryStringParameters["stream"]
@@ -96,41 +96,41 @@ func (h *Handler) HandleSSEStream(ctx context.Context, request events.APIGateway
 	// For Mastodon compatibility, we need to return a proper redirect to WebSocket
 	// Build the WebSocket URL with the appropriate stream and token
 	wsURL := fmt.Sprintf("wss://ws.%s/v1?stream=%s&access_token=%s", h.cfg.Domain, stream, token)
-	
+
 	// Some Mastodon clients expect different behavior:
 	// 1. Some expect a redirect to WebSocket
 	// 2. Some expect an error message
 	// 3. Some try SSE first, then fall back to WebSocket
-	
+
 	// Check if client explicitly wants SSE (rare, but some clients do)
 	acceptHeader := request.Headers["Accept"]
 	if acceptHeader == "" {
 		acceptHeader = request.Headers["accept"]
 	}
-	
+
 	// If client explicitly requests SSE, return an error
 	if strings.Contains(acceptHeader, "text/event-stream") {
 		// Return 501 Not Implemented for SSE
 		response := map[string]interface{}{
-			"error": "Streaming API requires WebSocket",
+			"error":         "Streaming API requires WebSocket",
 			"websocket_url": wsURL,
 		}
 		body, _ := json.Marshal(response)
 		return &events.APIGatewayV2HTTPResponse{
 			StatusCode: 501,
 			Headers: map[string]string{
-				"Content-Type": "application/json",
+				"Content-Type":    "application/json",
 				"X-Websocket-Url": wsURL,
 			},
 			Body: string(body),
 		}, nil
 	}
-	
+
 	// Default: Return redirect to WebSocket endpoint
 	return &events.APIGatewayV2HTTPResponse{
 		StatusCode: 301,
 		Headers: map[string]string{
-			"Location": wsURL,
+			"Location":        wsURL,
 			"X-Websocket-Url": wsURL,
 		},
 	}, nil

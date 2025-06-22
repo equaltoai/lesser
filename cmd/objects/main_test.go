@@ -205,7 +205,7 @@ func TestHandler(t *testing.T) {
 	tests := []struct {
 		name         string
 		request      events.APIGatewayV2HTTPRequest
-		setupMock func(*mocks.MockStorage)
+		setupMock    func(*mocks.MockStorage)
 		expectedCode int
 		checkBody    func(t *testing.T, body string)
 	}{

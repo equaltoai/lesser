@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	
+
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/config"
@@ -62,13 +62,13 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 		// Remote actor - not supported yet
 		return nil, fmt.Errorf("remote accounts not yet supported")
 	}
-	
+
 	// Check if it's a numeric ID (Mastodon compatibility)
 	if _, err := strconv.ParseInt(accountID, 10, 64); err == nil && len(accountID) >= 10 {
 		// It's a numeric ID - use the dedicated lookup method
 		return h.store.GetActorByNumericID(ctx, accountID)
 	}
-	
+
 	// Assume it's a username for local accounts
 	return h.store.GetActor(ctx, accountID)
 }

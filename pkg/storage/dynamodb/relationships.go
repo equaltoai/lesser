@@ -381,3 +381,147 @@ func (s *dynamoDBStorage) RemoveFromFollowers(ctx context.Context, username, fol
 	// RemoveFollow expects (follower, followed), so we swap the parameters
 	return s.RemoveFollow(ctx, followerUsername, username)
 }
+
+// GetPendingFollowRequests returns pending follow requests for a user with locked account
+func (s *dynamoDBStorage) GetPendingFollowRequests(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	log := common.WithContext(ctx)
+
+	// Build the query input to get all follow relationships where this user is followed
+	input := &dynamodb.QueryInput{
+		TableName:              s.getTableName(),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s%s", storage.FollowPKPrefix, username)},
+		},
+		Limit: safeInt32(limit),
+	}
+
+	// Add filter for pending relationships only
+	input.FilterExpression = aws.String("#state = :state")
+	if input.ExpressionAttributeNames == nil {
+		input.ExpressionAttributeNames = make(map[string]string)
+	}
+	input.ExpressionAttributeNames["#state"] = "State"
+	input.ExpressionAttributeValues[":state"] = &types.AttributeValueMemberS{Value: storage.RelationshipPending}
+
+	// Handle cursor for pagination
+	if cursor != "" {
+		startKey, err := decodeCursor(cursor)
+		if err != nil {
+			log.Error("failed to decode cursor", zap.Error(err))
+			return nil, "", fmt.Errorf("invalid cursor: %w", err)
+		}
+		input.ExclusiveStartKey = startKey
+	}
+
+	// Execute query
+	output, err := s.client.Query(ctx, input)
+	if err != nil {
+		log.Error("failed to query pending follow requests", zap.Error(err))
+		return nil, "", fmt.Errorf("failed to query pending requests: %w", err)
+	}
+
+	// Extract follower usernames from pending requests
+	followers := make([]string, 0, len(output.Items))
+	for _, item := range output.Items {
+		var record storage.RelationshipRecord
+		if err := s.UnmarshalItem(item, &record); err != nil {
+			log.Error("failed to unmarshal relationship record", zap.Error(err))
+			continue
+		}
+
+		// Extract username from GSI1SK (format: FOLLOWER#{username})
+		if len(record.GSI1SK) > len(storage.FollowerSKPrefix) {
+			followerUsername := record.GSI1SK[len(storage.FollowerSKPrefix):]
+			followers = append(followers, followerUsername)
+		}
+	}
+
+	// Handle pagination cursor
+	var nextCursor string
+	if output.LastEvaluatedKey != nil {
+		nextCursor = encodeCursor(output.LastEvaluatedKey)
+	}
+
+	return followers, nextCursor, nil
+}
+
+// GetFollowRequestState returns the state of a follow request between two users
+func (s *dynamoDBStorage) GetFollowRequestState(ctx context.Context, followerUsername, followedUsername string) (string, error) {
+	log := common.WithContext(ctx)
+
+	input := &dynamodb.GetItemInput{
+		TableName: s.getTableName(),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s%s", storage.FollowPKPrefix, followerUsername)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s%s", storage.FollowingSKPrefix, followedUsername)},
+		},
+		ProjectionExpression: aws.String("#state"),
+		ExpressionAttributeNames: map[string]string{
+			"#state": "State",
+		},
+	}
+
+	output, err := s.client.GetItem(ctx, input)
+	if err != nil {
+		log.Error("failed to get follow request state", zap.Error(err))
+		return "", fmt.Errorf("failed to get follow state: %w", err)
+	}
+
+	// If no item found, no relationship exists
+	if output.Item == nil {
+		return "", nil
+	}
+
+	// Extract the state
+	if state, ok := output.Item["State"].(*types.AttributeValueMemberS); ok {
+		return state.Value, nil
+	}
+
+	return "", fmt.Errorf("invalid state format in relationship record")
+}
+
+// GetFollowRequest gets a follow request by follower and target IDs
+func (s *dynamoDBStorage) GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error) {
+	log := common.WithContext(ctx)
+
+	input := &dynamodb.GetItemInput{
+		TableName: s.getTableName(),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("FOLLOW#%s", followerID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("FOLLOWING#%s", targetID)},
+		},
+	}
+
+	output, err := s.client.GetItem(ctx, input)
+	if err != nil {
+		log.Error("failed to get follow request", zap.Error(err))
+		return nil, fmt.Errorf("failed to get follow request: %w", err)
+	}
+
+	if output.Item == nil {
+		return nil, fmt.Errorf("follow request not found")
+	}
+
+	var record storage.RelationshipRecord
+	err = s.UnmarshalItem(output.Item, &record)
+	if err != nil {
+		log.Error("failed to unmarshal follow request", zap.Error(err))
+		return nil, fmt.Errorf("failed to parse follow request: %w", err)
+	}
+
+	return &record, nil
+}
+
+// AcceptFollowRequest accepts a follow request by follower and target IDs
+func (s *dynamoDBStorage) AcceptFollowRequest(ctx context.Context, followerID, targetID string) error {
+	// Use the existing AcceptFollow method
+	return s.AcceptFollow(ctx, followerID, targetID)
+}
+
+// RejectFollowRequest rejects a follow request by follower and target IDs
+func (s *dynamoDBStorage) RejectFollowRequest(ctx context.Context, followerID, targetID string) error {
+	// Use the existing RejectFollow method
+	return s.RejectFollow(ctx, followerID, targetID)
+}

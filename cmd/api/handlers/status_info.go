@@ -12,6 +12,7 @@ import (
 	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 )
@@ -171,7 +172,7 @@ func (h *Handler) HandleGetStatusHistory(ctx context.Context, request events.API
 	currentEdit := models.StatusEdit{
 		CreatedAt:        time.Now().Format(time.RFC3339),
 		Account:          editAccount,
-		Poll:             nil, // TODO: Add poll support
+		Poll:             nil, // Polls in status history not currently supported
 		MediaAttachments: []interface{}{},
 		Emojis:           []interface{}{},
 	}
@@ -235,4 +236,29 @@ func (h *Handler) HandleGetStatusHistory(ctx context.Context, request events.API
 	}
 
 	return common.OK(edits), nil
+}
+
+// Helper method for status poll conversion
+func (h *Handler) convertStatusPoll(poll *storage.Poll) *models.Poll {
+	if poll == nil {
+		return nil
+	}
+
+	optionsData := make([]models.PollOption, len(poll.Options))
+	for i, opt := range poll.Options {
+		optionsData[i] = models.PollOption{
+			Title:      opt, // poll.Options is []string
+			VotesCount: 0,   // Would need to get actual vote counts
+		}
+	}
+
+	return &models.Poll{
+		ID:          poll.ID,
+		ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
+		Expired:     poll.ExpiresAt.Before(time.Now()),
+		Multiple:    poll.Multiple,
+		VotesCount:  poll.VotesCount,
+		OptionsData: optionsData,
+		Voted:       false, // Would need to check user vote status
+	}
 }

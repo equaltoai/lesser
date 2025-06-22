@@ -450,7 +450,7 @@ func (s *StatusSearchService) mergeAndRankResults(
 
 	// Calculate final scores
 	for _, result := range merged {
-		result.Score = ranker.Score(result, context)
+		result.Score = ranker.Score(result, context, s)
 	}
 
 	// Sort by score
@@ -553,7 +553,6 @@ func (s *StatusSearchService) buildCacheKey(query string, options StatusSearchOp
 	return fmt.Sprintf("status_search:%s:%+v", query, options)
 }
 
-
 func (s *StatusSearchService) isLocalStatus(statusID string) bool {
 	// Check if status ID belongs to local instance
 	return strings.Contains(statusID, s.storage.domain)
@@ -582,7 +581,7 @@ func NewStatusRanker() *StatusRanker {
 }
 
 // Score calculates the final score for a status result
-func (r *StatusRanker) Score(status *StatusSearchResult, context SearchContext) float64 {
+func (r *StatusRanker) Score(status *StatusSearchResult, context SearchContext, service *StatusSearchService) float64 {
 	score := 0.0
 
 	// Content relevance (from search strategy)
@@ -598,9 +597,8 @@ func (r *StatusRanker) Score(status *StatusSearchResult, context SearchContext) 
 	engagementRate := engagementCount / (ageHours + 1)
 	score += math.Log1p(engagementRate) * r.Engagement
 
-	// Author authority (placeholder - would use follower count/trust score)
-	// For now, just use a fixed value
-	authorScore := 0.5
+	// Author authority - calculate based on follower count and trust score
+	authorScore := service.calculateAuthorAuthority(status.AuthorID)
 	score += authorScore * r.AuthorAuthority
 
 	// Personal affinity
@@ -612,4 +610,61 @@ func (r *StatusRanker) Score(status *StatusSearchResult, context SearchContext) 
 	// Placeholder for now
 
 	return score
+}
+
+// calculateAuthorAuthority calculates an authority score for an author
+func (s *StatusSearchService) calculateAuthorAuthority(authorID string) float64 {
+	// Try to get the author's follower count and trust score
+	// Default score for unknown authors
+	baseScore := 0.1
+
+	// Extract username from author ID
+	username := s.extractUsernameFromAuthorID(authorID)
+	if username == "" {
+		return baseScore
+	}
+
+	// Get follower count (normalized to 0-1 scale)
+	followers, _, err := s.storage.GetFollowers(context.Background(), username, 1, "")
+	if err == nil {
+		followerCount := len(followers)
+		// Log scale for follower count (1000 followers = 0.5, 10000 = 0.75)
+		followerScore := math.Log1p(float64(followerCount)) / math.Log(10000)
+		if followerScore > 1.0 {
+			followerScore = 1.0
+		}
+		baseScore = followerScore * 0.7 // 70% weight to follower count
+	}
+
+	// Get trust score if available
+	trustScore, err := s.storage.GetTrustScore(context.Background(), username, "general")
+	if err == nil && trustScore != nil {
+		// Trust scores are typically 0-1, add 30% weight
+		baseScore += trustScore.Score * 0.3
+	}
+
+	// Cap at 1.0
+	if baseScore > 1.0 {
+		baseScore = 1.0
+	}
+
+	return baseScore
+}
+
+// extractUsernameFromAuthorID extracts username from an author ID
+func (s *StatusSearchService) extractUsernameFromAuthorID(authorID string) string {
+	// For local actors: https://domain.com/users/username -> username
+	if strings.Contains(authorID, "/users/") {
+		parts := strings.Split(authorID, "/users/")
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+
+	// For simple usernames without URL
+	if !strings.Contains(authorID, "://") {
+		return authorID
+	}
+
+	return "" // Unable to extract
 }

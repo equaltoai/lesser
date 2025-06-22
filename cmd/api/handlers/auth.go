@@ -327,9 +327,13 @@ func (h *AuthHandler) HandleGetAccountStatus(ctx context.Context, request events
 		return common.Unauthorized(err), nil
 	}
 
-	// Check admin permission (simplified for now)
-	// TODO: Implement proper role checking
-	if !strings.HasSuffix(claims.Username, "-admin") {
+	// Check admin permission
+	user, err := h.authService.GetStore().GetUser(ctx, claims.Username)
+	if err != nil {
+		return common.InternalServerError(errors.New("failed to get user")), nil
+	}
+
+	if user.Role != "admin" && user.Role != "moderator" {
 		return common.Forbidden(errors.New("admin access required")), nil
 	}
 
@@ -359,7 +363,12 @@ func (h *AuthHandler) HandleClearAccountLockout(ctx context.Context, request eve
 	}
 
 	// Check admin permission
-	if !strings.HasSuffix(claims.Username, "-admin") {
+	user, err := h.authService.GetStore().GetUser(ctx, claims.Username)
+	if err != nil {
+		return common.InternalServerError(errors.New("failed to get user")), nil
+	}
+
+	if user.Role != "admin" && user.Role != "moderator" {
 		return common.Forbidden(errors.New("admin access required")), nil
 	}
 

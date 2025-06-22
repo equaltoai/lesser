@@ -70,6 +70,20 @@ func (h *Handler) HandleFollow(ctx context.Context, request events.APIGatewayV2H
 	now := time.Now()
 	followActivity.Published = &now
 
+	// Create the follow relationship record
+	if err := h.store.CreateFollow(ctx, claims.Username, accountID, followActivity.ID); err != nil {
+		h.logger.Error("failed to create follow relationship", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Auto-accept if target doesn't require manual approval
+	if !targetActor.ManuallyApprovesFollowers {
+		if err := h.store.AcceptFollow(ctx, claims.Username, accountID); err != nil {
+			h.logger.Error("failed to auto-accept follow", zap.Error(err))
+			// Don't return error - the follow was created, just not auto-accepted
+		}
+	}
+
 	// Store the activity in the outbox (this will trigger delivery)
 	if err := h.store.CreateActivity(ctx, followActivity); err != nil {
 		h.logger.Error("failed to create follow activity", zap.Error(err))
@@ -93,12 +107,16 @@ func (h *Handler) HandleFollow(ctx context.Context, request events.APIGatewayV2H
 		Note:                "",
 	}
 
-	// Check if already following
-	isFollowing, err := h.store.IsFollowing(ctx, actor.ID, targetActor.ID)
+	// Check the final relationship status after creating the follow
+	isFollowing, err := h.store.IsFollowing(ctx, claims.Username, accountID)
 	if err == nil && isFollowing {
-		// Already following
+		// Follow was accepted (either manually approved accounts or auto-accepted)
 		relationship.Following = true
 		relationship.Requested = false
+	} else {
+		// Follow is pending approval
+		relationship.Following = false
+		relationship.Requested = targetActor.ManuallyApprovesFollowers
 	}
 
 	body, _ := json.Marshal(relationship)
@@ -150,7 +168,7 @@ func (h *Handler) HandleUnfollow(ctx context.Context, request events.APIGatewayV
 	}
 
 	// Check if following
-	isFollowing, err := h.store.IsFollowing(ctx, actor.ID, targetActor.ID)
+	isFollowing, err := h.store.IsFollowing(ctx, claims.Username, accountID)
 	if err != nil || !isFollowing {
 		// Not following, but return success anyway for idempotency
 		h.logger.Info("follow not found",
@@ -174,6 +192,12 @@ func (h *Handler) HandleUnfollow(ctx context.Context, request events.APIGatewayV
 		}
 		now := time.Now()
 		undoActivity.Published = &now
+
+		// Remove the follow relationship record
+		if err := h.store.RemoveFollow(ctx, claims.Username, accountID); err != nil {
+			h.logger.Error("failed to remove follow relationship", zap.Error(err))
+			return common.InternalServerError(err), nil
+		}
 
 		// Store the activity in the outbox (this will trigger delivery)
 		if err := h.store.CreateActivity(ctx, undoActivity); err != nil {
@@ -200,7 +224,7 @@ func (h *Handler) HandleUnfollow(ctx context.Context, request events.APIGatewayV
 	}
 
 	// Check if following now
-	isFollowing, err = h.store.IsFollowing(ctx, actor.ID, targetActor.ID)
+	isFollowing, err = h.store.IsFollowing(ctx, claims.Username, accountID)
 	if err == nil && isFollowing {
 		relationship.Following = true
 	}
@@ -287,7 +311,7 @@ func (h *Handler) HandleBlock(ctx context.Context, request events.APIGatewayV2HT
 	}
 
 	// Unfollow if following
-	isFollowing, err := h.store.IsFollowing(ctx, actor.ID, targetActor.ID)
+	isFollowing, err := h.store.IsFollowing(ctx, claims.Username, accountID)
 	if err == nil && isFollowing {
 		// Create an Undo Follow activity
 		undoFollowActivity := &activitypub.Activity{
@@ -328,7 +352,7 @@ func (h *Handler) HandleBlock(ctx context.Context, request events.APIGatewayV2HT
 	}
 
 	// Check if following now
-	isFollowing, err = h.store.IsFollowing(ctx, actor.ID, targetActor.ID)
+	isFollowing, err = h.store.IsFollowing(ctx, claims.Username, accountID)
 	if err == nil && isFollowing {
 		relationship.Following = true
 	}
@@ -438,7 +462,7 @@ func (h *Handler) HandleUnblock(ctx context.Context, request events.APIGatewayV2
 	}
 
 	// Check if following now
-	isFollowing, err := h.store.IsFollowing(ctx, actor.ID, targetActor.ID)
+	isFollowing, err := h.store.IsFollowing(ctx, claims.Username, accountID)
 	if err == nil && isFollowing {
 		relationship.Following = true
 	}
@@ -512,7 +536,7 @@ func (h *Handler) HandleGetBlocks(ctx context.Context, request events.APIGateway
 				Acct:           blockedActor.PreferredUsername,
 				DisplayName:    blockedActor.Name,
 				URL:            blockedActor.URL,
-				CreatedAt:      time.Now().Format("2006-01-02T15:04:05.000Z"), // TODO: Store actor creation time
+				CreatedAt:      h.formatActorCreatedTime(blockedActor.CreatedAt),
 				Note:           blockedActor.Summary,
 				Avatar:         "",
 				AvatarStatic:   "",

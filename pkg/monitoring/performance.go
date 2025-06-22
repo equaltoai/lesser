@@ -46,7 +46,7 @@ func (pm *PerformanceMonitor) RecordLatency(ctx context.Context, operation strin
 			"Environment": pm.environment,
 		},
 	}
-	
+
 	return pm.putMetric(ctx, metric)
 }
 
@@ -62,7 +62,7 @@ func (pm *PerformanceMonitor) RecordError(ctx context.Context, operation string,
 			"Environment": pm.environment,
 		},
 	}
-	
+
 	return pm.putMetric(ctx, metric)
 }
 
@@ -78,7 +78,7 @@ func (pm *PerformanceMonitor) RecordDynamoDBConsumedCapacity(ctx context.Context
 			"Environment": pm.environment,
 		},
 	}
-	
+
 	writeMetric := MetricData{
 		Name:  "DynamoDBWriteCapacity",
 		Value: writeCapacity,
@@ -89,11 +89,11 @@ func (pm *PerformanceMonitor) RecordDynamoDBConsumedCapacity(ctx context.Context
 			"Environment": pm.environment,
 		},
 	}
-	
+
 	if err := pm.putMetric(ctx, readMetric); err != nil {
 		return err
 	}
-	
+
 	return pm.putMetric(ctx, writeMetric)
 }
 
@@ -109,11 +109,11 @@ func (pm *PerformanceMonitor) RecordLambdaColdStart(ctx context.Context, functio
 				"Environment":  pm.environment,
 			},
 		}
-		
+
 		if err := pm.putMetric(ctx, metric); err != nil {
 			return err
 		}
-		
+
 		if initDurationMs > 0 {
 			initMetric := MetricData{
 				Name:  "LambdaInitDuration",
@@ -124,11 +124,11 @@ func (pm *PerformanceMonitor) RecordLambdaColdStart(ctx context.Context, functio
 					"Environment":  pm.environment,
 				},
 			}
-			
+
 			return pm.putMetric(ctx, initMetric)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -143,7 +143,7 @@ func (pm *PerformanceMonitor) RecordSQSQueueDepth(ctx context.Context, queueName
 			"Environment": pm.environment,
 		},
 	}
-	
+
 	return pm.putMetric(ctx, metric)
 }
 
@@ -158,7 +158,7 @@ func (pm *PerformanceMonitor) RecordQueryComplexity(ctx context.Context, queryNa
 			"Environment": pm.environment,
 		},
 	}
-	
+
 	return pm.putMetric(ctx, metric)
 }
 
@@ -168,7 +168,7 @@ func (pm *PerformanceMonitor) RecordCacheHit(ctx context.Context, cacheName stri
 	if hit {
 		metricName = "CacheHits"
 	}
-	
+
 	metric := MetricData{
 		Name:  metricName,
 		Value: 1,
@@ -178,7 +178,7 @@ func (pm *PerformanceMonitor) RecordCacheHit(ctx context.Context, cacheName stri
 			"Environment": pm.environment,
 		},
 	}
-	
+
 	return pm.putMetric(ctx, metric)
 }
 
@@ -194,11 +194,11 @@ func (pm *PerformanceMonitor) RecordFederationPerformance(ctx context.Context, d
 			"Environment": pm.environment,
 		},
 	}
-	
+
 	if err := pm.putMetric(ctx, latencyMetric); err != nil {
 		return err
 	}
-	
+
 	if !success {
 		errorMetric := MetricData{
 			Name:  "FederationErrors",
@@ -210,10 +210,10 @@ func (pm *PerformanceMonitor) RecordFederationPerformance(ctx context.Context, d
 				"Environment": pm.environment,
 			},
 		}
-		
+
 		return pm.putMetric(ctx, errorMetric)
 	}
-	
+
 	return nil
 }
 
@@ -226,7 +226,7 @@ func (pm *PerformanceMonitor) putMetric(ctx context.Context, metric MetricData) 
 			Value: aws.String(value),
 		})
 	}
-	
+
 	input := &cloudwatch.PutMetricDataInput{
 		Namespace: aws.String(pm.namespace),
 		MetricData: []types.MetricDatum{
@@ -239,12 +239,12 @@ func (pm *PerformanceMonitor) putMetric(ctx context.Context, metric MetricData) 
 			},
 		},
 	}
-	
+
 	_, err := pm.cloudwatch.PutMetricData(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to put metric data: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -271,7 +271,7 @@ func (bm *BatchMetrics) Add(metric MetricData) {
 			Value: aws.String(value),
 		})
 	}
-	
+
 	bm.metrics = append(bm.metrics, types.MetricDatum{
 		MetricName: aws.String(metric.Name),
 		Value:      aws.Float64(metric.Value),
@@ -286,27 +286,27 @@ func (bm *BatchMetrics) Flush(ctx context.Context) error {
 	if len(bm.metrics) == 0 {
 		return nil
 	}
-	
+
 	// CloudWatch has a limit of 20 metrics per request
 	for i := 0; i < len(bm.metrics); i += 20 {
 		end := i + 20
 		if end > len(bm.metrics) {
 			end = len(bm.metrics)
 		}
-		
+
 		input := &cloudwatch.PutMetricDataInput{
 			Namespace:  aws.String(bm.monitor.namespace),
 			MetricData: bm.metrics[i:end],
 		}
-		
+
 		if _, err := bm.monitor.cloudwatch.PutMetricData(ctx, input); err != nil {
 			return fmt.Errorf("failed to put batch metric data: %w", err)
 		}
 	}
-	
+
 	// Clear the metrics after successful flush
 	bm.metrics = bm.metrics[:0]
-	
+
 	return nil
 }
 
@@ -354,7 +354,7 @@ func (pm *PerformanceMonitor) RecordXRayError(ctx context.Context, err error) {
 func (pm *PerformanceMonitor) TraceDBQuery(ctx context.Context, operation string, tableName string, fn func(context.Context) error) error {
 	ctx, seg := xray.BeginSubsegment(ctx, "DynamoDB "+operation)
 	defer seg.Close(nil)
-	
+
 	if err := seg.AddAnnotation("operation", operation); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray annotation 'operation': %v\n", err)
 	}
@@ -362,21 +362,21 @@ func (pm *PerformanceMonitor) TraceDBQuery(ctx context.Context, operation string
 		fmt.Printf("Warning: failed to add X-Ray annotation 'table_name': %v\n", err)
 	}
 	seg.Namespace = "aws"
-	
+
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		seg.AddError(err)
 		pm.RecordError(ctx, "db_query", err.Error())
 	}
-	
+
 	if err := seg.AddMetadata("dynamodb", map[string]interface{}{"duration_ms": duration.Milliseconds()}); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray metadata 'dynamodb': %v\n", err)
 	}
 	pm.RecordLatency(ctx, "db_query_"+operation, float64(duration.Milliseconds()))
-	
+
 	return err
 }
 
@@ -384,7 +384,7 @@ func (pm *PerformanceMonitor) TraceDBQuery(ctx context.Context, operation string
 func (pm *PerformanceMonitor) TraceFederationCall(ctx context.Context, domain string, operation string, fn func(context.Context) error) error {
 	ctx, seg := xray.BeginSubsegment(ctx, "Federation "+operation)
 	defer seg.Close(nil)
-	
+
 	if err := seg.AddAnnotation("domain", domain); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray annotation 'domain': %v\n", err)
 	}
@@ -392,25 +392,25 @@ func (pm *PerformanceMonitor) TraceFederationCall(ctx context.Context, domain st
 		fmt.Printf("Warning: failed to add X-Ray annotation 'operation': %v\n", err)
 	}
 	seg.Namespace = "remote"
-	
+
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	success := err == nil
 	if err != nil {
 		seg.AddError(err)
 	}
-	
+
 	if err := seg.AddMetadata("federation", map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
-		"success": success,
+		"success":     success,
 	}); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray metadata 'federation': %v\n", err)
 	}
-	
+
 	pm.RecordFederationPerformance(ctx, domain, operation, float64(duration.Milliseconds()), success)
-	
+
 	return err
 }
 
@@ -418,7 +418,7 @@ func (pm *PerformanceMonitor) TraceFederationCall(ctx context.Context, domain st
 func (pm *PerformanceMonitor) TraceGraphQLQuery(ctx context.Context, queryName string, complexity int, fn func(context.Context) error) error {
 	ctx, seg := xray.BeginSubsegment(ctx, "GraphQL "+queryName)
 	defer seg.Close(nil)
-	
+
 	if err := seg.AddAnnotation("query_name", queryName); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray annotation 'query_name': %v\n", err)
 	}
@@ -426,26 +426,26 @@ func (pm *PerformanceMonitor) TraceGraphQLQuery(ctx context.Context, queryName s
 		fmt.Printf("Warning: failed to add X-Ray annotation 'complexity': %v\n", err)
 	}
 	seg.Namespace = "graphql"
-	
+
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		seg.AddError(err)
 		pm.RecordError(ctx, "graphql_query", err.Error())
 	}
-	
+
 	if err := seg.AddMetadata("graphql", map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
-		"complexity": complexity,
+		"complexity":  complexity,
 	}); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray metadata 'graphql': %v\n", err)
 	}
-	
+
 	pm.RecordLatency(ctx, "graphql_"+queryName, float64(duration.Milliseconds()))
 	pm.RecordQueryComplexity(ctx, queryName, complexity)
-	
+
 	return err
 }
 
@@ -453,43 +453,43 @@ func (pm *PerformanceMonitor) TraceGraphQLQuery(ctx context.Context, queryName s
 func (pm *PerformanceMonitor) TraceLambdaHandler(ctx context.Context, functionName string, fn func(context.Context) error) error {
 	ctx, seg := xray.BeginSegment(ctx, functionName)
 	defer seg.Close(nil)
-	
+
 	if err := seg.AddAnnotation("function_name", functionName); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray annotation 'function_name': %v\n", err)
 	}
 	if err := seg.AddAnnotation("environment", pm.environment); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray annotation 'environment': %v\n", err)
 	}
-	
+
 	// Detect cold start (simplified - in real implementation you'd check if this is the first invocation)
-	coldStart := false // This would be determined by Lambda runtime
+	coldStart := false  // This would be determined by Lambda runtime
 	initDuration := 0.0 // This would come from Lambda runtime environment
-	
+
 	if coldStart {
 		if err := seg.AddAnnotation("cold_start", true); err != nil {
 			fmt.Printf("Warning: failed to add X-Ray annotation 'cold_start': %v\n", err)
 		}
 		pm.RecordLambdaColdStart(ctx, functionName, coldStart, initDuration)
 	}
-	
+
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		seg.AddError(err)
 		pm.RecordError(ctx, "lambda_handler", err.Error())
 	}
-	
+
 	if err := seg.AddMetadata("lambda", map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
-		"cold_start": coldStart,
+		"cold_start":  coldStart,
 	}); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray metadata 'lambda': %v\n", err)
 	}
-	
+
 	pm.RecordLatency(ctx, "lambda_"+functionName, float64(duration.Milliseconds()))
-	
+
 	return err
 }
 
@@ -508,12 +508,12 @@ func (pm *PerformanceMonitor) GetPerformanceInsights(ctx context.Context, metric
 			types.StatisticSum,
 		},
 	}
-	
+
 	result, err := pm.cloudwatch.GetMetricStatistics(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metric statistics: %w", err)
 	}
-	
+
 	return result.Datapoints, nil
 }
 
@@ -532,11 +532,11 @@ func (pm *PerformanceMonitor) CreateAlarm(ctx context.Context, alarmName, metric
 		AlarmDescription:   aws.String(fmt.Sprintf("Alarm for %s metric", metricName)),
 		Unit:               types.StandardUnitCount,
 	}
-	
+
 	_, err := pm.cloudwatch.PutMetricAlarm(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to create alarm: %w", err)
 	}
-	
+
 	return nil
 }

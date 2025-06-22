@@ -617,12 +617,16 @@ func (h *Handler) HandleGetFederationInstance(ctx context.Context, request event
 		resp.IsSuspended = block.Severity == "suspend"
 	}
 
-	// TODO: Add more detailed information like:
-	// - Recent activity from this instance
-	// - Users from this instance
-	// - Moderation history
+	// Add detailed federation information
+	details := h.getFederationDetails(ctx, domain)
 
-	return common.OK(resp), nil
+	// Create response with instance info and details
+	responseData := map[string]interface{}{
+		"instance": resp,
+		"details":  details,
+	}
+
+	return common.OK(responseData), nil
 }
 
 // HandleGetFederationStatistics handles GET /api/v1/admin/federation/statistics
@@ -835,4 +839,36 @@ func cleanDomain(domain string) string {
 	domain = strings.ToLower(domain)
 
 	return domain
+}
+
+// Helper methods for federation details
+func (h *Handler) getFederationDetails(ctx context.Context, domain string) map[string]interface{} {
+	stats, err := h.store.GetDomainStats(ctx, domain)
+	if err != nil {
+		h.logger.Warn("failed to get domain stats", zap.Error(err))
+		return map[string]interface{}{}
+	}
+
+	// Handle stats as a map since GetDomainStats returns interface{}
+	if statsMap, ok := stats.(map[string]interface{}); ok {
+		return map[string]interface{}{
+			"total_users":    getFieldOrDefault(statsMap, "total_users", 0),
+			"active_users":   getFieldOrDefault(statsMap, "active_users", 0),
+			"total_statuses": getFieldOrDefault(statsMap, "total_statuses", 0),
+			"last_activity":  getFieldOrDefault(statsMap, "last_activity", nil),
+			"software":       getFieldOrDefault(statsMap, "software", ""),
+			"version":        getFieldOrDefault(statsMap, "version", ""),
+		}
+	}
+
+	// Return empty map if stats is not in expected format
+	return map[string]interface{}{}
+}
+
+// Helper function to safely get field from map with default value
+func getFieldOrDefault(m map[string]interface{}, key string, defaultValue interface{}) interface{} {
+	if value, exists := m[key]; exists {
+		return value
+	}
+	return defaultValue
 }

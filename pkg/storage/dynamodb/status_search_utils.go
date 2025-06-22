@@ -125,7 +125,6 @@ func extractURLs(content string) []string {
 	return urls
 }
 
-
 // highlightMatch creates a highlighted version of text with the match emphasized
 func highlightMatch(text, query string, maxLength int) string {
 	lowerText := strings.ToLower(text)

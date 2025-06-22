@@ -64,7 +64,7 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 		h.logger.Error("failed to get home timeline", zap.Error(err))
 		return common.InternalServerError(err), nil
 	}
-	
+
 	h.logger.Info("timeline entries fetched",
 		zap.String("username", claims.Username),
 		zap.Int("count", len(entries)),
@@ -75,17 +75,16 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 	for _, entry := range entries {
 		// Extract object ID from PostID URL
 		objectID := h.converter.ExtractIDFromURL(entry.PostID)
-		
+
 		// Get the actual object
 		obj, err := h.store.GetObject(ctx, objectID)
 		if err != nil {
-			h.logger.Warn("failed to get object from timeline", 
+			h.logger.Warn("failed to get object from timeline",
 				zap.String("post_id", entry.PostID),
 				zap.String("object_id", objectID),
 				zap.Error(err))
 			continue
 		}
-		
 
 		// Get the actor who created the object
 		var attributedTo string
@@ -132,7 +131,7 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 			if _, err := h.store.GetAnnounce(ctx, actor.ID, entry.PostID); err == nil {
 				status.Reblogged = true
 			}
-			bookmarked, _ := h.store.IsBookmarked(ctx, actor.PreferredUsername, entry.PostID)
+			bookmarked, _ := h.store.IsBookmarked(ctx, claims.Username, entry.PostID)
 			status.Bookmarked = bookmarked
 		}
 
@@ -297,6 +296,7 @@ func (h *Handler) HandlePublicTimeline(ctx context.Context, request events.APIGa
 func (h *Handler) HandleHashtagTimeline(ctx context.Context, request events.APIGatewayV2HTTPRequest, hashtag string) (*events.APIGatewayV2HTTPResponse, error) {
 	// Public timeline doesn't require authentication, but check if user is authenticated
 	var currentActor *activitypub.Actor
+	var currentUsername string
 	authHeader := request.Headers["Authorization"]
 	if authHeader == "" {
 		authHeader = request.Headers["authorization"]
@@ -306,6 +306,7 @@ func (h *Handler) HandleHashtagTimeline(ctx context.Context, request events.APIG
 		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 			currentActor, _ = h.store.GetActor(ctx, claims.Username)
+			currentUsername = claims.Username
 		}
 	}
 
@@ -393,8 +394,10 @@ func (h *Handler) HandleHashtagTimeline(ctx context.Context, request events.APIG
 				if _, err := h.store.GetAnnounce(ctx, currentActor.ID, objectID); err == nil {
 					status.Reblogged = true
 				}
-				bookmarked, _ := h.store.IsBookmarked(ctx, currentActor.PreferredUsername, objectID)
-				status.Bookmarked = bookmarked
+				if currentUsername != "" {
+					bookmarked, _ := h.store.IsBookmarked(ctx, currentUsername, objectID)
+					status.Bookmarked = bookmarked
+				}
 			}
 		}
 
@@ -547,7 +550,7 @@ func (h *Handler) HandleListTimeline(ctx context.Context, request events.APIGate
 			if _, err := h.store.GetAnnounce(ctx, actor.ID, objectID); err == nil {
 				status.Reblogged = true
 			}
-			bookmarked, _ := h.store.IsBookmarked(ctx, actor.PreferredUsername, objectID)
+			bookmarked, _ := h.store.IsBookmarked(ctx, claims.Username, objectID)
 			status.Bookmarked = bookmarked
 		}
 

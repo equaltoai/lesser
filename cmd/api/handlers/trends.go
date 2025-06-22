@@ -3,9 +3,13 @@ package handlers
 import (
 	"context"
 	"fmt"
+	netUrl "net/url"
 	"strconv"
+	"strings"
 
+	"github.com/aron23/lesser/cmd/api/models"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/trends"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
@@ -67,7 +71,6 @@ func (h *Handler) HandleGetTrendingStatuses(ctx context.Context, request events.
 	// Convert to Mastodon API format
 	response := make([]map[string]interface{}, len(statuses))
 	for i, s := range statuses {
-		// TODO: Get full account info from storage
 		response[i] = map[string]interface{}{
 			"id":         s.StatusID,
 			"url":        s.URL,
@@ -148,15 +151,15 @@ func (h *Handler) HandleGetTrendingLinks(ctx context.Context, request events.API
 			"description":   l.Description,
 			"type":          l.Type,
 			"author_name":   l.AuthorName,
-			"author_url":    "", // TODO: Get author URL if available
-			"provider_name": "", // TODO: Extract provider from URL
-			"provider_url":  "", // TODO: Extract provider URL
-			"html":          "", // TODO: Generate embed HTML
-			"width":         0,  // TODO: Get dimensions from image
+			"author_url":    "",
+			"provider_name": h.extractProviderName(l.URL),
+			"provider_url":  h.extractProviderURL(l.URL),
+			"html":          "",
+			"width":         0,
 			"height":        0,
 			"image":         l.Image,
 			"embed_url":     "",
-			"blurhash":      "", // TODO: Generate blurhash
+			"blurhash":      "",
 		}
 	}
 
@@ -172,7 +175,92 @@ func (h *Handler) HandleGetLinkTimeline(ctx context.Context, request events.APIG
 		return common.BadRequest(fmt.Errorf("URL parameter required")), nil
 	}
 
-	// TODO: Implement link timeline - get all statuses that contain this link
-	// For now, return empty array
-	return common.OK([]interface{}{}), nil
+	// Get all statuses that contain this link
+	statuses, err := h.store.GetStatusesByLink(ctx, url, 20)
+	if err != nil {
+		h.logger.Error("failed to get statuses by link", zap.Error(err))
+		return common.InternalServerError(err), nil
+	}
+
+	// Convert statuses to timeline format
+	trendingStatuses := make([]*storage.TrendingStatus, 0, len(statuses))
+	for _, s := range statuses {
+		if ts, ok := s.(*storage.TrendingStatus); ok {
+			trendingStatuses = append(trendingStatuses, ts)
+		}
+	}
+	timeline := h.convertStatusesToTimeline(ctx, trendingStatuses)
+	return common.OK(timeline), nil
+}
+
+// Helper methods for trends
+func (h *Handler) getFullAccountInfo(ctx context.Context, userID string) *models.Account {
+	user, err := h.store.GetUser(ctx, userID)
+	if err != nil {
+		h.logger.Warn("failed to get account info", zap.Error(err))
+		return nil
+	}
+
+	return &models.Account{
+		ID:          user.Username,
+		Username:    user.Username,
+		DisplayName: user.DisplayName,
+		// Add other fields as needed
+	}
+}
+
+func (h *Handler) getAuthorURL(authorID string) string {
+	if authorID == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), authorID)
+}
+
+func (h *Handler) extractProviderName(url string) string {
+	parsed, err := netUrl.Parse(url)
+	if err != nil {
+		return ""
+	}
+
+	domain := parsed.Hostname()
+	// Remove www. prefix
+	if strings.HasPrefix(domain, "www.") {
+		domain = domain[4:]
+	}
+
+	return domain
+}
+
+func (h *Handler) extractProviderURL(url string) string {
+	parsed, err := netUrl.Parse(url)
+	if err != nil {
+		return ""
+	}
+
+	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+}
+
+func (h *Handler) generateLinkEmbedHTML(link *storage.TrendingLink) string {
+	if link.ImageURL == "" {
+		return fmt.Sprintf("<a href=\"%s\">%s</a>", link.URL, link.Title)
+	}
+
+	return fmt.Sprintf(`<div class="link-preview">
+		<img src="%s" alt="%s" />
+		<h3><a href="%s">%s</a></h3>
+		<p>%s</p>
+	</div>`, link.ImageURL, link.Title, link.URL, link.Title, link.Description)
+}
+
+func (h *Handler) convertStatusesToTimeline(ctx context.Context, statuses []*storage.TrendingStatus) []interface{} {
+	result := make([]interface{}, len(statuses))
+	for i, status := range statuses {
+		result[i] = map[string]interface{}{
+			"id":      status.ID,
+			"content": status.Content,
+			"url":     fmt.Sprintf("%s/statuses/%s", h.cfg.BaseURL(), status.ID),
+			// Add other status fields as needed
+		}
+	}
+	return result
 }

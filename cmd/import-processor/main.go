@@ -12,12 +12,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aron23/lesser/pkg/common"
+	"github.com/aron23/lesser/pkg/config"
+	"github.com/aron23/lesser/pkg/federation"
+	"github.com/aron23/lesser/pkg/storage"
+	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dynamodbsvc "github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.uber.org/zap"
@@ -27,7 +32,9 @@ import (
 var (
 	logger       *zap.Logger
 	s3Client     *s3.Client
-	dynamoClient *dynamodb.Client
+	dynamoClient *dynamodbsvc.Client
+	store        storage.Storage
+	cfg          *config.Config
 	tableName    string
 	bucketName   string
 	baseURL      string
@@ -119,16 +126,26 @@ func handleImportProcessing(ctx context.Context, sqsEvent events.SQSEvent) error
 
 func initializeAWSClients(ctx context.Context) error {
 	// Load AWS configuration
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
 	// Initialize S3 client
-	s3Client = s3.NewFromConfig(cfg)
+	s3Client = s3.NewFromConfig(awsCfg)
 
 	// Initialize DynamoDB client
-	dynamoClient = dynamodb.NewFromConfig(cfg)
+	dynamoClient = dynamodbsvc.NewFromConfig(awsCfg)
+
+	// Initialize application config
+	cfg = config.Get() // Use the global config instance
+
+	// Initialize storage service
+	var storeErr error
+	store, storeErr = dynamodb.New()
+	if storeErr != nil {
+		return fmt.Errorf("failed to initialize storage: %w", storeErr)
+	}
 
 	return nil
 }
@@ -273,8 +290,8 @@ func processCSVImport(ctx context.Context, event ImportProcessorEvent, data []by
 
 			// Update progress
 			if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-				logger.Warn("failed to update import progress", 
-					zap.String("import_id", event.ImportID), 
+				logger.Warn("failed to update import progress",
+					zap.String("import_id", event.ImportID),
 					zap.Error(err))
 			}
 
@@ -310,8 +327,8 @@ func processCSVImport(ctx context.Context, event ImportProcessorEvent, data []by
 
 			// Update progress
 			if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-				logger.Warn("failed to update import progress", 
-					zap.String("import_id", event.ImportID), 
+				logger.Warn("failed to update import progress",
+					zap.String("import_id", event.ImportID),
 					zap.Error(err))
 			}
 
@@ -360,8 +377,8 @@ func processCSVImport(ctx context.Context, event ImportProcessorEvent, data []by
 
 			// Update progress
 			if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-				logger.Warn("failed to update import progress", 
-					zap.String("import_id", event.ImportID), 
+				logger.Warn("failed to update import progress",
+					zap.String("import_id", event.ImportID),
 					zap.Error(err))
 			}
 
@@ -397,8 +414,8 @@ func processCSVImport(ctx context.Context, event ImportProcessorEvent, data []by
 
 			// Update progress
 			if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-				logger.Warn("failed to update import progress", 
-					zap.String("import_id", event.ImportID), 
+				logger.Warn("failed to update import progress",
+					zap.String("import_id", event.ImportID),
 					zap.Error(err))
 			}
 
@@ -444,8 +461,8 @@ func processJSONImport(ctx context.Context, event ImportProcessorEvent, data []b
 			// Add members to list
 			for _, member := range members {
 				if err := updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-					logger.Warn("failed to update import progress", 
-						zap.String("import_id", event.ImportID), 
+					logger.Warn("failed to update import progress",
+						zap.String("import_id", event.ImportID),
 						zap.Error(err))
 				}
 
@@ -513,14 +530,50 @@ func followAccount(ctx context.Context, username, targetAccount string) error {
 		"FollowType": &types.AttributeValueMemberS{Value: "following"},
 	}
 
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+	_, err = dynamoClient.PutItem(ctx, &dynamodbsvc.PutItemInput{
 		TableName: aws.String(tableName),
 		Item:      item,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to store follow relationship: %w", err)
+	}
 
-	// TODO: Send Follow activity to the remote actor
+	// Get the follower actor to send the follow activity
+	followerActor, err := store.GetActor(ctx, username)
+	if err != nil {
+		return fmt.Errorf("failed to get follower actor: %w", err)
+	}
 
-	return err
+	// Create and send Follow activity to the remote actor
+	followActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.FollowType,
+			ID:      fmt.Sprintf("%s/activities/follow-%d", followerActor.ID, time.Now().Unix()),
+			To:      []string{actorID},
+		},
+		Actor:  followerActor.ID,
+		Object: actorID,
+	}
+	now = time.Now()
+	followActivity.Published = &now
+
+	// Store the activity in the outbox (this will trigger delivery)
+	err = store.CreateActivity(ctx, followActivity)
+	if err != nil {
+		logger.Warn("failed to store follow activity in outbox",
+			zap.String("follower", username),
+			zap.String("target", actorID),
+			zap.Error(err))
+		// Don't fail the import if activity delivery fails
+	} else {
+		logger.Info("follow activity created for delivery",
+			zap.String("follower", username),
+			zap.String("target", actorID),
+			zap.String("activity_id", followActivity.ID))
+	}
+
+	return nil
 }
 
 func blockAccount(ctx context.Context, username, targetAccount string) error {
@@ -539,7 +592,7 @@ func blockAccount(ctx context.Context, username, targetAccount string) error {
 		"CreatedAt": &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
 	}
 
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+	_, err = dynamoClient.PutItem(ctx, &dynamodbsvc.PutItemInput{
 		TableName: aws.String(tableName),
 		Item:      item,
 	})
@@ -564,7 +617,7 @@ func muteAccount(ctx context.Context, username, targetAccount string, hideNotifi
 		"CreatedAt":         &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
 	}
 
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+	_, err = dynamoClient.PutItem(ctx, &dynamodbsvc.PutItemInput{
 		TableName: aws.String(tableName),
 		Item:      item,
 	})
@@ -587,7 +640,7 @@ func bookmarkStatus(ctx context.Context, username, statusURL string) error {
 		"CreatedAt": &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
 	}
 
-	_, err := dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+	_, err := dynamoClient.PutItem(ctx, &dynamodbsvc.PutItemInput{
 		TableName: aws.String(tableName),
 		Item:      item,
 	})
@@ -610,7 +663,7 @@ func createOrUpdateList(ctx context.Context, username, listName string) (string,
 		"CreatedAt":     &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
 	}
 
-	_, err := dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+	_, err := dynamoClient.PutItem(ctx, &dynamodbsvc.PutItemInput{
 		TableName: aws.String(tableName),
 		Item:      item,
 	})
@@ -633,7 +686,7 @@ func addToList(ctx context.Context, username, listID, accountAddress string) err
 		"AddedAt": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 	}
 
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+	_, err = dynamoClient.PutItem(ctx, &dynamodbsvc.PutItemInput{
 		TableName: aws.String(tableName),
 		Item:      item,
 	})
@@ -662,12 +715,20 @@ func resolveAccount(ctx context.Context, accountAddress string) (string, error) 
 		return fmt.Sprintf("%s/users/%s", baseURL, username), nil
 	}
 
-	// Use WebFinger to resolve remote account
-	// This is a simplified version - would need proper WebFinger client
-	// webfingerURL := fmt.Sprintf("https://%s/.well-known/webfinger?resource=acct:%s@%s", domain, username, domain)
+	// Use federation service to resolve remote account via WebFinger
+	remoteSearchService := federation.NewRemoteSearchService(store)
+	result, err := remoteSearchService.ResolveActor(ctx, fmt.Sprintf("@%s@%s", username, domain))
+	if err != nil {
+		// Fallback to constructing likely actor ID if WebFinger fails
+		log.Printf("WebFinger resolution failed for %s@%s, using fallback: %v", username, domain, err)
+		return fmt.Sprintf("https://%s/users/%s", domain, username), nil
+	}
 
-	// TODO: Make HTTP request and parse WebFinger response
-	// For now, construct a likely actor ID
+	if result.IsRemote && result.Actor != nil {
+		return result.Actor.ID, nil
+	}
+
+	// Fallback if resolution doesn't return expected data
 	return fmt.Sprintf("https://%s/users/%s", domain, username), nil
 }
 
@@ -738,7 +799,7 @@ func updateImportStatus(ctx context.Context, importID, status string, completion
 		exprAttrValues[":error"] = &types.AttributeValueMemberS{Value: errorMsg}
 	}
 
-	_, err := dynamoClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+	_, err := dynamoClient.UpdateItem(ctx, &dynamodbsvc.UpdateItemInput{
 		TableName: aws.String(tableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("IMPORT#%s", importID)},
@@ -753,7 +814,7 @@ func updateImportStatus(ctx context.Context, importID, status string, completion
 }
 
 func updateImportProgress(ctx context.Context, importID string, progress int) error {
-	_, err := dynamoClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+	_, err := dynamoClient.UpdateItem(ctx, &dynamodbsvc.UpdateItemInput{
 		TableName: aws.String(tableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("IMPORT#%s", importID)},

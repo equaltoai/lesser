@@ -34,7 +34,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 	// Fetch real federation costs from storage
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, -1, 0) // Last month
-	
+
 	costs, nextCursor, err := r.Storage.GetFederationCosts(ctx, startTime, endTime, limit, cursor)
 	if err != nil {
 		r.Logger.Error("Failed to get federation costs", zap.Error(err))
@@ -51,7 +51,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 
 	// Convert to GraphQL model
 	edges := make([]*model.FederationCostEdge, 0, len(costs))
-	
+
 	for i, cost := range costs {
 		// Calculate health score based on error rate
 		healthScore := (1.0 - cost.ErrorRate) * 100
@@ -117,7 +117,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 		HasNextPage:     nextCursor != "",
 		HasPreviousPage: cursor != "",
 	}
-	
+
 	if len(edges) > 0 {
 		pageInfo.StartCursor = &edges[0].Cursor
 		pageInfo.EndCursor = &edges[len(edges)-1].Cursor
@@ -145,10 +145,10 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 	// Get health report from storage (last 24 hours)
 	healthReport, err := r.Storage.GetInstanceHealthReport(ctx, domain, 24*time.Hour)
 	if err != nil {
-		r.Logger.Error("Failed to get instance health report", 
+		r.Logger.Error("Failed to get instance health report",
 			zap.String("domain", domain),
 			zap.Error(err))
-		
+
 		// Return a default report on error
 		return &model.InstanceHealthReport{
 			Domain: domain,
@@ -260,14 +260,14 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 		r.Logger.Error("Failed to get cost projections",
 			zap.String("period", periodStr),
 			zap.Error(err))
-		
+
 		// Return default projections on error
 		return &model.CostProjection{
-			Period:        period,
-			CurrentCost:   0,
-			ProjectedCost: 0,
-			Variance:      0,
-			TopCostDrivers: []*model.CostDriver{},
+			Period:          period,
+			CurrentCost:     0,
+			ProjectedCost:   0,
+			Variance:        0,
+			TopCostDrivers:  []*model.CostDriver{},
 			Recommendations: []string{"Unable to generate projections"},
 		}, nil
 	}
@@ -291,12 +291,12 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 			PercentOfTotal: driver.PercentOfTotal,
 			Trend:          trend,
 		}
-		
+
 		// Only set domain if it's not empty
 		if driver.Domain == "" {
 			costDriver.Domain = nil
 		}
-		
+
 		topDrivers = append(topDrivers, costDriver)
 	}
 

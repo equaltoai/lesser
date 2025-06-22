@@ -7,21 +7,25 @@ import (
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/federation"
 	"github.com/aron23/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
+// FederationDeliveryService represents the interface needed for federation delivery
+type FederationDeliveryService interface {
+	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string) error
+}
+
 // RecoveryFederationService handles ActivityPub notifications for recovery
 type RecoveryFederationService struct {
 	store      storage.Storage
-	fedService *federation.DeliveryService
+	fedService FederationDeliveryService
 	logger     *zap.Logger
 	domain     string
 }
 
 // NewRecoveryFederationService creates a new recovery federation service
-func NewRecoveryFederationService(store storage.Storage, fedService *federation.DeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
+func NewRecoveryFederationService(store storage.Storage, fedService FederationDeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
 	return &RecoveryFederationService{
 		store:      store,
 		fedService: fedService,
@@ -77,14 +81,14 @@ func (s *RecoveryFederationService) SendTrusteeInvitation(ctx context.Context, f
 		},
 	}
 
-	// Get the signing actor
-	signingActor, err := s.store.GetActor(ctx, fromUser)
+	// Get the signing actor (not used in current interface)
+	_, err := s.store.GetActor(ctx, fromUser)
 	if err != nil {
 		return fmt.Errorf("failed to get signing actor: %w", err)
 	}
 
 	// Send via federation
-	return s.fedService.DeliverActivity(ctx, activity, trusteeActorID+"/inbox", signingActor)
+	return s.fedService.DeliverActivity(ctx, activity, trusteeActorID+"/inbox")
 }
 
 // SendRecoveryRequest sends a recovery request to a trustee
@@ -139,11 +143,11 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 		},
 	}
 
-	// Get the system actor for signing
-	systemActor, err := s.store.GetActor(ctx, "system")
+	// Get the system actor for signing (not used in current interface)
+	_, err := s.store.GetActor(ctx, "system")
 	if err != nil {
-		// Create a minimal system actor if it doesn't exist
-		systemActor = &activitypub.Actor{
+		// Create a minimal system actor if it doesn't exist (not used)
+		_ = &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
 				ID:   fmt.Sprintf("https://%s/actor/system", s.domain),
 				Type: "Service",
@@ -155,7 +159,7 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 	}
 
 	// Send via federation
-	return s.fedService.DeliverActivity(ctx, activity, trusteeActorID+"/inbox", systemActor)
+	return s.fedService.DeliverActivity(ctx, activity, trusteeActorID+"/inbox")
 }
 
 // HandleTrusteeConfirmation processes incoming trustee confirmations

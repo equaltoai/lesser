@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
@@ -184,9 +185,27 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 
 // IsAuthorizedFetchEnabled checks if authorized fetch is enabled
 func (f *AuthorizedFetchService) IsAuthorizedFetchEnabled(ctx context.Context) bool {
-	// Check instance configuration
-	// This could be stored in DynamoDB or environment variable
-	// For now, return false by default
+	// Check environment variable first
+	if envValue := os.Getenv("AUTHORIZED_FETCH_ENABLED"); envValue != "" {
+		return envValue == "true" || envValue == "1"
+	}
+
+	// Check instance configuration from storage
+	rules, err := f.store.GetInstanceRules(ctx)
+	if err != nil {
+		f.logger.Debug("failed to get instance rules, defaulting authorized fetch to disabled",
+			zap.Error(err))
+		return false
+	}
+
+	// Look for authorized fetch rule
+	for _, rule := range rules {
+		if rule.ID == "authorized_fetch_enabled" {
+			return rule.Text == "true" || rule.Text == "1"
+		}
+	}
+
+	// Default to false for security (require explicit enablement)
 	return false
 }
 

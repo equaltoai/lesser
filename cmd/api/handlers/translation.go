@@ -103,42 +103,14 @@ func (h *Handler) HandleTranslateStatus(ctx context.Context, request events.APIG
 	translationEnabled := os.Getenv("TRANSLATION_ENABLED") == "true"
 
 	if !translationEnabled {
-		// Return mock translation if not enabled
-		translation := TranslationResult{
-			Content:          fmt.Sprintf("[Mock translation of: %s]", content),
-			SpoilerText:      spoilerText,
-			DetectedLanguage: language,
-			Provider:         "mock",
-		}
-
-		body, _ := json.Marshal(translation)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: 200,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: string(body),
-		}, nil
+		return common.UnprocessableEntity(fmt.Errorf("translation service is not enabled")), nil
 	}
 
 	// Initialize translation service
 	translationSvc, err := translation.NewService(ctx, h.store, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
-		// Return basic list on error
-		languages := []TranslationLanguage{
-			{Code: "en", Name: "English"},
-			{Code: "es", Name: "Spanish"},
-			{Code: "fr", Name: "French"},
-		}
-		body, _ := json.Marshal(languages)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: 200,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: string(body),
-		}, nil
+		return common.InternalServerError(fmt.Errorf("translation service initialization failed")), nil
 	}
 
 	// Translate the content
@@ -184,70 +156,21 @@ func (h *Handler) HandleGetTranslationLanguages(ctx context.Context, request eve
 	translationEnabled := os.Getenv("TRANSLATION_ENABLED") == "true"
 
 	if !translationEnabled {
-		// Return mock languages if not enabled
-		languages := []TranslationLanguage{
-			{Code: "en", Name: "English"},
-			{Code: "es", Name: "Spanish"},
-			{Code: "fr", Name: "French"},
-			{Code: "de", Name: "German"},
-			{Code: "it", Name: "Italian"},
-			{Code: "pt", Name: "Portuguese"},
-			{Code: "ja", Name: "Japanese"},
-			{Code: "ko", Name: "Korean"},
-			{Code: "zh", Name: "Chinese"},
-			{Code: "ru", Name: "Russian"},
-			{Code: "ar", Name: "Arabic"},
-			{Code: "hi", Name: "Hindi"},
-		}
-
-		body, _ := json.Marshal(languages)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: 200,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: string(body),
-		}, nil
+		return common.UnprocessableEntity(fmt.Errorf("translation service is not enabled")), nil
 	}
 
 	// Initialize translation service
 	translationSvc, err := translation.NewService(ctx, h.store, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
-		// Return basic list on error
-		languages := []TranslationLanguage{
-			{Code: "en", Name: "English"},
-			{Code: "es", Name: "Spanish"},
-			{Code: "fr", Name: "French"},
-		}
-		body, _ := json.Marshal(languages)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: 200,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: string(body),
-		}, nil
+		return common.InternalServerError(fmt.Errorf("translation service initialization failed")), nil
 	}
 
 	// Get supported languages from AWS Translate
 	supportedLangs, err := translationSvc.GetSupportedLanguages(ctx)
 	if err != nil {
 		h.logger.Error("failed to get supported languages", zap.Error(err))
-		// Return basic list on error
-		languages := []TranslationLanguage{
-			{Code: "en", Name: "English"},
-			{Code: "es", Name: "Spanish"},
-			{Code: "fr", Name: "French"},
-		}
-		body, _ := json.Marshal(languages)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: 200,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: string(body),
-		}, nil
+		return common.InternalServerError(fmt.Errorf("failed to get supported languages")), nil
 	}
 
 	// Convert to API format
