@@ -49,14 +49,24 @@
 
 ## Data Layer Refactoring
 
-- [ ] 3. Refactor core data models to use DynamORM
-  - [ ] 3.1 Refactor Actor model
+- [-] 3. Refactor core data models to use DynamORM
+
+
+
+  - [x] 3.1 Refactor Actor model
+
+
     - Convert to DynamORM struct tags
     - Implement repository methods using query builder
     - Add unit tests for Actor operations
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [ ] 3.2 Refactor User model
+  - [x] 3.2 Refactor User model
+
+
+
+
+
     - Convert to DynamORM struct tags
     - Implement repository methods using query builder
     - Add unit tests for User operations
