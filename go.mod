@@ -40,6 +40,7 @@ require (
 	github.com/graph-gophers/dataloader v5.0.0+incompatible
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
+	github.com/pay-theory/dynamorm v1.0.29
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.10.0
 	github.com/vektah/gqlparser/v2 v2.5.27
@@ -95,8 +96,6 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
-	github.com/pay-theory/dynamorm v1.0.29 // indirect
-	github.com/pay-theory/lift v1.0.55 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/relvacode/iso8601 v1.1.1-0.20210511065120-b30b151cc433 // indirect
