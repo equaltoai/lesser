@@ -73,8 +73,13 @@ func GetLambdaClient(ctx context.Context) (*dynamorm.LambdaDB, error) {
 			return
 		}
 
+		// Set timeout buffer to prevent Lambda timeouts
+		// The WithLambdaTimeoutBuffer method returns a *dynamorm.LambdaDB
+		// so we can safely assign it back to lambdaDB
+		lambdaDB = lambdaDB.WithLambdaTimeoutBuffer(defaultTimeoutBuffer)
+
 		// Store the standard client interface for compatibility
-		client = lambdaDB.WithLambdaTimeoutBuffer(defaultTimeoutBuffer)
+		client = lambdaDB
 
 		log.Printf("DynamORM initialized in %v", time.Since(startTime))
 	})
