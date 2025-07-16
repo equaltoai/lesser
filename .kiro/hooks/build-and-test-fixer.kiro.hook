@@ -1,6 +1,6 @@
 {
   "enabled": true,
-  "name": "Build and Test Fixer",
+  "name": "Build Fixer",
   "description": "Automatically compiles the application, fixes any build errors",
   "version": "1",
   "when": {
