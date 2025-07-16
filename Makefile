@@ -1,9 +1,16 @@
-.PHONY: build test clean deploy fmt lint install-tools
+.PHONY: build test clean deploy fmt lint install-tools build-win clean-win
 
 # Variables
 GOOS ?= linux
 GOARCH ?= arm64
 CGO_ENABLED ?= 0
+
+# Detect Windows
+ifeq ($(OS),Windows_NT)
+    DETECTED_OS := Windows
+else
+    DETECTED_OS := $(shell uname -s)
+endif
 
 # List of Lambda functions to build
 LAMBDAS := webfinger actor inbox outbox collections activity-processor graphql
@@ -114,16 +121,43 @@ vendor:
 	@echo "Vendoring dependencies..."
 	go mod vendor
 
+# Windows-specific build command
+build-win:
+	@echo "Building Lambda functions for Windows..."
+	@if not exist bin mkdir bin
+	@for %%l in (webfinger actor inbox outbox collections activity-processor graphql) do ( \
+		echo Building cmd/%%l... && \
+		go build -ldflags="-s -w" -o bin/%%l.exe ./cmd/%%l \
+	)
+
+# Windows-specific build-lambdas command
+build-lambdas-win:
+	@echo "Building all Lambda functions for Windows..."
+	@if not exist bin mkdir bin
+	@for %%l in (webfinger actor inbox outbox collections activity-processor graphql api objects auth auth-api search-indexer status-indexer push-delivery cost-aggregator ai-processor streaming stream-router note-processor moderation-processor report-trust-updater federation-tracker federation-delivery import-processor export-generator media-processor trend-aggregator) do ( \
+		echo Building cmd/%%l... && \
+		go build -ldflags="-s -w" -o bin/%%l.exe ./cmd/%%l \
+	)
+
+# Windows-specific clean command
+clean-win:
+	@echo "Cleaning build artifacts for Windows..."
+	@if exist bin rmdir /s /q bin
+	@if exist coverage.out del coverage.out
+	@if exist coverage.html del coverage.html
+
 # Help
 help:
 	@echo "Available targets:"
 	@echo "  build           - Build all Lambda functions"
 	@echo "  build-<name>    - Build specific Lambda function"
+	@echo "  build-win       - Build all Lambda functions (Windows)"
 	@echo "  test            - Run tests"
 	@echo "  test-coverage   - Run tests with coverage"
 	@echo "  fmt             - Format code"
 	@echo "  lint            - Run linter"
 	@echo "  clean           - Clean build artifacts"
+	@echo "  clean-win       - Clean build artifacts (Windows)"
 	@echo "  install-tools   - Install development tools"
 	@echo "  package         - Create Lambda deployment packages"
 	@echo "  deploy-infra    - Deploy infrastructure with Pulumi"

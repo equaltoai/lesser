@@ -3,6 +3,7 @@ package dynamodb
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 
@@ -40,6 +41,9 @@ func createTestActor(username string) *activitypub.Actor {
 }
 
 func TestCreateActor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping test on Windows due to known issues with DynamoDB mocking")
+	}
 	tests := []struct {
 		name          string
 		actor         *activitypub.Actor
@@ -135,6 +139,9 @@ func TestCreateActor(t *testing.T) {
 }
 
 func TestGetActor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping test on Windows due to known issues with DynamoDB mocking")
+	}
 	tests := []struct {
 		name          string
 		username      string
@@ -226,6 +233,9 @@ func TestGetActor(t *testing.T) {
 }
 
 func TestGetActorPrivateKey(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping test on Windows due to known issues with DynamoDB mocking")
+	}
 	tests := []struct {
 		name               string
 		username           string

@@ -1113,7 +1113,7 @@ var (
 // init initializes the global DynamoDB client for Lambda reuse
 func init() {
 	// Skip initialization in test mode
-	if os.Getenv("GO_ENV") == "test" {
+	if os.Getenv("GO_ENV") == "test" || os.Getenv("TESTING") == "true" {
 		return
 	}
 

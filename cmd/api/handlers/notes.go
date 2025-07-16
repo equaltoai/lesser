@@ -416,7 +416,7 @@ func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
 		Storage:     h.store,
 		Logger:      h.logger,
 		InstanceURL: h.cfg.BaseURL(),
-		PrivateKey:  h.cfg.PrivateKey, // Load from config
+		PrivateKey:  h.cfg.ReputationPrivateKey, // Load from config
 	}
 
 	return reputation.NewService(cfg)
