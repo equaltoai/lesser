@@ -269,7 +269,7 @@ func (t *secureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				zap.String("resolved_ip", ip.String()),
 				zap.String("url", req.URL.String()),
 				zap.Bool("from_cache", fromCache))
-			return nil, fmt.Errorf("%w: %s resolves to private IP %s", ErrDNSRebindingDetected, hostname, ip)
+			return nil, fmt.Errorf("request blocked: %w", ErrPrivateIPAddress)
 		}
 	}
 

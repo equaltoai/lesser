@@ -65,3 +65,5 @@ docs/api/swagger-ui/
 test-reports*
 
 .env.k6
+
+reference

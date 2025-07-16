@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	// Username: 1-30 chars, alphanumeric + underscore, no double underscore
-	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_]{0,28}[a-zA-Z0-9])?$`)
+	// Username: 1-30 chars, alphanumeric + underscore + hyphen, no double underscore
+	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_\-]{0,28}[a-zA-Z0-9])?$`)
 
 	// Domain: valid hostname
 	domainRegex = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
@@ -29,7 +29,7 @@ func ValidateUsername(username string) error {
 	}
 
 	if !usernameRegex.MatchString(username) {
-		return fmt.Errorf("username can only contain letters, numbers, and underscores")
+		return fmt.Errorf("username can only contain letters, numbers, underscores, and hyphens")
 	}
 
 	// Check for reserved usernames

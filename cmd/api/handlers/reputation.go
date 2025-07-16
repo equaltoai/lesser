@@ -371,7 +371,7 @@ func (h *Handler) getReputationService() (*reputation.Service, error) {
 		Storage:     h.store,
 		Logger:      h.logger,
 		InstanceURL: h.cfg.BaseURL(),
-		PrivateKey:  h.cfg.PrivateKey,
+		PrivateKey:  h.cfg.ReputationPrivateKey,
 	}
 
 	return reputation.NewService(cfg)

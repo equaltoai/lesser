@@ -117,14 +117,6 @@ type Controller interface {
 	IsHealthy(ctx context.Context, instance string) (bool, error)
 }
 
-// CostCalculator provides cost estimation
-type CostCalculator interface {
-	EstimateDataTransferCost(bytes int64, region string) float64
-	EstimateLambdaCost(invocations int, durationMs int64) float64
-	EstimateDynamoDBCost(readUnits, writeUnits int) float64
-	EstimateS3Cost(storageGB, requestCount int64) float64
-}
-
 // Default retry policy
 var DefaultRetryPolicy = &RetryPolicy{
 	MaxRetries:     3,
@@ -132,21 +124,3 @@ var DefaultRetryPolicy = &RetryPolicy{
 	MaxBackoff:     30 * time.Second,
 	BackoffFactor:  2.0,
 }
-
-// AWS pricing constants (us-east-1)
-const (
-	// Data transfer costs per GB
-	DataTransferCostPerGB = 0.09
-
-	// Lambda costs
-	LambdaCostPerMillionRequests = 0.20
-	LambdaCostPerGBSecond        = 0.0000166667
-
-	// DynamoDB costs
-	DynamoDBReadCostPerMillion  = 0.25
-	DynamoDBWriteCostPerMillion = 1.25
-
-	// S3 costs
-	S3StorageCostPerGB       = 0.023
-	S3RequestCostPerThousand = 0.0004
-)
