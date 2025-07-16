@@ -2,8 +2,10 @@ package dynamorm
 
 import (
 	"context"
+	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -13,8 +15,13 @@ import (
 var (
 	// Global client instance for reuse across Lambda invocations
 	client     core.DB
+	lambdaDB   *dynamorm.LambdaDB
 	clientOnce sync.Once
 	clientErr  error
+
+	// Default timeout buffer to prevent Lambda timeouts
+	// This is subtracted from the Lambda function timeout
+	defaultTimeoutBuffer = 500 * time.Millisecond
 )
 
 // GetClient returns a singleton DynamORM client instance
@@ -47,4 +54,63 @@ func GetClient(ctx context.Context) (core.DB, error) {
 	})
 
 	return client, clientErr
+}
+
+// GetLambdaClient returns a singleton DynamORM Lambda-optimized client instance
+// This ensures that the client is only initialized once per Lambda container
+// and includes Lambda-specific optimizations like timeout handling
+func GetLambdaClient(ctx context.Context) (*dynamorm.LambdaDB, error) {
+	clientOnce.Do(func() {
+		log.Println("Initializing Lambda-optimized DynamORM client...")
+		startTime := time.Now()
+
+		// Create Lambda-optimized client
+		var err error
+		lambdaDB, err = dynamorm.NewLambdaOptimized()
+		if err != nil {
+			clientErr = err
+			log.Printf("Failed to initialize DynamORM: %v", err)
+			return
+		}
+
+		// Store the standard client interface for compatibility
+		client = lambdaDB.WithLambdaTimeoutBuffer(defaultTimeoutBuffer)
+
+		log.Printf("DynamORM initialized in %v", time.Since(startTime))
+	})
+
+	// Apply Lambda context timeout if available
+	if ctx != nil && lambdaDB != nil {
+		return lambdaDB.WithLambdaTimeout(ctx), clientErr
+	}
+
+	return lambdaDB, clientErr
+}
+
+// InitializeModels pre-registers models with the DynamORM client to reduce cold start time
+// This should be called in the init() function of Lambda handlers
+func InitializeModels(models ...interface{}) error {
+	db, err := GetLambdaClient(context.Background())
+	if err != nil {
+		return err
+	}
+
+	// Pre-register models to reduce cold start time
+	return db.PreRegisterModels(models...)
+}
+
+// WithTimeoutBuffer returns a new client with the specified timeout buffer
+func WithTimeoutBuffer(db core.DB, buffer time.Duration) core.DB {
+	if db == nil {
+		return nil
+	}
+
+	// Type assertion to get the LambdaDB
+	lambdaDB, ok := db.(*dynamorm.LambdaDB)
+	if !ok {
+		// If not a LambdaDB, return the original DB
+		return db
+	}
+
+	return lambdaDB.WithLambdaTimeoutBuffer(buffer)
 }
