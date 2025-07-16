@@ -103,23 +103,26 @@ func (r *GenericRepository) List(ctx context.Context, filter map[string]interfac
 	// Start building the query
 	query := r.DB.Model(reflect.New(reflect.TypeOf(entities).Elem().Elem().Elem()).Interface())
 
-	for key, value := range filter {
-		// Handle special case for GSI queries
-		if strings.HasPrefix(key, "index:") {
-			indexName := strings.TrimPrefix(key, "index:")
-			query = query.Index(indexName)
-			continue
-		}
+	// Apply filters if provided
+	if filter != nil {
+		for key, value := range filter {
+			// Handle special case for GSI queries
+			if strings.HasPrefix(key, "index:") {
+				indexName := strings.TrimPrefix(key, "index:")
+				query = query.Index(indexName)
+				continue
+			}
 
-		// Handle operators in key (e.g., "CreatedAt:>")
-		parts := strings.Split(key, ":")
-		fieldName := parts[0]
-		operator := "="
-		if len(parts) > 1 {
-			operator = parts[1]
-		}
+			// Handle operators in key (e.g., "CreatedAt:>")
+			parts := strings.Split(key, ":")
+			fieldName := parts[0]
+			operator := "="
+			if len(parts) > 1 {
+				operator = parts[1]
+			}
 
-		query = query.Where(fieldName, operator, value)
+			query = query.Where(fieldName, operator, value)
+		}
 	}
 
 	// Execute the query
