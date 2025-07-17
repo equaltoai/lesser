@@ -72,7 +72,10 @@
     - Add unit tests for User operations
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [ ] 3.3 Refactor Status model
+  - [-] 3.3 Refactor Status model
+
+
+
     - Convert to DynamORM struct tags
     - Implement repository methods using query builder
     - Add unit tests for Status operations
