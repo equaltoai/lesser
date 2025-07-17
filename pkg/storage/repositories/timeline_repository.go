@@ -1,0 +1,469 @@
+package repositories
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm/pkg/core"
+)
+
+// TimelineRepository handles timeline operations using DynamORM
+type TimelineRepository struct {
+	db        core.DB
+	tableName string
+}
+
+// NewTimelineRepository creates a new timeline repository
+func NewTimelineRepository(db core.DB, tableName string) *TimelineRepository {
+	return &TimelineRepository{
+		db:        db,
+		tableName: tableName,
+	}
+}
+
+// CreateTimelineEntry creates a new timeline entry
+func (r *TimelineRepository) CreateTimelineEntry(ctx context.Context, entry *models.Timeline) error {
+	if err := entry.BeforeCreate(); err != nil {
+		return fmt.Errorf("failed to prepare timeline entry for creation: %w", err)
+	}
+
+	err := r.db.Model(entry).Create()
+	if err != nil {
+		return fmt.Errorf("failed to create timeline entry: %w", err)
+	}
+
+	return nil
+}
+
+// CreateTimelineEntries creates multiple timeline entries in batch
+func (r *TimelineRepository) CreateTimelineEntries(ctx context.Context, entries []*models.Timeline) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Prepare all entries
+	for _, entry := range entries {
+		if err := entry.BeforeCreate(); err != nil {
+			return fmt.Errorf("failed to prepare timeline entry for creation: %w", err)
+		}
+	}
+
+	// Create entries one by one (in a real implementation, you'd use batch operations)
+	for _, entry := range entries {
+		err := r.db.Model(entry).Create()
+		if err != nil {
+			return fmt.Errorf("failed to create timeline entry: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// GetHomeTimeline retrieves home timeline entries for a user
+func (r *TimelineRepository) GetHomeTimeline(ctx context.Context, username string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	return r.getTimelineEntries(ctx, "HOME", username, limit, cursor)
+}
+
+// GetPublicTimeline retrieves public timeline entries
+func (r *TimelineRepository) GetPublicTimeline(ctx context.Context, local bool, limit int, cursor string) ([]*models.Timeline, string, error) {
+	timelineID := "FEDERATED"
+	if local {
+		timelineID = "LOCAL"
+	}
+	return r.getTimelineEntries(ctx, "PUBLIC", timelineID, limit, cursor)
+}
+
+// GetListTimeline retrieves timeline entries for a specific list
+func (r *TimelineRepository) GetListTimeline(ctx context.Context, listID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	return r.getTimelineEntries(ctx, "LIST", listID, limit, cursor)
+}
+
+// GetDirectTimeline retrieves direct message timeline entries for a user
+func (r *TimelineRepository) GetDirectTimeline(ctx context.Context, username string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	return r.getTimelineEntries(ctx, "DIRECT", username, limit, cursor)
+}
+
+// GetHashtagTimeline retrieves timeline entries for a specific hashtag
+func (r *TimelineRepository) GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*models.Timeline, string, error) {
+	timelineID := hashtag
+	if local {
+		timelineID = hashtag + "#LOCAL"
+	}
+	return r.getTimelineEntries(ctx, "HASHTAG", timelineID, limit, cursor)
+}
+
+// getTimelineEntries is a helper method to retrieve timeline entries
+func (r *TimelineRepository) getTimelineEntries(ctx context.Context, timelineType, timelineID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
+	query := r.db.Model(&models.Timeline{}).
+		Where("PK", "=", pk).
+		OrderBy("SK", "DESC") // Most recent first
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get timeline entries: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	return entries, nextCursor, nil
+}
+
+// GetTimelineEntriesByPost retrieves all timeline entries for a specific post
+func (r *TimelineRepository) GetTimelineEntriesByPost(ctx context.Context, postID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	query := r.db.Model(&models.Timeline{}).
+		Index("post-timeline-index").
+		Where("GSI1PK", "=", "POST#"+postID).
+		OrderBy("GSI1SK", "DESC")
+
+	if cursor != "" {
+		query = query.Where("GSI1SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get timeline entries by post: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].GSI1SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	return entries, nextCursor, nil
+}
+
+// GetTimelineEntriesByActor retrieves all timeline entries by a specific actor
+func (r *TimelineRepository) GetTimelineEntriesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	query := r.db.Model(&models.Timeline{}).
+		Index("actor-timeline-index").
+		Where("GSI2PK", "=", "ACTOR#"+actorID).
+		OrderBy("GSI2SK", "DESC")
+
+	if cursor != "" {
+		query = query.Where("GSI2SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get timeline entries by actor: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].GSI2SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	return entries, nextCursor, nil
+}
+
+// GetTimelineEntriesByVisibility retrieves timeline entries by visibility level
+func (r *TimelineRepository) GetTimelineEntriesByVisibility(ctx context.Context, visibility string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	query := r.db.Model(&models.Timeline{}).
+		Index("visibility-timeline-index").
+		Where("GSI3PK", "=", "VISIBILITY#"+visibility).
+		OrderBy("GSI3SK", "DESC")
+
+	if cursor != "" {
+		query = query.Where("GSI3SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get timeline entries by visibility: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].GSI3SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	return entries, nextCursor, nil
+}
+
+// GetTimelineEntriesByLanguage retrieves timeline entries by language
+func (r *TimelineRepository) GetTimelineEntriesByLanguage(ctx context.Context, language string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	query := r.db.Model(&models.Timeline{}).
+		Index("language-timeline-index").
+		Where("GSI4PK", "=", "LANGUAGE#"+language).
+		OrderBy("GSI4SK", "DESC")
+
+	if cursor != "" {
+		query = query.Where("GSI4SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get timeline entries by language: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].GSI4SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	return entries, nextCursor, nil
+}
+
+// GetTimelineEntry retrieves a specific timeline entry
+func (r *TimelineRepository) GetTimelineEntry(ctx context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) (*models.Timeline, error) {
+	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
+	sk := fmt.Sprintf("%d#%s", timelineAt.Unix(), entryID)
+
+	var entry models.Timeline
+	err := r.db.Model(&models.Timeline{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&entry)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get timeline entry: %w", err)
+	}
+
+	return &entry, nil
+}
+
+// UpdateTimelineEntry updates an existing timeline entry
+func (r *TimelineRepository) UpdateTimelineEntry(ctx context.Context, entry *models.Timeline) error {
+	if err := entry.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare timeline entry for update: %w", err)
+	}
+
+	err := r.db.Model(entry).Update()
+	if err != nil {
+		return fmt.Errorf("failed to update timeline entry: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteTimelineEntry deletes a specific timeline entry
+func (r *TimelineRepository) DeleteTimelineEntry(ctx context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) error {
+	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
+	sk := fmt.Sprintf("%d#%s", timelineAt.Unix(), entryID)
+
+	entry := &models.Timeline{
+		PK: pk,
+		SK: sk,
+	}
+
+	err := r.db.Model(entry).Delete()
+	if err != nil {
+		return fmt.Errorf("failed to delete timeline entry: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteTimelineEntriesByPost deletes all timeline entries for a specific post
+func (r *TimelineRepository) DeleteTimelineEntriesByPost(ctx context.Context, postID string) error {
+	// First, get all timeline entries for this post
+	entries, _, err := r.GetTimelineEntriesByPost(ctx, postID, 1000, "")
+	if err != nil {
+		return fmt.Errorf("failed to get timeline entries for deletion: %w", err)
+	}
+
+	if len(entries) == 0 {
+		return nil // Nothing to delete
+	}
+
+	// Delete entries one by one (in a real implementation, you'd use batch operations)
+	for _, entry := range entries {
+		err := r.db.Model(entry).Delete()
+		if err != nil {
+			return fmt.Errorf("failed to delete timeline entry: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// DeleteExpiredTimelineEntries deletes timeline entries that have expired
+func (r *TimelineRepository) DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error {
+	// This is a complex operation that would require scanning the table
+	// In a real implementation, you might want to use DynamoDB TTL instead
+	// For now, we'll implement a basic version that scans and deletes
+
+	// Note: This is not the most efficient approach for large datasets
+	// Consider using DynamoDB TTL for automatic expiration
+
+	var expiredEntries []*models.Timeline
+
+	// Scan for expired entries (this is expensive - consider using TTL instead)
+	err := r.db.Model(&models.Timeline{}).
+		Filter("ExpiresAt", "<", before).
+		All(&expiredEntries)
+
+	if err != nil {
+		return fmt.Errorf("failed to scan for expired timeline entries: %w", err)
+	}
+
+	if len(expiredEntries) == 0 {
+		return nil // Nothing to delete
+	}
+
+	// Delete entries one by one (in a real implementation, you'd use batch operations)
+	for _, entry := range expiredEntries {
+		err := r.db.Model(entry).Delete()
+		if err != nil {
+			return fmt.Errorf("failed to delete timeline entry: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// CountTimelineEntries counts the number of entries in a timeline
+func (r *TimelineRepository) CountTimelineEntries(ctx context.Context, timelineType, timelineID string) (int, error) {
+	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
+
+	count, err := r.db.Model(&models.Timeline{}).
+		Where("PK", "=", pk).
+		Count()
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count timeline entries: %w", err)
+	}
+
+	return int(count), nil
+}
+
+// GetTimelineEntriesInRange retrieves timeline entries within a time range
+func (r *TimelineRepository) GetTimelineEntriesInRange(ctx context.Context, timelineType, timelineID string, startTime, endTime time.Time, limit int) ([]*models.Timeline, error) {
+	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
+	startSK := fmt.Sprintf("%d#", startTime.Unix())
+	endSK := fmt.Sprintf("%d#", endTime.Unix())
+
+	var entries []*models.Timeline
+	err := r.db.Model(&models.Timeline{}).
+		Where("PK", "=", pk).
+		Where("SK", ">=", startSK).
+		Where("SK", "<=", endSK).
+		OrderBy("SK", "DESC").
+		Limit(limit).
+		All(&entries)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get timeline entries in range: %w", err)
+	}
+
+	return entries, nil
+}
+
+// GetTimelineEntriesWithFilters retrieves timeline entries with various filters
+func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, cursor string) ([]*models.Timeline, string, error) {
+	query := r.db.Model(&models.Timeline{}).
+		Where("PK", "=", fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)).
+		OrderBy("SK", "DESC")
+
+	// Apply filters
+	if filters.OnlyMedia {
+		query = query.Filter("HasMedia", "=", true)
+	}
+
+	if filters.ExcludeReplies {
+		query = query.Filter("IsReply", "=", false)
+	}
+
+	if filters.ExcludeBoosts {
+		query = query.Filter("IsBoost", "=", false)
+	}
+
+	if filters.Language != "" {
+		query = query.Filter("Language", "=", filters.Language)
+	}
+
+	if filters.MinID != "" {
+		// Convert minID to timestamp for comparison
+		if timestamp, err := strconv.ParseInt(filters.MinID, 10, 64); err == nil {
+			query = query.Filter("TimelineAt", ">=", time.Unix(timestamp, 0))
+		}
+	}
+
+	if filters.MaxID != "" {
+		// Convert maxID to timestamp for comparison
+		if timestamp, err := strconv.ParseInt(filters.MaxID, 10, 64); err == nil {
+			query = query.Filter("TimelineAt", "<=", time.Unix(timestamp, 0))
+		}
+	}
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get filtered timeline entries: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	return entries, nextCursor, nil
+}
+
+// TimelineFilters represents filters for timeline queries
+type TimelineFilters struct {
+	OnlyMedia      bool   // Only show entries with media
+	ExcludeReplies bool   // Exclude reply entries
+	ExcludeBoosts  bool   // Exclude boost/announce entries
+	Language       string // Filter by language
+	MinID          string // Minimum entry ID (for pagination)
+	MaxID          string // Maximum entry ID (for pagination)
+}
