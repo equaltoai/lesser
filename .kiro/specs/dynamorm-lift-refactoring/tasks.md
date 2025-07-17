@@ -54,34 +54,30 @@
 
 
   - [x] 3.1 Refactor Actor model
-
-
     - Convert to DynamORM struct tags
     - Implement repository methods using query builder
     - Add unit tests for Actor operations
     - _Requirements: 1.1, 1.2, 1.3_
 
   - [x] 3.2 Refactor User model
-
-
-
-
-
     - Convert to DynamORM struct tags
     - Implement repository methods using query builder
     - Add unit tests for User operations
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [-] 3.3 Refactor Status model
-
-
-
+  - [X] 3.3 Refactor Status model
     - Convert to DynamORM struct tags
     - Implement repository methods using query builder
     - Add unit tests for Status operations
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [ ] 3.4 Refactor Timeline model
+  - [x] 3.4 Refactor Timeline model
+
+
+
+
+
+
     - Convert to DynamORM struct tags
     - Implement repository methods using query builder
     - Add unit tests for Timeline operations
