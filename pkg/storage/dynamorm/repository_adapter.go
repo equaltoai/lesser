@@ -14,6 +14,8 @@ type GenericRepository struct {
 	DB         core.DB
 	TableName  string
 	EntityType string
+	// Transaction support
+	tx *Transaction
 }
 
 // NewGenericRepository creates a new GenericRepository
@@ -25,6 +27,16 @@ func NewGenericRepository(db core.DB, tableName, entityType string) *GenericRepo
 	}
 }
 
+// WithTransaction returns a new repository that uses the provided transaction
+func (r *GenericRepository) WithTransaction(tx *Transaction) *GenericRepository {
+	return &GenericRepository{
+		DB:         r.DB,
+		TableName:  r.TableName,
+		EntityType: r.EntityType,
+		tx:         tx,
+	}
+}
+
 // Create creates a new entity
 func (r *GenericRepository) Create(ctx context.Context, entity interface{}) error {
 	// Set primary keys if the entity implements KeySetter
@@ -32,7 +44,16 @@ func (r *GenericRepository) Create(ctx context.Context, entity interface{}) erro
 		keySetter.SetKeys()
 	}
 
-	// Create the entity
+	// If we're in a transaction, use the transaction's Put method
+	if r.tx != nil {
+		err := r.tx.Put(entity)
+		if err != nil {
+			return MapRepositoryError(err, "Create", r.EntityType, getEntityID(entity))
+		}
+		return nil
+	}
+
+	// Otherwise, use the standard Create method
 	err := r.DB.Model(entity).Create()
 	if err != nil {
 		return MapRepositoryError(err, "Create", r.EntityType, getEntityID(entity))
@@ -66,6 +87,15 @@ func (r *GenericRepository) Update(ctx context.Context, entity interface{}) erro
 		keySetter.SetKeys()
 	}
 
+	// If we're in a transaction, use the transaction's Update method
+	if r.tx != nil {
+		err := r.tx.Update(entity)
+		if err != nil {
+			return MapRepositoryError(err, "Update", r.EntityType, getEntityID(entity))
+		}
+		return nil
+	}
+
 	// Update the entity
 	err := r.DB.Model(entity).Update()
 	if err != nil {
@@ -85,7 +115,29 @@ func (r *GenericRepository) Delete(ctx context.Context, id string, entityPtr int
 	entityType := entityValue.Type()
 	entity := reflect.New(entityType).Interface()
 
-	// Set the keys on the entity
+	// Set the keys using reflection
+	entityElem := reflect.ValueOf(entity).Elem()
+	pkField := entityElem.FieldByName("PK")
+	skField := entityElem.FieldByName("SK")
+
+	if pkField.IsValid() && pkField.CanSet() && pkField.Kind() == reflect.String {
+		pkField.SetString(pk)
+	}
+
+	if skField.IsValid() && skField.CanSet() && skField.Kind() == reflect.String {
+		skField.SetString(sk)
+	}
+
+	// If we're in a transaction, use the transaction's Delete method
+	if r.tx != nil {
+		err := r.tx.Delete(entity)
+		if err != nil {
+			return MapRepositoryError(err, "Delete", r.EntityType, id)
+		}
+		return nil
+	}
+
+	// Otherwise, use the standard Delete method
 	err := r.DB.Model(entity).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
