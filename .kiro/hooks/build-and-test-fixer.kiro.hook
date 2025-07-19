@@ -14,6 +14,6 @@
   },
   "then": {
     "type": "askAgent",
-    "prompt": "I notice code changes that might affect the build or tests. Let me:\n\n1. Compile the application using `make build-lambdas-win`\n2. If there are build errors, analyze and fix them\n\nPlease provide the output of the build so I can see any errors that need to be fixed."
+    "prompt": "I notice code changes that might affect the build or tests. Let me:\n\n1. Compile the application using `make build-lambdas-win`\n2. wait for build (it takes a while)\n2. If there are build errors, analyze and fix them\n\nPlease provide the output of the build so I can see any errors that need to be fixed."
   }
 }
