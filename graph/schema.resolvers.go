@@ -5055,7 +5055,7 @@ func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypu
 	// For now, we don't have a direct reference to the original note ID in QuoteContext
 	// This would require extending the QuoteContext struct or using a different approach
 	// to track the original note being quoted
-	
+
 	// TODO: Implement original note retrieval
 	// This would require:
 	// 1. Adding OriginalNoteID field to QuoteContext struct
@@ -5073,7 +5073,7 @@ func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypu
 // QuoteAllowed is the resolver for the quoteAllowed field.
 func (r *quoteContextResolver) QuoteAllowed(ctx context.Context, obj *activitypub.QuoteContext) (bool, error) {
 	// 1. Get authenticated user from context
-// 	username := getUsernameFromContext(ctx)
+	// 	username := getUsernameFromContext(ctx)
 
 	// 2. Track query cost
 	r.CostTracker.TrackDynamoRead(1)
@@ -5081,13 +5081,13 @@ func (r *quoteContextResolver) QuoteAllowed(ctx context.Context, obj *activitypu
 	// 3. For quote allowance, we need the status ID being quoted
 	// This information is not directly available in QuoteContext
 	// We would need to extend the struct or use a different approach
-	
+
 	// TODO: Implement proper quote allowance checking
 	// This requires:
 	// 1. Getting the status ID of the note being quoted
 	// 2. Checking if it's withdrawn from quotes
 	// 3. Checking quote permissions for the current user
-	
+
 	// For now, return based on AllowWithdrawal field
 	return obj.AllowWithdrawal, nil
 }
@@ -5101,15 +5101,15 @@ func (r *quoteContextResolver) QuoteType(ctx context.Context, obj *activitypub.Q
 	// 1. The specific quote being analyzed
 	// 2. The content of the quote vs original
 	// 3. Quote metadata stored in the database
-	
+
 	// Since QuoteContext doesn't contain this information,
 	// we'll return a reasonable default based on context
-	
+
 	// If quote count is high, it might be a popular quote worth full context
 	if obj.QuoteCount > 10 {
 		return model.QuoteTypeFull, nil
 	}
-	
+
 	// For lower quote counts, assume it's commentary
 	return model.QuoteTypeCommentary, nil
 }
@@ -5122,17 +5122,17 @@ func (r *quoteContextResolver) Withdrawn(ctx context.Context, obj *activitypub.Q
 	// For checking if a quote is withdrawn, we would need:
 	// 1. The specific quote note ID
 	// 2. Or the relationship between quoter and quoted note
-	
+
 	// Since QuoteContext doesn't contain this information,
 	// we use the AllowWithdrawal field as an inverse indicator
 	// If withdrawal is not allowed, the quote is effectively "permanent"
-	
+
 	// TODO: Implement proper withdrawal status checking
 	// This requires:
 	// 1. Quote note ID or relationship ID
 	// 2. Storage.WithdrawQuote() or similar check
 	// 3. Proper withdrawal status tracking
-	
+
 	// For now, return false (not withdrawn) if withdrawal is allowed
 	// This is a safe default that doesn't break functionality
 	return !obj.AllowWithdrawal, nil

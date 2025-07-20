@@ -162,7 +162,7 @@ func (s *dynamoDBStorage) IsQuoteAllowed(ctx context.Context, statusID, quoterID
 					authorID = attr
 				}
 			}
-			
+
 			if authorID != "" {
 				// Check if quoter follows the status author
 				isFollowing, err := s.IsFollowing(ctx, quoterID, authorID)
@@ -173,7 +173,7 @@ func (s *dynamoDBStorage) IsQuoteAllowed(ctx context.Context, statusID, quoterID
 			}
 		}
 	}
-	
+
 	// Check if quoter is mentioned in the status (AllowMentioned)
 	if permissions.AllowMentioned {
 		// Get the status to check for mentions
@@ -339,18 +339,18 @@ func (s *dynamoDBStorage) isUserMentionedInStatus(ctx context.Context, userID st
 	if err != nil {
 		return false, fmt.Errorf("failed to get user actor: %w", err)
 	}
-	
+
 	// Extract possible mention formats for this user
 	possibleMentions := []string{
-		userActor.PreferredUsername,                    // @username
+		userActor.PreferredUsername,                     // @username
 		fmt.Sprintf("@%s", userActor.PreferredUsername), // @username
-		userActor.ID,                                   // full actor ID
+		userActor.ID, // full actor ID
 	}
-	
+
 	// Extract content and tags from the status
 	var content string
 	var tags []interface{}
-	
+
 	switch obj := statusObj.(type) {
 	case *activitypub.Note:
 		content = obj.Content
@@ -367,7 +367,7 @@ func (s *dynamoDBStorage) isUserMentionedInStatus(ctx context.Context, userID st
 			tags = tagArray
 		}
 	}
-	
+
 	// Check tags for mentions (ActivityPub Mention type)
 	for _, tag := range tags {
 		if tagMap, ok := tag.(map[string]interface{}); ok {
@@ -381,13 +381,13 @@ func (s *dynamoDBStorage) isUserMentionedInStatus(ctx context.Context, userID st
 			}
 		}
 	}
-	
+
 	// Check content for mention patterns
 	for _, mention := range possibleMentions {
 		if strings.Contains(content, mention) {
 			return true, nil
 		}
 	}
-	
+
 	return false, nil
 }

@@ -106,7 +106,7 @@ func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redire
 		// Allow this for the test case
 		return nil
 	}
-	
+
 	// Special case for test
 	if redirectURI == "https://wrong.com/callback" {
 		return ErrInvalidRequest

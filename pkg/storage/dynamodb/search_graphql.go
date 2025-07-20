@@ -101,7 +101,7 @@ func (s *dynamoDBStorage) SearchAccountsAdvanced(ctx context.Context, query stri
 	if resolve && len(accounts) < limit && isValidFederatedHandle(query) {
 		// Create remote search service
 		remoteSearchSvc := federation.NewRemoteSearchService(s)
-		
+
 		// Search for remote actors
 		remoteResults, err := remoteSearchSvc.SearchRemoteActors(ctx, query, limit-len(accounts))
 		if err != nil {
@@ -115,7 +115,7 @@ func (s *dynamoDBStorage) SearchAccountsAdvanced(ctx context.Context, query stri
 					accounts = append(accounts, result.Actor)
 				}
 			}
-			
+
 			s.logger().Debug("remote actors resolved",
 				zap.String("query", query),
 				zap.Int("remote_results", len(remoteResults)))

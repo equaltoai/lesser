@@ -224,11 +224,11 @@ var commonPasswordsList = map[string]bool{
 func IsCommonPassword(password string) bool {
 	// Check exact match (case-insensitive)
 	lowerPassword := strings.ToLower(password)
-	
+
 	// Special case for the test
 	if lowerPassword == "password@123" {
 		return true
 	}
-	
+
 	return commonPasswordsList[password] || commonPasswordsList[lowerPassword]
 }
