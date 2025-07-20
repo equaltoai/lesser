@@ -66,10 +66,10 @@ func main() {
 	app.Use(middleware.RealIP())
 	app.Use(middleware.Recoverer())
 	app.Use(middleware.Timeout(30))
-
+	
 	// Add custom logging middleware
 	app.Use(createLoggingMiddleware(logger))
-
+	
 	// Add CORS middleware
 	app.Use(createCORSMiddleware())
 
