@@ -128,8 +128,13 @@
     - Add tenant validation utilities
     - _Requirements: 2.7, 3.2_
 
-- [ ] 7. Refactor Lambda handlers to use Lift
-  - [ ] 7.1 Refactor API Lambda function
+- [-] 7. Refactor Lambda handlers to use Lift
+
+
+  - [x] 7.1 Refactor API Lambda function
+
+
+
     - Convert to Lift application structure
     - Implement route handlers using Lift Context
     - Add middleware for cross-cutting concerns
