@@ -594,7 +594,7 @@ func (h *Handler) HandleDirectTimeline(ctx context.Context, request events.APIGa
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx, claims.Username) 
+	actor, err := h.store.GetActor(ctx, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return common.InternalServerError(err), nil

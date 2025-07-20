@@ -64,7 +64,7 @@ func (c *calculator) EstimateLambdaCost(invocations int, durationMs int64) float
 	memoryGB := 1.0
 	durationSeconds := float64(durationMs) / 1000.0
 	gbSeconds := float64(invocations) * memoryGB * durationSeconds
-	
+
 	// First 400,000 GB-seconds are free
 	computeCost := float64(0)
 	freeGBSeconds := 400_000.0
@@ -95,8 +95,8 @@ func (c *calculator) EstimateDynamoDBCost(readUnits, writeUnits int) float64 {
 			readCost = float64(readUnits-freeReads) / 1_000_000 * 0.27 // Adjusted from 0.25
 		} else {
 			// For larger volumes, use a lower rate (volume discount)
-			readCost = float64(2_500_000) / 1_000_000 * 0.27 + // First tier
-				float64(readUnits-5_000_000) / 1_000_000 * 0.22 // Volume discount
+			readCost = float64(2_500_000)/1_000_000*0.27 + // First tier
+				float64(readUnits-5_000_000)/1_000_000*0.22 // Volume discount
 		}
 	}
 
@@ -109,8 +109,8 @@ func (c *calculator) EstimateDynamoDBCost(readUnits, writeUnits int) float64 {
 			writeCost = float64(writeUnits-freeWrites) / 1_000_000 * DynamoDBWriteCostPerMillion
 		} else {
 			// Lower rate for higher volumes (volume discount)
-			writeCost = float64(1_000_000) / 1_000_000 * DynamoDBWriteCostPerMillion + // First tier
-				float64(writeUnits-2_000_000) / 1_000_000 * 1.15 // Volume discount
+			writeCost = float64(1_000_000)/1_000_000*DynamoDBWriteCostPerMillion + // First tier
+				float64(writeUnits-2_000_000)/1_000_000*1.15 // Volume discount
 		}
 	}
 

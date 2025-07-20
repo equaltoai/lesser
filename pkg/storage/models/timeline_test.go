@@ -189,11 +189,11 @@ func TestTimeline_SetupGSIKeys_PrivateVisibility(t *testing.T) {
 	// Post and Actor GSIs should be set
 	assert.Equal(t, "POST#post456", timeline.GSI1PK)
 	assert.Equal(t, "ACTOR#actor789", timeline.GSI2PK)
-	
+
 	// Visibility GSI should be empty for private content
 	assert.Empty(t, timeline.GSI3PK)
 	assert.Empty(t, timeline.GSI3SK)
-	
+
 	// Language GSI should still be set
 	assert.Equal(t, "LANGUAGE#en", timeline.GSI4PK)
 }

@@ -224,8 +224,6 @@ func ValidateNote(note *Note) error {
 	return nil
 }
 
-
-
 // ValidateURL validates that a string is a valid URL
 func ValidateURL(urlStr string, fieldName string) error {
 	if urlStr == "" {

@@ -140,7 +140,13 @@
     - Add middleware for cross-cutting concerns
     - _Requirements: 2.1, 2.2, 2.5_
 
-  - [ ] 7.2 Refactor Auth Lambda function
+  - [x] 7.2 Refactor Auth Lambda function
+
+
+
+
+
+
     - Convert to Lift application structure
     - Implement authentication handlers using Lift
     - Add JWT validation middleware
