@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -49,6 +50,47 @@ func createCORSMiddleware() lift.Middleware {
 	}
 }
 
+// createCostTrackingMiddleware creates a cost tracking middleware that integrates with existing pkg/cost infrastructure
+func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
+	return func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			// Initialize cost tracking context
+			tracker := cost.NewWithRequest(ctx.GetRequestID(), "api_request")
+
+			// Store the tracker in the Lift context for easy access
+			ctx.Set("cost_tracker", tracker)
+
+			// Track Lambda invocation
+			start := time.Now()
+
+			// Process request
+			err := next.Handle(ctx)
+
+			// Calculate Lambda execution cost
+			duration := time.Since(start)
+			memoryMB := int64(128) // Default Lambda memory, could be configurable
+			tracker.TrackLambdaInvocation(duration.Milliseconds(), memoryMB)
+
+			// Calculate and log costs
+			operationCost := tracker.CalculateCost()
+			if operationCost.TotalCostMicroCents > 0 {
+				logger.Info("request_costs",
+					zap.String("request_id", ctx.GetRequestID()),
+					zap.Int64("total_cost_microcents", operationCost.TotalCostMicroCents),
+					zap.Int64("dynamodb_reads", operationCost.DynamoDBReads),
+					zap.Int64("dynamodb_writes", operationCost.DynamoDBWrites),
+					zap.Int64("lambda_invocations", operationCost.LambdaInvocations),
+					zap.Int64("lambda_duration_ms", operationCost.LambdaDurationMs),
+					zap.Int64("s3_gets", operationCost.S3Gets),
+					zap.Int64("s3_puts", operationCost.S3Puts),
+				)
+			}
+
+			return err
+		})
+	}
+}
+
 // createAuthMiddleware creates an authentication middleware
 func createAuthMiddleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
@@ -90,5 +132,22 @@ func createAdminMiddleware() lift.Middleware {
 			// Process the request
 			return next.Handle(ctx)
 		})
+	}
+}
+
+// Helper functions for cost tracking
+
+// GetCostTracker retrieves the cost tracker from the Lift context
+func GetCostTracker(ctx *lift.Context) *cost.Tracker {
+	if tracker, ok := ctx.Get("cost_tracker").(*cost.Tracker); ok {
+		return tracker
+	}
+	return nil
+}
+
+// TrackCost is a convenience function to track costs from a Lift context
+func TrackCost(ctx *lift.Context, fn func(*cost.Tracker)) {
+	if tracker := GetCostTracker(ctx); tracker != nil {
+		fn(tracker)
 	}
 }
