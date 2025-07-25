@@ -15,19 +15,39 @@ type MockDB struct {
 	mock.Mock
 }
 
-func (m *MockDB) Query(ctx context.Context) core.QueryBuilder {
+func (m *MockDB) Query(ctx context.Context) core.Query {
 	args := m.Called(ctx)
-	return args.Get(0).(core.QueryBuilder)
+	return args.Get(0).(core.Query)
 }
 
-func (m *MockDB) Get(ctx context.Context) core.GetBuilder {
-	args := m.Called(ctx)
-	return args.Get(0).(core.GetBuilder)
+func (m *MockDB) Get(ctx context.Context, key interface{}, result interface{}) error {
+	args := m.Called(ctx, key, result)
+	return args.Error(0)
 }
 
-func (m *MockDB) Put(ctx context.Context) core.PutBuilder {
+func (m *MockDB) Put(ctx context.Context, item interface{}) error {
+	args := m.Called(ctx, item)
+	return args.Error(0)
+}
+
+func (m *MockDB) Delete(ctx context.Context, key interface{}) error {
+	args := m.Called(ctx, key)
+	return args.Error(0)
+}
+
+func (m *MockDB) Update(ctx context.Context) core.UpdateBuilder {
 	args := m.Called(ctx)
-	return args.Get(0).(core.PutBuilder)
+	return args.Get(0).(core.UpdateBuilder)
+}
+
+func (m *MockDB) WithContext(ctx context.Context) core.DB {
+	args := m.Called(ctx)
+	return args.Get(0).(core.DB)
+}
+
+func (m *MockDB) BeginTransaction() core.DB {
+	args := m.Called()
+	return args.Get(0).(core.DB)
 }
 
 // Add other required methods for core.DB interface...
