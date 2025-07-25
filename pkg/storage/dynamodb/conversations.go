@@ -233,8 +233,8 @@ func (s *dynamoDBStorage) UpdateConversationLastStatus(ctx context.Context, id, 
 			GSI1SK:       fmt.Sprintf("PARTICIPANT#%s", participantID),
 			Conversation: conv,
 		}
-		participantRecord.Conversation.UpdatedAt = now
-		participantRecord.Conversation.LastStatusID = lastStatusID
+		participantRecord.UpdatedAt = now
+		participantRecord.LastStatusID = lastStatusID
 
 		item, marshalErr := s.MarshalItem(participantRecord)
 		if marshalErr != nil {

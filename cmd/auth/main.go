@@ -215,7 +215,8 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 	var req AuthorizeRequest
 	var loginErr string
 
-	if request.RequestContext.HTTP.Method == http.MethodGet {
+	switch request.RequestContext.HTTP.Method {
+	case http.MethodGet:
 		req = AuthorizeRequest{
 			ResponseType:        request.QueryStringParameters["response_type"],
 			ClientID:            request.QueryStringParameters["client_id"],
@@ -242,7 +243,7 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 				zap.Any("query_params", request.QueryStringParameters),
 				zap.String("raw_query", request.RawQueryString))
 		}
-	} else if request.RequestContext.HTTP.Method == http.MethodPost {
+	case http.MethodPost:
 		// Check if this is a login form submission
 		contentType := request.Headers["content-type"]
 		if contentType == "" {
@@ -344,7 +345,7 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 				return common.BadRequest(err), nil
 			}
 		}
-	} else {
+	default:
 		return methodNotAllowed(request.RequestContext.HTTP.Method), nil
 	}
 

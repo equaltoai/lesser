@@ -420,7 +420,7 @@ func TestHandler(t *testing.T) {
 					},
 				}
 				activity := createTestActivity(sender.ID, "https://example.com/users/charlie")
-				activity.BaseObject.To = []string{"https://example.com/users/charlie"}
+				activity.To = []string{"https://example.com/users/charlie"}
 				body, _ := json.Marshal(activity)
 				return createSignedRequest("POST", "/users/alice/inbox", body, privateKey, "https://remote.example/users/bob#main-key")
 			},

@@ -254,7 +254,7 @@ func (r *actorResolver) StatusesCount(ctx context.Context, obj *activitypub.Acto
 // Bot is the resolver for the bot field.
 func (r *actorResolver) Bot(ctx context.Context, obj *activitypub.Actor) (bool, error) {
 	// Check if the actor type indicates a bot
-	return "" == activitypub.ServiceType || "" == activitypub.ApplicationType, nil
+	return activitypub.ServiceType == "" || activitypub.ApplicationType == "", nil
 }
 
 // Locked is the resolver for the locked field.
@@ -2226,7 +2226,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 	}
 
 	// Add vote type as extension
-	voteActivity.BaseObject.Context = map[string]interface{}{
+	voteActivity.Context = map[string]interface{}{
 		"@context": activitypub.Context,
 		"helpful":  helpful,
 	}
@@ -3530,7 +3530,6 @@ func (r *queryResolver) Search(ctx context.Context, query string, typeArg *strin
 
 		totalCount = len(searchResults.Statuses) + len(searchResults.Accounts) + len(searchResults.Hashtags)
 		hasNextPage = len(edges) >= limit
-
 	} else if *typeArg == "statuses" {
 		// Search only statuses
 		statusResults, err := r.Storage.SearchStatusesAdvanced(ctx, query, limit, nil, nil, username)
@@ -3556,7 +3555,6 @@ func (r *queryResolver) Search(ctx context.Context, query string, typeArg *strin
 
 		totalCount = len(statusResults)
 		hasNextPage = len(edges) >= limit
-
 	} else {
 		// For accounts and hashtags, we'll return empty results since Object type
 		// is primarily for content objects (posts, articles, etc.)

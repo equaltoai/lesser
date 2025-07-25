@@ -388,7 +388,6 @@ func (h *Handler) HandleGetNotifications(ctx context.Context, request events.API
 		if notif.StatusID != "" && (notif.Type == models.NotificationTypeMention ||
 			notif.Type == models.NotificationTypeFavourite ||
 			notif.Type == models.NotificationTypeReblog) {
-
 			// Get the status
 			obj, err := h.store.GetObject(ctx, notif.StatusID)
 			if err != nil {
@@ -626,7 +625,6 @@ func (h *Handler) HandleGetNotification(ctx context.Context, request events.APIG
 	if notification.StatusID != "" && (notification.Type == models.NotificationTypeMention ||
 		notification.Type == models.NotificationTypeFavourite ||
 		notification.Type == models.NotificationTypeReblog) {
-
 		obj, err := h.store.GetObject(ctx, notification.StatusID)
 		if err == nil {
 			var statusActor *activitypub.Actor

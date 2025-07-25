@@ -246,7 +246,6 @@ func (si *SearchIndexer) handleRecord(ctx context.Context, record events.DynamoD
 }
 
 func (si *SearchIndexer) indexActor(ctx context.Context, item map[string]events.DynamoDBAttributeValue) error {
-
 	// Extract PK to ensure it's an actor
 	pk, ok := item["PK"]
 	if !ok || !strings.HasPrefix(pk.String(), "ACTOR#") {

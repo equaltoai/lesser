@@ -26,8 +26,8 @@ func (h *Handler) HandleGetInstanceMetrics(ctx context.Context, request events.A
 	}
 
 	// Get request metrics from cost data if available
-	var requestsPerMinute float64 = 0.0
-	var avgLatencyMs float64 = 0.0
+	var requestsPerMinute = 0.0
+	var avgLatencyMs = 0.0
 
 	// Calculate actual request rate from time-series data
 	requestsPerMinute = h.calculateRequestRate(ctx)
@@ -144,10 +144,10 @@ func (h *Handler) HandleGetPredictiveAnalytics(ctx context.Context, request even
 
 	// Get current month data for projections
 	now := time.Now()
-	var monthlyProjection float64 = 0.0
-	var currentMonthCost float64 = 0.0
-	var storageGrowthRate float64 = 5.2 // Default estimate
-	var userGrowthRate float64 = 12.5   // Default estimate
+	var monthlyProjection = 0.0
+	var currentMonthCost = 0.0
+	var storageGrowthRate = 5.2 // Default estimate
+	var userGrowthRate = 12.5   // Default estimate
 
 	if costStorage := h.getCostStorage(); costStorage != nil {
 		currentMonth, err := costStorage.GetMonthlyCost(ctx, now.Year(), now.Month())

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,7 +29,7 @@ import (
 const testTableName = "lesser-integration-test"
 
 // setupTestEnvironment creates a test DynamoDB table and returns a storage instance
-func setupTestEnvironment(t *testing.T) (*dynamodb.DynamoDBStorage, *awsdynamodb.Client) {
+func setupTestEnvironment(t *testing.T) (storage.Storage, *awsdynamodb.Client) {
 	// Initialize logger
 	logger = zap.NewNop()
 
@@ -141,7 +142,7 @@ func setupTestEnvironment(t *testing.T) (*dynamodb.DynamoDBStorage, *awsdynamodb
 }
 
 // createTestActor creates a test actor in the database
-func createTestActor(t *testing.T, storage *dynamodb.DynamoDBStorage, username string) *activitypub.Actor {
+func createTestActor(t *testing.T, storage storage.Storage, username string) *activitypub.Actor {
 	ctx := context.Background()
 
 	actor := &activitypub.Actor{
@@ -195,7 +196,11 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		require.NoError(t, err)
 
 		request := events.APIGatewayV2HTTPRequest{
-			HTTPMethod: http.MethodPost,
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: http.MethodPost,
+				},
+			},
 			PathParameters: map[string]string{
 				"username": "alice",
 			},
@@ -233,7 +238,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		// Step 3: Simulate activity processor extracting the object
 		// In production, this would be done by the activity processor Lambda
 		// For testing, we'll extract and store the object directly
-		if createType, ok := storedActivity.Type.(string); ok && createType == "Create" {
+		if storedActivity.Type == "Create" {
 			if objMap, ok := storedActivity.Object.(map[string]interface{}); ok {
 				err = storage.CreateObject(ctx, objMap)
 				assert.NoError(t, err)
@@ -293,7 +298,11 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		require.NoError(t, err)
 
 		request := events.APIGatewayV2HTTPRequest{
-			HTTPMethod: http.MethodPost,
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: http.MethodPost,
+				},
+			},
 			PathParameters: map[string]string{
 				"username": "alice",
 			},
@@ -358,7 +367,11 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		require.NoError(t, err)
 
 		request := events.APIGatewayV2HTTPRequest{
-			HTTPMethod: http.MethodPost,
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: http.MethodPost,
+				},
+			},
 			PathParameters: map[string]string{
 				"username": "alice",
 			},
@@ -408,7 +421,11 @@ func TestCreateActivityFullFlow(t *testing.T) {
 			require.NoError(t, err)
 
 			request := events.APIGatewayV2HTTPRequest{
-				HTTPMethod: http.MethodPost,
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodPost,
+					},
+				},
 				PathParameters: map[string]string{
 					"username": "alice",
 				},
@@ -465,7 +482,11 @@ func TestCreateActivityValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		request := events.APIGatewayV2HTTPRequest{
-			HTTPMethod: http.MethodPost,
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: http.MethodPost,
+				},
+			},
 			PathParameters: map[string]string{
 				"username": "alice",
 			},
@@ -495,7 +516,11 @@ func TestCreateActivityValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		request := events.APIGatewayV2HTTPRequest{
-			HTTPMethod: http.MethodPost,
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: http.MethodPost,
+				},
+			},
 			PathParameters: map[string]string{
 				"username": "alice",
 			},
@@ -526,7 +551,11 @@ func TestCreateActivityValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		request := events.APIGatewayV2HTTPRequest{
-			HTTPMethod: http.MethodPost,
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: http.MethodPost,
+				},
+			},
 			PathParameters: map[string]string{
 				"username": "alice",
 			},

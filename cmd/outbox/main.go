@@ -153,18 +153,19 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 
 	// Determine what visibility types the requester can see
 	allowedVisibility := make(map[string]bool)
-	if requesterUsername == "" {
+	switch requesterUsername {
+	case "":
 		// Unauthenticated: only public posts
 		allowedVisibility["public"] = true
 		log.Info("unauthenticated access, showing only public posts")
-	} else if requesterUsername == actor.PreferredUsername {
+	case actor.PreferredUsername:
 		// Owner: see everything
 		allowedVisibility["public"] = true
 		allowedVisibility["unlisted"] = true
 		allowedVisibility["followers"] = true
 		allowedVisibility["direct"] = true
 		log.Info("owner access, showing all posts")
-	} else {
+	default:
 		// Check if requester is a follower
 		isFollower, err := store.IsFollowing(ctx, requesterUsername, actor.PreferredUsername)
 		if err != nil {

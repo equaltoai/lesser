@@ -189,7 +189,7 @@ func generateVAPIDKeys() (string, string, error) {
 	})
 
 	// Extract public key
-	publicKeyBytes := elliptic.Marshal(elliptic.P256(), privateKey.PublicKey.X, privateKey.PublicKey.Y)
+	publicKeyBytes := elliptic.Marshal(elliptic.P256(), privateKey.X, privateKey.Y)
 
 	// Encode public key to base64url (without padding)
 	publicKeyB64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)

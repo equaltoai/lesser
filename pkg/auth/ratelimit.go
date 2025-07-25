@@ -140,7 +140,7 @@ func (rl *RateLimiter) enforceRateLimits(ctx context.Context, username, ipAddres
 }
 
 // imposeLockout creates a rate limit entry
-func (rl *RateLimiter) imposeLockout(ctx context.Context, key string, duration time.Duration) error {
+func (rl *RateLimiter) imposeLockout(_ context.Context, _ string, _ time.Duration) error {
 	// This would typically create a rate limit entry in storage
 	// The storage layer would handle the expiration
 	// For now, we'll rely on the attempt count mechanism

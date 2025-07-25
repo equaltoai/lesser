@@ -426,10 +426,11 @@ func (de *DecisionEngine) generateRecommendations(decision *ModerationDecision, 
 		switch reason.Type {
 		case "threat":
 			if threat, ok := reason.Evidence.(ThreatIndicator); ok {
-				if threat.Type == "SELF_HARM" {
+				switch threat.Type {
+				case "SELF_HARM":
 					recommendations = append(recommendations, "Provide mental health resources")
 					recommendations = append(recommendations, "Consider wellness check")
-				} else if threat.Type == "VIOLENCE" {
+				case "VIOLENCE":
 					recommendations = append(recommendations, "Report to security team")
 					recommendations = append(recommendations, "Document evidence")
 				}

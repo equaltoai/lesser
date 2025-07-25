@@ -1741,7 +1741,6 @@ func (h *Handler) cancelUserFollowRelationships(ctx context.Context, username st
 
 // markAllUserMediaAsSensitive marks all media uploaded by a user as sensitive
 func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username string) error {
-
 	// Get all media attachments for this user
 	media, err := h.store.GetUserMedia(ctx, username)
 	if err != nil {
