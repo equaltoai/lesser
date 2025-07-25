@@ -2,7 +2,6 @@ package migrations
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/pay-theory/dynamorm/pkg/core"

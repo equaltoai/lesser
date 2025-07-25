@@ -8,6 +8,8 @@ bin/
 main
 auth-api
 activity-processor.test
+api
+graphql
 
 # Go
 vendor/
