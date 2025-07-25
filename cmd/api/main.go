@@ -12,12 +12,12 @@ before passing requests to this Lambda, so the router receives clean paths.
 
 import (
 	"os"
+	"time"
 
 	"github.com/aron23/lesser/cmd/api/handlers"
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aron23/lesser/pkg/storage"
 	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -56,16 +56,16 @@ func init() {
 
 func main() {
 	// Create a new Lift application
-	app := lift.New(
-		lift.WithLogger(logger),
-		lift.WithDebug(os.Getenv("DEBUG") == "true"),
-	)
+	app := lift.New()
+	if os.Getenv("DEBUG") == "true" {
+		app = lift.New(lift.WithDebug())
+	}
 
 	// Add global middleware
-	app.Use(middleware.RequestID())
-	app.Use(middleware.RealIP())
-	app.Use(middleware.Recoverer())
-	app.Use(middleware.Timeout(30))
+	// Add timeout middleware
+	app.Use(middleware.TimeoutMiddleware(middleware.TimeoutConfig{
+		DefaultTimeout: 30 * time.Second,
+	}))
 
 	// Add custom logging middleware
 	app.Use(createLoggingMiddleware(logger))
@@ -79,9 +79,7 @@ func main() {
 	configureAuthenticatedWriteRoutes(app)
 	configureAdminRoutes(app)
 
-	// Wrap the Lift handler with cost tracking
-	wrappedHandler := cost.WrapHandler(app.HandleRequest, logger)
-
 	// Start the Lambda handler
-	lambda.Start(wrappedHandler)
+	// Note: Cost tracking is handled within the handlers via context
+	lambda.Start(app.HandleRequest)
 }

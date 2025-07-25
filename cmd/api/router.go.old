@@ -112,26 +112,7 @@ func NewRouter(h *handlers.Handler, authMiddleware auth.Middleware, logger *zap.
 		// Custom emojis
 		r.Get("/custom_emojis", wrapHandler(h.HandleGetCustomEmojis))
 
-		// Streaming endpoints (SSE/WebSocket)
-		r.Get("/streaming/{stream}", func(w http.ResponseWriter, r *http.Request) {
-			streamType := chi.URLParam(r, "stream")
-			lambdaReq := httpToLambdaRequest(r)
-			resp, err := h.HandleSSEStream(r.Context(), lambdaReq, streamType)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			writeLambdaResponse(w, resp)
-		})
-		r.Get("/streaming", func(w http.ResponseWriter, r *http.Request) {
-			lambdaReq := httpToLambdaRequest(r)
-			resp, err := h.HandleSSEStream(r.Context(), lambdaReq)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			writeLambdaResponse(w, resp)
-		})
+		// Streaming endpoints are handled by WebSocket Lambda
 	})
 
 	// Authenticated routes (read-only)

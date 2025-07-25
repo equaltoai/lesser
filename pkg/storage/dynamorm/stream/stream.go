@@ -182,6 +182,6 @@ func convertAttributeValue(attr events.DynamoDBAttributeValue) (interface{}, err
 	case events.DataTypeBinary:
 		return attr.Binary(), nil
 	default:
-		return nil, fmt.Errorf("unsupported attribute type: %s", attr.DataType())
+		return nil, fmt.Errorf("unsupported attribute type: %v", attr.DataType())
 	}
 }

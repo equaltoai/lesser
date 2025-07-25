@@ -22,7 +22,7 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 				zap.String("path", ctx.Request.Path),
 				zap.Int("status", ctx.Response.StatusCode),
 				zap.Duration("duration", time.Since(start)),
-				zap.String("request_id", ctx.RequestID()))
+				zap.String("request_id", ctx.GetRequestID()))
 
 			return err
 		})
@@ -34,13 +34,13 @@ func createCORSMiddleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Set CORS headers
-			ctx.SetHeader("Access-Control-Allow-Origin", "*")
-			ctx.SetHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
-			ctx.SetHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Accept-Encoding, Accept-Language, Date, Digest, Host, Signature, User-Agent, X-Forwarded-For, X-Forwarded-Proto, X-CSRF-Token")
+			ctx.Response.Header("Access-Control-Allow-Origin", "*")
+			ctx.Response.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
+			ctx.Response.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Accept-Encoding, Accept-Language, Date, Digest, Host, Signature, User-Agent, X-Forwarded-For, X-Forwarded-Proto, X-CSRF-Token")
 
 			// Handle OPTIONS requests
 			if ctx.Request.Method == "OPTIONS" {
-				return ctx.NoContent(200)
+				return ctx.Status(200).Text("")
 			}
 
 			// Process the request
@@ -54,15 +54,15 @@ func createAuthMiddleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Get the auth token from the request
-			token := ctx.GetHeader("Authorization")
+			token := ctx.Header("Authorization")
 			if token == "" {
-				return lift.Unauthorized("Missing authorization token")
+				return ctx.Unauthorized("Missing authorization token", nil)
 			}
 
 			// Validate the token using the auth middleware
 			claims, err := authMiddleware.ValidateToken(token)
 			if err != nil {
-				return lift.Unauthorized("Invalid authorization token")
+				return ctx.Unauthorized("Invalid authorization token", err)
 			}
 
 			// Store the claims in the context
@@ -79,9 +79,9 @@ func createAdminMiddleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Get the claims from the context
-			claims, ok := ctx.Get("claims")
-			if !ok {
-				return lift.Forbidden("Authentication required")
+			claims := ctx.Get("claims")
+			if claims == nil {
+				return ctx.Forbidden("Authentication required", nil)
 			}
 
 			// TODO: Add role check to claims when role support is added

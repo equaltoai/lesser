@@ -31,10 +31,10 @@ func TestUnmarshalItem(t *testing.T) {
 				"Name":     events.NewStringAttribute("John Doe"),
 				"Age":      events.NewNumberAttribute("30"),
 				"IsActive": events.NewBooleanAttribute(true),
-				"Tags": events.NewListAttribute(
+				"Tags": events.NewListAttribute([]events.DynamoDBAttributeValue{
 					events.NewStringAttribute("tag1"),
 					events.NewStringAttribute("tag2"),
-				),
+				}),
 				"Metadata": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
 					"CreatedBy": events.NewStringAttribute("admin"),
 					"Version":   events.NewNumberAttribute("1"),
@@ -214,11 +214,11 @@ func TestConvertAttributeValue(t *testing.T) {
 		},
 		{
 			name: "list attribute",
-			attr: events.NewListAttribute(
+			attr: events.NewListAttribute([]events.DynamoDBAttributeValue{
 				events.NewStringAttribute("item1"),
 				events.NewNumberAttribute("2"),
 				events.NewBooleanAttribute(true),
-			),
+			}),
 			expected: []interface{}{"item1", "2", true},
 		},
 	}

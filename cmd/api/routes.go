@@ -5,7 +5,7 @@ import (
 )
 
 // configurePublicRoutes configures routes that don't require authentication
-func configurePublicRoutes(app *lift.Application) {
+func configurePublicRoutes(app *lift.App) {
 	// OAuth endpoints
 	app.POST("/apps", wrapHandler(handler.HandleAppRegistration))
 	app.GET("/oauth/authorize", wrapHandler(handler.HandleOAuthAuthorize))
@@ -32,142 +32,138 @@ func configurePublicRoutes(app *lift.Application) {
 	// Custom emojis
 	app.GET("/custom_emojis", wrapHandler(handler.HandleGetCustomEmojis))
 
-	// Streaming endpoints (SSE/WebSocket)
-	app.GET("/streaming/{stream}", wrapHandlerWithParam(handler.HandleSSEStream, "stream"))
-	app.GET("/streaming", wrapHandler(handler.HandleSSEStream))
+	// Streaming endpoints are handled by WebSocket Lambda
 }
 
 // configureAuthenticatedReadRoutes configures routes that require authentication for read operations
-func configureAuthenticatedReadRoutes(app *lift.Application) {
-	// Create a group with auth middleware
-	authGroup := app.Group()
-	authGroup.Use(createAuthMiddleware())
-
+func configureAuthenticatedReadRoutes(app *lift.App) {
 	// Account information
-	authGroup.GET("/accounts/verify_credentials", wrapHandler(handler.HandleVerifyCredentials))
-	authGroup.GET("/accounts/relationships", wrapHandler(handler.HandleGetRelationships))
-	authGroup.GET("/accounts/search", wrapHandler(handler.HandleAccountSearch))
-	authGroup.GET("/accounts/lookup", wrapHandler(handler.HandleAccountLookup))
-	authGroup.GET("/accounts/{id}", wrapHandlerWithParam(handler.HandleGetAccount, "id"))
-	authGroup.GET("/accounts/{id}/statuses", wrapHandlerWithParam(handler.HandleGetAccountStatuses, "id"))
-	authGroup.GET("/accounts/{id}/followers", wrapHandlerWithParam(handler.HandleGetAccountFollowers, "id"))
-	authGroup.GET("/accounts/{id}/following", wrapHandlerWithParam(handler.HandleGetAccountFollowing, "id"))
+	app.GET("/accounts/verify_credentials", wrapAuthHandler(wrapHandler(handler.HandleVerifyCredentials)))
+	app.GET("/accounts/relationships", wrapAuthHandler(wrapHandler(handler.HandleGetRelationships)))
+	app.GET("/accounts/search", wrapAuthHandler(wrapHandler(handler.HandleAccountSearch)))
+	app.GET("/accounts/lookup", wrapAuthHandler(wrapHandler(handler.HandleAccountLookup)))
+	app.GET("/accounts/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetAccount, "id")))
+	app.GET("/accounts/{id}/statuses", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetAccountStatuses, "id")))
+	app.GET("/accounts/{id}/followers", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetAccountFollowers, "id")))
+	app.GET("/accounts/{id}/following", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetAccountFollowing, "id")))
 
 	// Timelines
-	authGroup.GET("/timelines/home", wrapHandler(handler.HandleHomeTimeline))
-	authGroup.GET("/timelines/list/{id}", wrapHandlerWithParam(handler.HandleListTimeline, "id"))
-	authGroup.GET("/timelines/direct", wrapHandler(handler.HandleDirectTimeline))
+	app.GET("/timelines/home", wrapAuthHandler(wrapHandler(handler.HandleHomeTimeline)))
+	app.GET("/timelines/list/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleListTimeline, "id")))
+	app.GET("/timelines/direct", wrapAuthHandler(wrapHandler(handler.HandleDirectTimeline)))
 
 	// Statuses
-	authGroup.GET("/statuses/{id}", wrapHandlerWithParam(handler.HandleGetStatus, "id"))
-	authGroup.GET("/statuses/{id}/context", wrapHandlerWithParam(handler.HandleGetStatusContext, "id"))
-	authGroup.GET("/statuses/{id}/favourited_by", wrapHandlerWithParam(handler.HandleGetStatusFavouritedBy, "id"))
-	authGroup.GET("/statuses/{id}/reblogged_by", wrapHandlerWithParam(handler.HandleGetStatusRebloggedBy, "id"))
+	app.GET("/statuses/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetStatus, "id")))
+	app.GET("/statuses/{id}/context", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetStatusContext, "id")))
+	app.GET("/statuses/{id}/favourited_by", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetStatusFavouritedBy, "id")))
+	app.GET("/statuses/{id}/reblogged_by", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetStatusRebloggedBy, "id")))
 
 	// User collections
-	authGroup.GET("/bookmarks", wrapHandler(handler.HandleGetBookmarks))
-	authGroup.GET("/favourites", wrapHandler(handler.HandleGetFavourites))
-	authGroup.GET("/blocks", wrapHandler(handler.HandleGetBlocks))
-	authGroup.GET("/mutes", wrapHandler(handler.HandleGetMutedAccounts))
-	authGroup.GET("/domain_blocks", wrapHandler(handler.HandleGetDomainBlocks))
+	app.GET("/bookmarks", wrapAuthHandler(wrapHandler(handler.HandleGetBookmarks)))
+	app.GET("/favourites", wrapAuthHandler(wrapHandler(handler.HandleGetFavourites)))
+	app.GET("/blocks", wrapAuthHandler(wrapHandler(handler.HandleGetBlocks)))
+	app.GET("/mutes", wrapAuthHandler(wrapHandler(handler.HandleGetMutedAccounts)))
+	app.GET("/domain_blocks", wrapAuthHandler(wrapHandler(handler.HandleGetDomainBlocks)))
 
 	// Lists
-	authGroup.GET("/lists", wrapHandler(handler.HandleGetLists))
-	authGroup.GET("/lists/{id}", wrapHandlerWithParam(handler.HandleGetList, "id"))
-	authGroup.GET("/lists/{id}/accounts", wrapHandlerWithParam(handler.HandleGetListAccounts, "id"))
+	app.GET("/lists", wrapAuthHandler(wrapHandler(handler.HandleGetLists)))
+	app.GET("/lists/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetList, "id")))
+	app.GET("/lists/{id}/accounts", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetListAccounts, "id")))
 
 	// Notifications
-	authGroup.GET("/notifications", wrapHandler(handler.HandleGetNotifications))
-	authGroup.GET("/notifications/{id}", wrapHandlerWithParam(handler.HandleGetNotification, "id"))
+	app.GET("/notifications", wrapAuthHandler(wrapHandler(handler.HandleGetNotifications)))
+	app.GET("/notifications/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetNotification, "id")))
 
 	// Search
-	authGroup.GET("/search", wrapHandler(handler.HandleSearch))
+	app.GET("/search", wrapAuthHandler(wrapHandler(handler.HandleSearch)))
 
 	// Trends
-	authGroup.GET("/trends", wrapHandler(handler.HandleGetTrends))
-	authGroup.GET("/trends/statuses", wrapHandler(handler.HandleGetTrendingStatuses))
-	authGroup.GET("/trends/tags", wrapHandler(handler.HandleGetTrendingTags))
-	authGroup.GET("/trends/links", wrapHandler(handler.HandleGetTrendingLinks))
+	app.GET("/trends", wrapAuthHandler(wrapHandler(handler.HandleGetTrends)))
+	app.GET("/trends/statuses", wrapAuthHandler(wrapHandler(handler.HandleGetTrendingStatuses)))
+	app.GET("/trends/tags", wrapAuthHandler(wrapHandler(handler.HandleGetTrendingTags)))
+	app.GET("/trends/links", wrapAuthHandler(wrapHandler(handler.HandleGetTrendingLinks)))
 }
 
 // configureAuthenticatedWriteRoutes configures routes that require authentication for write operations
-func configureAuthenticatedWriteRoutes(app *lift.Application) {
-	// Create a group with auth middleware
-	authGroup := app.Group()
-	authGroup.Use(createAuthMiddleware())
-
+func configureAuthenticatedWriteRoutes(app *lift.App) {
 	// Account updates
-	authGroup.PATCH("/accounts/update_credentials", wrapHandler(handler.HandleUpdateCredentials))
+	app.PATCH("/accounts/update_credentials", wrapAuthHandler(wrapHandler(handler.HandleUpdateCredentials)))
 
-	// Status management
-	authGroup.POST("/statuses", wrapHandler(handler.HandleCreateStatus))
-	authGroup.DELETE("/statuses/{id}", wrapHandlerWithParam(handler.HandleDeleteStatus, "id"))
-	authGroup.PUT("/statuses/{id}", wrapHandlerWithParam(handler.HandleUpdateStatus, "id"))
+	// Status creation and interactions
+	app.POST("/statuses", wrapAuthHandler(wrapHandler(handler.HandleCreateStatus)))
+	app.DELETE("/statuses/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleDeleteStatus, "id")))
+	app.POST("/statuses/{id}/reblog", wrapAuthHandler(wrapHandlerWithParam(handler.HandleReblog, "id")))
+	app.POST("/statuses/{id}/unreblog", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnreblog, "id")))
+	app.POST("/statuses/{id}/favourite", wrapAuthHandler(wrapHandlerWithParam(handler.HandleFavourite, "id")))
+	app.POST("/statuses/{id}/unfavourite", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnfavourite, "id")))
+	app.POST("/statuses/{id}/bookmark", wrapAuthHandler(wrapHandlerWithParam(handler.HandleBookmark, "id")))
+	app.POST("/statuses/{id}/unbookmark", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnbookmark, "id")))
+	app.POST("/statuses/{id}/pin", wrapAuthHandler(wrapHandlerWithParam(handler.HandlePinStatus, "id")))
+	app.POST("/statuses/{id}/unpin", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnpinStatus, "id")))
+	app.POST("/statuses/{id}/mute", wrapAuthHandler(wrapHandlerWithParam(handler.HandleMuteConversation, "id")))
+	app.POST("/statuses/{id}/unmute", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnmuteConversation, "id")))
+	app.PUT("/statuses/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUpdateStatus, "id")))
 
-	// Status interactions
-	authGroup.POST("/statuses/{id}/favourite", wrapHandlerWithParam(handler.HandleFavourite, "id"))
-	authGroup.POST("/statuses/{id}/unfavourite", wrapHandlerWithParam(handler.HandleUnfavourite, "id"))
-	authGroup.POST("/statuses/{id}/reblog", wrapHandlerWithParam(handler.HandleUnifiedReblog, "id"))
-	authGroup.POST("/statuses/{id}/unreblog", wrapHandlerWithParam(handler.HandleUnreblog, "id"))
-	authGroup.POST("/statuses/{id}/bookmark", wrapHandlerWithParam(handler.HandleBookmark, "id"))
-	authGroup.POST("/statuses/{id}/unbookmark", wrapHandlerWithParam(handler.HandleUnbookmark, "id"))
-	authGroup.POST("/statuses/{id}/mute", wrapHandlerWithParam(handler.HandleMuteConversation, "id"))
-	authGroup.POST("/statuses/{id}/unmute", wrapHandlerWithParam(handler.HandleUnmuteConversation, "id"))
-	authGroup.POST("/statuses/{id}/pin", wrapHandlerWithParam(handler.HandlePinStatus, "id"))
-	authGroup.POST("/statuses/{id}/unpin", wrapHandlerWithParam(handler.HandleUnpinStatus, "id"))
-
-	// Account interactions
-	authGroup.POST("/accounts/{id}/follow", wrapHandlerWithParam(handler.HandleFollow, "id"))
-	authGroup.POST("/accounts/{id}/unfollow", wrapHandlerWithParam(handler.HandleUnfollow, "id"))
-	authGroup.POST("/accounts/{id}/block", wrapHandlerWithParam(handler.HandleBlock, "id"))
-	authGroup.POST("/accounts/{id}/unblock", wrapHandlerWithParam(handler.HandleUnblock, "id"))
-	authGroup.POST("/accounts/{id}/mute", wrapHandlerWithParam(handler.HandleMuteAccount, "id"))
-	authGroup.POST("/accounts/{id}/unmute", wrapHandlerWithParam(handler.HandleUnmuteAccount, "id"))
-	authGroup.POST("/accounts/{id}/pin", wrapHandlerWithParam(handler.HandlePinAccount, "id"))
-	authGroup.POST("/accounts/{id}/unpin", wrapHandlerWithParam(handler.HandleUnpinAccount, "id"))
-	authGroup.POST("/accounts/{id}/note", wrapHandlerWithParam(handler.HandleSetAccountNote, "id"))
-	authGroup.POST("/accounts/{id}/remove_from_followers", wrapHandlerWithParam(handler.HandleRemoveFromFollowers, "id"))
-
-	// List management
-	authGroup.POST("/lists", wrapHandler(handler.HandleCreateList))
-	authGroup.PUT("/lists/{id}", wrapHandlerWithParam(handler.HandleUpdateList, "id"))
-	authGroup.DELETE("/lists/{id}", wrapHandlerWithParam(handler.HandleDeleteList, "id"))
-	authGroup.POST("/lists/{id}/accounts", wrapHandlerWithParam(handler.HandleAddAccountsToList, "id"))
-	authGroup.DELETE("/lists/{id}/accounts", wrapHandlerWithParam(handler.HandleRemoveAccountsFromList, "id"))
-
-	// Media uploads
-	authGroup.POST("/media", wrapHandler(handler.HandleMediaUpload))
-	authGroup.PUT("/media/{id}", wrapHandler(handler.HandleUpdateMedia))
-
-	// Push subscriptions
-	authGroup.POST("/push/subscription", wrapHandler(handler.HandleCreatePushSubscription))
-	authGroup.GET("/push/subscription", wrapHandler(handler.HandleGetPushSubscription))
-	authGroup.PUT("/push/subscription", wrapHandler(handler.HandleUpdatePushSubscription))
-	authGroup.DELETE("/push/subscription", wrapHandler(handler.HandleDeletePushSubscription))
+	// Account relationships
+	app.POST("/accounts/{id}/follow", wrapAuthHandler(wrapHandlerWithParam(handler.HandleFollow, "id")))
+	app.POST("/accounts/{id}/unfollow", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnfollow, "id")))
+	app.POST("/accounts/{id}/block", wrapAuthHandler(wrapHandlerWithParam(handler.HandleBlock, "id")))
+	app.POST("/accounts/{id}/unblock", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnblock, "id")))
+	app.POST("/accounts/{id}/mute", wrapAuthHandler(wrapHandlerWithParam(handler.HandleMuteAccount, "id")))
+	app.POST("/accounts/{id}/unmute", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnmuteAccount, "id")))
+	app.POST("/accounts/{id}/pin", wrapAuthHandler(wrapHandlerWithParam(handler.HandlePinAccount, "id")))
+	app.POST("/accounts/{id}/unpin", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnpinAccount, "id")))
+	app.POST("/accounts/{id}/note", wrapAuthHandler(wrapHandlerWithParam(handler.HandleSetAccountNote, "id")))
 
 	// Domain blocks
-	authGroup.POST("/domain_blocks", wrapHandler(handler.HandleCreateDomainBlock))
-	authGroup.DELETE("/domain_blocks", wrapHandler(handler.HandleDeleteDomainBlock))
+	app.POST("/domain_blocks", wrapAuthHandler(wrapHandler(handler.HandleCreateDomainBlock)))
+	app.DELETE("/domain_blocks", wrapAuthHandler(wrapHandler(handler.HandleDeleteDomainBlock)))
 
-	// Notification management
-	authGroup.POST("/notifications/clear", wrapHandler(handler.HandleClearNotifications))
-	authGroup.POST("/notifications/{id}/dismiss", wrapHandlerWithParam(handler.HandleDismissNotification, "id"))
+	// Lists management
+	app.POST("/lists", wrapAuthHandler(wrapHandler(handler.HandleCreateList)))
+	app.PUT("/lists/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUpdateList, "id")))
+	app.DELETE("/lists/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleDeleteList, "id")))
+	app.POST("/lists/{id}/accounts", wrapAuthHandler(wrapHandlerWithParam(handler.HandleAddAccountsToList, "id")))
+	app.DELETE("/lists/{id}/accounts", wrapAuthHandler(wrapHandlerWithParam(handler.HandleRemoveAccountsFromList, "id")))
 
-	// Featured tags
-	authGroup.GET("/featured_tags", wrapHandler(handler.HandleGetFeaturedTags))
-	authGroup.POST("/featured_tags", wrapHandler(handler.HandleCreateFeaturedTag))
-	authGroup.DELETE("/featured_tags/{id}", wrapHandlerWithParam(handler.HandleDeleteFeaturedTag, "id"))
+	// Follow requests
+	app.POST("/follow_requests/{id}/authorize", wrapAuthHandler(wrapHandlerWithParam(handler.HandleAuthorizeFollowRequest, "id")))
+	app.POST("/follow_requests/{id}/reject", wrapAuthHandler(wrapHandlerWithParam(handler.HandleRejectFollowRequest, "id")))
+
+	// Notifications
+	app.POST("/notifications/clear", wrapAuthHandler(wrapHandler(handler.HandleClearNotifications)))
+	app.POST("/notifications/{id}/dismiss", wrapAuthHandler(wrapHandlerWithParam(handler.HandleDismissNotification, "id")))
+
+	// Push notifications
+	app.POST("/push/subscription", wrapAuthHandler(wrapHandler(handler.HandleCreatePushSubscription)))
+	app.GET("/push/subscription", wrapAuthHandler(wrapHandler(handler.HandleGetPushSubscription)))
+	app.PUT("/push/subscription", wrapAuthHandler(wrapHandler(handler.HandleUpdatePushSubscription)))
+	app.DELETE("/push/subscription", wrapAuthHandler(wrapHandler(handler.HandleDeletePushSubscription)))
+
+	// Filters
+	app.POST("/filters", wrapAuthHandler(wrapHandler(handler.HandleCreateFilter)))
+	app.PUT("/filters/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUpdateFilter, "id")))
+	app.DELETE("/filters/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleDeleteFilter, "id")))
+
+	// Reports
+	app.POST("/reports", wrapAuthHandler(wrapHandler(handler.HandleCreateReport)))
+
+	// Endorsements
+	app.POST("/accounts/{id}/endorse", wrapAuthHandler(wrapHandlerWithParam(handler.HandlePinAccount, "id")))
+	app.POST("/accounts/{id}/unendorse", wrapAuthHandler(wrapHandlerWithParam(handler.HandleUnpinAccount, "id")))
+
+	// Markers
+	app.POST("/markers", wrapAuthHandler(wrapHandler(handler.HandleSaveMarkers)))
+
+	// Media
+	app.POST("/media", wrapAuthHandler(wrapHandler(handler.HandleMediaUpload)))
+	app.PUT("/media/{id}", wrapAuthHandler(wrapHandler(handler.HandleUpdateMedia)))
 }
 
 // configureAdminRoutes configures routes that require admin role
-func configureAdminRoutes(app *lift.Application) {
-	// Create a group with auth and admin middleware
-	adminGroup := app.Group()
-	adminGroup.Use(createAuthMiddleware())
-	adminGroup.Use(createAdminMiddleware())
-
+func configureAdminRoutes(app *lift.App) {
 	// Admin routes
-	adminGroup.GET("/admin", func(ctx *lift.Context) error {
+	app.GET("/admin", wrapAdminHandler(lift.HandlerFunc(func(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"status": "admin area"})
-	})
+	})))
 }
