@@ -18,6 +18,7 @@ import (
 	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
+	liftAuth "github.com/aron23/lesser/pkg/lift"
 	"github.com/aron23/lesser/pkg/storage"
 	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -27,11 +28,12 @@ import (
 )
 
 var (
-	cfg            *config.Config
-	store          storage.Storage
-	logger         *zap.Logger
-	handler        *handlers.Handler
-	authMiddleware *auth.Middleware
+	cfg         *config.Config
+	store       storage.Storage
+	logger      *zap.Logger
+	handler     *handlers.Handler
+	authService *auth.AuthService
+	liftAuthSvc *liftAuth.LiftAuthService
 )
 
 func init() {
@@ -44,14 +46,21 @@ func init() {
 		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
 
-	// Initialize auth middleware
-	authMiddleware, err = auth.GetMiddleware()
+	// Initialize auth service directly
+	authService, err = auth.NewAuthService(store)
 	if err != nil {
-		logger.Fatal("failed to initialize auth middleware", zap.Error(err))
+		logger.Fatal("failed to initialize auth service", zap.Error(err))
 	}
 
-	// Create handler with all dependencies
-	handler = handlers.NewHandler(cfg, store, logger, authMiddleware)
+	// Initialize Lift-native auth service
+	liftAuthSvc = liftAuth.NewLiftAuthService(authService)
+
+	// Create handler with all dependencies (still needs old middleware for legacy handlers)
+	legacyAuthMiddleware, err := auth.GetMiddleware()
+	if err != nil {
+		logger.Fatal("failed to initialize legacy auth middleware", zap.Error(err))
+	}
+	handler = handlers.NewHandler(cfg, store, logger, legacyAuthMiddleware)
 }
 
 func main() {

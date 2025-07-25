@@ -120,7 +120,7 @@ func createTestContext() *lift.Context {
 	// Initialize internal maps that Lift uses
 	ctx.Set("__test", "init") // This initializes the internal storage
 	ctx.Get("__test")         // Clean up the test key
-	
+
 	return ctx
 }
 
@@ -157,6 +157,201 @@ func createValidClaims() *auth.EnhancedClaims {
 		},
 		SessionID: "test-session",
 		DeviceID:  "test-device",
+	}
+}
+
+// Test token generators for various user types and scopes
+
+// createClaimsForUserType creates claims for different user types
+func createClaimsForUserType(username string, userType string) *auth.EnhancedClaims {
+	var scopes []string
+
+	switch userType {
+	case "admin":
+		scopes = []string{"read", "write", "follow", "push", "admin:read", "admin:write", "admin:accounts", "admin:all"}
+	case "moderator":
+		scopes = []string{"read", "write", "follow", "push", "admin:read", "admin:accounts"}
+	case "standard":
+		scopes = []string{"read", "write", "follow", "push"}
+	case "read-only":
+		scopes = []string{"read"}
+	case "bot":
+		scopes = []string{"read", "write"}
+	default:
+		scopes = []string{"read", "write"}
+	}
+
+	return &auth.EnhancedClaims{
+		Claims: auth.Claims{
+			Username: username,
+			Scopes:   scopes,
+			ClientID: "test-client",
+		},
+		SessionID: "test-session-" + username,
+		DeviceID:  "test-device-" + username,
+	}
+}
+
+// createCustomClaims creates claims with custom scopes
+func createCustomClaims(username string, scopes []string) *auth.EnhancedClaims {
+	return &auth.EnhancedClaims{
+		Claims: auth.Claims{
+			Username: username,
+			Scopes:   scopes,
+			ClientID: "test-client",
+		},
+		SessionID: "test-session-" + username,
+		DeviceID:  "test-device-" + username,
+	}
+}
+
+// Integration test helpers for auth flows
+
+// createAuthenticatedTestContext creates a context with pre-set authentication
+func createAuthenticatedTestContext(username string, userType string) *lift.Context {
+	ctx := createTestContext()
+	claims := createClaimsForUserType(username, userType)
+
+	// Set authentication context values
+	ctx.Set("claims", claims)
+	ctx.Set("username", claims.Username)
+	ctx.Set("session_id", claims.SessionID)
+	ctx.Set("device_id", claims.DeviceID)
+
+	return ctx
+}
+
+// createContextWithTenantAndAuth creates context with both tenant and auth
+func createContextWithTenantAndAuth(username, userType, tenantID string) *lift.Context {
+	ctx := createAuthenticatedTestContext(username, userType)
+	ctx.Request.Headers["X-Tenant-ID"] = tenantID
+	ctx.Set("tenant_id", tenantID)
+	return ctx
+}
+
+// setupAuthFlow sets up a complete authentication flow test scenario
+func setupAuthFlow(mockAuth *MockAuthService, token string, username string, userType string, shouldSucceed bool) *auth.EnhancedClaims {
+	claims := createClaimsForUserType(username, userType)
+
+	if shouldSucceed {
+		mockAuth.On("ValidateAccessToken", token).Return(claims, nil)
+	} else {
+		mockAuth.On("ValidateAccessToken", token).Return(nil, auth.ErrInvalidToken)
+	}
+
+	return claims
+}
+
+// Test assertion helpers
+
+// assertAuthenticationRequired verifies handler requires authentication
+func assertAuthenticationRequired(t *testing.T, middleware lift.Middleware) {
+	t.Helper()
+
+	handlerCalled := false
+	testHandler := lift.HandlerFunc(func(ctx *lift.Context) error {
+		handlerCalled = true
+		return ctx.JSON(map[string]string{"success": "true"})
+	})
+
+	wrappedHandler := middleware(testHandler)
+	ctx := createTestContext() // No auth
+
+	_ = wrappedHandler.Handle(ctx)
+
+	assert.False(t, handlerCalled, "Handler should not be called without authentication")
+	assert.Equal(t, 401, ctx.Response.StatusCode, "Should return 401 Unauthorized")
+}
+
+// assertScopeRequired verifies handler requires specific scope
+func assertScopeRequired(t *testing.T, liftAuthService *testLiftAuthService, requiredScope string, userWithScope, userWithoutScope string) {
+	t.Helper()
+
+	middleware := liftAuthService.RequireScope(requiredScope)
+
+	handlerCalled := false
+	testHandler := lift.HandlerFunc(func(ctx *lift.Context) error {
+		handlerCalled = true
+		return ctx.JSON(map[string]string{"success": "true"})
+	})
+
+	wrappedHandler := middleware(testHandler)
+
+	// Test user without required scope
+	ctx := createTestContext()
+	claimsWithoutScope := createCustomClaims(userWithoutScope, []string{"read", "write"})
+	ctx.Set("claims", claimsWithoutScope)
+
+	_ = wrappedHandler.Handle(ctx)
+	assert.False(t, handlerCalled, "Handler should not be called without required scope")
+	assert.Equal(t, 403, ctx.Response.StatusCode, "Should return 403 Forbidden")
+
+	// Reset for next test
+	handlerCalled = false
+
+	// Test user with required scope
+	ctx = createTestContext()
+	claimsWithScope := createCustomClaims(userWithScope, []string{"read", "write", requiredScope})
+	ctx.Set("claims", claimsWithScope)
+
+	err := wrappedHandler.Handle(ctx)
+	assert.NoError(t, err, "Should succeed with required scope")
+	assert.True(t, handlerCalled, "Handler should be called with required scope")
+}
+
+// Multi-scenario test helpers
+
+// AuthTestScenario defines a test scenario for authentication
+type AuthTestScenario struct {
+	Name          string
+	Token         string
+	ExpectedClaim *auth.EnhancedClaims
+	ExpectedError error
+	ShouldSucceed bool
+}
+
+// runAuthScenarios runs multiple authentication test scenarios
+func runAuthScenarios(t *testing.T, scenarios []AuthTestScenario, createMiddleware func(*testLiftAuthService) lift.Middleware) {
+	for _, scenario := range scenarios {
+		t.Run(scenario.Name, func(t *testing.T) {
+			mockAuth := new(MockAuthService)
+
+			if scenario.ExpectedClaim != nil {
+				mockAuth.On("ValidateAccessToken", scenario.Token).Return(scenario.ExpectedClaim, scenario.ExpectedError)
+			} else {
+				mockAuth.On("ValidateAccessToken", scenario.Token).Return(nil, scenario.ExpectedError)
+			}
+
+			liftAuthService := newTestLiftAuthService(mockAuth)
+			middleware := createMiddleware(liftAuthService)
+
+			handlerCalled := false
+			testHandler := lift.HandlerFunc(func(ctx *lift.Context) error {
+				handlerCalled = true
+				return ctx.JSON(map[string]string{"success": "true"})
+			})
+
+			wrappedHandler := middleware(testHandler)
+			ctx := createTestContextWithAuth(scenario.Token)
+
+			err := wrappedHandler.Handle(ctx)
+
+			if scenario.ShouldSucceed {
+				assert.NoError(t, err, "Scenario should succeed")
+				assert.True(t, handlerCalled, "Handler should be called on success")
+
+				if scenario.ExpectedClaim != nil {
+					claims, ok := ctx.Get("claims").(*auth.EnhancedClaims)
+					assert.True(t, ok, "Claims should be in context")
+					assert.Equal(t, scenario.ExpectedClaim.Username, claims.Username)
+				}
+			} else {
+				assert.False(t, handlerCalled, "Handler should not be called on failure")
+				assert.True(t, ctx.Response.StatusCode >= 400, "Should have error status code")
+			}
+
+			mockAuth.AssertExpectations(t)
+		})
 	}
 }
 
@@ -684,4 +879,272 @@ func TestExtractTenantFromPath(t *testing.T) {
 			assert.Equal(t, tt.expectedTenant, result)
 		})
 	}
+}
+
+// Tests for authentication testing utilities
+
+// TestCreateClaimsForUserType tests the user type claims generator
+func TestCreateClaimsForUserType(t *testing.T) {
+	tests := []struct {
+		name           string
+		username       string
+		userType       string
+		expectedScopes []string
+	}{
+		{
+			name:           "admin user",
+			username:       "admin",
+			userType:       "admin",
+			expectedScopes: []string{"read", "write", "follow", "push", "admin:read", "admin:write", "admin:accounts", "admin:all"},
+		},
+		{
+			name:           "moderator user",
+			username:       "mod",
+			userType:       "moderator",
+			expectedScopes: []string{"read", "write", "follow", "push", "admin:read", "admin:accounts"},
+		},
+		{
+			name:           "standard user",
+			username:       "user",
+			userType:       "standard",
+			expectedScopes: []string{"read", "write", "follow", "push"},
+		},
+		{
+			name:           "read-only user",
+			username:       "readonly",
+			userType:       "read-only",
+			expectedScopes: []string{"read"},
+		},
+		{
+			name:           "bot user",
+			username:       "bot",
+			userType:       "bot",
+			expectedScopes: []string{"read", "write"},
+		},
+		{
+			name:           "unknown user type defaults to standard",
+			username:       "unknown",
+			userType:       "unknown",
+			expectedScopes: []string{"read", "write"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			claims := createClaimsForUserType(tt.username, tt.userType)
+
+			assert.Equal(t, tt.username, claims.Username)
+			assert.Equal(t, tt.expectedScopes, claims.Scopes)
+			assert.Equal(t, "test-client", claims.ClientID)
+			assert.Equal(t, "test-session-"+tt.username, claims.SessionID)
+			assert.Equal(t, "test-device-"+tt.username, claims.DeviceID)
+		})
+	}
+}
+
+// TestCreateCustomClaims tests the custom claims generator
+func TestCreateCustomClaims(t *testing.T) {
+	username := "testuser"
+	scopes := []string{"custom:scope1", "custom:scope2"}
+
+	claims := createCustomClaims(username, scopes)
+
+	assert.Equal(t, username, claims.Username)
+	assert.Equal(t, scopes, claims.Scopes)
+	assert.Equal(t, "test-client", claims.ClientID)
+	assert.Equal(t, "test-session-"+username, claims.SessionID)
+	assert.Equal(t, "test-device-"+username, claims.DeviceID)
+}
+
+// TestCreateAuthenticatedTestContext tests the authenticated context builder
+func TestCreateAuthenticatedTestContext(t *testing.T) {
+	username := "testuser"
+	userType := "admin"
+
+	ctx := createAuthenticatedTestContext(username, userType)
+
+	// Check that context has all expected values
+	claims, ok := ctx.Get("claims").(*auth.EnhancedClaims)
+	assert.True(t, ok, "Claims should be in context")
+	assert.Equal(t, username, claims.Username)
+
+	ctxUsername, ok := ctx.Get("username").(string)
+	assert.True(t, ok, "Username should be in context")
+	assert.Equal(t, username, ctxUsername)
+
+	sessionID, ok := ctx.Get("session_id").(string)
+	assert.True(t, ok, "Session ID should be in context")
+	assert.Equal(t, "test-session-"+username, sessionID)
+
+	deviceID, ok := ctx.Get("device_id").(string)
+	assert.True(t, ok, "Device ID should be in context")
+	assert.Equal(t, "test-device-"+username, deviceID)
+}
+
+// TestCreateContextWithTenantAndAuth tests the tenant + auth context builder
+func TestCreateContextWithTenantAndAuth(t *testing.T) {
+	username := "testuser"
+	userType := "standard"
+	tenantID := "test-tenant"
+
+	ctx := createContextWithTenantAndAuth(username, userType, tenantID)
+
+	// Check authentication context
+	claims, ok := ctx.Get("claims").(*auth.EnhancedClaims)
+	assert.True(t, ok, "Claims should be in context")
+	assert.Equal(t, username, claims.Username)
+
+	// Check tenant context
+	assert.Equal(t, tenantID, ctx.Request.Headers["X-Tenant-ID"])
+
+	ctxTenantID, ok := ctx.Get("tenant_id").(string)
+	assert.True(t, ok, "Tenant ID should be in context")
+	assert.Equal(t, tenantID, ctxTenantID)
+}
+
+// TestSetupAuthFlow tests the auth flow setup helper
+func TestSetupAuthFlow(t *testing.T) {
+	mockAuth := new(MockAuthService)
+	token := "test-token"
+	username := "testuser"
+	userType := "admin"
+
+	// Test successful flow
+	claims := setupAuthFlow(mockAuth, token, username, userType, true)
+
+	assert.Equal(t, username, claims.Username)
+	assert.Contains(t, claims.Scopes, "admin:all")
+
+	// Actually exercise the mock by calling ValidateAccessToken
+	liftAuthService := newTestLiftAuthService(mockAuth)
+	middleware := liftAuthService.RequireAuth()
+
+	// Create a test context with the token
+	ctx := createTestContextWithAuth(token)
+
+	// Create a test handler
+	handlerCalled := false
+	testHandler := lift.HandlerFunc(func(ctx *lift.Context) error {
+		handlerCalled = true
+		return nil
+	})
+
+	// Execute the middleware
+	wrappedHandler := middleware(testHandler)
+	err := wrappedHandler.Handle(ctx)
+
+	// Verify the call succeeded and handler was called
+	assert.NoError(t, err)
+	assert.True(t, handlerCalled)
+
+	// Verify mock was called as expected
+	mockAuth.AssertExpectations(t)
+}
+
+// TestAssertAuthenticationRequired tests the authentication assertion helper
+func TestAssertAuthenticationRequired(t *testing.T) {
+	mockAuth := new(MockAuthService)
+	liftAuthService := newTestLiftAuthService(mockAuth)
+	middleware := liftAuthService.RequireAuth()
+
+	// This should pass (no assertion errors)
+	assertAuthenticationRequired(t, middleware)
+}
+
+// TestAssertScopeRequired tests the scope assertion helper
+func TestAssertScopeRequired(t *testing.T) {
+	mockAuth := new(MockAuthService)
+	liftAuthService := newTestLiftAuthService(mockAuth)
+
+	requiredScope := "admin:read"
+	userWithScope := "admin"
+	userWithoutScope := "user"
+
+	// This should pass (no assertion errors)
+	assertScopeRequired(t, liftAuthService, requiredScope, userWithScope, userWithoutScope)
+}
+
+// TestRunAuthScenarios tests the multi-scenario test runner
+func TestRunAuthScenarios(t *testing.T) {
+	scenarios := []AuthTestScenario{
+		{
+			Name:          "valid admin token",
+			Token:         "admin-token",
+			ExpectedClaim: createClaimsForUserType("admin", "admin"),
+			ExpectedError: nil,
+			ShouldSucceed: true,
+		},
+		{
+			Name:          "invalid token",
+			Token:         "invalid-token",
+			ExpectedClaim: nil,
+			ExpectedError: auth.ErrInvalidToken,
+			ShouldSucceed: false,
+		},
+		{
+			Name:          "valid user token",
+			Token:         "user-token",
+			ExpectedClaim: createClaimsForUserType("user", "standard"),
+			ExpectedError: nil,
+			ShouldSucceed: true,
+		},
+	}
+
+	createMiddleware := func(las *testLiftAuthService) lift.Middleware {
+		return las.RequireAuth()
+	}
+
+	runAuthScenarios(t, scenarios, createMiddleware)
+}
+
+// Integration test examples showing how to use the utilities
+
+// TestAuthUtilitiesIntegration demonstrates using the utilities together
+func TestAuthUtilitiesIntegration(t *testing.T) {
+	t.Run("admin endpoint access", func(t *testing.T) {
+		// Set up mock auth service
+		mockAuth := new(MockAuthService)
+		adminClaims := createClaimsForUserType("admin", "admin")
+		mockAuth.On("ValidateAccessToken", "admin-token").Return(adminClaims, nil)
+
+		// Create auth service and middleware
+		liftAuthService := newTestLiftAuthService(mockAuth)
+		requireAuth := liftAuthService.RequireAuth()
+		requireAdminScope := liftAuthService.RequireScope("admin:all")
+
+		// Create test handler
+		handlerCalled := false
+		testHandler := lift.HandlerFunc(func(ctx *lift.Context) error {
+			handlerCalled = true
+			return ctx.JSON(map[string]string{"admin": "data"})
+		})
+
+		// Chain middleware
+		wrappedHandler := requireAuth(requireAdminScope(testHandler))
+
+		// Create context with admin token
+		ctx := createTestContextWithAuth("admin-token")
+
+		// Execute
+		err := wrappedHandler.Handle(ctx)
+
+		// Verify
+		assert.NoError(t, err)
+		assert.True(t, handlerCalled)
+		mockAuth.AssertExpectations(t)
+	})
+
+	t.Run("multi-tenant authenticated endpoint", func(t *testing.T) {
+		// Set up authenticated context with tenant
+		ctx := createContextWithTenantAndAuth("user", "standard", "tenant1")
+
+		// Verify both auth and tenant context
+		claims, ok := ctx.Get("claims").(*auth.EnhancedClaims)
+		assert.True(t, ok)
+		assert.Equal(t, "user", claims.Username)
+
+		tenantID, ok := ctx.Get("tenant_id").(string)
+		assert.True(t, ok)
+		assert.Equal(t, "tenant1", tenantID)
+	})
 }

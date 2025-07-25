@@ -120,7 +120,7 @@
   - Write unit tests for tenant resolution and isolation
   - _Requirements: 3.3_
 
-- [ ] 3.4 Build authentication testing utilities
+- [x] 3.4 Build authentication testing utilities
   - Create test context builders for authenticated and unauthenticated requests
   - Implement test token generators for various user types and scopes
   - Add mock authentication service for unit testing
@@ -128,7 +128,7 @@
   - Write comprehensive tests for authentication testing utilities
   - _Requirements: 3.5_
 
-- [ ] 3.5 Implement direct Lift-native auth replacement
+- [x] 3.5 Implement direct Lift-native auth replacement
   - Replace existing API Gateway auth with Lift-native auth directly (no migration needed)
   - Update all Lambda functions to use LiftAuthService instead of auth.Middleware
   - Remove API Gateway auth dependencies and context conversion functions
