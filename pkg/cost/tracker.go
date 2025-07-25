@@ -71,12 +71,22 @@ type Tracker struct {
 	requestID     string
 	operationType string
 	startTime     time.Time
+	
+	// Circuit breaker for cost limits
+	circuitBreaker *CostCircuitBreaker
 }
 
 // New creates a new cost tracker
 func New() *Tracker {
 	return &Tracker{
 		startTime: time.Now(),
+		circuitBreaker: NewCostCircuitBreaker(CostCircuitBreakerConfig{
+			MaxCostPerHour:    0.10, // $0.10 per hour
+			MaxCostPerRequest: 0.001, // $0.001 per request
+			WindowSize:        time.Hour,
+			FailureThreshold:  5,
+			RecoveryTimeout:   5 * time.Minute,
+		}),
 	}
 }
 
@@ -86,17 +96,40 @@ func NewWithRequest(requestID, operationType string) *Tracker {
 		requestID:     requestID,
 		operationType: operationType,
 		startTime:     time.Now(),
+		circuitBreaker: NewCostCircuitBreaker(CostCircuitBreakerConfig{
+			MaxCostPerHour:    0.10, // $0.10 per hour
+			MaxCostPerRequest: 0.001, // $0.001 per request
+			WindowSize:        time.Hour,
+			FailureThreshold:  5,
+			RecoveryTimeout:   5 * time.Minute,
+		}),
 	}
 }
 
 // TrackDynamoRead tracks DynamoDB read operations
-func (t *Tracker) TrackDynamoRead(items int) {
+func (t *Tracker) TrackDynamoRead(items int) error {
+	if t.circuitBreaker != nil {
+		estimatedCost := float64(items) * float64(DynamoDBReadRequestUnit) / float64(MicroCentsToCents)
+		if err := t.circuitBreaker.CheckCost(context.Background(), estimatedCost); err != nil {
+			return err
+		}
+		t.circuitBreaker.RecordCost(estimatedCost)
+	}
 	t.dynamoReads.Add(int64(items))
+	return nil
 }
 
 // TrackDynamoWrite tracks DynamoDB write operations
-func (t *Tracker) TrackDynamoWrite(items int) {
+func (t *Tracker) TrackDynamoWrite(items int) error {
+	if t.circuitBreaker != nil {
+		estimatedCost := float64(items) * float64(DynamoDBWriteRequestUnit) / float64(MicroCentsToCents)
+		if err := t.circuitBreaker.CheckCost(context.Background(), estimatedCost); err != nil {
+			return err
+		}
+		t.circuitBreaker.RecordCost(estimatedCost)
+	}
 	t.dynamoWrites.Add(int64(items))
+	return nil
 }
 
 // TrackDynamoStorage tracks DynamoDB storage usage
