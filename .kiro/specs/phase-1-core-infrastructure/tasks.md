@@ -96,7 +96,7 @@
   - Build comprehensive authentication testing utilities
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.7_
 
-- [ ] 3.1 Implement Lift-native authentication middleware
+- [x] 3.1 Implement Lift-native authentication middleware
   - Create LiftAuthService that uses auth.AuthService directly without API Gateway dependencies
   - Implement RequireAuth, RequireScope, and OptionalAuth middleware methods
   - Add support for optional authentication on public endpoints
@@ -104,7 +104,7 @@
   - Write unit tests for different authentication scenarios
   - _Requirements: 3.1, 3.6_
 
-- [ ] 3.2 Create enhanced claims management system
+- [x] 3.2 Create enhanced claims management system
   - Use existing auth.Claims struct instead of creating new types
   - Add type-safe claims access functions that work with existing patterns
   - Create scope checking utilities using existing Claims.HasScope method
@@ -112,7 +112,7 @@
   - Write unit tests for claims management functionality
   - _Requirements: 3.2, 3.7_
 
-- [ ] 3.3 Add multi-tenant support infrastructure
+- [x] 3.3 Add multi-tenant support infrastructure
   - Implement tenant resolution strategies (header, subdomain, path parameter)
   - Create tenant isolation utilities for data access
   - Add tenant context management in request processing
