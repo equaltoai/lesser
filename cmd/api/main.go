@@ -11,6 +11,7 @@ before passing requests to this Lambda, so the router receives clean paths.
 */
 
 import (
+	"context"
 	"os"
 	"time"
 
@@ -19,24 +20,30 @@ import (
 	"github.com/aron23/lesser/pkg/common"
 	"github.com/aron23/lesser/pkg/config"
 	liftAuth "github.com/aron23/lesser/pkg/lift"
+	"github.com/aron23/lesser/pkg/observability"
 	"github.com/aron23/lesser/pkg/storage"
 	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 )
 
 var (
-	cfg         *config.Config
-	store       storage.Storage
-	logger      *zap.Logger
-	handler     *handlers.Handler
-	authService *auth.AuthService
-	liftAuthSvc *liftAuth.LiftAuthService
+	cfg              *config.Config
+	store            storage.Storage
+	logger           *zap.Logger
+	handler          *handlers.Handler
+	authService      *auth.AuthService
+	liftAuthSvc      *liftAuth.LiftAuthService
+	metricsCollector *observability.MetricsCollector
+	initTime         time.Time
 )
 
 func init() {
+	initTime = time.Now()
 	cfg = config.Get()
 	logger = common.Logger()
 
@@ -54,6 +61,22 @@ func init() {
 
 	// Initialize Lift-native auth service
 	liftAuthSvc = liftAuth.NewLiftAuthService(authService)
+
+	// Initialize metrics collector
+	if os.Getenv("DISABLE_METRICS") != "true" {
+		ctx := context.Background()
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.Region))
+		if err != nil {
+			logger.Warn("failed to load AWS config for metrics", zap.Error(err))
+		} else {
+			cloudwatchClient := cloudwatch.NewFromConfig(awsCfg)
+			metricsCollector = observability.NewMetricsCollector(
+				cloudwatchClient,
+				"Lesser/API",
+				logger,
+			)
+		}
+	}
 
 	// Create handler with all dependencies (still needs old middleware for legacy handlers)
 	legacyAuthMiddleware, err := auth.GetMiddleware()
@@ -81,6 +104,14 @@ func main() {
 
 	// Add CORS middleware
 	app.Use(createCORSMiddleware())
+	
+	// Add cost tracking middleware
+	app.Use(createCostTrackingMiddleware(logger))
+	
+	// Add performance monitoring middleware
+	if metricsCollector != nil {
+		app.Use(createPerformanceMonitoringMiddleware(metricsCollector))
+	}
 
 	// Configure routes
 	configurePublicRoutes(app)

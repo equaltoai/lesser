@@ -1,29 +1,77 @@
 package main
 
 import (
+	"os"
 	"time"
 
+	"github.com/aron23/lesser/pkg/auth"
 	"github.com/aron23/lesser/pkg/cost"
+	"github.com/aron23/lesser/pkg/observability"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
-// createLoggingMiddleware creates a custom logging middleware
+// createLoggingMiddleware creates a custom logging middleware with structured correlation
 func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
+			requestID := ctx.GetRequestID()
+			
+			// Extract user and tenant context for correlation
+			userID := ""
+			tenantID := ""
+			if claims, ok := ctx.Get("claims").(*auth.Claims); ok && claims != nil {
+				userID = claims.Username
+			}
+			if tenant, ok := ctx.Get("tenantID").(string); ok {
+				tenantID = tenant
+			}
+			
+			// Create contextual logger with correlation fields
+			contextLogger := logger.With(
+				zap.String("request_id", requestID),
+				zap.String("user_id", userID),
+				zap.String("tenant_id", tenantID),
+				zap.String("function_name", os.Getenv("AWS_LAMBDA_FUNCTION_NAME")),
+				zap.String("function_version", os.Getenv("AWS_LAMBDA_FUNCTION_VERSION")),
+				zap.String("cold_start", os.Getenv("AWS_LAMBDA_INITIALIZATION_TYPE")),
+			)
+			
+			// Store contextual logger in context
+			ctx.Set("logger", contextLogger)
+			
+			// Log request start
+			contextLogger.Info("request_start",
+				zap.String("method", ctx.Request.Method),
+				zap.String("path", ctx.Request.Path),
+				zap.String("user_agent", ctx.Header("User-Agent")),
+				zap.String("remote_addr", ctx.Header("X-Forwarded-For")),
+			)
 
 			// Process the request
 			err := next.Handle(ctx)
-
-			// Log the request after processing
-			logger.Info("API request",
+			
+			// Calculate execution metrics
+			duration := time.Since(start)
+			statusCode := ctx.Response.StatusCode
+			
+			// Log request completion with metrics
+			logLevel := zap.InfoLevel
+			if err != nil {
+				logLevel = zap.ErrorLevel
+			} else if statusCode >= 400 {
+				logLevel = zap.WarnLevel
+			}
+			
+			contextLogger.Log(logLevel, "request_complete",
 				zap.String("method", ctx.Request.Method),
 				zap.String("path", ctx.Request.Path),
-				zap.Int("status", ctx.Response.StatusCode),
-				zap.Duration("duration", time.Since(start)),
-				zap.String("request_id", ctx.GetRequestID()))
+				zap.Int("status", statusCode),
+				zap.Duration("duration", duration),
+				zap.Bool("success", err == nil && statusCode < 400),
+				zap.Error(err),
+			)
 
 			return err
 		})
@@ -116,4 +164,42 @@ func TrackCost(ctx *lift.Context, fn func(*cost.Tracker)) {
 	if tracker := GetCostTracker(ctx); tracker != nil {
 		fn(tracker)
 	}
+}
+
+// createPerformanceMonitoringMiddleware creates middleware for performance monitoring
+func createPerformanceMonitoringMiddleware(metricsCollector *observability.MetricsCollector) lift.Middleware {
+	return func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			startTime := time.Now()
+			
+			// Process the request
+			err := next.Handle(ctx)
+			
+			// Collect performance metrics
+			metrics := observability.GetPerformanceMetrics(startTime, time.Time{})
+			
+			// Record metrics
+			if metricsCollector != nil {
+				metricsCollector.RecordPerformanceMetrics(metrics)
+				metricsCollector.RecordLatency(ctx.Request.Path, metrics.ExecutionDuration)
+				
+				// Record success/error metrics
+				if err != nil {
+					metricsCollector.RecordErrorRate("api_request", 1, 1)
+				} else {
+					metricsCollector.RecordErrorRate("api_request", 0, 1)
+				}
+			}
+			
+			return err
+		})
+	}
+}
+
+// GetLogger retrieves the contextual logger from the Lift context
+func GetLogger(ctx *lift.Context) *zap.Logger {
+	if logger, ok := ctx.Get("logger").(*zap.Logger); ok {
+		return logger
+	}
+	return zap.L() // fallback to global logger
 }

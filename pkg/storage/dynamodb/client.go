@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"reflect"
 	"strconv"
@@ -1108,10 +1110,13 @@ var (
 	globalClient DynamoDBAPI
 	clientOnce   sync.Once
 	clientErr    error
+	initTime     time.Time
 )
 
 // init initializes the global DynamoDB client for Lambda reuse
 func init() {
+	initTime = time.Now()
+	
 	// Skip initialization in test mode
 	if os.Getenv("GO_ENV") == "test" || os.Getenv("TESTING") == "true" {
 		return
@@ -1126,30 +1131,56 @@ func init() {
 // getClient returns the global DynamoDB client, initializing it if needed
 func getClient() (DynamoDBAPI, error) {
 	clientOnce.Do(func() {
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
 		awsCfg, err := config.LoadDefaultConfig(ctx,
 			config.WithRegion(cfg.Get().Region),
+			config.WithRetryMaxAttempts(3),
+			config.WithHTTPClient(&http.Client{
+				Timeout: 10 * time.Second,
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					ResponseHeaderTimeout: 5 * time.Second,
+					TLSHandshakeTimeout: 3 * time.Second,
+					DialContext: (&net.Dialer{
+						Timeout:   5 * time.Second,
+						KeepAlive: 30 * time.Second,
+					}).DialContext,
+				},
+			}),
 		)
 		if err != nil {
 			clientErr = fmt.Errorf("failed to load AWS config: %w", err)
 			return
 		}
 
-		// Create base DynamoDB client
+		// Create base DynamoDB client with optimized settings
 		baseClient := dynamodb.NewFromConfig(awsCfg)
 
 		// Wrap with cost tracking if not in test mode
 		if os.Getenv("GO_ENV") != "test" && os.Getenv("DISABLE_COST_TRACKING") != "true" {
 			globalClient = cost.NewDynamoDBWrapper(baseClient)
-			common.Logger().Info("DynamoDB client initialized with cost tracking",
+			common.Logger().Info("DynamoDB client initialized with cost tracking and connection pooling",
 				zap.String("region", cfg.Get().Region),
+				zap.Duration("init_time", time.Since(initTime)),
 			)
 		} else {
 			globalClient = baseClient
-			common.Logger().Info("DynamoDB client initialized",
+			common.Logger().Info("DynamoDB client initialized with connection pooling",
 				zap.String("region", cfg.Get().Region),
+				zap.Duration("init_time", time.Since(initTime)),
 			)
 		}
+		
+		// Pre-warm connection with a lightweight operation
+		go func() {
+			_, _ = baseClient.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+				TableName: aws.String(cfg.Get().DynamoTableName),
+			})
+		}()
 	})
 
 	return globalClient, clientErr
