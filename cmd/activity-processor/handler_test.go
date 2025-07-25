@@ -10,10 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
-	"github.com/lesser/pkg/common"
-	"github.com/lesser/pkg/storage/models"
+	"github.com/aron23/lesser/pkg/storage/models"
 )
 
 // MockDB is a mock implementation of the dynamorm.LambdaDB interface
@@ -27,9 +25,6 @@ func (m *MockDB) WithLambdaTimeoutBuffer(milliseconds int) *dynamorm.LambdaDB {
 }
 
 func TestActivityHandler_ProcessRecord(t *testing.T) {
-	// Initialize logger for tests
-	logger, _ := zap.NewDevelopment()
-	common.SetLogger(logger)
 
 	// Create mock DB
 	mockDB := new(MockDB)
@@ -90,9 +85,6 @@ func TestActivityHandler_ProcessRecord(t *testing.T) {
 }
 
 func TestHandleDynamoDBStream(t *testing.T) {
-	// Initialize logger for tests
-	logger, _ := zap.NewDevelopment()
-	common.SetLogger(logger)
 
 	// Create mock DB
 	mockDB := new(MockDB)
