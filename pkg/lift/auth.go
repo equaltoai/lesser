@@ -1,9 +1,11 @@
 package lift
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/aron23/lesser/pkg/auth"
+	"github.com/aron23/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
@@ -26,12 +28,16 @@ func (las *LiftAuthService) RequireAuth() lift.Middleware {
 			// Extract Bearer token directly from Lift context
 			token := extractBearerToken(ctx)
 			if token == "" {
+				// Log authentication failure
+				common.LogAuthFailure("missing authorization token", "", getClientIP(ctx), ctx.Header("User-Agent"))
 				return ctx.Unauthorized("Authentication required", nil)
 			}
 
 			// Validate token using existing auth service
 			claims, err := las.authService.ValidateAccessToken(token)
 			if err != nil {
+				// Log authentication failure
+				common.LogAuthFailure(err.Error(), "", getClientIP(ctx), ctx.Header("User-Agent"))
 				return ctx.Unauthorized("Invalid token", err)
 			}
 
@@ -95,15 +101,30 @@ func (las *LiftAuthService) OptionalAuth() lift.Middleware {
 
 // RequireTenant middleware that requires tenant context
 func (las *LiftAuthService) RequireTenant() lift.Middleware {
+	return las.RequireTenantWithConfig(DefaultTenantIsolationConfig())
+}
+
+// RequireTenantWithConfig middleware that requires tenant context with custom config
+func (las *LiftAuthService) RequireTenantWithConfig(config *TenantIsolationConfig) lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			tenantID, err := resolveTenant(ctx)
 			if err != nil {
-				return ctx.Forbidden("Tenant context required", err)
+				// Try default tenant if configured
+				if config.DefaultTenantID != "" {
+					tenantID = config.DefaultTenantID
+				} else {
+					return ctx.Forbidden("Tenant context required", err)
+				}
 			}
 
-			// Store tenant ID in context
+			// Store tenant ID and config in context
 			ctx.Set("tenant_id", tenantID)
+			ctx.Set("tenant_config", config)
+			
+			// Create tenant context for easy access
+			tenantCtx := &TenantContext{TenantID: tenantID}
+			ctx.Set("tenant_context", tenantCtx)
 
 			return next.Handle(ctx)
 		})
@@ -139,7 +160,7 @@ func resolveTenant(ctx *lift.Context) (string, error) {
 		return claims.Username, nil
 	}
 
-	return "", ctx.BadRequest("Tenant context required", nil)
+	return "", errors.New("tenant context required")
 }
 
 // extractTenantFromSubdomain extracts tenant ID from subdomain
@@ -219,9 +240,23 @@ func GetSessionID(ctx *lift.Context) (string, error) {
 func GetTenantID(ctx *lift.Context) (string, error) {
 	tenantID, ok := ctx.Get("tenant_id").(string)
 	if !ok || tenantID == "" {
-		return "", ctx.BadRequest("Tenant context required", nil)
+		return "", errors.New("tenant context required")
 	}
 	return tenantID, nil
+}
+
+// GetTenantContext retrieves tenant context from Lift context
+func GetTenantContext(ctx *lift.Context) (*TenantContext, error) {
+	tenantCtx, ok := ctx.Get("tenant_context").(*TenantContext)
+	if !ok {
+		// Try to create from tenant_id if available
+		tenantID, err := GetTenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &TenantContext{TenantID: tenantID}, nil
+	}
+	return tenantCtx, nil
 }
 
 // GetOptionalUsername retrieves username from context if authenticated
@@ -249,4 +284,23 @@ func HasScope(ctx *lift.Context, scope string) bool {
 		return false
 	}
 	return claims.HasScope(scope)
+}
+
+// getClientIP extracts the client IP from the request
+func getClientIP(ctx *lift.Context) string {
+	// Check X-Forwarded-For header first (for requests through load balancers)
+	if xff := ctx.Header("X-Forwarded-For"); xff != "" {
+		// Take the first IP in the comma-separated list
+		ips := strings.Split(xff, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+
+	// Check X-Real-IP header
+	if xri := ctx.Header("X-Real-IP"); xri != "" {
+		return xri
+	}
+
+	return "unknown"
 }
