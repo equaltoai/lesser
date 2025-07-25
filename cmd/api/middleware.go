@@ -91,48 +91,14 @@ func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 	}
 }
 
-// createAuthMiddleware creates an authentication middleware
+// createAuthMiddleware creates Lift-native authentication middleware
 func createAuthMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Get the auth token from the request
-			token := ctx.Header("Authorization")
-			if token == "" {
-				return ctx.Unauthorized("Missing authorization token", nil)
-			}
-
-			// Validate the token using the auth middleware
-			claims, err := authMiddleware.ValidateToken(token)
-			if err != nil {
-				return ctx.Unauthorized("Invalid authorization token", err)
-			}
-
-			// Store the claims in the context
-			ctx.Set("claims", claims)
-
-			// Process the request
-			return next.Handle(ctx)
-		})
-	}
+	return liftAuthSvc.RequireAuth()
 }
 
-// createAdminMiddleware creates a middleware that checks for admin role
+// createAdminMiddleware creates Lift-native admin middleware that checks for admin scope
 func createAdminMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Get the claims from the context
-			claims := ctx.Get("claims")
-			if claims == nil {
-				return ctx.Forbidden("Authentication required", nil)
-			}
-
-			// TODO: Add role check to claims when role support is added
-			// For now, admin check would need to be done via username or a separate lookup
-
-			// Process the request
-			return next.Handle(ctx)
-		})
-	}
+	return liftAuthSvc.RequireScope("admin")
 }
 
 // Helper functions for cost tracking
