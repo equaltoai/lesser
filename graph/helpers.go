@@ -108,7 +108,7 @@ func GetUserID(ctx context.Context) string {
 }
 
 // convertToGraphQLObject converts storage objects to GraphQL model objects
-func (r *queryResolver) convertToGraphQLObject(ctx context.Context, obj interface{}) *model.Object {
+func (r *queryResolver) convertToGraphQLObject(ctx context.Context, obj any) *model.Object {
 	// Reuse logic from Object resolver
 	switch o := obj.(type) {
 	case *activitypub.Note:
@@ -393,14 +393,14 @@ func shouldFederate(_ model.Visibility) bool {
 }
 
 // convertToGraphQLObject converts an ActivityPub object to GraphQL Object type
-func (r *mutationResolver) convertToGraphQLObject(ctx context.Context, obj interface{}) *model.Object {
+func (r *mutationResolver) convertToGraphQLObject(ctx context.Context, obj any) *model.Object {
 	// Reuse the query resolver's method
 	qr := &queryResolver{r.Resolver}
 	return qr.convertToGraphQLObject(ctx, obj)
 }
 
 // getObjectActorID extracts the actor ID from an object
-func getObjectActorID(obj interface{}) string {
+func getObjectActorID(obj any) string {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		return o.AttributedTo
@@ -547,7 +547,7 @@ func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext
 }
 
 // getObjectID extracts the ID from an ActivityPub object
-func (r *Resolver) getObjectID(obj interface{}) string {
+func (r *Resolver) getObjectID(obj any) string {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		return o.ID

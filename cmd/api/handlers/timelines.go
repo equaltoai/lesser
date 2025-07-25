@@ -93,7 +93,7 @@ func (h *Handler) HandleHomeTimeline(ctx context.Context, request events.APIGate
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			attributedTo = o.AttributedTo
-		case map[string]interface{}:
+		case map[string]any:
 			if attr, ok := o["attributedTo"].(string); ok {
 				attributedTo = attr
 			}
@@ -216,7 +216,7 @@ func (h *Handler) HandlePublicTimeline(ctx context.Context, request events.APIGa
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			attributedTo = o.AttributedTo
-		case map[string]interface{}:
+		case map[string]any:
 			if attr, ok := o["attributedTo"].(string); ok {
 				attributedTo = attr
 			}
@@ -353,7 +353,7 @@ func (h *Handler) HandleHashtagTimeline(ctx context.Context, request events.APIG
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			attributedTo = o.AttributedTo
-		case map[string]interface{}:
+		case map[string]any:
 			if attr, ok := o["attributedTo"].(string); ok {
 				attributedTo = attr
 			}
@@ -511,7 +511,7 @@ func (h *Handler) HandleListTimeline(ctx context.Context, request events.APIGate
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			attributedTo = o.AttributedTo
-		case map[string]interface{}:
+		case map[string]any:
 			if attr, ok := o["attributedTo"].(string); ok {
 				attributedTo = attr
 			}
@@ -645,7 +645,7 @@ func (h *Handler) HandleDirectTimeline(ctx context.Context, request events.APIGa
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			attributedTo = o.AttributedTo
-		case map[string]interface{}:
+		case map[string]any:
 			if attr, ok := o["attributedTo"].(string); ok {
 				attributedTo = attr
 			}

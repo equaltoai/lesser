@@ -161,7 +161,7 @@ func (h *Handler) HandleRequestAIAnalysis(ctx context.Context, request events.AP
 		return common.InternalServerError(err), nil
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"message":        "Analysis queued",
 		"object_id":      req.ObjectID,
 		"estimated_time": "10-30 seconds",
@@ -213,8 +213,8 @@ func (h *Handler) HandleGetAIStats(ctx context.Context, request events.APIGatewa
 // HandleGetAISummary returns a summary of AI features and capabilities
 // GET /api/v1/ai/capabilities
 func (h *Handler) HandleGetAISummary(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	capabilities := map[string]interface{}{
-		"text_analysis": map[string]interface{}{
+	capabilities := map[string]any{
+		"text_analysis": map[string]any{
 			"sentiment_analysis": true,
 			"toxicity_detection": true,
 			"spam_detection":     true,
@@ -222,14 +222,14 @@ func (h *Handler) HandleGetAISummary(ctx context.Context, request events.APIGate
 			"entity_extraction":  true,
 			"language_detection": true,
 		},
-		"image_analysis": map[string]interface{}{
+		"image_analysis": map[string]any{
 			"nsfw_detection":        true,
 			"violence_detection":    true,
 			"text_extraction":       true,
 			"celebrity_recognition": true,
 			"deepfake_detection":    false, // Future feature
 		},
-		"ai_detection": map[string]interface{}{
+		"ai_detection": map[string]any{
 			"ai_generated_content": true,
 			"pattern_analysis":     true,
 			"style_consistency":    true,

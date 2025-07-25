@@ -401,7 +401,7 @@ func InitSecurityLogger() {
     config.OutputPaths = []string{"stdout"}
     
     // Add security-specific fields
-    config.InitialFields = map[string]interface{}{
+    config.InitialFields = map[string]any{
         "service": "lesser",
         "type":    "security",
     }

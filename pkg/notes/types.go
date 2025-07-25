@@ -94,8 +94,8 @@ type VoteRequest struct {
 }
 
 type NotesResponse struct {
-	Notes []CommunityNote        `json:"notes"`
-	Stats map[string]interface{} `json:"stats"`
+	Notes []CommunityNote `json:"notes"`
+	Stats map[string]any  `json:"stats"`
 }
 
 // Constants for thresholds and limits

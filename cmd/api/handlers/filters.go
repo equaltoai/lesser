@@ -165,11 +165,11 @@ func (h *Handler) HandleCreateFilter(ctx context.Context, request events.APIGate
 
 	// Parse request body
 	var params struct {
-		Title              string                   `json:"title"`
-		Context            []string                 `json:"context"`
-		FilterAction       string                   `json:"filter_action"`
-		ExpiresIn          *int                     `json:"expires_in"`
-		KeywordsAttributes []map[string]interface{} `json:"keywords_attributes"`
+		Title              string           `json:"title"`
+		Context            []string         `json:"context"`
+		FilterAction       string           `json:"filter_action"`
+		ExpiresIn          *int             `json:"expires_in"`
+		KeywordsAttributes []map[string]any `json:"keywords_attributes"`
 	}
 
 	if err := common.ParseRequestBody([]byte(request.Body), &params); err != nil {
@@ -305,19 +305,19 @@ func (h *Handler) HandleUpdateFilter(ctx context.Context, request events.APIGate
 	}
 
 	// Parse request body
-	var params map[string]interface{}
+	var params map[string]any
 	if err := common.ParseRequestBody([]byte(request.Body), &params); err != nil {
 		return common.BadRequest(err), nil
 	}
 
 	// Build updates map
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 
 	if title, ok := params["title"].(string); ok {
 		updates["title"] = title
 	}
 
-	if context, ok := params["context"].([]interface{}); ok {
+	if context, ok := params["context"].([]any); ok {
 		contextStrings := make([]string, 0, len(context))
 		for _, c := range context {
 			if str, ok := c.(string); ok {
@@ -343,9 +343,9 @@ func (h *Handler) HandleUpdateFilter(ctx context.Context, request events.APIGate
 	}
 
 	// Handle keyword updates if provided
-	if keywordsAttrs, ok := params["keywords_attributes"].([]interface{}); ok {
+	if keywordsAttrs, ok := params["keywords_attributes"].([]any); ok {
 		for _, kwAttr := range keywordsAttrs {
-			kwMap, ok := kwAttr.(map[string]interface{})
+			kwMap, ok := kwAttr.(map[string]any)
 			if !ok {
 				continue
 			}
@@ -359,7 +359,7 @@ func (h *Handler) HandleUpdateFilter(ctx context.Context, request events.APIGate
 					}
 				} else {
 					// Update the keyword
-					kwUpdates := make(map[string]interface{})
+					kwUpdates := make(map[string]any)
 					if keyword, ok := kwMap["keyword"].(string); ok {
 						kwUpdates["keyword"] = keyword
 					}

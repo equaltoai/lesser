@@ -194,7 +194,7 @@ func NewSafeQuery() *SafeQueryBuilder {
     return &SafeQueryBuilder{}
 }
 
-func (q *SafeQueryBuilder) WithKey(attribute string, value interface{}) error {
+func (q *SafeQueryBuilder) WithKey(attribute string, value any) error {
     if err := ValidateAttributeName(attribute); err != nil {
         return err
     }
@@ -204,7 +204,7 @@ func (q *SafeQueryBuilder) WithKey(attribute string, value interface{}) error {
     return nil
 }
 
-func (q *SafeQueryBuilder) WithFilter(attribute string, op string, value interface{}) error {
+func (q *SafeQueryBuilder) WithFilter(attribute string, op string, value any) error {
     if err := ValidateAttributeName(attribute); err != nil {
         return err
     }
@@ -560,7 +560,7 @@ func handlePostOutbox(request events.APIGatewayProxyRequest) (events.APIGatewayP
     // Additional validation for specific activity types
     switch activity.Type {
     case "Create":
-        if note, ok := activity.Object.(map[string]interface{}); ok {
+        if note, ok := activity.Object.(map[string]any); ok {
             content := note["content"].(string)
             if len(content) > 5000 {
                 return events.APIGatewayProxyResponse{

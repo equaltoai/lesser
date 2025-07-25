@@ -104,9 +104,9 @@ func (h *Handler) HandleCreateNote(ctx context.Context, request events.APIGatewa
 	}
 
 	// Add rate limit info to response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"note": note,
-		"rate_limit": map[string]interface{}{
+		"rate_limit": map[string]any{
 			"limit":     limit,
 			"remaining": remaining - 1,
 			"reset":     "24h",
@@ -221,9 +221,9 @@ func (h *Handler) HandleGetNotes(ctx context.Context, request events.APIGatewayV
 	}
 
 	// Format response
-	formattedNotes := make([]map[string]interface{}, len(rankedNotes))
+	formattedNotes := make([]map[string]any, len(rankedNotes))
 	for i, note := range rankedNotes {
-		noteData := map[string]interface{}{
+		noteData := map[string]any{
 			"id":                note.ID,
 			"object_id":         note.ObjectID,
 			"author_id":         note.AuthorID,
@@ -240,7 +240,7 @@ func (h *Handler) HandleGetNotes(ctx context.Context, request events.APIGatewayV
 		formattedNotes[i] = noteData
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"notes": formattedNotes,
 		"stats": calculateNotesStats(rankedNotes),
 	}
@@ -326,7 +326,7 @@ func (h *Handler) HandleVoteNote(ctx context.Context, request events.APIGatewayV
 		return common.InternalServerError(err), nil
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"vote":    vote,
 		"note_id": noteID,
 	}
@@ -364,14 +364,14 @@ func (h *Handler) HandleGetUserNotes(ctx context.Context, request events.APIGate
 	}
 
 	// Convert notes to Mastodon status format
-	statuses := make([]interface{}, len(userNotes))
+	statuses := make([]any, len(userNotes))
 	for i, note := range userNotes {
 		// Convert note to status-like format
-		status := map[string]interface{}{
+		status := map[string]any{
 			"id":         note.ID,
 			"content":    fmt.Sprintf("<p>Community Note: %s</p>", note.Content),
 			"created_at": note.CreatedAt.Format(time.RFC3339),
-			"account": map[string]interface{}{
+			"account": map[string]any{
 				"id":       note.AuthorID,
 				"username": username,
 				"acct":     username,
@@ -379,15 +379,15 @@ func (h *Handler) HandleGetUserNotes(ctx context.Context, request events.APIGate
 			"visibility":        "public",
 			"sensitive":         false,
 			"spoiler_text":      "",
-			"media_attachments": []interface{}{},
-			"mentions":          []interface{}{},
-			"tags":              []interface{}{},
-			"emojis":            []interface{}{},
+			"media_attachments": []any{},
+			"mentions":          []any{},
+			"tags":              []any{},
+			"emojis":            []any{},
 			"reblogs_count":     0,
 			"favourites_count":  note.HelpfulVotes,
 			"replies_count":     note.NotHelpfulVotes,
 			"url":               fmt.Sprintf("https://%s/notes/%s", h.cfg.Domain, note.ID),
-			"card": map[string]interface{}{
+			"card": map[string]any{
 				"type":        "note",
 				"object_id":   note.ObjectID,
 				"object_type": note.ObjectType,
@@ -422,9 +422,9 @@ func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
 	return reputation.NewService(cfg)
 }
 
-func calculateNotesStats(notes []*storage.CommunityNote) map[string]interface{} {
+func calculateNotesStats(notes []*storage.CommunityNote) map[string]any {
 	if len(notes) == 0 {
-		return map[string]interface{}{
+		return map[string]any{
 			"total":           0,
 			"visible":         0,
 			"average_score":   0,
@@ -446,7 +446,7 @@ func calculateNotesStats(notes []*storage.CommunityNote) map[string]interface{} 
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total":           len(notes),
 		"visible":         visibleCount,
 		"average_score":   totalScore / float64(len(notes)),

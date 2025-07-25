@@ -309,7 +309,7 @@ func (pm *PatternMatcher) MatchContent(ctx context.Context, content string, meta
 	lowerContent := strings.ToLower(content)
 
 	// Iterate through cached patterns
-	pm.patterns.Range(func(key, value interface{}) bool {
+	pm.patterns.Range(func(key, value any) bool {
 		pattern, ok := value.(*ModerationPattern)
 		if !ok || !pattern.Active {
 			return true
@@ -440,11 +440,11 @@ func (pm *PatternMatcher) loadPatterns(ctx context.Context) error {
 	}
 
 	// Clear existing patterns
-	pm.patterns.Range(func(key, value interface{}) bool {
+	pm.patterns.Range(func(key, value any) bool {
 		pm.patterns.Delete(key)
 		return true
 	})
-	pm.regexCache.Range(func(key, value interface{}) bool {
+	pm.regexCache.Range(func(key, value any) bool {
 		pm.regexCache.Delete(key)
 		return true
 	})

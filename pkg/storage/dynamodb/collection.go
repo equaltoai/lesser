@@ -47,7 +47,7 @@ func (s *dynamoDBStorage) GetCollection(ctx context.Context, username, collectio
 		}
 
 		// Convert usernames to actor IDs
-		items := make([]interface{}, len(followers))
+		items := make([]any, len(followers))
 		for i, follower := range followers {
 			items[i] = fmt.Sprintf("%s/users/%s", baseURL, follower)
 		}
@@ -70,7 +70,7 @@ func (s *dynamoDBStorage) GetCollection(ctx context.Context, username, collectio
 		}
 
 		// Convert usernames to actor IDs
-		items := make([]interface{}, len(following))
+		items := make([]any, len(following))
 		for i, followed := range following {
 			items[i] = fmt.Sprintf("%s/users/%s", baseURL, followed)
 		}
@@ -93,7 +93,7 @@ func (s *dynamoDBStorage) GetCollection(ctx context.Context, username, collectio
 		}
 
 		// Convert likes to object IDs
-		items := make([]interface{}, len(likes))
+		items := make([]any, len(likes))
 		for i, like := range likes {
 			items[i] = like.Object
 		}
@@ -125,7 +125,7 @@ func (s *dynamoDBStorage) GetCollection(ctx context.Context, username, collectio
 		}
 
 		// Convert activities to interfaces
-		items := make([]interface{}, len(activities))
+		items := make([]any, len(activities))
 		for i, activity := range activities {
 			items[i] = activity
 		}
@@ -142,13 +142,13 @@ func (s *dynamoDBStorage) GetCollection(ctx context.Context, username, collectio
 	default:
 		// For unknown collection types, return empty
 		log.Warn("unknown collection type requested", zap.String("type", collectionType))
-		page.OrderedItems = []interface{}{}
+		page.OrderedItems = []any{}
 		page.TotalItems = 0
 	}
 
 	log.Info("retrieved collection",
 		zap.String("type", collectionType),
-		zap.Int("items", len(page.OrderedItems.([]interface{}))),
+		zap.Int("items", len(page.OrderedItems.([]any))),
 	)
 
 	return page, nil

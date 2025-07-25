@@ -29,7 +29,7 @@ func InitSecurityLogger() {
 	config.OutputPaths = []string{"stdout"}
 
 	// Add security-specific fields
-	config.InitialFields = map[string]interface{}{
+	config.InitialFields = map[string]any{
 		"service": "lesser",
 		"type":    "security",
 	}
@@ -100,7 +100,7 @@ func LogRateLimit(userID string, ip string, endpoint string, limit int) {
 }
 
 // LogSuspiciousActivity logs general suspicious activity
-func LogSuspiciousActivity(activity string, userID string, ip string, details map[string]interface{}) {
+func LogSuspiciousActivity(activity string, userID string, ip string, details map[string]any) {
 	fields := []zap.Field{
 		zap.String("activity", activity),
 		zap.String("user_id", userID),

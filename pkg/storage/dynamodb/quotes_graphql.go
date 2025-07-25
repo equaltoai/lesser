@@ -157,7 +157,7 @@ func (s *dynamoDBStorage) IsQuoteAllowed(ctx context.Context, statusID, quoterID
 			switch obj := statusObj.(type) {
 			case *activitypub.Note:
 				authorID = obj.AttributedTo
-			case map[string]interface{}:
+			case map[string]any:
 				if attr, ok := obj["attributedTo"].(string); ok {
 					authorID = attr
 				}
@@ -333,7 +333,7 @@ func (s *dynamoDBStorage) fallbackGetQuotesOfStatus(ctx context.Context, statusI
 }
 
 // isUserMentionedInStatus checks if a user is mentioned in a status
-func (s *dynamoDBStorage) isUserMentionedInStatus(ctx context.Context, userID string, statusObj interface{}) (bool, error) {
+func (s *dynamoDBStorage) isUserMentionedInStatus(ctx context.Context, userID string, statusObj any) (bool, error) {
 	// Get the user's actor to find their handle
 	userActor, err := s.GetActor(ctx, userID)
 	if err != nil {
@@ -349,7 +349,7 @@ func (s *dynamoDBStorage) isUserMentionedInStatus(ctx context.Context, userID st
 
 	// Extract content and tags from the status
 	var content string
-	var tags []interface{}
+	var tags []any
 
 	switch obj := statusObj.(type) {
 	case *activitypub.Note:
@@ -359,18 +359,18 @@ func (s *dynamoDBStorage) isUserMentionedInStatus(ctx context.Context, userID st
 				tags = append(tags, tag)
 			}
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		if c, ok := obj["content"].(string); ok {
 			content = c
 		}
-		if tagArray, ok := obj["tag"].([]interface{}); ok {
+		if tagArray, ok := obj["tag"].([]any); ok {
 			tags = tagArray
 		}
 	}
 
 	// Check tags for mentions (ActivityPub Mention type)
 	for _, tag := range tags {
-		if tagMap, ok := tag.(map[string]interface{}); ok {
+		if tagMap, ok := tag.(map[string]any); ok {
 			if tagType, ok := tagMap["type"].(string); ok && tagType == "Mention" {
 				if href, ok := tagMap["href"].(string); ok {
 					// Check if the href matches the user's actor ID

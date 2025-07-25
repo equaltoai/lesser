@@ -120,7 +120,7 @@ func (alb *AdaptiveLoadBalancer) UpdateWeights(metrics map[string]*RouteMetrics)
 func (alb *AdaptiveLoadBalancer) GetCurrentWeights() map[string]float64 {
 	weights := make(map[string]float64)
 
-	alb.weights.Range(func(key, value interface{}) bool {
+	alb.weights.Range(func(key, value any) bool {
 		rw := value.(*routeWeight)
 		rw.mu.RLock()
 		weights[rw.RouteID] = rw.CurrentWeight

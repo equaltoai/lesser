@@ -166,7 +166,7 @@ func (ti *ThreatIntelligence) CheckContent(ctx context.Context, content string, 
 	lowerContent := strings.ToLower(content)
 
 	// Check against cached threats
-	ti.threatCache.Range(func(key, value interface{}) bool {
+	ti.threatCache.Range(func(key, value any) bool {
 		threat, ok := value.(*ThreatIntel)
 		if !ok {
 			return true
@@ -409,7 +409,7 @@ func (ti *ThreatIntelligence) loadThreats(ctx context.Context) error {
 	defer ti.updateMutex.Unlock()
 
 	// Clear existing threats
-	ti.threatCache.Range(func(key, value interface{}) bool {
+	ti.threatCache.Range(func(key, value any) bool {
 		ti.threatCache.Delete(key)
 		return true
 	})

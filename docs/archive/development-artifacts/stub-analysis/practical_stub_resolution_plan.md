@@ -45,7 +45,7 @@ func getFollowers(ctx context.Context, username string) ([]string, error) {
 Implement the DynamoDB queries:
 
 ```go
-func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
     input := &dynamodb.QueryInput{
         TableName: aws.String(h.cfg.TableName),
         IndexName: aws.String("GSI1"),
@@ -64,7 +64,7 @@ func (h *Handler) getUserImportJobs(ctx context.Context, username string, status
 Replace hardcoded values with actual processing:
 
 ```go
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     // Use ffprobe to get real metadata
     cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", 
         "stream=width,height,duration", "-of", "json", "-")

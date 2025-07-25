@@ -12,7 +12,7 @@ import (
 type Duration int
 
 // UnmarshalGQL implements the graphql.Unmarshaler interface
-func (d *Duration) UnmarshalGQL(v interface{}) error {
+func (d *Duration) UnmarshalGQL(v any) error {
 	switch v := v.(type) {
 	case int:
 		*d = Duration(v)

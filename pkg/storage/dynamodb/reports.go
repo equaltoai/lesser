@@ -28,7 +28,7 @@ func (s *dynamoDBStorage) CreateReport(ctx context.Context, report *storage.Repo
 	report.Status = storage.ReportStatusOpen
 
 	// Create the main report item
-	reportItem := map[string]interface{}{
+	reportItem := map[string]any{
 		"PK":                fmt.Sprintf("REPORT#%s", report.ID),
 		"SK":                "REPORT",
 		"GSI1PK":            fmt.Sprintf("USER#%s", report.ReporterID),
@@ -386,7 +386,6 @@ func (s *dynamoDBStorage) AssignReport(ctx context.Context, reportID string, ass
 		ExpressionAttributeValues: expressionAttributeValues,
 		ConditionExpression:       aws.String(conditionExpression),
 	})
-
 	if err != nil {
 		// Check if the error is because the report doesn't exist
 		var ccfe *types.ConditionalCheckFailedException
@@ -423,7 +422,6 @@ func (s *dynamoDBStorage) UnassignReport(ctx context.Context, reportID string) e
 		ExpressionAttributeValues: expressionAttributeValues,
 		ConditionExpression:       aws.String(conditionExpression),
 	})
-
 	if err != nil {
 		// Check if the error is because the report doesn't exist
 		var ccfe *types.ConditionalCheckFailedException

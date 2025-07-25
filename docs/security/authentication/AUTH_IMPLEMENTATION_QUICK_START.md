@@ -85,7 +85,7 @@ func (a *AuthHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
     // 3. Generate tokens
     // 4. Prompt to set up passkey!
     
-    respond(w, map[string]interface{}{
+    respond(w, map[string]any{
         "access_token": accessToken,
         "refresh_token": refreshToken,
         "upgrade_required": true,

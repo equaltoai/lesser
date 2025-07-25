@@ -20,7 +20,7 @@ Lambda functions have several characteristics that make traditional storage appr
 ```go
 // THIS DOESN'T WORK IN LAMBDA!
 type Service struct {
-    cache map[string]interface{} // Lost on container recycle
+    cache map[string]any // Lost on container recycle
     mutex sync.RWMutex           // Only protects within single instance
 }
 ```

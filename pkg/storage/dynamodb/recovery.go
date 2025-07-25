@@ -313,11 +313,11 @@ func (d *dynamoDBStorage) CountUnusedRecoveryCodes(ctx context.Context, username
 }
 
 // StoreRecoveryToken stores a generic recovery token with data
-func (d *dynamoDBStorage) StoreRecoveryToken(ctx context.Context, key string, data map[string]interface{}) error {
+func (d *dynamoDBStorage) StoreRecoveryToken(ctx context.Context, key string, data map[string]any) error {
 	// Create a TTL for 24 hours
 	ttl := time.Now().Add(24 * time.Hour).Unix()
 
-	item := map[string]interface{}{
+	item := map[string]any{
 		"PK":        key,
 		"SK":        "TOKEN",
 		"Data":      data,
@@ -342,7 +342,7 @@ func (d *dynamoDBStorage) StoreRecoveryToken(ctx context.Context, key string, da
 }
 
 // GetRecoveryToken retrieves a recovery token by key
-func (d *dynamoDBStorage) GetRecoveryToken(ctx context.Context, key string) (map[string]interface{}, error) {
+func (d *dynamoDBStorage) GetRecoveryToken(ctx context.Context, key string) (map[string]any, error) {
 	result, err := d.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(d.tableName),
 		Key: map[string]types.AttributeValue{
@@ -359,7 +359,7 @@ func (d *dynamoDBStorage) GetRecoveryToken(ctx context.Context, key string) (map
 	}
 
 	var item struct {
-		Data map[string]interface{} `dynamodbav:"Data"`
+		Data map[string]any `dynamodbav:"Data"`
 	}
 
 	err = attributevalue.UnmarshalMap(result.Item, &item)

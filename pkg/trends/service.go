@@ -195,8 +195,8 @@ func (s *Service) RecordLinkShare(ctx context.Context, url string, statusID stri
 
 // Trend represents a general trend
 type Trend struct {
-	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
+	Type  string `json:"type"`
+	Value any    `json:"value"`
 }
 
 // HashtagTrend represents a trending hashtag

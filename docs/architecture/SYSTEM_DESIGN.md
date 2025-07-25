@@ -170,7 +170,7 @@ type OperationCost struct {
 
 // Every API response includes cost
 type APIResponse struct {
-    Data     interface{}    `json:"data"`
+    Data     any    `json:"data"`
     Cost     *OperationCost `json:"cost"`
     Duration int64          `json:"duration_ms"`
 }

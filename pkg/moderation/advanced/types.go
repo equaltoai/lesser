@@ -301,7 +301,7 @@ type DecisionReason struct {
 	Type        string // "toxicity", "explicit", "pattern", "reputation", etc.
 	Severity    Severity
 	Description string
-	Evidence    interface{} // Can be various types of evidence
+	Evidence    any // Can be various types of evidence
 }
 
 // ModerationStats contains moderation statistics
@@ -376,7 +376,7 @@ type ModerationConfig struct {
 type ModerationError struct {
 	Code    string
 	Message string
-	Details map[string]interface{}
+	Details map[string]any
 }
 
 func (e *ModerationError) Error() string {
@@ -448,7 +448,7 @@ type AudioAnalysis struct {
 
 type CustomFlag struct {
 	Name       string
-	Value      interface{}
+	Value      any
 	Confidence float64
 }
 

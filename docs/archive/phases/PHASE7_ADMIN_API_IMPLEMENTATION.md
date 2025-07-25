@@ -93,7 +93,7 @@ GetAllTrustRelationships(ctx context.Context, limit int) ([]*TrustRelationship, 
 GetReviewerStats(ctx context.Context, reviewerID string) (*ReviewerStats, error)
 
 // Report assignment
-UpdateReport(ctx context.Context, reportID string, updates map[string]interface{}) error
+UpdateReport(ctx context.Context, reportID string, updates map[string]any) error
 ```
 
 ### Data Model Updates Needed

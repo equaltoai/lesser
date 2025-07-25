@@ -12,10 +12,10 @@ type TransactionFunc func(tx *Transaction) error
 
 // TxOperations defines the operations that can be performed in a transaction
 type TxOperations interface {
-	Put(item interface{}) error
-	Delete(item interface{}) error
-	Update(item interface{}) error
-	ConditionCheck(tableName string, key map[string]interface{}, condition string, values ...interface{}) error
+	Put(item any) error
+	Delete(item any) error
+	Update(item any) error
+	ConditionCheck(tableName string, key map[string]any, condition string, values ...any) error
 }
 
 // Transaction represents a DynamoDB transaction
@@ -51,7 +51,7 @@ func (t *Transaction) Execute(ctx context.Context, fn TransactionFunc) error {
 }
 
 // Put adds a Put operation to the transaction
-func (t *Transaction) Put(item interface{}) error {
+func (t *Transaction) Put(item any) error {
 	if t.tx == nil {
 		return fmt.Errorf("transaction not started")
 	}
@@ -60,7 +60,7 @@ func (t *Transaction) Put(item interface{}) error {
 }
 
 // Delete adds a Delete operation to the transaction
-func (t *Transaction) Delete(item interface{}) error {
+func (t *Transaction) Delete(item any) error {
 	if t.tx == nil {
 		return fmt.Errorf("transaction not started")
 	}
@@ -69,7 +69,7 @@ func (t *Transaction) Delete(item interface{}) error {
 }
 
 // Update adds an Update operation to the transaction
-func (t *Transaction) Update(item interface{}) error {
+func (t *Transaction) Update(item any) error {
 	if t.tx == nil {
 		return fmt.Errorf("transaction not started")
 	}
@@ -79,7 +79,7 @@ func (t *Transaction) Update(item interface{}) error {
 
 // ConditionCheck adds a condition check to the transaction
 // The transaction will fail if the condition is not met
-func (t *Transaction) ConditionCheck(tableName string, key map[string]interface{}, condition string, values ...interface{}) error {
+func (t *Transaction) ConditionCheck(tableName string, key map[string]any, condition string, values ...any) error {
 	if t.tx == nil {
 		return fmt.Errorf("transaction not started")
 	}

@@ -333,9 +333,9 @@ func (s *dynamoDBStorage) GetDailyActiveUserCount(ctx context.Context) (int64, e
 }
 
 // GetDomainStats returns federation statistics for a specific domain
-func (s *dynamoDBStorage) GetDomainStats(ctx context.Context, domain string) (interface{}, error) {
+func (s *dynamoDBStorage) GetDomainStats(ctx context.Context, domain string) (any, error) {
 	// Create a structure to hold domain statistics
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"domain":         domain,
 		"total_users":    0,
 		"active_users":   0,

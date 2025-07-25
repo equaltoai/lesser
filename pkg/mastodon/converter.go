@@ -16,11 +16,11 @@ type Converter interface {
 	ActorToAccountWithMetadata(actor *activitypub.Actor, metadata *storage.ActorMetadata, followers, following, statuses int) models.Account
 
 	// Object conversions
-	ObjectToStatus(obj interface{}, actor *activitypub.Actor) models.Status
-	ObjectToStatusWithContext(ctx context.Context, obj interface{}, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status
+	ObjectToStatus(obj any, actor *activitypub.Actor) models.Status
+	ObjectToStatusWithContext(ctx context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status
 
 	// Conversation conversions
-	ConversationToAPI(conv *storage.Conversation, participants []*activitypub.Actor, lastStatus interface{}, unread bool) models.Conversation
+	ConversationToAPI(conv *storage.Conversation, participants []*activitypub.Actor, lastStatus any, unread bool) models.Conversation
 
 	// Filter conversions
 	ConvertFilterToMastodon(filter *storage.Filter, keywords []*storage.FilterKeyword, statuses []*storage.FilterStatus) *Filter
@@ -30,7 +30,7 @@ type Converter interface {
 	ConvertMuteToRelationship(relationship *models.Relationship, mute *storage.Mute)
 
 	// Notes conversions
-	NotesToStatus(note interface{}) models.Status
+	NotesToStatus(note any) models.Status
 
 	// Utility methods
 	ExtractUsernameFromActorID(actorID string) string

@@ -36,7 +36,7 @@ type queryCache struct {
 
 type cacheEntry struct {
 	key      string
-	value    interface{}
+	value    any
 	size     int
 	expiry   time.Time
 	listNode *lruNode
@@ -68,11 +68,10 @@ type queryBatch struct {
 
 type batchedQuery struct {
 	key        string
-	resultChan chan interface{}
+	resultChan chan any
 }
 
-type batchResult struct {
-}
+type batchResult struct{}
 
 // NewQueryOptimizer creates a new query optimizer
 func NewQueryOptimizer(db *dynamodb.Client, tableName string, logger *zap.Logger) *QueryOptimizer {
@@ -112,7 +111,7 @@ func (qo *QueryOptimizer) OptimizedGetInstance(ctx context.Context, instanceID s
 	}
 
 	// Use batch query
-	resultChan := make(chan interface{}, 1)
+	resultChan := make(chan any, 1)
 	qo.batcher.addQuery("instance", batchedQuery{
 		key:        instanceID,
 		resultChan: resultChan,
@@ -361,7 +360,7 @@ func (qo *QueryOptimizer) queryMetricsInRange(ctx context.Context, routeID strin
 
 // Cache implementation
 
-func (c *queryCache) get(key string) interface{} {
+func (c *queryCache) get(key string) any {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -381,7 +380,7 @@ func (c *queryCache) get(key string) interface{} {
 	return entry.value
 }
 
-func (c *queryCache) set(key string, value interface{}, size int) {
+func (c *queryCache) set(key string, value any, size int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

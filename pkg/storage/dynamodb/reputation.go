@@ -34,7 +34,6 @@ func (s *dynamoDBStorage) GetStatusCount(ctx context.Context, actorID string) (i
 		},
 		ProjectionExpression: aws.String("StatusCount"),
 	})
-
 	if err != nil {
 		s.logger().Error("failed to get status count",
 			zap.String("actorID", actorID),
@@ -75,7 +74,6 @@ func (s *dynamoDBStorage) GetFollowingCount(ctx context.Context, actorID string)
 		},
 		ProjectionExpression: aws.String("FollowingCount"),
 	})
-
 	if err != nil {
 		s.logger().Error("failed to get following count",
 			zap.String("actorID", actorID),
@@ -116,7 +114,6 @@ func (s *dynamoDBStorage) GetFollowersCount(ctx context.Context, actorID string)
 		},
 		ProjectionExpression: aws.String("FollowerCount"),
 	})
-
 	if err != nil {
 		s.logger().Error("failed to get follower count",
 			zap.String("actorID", actorID),
@@ -159,7 +156,7 @@ func (s *dynamoDBStorage) GetLatestStatus(ctx context.Context, actorID string) (
 	var published time.Time
 
 	// Try to extract fields based on object type
-	if objMap, ok := obj.(map[string]interface{}); ok {
+	if objMap, ok := obj.(map[string]any); ok {
 		if id, ok := objMap["id"].(string); ok {
 			statusID = id
 		}
@@ -272,7 +269,6 @@ func (s *dynamoDBStorage) GetCommunityNoteVotes(ctx context.Context, noteID stri
 			":sk": &types.AttributeValueMemberS{Value: "VOTE#"},
 		},
 	})
-
 	if err != nil {
 		s.logger().Error("failed to query community note votes",
 			zap.String("noteID", noteID),
@@ -321,7 +317,6 @@ func (s *dynamoDBStorage) StoreReputation(ctx context.Context, actorID string, r
 		TableName: s.getTableName(),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to store reputation: %w", err)
 	}
@@ -345,7 +340,6 @@ func (s *dynamoDBStorage) GetReputation(ctx context.Context, actorID string) (*s
 		ScanIndexForward: aws.Bool(false), // Sort descending to get latest first
 		Limit:            aws.Int32(1),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query reputation: %w", err)
 	}
@@ -387,7 +381,6 @@ func (s *dynamoDBStorage) GetReputationHistory(ctx context.Context, actorID stri
 		ScanIndexForward: aws.Bool(false), // Sort descending
 		Limit:            safeInt32(limit),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query reputation history: %w", err)
 	}
@@ -446,7 +439,6 @@ func (s *dynamoDBStorage) CreateVouch(ctx context.Context, vouch *storage.Vouch)
 		TableName: s.getTableName(),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to store vouch: %w", err)
 	}
@@ -463,7 +455,6 @@ func (s *dynamoDBStorage) GetVouch(ctx context.Context, vouchID string) (*storag
 			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vouch: %w", err)
 	}
@@ -630,7 +621,6 @@ func (s *dynamoDBStorage) GetMonthlyVouchCount(ctx context.Context, actorID stri
 			":end":   &types.AttributeValueMemberS{Value: endOfMonth.Format(time.RFC3339)},
 		},
 	})
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to query monthly vouch count: %w", err)
 	}

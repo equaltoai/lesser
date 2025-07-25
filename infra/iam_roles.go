@@ -133,8 +133,8 @@ var functionPermissionsMap = map[string]FunctionPermissions{
 func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.StringOutput,
 	costTableArn pulumi.StringOutput, bucketArn pulumi.StringOutput,
 	federationQueueArn pulumi.StringOutput, pushQueueArn pulumi.StringOutput,
-	wsTableArns []pulumi.StringOutput, kmsKeyArn pulumi.StringOutput) (*iam.Role, error) {
-
+	wsTableArns []pulumi.StringOutput, kmsKeyArn pulumi.StringOutput,
+) (*iam.Role, error) {
 	// Create the base Lambda execution role
 	role, err := iam.NewRole(ctx, fmt.Sprintf("lesser-%s-role", functionName), &iam.RoleArgs{
 		AssumeRolePolicy: pulumi.String(`{
@@ -218,7 +218,7 @@ func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.
 			}
 		}
 
-		dynamoPolicy := pulumi.All(resourceList).ApplyT(func(args []interface{}) (string, error) {
+		dynamoPolicy := pulumi.All(resourceList).ApplyT(func(args []any) (string, error) {
 			resources := []string{}
 			for _, r := range args {
 				if str, ok := r.(string); ok && str != "" {
@@ -226,10 +226,10 @@ func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.
 				}
 			}
 
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect":   "Allow",
 						"Action":   dynamoActions,
 						"Resource": resources,
@@ -253,10 +253,10 @@ func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.
 	// Add DynamoDB Streams permissions if needed
 	if perms.AllowDynamoDBStreams {
 		streamsPolicy := tableArn.ApplyT(func(arn string) (string, error) {
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"dynamodb:DescribeStream",
@@ -294,10 +294,10 @@ func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.
 		}
 
 		s3Policy := bucketArn.ApplyT(func(arn string) (string, error) {
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect":   "Allow",
 						"Action":   s3Actions,
 						"Resource": fmt.Sprintf("%s/*", arn),
@@ -342,7 +342,7 @@ func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.
 		}
 
 		if len(queues) > 0 {
-			sqsPolicy := pulumi.All(queues).ApplyT(func(args []interface{}) (string, error) {
+			sqsPolicy := pulumi.All(queues).ApplyT(func(args []any) (string, error) {
 				resources := []string{}
 				for _, r := range args {
 					if str, ok := r.(string); ok && str != "" {
@@ -350,10 +350,10 @@ func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.
 					}
 				}
 
-				policy := map[string]interface{}{
+				policy := map[string]any{
 					"Version": "2012-10-17",
-					"Statement": []interface{}{
-						map[string]interface{}{
+					"Statement": []any{
+						map[string]any{
 							"Effect":   "Allow",
 							"Action":   sqsActions,
 							"Resource": resources,
@@ -434,10 +434,10 @@ func CreateLambdaRole(ctx *pulumi.Context, functionName string, tableArn pulumi.
 	// Add KMS permissions if needed
 	if perms.AllowKMS {
 		kmsPolicy := kmsKeyArn.ApplyT(func(arn string) (string, error) {
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"kms:Encrypt",
@@ -470,8 +470,8 @@ func CreateLambdaWithRole(ctx *pulumi.Context, name string, handler string, time
 	tableArn pulumi.StringOutput, costTableArn pulumi.StringOutput,
 	bucketArn pulumi.StringOutput, federationQueueArn pulumi.StringOutput,
 	pushQueueArn pulumi.StringOutput, wsTableArns []pulumi.StringOutput,
-	kmsKeyArn pulumi.StringOutput, lambdaEnv pulumi.StringMap) (*lambda.Function, error) {
-
+	kmsKeyArn pulumi.StringOutput, lambdaEnv pulumi.StringMap,
+) (*lambda.Function, error) {
 	// Create role for this specific function
 	role, err := CreateLambdaRole(ctx, name, tableArn, costTableArn, bucketArn,
 		federationQueueArn, pushQueueArn, wsTableArns, kmsKeyArn)

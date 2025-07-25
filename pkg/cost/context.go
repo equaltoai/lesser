@@ -1,3 +1,4 @@
+// Package cost provides cost tracking functionality for AWS services
 package cost
 
 import (

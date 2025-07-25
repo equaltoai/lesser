@@ -21,7 +21,7 @@ type ThreadSyncer struct {
 
 // FederationClient interface for making federation requests
 type FederationClient interface {
-	FetchObject(ctx context.Context, url string) (interface{}, error)
+	FetchObject(ctx context.Context, url string) (any, error)
 	FetchReplies(ctx context.Context, noteURL string) ([]*activitypub.Note, error)
 	FetchContext(ctx context.Context, noteURL string) (*ThreadContext, error)
 }
@@ -197,7 +197,7 @@ func (t *ThreadSyncer) fetchRepliesRecursive(ctx context.Context, noteURL string
 
 // storeNote stores a note in the local storage
 func (t *ThreadSyncer) storeNote(ctx context.Context, note *activitypub.Note) error {
-	// The storage layer accepts interface{}, so we can pass the note directly
+	// The storage layer accepts any, so we can pass the note directly
 	return t.storage.CreateObject(ctx, note)
 }
 

@@ -502,7 +502,7 @@ func silenceAccount(ctx context.Context, accountID, reason string) error {
 	}
 
 	// Update user to be silenced
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"silenced":          true,
 		"moderation_reason": reason,
 		"moderated_at":      time.Now(),
@@ -529,7 +529,7 @@ func suspendAccount(ctx context.Context, accountID, reason string) error {
 	}
 
 	// Update user to be suspended
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"suspended":         true,
 		"moderation_reason": reason,
 		"moderated_at":      time.Now(),
@@ -613,10 +613,10 @@ func sendWarningNotification(ctx context.Context, objectID, reason string) error
 }
 
 // extractUsernameFromObject extracts username from an object
-func extractUsernameFromObject(obj interface{}) string {
+func extractUsernameFromObject(obj any) string {
 	// Try to extract username from different object types
 	switch v := obj.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		// Check for actor field
 		if actor, ok := v["actor"].(string); ok {
 			return extractUsernameFromActorID(actor)

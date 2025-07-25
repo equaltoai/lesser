@@ -38,7 +38,7 @@ func (r *GenericRepository) WithTransaction(tx *Transaction) *GenericRepository 
 }
 
 // Create creates a new entity
-func (r *GenericRepository) Create(ctx context.Context, entity interface{}) error {
+func (r *GenericRepository) Create(ctx context.Context, entity any) error {
 	// Set primary keys if the entity implements KeySetter
 	if keySetter, ok := entity.(KeySetter); ok {
 		keySetter.SetKeys()
@@ -63,7 +63,7 @@ func (r *GenericRepository) Create(ctx context.Context, entity interface{}) erro
 }
 
 // Get retrieves an entity by ID
-func (r *GenericRepository) Get(ctx context.Context, id string, entity interface{}) error {
+func (r *GenericRepository) Get(ctx context.Context, id string, entity any) error {
 	// Generate keys for the entity type
 	pk, sk := GenerateSimpleKeys(r.EntityType, id)
 
@@ -72,7 +72,6 @@ func (r *GenericRepository) Get(ctx context.Context, id string, entity interface
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(entity)
-
 	if err != nil {
 		return MapRepositoryError(err, "Get", r.EntityType, id)
 	}
@@ -81,7 +80,7 @@ func (r *GenericRepository) Get(ctx context.Context, id string, entity interface
 }
 
 // Update updates an entity
-func (r *GenericRepository) Update(ctx context.Context, entity interface{}) error {
+func (r *GenericRepository) Update(ctx context.Context, entity any) error {
 	// Set primary keys if the entity implements KeySetter
 	if keySetter, ok := entity.(KeySetter); ok {
 		keySetter.SetKeys()
@@ -106,7 +105,7 @@ func (r *GenericRepository) Update(ctx context.Context, entity interface{}) erro
 }
 
 // Delete deletes an entity by ID
-func (r *GenericRepository) Delete(ctx context.Context, id string, entityPtr interface{}) error {
+func (r *GenericRepository) Delete(ctx context.Context, id string, entityPtr any) error {
 	// Generate keys for the entity type
 	pk, sk := GenerateSimpleKeys(r.EntityType, id)
 
@@ -142,7 +141,6 @@ func (r *GenericRepository) Delete(ctx context.Context, id string, entityPtr int
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		Delete()
-
 	if err != nil {
 		return MapRepositoryError(err, "Delete", r.EntityType, id)
 	}
@@ -151,7 +149,7 @@ func (r *GenericRepository) Delete(ctx context.Context, id string, entityPtr int
 }
 
 // List lists entities with optional filtering
-func (r *GenericRepository) List(ctx context.Context, filter map[string]interface{}, entities interface{}) error {
+func (r *GenericRepository) List(ctx context.Context, filter map[string]any, entities any) error {
 	// Start building the query
 	query := r.DB.Model(reflect.New(reflect.TypeOf(entities).Elem().Elem().Elem()).Interface())
 
@@ -184,7 +182,7 @@ func (r *GenericRepository) List(ctx context.Context, filter map[string]interfac
 }
 
 // BatchGet retrieves multiple entities by their IDs
-func (r *GenericRepository) BatchGet(ctx context.Context, ids []string, entities interface{}) error {
+func (r *GenericRepository) BatchGet(ctx context.Context, ids []string, entities any) error {
 	// Since BatchGet might not be directly available in the core.DB interface,
 	// we'll implement it using individual Get operations
 
@@ -220,7 +218,7 @@ type KeySetter interface {
 }
 
 // getEntityID attempts to extract an ID from an entity for error reporting
-func getEntityID(entity interface{}) string {
+func getEntityID(entity any) string {
 	// Try to get ID field
 	val := reflect.ValueOf(entity)
 	if val.Kind() == reflect.Ptr {
@@ -241,10 +239,10 @@ func getEntityID(entity interface{}) string {
 // ModelConverter is an interface for converting between model types
 type ModelConverter interface {
 	// ToStorage converts a DynamORM model to a storage model
-	ToStorage() interface{}
+	ToStorage() any
 
 	// FromStorage converts a storage model to a DynamORM model
-	FromStorage(interface{}) error
+	FromStorage(any) error
 }
 
 // RepositoryAdapterConfig provides configuration for repository adapters
@@ -252,8 +250,8 @@ type RepositoryAdapterConfig struct {
 	DB              core.DB
 	TableName       string
 	EntityType      string
-	OriginalRepo    interface{}
-	ConversionFuncs map[string]interface{}
+	OriginalRepo    any
+	ConversionFuncs map[string]any
 }
 
 // NewRepositoryAdapterConfig creates a new RepositoryAdapterConfig
@@ -262,18 +260,18 @@ func NewRepositoryAdapterConfig(db core.DB, tableName, entityType string) *Repos
 		DB:              db,
 		TableName:       tableName,
 		EntityType:      entityType,
-		ConversionFuncs: make(map[string]interface{}),
+		ConversionFuncs: make(map[string]any),
 	}
 }
 
 // WithOriginalRepo sets the original repository
-func (c *RepositoryAdapterConfig) WithOriginalRepo(repo interface{}) *RepositoryAdapterConfig {
+func (c *RepositoryAdapterConfig) WithOriginalRepo(repo any) *RepositoryAdapterConfig {
 	c.OriginalRepo = repo
 	return c
 }
 
 // WithConversion adds a conversion function
-func (c *RepositoryAdapterConfig) WithConversion(name string, fn interface{}) *RepositoryAdapterConfig {
+func (c *RepositoryAdapterConfig) WithConversion(name string, fn any) *RepositoryAdapterConfig {
 	c.ConversionFuncs[name] = fn
 	return c
 }

@@ -19,7 +19,7 @@ import (
 // RecordHashtagUsage records when a hashtag is used in a status
 func (s *dynamoDBStorage) RecordHashtagUsage(ctx context.Context, hashtag string, statusID string, authorID string) error {
 	// Create a usage record
-	usage := map[string]interface{}{
+	usage := map[string]any{
 		"PK":       fmt.Sprintf("HASHTAG_USAGE#%s", hashtag),
 		"SK":       fmt.Sprintf("STATUS#%s", statusID),
 		"AuthorID": authorID,
@@ -38,7 +38,6 @@ func (s *dynamoDBStorage) RecordHashtagUsage(ctx context.Context, hashtag string
 		TableName: s.getTableName(),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to record hashtag usage: %w", err)
 	}
@@ -50,7 +49,7 @@ func (s *dynamoDBStorage) RecordHashtagUsage(ctx context.Context, hashtag string
 // RecordStatusEngagement records engagement on a status (like, boost, reply)
 func (s *dynamoDBStorage) RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error {
 	// Create an engagement record
-	engagement := map[string]interface{}{
+	engagement := map[string]any{
 		"PK":             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
 		"SK":             fmt.Sprintf("%s#%s#%s", engagementType, time.Now().Format("20060102150405"), userID),
 		"StatusID":       statusID,
@@ -69,7 +68,6 @@ func (s *dynamoDBStorage) RecordStatusEngagement(ctx context.Context, statusID s
 		TableName: s.getTableName(),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to record status engagement: %w", err)
 	}
@@ -81,7 +79,7 @@ func (s *dynamoDBStorage) RecordStatusEngagement(ctx context.Context, statusID s
 // RecordLinkShare records when a link is shared in a status
 func (s *dynamoDBStorage) RecordLinkShare(ctx context.Context, url string, statusID string, authorID string) error {
 	// Create a link share record
-	share := map[string]interface{}{
+	share := map[string]any{
 		"PK":       fmt.Sprintf("LINK_SHARE#%s", url),
 		"SK":       fmt.Sprintf("STATUS#%s", statusID),
 		"URL":      url,
@@ -100,7 +98,6 @@ func (s *dynamoDBStorage) RecordLinkShare(ctx context.Context, url string, statu
 		TableName: s.getTableName(),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to record link share: %w", err)
 	}
@@ -371,7 +368,7 @@ func (s *dynamoDBStorage) updateHashtagTrendScore(ctx context.Context, hashtag s
 	timeBucket := now.Format("2006-01-02")
 	paddedScore := fmt.Sprintf("%010.0f", score*1000) // Pad for proper sorting
 
-	trendItem := map[string]interface{}{
+	trendItem := map[string]any{
 		"PK":          fmt.Sprintf("TREND_TYPE#HASHTAG#%s", timeBucket),
 		"SK":          fmt.Sprintf("SCORE#%s#%s", paddedScore, hashtag),
 		"GSI8PK":      fmt.Sprintf("TREND_TYPE#HASHTAG#%s", timeBucket), // For GSI8
@@ -411,7 +408,7 @@ func (s *dynamoDBStorage) updateStatusTrendScore(ctx context.Context, statusID s
 	var authorID, content, url string
 	var publishedAt time.Time
 
-	if note, ok := statusObj.(map[string]interface{}); ok {
+	if note, ok := statusObj.(map[string]any); ok {
 		if actor, ok := note["attributedTo"].(string); ok {
 			authorID = actor
 		}
@@ -481,7 +478,7 @@ func (s *dynamoDBStorage) updateStatusTrendScore(ctx context.Context, statusID s
 	timeBucket := now.Format("2006-01-02")
 	paddedScore := fmt.Sprintf("%010.0f", score*1000)
 
-	trendItem := map[string]interface{}{
+	trendItem := map[string]any{
 		"PK":          fmt.Sprintf("TREND_TYPE#STATUS#%s", timeBucket),
 		"SK":          fmt.Sprintf("SCORE#%s#%s", paddedScore, statusID),
 		"GSI8PK":      fmt.Sprintf("TREND_TYPE#STATUS#%s", timeBucket),
@@ -577,7 +574,7 @@ func (s *dynamoDBStorage) updateLinkTrendScore(ctx context.Context, url string) 
 	timeBucket := now.Format("2006-01-02")
 	paddedScore := fmt.Sprintf("%010.0f", score*1000)
 
-	trendItem := map[string]interface{}{
+	trendItem := map[string]any{
 		"PK":          fmt.Sprintf("TREND_TYPE#LINK#%s", timeBucket),
 		"SK":          fmt.Sprintf("SCORE#%s#%s", paddedScore, url),
 		"GSI8PK":      fmt.Sprintf("TREND_TYPE#LINK#%s", timeBucket),

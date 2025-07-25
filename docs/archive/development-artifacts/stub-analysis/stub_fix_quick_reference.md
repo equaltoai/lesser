@@ -5,7 +5,7 @@
 ### Red Flags in Code
 ```go
 // ❌ BAD - These indicate stubs:
-return []map[string]interface{}{}, nil  // For now
+return []map[string]any{}, nil  // For now
 return []string{}, nil  // TODO: implement
 panic("not implemented")
 // This would normally...
@@ -28,15 +28,15 @@ grep -r "would normally" .
 ### Pattern 1: Empty List Returns
 **Before (Stub):**
 ```go
-func getUserImportJobs(_ context.Context, _ string, _ ...string) ([]map[string]interface{}, error) {
+func getUserImportJobs(_ context.Context, _ string, _ ...string) ([]map[string]any, error) {
     // For now, return empty to avoid errors
-    return []map[string]interface{}{}, nil
+    return []map[string]any{}, nil
 }
 ```
 
 **After (Fixed):**
 ```go
-func getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
     input := &dynamodb.QueryInput{
         TableName: aws.String(h.cfg.TableName),
         IndexName: aws.String("GSI1"),
@@ -85,7 +85,7 @@ func (r *actorResolver) Username(ctx context.Context, obj *activitypub.Actor) (s
 ### Pattern 3: Hardcoded Fake Data
 **Before (Stub):**
 ```go
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     // For now, return some placeholder data
     result.Width = 1920
     result.Height = 1080
@@ -96,7 +96,7 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
 
 **After (Fixed):**
 ```go
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     // Use ffprobe to get actual video metadata
     probeResult, err := probeVideoFile(data)
     if err != nil {
@@ -179,7 +179,7 @@ input.ExpressionAttributeValues[":status"] = &types.AttributeValueMemberS{
 
 ### Pagination
 ```go
-var allItems []map[string]interface{}
+var allItems []map[string]any
 var lastKey map[string]types.AttributeValue
 
 for {

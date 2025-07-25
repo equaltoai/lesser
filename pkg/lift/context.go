@@ -20,8 +20,8 @@ type Pagination struct {
 
 // PaginationResponse wraps data with pagination information
 type PaginationResponse struct {
-	Data       interface{} `json:"data"`
-	Pagination Pagination  `json:"pagination"`
+	Data       any        `json:"data"`
+	Pagination Pagination `json:"pagination"`
 }
 
 // GetPaginationParams extracts pagination parameters from query string
@@ -59,7 +59,7 @@ func GetPaginationParams(ctx *lift.Context) Pagination {
 }
 
 // RespondWithPagination sends a paginated response
-func RespondWithPagination(ctx *lift.Context, data interface{}, pagination Pagination) error {
+func RespondWithPagination(ctx *lift.Context, data any, pagination Pagination) error {
 	response := PaginationResponse{
 		Data:       data,
 		Pagination: pagination,
@@ -71,9 +71,9 @@ func RespondWithPagination(ctx *lift.Context, data interface{}, pagination Pagin
 
 // SuccessResponse represents a successful API response
 type SuccessResponse struct {
-	Success bool        `json:"success"`
-	Data    interface{} `json:"data,omitempty"`
-	Message string      `json:"message,omitempty"`
+	Success bool   `json:"success"`
+	Data    any    `json:"data,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // ErrorResponse represents an error API response
@@ -84,7 +84,7 @@ type ErrorResponse struct {
 }
 
 // RespondWithSuccess sends a successful response
-func RespondWithSuccess(ctx *lift.Context, data interface{}, message ...string) error {
+func RespondWithSuccess(ctx *lift.Context, data any, message ...string) error {
 	response := SuccessResponse{
 		Success: true,
 		Data:    data,
@@ -112,7 +112,7 @@ func RespondWithError(ctx *lift.Context, statusCode int, message string, code ..
 }
 
 // RespondWithData sends data directly (for Mastodon API compatibility)
-func RespondWithData(ctx *lift.Context, data interface{}) error {
+func RespondWithData(ctx *lift.Context, data any) error {
 	return ctx.JSON(data)
 }
 

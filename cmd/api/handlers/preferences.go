@@ -91,7 +91,7 @@ func (h *Handler) HandleUpdatePreferences(ctx context.Context, request events.AP
 	}
 
 	// Parse request body - using map to handle partial updates
-	var updateReq map[string]interface{}
+	var updateReq map[string]any
 	if err := common.ParseRequestBody([]byte(request.Body), &updateReq); err != nil {
 		return common.BadRequest(err), nil
 	}

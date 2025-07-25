@@ -241,7 +241,7 @@ func (s *SocialRecoveryService) sendRecoveryRequest(ctx context.Context, request
 
 func (s *SocialRecoveryService) enableRecoveryToken(ctx context.Context, request *storage.SocialRecoveryRequest) error {
 	// Store recovery token with 24 hour expiration
-	recoveryData := map[string]interface{}{
+	recoveryData := map[string]any{
 		"username":  request.Username,
 		"token":     request.RecoveryToken,
 		"type":      "social_recovery",

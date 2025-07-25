@@ -208,7 +208,7 @@ The emergency compilation fixes added 30+ storage methods that are mostly stubs 
 
 ❌ **NOT COMPLETE:**
 - `return nil`
-- `return []interface{}{}`
+- `return []any{}`
 - `return 0.0`
 - `// TODO: implement actual...`
 - `// For now...`

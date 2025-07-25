@@ -262,8 +262,8 @@ func extractUsernameFromActorID(actorID string) string {
 }
 
 // extractCustomEmojis extracts custom emojis from poll options
-func (h *Handler) extractCustomEmojis(ctx context.Context, options []string) []interface{} {
-	emojis := make([]interface{}, 0)
+func (h *Handler) extractCustomEmojis(ctx context.Context, options []string) []any {
+	emojis := make([]any, 0)
 	emojiMap := make(map[string]bool) // To avoid duplicates
 
 	for _, option := range options {
@@ -273,7 +273,7 @@ func (h *Handler) extractCustomEmojis(ctx context.Context, options []string) []i
 				if !emojiMap[code] {
 					// Get emoji data from storage
 					if emoji, err := h.store.GetCustomEmoji(ctx, code); err == nil {
-						emojis = append(emojis, map[string]interface{}{
+						emojis = append(emojis, map[string]any{
 							"shortcode":         emoji.Shortcode,
 							"url":               emoji.URL,
 							"static_url":        emoji.StaticURL,

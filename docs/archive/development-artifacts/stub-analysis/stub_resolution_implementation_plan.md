@@ -58,7 +58,7 @@ This plan outlines a systematic approach to resolve ~27 critical stub implementa
 
 ```go
 // Replace stub in cmd/api/handlers/imports.go
-func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
     // Build filter expression for statuses if provided
     filterExpr := ""
     exprAttrValues := map[string]types.AttributeValue{
@@ -97,9 +97,9 @@ func (h *Handler) getUserImportJobs(ctx context.Context, username string, status
         return nil, fmt.Errorf("failed to query import jobs: %w", err)
     }
     
-    jobs := make([]map[string]interface{}, 0, len(result.Items))
+    jobs := make([]map[string]any, 0, len(result.Items))
     for _, item := range result.Items {
-        job := make(map[string]interface{})
+        job := make(map[string]any)
         if err := attributevalue.UnmarshalMap(item, &job); err != nil {
             h.logger.Warn("failed to unmarshal job", zap.Error(err))
             continue
@@ -290,7 +290,7 @@ jobs:
 
 ### Video Processing
 ```go
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{
         Sizes: make(map[string]SizeInfo),
     }

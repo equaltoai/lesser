@@ -149,11 +149,11 @@ func (h *Handler) createPureBoost(ctx context.Context, statusID, objectID string
 }
 
 // extractActorIDFromObject extracts actor ID from an object
-func (h *Handler) extractActorIDFromObject(obj interface{}) string {
+func (h *Handler) extractActorIDFromObject(obj any) string {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		return o.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attributedTo, ok := o["attributedTo"].(string); ok {
 			return attributedTo
 		}
@@ -162,11 +162,11 @@ func (h *Handler) extractActorIDFromObject(obj interface{}) string {
 }
 
 // extractContentFromObject extracts content from an object
-func (h *Handler) extractContentFromObject(obj interface{}) string {
+func (h *Handler) extractContentFromObject(obj any) string {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		return o.Content
-	case map[string]interface{}:
+	case map[string]any:
 		if content, ok := o["content"].(string); ok {
 			return content
 		}
@@ -317,10 +317,10 @@ func (h *Handler) createQuoteBoost(ctx context.Context, statusID, objectID, comm
 		IsQuoteBoost:     true,
 		QuotedStatus:     quotedStatus,
 		QuotedStatusID:   &objectID,
-		MediaAttachments: []interface{}{},
-		Mentions:         []interface{}{},
-		Tags:             []interface{}{},
-		Emojis:           []interface{}{},
+		MediaAttachments: []any{},
+		Mentions:         []any{},
+		Tags:             []any{},
+		Emojis:           []any{},
 		Account: models.Account{
 			ID:             actor.ID,
 			Username:       actor.PreferredUsername,
@@ -336,8 +336,8 @@ func (h *Handler) createQuoteBoost(ctx context.Context, statusID, objectID, comm
 			FollowersCount: 0,
 			FollowingCount: 0,
 			StatusesCount:  0,
-			Emojis:         []interface{}{},
-			Fields:         []interface{}{},
+			Emojis:         []any{},
+			Fields:         []any{},
 		},
 	}
 

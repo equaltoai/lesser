@@ -37,7 +37,7 @@ func TestGetUserByEmail_EmptyEmail(t *testing.T) {
 func TestUpdateUser_EmptyUpdates(t *testing.T) {
 	repo := &UserRepository{}
 
-	err := repo.UpdateUser(context.Background(), "testuser", map[string]interface{}{})
+	err := repo.UpdateUser(context.Background(), "testuser", map[string]any{})
 
 	assert.Error(t, err)
 	assert.IsType(t, common.ValidationError{}, err)
@@ -124,7 +124,7 @@ func TestApplyUpdates(t *testing.T) {
 		Approved: false,
 	}
 
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"email":            "new@example.com",
 		"approved":         true,
 		"role":             "moderator",

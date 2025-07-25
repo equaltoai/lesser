@@ -36,10 +36,10 @@ The MockStorage implementation provides mock versions of all storage interface m
 
 ### Object Operations
 - `CreateObject(ctx, object) error`
-- `GetObject(ctx, id) (interface{}, error)`
+- `GetObject(ctx, id) (any, error)`
 - `UpdateObject(ctx, object) error`
 - `DeleteObject(ctx, id) error`
-- `GetObjectsByActor(ctx, actorID, cursor, limit) ([]interface{}, string, error)`
+- `GetObjectsByActor(ctx, actorID, cursor, limit) ([]any, string, error)`
 - `CountObjectReplies(ctx, objectID) (int, error)`
 - `TombstoneObject(ctx, objectID, deletedBy) error`
 - `GetTombstone(ctx, objectID) (*Tombstone, error)`
@@ -108,7 +108,7 @@ The MockStorage implementation provides mock versions of all storage interface m
 
 ### Recovery Operations
 - `StoreRecoveryToken(ctx, key, data) error`
-- `GetRecoveryToken(ctx, key) (map[string]interface{}, error)`
+- `GetRecoveryToken(ctx, key) (map[string]any, error)`
 - `DeleteRecoveryToken(ctx, key) error`
 - `GetRecoveryCodes(ctx, username) ([]*RecoveryCodeItem, error)`
 - `StoreRecoveryCode(ctx, username, code) error`
@@ -349,9 +349,9 @@ The MockStorage implementation provides mock versions of all storage interface m
 - `SetUserLanguagePreference(ctx, username, language) error`
 - `GetUserPreferences(ctx, username) (*UserPreferences, error)`
 - `UpdateUserPreferences(ctx, username, preferences) error`
-- `GetAllPreferences(ctx, username) (map[string]interface{}, error)`
+- `GetAllPreferences(ctx, username) (map[string]any, error)`
 - `SetPreference(ctx, username, key, value) error`
-- `GetPreference(ctx, username, key) (interface{}, error)`
+- `GetPreference(ctx, username, key) (any, error)`
 - `UpdatePreferences(ctx, username, prefs) error`
 
 ### Search Operations
@@ -551,7 +551,7 @@ The MockStorage implementation provides mock versions of all storage interface m
 - `ResolvePreferenceConflict(ctx, username, strategy) (*StreamingPreferences, error)`
 
 ### Reply Operations
-- `GetReplies(ctx, objectID, limit, cursor) ([]interface{}, string, error)`
+- `GetReplies(ctx, objectID, limit, cursor) ([]any, string, error)`
 - `CountReplies(ctx, objectID) (int, error)`
 - `IncrementReplyCount(ctx, objectID) error`
 - `IncrementReblogCount(ctx, objectID) error`
@@ -587,14 +587,14 @@ The following methods were recently added to MockStorage to resolve compilation 
 ### Status Methods
 - `GetStatusReplyCount(ctx, statusID) (int, error)`
 - `GetUserStatusCount(ctx, userID) (int, error)`
-- `GetStatus(ctx, statusID) (interface{}, error)`
-- `GetScheduledStatusMedia(ctx, statusID) ([]interface{}, error)`
-- `GetStatusesByLink(ctx, linkURL, limit) ([]interface{}, error)`
+- `GetStatus(ctx, statusID) (any, error)`
+- `GetScheduledStatusMedia(ctx, statusID) ([]any, error)`
+- `GetStatusesByLink(ctx, linkURL, limit) ([]any, error)`
 
 ### Storage and Analytics Methods
-- `GetStorageUsage(ctx) (interface{}, error)`
-- `GetStorageHistory(ctx, days) ([]interface{}, error)`
-- `GetUserGrowthHistory(ctx, days) ([]interface{}, error)`
+- `GetStorageUsage(ctx) (any, error)`
+- `GetStorageHistory(ctx, days) ([]any, error)`
+- `GetUserGrowthHistory(ctx, days) ([]any, error)`
 
 ### Trend Methods
 - `GetRecentHashtags(ctx, since, limit) ([]*TrendingHashtag, error)`

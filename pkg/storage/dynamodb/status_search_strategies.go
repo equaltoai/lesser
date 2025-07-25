@@ -42,7 +42,6 @@ func (s *ContentWordSearchStrategy) Search(ctx context.Context, query string, op
 				expression.Key("GSI5PK").Equal(expression.Value(gsi5pk)),
 			).
 			Build()
-
 		if err != nil {
 			continue
 		}
@@ -130,7 +129,6 @@ func (s *HashtagSearchStrategy) Search(ctx context.Context, query string, option
 				expression.Key("GSI6PK").Equal(expression.Value(gsi6pk)),
 			).
 			Build()
-
 		if err != nil {
 			continue
 		}
@@ -378,7 +376,6 @@ func (s *TrendingSearchStrategy) Search(ctx context.Context, query string, optio
 				expression.Key("GSI8PK").Equal(expression.Value(gsi8pk)),
 			).
 			Build()
-
 		if err != nil {
 			continue
 		}
@@ -476,7 +473,7 @@ func fetchStatusDetailsHelper(ctx context.Context, storage *dynamoDBStorage, sta
 }
 
 // convertObjectToSearchResult converts an object to a search result
-func convertObjectToSearchResult(obj interface{}, statusID string) *StatusSearchResult {
+func convertObjectToSearchResult(obj any, statusID string) *StatusSearchResult {
 	result := &StatusSearchResult{
 		StatusID:   statusID,
 		Highlights: make(map[string]string),
@@ -511,7 +508,7 @@ func convertObjectToSearchResult(obj interface{}, statusID string) *StatusSearch
 			}
 		}
 
-	case map[string]interface{}:
+	case map[string]any:
 		// Handle generic map representation
 		if content, ok := o["content"].(string); ok {
 			result.Content = content
@@ -536,6 +533,6 @@ func convertObjectToSearchResult(obj interface{}, statusID string) *StatusSearch
 	return result
 }
 
-func (s *URLSearchStrategy) convertObjectToResult(obj interface{}, url string) *StatusSearchResult {
+func (s *URLSearchStrategy) convertObjectToResult(obj any, url string) *StatusSearchResult {
 	return convertObjectToSearchResult(obj, url)
 }

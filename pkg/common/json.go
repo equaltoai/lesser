@@ -16,17 +16,17 @@ var jsonConfig = sonic.Config{
 }.Froze()
 
 // Marshal serializes v to JSON with ActivityPub optimizations
-func Marshal(v interface{}) ([]byte, error) {
+func Marshal(v any) ([]byte, error) {
 	return jsonConfig.Marshal(v)
 }
 
 // Unmarshal deserializes JSON data with ActivityPub optimizations
-func Unmarshal(data []byte, v interface{}) error {
+func Unmarshal(data []byte, v any) error {
 	return jsonConfig.Unmarshal(data, v)
 }
 
 // MarshalString is optimized for string output
-func MarshalString(v interface{}) (string, error) {
+func MarshalString(v any) (string, error) {
 	return jsonConfig.MarshalToString(v)
 }
 

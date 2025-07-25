@@ -46,7 +46,7 @@ func (h *Handler) HandleGetStatusSource(ctx context.Context, request events.APIG
 	case *activitypub.Note:
 		content = obj.Content
 		spoilerText = obj.Summary
-	case map[string]interface{}:
+	case map[string]any:
 		if c, ok := obj["content"].(string); ok {
 			content = c
 		}
@@ -124,7 +124,7 @@ func (h *Handler) HandleGetStatusHistory(ctx context.Context, request events.API
 	switch obj := currentObject.(type) {
 	case *activitypub.Note:
 		attributedTo = obj.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok {
 			attributedTo = attr
 		}
@@ -172,8 +172,8 @@ func (h *Handler) HandleGetStatusHistory(ctx context.Context, request events.API
 		CreatedAt:        time.Now().Format(time.RFC3339),
 		Account:          editAccount,
 		Poll:             nil, // Polls in status history not currently supported
-		MediaAttachments: []interface{}{},
-		Emojis:           []interface{}{},
+		MediaAttachments: []any{},
+		Emojis:           []any{},
 	}
 
 	// Extract current content
@@ -187,7 +187,7 @@ func (h *Handler) HandleGetStatusHistory(ctx context.Context, request events.API
 		} else if obj.Published != nil {
 			currentEdit.CreatedAt = obj.Published.Format(time.RFC3339)
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		if content, ok := obj["content"].(string); ok {
 			currentEdit.Content = content
 		}
@@ -211,13 +211,13 @@ func (h *Handler) HandleGetStatusHistory(ctx context.Context, request events.API
 		edit := models.StatusEdit{
 			CreatedAt:        history.UpdatedAt.Format(time.RFC3339),
 			Account:          editAccount,
-			MediaAttachments: []interface{}{},
-			Emojis:           []interface{}{},
+			MediaAttachments: []any{},
+			Emojis:           []any{},
 		}
 
 		// Parse previous state
 		if history.PreviousState != "" {
-			var previousObj map[string]interface{}
+			var previousObj map[string]any
 			if err := json.Unmarshal([]byte(history.PreviousState), &previousObj); err == nil {
 				if content, ok := previousObj["content"].(string); ok {
 					edit.Content = content

@@ -500,13 +500,13 @@ type ModerationPattern struct {
 }
 
 type ContentToModerate struct {
-	ID        string                 `json:"id"`
-	Text      string                 `json:"text"`
-	ImageHash string                 `json:"image_hash,omitempty"`
-	TextHash  string                 `json:"text_hash,omitempty"`
-	Author    string                 `json:"author"`
-	Type      string                 `json:"type"` // post/comment/message/profile
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	ID        string         `json:"id"`
+	Text      string         `json:"text"`
+	ImageHash string         `json:"image_hash,omitempty"`
+	TextHash  string         `json:"text_hash,omitempty"`
+	Author    string         `json:"author"`
+	Type      string         `json:"type"` // post/comment/message/profile
+	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
 type PatternMatch struct {

@@ -148,7 +148,7 @@ func (s *dynamoDBStorage) GetListsForUser(ctx context.Context, username string) 
 }
 
 // UpdateList updates a list's properties
-func (s *dynamoDBStorage) UpdateList(ctx context.Context, listID string, updates map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdateList(ctx context.Context, listID string, updates map[string]any) error {
 	log := common.WithContext(ctx)
 
 	// Build update expression

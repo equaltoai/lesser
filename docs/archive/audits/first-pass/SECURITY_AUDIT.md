@@ -57,7 +57,7 @@ This document tracks security-related findings during the code review of the Les
 
 - **Severity**: <span style="color:orange">**Medium**</span>
 - **Location**: `pkg/activitypub/types.go`, structs `Activity` and `Collection`
-- **Description**: The `Object` field in the `Activity` struct and the `Items`/`OrderedItems` fields in `Collection` structs use `interface{}`. This forces the application to rely on runtime type assertions, which can lead to unexpected panics if the incoming data's `type` field doesn't match expectations. An attacker could potentially craft malicious payloads to trigger these panics, leading to a denial-of-service (DoS) condition in the service processing the activity.
+- **Description**: The `Object` field in the `Activity` struct and the `Items`/`OrderedItems` fields in `Collection` structs use `any`. This forces the application to rely on runtime type assertions, which can lead to unexpected panics if the incoming data's `type` field doesn't match expectations. An attacker could potentially craft malicious payloads to trigger these panics, leading to a denial-of-service (DoS) condition in the service processing the activity.
 - **Recommendation**: Implement a custom `UnmarshalJSON` method for these structs. The method should first parse the JSON into a generic map to inspect the `type` property, then unmarshal the data into the corresponding concrete type. This improves robustness and prevents unexpected crashes.
 
 ### LSS-003: Incomplete Validation Coverage
@@ -126,7 +126,7 @@ This document tracks security-related findings during the code review of the Les
 
 - **Severity**: <span style="color:orange">**Medium**</span>
 - **Location**: `pkg/federation/authorized_fetch.go`, function `FetchObject`
-- **Description**: The `FetchObject` function decodes arbitrary JSON from remote servers into a `map[string]interface{}`. A malicious server could respond with a very large or deeply nested JSON object. Decoding this without limits could consume excessive memory or CPU, leading to a denial-of-service (DoS) attack.
+- **Description**: The `FetchObject` function decodes arbitrary JSON from remote servers into a `map[string]any`. A malicious server could respond with a very large or deeply nested JSON object. Decoding this without limits could consume excessive memory or CPU, leading to a denial-of-service (DoS) attack.
 - **Recommendation**: Implement safer JSON decoding practices:
     1.  **Limit Response Size**: Use `io.LimitReader` to cap the size of the HTTP response body before it is passed to the JSON decoder. This prevents attacks based on very large objects.
     2.  **Avoid Recursive Decoding**: While `encoding/json` has some internal limits, consider using a streaming parser for very large or complex objects if they need to be processed, which avoids deep recursion.

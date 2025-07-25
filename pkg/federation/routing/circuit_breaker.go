@@ -348,7 +348,7 @@ func (dcb *DistributedCircuitBreaker) GetStatus(instanceID string) CircuitStatus
 }
 
 // GetMetrics returns circuit breaker metrics
-func (dcb *DistributedCircuitBreaker) GetMetrics(instanceID string) map[string]interface{} {
+func (dcb *DistributedCircuitBreaker) GetMetrics(instanceID string) map[string]any {
 	state := dcb.getOrCreateState(instanceID)
 
 	state.mu.RLock()
@@ -359,7 +359,7 @@ func (dcb *DistributedCircuitBreaker) GetMetrics(instanceID string) map[string]i
 		successRate = float64(state.TotalSuccesses) / float64(state.TotalRequests)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"status":           state.Status,
 		"totalRequests":    state.TotalRequests,
 		"totalFailures":    state.TotalFailures,
@@ -596,7 +596,7 @@ func (dcb *DistributedCircuitBreaker) syncWithDynamoDB() {
 
 	for range ticker.C {
 		// Sync local state with DynamoDB
-		dcb.circuits.Range(func(key, value interface{}) bool {
+		dcb.circuits.Range(func(key, value any) bool {
 			state := value.(*circuitState)
 
 			// Only sync if there have been changes
@@ -622,7 +622,7 @@ func (dcb *DistributedCircuitBreaker) checkRecovery() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		dcb.circuits.Range(func(key, value interface{}) bool {
+		dcb.circuits.Range(func(key, value any) bool {
 			state := value.(*circuitState)
 
 			state.mu.RLock()

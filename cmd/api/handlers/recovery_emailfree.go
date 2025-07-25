@@ -44,7 +44,7 @@ func (h *EmailFreeRecoveryHandler) HandleGetRecoveryOptions(ctx context.Context,
 	user, err := h.authService.GetStore().GetUser(ctx, username)
 	if err != nil {
 		// Return generic response to prevent user enumeration
-		return common.OK(map[string]interface{}{
+		return common.OK(map[string]any{
 			"options": []string{},
 			"message": "No account found with this username",
 		}), nil
@@ -91,7 +91,7 @@ func (h *EmailFreeRecoveryHandler) HandleGetRecoveryOptions(ctx context.Context,
 		options = []string{"passkey", "wallet", "oauth_github", "social", "recovery_code"}
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"username": user.Username,
 		"options":  options,
 		"message":  fmt.Sprintf("Found %d recovery options", len(options)),
@@ -120,7 +120,7 @@ func (h *EmailFreeRecoveryHandler) HandleInitiateSocialRecovery(ctx context.Cont
 
 	// In development, return the recovery details
 	if h.authService.GetConfig().Environment == "development" {
-		return common.OK(map[string]interface{}{
+		return common.OK(map[string]any{
 			"message":        "Social recovery initiated",
 			"request_id":     recoveryRequest.ID,
 			"required_votes": recoveryRequest.RequiredVotes,
@@ -172,7 +172,7 @@ func (h *EmailFreeRecoveryHandler) HandleGenerateRecoveryCodes(ctx context.Conte
 		return common.InternalServerError(err), nil
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"codes":          codes,
 		"warning":        "Save these codes securely! Each code can only be used once.",
 		"recommendation": "Store in a password manager or hardware wallet",
@@ -206,7 +206,7 @@ func (h *EmailFreeRecoveryHandler) HandleUseRecoveryCode(ctx context.Context, re
 	// Get remaining code count
 	remainingCodes, _ := h.recoveryCode.GetRecoveryCodeCount(ctx, req.Username)
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"recovery_token":  token,
 		"remaining_codes": remainingCodes,
 		"message":         "Recovery code accepted. Use the token to set a new password or add authentication methods.",
@@ -259,7 +259,7 @@ func (h *EmailFreeRecoveryHandler) HandleListTrustees(ctx context.Context, reque
 		return common.InternalServerError(err), nil
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"trustees":         trustees,
 		"count":            len(trustees),
 		"minimum_required": 2,
@@ -317,7 +317,7 @@ func (h *EmailFreeRecoveryHandler) HandleDeviceRecovery(ctx context.Context, req
 		return common.InternalServerError(err), nil
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"recovery_token": token,
 		"device_name":    device.DeviceName,
 		"message":        "Device verified. Use the token to add new authentication methods.",

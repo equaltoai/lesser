@@ -39,7 +39,7 @@ func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGate
 
 	// Validate request
 	if err := h.validateRegistrationRequest(req); err != nil {
-		errResp := map[string]interface{}{
+		errResp := map[string]any{
 			"error": err.Error(),
 		}
 		body, _ := json.Marshal(errResp)
@@ -55,7 +55,7 @@ func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGate
 	if req.Password != "" {
 		// Validate password strength
 		if err := auth.ValidatePassword(req.Password, req.Username); err != nil {
-			errResp := map[string]interface{}{
+			errResp := map[string]any{
 				"error": err.Error(),
 			}
 			body, _ := json.Marshal(errResp)
@@ -70,7 +70,7 @@ func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGate
 		strength := auth.PasswordStrength(req.Password)
 		if strength < 3 {
 			hints := auth.GeneratePasswordHint(req.Password)
-			errResp := map[string]interface{}{
+			errResp := map[string]any{
 				"error": fmt.Sprintf("Password is too weak (%s). Suggestions: %s",
 					auth.PasswordStrengthLabel(strength),
 					strings.Join(hints, ", ")),
@@ -86,7 +86,7 @@ func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGate
 		// Hash password
 		hash, err := auth.HashPassword(req.Password)
 		if err != nil {
-			errResp := map[string]interface{}{
+			errResp := map[string]any{
 				"error": err.Error(),
 			}
 			body, _ := json.Marshal(errResp)
@@ -112,7 +112,7 @@ func (h *Handler) HandleRegistration(ctx context.Context, request events.APIGate
 
 	if err := h.store.CreateUser(ctx, user); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			errResp := map[string]interface{}{
+			errResp := map[string]any{
 				"error": "Username is already taken",
 			}
 			body, _ := json.Marshal(errResp)
@@ -257,15 +257,15 @@ func (h *Handler) HandleVerifyCredentials(ctx context.Context, request events.AP
 		FollowingCount: followingCount,
 		StatusesCount:  statusesCount,
 		LastStatusAt:   h.formatLastStatusTime(actor.LastStatusAt),
-		Emojis:         []interface{}{},
-		Fields:         []interface{}{},
+		Emojis:         []any{},
+		Fields:         []any{},
 		CreatedAt:      user.CreatedAt.Format("2006-01-02T15:04:05.000Z"),
 		Role:           user.Role,
-		Source: map[string]interface{}{
+		Source: map[string]any{
 			"privacy":   "public",
 			"sensitive": false,
 			"language":  user.Locale,
-			"fields":    []interface{}{},
+			"fields":    []any{},
 		},
 	}
 
@@ -561,11 +561,11 @@ func (h *Handler) HandleUpdateCredentials(ctx context.Context, request events.AP
 		StatusesCount:  statusesCount,
 		CreatedAt:      time.Now().Format("2006-01-02T15:04:05.000Z"),
 		Role:           user.Role,
-		Source: map[string]interface{}{
+		Source: map[string]any{
 			"privacy":   "public",
 			"sensitive": false,
 			"language":  "en",
-			"fields":    []interface{}{},
+			"fields":    []any{},
 		},
 	}
 
@@ -623,7 +623,7 @@ func (h *Handler) HandleGetAccount(ctx context.Context, request events.APIGatewa
 		FollowingCount: followingCount,
 		StatusesCount:  statusesCount,
 		LastStatusAt:   h.formatLastStatusTime(actor.LastStatusAt),
-		Emojis:         []interface{}{},
+		Emojis:         []any{},
 		Fields:         h.parseActorFields(ctx, actor, actor.Attachment),
 	}
 
@@ -1173,7 +1173,7 @@ func (h *Handler) HandleRemoveFromFollowers(ctx context.Context, request events.
 }
 
 // Helper function to get relationship status (used by pin/unpin/note endpoints)
-func (h *Handler) getRelationshipMap(ctx context.Context, currentUsername, targetUsername string) (map[string]interface{}, error) {
+func (h *Handler) getRelationshipMap(ctx context.Context, currentUsername, targetUsername string) (map[string]any, error) {
 	// Get actors
 	currentActor, err := h.store.GetActor(ctx, currentUsername)
 	if err != nil {
@@ -1207,7 +1207,7 @@ func (h *Handler) getRelationshipMap(ctx context.Context, currentUsername, targe
 	blockedBy, _ := h.store.IsBlocked(ctx, targetActor.ID, currentActor.ID)
 
 	// Build relationship response
-	relationship := map[string]interface{}{
+	relationship := map[string]any{
 		"id":                   targetUsername,
 		"following":            following,
 		"showing_reblogs":      !h.isReblogFiltered(ctx, currentActor.ID, targetActor.ID),
@@ -1342,11 +1342,11 @@ func (h *Handler) getHeaderURL(actor *activitypub.Actor) string {
 }
 
 // parseActorFields parses actor attachment fields into Mastodon format
-func (h *Handler) parseActorFields(ctx context.Context, actor *activitypub.Actor, attachments []activitypub.Attachment) []interface{} {
-	var fields []interface{}
+func (h *Handler) parseActorFields(ctx context.Context, actor *activitypub.Actor, attachments []activitypub.Attachment) []any {
+	var fields []any
 	for _, attachment := range attachments {
 		if attachment.Type == "PropertyValue" {
-			field := map[string]interface{}{
+			field := map[string]any{
 				"name":        attachment.Name,
 				"value":       attachment.Value,
 				"verified_at": h.getFieldVerificationTime(ctx, actor.PreferredUsername, attachment.Name),
@@ -1464,7 +1464,7 @@ func (h *Handler) extractDomainFromActorID(actorID string) string {
 }
 
 // getFieldVerificationTime gets the verification time for a profile field
-func (h *Handler) getFieldVerificationTime(ctx context.Context, username, fieldName string) interface{} {
+func (h *Handler) getFieldVerificationTime(ctx context.Context, username, fieldName string) any {
 	field, err := h.store.GetFieldVerification(ctx, username, fieldName)
 	if err != nil {
 		h.logger.Warn("failed to get field verification",

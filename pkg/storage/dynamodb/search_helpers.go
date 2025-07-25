@@ -55,7 +55,7 @@ type ActorCounts struct {
 
 // GetActorCountsFromItem extracts counts from a DynamoDB item
 // GetActorCountsFromItem extracts follower, following, and status counts from a DynamoDB item
-func GetActorCountsFromItem(item map[string]interface{}) ActorCounts {
+func GetActorCountsFromItem(item map[string]any) ActorCounts {
 	counts := ActorCounts{
 		FollowerCount:  0,
 		FollowingCount: 0,

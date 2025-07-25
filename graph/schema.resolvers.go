@@ -1631,12 +1631,12 @@ func (r *mutationResolver) UnfollowActor(ctx context.Context, id string) (bool, 
 	undoActivityID := fmt.Sprintf("https://%s/activities/%s", domain, generateUniqueID())
 
 	// Build the undo object
-	var undoObject interface{}
+	var undoObject any
 	if followActivity != nil {
 		undoObject = followActivity.ID // Reference the original follow activity
 	} else {
 		// If we can't find the original activity, create a minimal follow object
-		undoObject = map[string]interface{}{
+		undoObject = map[string]any{
 			"type":   "Follow",
 			"actor":  follower.ID,
 			"object": id,
@@ -2226,7 +2226,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 	}
 
 	// Add vote type as extension
-	voteActivity.Context = map[string]interface{}{
+	voteActivity.Context = map[string]any{
 		"@context": activitypub.Context,
 		"helpful":  helpful,
 	}
@@ -2241,7 +2241,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 
 	// 9. Update vote counts (in practice, this would be atomic counters)
 	// For now, we'll track in metadata on the note
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"helpful_count":     0,
 		"not_helpful_count": 0,
 	}
@@ -3751,10 +3751,10 @@ func (r *queryResolver) InstanceMetrics(ctx context.Context) (*model.InstanceMet
 	// Add cost info to response extensions
 	if opCtx := graphql.GetOperationContext(ctx); opCtx != nil {
 		if opCtx.Extensions == nil {
-			opCtx.Extensions = make(map[string]interface{})
+			opCtx.Extensions = make(map[string]any)
 		}
 		cost := r.CostTracker.CalculateCost()
-		opCtx.Extensions["cost"] = map[string]interface{}{
+		opCtx.Extensions["cost"] = map[string]any{
 			"operationCost": cost.TotalCostMicroCents,
 			"dynamoReads":   cost.DynamoDBReads,
 			"dynamoWrites":  cost.DynamoDBWrites,
@@ -4016,7 +4016,7 @@ func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *
 
 	// Add cost info to response
 	costInfo := r.CostTracker.CalculateCost()
-	graphql.GetOperationContext(ctx).Extensions["cost"] = map[string]interface{}{
+	graphql.GetOperationContext(ctx).Extensions["cost"] = map[string]any{
 		"reads":  costInfo.DynamoDBReads,
 		"writes": costInfo.DynamoDBWrites,
 		"total":  float64(costInfo.TotalCostMicroCents) / float64(1000000),
@@ -4083,11 +4083,11 @@ func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.Ob
 	case *activitypub.BaseObject:
 		// Basic object, minimal content
 		contentSize = 100
-	case map[string]interface{}:
+	case map[string]any:
 		if content, ok := v["content"].(string); ok {
 			contentSize = len(content)
 		}
-		if attachments, ok := v["attachment"].([]interface{}); ok {
+		if attachments, ok := v["attachment"].([]any); ok {
 			attachmentSize = len(attachments) * 1024
 		}
 	default:
@@ -4259,7 +4259,7 @@ func (r *queryResolver) AiAnalysis(ctx context.Context, objectID string) (*model
 	case *activitypub.Article:
 		content = o.Content
 		objectType = "article"
-	case map[string]interface{}:
+	case map[string]any:
 		if c, ok := o["content"].(string); ok {
 			content = c
 		}
@@ -5451,13 +5451,15 @@ func (r *Resolver) Tag() TagResolver { return &tagResolver{r} }
 // TrustEdge returns TrustEdgeResolver implementation.
 func (r *Resolver) TrustEdge() TrustEdgeResolver { return &trustEdgeResolver{r} }
 
-type activityResolver struct{ *Resolver }
-type actorResolver struct{ *Resolver }
-type attachmentResolver struct{ *Resolver }
-type moderationDecisionResolver struct{ *Resolver }
-type mutationResolver struct{ *Resolver }
-type queryResolver struct{ *Resolver }
-type quoteContextResolver struct{ *Resolver }
-type subscriptionResolver struct{ *Resolver }
-type tagResolver struct{ *Resolver }
-type trustEdgeResolver struct{ *Resolver }
+type (
+	activityResolver           struct{ *Resolver }
+	actorResolver              struct{ *Resolver }
+	attachmentResolver         struct{ *Resolver }
+	moderationDecisionResolver struct{ *Resolver }
+	mutationResolver           struct{ *Resolver }
+	queryResolver              struct{ *Resolver }
+	quoteContextResolver       struct{ *Resolver }
+	subscriptionResolver       struct{ *Resolver }
+	tagResolver                struct{ *Resolver }
+	trustEdgeResolver          struct{ *Resolver }
+)

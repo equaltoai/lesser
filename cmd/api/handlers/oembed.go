@@ -97,7 +97,7 @@ func (h *Handler) HandleOEmbed(ctx context.Context, request events.APIGatewayV2H
 	note, ok := obj.(*activitypub.Note)
 	if !ok {
 		// Try to extract Note from map
-		if objMap, mapOk := obj.(map[string]interface{}); mapOk {
+		if objMap, mapOk := obj.(map[string]any); mapOk {
 			// Convert map to Note
 			noteData, _ := json.Marshal(objMap)
 			note = &activitypub.Note{}
@@ -344,7 +344,7 @@ func (h *Handler) HandleEmbedPage(ctx context.Context, request events.APIGateway
 	note, ok := obj.(*activitypub.Note)
 	if !ok {
 		// Try to extract Note from map
-		if objMap, mapOk := obj.(map[string]interface{}); mapOk {
+		if objMap, mapOk := obj.(map[string]any); mapOk {
 			// Convert map to Note
 			noteData, _ := json.Marshal(objMap)
 			note = &activitypub.Note{}

@@ -61,7 +61,7 @@ func (h *Handler) HandleGetTag(ctx context.Context, request events.APIGatewayV2H
 			History:       []storage.HashtagHistoryEntry{},
 		}
 	} else {
-		// Type assert the interface{} to *storage.HashtagStats
+		// Type assert the any to *storage.HashtagStats
 		var ok bool
 		tagStats, ok = tagStatsRaw.(*storage.HashtagStats)
 		if !ok {
@@ -115,7 +115,7 @@ func (h *Handler) HandleGetTag(ctx context.Context, request events.APIGatewayV2H
 				// Check if following
 				following, _ := h.store.IsFollowingHashtag(ctx, claims.Username, tagName)
 				// Return tag with following info in a wrapper
-				response := map[string]interface{}{
+				response := map[string]any{
 					"name":      tag.Name,
 					"url":       tag.URL,
 					"history":   history,
@@ -164,7 +164,7 @@ func (h *Handler) HandleFollowTag(ctx context.Context, request events.APIGateway
 	}
 
 	// Return the tag with following status
-	response := map[string]interface{}{
+	response := map[string]any{
 		"name": tagName,
 		"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
 		"history": []struct {
@@ -219,7 +219,7 @@ func (h *Handler) HandleUnfollowTag(ctx context.Context, request events.APIGatew
 	}
 
 	// Return the tag with following status
-	response := map[string]interface{}{
+	response := map[string]any{
 		"name": tagName,
 		"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
 		"history": []struct {
@@ -277,9 +277,9 @@ func (h *Handler) HandleGetFollowedTags(ctx context.Context, request events.APIG
 	}
 
 	// Convert to tag models with following set to true
-	tags := make([]map[string]interface{}, len(hashtags))
+	tags := make([]map[string]any, len(hashtags))
 	for i, hashtag := range hashtags {
-		tags[i] = map[string]interface{}{
+		tags[i] = map[string]any{
 			"name": hashtag,
 			"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), hashtag),
 			"history": []struct {
@@ -449,7 +449,7 @@ func (h *Handler) HandleDeleteFeaturedTag(ctx context.Context, request events.AP
 	}
 
 	// Return empty object on success
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // HandleGetFeaturedTagSuggestions suggests hashtags to feature based on usage
@@ -477,7 +477,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestions(ctx context.Context, request e
 	if err != nil {
 		h.logger.Error("failed to get tag suggestions", zap.Error(err))
 		// Return empty array on error
-		return common.OK([]interface{}{}), nil
+		return common.OK([]any{}), nil
 	}
 
 	// Convert to tag models
@@ -510,7 +510,7 @@ func (h *Handler) HandleGetAccountFeaturedTags(ctx context.Context, request even
 	if err != nil {
 		h.logger.Error("failed to get account featured tags", zap.Error(err))
 		// Return empty array on error
-		return common.OK([]interface{}{}), nil
+		return common.OK([]any{}), nil
 	}
 
 	// Convert to API models

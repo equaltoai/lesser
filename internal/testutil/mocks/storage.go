@@ -201,19 +201,19 @@ func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, l
 }
 
 // CreateObject mocks the CreateObject method
-func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
+func (m *MockStorage) CreateObject(ctx context.Context, object any) error {
 	args := m.Called(ctx, object)
 	return args.Error(0)
 }
 
 // GetObject mocks the GetObject method
-func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
+func (m *MockStorage) GetObject(ctx context.Context, id string) (any, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0), args.Error(1)
 }
 
 // UpdateObject mocks the UpdateObject method
-func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
+func (m *MockStorage) UpdateObject(ctx context.Context, object any) error {
 	args := m.Called(ctx, object)
 	return args.Error(0)
 }
@@ -231,12 +231,12 @@ func (m *MockStorage) CountObjectReplies(ctx context.Context, objectID string) (
 }
 
 // GetObjectsByActor mocks the GetObjectsByActor method
-func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
+func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error) {
 	args := m.Called(ctx, actorID, cursor, limit)
 	if args.Get(0) == nil {
 		return nil, args.String(1), args.Error(2)
 	}
-	return args.Get(0).([]interface{}), args.String(1), args.Error(2)
+	return args.Get(0).([]any), args.String(1), args.Error(2)
 }
 
 // CreateFollow mocks the CreateFollow method
@@ -1189,12 +1189,12 @@ func (m *MockStorage) GetActorLikes(ctx context.Context, actorID string, limit i
 }
 
 // GetAllPreferences mocks the GetAllPreferences method
-func (m *MockStorage) GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+func (m *MockStorage) GetAllPreferences(ctx context.Context, username string) (map[string]any, error) {
 	args := m.Called(ctx, username)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(map[string]interface{}), args.Error(1)
+	return args.Get(0).(map[string]any), args.Error(1)
 }
 
 // GetAllTrustRelationships mocks the GetAllTrustRelationships method
@@ -1891,7 +1891,7 @@ func (m *MockStorage) GetPopularSearchQueries(ctx context.Context, limit int, ti
 }
 
 // GetPreference mocks the GetPreference method
-func (m *MockStorage) GetPreference(ctx context.Context, username string, key string) (interface{}, error) {
+func (m *MockStorage) GetPreference(ctx context.Context, username string, key string) (any, error) {
 	args := m.Called(ctx, username, key)
 	return args.Get(0), args.Error(1)
 }
@@ -1933,12 +1933,12 @@ func (m *MockStorage) GetRecoveryRequest(ctx context.Context, requestID string) 
 }
 
 // GetRecoveryToken mocks the GetRecoveryToken method
-func (m *MockStorage) GetRecoveryToken(ctx context.Context, key string) (map[string]interface{}, error) {
+func (m *MockStorage) GetRecoveryToken(ctx context.Context, key string) (map[string]any, error) {
 	args := m.Called(ctx, key)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(map[string]interface{}), args.Error(1)
+	return args.Get(0).(map[string]any), args.Error(1)
 }
 
 // GetRefreshToken mocks the GetRefreshToken method
@@ -2701,7 +2701,7 @@ func (m *MockStorage) SetInstanceRules(ctx context.Context, rules []storage.Inst
 }
 
 // SetPreference mocks the SetPreference method
-func (m *MockStorage) SetPreference(ctx context.Context, username string, key string, value interface{}) error {
+func (m *MockStorage) SetPreference(ctx context.Context, username string, key string, value any) error {
 	args := m.Called(ctx, username, key, value)
 	return args.Error(0)
 }
@@ -2737,7 +2737,7 @@ func (m *MockStorage) StoreRecoveryRequest(ctx context.Context, request *storage
 }
 
 // StoreRecoveryToken mocks the StoreRecoveryToken method
-func (m *MockStorage) StoreRecoveryToken(ctx context.Context, key string, data map[string]interface{}) error {
+func (m *MockStorage) StoreRecoveryToken(ctx context.Context, key string, data map[string]any) error {
 	args := m.Called(ctx, key, data)
 	return args.Error(0)
 }
@@ -2833,43 +2833,43 @@ func (m *MockStorage) UpdateCustomEmoji(ctx context.Context, emoji *storage.Cust
 }
 
 // UpdateDomainBlock mocks the UpdateDomainBlock method
-func (m *MockStorage) UpdateDomainBlock(ctx context.Context, id string, updates map[string]interface{}) error {
+func (m *MockStorage) UpdateDomainBlock(ctx context.Context, id string, updates map[string]any) error {
 	args := m.Called(ctx, id, updates)
 	return args.Error(0)
 }
 
 // UpdateFilter mocks the UpdateFilter method
-func (m *MockStorage) UpdateFilter(ctx context.Context, filterID string, updates map[string]interface{}) error {
+func (m *MockStorage) UpdateFilter(ctx context.Context, filterID string, updates map[string]any) error {
 	args := m.Called(ctx, filterID, updates)
 	return args.Error(0)
 }
 
 // UpdateFilterKeyword mocks the UpdateFilterKeyword method
-func (m *MockStorage) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]interface{}) error {
+func (m *MockStorage) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error {
 	args := m.Called(ctx, keywordID, updates)
 	return args.Error(0)
 }
 
 // UpdateInstanceDomainBlock mocks the UpdateInstanceDomainBlock method
-func (m *MockStorage) UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]interface{}) error {
+func (m *MockStorage) UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]any) error {
 	args := m.Called(ctx, domain, updates)
 	return args.Error(0)
 }
 
 // UpdateList mocks the UpdateList method
-func (m *MockStorage) UpdateList(ctx context.Context, listID string, updates map[string]interface{}) error {
+func (m *MockStorage) UpdateList(ctx context.Context, listID string, updates map[string]any) error {
 	args := m.Called(ctx, listID, updates)
 	return args.Error(0)
 }
 
 // UpdateOAuthClient mocks the UpdateOAuthClient method
-func (m *MockStorage) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]interface{}) error {
+func (m *MockStorage) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
 	args := m.Called(ctx, clientID, updates)
 	return args.Error(0)
 }
 
 // UpdatePreferences mocks the UpdatePreferences method
-func (m *MockStorage) UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error {
+func (m *MockStorage) UpdatePreferences(ctx context.Context, username string, prefs map[string]any) error {
 	args := m.Called(ctx, username, prefs)
 	return args.Error(0)
 }
@@ -2923,7 +2923,7 @@ func (m *MockStorage) UpdateTrusteeConfirmed(ctx context.Context, username strin
 }
 
 // UpdateUser mocks the UpdateUser method
-func (m *MockStorage) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
+func (m *MockStorage) UpdateUser(ctx context.Context, username string, updates map[string]any) error {
 	args := m.Called(ctx, username, updates)
 	return args.Error(0)
 }
@@ -3148,12 +3148,12 @@ func (m *MockStorage) GetRecentInstanceConnections(ctx context.Context, domain s
 }
 
 // GetReplies mocks the GetReplies method
-func (m *MockStorage) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error) {
+func (m *MockStorage) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]any, string, error) {
 	args := m.Called(ctx, objectID, limit, cursor)
 	if args.Get(0) == nil {
 		return nil, args.String(1), args.Error(2)
 	}
-	return args.Get(0).([]interface{}), args.String(1), args.Error(2)
+	return args.Get(0).([]any), args.String(1), args.Error(2)
 }
 
 // GetStreamingPreferenceHistory mocks the GetStreamingPreferenceHistory method
@@ -3344,7 +3344,7 @@ func (m *MockStorage) GetDailyActiveUserCount(ctx context.Context) (int64, error
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *MockStorage) GetDomainStats(ctx context.Context, domain string) (interface{}, error) {
+func (m *MockStorage) GetDomainStats(ctx context.Context, domain string) (any, error) {
 	args := m.Called(ctx, domain)
 	return args.Get(0), args.Error(1)
 }
@@ -3366,20 +3366,20 @@ func (m *MockStorage) GetFollowRequest(ctx context.Context, followerID, targetID
 }
 
 // Batch adding multiple missing methods
-func (m *MockStorage) GetHashtagStats(ctx context.Context, hashtag string) (interface{}, error) {
+func (m *MockStorage) GetHashtagStats(ctx context.Context, hashtag string) (any, error) {
 	args := m.Called(ctx, hashtag)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockStorage) GetUserMedia(ctx context.Context, username string) ([]interface{}, error) {
+func (m *MockStorage) GetUserMedia(ctx context.Context, username string) ([]any, error) {
 	args := m.Called(ctx, username)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]interface{}), args.Error(1)
+	return args.Get(0).([]any), args.Error(1)
 }
 
-func (m *MockStorage) UpdateMediaAttachment(ctx context.Context, id string, updates map[string]interface{}) error {
+func (m *MockStorage) UpdateMediaAttachment(ctx context.Context, id string, updates map[string]any) error {
 	args := m.Called(ctx, id, updates)
 	return args.Error(0)
 }
@@ -3397,12 +3397,12 @@ func (m *MockStorage) ListUsersByRole(ctx context.Context, role string) ([]*stor
 	return args.Get(0).([]*storage.User), args.Error(1)
 }
 
-func (m *MockStorage) GetReportedStatuses(ctx context.Context, reportID string) ([]interface{}, error) {
+func (m *MockStorage) GetReportedStatuses(ctx context.Context, reportID string) ([]any, error) {
 	args := m.Called(ctx, reportID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]interface{}), args.Error(1)
+	return args.Get(0).([]any), args.Error(1)
 }
 
 func (m *MockStorage) VerifyFieldLink(ctx context.Context, username, fieldName, url string) error {
@@ -3480,28 +3480,28 @@ func (m *MockStorage) GetUserStatusCount(ctx context.Context, userID string) (in
 	return args.Int(0), args.Error(1)
 }
 
-func (m *MockStorage) GetStorageUsage(ctx context.Context) (interface{}, error) {
+func (m *MockStorage) GetStorageUsage(ctx context.Context) (any, error) {
 	args := m.Called(ctx)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockStorage) GetStorageHistory(ctx context.Context, days int) ([]interface{}, error) {
+func (m *MockStorage) GetStorageHistory(ctx context.Context, days int) ([]any, error) {
 	args := m.Called(ctx, days)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]interface{}), args.Error(1)
+	return args.Get(0).([]any), args.Error(1)
 }
 
-func (m *MockStorage) GetUserGrowthHistory(ctx context.Context, days int) ([]interface{}, error) {
+func (m *MockStorage) GetUserGrowthHistory(ctx context.Context, days int) ([]any, error) {
 	args := m.Called(ctx, days)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]interface{}), args.Error(1)
+	return args.Get(0).([]any), args.Error(1)
 }
 
-func (m *MockStorage) GetStatus(ctx context.Context, statusID string) (interface{}, error) {
+func (m *MockStorage) GetStatus(ctx context.Context, statusID string) (any, error) {
 	args := m.Called(ctx, statusID)
 	return args.Get(0), args.Error(1)
 }
@@ -3522,12 +3522,12 @@ func (m *MockStorage) GetUserAppConsent(ctx context.Context, userID, appID strin
 	return args.Get(0).(*storage.UserAppConsent), args.Error(1)
 }
 
-func (m *MockStorage) GetScheduledStatusMedia(ctx context.Context, statusID string) ([]interface{}, error) {
+func (m *MockStorage) GetScheduledStatusMedia(ctx context.Context, statusID string) ([]any, error) {
 	args := m.Called(ctx, statusID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]interface{}), args.Error(1)
+	return args.Get(0).([]any), args.Error(1)
 }
 
 func (m *MockStorage) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
@@ -3538,7 +3538,7 @@ func (m *MockStorage) GetRecentHashtags(ctx context.Context, since time.Time, li
 	return args.Get(0).([]*storage.TrendingHashtag), args.Error(1)
 }
 
-func (m *MockStorage) StoreHashtagTrend(ctx context.Context, trend interface{}) error {
+func (m *MockStorage) StoreHashtagTrend(ctx context.Context, trend any) error {
 	args := m.Called(ctx, trend)
 	return args.Error(0)
 }
@@ -3551,7 +3551,7 @@ func (m *MockStorage) GetRecentStatusesWithEngagement(ctx context.Context, since
 	return args.Get(0).([]*storage.TrendingStatus), args.Error(1)
 }
 
-func (m *MockStorage) StoreStatusTrend(ctx context.Context, trend interface{}) error {
+func (m *MockStorage) StoreStatusTrend(ctx context.Context, trend any) error {
 	args := m.Called(ctx, trend)
 	return args.Error(0)
 }
@@ -3564,17 +3564,17 @@ func (m *MockStorage) GetRecentLinks(ctx context.Context, since time.Time, limit
 	return args.Get(0).([]*storage.TrendingLink), args.Error(1)
 }
 
-func (m *MockStorage) StoreLinkTrend(ctx context.Context, trend interface{}) error {
+func (m *MockStorage) StoreLinkTrend(ctx context.Context, trend any) error {
 	args := m.Called(ctx, trend)
 	return args.Error(0)
 }
 
-func (m *MockStorage) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]interface{}, error) {
+func (m *MockStorage) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]any, error) {
 	args := m.Called(ctx, linkURL, limit)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]interface{}), args.Error(1)
+	return args.Get(0).([]any), args.Error(1)
 }
 
 func (m *MockStorage) UnmarkAllMediaAsSensitive(ctx context.Context, username string) error {

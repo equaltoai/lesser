@@ -47,8 +47,8 @@ func (c *converterImpl) ActorToAccountWithCounts(actor *activitypub.Actor, follo
 		FollowingCount: following,
 		StatusesCount:  statuses,
 		LastStatusAt:   "", // Will be populated if metadata available
-		Emojis:         []interface{}{},
-		Fields:         []interface{}{}, // Use ActorToAccountWithMetadata for field support
+		Emojis:         []any{},
+		Fields:         []any{}, // Use ActorToAccountWithMetadata for field support
 	}
 
 	// Set avatar
@@ -91,8 +91,8 @@ func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, met
 		FollowingCount: following,
 		StatusesCount:  statuses,
 		LastStatusAt:   "", // Default empty
-		Emojis:         []interface{}{},
-		Fields:         []interface{}{}, // Default empty
+		Emojis:         []any{},
+		Fields:         []any{}, // Default empty
 	}
 
 	// Set last status time if available
@@ -102,9 +102,9 @@ func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, met
 
 	// Convert actor fields to Mastodon format
 	if len(metadata.Fields) > 0 {
-		fields := make([]interface{}, 0, len(metadata.Fields))
+		fields := make([]any, 0, len(metadata.Fields))
 		for _, field := range metadata.Fields {
-			fieldMap := map[string]interface{}{
+			fieldMap := map[string]any{
 				"name":        field.Name,
 				"value":       field.Value,
 				"verified_at": nil,
@@ -140,17 +140,17 @@ func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, met
 }
 
 // ObjectToStatus converts an ActivityPub object to a Mastodon status
-func (c *converterImpl) ObjectToStatus(obj interface{}, actor *activitypub.Actor) models.Status {
+func (c *converterImpl) ObjectToStatus(obj any, actor *activitypub.Actor) models.Status {
 	return c.ObjectToStatusWithContext(context.Background(), obj, actor, 0, 0, false, false, false)
 }
 
 // ObjectToStatusWithContext converts an object with additional context
-func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj interface{}, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status {
+func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status {
 	status := models.Status{
-		MediaAttachments: []interface{}{},
-		Mentions:         []interface{}{},
-		Tags:             []interface{}{},
-		Emojis:           []interface{}{},
+		MediaAttachments: []any{},
+		Mentions:         []any{},
+		Tags:             []any{},
+		Emojis:           []any{},
 		Visibility:       "public", // Default
 		Language:         "en",     // Default
 		FavouritesCount:  likeCount,
@@ -167,7 +167,7 @@ func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj inter
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		c.populateStatusFromNote(&status, o)
-	case map[string]interface{}:
+	case map[string]any:
 		c.populateStatusFromMap(&status, o)
 	default:
 		// If we get an unexpected type, try to handle it gracefully
@@ -188,7 +188,7 @@ func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj inter
 }
 
 // ConversationToAPI converts a storage Conversation to API format
-func (c *converterImpl) ConversationToAPI(conv *storage.Conversation, participants []*activitypub.Actor, lastStatus interface{}, unread bool) models.Conversation {
+func (c *converterImpl) ConversationToAPI(conv *storage.Conversation, participants []*activitypub.Actor, lastStatus any, unread bool) models.Conversation {
 	accounts := make([]models.Account, 0, len(participants))
 	for _, actor := range participants {
 		accounts = append(accounts, c.ActorToAccount(actor))
@@ -259,7 +259,7 @@ func (c *converterImpl) populateStatusFromNote(status *models.Status, note *acti
 	}
 }
 
-func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[string]interface{}) {
+func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[string]any) {
 	if id, ok := obj["id"].(string); ok && id != "" {
 		status.ID = c.ExtractIDFromURL(id)
 		status.URI = id
@@ -289,7 +289,7 @@ func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[str
 	}
 
 	// Process attachments from map
-	if attachments, ok := obj["attachment"].([]interface{}); ok && len(attachments) > 0 {
+	if attachments, ok := obj["attachment"].([]any); ok && len(attachments) > 0 {
 		status.MediaAttachments = c.processAttachmentsFromMap(attachments)
 	}
 
@@ -299,14 +299,14 @@ func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[str
 	} else {
 		// Fallback to determining visibility from to/cc fields
 		var to, cc []string
-		if toField, ok := obj["to"].([]interface{}); ok {
+		if toField, ok := obj["to"].([]any); ok {
 			for _, t := range toField {
 				if str, ok := t.(string); ok {
 					to = append(to, str)
 				}
 			}
 		}
-		if ccField, ok := obj["cc"].([]interface{}); ok {
+		if ccField, ok := obj["cc"].([]any); ok {
 			for _, c := range ccField {
 				if str, ok := c.(string); ok {
 					cc = append(cc, str)
@@ -317,10 +317,10 @@ func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[str
 	}
 }
 
-func (c *converterImpl) processAttachments(attachments []activitypub.Attachment) []interface{} {
-	result := make([]interface{}, 0, len(attachments))
+func (c *converterImpl) processAttachments(attachments []activitypub.Attachment) []any {
+	result := make([]any, 0, len(attachments))
 	for _, att := range attachments {
-		attachment := map[string]interface{}{
+		attachment := map[string]any{
 			"id":          c.generateRandomString(8),
 			"type":        c.getAttachmentType(att.MediaType),
 			"url":         att.URL,
@@ -333,11 +333,11 @@ func (c *converterImpl) processAttachments(attachments []activitypub.Attachment)
 	return result
 }
 
-func (c *converterImpl) processAttachmentsFromMap(attachments []interface{}) []interface{} {
-	result := make([]interface{}, 0, len(attachments))
+func (c *converterImpl) processAttachmentsFromMap(attachments []any) []any {
+	result := make([]any, 0, len(attachments))
 	for _, att := range attachments {
-		if attMap, ok := att.(map[string]interface{}); ok {
-			attachment := map[string]interface{}{
+		if attMap, ok := att.(map[string]any); ok {
+			attachment := map[string]any{
 				"id":          c.generateRandomString(8),
 				"type":        "image",
 				"url":         c.getStringFromMap(attMap, "url", ""),
@@ -384,7 +384,7 @@ func (c *converterImpl) generateRandomString(length int) string {
 	return string(b)
 }
 
-func (c *converterImpl) getStringFromMap(m map[string]interface{}, key, defaultValue string) string {
+func (c *converterImpl) getStringFromMap(m map[string]any, key, defaultValue string) string {
 	if val, ok := m[key].(string); ok {
 		return val
 	}
@@ -401,7 +401,7 @@ func (c *converterImpl) contains(slice []string, item string) bool {
 }
 
 // NotesToStatus converts a community note to a Mastodon status format
-func (c *converterImpl) NotesToStatus(note interface{}) models.Status {
+func (c *converterImpl) NotesToStatus(note any) models.Status {
 	// Handle different note types
 	var content string
 	var createdAt time.Time
@@ -422,7 +422,7 @@ func (c *converterImpl) NotesToStatus(note interface{}) models.Status {
 		id = n.ID
 		authorID = n.AuthorID
 		createdAt = n.CreatedAt
-	case map[string]interface{}:
+	case map[string]any:
 		// Handle map representation (from JSON)
 		content, _ = n["content"].(string)
 		id, _ = n["id"].(string)
@@ -463,10 +463,10 @@ func (c *converterImpl) NotesToStatus(note interface{}) models.Status {
 		Reblog:             nil,
 		Application:        nil,
 		Account:            models.Account{}, // Will be populated by caller if needed
-		MediaAttachments:   []interface{}{},
-		Mentions:           []interface{}{},
-		Tags:               []interface{}{},
-		Emojis:             []interface{}{},
+		MediaAttachments:   []any{},
+		Mentions:           []any{},
+		Tags:               []any{},
+		Emojis:             []any{},
 		Card:               nil,
 		Poll:               nil,
 	}
@@ -502,8 +502,8 @@ func (c *converterImpl) NotesToStatus(note interface{}) models.Status {
 			FollowingCount: 0,
 			StatusesCount:  0,
 			LastStatusAt:   "",
-			Emojis:         []interface{}{},
-			Fields:         []interface{}{},
+			Emojis:         []any{},
+			Fields:         []any{},
 		}
 	}
 

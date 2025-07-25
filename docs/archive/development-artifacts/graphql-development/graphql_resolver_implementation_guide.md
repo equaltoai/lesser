@@ -870,7 +870,7 @@ func (r *Resolver) getDataLoader(ctx context.Context) *Loaders {
 type GraphQLError struct {
     Message    string
     Code       string
-    Extensions map[string]interface{}
+    Extensions map[string]any
 }
 
 func (e GraphQLError) Error() string {
@@ -892,7 +892,7 @@ var (
     ErrRateLimit = GraphQLError{
         Message: "Rate limit exceeded",
         Code:    "RATE_LIMITED",
-        Extensions: map[string]interface{}{
+        Extensions: map[string]any{
             "retryAfter": 60,
         },
     }
@@ -911,7 +911,7 @@ func ErrorHandler(logger *zap.Logger) graphql.ErrorPresenterFunc {
         case GraphQLError:
             gqlErr = &gqlerror.Error{
                 Message: e.Message,
-                Extensions: map[string]interface{}{
+                Extensions: map[string]any{
                     "code": e.Code,
                 },
             }
@@ -925,7 +925,7 @@ func ErrorHandler(logger *zap.Logger) graphql.ErrorPresenterFunc {
         default:
             gqlErr = &gqlerror.Error{
                 Message: "Internal server error",
-                Extensions: map[string]interface{}{
+                Extensions: map[string]any{
                     "code": "INTERNAL_ERROR",
                 },
             }

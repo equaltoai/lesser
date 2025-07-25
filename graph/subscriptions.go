@@ -294,7 +294,7 @@ func (sm *SubscriptionManager) SubscribeToHashtagActivity(ctx context.Context, u
 }
 
 // SubscribeToQuoteActivity creates a channel for quote activity updates on a specific note
-func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj interface{}) (<-chan *model.QuoteActivityUpdate, error) {
+func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj any) (<-chan *model.QuoteActivityUpdate, error) {
 	// Create buffered channel for quote activity updates
 	ch := make(chan *model.QuoteActivityUpdate, 50)
 
@@ -500,7 +500,7 @@ func (sm *SubscriptionManager) checkForHashtagUpdates(ctx context.Context, usern
 	}
 }
 
-func (sm *SubscriptionManager) checkForQuoteUpdates(ctx context.Context, username string, noteID string, noteObj interface{}, ch chan<- *model.QuoteActivityUpdate) {
+func (sm *SubscriptionManager) checkForQuoteUpdates(ctx context.Context, username string, noteID string, noteObj any, ch chan<- *model.QuoteActivityUpdate) {
 	// In a real implementation, this would:
 	// 1. Query DynamoDB for recent quotes of this specific note
 	// 2. Check for quote activity (new quotes, quote updates, quote deletions)

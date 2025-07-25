@@ -36,7 +36,7 @@
       Username     string                 `dynamodbav:"username,omitempty"`
       DisplayName  string                 `dynamodbav:"display_name,omitempty"`
       AvatarURL    string                 `dynamodbav:"avatar_url,omitempty"`
-      ProfileData  map[string]interface{} `dynamodbav:"profile_data,omitempty"`
+      ProfileData  map[string]any `dynamodbav:"profile_data,omitempty"`
       
       // Metadata
       CreatedAt    time.Time `dynamodbav:"created_at"`
@@ -169,7 +169,7 @@
       RevokeReason string                `dynamodbav:"revoke_reason,omitempty"`
       
       // Additional context
-      Context      map[string]interface{} `dynamodbav:"context,omitempty"`
+      Context      map[string]any `dynamodbav:"context,omitempty"`
   }
   
   func (s *Session) TableName() string {
@@ -443,7 +443,7 @@
       // Content
       Title        string                 `dynamodbav:"title,omitempty"`
       Body         string                 `dynamodbav:"body,omitempty"`
-      Data         map[string]interface{} `dynamodbav:"data,omitempty"`
+      Data         map[string]any `dynamodbav:"data,omitempty"`
       
       // Status
       IsRead       bool      `dynamodbav:"is_read"`
@@ -670,7 +670,7 @@
       }
   }
   
-  func (b *BatchOperations) BatchWrite(items []interface{}) error {
+  func (b *BatchOperations) BatchWrite(items []any) error {
       for i := 0; i < len(items); i += b.batchSize {
           end := i + b.batchSize
           if end > len(items) {
@@ -694,7 +694,7 @@
 - [ ] Implement timeline batch updates
   ```go
   func (r *TimelineRepository) BatchInsertTimelineEntries(userIDs []string, status *Status) error {
-      entries := make([]interface{}, 0, len(userIDs))
+      entries := make([]any, 0, len(userIDs))
       
       for _, userID := range userIDs {
           entry := &Timeline{
@@ -715,8 +715,8 @@
       return r.batchOps.BatchWrite(entries)
   }
   
-  func (r *TimelineRepository) parallelBatchWrite(entries []interface{}, workers int) error {
-      ch := make(chan []interface{}, workers)
+  func (r *TimelineRepository) parallelBatchWrite(entries []any, workers int) error {
+      ch := make(chan []any, workers)
       errors := make(chan error, workers)
       
       // Start workers
@@ -967,10 +967,10 @@
   
   type Cleaner struct {
       client    *dynamorm.Client
-      toClean   []interface{}
+      toClean   []any
   }
   
-  func (c *Cleaner) Track(item interface{}) {
+  func (c *Cleaner) Track(item any) {
       c.toClean = append(c.toClean, item)
   }
   
@@ -1022,7 +1022,7 @@
       mu    sync.RWMutex
   }
   
-  type HookFunc func(ctx context.Context, model interface{}) error
+  type HookFunc func(ctx context.Context, model any) error
   
   func (hr *HookRegistry) Register(modelType reflect.Type, hookType HookType, fn HookFunc) {
       hr.mu.Lock()
@@ -1035,7 +1035,7 @@
       hr.hooks[modelType][hookType] = append(hr.hooks[modelType][hookType], fn)
   }
   
-  func (hr *HookRegistry) Execute(ctx context.Context, model interface{}, hookType HookType) error {
+  func (hr *HookRegistry) Execute(ctx context.Context, model any, hookType HookType) error {
       hr.mu.RLock()
       defer hr.mu.RUnlock()
       
@@ -1055,7 +1055,7 @@
 - [ ] Implement common hooks
   ```go
   // Audit trail hook
-  func AuditHook(ctx context.Context, model interface{}) error {
+  func AuditHook(ctx context.Context, model any) error {
       audit := &AuditLog{
           EntityType: reflect.TypeOf(model).Name(),
           EntityID:   getEntityID(model),
@@ -1069,7 +1069,7 @@
   }
   
   // Validation hook
-  func ValidationHook(ctx context.Context, model interface{}) error {
+  func ValidationHook(ctx context.Context, model any) error {
       if validator, ok := model.(Validator); ok {
           return validator.Validate()
       }
@@ -1077,7 +1077,7 @@
   }
   
   // Notification hook
-  func NotificationHook(ctx context.Context, model interface{}) error {
+  func NotificationHook(ctx context.Context, model any) error {
       switch m := model.(type) {
       case *Status:
           return notifyMentions(ctx, m)
@@ -1108,7 +1108,7 @@
   package validation
   
   type Rule interface {
-      Validate(value interface{}) error
+      Validate(value any) error
       Message() string
   }
   
@@ -1120,7 +1120,7 @@
       v.rules[field] = append(v.rules[field], rule)
   }
   
-  func (v *Validator) Validate(model interface{}) error {
+  func (v *Validator) Validate(model any) error {
       modelValue := reflect.ValueOf(model).Elem()
       modelType := modelValue.Type()
       
@@ -1152,7 +1152,7 @@
   // Required rule
   type RequiredRule struct{}
   
-  func (r RequiredRule) Validate(value interface{}) error {
+  func (r RequiredRule) Validate(value any) error {
       if isZero(value) {
           return errors.New(r.Message())
       }
@@ -1169,7 +1169,7 @@
       Max int
   }
   
-  func (r LengthRule) Validate(value interface{}) error {
+  func (r LengthRule) Validate(value any) error {
       str, ok := value.(string)
       if !ok {
           return errors.New("value must be a string")
@@ -1192,7 +1192,7 @@
       Message string
   }
   
-  func (r PatternRule) Validate(value interface{}) error {
+  func (r PatternRule) Validate(value any) error {
       str, ok := value.(string)
       if !ok {
           return errors.New("value must be a string")
@@ -1208,7 +1208,7 @@
 
 - [ ] Add struct tag support
   ```go
-  func ValidateWithTags(model interface{}) error {
+  func ValidateWithTags(model any) error {
       modelType := reflect.TypeOf(model).Elem()
       modelValue := reflect.ValueOf(model).Elem()
       
@@ -1388,17 +1388,17 @@
       return r.Save(ctx, model)
   }
   
-  func (r *SoftDeleteRepository) HardDelete(ctx context.Context, model interface{}) error {
+  func (r *SoftDeleteRepository) HardDelete(ctx context.Context, model any) error {
       return r.BaseRepository.Delete(ctx, model)
   }
   
-  func (r *SoftDeleteRepository) FindActive(ctx context.Context, query Query) ([]interface{}, error) {
+  func (r *SoftDeleteRepository) FindActive(ctx context.Context, query Query) ([]any, error) {
       // Add filter to exclude soft-deleted items
       query.Filter("deleted_at", "=", nil)
       return r.BaseRepository.Find(ctx, query)
   }
   
-  func (r *SoftDeleteRepository) FindDeleted(ctx context.Context, query Query) ([]interface{}, error) {
+  func (r *SoftDeleteRepository) FindDeleted(ctx context.Context, query Query) ([]any, error) {
       // Add filter to include only soft-deleted items
       query.Filter("deleted_at", "!=", nil)
       return r.BaseRepository.Find(ctx, query)

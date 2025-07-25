@@ -45,7 +45,7 @@ type SignableContent interface {
     GetID() string
     GetType() string
     GetAuthorID() string
-    GetContent() map[string]interface{}
+    GetContent() map[string]any
 }
 ```
 
@@ -110,7 +110,7 @@ func (s *Signer) SignContent(content SignableContent) (*ContentSignature, error)
 
 func (s *Signer) canonicalize(content SignableContent) ([]byte, error) {
     // Create deterministic JSON representation
-    data := map[string]interface{}{
+    data := map[string]any{
         "@context": "https://www.w3.org/ns/activitystreams",
         "id":       content.GetID(),
         "type":     content.GetType(),
@@ -208,8 +208,8 @@ type StatusWrapper struct {
     *models.Status
 }
 
-func (s *StatusWrapper) GetContent() map[string]interface{} {
-    return map[string]interface{}{
+func (s *StatusWrapper) GetContent() map[string]any {
+    return map[string]any{
         "content":     s.Content,
         "visibility":  s.Visibility,
         "sensitive":   s.Sensitive,
@@ -242,8 +242,8 @@ type Status struct {
 // pkg/activitypub/objects.go
 // Add signature to ActivityPub objects
 
-func StatusToActivity(status *Status) map[string]interface{} {
-    activity := map[string]interface{}{
+func StatusToActivity(status *Status) map[string]any {
+    activity := map[string]any{
         "@context": "https://www.w3.org/ns/activitystreams",
         "id":       status.ID,
         "type":     "Note",
@@ -278,7 +278,7 @@ func (h *Handler) VerifyContent(w http.ResponseWriter, r *http.Request) {
     
     // Verify signature
     if status.Signature == nil {
-        respondJSON(w, http.StatusOK, map[string]interface{}{
+        respondJSON(w, http.StatusOK, map[string]any{
             "verified": false,
             "reason":   "No signature present",
         })
@@ -287,14 +287,14 @@ func (h *Handler) VerifyContent(w http.ResponseWriter, r *http.Request) {
     
     err = h.verifier.VerifySignature(&StatusWrapper{status}, status.Signature)
     if err != nil {
-        respondJSON(w, http.StatusOK, map[string]interface{}{
+        respondJSON(w, http.StatusOK, map[string]any{
             "verified": false,
             "reason":   err.Error(),
         })
         return
     }
     
-    respondJSON(w, http.StatusOK, map[string]interface{}{
+    respondJSON(w, http.StatusOK, map[string]any{
         "verified":   true,
         "signer":     status.Signature.Creator,
         "signed_at":  status.Signature.Created,
@@ -375,7 +375,7 @@ func TestSignAndVerify(t *testing.T) {
         ID:      "https://example.com/status/123",
         Type:    "Note",
         Author:  "https://example.com/users/alice",
-        Content: map[string]interface{}{"text": "Hello, world!"},
+        Content: map[string]any{"text": "Hello, world!"},
     }
     
     // Sign

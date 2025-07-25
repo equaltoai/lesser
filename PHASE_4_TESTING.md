@@ -20,7 +20,7 @@
   type TestContextBuilder struct {
       method  string
       path    string
-      body    interface{}
+      body    any
       headers map[string]string
       params  map[string]string
       query   map[string]string
@@ -30,7 +30,7 @@
   type AuthInfo struct {
       UserID string
       Scopes []string
-      Claims map[string]interface{}
+      Claims map[string]any
   }
   
   func NewTestContext() *TestContextBuilder {
@@ -53,7 +53,7 @@
       return b
   }
   
-  func (b *TestContextBuilder) WithJSON(body interface{}) *TestContextBuilder {
+  func (b *TestContextBuilder) WithJSON(body any) *TestContextBuilder {
       b.body = body
       b.headers["Content-Type"] = "application/json"
       return b
@@ -63,7 +63,7 @@
       b.auth = &AuthInfo{
           UserID: userID,
           Scopes: scopes,
-          Claims: map[string]interface{}{
+          Claims: map[string]any{
               "sub": userID,
           },
       }
@@ -114,7 +114,7 @@
       suite.Suite
       app      *lift.App
       store    *MockStorage
-      handler  interface{}
+      handler  any
   }
   
   func (s *HandlerTestSuite) SetupTest() {
@@ -225,7 +225,7 @@
       suite.Suite
       client     *dynamorm.Client
       cleaner    *DataCleaner
-      repository interface{}
+      repository any
   }
   
   func (s *RepositoryTestSuite) SetupSuite() {
@@ -255,7 +255,7 @@
       }
   }
   
-  func (s *RepositoryTestSuite) Track(items ...interface{}) {
+  func (s *RepositoryTestSuite) Track(items ...any) {
       for _, item := range items {
           s.cleaner.Track(item)
       }
@@ -266,8 +266,8 @@
   ```go
   type RepositoryTest struct {
       Name     string
-      Setup    func() interface{}      // Create test data
-      Execute  func(interface{}) error // Run repository method
+      Setup    func() any      // Create test data
+      Execute  func(any) error // Run repository method
       Validate func(error)              // Validate result
   }
   
@@ -294,7 +294,7 @@
       tests := []RepositoryTest{
           {
               Name: "existing user",
-              Setup: func() interface{} {
+              Setup: func() any {
                   user := &User{
                       ID:       "test-user-1",
                       Username: "testuser",
@@ -303,7 +303,7 @@
                   s.NoError(s.repository.Save(context.Background(), user))
                   return user
               },
-              Execute: func(data interface{}) error {
+              Execute: func(data any) error {
                   user := data.(*User)
                   found, err := s.repository.GetByID(context.Background(), user.ID)
                   s.NoError(err)
@@ -316,10 +316,10 @@
           },
           {
               Name: "non-existent user",
-              Setup: func() interface{} {
+              Setup: func() any {
                   return nil
               },
-              Execute: func(data interface{}) error {
+              Execute: func(data any) error {
                   _, err := s.repository.GetByID(context.Background(), "non-existent")
                   return err
               },
@@ -629,7 +629,7 @@
       }, nil
   }
   
-  func (h *LambdaTestHarness) InvokeFunction(name string, payload interface{}) (*lambda.InvokeOutput, error) {
+  func (h *LambdaTestHarness) InvokeFunction(name string, payload any) (*lambda.InvokeOutput, error) {
       payloadBytes, err := json.Marshal(payload)
       if err != nil {
           return nil, err
@@ -776,7 +776,7 @@
       tableName    string
   }
   
-  func (u *StreamTestUtils) TriggerStreamEvent(t *testing.T, operation string, item interface{}) {
+  func (u *StreamTestUtils) TriggerStreamEvent(t *testing.T, operation string, item any) {
       switch operation {
       case "INSERT":
           _, err := u.dynamoClient.PutItem(context.Background(), &dynamodb.PutItemInput{
@@ -821,7 +821,7 @@
       
       // Test 1: Large batch processing
       t.Run("large batch", func(t *testing.T) {
-          items := make([]interface{}, 100)
+          items := make([]any, 100)
           for i := 0; i < 100; i++ {
               items[i] = &Status{
                   ID:      fmt.Sprintf("status-%d", i),
@@ -844,7 +844,7 @@
       // Test 2: Error recovery
       t.Run("error recovery", func(t *testing.T) {
           // Insert malformed data
-          malformed := map[string]interface{}{
+          malformed := map[string]any{
               "pk": "INVALID",
               "sk": "INVALID",
               "bad_field": struct{}{}, // This should cause processing error

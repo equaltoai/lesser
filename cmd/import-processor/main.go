@@ -190,7 +190,7 @@ func processImportJob(ctx context.Context, event ImportProcessorEvent) error {
 	}
 
 	// Update import job as completed
-	completionData := map[string]interface{}{
+	completionData := map[string]any{
 		"total":   result.Success + result.Skipped + result.Failed,
 		"success": result.Success,
 		"skipped": result.Skipped,
@@ -213,10 +213,10 @@ func processImportJob(ctx context.Context, event ImportProcessorEvent) error {
 
 func detectFormat(data []byte) string {
 	// Try to parse as JSON first
-	var jsonTest interface{}
+	var jsonTest any
 	if err := common.ParseActivityPubObject(data, &jsonTest); err == nil {
 		// Check if it's an ActivityPub collection
-		if jsonMap, ok := jsonTest.(map[string]interface{}); ok {
+		if jsonMap, ok := jsonTest.(map[string]any); ok {
 			if _, hasContext := jsonMap["@context"]; hasContext {
 				return "activitypub"
 			}
@@ -498,13 +498,13 @@ func processActivityPubImport(ctx context.Context, event ImportProcessorEvent, d
 	// 3. Recreating follows/blocks/etc
 	// For now, we'll just count the items
 
-	var collection map[string]interface{}
+	var collection map[string]any
 	if err := common.ParseActivityPubObject(data, &collection); err != nil {
 		return result, fmt.Errorf("failed to parse ActivityPub collection: %w", err)
 	}
 
 	// Count items in the collection
-	if items, ok := collection["orderedItems"].([]interface{}); ok {
+	if items, ok := collection["orderedItems"].([]any); ok {
 		result.Success = len(items)
 	}
 
@@ -753,7 +753,7 @@ func downloadFromS3(ctx context.Context, key string) ([]byte, error) {
 	return io.ReadAll(result.Body)
 }
 
-func updateImportStatus(ctx context.Context, importID, status string, completionData map[string]interface{}, errorMsg string) error {
+func updateImportStatus(ctx context.Context, importID, status string, completionData map[string]any, errorMsg string) error {
 	updateExpr := "SET #status = :status, UpdatedAt = :updated"
 	exprAttrNames := map[string]string{
 		"#status": "Status",

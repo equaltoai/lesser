@@ -239,7 +239,7 @@ func (h *Handler) HandleUpdateAdminDomainBlock(ctx context.Context, request even
 	}
 
 	// Build updates map
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 	if req.Severity != "" {
 		if req.Severity != "silence" && req.Severity != "suspend" {
 			return common.BadRequest(errors.New("severity must be 'silence' or 'suspend'")), nil
@@ -332,7 +332,7 @@ func (h *Handler) HandleDeleteAdminDomainBlock(ctx context.Context, request even
 		zap.String("admin", adminClaims.Username))
 
 	// Return empty object (Mastodon compatibility)
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // AdminDomainAllowResponse represents a domain allow in API responses
@@ -483,7 +483,7 @@ func (h *Handler) HandleDeleteAdminDomainAllow(ctx context.Context, request even
 		zap.String("admin", adminClaims.Username))
 
 	// Return empty object (Mastodon compatibility)
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // InstanceInfoResponse represents instance information in API responses
@@ -556,7 +556,7 @@ func (h *Handler) HandleGetFederationInstances(ctx context.Context, request even
 	}
 
 	// Create response with pagination cursor
-	result := map[string]interface{}{
+	result := map[string]any{
 		"instances": responses,
 	}
 	if nextCursor != "" {
@@ -621,7 +621,7 @@ func (h *Handler) HandleGetFederationInstance(ctx context.Context, request event
 	details := h.getFederationDetails(ctx, domain)
 
 	// Create response with instance info and details
-	responseData := map[string]interface{}{
+	responseData := map[string]any{
 		"instance": resp,
 		"details":  details,
 	}
@@ -660,11 +660,11 @@ func (h *Handler) HandleGetFederationStatistics(ctx context.Context, request eve
 	}
 
 	// Build response
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"active_instances": stats.ActiveInstances,
 		"total_messages":   stats.TotalMessages,
 		"total_users":      stats.TotalUsers,
-		"time_range": map[string]interface{}{
+		"time_range": map[string]any{
 			"start": startTime.Format(time.RFC3339),
 			"end":   endTime.Format(time.RFC3339),
 		},
@@ -717,7 +717,7 @@ func (h *Handler) HandleGetEmailDomainBlocks(ctx context.Context, request events
 	}
 
 	// Create response with cursor for pagination
-	result := map[string]interface{}{
+	result := map[string]any{
 		"blocks": responses,
 	}
 	if nextCursor != "" {
@@ -817,7 +817,7 @@ func (h *Handler) HandleDeleteEmailDomainBlock(ctx context.Context, request even
 		zap.String("admin", adminClaims.Username))
 
 	// Return empty object (Mastodon compatibility)
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // cleanDomain removes protocol, path, and trailing slashes from a domain
@@ -842,16 +842,16 @@ func cleanDomain(domain string) string {
 }
 
 // Helper methods for federation details
-func (h *Handler) getFederationDetails(ctx context.Context, domain string) map[string]interface{} {
+func (h *Handler) getFederationDetails(ctx context.Context, domain string) map[string]any {
 	stats, err := h.store.GetDomainStats(ctx, domain)
 	if err != nil {
 		h.logger.Warn("failed to get domain stats", zap.Error(err))
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 
-	// Handle stats as a map since GetDomainStats returns interface{}
-	if statsMap, ok := stats.(map[string]interface{}); ok {
-		return map[string]interface{}{
+	// Handle stats as a map since GetDomainStats returns any
+	if statsMap, ok := stats.(map[string]any); ok {
+		return map[string]any{
 			"total_users":    getFieldOrDefault(statsMap, "total_users", 0),
 			"active_users":   getFieldOrDefault(statsMap, "active_users", 0),
 			"total_statuses": getFieldOrDefault(statsMap, "total_statuses", 0),
@@ -862,11 +862,11 @@ func (h *Handler) getFederationDetails(ctx context.Context, domain string) map[s
 	}
 
 	// Return empty map if stats is not in expected format
-	return map[string]interface{}{}
+	return map[string]any{}
 }
 
 // Helper function to safely get field from map with default value
-func getFieldOrDefault(m map[string]interface{}, key string, defaultValue interface{}) interface{} {
+func getFieldOrDefault(m map[string]any, key string, defaultValue any) any {
 	if value, exists := m[key]; exists {
 		return value
 	}

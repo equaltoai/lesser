@@ -260,7 +260,7 @@ err = db.Model(&Order{}).
 ```go
 // Query with pagination
 var users []User
-var lastEvaluatedKey map[string]interface{}
+var lastEvaluatedKey map[string]any
 
 err := db.Model(&User{}).
     Index("status-index").
@@ -625,7 +625,7 @@ type UserActivity struct {
     UserID    string    `dynamorm:"pk" json:"user_id"`
     Timestamp string    `dynamorm:"sk" json:"timestamp"`
     Action    string    `dynamorm:"index:action-index,pk" json:"action"`
-    Details   map[string]interface{} `json:"details"`
+    Details   map[string]any `json:"details"`
 }
 ```
 
@@ -829,7 +829,7 @@ err := db.Model(&User{}).
 
 6. **Use batch operations for efficiency**:
    ```go
-   items := []interface{}{user1, user2, user3}
+   items := []any{user1, user2, user3}
    err := db.BatchWrite().Add(items...).Execute()
    ```
 
@@ -842,7 +842,7 @@ err := db.Model(&User{}).
 
 8. **Use pagination for large result sets**:
    ```go
-   var lastEvaluatedKey map[string]interface{}
+   var lastEvaluatedKey map[string]any
    err := db.Model(&User{}).
        Limit(100).
        AllWithLastEvaluatedKey(&users, &lastEvaluatedKey)

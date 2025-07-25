@@ -188,7 +188,7 @@ func handleNodeInfoDiscovery(ctx context.Context, request events.APIGatewayV2HTT
 
 	log.Info("handling nodeinfo discovery request")
 
-	discovery := map[string]interface{}{
+	discovery := map[string]any{
 		"links": []map[string]string{
 			{
 				"rel":  "http://nodeinfo.diaspora.software/ns/schema/2.0",
@@ -221,19 +221,19 @@ func handleNodeInfo20(ctx context.Context, request events.APIGatewayV2HTTPReques
 	}
 	userCount := int(userCount64)
 
-	nodeinfo := map[string]interface{}{
+	nodeinfo := map[string]any{
 		"version": "2.0",
-		"software": map[string]interface{}{
+		"software": map[string]any{
 			"name":    "lesser",
 			"version": "0.1.0",
 		},
 		"protocols": []string{"activitypub"},
-		"services": map[string]interface{}{
+		"services": map[string]any{
 			"outbound": []string{},
 			"inbound":  []string{},
 		},
-		"usage": map[string]interface{}{
-			"users": map[string]interface{}{
+		"usage": map[string]any{
+			"users": map[string]any{
 				"total": userCount,
 			},
 			"localPosts": func() int {
@@ -246,7 +246,7 @@ func handleNodeInfo20(ctx context.Context, request events.APIGatewayV2HTTPReques
 			}(),
 		},
 		"openRegistrations": true,
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"nodeName":        cfg.InstanceName,
 			"nodeDescription": "A serverless ActivityPub implementation",
 		},
@@ -273,20 +273,20 @@ func handleNodeInfo21(ctx context.Context, request events.APIGatewayV2HTTPReques
 	}
 	userCount := int(userCount64)
 
-	nodeinfo := map[string]interface{}{
+	nodeinfo := map[string]any{
 		"version": "2.1",
-		"software": map[string]interface{}{
+		"software": map[string]any{
 			"name":       "lesser",
 			"version":    "0.1.0",
 			"repository": "https://github.com/aron23/lesser",
 		},
 		"protocols": []string{"activitypub"},
-		"services": map[string]interface{}{
+		"services": map[string]any{
 			"outbound": []string{},
 			"inbound":  []string{},
 		},
-		"usage": map[string]interface{}{
-			"users": map[string]interface{}{
+		"usage": map[string]any{
+			"users": map[string]any{
 				"total": userCount,
 				"activeMonth": func() int {
 					activeCount, err := store.GetActiveUserCount(ctx, 30)
@@ -315,7 +315,7 @@ func handleNodeInfo21(ctx context.Context, request events.APIGatewayV2HTTPReques
 			}(),
 		},
 		"openRegistrations": true,
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"nodeName":        cfg.InstanceName,
 			"nodeDescription": "A serverless ActivityPub implementation",
 		},
@@ -342,7 +342,7 @@ func handleReputationKeys(ctx context.Context, request events.APIGatewayV2HTTPRe
 		return common.InternalServerError(fmt.Errorf("reputation service unavailable")), nil
 	}
 
-	keys := map[string]interface{}{
+	keys := map[string]any{
 		"publicKey": publicKeyBase64,
 		"algorithm": "Ed25519",
 		"keyId":     cfg.BaseURL() + "#reputation-key",

@@ -182,7 +182,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 			}
 
 			// Extract media info
-			if mediaMap, ok := mediaObj.(map[string]interface{}); ok {
+			if mediaMap, ok := mediaObj.(map[string]any); ok {
 				attachment := activitypub.Attachment{
 					Type:      "Document",
 					MediaType: getStringFromMap(mediaMap, "MimeType", "image/jpeg"),
@@ -273,7 +273,7 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 			Voted:       false,
 			OwnVotes:    nil,
 			OptionsData: optionsData,
-			Emojis:      []interface{}{},
+			Emojis:      []any{},
 		}
 	}
 
@@ -362,12 +362,12 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 	}
 
 	// Convert hashtags for Mastodon API response
-	mastodonTags := make([]interface{}, 0, len(note.Tag))
+	mastodonTags := make([]any, 0, len(note.Tag))
 	for _, tag := range note.Tag {
 		if tag.Type == "Hashtag" {
 			// Extract tag name without # prefix
 			tagName := strings.TrimPrefix(tag.Name, "#")
-			mastodonTags = append(mastodonTags, map[string]interface{}{
+			mastodonTags = append(mastodonTags, map[string]any{
 				"name": tagName,
 				"url":  tag.Href,
 			})
@@ -375,10 +375,10 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 	}
 
 	// Convert parsed emojis to Mastodon API format
-	mastodonEmojis := make([]interface{}, 0, len(parsedEmojis))
+	mastodonEmojis := make([]any, 0, len(parsedEmojis))
 	for _, parsed := range parsedEmojis {
 		if parsed.Emoji != nil {
-			mastodonEmojis = append(mastodonEmojis, map[string]interface{}{
+			mastodonEmojis = append(mastodonEmojis, map[string]any{
 				"shortcode":         parsed.Emoji.Shortcode,
 				"url":               parsed.Emoji.URL,
 				"static_url":        parsed.Emoji.StaticURL,
@@ -407,8 +407,8 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 		Muted:            false,
 		Bookmarked:       false,
 		Pinned:           false,
-		MediaAttachments: []interface{}{},
-		Mentions:         []interface{}{},
+		MediaAttachments: []any{},
+		Mentions:         []any{},
 		Tags:             mastodonTags,
 		Emojis:           mastodonEmojis,
 		Poll:             pollResp,
@@ -427,8 +427,8 @@ func (h *Handler) HandleCreateStatus(ctx context.Context, request events.APIGate
 			FollowersCount: 0,
 			FollowingCount: 0,
 			StatusesCount:  0,
-			Emojis:         []interface{}{},
-			Fields:         []interface{}{},
+			Emojis:         []any{},
+			Fields:         []any{},
 		},
 	}
 
@@ -632,7 +632,7 @@ func (h *Handler) HandleUnfavourite(ctx context.Context, request events.APIGatew
 				To:      []string{activitypub.PublicAddress},
 			},
 			Actor: actor.ID,
-			Object: map[string]interface{}{
+			Object: map[string]any{
 				"type":   activitypub.LikeType,
 				"actor":  actor.ID,
 				"object": objectID,
@@ -839,7 +839,7 @@ func (h *Handler) HandleUnreblog(ctx context.Context, request events.APIGatewayV
 				To:      []string{activitypub.PublicAddress},
 			},
 			Actor: actor.ID,
-			Object: map[string]interface{}{
+			Object: map[string]any{
 				"type":   activitypub.AnnounceType,
 				"actor":  actor.ID,
 				"object": objectID,
@@ -937,7 +937,7 @@ func (h *Handler) HandleDeleteStatus(ctx context.Context, request events.APIGate
 	switch obj := object.(type) {
 	case *activitypub.Note:
 		attributedTo = obj.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok {
 			attributedTo = attr
 		}
@@ -1062,7 +1062,7 @@ func (h *Handler) HandleUpdateStatus(ctx context.Context, request events.APIGate
 			return common.Forbidden(errors.New("you can only update your own statuses")), nil
 		}
 		note = obj
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok && attr != actor.ID {
 			return common.Forbidden(errors.New("you can only update your own statuses")), nil
 		}
@@ -1189,7 +1189,7 @@ func (h *Handler) HandleGetStatus(ctx context.Context, request events.APIGateway
 	switch obj := object.(type) {
 	case *activitypub.Note:
 		attributedTo = obj.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok {
 			attributedTo = attr
 		}
@@ -1236,10 +1236,10 @@ func (h *Handler) HandleGetStatus(ctx context.Context, request events.APIGateway
 		h.logger.Warn("failed to parse emojis in status content", zap.Error(err))
 	} else if len(parsedEmojis) > 0 {
 		// Convert parsed emojis to Mastodon API format
-		mastodonEmojis := make([]interface{}, 0, len(parsedEmojis))
+		mastodonEmojis := make([]any, 0, len(parsedEmojis))
 		for _, parsed := range parsedEmojis {
 			if parsed.Emoji != nil {
-				mastodonEmojis = append(mastodonEmojis, map[string]interface{}{
+				mastodonEmojis = append(mastodonEmojis, map[string]any{
 					"shortcode":         parsed.Emoji.Shortcode,
 					"url":               parsed.Emoji.URL,
 					"static_url":        parsed.Emoji.StaticURL,
@@ -1293,7 +1293,7 @@ func (h *Handler) HandleGetStatus(ctx context.Context, request events.APIGateway
 			Voted:       false,
 			OwnVotes:    nil,
 			OptionsData: optionsData,
-			Emojis:      []interface{}{},
+			Emojis:      []any{},
 		}
 
 		// Hide totals if requested and poll hasn't expired
@@ -1375,7 +1375,7 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			inReplyTo = o.InReplyTo
-		case map[string]interface{}:
+		case map[string]any:
 			if reply, ok := o["inReplyTo"].(string); ok {
 				inReplyTo = reply
 			}
@@ -1416,7 +1416,7 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 		switch o := parentObj.(type) {
 		case *activitypub.Note:
 			attributedTo = o.AttributedTo
-		case map[string]interface{}:
+		case map[string]any:
 			if attr, ok := o["attributedTo"].(string); ok {
 				attributedTo = attr
 			}
@@ -1464,7 +1464,7 @@ func (h *Handler) HandleGetStatusContext(ctx context.Context, request events.API
 			switch o := reply.(type) {
 			case *activitypub.Note:
 				attributedTo = o.AttributedTo
-			case map[string]interface{}:
+			case map[string]any:
 				if attr, ok := o["attributedTo"].(string); ok {
 					attributedTo = attr
 				}
@@ -1545,8 +1545,8 @@ func (h *Handler) HandleGetAccountStatuses(ctx context.Context, request events.A
 			switch o := obj.(type) {
 			case *activitypub.Note:
 				hasMedia = len(o.Attachment) > 0
-			case map[string]interface{}:
-				if attachments, ok := o["attachment"].([]interface{}); ok {
+			case map[string]any:
+				if attachments, ok := o["attachment"].([]any); ok {
 					hasMedia = len(attachments) > 0
 				}
 			}
@@ -1561,7 +1561,7 @@ func (h *Handler) HandleGetAccountStatuses(ctx context.Context, request events.A
 			switch o := obj.(type) {
 			case *activitypub.Note:
 				isReply = o.InReplyTo != ""
-			case map[string]interface{}:
+			case map[string]any:
 				if inReplyTo, ok := o["inReplyTo"].(string); ok {
 					isReply = inReplyTo != ""
 				}
@@ -1632,8 +1632,8 @@ func generateRandomString(length int) string {
 	return string(b)
 }
 
-// getStringFromMap safely gets a string from a map[string]interface{}
-func getStringFromMap(m map[string]interface{}, key, defaultValue string) string {
+// getStringFromMap safely gets a string from a map[string]any
+func getStringFromMap(m map[string]any, key, defaultValue string) string {
 	if val, ok := m[key].(string); ok {
 		return val
 	}
@@ -1697,7 +1697,7 @@ func (h *Handler) getReplyToAccountID(ctx context.Context, statusID string) stri
 				return parts[len(parts)-1]
 			}
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		if attributedTo, ok := o["attributedTo"].(string); ok {
 			parts := strings.Split(attributedTo, "/")
 			if len(parts) > 0 {

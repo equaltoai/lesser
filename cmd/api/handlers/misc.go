@@ -102,8 +102,8 @@ func (h *Handler) HandleSearch(ctx context.Context, request events.APIGatewayV2H
 					FollowersCount: 0,
 					FollowingCount: 0,
 					StatusesCount:  0,
-					Emojis:         []interface{}{},
-					Fields:         []interface{}{},
+					Emojis:         []any{},
+					Fields:         []any{},
 				}
 
 				if actor.Icon != nil {
@@ -462,50 +462,50 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 	}
 
 	// Convert rules for API response
-	apiRules := make([]map[string]interface{}, len(rules))
+	apiRules := make([]map[string]any, len(rules))
 	for i, rule := range rules {
-		apiRules[i] = map[string]interface{}{
+		apiRules[i] = map[string]any{
 			"id":   rule.ID,
 			"text": rule.Text,
 		}
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"domain":      h.cfg.Domain,
 		"title":       instanceConfig.Title,
 		"version":     instanceConfig.Version,
 		"source_url":  "https://github.com/aron23/lesser",
 		"description": instanceConfig.Description,
-		"usage": map[string]interface{}{
-			"users": map[string]interface{}{
+		"usage": map[string]any{
+			"users": map[string]any{
 				"active_month": h.getActiveMonthlyUsers(ctx),
 			},
 		},
-		"thumbnail": map[string]interface{}{
+		"thumbnail": map[string]any{
 			"url": h.cfg.BaseURL() + "/assets/thumbnail.png",
 		},
-		"icon":      []interface{}{},
+		"icon":      []any{},
 		"languages": instanceConfig.Languages,
-		"configuration": map[string]interface{}{
-			"urls": map[string]interface{}{
+		"configuration": map[string]any{
+			"urls": map[string]any{
 				"streaming":        fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
 				"about":            h.cfg.BaseURL() + "/about",
 				"privacy_policy":   h.cfg.BaseURL() + "/privacy-policy",
 				"terms_of_service": h.cfg.BaseURL() + "/terms",
 			},
-			"vapid": map[string]interface{}{
+			"vapid": map[string]any{
 				"public_key": vapidPublicKey,
 			},
-			"accounts": map[string]interface{}{
+			"accounts": map[string]any{
 				"max_featured_tags":   10,
 				"max_pinned_statuses": 4,
 			},
-			"statuses": map[string]interface{}{
+			"statuses": map[string]any{
 				"max_characters":              instanceConfig.MaxStatusChars,
 				"max_media_attachments":       4,
 				"characters_reserved_per_url": 23,
 			},
-			"media_attachments": map[string]interface{}{
+			"media_attachments": map[string]any{
 				"supported_mime_types": []string{
 					"image/jpeg",
 					"image/png",
@@ -521,28 +521,28 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 				"video_frame_rate_limit": 60,
 				"video_matrix_limit":     2304000,
 			},
-			"polls": map[string]interface{}{
+			"polls": map[string]any{
 				"max_options":               4,
 				"max_characters_per_option": 50,
 				"min_expiration":            300,
 				"max_expiration":            2629746,
 			},
-			"translation": map[string]interface{}{
+			"translation": map[string]any{
 				"enabled": false,
 			},
 			"limited_federation": false,
 		},
-		"registrations": map[string]interface{}{
+		"registrations": map[string]any{
 			"enabled":           instanceConfig.RegistrationsOpen,
 			"approval_required": instanceConfig.ApprovalRequired,
 			"message":           nil,
 			"min_age":           nil,
 			"reason_required":   false,
 		},
-		"api_versions": map[string]interface{}{
+		"api_versions": map[string]any{
 			"mastodon": 1,
 		},
-		"contact": map[string]interface{}{
+		"contact": map[string]any{
 			"email":   instanceConfig.Email,
 			"account": h.getAdminAccount(ctx),
 		},
@@ -561,7 +561,7 @@ func (h *Handler) HandleGetInstanceV2(ctx context.Context, request events.APIGat
 }
 
 // Helper function to get map keys for logging
-func getMapKeys(m map[string]interface{}) []string {
+func getMapKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -730,7 +730,7 @@ func (h *Handler) HandleGetInstanceCosts(ctx context.Context, request events.API
 	costTableName := os.Getenv("COST_HISTORY_TABLE_NAME")
 	if costTableName == "" {
 		// Return placeholder data if cost tracking is not configured
-		response := map[string]interface{}{
+		response := map[string]any{
 			"error": "Cost tracking not configured",
 		}
 		return common.OK(response), nil
@@ -764,9 +764,9 @@ func (h *Handler) HandleGetInstanceCosts(ctx context.Context, request events.API
 	}
 
 	// Format daily costs for response
-	formattedDailyCosts := make([]map[string]interface{}, 0, len(dailyCosts))
+	formattedDailyCosts := make([]map[string]any, 0, len(dailyCosts))
 	for _, daily := range dailyCosts {
-		formattedDailyCosts = append(formattedDailyCosts, map[string]interface{}{
+		formattedDailyCosts = append(formattedDailyCosts, map[string]any{
 			"date":          daily.Date,
 			"cost_cents":    float64(daily.TotalCostMicrocents) / float64(cost.MicroCentsToCents),
 			"request_count": daily.RequestCount,
@@ -808,8 +808,8 @@ func (h *Handler) HandleGetInstanceCosts(ctx context.Context, request events.API
 		medianCostPerUser = avgCostPerUser
 	}
 
-	response := map[string]interface{}{
-		"current_month": map[string]interface{}{
+	response := map[string]any{
+		"current_month": map[string]any{
 			"total_cost_cents":     float64(currentMonth.TotalCostMicrocents) / float64(cost.MicroCentsToCents),
 			"dynamodb_reads":       currentMonth.DynamoDBReads,
 			"dynamodb_writes":      currentMonth.DynamoDBWrites,
@@ -818,11 +818,11 @@ func (h *Handler) HandleGetInstanceCosts(ctx context.Context, request events.API
 			"projected_cost_cents": float64(currentMonth.ProjectedCostMicrocents) / float64(cost.MicroCentsToCents),
 		},
 		"daily_costs": formattedDailyCosts,
-		"cost_per_user": map[string]interface{}{
+		"cost_per_user": map[string]any{
 			"average_cents": avgCostPerUser,
 			"median_cents":  medianCostPerUser,
 		},
-		"cost_breakdown": map[string]interface{}{
+		"cost_breakdown": map[string]any{
 			"dynamodb_percent":      dynamoPercent,
 			"lambda_percent":        lambdaPercent,
 			"data_transfer_percent": transferPercent,
@@ -836,21 +836,21 @@ func (h *Handler) HandleGetInstanceCosts(ctx context.Context, request events.API
 // HandleGetInstanceConfiguration returns configuration details
 func (h *Handler) HandleGetInstanceConfiguration(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Build configuration response
-	config := map[string]interface{}{
-		"urls": map[string]interface{}{
+	config := map[string]any{
+		"urls": map[string]any{
 			// Use Mastodon-compatible streaming endpoint
 			"streaming": fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
 		},
-		"accounts": map[string]interface{}{
+		"accounts": map[string]any{
 			"max_featured_tags":   20,
 			"max_pinned_statuses": 5,
 		},
-		"statuses": map[string]interface{}{
+		"statuses": map[string]any{
 			"max_characters":              5000,
 			"max_media_attachments":       4,
 			"characters_reserved_per_url": 23,
 		},
-		"media_attachments": map[string]interface{}{
+		"media_attachments": map[string]any{
 			"supported_mime_types": []string{
 				"image/jpeg",
 				"image/png",
@@ -886,13 +886,13 @@ func (h *Handler) HandleGetInstanceConfiguration(ctx context.Context, request ev
 			"video_frame_rate_limit": 120,
 			"video_matrix_limit":     8294400, // 4K
 		},
-		"polls": map[string]interface{}{
+		"polls": map[string]any{
 			"max_options":               4,
 			"max_characters_per_option": 50,
 			"min_expiration":            300,
 			"max_expiration":            2629746,
 		},
-		"translation": map[string]interface{}{
+		"translation": map[string]any{
 			"enabled": false,
 		},
 	}
@@ -938,7 +938,7 @@ func (h *Handler) getActiveMonthlyUsers(ctx context.Context) int {
 }
 
 // getAdminAccount returns the admin account for the instance
-func (h *Handler) getAdminAccount(ctx context.Context) interface{} {
+func (h *Handler) getAdminAccount(ctx context.Context) any {
 	// Get admin username from config
 	adminUsername := os.Getenv("ADMIN_USERNAME")
 	if adminUsername == "" {
@@ -958,7 +958,7 @@ func (h *Handler) getAdminAccount(ctx context.Context) interface{} {
 	statusesCount, _ := h.store.GetStatusCount(ctx, actor.ID)
 
 	// Return admin account in API format
-	return map[string]interface{}{
+	return map[string]any{
 		"id":              actor.ID,
 		"username":        actor.PreferredUsername,
 		"acct":            actor.PreferredUsername,

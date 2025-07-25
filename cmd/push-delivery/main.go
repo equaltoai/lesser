@@ -257,13 +257,13 @@ func createVAPIDJWT(endpoint, subject, privateKeyBase64 string) (string, error) 
 	audience := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 
 	// Create the JWT header
-	header := map[string]interface{}{
+	header := map[string]any{
 		"typ": "JWT",
 		"alg": "ES256",
 	}
 
 	// Create the JWT claims
-	claims := map[string]interface{}{
+	claims := map[string]any{
 		"aud": audience,
 		"exp": time.Now().Add(12 * time.Hour).Unix(),
 		"sub": subject,

@@ -26,8 +26,8 @@ func (h *Handler) HandleGetInstanceMetrics(ctx context.Context, request events.A
 	}
 
 	// Get request metrics from cost data if available
-	var requestsPerMinute = 0.0
-	var avgLatencyMs = 0.0
+	requestsPerMinute := 0.0
+	avgLatencyMs := 0.0
 
 	// Calculate actual request rate from time-series data
 	requestsPerMinute = h.calculateRequestRate(ctx)
@@ -50,14 +50,14 @@ func (h *Handler) HandleGetInstanceMetrics(ctx context.Context, request events.A
 		}
 	}
 
-	metrics := map[string]interface{}{
-		"current": map[string]interface{}{
+	metrics := map[string]any{
+		"current": map[string]any{
 			"active_users":        activeUsers,
 			"requests_per_minute": requestsPerMinute,
 			"avg_latency_ms":      avgLatencyMs,
 			"timestamp":           time.Now().UTC().Format(time.RFC3339),
 		},
-		"system": map[string]interface{}{
+		"system": map[string]any{
 			"version":     "2.0.0",
 			"uptime_days": 30, // Placeholder - serverless doesn't have traditional uptime
 			"region":      h.cfg.Region,
@@ -84,7 +84,7 @@ func (h *Handler) HandleGetDailyAggregates(ctx context.Context, request events.A
 	endDate := time.Now()
 	startDate := endDate.AddDate(0, 0, -days+1)
 
-	var dailyMetrics []map[string]interface{}
+	var dailyMetrics []map[string]any
 
 	if costStorage := h.getCostStorage(); costStorage != nil {
 		dailyCosts, err := costStorage.GetDailyCosts(ctx, startDate, endDate)
@@ -93,9 +93,9 @@ func (h *Handler) HandleGetDailyAggregates(ctx context.Context, request events.A
 		}
 
 		for _, daily := range dailyCosts {
-			metrics := map[string]interface{}{
+			metrics := map[string]any{
 				"date": daily.Date,
-				"metrics": map[string]interface{}{
+				"metrics": map[string]any{
 					"total_requests":     daily.RequestCount,
 					"unique_users":       daily.UniqueUsers,
 					"dynamodb_reads":     daily.DynamoDBReads,
@@ -112,9 +112,9 @@ func (h *Handler) HandleGetDailyAggregates(ctx context.Context, request events.A
 	if len(dailyMetrics) == 0 {
 		for i := 0; i < days; i++ {
 			date := endDate.AddDate(0, 0, -i).Format("2006-01-02")
-			dailyMetrics = append(dailyMetrics, map[string]interface{}{
+			dailyMetrics = append(dailyMetrics, map[string]any{
 				"date": date,
-				"metrics": map[string]interface{}{
+				"metrics": map[string]any{
 					"total_requests":     1000 + i*100,
 					"unique_users":       10 + i,
 					"dynamodb_reads":     500 + i*50,
@@ -126,8 +126,8 @@ func (h *Handler) HandleGetDailyAggregates(ctx context.Context, request events.A
 		}
 	}
 
-	response := map[string]interface{}{
-		"period": map[string]interface{}{
+	response := map[string]any{
+		"period": map[string]any{
 			"start": startDate.Format("2006-01-02"),
 			"end":   endDate.Format("2006-01-02"),
 			"days":  days,
@@ -144,10 +144,10 @@ func (h *Handler) HandleGetPredictiveAnalytics(ctx context.Context, request even
 
 	// Get current month data for projections
 	now := time.Now()
-	var monthlyProjection = 0.0
-	var currentMonthCost = 0.0
-	var storageGrowthRate = 5.2 // Default estimate
-	var userGrowthRate = 12.5   // Default estimate
+	monthlyProjection := 0.0
+	currentMonthCost := 0.0
+	storageGrowthRate := 5.2 // Default estimate
+	userGrowthRate := 12.5   // Default estimate
 
 	if costStorage := h.getCostStorage(); costStorage != nil {
 		currentMonth, err := costStorage.GetMonthlyCost(ctx, now.Year(), now.Month())
@@ -202,27 +202,27 @@ func (h *Handler) HandleGetPredictiveAnalytics(ctx context.Context, request even
 		}
 	}
 
-	analytics := map[string]interface{}{
-		"projections": map[string]interface{}{
-			"monthly_cost": map[string]interface{}{
+	analytics := map[string]any{
+		"projections": map[string]any{
+			"monthly_cost": map[string]any{
 				"current_month":    currentMonthCost,
 				"projected_month":  monthlyProjection,
 				"next_month":       monthlyProjection * (1.0 + userGrowthRate/100.0),
 				"three_months":     monthlyProjection * (1.0 + userGrowthRate/100.0*3.0),
 				"confidence_level": 0.85,
 			},
-			"storage_growth": map[string]interface{}{
+			"storage_growth": map[string]any{
 				"monthly_rate_percent": storageGrowthRate,
 				"projected_gb_30_days": h.calculateStorageProjection(ctx, 30),
 				"projected_gb_90_days": h.calculateStorageProjection(ctx, 90),
 			},
-			"user_growth": map[string]interface{}{
+			"user_growth": map[string]any{
 				"monthly_rate_percent":  userGrowthRate,
 				"projected_mau_30_days": h.calculateUserProjection(ctx, 30),
 				"projected_mau_90_days": h.calculateUserProjection(ctx, 90),
 			},
 		},
-		"recommendations": []map[string]interface{}{
+		"recommendations": []map[string]any{
 			{
 				"type":                      "cost_optimization",
 				"priority":                  "medium",
@@ -312,7 +312,7 @@ func (h *Handler) calculateStorageProjection(ctx context.Context, days int) floa
 		activeUsers, _ := h.store.GetActiveUserCount(ctx, 30)
 		currentStorageGB = float64(activeUsers) * 0.5 // 500MB per active user estimate
 	} else {
-		// Convert interface{} to float64
+		// Convert any to float64
 		if storageFloat, ok := storageResult.(float64); ok {
 			currentStorageGB = storageFloat
 		} else if storageInt, ok := storageResult.(int64); ok {
@@ -350,14 +350,14 @@ func (h *Handler) calculateStorageGrowthRate(ctx context.Context) float64 {
 	var firstUsage, lastUsage float64
 
 	// Safe type assertion for first usage
-	if firstMap, ok := storageHistory[0].(map[string]interface{}); ok {
+	if firstMap, ok := storageHistory[0].(map[string]any); ok {
 		if usage, ok := firstMap["UsageGB"].(float64); ok {
 			firstUsage = usage
 		}
 	}
 
 	// Safe type assertion for last usage
-	if lastMap, ok := storageHistory[len(storageHistory)-1].(map[string]interface{}); ok {
+	if lastMap, ok := storageHistory[len(storageHistory)-1].(map[string]any); ok {
 		if usage, ok := lastMap["UsageGB"].(float64); ok {
 			lastUsage = usage
 		}
@@ -415,7 +415,7 @@ func (h *Handler) calculateUserGrowthRate(ctx context.Context) float64 {
 	// Calculate new user registrations trend
 	totalNewUsers := 0
 	for _, dailyInterface := range userHistory {
-		if dailyMap, ok := dailyInterface.(map[string]interface{}); ok {
+		if dailyMap, ok := dailyInterface.(map[string]any); ok {
 			if newRegs, ok := dailyMap["NewRegistrations"].(float64); ok {
 				totalNewUsers += int(newRegs)
 			} else if newRegs, ok := dailyMap["NewRegistrations"].(int); ok {

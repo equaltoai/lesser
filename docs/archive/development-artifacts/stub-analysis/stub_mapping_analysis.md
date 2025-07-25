@@ -33,8 +33,8 @@ getFollowers()      // returns []string{}, nil
 getFollowing()      // returns []string{}, nil
 getBlocks()         // returns []string{}, nil
 getMutes()          // returns []MuteInfo{}, nil
-getOutbox()         // returns []interface{}{}, 0, nil
-getLikes()          // returns []interface{}{}, nil
+getOutbox()         // returns []any{}, 0, nil
+getLikes()          // returns []any{}, nil
 // ... 6 more
 ```
 

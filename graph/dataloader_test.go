@@ -34,7 +34,7 @@ func (m *MockStorage) GetActor(ctx context.Context, username string) (*activityp
 	return args.Get(0).(*activitypub.Actor), args.Error(1)
 }
 
-func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
+func (m *MockStorage) GetObject(ctx context.Context, id string) (any, error) {
 	m.callCount["GetObject"]++
 	args := m.Called(ctx, id)
 	return args.Get(0), args.Error(1)

@@ -383,7 +383,7 @@ middleware := func(ctx context.Context, next graphql.ResponseHandler) *graphql.R
     costAfter := r.CostTracker.GetCurrentCost()
     
     // Add cost headers
-    resp.Extensions["cost"] = map[string]interface{}{
+    resp.Extensions["cost"] = map[string]any{
         "total_micros": costAfter - costBefore,
         "duration_ms": duration.Milliseconds(),
     }

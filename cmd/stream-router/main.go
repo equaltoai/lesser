@@ -191,7 +191,7 @@ func processStatusEvent(ctx context.Context, record events.DynamoDBEventRecord) 
 	}
 
 	// Create simplified status payload for WebSocket
-	statusPayload := map[string]interface{}{
+	statusPayload := map[string]any{
 		"id":           strings.TrimPrefix(object.ID, "https://"),
 		"uri":          object.ID,
 		"url":          object.URL,
@@ -201,16 +201,16 @@ func processStatusEvent(ctx context.Context, record events.DynamoDBEventRecord) 
 		"language":     "en",     // Default
 		"spoiler_text": object.Summary,
 		"sensitive":    object.Sensitive,
-		"account": map[string]interface{}{
+		"account": map[string]any{
 			"id":       extractUsernameFromActorID(object.AttributedTo),
 			"username": extractUsernameFromActorID(object.AttributedTo),
 			"acct":     extractUsernameFromActorID(object.AttributedTo),
 			"url":      object.AttributedTo,
 		},
-		"media_attachments": []interface{}{},
-		"mentions":          []interface{}{},
-		"tags":              []interface{}{},
-		"emojis":            []interface{}{},
+		"media_attachments": []any{},
+		"mentions":          []any{},
+		"tags":              []any{},
+		"emojis":            []any{},
 		"reblogs_count":     0,
 		"favourites_count":  0,
 		"replies_count":     0,
@@ -226,7 +226,7 @@ func processStatusEvent(ctx context.Context, record events.DynamoDBEventRecord) 
 	for _, tag := range object.Tag {
 		if tag.Type == "Hashtag" {
 			tagName := strings.TrimPrefix(tag.Name, "#")
-			statusPayload["tags"] = append(statusPayload["tags"].([]interface{}), map[string]interface{}{
+			statusPayload["tags"] = append(statusPayload["tags"].([]any), map[string]any{
 				"name": tagName,
 				"url":  tag.Href,
 			})
@@ -235,14 +235,14 @@ func processStatusEvent(ctx context.Context, record events.DynamoDBEventRecord) 
 
 	// Process attachments
 	for _, att := range object.Attachment {
-		attachment := map[string]interface{}{
+		attachment := map[string]any{
 			"id":          generateID(8),
 			"type":        getAttachmentType(att.MediaType),
 			"url":         att.URL,
 			"preview_url": att.URL,
 			"description": att.Name,
 		}
-		statusPayload["media_attachments"] = append(statusPayload["media_attachments"].([]interface{}), attachment)
+		statusPayload["media_attachments"] = append(statusPayload["media_attachments"].([]any), attachment)
 	}
 
 	// Marshal the status for payload
@@ -354,11 +354,11 @@ func processNotificationEvent(ctx context.Context, record events.DynamoDBEventRe
 	}
 
 	// Create simplified notification payload for WebSocket
-	notifPayload := map[string]interface{}{
+	notifPayload := map[string]any{
 		"id":         notification.ID,
 		"type":       notification.Type,
 		"created_at": notification.CreatedAt.Format(time.RFC3339),
-		"account": map[string]interface{}{
+		"account": map[string]any{
 			"id":       extractUsernameFromActorID(notification.AccountID),
 			"username": extractUsernameFromActorID(notification.AccountID),
 			"acct":     extractUsernameFromActorID(notification.AccountID),
@@ -368,7 +368,7 @@ func processNotificationEvent(ctx context.Context, record events.DynamoDBEventRe
 
 	// Add status info if present
 	if notification.StatusID != "" {
-		notifPayload["status"] = map[string]interface{}{
+		notifPayload["status"] = map[string]any{
 			"id": strings.TrimPrefix(notification.StatusID, "https://"),
 		}
 	}
@@ -621,9 +621,9 @@ func getAttachmentType(mediaType string) string {
 }
 
 // createAccountPayload creates a proper account payload for streaming
-func createAccountPayload(accountID, eventType string) (map[string]interface{}, error) {
+func createAccountPayload(accountID, eventType string) (map[string]any, error) {
 	// Create account streaming payload with proper structure
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"id":         accountID,
 		"event_type": eventType,
 		"type":       "account",

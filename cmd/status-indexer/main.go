@@ -372,7 +372,7 @@ func isStopWord(word string) bool {
 }
 
 // calculateAndIndexEngagement calculates engagement metrics and indexes by engagement bucket
-func calculateAndIndexEngagement(ctx context.Context, statusID string, status interface{}) error {
+func calculateAndIndexEngagement(ctx context.Context, statusID string, status any) error {
 	// Get current engagement metrics
 	likes, err := store.GetLikeCount(ctx, statusID)
 	if err != nil {

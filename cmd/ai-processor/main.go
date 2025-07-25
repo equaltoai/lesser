@@ -155,7 +155,7 @@ func handleModerationAction(ctx context.Context, analysis *ai.AIAnalysis, actorI
 				Type:        "ai_analysis",
 				Score:       analysis.OverallRisk,
 				Description: fmt.Sprintf("AI detected %s", analysis.ModerationAction),
-				Metadata: map[string]interface{}{
+				Metadata: map[string]any{
 					"analysis_id": analysis.ID,
 					"risk_score":  analysis.OverallRisk,
 				},

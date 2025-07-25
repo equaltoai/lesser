@@ -60,7 +60,7 @@ func NewWebAuthnService(storage storage.Storage, domain string, displayName stri
 }
 
 // BeginRegistration starts the WebAuthn registration process
-func (s *WebAuthnService) BeginRegistration(ctx context.Context, username string) (interface{}, string, error) {
+func (s *WebAuthnService) BeginRegistration(ctx context.Context, username string) (any, string, error) {
 	// Get user from storage
 	user, err := s.storage.GetUser(ctx, username)
 	if err != nil {
@@ -199,7 +199,7 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 }
 
 // BeginLogin starts the WebAuthn login process
-func (s *WebAuthnService) BeginLogin(ctx context.Context, username string) (interface{}, string, error) {
+func (s *WebAuthnService) BeginLogin(ctx context.Context, username string) (any, string, error) {
 	// Get user credentials
 	credentials, err := s.storage.GetUserWebAuthnCredentials(ctx, username)
 	if err != nil {

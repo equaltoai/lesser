@@ -72,7 +72,7 @@ func (h *Handler) HandleInitiateRecovery(ctx context.Context, request events.API
 	token := base64.URLEncoding.EncodeToString(tokenBytes)
 
 	// Store recovery token with expiration (1 hour)
-	recoveryData := map[string]interface{}{
+	recoveryData := map[string]any{
 		"username":  user.Username,
 		"token":     token,
 		"expiresAt": time.Now().Add(time.Hour).Unix(),
@@ -94,7 +94,7 @@ func (h *Handler) HandleInitiateRecovery(ctx context.Context, request events.API
 
 	// In development, include the token in response
 	if os.Getenv("ENVIRONMENT") == "development" {
-		return common.OK(map[string]interface{}{
+		return common.OK(map[string]any{
 			"message": "Recovery token generated (dev mode)",
 			"token":   token,
 			"url":     recoveryURL,
@@ -137,7 +137,7 @@ func (h *Handler) HandleVerifyRecoveryToken(ctx context.Context, request events.
 	username := recoveryData["username"].(string)
 	maskedUsername := maskUsername(username)
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"valid":    true,
 		"username": maskedUsername,
 		"token":    token,
@@ -188,7 +188,7 @@ func (h *Handler) HandleCompleteRecovery(ctx context.Context, request events.API
 	}
 
 	// Update user password
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"password_hash": string(hashedPassword),
 		"updated_at":    time.Now(),
 	}
@@ -243,7 +243,7 @@ func (h *Handler) HandleAccountRecoveryOptions(ctx context.Context, request even
 	}
 
 	// Always return some options to prevent user enumeration
-	defaultOptions := map[string]interface{}{
+	defaultOptions := map[string]any{
 		"options": []string{},
 		"message": "No recovery options available for this account",
 	}
@@ -271,7 +271,7 @@ func (h *Handler) HandleAccountRecoveryOptions(ctx context.Context, request even
 		return common.OK(defaultOptions), nil
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"options": options,
 		"message": "Select a recovery method",
 	}), nil
@@ -313,7 +313,7 @@ func (h *Handler) HandleSendRecoveryCode(ctx context.Context, request events.API
 
 	// Store recovery code with 15 minute expiration
 	codeKey := fmt.Sprintf("RECOVERY_CODE#%s#%s", user.Username, code)
-	codeData := map[string]interface{}{
+	codeData := map[string]any{
 		"username":  user.Username,
 		"code":      code,
 		"method":    req.Method,
@@ -334,7 +334,7 @@ func (h *Handler) HandleSendRecoveryCode(ctx context.Context, request events.API
 
 	// In development, return info about removed recovery methods
 	if os.Getenv("ENVIRONMENT") == "development" {
-		return common.OK(map[string]interface{}{
+		return common.OK(map[string]any{
 			"message": "Email/SMS recovery disabled - use OAuth providers",
 			"method":  req.Method,
 		}), nil

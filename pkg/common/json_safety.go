@@ -48,9 +48,9 @@ func NewSafeJSONDecoder(r io.Reader) *SafeJSONDecoder {
 }
 
 // Decode safely decodes JSON with depth and size limits
-func (d *SafeJSONDecoder) Decode(v interface{}) error {
-	// For complex validation, we need to decode to interface{} first
-	var raw interface{}
+func (d *SafeJSONDecoder) Decode(v any) error {
+	// For complex validation, we need to decode to any first
+	var raw any
 	if err := d.decoder.Decode(&raw); err != nil {
 		return fmt.Errorf("JSON decode error: %w", err)
 	}
@@ -71,13 +71,13 @@ func (d *SafeJSONDecoder) Decode(v interface{}) error {
 }
 
 // validateJSON recursively validates JSON structure
-func (d *SafeJSONDecoder) validateJSON(v interface{}, depth int) error {
+func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 	if depth > MaxJSONDepth {
 		return fmt.Errorf("JSON depth exceeds maximum of %d", MaxJSONDepth)
 	}
 
 	switch val := v.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if len(val) > MaxJSONKeys {
 			return fmt.Errorf("JSON object has %d keys, maximum is %d", len(val), MaxJSONKeys)
 		}
@@ -91,7 +91,7 @@ func (d *SafeJSONDecoder) validateJSON(v interface{}, depth int) error {
 			}
 		}
 
-	case []interface{}:
+	case []any:
 		if len(val) > MaxJSONArrayLength {
 			return fmt.Errorf("JSON array has %d elements, maximum is %d", len(val), MaxJSONArrayLength)
 		}
@@ -118,7 +118,7 @@ func (d *SafeJSONDecoder) validateJSON(v interface{}, depth int) error {
 }
 
 // SafeUnmarshalJSON is a convenience function for safe JSON unmarshaling
-func SafeUnmarshalJSON(data []byte, v interface{}) error {
+func SafeUnmarshalJSON(data []byte, v any) error {
 	if len(data) > MaxJSONSize {
 		return fmt.Errorf("JSON size %d exceeds maximum %d", len(data), MaxJSONSize)
 	}
@@ -129,13 +129,13 @@ func SafeUnmarshalJSON(data []byte, v interface{}) error {
 
 // SafeUnmarshalJSONWithoutUnknownFields unmarshals JSON without DisallowUnknownFields
 // Use this for ActivityPub objects which may have extensions
-func SafeUnmarshalJSONWithoutUnknownFields(data []byte, v interface{}) error {
+func SafeUnmarshalJSONWithoutUnknownFields(data []byte, v any) error {
 	if len(data) > MaxJSONSize {
 		return fmt.Errorf("JSON size %d exceeds maximum %d", len(data), MaxJSONSize)
 	}
 
 	// First validate the structure
-	var raw interface{}
+	var raw any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("JSON decode error: %w", err)
 	}
@@ -181,7 +181,7 @@ func detectRepetition(s string) bool {
 
 // ParseRequestBody safely parses a request body with JSON bomb detection
 // Use this for API endpoints with known request structures
-func ParseRequestBody(body []byte, v interface{}) error {
+func ParseRequestBody(body []byte, v any) error {
 	// Check for JSON bombs
 	if err := DetectJSONBomb(body); err != nil {
 		return fmt.Errorf("invalid JSON structure: %w", err)
@@ -193,7 +193,7 @@ func ParseRequestBody(body []byte, v interface{}) error {
 
 // ParseActivityPubObject safely parses an ActivityPub object with JSON bomb detection
 // Use this for ActivityPub objects that may have extensions
-func ParseActivityPubObject(body []byte, v interface{}) error {
+func ParseActivityPubObject(body []byte, v any) error {
 	// Check for JSON bombs
 	if err := DetectJSONBomb(body); err != nil {
 		return fmt.Errorf("invalid JSON structure: %w", err)
@@ -205,7 +205,7 @@ func ParseActivityPubObject(body []byte, v interface{}) error {
 
 // ParseHTTPResponse safely parses an HTTP response body
 // Use this when fetching data from external sources
-func ParseHTTPResponse(r io.Reader, v interface{}) error {
+func ParseHTTPResponse(r io.Reader, v any) error {
 	decoder := NewSafeJSONDecoder(r)
 	return decoder.Decode(v)
 }

@@ -212,7 +212,7 @@ func handleGetOutbox(ctx context.Context, log *zap.Logger, username string, quer
 	}
 
 	// Convert activities to ordered items
-	orderedItems := make([]interface{}, len(filteredActivities))
+	orderedItems := make([]any, len(filteredActivities))
 	for i, activity := range filteredActivities {
 		orderedItems[i] = activity
 	}
@@ -504,7 +504,7 @@ func generateRandomString(length int) string {
 // processCreateActivity processes a Create activity and its embedded object
 func processCreateActivity(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	// Extract the object
-	objMap, ok := activity.Object.(map[string]interface{})
+	objMap, ok := activity.Object.(map[string]any)
 	if !ok {
 		return common.ValidationError{Field: "object", Message: "Create activity must have an object"}
 	}
@@ -587,7 +587,7 @@ func processLikeActivity(ctx context.Context, activity *activitypub.Activity, ac
 	switch obj := activity.Object.(type) {
 	case string:
 		objectID = obj
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := obj["id"].(string); ok {
 			objectID = id
 		} else {
@@ -630,7 +630,7 @@ func processAnnounceActivity(ctx context.Context, activity *activitypub.Activity
 	switch obj := activity.Object.(type) {
 	case string:
 		objectID = obj
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := obj["id"].(string); ok {
 			objectID = id
 		} else {
@@ -675,7 +675,7 @@ func processDeleteActivity(ctx context.Context, activity *activitypub.Activity, 
 	switch obj := activity.Object.(type) {
 	case string:
 		objectID = obj
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := obj["id"].(string); ok {
 			objectID = id
 		} else {
@@ -706,7 +706,7 @@ func processDeleteActivity(ctx context.Context, activity *activitypub.Activity, 
 	switch v := existingObj.(type) {
 	case *dynamodb.Object:
 		attributedTo = v.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := v["attributedTo"].(string); ok {
 			attributedTo = attr
 		}
@@ -722,7 +722,7 @@ func processDeleteActivity(ctx context.Context, activity *activitypub.Activity, 
 	}
 
 	// Update the activity object to be a Tombstone
-	activity.Object = map[string]interface{}{
+	activity.Object = map[string]any{
 		"id":         objectID,
 		"type":       "Tombstone",
 		"formerType": getObjectType(existingObj),
@@ -755,7 +755,7 @@ func processUpdateActivity(ctx context.Context, activity *activitypub.Activity, 
 	}
 
 	// The object should be a map with all the object properties
-	objMap, ok := activity.Object.(map[string]interface{})
+	objMap, ok := activity.Object.(map[string]any)
 	if !ok {
 		return common.ValidationError{Field: "object", Message: "Update object must be a map"}
 	}
@@ -787,7 +787,7 @@ func processUpdateActivity(ctx context.Context, activity *activitypub.Activity, 
 	switch v := existingObj.(type) {
 	case *dynamodb.Object:
 		attributedTo = v.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := v["attributedTo"].(string); ok {
 			attributedTo = attr
 		}
@@ -807,7 +807,7 @@ func processUpdateActivity(ctx context.Context, activity *activitypub.Activity, 
 	switch v := existingObj.(type) {
 	case *dynamodb.Object:
 		objMap["published"] = v.Published.Format(time.RFC3339)
-	case map[string]interface{}:
+	case map[string]any:
 		// Keep existing published time
 		if _, hasPublished := objMap["published"]; !hasPublished {
 			if pub, ok := v["published"]; ok {
@@ -852,7 +852,7 @@ func processUndoActivity(ctx context.Context, activity *activitypub.Activity, ac
 	}
 
 	// The object should be a map representing the activity being undone
-	objMap, ok := activity.Object.(map[string]interface{})
+	objMap, ok := activity.Object.(map[string]any)
 	if !ok {
 		return common.ValidationError{Field: "object", Message: "Undo object must be an activity"}
 	}
@@ -876,7 +876,7 @@ func processUndoActivity(ctx context.Context, activity *activitypub.Activity, ac
 	}
 }
 
-func processUndoFollowActivity(ctx context.Context, activity *activitypub.Activity, followObj map[string]interface{}, actor *activitypub.Actor) error {
+func processUndoFollowActivity(ctx context.Context, activity *activitypub.Activity, followObj map[string]any, actor *activitypub.Actor) error {
 	// Ensure the follow has required fields
 	followActor, ok := followObj["actor"].(string)
 	if !ok || followActor == "" {
@@ -934,7 +934,7 @@ func processUndoFollowActivity(ctx context.Context, activity *activitypub.Activi
 	return nil
 }
 
-func processUndoLikeActivity(ctx context.Context, activity *activitypub.Activity, likeObj map[string]interface{}, actor *activitypub.Actor) error {
+func processUndoLikeActivity(ctx context.Context, activity *activitypub.Activity, likeObj map[string]any, actor *activitypub.Actor) error {
 	// Ensure the like has required fields
 	likeActor, ok := likeObj["actor"].(string)
 	if !ok || likeActor == "" {
@@ -947,7 +947,7 @@ func processUndoLikeActivity(ctx context.Context, activity *activitypub.Activity
 	switch obj := likeObj["object"].(type) {
 	case string:
 		likeObject = obj
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := obj["id"].(string); ok {
 			likeObject = id
 		}
@@ -990,7 +990,7 @@ func processUndoLikeActivity(ctx context.Context, activity *activitypub.Activity
 	return nil
 }
 
-func processUndoAnnounceActivity(ctx context.Context, activity *activitypub.Activity, announceObj map[string]interface{}, actor *activitypub.Actor) error {
+func processUndoAnnounceActivity(ctx context.Context, activity *activitypub.Activity, announceObj map[string]any, actor *activitypub.Actor) error {
 	// Ensure the announce has required fields
 	announceActor, ok := announceObj["actor"].(string)
 	if !ok || announceActor == "" {
@@ -1003,7 +1003,7 @@ func processUndoAnnounceActivity(ctx context.Context, activity *activitypub.Acti
 	switch obj := announceObj["object"].(type) {
 	case string:
 		announceObject = obj
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := obj["id"].(string); ok {
 			announceObject = id
 		}
@@ -1050,11 +1050,11 @@ func processUndoAnnounceActivity(ctx context.Context, activity *activitypub.Acti
 }
 
 // getObjectType extracts the type from an object
-func getObjectType(obj interface{}) string {
+func getObjectType(obj any) string {
 	switch v := obj.(type) {
 	case *dynamodb.Object:
 		return v.Type
-	case map[string]interface{}:
+	case map[string]any:
 		if t, ok := v["type"].(string); ok {
 			return t
 		}
@@ -1063,7 +1063,7 @@ func getObjectType(obj interface{}) string {
 }
 
 // validateObject validates the object within a Create activity
-func validateObject(obj map[string]interface{}) error {
+func validateObject(obj map[string]any) error {
 	// Check required fields
 	if obj["type"] == nil || obj["type"] == "" {
 		return common.ValidationError{Field: "object.type", Message: "object type is required"}
@@ -1107,9 +1107,9 @@ func validateObject(obj map[string]interface{}) error {
 	}
 
 	// Validate attachments if present
-	if attachments, ok := obj["attachment"].([]interface{}); ok {
+	if attachments, ok := obj["attachment"].([]any); ok {
 		for i, att := range attachments {
-			if attMap, ok := att.(map[string]interface{}); ok {
+			if attMap, ok := att.(map[string]any); ok {
 				// Validate attachment URL
 				if url, ok := attMap["url"].(string); ok {
 					if !isValidURL(url) {
@@ -1130,7 +1130,7 @@ func validateObject(obj map[string]interface{}) error {
 	}
 
 	// Validate contentMap if present
-	if contentMap, ok := obj["contentMap"].(map[string]interface{}); ok {
+	if contentMap, ok := obj["contentMap"].(map[string]any); ok {
 		for lang, content := range contentMap {
 			// Validate language code (simple check for 2 or 2-2 format)
 			if !isValidLanguageCode(lang) {
@@ -1148,9 +1148,9 @@ func validateObject(obj map[string]interface{}) error {
 	}
 
 	// Validate tags if present
-	if tags, ok := obj["tag"].([]interface{}); ok {
+	if tags, ok := obj["tag"].([]any); ok {
 		for i, tag := range tags {
-			if tagMap, ok := tag.(map[string]interface{}); ok {
+			if tagMap, ok := tag.(map[string]any); ok {
 				tagType, _ := tagMap["type"].(string)
 				name, _ := tagMap["name"].(string)
 
@@ -1187,12 +1187,12 @@ func generateObjectID(actorID, objectType string) string {
 	return fmt.Sprintf("https://%s/objects/%s-%s", cfg.Domain, timestamp, random)
 }
 
-// convertToStringSlice converts an interface{} to []string
-func convertToStringSlice(v interface{}) []string {
+// convertToStringSlice converts an any to []string
+func convertToStringSlice(v any) []string {
 	switch val := v.(type) {
 	case []string:
 		return val
-	case []interface{}:
+	case []any:
 		result := make([]string, 0, len(val))
 		for _, item := range val {
 			if s, ok := item.(string); ok {
@@ -1311,7 +1311,7 @@ func processFollowActivity(ctx context.Context, activity *activitypub.Activity, 
 	switch obj := activity.Object.(type) {
 	case string:
 		followedActorID = obj
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := obj["id"].(string); ok {
 			followedActorID = id
 		} else {
@@ -1367,7 +1367,7 @@ func processBlockActivity(ctx context.Context, activity *activitypub.Activity, a
 	blockedActor, ok := activity.Object.(string)
 	if !ok {
 		// Try to extract from object map
-		if objMap, ok := activity.Object.(map[string]interface{}); ok {
+		if objMap, ok := activity.Object.(map[string]any); ok {
 			if id, ok := objMap["id"].(string); ok {
 				blockedActor = id
 				activity.Object = id // Normalize to string

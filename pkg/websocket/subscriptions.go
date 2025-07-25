@@ -43,11 +43,11 @@ type Connection struct {
 
 // Subscription represents a subscription to events
 type Subscription struct {
-	ConnectionID     string                 `json:"connection_id" dynamodbav:"ConnectionID"`
-	SubscriptionType string                 `json:"subscription_type" dynamodbav:"SubscriptionType"`
-	Filter           map[string]interface{} `json:"filter" dynamodbav:"Filter"`
-	CreatedAt        time.Time              `json:"created_at" dynamodbav:"CreatedAt"`
-	TTL              int64                  `json:"ttl" dynamodbav:"TTL"`
+	ConnectionID     string         `json:"connection_id" dynamodbav:"ConnectionID"`
+	SubscriptionType string         `json:"subscription_type" dynamodbav:"SubscriptionType"`
+	Filter           map[string]any `json:"filter" dynamodbav:"Filter"`
+	CreatedAt        time.Time      `json:"created_at" dynamodbav:"CreatedAt"`
+	TTL              int64          `json:"ttl" dynamodbav:"TTL"`
 }
 
 // ModerationFilter filters moderation events
@@ -60,60 +60,60 @@ type ModerationFilter struct {
 
 // ModerationEvent represents a moderation event
 type ModerationEvent struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Severity    string                 `json:"severity"`
-	ContentID   string                 `json:"content_id"`
-	UserID      string                 `json:"user_id"`
-	Description string                 `json:"description"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"`
+	Severity    string         `json:"severity"`
+	ContentID   string         `json:"content_id"`
+	UserID      string         `json:"user_id"`
+	Description string         `json:"description"`
+	Timestamp   time.Time      `json:"timestamp"`
+	Metadata    map[string]any `json:"metadata"`
 }
 
 // ThreatAlert represents a security threat alert
 type ThreatAlert struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Severity    string                 `json:"severity"`
-	Source      string                 `json:"source"`
-	Target      string                 `json:"target"`
-	Description string                 `json:"description"`
-	Indicators  []string               `json:"indicators"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"`
+	Severity    string         `json:"severity"`
+	Source      string         `json:"source"`
+	Target      string         `json:"target"`
+	Description string         `json:"description"`
+	Indicators  []string       `json:"indicators"`
+	Timestamp   time.Time      `json:"timestamp"`
+	Metadata    map[string]any `json:"metadata"`
 }
 
 // PerformanceAlert represents a performance alert
 type PerformanceAlert struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Severity    string                 `json:"severity"`
-	Service     string                 `json:"service"`
-	Metric      string                 `json:"metric"`
-	Value       float64                `json:"value"`
-	Threshold   float64                `json:"threshold"`
-	Description string                 `json:"description"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"`
+	Severity    string         `json:"severity"`
+	Service     string         `json:"service"`
+	Metric      string         `json:"metric"`
+	Value       float64        `json:"value"`
+	Threshold   float64        `json:"threshold"`
+	Description string         `json:"description"`
+	Timestamp   time.Time      `json:"timestamp"`
+	Metadata    map[string]any `json:"metadata"`
 }
 
 // InfrastructureEvent represents an infrastructure event
 type InfrastructureEvent struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Severity    string                 `json:"severity"`
-	Service     string                 `json:"service"`
-	Region      string                 `json:"region"`
-	Description string                 `json:"description"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"`
+	Severity    string         `json:"severity"`
+	Service     string         `json:"service"`
+	Region      string         `json:"region"`
+	Description string         `json:"description"`
+	Timestamp   time.Time      `json:"timestamp"`
+	Metadata    map[string]any `json:"metadata"`
 }
 
 // WebSocketMessage represents a message sent over WebSocket
 type WebSocketMessage struct {
-	Type      string      `json:"type"`
-	Data      interface{} `json:"data"`
-	Timestamp time.Time   `json:"timestamp"`
+	Type      string    `json:"type"`
+	Data      any       `json:"data"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // subscriptionManager implements SubscriptionManager
@@ -229,7 +229,7 @@ func (sm *subscriptionManager) SubscribeThreatIntel(connectionID string) error {
 
 // SubscribePerformanceAlerts subscribes to performance alerts
 func (sm *subscriptionManager) SubscribePerformanceAlerts(connectionID string, severity string) error {
-	filter := map[string]interface{}{
+	filter := map[string]any{
 		"severity": severity,
 	}
 	return sm.createSubscription(connectionID, "performance", filter)
@@ -241,7 +241,7 @@ func (sm *subscriptionManager) SubscribeInfrastructureEvents(connectionID string
 }
 
 // createSubscription creates a new subscription
-func (sm *subscriptionManager) createSubscription(connectionID string, subscriptionType string, filter interface{}) error {
+func (sm *subscriptionManager) createSubscription(connectionID string, subscriptionType string, filter any) error {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 
@@ -425,13 +425,13 @@ func (sm *subscriptionManager) handleDeadConnection(connectionID string) {
 }
 
 // matchesModerationFilter checks if a moderation event matches the filter
-func (sm *subscriptionManager) matchesModerationFilter(event *ModerationEvent, filter map[string]interface{}) bool {
+func (sm *subscriptionManager) matchesModerationFilter(event *ModerationEvent, filter map[string]any) bool {
 	if filter == nil {
 		return true
 	}
 
 	// Check severity filter
-	if severities, ok := filter["severity"].([]interface{}); ok {
+	if severities, ok := filter["severity"].([]any); ok {
 		matched := false
 		for _, sev := range severities {
 			if sevStr, ok := sev.(string); ok && sevStr == event.Severity {
@@ -445,7 +445,7 @@ func (sm *subscriptionManager) matchesModerationFilter(event *ModerationEvent, f
 	}
 
 	// Check types filter
-	if types, ok := filter["types"].([]interface{}); ok {
+	if types, ok := filter["types"].([]any); ok {
 		matched := false
 		for _, typ := range types {
 			if typStr, ok := typ.(string); ok && typStr == event.Type {
@@ -472,7 +472,7 @@ func (sm *subscriptionManager) matchesModerationFilter(event *ModerationEvent, f
 }
 
 // matchesPerformanceFilter checks if a performance alert matches the filter
-func (sm *subscriptionManager) matchesPerformanceFilter(alert *PerformanceAlert, filter map[string]interface{}) bool {
+func (sm *subscriptionManager) matchesPerformanceFilter(alert *PerformanceAlert, filter map[string]any) bool {
 	if filter == nil {
 		return true
 	}
@@ -519,14 +519,14 @@ func (sm *subscriptionManager) cleanupSubscriptions(connectionID string) {
 	}
 }
 
-// convertToMap converts an interface{} to map[string]interface{}
-func convertToMap(v interface{}) (map[string]interface{}, error) {
+// convertToMap converts an any to map[string]any
+func convertToMap(v any) (map[string]any, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
@@ -575,8 +575,8 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(ctx context.Context, e
 
 	case "subscribe":
 		var request struct {
-			Type   string      `json:"type"`
-			Filter interface{} `json:"filter,omitempty"`
+			Type   string `json:"type"`
+			Filter any    `json:"filter,omitempty"`
 		}
 
 		if err := json.Unmarshal([]byte(event.Body), &request); err != nil {
@@ -586,7 +586,7 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(ctx context.Context, e
 		var err error
 		switch request.Type {
 		case "moderation":
-			if filter, ok := request.Filter.(map[string]interface{}); ok {
+			if filter, ok := request.Filter.(map[string]any); ok {
 				var modFilter ModerationFilter
 				if data, marshalErr := json.Marshal(filter); marshalErr == nil {
 					json.Unmarshal(data, &modFilter)
@@ -599,7 +599,7 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(ctx context.Context, e
 			err = h.subscriptionManager.SubscribeThreatIntel(connectionID)
 		case "performance":
 			severity := "medium" // default
-			if filter, ok := request.Filter.(map[string]interface{}); ok {
+			if filter, ok := request.Filter.(map[string]any); ok {
 				if sev, ok := filter["severity"].(string); ok {
 					severity = sev
 				}

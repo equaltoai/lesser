@@ -523,7 +523,7 @@ func (c *CostTracker) Calculate() *OperationCost {
 
 // Include cost in all responses
 type Response struct {
-    Data interface{}    `json:"data"`
+    Data any    `json:"data"`
     Cost *OperationCost `json:"cost"`
 }
 ```

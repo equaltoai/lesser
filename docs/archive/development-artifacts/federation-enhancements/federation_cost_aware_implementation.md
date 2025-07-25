@@ -56,7 +56,7 @@ type FederationBudget struct {
 type BudgetAction struct {
     Threshold   float64 // Percentage of budget
     Action      ActionType
-    Parameters  map[string]interface{}
+    Parameters  map[string]any
 }
 
 type ActionType string

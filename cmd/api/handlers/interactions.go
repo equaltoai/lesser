@@ -184,7 +184,7 @@ func (h *Handler) HandleUnfollow(ctx context.Context, request events.APIGatewayV
 				To:      []string{targetActor.ID},
 			},
 			Actor: actor.ID,
-			Object: map[string]interface{}{
+			Object: map[string]any{
 				"type":   activitypub.FollowType,
 				"actor":  actor.ID,
 				"object": targetActor.ID,
@@ -322,7 +322,7 @@ func (h *Handler) HandleBlock(ctx context.Context, request events.APIGatewayV2HT
 				To:      []string{targetActor.ID},
 			},
 			Actor: actor.ID,
-			Object: map[string]interface{}{
+			Object: map[string]any{
 				"type":   activitypub.FollowType,
 				"actor":  actor.ID,
 				"object": targetActor.ID,
@@ -428,7 +428,7 @@ func (h *Handler) HandleUnblock(ctx context.Context, request events.APIGatewayV2
 				To:      []string{targetActor.ID},
 			},
 			Actor: actor.ID,
-			Object: map[string]interface{}{
+			Object: map[string]any{
 				"type":   activitypub.BlockType,
 				"actor":  actor.ID,
 				"object": targetActor.ID,
@@ -545,8 +545,8 @@ func (h *Handler) HandleGetBlocks(ctx context.Context, request events.APIGateway
 				FollowersCount: 0,
 				FollowingCount: 0,
 				StatusesCount:  0,
-				Emojis:         []interface{}{},
-				Fields:         []interface{}{},
+				Emojis:         []any{},
+				Fields:         []any{},
 			}
 
 			if blockedActor.Icon != nil {

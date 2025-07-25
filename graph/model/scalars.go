@@ -11,7 +11,7 @@ import (
 type Time time.Time
 
 // UnmarshalGQL implements the graphql.Unmarshaler interface
-func (t *Time) UnmarshalGQL(v interface{}) error {
+func (t *Time) UnmarshalGQL(v any) error {
 	switch v := v.(type) {
 	case string:
 		parsed, err := time.Parse(time.RFC3339, v)
@@ -38,7 +38,7 @@ func (t Time) MarshalGQL(w io.Writer) {
 type Cursor string
 
 // UnmarshalGQL implements the graphql.Unmarshaler interface
-func (c *Cursor) UnmarshalGQL(v interface{}) error {
+func (c *Cursor) UnmarshalGQL(v any) error {
 	switch v := v.(type) {
 	case string:
 		*c = Cursor(v)

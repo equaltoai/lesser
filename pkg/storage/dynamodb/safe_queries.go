@@ -9,7 +9,7 @@ import (
 )
 
 // toString converts a value to string for string operations
-func toString(value interface{}) string {
+func toString(value any) string {
 	if s, ok := value.(string); ok {
 		return s
 	}
@@ -40,7 +40,7 @@ func NewSafeQuery() *SafeQueryBuilder {
 	return &SafeQueryBuilder{}
 }
 
-func (q *SafeQueryBuilder) WithKey(attribute string, value interface{}) error {
+func (q *SafeQueryBuilder) WithKey(attribute string, value any) error {
 	if err := ValidateAttributeName(attribute); err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func (q *SafeQueryBuilder) WithKey(attribute string, value interface{}) error {
 	return nil
 }
 
-func (q *SafeQueryBuilder) WithKeyRange(attribute string, startValue, endValue interface{}) error {
+func (q *SafeQueryBuilder) WithKeyRange(attribute string, startValue, endValue any) error {
 	if err := ValidateAttributeName(attribute); err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (q *SafeQueryBuilder) WithKeyRange(attribute string, startValue, endValue i
 	return nil
 }
 
-func (q *SafeQueryBuilder) WithFilter(attribute string, op string, value interface{}) error {
+func (q *SafeQueryBuilder) WithFilter(attribute string, op string, value any) error {
 	if err := ValidateAttributeName(attribute); err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (q *SafeQueryBuilder) WithFilter(attribute string, op string, value interfa
 	return nil
 }
 
-func (q *SafeQueryBuilder) AddFilter(attribute string, op string, value interface{}) error {
+func (q *SafeQueryBuilder) AddFilter(attribute string, op string, value any) error {
 	if err := ValidateAttributeName(attribute); err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func SanitizeSearchQuery(query string) string {
 }
 
 // BuildSafeUpdateExpression builds a safe update expression
-func BuildSafeUpdateExpression(updates map[string]interface{}) (expression.UpdateBuilder, error) {
+func BuildSafeUpdateExpression(updates map[string]any) (expression.UpdateBuilder, error) {
 	var updateBuilder expression.UpdateBuilder
 	first := true
 
@@ -237,7 +237,7 @@ func NewSafeScan() *SafeScanBuilder {
 	return &SafeScanBuilder{}
 }
 
-func (s *SafeScanBuilder) WithFilter(attribute string, op string, value interface{}) error {
+func (s *SafeScanBuilder) WithFilter(attribute string, op string, value any) error {
 	qb := &SafeQueryBuilder{}
 	if err := qb.WithFilter(attribute, op, value); err != nil {
 		return err
@@ -247,7 +247,7 @@ func (s *SafeScanBuilder) WithFilter(attribute string, op string, value interfac
 	return nil
 }
 
-func (s *SafeScanBuilder) AddFilter(attribute string, op string, value interface{}) error {
+func (s *SafeScanBuilder) AddFilter(attribute string, op string, value any) error {
 	qb := &SafeQueryBuilder{filter: s.filter, hasFilter: s.hasFilter}
 	if err := qb.AddFilter(attribute, op, value); err != nil {
 		return err

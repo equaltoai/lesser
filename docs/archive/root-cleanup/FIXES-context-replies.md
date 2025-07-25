@@ -46,14 +46,14 @@ if obj.InReplyTo != nil && *obj.InReplyTo != "" {
 Add to `pkg/storage/interface.go`:
 ```go
 // GetReplies retrieves all replies to a given object
-GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error)
+GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]any, string, error)
 // CountReplies counts the number of replies to an object
 CountReplies(ctx context.Context, objectID string) (int, error)
 ```
 
 Implementation in `pkg/storage/dynamodb/objects.go`:
 ```go
-func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error) {
+func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]any, string, error) {
     log := common.WithContext(ctx)
     
     if limit <= 0 || limit > 100 {
@@ -86,7 +86,7 @@ func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit
         return nil, "", fmt.Errorf("failed to query replies: %w", err)
     }
     
-    replies := make([]interface{}, 0, len(result.Items))
+    replies := make([]any, 0, len(result.Items))
     for _, item := range result.Items {
         var record ObjectRecord
         if err := s.UnmarshalItem(item, &record); err != nil {
@@ -151,7 +151,7 @@ if err == nil {
             attributedTo = o.AttributedTo
         case *Object:
             attributedTo = o.AttributedTo
-        case map[string]interface{}:
+        case map[string]any:
             if attr, ok := o["attributedTo"].(string); ok {
                 attributedTo = attr
             }

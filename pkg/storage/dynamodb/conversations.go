@@ -53,7 +53,7 @@ func (s *dynamoDBStorage) CreateConversation(ctx context.Context, conversation *
 	}
 
 	// Create GSI entries for each participant
-	records := []interface{}{record}
+	records := []any{record}
 	for _, participantID := range conversation.Participants {
 		participantRecord := &ConversationRecord{
 			PK:           fmt.Sprintf("USER_CONVERSATIONS#%s", participantID),
@@ -98,7 +98,6 @@ func (s *dynamoDBStorage) GetConversation(ctx context.Context, id string) (*stor
 			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
 		},
 	})
-
 	if err != nil {
 		log.Error("failed to get conversation", zap.Error(err))
 		return nil, fmt.Errorf("failed to get conversation: %w", err)
@@ -195,7 +194,6 @@ func (s *dynamoDBStorage) UpdateConversationLastStatus(ctx context.Context, id, 
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 	})
-
 	if err != nil {
 		log.Error("failed to update conversation", zap.Error(err))
 		return fmt.Errorf("failed to update conversation: %w", err)
@@ -286,7 +284,6 @@ func (s *dynamoDBStorage) MarkConversationRead(ctx context.Context, id, username
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		log.Error("failed to mark conversation as read", zap.Error(err))
 		return fmt.Errorf("failed to mark conversation as read: %w", err)
@@ -314,7 +311,6 @@ func (s *dynamoDBStorage) DeleteConversation(ctx context.Context, id string) err
 			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
 		},
 	})
-
 	if err != nil {
 		log.Error("failed to delete conversation", zap.Error(err))
 		return fmt.Errorf("failed to delete conversation: %w", err)
@@ -354,7 +350,6 @@ func (s *dynamoDBStorage) DeleteConversation(ctx context.Context, id string) err
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 	})
-
 	if err != nil {
 		log.Warn("failed to query conversation status records", zap.Error(err))
 		return nil // Main record deleted, don't fail on cleanup
@@ -408,7 +403,6 @@ func (s *dynamoDBStorage) GetUserConversations(ctx context.Context, userID strin
 		Limit:                     safeInt32(limit + 1),
 		ScanIndexForward:          aws.Bool(false), // Most recent first
 	})
-
 	if err != nil {
 		log.Error("failed to query user conversations", zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query user conversations: %w", err)

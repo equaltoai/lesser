@@ -49,7 +49,7 @@ func (s *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) (
 	}
 
 	// Prepare the request for Titan embeddings model
-	requestBody := map[string]interface{}{
+	requestBody := map[string]any{
 		"inputText": text,
 	}
 
@@ -65,7 +65,6 @@ func (s *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) (
 		Accept:      aws.String("application/json"),
 		Body:        bodyBytes,
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to invoke bedrock model: %w", err)
 	}
@@ -172,7 +171,6 @@ func (s *EmbeddingService) StoreActorEmbedding(ctx context.Context, actorID stri
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to store embedding: %w", err)
 	}
@@ -202,7 +200,6 @@ func (s *EmbeddingService) StoreStatusEmbedding(ctx context.Context, statusID st
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to store status embedding: %w", err)
 	}
@@ -219,7 +216,6 @@ func (s *EmbeddingService) GetActorEmbedding(ctx context.Context, actorID string
 			"SK": &types.AttributeValueMemberS{Value: "VECTOR"},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding: %w", err)
 	}
@@ -249,7 +245,6 @@ func (s *EmbeddingService) GetStatusEmbedding(ctx context.Context, statusID stri
 			"SK": &types.AttributeValueMemberS{Value: "VECTOR"},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get status embedding: %w", err)
 	}

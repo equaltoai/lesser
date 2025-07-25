@@ -147,7 +147,7 @@ For EACH implemented method:
 ❌ **NOT COMPLETE:**
 - `return 0`  
 - `return false`
-- `return []interface{}{}`
+- `return []any{}`
 - `return nil // TODO: implement`
 - `// For now...`
 

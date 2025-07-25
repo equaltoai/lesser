@@ -71,7 +71,6 @@ func (r *UserRepository) GetUser(ctx context.Context, username string) (*storage
 		Where("PK", "=", "user#"+username).
 		Where("SK", "=", "user#"+username).
 		First(&userModel)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("user not found: %s", username)
@@ -94,7 +93,6 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*sto
 		Where("GSI1PK", "=", "EMAIL#"+strings.ToLower(email)).
 		Limit(1).
 		All(&userModels)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query user by email: %w", err)
 	}
@@ -107,7 +105,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*sto
 }
 
 // UpdateUser updates an existing user
-func (r *UserRepository) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
+func (r *UserRepository) UpdateUser(ctx context.Context, username string, updates map[string]any) error {
 	if len(updates) == 0 {
 		return common.ValidationError{Field: "Updates", Message: "no updates provided"}
 	}
@@ -118,7 +116,6 @@ func (r *UserRepository) UpdateUser(ctx context.Context, username string, update
 		Where("PK", "=", "user#"+username).
 		Where("SK", "=", "user#"+username).
 		First(&userModel)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("user not found: %s", username)
@@ -145,7 +142,6 @@ func (r *UserRepository) DeleteUser(ctx context.Context, username string) error 
 		Where("PK", "=", "user#"+username).
 		Where("SK", "=", "user#"+username).
 		Delete()
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("user not found: %s", username)
@@ -194,7 +190,6 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 		Index("status-index").
 		Where("GSI4PK", "=", "STATUS#active").
 		All(&userModels)
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to count active users: %w", err)
 	}
@@ -251,7 +246,7 @@ func (r *UserRepository) modelToStorage(userModel *models.User) *storage.User {
 }
 
 // applyUpdates applies the updates map to the user model
-func (r *UserRepository) applyUpdates(userModel *models.User, updates map[string]interface{}) {
+func (r *UserRepository) applyUpdates(userModel *models.User, updates map[string]any) {
 	for key, value := range updates {
 		switch key {
 		case "email":

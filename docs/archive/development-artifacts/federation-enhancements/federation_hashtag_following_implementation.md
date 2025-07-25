@@ -245,7 +245,7 @@ func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, no
     activity := &activitypub.Activity{
         Type:  "Follow",
         Actor: user.URL,
-        Object: map[string]interface{}{
+        Object: map[string]any{
             "type": "Hashtag",
             "name": "#" + normalizedTag,
             "href": fmt.Sprintf("%s/tags/%s", r.Config.InstanceURL, normalizedTag),
@@ -309,7 +309,7 @@ type HashtagNotificationRule struct {
 
 type NotificationCondition struct {
     Type      ConditionType
-    Value     interface{}
+    Value     any
     Action    NotificationAction
 }
 

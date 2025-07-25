@@ -106,7 +106,7 @@ func (h *Handler) HandleUnlinkOAuthProvider(ctx context.Context, request events.
 }
 
 // getProvider returns the OAuth provider implementation
-func (h *Handler) getProvider(name string) interface{} {
+func (h *Handler) getProvider(name string) any {
 	// OAuth providers have been removed from Lesser
 	// This framework is maintained for potential ActivityPub OAuth needs
 	return nil

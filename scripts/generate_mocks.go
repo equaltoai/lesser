@@ -36,7 +36,7 @@ func main() {
 	generated := generateMockMethods(missing)
 
 	// Write to file
-	err = os.WriteFile("generated_mocks.go", []byte(generated), 0644)
+	err = os.WriteFile("generated_mocks.go", []byte(generated), 0o644)
 	if err != nil {
 		log.Fatalf("Failed to write file: %v", err)
 	}
@@ -407,7 +407,7 @@ func exprToString(expr ast.Expr) string {
 	case *ast.SelectorExpr:
 		return exprToString(e.X) + "." + e.Sel.Name
 	case *ast.InterfaceType:
-		return "interface{}"
+		return "any"
 	case *ast.MapType:
 		return "map[" + exprToString(e.Key) + "]" + exprToString(e.Value)
 	case *ast.FuncType:

@@ -208,7 +208,7 @@ type StreamingError struct {
 	Code    string
 	Message string
 	MediaID string
-	Details map[string]interface{}
+	Details map[string]any
 }
 
 func (e *StreamingError) Error() string {

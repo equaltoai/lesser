@@ -229,7 +229,7 @@ func GenerateSecureID() string {
 **Goal**: Secure federation mechanisms
 
 #### 7.1 Type-Safe Unmarshaling (LSS-002, LSS-011)
-- [ ] Implement custom UnmarshalJSON for interface{} fields
+- [ ] Implement custom UnmarshalJSON for any fields
 - [ ] Add JSON size limits for federation
 - [ ] Validate all incoming ActivityPub objects
 

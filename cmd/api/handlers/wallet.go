@@ -106,7 +106,7 @@ func (h *WalletHandler) VerifySignature(ctx context.Context, request events.APIG
 
 	// If no access token, wallet is not linked to any account
 	if authResponse.AccessToken == "" {
-		return common.OK(map[string]interface{}{
+		return common.OK(map[string]any{
 			"authenticated": false,
 			"message":       "wallet not linked to any account",
 			"address":       req.Address,
@@ -191,7 +191,7 @@ func (h *WalletHandler) LinkWallet(ctx context.Context, request events.APIGatewa
 		return common.InternalServerError(errors.New("failed to link wallet")), nil
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"success": true,
 		"message": "wallet linked successfully",
 		"address": req.Address,
@@ -226,7 +226,7 @@ func (h *WalletHandler) UnlinkWallet(ctx context.Context, request events.APIGate
 		return common.InternalServerError(errors.New("failed to unlink wallet")), nil
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"success": true,
 		"message": "wallet unlinked successfully",
 		"address": address,
@@ -255,7 +255,7 @@ func (h *WalletHandler) GetWallets(ctx context.Context, request events.APIGatewa
 		return common.InternalServerError(errors.New("failed to get wallets")), nil
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"wallets": wallets,
 		"count":   len(wallets),
 	}), nil

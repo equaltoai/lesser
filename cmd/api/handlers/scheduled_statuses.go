@@ -305,7 +305,7 @@ func (h *Handler) HandleDeleteScheduledStatus(ctx context.Context, request event
 	}
 
 	// Return empty object
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // HandleScheduleStatus handles scheduling a status from the create status endpoint
@@ -342,7 +342,7 @@ func (h *Handler) HandleScheduleStatus(ctx context.Context, claims *auth.Claims,
 			h.logger.Error("failed to marshal poll data", zap.Error(err))
 			return common.InternalServerError(err), nil
 		}
-		var pollMap map[string]interface{}
+		var pollMap map[string]any
 		if err := json.Unmarshal(pollData, &pollMap); err != nil {
 			h.logger.Error("failed to unmarshal poll data", zap.Error(err))
 			return common.InternalServerError(err), nil
@@ -388,7 +388,7 @@ func (h *Handler) HandleScheduleStatus(ctx context.Context, claims *auth.Claims,
 }
 
 // Helper methods for scheduled statuses
-func (h *Handler) convertScheduledPoll(pollData map[string]interface{}) *models.Poll {
+func (h *Handler) convertScheduledPoll(pollData map[string]any) *models.Poll {
 	if pollData == nil {
 		return nil
 	}
@@ -402,7 +402,7 @@ func (h *Handler) convertScheduledPoll(pollData map[string]interface{}) *models.
 
 	// Extract options and populate OptionsData (for responses)
 	if optionsRaw, ok := pollData["options"]; ok {
-		if optionsList, ok := optionsRaw.([]interface{}); ok {
+		if optionsList, ok := optionsRaw.([]any); ok {
 			optionsData := make([]models.PollOption, len(optionsList))
 			for i, optRaw := range optionsList {
 				if optStr, ok := optRaw.(string); ok {
@@ -442,18 +442,18 @@ func (h *Handler) convertScheduledPoll(pollData map[string]interface{}) *models.
 	return poll
 }
 
-func (h *Handler) loadScheduledMediaAttachments(ctx context.Context, scheduledStatusID string) []interface{} {
+func (h *Handler) loadScheduledMediaAttachments(ctx context.Context, scheduledStatusID string) []any {
 	attachments, err := h.store.GetScheduledStatusMedia(ctx, scheduledStatusID)
 	if err != nil {
 		h.logger.Warn("failed to load scheduled media attachments", zap.Error(err))
-		return []interface{}{}
+		return []any{}
 	}
 
-	result := make([]interface{}, len(attachments))
+	result := make([]any, len(attachments))
 	for i, attachment := range attachments {
-		// Handle interface{} type by asserting to map[string]interface{}
-		if attachmentMap, ok := attachment.(map[string]interface{}); ok {
-			result[i] = map[string]interface{}{
+		// Handle any type by asserting to map[string]any
+		if attachmentMap, ok := attachment.(map[string]any); ok {
+			result[i] = map[string]any{
 				"id":          attachmentMap["id"],
 				"type":        attachmentMap["type"],
 				"url":         attachmentMap["url"],

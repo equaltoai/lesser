@@ -214,7 +214,7 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 
 	// Create media record
 	now := time.Now()
-	mediaRecord := map[string]interface{}{
+	mediaRecord := map[string]any{
 		"PK":          fmt.Sprintf("MEDIA#%s", mediaID),
 		"SK":          "METADATA",
 		"id":          fmt.Sprintf("MEDIA#%s", mediaID),
@@ -249,7 +249,7 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 		processingTasks = append(processingTasks, "waveform", "duration", "metadata")
 	}
 
-	jobRecord := map[string]interface{}{
+	jobRecord := map[string]any{
 		"PK":              fmt.Sprintf("JOB#%s", jobID),
 		"SK":              fmt.Sprintf("JOB#%s", jobID),
 		"id":              fmt.Sprintf("JOB#%s", jobID),
@@ -266,7 +266,7 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 		"Status":          "pending",
 		"RetryCount":      0,
 		"ProcessingTasks": processingTasks,
-		"Results":         map[string]interface{}{},
+		"Results":         map[string]any{},
 		"CreatedAt":       now,
 		"UpdatedAt":       now,
 		"TTL":             now.Add(7 * 24 * time.Hour).Unix(), // 7 days TTL
@@ -297,9 +297,9 @@ func (h *Handler) HandleMediaUploadV2(ctx context.Context, request events.APIGat
 		PreviewURL: "", // Empty until processed
 		RemoteURL:  nil,
 		TextURL:    "", // Will be populated after processing
-		Meta: map[string]interface{}{
+		Meta: map[string]any{
 			"processing": true,
-			"focus": map[string]interface{}{
+			"focus": map[string]any{
 				"x": focusX,
 				"y": focusY,
 			},
@@ -321,7 +321,7 @@ func (h *Handler) triggerMediaProcessor(ctx context.Context, jobID, mediaID, s3K
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Create message payload
-	message := map[string]interface{}{
+	message := map[string]any{
 		"jobID":     jobID,
 		"mediaID":   mediaID,
 		"s3Key":     s3Key,
@@ -358,7 +358,6 @@ func (h *Handler) triggerMediaProcessor(ctx context.Context, jobID, mediaID, s3K
 			},
 		},
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to send SQS message: %w", err)
 	}

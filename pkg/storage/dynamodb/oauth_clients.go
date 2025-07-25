@@ -96,7 +96,7 @@ func (s *dynamoDBStorage) GetOAuthClient(ctx context.Context, clientID string) (
 }
 
 // UpdateOAuthClient updates an existing OAuth client
-func (s *dynamoDBStorage) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
 	if len(updates) == 0 {
 		return errors.New("no updates provided")
 	}

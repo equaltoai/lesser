@@ -138,7 +138,7 @@ func (a *StorageAdapter) GetUser(ctx context.Context, username string) (*storage
 
 // For methods not yet migrated, delegate to the original storage implementation
 // This allows for incremental migration
-func (a *StorageAdapter) delegateToOriginal(methodName string, args ...interface{}) (interface{}, error) {
+func (a *StorageAdapter) delegateToOriginal(methodName string, args ...any) (any, error) {
 	if a.originalStorage == nil {
 		return nil, fmt.Errorf("method %s not implemented and no original storage available", methodName)
 	}

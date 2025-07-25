@@ -43,7 +43,7 @@ func (h *WebAuthnHandler) BeginRegistration(ctx context.Context, request events.
 	}
 
 	// Return options and challenge
-	response := map[string]interface{}{
+	response := map[string]any{
 		"publicKey": options,
 		"challenge": challenge,
 	}
@@ -114,7 +114,7 @@ func (h *WebAuthnHandler) BeginLogin(ctx context.Context, request events.APIGate
 	}
 
 	// Return options and challenge
-	response := map[string]interface{}{
+	response := map[string]any{
 		"publicKey": options,
 		"challenge": challenge,
 	}
@@ -180,9 +180,9 @@ func (h *WebAuthnHandler) ListCredentials(ctx context.Context, request events.AP
 	}
 
 	// Format response
-	var response []map[string]interface{}
+	var response []map[string]any
 	for _, cred := range credentials {
-		response = append(response, map[string]interface{}{
+		response = append(response, map[string]any{
 			"id":           cred.ID,
 			"name":         cred.Name,
 			"created_at":   cred.CreatedAt,
@@ -190,7 +190,7 @@ func (h *WebAuthnHandler) ListCredentials(ctx context.Context, request events.AP
 		})
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"credentials": response,
 	}), nil
 }

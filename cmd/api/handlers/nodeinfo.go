@@ -23,13 +23,13 @@ type NodeInfoLink struct {
 
 // NodeInfo represents a NodeInfo 2.0 response
 type NodeInfo struct {
-	Version           string                 `json:"version"`
-	Software          NodeInfoSoftware       `json:"software"`
-	Protocols         []string               `json:"protocols"`
-	Services          NodeInfoServices       `json:"services"`
-	OpenRegistrations bool                   `json:"openRegistrations"`
-	Usage             NodeInfoUsage          `json:"usage"`
-	Metadata          map[string]interface{} `json:"metadata"`
+	Version           string           `json:"version"`
+	Software          NodeInfoSoftware `json:"software"`
+	Protocols         []string         `json:"protocols"`
+	Services          NodeInfoServices `json:"services"`
+	OpenRegistrations bool             `json:"openRegistrations"`
+	Usage             NodeInfoUsage    `json:"usage"`
+	Metadata          map[string]any   `json:"metadata"`
 }
 
 // NodeInfoSoftware represents software information
@@ -136,10 +136,10 @@ func (h *Handler) HandleNodeInfo(ctx context.Context, request events.APIGatewayV
 			LocalPosts:    int(localPosts),
 			LocalComments: 0, // Lesser doesn't distinguish between posts and comments
 		},
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"nodeName":        instanceConfig.Title,
 			"nodeDescription": instanceConfig.Description,
-			"maintainer": map[string]interface{}{
+			"maintainer": map[string]any{
 				"name":  instanceConfig.Email,
 				"email": instanceConfig.Email,
 			},
@@ -151,11 +151,11 @@ func (h *Handler) HandleNodeInfo(ctx context.Context, request events.APIGatewayV
 			"email":                     instanceConfig.Email,
 			"accountActivationRequired": instanceConfig.ApprovalRequired,
 			"invitesEnabled":            false,
-			"configuration": map[string]interface{}{
-				"statuses": map[string]interface{}{
+			"configuration": map[string]any{
+				"statuses": map[string]any{
 					"max_characters": instanceConfig.MaxStatusChars,
 				},
-				"media_attachments": map[string]interface{}{
+				"media_attachments": map[string]any{
 					"image_size_limit": instanceConfig.MaxMediaSize,
 					"video_size_limit": instanceConfig.MaxVideoSize,
 				},

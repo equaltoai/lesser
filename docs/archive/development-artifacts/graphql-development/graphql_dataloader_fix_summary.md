@@ -95,7 +95,7 @@ r.CostTracker.TrackDynamoRead(1)
 
 // Add to response
 cost := r.CostTracker.CalculateCost()
-opCtx.Extensions["cost"] = map[string]interface{}{
+opCtx.Extensions["cost"] = map[string]any{
     "operationCost": cost.TotalCostMicroCents,
     "dynamoReads":   cost.DynamoDBReads,
 }

@@ -1084,7 +1084,7 @@
       }
   }
   
-  func (c *MultiLevelCache) Get(ctx context.Context, key string) (interface{}, error) {
+  func (c *MultiLevelCache) Get(ctx context.Context, key string) (any, error) {
       // Check L1 (memory)
       if value, found := c.l1.Get(key); found {
           c.recordHit("l1", key)
@@ -1113,7 +1113,7 @@
       return nil, ErrCacheMiss
   }
   
-  func (c *MultiLevelCache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+  func (c *MultiLevelCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
       size := calculateSize(value)
       
       // Store in appropriate levels based on size and access pattern
@@ -1442,7 +1442,7 @@
       history   *QueryHistory
   }
   
-  func (aqe *AdaptiveQueryExecutor) ExecuteQuery(ctx context.Context, query Query) (interface{}, error) {
+  func (aqe *AdaptiveQueryExecutor) ExecuteQuery(ctx context.Context, query Query) (any, error) {
       // Get historical performance data
       historical := aqe.history.GetStats(query)
       

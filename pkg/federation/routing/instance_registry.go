@@ -38,7 +38,7 @@ type InstanceRegistry struct {
 
 type instanceUpdate struct {
 	instanceID string
-	updates    map[string]interface{}
+	updates    map[string]any
 }
 
 type cachedInstance struct {
@@ -450,7 +450,7 @@ func (ir *InstanceRegistry) UpdateInstanceUsage(ctx context.Context, instanceID 
 				// Queue for batch update
 				ir.updateBatch <- &instanceUpdate{
 					instanceID: instanceID,
-					updates: map[string]interface{}{
+					updates: map[string]any{
 						"Status": InstanceStatusBlocked,
 						"GSI1PK": "STATUS#blocked",
 					},

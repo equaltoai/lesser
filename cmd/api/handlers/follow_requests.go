@@ -43,7 +43,7 @@ func (h *Handler) HandleGetFollowRequests(ctx context.Context, request events.AP
 
 	// If account is not locked, return empty array
 	if !actor.ManuallyApprovesFollowers {
-		return common.OK([]interface{}{}), nil
+		return common.OK([]any{}), nil
 	}
 
 	// Get pending follow requests
@@ -54,7 +54,7 @@ func (h *Handler) HandleGetFollowRequests(ctx context.Context, request events.AP
 	}
 
 	// Convert to account format
-	accounts := make([]map[string]interface{}, 0, len(pendingRequests))
+	accounts := make([]map[string]any, 0, len(pendingRequests))
 	for _, followerID := range pendingRequests {
 		// Get follower actor
 		followerActor, err := h.store.GetActor(ctx, followerID)
@@ -137,7 +137,7 @@ func (h *Handler) HandleAuthorizeFollowRequest(ctx context.Context, request even
 		zap.String("follower_id", accountID))
 
 	// Build relationship response
-	relationship := map[string]interface{}{
+	relationship := map[string]any{
 		"id":                   accountID,
 		"following":            false,
 		"showing_reblogs":      true,
@@ -216,7 +216,7 @@ func (h *Handler) HandleRejectFollowRequest(ctx context.Context, request events.
 		zap.String("follower_id", accountID))
 
 	// Build relationship response
-	relationship := map[string]interface{}{
+	relationship := map[string]any{
 		"id":                   accountID,
 		"following":            false,
 		"showing_reblogs":      false,
