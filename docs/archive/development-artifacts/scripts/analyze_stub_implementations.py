@@ -55,7 +55,7 @@ class StubAnalyzer:
                 "description": "Placeholder implementation"
             },
             "empty_return": {
-                "pattern": r"return \[\](map\[string\])?interface{}{}, nil|return \[\]string{}, nil",
+                "pattern": r"return \[\](map\[string\])?any{}, nil|return \[\]string{}, nil",
                 "severity": "HIGH",
                 "description": "Returns empty collection"
             }

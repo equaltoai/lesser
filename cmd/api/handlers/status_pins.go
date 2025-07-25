@@ -64,7 +64,7 @@ func (h *Handler) HandlePinStatus(ctx context.Context, request events.APIGateway
 	switch obj := object.(type) {
 	case *activitypub.Note:
 		attributedTo = obj.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok {
 			attributedTo = attr
 		}

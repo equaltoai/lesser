@@ -404,7 +404,7 @@ func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activityp
 	// Create delivery message
 	deliveryID := fmt.Sprintf("delivery_%s_%d", generateDeliveryID(), time.Now().UnixNano())
 
-	message := map[string]interface{}{
+	message := map[string]any{
 		"delivery_id":      deliveryID,
 		"activity":         activity,
 		"target_inbox":     targetInbox,
@@ -444,7 +444,6 @@ func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activityp
 			},
 		},
 	})
-
 	if err != nil {
 		d.logger.Error("failed to send to SQS, falling back to synchronous delivery",
 			zap.String("delivery_id", deliveryID),

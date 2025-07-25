@@ -136,7 +136,7 @@ func (s *dynamoDBStorage) GetFiltersForUser(ctx context.Context, username string
 }
 
 // UpdateFilter updates a filter
-func (s *dynamoDBStorage) UpdateFilter(ctx context.Context, filterID string, updates map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdateFilter(ctx context.Context, filterID string, updates map[string]any) error {
 	// First get the existing filter to find the username
 	filter, err := s.GetFilter(ctx, filterID)
 	if err != nil {
@@ -318,7 +318,7 @@ func (s *dynamoDBStorage) GetFilterKeywords(ctx context.Context, filterID string
 }
 
 // UpdateFilterKeyword updates a filter keyword
-func (s *dynamoDBStorage) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error {
 	// Need to find the filter ID first
 	// For now, we'll scan - in production, you might want to maintain a GSI
 	input := &dynamodb.ScanInput{

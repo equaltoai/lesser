@@ -396,9 +396,9 @@ func broadcastNoteUpdate(ctx context.Context, note *notes.CommunityNote) {
 	}
 
 	// Create update message
-	message := map[string]interface{}{
+	message := map[string]any{
 		"type": "note.update",
-		"payload": map[string]interface{}{
+		"payload": map[string]any{
 			"object_id": note.ObjectID,
 			"note":      note,
 			"action":    determineAction(note),

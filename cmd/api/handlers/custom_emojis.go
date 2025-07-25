@@ -236,5 +236,5 @@ func (h *Handler) HandleDeleteCustomEmoji(ctx context.Context, request events.AP
 	}
 
 	// Return empty object
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }

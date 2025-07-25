@@ -58,7 +58,7 @@ func (h *Handler) HandleMuteAccount(ctx context.Context, request events.APIGatew
 	// Parse parameters
 	hideNotifications := false
 	if request.Body != "" {
-		var params map[string]interface{}
+		var params map[string]any
 		if err := common.ParseRequestBody([]byte(request.Body), &params); err == nil {
 			if notifications, ok := params["notifications"].(bool); ok {
 				hideNotifications = notifications

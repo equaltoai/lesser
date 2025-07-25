@@ -202,7 +202,6 @@ func (s *Streamer) GetSegmentURL(mediaID string, quality Quality, segment int) (
 	}, func(opts *s3.PresignOptions) {
 		opts.Expires = 1 * time.Hour
 	})
-
 	if err != nil {
 		return "", fmt.Errorf("generate presigned URL: %w", err)
 	}
@@ -431,7 +430,7 @@ func (s *Streamer) logManifestGeneration(mediaID string, format string, duration
 
 // CleanupCache removes expired entries from the manifest cache
 func (s *Streamer) CleanupCache() {
-	s.manifestCache.Range(func(key, value interface{}) bool {
+	s.manifestCache.Range(func(key, value any) bool {
 		if manifest, ok := value.(*cachedManifest); ok {
 			if time.Since(manifest.generatedAt) > s.cacheTTL {
 				s.manifestCache.Delete(key)

@@ -40,9 +40,9 @@ func (s *RecoveryFederationService) SendTrusteeInvitation(ctx context.Context, f
 	now := time.Now()
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: []interface{}{
+			Context: []any{
 				"https://www.w3.org/ns/activitystreams",
-				map[string]interface{}{
+				map[string]any{
 					"lesser": "https://lesser.social/ns#",
 					"TrusteeInvitation": map[string]string{
 						"@id":   "lesser:TrusteeInvitation",
@@ -56,7 +56,7 @@ func (s *RecoveryFederationService) SendTrusteeInvitation(ctx context.Context, f
 			Published: &now,
 		},
 		Actor: fmt.Sprintf("https://%s/users/%s", s.domain, fromUser),
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"type":         "Note",
 			"id":           fmt.Sprintf("https://%s/objects/%s", s.domain, generateActivityID()),
 			"attributedTo": fmt.Sprintf("https://%s/users/%s", s.domain, fromUser),
@@ -65,14 +65,14 @@ func (s *RecoveryFederationService) SendTrusteeInvitation(ctx context.Context, f
 				s.domain, fromUser, fromUser, s.domain, fromUser,
 			),
 			"to": []string{trusteeActorID},
-			"tag": []map[string]interface{}{
+			"tag": []map[string]any{
 				{
 					"type": "Mention",
 					"href": trusteeActorID,
 					"name": getActorHandle(trusteeActorID),
 				},
 			},
-			"lesser:trusteeInvitation": map[string]interface{}{
+			"lesser:trusteeInvitation": map[string]any{
 				"type":      "TrusteeInvitation",
 				"inviter":   fmt.Sprintf("https://%s/users/%s", s.domain, fromUser),
 				"invitee":   trusteeActorID,
@@ -99,9 +99,9 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 	now := time.Now()
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: []interface{}{
+			Context: []any{
 				"https://www.w3.org/ns/activitystreams",
-				map[string]interface{}{
+				map[string]any{
 					"lesser": "https://lesser.social/ns#",
 					"RecoveryRequest": map[string]string{
 						"@id":   "lesser:RecoveryRequest",
@@ -115,7 +115,7 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 			Published: &now,
 		},
 		Actor: fmt.Sprintf("https://%s/actor/system", s.domain), // System actor for recovery
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"type":         "Note",
 			"id":           fmt.Sprintf("https://%s/objects/%s", s.domain, generateActivityID()),
 			"attributedTo": fmt.Sprintf("https://%s/actor/system", s.domain),
@@ -124,14 +124,14 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 				s.domain, request.Username, request.Username, confirmURL,
 			),
 			"to": []string{trusteeActorID},
-			"tag": []map[string]interface{}{
+			"tag": []map[string]any{
 				{
 					"type": "Mention",
 					"href": trusteeActorID,
 					"name": getActorHandle(trusteeActorID),
 				},
 			},
-			"lesser:recoveryRequest": map[string]interface{}{
+			"lesser:recoveryRequest": map[string]any{
 				"type":       "RecoveryRequest",
 				"requestId":  request.ID,
 				"username":   request.Username,
@@ -165,13 +165,13 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 // HandleTrusteeConfirmation processes incoming trustee confirmations
 func (s *RecoveryFederationService) HandleTrusteeConfirmation(ctx context.Context, activity *activitypub.Activity) error {
 	// Extract recovery request information
-	object, ok := activity.Object.(map[string]interface{})
+	object, ok := activity.Object.(map[string]any)
 	if !ok {
 		return fmt.Errorf("invalid activity object")
 	}
 
 	// Look for our custom recovery confirmation
-	recoveryData, ok := object["lesser:recoveryConfirmation"].(map[string]interface{})
+	recoveryData, ok := object["lesser:recoveryConfirmation"].(map[string]any)
 	if !ok {
 		return fmt.Errorf("not a recovery confirmation activity")
 	}
@@ -219,7 +219,7 @@ func (s *RecoveryFederationService) SendRecoveryApprovalNotification(ctx context
 			Published: &now,
 		},
 		Actor: fmt.Sprintf("https://%s/actor/system", s.domain),
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"type": "Note",
 			"content": fmt.Sprintf(
 				"<p>✅ <strong>Account Recovery Approved</strong></p><p>Your account recovery request has been approved by your trustees. You can now reset your authentication methods.</p><p>🔐 <a href=\"%s\">Complete Account Recovery</a></p><p>⚠️ This link expires in 24 hours.</p>",
@@ -264,8 +264,8 @@ func getActorHandle(actorID string) string {
 // RecoveryActivity represents a custom ActivityPub activity for recovery
 type RecoveryActivity struct {
 	activitypub.Activity
-	RecoveryType string                 `json:"lesser:recoveryType,omitempty"`
-	RecoveryData map[string]interface{} `json:"lesser:recoveryData,omitempty"`
+	RecoveryType string         `json:"lesser:recoveryType,omitempty"`
+	RecoveryData map[string]any `json:"lesser:recoveryData,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling
@@ -277,7 +277,7 @@ func (r *RecoveryActivity) MarshalJSON() ([]byte, error) {
 	}
 
 	// Unmarshal to add our custom fields
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(baseJSON, &m); err != nil {
 		return nil, err
 	}

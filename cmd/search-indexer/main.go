@@ -147,33 +147,33 @@ func (si *SearchIndexer) ensureIndex(ctx context.Context) error {
 
 	// If index doesn't exist, create it
 	if res.StatusCode == 404 {
-		mapping := map[string]interface{}{
-			"mappings": map[string]interface{}{
-				"properties": map[string]interface{}{
-					"id":       map[string]interface{}{"type": "keyword"},
-					"username": map[string]interface{}{"type": "keyword"},
-					"display_name": map[string]interface{}{
+		mapping := map[string]any{
+			"mappings": map[string]any{
+				"properties": map[string]any{
+					"id":       map[string]any{"type": "keyword"},
+					"username": map[string]any{"type": "keyword"},
+					"display_name": map[string]any{
 						"type": "text",
-						"fields": map[string]interface{}{
-							"keyword": map[string]interface{}{"type": "keyword"},
+						"fields": map[string]any{
+							"keyword": map[string]any{"type": "keyword"},
 						},
 					},
-					"bio": map[string]interface{}{
+					"bio": map[string]any{
 						"type":     "text",
 						"analyzer": "standard",
 					},
-					"domain":          map[string]interface{}{"type": "keyword"},
-					"followers_count": map[string]interface{}{"type": "integer"},
-					"following_count": map[string]interface{}{"type": "integer"},
-					"statuses_count":  map[string]interface{}{"type": "integer"},
-					"created_at":      map[string]interface{}{"type": "date"},
-					"updated_at":      map[string]interface{}{"type": "date"},
-					"indexed_at":      map[string]interface{}{"type": "date"},
-					"is_local":        map[string]interface{}{"type": "boolean"},
-					"embedding": map[string]interface{}{
+					"domain":          map[string]any{"type": "keyword"},
+					"followers_count": map[string]any{"type": "integer"},
+					"following_count": map[string]any{"type": "integer"},
+					"statuses_count":  map[string]any{"type": "integer"},
+					"created_at":      map[string]any{"type": "date"},
+					"updated_at":      map[string]any{"type": "date"},
+					"indexed_at":      map[string]any{"type": "date"},
+					"is_local":        map[string]any{"type": "boolean"},
+					"embedding": map[string]any{
 						"type":      "knn_vector",
 						"dimension": 1536, // AWS Titan embedding dimension
-						"method": map[string]interface{}{
+						"method": map[string]any{
 							"name":       "hnsw",
 							"space_type": "cosinesimil",
 							"engine":     "nmslib",
@@ -181,19 +181,19 @@ func (si *SearchIndexer) ensureIndex(ctx context.Context) error {
 					},
 				},
 			},
-			"settings": map[string]interface{}{
+			"settings": map[string]any{
 				"number_of_shards":   1,
 				"number_of_replicas": 1,
-				"analysis": map[string]interface{}{
-					"analyzer": map[string]interface{}{
-						"username_analyzer": map[string]interface{}{
+				"analysis": map[string]any{
+					"analyzer": map[string]any{
+						"username_analyzer": map[string]any{
 							"type":      "custom",
 							"tokenizer": "lowercase",
 							"filter":    []string{"edge_ngram_filter"},
 						},
 					},
-					"filter": map[string]interface{}{
-						"edge_ngram_filter": map[string]interface{}{
+					"filter": map[string]any{
+						"edge_ngram_filter": map[string]any{
 							"type":     "edge_ngram",
 							"min_gram": 2,
 							"max_gram": 20,

@@ -47,7 +47,7 @@ func (h *Handler) HandleGetPushSubscription(ctx context.Context, request events.
 
 	// If no subscriptions, return empty response
 	if len(subscriptions) == 0 {
-		return common.OK(map[string]interface{}{
+		return common.OK(map[string]any{
 			"id":       "",
 			"endpoint": "",
 			"alerts": map[string]bool{

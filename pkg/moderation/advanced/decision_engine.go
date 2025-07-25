@@ -105,7 +105,7 @@ type Signal struct {
 	Severity   Severity
 	Score      float64
 	Confidence float64
-	Evidence   interface{}
+	Evidence   any
 }
 
 // collectSignals extracts all signals from the analysis

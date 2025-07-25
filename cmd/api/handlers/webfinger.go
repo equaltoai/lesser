@@ -14,20 +14,20 @@ import (
 
 // WebFingerResponse represents a WebFinger response
 type WebFingerResponse struct {
-	Subject string                 `json:"subject"`
-	Aliases []string               `json:"aliases,omitempty"`
-	Links   []WebFingerLink        `json:"links"`
-	Props   map[string]interface{} `json:"properties,omitempty"`
+	Subject string          `json:"subject"`
+	Aliases []string        `json:"aliases,omitempty"`
+	Links   []WebFingerLink `json:"links"`
+	Props   map[string]any  `json:"properties,omitempty"`
 }
 
 // WebFingerLink represents a link in a WebFinger response
 type WebFingerLink struct {
-	Rel        string                 `json:"rel"`
-	Type       string                 `json:"type,omitempty"`
-	Href       string                 `json:"href,omitempty"`
-	Template   string                 `json:"template,omitempty"`
-	Titles     map[string]string      `json:"titles,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
+	Rel        string            `json:"rel"`
+	Type       string            `json:"type,omitempty"`
+	Href       string            `json:"href,omitempty"`
+	Template   string            `json:"template,omitempty"`
+	Titles     map[string]string `json:"titles,omitempty"`
+	Properties map[string]any    `json:"properties,omitempty"`
 }
 
 // HandleWebFinger handles /.well-known/webfinger requests

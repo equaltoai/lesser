@@ -79,7 +79,7 @@ type VerifyCredentialsResponse struct {
 	LastStatusAt   string                 `json:"last_status_at,omitempty"`
 	CreatedAt      string                 `json:"created_at"`
 	Role           string                 `json:"role"`
-	Source         map[string]interface{} `json:"source"`
+	Source         map[string]any `json:"source"`
 }
 
 // AppRegistrationRequest represents a Mastodon-compatible client registration request
@@ -165,13 +165,13 @@ type Status struct {
 	Pinned             bool                   `json:"pinned"`
 	Content            string                 `json:"content"`
 	Reblog             *Status                `json:"reblog"`
-	Application        map[string]interface{} `json:"application,omitempty"`
+	Application        map[string]any `json:"application,omitempty"`
 	Account            Account                `json:"account"`
-	MediaAttachments   []interface{}          `json:"media_attachments"`
-	Mentions           []interface{}          `json:"mentions"`
-	Tags               []interface{}          `json:"tags"`
-	Emojis             []interface{}          `json:"emojis"`
-	Card               *interface{}           `json:"card"`
+	MediaAttachments   []any          `json:"media_attachments"`
+	Mentions           []any          `json:"mentions"`
+	Tags               []any          `json:"tags"`
+	Emojis             []any          `json:"emojis"`
+	Card               *any           `json:"card"`
 	Poll               *Poll                  `json:"poll"`
 }
 
@@ -196,8 +196,8 @@ type Account struct {
 	FollowingCount int           `json:"following_count"`
 	StatusesCount  int           `json:"statuses_count"`
 	LastStatusAt   string        `json:"last_status_at"`
-	Emojis         []interface{} `json:"emojis"`
-	Fields         []interface{} `json:"fields"`
+	Emojis         []any `json:"emojis"`
+	Fields         []any `json:"fields"`
 }
 
 func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
@@ -416,7 +416,7 @@ func handleRegistration(ctx context.Context, request events.APIGatewayV2HTTPRequ
 
 	// Validate request
 	if err := validateRegistrationRequest(req); err != nil {
-		errResp := map[string]interface{}{
+		errResp := map[string]any{
 			"error": err.Error(),
 		}
 		body, _ := json.Marshal(errResp)
@@ -430,7 +430,7 @@ func handleRegistration(ctx context.Context, request events.APIGatewayV2HTTPRequ
 	// Hash password
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		errResp := map[string]interface{}{
+		errResp := map[string]any{
 			"error": err.Error(),
 		}
 		body, _ := json.Marshal(errResp)
@@ -454,7 +454,7 @@ func handleRegistration(ctx context.Context, request events.APIGatewayV2HTTPRequ
 
 	if err := store.CreateUser(ctx, user); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			errResp := map[string]interface{}{
+			errResp := map[string]any{
 				"error": "Username is already taken",
 			}
 			body, _ := json.Marshal(errResp)
@@ -583,11 +583,11 @@ func handleVerifyCredentials(ctx context.Context, request events.APIGatewayV2HTT
 		StatusesCount:  0,
 		CreatedAt:      user.CreatedAt.Format("2006-01-02T15:04:05.000Z"),
 		Role:           user.Role,
-		Source: map[string]interface{}{
+		Source: map[string]any{
 			"privacy":   "public",
 			"sensitive": false,
 			"language":  user.Locale,
-			"fields":    []interface{}{},
+			"fields":    []any{},
 		},
 	}
 
@@ -717,7 +717,7 @@ func handleCreateStatus(ctx context.Context, request events.APIGatewayV2HTTPRequ
 			}
 
 			// Extract media info
-			if mediaMap, ok := mediaObj.(map[string]interface{}); ok {
+			if mediaMap, ok := mediaObj.(map[string]any); ok {
 				attachment := activitypub.Attachment{
 					Type:      "Document",
 					MediaType: getStringFromMap(mediaMap, "MimeType", "image/jpeg"),
@@ -796,10 +796,10 @@ func handleCreateStatus(ctx context.Context, request events.APIGatewayV2HTTPRequ
 		Muted:            false,
 		Bookmarked:       false,
 		Pinned:           false,
-		MediaAttachments: []interface{}{},
-		Mentions:         []interface{}{},
-		Tags:             []interface{}{},
-		Emojis:           []interface{}{},
+		MediaAttachments: []any{},
+		Mentions:         []any{},
+		Tags:             []any{},
+		Emojis:           []any{},
 		Account: Account{
 			ID:             actor.ID,
 			Username:       actor.PreferredUsername,
@@ -815,8 +815,8 @@ func handleCreateStatus(ctx context.Context, request events.APIGatewayV2HTTPRequ
 			FollowersCount: 0,
 			FollowingCount: 0,
 			StatusesCount:  0,
-			Emojis:         []interface{}{},
-			Fields:         []interface{}{},
+			Emojis:         []any{},
+			Fields:         []any{},
 		},
 	}
 
@@ -982,7 +982,7 @@ func handleUnfavourite(ctx context.Context, request events.APIGatewayV2HTTPReque
 				To:      []string{activitypub.PublicAddress},
 			},
 			Actor: actor.ID,
-			Object: map[string]interface{}{
+			Object: map[string]any{
 				"type":   activitypub.LikeType,
 				"actor":  actor.ID,
 				"object": objectID,
@@ -1173,7 +1173,7 @@ func handleUnreblog(ctx context.Context, request events.APIGatewayV2HTTPRequest,
 				To:      []string{activitypub.PublicAddress},
 			},
 			Actor: actor.ID,
-			Object: map[string]interface{}{
+			Object: map[string]any{
 				"type":   activitypub.AnnounceType,
 				"actor":  actor.ID,
 				"object": objectID,
@@ -1273,7 +1273,7 @@ func handleDeleteStatus(ctx context.Context, request events.APIGatewayV2HTTPRequ
 	switch v := existingObj.(type) {
 	case *storageDB.Object:
 		attributedTo = v.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := v["attributedTo"].(string); ok {
 			attributedTo = attr
 		}
@@ -1398,7 +1398,7 @@ func handleUpdateStatus(ctx context.Context, request events.APIGatewayV2HTTPRequ
 		existingPublished = v.Published
 		existingTo = v.To
 		existingCC = v.CC
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := v["attributedTo"].(string); ok {
 			attributedTo = attr
 		}
@@ -1408,14 +1408,14 @@ func handleUpdateStatus(ctx context.Context, request events.APIGatewayV2HTTPRequ
 		if pub, ok := v["published"].(string); ok {
 			existingPublished, _ = time.Parse(time.RFC3339, pub)
 		}
-		if to, ok := v["to"].([]interface{}); ok {
+		if to, ok := v["to"].([]any); ok {
 			for _, t := range to {
 				if s, ok := t.(string); ok {
 					existingTo = append(existingTo, s)
 				}
 			}
 		}
-		if cc, ok := v["cc"].([]interface{}); ok {
+		if cc, ok := v["cc"].([]any); ok {
 			for _, c := range cc {
 				if s, ok := c.(string); ok {
 					existingCC = append(existingCC, s)
@@ -1437,7 +1437,7 @@ func handleUpdateStatus(ctx context.Context, request events.APIGatewayV2HTTPRequ
 			To:      []string{activitypub.PublicAddress},
 		},
 		Actor: actor.ID,
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"id":           objectID,
 			"type":         existingType,
 			"attributedTo": actor.ID,
@@ -1495,8 +1495,8 @@ func generateRandomString(length int) string {
 	return string(b)
 }
 
-// getStringFromMap safely extracts a string value from a map[string]interface{}
-func getStringFromMap(m map[string]interface{}, key, defaultValue string) string {
+// getStringFromMap safely extracts a string value from a map[string]any
+func getStringFromMap(m map[string]any, key, defaultValue string) string {
 	if val, ok := m[key]; ok {
 		if str, ok := val.(string); ok {
 			return str
@@ -1570,7 +1570,7 @@ func handleBlock(ctx context.Context, request events.APIGatewayV2HTTPRequest, ac
 		// Check if already blocked
 		if strings.Contains(err.Error(), "already exists") {
 			// Already blocked, return success
-			relationship := map[string]interface{}{
+			relationship := map[string]any{
 				"id":                   accountID,
 				"following":            false,
 				"showing_reblogs":      false,
@@ -1597,7 +1597,7 @@ func handleBlock(ctx context.Context, request events.APIGatewayV2HTTPRequest, ac
 	}
 
 	// Return Mastodon-compatible relationship object
-	relationship := map[string]interface{}{
+	relationship := map[string]any{
 		"id":                   accountID,
 		"following":            false,
 		"showing_reblogs":      false,
@@ -1659,7 +1659,7 @@ func handleUnblock(ctx context.Context, request events.APIGatewayV2HTTPRequest, 
 	_, err = store.GetBlock(ctx, actor.ID, blockedActorID)
 	if err != nil {
 		// Not blocked, return success anyway
-		relationship := map[string]interface{}{
+		relationship := map[string]any{
 			"id":                   accountID,
 			"following":            false,
 			"showing_reblogs":      false,
@@ -1684,7 +1684,7 @@ func handleUnblock(ctx context.Context, request events.APIGatewayV2HTTPRequest, 
 	}
 
 	// Return Mastodon-compatible relationship object
-	relationship := map[string]interface{}{
+	relationship := map[string]any{
 		"id":                   accountID,
 		"following":            false,
 		"showing_reblogs":      false,
@@ -1750,13 +1750,13 @@ func handleGetBlocks(ctx context.Context, request events.APIGatewayV2HTTPRequest
 	}
 
 	// Convert to Mastodon-compatible account format
-	accounts := make([]map[string]interface{}, 0, len(blocks))
+	accounts := make([]map[string]any, 0, len(blocks))
 	for _, block := range blocks {
 		// Extract username from actor ID
 		parts := strings.Split(block.Object, "/")
 		username := parts[len(parts)-1]
 
-		account := map[string]interface{}{
+		account := map[string]any{
 			"id":              username,
 			"username":        username,
 			"acct":            username,
@@ -1776,8 +1776,8 @@ func handleGetBlocks(ctx context.Context, request events.APIGatewayV2HTTPRequest
 			"following_count": 0,
 			"statuses_count":  0,
 			"last_status_at":  nil,
-			"emojis":          []interface{}{},
-			"fields":          []interface{}{},
+			"emojis":          []any{},
+			"fields":          []any{},
 		}
 		accounts = append(accounts, account)
 	}
@@ -1875,7 +1875,7 @@ func handleHomeTimeline(ctx context.Context, request events.APIGatewayV2HTTPRequ
 			Visibility:       entry.Visibility,
 			Language:         entry.Language,
 			InReplyToID:      nil,             // Will set below if there's a reply
-			MediaAttachments: []interface{}{}, // TODO: Load media
+			MediaAttachments: []any{}, // TODO: Load media
 		}
 
 		// Set InReplyToID if this is a reply
@@ -2004,7 +2004,7 @@ func handlePublicTimeline(ctx context.Context, request events.APIGatewayV2HTTPRe
 			Visibility:       entry.Visibility,
 			Language:         entry.Language,
 			InReplyToID:      nil,
-			MediaAttachments: []interface{}{},
+			MediaAttachments: []any{},
 		}
 
 		// Set InReplyToID if this is a reply
@@ -2053,7 +2053,7 @@ func handlePublicTimeline(ctx context.Context, request events.APIGatewayV2HTTPRe
 }
 
 // Helper function to convert an object to a Mastodon status
-func objectToStatus(obj interface{}, actor *activitypub.Actor) Status {
+func objectToStatus(obj any, actor *activitypub.Actor) Status {
 	// Type assertion based on the storage implementation
 	// This handles the dynamodb.Object type
 	var noteID, content, visibility, language string
@@ -2098,7 +2098,7 @@ func objectToStatus(obj interface{}, actor *activitypub.Actor) Status {
 			visibility = "direct"
 		}
 
-	case map[string]interface{}:
+	case map[string]any:
 		noteID, _ = v["id"].(string)
 		content, _ = v["content"].(string)
 		sensitive, _ = v["sensitive"].(bool)
@@ -2128,10 +2128,10 @@ func objectToStatus(obj interface{}, actor *activitypub.Actor) Status {
 		Muted:            false,
 		Bookmarked:       false,
 		Pinned:           false,
-		MediaAttachments: []interface{}{},
-		Mentions:         []interface{}{},
-		Tags:             []interface{}{},
-		Emojis:           []interface{}{},
+		MediaAttachments: []any{},
+		Mentions:         []any{},
+		Tags:             []any{},
+		Emojis:           []any{},
 		Account: Account{
 			ID:             actor.ID,
 			Username:       actor.PreferredUsername,
@@ -2147,8 +2147,8 @@ func objectToStatus(obj interface{}, actor *activitypub.Actor) Status {
 			FollowersCount: 0,
 			FollowingCount: 0,
 			StatusesCount:  0,
-			Emojis:         []interface{}{},
-			Fields:         []interface{}{},
+			Emojis:         []any{},
+			Fields:         []any{},
 		},
 	}
 }
@@ -2182,7 +2182,7 @@ func handleGetStatus(ctx context.Context, request events.APIGatewayV2HTTPRequest
 	}
 
 	// Convert object to status format using the existing helper
-	// The objectToStatus function already handles the interface{} type
+	// The objectToStatus function already handles the any type
 	// Get the actor who created this object
 	var actorID string
 
@@ -2190,7 +2190,7 @@ func handleGetStatus(ctx context.Context, request events.APIGatewayV2HTTPRequest
 	switch v := objInterface.(type) {
 	case *storageDB.Object:
 		actorID = v.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := v["attributedTo"].(string); ok {
 			actorID = id
 		}
@@ -2461,8 +2461,8 @@ func handleGetAccount(ctx context.Context, request events.APIGatewayV2HTTPReques
 		FollowingCount: followingCount,
 		StatusesCount:  statusesCount,
 		LastStatusAt:   "", // TODO: Track last status time
-		Emojis:         []interface{}{},
-		Fields:         []interface{}{}, // TODO: Parse actor.Attachment
+		Emojis:         []any{},
+		Fields:         []any{}, // TODO: Parse actor.Attachment
 	}
 
 	// Set default avatar if not present
@@ -2626,7 +2626,7 @@ func handleFollow(ctx context.Context, request events.APIGatewayV2HTTPRequest, a
 
 	// Return relationship object
 	isFollowing := true
-	relationship := map[string]interface{}{
+	relationship := map[string]any{
 		"id":                   accountID,
 		"following":            isFollowing,
 		"showing_reblogs":      true,
@@ -2687,7 +2687,7 @@ func handleUnfollow(ctx context.Context, request events.APIGatewayV2HTTPRequest,
 	isFollowing, err := store.IsFollowing(ctx, claims.Username, targetUsername)
 	if err != nil || !isFollowing {
 		// Not following, return success anyway
-		relationship := map[string]interface{}{
+		relationship := map[string]any{
 			"id":                   accountID,
 			"following":            false,
 			"showing_reblogs":      false,
@@ -2714,7 +2714,7 @@ func handleUnfollow(ctx context.Context, request events.APIGatewayV2HTTPRequest,
 			To:      []string{targetActor.ID},
 		},
 		Actor: follower.ID,
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"type":   activitypub.FollowType,
 			"actor":  follower.ID,
 			"object": targetActor.ID,
@@ -2734,7 +2734,7 @@ func handleUnfollow(ctx context.Context, request events.APIGatewayV2HTTPRequest,
 	}
 
 	// Return relationship object
-	relationship := map[string]interface{}{
+	relationship := map[string]any{
 		"id":                   accountID,
 		"following":            false,
 		"showing_reblogs":      false,
@@ -2762,7 +2762,7 @@ func handleGetInstance(ctx context.Context, request events.APIGatewayV2HTTPReque
 	}
 
 	// Build instance response
-	instance := map[string]interface{}{
+	instance := map[string]any{
 		"uri":               cfg.Domain,
 		"title":             "Lesser Instance",
 		"short_description": "A serverless ActivityPub instance powered by Lesser",
@@ -2773,12 +2773,12 @@ func handleGetInstance(ctx context.Context, request events.APIGatewayV2HTTPReque
 		"registrations":     true,
 		"approval_required": false,
 		"invites_enabled":   false,
-		"configuration": map[string]interface{}{
-			"statuses": map[string]interface{}{
+		"configuration": map[string]any{
+			"statuses": map[string]any{
 				"max_characters":        500,
 				"max_media_attachments": 4,
 			},
-			"media_attachments": map[string]interface{}{
+			"media_attachments": map[string]any{
 				"supported_mime_types": []string{
 					"image/jpeg",
 					"image/png",
@@ -2791,21 +2791,21 @@ func handleGetInstance(ctx context.Context, request events.APIGatewayV2HTTPReque
 				"video_frame_rate_limit": 0,
 				"video_matrix_limit":     0,
 			},
-			"polls": map[string]interface{}{
+			"polls": map[string]any{
 				"max_options":               4,
 				"max_characters_per_option": 50,
 				"min_expiration":            300,
 				"max_expiration":            2629746,
 			},
 		},
-		"stats": map[string]interface{}{
+		"stats": map[string]any{
 			"user_count":   userCount,
 			"status_count": 0, // TODO: Implement status counting
 			"domain_count": 1, // TODO: Track federated domains
 		},
 		"thumbnail":       fmt.Sprintf("%s/thumbnail.png", cfg.BaseURL()),
 		"contact_account": nil,             // TODO: Set admin account
-		"rules":           []interface{}{}, // TODO: Add instance rules
+		"rules":           []any{}, // TODO: Add instance rules
 	}
 
 	body, err := json.Marshal(instance)
@@ -2856,10 +2856,10 @@ func handleSearch(ctx context.Context, request events.APIGatewayV2HTTPRequest) (
 	}
 
 	// Initialize search results
-	results := map[string]interface{}{
-		"accounts": []interface{}{},
-		"statuses": []interface{}{},
-		"hashtags": []interface{}{},
+	results := map[string]any{
+		"accounts": []any{},
+		"statuses": []any{},
+		"hashtags": []any{},
 	}
 
 	// Determine what to search for
@@ -2869,7 +2869,7 @@ func handleSearch(ctx context.Context, request events.APIGatewayV2HTTPRequest) (
 
 	// Search accounts
 	if searchAccounts {
-		accounts := []interface{}{}
+		accounts := []any{}
 
 		// Simple search: check if query matches a username
 		// First try exact match
@@ -2888,8 +2888,8 @@ func handleSearch(ctx context.Context, request events.APIGatewayV2HTTPRequest) (
 				FollowersCount: 0,
 				FollowingCount: 0,
 				StatusesCount:  0,
-				Emojis:         []interface{}{},
-				Fields:         []interface{}{},
+				Emojis:         []any{},
+				Fields:         []any{},
 			}
 			if actor.Icon != nil {
 				account.Avatar = actor.Icon.URL
@@ -2906,7 +2906,7 @@ func handleSearch(ctx context.Context, request events.APIGatewayV2HTTPRequest) (
 
 	// Search statuses
 	if searchStatuses && claims != nil {
-		statuses := []interface{}{}
+		statuses := []any{}
 
 		// For now, we can only search by exact status ID/URL
 		if strings.HasPrefix(q, "http") {
@@ -2917,7 +2917,7 @@ func handleSearch(ctx context.Context, request events.APIGatewayV2HTTPRequest) (
 				switch v := obj.(type) {
 				case *storageDB.Object:
 					actorID = v.AttributedTo
-				case map[string]interface{}:
+				case map[string]any:
 					if id, ok := v["attributedTo"].(string); ok {
 						actorID = id
 					}
@@ -2944,7 +2944,7 @@ func handleSearch(ctx context.Context, request events.APIGatewayV2HTTPRequest) (
 	if searchHashtags {
 		// TODO: Implement hashtag search
 		// This would require tracking hashtags in a separate index
-		results["hashtags"] = []interface{}{}
+		results["hashtags"] = []any{}
 	}
 
 	body, err := json.Marshal(results)
@@ -2987,7 +2987,7 @@ func handleGetNotifications(ctx context.Context, request events.APIGatewayV2HTTP
 
 	// TODO: Implement notification storage and retrieval
 	// For now, return an empty array
-	notifications := []interface{}{}
+	notifications := []any{}
 
 	body, err := json.Marshal(notifications)
 	if err != nil {
@@ -3091,11 +3091,11 @@ func handleUpdateCredentials(ctx context.Context, request events.APIGatewayV2HTT
 		StatusesCount:  0,
 		CreatedAt:      time.Now().Format("2006-01-02T15:04:05.000Z"),
 		Role:           user.Role,
-		Source: map[string]interface{}{
+		Source: map[string]any{
 			"privacy":   "public",
 			"sensitive": false,
 			"language":  "en",
-			"fields":    []interface{}{},
+			"fields":    []any{},
 		},
 	}
 

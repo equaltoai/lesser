@@ -37,10 +37,10 @@ type StreamConnection struct {
 
 // StreamMessage represents a message sent over WebSocket
 type StreamMessage struct {
-	Type    string                 `json:"type"`
-	Stream  string                 `json:"stream,omitempty"`
-	Event   string                 `json:"event,omitempty"`
-	Payload map[string]interface{} `json:"payload,omitempty"`
+	Type    string         `json:"type"`
+	Stream  string         `json:"stream,omitempty"`
+	Event   string         `json:"event,omitempty"`
+	Payload map[string]any `json:"payload,omitempty"`
 }
 
 // StreamEvent represents an event to be streamed
@@ -311,7 +311,7 @@ func handleSubscribe(ctx context.Context, connection *StreamConnection, message 
 	confirmMsg := StreamMessage{
 		Type:   "subscribed",
 		Stream: message.Stream,
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
@@ -356,7 +356,7 @@ func handleUnsubscribe(ctx context.Context, connection *StreamConnection, messag
 	confirmMsg := StreamMessage{
 		Type:   "unsubscribed",
 		Stream: message.Stream,
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
@@ -373,7 +373,7 @@ func handleUnsubscribe(ctx context.Context, connection *StreamConnection, messag
 func handlePing(connectionID string) (events.APIGatewayProxyResponse, error) {
 	pongMessage := StreamMessage{
 		Type: "pong",
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
@@ -490,7 +490,7 @@ func sendMessageToConnection(connectionID string, message StreamMessage) error {
 func sendError(connectionID string, errorMessage string) (events.APIGatewayProxyResponse, error) {
 	errMsg := StreamMessage{
 		Type: "error",
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"error":     errorMessage,
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},

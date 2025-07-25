@@ -183,7 +183,7 @@ func handleGetInbox(ctx context.Context, log *zap.Logger, username string, reque
 	}
 
 	// Convert activities to ordered items
-	orderedItems := make([]interface{}, len(activities))
+	orderedItems := make([]any, len(activities))
 	for i, activity := range activities {
 		orderedItems[i] = activity
 	}
@@ -267,7 +267,7 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 	}
 
 	// Sanitize any embedded objects in the activity
-	if objMap, ok := activity.Object.(map[string]interface{}); ok {
+	if objMap, ok := activity.Object.(map[string]any); ok {
 		common.SanitizeActivityPubObjectDefault(objMap)
 		activity.Object = objMap
 	}
@@ -754,7 +754,7 @@ func processRemoteCreateActivity(ctx context.Context, activity *activitypub.Acti
 	log := common.WithContext(ctx)
 
 	// Extract the object
-	objMap, ok := activity.Object.(map[string]interface{})
+	objMap, ok := activity.Object.(map[string]any)
 	if !ok {
 		log.Warn("create activity has invalid object")
 		return nil
@@ -791,7 +791,7 @@ func processRemoteUpdateActivity(ctx context.Context, activity *activitypub.Acti
 	log := common.WithContext(ctx)
 
 	// Extract the object
-	objMap, ok := activity.Object.(map[string]interface{})
+	objMap, ok := activity.Object.(map[string]any)
 	if !ok {
 		log.Warn("update activity has invalid object")
 		return nil
@@ -832,7 +832,7 @@ func processRemoteDeleteActivity(ctx context.Context, activity *activitypub.Acti
 	switch obj := activity.Object.(type) {
 	case string:
 		objectID = obj
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := obj["id"].(string); ok {
 			objectID = id
 		}
@@ -868,7 +868,7 @@ func processUndoActivity(ctx context.Context, activity *activitypub.Activity, ta
 			log.Warn("failed to find activity to undo", zap.String("id", obj))
 			return nil
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		// Convert to activity
 		objJSON, err := json.Marshal(obj)
 		if err != nil {

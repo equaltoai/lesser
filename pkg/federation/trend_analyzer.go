@@ -408,7 +408,7 @@ func (ta *TrendAnalyzer) detectPatterns(connections []*storage.InstanceConnectio
 			Type:        "daily_peak",
 			Description: fmt.Sprintf("Peak activity at hour %d with %d total volume", peakHour, peakVolume),
 			Confidence:  0.8,
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"peak_hour":   peakHour,
 				"peak_volume": peakVolume,
 			},
@@ -438,7 +438,7 @@ func (ta *TrendAnalyzer) detectPatterns(connections []*storage.InstanceConnectio
 				Type:        "weekly_peak",
 				Description: fmt.Sprintf("Peak activity on %s with %d total volume", peakWeekday.String(), peakWeekdayVolume),
 				Confidence:  0.7,
-				Metadata: map[string]interface{}{
+				Metadata: map[string]any{
 					"peak_weekday": peakWeekday.String(),
 					"peak_volume":  peakWeekdayVolume,
 				},
@@ -628,10 +628,10 @@ type TrendingInstance struct {
 }
 
 type ActivityPattern struct {
-	Type        string                 `json:"type"`
-	Description string                 `json:"description"`
-	Confidence  float64                `json:"confidence"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	Type        string         `json:"type"`
+	Description string         `json:"description"`
+	Confidence  float64        `json:"confidence"`
+	Metadata    map[string]any `json:"metadata"`
 }
 
 type DomainStats struct {

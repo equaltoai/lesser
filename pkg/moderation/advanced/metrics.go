@@ -289,7 +289,7 @@ func (mm *ModerationMetrics) flush(ctx context.Context) error {
 	writeRequests := []types.WriteRequest{}
 
 	// Flush all counters
-	mm.counters.Range(func(key, value interface{}) bool {
+	mm.counters.Range(func(key, value any) bool {
 		counter := value.(*atomic.Int64)
 		count := counter.Swap(0) // Reset counter
 

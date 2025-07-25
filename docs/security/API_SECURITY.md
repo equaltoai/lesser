@@ -150,7 +150,7 @@ type APIKey struct {
     // Security metadata
     AllowedIPs  []string `dynamodbav:"allowed_ips,omitempty"`
     RateLimit   int      `dynamodbav:"rate_limit"`
-    Permissions map[string]interface{} `dynamodbav:"permissions"`
+    Permissions map[string]any `dynamodbav:"permissions"`
 }
 
 // Storage pattern
@@ -423,7 +423,7 @@ func (c *ConsentManager) RequireConsent(purpose string) func(http.Handler) http.
             consent, _ := c.storage.GetConsent(r.Context(), user.ID, purpose)
             if consent == nil || !consent.Granted || consent.IsExpired() {
                 // Return consent required error
-                respondJSON(w, 403, map[string]interface{}{
+                respondJSON(w, 403, map[string]any{
                     "error": "consent_required",
                     "purpose": purpose,
                     "policy_url": "/privacy/policy",

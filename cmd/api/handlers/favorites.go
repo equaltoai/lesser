@@ -81,7 +81,7 @@ func (h *Handler) HandleGetFavourites(ctx context.Context, request events.APIGat
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			attributedTo = o.AttributedTo
-		case map[string]interface{}:
+		case map[string]any:
 			if attr, ok := o["attributedTo"].(string); ok {
 				attributedTo = attr
 			}

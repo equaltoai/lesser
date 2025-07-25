@@ -237,13 +237,12 @@ func (as *AuthService) generateShortLivedAccessToken(username, sessionID, device
 
 // ValidateAccessToken validates and parses an enhanced JWT access token
 func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &EnhancedClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &EnhancedClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return as.jwtSecret, nil
 	})
-
 	if err != nil {
 		return nil, ErrInvalidToken
 	}
@@ -281,7 +280,7 @@ func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword
 	}
 
 	// Update user
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"password_hash": newHash,
 		"updated_at":    time.Now(),
 	}
@@ -326,7 +325,7 @@ func (as *AuthService) GenerateAuthorizationCode() (string, error) {
 // WebAuthn methods
 
 // BeginWebAuthnRegistration starts the WebAuthn registration process
-func (as *AuthService) BeginWebAuthnRegistration(ctx context.Context, username string) (interface{}, string, error) {
+func (as *AuthService) BeginWebAuthnRegistration(ctx context.Context, username string) (any, string, error) {
 	if as.webAuthnService == nil {
 		return nil, "", ErrWebAuthnNotConfigured
 	}
@@ -342,7 +341,7 @@ func (as *AuthService) FinishWebAuthnRegistration(ctx context.Context, username 
 }
 
 // BeginWebAuthnLogin starts the WebAuthn login process
-func (as *AuthService) BeginWebAuthnLogin(ctx context.Context, username string) (interface{}, string, error) {
+func (as *AuthService) BeginWebAuthnLogin(ctx context.Context, username string) (any, string, error) {
 	if as.webAuthnService == nil {
 		return nil, "", ErrWebAuthnNotConfigured
 	}
@@ -513,7 +512,7 @@ func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username strin
 	token := base64.URLEncoding.EncodeToString(tokenBytes)
 
 	// Store recovery token with metadata
-	recoveryData := map[string]interface{}{
+	recoveryData := map[string]any{
 		"username":        username,
 		"token":           token,
 		"recovery_method": recoveryMethod,

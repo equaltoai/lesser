@@ -279,7 +279,7 @@ type FederationMessage struct {
 	ID     string
 	Type   MessageType
 	Actor  string
-	Object interface{}
+	Object any
 	Target []string
 
 	Payload     []byte
@@ -390,7 +390,7 @@ var (
 type RoutingError struct {
 	Code    string
 	Message string
-	Details map[string]interface{}
+	Details map[string]any
 }
 
 func (e *RoutingError) Error() string {

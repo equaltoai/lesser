@@ -255,7 +255,7 @@ func (h *Handler) HandleModerationReview(ctx context.Context, request events.API
 	}
 
 	// Return response
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"review_id":   review.ID,
 		"event_id":    review.EventID,
 		"action":      string(review.Action),
@@ -299,23 +299,23 @@ func (h *Handler) HandleModerationHistory(ctx context.Context, request events.AP
 	}
 
 	// Convert to response format
-	timeline := make([]map[string]interface{}, 0)
+	timeline := make([]map[string]any, 0)
 	for _, event := range history.Events {
-		timeline = append(timeline, map[string]interface{}{
+		timeline = append(timeline, map[string]any{
 			"timestamp": event.Created.Format(time.RFC3339),
 			"type":      "event",
 			"event":     event,
 		})
 	}
 	for _, decision := range history.Decisions {
-		timeline = append(timeline, map[string]interface{}{
+		timeline = append(timeline, map[string]any{
 			"timestamp": decision.Decided.Format(time.RFC3339),
 			"type":      "decision",
 			"decision":  decision,
 		})
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"object_id":      objectID,
 		"events":         history.Events,
 		"timeline":       timeline,
@@ -571,7 +571,7 @@ func (h *Handler) HandleUpdateTrust(ctx context.Context, request events.APIGatew
 		}
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"success": true,
 		"message": "Trust relationship updated successfully",
 	}), nil
@@ -669,8 +669,8 @@ func (h *Handler) getObjectPreview(ctx context.Context, objectID, objectType str
 			return ""
 		}
 
-		// Handle interface{} type with safe type assertion
-		if statusMap, ok := statusInterface.(map[string]interface{}); ok {
+		// Handle any type with safe type assertion
+		if statusMap, ok := statusInterface.(map[string]any); ok {
 			if content, ok := statusMap["Content"].(string); ok {
 				if len(content) > 100 {
 					return content[:100] + "..."

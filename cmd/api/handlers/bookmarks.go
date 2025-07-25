@@ -207,13 +207,13 @@ func (h *Handler) HandleGetBookmarks(ctx context.Context, request events.APIGate
 }
 
 // convertBookmarkedObjectToStatus is a helper that properly converts objects to status format
-func (h *Handler) convertBookmarkedObjectToStatus(ctx context.Context, obj interface{}, objectID string, currentUsername string, isBookmarked bool) (*models.Status, error) {
+func (h *Handler) convertBookmarkedObjectToStatus(ctx context.Context, obj any, objectID string, currentUsername string, isBookmarked bool) (*models.Status, error) {
 	// Extract actor ID from object
 	var attributedTo string
 	switch v := obj.(type) {
 	case *dynamodb.Object:
 		attributedTo = v.AttributedTo
-	case map[string]interface{}:
+	case map[string]any:
 		if attr, ok := v["attributedTo"].(string); ok {
 			attributedTo = attr
 		}

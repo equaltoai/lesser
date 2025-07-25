@@ -611,7 +611,7 @@ func (sro *SmartRouteOptimizer) getHourlyLatencyFactor() float64 {
 
 func (sro *SmartRouteOptimizer) storeOptimizationDecision(_ context.Context, routes []*Route, messageSize int64) {
 	// Store decision for later analysis
-	decision := map[string]interface{}{
+	decision := map[string]any{
 		"timestamp":   time.Now(),
 		"messageSize": messageSize,
 		"routes":      []string{},

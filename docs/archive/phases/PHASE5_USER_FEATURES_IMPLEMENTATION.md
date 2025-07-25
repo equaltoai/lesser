@@ -175,7 +175,7 @@ Pattern:
 - SK: PREFERENCES
 
 Attributes:
-- Preferences: map[string]interface{}
+- Preferences: map[string]any
 - UpdatedAt: time.Time
 ```
 
@@ -249,7 +249,7 @@ type Storage interface {
     GetMarkers(ctx context.Context, username string, timelines []string) (map[string]*Marker, error)
     
     // Preferences (extend existing)
-    UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error
+    UpdatePreferences(ctx context.Context, username string, prefs map[string]any) error
 }
 ```
 

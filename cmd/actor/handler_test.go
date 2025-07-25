@@ -20,7 +20,7 @@ func TestHandler(t *testing.T) {
 	// Test actor
 	testActor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
-			Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+			Context: []any{"https://www.w3.org/ns/activitystreams"},
 			ID:      "https://example.com/users/alice",
 			Type:    "Person",
 			Summary: "Test user",
@@ -168,7 +168,7 @@ func TestHandler(t *testing.T) {
 			setupMock: func(m *mocks.MockStorage) {
 				actorNoAvatar := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						ID:      "https://example.com/users/bob",
 						Type:    "Person",
 					},

@@ -84,7 +84,7 @@ func (fah *FederationAnalyticsHandler) GetFederationNodes(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"nodes": nodes,
 		"count": len(nodes),
 	}); err != nil {
@@ -119,7 +119,7 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"edges": edges,
 		"count": len(edges),
 	}); err != nil {
@@ -137,7 +137,7 @@ func (fah *FederationAnalyticsHandler) GetFederationClusters(w http.ResponseWrit
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"clusters": clusters,
 		"count":    len(clusters),
 	}); err != nil {
@@ -184,7 +184,7 @@ func (fah *FederationAnalyticsHandler) GetRecommendations(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"recommendations": recommendations,
 		"count":           len(recommendations),
 		"domain":          domain,
@@ -220,7 +220,7 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"metadata":     metadata,
 		"connections":  connections,
 		"retrieved_at": time.Now(),
@@ -273,12 +273,12 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 	// This would require implementing GetFederationTimeSeries in storage
 	// For now, return a placeholder response
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"domain":     domain,
 		"period":     period,
 		"start_time": startTime,
 		"end_time":   endTime,
-		"data":       []interface{}{}, // Placeholder
+		"data":       []any{}, // Placeholder
 		"message":    "Time series data not yet implemented",
 	})
 }

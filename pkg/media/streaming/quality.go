@@ -275,7 +275,7 @@ func (aqs *AdaptiveQualitySelector) isQualityAvailable(quality Quality, availabl
 func (aqs *AdaptiveQualitySelector) CleanupMetrics(maxAge time.Duration) {
 	cutoff := time.Now().Add(-maxAge)
 
-	aqs.metricsCache.Range(func(key, value interface{}) bool {
+	aqs.metricsCache.Range(func(key, value any) bool {
 		if metrics, ok := value.(*QualityMetrics); ok {
 			if metrics.LastQualityChange.Before(cutoff) {
 				aqs.metricsCache.Delete(key)

@@ -64,12 +64,12 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 	}
 
 	// Get contact account (admin)
-	var contactAccount map[string]interface{}
+	var contactAccount map[string]any
 	adminActor, err := h.store.GetContactAccount(ctx)
 	if err != nil {
 		h.logger.Warn("failed to get contact account", zap.Error(err))
 	} else if adminActor != nil && adminActor.Actor != nil {
-		contactAccount = map[string]interface{}{
+		contactAccount = map[string]any{
 			"id":              adminActor.Actor.ID,
 			"username":        adminActor.Actor.PreferredUsername,
 			"acct":            adminActor.Actor.PreferredUsername,
@@ -89,23 +89,23 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 			"followers_count": h.getAccountFollowersCount(ctx, adminActor.Username),
 			"following_count": h.getAccountFollowingCount(ctx, adminActor.Username),
 			"statuses_count":  h.getAccountStatusesCount(ctx, adminActor.Username),
-			"emojis":          []interface{}{},
+			"emojis":          []any{},
 			"fields":          adminActor.Fields,
 		}
 	}
 
 	// Build v1 response (flat structure)
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"uri":               h.cfg.Domain,
 		"title":             instanceConfig.Title,
 		"short_description": instanceConfig.ShortDescription,
 		"description":       instanceConfig.Description,
 		"email":             instanceConfig.Email,
 		"version":           instanceConfig.Version,
-		"urls": map[string]interface{}{
+		"urls": map[string]any{
 			"streaming_api": fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
 		},
-		"stats": map[string]interface{}{
+		"stats": map[string]any{
 			"user_count":   userCount,
 			"status_count": statusCount,
 			"domain_count": domainCount,
@@ -118,13 +118,13 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 		"contact_account":   contactAccount,
 
 		// Configuration
-		"configuration": map[string]interface{}{
-			"statuses": map[string]interface{}{
+		"configuration": map[string]any{
+			"statuses": map[string]any{
 				"max_characters":              instanceConfig.MaxStatusChars,
 				"max_media_attachments":       4,
 				"characters_reserved_per_url": 23,
 			},
-			"media_attachments": map[string]interface{}{
+			"media_attachments": map[string]any{
 				"supported_mime_types": []string{
 					"image/jpeg",
 					"image/png",
@@ -136,7 +136,7 @@ func (h *Handler) HandleGetInstanceV1(ctx context.Context, request events.APIGat
 				"image_size_limit": instanceConfig.MaxMediaSize,
 				"video_size_limit": instanceConfig.MaxVideoSize,
 			},
-			"polls": map[string]interface{}{
+			"polls": map[string]any{
 				"max_options":               4,
 				"max_characters_per_option": 50,
 				"min_expiration":            300,
@@ -192,7 +192,7 @@ func (h *Handler) HandleGetInstancePeers(ctx context.Context, request events.API
 // HandleGetInstanceActivity returns instance activity statistics
 func (h *Handler) HandleGetInstanceActivity(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 	// Generate weekly activity data for the past 12 weeks
-	activity := make([]map[string]interface{}, 12)
+	activity := make([]map[string]any, 12)
 
 	now := time.Now()
 	// Start from Monday of the current week
@@ -223,7 +223,7 @@ func (h *Handler) HandleGetInstanceActivity(ctx context.Context, request events.
 		}
 
 		// Format for API response (newest week first)
-		activity[i] = map[string]interface{}{
+		activity[i] = map[string]any{
 			"week":          fmt.Sprintf("%d", weekTimestamp),
 			"statuses":      fmt.Sprintf("%d", weekActivity.Statuses),
 			"logins":        fmt.Sprintf("%d", weekActivity.Logins),
@@ -241,11 +241,11 @@ func (h *Handler) HandleGetInstanceDomainBlocks(ctx context.Context, request eve
 	if err != nil {
 		h.logger.Warn("failed to get domain blocks", zap.Error(err))
 		// Return empty array on error
-		return common.OK([]map[string]interface{}{}), nil
+		return common.OK([]map[string]any{}), nil
 	}
 
 	// Convert to API format
-	blocks := make([]map[string]interface{}, 0, len(domainBlocks))
+	blocks := make([]map[string]any, 0, len(domainBlocks))
 	for _, block := range domainBlocks {
 		// Only include public blocks (not obfuscated)
 		if !block.Obfuscate && block.PublicComment != "" {
@@ -253,7 +253,7 @@ func (h *Handler) HandleGetInstanceDomainBlocks(ctx context.Context, request eve
 			hash := sha256.Sum256([]byte(block.Domain))
 			digest := hex.EncodeToString(hash[:])
 
-			blocks = append(blocks, map[string]interface{}{
+			blocks = append(blocks, map[string]any{
 				"domain":   block.Domain,
 				"digest":   digest,
 				"severity": block.Severity,
@@ -298,7 +298,7 @@ Last updated: 2025-01-01`
 	// Convert markdown to HTML
 	htmlContent := h.markdownToHTML(privacyPolicyContent)
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"content":    htmlContent,
 		"updated_at": "2025-01-01T00:00:00Z",
 	}
@@ -345,7 +345,7 @@ Last updated: 2025-01-01`
 	// Convert markdown to HTML
 	htmlContent := h.markdownToHTML(termsContent)
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"content":    htmlContent,
 		"updated_at": "2025-01-01T00:00:00Z",
 	}

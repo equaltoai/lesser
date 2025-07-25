@@ -315,7 +315,7 @@ func (s *dynamoDBStorage) GetRelationshipNote(ctx context.Context, userID, targe
 }
 
 // GetReportedStatuses gets reported statuses for a specific report
-func (s *dynamoDBStorage) GetReportedStatuses(ctx context.Context, reportID string) ([]interface{}, error) {
+func (s *dynamoDBStorage) GetReportedStatuses(ctx context.Context, reportID string) ([]any, error) {
 	// Query for reported statuses by report ID
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
@@ -328,10 +328,10 @@ func (s *dynamoDBStorage) GetReportedStatuses(ctx context.Context, reportID stri
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
 		// If the GSI doesn't exist, return empty list
-		return []interface{}{}, nil
+		return []any{}, nil
 	}
 
-	reports := make([]interface{}, 0, len(result.Items))
+	reports := make([]any, 0, len(result.Items))
 
 	for _, item := range result.Items {
 		var report storage.Report
@@ -378,7 +378,7 @@ func (s *dynamoDBStorage) GetRulesByCategory(ctx context.Context, category strin
 }
 
 // GetScheduledStatusMedia gets media for scheduled status
-func (s *dynamoDBStorage) GetScheduledStatusMedia(ctx context.Context, statusID string) ([]interface{}, error) {
+func (s *dynamoDBStorage) GetScheduledStatusMedia(ctx context.Context, statusID string) ([]any, error) {
 	// Query for media attachments for the scheduled status
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
@@ -391,13 +391,13 @@ func (s *dynamoDBStorage) GetScheduledStatusMedia(ctx context.Context, statusID 
 
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
-		return []interface{}{}, fmt.Errorf("failed to get scheduled status media: %w", err)
+		return []any{}, fmt.Errorf("failed to get scheduled status media: %w", err)
 	}
 
-	media := make([]interface{}, 0, len(result.Items))
+	media := make([]any, 0, len(result.Items))
 
 	for _, item := range result.Items {
-		// Just add the raw item as interface{} since we don't have the specific type
+		// Just add the raw item as any since we don't have the specific type
 		media = append(media, item)
 	}
 
@@ -405,7 +405,7 @@ func (s *dynamoDBStorage) GetScheduledStatusMedia(ctx context.Context, statusID 
 }
 
 // GetStatus gets a status by ID
-func (s *dynamoDBStorage) GetStatus(ctx context.Context, statusID string) (interface{}, error) {
+func (s *dynamoDBStorage) GetStatus(ctx context.Context, statusID string) (any, error) {
 	// Query for the status
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(s.tableName),
@@ -424,7 +424,7 @@ func (s *dynamoDBStorage) GetStatus(ctx context.Context, statusID string) (inter
 		return nil, nil // Status not found
 	}
 
-	// Return the raw item as interface{} since the interface expects interface{}
+	// Return the raw item as any since the interface expects any
 	return result.Item, nil
 }
 
@@ -451,7 +451,7 @@ func (s *dynamoDBStorage) GetStatusReplyCount(ctx context.Context, statusID stri
 }
 
 // GetStatusesByLink gets statuses that contain a specific link
-func (s *dynamoDBStorage) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]interface{}, error) {
+func (s *dynamoDBStorage) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]any, error) {
 	// Query for statuses containing the link
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
@@ -467,13 +467,13 @@ func (s *dynamoDBStorage) GetStatusesByLink(ctx context.Context, linkURL string,
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
 		// If the GSI doesn't exist, return empty list
-		return []interface{}{}, nil
+		return []any{}, nil
 	}
 
-	statuses := make([]interface{}, 0, len(result.Items))
+	statuses := make([]any, 0, len(result.Items))
 
 	for _, item := range result.Items {
-		// Just add the raw item as interface{} since the interface expects interface{}
+		// Just add the raw item as any since the interface expects any
 		statuses = append(statuses, item)
 	}
 
@@ -481,7 +481,7 @@ func (s *dynamoDBStorage) GetStatusesByLink(ctx context.Context, linkURL string,
 }
 
 // GetStorageHistory gets storage usage history
-func (s *dynamoDBStorage) GetStorageHistory(ctx context.Context, days int) ([]interface{}, error) {
+func (s *dynamoDBStorage) GetStorageHistory(ctx context.Context, days int) ([]any, error) {
 	// Query for storage history
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
@@ -497,13 +497,13 @@ func (s *dynamoDBStorage) GetStorageHistory(ctx context.Context, days int) ([]in
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
 		// If the GSI doesn't exist, return empty list
-		return []interface{}{}, nil
+		return []any{}, nil
 	}
 
-	history := make([]interface{}, 0, len(result.Items))
+	history := make([]any, 0, len(result.Items))
 
 	for _, item := range result.Items {
-		// Just add the raw item as interface{} since the interface expects interface{}
+		// Just add the raw item as any since the interface expects any
 		history = append(history, item)
 	}
 
@@ -511,7 +511,7 @@ func (s *dynamoDBStorage) GetStorageHistory(ctx context.Context, days int) ([]in
 }
 
 // GetStorageUsage gets current storage usage
-func (s *dynamoDBStorage) GetStorageUsage(ctx context.Context) (interface{}, error) {
+func (s *dynamoDBStorage) GetStorageUsage(ctx context.Context) (any, error) {
 	// Query for current storage usage
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(s.tableName),
@@ -528,13 +528,13 @@ func (s *dynamoDBStorage) GetStorageUsage(ctx context.Context) (interface{}, err
 
 	if result.Item == nil {
 		// Return empty usage if no record exists
-		return map[string]interface{}{
+		return map[string]any{
 			"total_bytes": 0,
 			"media_bytes": 0,
 		}, nil
 	}
 
-	// Return the raw item as interface{} since the interface expects interface{}
+	// Return the raw item as any since the interface expects any
 	return result.Item, nil
 }
 
@@ -568,7 +568,7 @@ func (s *dynamoDBStorage) GetUserAppConsent(ctx context.Context, userID, appID s
 }
 
 // GetUserGrowthHistory gets user growth history
-func (s *dynamoDBStorage) GetUserGrowthHistory(ctx context.Context, days int) ([]interface{}, error) {
+func (s *dynamoDBStorage) GetUserGrowthHistory(ctx context.Context, days int) ([]any, error) {
 	// Query for user growth history
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
@@ -584,13 +584,13 @@ func (s *dynamoDBStorage) GetUserGrowthHistory(ctx context.Context, days int) ([
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
 		// If the GSI doesn't exist, return empty list
-		return []interface{}{}, nil
+		return []any{}, nil
 	}
 
-	history := make([]interface{}, 0, len(result.Items))
+	history := make([]any, 0, len(result.Items))
 
 	for _, item := range result.Items {
-		// Just add the raw item as interface{} since the interface expects interface{}
+		// Just add the raw item as any since the interface expects any
 		history = append(history, item)
 	}
 
@@ -796,7 +796,7 @@ func (s *dynamoDBStorage) ListUsersByRole(ctx context.Context, role string) ([]*
 }
 
 // StoreHashtagTrend stores a hashtag trend
-func (s *dynamoDBStorage) StoreHashtagTrend(ctx context.Context, trend interface{}) error {
+func (s *dynamoDBStorage) StoreHashtagTrend(ctx context.Context, trend any) error {
 	// Convert trend to map for DynamoDB storage
 	av, err := attributevalue.MarshalMap(trend)
 	if err != nil {
@@ -818,7 +818,7 @@ func (s *dynamoDBStorage) StoreHashtagTrend(ctx context.Context, trend interface
 }
 
 // StoreLinkTrend stores a link trend
-func (s *dynamoDBStorage) StoreLinkTrend(ctx context.Context, trend interface{}) error {
+func (s *dynamoDBStorage) StoreLinkTrend(ctx context.Context, trend any) error {
 	// Convert trend to map for DynamoDB storage
 	av, err := attributevalue.MarshalMap(trend)
 	if err != nil {
@@ -840,7 +840,7 @@ func (s *dynamoDBStorage) StoreLinkTrend(ctx context.Context, trend interface{})
 }
 
 // StoreStatusTrend stores a status trend
-func (s *dynamoDBStorage) StoreStatusTrend(ctx context.Context, trend interface{}) error {
+func (s *dynamoDBStorage) StoreStatusTrend(ctx context.Context, trend any) error {
 	// Convert trend to map for DynamoDB storage
 	av, err := attributevalue.MarshalMap(trend)
 	if err != nil {
@@ -904,7 +904,7 @@ func (s *dynamoDBStorage) UnmarkAllMediaAsSensitive(ctx context.Context, userID 
 }
 
 // GetUserMedia gets all media uploaded by a user
-func (s *dynamoDBStorage) GetUserMedia(ctx context.Context, username string) ([]interface{}, error) {
+func (s *dynamoDBStorage) GetUserMedia(ctx context.Context, username string) ([]any, error) {
 	// Query for user's media
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
@@ -920,7 +920,7 @@ func (s *dynamoDBStorage) GetUserMedia(ctx context.Context, username string) ([]
 		return nil, fmt.Errorf("failed to get user media: %w", err)
 	}
 
-	media := make([]interface{}, 0, len(result.Items))
+	media := make([]any, 0, len(result.Items))
 	for _, item := range result.Items {
 		media = append(media, item)
 	}
@@ -929,7 +929,7 @@ func (s *dynamoDBStorage) GetUserMedia(ctx context.Context, username string) ([]
 }
 
 // UpdateMediaAttachment updates a media attachment
-func (s *dynamoDBStorage) UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error {
 	// Build update expression
 	updateExpr := "SET "
 	attrNames := make(map[string]string)
@@ -1234,22 +1234,22 @@ func (s *dynamoDBStorage) getTableName() *string {
 // DynamoDB Attribute Value Conversion Utilities
 
 // ConvertFromDynamoDB recursively converts DynamoDB attribute values to plain Go types
-func ConvertFromDynamoDB(av interface{}) interface{} {
+func ConvertFromDynamoDB(av any) any {
 	switch v := av.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		// Check if this is a DynamoDB attribute value
 		if isDynamoDBAttributeValue(v) {
 			return extractDynamoDBValue(v)
 		}
 		// Otherwise, recursively convert the map
-		result := make(map[string]interface{})
+		result := make(map[string]any)
 		for key, value := range v {
 			result[key] = ConvertFromDynamoDB(value)
 		}
 		return result
-	case []interface{}:
+	case []any:
 		// Recursively convert slice elements
-		result := make([]interface{}, len(v))
+		result := make([]any, len(v))
 		for i, item := range v {
 			result[i] = ConvertFromDynamoDB(item)
 		}
@@ -1261,7 +1261,7 @@ func ConvertFromDynamoDB(av interface{}) interface{} {
 }
 
 // isDynamoDBAttributeValue checks if a map represents a DynamoDB attribute value
-func isDynamoDBAttributeValue(m map[string]interface{}) bool {
+func isDynamoDBAttributeValue(m map[string]any) bool {
 	// DynamoDB attribute values have exactly one key that matches a type
 	if len(m) != 1 {
 		return false
@@ -1276,7 +1276,7 @@ func isDynamoDBAttributeValue(m map[string]interface{}) bool {
 }
 
 // extractDynamoDBValue extracts the actual value from a DynamoDB attribute value
-func extractDynamoDBValue(av map[string]interface{}) interface{} {
+func extractDynamoDBValue(av map[string]any) any {
 	for key, value := range av {
 		switch key {
 		case "S":
@@ -1299,17 +1299,17 @@ func extractDynamoDBValue(av map[string]interface{}) interface{} {
 			return nil
 		case "M":
 			// Map
-			if m, ok := value.(map[string]interface{}); ok {
+			if m, ok := value.(map[string]any); ok {
 				return ConvertFromDynamoDB(m)
 			}
 		case "L":
 			// List
-			if l, ok := value.([]interface{}); ok {
+			if l, ok := value.([]any); ok {
 				return ConvertFromDynamoDB(l)
 			}
 		case "SS":
 			// String Set
-			if ss, ok := value.([]interface{}); ok {
+			if ss, ok := value.([]any); ok {
 				result := make([]string, len(ss))
 				for i, s := range ss {
 					if str, ok := s.(string); ok {
@@ -1320,7 +1320,7 @@ func extractDynamoDBValue(av map[string]interface{}) interface{} {
 			}
 		case "NS":
 			// Number Set
-			if ns, ok := value.([]interface{}); ok {
+			if ns, ok := value.([]any); ok {
 				result := make([]string, len(ns))
 				for i, n := range ns {
 					if str, ok := n.(string); ok {
@@ -1341,49 +1341,49 @@ func extractDynamoDBValue(av map[string]interface{}) interface{} {
 }
 
 // ConvertToDynamoDB converts plain Go types to DynamoDB attribute value format
-func ConvertToDynamoDB(v interface{}) interface{} {
+func ConvertToDynamoDB(v any) any {
 	if v == nil {
-		return map[string]interface{}{"NULL": true}
+		return map[string]any{"NULL": true}
 	}
 
 	switch val := v.(type) {
 	case string:
-		return map[string]interface{}{"S": val}
+		return map[string]any{"S": val}
 	case int, int32, int64, uint, uint32, uint64, float32, float64:
-		return map[string]interface{}{"N": fmt.Sprintf("%v", val)}
+		return map[string]any{"N": fmt.Sprintf("%v", val)}
 	case bool:
-		return map[string]interface{}{"BOOL": val}
+		return map[string]any{"BOOL": val}
 	case []byte:
-		return map[string]interface{}{"B": val}
-	case map[string]interface{}:
-		m := make(map[string]interface{})
+		return map[string]any{"B": val}
+	case map[string]any:
+		m := make(map[string]any)
 		for k, v := range val {
 			m[k] = ConvertToDynamoDB(v)
 		}
-		return map[string]interface{}{"M": m}
-	case []interface{}:
-		l := make([]interface{}, len(val))
+		return map[string]any{"M": m}
+	case []any:
+		l := make([]any, len(val))
 		for i, item := range val {
 			l[i] = ConvertToDynamoDB(item)
 		}
-		return map[string]interface{}{"L": l}
+		return map[string]any{"L": l}
 	case []string:
 		if len(val) > 0 {
-			return map[string]interface{}{"SS": val}
+			return map[string]any{"SS": val}
 		}
-		return map[string]interface{}{"L": []interface{}{}}
+		return map[string]any{"L": []any{}}
 	default:
 		// For unknown types, try to convert to string
-		return map[string]interface{}{"S": fmt.Sprintf("%v", val)}
+		return map[string]any{"S": fmt.Sprintf("%v", val)}
 	}
 }
 
 // UnmarshalItem is a wrapper around attributevalue.UnmarshalMap that handles DynamoDB format conversion
-func (s *dynamoDBStorage) UnmarshalItem(item map[string]types.AttributeValue, out interface{}) error {
+func (s *dynamoDBStorage) UnmarshalItem(item map[string]types.AttributeValue, out any) error {
 	// First, do the standard unmarshal
 	if err := attributevalue.UnmarshalMap(item, out); err != nil {
 		// If standard unmarshal fails, try converting from DynamoDB format first
-		plainMap := make(map[string]interface{})
+		plainMap := make(map[string]any)
 		for k, v := range item {
 			plainMap[k] = attributeValueToInterface(v)
 		}
@@ -1407,12 +1407,12 @@ func (s *dynamoDBStorage) UnmarshalItem(item map[string]types.AttributeValue, ou
 }
 
 // MarshalItem is a wrapper around attributevalue.MarshalMap for consistency
-func (s *dynamoDBStorage) MarshalItem(in interface{}) (map[string]types.AttributeValue, error) {
+func (s *dynamoDBStorage) MarshalItem(in any) (map[string]types.AttributeValue, error) {
 	return attributevalue.MarshalMap(in)
 }
 
 // UnmarshalListOfMaps converts a list of DynamoDB items to a slice of the target type
-func (s *dynamoDBStorage) UnmarshalListOfMaps(items []map[string]types.AttributeValue, out interface{}) error {
+func (s *dynamoDBStorage) UnmarshalListOfMaps(items []map[string]types.AttributeValue, out any) error {
 	// Use reflection to ensure 'out' is a pointer to a slice
 	outValue := reflect.ValueOf(out)
 	if outValue.Kind() != reflect.Ptr || outValue.Elem().Kind() != reflect.Slice {
@@ -1448,9 +1448,9 @@ func (s *dynamoDBStorage) UnmarshalListOfMaps(items []map[string]types.Attribute
 	return nil
 }
 
-// attributeValueToInterface converts a DynamoDB AttributeValue to a Go interface{}
+// attributeValueToInterface converts a DynamoDB AttributeValue to a Go any
 // This is used internally by UnmarshalItem
-func attributeValueToInterface(av types.AttributeValue) interface{} {
+func attributeValueToInterface(av types.AttributeValue) any {
 	switch v := av.(type) {
 	case *types.AttributeValueMemberS:
 		return v.Value
@@ -1461,13 +1461,13 @@ func attributeValueToInterface(av types.AttributeValue) interface{} {
 	case *types.AttributeValueMemberNULL:
 		return nil
 	case *types.AttributeValueMemberM:
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		for k, val := range v.Value {
 			m[k] = attributeValueToInterface(val)
 		}
 		return m
 	case *types.AttributeValueMemberL:
-		l := make([]interface{}, len(v.Value))
+		l := make([]any, len(v.Value))
 		for i, val := range v.Value {
 			l[i] = attributeValueToInterface(val)
 		}
@@ -1507,7 +1507,6 @@ func (s *dynamoDBStorage) StoreEngagementMetrics(ctx context.Context, metrics *s
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to store engagement metrics: %w", err)
 	}
@@ -1535,7 +1534,6 @@ func (s *dynamoDBStorage) IndexByEngagement(ctx context.Context, statusID string
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to index by engagement: %w", err)
 	}

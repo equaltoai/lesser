@@ -23,11 +23,11 @@ type Storage interface {
 	GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error)
 
 	// Object operations
-	CreateObject(ctx context.Context, object interface{}) error
-	GetObject(ctx context.Context, id string) (interface{}, error)
-	UpdateObject(ctx context.Context, object interface{}) error
+	CreateObject(ctx context.Context, object any) error
+	GetObject(ctx context.Context, id string) (any, error)
+	UpdateObject(ctx context.Context, object any) error
 	DeleteObject(ctx context.Context, id string) error
-	GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error)
+	GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error)
 
 	// Relationship operations
 	CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error
@@ -53,14 +53,14 @@ type Storage interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUser(ctx context.Context, username string) (*User, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
-	UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error
+	UpdateUser(ctx context.Context, username string, updates map[string]any) error
 	DeleteUser(ctx context.Context, username string) error
 	ListUsers(ctx context.Context, limit int32, cursor string) ([]*User, string, error)
 
 	// OAuth Client operations
 	CreateOAuthClient(ctx context.Context, client *OAuthClient) error
 	GetOAuthClient(ctx context.Context, clientID string) (*OAuthClient, error)
-	UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]interface{}) error
+	UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error
 	DeleteOAuthClient(ctx context.Context, clientID string) error
 	ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*OAuthClient, string, error)
 

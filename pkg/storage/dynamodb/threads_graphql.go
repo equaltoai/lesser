@@ -62,7 +62,7 @@ func (s *dynamoDBStorage) SyncThreadFromRemote(ctx context.Context, statusID str
 	switch obj := existingStatus.(type) {
 	case *activitypub.Note:
 		statusURL = obj.ID
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := obj["id"].(string); ok {
 			statusURL = id
 		}
@@ -229,7 +229,7 @@ func (s *dynamoDBStorage) getThreadAncestors(ctx context.Context, statusID strin
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			inReplyTo = o.InReplyTo
-		case map[string]interface{}:
+		case map[string]any:
 			if reply, ok := o["inReplyTo"].(string); ok {
 				inReplyTo = reply
 			}
@@ -500,7 +500,7 @@ func (s *dynamoDBStorage) identifyMissingReplies(ctx context.Context, rootStatus
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			inReplyTo = o.InReplyTo
-		case map[string]interface{}:
+		case map[string]any:
 			if reply, ok := o["inReplyTo"].(string); ok {
 				inReplyTo = reply
 			}
@@ -526,7 +526,7 @@ func (s *dynamoDBStorage) identifyMissingReplies(ctx context.Context, rootStatus
 		switch o := obj.(type) {
 		case *activitypub.Note:
 			inReplyTo = o.InReplyTo
-		case map[string]interface{}:
+		case map[string]any:
 			if reply, ok := o["inReplyTo"].(string); ok {
 				inReplyTo = reply
 			}
@@ -645,11 +645,11 @@ func (s *dynamoDBStorage) fetchObjectReplies(ctx context.Context, authService *f
 	var repliesURL string
 
 	// Check if the raw object (map) has a replies property
-	if objMap, ok := obj.(map[string]interface{}); ok {
+	if objMap, ok := obj.(map[string]any); ok {
 		if replies, ok := objMap["replies"]; ok {
 			if repliesStr, ok := replies.(string); ok {
 				repliesURL = repliesStr
-			} else if repliesMap, ok := replies.(map[string]interface{}); ok {
+			} else if repliesMap, ok := replies.(map[string]any); ok {
 				if id, ok := repliesMap["id"].(string); ok {
 					repliesURL = id
 				}
@@ -672,12 +672,12 @@ func (s *dynamoDBStorage) fetchRepliesCollection(ctx context.Context, authServic
 		return fmt.Errorf("failed to fetch collection: %w", err)
 	}
 
-	var items []interface{}
+	var items []any
 	switch coll := collection.(type) {
-	case map[string]interface{}:
-		if itemsArray, ok := coll["items"].([]interface{}); ok {
+	case map[string]any:
+		if itemsArray, ok := coll["items"].([]any); ok {
 			items = itemsArray
-		} else if orderedItems, ok := coll["orderedItems"].([]interface{}); ok {
+		} else if orderedItems, ok := coll["orderedItems"].([]any); ok {
 			items = orderedItems
 		}
 	}
@@ -688,7 +688,7 @@ func (s *dynamoDBStorage) fetchRepliesCollection(ctx context.Context, authServic
 		switch v := item.(type) {
 		case string:
 			itemURL = v
-		case map[string]interface{}:
+		case map[string]any:
 			if id, ok := v["id"].(string); ok {
 				itemURL = id
 			}
@@ -707,13 +707,13 @@ func (s *dynamoDBStorage) fetchRepliesCollection(ctx context.Context, authServic
 }
 
 // fetchThreadAncestors fetches parent statuses by following inReplyTo chain
-func (s *dynamoDBStorage) fetchThreadAncestors(ctx context.Context, authService *federation.AuthorizedFetchService, signingActor *activitypub.Actor, status interface{}) error {
+func (s *dynamoDBStorage) fetchThreadAncestors(ctx context.Context, authService *federation.AuthorizedFetchService, signingActor *activitypub.Actor, status any) error {
 	var inReplyTo string
 
 	switch obj := status.(type) {
 	case *activitypub.Note:
 		inReplyTo = obj.InReplyTo
-	case map[string]interface{}:
+	case map[string]any:
 		if reply, ok := obj["inReplyTo"].(string); ok {
 			inReplyTo = reply
 		}
@@ -752,7 +752,7 @@ func (s *dynamoDBStorage) fetchThreadAncestors(ctx context.Context, authService 
 		switch parent := parentObj.(type) {
 		case *activitypub.Note:
 			inReplyTo = parent.InReplyTo
-		case map[string]interface{}:
+		case map[string]any:
 			if reply, ok := parent["inReplyTo"].(string); ok {
 				inReplyTo = reply
 			}
@@ -782,7 +782,7 @@ func (s *dynamoDBStorage) fetchAndStoreRemoteStatus(ctx context.Context, authSer
 }
 
 // objectToStatusSearchResult converts an ActivityPub object to StatusSearchResult
-func (s *dynamoDBStorage) objectToStatusSearchResult(obj interface{}) *storage.StatusSearchResult {
+func (s *dynamoDBStorage) objectToStatusSearchResult(obj any) *storage.StatusSearchResult {
 	if obj == nil {
 		return nil
 	}
@@ -799,7 +799,7 @@ func (s *dynamoDBStorage) objectToStatusSearchResult(obj interface{}) *storage.S
 		}
 		result.Score = 1.0
 
-	case map[string]interface{}:
+	case map[string]any:
 		if id, ok := o["id"].(string); ok {
 			result.StatusID = id
 		}

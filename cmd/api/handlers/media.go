@@ -216,9 +216,9 @@ func (h *Handler) HandleMediaUpload(ctx context.Context, request events.APIGatew
 		PreviewURL: h.generateThumbnailURL(ctx, mediaURL, mimeType),
 		RemoteURL:  nil,
 		TextURL:    mediaURL,
-		Meta: map[string]interface{}{
+		Meta: map[string]any{
 			"original": h.getMediaDimensions(ctx, fileData, mimeType),
-			"focus": map[string]interface{}{
+			"focus": map[string]any{
 				"x": focusX,
 				"y": focusY,
 			},
@@ -228,7 +228,7 @@ func (h *Handler) HandleMediaUpload(ctx context.Context, request events.APIGatew
 	}
 
 	// Store media metadata in DynamoDB
-	mediaRecord := map[string]interface{}{
+	mediaRecord := map[string]any{
 		"PK":          fmt.Sprintf("MEDIA#%s", mediaID),
 		"SK":          "METADATA",
 		"id":          fmt.Sprintf("MEDIA#%s", mediaID), // CreateObject expects an 'id' field
@@ -266,7 +266,7 @@ func (h *Handler) HandleGetMedia(ctx context.Context, request events.APIGatewayV
 	}
 
 	// Convert to MediaAttachment
-	mediaData, ok := obj.(map[string]interface{})
+	mediaData, ok := obj.(map[string]any)
 	if !ok {
 		return common.InternalServerError(errors.New("invalid media data")), nil
 	}
@@ -284,7 +284,7 @@ func (h *Handler) HandleGetMedia(ctx context.Context, request events.APIGatewayV
 			PreviewURL: "", // Empty while processing
 			RemoteURL:  nil,
 			TextURL:    "",
-			Meta: map[string]interface{}{
+			Meta: map[string]any{
 				"processing": isProcessing,
 				"progress":   progress,
 			},
@@ -296,7 +296,7 @@ func (h *Handler) HandleGetMedia(ctx context.Context, request events.APIGatewayV
 		if focus := getStringFromMediaData(mediaData, "Focus"); focus != "" {
 			var focusX, focusY float64
 			if n, err := fmt.Sscanf(focus, "%f,%f", &focusX, &focusY); err == nil && n == 2 {
-				attachment.Meta["focus"] = map[string]interface{}{
+				attachment.Meta["focus"] = map[string]any{
 					"x": focusX,
 					"y": focusY,
 				}
@@ -315,8 +315,8 @@ func (h *Handler) HandleGetMedia(ctx context.Context, request events.APIGatewayV
 		PreviewURL: getStringFromMediaData(mediaData, "PreviewURL", url), // Fallback to main URL
 		RemoteURL:  nil,
 		TextURL:    url,
-		Meta: map[string]interface{}{
-			"original": map[string]interface{}{
+		Meta: map[string]any{
+			"original": map[string]any{
 				"width":  getIntFromMediaData(mediaData, "Width"),
 				"height": getIntFromMediaData(mediaData, "Height"),
 				"size":   fmt.Sprintf("%dx%d", getIntFromMediaData(mediaData, "Width"), getIntFromMediaData(mediaData, "Height")),
@@ -331,7 +331,7 @@ func (h *Handler) HandleGetMedia(ctx context.Context, request events.APIGatewayV
 	if focus := getStringFromMediaData(mediaData, "Focus"); focus != "" {
 		var focusX, focusY float64
 		if n, err := fmt.Sscanf(focus, "%f,%f", &focusX, &focusY); err == nil && n == 2 {
-			attachment.Meta["focus"] = map[string]interface{}{
+			attachment.Meta["focus"] = map[string]any{
 				"x": focusX,
 				"y": focusY,
 			}
@@ -386,7 +386,7 @@ func (h *Handler) HandleUpdateMedia(ctx context.Context, request events.APIGatew
 	}
 
 	// Verify ownership
-	mediaData, ok := obj.(map[string]interface{})
+	mediaData, ok := obj.(map[string]any)
 	if !ok {
 		return common.InternalServerError(errors.New("invalid media data")), nil
 	}
@@ -413,8 +413,8 @@ func (h *Handler) HandleUpdateMedia(ctx context.Context, request events.APIGatew
 		PreviewURL: url,
 		RemoteURL:  nil,
 		TextURL:    url,
-		Meta: map[string]interface{}{
-			"original": map[string]interface{}{
+		Meta: map[string]any{
+			"original": map[string]any{
 				"width":  0,
 				"height": 0,
 				"size":   "0x0",
@@ -429,7 +429,7 @@ func (h *Handler) HandleUpdateMedia(ctx context.Context, request events.APIGatew
 	if updateReq.Focus != "" {
 		var focusX, focusY float64
 		if n, err := fmt.Sscanf(updateReq.Focus, "%f,%f", &focusX, &focusY); err == nil && n == 2 {
-			attachment.Meta["focus"] = map[string]interface{}{
+			attachment.Meta["focus"] = map[string]any{
 				"x": focusX,
 				"y": focusY,
 			}
@@ -498,7 +498,7 @@ func getMediaType(mimeType string) string {
 }
 
 // Helper functions for media data extraction
-func getStringFromMediaData(data map[string]interface{}, key string, defaultValue ...string) string {
+func getStringFromMediaData(data map[string]any, key string, defaultValue ...string) string {
 	if val, ok := data[key].(string); ok {
 		return val
 	}
@@ -508,7 +508,7 @@ func getStringFromMediaData(data map[string]interface{}, key string, defaultValu
 	return ""
 }
 
-func getIntFromMediaData(data map[string]interface{}, key string) int {
+func getIntFromMediaData(data map[string]any, key string) int {
 	if val, ok := data[key].(float64); ok {
 		return int(val)
 	}
@@ -533,7 +533,7 @@ func (h *Handler) GetMediaProcessingStatus(ctx context.Context, mediaID string) 
 		return false, 0, err
 	}
 
-	mediaData, ok := obj.(map[string]interface{})
+	mediaData, ok := obj.(map[string]any)
 	if !ok {
 		return false, 0, errors.New("invalid media data")
 	}
@@ -557,14 +557,14 @@ func (h *Handler) GetMediaProcessingStatus(ctx context.Context, mediaID string) 
 		return true, 0, nil
 	}
 
-	jobData, ok := jobObj.(map[string]interface{})
+	jobData, ok := jobObj.(map[string]any)
 	if !ok {
 		return true, 0, nil
 	}
 
 	// Calculate progress based on completed tasks
 	tasks, _ := jobData["ProcessingTasks"].([]string)
-	results, _ := jobData["Results"].(map[string]interface{})
+	results, _ := jobData["Results"].(map[string]any)
 
 	if len(tasks) == 0 {
 		return true, 0, nil
@@ -609,7 +609,7 @@ func (h *Handler) generateThumbnailURL(_ context.Context, originalURL, mimeType 
 }
 
 // getMediaDimensions extracts dimensions from media file data
-func (h *Handler) getMediaDimensions(_ context.Context, fileData []byte, mimeType string) map[string]interface{} {
+func (h *Handler) getMediaDimensions(_ context.Context, fileData []byte, mimeType string) map[string]any {
 	// For images, try to extract dimensions using proper image decoding
 	if strings.HasPrefix(mimeType, "image/") {
 		img, err := h.decodeImage(fileData, mimeType)
@@ -617,7 +617,7 @@ func (h *Handler) getMediaDimensions(_ context.Context, fileData []byte, mimeTyp
 			h.logger.Warn("failed to decode image for dimensions, using header parsing", zap.Error(err))
 			// Fallback to header parsing
 			width, height := h.extractImageDimensions(fileData, mimeType)
-			return map[string]interface{}{
+			return map[string]any{
 				"width":  width,
 				"height": height,
 				"size":   fmt.Sprintf("%dx%d", width, height),
@@ -629,7 +629,7 @@ func (h *Handler) getMediaDimensions(_ context.Context, fileData []byte, mimeTyp
 		width := bounds.Dx()
 		height := bounds.Dy()
 
-		return map[string]interface{}{
+		return map[string]any{
 			"width":  width,
 			"height": height,
 			"size":   fmt.Sprintf("%dx%d", width, height),
@@ -641,7 +641,7 @@ func (h *Handler) getMediaDimensions(_ context.Context, fileData []byte, mimeTyp
 	if strings.HasPrefix(mimeType, "video/") {
 		// For now, return default dimensions
 		// In production, use ffprobe or similar to get actual dimensions
-		return map[string]interface{}{
+		return map[string]any{
 			"width":    1920,
 			"height":   1080,
 			"size":     "1920x1080",
@@ -651,7 +651,7 @@ func (h *Handler) getMediaDimensions(_ context.Context, fileData []byte, mimeTyp
 	}
 
 	// Default for other types
-	return map[string]interface{}{
+	return map[string]any{
 		"width":  0,
 		"height": 0,
 		"size":   "0x0",

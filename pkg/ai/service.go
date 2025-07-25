@@ -422,7 +422,7 @@ Respond with JSON only:
 }`, content.Text)
 
 	// Call Bedrock
-	requestBody := map[string]interface{}{
+	requestBody := map[string]any{
 		"prompt":               prompt,
 		"max_tokens_to_sample": 500,
 		"temperature":          0.1,
@@ -444,7 +444,7 @@ Respond with JSON only:
 	}
 
 	// Parse response
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(response.Body, &result); err != nil {
 		return s.fallbackAIDetection(content), nil
 	}

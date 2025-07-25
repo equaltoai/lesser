@@ -17,17 +17,17 @@ import (
 
 // DebugFederationTrace represents a single step in federation processing
 type DebugFederationTrace struct {
-	Timestamp   time.Time              `json:"timestamp"`
-	Step        string                 `json:"step"`
-	Direction   string                 `json:"direction"` // inbound/outbound
-	Actor       string                 `json:"actor,omitempty"`
-	RemoteURL   string                 `json:"remote_url,omitempty"`
-	StatusCode  int                    `json:"status_code,omitempty"`
-	Headers     map[string]string      `json:"headers,omitempty"`
-	Body        json.RawMessage        `json:"body,omitempty"`
-	Error       string                 `json:"error,omitempty"`
-	Duration    string                 `json:"duration,omitempty"`
-	StorageInfo map[string]interface{} `json:"storage_info,omitempty"`
+	Timestamp   time.Time         `json:"timestamp"`
+	Step        string            `json:"step"`
+	Direction   string            `json:"direction"` // inbound/outbound
+	Actor       string            `json:"actor,omitempty"`
+	RemoteURL   string            `json:"remote_url,omitempty"`
+	StatusCode  int               `json:"status_code,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	Body        json.RawMessage   `json:"body,omitempty"`
+	Error       string            `json:"error,omitempty"`
+	Duration    string            `json:"duration,omitempty"`
+	StorageInfo map[string]any    `json:"storage_info,omitempty"`
 }
 
 // DebugFederationResponse contains the complete trace of an activity
@@ -44,12 +44,12 @@ type DebugFederationResponse struct {
 
 // DebugObjectResponse contains detailed information about a stored object
 type DebugObjectResponse struct {
-	ID            string                 `json:"id"`
-	Type          string                 `json:"type"`
-	Object        interface{}            `json:"object"`
-	Created       time.Time              `json:"created"`
-	Actor         map[string]interface{} `json:"actor,omitempty"`
-	Relationships map[string]interface{} `json:"relationships,omitempty"`
+	ID            string         `json:"id"`
+	Type          string         `json:"type"`
+	Object        any            `json:"object"`
+	Created       time.Time      `json:"created"`
+	Actor         map[string]any `json:"actor,omitempty"`
+	Relationships map[string]any `json:"relationships,omitempty"`
 }
 
 // HandleDebugFederationTrace traces the processing of a specific activity
@@ -139,8 +139,8 @@ func (h *Handler) HandleDebugFederationTrace(ctx context.Context, request events
 		})
 		// Extract username from activity object/target
 		if activity.Object != nil {
-			if objMap, ok := activity.Object.(map[string]interface{}); ok {
-				if toList, ok := objMap["to"].([]interface{}); ok && len(toList) > 0 {
+			if objMap, ok := activity.Object.(map[string]any); ok {
+				if toList, ok := objMap["to"].([]any); ok && len(toList) > 0 {
 					if toStr, ok := toList[0].(string); ok && strings.Contains(toStr, h.cfg.BaseURL()) {
 						response.StorageLocations["inbox"] = toStr + "/inbox"
 					}
@@ -206,12 +206,12 @@ func (h *Handler) HandleDebugObject(ctx context.Context, request events.APIGatew
 	response := &DebugObjectResponse{
 		ID:            objectID,
 		Object:        obj,
-		Relationships: make(map[string]interface{}),
+		Relationships: make(map[string]any),
 	}
 
 	// Determine object type and add metadata
 	switch v := obj.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if typeStr, ok := v["type"].(string); ok {
 			response.Type = typeStr
 		}
@@ -226,7 +226,7 @@ func (h *Handler) HandleDebugObject(ctx context.Context, request events.APIGatew
 			if len(parts) > 0 {
 				username := parts[len(parts)-1]
 				if actor, err := h.store.GetActor(ctx, username); err == nil {
-					response.Actor = map[string]interface{}{
+					response.Actor = map[string]any{
 						"id":       actor.ID,
 						"username": actor.PreferredUsername,
 						"name":     actor.Name,
@@ -241,11 +241,11 @@ func (h *Handler) HandleDebugObject(ctx context.Context, request events.APIGatew
 	likeCount, _ := h.store.CountObjectLikes(ctx, objectID)
 	announceCount, _ := h.store.CountObjectAnnounces(ctx, objectID)
 
-	response.Relationships["likes"] = map[string]interface{}{
+	response.Relationships["likes"] = map[string]any{
 		"count": likeCount,
 		"url":   fmt.Sprintf("%s/likes", objectID),
 	}
-	response.Relationships["announces"] = map[string]interface{}{
+	response.Relationships["announces"] = map[string]any{
 		"count": announceCount,
 		"url":   fmt.Sprintf("%s/shares", objectID),
 	}
@@ -308,7 +308,7 @@ func (h *Handler) HandleDebugReplay(ctx context.Context, request events.APIGatew
 	)
 
 	// Create a replay result
-	result := map[string]interface{}{
+	result := map[string]any{
 		"activity_id": activityID,
 		"type":        activity.Type,
 		"actor":       activity.Actor,
@@ -338,14 +338,14 @@ func (h *Handler) HandleDebugReplay(ctx context.Context, request events.APIGatew
 
 // DebugFederationDomainResponse contains debug info for a specific domain
 type DebugFederationDomainResponse struct {
-	Domain        string                 `json:"domain"`
-	LastContact   time.Time              `json:"last_contact,omitempty"`
-	Status        string                 `json:"status"`
-	SharedInbox   string                 `json:"shared_inbox,omitempty"`
-	RecentErrors  []string               `json:"recent_errors,omitempty"`
-	KnownActors   []string               `json:"known_actors"`
-	ActivityCount int                    `json:"activity_count"`
-	InstanceInfo  map[string]interface{} `json:"instance_info,omitempty"`
+	Domain        string         `json:"domain"`
+	LastContact   time.Time      `json:"last_contact,omitempty"`
+	Status        string         `json:"status"`
+	SharedInbox   string         `json:"shared_inbox,omitempty"`
+	RecentErrors  []string       `json:"recent_errors,omitempty"`
+	KnownActors   []string       `json:"known_actors"`
+	ActivityCount int            `json:"activity_count"`
+	InstanceInfo  map[string]any `json:"instance_info,omitempty"`
 }
 
 // HandleDebugFederationDomain provides debug info for a specific federated domain
@@ -392,8 +392,8 @@ func (h *Handler) HandleDebugFederationDomain(ctx context.Context, request event
 	}
 
 	// Add instance info if available
-	response.InstanceInfo = map[string]interface{}{
-		"software": map[string]interface{}{
+	response.InstanceInfo = map[string]any{
+		"software": map[string]any{
 			"name":    "unknown",
 			"version": "unknown",
 		},
@@ -418,11 +418,11 @@ func (h *Handler) HandleDebugFederationDomain(ctx context.Context, request event
 
 // DebugObjectExplanation contains detailed object info including storage and cost
 type DebugObjectExplanation struct {
-	Object        interface{}            `json:"object"`
-	Storage       map[string]interface{} `json:"storage"`
-	Indexes       []string               `json:"indexes"`
-	References    map[string]interface{} `json:"references"`
-	CostBreakdown map[string]interface{} `json:"cost_breakdown"`
+	Object        any            `json:"object"`
+	Storage       map[string]any `json:"storage"`
+	Indexes       []string       `json:"indexes"`
+	References    map[string]any `json:"references"`
+	CostBreakdown map[string]any `json:"cost_breakdown"`
 }
 
 // HandleDebugObjectExplain provides detailed explanation of object storage and cost
@@ -463,14 +463,14 @@ func (h *Handler) HandleDebugObjectExplain(ctx context.Context, request events.A
 	// Build detailed explanation
 	response := &DebugObjectExplanation{
 		Object:        obj,
-		Storage:       make(map[string]interface{}),
+		Storage:       make(map[string]any),
 		Indexes:       []string{},
-		References:    make(map[string]interface{}),
-		CostBreakdown: make(map[string]interface{}),
+		References:    make(map[string]any),
+		CostBreakdown: make(map[string]any),
 	}
 
 	// Add storage details
-	response.Storage = map[string]interface{}{
+	response.Storage = map[string]any{
 		"table":         "lesser-objects",
 		"partition_key": fmt.Sprintf("OBJECT#%s", objectID),
 		"sort_key":      fmt.Sprintf("OBJECT#%s", objectID),
@@ -490,14 +490,14 @@ func (h *Handler) HandleDebugObjectExplain(ctx context.Context, request events.A
 	likeCount, _ := h.store.CountObjectLikes(ctx, objectID)
 	announceCount, _ := h.store.CountObjectAnnounces(ctx, objectID)
 
-	response.References = map[string]interface{}{
+	response.References = map[string]any{
 		"likes":     likeCount,
 		"announces": announceCount,
 		"replies":   h.countStatusReplies(ctx, objectID),
 	}
 
 	// Add cost breakdown
-	response.CostBreakdown = map[string]interface{}{
+	response.CostBreakdown = map[string]any{
 		"read_cost_units":      1,
 		"write_cost_units":     1,
 		"storage_cost_monthly": "$0.00025",   // $0.25 per GB/month

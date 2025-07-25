@@ -48,7 +48,7 @@ followers, _, err := storageClient.GetFollowers(ctx, userID, 1000, "")
 #### 3. Job Management (2/2 Functions) ✅
 ```go
 // Before: Empty arrays
-return []map[string]interface{}{}, nil
+return []map[string]any{}, nil
 
 // After: GSI queries
 queryInput := &dynamodb.QueryInput{

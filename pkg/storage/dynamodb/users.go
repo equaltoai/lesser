@@ -117,7 +117,7 @@ func (s *dynamoDBStorage) GetUserByEmail(ctx context.Context, email string) (*st
 }
 
 // UpdateUser updates an existing user
-func (s *dynamoDBStorage) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdateUser(ctx context.Context, username string, updates map[string]any) error {
 	if len(updates) == 0 {
 		return errors.New("no updates provided")
 	}
@@ -400,7 +400,7 @@ func (d *dynamoDBStorage) GetUserByProviderID(ctx context.Context, provider, pro
 
 // LinkProviderAccount links an OAuth provider account to a user
 func (d *dynamoDBStorage) LinkProviderAccount(ctx context.Context, username, provider, providerID string) error {
-	item := map[string]interface{}{
+	item := map[string]any{
 		"PK":         fmt.Sprintf("USER#%s", username),
 		"SK":         fmt.Sprintf("PROVIDER#%s", provider),
 		"GSI1PK":     fmt.Sprintf("PROVIDER#%s", provider),

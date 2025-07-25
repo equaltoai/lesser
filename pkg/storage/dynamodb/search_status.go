@@ -92,7 +92,7 @@ func (s *dynamoDBStorage) SearchStatusesByURL(ctx context.Context, url string) (
 	}
 
 	// Try to handle generic object types
-	if objMap, ok := obj.(map[string]interface{}); ok {
+	if objMap, ok := obj.(map[string]any); ok {
 		result := &storage.StatusSearchResult{
 			Score:      1.0,
 			Highlights: make(map[string]string),

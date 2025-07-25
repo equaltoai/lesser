@@ -23,7 +23,7 @@ For import/export jobs, the pattern is already established:
 ### Import Jobs
 ```go
 // When creating an import job:
-jobRecord := map[string]interface{}{
+jobRecord := map[string]any{
     "PK":        fmt.Sprintf("IMPORT#%s", importID),
     "SK":        fmt.Sprintf("IMPORT#%s", importID),
     "GSI1PK":    fmt.Sprintf("USER#%s", username),        // GSI1 partition key
@@ -35,7 +35,7 @@ jobRecord := map[string]interface{}{
 ### Export Jobs
 ```go
 // When creating an export job:
-jobRecord := map[string]interface{}{
+jobRecord := map[string]any{
     "PK":        fmt.Sprintf("EXPORT#%s", exportID),
     "SK":        fmt.Sprintf("EXPORT#%s", exportID),
     "GSI1PK":    fmt.Sprintf("USER#%s", username),        // Same GSI1 pattern
@@ -49,7 +49,7 @@ jobRecord := map[string]interface{}{
 Here's how to implement the GSI query:
 
 ```go
-func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
     // Build the query input for GSI1
     queryInput := &dynamodb.QueryInput{
         TableName:              aws.String(h.cfg.TableName),
@@ -81,13 +81,13 @@ func (h *Handler) getUserImportJobs(ctx context.Context, username string, status
     }
     
     // Filter for IMPORT items only (GSI1 may contain other user data)
-    imports := make([]map[string]interface{}, 0)
+    imports := make([]map[string]any, 0)
     for _, item := range result.Items {
         // Check if this is an import job by looking at PK
         if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
             if strings.HasPrefix(pk.Value, "IMPORT#") {
                 // Convert DynamoDB item to map
-                var jobData map[string]interface{}
+                var jobData map[string]any
                 if err := attributevalue.UnmarshalMap(item, &jobData); err != nil {
                     h.logger.Error("failed to unmarshal import job", zap.Error(err))
                     continue
@@ -106,7 +106,7 @@ func (h *Handler) getUserImportJobs(ctx context.Context, username string, status
 The export jobs implementation is identical, just filtering for EXPORT# prefix:
 
 ```go
-func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
     // Same query structure as imports
     queryInput := &dynamodb.QueryInput{
         TableName:              aws.String(h.cfg.TableName),
@@ -130,11 +130,11 @@ func (h *Handler) getUserExportJobs(ctx context.Context, username string, status
     }
     
     // Filter for EXPORT items only
-    exports := make([]map[string]interface{}, 0)
+    exports := make([]map[string]any, 0)
     for _, item := range result.Items {
         if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
             if strings.HasPrefix(pk.Value, "EXPORT#") {
-                var jobData map[string]interface{}
+                var jobData map[string]any
                 if err := attributevalue.UnmarshalMap(item, &jobData); err != nil {
                     h.logger.Error("failed to unmarshal export job", zap.Error(err))
                     continue

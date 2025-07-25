@@ -37,7 +37,7 @@ func NewAuthorizedFetchService(store storage.Storage, domain string, logger *zap
 }
 
 // FetchObject fetches an ActivityPub object with authorization
-func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL string, signingActor *activitypub.Actor) (interface{}, error) {
+func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL string, signingActor *activitypub.Actor) (any, error) {
 	f.logger.Debug("fetching object with authorization",
 		zap.String("object_url", objectURL),
 		zap.String("signing_actor", signingActor.ID))
@@ -82,7 +82,7 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	}
 
 	// Decode the response
-	var result map[string]interface{}
+	var result map[string]any
 	if err := common.ParseHTTPResponse(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -108,7 +108,7 @@ func (f *AuthorizedFetchService) FetchActor(ctx context.Context, actorURL string
 	}
 
 	// Convert to Actor
-	objMap, ok := obj.(map[string]interface{})
+	objMap, ok := obj.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("invalid actor object type")
 	}
@@ -211,7 +211,7 @@ func (f *AuthorizedFetchService) IsAuthorizedFetchEnabled(ctx context.Context) b
 
 // Private methods
 
-func (f *AuthorizedFetchService) validateObject(obj map[string]interface{}, expectedID string) error {
+func (f *AuthorizedFetchService) validateObject(obj map[string]any, expectedID string) error {
 	// Verify the object ID matches what we requested
 	id, ok := obj["id"].(string)
 	if !ok || id != expectedID {

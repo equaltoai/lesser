@@ -24,7 +24,7 @@ func (s *dynamoDBStorage) AddDomainBlock(ctx context.Context, username, domain s
 		CreatedAt: time.Now(),
 	}
 
-	av, err := s.MarshalItem(map[string]interface{}{
+	av, err := s.MarshalItem(map[string]any{
 		"PK":        s.userPK(username),
 		"SK":        fmt.Sprintf("DOMAIN_BLOCK#%s", domain),
 		"Username":  item.Username,
@@ -153,7 +153,7 @@ func (s *dynamoDBStorage) CreateInstanceDomainBlock(ctx context.Context, block *
 	block.Domain = strings.ToLower(strings.TrimSpace(block.Domain))
 
 	// Create the record
-	item := map[string]interface{}{
+	item := map[string]any{
 		"PK":             fmt.Sprintf("DOMAIN_BLOCK#%s", block.Domain),
 		"SK":             fmt.Sprintf("DOMAIN_BLOCK#%s", block.Domain),
 		"GSI1PK":         "DOMAIN_BLOCKS",
@@ -184,7 +184,6 @@ func (s *dynamoDBStorage) CreateInstanceDomainBlock(ctx context.Context, block *
 		Item:                av,
 		ConditionExpression: aws.String("attribute_not_exists(PK)"),
 	})
-
 	if err != nil {
 		// Check if it's a conditional check failure (duplicate)
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
@@ -209,7 +208,6 @@ func (s *dynamoDBStorage) GetInstanceDomainBlock(ctx context.Context, domain str
 		TableName: aws.String(s.tableName),
 		Key:       key,
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get domain block: %w", err)
 	}
@@ -237,7 +235,6 @@ func (s *dynamoDBStorage) GetInstanceDomainBlockByID(ctx context.Context, id str
 			expression.Name("ID").Equal(expression.Value(id)),
 		).
 		Build()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to build query expression: %w", err)
 	}
@@ -251,7 +248,6 @@ func (s *dynamoDBStorage) GetInstanceDomainBlockByID(ctx context.Context, id str
 		ExpressionAttributeValues: expr.Values(),
 		Limit:                     aws.Int32(1),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query domain block by ID: %w", err)
 	}
@@ -319,7 +315,7 @@ func (s *dynamoDBStorage) ListInstanceDomainBlocks(ctx context.Context, limit in
 }
 
 // UpdateInstanceDomainBlock updates an existing domain block
-func (s *dynamoDBStorage) UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]any) error {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 
 	// Build update expression
@@ -412,7 +408,6 @@ func (s *dynamoDBStorage) DeleteInstanceDomainBlock(ctx context.Context, domain 
 		Key:                 key,
 		ConditionExpression: aws.String("attribute_exists(PK)"),
 	})
-
 	if err != nil {
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
 			return storage.ErrNotFound

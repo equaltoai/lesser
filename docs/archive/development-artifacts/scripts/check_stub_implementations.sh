@@ -48,9 +48,9 @@ count_pattern "would normally" "Would normally patterns"
 
 echo ""
 echo "### Empty return patterns:"
-count_pattern "return \[\]map\[string\]interface{}{}, nil" "Empty map slice returns"
+count_pattern "return \[\]map\[string\]any{}, nil" "Empty map slice returns"
 count_pattern "return \[\]string{}, nil" "Empty string slice returns"
-count_pattern "return \[\]interface{}{}, nil" "Empty interface slice returns"
+count_pattern "return \[\]any{}, nil" "Empty interface slice returns"
 count_pattern "return nil, nil" "Double nil returns"
 
 echo ""

@@ -6,9 +6,9 @@ import (
 )
 
 // Context represents the JSON-LD context for ActivityStreams
-var Context = []interface{}{
+var Context = []any{
 	"https://www.w3.org/ns/activitystreams",
-	map[string]interface{}{
+	map[string]any{
 		"manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
 		"sensitive":                 "as:sensitive",
 		"Hashtag":                   "as:Hashtag",
@@ -25,18 +25,18 @@ var Context = []interface{}{
 
 // BaseObject represents the base ActivityStreams object
 type BaseObject struct {
-	Context   interface{} `json:"@context,omitempty"`
-	ID        string      `json:"id"`
-	Type      string      `json:"type"`
-	Published *time.Time  `json:"published,omitempty"`
-	Updated   *time.Time  `json:"updated,omitempty"`
-	To        []string    `json:"to,omitempty"`
-	CC        []string    `json:"cc,omitempty"`
-	BTo       []string    `json:"bto,omitempty"`
-	BCC       []string    `json:"bcc,omitempty"`
-	InReplyTo string      `json:"inReplyTo,omitempty"`
-	Summary   string      `json:"summary,omitempty"`
-	Sensitive bool        `json:"sensitive,omitempty"`
+	Context   any        `json:"@context,omitempty"`
+	ID        string     `json:"id"`
+	Type      string     `json:"type"`
+	Published *time.Time `json:"published,omitempty"`
+	Updated   *time.Time `json:"updated,omitempty"`
+	To        []string   `json:"to,omitempty"`
+	CC        []string   `json:"cc,omitempty"`
+	BTo       []string   `json:"bto,omitempty"`
+	BCC       []string   `json:"bcc,omitempty"`
+	InReplyTo string     `json:"inReplyTo,omitempty"`
+	Summary   string     `json:"summary,omitempty"`
+	Sensitive bool       `json:"sensitive,omitempty"`
 }
 
 // Actor represents an ActivityPub actor (Person, Service, etc.)
@@ -80,11 +80,11 @@ type Endpoints struct {
 // Activity represents an ActivityPub activity
 type Activity struct {
 	BaseObject
-	Actor      string      `json:"actor"`
-	Object     interface{} `json:"object"`
-	Target     string      `json:"target,omitempty"`     // For Add/Remove activities
-	Origin     string      `json:"origin,omitempty"`     // For Move activities
-	Instrument string      `json:"instrument,omitempty"` // For various activities
+	Actor      string `json:"actor"`
+	Object     any    `json:"object"`
+	Target     string `json:"target,omitempty"`     // For Add/Remove activities
+	Origin     string `json:"origin,omitempty"`     // For Move activities
+	Instrument string `json:"instrument,omitempty"` // For various activities
 }
 
 // Note represents a basic text post
@@ -150,12 +150,12 @@ type Tag struct {
 // Collection represents an ActivityStreams collection
 type Collection struct {
 	BaseObject
-	TotalItems   int         `json:"totalItems"`
-	Current      string      `json:"current,omitempty"`
-	First        string      `json:"first,omitempty"`
-	Last         string      `json:"last,omitempty"`
-	Items        interface{} `json:"items,omitempty"`
-	OrderedItems interface{} `json:"orderedItems,omitempty"`
+	TotalItems   int    `json:"totalItems"`
+	Current      string `json:"current,omitempty"`
+	First        string `json:"first,omitempty"`
+	Last         string `json:"last,omitempty"`
+	Items        any    `json:"items,omitempty"`
+	OrderedItems any    `json:"orderedItems,omitempty"`
 }
 
 // OrderedCollection represents an ordered ActivityStreams collection
@@ -279,7 +279,7 @@ func NewActor(actorType, id, username string) *Actor {
 }
 
 // NewActivity creates a new activity
-func NewActivity(activityType, id, actorID string, object interface{}) *Activity {
+func NewActivity(activityType, id, actorID string, object any) *Activity {
 	now := time.Now()
 	return &Activity{
 		BaseObject: BaseObject{

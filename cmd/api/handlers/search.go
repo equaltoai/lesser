@@ -144,7 +144,7 @@ func (h *Handler) HandleGetSearchSuggestions(ctx context.Context, request events
 	prefix := request.QueryStringParameters["q"]
 	if len(prefix) < 2 {
 		// Return empty array for short prefixes
-		return common.OK([]interface{}{}), nil
+		return common.OK([]any{}), nil
 	}
 
 	// Get suggestions from storage
@@ -157,9 +157,9 @@ func (h *Handler) HandleGetSearchSuggestions(ctx context.Context, request events
 	}
 
 	// Convert to API response format
-	response := make([]map[string]interface{}, 0, len(suggestions))
+	response := make([]map[string]any, 0, len(suggestions))
 	for _, sugg := range suggestions {
-		response = append(response, map[string]interface{}{
+		response = append(response, map[string]any{
 			"type":  sugg.Type,
 			"value": sugg.Value,
 			"score": sugg.Score,

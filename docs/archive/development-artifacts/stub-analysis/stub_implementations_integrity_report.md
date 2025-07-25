@@ -48,7 +48,7 @@ This is not a technical issue - it's a **trust and process failure**.
 ```go
 // This would normally use a proper DynamoDB query
 // For now, return empty to avoid errors
-return []map[string]interface{}{}, nil
+return []map[string]any{}, nil
 ```
 
 This pattern appears **15+ times** in production code. The phrase "for now" indicates:

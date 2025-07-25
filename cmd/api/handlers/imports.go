@@ -162,7 +162,7 @@ func (h *Handler) HandleCreateImport(ctx context.Context, request events.APIGate
 	}
 
 	// Create job record
-	jobRecord := map[string]interface{}{
+	jobRecord := map[string]any{
 		"PK":        fmt.Sprintf("IMPORT#%s", importID),
 		"SK":        fmt.Sprintf("IMPORT#%s", importID),
 		"GSI1PK":    fmt.Sprintf("USER#%s", claims.Username),
@@ -233,7 +233,7 @@ func (h *Handler) HandleGetImportStatus(ctx context.Context, request events.APIG
 		return common.NotFound(fmt.Errorf("import not found: %s", importID)), nil
 	}
 
-	jobData, ok := obj.(map[string]interface{})
+	jobData, ok := obj.(map[string]any)
 	if !ok {
 		return common.InternalServerError(errors.New("invalid import data")), nil
 	}
@@ -258,7 +258,7 @@ func (h *Handler) HandleGetImportStatus(ctx context.Context, request events.APIG
 	}
 
 	// Add errors if any
-	if errorsData, ok := jobData["Errors"].([]interface{}); ok {
+	if errorsData, ok := jobData["Errors"].([]any); ok {
 		for _, err := range errorsData {
 			if errStr, ok := err.(string); ok {
 				job.Errors = append(job.Errors, errStr)
@@ -321,7 +321,7 @@ func (h *Handler) HandleListImports(ctx context.Context, request events.APIGatew
 		}
 
 		// Add errors if any
-		if errorsData, ok := jobData["Errors"].([]interface{}); ok && len(errorsData) > 0 {
+		if errorsData, ok := jobData["Errors"].([]any); ok && len(errorsData) > 0 {
 			job.Errors = make([]string, 0, len(errorsData))
 			for _, err := range errorsData {
 				if errStr, ok := err.(string); ok {
@@ -347,7 +347,7 @@ func (h *Handler) HandleListImports(ctx context.Context, request events.APIGatew
 }
 
 // Helper to get user's import jobs
-func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
 	// Query GSI1 for user's imports
 	// GSI1PK: USER#username, GSI1SK: CREATED#timestamp
 
@@ -391,13 +391,13 @@ func (h *Handler) getUserImportJobs(ctx context.Context, username string, status
 	}
 
 	// Filter for IMPORT items only (GSI1 may contain other user data)
-	imports := make([]map[string]interface{}, 0)
+	imports := make([]map[string]any, 0)
 	for _, item := range result.Items {
 		// Check if this is an import job by looking at PK
 		if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
 			if strings.HasPrefix(pk.Value, "IMPORT#") {
 				// Convert DynamoDB item to map
-				var jobData map[string]interface{}
+				var jobData map[string]any
 				if err := attributevalue.UnmarshalMap(item, &jobData); err != nil {
 					h.logger.Error("failed to unmarshal import job",
 						zap.String("pk", pk.Value),
@@ -426,7 +426,7 @@ func (h *Handler) triggerImportProcessor(ctx context.Context, importID, username
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Create message payload
-	message := map[string]interface{}{
+	message := map[string]any{
 		"importID":  importID,
 		"username":  username,
 		"type":      importType,
@@ -461,7 +461,6 @@ func (h *Handler) triggerImportProcessor(ctx context.Context, importID, username
 			},
 		},
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to send SQS message: %w", err)
 	}

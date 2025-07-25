@@ -210,7 +210,7 @@ func (h *Handler) HandleDismissAnnouncement(ctx context.Context, request events.
 	}
 
 	// Return empty object
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // HandleAddAnnouncementReaction handles PUT /api/v1/announcements/:id/reactions/:name
@@ -282,7 +282,7 @@ func (h *Handler) HandleAddAnnouncementReaction(ctx context.Context, request eve
 	}
 
 	// Return empty object
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // HandleRemoveAnnouncementReaction handles DELETE /api/v1/announcements/:id/reactions/:name
@@ -329,7 +329,7 @@ func (h *Handler) HandleRemoveAnnouncementReaction(ctx context.Context, request 
 	}
 
 	// Return empty object
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // Helper function to convert storage reactions to API format

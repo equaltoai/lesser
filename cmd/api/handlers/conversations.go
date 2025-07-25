@@ -87,7 +87,7 @@ func (h *Handler) HandleGetConversations(ctx context.Context, request events.API
 		}
 
 		// Get last status
-		var lastStatus interface{}
+		var lastStatus any
 		if conv.LastStatusID != "" {
 			lastStatus, _ = h.store.GetObject(ctx, conv.LastStatusID)
 		}
@@ -258,7 +258,7 @@ func (h *Handler) HandleMarkConversationRead(ctx context.Context, request events
 		}
 	}
 
-	var lastStatus interface{}
+	var lastStatus any
 	if conversation.LastStatusID != "" {
 		lastStatus, _ = h.store.GetObject(ctx, conversation.LastStatusID)
 	}

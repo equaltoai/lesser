@@ -193,17 +193,17 @@ func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collect
 	}
 
 	// Convert to appropriate URLs based on collection type
-	var orderedItems []interface{}
+	var orderedItems []any
 
 	if collectionType == "liked" {
 		// For liked collection, we use the object IDs from likes
-		orderedItems = make([]interface{}, len(likes))
+		orderedItems = make([]any, len(likes))
 		for i, like := range likes {
 			orderedItems[i] = like.Object
 		}
 	} else {
 		// For followers/following, convert usernames to actor URLs
-		orderedItems = make([]interface{}, len(usernames))
+		orderedItems = make([]any, len(usernames))
 		for i, username := range usernames {
 			orderedItems[i] = fmt.Sprintf("%s/users/%s", cfg.Domain, username)
 		}

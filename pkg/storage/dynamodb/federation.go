@@ -145,7 +145,7 @@ func (s *dynamoDBStorage) CreateDomainBlock(ctx context.Context, block *storage.
 }
 
 // UpdateDomainBlock updates an existing domain block
-func (s *dynamoDBStorage) UpdateDomainBlock(ctx context.Context, id string, updates map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdateDomainBlock(ctx context.Context, id string, updates map[string]any) error {
 	// First get the block to find the domain
 	block, err := s.GetDomainBlock(ctx, id)
 	if err != nil {

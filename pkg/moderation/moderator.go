@@ -414,14 +414,14 @@ func generateTextHash(text string) string {
 // Types for moderation system
 
 type ContentSubmission struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"` // post/comment/message/profile
-	Text        string                 `json:"text,omitempty"`
-	ImageURL    string                 `json:"image_url,omitempty"`
-	ImageBytes  []byte                 `json:"-"`
-	Author      string                 `json:"author"`
-	SubmittedAt time.Time              `json:"submitted_at"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"` // post/comment/message/profile
+	Text        string         `json:"text,omitempty"`
+	ImageURL    string         `json:"image_url,omitempty"`
+	ImageBytes  []byte         `json:"-"`
+	Author      string         `json:"author"`
+	SubmittedAt time.Time      `json:"submitted_at"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 type ModerationResult struct {

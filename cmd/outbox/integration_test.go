@@ -42,7 +42,7 @@ func setupTestEnvironment(t *testing.T) (storage.Storage, *awsdynamodb.Client) {
 	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion("us-east-1"),
 		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			func(service, region string, options ...any) (aws.Endpoint, error) {
 				if service == awsdynamodb.ServiceID {
 					return aws.Endpoint{
 						URL: endpoint,
@@ -147,7 +147,7 @@ func createTestActor(t *testing.T, storage storage.Storage, username string) *ac
 
 	actor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
-			Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+			Context: []any{"https://www.w3.org/ns/activitystreams"},
 			Type:    "Person",
 			ID:      fmt.Sprintf("https://example.com/users/%s", username),
 		},
@@ -183,10 +183,10 @@ func TestCreateActivityFullFlow(t *testing.T) {
 
 	t.Run("create note flow", func(t *testing.T) {
 		// Step 1: POST Create activity to outbox
-		createActivity := map[string]interface{}{
+		createActivity := map[string]any{
 			"@context": "https://www.w3.org/ns/activitystreams",
 			"type":     "Create",
-			"object": map[string]interface{}{
+			"object": map[string]any{
 				"type":    "Note",
 				"content": "Hello from integration test!",
 			},
@@ -223,7 +223,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		assert.NotEmpty(t, createdActivity.ID)
 
 		// Extract the object ID
-		obj, ok := createdActivity.Object.(map[string]interface{})
+		obj, ok := createdActivity.Object.(map[string]any)
 		assert.True(t, ok)
 		objectID, ok := obj["id"].(string)
 		assert.True(t, ok)
@@ -239,7 +239,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		// In production, this would be done by the activity processor Lambda
 		// For testing, we'll extract and store the object directly
 		if storedActivity.Type == "Create" {
-			if objMap, ok := storedActivity.Object.(map[string]interface{}); ok {
+			if objMap, ok := storedActivity.Object.(map[string]any); ok {
 				err = storage.CreateObject(ctx, objMap)
 				assert.NoError(t, err)
 			}
@@ -250,7 +250,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, retrievedObj)
 
-		objMap, ok := retrievedObj.(map[string]interface{})
+		objMap, ok := retrievedObj.(map[string]any)
 		assert.True(t, ok)
 		assert.Equal(t, "Note", objMap["type"])
 		assert.Equal(t, "Hello from integration test!", objMap["content"])
@@ -266,26 +266,26 @@ func TestCreateActivityFullFlow(t *testing.T) {
 
 	t.Run("create note with rich content", func(t *testing.T) {
 		// Test with attachments, tags, and multi-language content
-		createActivity := map[string]interface{}{
+		createActivity := map[string]any{
 			"@context": "https://www.w3.org/ns/activitystreams",
 			"type":     "Create",
-			"object": map[string]interface{}{
+			"object": map[string]any{
 				"type":    "Note",
 				"content": "Check out this photo! #photography",
-				"contentMap": map[string]interface{}{
+				"contentMap": map[string]any{
 					"en": "Check out this photo! #photography",
 					"es": "¡Mira esta foto! #fotografía",
 				},
-				"attachment": []interface{}{
-					map[string]interface{}{
+				"attachment": []any{
+					map[string]any{
 						"type":      "Image",
 						"url":       "https://example.com/photo.jpg",
 						"mediaType": "image/jpeg",
 						"name":      "A beautiful sunset",
 					},
 				},
-				"tag": []interface{}{
-					map[string]interface{}{
+				"tag": []any{
+					map[string]any{
 						"type": "Hashtag",
 						"name": "#photography",
 						"href": "https://example.com/tags/photography",
@@ -321,41 +321,41 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Verify the object has all the rich content
-		obj, ok := createdActivity.Object.(map[string]interface{})
+		obj, ok := createdActivity.Object.(map[string]any)
 		assert.True(t, ok)
 
 		// Check contentMap
-		contentMap, ok := obj["contentMap"].(map[string]interface{})
+		contentMap, ok := obj["contentMap"].(map[string]any)
 		assert.True(t, ok)
 		assert.Equal(t, "Check out this photo! #photography", contentMap["en"])
 		assert.Equal(t, "¡Mira esta foto! #fotografía", contentMap["es"])
 
 		// Check attachments
-		attachments, ok := obj["attachment"].([]interface{})
+		attachments, ok := obj["attachment"].([]any)
 		assert.True(t, ok)
 		assert.Len(t, attachments, 1)
 
-		attachment, ok := attachments[0].(map[string]interface{})
+		attachment, ok := attachments[0].(map[string]any)
 		assert.True(t, ok)
 		assert.Equal(t, "Image", attachment["type"])
 		assert.Equal(t, "https://example.com/photo.jpg", attachment["url"])
 
 		// Check tags
-		tags, ok := obj["tag"].([]interface{})
+		tags, ok := obj["tag"].([]any)
 		assert.True(t, ok)
 		assert.Len(t, tags, 1)
 
-		tag, ok := tags[0].(map[string]interface{})
+		tag, ok := tags[0].(map[string]any)
 		assert.True(t, ok)
 		assert.Equal(t, "Hashtag", tag["type"])
 		assert.Equal(t, "#photography", tag["name"])
 	})
 
 	t.Run("create article", func(t *testing.T) {
-		createActivity := map[string]interface{}{
+		createActivity := map[string]any{
 			"@context": "https://www.w3.org/ns/activitystreams",
 			"type":     "Create",
-			"object": map[string]interface{}{
+			"object": map[string]any{
 				"type":    "Article",
 				"name":    "My First Article",
 				"content": "This is the content of my article...",
@@ -389,7 +389,7 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		err = json.Unmarshal([]byte(response.Body), &createdActivity)
 		assert.NoError(t, err)
 
-		obj, ok := createdActivity.Object.(map[string]interface{})
+		obj, ok := createdActivity.Object.(map[string]any)
 		assert.True(t, ok)
 		assert.Equal(t, "Article", obj["type"])
 		assert.Equal(t, "My First Article", obj["name"])
@@ -408,10 +408,10 @@ func TestCreateActivityFullFlow(t *testing.T) {
 		createdIDs := make([]string, 0, len(noteContents))
 
 		for _, content := range noteContents {
-			createActivity := map[string]interface{}{
+			createActivity := map[string]any{
 				"@context": "https://www.w3.org/ns/activitystreams",
 				"type":     "Create",
-				"object": map[string]interface{}{
+				"object": map[string]any{
 					"type":    "Note",
 					"content": content,
 				},
@@ -472,7 +472,7 @@ func TestCreateActivityValidation(t *testing.T) {
 	_ = createTestActor(t, storage, "alice")
 
 	t.Run("reject create without object", func(t *testing.T) {
-		createActivity := map[string]interface{}{
+		createActivity := map[string]any{
 			"@context": "https://www.w3.org/ns/activitystreams",
 			"type":     "Create",
 			// Missing object
@@ -503,10 +503,10 @@ func TestCreateActivityValidation(t *testing.T) {
 	})
 
 	t.Run("reject note without content", func(t *testing.T) {
-		createActivity := map[string]interface{}{
+		createActivity := map[string]any{
 			"@context": "https://www.w3.org/ns/activitystreams",
 			"type":     "Create",
-			"object": map[string]interface{}{
+			"object": map[string]any{
 				"type": "Note",
 				// Missing content
 			},
@@ -537,10 +537,10 @@ func TestCreateActivityValidation(t *testing.T) {
 	})
 
 	t.Run("reject article without name", func(t *testing.T) {
-		createActivity := map[string]interface{}{
+		createActivity := map[string]any{
 			"@context": "https://www.w3.org/ns/activitystreams",
 			"type":     "Create",
-			"object": map[string]interface{}{
+			"object": map[string]any{
 				"type":    "Article",
 				"content": "Article content",
 				// Missing name

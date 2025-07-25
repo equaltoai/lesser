@@ -163,7 +163,7 @@
   type DomainError struct {
       Code    string
       Message string
-      Details map[string]interface{}
+      Details map[string]any
   }
   
   func (e DomainError) Error() string {
@@ -208,7 +208,7 @@
 
 - [ ] Create error response formatter
   ```go
-  func FormatErrorResponse(err error) map[string]interface{}
+  func FormatErrorResponse(err error) map[string]any
   ```
 
 **Testing Requirements:**
@@ -265,9 +265,9 @@
 
 - [ ] Create response helpers
   ```go
-  func RespondWithData(ctx *lift.Context, data interface{}) error
+  func RespondWithData(ctx *lift.Context, data any) error
   func RespondWithError(ctx *lift.Context, err error) error
-  func RespondWithPagination(ctx *lift.Context, data interface{}, pagination Pagination) error
+  func RespondWithPagination(ctx *lift.Context, data any, pagination Pagination) error
   ```
 
 **Testing Requirements:**
@@ -388,8 +388,8 @@
       operations []TransactionOperation
   }
   
-  func (tb *TransactionBuilder) Put(item interface{}) *TransactionBuilder
-  func (tb *TransactionBuilder) Update(item interface{}, expr string) *TransactionBuilder
+  func (tb *TransactionBuilder) Put(item any) *TransactionBuilder
+  func (tb *TransactionBuilder) Update(item any, expr string) *TransactionBuilder
   func (tb *TransactionBuilder) Delete(key dynamorm.Key) *TransactionBuilder
   func (tb *TransactionBuilder) Build() []TransactionOperation
   ```
@@ -433,7 +433,7 @@
       }
   }
   
-  func (bw *BatchWriter) WriteItems(items []interface{}) error {
+  func (bw *BatchWriter) WriteItems(items []any) error {
       for i := 0; i < len(items); i += bw.batchSize {
           end := i + bw.batchSize
           if end > len(items) {
@@ -451,12 +451,12 @@
 
 - [ ] Create batch reader
   ```go
-  func (br *BatchReader) GetItems(keys []dynamorm.Key) ([]interface{}, error)
+  func (br *BatchReader) GetItems(keys []dynamorm.Key) ([]any, error)
   ```
 
 - [ ] Add parallel processing
   ```go
-  func (bw *BatchWriter) WriteItemsParallel(items []interface{}, workers int) error
+  func (bw *BatchWriter) WriteItemsParallel(items []any, workers int) error
   ```
 
 **Testing Requirements:**
@@ -605,7 +605,7 @@
       Scopes    []string `json:"scopes"`
       IssuedAt  int64    `json:"iat"`
       ExpiresAt int64    `json:"exp"`
-      Extra     map[string]interface{} `json:"extra,omitempty"`
+      Extra     map[string]any `json:"extra,omitempty"`
   }
   
   func (c *Claims) HasScope(scope string) bool

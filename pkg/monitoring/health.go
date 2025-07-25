@@ -31,7 +31,7 @@ type ComponentHealth struct {
 	LastCheck  time.Time
 	ErrorCount int
 	LastError  error
-	Metadata   map[string]interface{}
+	Metadata   map[string]any
 }
 
 // HealthStatus represents the health state
@@ -78,7 +78,7 @@ func (hm *HealthMonitor) CheckDynamoDBHealth(ctx context.Context, tableName stri
 	// Check table status
 	tableStatus := string(result.Table.TableStatus)
 	var status HealthStatus
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"tableStatus":    tableStatus,
 		"itemCount":      result.Table.ItemCount,
 		"tableSizeBytes": result.Table.TableSizeBytes,
@@ -130,7 +130,7 @@ func (hm *HealthMonitor) CheckLambdaHealth(ctx context.Context, functionName str
 
 	// Check function state
 	var status HealthStatus
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"state":      string(result.State),
 		"runtime":    string(result.Runtime),
 		"memorySize": *result.MemorySize,
@@ -202,7 +202,7 @@ func (hm *HealthMonitor) CheckSQSHealth(ctx context.Context, queueURL string) er
 		status = HealthStatusHealthy
 	}
 
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"visibleMessages":   visibleMessages,
 		"invisibleMessages": invisibleMessages,
 		"delayedMessages":   delayedMessages,
@@ -215,7 +215,7 @@ func (hm *HealthMonitor) CheckSQSHealth(ctx context.Context, queueURL string) er
 }
 
 // updateComponentHealth updates the health status of a component
-func (hm *HealthMonitor) updateComponentHealth(component string, status HealthStatus, err error, metadata map[string]interface{}) {
+func (hm *HealthMonitor) updateComponentHealth(component string, status HealthStatus, err error, metadata map[string]any) {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
 
@@ -223,7 +223,7 @@ func (hm *HealthMonitor) updateComponentHealth(component string, status HealthSt
 	if !exists {
 		health = &ComponentHealth{
 			Component: component,
-			Metadata:  make(map[string]interface{}),
+			Metadata:  make(map[string]any),
 		}
 		hm.healthStatus[component] = health
 	}

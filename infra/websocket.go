@@ -115,7 +115,7 @@ func CreateWebSocketInfrastructure(ctx *pulumi.Context, lambdaRole *iam.Role, ta
 		Timeout:       pulumi.Int(60),
 		Architectures: pulumi.StringArray{pulumi.String("arm64")},
 		Environment: &lambda.FunctionEnvironmentArgs{
-			Variables: pulumi.All(wsApi.ApiEndpoint, stage.Name).ApplyT(func(args []interface{}) map[string]string {
+			Variables: pulumi.All(wsApi.ApiEndpoint, stage.Name).ApplyT(func(args []any) map[string]string {
 				endpoint := args[0].(string)
 				stageName := args[1].(string)
 				return map[string]string{

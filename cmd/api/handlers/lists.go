@@ -201,7 +201,7 @@ func (h *Handler) HandleUpdateList(ctx context.Context, request events.APIGatewa
 	}
 
 	// Build updates
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 	if req.Title != "" {
 		updates["title"] = req.Title
 	}

@@ -68,12 +68,12 @@ func (h *Handler) HandleGetTrendingStatuses(ctx context.Context, request events.
 	}
 
 	// Convert to Mastodon API format
-	response := make([]map[string]interface{}, len(statuses))
+	response := make([]map[string]any, len(statuses))
 	for i, s := range statuses {
-		response[i] = map[string]interface{}{
+		response[i] = map[string]any{
 			"id":         s.StatusID,
 			"url":        s.URL,
-			"account":    map[string]interface{}{"id": s.AuthorID},
+			"account":    map[string]any{"id": s.AuthorID},
 			"content":    s.Content,
 			"created_at": s.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
 		}
@@ -101,7 +101,7 @@ func (h *Handler) HandleGetTrendingTags(ctx context.Context, request events.APIG
 	}
 
 	// Convert to Mastodon API format
-	response := make([]map[string]interface{}, len(hashtags))
+	response := make([]map[string]any, len(hashtags))
 	for i, h := range hashtags {
 		// Convert history to strings for Mastodon API
 		history := make([]map[string]string, len(h.History))
@@ -113,7 +113,7 @@ func (h *Handler) HandleGetTrendingTags(ctx context.Context, request events.APIG
 			}
 		}
 
-		response[i] = map[string]interface{}{
+		response[i] = map[string]any{
 			"name":    h.Name,
 			"url":     h.URL,
 			"history": history,
@@ -142,9 +142,9 @@ func (h *Handler) HandleGetTrendingLinks(ctx context.Context, request events.API
 	}
 
 	// Convert to Mastodon API format
-	response := make([]map[string]interface{}, len(links))
+	response := make([]map[string]any, len(links))
 	for i, l := range links {
-		response[i] = map[string]interface{}{
+		response[i] = map[string]any{
 			"url":           l.URL,
 			"title":         l.Title,
 			"description":   l.Description,
@@ -215,10 +215,10 @@ func (h *Handler) extractProviderURL(url string) string {
 	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
 }
 
-func (h *Handler) convertStatusesToTimeline(statuses []*storage.TrendingStatus) []interface{} {
-	result := make([]interface{}, len(statuses))
+func (h *Handler) convertStatusesToTimeline(statuses []*storage.TrendingStatus) []any {
+	result := make([]any, len(statuses))
 	for i, status := range statuses {
-		result[i] = map[string]interface{}{
+		result[i] = map[string]any{
 			"id":      status.ID,
 			"content": status.Content,
 			"url":     fmt.Sprintf("%s/statuses/%s", h.cfg.BaseURL(), status.ID),

@@ -12,10 +12,8 @@ type ActivityPubSanitizer struct {
 	policy *bluemonday.Policy
 }
 
-var (
-	// Global sanitizer instance
-	defaultSanitizer *ActivityPubSanitizer
-)
+// Global sanitizer instance
+var defaultSanitizer *ActivityPubSanitizer
 
 func init() {
 	defaultSanitizer = NewActivityPubSanitizer()
@@ -69,7 +67,7 @@ func (s *ActivityPubSanitizer) SanitizeHTML(content string) string {
 }
 
 // SanitizeActivityPubObject sanitizes all string fields in an ActivityPub object
-func (s *ActivityPubSanitizer) SanitizeActivityPubObject(obj map[string]interface{}) {
+func (s *ActivityPubSanitizer) SanitizeActivityPubObject(obj map[string]any) {
 	for key, value := range obj {
 		switch v := value.(type) {
 		case string:
@@ -83,13 +81,13 @@ func (s *ActivityPubSanitizer) SanitizeActivityPubObject(obj map[string]interfac
 				// For other string fields, escape HTML
 				obj[key] = EscapeHTML(v)
 			}
-		case map[string]interface{}:
+		case map[string]any:
 			// Recursively sanitize nested objects
 			s.SanitizeActivityPubObject(v)
-		case []interface{}:
+		case []any:
 			// Sanitize arrays of objects
 			for _, item := range v {
-				if itemMap, ok := item.(map[string]interface{}); ok {
+				if itemMap, ok := item.(map[string]any); ok {
 					s.SanitizeActivityPubObject(itemMap)
 				}
 			}
@@ -120,7 +118,7 @@ func SanitizeContent(content string) string {
 }
 
 // SanitizeActivityPubObjectDefault sanitizes an object using the default sanitizer
-func SanitizeActivityPubObjectDefault(obj map[string]interface{}) {
+func SanitizeActivityPubObjectDefault(obj map[string]any) {
 	defaultSanitizer.SanitizeActivityPubObject(obj)
 }
 

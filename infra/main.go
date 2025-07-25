@@ -8,10 +8,10 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/acm"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/apigatewayv2"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudfront"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/kms"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/dynamodb"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
+	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/kms"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lambda"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/route53"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/s3"
@@ -200,7 +200,6 @@ func main() {
 			return err
 		}
 
-
 		// Create S3 bucket for media storage
 		mediaBucket, err := s3.NewBucket(ctx, "lesser-media", &s3.BucketArgs{
 			Bucket: pulumi.Sprintf("lesser-media-%s", environment),
@@ -255,7 +254,7 @@ func main() {
 			MessageRetentionSeconds:  pulumi.Int(345600), // 4 days
 			ReceiveWaitTimeSeconds:   pulumi.Int(20),     // Long polling
 			RedrivePolicy: federationDLQ.Arn.ApplyT(func(dlqArn string) (string, error) {
-				policy := map[string]interface{}{
+				policy := map[string]any{
 					"deadLetterTargetArn": dlqArn,
 					"maxReceiveCount":     5, // After 5 failed attempts, send to DLQ
 				}
@@ -325,15 +324,15 @@ func main() {
 		}
 
 		// Update bucket policy to allow CloudFront access
-		bucketPolicyDocument := pulumi.All(mediaBucket.ID(), originAccessIdentity.IamArn).ApplyT(func(args []interface{}) (string, error) {
+		bucketPolicyDocument := pulumi.All(mediaBucket.ID(), originAccessIdentity.IamArn).ApplyT(func(args []any) (string, error) {
 			bucketName := string(args[0].(pulumi.ID))
 			oaiArn := args[1].(string)
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
-						"Principal": map[string]interface{}{
+						"Principal": map[string]any{
 							"AWS": oaiArn,
 						},
 						"Action":   "s3:GetObject",
@@ -432,13 +431,13 @@ func main() {
 		}
 
 		// Create DynamoDB policy for Lambda
-		dynamoPolicy := pulumi.All(table.Arn, costHistoryTable.Arn).ApplyT(func(args []interface{}) (string, error) {
+		dynamoPolicy := pulumi.All(table.Arn, costHistoryTable.Arn).ApplyT(func(args []any) (string, error) {
 			tableArn := args[0].(string)
 			costTableArn := args[1].(string)
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"dynamodb:GetItem",
@@ -457,7 +456,7 @@ func main() {
 							fmt.Sprintf("%s/index/*", costTableArn),
 						},
 					},
-					map[string]interface{}{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"dynamodb:DescribeStream",
@@ -486,10 +485,10 @@ func main() {
 
 		// Create S3 policy for Lambda
 		s3Policy := mediaBucket.Arn.ApplyT(func(arn string) (string, error) {
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"s3:GetObject",
@@ -514,14 +513,14 @@ func main() {
 		}
 
 		// Create SQS policy for Lambda
-		sqsPolicy := pulumi.All(federationQueue.Arn, federationDLQ.Arn, pushNotificationQueue.Arn).ApplyT(func(args []interface{}) (string, error) {
+		sqsPolicy := pulumi.All(federationQueue.Arn, federationDLQ.Arn, pushNotificationQueue.Arn).ApplyT(func(args []any) (string, error) {
 			federationQueueArn := args[0].(string)
 			federationDLQArn := args[1].(string)
 			pushQueueArn := args[2].(string)
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"sqs:SendMessage",
@@ -588,10 +587,10 @@ func main() {
 
 		// Create KMS policy for Lambda
 		kmsPolicy := kmsKey.Arn.ApplyT(func(arn string) (string, error) {
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"kms:Encrypt",
@@ -860,13 +859,13 @@ func main() {
 		}
 
 		// Add DynamoDB policy for WebSocket tables
-		wsTablePolicy := pulumi.All(connectionsTable.Arn, subscriptionsTable.Arn).ApplyT(func(args []interface{}) (string, error) {
+		wsTablePolicy := pulumi.All(connectionsTable.Arn, subscriptionsTable.Arn).ApplyT(func(args []any) (string, error) {
 			connectionsArn := args[0].(string)
 			subscriptionsArn := args[1].(string)
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"dynamodb:GetItem",
@@ -1040,10 +1039,10 @@ func main() {
 
 		// Add API Gateway Management API permissions for stream router
 		wsManagementPolicy := wsApi.ExecutionArn.ApplyT(func(executionArn string) (string, error) {
-			policy := map[string]interface{}{
+			policy := map[string]any{
 				"Version": "2012-10-17",
-				"Statement": []interface{}{
-					map[string]interface{}{
+				"Statement": []any{
+					map[string]any{
 						"Effect": "Allow",
 						"Action": []string{
 							"execute-api:ManageConnections",

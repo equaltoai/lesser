@@ -163,9 +163,9 @@ func sortNotesByScore(notes []CommunityNote) {
 }
 
 // CalculateStats generates statistics for a set of notes
-func CalculateStats(notes []CommunityNote) map[string]interface{} {
+func CalculateStats(notes []CommunityNote) map[string]any {
 	if len(notes) == 0 {
-		return map[string]interface{}{
+		return map[string]any{
 			"total":         0,
 			"visible":       0,
 			"disputed":      0,
@@ -186,7 +186,7 @@ func CalculateStats(notes []CommunityNote) map[string]interface{} {
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total":         len(notes),
 		"visible":       visible,
 		"disputed":      disputed,

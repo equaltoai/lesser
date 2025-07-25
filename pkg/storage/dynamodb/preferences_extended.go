@@ -8,7 +8,7 @@ import (
 )
 
 // SetPreference sets a single preference for a user
-func (s *dynamoDBStorage) SetPreference(ctx context.Context, username string, key string, value interface{}) error {
+func (s *dynamoDBStorage) SetPreference(ctx context.Context, username string, key string, value any) error {
 	// Get existing preferences
 	prefs, err := s.GetUserPreferences(ctx, username)
 	if err != nil {
@@ -68,7 +68,7 @@ func (s *dynamoDBStorage) SetPreference(ctx context.Context, username string, ke
 }
 
 // GetPreference gets a single preference value for a user
-func (s *dynamoDBStorage) GetPreference(ctx context.Context, username string, key string) (interface{}, error) {
+func (s *dynamoDBStorage) GetPreference(ctx context.Context, username string, key string) (any, error) {
 	prefs, err := s.GetUserPreferences(ctx, username)
 	if err != nil {
 		// Return default value if preferences don't exist
@@ -80,7 +80,7 @@ func (s *dynamoDBStorage) GetPreference(ctx context.Context, username string, ke
 }
 
 // GetAllPreferences gets all preferences as a map
-func (s *dynamoDBStorage) GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+func (s *dynamoDBStorage) GetAllPreferences(ctx context.Context, username string) (map[string]any, error) {
 	prefs, err := s.GetUserPreferences(ctx, username)
 	if err != nil {
 		// Return defaults if preferences don't exist
@@ -88,7 +88,7 @@ func (s *dynamoDBStorage) GetAllPreferences(ctx context.Context, username string
 	}
 
 	// Convert to map format
-	result := map[string]interface{}{
+	result := map[string]any{
 		"posting:default:visibility":  prefs.DefaultPostingVisibility,
 		"posting:default:sensitive":   prefs.DefaultMediaSensitive,
 		"posting:default:language":    prefs.Language,
@@ -105,7 +105,7 @@ func (s *dynamoDBStorage) GetAllPreferences(ctx context.Context, username string
 }
 
 // UpdatePreferences updates multiple preferences at once from a map
-func (s *dynamoDBStorage) UpdatePreferences(ctx context.Context, username string, prefsMap map[string]interface{}) error {
+func (s *dynamoDBStorage) UpdatePreferences(ctx context.Context, username string, prefsMap map[string]any) error {
 	// Get existing preferences
 	prefs, err := s.GetUserPreferences(ctx, username)
 	if err != nil {
@@ -164,7 +164,7 @@ func (s *dynamoDBStorage) UpdatePreferences(ctx context.Context, username string
 }
 
 // Helper method to get a specific preference value from the preferences struct
-func (s *dynamoDBStorage) getPreferenceValue(prefs *storage.UserPreferences, key string) interface{} {
+func (s *dynamoDBStorage) getPreferenceValue(prefs *storage.UserPreferences, key string) any {
 	switch key {
 	case "posting:default:visibility":
 		return prefs.DefaultPostingVisibility

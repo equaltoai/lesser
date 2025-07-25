@@ -14,7 +14,7 @@ import (
 )
 
 // GetReplies retrieves all replies to a given object
-func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error) {
+func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]any, string, error) {
 	log := common.WithContext(ctx)
 
 	if limit <= 0 || limit > 100 {
@@ -58,7 +58,7 @@ func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit
 
 	// Cost tracking is handled automatically by the wrapped DynamoDB client
 
-	replies := make([]interface{}, 0, len(result.Items))
+	replies := make([]any, 0, len(result.Items))
 	for _, item := range result.Items {
 		var record ObjectRecord
 		if err := s.UnmarshalItem(item, &record); err != nil {
@@ -67,7 +67,7 @@ func (s *dynamoDBStorage) GetReplies(ctx context.Context, objectID string, limit
 			continue
 		}
 
-		// Convert Object to interface{} format expected by converter
+		// Convert Object to any format expected by converter
 		if record.Object != nil {
 			objMap := s.objectToMap(record.Object)
 			replies = append(replies, objMap)
@@ -264,8 +264,8 @@ func (s *dynamoDBStorage) updateReplyCount(ctx context.Context, objectID string,
 }
 
 // Helper to convert Object to map for converter compatibility
-func (s *dynamoDBStorage) objectToMap(obj *Object) map[string]interface{} {
-	objMap := map[string]interface{}{
+func (s *dynamoDBStorage) objectToMap(obj *Object) map[string]any {
+	objMap := map[string]any{
 		"id":           obj.ID,
 		"type":         obj.Type,
 		"attributedTo": obj.AttributedTo,
@@ -288,9 +288,9 @@ func (s *dynamoDBStorage) objectToMap(obj *Object) map[string]interface{} {
 	}
 
 	if len(obj.Attachment) > 0 {
-		attachments := make([]interface{}, len(obj.Attachment))
+		attachments := make([]any, len(obj.Attachment))
 		for i, att := range obj.Attachment {
-			attachments[i] = map[string]interface{}{
+			attachments[i] = map[string]any{
 				"type":      att.Type,
 				"url":       att.URL,
 				"mediaType": att.MediaType,
@@ -303,9 +303,9 @@ func (s *dynamoDBStorage) objectToMap(obj *Object) map[string]interface{} {
 	}
 
 	if len(obj.Tag) > 0 {
-		tags := make([]interface{}, len(obj.Tag))
+		tags := make([]any, len(obj.Tag))
 		for i, tag := range obj.Tag {
-			tags[i] = map[string]interface{}{
+			tags[i] = map[string]any{
 				"type": tag.Type,
 				"href": tag.Href,
 				"name": tag.Name,

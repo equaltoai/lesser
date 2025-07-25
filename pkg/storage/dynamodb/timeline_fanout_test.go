@@ -31,7 +31,7 @@ func TestFanOutPost(t *testing.T) {
 					CC:   []string{"https://example.com/users/alice/followers"},
 				},
 				Actor: "https://example.com/users/alice",
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"id":           "https://example.com/objects/1",
 					"type":         "Note",
 					"content":      "Hello, world!",
@@ -53,7 +53,7 @@ func TestFanOutPost(t *testing.T) {
 					To:   []string{"https://example.com/users/alice/followers"},
 				},
 				Actor: "https://example.com/users/alice",
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"id":           "https://example.com/objects/2",
 					"type":         "Note",
 					"content":      "Private message to followers",
@@ -74,7 +74,7 @@ func TestFanOutPost(t *testing.T) {
 					To:   []string{"https://example.com/users/bob"},
 				},
 				Actor: "https://example.com/users/alice",
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"id":           "https://example.com/objects/3",
 					"type":         "Note",
 					"content":      "Direct message to Bob",
@@ -109,7 +109,7 @@ func TestFanOutPost(t *testing.T) {
 
 			// Verify the activity structure is correct
 			if tt.activity.Type == activitypub.CreateType {
-				objMap, ok := tt.activity.Object.(map[string]interface{})
+				objMap, ok := tt.activity.Object.(map[string]any)
 				require.True(t, ok, "Create activity should have object map")
 				assert.NotEmpty(t, objMap["id"], "Object should have ID")
 				assert.NotEmpty(t, objMap["attributedTo"], "Object should have attributedTo")

@@ -79,13 +79,13 @@ func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, l
 	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
 }
 
-func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
+func (m *MockStorage) CreateObject(ctx context.Context, object any) error {
 	args := m.Called(ctx, object)
 	return args.Error(0)
 }
 
 // Override only the methods that need mock expectations in these tests
-func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
+func (m *MockStorage) GetObject(ctx context.Context, id string) (any, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -93,7 +93,7 @@ func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, er
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
+func (m *MockStorage) UpdateObject(ctx context.Context, object any) error {
 	args := m.Called(ctx, object)
 	return args.Error(0)
 }
@@ -103,12 +103,12 @@ func (m *MockStorage) DeleteObject(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
-func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
+func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error) {
 	args := m.Called(ctx, actorID, cursor, limit)
 	if args.Get(0) == nil {
 		return nil, args.String(1), args.Error(2)
 	}
-	return args.Get(0).([]interface{}), args.String(1), args.Error(2)
+	return args.Get(0).([]any), args.String(1), args.Error(2)
 }
 
 // Implement remaining interface methods as stubs...

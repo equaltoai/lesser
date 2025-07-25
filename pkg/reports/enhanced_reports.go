@@ -159,7 +159,7 @@ func (s *EnhancedReportService) CreateEnhancedModerationEvent(ctx context.Contex
 				Type:        "user_report",
 				Score:       finalConfidence,
 				Description: report.Comment,
-				Metadata: map[string]interface{}{
+				Metadata: map[string]any{
 					"report_id":            report.ID,
 					"reporter_username":    report.ReporterID,
 					"reporter_reliability": reliability.ReliabilityScore,
@@ -260,7 +260,7 @@ func (s *EnhancedReportService) UpdateReporterTrustOnDecision(ctx context.Contex
 	}
 
 	// Update report stats
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 	if reportValid {
 		updates["action_taken"] = string(decision.Action)
 	} else {

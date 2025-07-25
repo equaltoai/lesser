@@ -27,16 +27,16 @@ func (s *dynamoDBStorage) FanOutPost(ctx context.Context, activity *activitypub.
 	}
 
 	// Extract the object from the activity
-	var object map[string]interface{}
+	var object map[string]any
 	var tags []activitypub.Tag
 
 	switch obj := activity.Object.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		object = obj
 		// Extract tags if present
-		if tagList, ok := obj["tag"].([]interface{}); ok {
+		if tagList, ok := obj["tag"].([]any); ok {
 			for _, t := range tagList {
-				if tagMap, ok := t.(map[string]interface{}); ok {
+				if tagMap, ok := t.(map[string]any); ok {
 					tag := activitypub.Tag{
 						Type: getStringFromMap(tagMap, "type"),
 						Name: getStringFromMap(tagMap, "name"),
@@ -49,7 +49,7 @@ func (s *dynamoDBStorage) FanOutPost(ctx context.Context, activity *activitypub.
 	case *activitypub.Note:
 		// Convert Note to map for easier processing
 		// In production, you'd want a proper conversion function
-		object = map[string]interface{}{
+		object = map[string]any{
 			"id":           obj.ID,
 			"type":         obj.Type,
 			"content":      obj.Content,
@@ -273,7 +273,7 @@ func (s *dynamoDBStorage) createListTimelineEntries(ctx context.Context, usernam
 }
 
 // determineVisibility determines the visibility of a post based on addressing
-func (s *dynamoDBStorage) determineVisibility(object map[string]interface{}) string {
+func (s *dynamoDBStorage) determineVisibility(object map[string]any) string {
 	to := convertToStringSlice(object["to"])
 	cc := convertToStringSlice(object["cc"])
 
@@ -305,16 +305,16 @@ func truncateContent(content string, maxLen int) string {
 	return content[:maxLen]
 }
 
-func hasMediaAttachments(object map[string]interface{}) bool {
-	attachments, ok := object["attachment"].([]interface{})
+func hasMediaAttachments(object map[string]any) bool {
+	attachments, ok := object["attachment"].([]any)
 	return ok && len(attachments) > 0
 }
 
-func extractLanguage(object map[string]interface{}) string {
+func extractLanguage(object map[string]any) string {
 	if lang, ok := object["language"].(string); ok {
 		return lang
 	}
-	if langMap, ok := object["contentMap"].(map[string]interface{}); ok && len(langMap) > 0 {
+	if langMap, ok := object["contentMap"].(map[string]any); ok && len(langMap) > 0 {
 		// Return the first language found
 		for lang := range langMap {
 			return lang
@@ -323,7 +323,7 @@ func extractLanguage(object map[string]interface{}) string {
 	return "en" // Default to English
 }
 
-func extractPublishedTime(object map[string]interface{}) time.Time {
+func extractPublishedTime(object map[string]any) time.Time {
 	if published, ok := object["published"].(string); ok {
 		if t, err := time.Parse(time.RFC3339, published); err == nil {
 			return t
@@ -332,7 +332,7 @@ func extractPublishedTime(object map[string]interface{}) time.Time {
 	return time.Now()
 }
 
-func convertToStringSlice(v interface{}) []string {
+func convertToStringSlice(v any) []string {
 	if v == nil {
 		return []string{}
 	}
@@ -340,7 +340,7 @@ func convertToStringSlice(v interface{}) []string {
 	switch val := v.(type) {
 	case []string:
 		return val
-	case []interface{}:
+	case []any:
 		result := make([]string, 0, len(val))
 		for _, item := range val {
 			if str, ok := item.(string); ok {
@@ -364,7 +364,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func getStringFromMap(m map[string]interface{}, key string) string {
+func getStringFromMap(m map[string]any, key string) string {
 	if v, ok := m[key].(string); ok {
 		return v
 	}

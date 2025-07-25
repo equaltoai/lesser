@@ -82,7 +82,6 @@ func setupTestTable(t *testing.T, client *dynamodb.Client) {
 		},
 		BillingMode: types.BillingModePayPerRequest,
 	})
-
 	if err != nil {
 		// Table might already exist
 		var rie *types.ResourceInUseException
@@ -135,7 +134,7 @@ func TestActorIntegration(t *testing.T) {
 	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion("us-east-1"),
 		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			func(service, region string, options ...any) (aws.Endpoint, error) {
 				if service == dynamodb.ServiceID {
 					return aws.Endpoint{
 						URL: endpoint,
@@ -224,7 +223,7 @@ func TestActivityIntegration(t *testing.T) {
 	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion("us-east-1"),
 		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			func(service, region string, options ...any) (aws.Endpoint, error) {
 				if service == dynamodb.ServiceID {
 					return aws.Endpoint{
 						URL: endpoint,
@@ -253,7 +252,7 @@ func TestActivityIntegration(t *testing.T) {
 					Type: activitypub.CreateType,
 				},
 				Actor:  "https://example.com/users/alice",
-				Object: map[string]interface{}{"content": fmt.Sprintf("Test content %d", i)},
+				Object: map[string]any{"content": fmt.Sprintf("Test content %d", i)},
 			}
 
 			err := storage.CreateActivity(ctx, activity)

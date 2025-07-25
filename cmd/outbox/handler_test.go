@@ -47,18 +47,23 @@ func (m *MockStorage) CreateActivity(ctx context.Context, activity *activitypub.
 func (m *MockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
 	return nil
 }
+
 func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
 	return "", nil
 }
+
 func (m *MockStorage) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
 	return nil
 }
+
 func (m *MockStorage) DeleteActor(ctx context.Context, username string) error {
 	return nil
 }
+
 func (m *MockStorage) GetActivity(ctx context.Context, id string) (*activitypub.Activity, error) {
 	return nil, nil
 }
+
 func (m *MockStorage) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
 	args := m.Called(ctx, username, limit, cursor)
 	if args.Get(0) == nil {
@@ -66,34 +71,44 @@ func (m *MockStorage) GetOutboxActivities(ctx context.Context, username string, 
 	}
 	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
 	return nil, "", nil
 }
-func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
+
+func (m *MockStorage) CreateObject(ctx context.Context, object any) error {
 	return nil
 }
-func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
+
+func (m *MockStorage) GetObject(ctx context.Context, id string) (any, error) {
 	return nil, nil
 }
-func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
+
+func (m *MockStorage) UpdateObject(ctx context.Context, object any) error {
 	return nil
 }
+
 func (m *MockStorage) DeleteObject(ctx context.Context, id string) error {
 	return nil
 }
+
 func (m *MockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
 	return nil
 }
+
 func (m *MockStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
 	return nil
 }
+
 func (m *MockStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
 	return nil
 }
+
 func (m *MockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
 	args := m.Called(ctx, followerUsername, followedUsername)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
 	args := m.Called(ctx, username, limit, cursor)
 	if args.Get(0) == nil {
@@ -101,6 +116,7 @@ func (m *MockStorage) GetFollowers(ctx context.Context, username string, limit i
 	}
 	return args.Get(0).([]string), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
 	args := m.Called(ctx, username, limit, cursor)
 	if args.Get(0) == nil {
@@ -108,10 +124,12 @@ func (m *MockStorage) GetFollowing(ctx context.Context, username string, limit i
 	}
 	return args.Get(0).([]string), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
 	args := m.Called(ctx, followerUsername, followedUsername)
 	return args.Bool(0), args.Error(1)
 }
+
 func (m *MockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
 	return nil, nil
 }
@@ -120,22 +138,28 @@ func (m *MockStorage) GetCollection(ctx context.Context, username, collectionTyp
 func (m *MockStorage) CreateAuthorizationCode(ctx context.Context, code *storage.AuthorizationCode) error {
 	return nil
 }
+
 func (m *MockStorage) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
 	return nil, nil
 }
+
 func (m *MockStorage) DeleteAuthorizationCode(ctx context.Context, code string) error {
 	return nil
 }
+
 func (m *MockStorage) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
 	return nil
 }
+
 func (m *MockStorage) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
 	return nil, nil
 }
+
 func (m *MockStorage) DeleteRefreshToken(ctx context.Context, token string) error {
 	return nil
 }
-func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
+
+func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error) {
 	return nil, "", nil
 }
 
@@ -143,18 +167,23 @@ func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cur
 func (m *MockStorage) CreateUser(ctx context.Context, user *storage.User) error {
 	return nil
 }
+
 func (m *MockStorage) GetUser(ctx context.Context, username string) (*storage.User, error) {
 	return nil, nil
 }
+
 func (m *MockStorage) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
 	return nil, nil
 }
-func (m *MockStorage) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
+
+func (m *MockStorage) UpdateUser(ctx context.Context, username string, updates map[string]any) error {
 	return nil
 }
+
 func (m *MockStorage) DeleteUser(ctx context.Context, username string) error {
 	return nil
 }
+
 func (m *MockStorage) ListUsers(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error) {
 	return nil, "", nil
 }
@@ -163,15 +192,19 @@ func (m *MockStorage) ListUsers(ctx context.Context, limit int32, cursor string)
 func (m *MockStorage) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
 	return nil
 }
+
 func (m *MockStorage) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
 	return nil, nil
 }
-func (m *MockStorage) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]interface{}) error {
+
+func (m *MockStorage) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
 	return nil
 }
+
 func (m *MockStorage) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	return nil
 }
+
 func (m *MockStorage) ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*storage.OAuthClient, string, error) {
 	return nil, "", nil
 }
@@ -181,6 +214,7 @@ func (m *MockStorage) CreateLike(ctx context.Context, like *storage.Like) error 
 	args := m.Called(ctx, like)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetLike(ctx context.Context, actor, object string) (*storage.Like, error) {
 	args := m.Called(ctx, actor, object)
 	if args.Get(0) == nil {
@@ -188,10 +222,12 @@ func (m *MockStorage) GetLike(ctx context.Context, actor, object string) (*stora
 	}
 	return args.Get(0).(*storage.Like), args.Error(1)
 }
+
 func (m *MockStorage) DeleteLike(ctx context.Context, actor, object string) error {
 	args := m.Called(ctx, actor, object)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetObjectLikes(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Like, string, error) {
 	args := m.Called(ctx, objectID, limit, cursor)
 	if args.Get(0) == nil {
@@ -199,6 +235,7 @@ func (m *MockStorage) GetObjectLikes(ctx context.Context, objectID string, limit
 	}
 	return args.Get(0).([]*storage.Like), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Like, string, error) {
 	args := m.Called(ctx, actorID, limit, cursor)
 	if args.Get(0) == nil {
@@ -206,6 +243,7 @@ func (m *MockStorage) GetActorLikes(ctx context.Context, actorID string, limit i
 	}
 	return args.Get(0).([]*storage.Like), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) CountObjectLikes(ctx context.Context, objectID string) (int, error) {
 	args := m.Called(ctx, objectID)
 	return args.Int(0), args.Error(1)
@@ -216,6 +254,7 @@ func (m *MockStorage) CreateAnnounce(ctx context.Context, announce *storage.Anno
 	args := m.Called(ctx, announce)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetAnnounce(ctx context.Context, actor, object string) (*storage.Announce, error) {
 	args := m.Called(ctx, actor, object)
 	if args.Get(0) == nil {
@@ -223,10 +262,12 @@ func (m *MockStorage) GetAnnounce(ctx context.Context, actor, object string) (*s
 	}
 	return args.Get(0).(*storage.Announce), args.Error(1)
 }
+
 func (m *MockStorage) DeleteAnnounce(ctx context.Context, actor, object string) error {
 	args := m.Called(ctx, actor, object)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetObjectAnnounces(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Announce, string, error) {
 	args := m.Called(ctx, objectID, limit, cursor)
 	if args.Get(0) == nil {
@@ -234,6 +275,7 @@ func (m *MockStorage) GetObjectAnnounces(ctx context.Context, objectID string, l
 	}
 	return args.Get(0).([]*storage.Announce), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) GetActorAnnounces(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Announce, string, error) {
 	args := m.Called(ctx, actorID, limit, cursor)
 	if args.Get(0) == nil {
@@ -241,6 +283,7 @@ func (m *MockStorage) GetActorAnnounces(ctx context.Context, actorID string, lim
 	}
 	return args.Get(0).([]*storage.Announce), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) CountObjectAnnounces(ctx context.Context, objectID string) (int, error) {
 	args := m.Called(ctx, objectID)
 	return args.Int(0), args.Error(1)
@@ -251,6 +294,7 @@ func (m *MockStorage) TombstoneObject(ctx context.Context, objectID string, dele
 	args := m.Called(ctx, objectID, deletedBy)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetTombstone(ctx context.Context, objectID string) (*storage.Tombstone, error) {
 	args := m.Called(ctx, objectID)
 	if args.Get(0) == nil {
@@ -258,10 +302,12 @@ func (m *MockStorage) GetTombstone(ctx context.Context, objectID string) (*stora
 	}
 	return args.Get(0).(*storage.Tombstone), args.Error(1)
 }
+
 func (m *MockStorage) CascadeDeleteLikes(ctx context.Context, objectID string) error {
 	args := m.Called(ctx, objectID)
 	return args.Error(0)
 }
+
 func (m *MockStorage) CascadeDeleteAnnounces(ctx context.Context, objectID string) error {
 	args := m.Called(ctx, objectID)
 	return args.Error(0)
@@ -272,6 +318,7 @@ func (m *MockStorage) CreateUpdateHistory(ctx context.Context, history *storage.
 	args := m.Called(ctx, history)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*storage.UpdateHistory, error) {
 	args := m.Called(ctx, objectID, limit)
 	if args.Get(0) == nil {
@@ -285,6 +332,7 @@ func (m *MockStorage) CreateBlock(ctx context.Context, block *storage.Block) err
 	args := m.Called(ctx, block)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetBlock(ctx context.Context, actor, blockedActor string) (*storage.Block, error) {
 	args := m.Called(ctx, actor, blockedActor)
 	if args.Get(0) == nil {
@@ -292,10 +340,12 @@ func (m *MockStorage) GetBlock(ctx context.Context, actor, blockedActor string) 
 	}
 	return args.Get(0).(*storage.Block), args.Error(1)
 }
+
 func (m *MockStorage) DeleteBlock(ctx context.Context, actor, blockedActor string) error {
 	args := m.Called(ctx, actor, blockedActor)
 	return args.Error(0)
 }
+
 func (m *MockStorage) GetBlockedActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
 	args := m.Called(ctx, actor, limit, cursor)
 	if args.Get(0) == nil {
@@ -303,6 +353,7 @@ func (m *MockStorage) GetBlockedActors(ctx context.Context, actor string, limit 
 	}
 	return args.Get(0).([]*storage.Block), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) GetBlockedByActors(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
 	args := m.Called(ctx, actor, limit, cursor)
 	if args.Get(0) == nil {
@@ -310,10 +361,12 @@ func (m *MockStorage) GetBlockedByActors(ctx context.Context, actor string, limi
 	}
 	return args.Get(0).([]*storage.Block), args.String(1), args.Error(2)
 }
+
 func (m *MockStorage) IsBlocked(ctx context.Context, actor, targetActor string) (bool, error) {
 	args := m.Called(ctx, actor, targetActor)
 	return args.Bool(0), args.Error(1)
 }
+
 func (m *MockStorage) IsBlockedBidirectional(ctx context.Context, actor1, actor2 string) (bool, error) {
 	args := m.Called(ctx, actor1, actor2)
 	return args.Bool(0), args.Error(1)
@@ -379,7 +432,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -412,7 +465,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -452,7 +505,7 @@ func TestHandler(t *testing.T) {
 				assert.Equal(t, "https://example.com/users/alice/outbox?page=true&cursor=next-cursor&limit=20", page.Next)
 
 				// Check activities
-				items, ok := page.OrderedItems.([]interface{})
+				items, ok := page.OrderedItems.([]any)
 				assert.True(t, ok)
 				assert.Len(t, items, 2)
 			},
@@ -469,7 +522,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -498,7 +551,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -535,7 +588,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -570,7 +623,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -601,7 +654,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -641,7 +694,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -652,7 +705,7 @@ func TestHandler(t *testing.T) {
 					if activity.Type != "Like" {
 						return false
 					}
-					objMap, ok := activity.Object.(map[string]interface{})
+					objMap, ok := activity.Object.(map[string]any)
 					return ok && objMap["id"] == "https://remote.example/notes/123"
 				})).Return(nil)
 			},
@@ -671,7 +724,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -693,7 +746,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -719,7 +772,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -774,7 +827,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -798,7 +851,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -822,7 +875,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -849,7 +902,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -870,7 +923,7 @@ func TestHandler(t *testing.T) {
 				assert.NotNil(t, activity.Published)
 
 				// Check object
-				obj, ok := activity.Object.(map[string]interface{})
+				obj, ok := activity.Object.(map[string]any)
 				assert.True(t, ok)
 				assert.Equal(t, "Note", obj["type"])
 				assert.Equal(t, "Hello, Fediverse!", obj["content"])
@@ -879,11 +932,11 @@ func TestHandler(t *testing.T) {
 				assert.NotEmpty(t, obj["published"])
 
 				// Check default addressing
-				to, ok := obj["to"].([]interface{})
+				to, ok := obj["to"].([]any)
 				assert.True(t, ok)
 				assert.Contains(t, to, activitypub.PublicAddress)
 
-				cc, ok := obj["cc"].([]interface{})
+				cc, ok := obj["cc"].([]any)
 				assert.True(t, ok)
 				assert.Contains(t, cc, "https://example.com/users/alice/followers")
 			},
@@ -907,7 +960,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -923,7 +976,7 @@ func TestHandler(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Check object
-				obj, ok := activity.Object.(map[string]interface{})
+				obj, ok := activity.Object.(map[string]any)
 				assert.True(t, ok)
 				assert.Equal(t, "Article", obj["type"])
 				assert.Equal(t, "My First Article", obj["name"])
@@ -931,11 +984,11 @@ func TestHandler(t *testing.T) {
 				assert.Equal(t, "A brief summary", obj["summary"])
 
 				// Check addressing copied from activity to object
-				to, ok := obj["to"].([]interface{})
+				to, ok := obj["to"].([]any)
 				assert.True(t, ok)
 				assert.Contains(t, to, "https://example.com/users/bob")
 
-				cc, ok := obj["cc"].([]interface{})
+				cc, ok := obj["cc"].([]any)
 				assert.True(t, ok)
 				assert.Contains(t, cc, activitypub.PublicAddress)
 			},
@@ -956,7 +1009,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -972,7 +1025,7 @@ func TestHandler(t *testing.T) {
 				err := json.Unmarshal([]byte(body), &activity)
 				assert.NoError(t, err)
 
-				obj, ok := activity.Object.(map[string]interface{})
+				obj, ok := activity.Object.(map[string]any)
 				assert.True(t, ok)
 				assert.Equal(t, "https://example.com/objects/custom-123", obj["id"])
 			},
@@ -991,7 +1044,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1007,7 +1060,7 @@ func TestHandler(t *testing.T) {
 				err := json.Unmarshal([]byte(body), &activity)
 				assert.NoError(t, err)
 
-				obj, ok := activity.Object.(map[string]interface{})
+				obj, ok := activity.Object.(map[string]any)
 				assert.True(t, ok)
 				assert.NotEmpty(t, obj["id"]) // Should have generated ID
 			},
@@ -1023,7 +1076,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1047,7 +1100,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1072,7 +1125,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1098,7 +1151,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1124,7 +1177,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1155,7 +1208,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1187,7 +1240,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1217,7 +1270,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1247,7 +1300,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1277,7 +1330,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1314,7 +1367,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1346,7 +1399,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1375,7 +1428,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1398,7 +1451,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1441,7 +1494,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1453,7 +1506,7 @@ func TestHandler(t *testing.T) {
 					if activity.Type != "Announce" {
 						return false
 					}
-					objMap, ok := activity.Object.(map[string]interface{})
+					objMap, ok := activity.Object.(map[string]any)
 					return ok && objMap["id"] == "https://remote.example/notes/456"
 				})).Return(nil)
 			},
@@ -1472,7 +1525,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1494,7 +1547,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1520,7 +1573,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1555,7 +1608,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1568,7 +1621,7 @@ func TestHandler(t *testing.T) {
 					if activity.Type != "Undo" {
 						return false
 					}
-					objMap, ok := activity.Object.(map[string]interface{})
+					objMap, ok := activity.Object.(map[string]any)
 					return ok && objMap["type"] == "Follow" &&
 						objMap["actor"] == "https://example.com/users/alice" &&
 						objMap["object"] == "https://example.com/users/bob"
@@ -1600,7 +1653,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1628,7 +1681,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1641,7 +1694,7 @@ func TestHandler(t *testing.T) {
 					if activity.Type != "Undo" {
 						return false
 					}
-					objMap, ok := activity.Object.(map[string]interface{})
+					objMap, ok := activity.Object.(map[string]any)
 					return ok && objMap["type"] == "Like" &&
 						objMap["object"] == "https://example.com/objects/123"
 				})).Return(nil)
@@ -1665,7 +1718,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1693,7 +1746,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1707,7 +1760,7 @@ func TestHandler(t *testing.T) {
 					if activity.Type != "Undo" {
 						return false
 					}
-					objMap, ok := activity.Object.(map[string]interface{})
+					objMap, ok := activity.Object.(map[string]any)
 					return ok && objMap["type"] == "Announce" &&
 						objMap["object"] == "https://example.com/objects/456" &&
 						activity.CC != nil && len(activity.CC) > 0
@@ -1727,7 +1780,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1750,7 +1803,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1777,7 +1830,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1804,7 +1857,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1828,7 +1881,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1873,7 +1926,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1906,7 +1959,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1928,7 +1981,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},
@@ -1951,7 +2004,7 @@ func TestHandler(t *testing.T) {
 			setupMocks: func(m *mocks.MockStorage) {
 				actor := &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						Context: []interface{}{"https://www.w3.org/ns/activitystreams"},
+						Context: []any{"https://www.w3.org/ns/activitystreams"},
 						Type:    "Person",
 						ID:      "https://example.com/users/alice",
 					},

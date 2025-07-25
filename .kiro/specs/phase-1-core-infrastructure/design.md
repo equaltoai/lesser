@@ -292,7 +292,7 @@ func GetRequestID(ctx *lift.Context) string {
 }
 
 // Response helpers
-func RespondWithData(ctx *lift.Context, data interface{}) error {
+func RespondWithData(ctx *lift.Context, data any) error {
     return ctx.JSON(data)
 }
 
@@ -301,7 +301,7 @@ func RespondWithError(ctx *lift.Context, err error) error {
 }
 
 type PaginationResponse struct {
-    Data       interface{} `json:"data"`
+    Data       any `json:"data"`
     Pagination Pagination  `json:"pagination"`
 }
 
@@ -313,7 +313,7 @@ type Pagination struct {
     Prev   string `json:"prev,omitempty"`
 }
 
-func RespondWithPagination(ctx *lift.Context, data interface{}, pagination Pagination) error {
+func RespondWithPagination(ctx *lift.Context, data any, pagination Pagination) error {
     response := PaginationResponse{
         Data:       data,
         Pagination: pagination,
@@ -429,7 +429,7 @@ type TransactionManager struct {
 
 type TransactionOperation struct {
     Type             OperationType
-    Item             interface{}
+    Item             any
     Key              core.Key
     UpdateExpression string
     Condition        string
@@ -500,7 +500,7 @@ func NewTransactionBuilder() *TransactionBuilder {
     }
 }
 
-func (tb *TransactionBuilder) Put(item interface{}) *TransactionBuilder {
+func (tb *TransactionBuilder) Put(item any) *TransactionBuilder {
     tb.operations = append(tb.operations, TransactionOperation{
         Type: OperationPut,
         Item: item,
@@ -508,7 +508,7 @@ func (tb *TransactionBuilder) Put(item interface{}) *TransactionBuilder {
     return tb
 }
 
-func (tb *TransactionBuilder) Update(item interface{}, expr string) *TransactionBuilder {
+func (tb *TransactionBuilder) Update(item any, expr string) *TransactionBuilder {
     tb.operations = append(tb.operations, TransactionOperation{
         Type:             OperationUpdate,
         Item:             item,
@@ -558,7 +558,7 @@ func NewBatchWriter(client core.DB, batchSize int) *BatchWriter {
     }
 }
 
-func (bw *BatchWriter) WriteItems(ctx context.Context, items []interface{}) error {
+func (bw *BatchWriter) WriteItems(ctx context.Context, items []any) error {
     for i := 0; i < len(items); i += bw.batchSize {
         end := i + bw.batchSize
         if end > len(items) {
@@ -573,13 +573,13 @@ func (bw *BatchWriter) WriteItems(ctx context.Context, items []interface{}) erro
     return nil
 }
 
-func (bw *BatchWriter) WriteItemsParallel(ctx context.Context, items []interface{}, workers int) error {
+func (bw *BatchWriter) WriteItemsParallel(ctx context.Context, items []any, workers int) error {
     if workers <= 0 {
         workers = 1
     }
     
     // Create work channels
-    workChan := make(chan []interface{}, workers)
+    workChan := make(chan []any, workers)
     errChan := make(chan error, workers)
     
     // Start workers
@@ -630,7 +630,7 @@ func (bw *BatchWriter) WriteItemsParallel(ctx context.Context, items []interface
     return ctx.Err()
 }
 
-func (bw *BatchWriter) writeBatch(ctx context.Context, items []interface{}) error {
+func (bw *BatchWriter) writeBatch(ctx context.Context, items []any) error {
     batch := bw.client.NewBatchWrite()
     for _, item := range items {
         batch.Put(item)

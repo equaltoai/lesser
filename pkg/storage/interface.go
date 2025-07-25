@@ -43,11 +43,11 @@ type Storage interface {
 	GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error)
 
 	// Object operations
-	CreateObject(ctx context.Context, object interface{}) error
-	GetObject(ctx context.Context, id string) (interface{}, error)
-	UpdateObject(ctx context.Context, object interface{}) error
+	CreateObject(ctx context.Context, object any) error
+	GetObject(ctx context.Context, id string) (any, error)
+	UpdateObject(ctx context.Context, object any) error
 	DeleteObject(ctx context.Context, id string) error
-	GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error)
+	GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error)
 	CountObjectReplies(ctx context.Context, objectID string) (int, error)
 
 	// Update history operations
@@ -80,7 +80,7 @@ type Storage interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUser(ctx context.Context, username string) (*User, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
-	UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error
+	UpdateUser(ctx context.Context, username string, updates map[string]any) error
 	DeleteUser(ctx context.Context, username string) error
 	ListUsers(ctx context.Context, limit int32, cursor string) ([]*User, string, error)
 	GetActiveUserCount(ctx context.Context, days int) (int64, error)
@@ -100,8 +100,8 @@ type Storage interface {
 	GetLinkedProviders(ctx context.Context, username string) ([]string, error)
 
 	// Recovery operations
-	StoreRecoveryToken(ctx context.Context, key string, data map[string]interface{}) error
-	GetRecoveryToken(ctx context.Context, key string) (map[string]interface{}, error)
+	StoreRecoveryToken(ctx context.Context, key string, data map[string]any) error
+	GetRecoveryToken(ctx context.Context, key string) (map[string]any, error)
 	DeleteRecoveryToken(ctx context.Context, key string) error
 
 	// OAuth state operations
@@ -112,7 +112,7 @@ type Storage interface {
 	// OAuth Client operations
 	CreateOAuthClient(ctx context.Context, client *OAuthClient) error
 	GetOAuthClient(ctx context.Context, clientID string) (*OAuthClient, error)
-	UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]interface{}) error
+	UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error
 	DeleteOAuthClient(ctx context.Context, clientID string) error
 	ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*OAuthClient, string, error)
 
@@ -207,7 +207,7 @@ type Storage interface {
 	CreateList(ctx context.Context, username, title, repliesPolicy string) (*List, error)
 	GetList(ctx context.Context, listID string) (*List, error)
 	GetListsForUser(ctx context.Context, username string) ([]*List, error)
-	UpdateList(ctx context.Context, listID string, updates map[string]interface{}) error
+	UpdateList(ctx context.Context, listID string, updates map[string]any) error
 	DeleteList(ctx context.Context, listID string) error
 	AddAccountsToList(ctx context.Context, listID string, accountIDs []string) error
 	RemoveAccountsFromList(ctx context.Context, listID string, accountIDs []string) error
@@ -266,13 +266,13 @@ type Storage interface {
 	CreateFilter(ctx context.Context, filter *Filter) error
 	GetFilter(ctx context.Context, filterID string) (*Filter, error)
 	GetFiltersForUser(ctx context.Context, username string) ([]*Filter, error)
-	UpdateFilter(ctx context.Context, filterID string, updates map[string]interface{}) error
+	UpdateFilter(ctx context.Context, filterID string, updates map[string]any) error
 	DeleteFilter(ctx context.Context, filterID string) error
 
 	// Filter keyword operations
 	AddFilterKeyword(ctx context.Context, filterID string, keyword *FilterKeyword) error
 	GetFilterKeywords(ctx context.Context, filterID string) ([]*FilterKeyword, error)
-	UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]interface{}) error
+	UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error
 	DeleteFilterKeyword(ctx context.Context, keywordID string) error
 
 	// Filter status operations
@@ -456,7 +456,7 @@ type Storage interface {
 	GetInstanceDomainBlock(ctx context.Context, domain string) (*InstanceDomainBlock, error)
 	GetInstanceDomainBlockByID(ctx context.Context, id string) (*InstanceDomainBlock, error)
 	ListInstanceDomainBlocks(ctx context.Context, limit int, cursor string) ([]*InstanceDomainBlock, string, error)
-	UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]interface{}) error
+	UpdateInstanceDomainBlock(ctx context.Context, domain string, updates map[string]any) error
 	DeleteInstanceDomainBlock(ctx context.Context, domain string) error
 	IsInstanceDomainBlocked(ctx context.Context, domain string) (bool, *InstanceDomainBlock, error)
 
@@ -464,7 +464,7 @@ type Storage interface {
 	GetDomainBlocks(ctx context.Context, limit int, cursor string) ([]*InstanceDomainBlock, string, error)
 	GetDomainBlock(ctx context.Context, id string) (*InstanceDomainBlock, error)
 	CreateDomainBlock(ctx context.Context, block *InstanceDomainBlock) error
-	UpdateDomainBlock(ctx context.Context, id string, updates map[string]interface{}) error
+	UpdateDomainBlock(ctx context.Context, id string, updates map[string]any) error
 	DeleteDomainBlock(ctx context.Context, id string) error
 	IsDomainBlocked(ctx context.Context, domain string) (bool, *InstanceDomainBlock, error)
 
@@ -520,10 +520,10 @@ type Storage interface {
 	GetMarkers(ctx context.Context, username string, timelines []string) (map[string]*Marker, error)
 
 	// Extended preferences operations
-	SetPreference(ctx context.Context, username string, key string, value interface{}) error
-	GetPreference(ctx context.Context, username string, key string) (interface{}, error)
-	GetAllPreferences(ctx context.Context, username string) (map[string]interface{}, error)
-	UpdatePreferences(ctx context.Context, username string, prefs map[string]interface{}) error
+	SetPreference(ctx context.Context, username string, key string, value any) error
+	GetPreference(ctx context.Context, username string, key string) (any, error)
+	GetAllPreferences(ctx context.Context, username string) (map[string]any, error)
+	UpdatePreferences(ctx context.Context, username string, prefs map[string]any) error
 
 	// Streaming preferences operations
 	GetStreamingPreferences(ctx context.Context, username string) (*StreamingPreferences, error)
@@ -616,7 +616,7 @@ type Storage interface {
 	SetDNSCache(ctx context.Context, entry *DNSCacheEntry) error
 
 	// Reply operations
-	GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error)
+	GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]any, string, error)
 	CountReplies(ctx context.Context, objectID string) (int, error)
 	IncrementReplyCount(ctx context.Context, objectID string) error
 
@@ -650,10 +650,10 @@ type Storage interface {
 	IsNotificationMuted(ctx context.Context, userID, targetID string) (bool, error)
 	HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error)
 	GetFieldVerification(ctx context.Context, username, fieldName string) (*ActorField, error)
-	GetDomainStats(ctx context.Context, domain string) (interface{}, error)
+	GetDomainStats(ctx context.Context, domain string) (any, error)
 	UnmarkAllMediaAsSensitive(ctx context.Context, username string) error
-	GetUserMedia(ctx context.Context, username string) ([]interface{}, error)
-	UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]interface{}) error
+	GetUserMedia(ctx context.Context, username string) ([]any, error)
+	UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error
 	GetLocalPostCount(ctx context.Context) (int64, error)
 	SaveOAuthState(ctx context.Context, state *OAuthState) error
 	GetOAuthApp(ctx context.Context, clientID string) (*OAuthApp, error)
@@ -673,28 +673,28 @@ type Storage interface {
 	IsEndorsed(ctx context.Context, userID, targetID string) (bool, error)
 	GetRelationshipNote(ctx context.Context, userID, targetID string) (*AccountNote, error)
 	GetStatusReplyCount(ctx context.Context, statusID string) (int, error)
-	GetHashtagStats(ctx context.Context, hashtag string) (interface{}, error)
+	GetHashtagStats(ctx context.Context, hashtag string) (any, error)
 	GetUserStatusCount(ctx context.Context, userID string) (int, error)
-	GetStorageUsage(ctx context.Context) (interface{}, error)
-	GetStorageHistory(ctx context.Context, days int) ([]interface{}, error)
-	GetUserGrowthHistory(ctx context.Context, days int) ([]interface{}, error)
+	GetStorageUsage(ctx context.Context) (any, error)
+	GetStorageHistory(ctx context.Context, days int) ([]any, error)
+	GetUserGrowthHistory(ctx context.Context, days int) ([]any, error)
 	GetDailyActiveUserCount(ctx context.Context) (int64, error)
-	GetStatus(ctx context.Context, statusID string) (interface{}, error)
-	GetReportedStatuses(ctx context.Context, reportID string) ([]interface{}, error)
+	GetStatus(ctx context.Context, statusID string) (any, error)
+	GetReportedStatuses(ctx context.Context, reportID string) ([]any, error)
 	GetRulesByCategory(ctx context.Context, category string) ([]InstanceRule, error)
 	GetUserAppConsent(ctx context.Context, userID, appID string) (*UserAppConsent, error)
-	GetScheduledStatusMedia(ctx context.Context, statusID string) ([]interface{}, error)
+	GetScheduledStatusMedia(ctx context.Context, statusID string) ([]any, error)
 	GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*TrendingHashtag, error)
-	StoreHashtagTrend(ctx context.Context, trend interface{}) error
+	StoreHashtagTrend(ctx context.Context, trend any) error
 	GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*TrendingStatus, error)
 	GetUserTrustScore(ctx context.Context, userID string) (float64, error)
-	StoreStatusTrend(ctx context.Context, trend interface{}) error
+	StoreStatusTrend(ctx context.Context, trend any) error
 	GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*TrendingLink, error)
-	StoreLinkTrend(ctx context.Context, trend interface{}) error
+	StoreLinkTrend(ctx context.Context, trend any) error
 	DeleteOldHashtagTrends(ctx context.Context, before time.Time) error
 	DeleteOldStatusTrends(ctx context.Context, before time.Time) error
 	DeleteOldLinkTrends(ctx context.Context, before time.Time) error
-	GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]interface{}, error)
+	GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]any, error)
 
 	// Relay operations
 	StoreRelayInfo(ctx context.Context, relay *RelayInfo) error
@@ -843,12 +843,12 @@ type RelationshipRecord struct {
 
 // ObjectRecord represents an object stored in DynamoDB
 type ObjectRecord struct {
-	PK        string      `dynamodbav:"PK"`
-	SK        string      `dynamodbav:"SK"`
-	Type      string      `dynamodbav:"Type"`
-	Object    interface{} `dynamodbav:"Object"`
-	CreatedAt time.Time   `dynamodbav:"CreatedAt"`
-	UpdatedAt time.Time   `dynamodbav:"UpdatedAt"`
+	PK        string    `dynamodbav:"PK"`
+	SK        string    `dynamodbav:"SK"`
+	Type      string    `dynamodbav:"Type"`
+	Object    any       `dynamodbav:"Object"`
+	CreatedAt time.Time `dynamodbav:"CreatedAt"`
+	UpdatedAt time.Time `dynamodbav:"UpdatedAt"`
 }
 
 // AuthorizationCode represents an OAuth authorization code
@@ -1198,20 +1198,24 @@ type FilterStatus struct {
 }
 
 // Type aliases for moderation and trust types to avoid repetition
-type ModerationEvent = moderation.ModerationEvent
-type ModerationReview = moderation.Review
-type ModerationDecision = moderation.ModerationDecision
-type ModerationHistory = moderation.ModerationHistory
-type ModerationQueueItem = moderation.QueueItem
-type EventType = moderation.EventType
-type Category = moderation.Category
-type Severity = moderation.Severity
-type ActionType = moderation.ActionType
+type (
+	ModerationEvent     = moderation.ModerationEvent
+	ModerationReview    = moderation.Review
+	ModerationDecision  = moderation.ModerationDecision
+	ModerationHistory   = moderation.ModerationHistory
+	ModerationQueueItem = moderation.QueueItem
+	EventType           = moderation.EventType
+	Category            = moderation.Category
+	Severity            = moderation.Severity
+	ActionType          = moderation.ActionType
+)
 
-type TrustRelationship = trust.TrustRelationship
-type TrustScore = trust.TrustScore
-type TrustUpdate = trust.TrustUpdate
-type TrustCategory = trust.TrustCategory
+type (
+	TrustRelationship = trust.TrustRelationship
+	TrustScore        = trust.TrustScore
+	TrustUpdate       = trust.TrustUpdate
+	TrustCategory     = trust.TrustCategory
+)
 
 // Constant aliases for moderation types
 const (
@@ -1263,22 +1267,22 @@ type ConversationMute struct {
 
 // ScheduledStatus represents a status scheduled for future publication
 type ScheduledStatus struct {
-	ID            string                 `dynamodbav:"id"`
-	Username      string                 `dynamodbav:"username"` // Who scheduled the status
-	Status        string                 `dynamodbav:"status"`   // The status content
-	MediaIDs      []string               `dynamodbav:"media_ids,omitempty"`
-	Sensitive     bool                   `dynamodbav:"sensitive"`
-	SpoilerText   string                 `dynamodbav:"spoiler_text,omitempty"`
-	Visibility    string                 `dynamodbav:"visibility"` // public, unlisted, private, direct
-	Language      string                 `dynamodbav:"language,omitempty"`
-	InReplyToID   string                 `dynamodbav:"in_reply_to_id,omitempty"`
-	Poll          map[string]interface{} `dynamodbav:"poll,omitempty"` // Poll data if any
-	ScheduledAt   time.Time              `dynamodbav:"scheduled_at"`   // When to publish
-	CreatedAt     time.Time              `dynamodbav:"created_at"`
-	UpdatedAt     time.Time              `dynamodbav:"updated_at"`
-	Published     bool                   `dynamodbav:"published"` // Whether it has been published
-	PublishedAt   *time.Time             `dynamodbav:"published_at,omitempty"`
-	ApplicationID string                 `dynamodbav:"application_id,omitempty"` // OAuth app that created it
+	ID            string         `dynamodbav:"id"`
+	Username      string         `dynamodbav:"username"` // Who scheduled the status
+	Status        string         `dynamodbav:"status"`   // The status content
+	MediaIDs      []string       `dynamodbav:"media_ids,omitempty"`
+	Sensitive     bool           `dynamodbav:"sensitive"`
+	SpoilerText   string         `dynamodbav:"spoiler_text,omitempty"`
+	Visibility    string         `dynamodbav:"visibility"` // public, unlisted, private, direct
+	Language      string         `dynamodbav:"language,omitempty"`
+	InReplyToID   string         `dynamodbav:"in_reply_to_id,omitempty"`
+	Poll          map[string]any `dynamodbav:"poll,omitempty"` // Poll data if any
+	ScheduledAt   time.Time      `dynamodbav:"scheduled_at"`   // When to publish
+	CreatedAt     time.Time      `dynamodbav:"created_at"`
+	UpdatedAt     time.Time      `dynamodbav:"updated_at"`
+	Published     bool           `dynamodbav:"published"` // Whether it has been published
+	PublishedAt   *time.Time     `dynamodbav:"published_at,omitempty"`
+	ApplicationID string         `dynamodbav:"application_id,omitempty"` // OAuth app that created it
 }
 
 // FeaturedTag represents a hashtag featured on a user's profile
@@ -1924,24 +1928,24 @@ type CostDriver struct {
 
 // FederationNode represents an instance in the federation graph
 type FederationNode struct {
-	Domain            string                 `json:"domain" dynamodbav:"domain"`
-	DisplayName       string                 `json:"display_name" dynamodbav:"display_name"`
-	Description       string                 `json:"description,omitempty" dynamodbav:"description,omitempty"`
-	Software          string                 `json:"software" dynamodbav:"software"`
-	Version           string                 `json:"version" dynamodbav:"version"`
-	UserCount         int64                  `json:"user_count" dynamodbav:"user_count"`
-	StatusCount       int64                  `json:"status_count" dynamodbav:"status_count"`
-	ActiveUsers       int64                  `json:"active_users" dynamodbav:"active_users"`
-	FirstSeen         time.Time              `json:"first_seen" dynamodbav:"first_seen"`
-	LastSeen          time.Time              `json:"last_seen" dynamodbav:"last_seen"`
-	Health            string                 `json:"health" dynamodbav:"health"` // healthy/warning/critical/unknown
-	ErrorRate         float64                `json:"error_rate" dynamodbav:"error_rate"`
-	ResponseTime      float64                `json:"response_time" dynamodbav:"response_time"`
-	ConnectionType    string                 `json:"connection_type" dynamodbav:"connection_type"` // direct/relay/blocked
-	TotalConnections  int64                  `json:"total_connections,omitempty" dynamodbav:"total_connections,omitempty"`
-	ActiveConnections int64                  `json:"active_connections,omitempty" dynamodbav:"active_connections,omitempty"`
-	ActivityVolume    int64                  `json:"activity_volume,omitempty" dynamodbav:"activity_volume,omitempty"`
-	Metadata          map[string]interface{} `json:"metadata,omitempty" dynamodbav:"metadata,omitempty"`
+	Domain            string         `json:"domain" dynamodbav:"domain"`
+	DisplayName       string         `json:"display_name" dynamodbav:"display_name"`
+	Description       string         `json:"description,omitempty" dynamodbav:"description,omitempty"`
+	Software          string         `json:"software" dynamodbav:"software"`
+	Version           string         `json:"version" dynamodbav:"version"`
+	UserCount         int64          `json:"user_count" dynamodbav:"user_count"`
+	StatusCount       int64          `json:"status_count" dynamodbav:"status_count"`
+	ActiveUsers       int64          `json:"active_users" dynamodbav:"active_users"`
+	FirstSeen         time.Time      `json:"first_seen" dynamodbav:"first_seen"`
+	LastSeen          time.Time      `json:"last_seen" dynamodbav:"last_seen"`
+	Health            string         `json:"health" dynamodbav:"health"` // healthy/warning/critical/unknown
+	ErrorRate         float64        `json:"error_rate" dynamodbav:"error_rate"`
+	ResponseTime      float64        `json:"response_time" dynamodbav:"response_time"`
+	ConnectionType    string         `json:"connection_type" dynamodbav:"connection_type"` // direct/relay/blocked
+	TotalConnections  int64          `json:"total_connections,omitempty" dynamodbav:"total_connections,omitempty"`
+	ActiveConnections int64          `json:"active_connections,omitempty" dynamodbav:"active_connections,omitempty"`
+	ActivityVolume    int64          `json:"activity_volume,omitempty" dynamodbav:"activity_volume,omitempty"`
+	Metadata          map[string]any `json:"metadata,omitempty" dynamodbav:"metadata,omitempty"`
 }
 
 // FederationEdge represents a connection between two instances

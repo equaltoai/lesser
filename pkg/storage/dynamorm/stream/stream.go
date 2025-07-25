@@ -13,7 +13,7 @@ import (
 )
 
 // UnmarshalItem unmarshals a single DynamoDB stream record into a struct
-func UnmarshalItem(record events.DynamoDBEventRecord, out interface{}) error {
+func UnmarshalItem(record events.DynamoDBEventRecord, out any) error {
 	// Check if we're dealing with a NewImage (INSERT/MODIFY) or OldImage (REMOVE)
 	var image map[string]events.DynamoDBAttributeValue
 	switch record.EventName {
@@ -70,7 +70,7 @@ func UnmarshalItem(record events.DynamoDBEventRecord, out interface{}) error {
 }
 
 // UnmarshalItems unmarshals multiple DynamoDB stream records into a slice of structs
-func UnmarshalItems(records []events.DynamoDBEventRecord, outType interface{}) (interface{}, error) {
+func UnmarshalItems(records []events.DynamoDBEventRecord, outType any) (any, error) {
 	// Create a slice of the correct type to hold results
 	sliceType := reflect.SliceOf(reflect.TypeOf(outType))
 	results := reflect.MakeSlice(sliceType, 0, len(records))
@@ -134,8 +134,8 @@ func ProcessStreamRecords[T any](ctx context.Context, records []events.DynamoDBE
 }
 
 // Helper function to convert DynamoDB stream attribute values to DynamORM compatible format
-func convertStreamImageToItem(image map[string]events.DynamoDBAttributeValue) (map[string]interface{}, error) {
-	item := make(map[string]interface{})
+func convertStreamImageToItem(image map[string]events.DynamoDBAttributeValue) (map[string]any, error) {
+	item := make(map[string]any)
 
 	for key, value := range image {
 		converted, err := convertAttributeValue(value)
@@ -149,7 +149,7 @@ func convertStreamImageToItem(image map[string]events.DynamoDBAttributeValue) (m
 }
 
 // Helper function to convert a single DynamoDB attribute value to a Go type
-func convertAttributeValue(attr events.DynamoDBAttributeValue) (interface{}, error) {
+func convertAttributeValue(attr events.DynamoDBAttributeValue) (any, error) {
 	switch attr.DataType() {
 	case events.DataTypeString:
 		return attr.String(), nil
@@ -158,7 +158,7 @@ func convertAttributeValue(attr events.DynamoDBAttributeValue) (interface{}, err
 	case events.DataTypeBoolean:
 		return attr.Boolean(), nil
 	case events.DataTypeMap:
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		for k, v := range attr.Map() {
 			converted, err := convertAttributeValue(v)
 			if err != nil {
@@ -168,7 +168,7 @@ func convertAttributeValue(attr events.DynamoDBAttributeValue) (interface{}, err
 		}
 		return m, nil
 	case events.DataTypeList:
-		list := make([]interface{}, len(attr.List()))
+		list := make([]any, len(attr.List()))
 		for i, v := range attr.List() {
 			converted, err := convertAttributeValue(v)
 			if err != nil {

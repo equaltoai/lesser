@@ -15,11 +15,11 @@ This document indexes all instances of stub, placeholder, or incomplete implemen
 - **Impact**: Import listing functionality completely broken
 - **Verification**: Confirmed - function ignores all parameters and returns empty array
 ```go
-func (h *Handler) getUserImportJobs(_ context.Context, _ string, _ ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserImportJobs(_ context.Context, _ string, _ ...string) ([]map[string]any, error) {
     // Query GSI1 for user's imports
     // This would normally use a proper DynamoDB query
     // For now, return empty to avoid errors
-    return []map[string]interface{}{}, nil
+    return []map[string]any{}, nil
 }
 ```
 
@@ -39,12 +39,12 @@ func (h *Handler) getUserImportJobs(_ context.Context, _ string, _ ...string) ([
   - `getMutes()` - returns empty []MuteInfo{}, nil
   - `getListsWithMembers()` - returns empty map[string][]string{}, nil
   - `getBookmarks()` - returns empty []BookmarkInfo{}, nil
-  - `getOutbox()` - returns empty []interface{}{}, 0, nil
+  - `getOutbox()` - returns empty []any{}, 0, nil
   - `getFollowingActors()` - returns empty []string{}, nil
   - `getFollowersActors()` - returns empty []string{}, nil
-  - `getLikes()` - returns empty []interface{}{}, nil
-  - `getBookmarksForExport()` - returns empty []interface{}{}, nil
-  - `getListsForExport()` - returns empty []interface{}{}, nil
+  - `getLikes()` - returns empty []any{}, nil
+  - `getBookmarksForExport()` - returns empty []any{}, nil
+  - `getListsForExport()` - returns empty []any{}, nil
 - **Impact**: Export functionality generates empty files for all data types
 
 ### 3. Trends System ⚠️ PARTIAL IMPLEMENTATION

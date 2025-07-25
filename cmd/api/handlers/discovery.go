@@ -44,14 +44,14 @@ func (h *Handler) HandleGetDirectory(ctx context.Context, request events.APIGate
 	}
 
 	// Convert to account format first to allow sorting
-	accounts := make([]map[string]interface{}, 0, len(actors))
+	accounts := make([]map[string]any, 0, len(actors))
 	for _, actor := range actors {
 		// Filter local only if requested
 		if local && !h.isLocal(actor.ID) {
 			continue
 		}
 
-		account := map[string]interface{}{
+		account := map[string]any{
 			"id":              actor.ID,
 			"username":        actor.PreferredUsername,
 			"acct":            h.getAccountAcct(actor),
@@ -133,11 +133,11 @@ func (h *Handler) HandleGetSuggestionsV1(ctx context.Context, request events.API
 	}
 
 	// Convert storage suggestions to API format
-	suggestionsList := make([]map[string]interface{}, 0, len(suggestions))
+	suggestionsList := make([]map[string]any, 0, len(suggestions))
 	for _, actor := range suggestions {
 		// V1 format wraps account in suggestion object
-		suggestionItem := map[string]interface{}{
-			"account": map[string]interface{}{
+		suggestionItem := map[string]any{
+			"account": map[string]any{
 				"id":              actor.ID,
 				"username":        actor.PreferredUsername,
 				"acct":            h.getAccountAcct(actor),
@@ -200,7 +200,7 @@ func (h *Handler) HandleGetSuggestionsV2(ctx context.Context, request events.API
 	}
 
 	// Filter and format suggestions
-	suggestions := make([]map[string]interface{}, 0, limit)
+	suggestions := make([]map[string]any, 0, limit)
 	for _, actor := range actors {
 		if len(suggestions) >= limit {
 			break
@@ -213,9 +213,9 @@ func (h *Handler) HandleGetSuggestionsV2(ctx context.Context, request events.API
 		}
 
 		// V2 format includes sources explaining why this was suggested
-		suggestion := map[string]interface{}{
+		suggestion := map[string]any{
 			"source": "global", // Can be: staff, past_interactions, global
-			"account": map[string]interface{}{
+			"account": map[string]any{
 				"id":              actor.ID,
 				"username":        actor.PreferredUsername,
 				"acct":            h.getAccountAcct(actor),
@@ -273,7 +273,7 @@ func (h *Handler) HandleRemoveSuggestion(ctx context.Context, request events.API
 	}
 
 	// For now, just return success
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // Helper function to check if an actor ID is local

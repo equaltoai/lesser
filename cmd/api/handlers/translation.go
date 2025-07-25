@@ -75,7 +75,7 @@ func (h *Handler) HandleTranslateStatus(ctx context.Context, request events.APIG
 		spoilerText = o.Summary
 		// Note: Language is not part of the standard Note type
 		// It would need to be stored separately or as object metadata
-	case map[string]interface{}:
+	case map[string]any:
 		if c, ok := o["content"].(string); ok {
 			content = c
 		}

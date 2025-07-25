@@ -25,31 +25,31 @@ type AccountRegistrationResponse struct {
 
 // VerifyCredentialsResponse represents the current user info
 type VerifyCredentialsResponse struct {
-	ID             string                 `json:"id"`
-	Username       string                 `json:"username"`
-	Acct           string                 `json:"acct"`
-	DisplayName    string                 `json:"display_name"`
-	Locked         bool                   `json:"locked"`
-	Bot            bool                   `json:"bot"`
-	Discoverable   bool                   `json:"discoverable"`
-	Group          bool                   `json:"group"`
-	Email          string                 `json:"email"`
-	EmailVerified  bool                   `json:"email_verified"`
-	Note           string                 `json:"note"`
-	URL            string                 `json:"url"`
-	Avatar         string                 `json:"avatar"`
-	AvatarStatic   string                 `json:"avatar_static"`
-	Header         string                 `json:"header"`
-	HeaderStatic   string                 `json:"header_static"`
-	FollowersCount int                    `json:"followers_count"`
-	FollowingCount int                    `json:"following_count"`
-	StatusesCount  int                    `json:"statuses_count"`
-	LastStatusAt   string                 `json:"last_status_at"`
-	Emojis         []interface{}          `json:"emojis"`
-	Fields         []interface{}          `json:"fields"`
-	CreatedAt      string                 `json:"created_at"`
-	Role           string                 `json:"role"`
-	Source         map[string]interface{} `json:"source"`
+	ID             string         `json:"id"`
+	Username       string         `json:"username"`
+	Acct           string         `json:"acct"`
+	DisplayName    string         `json:"display_name"`
+	Locked         bool           `json:"locked"`
+	Bot            bool           `json:"bot"`
+	Discoverable   bool           `json:"discoverable"`
+	Group          bool           `json:"group"`
+	Email          string         `json:"email"`
+	EmailVerified  bool           `json:"email_verified"`
+	Note           string         `json:"note"`
+	URL            string         `json:"url"`
+	Avatar         string         `json:"avatar"`
+	AvatarStatic   string         `json:"avatar_static"`
+	Header         string         `json:"header"`
+	HeaderStatic   string         `json:"header_static"`
+	FollowersCount int            `json:"followers_count"`
+	FollowingCount int            `json:"following_count"`
+	StatusesCount  int            `json:"statuses_count"`
+	LastStatusAt   string         `json:"last_status_at"`
+	Emojis         []any          `json:"emojis"`
+	Fields         []any          `json:"fields"`
+	CreatedAt      string         `json:"created_at"`
+	Role           string         `json:"role"`
+	Source         map[string]any `json:"source"`
 }
 
 // AppRegistrationRequest represents a Mastodon-compatible client registration request
@@ -102,15 +102,15 @@ type Poll struct {
 	HideTotals bool     `json:"hide_totals,omitempty"` // Hide vote counts until poll ends
 
 	// Response fields (returned in API responses)
-	ID          string        `json:"id,omitempty"`           // Poll ID
-	ExpiresAt   string        `json:"expires_at,omitempty"`   // ISO 8601 datetime
-	Expired     bool          `json:"expired,omitempty"`      // Whether the poll has ended
-	VotesCount  int           `json:"votes_count,omitempty"`  // Total number of votes
-	VotersCount int           `json:"voters_count,omitempty"` // Total number of voters
-	Voted       bool          `json:"voted,omitempty"`        // Whether the current user voted
-	OwnVotes    []int         `json:"own_votes,omitempty"`    // Which options the user voted for
-	OptionsData []PollOption  `json:"-"`                      // Internal field for detailed option data
-	Emojis      []interface{} `json:"emojis,omitempty"`       // Custom emojis used in options
+	ID          string       `json:"id,omitempty"`           // Poll ID
+	ExpiresAt   string       `json:"expires_at,omitempty"`   // ISO 8601 datetime
+	Expired     bool         `json:"expired,omitempty"`      // Whether the poll has ended
+	VotesCount  int          `json:"votes_count,omitempty"`  // Total number of votes
+	VotersCount int          `json:"voters_count,omitempty"` // Total number of voters
+	Voted       bool         `json:"voted,omitempty"`        // Whether the current user voted
+	OwnVotes    []int        `json:"own_votes,omitempty"`    // Which options the user voted for
+	OptionsData []PollOption `json:"-"`                      // Internal field for detailed option data
+	Emojis      []any        `json:"emojis,omitempty"`       // Custom emojis used in options
 }
 
 // PollOption represents an option in a poll response
@@ -126,34 +126,34 @@ type PollVoteRequest struct {
 
 // Status represents a Mastodon-compatible status response
 type Status struct {
-	ID                 string                 `json:"id"`
-	CreatedAt          string                 `json:"created_at"`
-	InReplyToID        *string                `json:"in_reply_to_id"`
-	InReplyToAccountID *string                `json:"in_reply_to_account_id"`
-	Sensitive          bool                   `json:"sensitive"`
-	SpoilerText        string                 `json:"spoiler_text"`
-	Visibility         string                 `json:"visibility"`
-	Language           string                 `json:"language"`
-	URI                string                 `json:"uri"`
-	URL                string                 `json:"url"`
-	RepliesCount       int                    `json:"replies_count"`
-	ReblogsCount       int                    `json:"reblogs_count"`
-	FavouritesCount    int                    `json:"favourites_count"`
-	Favourited         bool                   `json:"favourited"`
-	Reblogged          bool                   `json:"reblogged"`
-	Muted              bool                   `json:"muted"`
-	Bookmarked         bool                   `json:"bookmarked"`
-	Pinned             bool                   `json:"pinned"`
-	Content            string                 `json:"content"`
-	Reblog             *Status                `json:"reblog"`
-	Application        map[string]interface{} `json:"application,omitempty"`
-	Account            Account                `json:"account"`
-	MediaAttachments   []interface{}          `json:"media_attachments"`
-	Mentions           []interface{}          `json:"mentions"`
-	Tags               []interface{}          `json:"tags"`
-	Emojis             []interface{}          `json:"emojis"`
-	Card               *interface{}           `json:"card"`
-	Poll               *Poll                  `json:"poll"`
+	ID                 string         `json:"id"`
+	CreatedAt          string         `json:"created_at"`
+	InReplyToID        *string        `json:"in_reply_to_id"`
+	InReplyToAccountID *string        `json:"in_reply_to_account_id"`
+	Sensitive          bool           `json:"sensitive"`
+	SpoilerText        string         `json:"spoiler_text"`
+	Visibility         string         `json:"visibility"`
+	Language           string         `json:"language"`
+	URI                string         `json:"uri"`
+	URL                string         `json:"url"`
+	RepliesCount       int            `json:"replies_count"`
+	ReblogsCount       int            `json:"reblogs_count"`
+	FavouritesCount    int            `json:"favourites_count"`
+	Favourited         bool           `json:"favourited"`
+	Reblogged          bool           `json:"reblogged"`
+	Muted              bool           `json:"muted"`
+	Bookmarked         bool           `json:"bookmarked"`
+	Pinned             bool           `json:"pinned"`
+	Content            string         `json:"content"`
+	Reblog             *Status        `json:"reblog"`
+	Application        map[string]any `json:"application,omitempty"`
+	Account            Account        `json:"account"`
+	MediaAttachments   []any          `json:"media_attachments"`
+	Mentions           []any          `json:"mentions"`
+	Tags               []any          `json:"tags"`
+	Emojis             []any          `json:"emojis"`
+	Card               *any           `json:"card"`
+	Poll               *Poll          `json:"poll"`
 
 	// Quote boost extensions
 	IsQuoteBoost   bool    `json:"is_quote_boost,omitempty"`
@@ -163,27 +163,27 @@ type Status struct {
 
 // Account represents a Mastodon-compatible account
 type Account struct {
-	ID             string        `json:"id"`
-	Username       string        `json:"username"`
-	Acct           string        `json:"acct"`
-	DisplayName    string        `json:"display_name"`
-	Locked         bool          `json:"locked"`
-	Bot            bool          `json:"bot"`
-	Discoverable   bool          `json:"discoverable"`
-	Group          bool          `json:"group"`
-	CreatedAt      string        `json:"created_at"`
-	Note           string        `json:"note"`
-	URL            string        `json:"url"`
-	Avatar         string        `json:"avatar"`
-	AvatarStatic   string        `json:"avatar_static"`
-	Header         string        `json:"header"`
-	HeaderStatic   string        `json:"header_static"`
-	FollowersCount int           `json:"followers_count"`
-	FollowingCount int           `json:"following_count"`
-	StatusesCount  int           `json:"statuses_count"`
-	LastStatusAt   string        `json:"last_status_at"`
-	Emojis         []interface{} `json:"emojis"`
-	Fields         []interface{} `json:"fields"`
+	ID             string `json:"id"`
+	Username       string `json:"username"`
+	Acct           string `json:"acct"`
+	DisplayName    string `json:"display_name"`
+	Locked         bool   `json:"locked"`
+	Bot            bool   `json:"bot"`
+	Discoverable   bool   `json:"discoverable"`
+	Group          bool   `json:"group"`
+	CreatedAt      string `json:"created_at"`
+	Note           string `json:"note"`
+	URL            string `json:"url"`
+	Avatar         string `json:"avatar"`
+	AvatarStatic   string `json:"avatar_static"`
+	Header         string `json:"header"`
+	HeaderStatic   string `json:"header_static"`
+	FollowersCount int    `json:"followers_count"`
+	FollowingCount int    `json:"following_count"`
+	StatusesCount  int    `json:"statuses_count"`
+	LastStatusAt   string `json:"last_status_at"`
+	Emojis         []any  `json:"emojis"`
+	Fields         []any  `json:"fields"`
 }
 
 // Context represents the ancestors and descendants of a status
@@ -232,54 +232,54 @@ type Relationship struct {
 
 // SearchResults represents search results
 type SearchResults struct {
-	Accounts []Account     `json:"accounts"`
-	Statuses []Status      `json:"statuses"`
-	Hashtags []interface{} `json:"hashtags"`
+	Accounts []Account `json:"accounts"`
+	Statuses []Status  `json:"statuses"`
+	Hashtags []any     `json:"hashtags"`
 }
 
 // Instance represents instance information
 type Instance struct {
-	URI              string                 `json:"uri"`
-	Title            string                 `json:"title"`
-	ShortDescription string                 `json:"short_description"`
-	Description      string                 `json:"description"`
-	Email            string                 `json:"email"`
-	Version          string                 `json:"version"`
-	Languages        []string               `json:"languages"`
-	Registrations    bool                   `json:"registrations"`
-	ApprovalRequired bool                   `json:"approval_required"`
-	InvitesEnabled   bool                   `json:"invites_enabled"`
-	Configuration    map[string]interface{} `json:"configuration"`
-	Stats            map[string]interface{} `json:"stats"`
-	Thumbnail        string                 `json:"thumbnail"`
-	ContactAccount   *Account               `json:"contact_account"`
-	Rules            []interface{}          `json:"rules"`
+	URI              string         `json:"uri"`
+	Title            string         `json:"title"`
+	ShortDescription string         `json:"short_description"`
+	Description      string         `json:"description"`
+	Email            string         `json:"email"`
+	Version          string         `json:"version"`
+	Languages        []string       `json:"languages"`
+	Registrations    bool           `json:"registrations"`
+	ApprovalRequired bool           `json:"approval_required"`
+	InvitesEnabled   bool           `json:"invites_enabled"`
+	Configuration    map[string]any `json:"configuration"`
+	Stats            map[string]any `json:"stats"`
+	Thumbnail        string         `json:"thumbnail"`
+	ContactAccount   *Account       `json:"contact_account"`
+	Rules            []any          `json:"rules"`
 }
 
 // MediaAttachment represents a media attachment
 type MediaAttachment struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	URL         string                 `json:"url"`
-	PreviewURL  string                 `json:"preview_url"`
-	RemoteURL   *string                `json:"remote_url"`
-	TextURL     string                 `json:"text_url"`
-	Meta        map[string]interface{} `json:"meta"`
-	Description string                 `json:"description"`
-	Blurhash    string                 `json:"blurhash"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"`
+	URL         string         `json:"url"`
+	PreviewURL  string         `json:"preview_url"`
+	RemoteURL   *string        `json:"remote_url"`
+	TextURL     string         `json:"text_url"`
+	Meta        map[string]any `json:"meta"`
+	Description string         `json:"description"`
+	Blurhash    string         `json:"blurhash"`
 }
 
 // MediaUploadResponse represents the response after uploading media
 type MediaUploadResponse struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	URL         string                 `json:"url"`
-	PreviewURL  string                 `json:"preview_url"`
-	RemoteURL   *string                `json:"remote_url"`
-	TextURL     string                 `json:"text_url"`
-	Meta        map[string]interface{} `json:"meta"`
-	Description string                 `json:"description"`
-	Blurhash    string                 `json:"blurhash"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"`
+	URL         string         `json:"url"`
+	PreviewURL  string         `json:"preview_url"`
+	RemoteURL   *string        `json:"remote_url"`
+	TextURL     string         `json:"text_url"`
+	Meta        map[string]any `json:"meta"`
+	Description string         `json:"description"`
+	Blurhash    string         `json:"blurhash"`
 }
 
 // StatusContext represents the context of a status (ancestors and descendants)
@@ -312,14 +312,14 @@ type StatusSource struct {
 
 // StatusEdit represents a single edit in the status history
 type StatusEdit struct {
-	Content          string        `json:"content"`
-	SpoilerText      string        `json:"spoiler_text"`
-	Sensitive        bool          `json:"sensitive"`
-	CreatedAt        string        `json:"created_at"`
-	Account          Account       `json:"account"`
-	Poll             *Poll         `json:"poll,omitempty"`
-	MediaAttachments []interface{} `json:"media_attachments"`
-	Emojis           []interface{} `json:"emojis"`
+	Content          string  `json:"content"`
+	SpoilerText      string  `json:"spoiler_text"`
+	Sensitive        bool    `json:"sensitive"`
+	CreatedAt        string  `json:"created_at"`
+	Account          Account `json:"account"`
+	Poll             *Poll   `json:"poll,omitempty"`
+	MediaAttachments []any   `json:"media_attachments"`
+	Emojis           []any   `json:"emojis"`
 }
 
 // SearchResult represents search results
@@ -349,10 +349,10 @@ type TagHistory struct {
 
 // ScheduledStatus represents a scheduled status
 type ScheduledStatus struct {
-	ID               string        `json:"id"`
-	ScheduledAt      string        `json:"scheduled_at"`
-	Params           StatusParams  `json:"params"`
-	MediaAttachments []interface{} `json:"media_attachments"`
+	ID               string       `json:"id"`
+	ScheduledAt      string       `json:"scheduled_at"`
+	Params           StatusParams `json:"params"`
+	MediaAttachments []any        `json:"media_attachments"`
 }
 
 // StatusParams represents the parameters for a scheduled status

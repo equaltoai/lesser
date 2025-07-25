@@ -24,11 +24,11 @@ import (
 
 // ExportRequest represents a data export request
 type ExportRequest struct {
-	Type         string                 `json:"type"`          // archive, followers, following, blocks, mutes, lists, bookmarks
-	Format       string                 `json:"format"`        // activitypub, mastodon, csv
-	IncludeMedia bool                   `json:"include_media"` // Include media attachments
-	DateRange    *DateRange             `json:"date_range"`    // Optional date filtering
-	Options      map[string]interface{} `json:"options"`       // Additional format-specific options
+	Type         string         `json:"type"`          // archive, followers, following, blocks, mutes, lists, bookmarks
+	Format       string         `json:"format"`        // activitypub, mastodon, csv
+	IncludeMedia bool           `json:"include_media"` // Include media attachments
+	DateRange    *DateRange     `json:"date_range"`    // Optional date filtering
+	Options      map[string]any `json:"options"`       // Additional format-specific options
 }
 
 // DateRange for filtering exports
@@ -133,7 +133,7 @@ func (h *Handler) HandleCreateExport(ctx context.Context, request events.APIGate
 	exportID := uuid.New().String()
 	now := time.Now()
 
-	jobRecord := map[string]interface{}{
+	jobRecord := map[string]any{
 		"PK":           fmt.Sprintf("EXPORT#%s", exportID),
 		"SK":           fmt.Sprintf("EXPORT#%s", exportID),
 		"GSI1PK":       fmt.Sprintf("USER#%s", claims.Username),
@@ -208,7 +208,7 @@ func (h *Handler) HandleGetExportStatus(ctx context.Context, request events.APIG
 		return common.NotFound(fmt.Errorf("export not found: %s", exportID)), nil
 	}
 
-	jobData, ok := obj.(map[string]interface{})
+	jobData, ok := obj.(map[string]any)
 	if !ok {
 		return common.InternalServerError(errors.New("invalid export data")), nil
 	}
@@ -321,7 +321,7 @@ func (h *Handler) HandleListExports(ctx context.Context, request events.APIGatew
 }
 
 // Helper to get user's export jobs
-func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
 	// Query GSI1 for user's exports
 	// GSI1PK: USER#username, GSI1SK: CREATED#timestamp
 
@@ -365,13 +365,13 @@ func (h *Handler) getUserExportJobs(ctx context.Context, username string, status
 	}
 
 	// Filter for EXPORT items only (GSI1 may contain other user data)
-	exports := make([]map[string]interface{}, 0)
+	exports := make([]map[string]any, 0)
 	for _, item := range result.Items {
 		// Check if this is an export job by looking at PK
 		if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
 			if strings.HasPrefix(pk.Value, "EXPORT#") {
 				// Convert DynamoDB item to map
-				var jobData map[string]interface{}
+				var jobData map[string]any
 				if err := attributevalue.UnmarshalMap(item, &jobData); err != nil {
 					h.logger.Error("failed to unmarshal export job",
 						zap.String("pk", pk.Value),
@@ -391,14 +391,14 @@ func (h *Handler) getUserExportJobs(ctx context.Context, username string, status
 }
 
 // Helper functions for job data extraction
-func getStringFromJobData(data map[string]interface{}, key string) string {
+func getStringFromJobData(data map[string]any, key string) string {
 	if val, ok := data[key].(string); ok {
 		return val
 	}
 	return ""
 }
 
-func getIntFromJobData(data map[string]interface{}, key string) int {
+func getIntFromJobData(data map[string]any, key string) int {
 	if val, ok := data[key].(float64); ok {
 		return int(val)
 	}
@@ -408,7 +408,7 @@ func getIntFromJobData(data map[string]interface{}, key string) int {
 	return 0
 }
 
-func getInt64FromJobData(data map[string]interface{}, key string) int64 {
+func getInt64FromJobData(data map[string]any, key string) int64 {
 	if val, ok := data[key].(float64); ok {
 		return int64(val)
 	}
@@ -418,7 +418,7 @@ func getInt64FromJobData(data map[string]interface{}, key string) int64 {
 	return 0
 }
 
-func getTimeFromJobData(data map[string]interface{}, key string) time.Time {
+func getTimeFromJobData(data map[string]any, key string) time.Time {
 	if val, ok := data[key].(string); ok {
 		t, _ := time.Parse(time.RFC3339, val)
 		return t
@@ -439,7 +439,7 @@ func (h *Handler) triggerExportProcessor(ctx context.Context, exportID, username
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Create message payload
-	message := map[string]interface{}{
+	message := map[string]any{
 		"exportID":  exportID,
 		"username":  username,
 		"type":      exportType,
@@ -474,7 +474,6 @@ func (h *Handler) triggerExportProcessor(ctx context.Context, exportID, username
 			},
 		},
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to send SQS message: %w", err)
 	}

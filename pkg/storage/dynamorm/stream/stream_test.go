@@ -11,13 +11,13 @@ import (
 
 // Test model for unmarshaling
 type TestModel struct {
-	PK       string                 `dynamorm:"pk" json:"pk"`
-	SK       string                 `dynamorm:"sk" json:"sk"`
-	Name     string                 `json:"name"`
-	Age      int                    `json:"age"`
-	IsActive bool                   `json:"is_active"`
-	Tags     []string               `json:"tags"`
-	Metadata map[string]interface{} `json:"metadata"`
+	PK       string         `dynamorm:"pk" json:"pk"`
+	SK       string         `dynamorm:"sk" json:"sk"`
+	Name     string         `json:"name"`
+	Age      int            `json:"age"`
+	IsActive bool           `json:"is_active"`
+	Tags     []string       `json:"tags"`
+	Metadata map[string]any `json:"metadata"`
 }
 
 func TestUnmarshalItem(t *testing.T) {
@@ -179,7 +179,7 @@ func TestConvertAttributeValue(t *testing.T) {
 	tests := []struct {
 		name     string
 		attr     events.DynamoDBAttributeValue
-		expected interface{}
+		expected any
 	}{
 		{
 			name:     "string attribute",
@@ -207,7 +207,7 @@ func TestConvertAttributeValue(t *testing.T) {
 				"key1": events.NewStringAttribute("value1"),
 				"key2": events.NewNumberAttribute("42"),
 			}),
-			expected: map[string]interface{}{
+			expected: map[string]any{
 				"key1": "value1",
 				"key2": "42",
 			},
@@ -219,7 +219,7 @@ func TestConvertAttributeValue(t *testing.T) {
 				events.NewNumberAttribute("2"),
 				events.NewBooleanAttribute(true),
 			}),
-			expected: []interface{}{"item1", "2", true},
+			expected: []any{"item1", "2", true},
 		},
 	}
 

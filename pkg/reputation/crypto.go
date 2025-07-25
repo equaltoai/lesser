@@ -427,14 +427,14 @@ func (v *Verifier) isInstanceTrusted(instanceURL string) bool {
 }
 
 // canonicalizeJSON creates a canonical JSON representation
-func canonicalizeJSON(v interface{}) ([]byte, error) {
+func canonicalizeJSON(v any) ([]byte, error) {
 	// Simple canonicalization - in production use a proper JSON-LD library
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
 
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
 	}

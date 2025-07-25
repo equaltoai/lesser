@@ -13,7 +13,7 @@ import (
 )
 
 // convertActorToAccount converts an ActivityPub actor to a Mastodon account format
-func (h *Handler) convertActorToAccount(ctx context.Context, actor *activitypub.Actor) map[string]interface{} {
+func (h *Handler) convertActorToAccount(ctx context.Context, actor *activitypub.Actor) map[string]any {
 	// Default avatar and header
 	avatar := fmt.Sprintf("https://%s/avatars/default.png", h.cfg.Domain)
 	header := fmt.Sprintf("https://%s/headers/default.png", h.cfg.Domain)
@@ -46,7 +46,7 @@ func (h *Handler) convertActorToAccount(ctx context.Context, actor *activitypub.
 	following, _, _ := h.store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
 	followingCount := len(following)
 
-	return map[string]interface{}{
+	return map[string]any{
 		"id":              actor.PreferredUsername,
 		"username":        actor.PreferredUsername,
 		"acct":            actor.PreferredUsername,
@@ -65,8 +65,8 @@ func (h *Handler) convertActorToAccount(ctx context.Context, actor *activitypub.
 		"statuses_count":  statusesCount,
 		"followers_count": followersCount,
 		"following_count": followingCount,
-		"fields":          []interface{}{},
-		"emojis":          []interface{}{},
+		"fields":          []any{},
+		"emojis":          []any{},
 	}
 }
 
@@ -179,7 +179,7 @@ func (h *Handler) deliverActivity(ctx context.Context, activity *activitypub.Act
 		return fmt.Errorf("failed to marshal activity: %w", err)
 	}
 
-	var activityMap map[string]interface{}
+	var activityMap map[string]any
 	if err := json.Unmarshal(activityBytes, &activityMap); err != nil {
 		return fmt.Errorf("failed to unmarshal activity to map: %w", err)
 	}
@@ -199,7 +199,7 @@ func (h *Handler) deliverActivity(ctx context.Context, activity *activitypub.Act
 }
 
 // Helper method for ActivityPub delivery
-func (h *Handler) deliverActivityPubActivity(ctx context.Context, activity map[string]interface{}, targetInbox string) error {
+func (h *Handler) deliverActivityPubActivity(ctx context.Context, activity map[string]any, targetInbox string) error {
 	// Convert activity to JSON
 	activityJSON, err := json.Marshal(activity)
 	if err != nil {

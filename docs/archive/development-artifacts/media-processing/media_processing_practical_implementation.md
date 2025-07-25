@@ -8,7 +8,7 @@ Remove the hardcoded stubs and make media uploads work:
 ```go
 // cmd/media-processor/main.go
 
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{
         Sizes: make(map[string]SizeInfo),
     }
@@ -40,7 +40,7 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
     return result, nil
 }
 
-func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{}
     
     // Try to get duration with lightweight library

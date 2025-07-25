@@ -28,7 +28,7 @@ type MediaConfig struct {
     UserBudgetMicros int64
 }
 
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{
         Sizes: make(map[string]SizeInfo),
     }
@@ -146,7 +146,7 @@ func createMediaConvertJob(ctx context.Context, s3Input string, event MediaProce
     return *resp.Job.Id, nil
 }
 
-func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{}
     
     // Similar pattern: check config, budget, then process

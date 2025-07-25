@@ -298,8 +298,8 @@ func handleAuthorize(ctx context.Context, request events.APIGatewayV2HTTPRequest
 
 				// Parse WebAuthn response
 				var webauthnData struct {
-					Challenge  string                 `json:"challenge"`
-					Credential map[string]interface{} `json:"credential"`
+					Challenge  string         `json:"challenge"`
+					Credential map[string]any `json:"credential"`
 				}
 				if err := json.Unmarshal([]byte(webauthnResponse), &webauthnData); err != nil {
 					logger.Error("failed to parse WebAuthn response", zap.Error(err))
@@ -436,7 +436,7 @@ func validateUserCredentials(ctx context.Context, username, password string) (*s
 	return user, nil
 }
 
-func validateWebAuthnCredentials(ctx context.Context, username string, challenge string, credential map[string]interface{}) (*storage.User, error) {
+func validateWebAuthnCredentials(ctx context.Context, username string, challenge string, credential map[string]any) (*storage.User, error) {
 	if webAuthnSvc == nil {
 		return nil, errors.New("WebAuthn service not available")
 	}
@@ -1479,7 +1479,7 @@ func handleDiscovery(ctx context.Context, request events.APIGatewayV2HTTPRequest
 	}
 
 	// Return OAuth discovery document
-	discovery := map[string]interface{}{
+	discovery := map[string]any{
 		"issuer":                                cfg.BaseURL(),
 		"authorization_endpoint":                cfg.BaseURL() + "/oauth/authorize",
 		"token_endpoint":                        cfg.BaseURL() + "/oauth/token",
@@ -2117,7 +2117,7 @@ func handleAccountCreation(ctx context.Context, request events.APIGatewayV2HTTPR
 		return common.InternalServerError(errors.New("account created but token generation failed")), nil
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"id":           user.Username,
 		"username":     user.Username,
 		"created_at":   user.CreatedAt,
@@ -2152,7 +2152,7 @@ func createActorForUser(ctx context.Context, username string) error {
 	// Create actor
 	actor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
-			Context: []interface{}{
+			Context: []any{
 				"https://www.w3.org/ns/activitystreams",
 				"https://w3id.org/security/v1",
 			},
@@ -2190,7 +2190,7 @@ func createActorForUser(ctx context.Context, username string) error {
 
 // prepareWebAuthnResponse handles the common logic for preparing WebAuthn responses
 // It extracts nested publicKey fields if necessary and returns a properly structured response
-func prepareWebAuthnResponse(options interface{}, challenge string) (map[string]interface{}, error) {
+func prepareWebAuthnResponse(options any, challenge string) (map[string]any, error) {
 	// The go-webauthn library might return nested structure
 	// We need to structure the response properly for the client
 	optionsJSON, err := json.Marshal(options)
@@ -2198,13 +2198,13 @@ func prepareWebAuthnResponse(options interface{}, challenge string) (map[string]
 		return nil, fmt.Errorf("failed to marshal options: %w", err)
 	}
 
-	var optionsData map[string]interface{}
+	var optionsData map[string]any
 	if err := json.Unmarshal(optionsJSON, &optionsData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal options: %w", err)
 	}
 
 	// Check if it has a nested publicKey field
-	var publicKeyData interface{}
+	var publicKeyData any
 	if pk, exists := optionsData["publicKey"]; exists {
 		publicKeyData = pk
 	} else {
@@ -2212,7 +2212,7 @@ func prepareWebAuthnResponse(options interface{}, challenge string) (map[string]
 	}
 
 	// Return the properly structured response
-	return map[string]interface{}{
+	return map[string]any{
 		"publicKey": publicKeyData,
 		"challenge": challenge,
 	}, nil

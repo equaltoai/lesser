@@ -313,8 +313,8 @@ func (bm *BatchMetrics) Flush(ctx context.Context) error {
 // XRaySegment represents an X-Ray trace segment
 type XRaySegment struct {
 	Name        string
-	Annotations map[string]interface{}
-	Metadata    map[string]interface{}
+	Annotations map[string]any
+	Metadata    map[string]any
 }
 
 // StartXRaySegment starts a new X-Ray segment
@@ -328,14 +328,14 @@ func (pm *PerformanceMonitor) StartXRaySubsegment(ctx context.Context, name stri
 }
 
 // AddXRayAnnotation adds an annotation to the current X-Ray segment
-func (pm *PerformanceMonitor) AddXRayAnnotation(ctx context.Context, key string, value interface{}) error {
+func (pm *PerformanceMonitor) AddXRayAnnotation(ctx context.Context, key string, value any) error {
 	return xray.AddAnnotation(ctx, key, value)
 }
 
 // AddXRayMetadata adds metadata to the current X-Ray segment
-func (pm *PerformanceMonitor) AddXRayMetadata(ctx context.Context, namespace string, key string, value interface{}) error {
+func (pm *PerformanceMonitor) AddXRayMetadata(ctx context.Context, namespace string, key string, value any) error {
 	// Create metadata map with key-value pair
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		key: value,
 	}
 	return xray.AddMetadata(ctx, namespace, metadata)
@@ -372,7 +372,7 @@ func (pm *PerformanceMonitor) TraceDBQuery(ctx context.Context, operation string
 		pm.RecordError(ctx, "db_query", err.Error())
 	}
 
-	if err := seg.AddMetadata("dynamodb", map[string]interface{}{"duration_ms": duration.Milliseconds()}); err != nil {
+	if err := seg.AddMetadata("dynamodb", map[string]any{"duration_ms": duration.Milliseconds()}); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray metadata 'dynamodb': %v\n", err)
 	}
 	pm.RecordLatency(ctx, "db_query_"+operation, float64(duration.Milliseconds()))
@@ -402,7 +402,7 @@ func (pm *PerformanceMonitor) TraceFederationCall(ctx context.Context, domain st
 		seg.AddError(err)
 	}
 
-	if err := seg.AddMetadata("federation", map[string]interface{}{
+	if err := seg.AddMetadata("federation", map[string]any{
 		"duration_ms": duration.Milliseconds(),
 		"success":     success,
 	}); err != nil {
@@ -436,7 +436,7 @@ func (pm *PerformanceMonitor) TraceGraphQLQuery(ctx context.Context, queryName s
 		pm.RecordError(ctx, "graphql_query", err.Error())
 	}
 
-	if err := seg.AddMetadata("graphql", map[string]interface{}{
+	if err := seg.AddMetadata("graphql", map[string]any{
 		"duration_ms": duration.Milliseconds(),
 		"complexity":  complexity,
 	}); err != nil {
@@ -481,7 +481,7 @@ func (pm *PerformanceMonitor) TraceLambdaHandler(ctx context.Context, functionNa
 		pm.RecordError(ctx, "lambda_handler", err.Error())
 	}
 
-	if err := seg.AddMetadata("lambda", map[string]interface{}{
+	if err := seg.AddMetadata("lambda", map[string]any{
 		"duration_ms": duration.Milliseconds(),
 		"cold_start":  coldStart,
 	}); err != nil {

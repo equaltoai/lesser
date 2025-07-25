@@ -19,7 +19,7 @@ The `/api/v1/statuses/:id/context` endpoint was returning empty descendants arra
 ### 2. Added Methods to Storage Interface (interface.go)
 ```go
 // Reply operations
-GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]interface{}, string, error)
+GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]any, string, error)
 CountReplies(ctx context.Context, objectID string) (int, error)
 IncrementReplyCount(ctx context.Context, objectID string) error
 ```

@@ -231,7 +231,7 @@ func processMediaJob(ctx context.Context, event MediaProcessingEvent) error {
 	}
 
 	// Get processing tasks
-	tasks, _ := jobData["ProcessingTasks"].([]interface{})
+	tasks, _ := jobData["ProcessingTasks"].([]any)
 	s3Key := jobData["S3Key"].(string)
 	mimeType := jobData["MimeType"].(string)
 
@@ -290,7 +290,7 @@ func processMediaJob(ctx context.Context, event MediaProcessingEvent) error {
 	return nil
 }
 
-func processImage(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}, mimeType string) (ProcessingResult, error) {
+func processImage(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any, mimeType string) (ProcessingResult, error) {
 	result := ProcessingResult{
 		Sizes: make(map[string]SizeInfo),
 	}
@@ -374,7 +374,7 @@ func processImage(ctx context.Context, data []byte, event MediaProcessingEvent, 
 	return result, nil
 }
 
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
 	result := ProcessingResult{
 		Sizes: make(map[string]SizeInfo),
 	}
@@ -454,7 +454,7 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
 	return result, nil
 }
 
-func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
 	result := ProcessingResult{}
 
 	// 1. Get user's media processing config
@@ -560,7 +560,7 @@ func uploadToS3(ctx context.Context, key string, data []byte, contentType string
 	return err
 }
 
-func getJobData(ctx context.Context, jobID string) (map[string]interface{}, error) {
+func getJobData(ctx context.Context, jobID string) (map[string]any, error) {
 	// Get job from DynamoDB
 	result, err := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(tableName),
@@ -578,14 +578,14 @@ func getJobData(ctx context.Context, jobID string) (map[string]interface{}, erro
 	}
 
 	// Convert to map
-	jobData := make(map[string]interface{})
+	jobData := make(map[string]any)
 	for k, v := range result.Item {
 		if sv, ok := v.(*types.AttributeValueMemberS); ok {
 			jobData[k] = sv.Value
 		} else if nv, ok := v.(*types.AttributeValueMemberN); ok {
 			jobData[k] = nv.Value
 		} else if lv, ok := v.(*types.AttributeValueMemberL); ok {
-			var list []interface{}
+			var list []any
 			for _, item := range lv.Value {
 				if itemStr, ok := item.(*types.AttributeValueMemberS); ok {
 					list = append(list, itemStr.Value)
@@ -598,7 +598,7 @@ func getJobData(ctx context.Context, jobID string) (map[string]interface{}, erro
 	return jobData, nil
 }
 
-func updateJobStatus(ctx context.Context, jobID, status string, result interface{}, errorMsg string) error {
+func updateJobStatus(ctx context.Context, jobID, status string, result any, errorMsg string) error {
 	updateExpr := "SET #status = :status, UpdatedAt = :updated"
 	exprAttrNames := map[string]string{
 		"#status": "Status",
@@ -759,7 +759,6 @@ func getUserMediaConfig(ctx context.Context, username string) (*MediaConfig, err
 			"SK": &types.AttributeValueMemberS{Value: "MEDIA#CONFIG"},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user media config: %w", err)
 	}
@@ -808,7 +807,6 @@ func getUserRemainingBudget(ctx context.Context, username string) (int64, error)
 			"SK": &types.AttributeValueMemberS{Value: "TOTAL"},
 		},
 	})
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user spending: %w", err)
 	}

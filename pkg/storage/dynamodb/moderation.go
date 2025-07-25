@@ -69,7 +69,6 @@ func (s *dynamoDBStorage) CreateModerationEvent(ctx context.Context, event *mode
 		TableName: s.getTableName(),
 		Item:      av,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to create moderation event: %w", err)
 	}
@@ -94,7 +93,6 @@ func (s *dynamoDBStorage) GetModerationEvent(ctx context.Context, eventID string
 		},
 		Limit: aws.Int32(1),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get moderation event: %w", err)
 	}
@@ -385,7 +383,6 @@ func (s *dynamoDBStorage) AddModerationReview(ctx context.Context, review *moder
 		TableName: s.getTableName(),
 		Item:      av,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to add review: %w", err)
 	}
@@ -408,7 +405,6 @@ func (s *dynamoDBStorage) GetModerationReviews(ctx context.Context, eventID stri
 			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("REVIEW#%s", eventID)},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query reviews: %w", err)
 	}
@@ -457,7 +453,6 @@ func (s *dynamoDBStorage) CreateModerationDecision(ctx context.Context, decision
 		TableName: s.getTableName(),
 		Item:      av,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to create decision: %w", err)
 	}
@@ -484,7 +479,6 @@ func (s *dynamoDBStorage) GetModerationDecision(ctx context.Context, objectID st
 		},
 		Limit: aws.Int32(1),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get moderation decision: %w", err)
 	}
@@ -547,7 +541,7 @@ func (s *dynamoDBStorage) GetModerationHistory(ctx context.Context, objectID str
 			Type:        "event",
 			ActorID:     event.ActorID,
 			Description: fmt.Sprintf("%s event: %s", event.EventType, event.Category),
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"event_id": event.ID,
 				"severity": event.Severity,
 			},
@@ -560,7 +554,7 @@ func (s *dynamoDBStorage) GetModerationHistory(ctx context.Context, objectID str
 			Type:        "decision",
 			ActorID:     "system",
 			Description: fmt.Sprintf("Decision: %s (consensus: %.2f)", decision.Action, decision.ConsensusScore),
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"decision_id": decision.ID,
 				"action":      decision.Action,
 			},
@@ -903,7 +897,6 @@ func (s *dynamoDBStorage) countReviews(ctx context.Context, eventID string) (int
 		},
 		Select: types.SelectCount,
 	})
-
 	if err != nil {
 		return 0, err
 	}

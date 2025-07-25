@@ -39,7 +39,7 @@ type SlowQuery struct {
 	QueryPattern string
 	Duration     time.Duration
 	Timestamp    time.Time
-	Parameters   map[string]interface{}
+	Parameters   map[string]any
 	ConsumedRCU  float64
 	ConsumedWCU  float64
 }
@@ -62,11 +62,11 @@ type QueryExecution struct {
 	analyzer     *QueryAnalyzer
 	queryPattern string
 	startTime    time.Time
-	parameters   map[string]interface{}
+	parameters   map[string]any
 }
 
 // StartQuery begins tracking a query execution
-func (qa *QueryAnalyzer) StartQuery(queryPattern string, parameters map[string]interface{}) *QueryExecution {
+func (qa *QueryAnalyzer) StartQuery(queryPattern string, parameters map[string]any) *QueryExecution {
 	return &QueryExecution{
 		analyzer:     qa,
 		queryPattern: queryPattern,
@@ -244,7 +244,7 @@ func (qa *QueryAnalyzer) ResetStats() {
 }
 
 // AnalyzeQueryComplexity calculates the complexity score for a query
-func AnalyzeQueryComplexity(queryType string, filters map[string]interface{}, limit int) int {
+func AnalyzeQueryComplexity(queryType string, filters map[string]any, limit int) int {
 	complexity := 1 // Base complexity
 
 	// Add complexity based on query type
@@ -278,7 +278,7 @@ type QueryPlan struct {
 }
 
 // AnalyzeQueryPlan analyzes a query and provides optimization suggestions
-func AnalyzeQueryPlan(tableName, queryType, indexName string, keyConditions map[string]interface{}) QueryPlan {
+func AnalyzeQueryPlan(tableName, queryType, indexName string, keyConditions map[string]any) QueryPlan {
 	plan := QueryPlan{
 		QueryType: queryType,
 		IndexUsed: indexName,

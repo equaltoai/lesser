@@ -50,11 +50,11 @@ const (
 
 // Evidence represents supporting evidence for a moderation event
 type Evidence struct {
-	Type        string                 `json:"type"`        // ai_detection, user_report, pattern_match, etc.
-	Score       float64                `json:"score"`       // Confidence score 0.0-1.0
-	Description string                 `json:"description"` // Human-readable description
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	Timestamp   time.Time              `json:"timestamp"`
+	Type        string         `json:"type"`        // ai_detection, user_report, pattern_match, etc.
+	Score       float64        `json:"score"`       // Confidence score 0.0-1.0
+	Description string         `json:"description"` // Human-readable description
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	Timestamp   time.Time      `json:"timestamp"`
 }
 
 // ModerationEvent represents a moderation event in the system
@@ -123,11 +123,11 @@ type ModerationHistory struct {
 
 // TimelineEntry represents an entry in the moderation timeline
 type TimelineEntry struct {
-	Timestamp   time.Time              `json:"timestamp"`
-	Type        string                 `json:"type"` // event, review, decision, appeal
-	ActorID     string                 `json:"actor_id"`
-	Description string                 `json:"description"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Timestamp   time.Time      `json:"timestamp"`
+	Type        string         `json:"type"` // event, review, decision, appeal
+	ActorID     string         `json:"actor_id"`
+	Description string         `json:"description"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 // ConsensusConfig represents the configuration for consensus calculation

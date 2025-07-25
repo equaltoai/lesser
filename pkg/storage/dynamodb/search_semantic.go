@@ -173,16 +173,16 @@ func (s *SemanticSearchStrategy) searchWithOpenSearchVectors(ctx context.Context
 	// OpenSearch query tracking removed - service disabled
 
 	// Build OpenSearch vector search query
-	searchBody := map[string]interface{}{
+	searchBody := map[string]any{
 		"size": limit,
-		"query": map[string]interface{}{
-			"script_score": map[string]interface{}{
-				"query": map[string]interface{}{
-					"match_all": map[string]interface{}{},
+		"query": map[string]any{
+			"script_score": map[string]any{
+				"query": map[string]any{
+					"match_all": map[string]any{},
 				},
-				"script": map[string]interface{}{
+				"script": map[string]any{
 					"source": "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
-					"params": map[string]interface{}{
+					"params": map[string]any{
 						"query_vector": queryEmbedding,
 					},
 				},

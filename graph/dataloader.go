@@ -137,7 +137,7 @@ func LoadActor(ctx context.Context, username string) (*activitypub.Actor, error)
 }
 
 // LoadObject loads an object using DataLoader
-func LoadObject(ctx context.Context, id string) (interface{}, error) {
+func LoadObject(ctx context.Context, id string) (any, error) {
 	loaders := GetLoaders(ctx)
 	thunk := loaders.ObjectLoader.Load(ctx, dataloader.StringKey(id))
 	result, err := thunk()

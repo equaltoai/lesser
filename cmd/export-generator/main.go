@@ -39,13 +39,13 @@ var (
 
 // ExportGeneratorEvent represents the event triggered for export generation
 type ExportGeneratorEvent struct {
-	ExportID     string                 `json:"export_id"`
-	Username     string                 `json:"username"`
-	Type         string                 `json:"type"`   // archive, followers, following, etc.
-	Format       string                 `json:"format"` // activitypub, mastodon, csv
-	Options      map[string]interface{} `json:"options"`
-	IncludeMedia bool                   `json:"include_media"`
-	DateRange    *DateRange             `json:"date_range"`
+	ExportID     string         `json:"export_id"`
+	Username     string         `json:"username"`
+	Type         string         `json:"type"`   // archive, followers, following, etc.
+	Format       string         `json:"format"` // activitypub, mastodon, csv
+	Options      map[string]any `json:"options"`
+	IncludeMedia bool           `json:"include_media"`
+	DateRange    *DateRange     `json:"date_range"`
 }
 
 // DateRange for filtering exports
@@ -196,7 +196,7 @@ func processExportJob(ctx context.Context, event ExportGeneratorEvent) error {
 	}
 
 	// Update export job as completed
-	completionData := map[string]interface{}{
+	completionData := map[string]any{
 		"download_url": presignReq.URL,
 		"expires_at":   time.Now().Add(24 * time.Hour),
 		"file_size":    len(exportData),
@@ -383,7 +383,7 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 		}
 		recordCount += count
 
-		outboxJSON, _ := json.MarshalIndent(map[string]interface{}{
+		outboxJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"id":           fmt.Sprintf("%s/users/%s/outbox", baseURL, event.Username),
 			"type":         "OrderedCollection",
@@ -400,7 +400,7 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 			return nil, 0, err
 		}
 
-		followingJSON, _ := json.MarshalIndent(map[string]interface{}{
+		followingJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"id":           fmt.Sprintf("%s/users/%s/following", baseURL, event.Username),
 			"type":         "OrderedCollection",
@@ -417,7 +417,7 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 			return nil, 0, err
 		}
 
-		followersJSON, _ := json.MarshalIndent(map[string]interface{}{
+		followersJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"id":           fmt.Sprintf("%s/users/%s/followers", baseURL, event.Username),
 			"type":         "OrderedCollection",
@@ -434,7 +434,7 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 			return nil, 0, err
 		}
 
-		likesJSON, _ := json.MarshalIndent(map[string]interface{}{
+		likesJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"id":           fmt.Sprintf("%s/users/%s/likes", baseURL, event.Username),
 			"type":         "OrderedCollection",
@@ -474,8 +474,8 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 	}
 
 	// Create Mastodon-compatible actor.json
-	mastodonActor := map[string]interface{}{
-		"@context": []interface{}{
+	mastodonActor := map[string]any{
+		"@context": []any{
 			"https://www.w3.org/ns/activitystreams",
 			"https://w3id.org/security/v1",
 		},
@@ -506,7 +506,7 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 		}
 		recordCount += count
 
-		outboxJSON, _ := json.MarshalIndent(map[string]interface{}{
+		outboxJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"id":           fmt.Sprintf("%s/users/%s/outbox", baseURL, event.Username),
 			"type":         "OrderedCollection",
@@ -523,7 +523,7 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 			return nil, 0, err
 		}
 
-		likesJSON, _ := json.MarshalIndent(map[string]interface{}{
+		likesJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"type":         "OrderedCollection",
 			"orderedItems": likes,
@@ -538,7 +538,7 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 			return nil, 0, err
 		}
 
-		bookmarksJSON, _ := json.MarshalIndent(map[string]interface{}{
+		bookmarksJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"type":         "OrderedCollection",
 			"orderedItems": bookmarks,
@@ -792,7 +792,7 @@ func getBookmarks(ctx context.Context, username string) ([]BookmarkInfo, error) 
 
 			// Handle different object types
 			switch v := obj.(type) {
-			case map[string]interface{}:
+			case map[string]any:
 				if url, ok := v["url"].(string); ok {
 					statusURL = url
 				} else if id, ok := v["id"].(string); ok {
@@ -846,9 +846,9 @@ func getBookmarks(ctx context.Context, username string) ([]BookmarkInfo, error) 
 	return allBookmarks, nil
 }
 
-func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]interface{}, int, error) {
+func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]any, int, error) {
 	// Query user's posts from DynamoDB using storage client
-	var allActivities []interface{}
+	var allActivities []any
 	cursor := ""
 
 	for {
@@ -931,9 +931,9 @@ func getFollowersActors(ctx context.Context, username string) ([]string, error) 
 	return allFollowers, nil
 }
 
-func getLikes(ctx context.Context, username string) ([]interface{}, error) {
+func getLikes(ctx context.Context, username string) ([]any, error) {
 	// Query user's likes from DynamoDB using storage client
-	var allLikes []interface{}
+	var allLikes []any
 	cursor := ""
 
 	// First get the actor ID for the username
@@ -955,7 +955,7 @@ func getLikes(ctx context.Context, username string) ([]interface{}, error) {
 
 		// Convert likes to Like activities
 		for _, like := range likes {
-			likeActivity := map[string]interface{}{
+			likeActivity := map[string]any{
 				"@context":  activitypub.Context,
 				"type":      "Like",
 				"id":        like.ID,
@@ -975,7 +975,7 @@ func getLikes(ctx context.Context, username string) ([]interface{}, error) {
 	return allLikes, nil
 }
 
-func getBookmarksForExport(ctx context.Context, username string) ([]interface{}, error) {
+func getBookmarksForExport(ctx context.Context, username string) ([]any, error) {
 	// Query bookmarks and convert to ActivityPub format
 	bookmarks, err := getBookmarks(ctx, username)
 	if err != nil {
@@ -983,9 +983,9 @@ func getBookmarksForExport(ctx context.Context, username string) ([]interface{},
 	}
 
 	// Convert to ActivityPub bookmark activities
-	var result []interface{}
+	var result []any
 	for _, bookmark := range bookmarks {
-		bookmarkActivity := map[string]interface{}{
+		bookmarkActivity := map[string]any{
 			"@context":  activitypub.Context,
 			"type":      "Add",
 			"actor":     fmt.Sprintf("%s/users/%s", baseURL, username),
@@ -999,7 +999,7 @@ func getBookmarksForExport(ctx context.Context, username string) ([]interface{},
 	return result, nil
 }
 
-func getListsForExport(ctx context.Context, username string) ([]interface{}, error) {
+func getListsForExport(ctx context.Context, username string) ([]any, error) {
 	// Query lists and convert to export format
 	lists, err := storageClient.GetListsForUser(ctx, username)
 	if err != nil {
@@ -1008,7 +1008,7 @@ func getListsForExport(ctx context.Context, username string) ([]interface{}, err
 	}
 
 	// Convert to export format
-	var result []interface{}
+	var result []any
 	for _, list := range lists {
 		// Get members for each list
 		members, err := storageClient.GetListAccounts(ctx, list.ID)
@@ -1020,7 +1020,7 @@ func getListsForExport(ctx context.Context, username string) ([]interface{}, err
 			members = []string{} // Empty array if error
 		}
 
-		listExport := map[string]interface{}{
+		listExport := map[string]any{
 			"id":             list.ID,
 			"title":          list.Title,
 			"replies_policy": list.RepliesPolicy,
@@ -1093,7 +1093,7 @@ func uploadToS3(ctx context.Context, key string, data []byte, contentType string
 	return err
 }
 
-func updateExportStatus(ctx context.Context, exportID, status string, completionData map[string]interface{}, errorMsg string) error {
+func updateExportStatus(ctx context.Context, exportID, status string, completionData map[string]any, errorMsg string) error {
 	updateExpr := "SET #status = :status, UpdatedAt = :updated"
 	exprAttrNames := map[string]string{
 		"#status": "Status",

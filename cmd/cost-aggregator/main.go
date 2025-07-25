@@ -282,7 +282,7 @@ func handlePeriodicAggregation(ctx context.Context, event events.CloudWatchEvent
 func main() {
 	// Determine which handler to use based on event source
 	// This allows the same Lambda to handle both DynamoDB streams and EventBridge
-	lambda.Start(func(ctx context.Context, event interface{}) error {
+	lambda.Start(func(ctx context.Context, event any) error {
 		switch e := event.(type) {
 		case events.DynamoDBEvent:
 			return handleDynamoDBStream(ctx, e)

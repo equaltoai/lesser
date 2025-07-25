@@ -262,7 +262,7 @@ func getBookmarks(ctx context.Context, username string) ([]BookmarkInfo, error) 
 #### 7. getOutbox()
 ```go
 // IMPLEMENTATION
-func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]interface{}, int, error) {
+func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]any, int, error) {
     // Get user's actor ID first
     actorID := fmt.Sprintf("https://%s/users/%s", baseURL, username)
     
@@ -287,7 +287,7 @@ func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]in
         }
     }
     
-    var allObjects []interface{}
+    var allObjects []any
     var lastEvaluatedKey map[string]types.AttributeValue
     
     for {
@@ -302,7 +302,7 @@ func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]in
         
         for _, item := range result.Items {
             // Convert DynamoDB item to object
-            var obj map[string]interface{}
+            var obj map[string]any
             if err := attributevalue.UnmarshalMap(item, &obj); err != nil {
                 continue
             }
@@ -373,11 +373,11 @@ func getFollowersActors(ctx context.Context, username string) ([]string, error) 
 #### 9. getLikes()
 ```go
 // IMPLEMENTATION
-func getLikes(ctx context.Context, username string) ([]interface{}, error) {
+func getLikes(ctx context.Context, username string) ([]any, error) {
     actorID := fmt.Sprintf("https://%s/users/%s", baseURL, username)
     
     // Get all likes by this actor
-    var allLikes []interface{}
+    var allLikes []any
     cursor := ""
     
     for {
@@ -388,7 +388,7 @@ func getLikes(ctx context.Context, username string) ([]interface{}, error) {
         
         // Convert likes to ActivityPub Like activities
         for _, like := range likes {
-            likeActivity := map[string]interface{}{
+            likeActivity := map[string]any{
                 "@context": "https://www.w3.org/ns/activitystreams",
                 "type":     "Like",
                 "actor":    like.Actor,
@@ -411,7 +411,7 @@ func getLikes(ctx context.Context, username string) ([]interface{}, error) {
 #### 10. getActorPreferences()
 ```go
 // IMPLEMENTATION
-func getActorPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+func getActorPreferences(ctx context.Context, username string) (map[string]any, error) {
     // Get actor preferences from storage
     actor, err := storageClient.GetActor(ctx, username)
     if err != nil {
@@ -419,7 +419,7 @@ func getActorPreferences(ctx context.Context, username string) (map[string]inter
     }
     
     // Build preferences map
-    prefs := map[string]interface{}{
+    prefs := map[string]any{
         "posting:default:visibility": "public",
         "posting:default:sensitive": false,
         "posting:default:language": "en",
@@ -472,7 +472,7 @@ func getDomainBlocks(ctx context.Context, username string) ([]string, error) {
 #### 12. exportToS3()
 ```go
 // FIX - This is trying to use a nil s3Client
-func exportToS3(ctx context.Context, exportData map[string]interface{}, username, exportID string) error {
+func exportToS3(ctx context.Context, exportData map[string]any, username, exportID string) error {
     // Ensure S3 client is initialized
     if s3Client == nil {
         cfg, err := config.LoadDefaultConfig(ctx)
@@ -493,12 +493,12 @@ func exportToS3(ctx context.Context, exportData map[string]interface{}, username
 #### getUserImportJobs()
 ```go
 // CURRENT (imports.go:342)
-func (h *Handler) getUserImportJobs(_ context.Context, _ string, _ ...string) ([]map[string]interface{}, error) {
-    return []map[string]interface{}{}, nil
+func (h *Handler) getUserImportJobs(_ context.Context, _ string, _ ...string) ([]map[string]any, error) {
+    return []map[string]any{}, nil
 }
 
 // IMPLEMENTATION
-func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserImportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
     // Query GSI1 for user's imports
     input := &dynamodb.QueryInput{
         TableName: aws.String(h.cfg.TableName),
@@ -536,12 +536,12 @@ func (h *Handler) getUserImportJobs(ctx context.Context, username string, status
     }
     
     // Convert items to map format
-    jobs := make([]map[string]interface{}, 0, len(result.Items))
+    jobs := make([]map[string]any, 0, len(result.Items))
     for _, item := range result.Items {
         // Only include import jobs (check PK prefix)
         if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
             if strings.HasPrefix(pk.Value, "IMPORT#") {
-                job := make(map[string]interface{})
+                job := make(map[string]any)
                 if err := attributevalue.UnmarshalMap(item, &job); err != nil {
                     h.logger.Warn("failed to unmarshal job", zap.Error(err))
                     continue
@@ -558,12 +558,12 @@ func (h *Handler) getUserImportJobs(ctx context.Context, username string, status
 #### getUserExportJobs()
 ```go
 // CURRENT (exports.go:342)
-func (h *Handler) getUserExportJobs(_ context.Context, _ string, _ ...string) ([]map[string]interface{}, error) {
-    return []map[string]interface{}{}, nil
+func (h *Handler) getUserExportJobs(_ context.Context, _ string, _ ...string) ([]map[string]any, error) {
+    return []map[string]any{}, nil
 }
 
 // IMPLEMENTATION
-func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]interface{}, error) {
+func (h *Handler) getUserExportJobs(ctx context.Context, username string, statuses ...string) ([]map[string]any, error) {
     // Query GSI1 for user's exports - identical pattern to imports
     input := &dynamodb.QueryInput{
         TableName: aws.String(h.cfg.TableName),
@@ -601,12 +601,12 @@ func (h *Handler) getUserExportJobs(ctx context.Context, username string, status
     }
     
     // Convert items to map format, filtering for exports only
-    jobs := make([]map[string]interface{}, 0, len(result.Items))
+    jobs := make([]map[string]any, 0, len(result.Items))
     for _, item := range result.Items {
         // Only include export jobs (check PK prefix)
         if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
             if strings.HasPrefix(pk.Value, "EXPORT#") {
-                job := make(map[string]interface{})
+                job := make(map[string]any)
                 if err := attributevalue.UnmarshalMap(item, &job); err != nil {
                     h.logger.Warn("failed to unmarshal job", zap.Error(err))
                     continue
@@ -625,7 +625,7 @@ func (h *Handler) getUserExportJobs(ctx context.Context, username string, status
 #### updateJobStatus()
 ```go
 // Helper function to update job status
-func (h *Handler) updateJobStatus(ctx context.Context, jobID, status string, metadata map[string]interface{}) error {
+func (h *Handler) updateJobStatus(ctx context.Context, jobID, status string, metadata map[string]any) error {
     update := &dynamodb.UpdateItemInput{
         TableName: aws.String(h.cfg.TableName),
         Key: map[string]types.AttributeValue{
@@ -664,7 +664,7 @@ func (h *Handler) updateJobStatus(ctx context.Context, jobID, status string, met
 #### getJobDetails()
 ```go
 // Helper to get full job details
-func (h *Handler) getJobDetails(ctx context.Context, jobID string) (map[string]interface{}, error) {
+func (h *Handler) getJobDetails(ctx context.Context, jobID string) (map[string]any, error) {
     result, err := h.store.GetClient().GetItem(ctx, &dynamodb.GetItemInput{
         TableName: aws.String(h.cfg.TableName),
         Key: map[string]types.AttributeValue{
@@ -681,7 +681,7 @@ func (h *Handler) getJobDetails(ctx context.Context, jobID string) (map[string]i
         return nil, fmt.Errorf("job not found: %s", jobID)
     }
     
-    var job map[string]interface{}
+    var job map[string]any
     if err := attributevalue.UnmarshalMap(result.Item, &job); err != nil {
         return nil, fmt.Errorf("failed to unmarshal job: %w", err)
     }
@@ -697,7 +697,7 @@ func (h *Handler) getJobDetails(ctx context.Context, jobID string) (map[string]i
 #### processVideo()
 ```go
 // CURRENT (line 277)
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{
         Sizes: make(map[string]SizeInfo),
     }
@@ -709,7 +709,7 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
 }
 
 // IMPLEMENTATION
-func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{
         Sizes: make(map[string]SizeInfo),
     }
@@ -805,7 +805,7 @@ func processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, 
 #### processAudio()
 ```go
 // CURRENT (line 324)
-func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{}
     logger.Warn("audio processing not yet implemented")
     result.Duration = 180000 // 3 minutes
@@ -813,7 +813,7 @@ func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, 
 }
 
 // IMPLEMENTATION
-func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []interface{}) (ProcessingResult, error) {
+func processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []any) (ProcessingResult, error) {
     result := ProcessingResult{}
     
     // Write to temp file
@@ -1233,7 +1233,7 @@ func (r *mutationResolver) UnfollowActor(ctx context.Context, id string) (*activ
             ID:   fmt.Sprintf("https://%s/activities/%s", r.Domain, uuid.New().String()),
         },
         Actor: fmt.Sprintf("https://%s/users/%s", r.Domain, username),
-        Object: map[string]interface{}{
+        Object: map[string]any{
             "type":   "Follow",
             "actor":  fmt.Sprintf("https://%s/users/%s", r.Domain, username),
             "object": id,
@@ -1515,7 +1515,7 @@ func (t *CachedTranslateService) setCachedTranslation(ctx context.Context, text,
     h.Write([]byte(text))
     cacheKey := fmt.Sprintf("%s:%s:%x", sourceLang, targetLang, h.Sum(nil))
     
-    item := map[string]interface{}{
+    item := map[string]any{
         "PK":             "TRANSLATION",
         "SK":             cacheKey,
         "SourceText":     text,
@@ -1568,7 +1568,7 @@ Location: `cmd/api/handlers/admin.go`
 // Implement account silencing
 func (h *Handler) silenceAccount(ctx context.Context, username string, reason string) error {
     // Update actor metadata
-    updates := map[string]interface{}{
+    updates := map[string]any{
         "Silenced":       true,
         "SilencedAt":     time.Now().Format(time.RFC3339),
         "SilencedReason": reason,
@@ -1644,7 +1644,7 @@ func (h *Handler) markMediaSensitive(ctx context.Context, username string) error
 // Implement instance-wide blocks
 func (h *Handler) blockDomain(ctx context.Context, domain string, severity string, reason string) error {
     // Create domain block record
-    item := map[string]interface{}{
+    item := map[string]any{
         "PK":         "INSTANCE#BLOCKS",
         "SK":         fmt.Sprintf("DOMAIN#%s", domain),
         "Domain":     domain,
@@ -1682,7 +1682,7 @@ Location: `pkg/notifications/service.go`
 ```go
 // Implement notification preferences
 func (s *NotificationService) UpdatePreferences(ctx context.Context, username string, prefs NotificationPreferences) error {
-    item := map[string]interface{}{
+    item := map[string]any{
         "PK":              fmt.Sprintf("USER#%s", username),
         "SK":              "NOTIFICATION#PREFERENCES",
         "FollowEnabled":   prefs.FollowEnabled,

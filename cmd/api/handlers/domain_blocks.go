@@ -121,7 +121,7 @@ func (h *Handler) HandleCreateDomainBlock(ctx context.Context, request events.AP
 	}
 
 	// Return empty response (Mastodon returns empty object)
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }
 
 // HandleDeleteDomainBlock handles DELETE /api/v1/domain_blocks
@@ -163,5 +163,5 @@ func (h *Handler) HandleDeleteDomainBlock(ctx context.Context, request events.AP
 	}
 
 	// Return empty response (Mastodon returns empty object)
-	return common.OK(map[string]interface{}{}), nil
+	return common.OK(map[string]any{}), nil
 }

@@ -168,7 +168,7 @@ err = userRepo.Delete(ctx, "123", &User{})
 
 // List users
 var users []*User
-err = userRepo.List(ctx, map[string]interface{}{
+err = userRepo.List(ctx, map[string]any{
     "Active": true,
 }, &users)
 ```

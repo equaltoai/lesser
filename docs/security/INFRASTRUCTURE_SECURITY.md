@@ -204,7 +204,7 @@ type EncryptedField struct {
 }
 
 // Encrypt sensitive fields before storage
-func (f *FieldEncryptor) EncryptSensitiveFields(item interface{}) error {
+func (f *FieldEncryptor) EncryptSensitiveFields(item any) error {
     v := reflect.ValueOf(item)
     t := v.Type()
     
@@ -247,7 +247,7 @@ type AuditEvent struct {
     Action      string
     Resource    string
     Result      string
-    Details     map[string]interface{}
+    Details     map[string]any
     Signature   string // Sign audit logs
 }
 
@@ -470,7 +470,7 @@ type ContentHash struct {
 }
 
 // Hash content for integrity verification
-func (i *IntegrityService) HashContent(content interface{}) (*ContentHash, error) {
+func (i *IntegrityService) HashContent(content any) (*ContentHash, error) {
     // Canonicalize content
     canonical, err := i.canonicalize(content)
     if err != nil {

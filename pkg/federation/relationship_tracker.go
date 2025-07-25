@@ -148,7 +148,7 @@ func (rt *RelationshipTracker) GenerateRecommendations(ctx context.Context, doma
 				TargetDomain: conn.TargetDomain,
 				Description:  fmt.Sprintf("High error rate or slow response times to %s", conn.TargetDomain),
 				Action:       "Consider reviewing connection health or implementing retry logic",
-				Metrics: map[string]interface{}{
+				Metrics: map[string]any{
 					"response_time_ms": conn.ResponseTimeMs,
 					"success_rate":     rt.calculateSuccessRate(conn),
 				},
@@ -312,7 +312,7 @@ func (rt *RelationshipTracker) generateCostRecommendations(connections []*storag
 			Priority:    "medium",
 			Description: fmt.Sprintf("Many low-volume connections (%d of %d)", lowVolumeConnections, len(connections)),
 			Action:      "Consider consolidating or reducing monitoring frequency for low-activity instances",
-			Metrics: map[string]interface{}{
+			Metrics: map[string]any{
 				"low_volume_connections": lowVolumeConnections,
 				"total_connections":      len(connections),
 				"total_volume":           totalVolume,
@@ -365,10 +365,10 @@ type RelationshipAnalysis struct {
 }
 
 type FederationRecommendation struct {
-	Type         string                 `json:"type"`     // performance/opportunity/cost/security
-	Priority     string                 `json:"priority"` // high/medium/low
-	TargetDomain string                 `json:"target_domain,omitempty"`
-	Description  string                 `json:"description"`
-	Action       string                 `json:"action"`
-	Metrics      map[string]interface{} `json:"metrics,omitempty"`
+	Type         string         `json:"type"`     // performance/opportunity/cost/security
+	Priority     string         `json:"priority"` // high/medium/low
+	TargetDomain string         `json:"target_domain,omitempty"`
+	Description  string         `json:"description"`
+	Action       string         `json:"action"`
+	Metrics      map[string]any `json:"metrics,omitempty"`
 }

@@ -53,21 +53,27 @@ func (m *MockStorage) CreateActivity(ctx context.Context, activity *activitypub.
 func (m *MockStorage) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
 	return nil
 }
+
 func (m *MockStorage) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
 	return "", nil
 }
+
 func (m *MockStorage) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
 	return nil
 }
+
 func (m *MockStorage) DeleteActor(ctx context.Context, username string) error {
 	return nil
 }
+
 func (m *MockStorage) GetActivity(ctx context.Context, id string) (*activitypub.Activity, error) {
 	return nil, nil
 }
+
 func (m *MockStorage) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
 	return nil, "", nil
 }
+
 func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
 	args := m.Called(ctx, username, limit, cursor)
 	if args.Get(0) == nil {
@@ -75,43 +81,55 @@ func (m *MockStorage) GetInboxActivities(ctx context.Context, username string, l
 	}
 	return args.Get(0).([]*activitypub.Activity), args.String(1), args.Error(2)
 }
-func (m *MockStorage) CreateObject(ctx context.Context, object interface{}) error {
+
+func (m *MockStorage) CreateObject(ctx context.Context, object any) error {
 	return nil
 }
-func (m *MockStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
+
+func (m *MockStorage) GetObject(ctx context.Context, id string) (any, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0), args.Error(1)
 }
-func (m *MockStorage) UpdateObject(ctx context.Context, object interface{}) error {
+
+func (m *MockStorage) UpdateObject(ctx context.Context, object any) error {
 	return nil
 }
+
 func (m *MockStorage) DeleteObject(ctx context.Context, id string) error {
 	return nil
 }
+
 func (m *MockStorage) CreateFollow(ctx context.Context, followerUsername, followedUsername, followActivityID string) error {
 	return nil
 }
+
 func (m *MockStorage) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
 	return nil
 }
+
 func (m *MockStorage) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
 	return nil
 }
+
 func (m *MockStorage) RemoveFollow(ctx context.Context, followerUsername, followedUsername string) error {
 	return nil
 }
+
 func (m *MockStorage) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
 	return nil, "", nil
 }
+
 func (m *MockStorage) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
 	return nil, "", nil
 }
+
 func (m *MockStorage) IsFollowing(ctx context.Context, followerUsername, followedUsername string) (bool, error) {
 	return false, nil
 }
+
 func (m *MockStorage) GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error) {
 	return nil, nil
 }
@@ -120,22 +138,28 @@ func (m *MockStorage) GetCollection(ctx context.Context, username, collectionTyp
 func (m *MockStorage) CreateAuthorizationCode(ctx context.Context, code *storage.AuthorizationCode) error {
 	return nil
 }
+
 func (m *MockStorage) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
 	return nil, nil
 }
+
 func (m *MockStorage) DeleteAuthorizationCode(ctx context.Context, code string) error {
 	return nil
 }
+
 func (m *MockStorage) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
 	return nil
 }
+
 func (m *MockStorage) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
 	return nil, nil
 }
+
 func (m *MockStorage) DeleteRefreshToken(ctx context.Context, token string) error {
 	return nil
 }
-func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
+
+func (m *MockStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error) {
 	return nil, "", nil
 }
 
@@ -734,7 +758,7 @@ func TestGetInbox(t *testing.T) {
 				m.On("GetInboxActivities", mock.Anything, "alice", 20, "").Return(activities, "", nil)
 				// Mock object fetching for Create activity
 				m.On("GetObject", mock.Anything, "https://remote.example/objects/note1").Return(
-					map[string]interface{}{
+					map[string]any{
 						"id":      "https://remote.example/objects/note1",
 						"type":    "Note",
 						"content": "Hello Alice!",
@@ -750,14 +774,14 @@ func TestGetInbox(t *testing.T) {
 				assert.Equal(t, alice.Inbox, page.PartOf)
 
 				// Check activities
-				items, ok := page.OrderedItems.([]interface{})
+				items, ok := page.OrderedItems.([]any)
 				assert.True(t, ok)
 				assert.Len(t, items, 2)
 
 				// Check that Create activity has enriched object
-				createActivity := items[1].(map[string]interface{})
+				createActivity := items[1].(map[string]any)
 				assert.Equal(t, "Create", createActivity["type"])
-				obj, ok := createActivity["object"].(map[string]interface{})
+				obj, ok := createActivity["object"].(map[string]any)
 				assert.True(t, ok)
 				assert.Equal(t, "Note", obj["type"])
 				assert.Equal(t, "Hello Alice!", obj["content"])
@@ -884,11 +908,11 @@ func TestGetInbox(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Activity should still be returned, just without enriched object
-				items, ok := page.OrderedItems.([]interface{})
+				items, ok := page.OrderedItems.([]any)
 				assert.True(t, ok)
 				assert.Len(t, items, 1)
 
-				createActivity := items[0].(map[string]interface{})
+				createActivity := items[0].(map[string]any)
 				assert.Equal(t, "Create", createActivity["type"])
 				// Object should still be the ID string
 				assert.Equal(t, "https://remote.example/objects/note1", createActivity["object"])

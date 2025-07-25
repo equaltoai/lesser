@@ -89,7 +89,7 @@ func GetLambdaClient(ctx context.Context) (*dynamorm.LambdaDB, error) {
 
 // InitializeModels pre-registers models with the DynamORM client to reduce cold start time
 // This should be called in the init() function of Lambda handlers
-func InitializeModels(models ...interface{}) error {
+func InitializeModels(models ...any) error {
 	db, err := GetLambdaClient(context.Background())
 	if err != nil {
 		return err

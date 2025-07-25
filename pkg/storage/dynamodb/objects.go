@@ -34,7 +34,7 @@ type Object struct {
 	Sensitive      bool               `dynamodbav:"sensitive,omitempty" json:"sensitive,omitempty"`
 	Attachment     []ObjectAttachment `dynamodbav:"attachment,omitempty" json:"attachment,omitempty"`
 	Tag            []ObjectTag        `dynamodbav:"tag,omitempty" json:"tag,omitempty"`
-	Context        interface{}        `dynamodbav:"@context,omitempty" json:"@context,omitempty"`
+	Context        any                `dynamodbav:"@context,omitempty" json:"@context,omitempty"`
 	ConversationID string             `dynamodbav:"conversationId,omitempty" json:"conversationId,omitempty"`
 	Visibility     string             `dynamodbav:"visibility,omitempty" json:"visibility,omitempty"`
 }
@@ -70,7 +70,7 @@ type ObjectRecord struct {
 }
 
 // CreateObject creates a new object in DynamoDB
-func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) error {
+func (s *dynamoDBStorage) CreateObject(ctx context.Context, object any) error {
 	log := common.WithContext(ctx)
 
 	// Convert the object to our internal Object type
@@ -243,7 +243,7 @@ func (s *dynamoDBStorage) CreateObject(ctx context.Context, object interface{}) 
 }
 
 // GetObject retrieves an object by ID from DynamoDB
-func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}, error) {
+func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (any, error) {
 	log := common.WithContext(ctx)
 
 	// If the ID doesn't start with http, construct the full URL
@@ -306,7 +306,7 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 			// Create a temporary map with just the Object field
 			tempItem := map[string]types.AttributeValue{"Object": objItem}
 			var tempRecord struct {
-				Object interface{} `dynamodbav:"Object"`
+				Object any `dynamodbav:"Object"`
 			}
 			if err := s.UnmarshalItem(tempItem, &tempRecord); err == nil && tempRecord.Object != nil {
 				return tempRecord.Object, nil
@@ -315,7 +315,7 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 		return nil, fmt.Errorf("object data is missing or invalid")
 	}
 
-	// Convert the Object to a map[string]interface{} for compatibility with the converter
+	// Convert the Object to a map[string]any for compatibility with the converter
 	if record.Object != nil {
 		objMap := s.convertObjectToMap(record.Object)
 		return objMap, nil
@@ -325,7 +325,7 @@ func (s *dynamoDBStorage) GetObject(ctx context.Context, id string) (interface{}
 }
 
 // UpdateObject updates an existing object in DynamoDB
-func (s *dynamoDBStorage) UpdateObject(ctx context.Context, object interface{}) error {
+func (s *dynamoDBStorage) UpdateObject(ctx context.Context, object any) error {
 	log := common.WithContext(ctx)
 
 	// Convert the object to our internal Object type
@@ -446,7 +446,7 @@ func (s *dynamoDBStorage) TombstoneObject(ctx context.Context, objectID string, 
 	switch v := obj.(type) {
 	case *Object:
 		formerType = v.Type
-	case map[string]interface{}:
+	case map[string]any:
 		if t, ok := v["type"].(string); ok {
 			formerType = t
 		}
@@ -462,7 +462,7 @@ func (s *dynamoDBStorage) TombstoneObject(ctx context.Context, objectID string, 
 	}
 
 	// Create the tombstone record
-	tombstoneRecord := map[string]interface{}{
+	tombstoneRecord := map[string]any{
 		"PK":        fmt.Sprintf("OBJECT#%s", objectID),
 		"SK":        "TOMBSTONE",
 		"Tombstone": tombstone,
@@ -659,7 +659,7 @@ func (s *dynamoDBStorage) CascadeDeleteAnnounces(ctx context.Context, objectID s
 }
 
 // GetObjectsByActor retrieves objects created by a specific actor with pagination
-func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]interface{}, string, error) {
+func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error) {
 	log := common.WithContext(ctx)
 
 	// Extract username from actor ID
@@ -704,7 +704,7 @@ func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string,
 	}
 
 	// Unmarshal results
-	objects := make([]interface{}, 0, len(result.Items))
+	objects := make([]any, 0, len(result.Items))
 	for i, item := range result.Items {
 		// Skip the extra item used for pagination
 		if i >= limit {
@@ -718,7 +718,7 @@ func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string,
 			continue
 		}
 
-		// Convert the Object to a map[string]interface{} for compatibility with the converter
+		// Convert the Object to a map[string]any for compatibility with the converter
 		if record.Object != nil {
 			// Log the object data for debugging
 			log.Debug("processing object record",
@@ -755,7 +755,7 @@ func (s *dynamoDBStorage) GetObjectsByActor(ctx context.Context, actorID string,
 		// There are more items, use the timestamp of the last item we're returning
 		if len(objects) > 0 {
 			// Get the published field from the map
-			if objMap, ok := objects[len(objects)-1].(map[string]interface{}); ok {
+			if objMap, ok := objects[len(objects)-1].(map[string]any); ok {
 				if published, ok := objMap["published"].(string); ok {
 					nextCursor = published
 				}
@@ -771,7 +771,7 @@ func (s *dynamoDBStorage) CreateUpdateHistory(ctx context.Context, history *stor
 	log := common.WithContext(ctx)
 
 	// Create the DynamoDB record
-	record := map[string]interface{}{
+	record := map[string]any{
 		"PK":        fmt.Sprintf("OBJECT#%s#HISTORY", history.ObjectID),
 		"SK":        fmt.Sprintf("VERSION#%05d", history.Version), // Pad for proper sorting
 		"History":   history,
@@ -841,7 +841,7 @@ func (s *dynamoDBStorage) GetUpdateHistory(ctx context.Context, objectID string,
 }
 
 // convertToObject converts various object representations to our internal Object type
-func convertToObject(obj interface{}) (*Object, error) {
+func convertToObject(obj any) (*Object, error) {
 	// If it's already an Object, return it
 	if o, ok := obj.(*Object); ok {
 		return o, nil
@@ -962,7 +962,7 @@ func convertToObject(obj interface{}) (*Object, error) {
 	}
 
 	// If it's a map, try to convert it
-	if m, ok := obj.(map[string]interface{}); ok {
+	if m, ok := obj.(map[string]any); ok {
 		jsonBytes, err := json.Marshal(m)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal map to JSON: %w", err)
@@ -980,8 +980,8 @@ func convertToObject(obj interface{}) (*Object, error) {
 }
 
 // convertObjectToMap converts an Object to a map for compatibility with the converter
-func (s *dynamoDBStorage) convertObjectToMap(obj *Object) map[string]interface{} {
-	objMap := map[string]interface{}{
+func (s *dynamoDBStorage) convertObjectToMap(obj *Object) map[string]any {
+	objMap := map[string]any{
 		"id":           obj.ID,
 		"type":         obj.Type,
 		"attributedTo": obj.AttributedTo,
@@ -1021,9 +1021,9 @@ func (s *dynamoDBStorage) convertObjectToMap(obj *Object) map[string]interface{}
 	}
 
 	if len(obj.Attachment) > 0 {
-		attachments := make([]interface{}, len(obj.Attachment))
+		attachments := make([]any, len(obj.Attachment))
 		for i, att := range obj.Attachment {
-			attachments[i] = map[string]interface{}{
+			attachments[i] = map[string]any{
 				"type":      att.Type,
 				"url":       att.URL,
 				"mediaType": att.MediaType,
@@ -1036,9 +1036,9 @@ func (s *dynamoDBStorage) convertObjectToMap(obj *Object) map[string]interface{}
 	}
 
 	if len(obj.Tag) > 0 {
-		tags := make([]interface{}, len(obj.Tag))
+		tags := make([]any, len(obj.Tag))
 		for i, tag := range obj.Tag {
-			tags[i] = map[string]interface{}{
+			tags[i] = map[string]any{
 				"type": tag.Type,
 				"href": tag.Href,
 				"name": tag.Name,

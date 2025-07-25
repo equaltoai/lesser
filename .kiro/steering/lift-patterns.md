@@ -532,7 +532,7 @@ type Event struct {
 
 4. **Use batch operations** for efficiency:
    ```go
-   items := []interface{}{user1, user2, user3}
+   items := []any{user1, user2, user3}
    err := dynamorm.BatchPut(ctx, db, tableName, items).Execute()
    ```
 

@@ -267,7 +267,7 @@ func (h *Handler) HandleGetVouches(ctx context.Context, request events.APIGatewa
 	}
 
 	// Convert to API response
-	apiVouches := make([]map[string]interface{}, len(vouches))
+	apiVouches := make([]map[string]any, len(vouches))
 	for i, v := range vouches {
 		apiVouches[i] = convertVouchToAPI(&v)
 	}
@@ -377,8 +377,8 @@ func (h *Handler) getReputationService() (*reputation.Service, error) {
 	return reputation.NewService(cfg)
 }
 
-func convertReputationToAPI(rep *reputation.Reputation) map[string]interface{} {
-	return map[string]interface{}{
+func convertReputationToAPI(rep *reputation.Reputation) map[string]any {
+	return map[string]any{
 		"id":               rep.ActorID,
 		"instance":         rep.InstanceURL,
 		"total_score":      rep.TotalScore,
@@ -388,7 +388,7 @@ func convertReputationToAPI(rep *reputation.Reputation) map[string]interface{} {
 		"community_score":  rep.CommunityScore,
 		"calculated_at":    rep.CalculatedAt,
 		"version":          rep.Version,
-		"evidence": map[string]interface{}{
+		"evidence": map[string]any{
 			"total_posts":     rep.TotalPosts,
 			"total_followers": rep.TotalFollowers,
 			"account_age":     rep.AccountAge,
@@ -397,8 +397,8 @@ func convertReputationToAPI(rep *reputation.Reputation) map[string]interface{} {
 	}
 }
 
-func convertVouchToAPI(vouch *reputation.Vouch) map[string]interface{} {
-	result := map[string]interface{}{
+func convertVouchToAPI(vouch *reputation.Vouch) map[string]any {
+	result := map[string]any{
 		"id":                 vouch.ID,
 		"from":               vouch.From,
 		"to":                 vouch.To,

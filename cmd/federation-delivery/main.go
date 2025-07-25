@@ -255,7 +255,6 @@ func requeueDelivery(ctx context.Context, msg *FederationDeliveryMessage, delayM
 			},
 		},
 	})
-
 	if err != nil {
 		logger.Error("failed to send message to SQS",
 			zap.String("delivery_id", msg.DeliveryID),
@@ -283,7 +282,7 @@ func storeDeliveryStatus(ctx context.Context, status *DeliveryStatus) error {
 	}
 
 	// Create delivery status record using the same DynamoDB table structure
-	deliveryRecord := map[string]interface{}{
+	deliveryRecord := map[string]any{
 		"PK":            fmt.Sprintf("DELIVERY#%s", status.DeliveryID),
 		"SK":            "STATUS",
 		"Type":          "DELIVERY_STATUS",
@@ -315,7 +314,7 @@ func storeDeliveryStatus(ctx context.Context, status *DeliveryStatus) error {
 }
 
 // storeDeliveryRecord stores a delivery record in DynamoDB
-func storeDeliveryRecord(ctx context.Context, record map[string]interface{}) error {
+func storeDeliveryRecord(ctx context.Context, record map[string]any) error {
 	// Use the CreateObject method to store the delivery status record
 	// The storage layer will handle the DynamoDB operations internally
 	return store.CreateObject(ctx, record)

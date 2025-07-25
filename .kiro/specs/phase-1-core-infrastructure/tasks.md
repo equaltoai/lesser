@@ -41,14 +41,14 @@
   - Write unit tests for all context utility functions
   - _Requirements: 1.4, 1.5_
 
-- [ ] 2. Enhance DynamORM infrastructure with cost tracking and advanced operations
+- [x] 2. Enhance DynamORM infrastructure with cost tracking and advanced operations
   - Implement cost tracking wrapper for all DynamoDB operations
   - Create transaction manager with retry logic and conflict resolution
   - Build batch operation utilities for efficient bulk processing
   - Add migration utilities with rollback support
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7_
 
-- [ ] 2.1 Implement DynamoDB cost tracking system
+- [x] 2.1 Implement DynamoDB cost tracking system
   - Enhance existing pkg/cost/tracker.go to work with DynamORM
   - Create DynamORMCostTracker that embeds existing Tracker
   - Implement TrackOperation method that wraps DynamORM calls
@@ -57,7 +57,7 @@
   - Write unit tests for cost calculation accuracy
   - _Requirements: 2.1_
 
-- [ ] 2.2 Create transaction manager with retry logic
+- [x] 2.2 Create transaction manager with retry logic
   - Implement TransactionManager with support for put, update, delete, and condition check operations
   - Add TransactionBuilder pattern for fluent transaction construction
   - Implement retry logic with exponential backoff for transaction conflicts
@@ -65,7 +65,7 @@
   - Write unit tests for transaction success and failure scenarios
   - _Requirements: 2.2, 2.6_
 
-- [ ] 2.3 Build batch operation utilities
+- [x] 2.3 Build batch operation utilities
   - Create BatchWriter with configurable batch sizes respecting DynamoDB limits
   - Implement parallel batch processing with worker pools
   - Add progress tracking and error handling for partial batch failures
@@ -73,7 +73,7 @@
   - Write unit tests for batch operations with various data sizes
   - _Requirements: 2.3_
 
-- [ ] 2.4 Implement database migration utilities
+- [x] 2.4 Implement database migration utilities
   - Create Migration interface with Up/Down methods for schema changes
   - Implement Migrator with migration history tracking and validation
   - Add GSI migration helpers for adding and updating Global Secondary Indexes
@@ -81,7 +81,7 @@
   - Write integration tests for migration execution and rollback
   - _Requirements: 2.4_
 
-- [ ] 2.5 Optimize DynamORM for Lambda performance
+- [x] 2.5 Optimize DynamORM for Lambda performance
   - Use existing pkg/storage/dynamorm/lambda_init.go patterns
   - Enhance existing dynamorm.LambdaInit function with additional optimizations
   - Add optional cost tracking wrapper integration

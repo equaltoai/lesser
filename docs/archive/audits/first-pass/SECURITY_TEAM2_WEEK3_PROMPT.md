@@ -70,9 +70,9 @@ func NewSafeJSONDecoder(r io.Reader) *SafeJSONDecoder {
 }
 
 // Decode safely decodes JSON with depth and size limits
-func (d *SafeJSONDecoder) Decode(v interface{}) error {
-    // For complex validation, we need to decode to interface{} first
-    var raw interface{}
+func (d *SafeJSONDecoder) Decode(v any) error {
+    // For complex validation, we need to decode to any first
+    var raw any
     if err := d.decoder.Decode(&raw); err != nil {
         return fmt.Errorf("JSON decode error: %w", err)
     }
@@ -93,13 +93,13 @@ func (d *SafeJSONDecoder) Decode(v interface{}) error {
 }
 
 // validateJSON recursively validates JSON structure
-func (d *SafeJSONDecoder) validateJSON(v interface{}, depth int) error {
+func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
     if depth > MaxJSONDepth {
         return fmt.Errorf("JSON depth exceeds maximum of %d", MaxJSONDepth)
     }
     
     switch val := v.(type) {
-    case map[string]interface{}:
+    case map[string]any:
         if len(val) > MaxJSONKeys {
             return fmt.Errorf("JSON object has %d keys, maximum is %d", len(val), MaxJSONKeys)
         }
@@ -113,7 +113,7 @@ func (d *SafeJSONDecoder) validateJSON(v interface{}, depth int) error {
             }
         }
         
-    case []interface{}:
+    case []any:
         if len(val) > MaxJSONArrayLength {
             return fmt.Errorf("JSON array has %d elements, maximum is %d", len(val), MaxJSONArrayLength)
         }
@@ -140,7 +140,7 @@ func (d *SafeJSONDecoder) validateJSON(v interface{}, depth int) error {
 }
 
 // SafeUnmarshalJSON is a convenience function for safe JSON unmarshaling
-func SafeUnmarshalJSON(data []byte, v interface{}) error {
+func SafeUnmarshalJSON(data []byte, v any) error {
     if len(data) > MaxJSONSize {
         return fmt.Errorf("JSON size %d exceeds maximum %d", len(data), MaxJSONSize)
     }
@@ -531,7 +531,7 @@ func TestJSONBombPrevention(t *testing.T) {
     
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            var result interface{}
+            var result any
             err := SafeUnmarshalJSON([]byte(tt.json), &result)
             
             if tt.shouldFail {

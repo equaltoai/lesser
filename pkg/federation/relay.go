@@ -145,7 +145,7 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 			Published: &now,
 		},
 		Actor: actor.ID,
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"type":   activitypub.FollowType,
 			"actor":  actor.ID,
 			"object": relayURL,
@@ -326,7 +326,7 @@ func (r *RelayService) handleRelayAnnounce(ctx context.Context, activity *activi
 	switch obj := activity.Object.(type) {
 	case *activitypub.Activity:
 		announcedActivity = obj
-	case map[string]interface{}:
+	case map[string]any:
 		// Convert map to activity
 		data, err := json.Marshal(obj)
 		if err != nil {

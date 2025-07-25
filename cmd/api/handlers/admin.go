@@ -390,7 +390,7 @@ func (h *Handler) HandleAdminAccountAction(ctx context.Context, request events.A
 		zap.String("reason", req.Text))
 
 	// Handle the action
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 
 	switch req.Type {
 	case "suspend":
@@ -461,7 +461,7 @@ func (h *Handler) HandleAdminApproveAccount(ctx context.Context, request events.
 		zap.String("target", username))
 
 	// Update user
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"approved":   true,
 		"updated_at": time.Now(),
 	}
@@ -526,7 +526,7 @@ func (h *Handler) HandleAdminEnableAccount(ctx context.Context, request events.A
 		zap.String("target", username))
 
 	// Update user
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"approved":   true,
 		"suspended":  false,
 		"updated_at": time.Now(),
@@ -557,7 +557,7 @@ func (h *Handler) HandleAdminUnsilenceAccount(ctx context.Context, request event
 		zap.String("target", username))
 
 	// Update user silencing status
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"silenced":   false,
 		"updated_at": time.Now(),
 	}
@@ -587,7 +587,7 @@ func (h *Handler) HandleAdminUnsuspendAccount(ctx context.Context, request event
 		zap.String("target", username))
 
 	// Update user
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"suspended":  false,
 		"updated_at": time.Now(),
 	}
@@ -1010,7 +1010,7 @@ func (h *Handler) HandleAdminModerationOverview(ctx context.Context, request eve
 		}
 	}
 
-	overview := map[string]interface{}{
+	overview := map[string]any{
 		"pending_reviews":    queueCount,
 		"open_reports":       openReportCount,
 		"active_moderators":  h.getActiveModeratorsCount(ctx),
@@ -1072,9 +1072,9 @@ func (h *Handler) HandleAdminGetModerationEvents(ctx context.Context, request ev
 	}
 
 	// Convert to response format
-	response := make([]map[string]interface{}, 0, len(events))
+	response := make([]map[string]any, 0, len(events))
 	for _, event := range events {
-		response = append(response, map[string]interface{}{
+		response = append(response, map[string]any{
 			"id":               event.ID,
 			"event_type":       event.EventType,
 			"actor_id":         event.ActorID,
@@ -1169,7 +1169,7 @@ func (h *Handler) HandleAdminOverrideModerationEvent(ctx context.Context, reques
 		zap.String("reason", req.Reason))
 
 	// Return success
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"event_id": eventID,
 		"decision": req.Decision,
 		"action":   string(action),
@@ -1204,26 +1204,26 @@ func (h *Handler) HandleAdminGetTrustGraph(ctx context.Context, request events.A
 	}
 
 	// Build graph structure
-	nodes := make(map[string]interface{})
-	edges := make([]map[string]interface{}, 0)
+	nodes := make(map[string]any)
+	edges := make([]map[string]any, 0)
 
 	for _, rel := range trustRelationships {
 		// Add nodes
 		if _, exists := nodes[rel.TrusterID]; !exists {
-			nodes[rel.TrusterID] = map[string]interface{}{
+			nodes[rel.TrusterID] = map[string]any{
 				"id":   rel.TrusterID,
 				"type": "actor",
 			}
 		}
 		if _, exists := nodes[rel.TrusteeID]; !exists {
-			nodes[rel.TrusteeID] = map[string]interface{}{
+			nodes[rel.TrusteeID] = map[string]any{
 				"id":   rel.TrusteeID,
 				"type": "actor",
 			}
 		}
 
 		// Add edge
-		edges = append(edges, map[string]interface{}{
+		edges = append(edges, map[string]any{
 			"from":       rel.TrusterID,
 			"to":         rel.TrusteeID,
 			"trust":      rel.Score,
@@ -1233,16 +1233,16 @@ func (h *Handler) HandleAdminGetTrustGraph(ctx context.Context, request events.A
 	}
 
 	// Convert nodes map to array
-	nodeArray := make([]interface{}, 0, len(nodes))
+	nodeArray := make([]any, 0, len(nodes))
 	for _, node := range nodes {
 		nodeArray = append(nodeArray, node)
 	}
 
 	// Return graph data
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"nodes": nodeArray,
 		"edges": edges,
-		"stats": map[string]interface{}{
+		"stats": map[string]any{
 			"total_nodes": len(nodes),
 			"total_edges": len(edges),
 		},
@@ -1303,7 +1303,7 @@ func (h *Handler) HandleAdminUpdateTrust(ctx context.Context, request events.API
 		zap.String("reason", req.Reason))
 
 	// Return updated relationship
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"from_actor_id": fromActorID,
 		"to_actor_id":   toActorID,
 		"trust":         req.Trust,
@@ -1340,7 +1340,7 @@ func (h *Handler) HandleAdminGetReviewers(ctx context.Context, request events.AP
 	// Combine both lists
 	users := append(moderatorUsers, adminUsers...)
 
-	reviewers := make([]map[string]interface{}, 0)
+	reviewers := make([]map[string]any, 0)
 	for _, user := range users {
 		if user.Role == "moderator" || user.Role == "admin" {
 			// Get review stats for this user
@@ -1352,7 +1352,7 @@ func (h *Handler) HandleAdminGetReviewers(ctx context.Context, request events.AP
 				stats = &storage.ReviewerStats{} // Use empty stats
 			}
 
-			reviewers = append(reviewers, map[string]interface{}{
+			reviewers = append(reviewers, map[string]any{
 				"id":               fmt.Sprintf("user-%s", user.Username),
 				"username":         user.Username,
 				"role":             user.Role,
@@ -1364,7 +1364,7 @@ func (h *Handler) HandleAdminGetReviewers(ctx context.Context, request events.AP
 		}
 	}
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"reviewers": reviewers,
 		"total":     len(reviewers),
 	}), nil
@@ -1382,7 +1382,7 @@ func (h *Handler) HandleAdminPromoteModerator(ctx context.Context, request event
 	username := strings.TrimPrefix(userID, "user-")
 
 	// Update user role to moderator
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"role":       "moderator",
 		"updated_at": time.Now(),
 	}
@@ -1397,7 +1397,7 @@ func (h *Handler) HandleAdminPromoteModerator(ctx context.Context, request event
 		zap.String("admin", adminClaims.Username),
 		zap.String("target", username))
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"user_id":     userID,
 		"username":    username,
 		"new_role":    "moderator",
@@ -1431,7 +1431,7 @@ func (h *Handler) HandleAdminDemoteModerator(ctx context.Context, request events
 	}
 
 	// Update user role to regular user
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"role":       "user",
 		"updated_at": time.Now(),
 	}
@@ -1446,7 +1446,7 @@ func (h *Handler) HandleAdminDemoteModerator(ctx context.Context, request events
 		zap.String("admin", adminClaims.Username),
 		zap.String("target", username))
 
-	return common.OK(map[string]interface{}{
+	return common.OK(map[string]any{
 		"user_id":    userID,
 		"username":   username,
 		"new_role":   "user",
@@ -1572,20 +1572,19 @@ func (h *Handler) getActiveModeratorsCount(ctx context.Context) int {
 }
 
 // getRecentConsensusDecisions returns recent consensus-based moderation decisions
-func (h *Handler) getRecentConsensusDecisions(ctx context.Context) []interface{} {
+func (h *Handler) getRecentConsensusDecisions(ctx context.Context) []any {
 	// Get recent moderation events that were resolved through consensus
 	events, _, err := h.store.GetModerationEvents(ctx, &storage.ModerationEventFilter{
 		MinSeverity: func() *storage.Severity { s := storage.SeverityMedium; return &s }(),
 	}, 10, "")
-
 	if err != nil {
 		h.logger.Warn("failed to get recent consensus decisions", zap.Error(err))
-		return []interface{}{}
+		return []any{}
 	}
 
-	decisions := make([]interface{}, 0, len(events))
+	decisions := make([]any, 0, len(events))
 	for _, event := range events {
-		decisions = append(decisions, map[string]interface{}{
+		decisions = append(decisions, map[string]any{
 			"id":         event.ID,
 			"event_type": event.EventType,
 			"actor_id":   event.ActorID,
@@ -1599,12 +1598,12 @@ func (h *Handler) getRecentConsensusDecisions(ctx context.Context) []interface{}
 }
 
 // getTrustGraphHealth returns trust graph health metrics
-func (h *Handler) getTrustGraphHealth(ctx context.Context) map[string]interface{} {
+func (h *Handler) getTrustGraphHealth(ctx context.Context) map[string]any {
 	// Get all trust relationships
 	relationships, err := h.store.GetAllTrustRelationships(ctx, 10000)
 	if err != nil {
 		h.logger.Warn("failed to get trust relationships", zap.Error(err))
-		return map[string]interface{}{
+		return map[string]any{
 			"total_relationships": 0,
 			"average_trust_score": 0.0,
 			"isolated_users":      0,
@@ -1638,7 +1637,7 @@ func (h *Handler) getTrustGraphHealth(ctx context.Context) map[string]interface{
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total_relationships": totalRelationships,
 		"average_trust_score": averageTrust,
 		"isolated_users":      isolatedUsers,
@@ -1656,8 +1655,8 @@ func (h *Handler) loadReportedStatuses(ctx context.Context, reportID string) []m
 	// Convert storage statuses to API models
 	result := make([]models.Status, 0, len(statuses))
 	for _, statusInterface := range statuses {
-		// Handle interface{} type - in practice these would be map[string]interface{} or struct types
-		statusMap, ok := statusInterface.(map[string]interface{})
+		// Handle any type - in practice these would be map[string]any or struct types
+		statusMap, ok := statusInterface.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -1750,8 +1749,8 @@ func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username stri
 
 	// Mark each media item as sensitive
 	for _, mediaInterface := range media {
-		// Handle interface{} type - in practice these would be map[string]interface{} or struct types
-		mediaMap, ok := mediaInterface.(map[string]interface{})
+		// Handle any type - in practice these would be map[string]any or struct types
+		mediaMap, ok := mediaInterface.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -1761,7 +1760,7 @@ func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username stri
 			continue
 		}
 
-		updates := map[string]interface{}{
+		updates := map[string]any{
 			"sensitive": true,
 		}
 		if err := h.store.UpdateMediaAttachment(ctx, mediaID, updates); err != nil {

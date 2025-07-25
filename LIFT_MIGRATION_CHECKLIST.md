@@ -164,7 +164,7 @@ func CostTracking() lift.Middleware {
             readCost := tracker.ReadUnits.Load()
             writeCost := tracker.WriteUnits.Load()
             if readCost > 0 || writeCost > 0 {
-                ctx.Logger().WithFields(map[string]interface{}{
+                ctx.Logger().WithFields(map[string]any{
                     "dynamodb_read_units":  readCost,
                     "dynamodb_write_units": writeCost,
                     "estimated_cost_usd":   calculateCost(readCost, writeCost),
@@ -211,27 +211,27 @@ func ErrorHandler() lift.Middleware {
             // Handle known error types
             switch e := err.(type) {
             case *errors.ValidationError:
-                return ctx.JSON(400, map[string]interface{}{
+                return ctx.JSON(400, map[string]any{
                     "error": e.Error(),
                     "field": e.Field,
                 })
             case *errors.NotFoundError:
-                return ctx.JSON(404, map[string]interface{}{
+                return ctx.JSON(404, map[string]any{
                     "error": e.Error(),
                 })
             case *errors.UnauthorizedError:
-                return ctx.JSON(401, map[string]interface{}{
+                return ctx.JSON(401, map[string]any{
                     "error": "Unauthorized",
                 })
             case *lift.LiftError:
-                return ctx.JSON(e.StatusCode, map[string]interface{}{
+                return ctx.JSON(e.StatusCode, map[string]any{
                     "error": e.Error(),
                     "code":  e.Code,
                 })
             default:
                 // Log unexpected errors
                 ctx.Logger().WithError(err).Error("Unhandled error")
-                return ctx.JSON(500, map[string]interface{}{
+                return ctx.JSON(500, map[string]any{
                     "error": "Internal server error",
                 })
             }
@@ -417,19 +417,19 @@ func NewTransaction(ctx context.Context) *Transaction {
 }
 
 // Put adds a put operation to the transaction
-func (t *Transaction) Put(item interface{}) *Transaction {
+func (t *Transaction) Put(item any) *Transaction {
     t.tx.Put(item)
     return t
 }
 
 // Update adds an update operation
-func (t *Transaction) Update(item interface{}) *Transaction {
+func (t *Transaction) Update(item any) *Transaction {
     t.tx.Update(item)
     return t
 }
 
 // Delete adds a delete operation
-func (t *Transaction) Delete(item interface{}) *Transaction {
+func (t *Transaction) Delete(item any) *Transaction {
     t.tx.Delete(item)
     return t
 }
@@ -479,7 +479,7 @@ type QueryBuilder struct {
 }
 
 // NewQuery creates a new query builder
-func NewQuery(ctx context.Context, model interface{}) *QueryBuilder {
+func NewQuery(ctx context.Context, model any) *QueryBuilder {
     return &QueryBuilder{
         query: GetDB().Model(model),
         ctx:   ctx,
@@ -487,7 +487,7 @@ func NewQuery(ctx context.Context, model interface{}) *QueryBuilder {
 }
 
 // Where adds a condition
-func (q *QueryBuilder) Where(condition string, args ...interface{}) *QueryBuilder {
+func (q *QueryBuilder) Where(condition string, args ...any) *QueryBuilder {
     q.query = q.query.Where(condition, args...)
     return q
 }
@@ -511,7 +511,7 @@ func (q *QueryBuilder) ScanIndexForward(forward bool) *QueryBuilder {
 }
 
 // Find executes the query with cost tracking
-func (q *QueryBuilder) Find(result interface{}) error {
+func (q *QueryBuilder) Find(result any) error {
     output, err := q.query.FindWithOutput(q.ctx, result)
     if err != nil {
         return err
@@ -530,7 +530,7 @@ func (q *QueryBuilder) Find(result interface{}) error {
 }
 
 // First gets the first result
-func (q *QueryBuilder) First(result interface{}) error {
+func (q *QueryBuilder) First(result any) error {
     return q.Limit(1).Find(result)
 }
 

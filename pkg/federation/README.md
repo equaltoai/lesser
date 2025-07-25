@@ -49,7 +49,7 @@ func handleInbox(w http.ResponseWriter, r *http.Request) {
 ### Signing Outgoing Requests
 
 ```go
-func sendActivity(activity interface{}, recipientInbox string) error {
+func sendActivity(activity any, recipientInbox string) error {
     // Serialize the activity
     body, _ := json.Marshal(activity)
     
