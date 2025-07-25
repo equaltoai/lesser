@@ -50,7 +50,22 @@ fmt:
 # Run linter
 lint:
 	@echo "Running linter..."
-	golangci-lint run
+	golangci-lint run --config .golangci.yml
+
+# Run linter and automatically fix issues where possible
+lint-fix:
+	@echo "Running linter with auto-fix..."
+	golangci-lint run --config .golangci.yml --fix
+
+# Run linter on new code only (requires git)
+lint-new:
+	@echo "Running linter on new code..."
+	golangci-lint run --config .golangci.yml --new-from-rev=main
+
+# Run specific linter
+lint-%:
+	@echo "Running specific linter: $*..."
+	golangci-lint run --config .golangci.yml --disable-all --enable=$*
 
 # Clean build artifacts
 clean:
@@ -156,6 +171,9 @@ help:
 	@echo "  test-coverage   - Run tests with coverage"
 	@echo "  fmt             - Format code"
 	@echo "  lint            - Run linter"
+	@echo "  lint-fix        - Run linter with auto-fix"
+	@echo "  lint-new        - Run linter on new code only"
+	@echo "  lint-<name>     - Run specific linter (e.g., make lint-gosec)"
 	@echo "  clean           - Clean build artifacts"
 	@echo "  clean-win       - Clean build artifacts (Windows)"
 	@echo "  install-tools   - Install development tools"

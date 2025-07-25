@@ -175,11 +175,12 @@ func (c *Calculator) calculateModerationScore(input *CalculationInput) int {
 	for _, event := range input.ModerationHistory {
 		switch event.Type {
 		case "report":
-			if event.Outcome == "upheld" {
+			switch event.Outcome {
+			case "upheld":
 				reportsUpheld++
 				// Deduct based on severity
 				score -= event.Severity * 10
-			} else if event.Outcome == "dismissed" {
+			case "dismissed":
 				reportsDismissed++
 				// Bonus for false reports
 				score += 5

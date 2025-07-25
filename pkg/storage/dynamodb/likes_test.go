@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const likesTestTableName = "test-table"
+
 func TestCreateLike(t *testing.T) {
 	ctx := context.Background()
 
@@ -33,7 +35,7 @@ func TestCreateLike(t *testing.T) {
 			},
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", ctx, mock.MatchedBy(func(input *dynamodb.PutItemInput) bool {
-					return input.TableName != nil && *input.TableName == testTableName &&
+					return input.TableName != nil && *input.TableName == likesTestTableName &&
 						input.Item["PK"] != nil &&
 						input.Item["SK"] != nil &&
 						input.Item["GSI3PK"] != nil &&
@@ -97,7 +99,7 @@ func TestCreateLike(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: likesTestTableName,
 			}
 
 			err := s.CreateLike(ctx, tt.like)
@@ -186,7 +188,7 @@ func TestGetLike(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: likesTestTableName,
 			}
 
 			like, err := s.GetLike(ctx, tt.actor, tt.object)
@@ -250,7 +252,7 @@ func TestDeleteLike(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: likesTestTableName,
 			}
 
 			err := s.DeleteLike(ctx, tt.actor, tt.object)
@@ -326,7 +328,7 @@ func TestGetObjectLikes(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: likesTestTableName,
 			}
 
 			likes, cursor, err := s.GetObjectLikes(ctx, tt.objectID, tt.limit, tt.cursor)
@@ -409,7 +411,7 @@ func TestCountObjectLikes(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: likesTestTableName,
 			}
 
 			count, err := s.CountObjectLikes(ctx, tt.objectID)

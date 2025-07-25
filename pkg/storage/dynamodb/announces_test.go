@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const announcesTestTableName = "test-table"
+
 func TestCreateAnnounce(t *testing.T) {
 	ctx := context.Background()
 
@@ -35,7 +37,7 @@ func TestCreateAnnounce(t *testing.T) {
 			},
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", ctx, mock.MatchedBy(func(input *dynamodb.PutItemInput) bool {
-					return input.TableName != nil && *input.TableName == testTableName &&
+					return input.TableName != nil && *input.TableName == announcesTestTableName &&
 						input.Item["PK"] != nil &&
 						input.Item["SK"] != nil &&
 						input.Item["GSI4PK"] != nil &&
@@ -99,7 +101,7 @@ func TestCreateAnnounce(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: announcesTestTableName,
 			}
 
 			err := s.CreateAnnounce(ctx, tt.announce)
@@ -196,7 +198,7 @@ func TestGetAnnounce(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: announcesTestTableName,
 			}
 
 			announce, err := s.GetAnnounce(ctx, tt.actor, tt.object)
@@ -262,7 +264,7 @@ func TestDeleteAnnounce(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: announcesTestTableName,
 			}
 
 			err := s.DeleteAnnounce(ctx, tt.actor, tt.object)
@@ -343,7 +345,7 @@ func TestCountObjectAnnounces(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: announcesTestTableName,
 			}
 
 			count, err := s.CountObjectAnnounces(ctx, tt.objectID)

@@ -1,0 +1,265 @@
+# golangci-lint configuration for Lesser project
+# Configuration version
+version: "2"
+
+run:
+  # Timeout for analysis
+  timeout: 5m
+  
+  # Include test files
+  tests: true
+  
+  # List of build tags to apply
+  build-tags:
+    - integration
+  
+  # Which directories to exclude
+  exclude-dirs:
+    - docs
+    - scripts
+    - examples
+    - infra
+    - tests
+    - build
+    - bin
+    - dist
+    - paytheory-partnership
+    - internal/testutil/mocks
+
+output:
+  # Output format
+  format: colored-line-number
+  
+  # Print lines of code with issue
+  print-issued-lines: true
+  
+  # Print linter name in the end of issue text
+  print-linter-name: true
+
+linters:
+  enable:
+    # Default linters (always enabled)
+    - errcheck      # Checking for unchecked errors
+    - govet         # Reports suspicious constructs
+    - ineffassign   # Detects unused assignments
+    - staticcheck   # Advanced static analysis
+    - unused        # Checks for unused code
+    
+    # Additional linters for code quality
+    - bodyclose     # Checks HTTP response body closure
+    - dupl          # Code clone detection
+    - copyloopvar   # Checks for loop variable copies
+    - goconst       # Finds repeated strings
+    - gocyclo       # Cyclomatic complexity
+    - gosec         # Security problems
+    - misspell      # Spelling mistakes
+    - nakedret      # Finds naked returns
+    - prealloc      # Preallocatable slices
+    - revive        # Comprehensive linter
+    - unconvert     # Unnecessary type conversions
+    - unparam       # Unused function parameters
+    - whitespace    # Whitespace issues
+    - nilerr        # Nil error checking
+    - exhaustive    # Enum exhaustiveness
+    - noctx         # HTTP without context
+    - asciicheck    # Non-ASCII identifiers
+    - bidichk       # Dangerous unicode
+    
+  disable:
+    # Disabled linters
+    - funlen        # Function length
+    - godox         # TODO/FIXME comments
+    - lll           # Line length
+    - nestif        # Deeply nested ifs
+    - wsl           # Whitespace linter
+    - testpackage   # Separate test packages
+    - paralleltest  # Parallel tests
+    - wrapcheck     # Error wrapping
+    - varnamelen    # Variable name length
+    - gochecknoglobals # Global variables
+    - gochecknoinits   # Init functions
+    - cyclop        # Cyclomatic complexity (using gocyclo instead)
+    - gocognit      # Cognitive complexity
+    - maintidx      # Maintainability index
+
+linters-settings:
+  dupl:
+    # Tokens count to trigger issue
+    threshold: 100
+    
+  errcheck:
+    # Report about not checking of errors in type assertions
+    check-type-assertions: true
+    # Report about assignment of errors to blank identifier
+    check-blank: true
+    # Exclude some functions
+    exclude-functions:
+      - io.Closer.Close
+      - io/ioutil.ReadFile
+      - io.Copy
+    
+  goconst:
+    # Minimal length of string constant
+    min-len: 3
+    # Minimal occurrences count to trigger
+    min-occurrences: 3
+    
+  gocyclo:
+    # Minimal cyclomatic complexity to trigger
+    min-complexity: 15
+    
+  gosec:
+    # Exclude specific rules
+    excludes:
+      - G101 # Look for hardcoded credentials
+      - G401 # Detect weak crypto (MD5, SHA1)
+      - G501 # Import blocklist: crypto/md5
+      - G505 # Import blocklist: crypto/sha1
+    
+  govet:
+    # Settings for govet
+    enable:
+      - shadow
+    settings:
+      shadow:
+        strict: false
+    
+  misspell:
+    # Locale to use
+    locale: US
+    
+  nakedret:
+    # Max function length to check
+    max-func-lines: 30
+    
+  prealloc:
+    # Report preallocations only on simple loops
+    simple: true
+    range-loops: true
+    for-loops: true
+    
+  revive:
+    # Rules configuration
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+        arguments:
+          - disableStutteringCheck
+      - name: if-return
+      - name: increment-decrement
+      - name: var-declaration
+      - name: package-comments
+        disabled: true  # Often missing in Lambda handlers
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unreachable-code
+      
+  staticcheck:
+    # Go version to target
+    go: "1.21"
+    
+  unused:
+    # Go version to target
+    go: "1.21"
+    
+  whitespace:
+    # Enforce proper whitespace
+    multi-if: true
+    multi-func: true
+
+issues:
+  # List of regexps of issue texts to exclude
+  exclude:
+    - "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*print(f|ln)?|os\\.(Un)?Setenv). is not checked"
+    - "exported (type|method|function) .* should have comment or be unexported"
+    - "ST1000: at least one file in a package should have a package comment"
+    
+  # Exclude configuration per-path, per-linter, per-text
+  exclude-rules:
+    # Exclude some linters from running on test files
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - goconst
+        
+    # Exclude linters from generated files
+    - path: generated\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - unused
+        - goconst
+        - revive
+        
+    # Lambda handlers often need init()
+    - path: cmd/.*/main\.go
+      linters:
+        - gochecknoinits
+      text: "init function"
+        
+    # GraphQL generated code
+    - path: graph/generated\.go
+      linters:
+        - gocyclo
+        - dupl
+        - revive
+        - goconst
+        - gosec
+        - errcheck
+        
+    # Model files often have repetitive code
+    - path: (models?|model)/.*\.go
+      linters:
+        - dupl
+        
+    # Storage implementations often have similar patterns
+    - path: pkg/storage/.*\.go
+      linters:
+        - dupl
+        
+    # Test utilities can be more relaxed
+    - path: internal/testutil/.*\.go
+      linters:
+        - gosec
+        - errcheck
+        
+    # DynamoDB operations have complex error handling
+    - path: pkg/storage/dynamodb/.*\.go
+      text: "shadow: declaration of .* shadows declaration"
+      linters:
+        - govet
+        
+    # Common AWS SDK patterns
+    - text: "G104: Errors unhandled"
+      path: ".*aws.*"
+      linters:
+        - gosec
+        
+  # Maximum issues count per one linter
+  max-issues-per-linter: 0
+  
+  # Maximum count of issues with the same text
+  max-same-issues: 0
+  
+  # Show only new issues created after git revision
+  # new-from-rev: main
+  
+  # Fix found issues (if it's supported by the linter)
+  fix: false

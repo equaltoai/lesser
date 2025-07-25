@@ -78,7 +78,7 @@ func main() {
 		}
 
 		// Encode public key to uncompressed format (65 bytes: 0x04 + X + Y)
-		publicKeyBytes := elliptic.Marshal(privateKey.PublicKey.Curve, privateKey.PublicKey.X, privateKey.PublicKey.Y)
+		publicKeyBytes := elliptic.Marshal(privateKey.Curve, privateKey.X, privateKey.Y)
 		publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
 
 		// Encode private key (32 bytes)

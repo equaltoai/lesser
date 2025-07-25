@@ -111,7 +111,7 @@ func (s *dynamoDBStorage) IsConversationMuted(ctx context.Context, username, con
 	}
 
 	// If it has an expiration and it's past, consider it not muted
-	if !record.ConversationMute.ExpiresAt.IsZero() && record.ConversationMute.ExpiresAt.Before(time.Now()) {
+	if !record.ExpiresAt.IsZero() && record.ExpiresAt.Before(time.Now()) {
 		return false, nil
 	}
 
@@ -146,11 +146,11 @@ func (s *dynamoDBStorage) GetMutedConversations(ctx context.Context, username st
 			}
 
 			// Skip expired mutes
-			if !record.ConversationMute.ExpiresAt.IsZero() && record.ConversationMute.ExpiresAt.Before(time.Now()) {
+			if !record.ExpiresAt.IsZero() && record.ExpiresAt.Before(time.Now()) {
 				continue
 			}
 
-			conversationIDs = append(conversationIDs, record.ConversationMute.ConversationID)
+			conversationIDs = append(conversationIDs, record.ConversationID)
 		}
 	}
 

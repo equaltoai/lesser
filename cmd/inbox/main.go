@@ -292,8 +292,8 @@ func handlePostInbox(ctx context.Context, log *zap.Logger, username string, requ
 	if !isAddressedTo(&activity, actor) {
 		log.Warn("activity not addressed to this actor",
 			zap.String("actor_id", actor.ID),
-			zap.Any("to", activity.BaseObject.To),
-			zap.Any("cc", activity.BaseObject.CC))
+			zap.Any("to", activity.To),
+			zap.Any("cc", activity.CC))
 		return common.BadRequest(common.ValidationError{
 			Field:   "addressing",
 			Message: "activity is not addressed to this actor",
@@ -475,28 +475,28 @@ func isAddressedTo(activity *activitypub.Activity, actor *activitypub.Actor) boo
 	inboxURL := actor.Inbox
 
 	// Check 'to' field
-	for _, to := range activity.BaseObject.To {
+	for _, to := range activity.To {
 		if to == actorID || to == inboxURL || to == activitypub.PublicAddress {
 			return true
 		}
 	}
 
 	// Check 'cc' field
-	for _, cc := range activity.BaseObject.CC {
+	for _, cc := range activity.CC {
 		if cc == actorID || cc == inboxURL || cc == activitypub.PublicAddress {
 			return true
 		}
 	}
 
 	// Check 'bto' field
-	for _, bto := range activity.BaseObject.BTo {
+	for _, bto := range activity.BTo {
 		if bto == actorID || bto == inboxURL {
 			return true
 		}
 	}
 
 	// Check 'bcc' field
-	for _, bcc := range activity.BaseObject.BCC {
+	for _, bcc := range activity.BCC {
 		if bcc == actorID || bcc == inboxURL {
 			return true
 		}

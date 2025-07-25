@@ -509,7 +509,6 @@ func (sm *SubscriptionManager) checkForQuoteUpdates(ctx context.Context, usernam
 
 	// For demonstration, we'll simulate quote activity updates periodically
 	if time.Now().Unix()%12 == 0 { // Send an update every 12 seconds approximately
-
 		// Simulate different types of quote activity
 		activityTypes := []string{"quote_created", "quote_updated", "quote_removed"}
 		activityType := activityTypes[time.Now().Unix()%int64(len(activityTypes))]

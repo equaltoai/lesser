@@ -78,9 +78,10 @@ func (ftsp *FederationTimeSeriesProcessor) processTimeSeriesEvent(ctx context.Co
 	}
 
 	// Increment appropriate counters
-	if event.Direction == "inbound" {
+	switch event.Direction {
+	case "inbound":
 		timeSeries.InboundVolume = 1
-	} else if event.Direction == "outbound" {
+	case "outbound":
 		timeSeries.OutboundVolume = 1
 	}
 

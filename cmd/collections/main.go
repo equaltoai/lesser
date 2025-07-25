@@ -97,11 +97,12 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 	var likes []*storage.Like
 	var nextCursor string
 
-	if collectionType == "followers" {
+	switch collectionType {
+	case "followers":
 		usernames, nextCursor, err = store.GetFollowers(ctx, username, limit, cursor)
-	} else if collectionType == "following" {
+	case "following":
 		usernames, nextCursor, err = store.GetFollowing(ctx, username, limit, cursor)
-	} else {
+	default:
 		// For liked collection, we get Like objects
 		likes, nextCursor, err = store.GetActorLikes(ctx, actor.ID, limit, cursor)
 	}
@@ -126,7 +127,8 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 	var hasItems bool
 	var itemCount int
 
-	if collectionType == "followers" {
+	switch collectionType {
+	case "followers":
 		usernames, _, err := store.GetFollowers(ctx, actor.PreferredUsername, 1, "")
 		if err != nil {
 			log.Error("failed to get count", zap.Error(err))
@@ -134,7 +136,7 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 		}
 		hasItems = len(usernames) > 0
 		itemCount = len(usernames)
-	} else if collectionType == "following" {
+	case "following":
 		usernames, _, err := store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
 		if err != nil {
 			log.Error("failed to get count", zap.Error(err))
@@ -142,7 +144,7 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 		}
 		hasItems = len(usernames) > 0
 		itemCount = len(usernames)
-	} else {
+	default:
 		likes, _, err := store.GetActorLikes(ctx, actor.ID, 1, "")
 		if err != nil {
 			log.Error("failed to get count", zap.Error(err))

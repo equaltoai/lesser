@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const objectsTestTableName = "test-table"
+
 func TestCreateObject(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping test on Windows due to known issues with DynamoDB mocking")
@@ -550,7 +552,7 @@ func TestTombstoneObject(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: objectsTestTableName,
 			}
 
 			err := s.TombstoneObject(ctx, tt.objectID, tt.deletedBy)
@@ -632,7 +634,7 @@ func TestGetTombstone(t *testing.T) {
 
 			s := &dynamoDBStorage{
 				client:    mockClient,
-				tableName: testTableName,
+				tableName: objectsTestTableName,
 			}
 
 			tombstone, err := s.GetTombstone(ctx, tt.objectID)
@@ -720,7 +722,7 @@ func TestUpdateHistory(t *testing.T) {
 
 		storage := &dynamoDBStorage{
 			client:    mockClient,
-			tableName: testTableName,
+			tableName: objectsTestTableName,
 		}
 
 		err := storage.UpdateObject(ctx, updatedObj)
@@ -749,7 +751,7 @@ func TestUpdateHistory(t *testing.T) {
 
 		storage := &dynamoDBStorage{
 			client:    mockClient,
-			tableName: testTableName,
+			tableName: objectsTestTableName,
 		}
 
 		err := storage.CreateUpdateHistory(ctx, history)
@@ -798,7 +800,7 @@ func TestUpdateHistory(t *testing.T) {
 
 		storage := &dynamoDBStorage{
 			client:    mockClient,
-			tableName: testTableName,
+			tableName: objectsTestTableName,
 		}
 
 		histories, err := storage.GetUpdateHistory(ctx, objectID, limit)

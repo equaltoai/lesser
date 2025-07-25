@@ -25,7 +25,6 @@ func (m *MockDB) WithLambdaTimeoutBuffer(milliseconds int) *dynamorm.LambdaDB {
 }
 
 func TestActivityHandler_ProcessRecord(t *testing.T) {
-
 	// Create mock DB
 	mockDB := new(MockDB)
 	mockDB.On("WithLambdaTimeoutBuffer", mock.Anything).Return(&dynamorm.LambdaDB{})
@@ -85,7 +84,6 @@ func TestActivityHandler_ProcessRecord(t *testing.T) {
 }
 
 func TestHandleDynamoDBStream(t *testing.T) {
-
 	// Create mock DB
 	mockDB := new(MockDB)
 	mockDB.On("WithLambdaTimeoutBuffer", mock.Anything).Return(&dynamorm.LambdaDB{})

@@ -97,7 +97,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 		<meta property="og:url" content="%s">`,
 		displayName,
 		actor.BaseObject.Summary,
-		actor.BaseObject.ID)
+		actor.ID)
 
 	if actor.Icon != nil && actor.Icon.URL != "" {
 		metaTags += fmt.Sprintf(`
@@ -186,7 +186,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 	<div class="profile">`,
 		displayName, actor.PreferredUsername, cfg.Domain,
 		metaTags,
-		actor.BaseObject.ID)
+		actor.ID)
 
 	// Add avatar if available
 	if actor.Icon != nil && actor.Icon.URL != "" {
@@ -213,7 +213,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 		<div class="meta">
 			<p>This is an ActivityPub profile. You can follow @%s@%s from any compatible server.</p>
 			<p><a href="%s" type="application/activity+json">View ActivityPub data</a></p>
-		</div>`, actor.PreferredUsername, cfg.Domain, actor.BaseObject.ID)
+		</div>`, actor.PreferredUsername, cfg.Domain, actor.ID)
 
 	html += `
 	</div>

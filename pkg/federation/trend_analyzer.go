@@ -513,23 +513,26 @@ func (ta *TrendAnalyzer) calculateOverallTrendScore(analysis *TrendAnalysis) flo
 	score := 5.0 // Baseline score
 
 	// Adjust based on volume trend
-	if analysis.VolumeTrend.Direction == "increasing" {
+	switch analysis.VolumeTrend.Direction {
+	case "increasing":
 		score += 2.0
-	} else if analysis.VolumeTrend.Direction == "decreasing" {
+	case "decreasing":
 		score -= 1.0
 	}
 
 	// Adjust based on response time trend
-	if analysis.ResponseTimeTrend.Direction == "improving" {
+	switch analysis.ResponseTimeTrend.Direction {
+	case "improving":
 		score += 1.0
-	} else if analysis.ResponseTimeTrend.Direction == "degrading" {
+	case "degrading":
 		score -= 2.0
 	}
 
 	// Adjust based on error rate trend
-	if analysis.ErrorRateTrend.Direction == "decreasing" {
+	switch analysis.ErrorRateTrend.Direction {
+	case "decreasing":
 		score += 1.0
-	} else if analysis.ErrorRateTrend.Direction == "increasing" {
+	case "increasing":
 		score -= 2.0
 	}
 

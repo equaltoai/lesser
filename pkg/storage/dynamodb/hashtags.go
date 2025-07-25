@@ -43,7 +43,7 @@ func (s *dynamoDBStorage) IndexHashtag(ctx context.Context, hashtag string, stat
 	})
 
 	var existingCount int64 = 0
-	var firstSeen time.Time = now
+	var firstSeen = now
 
 	if err == nil && getResult.Item != nil {
 		// Extract existing values

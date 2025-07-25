@@ -293,7 +293,7 @@ func createVAPIDJWT(endpoint, subject, privateKeyBase64 string) (string, error) 
 	}
 
 	// Calculate the public key
-	privateKey.PublicKey.X, privateKey.PublicKey.Y = privateKey.PublicKey.Curve.ScalarBaseMult(privateKeyBytes)
+	privateKey.X, privateKey.Y = privateKey.ScalarBaseMult(privateKeyBytes)
 
 	// Sign the message
 	hash := sha256.Sum256([]byte(message))
@@ -349,7 +349,7 @@ func encryptPayload(payload []byte, p256dhBase64, authBase64 string) (string, st
 	}
 
 	// Perform ECDH
-	sharedX, _ := serverPrivateKey.Curve.ScalarMult(clientPublicKey.X, clientPublicKey.Y, serverPrivateKey.D.Bytes())
+	sharedX, _ := serverPrivateKey.ScalarMult(clientPublicKey.X, clientPublicKey.Y, serverPrivateKey.D.Bytes())
 	sharedSecret := sharedX.Bytes()
 
 	// Generate salt

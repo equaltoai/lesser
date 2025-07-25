@@ -446,7 +446,7 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *FederationMessage
 					m.logger.Error("failed to record circuit breaker success", zap.Error(err))
 				}
 			} else {
-				if err := m.circuitBreaker.RecordFailure(route.InstanceID, fmt.Errorf(result.ErrorMessage)); err != nil {
+				if err := m.circuitBreaker.RecordFailure(route.InstanceID, fmt.Errorf("%s", result.ErrorMessage)); err != nil {
 					m.logger.Error("failed to record circuit breaker failure", zap.Error(err))
 				}
 			}

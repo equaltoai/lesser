@@ -15,7 +15,8 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-const testTableName = "test-table"
+// Use a different constant name to avoid conflict with integration_test.go
+const relTestTableName = "test-table"
 
 func TestCreateFollow(t *testing.T) {
 	tests := []struct {
@@ -34,7 +35,7 @@ func TestCreateFollow(t *testing.T) {
 			followActivityID: "https://example.com/activities/123",
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("PutItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.PutItemInput) bool {
-					return *input.TableName == testTableName &&
+					return *input.TableName == relTestTableName &&
 						input.Item["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
 						input.Item["SK"].(*types.AttributeValueMemberS).Value == "FOLLOWING#bob" &&
 						input.Item["GSI1PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#bob" &&
@@ -75,7 +76,7 @@ func TestCreateFollow(t *testing.T) {
 			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
-			s := NewWithClient(mockClient, testTableName)
+			s := NewWithClient(mockClient, relTestTableName)
 
 			err := s.CreateFollow(context.Background(), tt.followerUsername, tt.followedUsername, tt.followActivityID)
 
@@ -108,7 +109,7 @@ func TestAcceptFollow(t *testing.T) {
 			followedUsername: "bob",
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("UpdateItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.UpdateItemInput) bool {
-					return *input.TableName == testTableName &&
+					return *input.TableName == relTestTableName &&
 						input.Key["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
 						input.Key["SK"].(*types.AttributeValueMemberS).Value == "FOLLOWING#bob" &&
 						input.ExpressionAttributeValues[":state"].(*types.AttributeValueMemberS).Value == storage.RelationshipAccepted
@@ -145,7 +146,7 @@ func TestAcceptFollow(t *testing.T) {
 			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
-			s := NewWithClient(mockClient, testTableName)
+			s := NewWithClient(mockClient, relTestTableName)
 
 			err := s.AcceptFollow(context.Background(), tt.followerUsername, tt.followedUsername)
 
@@ -182,7 +183,7 @@ func TestGetFollowers(t *testing.T) {
 			cursor:   "",
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("Query", mock.Anything, mock.MatchedBy(func(input *dynamodb.QueryInput) bool {
-					return *input.TableName == testTableName &&
+					return *input.TableName == relTestTableName &&
 						*input.IndexName == "GSI1" &&
 						input.ExpressionAttributeValues[":pk"].(*types.AttributeValueMemberS).Value == "FOLLOW#bob" &&
 						*input.Limit == 10
@@ -237,7 +238,7 @@ func TestGetFollowers(t *testing.T) {
 			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
-			s := NewWithClient(mockClient, testTableName)
+			s := NewWithClient(mockClient, relTestTableName)
 
 			followers, nextCursor, err := s.GetFollowers(context.Background(), tt.username, tt.limit, tt.cursor)
 
@@ -280,7 +281,7 @@ func TestGetFollowing(t *testing.T) {
 			cursor:   "",
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("Query", mock.Anything, mock.MatchedBy(func(input *dynamodb.QueryInput) bool {
-					return *input.TableName == testTableName &&
+					return *input.TableName == relTestTableName &&
 						input.ExpressionAttributeValues[":pk"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
 						*input.Limit == 10
 				})).Return(&dynamodb.QueryOutput{
@@ -381,7 +382,7 @@ func TestGetFollowing(t *testing.T) {
 			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
-			s := NewWithClient(mockClient, testTableName)
+			s := NewWithClient(mockClient, relTestTableName)
 
 			following, nextCursor, err := s.GetFollowing(context.Background(), tt.username, tt.limit, tt.cursor)
 
@@ -423,7 +424,7 @@ func TestIsFollowing(t *testing.T) {
 			followedUsername: "bob",
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("GetItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.GetItemInput) bool {
-					return *input.TableName == testTableName &&
+					return *input.TableName == relTestTableName &&
 						input.Key["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
 						input.Key["SK"].(*types.AttributeValueMemberS).Value == "FOLLOWING#bob"
 				})).Return(&dynamodb.GetItemOutput{
@@ -484,7 +485,7 @@ func TestIsFollowing(t *testing.T) {
 			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
-			s := NewWithClient(mockClient, testTableName)
+			s := NewWithClient(mockClient, relTestTableName)
 
 			isFollowing, err := s.IsFollowing(context.Background(), tt.followerUsername, tt.followedUsername)
 
@@ -518,7 +519,7 @@ func TestRejectFollow(t *testing.T) {
 			followedUsername: "bob",
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("UpdateItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.UpdateItemInput) bool {
-					return *input.TableName == testTableName &&
+					return *input.TableName == relTestTableName &&
 						input.Key["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
 						input.Key["SK"].(*types.AttributeValueMemberS).Value == "FOLLOWING#bob" &&
 						input.ExpressionAttributeValues[":state"].(*types.AttributeValueMemberS).Value == storage.RelationshipRejected
@@ -544,7 +545,7 @@ func TestRejectFollow(t *testing.T) {
 			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
-			s := NewWithClient(mockClient, testTableName)
+			s := NewWithClient(mockClient, relTestTableName)
 
 			err := s.RejectFollow(context.Background(), tt.followerUsername, tt.followedUsername)
 
@@ -577,7 +578,7 @@ func TestRemoveFollow(t *testing.T) {
 			followedUsername: "bob",
 			setupMock: func(m *mocks.MockDynamoDBClient) {
 				m.On("DeleteItem", mock.Anything, mock.MatchedBy(func(input *dynamodb.DeleteItemInput) bool {
-					return *input.TableName == testTableName &&
+					return *input.TableName == relTestTableName &&
 						input.Key["PK"].(*types.AttributeValueMemberS).Value == "FOLLOW#alice" &&
 						input.Key["SK"].(*types.AttributeValueMemberS).Value == "FOLLOWING#bob"
 				})).Return(&dynamodb.DeleteItemOutput{}, nil)
@@ -602,7 +603,7 @@ func TestRemoveFollow(t *testing.T) {
 			mockClient := new(mocks.MockDynamoDBClient)
 			tt.setupMock(mockClient)
 
-			s := NewWithClient(mockClient, testTableName)
+			s := NewWithClient(mockClient, relTestTableName)
 
 			err := s.RemoveFollow(context.Background(), tt.followerUsername, tt.followedUsername)
 
