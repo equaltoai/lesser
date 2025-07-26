@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // Session errors
@@ -27,8 +27,10 @@ const (
 )
 
 // Type aliases for convenience
-type Session = storage.Session
-type Device = storage.Device
+type (
+	Session = storage.Session
+	Device  = storage.Device
+)
 
 // SessionManager handles session operations
 type SessionManager struct {

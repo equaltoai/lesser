@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
 // Status represents an ActivityPub Note/status stored in DynamoDB using DynamORM

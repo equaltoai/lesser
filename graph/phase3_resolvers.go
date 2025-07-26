@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/aron23/lesser/graph/model"
-	"github.com/aron23/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/moderation"
 	"go.uber.org/zap"
 )
 

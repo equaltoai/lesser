@@ -20,12 +20,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -80,7 +80,7 @@ func (rl *RateLimiter) Allow(userID string) bool {
 
 	now := time.Now()
 	limit, exists := rl.limits[userID]
-	
+
 	if !exists || now.After(limit.resetTime) {
 		rl.limits[userID] = &userLimit{
 			count:     1,
@@ -139,7 +139,7 @@ func (pdp *PushDeliveryProcessor) HandleSQSBatch(ctx *lift.Context, event events
 		go func(msg events.SQSMessage) {
 			err := pdp.processMessage(ctx, msg)
 			results <- err
-			
+
 			if err != nil {
 				failureMutex.Lock()
 				failures = append(failures, err)
@@ -178,7 +178,7 @@ func (pdp *PushDeliveryProcessor) HandleSQSBatch(ctx *lift.Context, event events
 // processMessage processes a single SQS message
 func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.SQSMessage) error {
 	start := time.Now()
-	
+
 	// Parse notification
 	var notification PushMessage
 	if err := json.Unmarshal([]byte(msg.Body), &notification); err != nil {
@@ -387,7 +387,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 // trackDelivery tracks the delivery status of a push notification
 func (pdp *PushDeliveryProcessor) trackDelivery(ctx context.Context, notification PushMessage, result DeliveryResult) error {
 	now := time.Now()
-	
+
 	// Record the push notification delivery attempt using RecordActivity
 	activityType := fmt.Sprintf("push_delivery_%s_%s", notification.NotificationType, result.Status)
 	if err := pdp.store.RecordActivity(ctx, activityType, notification.Username, now); err != nil {
@@ -424,7 +424,7 @@ func (pdp *PushDeliveryProcessor) recordMetrics(ctx *lift.Context, notificationT
 		zap.Int64("duration_ms", duration.Milliseconds()),
 		zap.String("component", "push-delivery"),
 	)
-	
+
 	// Also log as a structured metric event for easy parsing by log processors
 	pdp.logger.Info("METRIC",
 		zap.String("name", "push_delivery_duration"),
@@ -433,7 +433,7 @@ func (pdp *PushDeliveryProcessor) recordMetrics(ctx *lift.Context, notificationT
 		zap.String("notification_type", notificationType),
 		zap.String("status", status),
 	)
-	
+
 	pdp.logger.Info("METRIC",
 		zap.String("name", "push_delivery_count"),
 		zap.Float64("value", 1),
@@ -692,7 +692,7 @@ func main() {
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
 		}
-		
+
 		// Parse the raw event as SQS event
 		var event events.SQSEvent
 		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
@@ -703,12 +703,12 @@ func main() {
 			if err != nil {
 				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
 			}
-			
+
 			if err := json.Unmarshal(eventBytes, &event); err != nil {
 				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
 			}
 		}
-		
+
 		return processor.HandleSQSBatch(ctx, event)
 	})
 

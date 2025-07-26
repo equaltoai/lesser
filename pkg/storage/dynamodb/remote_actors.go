@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -62,7 +62,6 @@ func (s *dynamoDBStorage) CacheRemoteActor(ctx context.Context, handle string, a
 		TableName: s.getTableName(),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to cache remote actor: %w", err)
 	}
@@ -86,7 +85,6 @@ func (s *dynamoDBStorage) GetCachedRemoteActor(ctx context.Context, handle strin
 			"SK": &types.AttributeValueMemberS{Value: "PROFILE"},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cached remote actor: %w", err)
 	}
@@ -158,7 +156,6 @@ func (s *dynamoDBStorage) ListCachedRemoteActors(ctx context.Context, limit int3
 		},
 		Limit: &limit,
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to list cached remote actors: %w", err)
 	}
@@ -203,7 +200,6 @@ func (s *dynamoDBStorage) CleanupExpiredRemoteActors(ctx context.Context) (int, 
 			":prefix": &types.AttributeValueMemberS{Value: "REMOTE_ACTOR#"},
 		},
 	})
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to query remote actors: %w", err)
 	}

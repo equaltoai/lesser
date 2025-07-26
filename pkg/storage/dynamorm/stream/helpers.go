@@ -9,7 +9,7 @@ import (
 	"github.com/pay-theory/dynamorm"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // EventProcessor is a function type for processing DynamoDB stream events

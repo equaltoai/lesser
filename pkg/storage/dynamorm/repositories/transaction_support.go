@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -40,7 +40,7 @@ type TransactionContext struct {
 // ExecuteTransaction executes a function within a transaction
 func (tm *TransactionManager) ExecuteTransaction(ctx context.Context, fn func(*TransactionContext) error) error {
 	startTime := time.Now()
-	
+
 	// Track initial costs
 	var initialCost *cost.OperationCost
 	if tm.tracker != nil {
@@ -138,9 +138,9 @@ func (tc *TransactionContext) GetOperationCount() int {
 // FollowUserTransactional implements a follow operation with multiple updates
 func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, followerID, followeeID string) error {
 	return r.tm.ExecuteTransaction(ctx, func(txCtx *TransactionContext) error {
-		// This is a conceptual example - actual implementation would depend on 
+		// This is a conceptual example - actual implementation would depend on
 		// DynamORM's transaction API when it becomes available
-		
+
 		// 1. Create follow relationship
 		follow := map[string]any{
 			"PK":         fmt.Sprintf("USER#%s", followerID),
@@ -173,12 +173,12 @@ func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, f
 
 		// 4. Add notification
 		notification := map[string]any{
-			"PK":           fmt.Sprintf("USER#%s", followeeID),
-			"SK":           fmt.Sprintf("NOTIF#%s#%s", time.Now().Format("20060102150405"), followerID),
-			"Type":         "follow",
-			"ActorID":      followerID,
-			"CreatedAt":    time.Now(),
-			"IsRead":       false,
+			"PK":        fmt.Sprintf("USER#%s", followeeID),
+			"SK":        fmt.Sprintf("NOTIF#%s#%s", time.Now().Format("20060102150405"), followerID),
+			"Type":      "follow",
+			"ActorID":   followerID,
+			"CreatedAt": time.Now(),
+			"IsRead":    false,
 		}
 		if err := txCtx.Put(notification); err != nil {
 			return fmt.Errorf("failed to create notification: %w", err)
@@ -192,7 +192,7 @@ func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, f
 func (r *TransactionalRepository) CreateStatusWithChecksTransactional(ctx context.Context, status map[string]any) error {
 	return r.tm.ExecuteTransaction(ctx, func(txCtx *TransactionContext) error {
 		userID := status["UserID"].(string)
-		
+
 		// 1. Check user exists and is not suspended
 		userCheck := map[string]any{
 			"PK": fmt.Sprintf("USER#%s", userID),
@@ -252,9 +252,9 @@ func (r *TransactionalRepository) TransferOwnershipTransactional(ctx context.Con
 		// Transfer each resource
 		for _, resourceID := range resourceIDs {
 			resource := map[string]any{
-				"PK":     fmt.Sprintf("STATUS#%s", resourceID),
-				"SK":     fmt.Sprintf("STATUS#%s", resourceID),
-				"UserID": toUserID,
+				"PK":        fmt.Sprintf("STATUS#%s", resourceID),
+				"SK":        fmt.Sprintf("STATUS#%s", resourceID),
+				"UserID":    toUserID,
 				"UpdatedAt": time.Now(),
 			}
 			if err := txCtx.Update(resource); err != nil {
@@ -300,7 +300,7 @@ func DefaultTransactionConfig() TransactionConfig {
 // ExecuteWithRetry executes a transaction with retry logic
 func (tm *TransactionManager) ExecuteWithRetry(ctx context.Context, config TransactionConfig, fn func(*TransactionContext) error) error {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		if attempt > 0 {
 			// Exponential backoff
@@ -311,7 +311,7 @@ func (tm *TransactionManager) ExecuteWithRetry(ctx context.Context, config Trans
 					zap.Duration("backoff", backoff),
 				)
 			}
-			
+
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
@@ -330,7 +330,7 @@ func (tm *TransactionManager) ExecuteWithRetry(ctx context.Context, config Trans
 		}
 
 		lastErr = err
-		
+
 		// Check if error is retryable
 		if !isRetryableError(err) {
 			break
@@ -354,7 +354,7 @@ func isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errorStr := err.Error()
 	// Check for common retryable patterns
 	retryablePatterns := []string{
@@ -364,13 +364,13 @@ func isRetryableError(err error) bool {
 		"connection",
 		"retry",
 	}
-	
+
 	for _, pattern := range retryablePatterns {
 		if strings.Contains(strings.ToLower(errorStr), pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -382,7 +382,7 @@ func ConditionalCreate(txCtx *TransactionContext, item any, key map[string]any) 
 	if err := txCtx.ConditionCheck(key, "attribute_not_exists(PK)", nil); err != nil {
 		return fmt.Errorf("item already exists: %w", err)
 	}
-	
+
 	// Create item
 	return txCtx.Put(item)
 }
@@ -393,7 +393,7 @@ func ConditionalUpdate(txCtx *TransactionContext, item any, key map[string]any, 
 	if err := txCtx.ConditionCheck(key, condition, values...); err != nil {
 		return fmt.Errorf("condition check failed: %w", err)
 	}
-	
+
 	// Update item
 	return txCtx.Update(item)
 }
@@ -404,7 +404,7 @@ func ConditionalDelete(txCtx *TransactionContext, item any, key map[string]any, 
 	if err := txCtx.ConditionCheck(key, condition, values...); err != nil {
 		return fmt.Errorf("condition check failed: %w", err)
 	}
-	
+
 	// Delete item
 	return txCtx.Delete(item)
 }

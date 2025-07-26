@@ -20,8 +20,8 @@ This document provides specific implementation details for every stub in the Les
 ```go
 // 1. Import the storage package
 import (
-    "github.com/aron23/lesser/pkg/storage"
-    "github.com/aron23/lesser/pkg/storage/dynamodb"
+    "github.com/equaltoai/lesser/pkg/storage"
+    "github.com/equaltoai/lesser/pkg/storage/dynamodb"
 )
 
 // 2. Add storage client to globals

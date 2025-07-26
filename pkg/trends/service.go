@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // TrendingAlgorithm defines the interface for different trending algorithms

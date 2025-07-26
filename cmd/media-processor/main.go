@@ -11,9 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/media"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -25,6 +22,9 @@ import (
 	mctypes "github.com/aws/aws-sdk-go-v2/service/mediaconvert/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dhowden/tag"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/media"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

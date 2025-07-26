@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -63,7 +63,6 @@ func (s *dynamoDBStorage) CreateActivity(ctx context.Context, activity *activity
 		TableName: s.getTableName(),
 		Item:      item,
 	})
-
 	if err != nil {
 		log.Error("failed to create activity",
 			zap.String("activity_id", activity.ID),
@@ -104,7 +103,6 @@ func (s *dynamoDBStorage) GetActivity(ctx context.Context, id string) (*activity
 		},
 		Limit: aws.Int32(1),
 	})
-
 	if err != nil {
 		log.Error("failed to scan for activity",
 			zap.String("activity_id", id),

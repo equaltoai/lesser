@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/trust"
 )
 
 // Storage defines the interface for data storage operations

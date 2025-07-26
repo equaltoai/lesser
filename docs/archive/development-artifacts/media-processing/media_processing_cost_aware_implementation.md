@@ -14,7 +14,7 @@
 // cmd/media-processor/main.go
 
 import (
-    "github.com/aron23/lesser/pkg/cost"
+    "github.com/equaltoai/lesser/pkg/cost"
     "github.com/aws/aws-sdk-go-v2/service/mediaconvert"
     "github.com/aws/aws-sdk-go-v2/service/rekognition"
 )

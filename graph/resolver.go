@@ -1,10 +1,10 @@
 package graph
 
 import (
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/mastodon"
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 

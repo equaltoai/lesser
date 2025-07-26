@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )

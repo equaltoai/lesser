@@ -13,13 +13,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"go.uber.org/zap"
 )
 
@@ -219,7 +219,6 @@ func storeSecret(ctx context.Context, client *secretsmanager.Client, secretName,
 		SecretString: aws.String(secretValue),
 		Description:  aws.String("Lesser instance secret"),
 	})
-
 	if err != nil {
 		// If secret already exists, update it
 		_, updateErr := client.UpdateSecret(ctx, &secretsmanager.UpdateSecretInput{

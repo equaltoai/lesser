@@ -4,9 +4,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/observability"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )

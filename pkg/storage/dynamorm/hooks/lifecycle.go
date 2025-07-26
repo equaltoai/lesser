@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"go.uber.org/zap"
 )
 
@@ -40,11 +40,11 @@ type ConditionalHookFunc struct {
 
 // HookRegistry manages all registered hooks
 type HookRegistry struct {
-	hooks      map[reflect.Type]map[HookType][]HookFunc
-	asyncHooks map[reflect.Type]map[HookType][]AsyncHookFunc
+	hooks       map[reflect.Type]map[HookType][]HookFunc
+	asyncHooks  map[reflect.Type]map[HookType][]AsyncHookFunc
 	conditional map[reflect.Type]map[HookType][]ConditionalHookFunc
-	logger     *zap.Logger
-	mu         sync.RWMutex
+	logger      *zap.Logger
+	mu          sync.RWMutex
 }
 
 // NewHookRegistry creates a new hook registry
@@ -122,7 +122,7 @@ func (hr *HookRegistry) RegisterConditional(modelType reflect.Type, hookType Hoo
 // Execute executes all registered hooks for a model and hook type
 func (hr *HookRegistry) Execute(ctx context.Context, model any, hookType HookType) error {
 	modelType := reflect.TypeOf(model)
-	
+
 	// Remove pointer if present
 	if modelType.Kind() == reflect.Ptr {
 		modelType = modelType.Elem()
@@ -307,8 +307,10 @@ func (hr *HookRegistry) ClearAll() {
 }
 
 // Global hook registry instance
-var globalRegistry *HookRegistry
-var globalRegistryOnce sync.Once
+var (
+	globalRegistry     *HookRegistry
+	globalRegistryOnce sync.Once
+)
 
 // GetGlobalRegistry returns the global hook registry instance
 func GetGlobalRegistry() *HookRegistry {
@@ -387,7 +389,7 @@ func ValidationHook(ctx context.Context, model any) error {
 func TimestampHook(ctx context.Context, model any) error {
 	now := time.Now()
 	modelValue := reflect.ValueOf(model)
-	
+
 	// Handle pointer
 	if modelValue.Kind() == reflect.Ptr {
 		modelValue = modelValue.Elem()
@@ -465,7 +467,7 @@ type FollowModel interface {
 	GetFolloweeID() string
 }
 
-// StatusModel interface for status-related models  
+// StatusModel interface for status-related models
 type StatusModel interface {
 	GetUserID() string
 	GetContent() string
@@ -565,21 +567,21 @@ func NewHookStatsTracker() *HookStatsTracker {
 // TrackExecution tracks the execution of a hook
 func (hst *HookStatsTracker) TrackExecution(modelType reflect.Type, hookType HookType, duration time.Duration, err error) {
 	key := fmt.Sprintf("%s:%s", modelType.String(), string(hookType))
-	
+
 	hst.mu.Lock()
 	defer hst.mu.Unlock()
-	
+
 	stats, exists := hst.stats[key]
 	if !exists {
 		stats = &HookStats{}
 		hst.stats[key] = stats
 	}
-	
+
 	stats.TotalExecutions++
 	stats.TotalDuration += duration
 	stats.AverageDuration = stats.TotalDuration / time.Duration(stats.TotalExecutions)
 	stats.LastExecution = time.Now()
-	
+
 	if err != nil {
 		stats.ErrorCount++
 	}
@@ -589,7 +591,7 @@ func (hst *HookStatsTracker) TrackExecution(modelType reflect.Type, hookType Hoo
 func (hst *HookStatsTracker) GetStats() map[string]*HookStats {
 	hst.mu.RLock()
 	defer hst.mu.RUnlock()
-	
+
 	result := make(map[string]*HookStats)
 	for key, stats := range hst.stats {
 		result[key] = &HookStats{
@@ -600,7 +602,7 @@ func (hst *HookStatsTracker) GetStats() map[string]*HookStats {
 			LastExecution:   stats.LastExecution,
 		}
 	}
-	
+
 	return result
 }
 
@@ -612,8 +614,10 @@ func (hst *HookStatsTracker) Reset() {
 }
 
 // Global stats tracker
-var globalStatsTracker *HookStatsTracker
-var globalStatsTrackerOnce sync.Once
+var (
+	globalStatsTracker     *HookStatsTracker
+	globalStatsTrackerOnce sync.Once
+)
 
 // GetGlobalStatsTracker returns the global hook statistics tracker
 func GetGlobalStatsTracker() *HookStatsTracker {

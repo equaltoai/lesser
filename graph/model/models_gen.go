@@ -8,9 +8,9 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/trust"
 )
 
 // AI Analysis types
@@ -761,8 +761,7 @@ type ModeratorStats struct {
 	Categories      []*CategoryStats `json:"categories"`
 }
 
-type Mutation struct {
-}
+type Mutation struct{}
 
 type MuteHashtagPayload struct {
 	Success    bool     `json:"success"`
@@ -940,8 +939,7 @@ type QualityStats struct {
 	AvgBandwidth float64       `json:"avgBandwidth"`
 }
 
-type Query struct {
-}
+type Query struct{}
 
 type QueryPerformance struct {
 	Query       string   `json:"query"`
@@ -1154,8 +1152,7 @@ type StreamingQualityReport struct {
 	ReportID string        `json:"reportId"`
 }
 
-type Subscription struct {
-}
+type Subscription struct{}
 
 type SyncRepliesPayload struct {
 	Success       bool           `json:"success"`

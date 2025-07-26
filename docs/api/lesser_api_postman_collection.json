@@ -76,7 +76,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"client_name\": \"Lesser Postman Test\",\n    \"redirect_uris\": \"urn:ietf:wg:oauth:2.0:oob\",\n    \"scopes\": \"read write follow push admin\",\n    \"website\": \"https://github.com/aron23/lesser\"\n}"
+              "raw": "{\n    \"client_name\": \"Lesser Postman Test\",\n    \"redirect_uris\": \"urn:ietf:wg:oauth:2.0:oob\",\n    \"scopes\": \"read write follow push admin\",\n    \"website\": \"https://github.com/equaltoai/lesser\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/apps",

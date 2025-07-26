@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/cmd/api/models"
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/trust"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 )

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/cmd/api/handlers"
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/cmd/api/handlers"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"

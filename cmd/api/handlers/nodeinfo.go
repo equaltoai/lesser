@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 )
@@ -116,8 +116,8 @@ func (h *Handler) HandleNodeInfo(ctx context.Context, request events.APIGatewayV
 		Software: NodeInfoSoftware{
 			Name:       "lesser",
 			Version:    instanceConfig.Version,
-			Repository: "https://github.com/aron23/lesser",
-			Homepage:   "https://github.com/aron23/lesser",
+			Repository: "https://github.com/equaltoai/lesser",
+			Homepage:   "https://github.com/equaltoai/lesser",
 		},
 		Protocols: []string{
 			"activitypub",

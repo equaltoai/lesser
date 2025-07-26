@@ -4,10 +4,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/smithy-go"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // MapCommonError converts common package errors to Lift errors
@@ -79,24 +79,24 @@ func MapStorageError(err error) error {
 		if errors.As(err, &rnf) {
 			return NotFoundError("resource")
 		}
-		
+
 		var ccf *types.ConditionalCheckFailedException
 		if errors.As(err, &ccf) {
 			return ConflictError("resource", "condition check failed")
 		}
-		
+
 		// Note: ValidationException is not a separate type in AWS SDK v2
-		
+
 		var rle *types.RequestLimitExceeded
 		if errors.As(err, &rle) {
 			return RateLimitError("Request throttled, please try again")
 		}
-		
+
 		var pte *types.ProvisionedThroughputExceededException
 		if errors.As(err, &pte) {
 			return RateLimitError("Request throttled, please try again")
 		}
-		
+
 		// For any other storage error, return internal error
 		return InternalError("Database operation failed")
 	}

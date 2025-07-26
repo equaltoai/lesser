@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/graph/model"
+	"github.com/equaltoai/lesser/graph/model"
 	"go.uber.org/zap"
 )
 

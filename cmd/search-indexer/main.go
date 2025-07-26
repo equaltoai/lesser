@@ -12,7 +12,7 @@ import (
 	"github.com/pay-theory/dynamorm"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 type SearchIndexer struct {
@@ -53,7 +53,7 @@ func (si *SearchIndexer) HandleStream(ctx context.Context, event events.DynamoDB
 
 	// Filter and process indexable records
 	indexableRecords := si.filterIndexable(event.Records)
-	
+
 	si.logger.Info("filtered indexable records",
 		zap.Int("total_records", len(event.Records)),
 		zap.Int("indexable_records", len(indexableRecords)),
@@ -154,17 +154,17 @@ type IndexableContent struct {
 
 func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventRecord) (*IndexableContent, error) {
 	var item struct {
-		PK         string   `dynamorm:"pk"`
-		SK         string   `dynamorm:"sk"`
-		Type       string   `json:"type"`
-		Content    string   `json:"content"`
-		Summary    string   `json:"summary"`
-		Name       string   `json:"name"`
-		ActorID    string   `json:"actor_id"`
-		Tags       []string `json:"tags"`
-		Language   string   `json:"language"`
-		CreatedAt  string   `json:"created_at"`
-		PublishedAt string  `json:"published_at"`
+		PK          string   `dynamorm:"pk"`
+		SK          string   `dynamorm:"sk"`
+		Type        string   `json:"type"`
+		Content     string   `json:"content"`
+		Summary     string   `json:"summary"`
+		Name        string   `json:"name"`
+		ActorID     string   `json:"actor_id"`
+		Tags        []string `json:"tags"`
+		Language    string   `json:"language"`
+		CreatedAt   string   `json:"created_at"`
+		PublishedAt string   `json:"published_at"`
 	}
 
 	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
@@ -229,20 +229,20 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *IndexableContent) error {
 	// Create search index record with full-text search capabilities
 	searchRecord := struct {
-		PK           string   `dynamorm:"pk"`
-		SK           string   `dynamorm:"sk"`
-		Type         string   `json:"type"`
-		ContentID    string   `json:"content_id"`
-		ContentType  string   `json:"content_type"`
-		Text         string   `json:"text"`
-		TextLower    string   `json:"text_lower"`    // For case-insensitive search
-		ActorID      string   `json:"actor_id"`
-		Tags         []string `json:"tags"`
-		Language     string   `json:"language"`
-		WordCount    int      `json:"word_count"`
-		CreatedAt    string   `json:"created_at"`
-		IndexedAt    string   `json:"indexed_at"`
-		TTL          int64    `dynamorm:"ttl"`
+		PK          string   `dynamorm:"pk"`
+		SK          string   `dynamorm:"sk"`
+		Type        string   `json:"type"`
+		ContentID   string   `json:"content_id"`
+		ContentType string   `json:"content_type"`
+		Text        string   `json:"text"`
+		TextLower   string   `json:"text_lower"` // For case-insensitive search
+		ActorID     string   `json:"actor_id"`
+		Tags        []string `json:"tags"`
+		Language    string   `json:"language"`
+		WordCount   int      `json:"word_count"`
+		CreatedAt   string   `json:"created_at"`
+		IndexedAt   string   `json:"indexed_at"`
+		TTL         int64    `dynamorm:"ttl"`
 	}{
 		PK:          fmt.Sprintf("SEARCH#%s", content.Type),
 		SK:          fmt.Sprintf("CONTENT#%s#%s", content.CreatedAt.Format("2006-01-02"), content.ID),

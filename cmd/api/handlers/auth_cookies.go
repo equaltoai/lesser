@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Configuration for different cookie types

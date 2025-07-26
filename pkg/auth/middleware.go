@@ -5,9 +5,9 @@ import (
 	"errors"
 	"os"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"go.uber.org/zap"
 )
 
@@ -31,10 +31,8 @@ type Middleware struct {
 	oauthService *OAuthService
 }
 
-var (
-	// globalMiddleware is reused across Lambda invocations
-	globalMiddleware *Middleware
-)
+// globalMiddleware is reused across Lambda invocations
+var globalMiddleware *Middleware
 
 // GetMiddleware returns a singleton middleware instance
 func GetMiddleware() (*Middleware, error) {

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"go.uber.org/zap"
 )
 

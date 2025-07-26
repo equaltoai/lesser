@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -260,7 +260,7 @@ func (s *dynamoDBStorage) DeleteWalletCredential(ctx context.Context, username, 
 		return fmt.Errorf("failed to get wallet credential: %w", err)
 	}
 
-	var walletType = "ethereum" // default
+	walletType := "ethereum" // default
 	if len(credResult.Item) > 0 {
 		var credential storage.WalletCredential
 		if err := s.UnmarshalItem(credResult.Item, &credential); err == nil {

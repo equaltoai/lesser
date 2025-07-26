@@ -15,10 +15,10 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
-	"github.com/aron23/lesser/graph/model"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/trust"
 	gqlparser "github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -55,8 +55,7 @@ type ResolverRoot interface {
 	TrustEdge() TrustEdgeResolver
 }
 
-type DirectiveRoot struct {
-}
+type DirectiveRoot struct{}
 
 type ComplexityRoot struct {
 	AIAnalysis struct {
@@ -8439,6 +8438,7 @@ func (ec *executionContext) field_Hashtag_posts_args(ctx context.Context, rawArg
 	args["after"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Hashtag_posts_argsFirst(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8485,6 +8485,7 @@ func (ec *executionContext) field_Mutation_acknowledgeSeverance_args(ctx context
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_acknowledgeSeverance_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8513,6 +8514,7 @@ func (ec *executionContext) field_Mutation_addCommunityNote_args(ctx context.Con
 	args["input"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_addCommunityNote_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8541,6 +8543,7 @@ func (ec *executionContext) field_Mutation_attemptReconnection_args(ctx context.
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_attemptReconnection_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8569,6 +8572,7 @@ func (ec *executionContext) field_Mutation_createModerationPattern_args(ctx cont
 	args["input"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_createModerationPattern_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8597,6 +8601,7 @@ func (ec *executionContext) field_Mutation_createNote_args(ctx context.Context, 
 	args["input"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_createNote_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8625,6 +8630,7 @@ func (ec *executionContext) field_Mutation_createQuoteNote_args(ctx context.Cont
 	args["input"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_createQuoteNote_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8653,6 +8659,7 @@ func (ec *executionContext) field_Mutation_deleteModerationPattern_args(ctx cont
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_deleteModerationPattern_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8681,6 +8688,7 @@ func (ec *executionContext) field_Mutation_deleteObject_args(ctx context.Context
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_deleteObject_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8709,6 +8717,7 @@ func (ec *executionContext) field_Mutation_flagObject_args(ctx context.Context, 
 	args["input"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_flagObject_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8737,6 +8746,7 @@ func (ec *executionContext) field_Mutation_followActor_args(ctx context.Context,
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_followActor_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8770,6 +8780,7 @@ func (ec *executionContext) field_Mutation_followHashtag_args(ctx context.Contex
 	args["notifyLevel"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_followHashtag_argsHashtag(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8816,6 +8827,7 @@ func (ec *executionContext) field_Mutation_likeObject_args(ctx context.Context, 
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_likeObject_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8849,6 +8861,7 @@ func (ec *executionContext) field_Mutation_muteHashtag_args(ctx context.Context,
 	args["until"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_muteHashtag_argsHashtag(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8895,6 +8908,7 @@ func (ec *executionContext) field_Mutation_optimizeFederationCosts_args(ctx cont
 	args["threshold"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_optimizeFederationCosts_argsThreshold(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8933,6 +8947,7 @@ func (ec *executionContext) field_Mutation_pauseFederation_args(ctx context.Cont
 	args["until"] = arg2
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_pauseFederation_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -8997,6 +9012,7 @@ func (ec *executionContext) field_Mutation_preloadMedia_args(ctx context.Context
 	args["mediaIds"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_preloadMedia_argsMediaIds(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9025,6 +9041,7 @@ func (ec *executionContext) field_Mutation_reportStreamingQuality_args(ctx conte
 	args["input"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_reportStreamingQuality_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9063,6 +9080,7 @@ func (ec *executionContext) field_Mutation_requestAIAnalysis_args(ctx context.Co
 	args["force"] = arg2
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_requestAIAnalysis_argsObjectID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9132,6 +9150,7 @@ func (ec *executionContext) field_Mutation_requestStreamingUrl_args(ctx context.
 	args["quality"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_requestStreamingUrl_argsMediaID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9178,6 +9197,7 @@ func (ec *executionContext) field_Mutation_resumeFederation_args(ctx context.Con
 	args["domain"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_resumeFederation_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9211,6 +9231,7 @@ func (ec *executionContext) field_Mutation_setFederationLimit_args(ctx context.C
 	args["limit"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_setFederationLimit_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9267,6 +9288,7 @@ func (ec *executionContext) field_Mutation_setInstanceBudget_args(ctx context.Co
 	args["autoLimit"] = arg2
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_setInstanceBudget_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9331,6 +9353,7 @@ func (ec *executionContext) field_Mutation_shareObject_args(ctx context.Context,
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_shareObject_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9359,6 +9382,7 @@ func (ec *executionContext) field_Mutation_syncMissingReplies_args(ctx context.C
 	args["noteId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_syncMissingReplies_argsNoteID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9392,6 +9416,7 @@ func (ec *executionContext) field_Mutation_syncThread_args(ctx context.Context, 
 	args["depth"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_syncThread_argsNoteURL(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9438,6 +9463,7 @@ func (ec *executionContext) field_Mutation_trainModerationModel_args(ctx context
 	args["samples"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_trainModerationModel_argsSamples(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9466,6 +9492,7 @@ func (ec *executionContext) field_Mutation_unfollowActor_args(ctx context.Contex
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_unfollowActor_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9494,6 +9521,7 @@ func (ec *executionContext) field_Mutation_unfollowHashtag_args(ctx context.Cont
 	args["hashtag"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_unfollowHashtag_argsHashtag(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9522,6 +9550,7 @@ func (ec *executionContext) field_Mutation_unlikeObject_args(ctx context.Context
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_unlikeObject_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9550,6 +9579,7 @@ func (ec *executionContext) field_Mutation_unshareObject_args(ctx context.Contex
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_unshareObject_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9583,6 +9613,7 @@ func (ec *executionContext) field_Mutation_updateHashtagNotifications_args(ctx c
 	args["settings"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_updateHashtagNotifications_argsHashtag(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9634,6 +9665,7 @@ func (ec *executionContext) field_Mutation_updateModerationPattern_args(ctx cont
 	args["input"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_updateModerationPattern_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9690,6 +9722,7 @@ func (ec *executionContext) field_Mutation_updateQuotePermissions_args(ctx conte
 	args["permission"] = arg2
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_updateQuotePermissions_argsNoteID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9754,6 +9787,7 @@ func (ec *executionContext) field_Mutation_updateStreamingPreferences_args(ctx c
 	args["input"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_updateStreamingPreferences_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9782,6 +9816,7 @@ func (ec *executionContext) field_Mutation_updateTrust_args(ctx context.Context,
 	args["input"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_updateTrust_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9815,6 +9850,7 @@ func (ec *executionContext) field_Mutation_voteCommunityNote_args(ctx context.Co
 	args["helpful"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_voteCommunityNote_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9861,6 +9897,7 @@ func (ec *executionContext) field_Mutation_withdrawFromQuotes_args(ctx context.C
 	args["noteId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Mutation_withdrawFromQuotes_argsNoteID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9894,6 +9931,7 @@ func (ec *executionContext) field_Object_quotes_args(ctx context.Context, rawArg
 	args["after"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Object_quotes_argsFirst(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9940,6 +9978,7 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 	args["name"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query___type_argsName(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -9973,6 +10012,7 @@ func (ec *executionContext) field_Query_actor_args(ctx context.Context, rawArgs 
 	args["username"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_actor_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10019,6 +10059,7 @@ func (ec *executionContext) field_Query_affectedRelationships_args(ctx context.C
 	args["severedRelationshipId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_affectedRelationships_argsSeveredRelationshipID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10047,6 +10088,7 @@ func (ec *executionContext) field_Query_aiAnalysis_args(ctx context.Context, raw
 	args["objectId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_aiAnalysis_argsObjectID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10075,6 +10117,7 @@ func (ec *executionContext) field_Query_aiStats_args(ctx context.Context, rawArg
 	args["period"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_aiStats_argsPeriod(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10103,6 +10146,7 @@ func (ec *executionContext) field_Query_bandwidthUsage_args(ctx context.Context,
 	args["period"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_bandwidthUsage_argsPeriod(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10131,6 +10175,7 @@ func (ec *executionContext) field_Query_costBreakdown_args(ctx context.Context, 
 	args["period"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_costBreakdown_argsPeriod(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10159,6 +10204,7 @@ func (ec *executionContext) field_Query_costProjections_args(ctx context.Context
 	args["period"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_costProjections_argsPeriod(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10187,6 +10233,7 @@ func (ec *executionContext) field_Query_explainObject_args(ctx context.Context, 
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_explainObject_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10225,6 +10272,7 @@ func (ec *executionContext) field_Query_federationCosts_args(ctx context.Context
 	args["orderBy"] = arg2
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_federationCosts_argsFirst(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10289,6 +10337,7 @@ func (ec *executionContext) field_Query_federationFlow_args(ctx context.Context,
 	args["period"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_federationFlow_argsPeriod(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10317,6 +10366,7 @@ func (ec *executionContext) field_Query_federationHealth_args(ctx context.Contex
 	args["threshold"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_federationHealth_argsThreshold(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10355,6 +10405,7 @@ func (ec *executionContext) field_Query_federationLimits_args(ctx context.Contex
 	args["after"] = arg2
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_federationLimits_argsActive(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10419,6 +10470,7 @@ func (ec *executionContext) field_Query_federationMap_args(ctx context.Context, 
 	args["depth"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_federationMap_argsDepth(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10447,6 +10499,7 @@ func (ec *executionContext) field_Query_federationStatus_args(ctx context.Contex
 	args["domain"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_federationStatus_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10480,6 +10533,7 @@ func (ec *executionContext) field_Query_followedHashtags_args(ctx context.Contex
 	args["after"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_followedHashtags_argsFirst(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10536,6 +10590,7 @@ func (ec *executionContext) field_Query_hashtagTimeline_args(ctx context.Context
 	args["after"] = arg2
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_hashtagTimeline_argsHashtag(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10600,6 +10655,7 @@ func (ec *executionContext) field_Query_hashtag_args(ctx context.Context, rawArg
 	args["name"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_hashtag_argsName(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10628,6 +10684,7 @@ func (ec *executionContext) field_Query_instanceBudgets_args(ctx context.Context
 	args["exceeded"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_instanceBudgets_argsExceeded(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10656,6 +10713,7 @@ func (ec *executionContext) field_Query_instanceHealthReport_args(ctx context.Co
 	args["domain"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_instanceHealthReport_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10684,6 +10742,7 @@ func (ec *executionContext) field_Query_instanceRelationships_args(ctx context.C
 	args["domain"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_instanceRelationships_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10712,6 +10771,7 @@ func (ec *executionContext) field_Query_mediaStreamUrl_args(ctx context.Context,
 	args["mediaId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_mediaStreamUrl_argsMediaID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10740,6 +10800,7 @@ func (ec *executionContext) field_Query_moderationDashboard_args(ctx context.Con
 	args["filter"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_moderationDashboard_argsFilter(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10773,6 +10834,7 @@ func (ec *executionContext) field_Query_moderationEffectiveness_args(ctx context
 	args["period"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_moderationEffectiveness_argsPatternID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10834,6 +10896,7 @@ func (ec *executionContext) field_Query_moderationPatterns_args(ctx context.Cont
 	args["after"] = arg3
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_moderationPatterns_argsActive(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10921,6 +10984,7 @@ func (ec *executionContext) field_Query_moderationQueue_args(ctx context.Context
 	args["after"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_moderationQueue_argsFirst(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -10972,6 +11036,7 @@ func (ec *executionContext) field_Query_moderatorActivity_args(ctx context.Conte
 	args["period"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_moderatorActivity_argsModeratorID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11033,6 +11098,7 @@ func (ec *executionContext) field_Query_multiHashtagTimeline_args(ctx context.Co
 	args["after"] = arg3
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_multiHashtagTimeline_argsHashtags(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11130,6 +11196,7 @@ func (ec *executionContext) field_Query_notifications_args(ctx context.Context, 
 	args["after"] = arg3
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_notifications_argsTypes(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11212,6 +11279,7 @@ func (ec *executionContext) field_Query_object_args(ctx context.Context, rawArgs
 	args["id"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_object_argsID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11240,6 +11308,7 @@ func (ec *executionContext) field_Query_patternEffectiveness_args(ctx context.Co
 	args["patternId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_patternEffectiveness_argsPatternID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11268,6 +11337,7 @@ func (ec *executionContext) field_Query_performanceMetrics_args(ctx context.Cont
 	args["service"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_performanceMetrics_argsService(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11301,6 +11371,7 @@ func (ec *executionContext) field_Query_popularStreams_args(ctx context.Context,
 	args["after"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_popularStreams_argsFirst(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11362,6 +11433,7 @@ func (ec *executionContext) field_Query_search_args(ctx context.Context, rawArgs
 	args["after"] = arg3
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_search_argsQuery(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11454,6 +11526,7 @@ func (ec *executionContext) field_Query_severedRelationships_args(ctx context.Co
 	args["after"] = arg2
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_severedRelationships_argsInstance(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11518,6 +11591,7 @@ func (ec *executionContext) field_Query_slowQueries_args(ctx context.Context, ra
 	args["threshold"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_slowQueries_argsThreshold(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11546,6 +11620,7 @@ func (ec *executionContext) field_Query_streamingAnalytics_args(ctx context.Cont
 	args["mediaId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_streamingAnalytics_argsMediaID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11574,6 +11649,7 @@ func (ec *executionContext) field_Query_suggestedHashtags_args(ctx context.Conte
 	args["limit"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_suggestedHashtags_argsLimit(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11602,6 +11678,7 @@ func (ec *executionContext) field_Query_supportedBitrates_args(ctx context.Conte
 	args["mediaId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_supportedBitrates_argsMediaID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11630,6 +11707,7 @@ func (ec *executionContext) field_Query_threadContext_args(ctx context.Context, 
 	args["noteId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_threadContext_argsNoteID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11678,6 +11756,7 @@ func (ec *executionContext) field_Query_timeline_args(ctx context.Context, rawAr
 	args["after"] = arg4
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_timeline_argsType(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11783,6 +11862,7 @@ func (ec *executionContext) field_Query_trustGraph_args(ctx context.Context, raw
 	args["category"] = arg1
 	return args, nil
 }
+
 func (ec *executionContext) field_Query_trustGraph_argsActorID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11829,6 +11909,7 @@ func (ec *executionContext) field_Subscription_activityStream_args(ctx context.C
 	args["types"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_activityStream_argsTypes(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11857,6 +11938,7 @@ func (ec *executionContext) field_Subscription_aiAnalysisUpdates_args(ctx contex
 	args["objectId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_aiAnalysisUpdates_argsObjectID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11885,6 +11967,7 @@ func (ec *executionContext) field_Subscription_budgetAlerts_args(ctx context.Con
 	args["domain"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_budgetAlerts_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11913,6 +11996,7 @@ func (ec *executionContext) field_Subscription_costAlerts_args(ctx context.Conte
 	args["thresholdUSD"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_costAlerts_argsThresholdUsd(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11941,6 +12025,7 @@ func (ec *executionContext) field_Subscription_costUpdates_args(ctx context.Cont
 	args["threshold"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_costUpdates_argsThreshold(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11969,6 +12054,7 @@ func (ec *executionContext) field_Subscription_federationHealthUpdates_args(ctx 
 	args["domain"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_federationHealthUpdates_argsDomain(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -11997,6 +12083,7 @@ func (ec *executionContext) field_Subscription_hashtagActivity_args(ctx context.
 	args["hashtags"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_hashtagActivity_argsHashtags(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12025,6 +12112,7 @@ func (ec *executionContext) field_Subscription_moderationAlerts_args(ctx context
 	args["severity"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_moderationAlerts_argsSeverity(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12053,6 +12141,7 @@ func (ec *executionContext) field_Subscription_moderationEvents_args(ctx context
 	args["actorId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_moderationEvents_argsActorID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12081,6 +12170,7 @@ func (ec *executionContext) field_Subscription_moderationQueueUpdate_args(ctx co
 	args["priority"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_moderationQueueUpdate_argsPriority(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12109,6 +12199,7 @@ func (ec *executionContext) field_Subscription_performanceAlert_args(ctx context
 	args["severity"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_performanceAlert_argsSeverity(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12137,6 +12228,7 @@ func (ec *executionContext) field_Subscription_quoteActivity_args(ctx context.Co
 	args["noteId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_quoteActivity_argsNoteID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12165,6 +12257,7 @@ func (ec *executionContext) field_Subscription_timelineUpdates_args(ctx context.
 	args["type"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_timelineUpdates_argsType(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12193,6 +12286,7 @@ func (ec *executionContext) field_Subscription_trustUpdates_args(ctx context.Con
 	args["actorId"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field_Subscription_trustUpdates_argsActorID(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12221,6 +12315,7 @@ func (ec *executionContext) field___Directive_args_args(ctx context.Context, raw
 	args["includeDeprecated"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field___Directive_args_argsIncludeDeprecated(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12249,6 +12344,7 @@ func (ec *executionContext) field___Field_args_args(ctx context.Context, rawArgs
 	args["includeDeprecated"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field___Field_args_argsIncludeDeprecated(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12277,6 +12373,7 @@ func (ec *executionContext) field___Type_enumValues_args(ctx context.Context, ra
 	args["includeDeprecated"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field___Type_enumValues_argsIncludeDeprecated(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -12305,6 +12402,7 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 	args["includeDeprecated"] = arg0
 	return args, nil
 }
+
 func (ec *executionContext) field___Type_fields_argsIncludeDeprecated(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -75820,7 +75918,7 @@ func (ec *executionContext) marshalNTime2githubᚗcomᚋaron23ᚋlesserᚋgraph�
 }
 
 func (ec *executionContext) unmarshalNTime2ᚖgithubᚗcomᚋaron23ᚋlesserᚋgraphᚋmodelᚐTime(ctx context.Context, v any) (*model.Time, error) {
-	var res = new(model.Time)
+	res := new(model.Time)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76484,7 +76582,7 @@ func (ec *executionContext) unmarshalOCostOrderBy2ᚖgithubᚗcomᚋaron23ᚋles
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.CostOrderBy)
+	res := new(model.CostOrderBy)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76500,7 +76598,7 @@ func (ec *executionContext) unmarshalOCursor2ᚖgithubᚗcomᚋaron23ᚋlesser�
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.Cursor)
+	res := new(model.Cursor)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76660,7 +76758,7 @@ func (ec *executionContext) unmarshalOModerationSeverity2ᚖgithubᚗcomᚋaron2
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.ModerationSeverity)
+	res := new(model.ModerationSeverity)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76694,7 +76792,7 @@ func (ec *executionContext) unmarshalONotificationLevel2ᚖgithubᚗcomᚋaron23
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.NotificationLevel)
+	res := new(model.NotificationLevel)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76717,7 +76815,7 @@ func (ec *executionContext) unmarshalOPeriod2ᚖgithubᚗcomᚋaron23ᚋlesser�
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.Period)
+	res := new(model.Period)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76733,7 +76831,7 @@ func (ec *executionContext) unmarshalOPriority2ᚖgithubᚗcomᚋaron23ᚋlesser
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.Priority)
+	res := new(model.Priority)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76756,7 +76854,7 @@ func (ec *executionContext) unmarshalOQuoteType2ᚖgithubᚗcomᚋaron23ᚋlesse
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.QuoteType)
+	res := new(model.QuoteType)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76793,7 +76891,7 @@ func (ec *executionContext) unmarshalOStreamQuality2ᚖgithubᚗcomᚋaron23ᚋl
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.StreamQuality)
+	res := new(model.StreamQuality)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76889,7 +76987,7 @@ func (ec *executionContext) unmarshalOTime2ᚖgithubᚗcomᚋaron23ᚋlesserᚋg
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.Time)
+	res := new(model.Time)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
@@ -76924,7 +77022,7 @@ func (ec *executionContext) unmarshalOVisibility2ᚖgithubᚗcomᚋaron23ᚋless
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.Visibility)
+	res := new(model.Visibility)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }

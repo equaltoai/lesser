@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/cmd/api/models"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/mastodon"
 )
 
 // HandleCreateStatus creates a new status (post)

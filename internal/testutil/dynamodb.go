@@ -6,11 +6,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	dynamodbsvc "github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"github.com/stretchr/testify/require"
 )
 

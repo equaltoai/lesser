@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/aron23/lesser/internal/testutil/mocks"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/internal/testutil/mocks"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

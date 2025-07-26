@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 )
 
@@ -261,7 +261,6 @@ func (r *TimelineRepository) GetTimelineEntry(ctx context.Context, timelineType,
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&entry)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get timeline entry: %w", err)
 	}
@@ -339,7 +338,6 @@ func (r *TimelineRepository) DeleteExpiredTimelineEntries(ctx context.Context, b
 	err := r.db.Model(&models.Timeline{}).
 		Filter("ExpiresAt", "<", before).
 		All(&expiredEntries)
-
 	if err != nil {
 		return fmt.Errorf("failed to scan for expired timeline entries: %w", err)
 	}
@@ -366,7 +364,6 @@ func (r *TimelineRepository) CountTimelineEntries(ctx context.Context, timelineT
 	count, err := r.db.Model(&models.Timeline{}).
 		Where("PK", "=", pk).
 		Count()
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to count timeline entries: %w", err)
 	}
@@ -388,7 +385,6 @@ func (r *TimelineRepository) GetTimelineEntriesInRange(ctx context.Context, time
 		OrderBy("SK", "DESC").
 		Limit(limit).
 		All(&entries)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get timeline entries in range: %w", err)
 	}

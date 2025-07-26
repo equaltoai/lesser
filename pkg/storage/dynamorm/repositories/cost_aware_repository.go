@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -28,15 +28,15 @@ type CostThresholds struct {
 	// Per-operation thresholds (in cents)
 	WarningCostPerOp float64
 	MaxCostPerOp     float64
-	
+
 	// Per-request thresholds (in cents)
 	WarningCostPerRequest float64
 	MaxCostPerRequest     float64
-	
+
 	// Time-based thresholds
 	WarningCostPerMinute float64
 	MaxCostPerMinute     float64
-	
+
 	// Operation count thresholds
 	MaxOperationsPerRequest int
 	MaxOperationsPerMinute  int
@@ -71,26 +71,26 @@ type OperationStats struct {
 // NewCostAwareRepository creates a repository with comprehensive cost tracking
 func NewCostAwareRepository(db core.DB, tableName string, logger *zap.Logger, tracker *cost.Tracker) *CostAwareRepository {
 	costTracker := cost.WrapWithCostTracking(db, logger)
-	
+
 	return &CostAwareRepository{
-		BaseRepository:  dynamorm.NewBaseRepository(db, tableName),
-		costTracker:     costTracker,
-		costThresholds:  DefaultCostThresholds(),
-		logger:          logger,
-		operationStats:  make(map[string]*OperationStats),
+		BaseRepository: dynamorm.NewBaseRepository(db, tableName),
+		costTracker:    costTracker,
+		costThresholds: DefaultCostThresholds(),
+		logger:         logger,
+		operationStats: make(map[string]*OperationStats),
 	}
 }
 
 // NewCostAwareRepositoryWithRequest creates a repository with request-scoped cost tracking
 func NewCostAwareRepositoryWithRequest(db core.DB, tableName, requestID, operationType string, logger *zap.Logger, tracker *cost.Tracker) *CostAwareRepository {
 	costTracker := cost.WrapWithCostTrackingAndRequest(db, requestID, operationType, logger)
-	
+
 	return &CostAwareRepository{
-		BaseRepository:  dynamorm.NewBaseRepository(db, tableName),
-		costTracker:     costTracker,
-		costThresholds:  DefaultCostThresholds(),
-		logger:          logger,
-		operationStats:  make(map[string]*OperationStats),
+		BaseRepository: dynamorm.NewBaseRepository(db, tableName),
+		costTracker:    costTracker,
+		costThresholds: DefaultCostThresholds(),
+		logger:         logger,
+		operationStats: make(map[string]*OperationStats),
 	}
 }
 
@@ -104,29 +104,29 @@ func (r *CostAwareRepository) SetCostThresholds(thresholds CostThresholds) {
 // trackOperation wraps a repository operation with comprehensive cost tracking
 func (r *CostAwareRepository) trackOperation(ctx context.Context, operationName string, fn func() error) error {
 	startTime := time.Now()
-	
+
 	// Get initial cost
 	initialCost := r.costTracker.CalculateCost()
-	
+
 	// Check pre-operation limits
 	if err := r.checkPreOperationLimits(ctx, operationName); err != nil {
 		return err
 	}
-	
+
 	// Execute operation
 	err := r.costTracker.TrackOperation(ctx, operationName, fn)
-	
+
 	// Calculate operation cost
 	finalCost := r.costTracker.CalculateCost()
 	operationCost := float64(finalCost.TotalCostMicroCents-initialCost.TotalCostMicroCents) / float64(cost.MicroCentsToCents)
 	duration := time.Since(startTime)
-	
+
 	// Update operation statistics
 	r.updateOperationStats(operationName, operationCost, duration, err != nil)
-	
+
 	// Check post-operation thresholds
 	r.checkPostOperationThresholds(operationName, operationCost, duration)
-	
+
 	// Log operation details
 	if r.logger != nil {
 		fields := []zap.Field{
@@ -135,7 +135,7 @@ func (r *CostAwareRepository) trackOperation(ctx context.Context, operationName 
 			zap.Duration("duration", duration),
 			zap.String("table", r.GetTableName()),
 		}
-		
+
 		if err != nil {
 			fields = append(fields, zap.Error(err))
 			r.logger.Error("cost_aware_operation_failed", fields...)
@@ -143,7 +143,7 @@ func (r *CostAwareRepository) trackOperation(ctx context.Context, operationName 
 			r.logger.Debug("cost_aware_operation_completed", fields...)
 		}
 	}
-	
+
 	return err
 }
 
@@ -151,7 +151,7 @@ func (r *CostAwareRepository) trackOperation(ctx context.Context, operationName 
 func (r *CostAwareRepository) checkPreOperationLimits(ctx context.Context, operationName string) error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	// Check operation count limits
 	if stats, exists := r.operationStats[operationName]; exists {
 		// Check operations per minute
@@ -162,17 +162,17 @@ func (r *CostAwareRepository) checkPreOperationLimits(ctx context.Context, opera
 			}
 		}
 	}
-	
+
 	// Check context for request-level limits
 	if requestTracker := cost.FromContext(ctx); requestTracker != nil {
 		requestCost := requestTracker.CalculateCost()
 		currentRequestCost := float64(requestCost.TotalCostMicroCents) / float64(cost.MicroCentsToCents)
-		
+
 		if currentRequestCost > r.costThresholds.MaxCostPerRequest {
 			return fmt.Errorf("request cost limit exceeded: $%.6f > $%.6f", currentRequestCost, r.costThresholds.MaxCostPerRequest)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -202,23 +202,23 @@ func (r *CostAwareRepository) checkPostOperationThresholds(operationName string,
 func (r *CostAwareRepository) updateOperationStats(operationName string, cost float64, duration time.Duration, hadError bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	stats, exists := r.operationStats[operationName]
 	if !exists {
 		stats = &OperationStats{}
 		r.operationStats[operationName] = stats
 	}
-	
+
 	stats.mu.Lock()
 	defer stats.mu.Unlock()
-	
+
 	stats.TotalOperations++
 	stats.TotalCost += cost
 	stats.TotalDuration += duration
 	stats.AverageCost = stats.TotalCost / float64(stats.TotalOperations)
 	stats.AverageDuration = stats.TotalDuration / time.Duration(stats.TotalOperations)
 	stats.LastOperation = time.Now()
-	
+
 	if hadError {
 		stats.ErrorCount++
 	}
@@ -331,7 +331,7 @@ func (cq *CostAwareQuery) All(dest any) error {
 			return cq.query.All(dest)
 		})
 	}
-	
+
 	return cq.repository.trackOperation(cq.ctx, "query_all", func() error {
 		return cq.query.All(dest)
 	})
@@ -354,7 +354,7 @@ func (cq *CostAwareQuery) Count() (int64, error) {
 func (r *CostAwareRepository) GetOperationStats() map[string]*OperationStats {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	// Return a copy to avoid race conditions
 	result := make(map[string]*OperationStats)
 	for op, stats := range r.operationStats {
@@ -370,14 +370,14 @@ func (r *CostAwareRepository) GetOperationStats() map[string]*OperationStats {
 		}
 		stats.mu.RUnlock()
 	}
-	
+
 	return result
 }
 
 // GetCostSummary returns a summary of costs for this repository
 func (r *CostAwareRepository) GetCostSummary() *RepositoryCostSummary {
 	stats := r.GetOperationStats()
-	
+
 	summary := &RepositoryCostSummary{
 		TableName:        r.GetTableName(),
 		TotalOperations:  0,
@@ -385,12 +385,12 @@ func (r *CostAwareRepository) GetCostSummary() *RepositoryCostSummary {
 		TotalErrors:      0,
 		OperationSummary: make(map[string]OperationSummary),
 	}
-	
+
 	for op, stat := range stats {
 		summary.TotalOperations += stat.TotalOperations
 		summary.TotalCost += stat.TotalCost
 		summary.TotalErrors += stat.ErrorCount
-		
+
 		summary.OperationSummary[op] = OperationSummary{
 			Count:           stat.TotalOperations,
 			TotalCost:       stat.TotalCost,
@@ -400,12 +400,12 @@ func (r *CostAwareRepository) GetCostSummary() *RepositoryCostSummary {
 			LastUsed:        stat.LastOperation,
 		}
 	}
-	
+
 	if summary.TotalOperations > 0 {
 		summary.AverageCostPerOperation = summary.TotalCost / float64(summary.TotalOperations)
 		summary.ErrorRate = float64(summary.TotalErrors) / float64(summary.TotalOperations)
 	}
-	
+
 	return summary
 }
 
@@ -448,46 +448,46 @@ func (r *CostAwareRepository) GetCostTracker() *cost.DynamORMCostTracker {
 func (r *CostAwareRepository) OptimizeQuery(ctx context.Context, query core.Query) *QueryOptimizationSuggestion {
 	// This is a basic implementation - in practice, you'd analyze:
 	// - Index usage
-	// - Filter efficiency  
+	// - Filter efficiency
 	// - Projection optimization
 	// - Pagination patterns
-	
+
 	suggestion := &QueryOptimizationSuggestion{
-		OriginalQuery: "query", // Would capture actual query details
-		Suggestions:   make([]string, 0),
+		OriginalQuery:    "query", // Would capture actual query details
+		Suggestions:      make([]string, 0),
 		EstimatedSavings: 0,
 	}
-	
+
 	// Basic optimization suggestions
-	suggestion.Suggestions = append(suggestion.Suggestions, 
+	suggestion.Suggestions = append(suggestion.Suggestions,
 		"Consider using specific projections to reduce data transfer",
 		"Ensure queries use appropriate indexes",
 		"Consider pagination for large result sets",
 	)
-	
+
 	return suggestion
 }
 
 // QueryOptimizationSuggestion provides query optimization recommendations
 type QueryOptimizationSuggestion struct {
-	OriginalQuery    string    `json:"original_query"`
-	Suggestions      []string  `json:"suggestions"`
-	EstimatedSavings float64   `json:"estimated_savings"`
-	Priority         string    `json:"priority"`
+	OriginalQuery    string   `json:"original_query"`
+	Suggestions      []string `json:"suggestions"`
+	EstimatedSavings float64  `json:"estimated_savings"`
+	Priority         string   `json:"priority"`
 }
 
 // Cost alerting
 
 // CostAlert represents a cost threshold violation
 type CostAlert struct {
-	AlertType     string    `json:"alert_type"`
-	Operation     string    `json:"operation"`
-	CurrentValue  float64   `json:"current_value"`
-	ThresholdValue float64  `json:"threshold_value"`
-	Severity      string    `json:"severity"`
-	Timestamp     time.Time `json:"timestamp"`
-	TableName     string    `json:"table_name"`
-	Message       string    `json:"message"`
+	AlertType      string    `json:"alert_type"`
+	Operation      string    `json:"operation"`
+	CurrentValue   float64   `json:"current_value"`
+	ThresholdValue float64   `json:"threshold_value"`
+	Severity       string    `json:"severity"`
+	Timestamp      time.Time `json:"timestamp"`
+	TableName      string    `json:"table_name"`
+	Message        string    `json:"message"`
 }
 
 // CheckCostAlerts checks for any cost threshold violations
@@ -495,7 +495,7 @@ func (r *CostAwareRepository) CheckCostAlerts() []*CostAlert {
 	alerts := make([]*CostAlert, 0)
 	stats := r.GetOperationStats()
 	now := time.Now()
-	
+
 	for op, stat := range stats {
 		// Check average cost alerts
 		if stat.AverageCost > r.costThresholds.MaxCostPerOp {
@@ -521,7 +521,7 @@ func (r *CostAwareRepository) CheckCostAlerts() []*CostAlert {
 				Message:        fmt.Sprintf("Average cost for %s exceeds warning threshold", op),
 			})
 		}
-		
+
 		// Check error rate alerts
 		if stat.TotalOperations > 0 {
 			errorRate := float64(stat.ErrorCount) / float64(stat.TotalOperations)
@@ -539,7 +539,7 @@ func (r *CostAwareRepository) CheckCostAlerts() []*CostAlert {
 			}
 		}
 	}
-	
+
 	return alerts
 }
 

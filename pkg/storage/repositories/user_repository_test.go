@@ -5,14 +5,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestCreateUser_MissingUsername(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	repo := NewUserRepository(mockDB)
 
 	user := &storage.User{
 		Email: "test@example.com",
@@ -25,7 +28,8 @@ func TestCreateUser_MissingUsername(t *testing.T) {
 }
 
 func TestGetUserByEmail_EmptyEmail(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	repo := NewUserRepository(mockDB)
 
 	user, err := repo.GetUserByEmail(context.Background(), "")
 
@@ -35,7 +39,8 @@ func TestGetUserByEmail_EmptyEmail(t *testing.T) {
 }
 
 func TestUpdateUser_EmptyUpdates(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	repo := NewUserRepository(mockDB)
 
 	err := repo.UpdateUser(context.Background(), "testuser", map[string]any{})
 
@@ -44,46 +49,104 @@ func TestUpdateUser_EmptyUpdates(t *testing.T) {
 }
 
 func TestGetUserByProviderID_NotImplemented(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewUserRepository(mockDB)
+
+	// Set up expectations
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
+	mockQuery.On("Index", "provider-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI1PK", "=", "PROVIDER#google").Return(mockQuery)
+	mockQuery.On("Where", "GSI1SK", "=", "123#").Return(mockQuery)
+	mockQuery.On("Limit", 1).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(nil) // Return success but empty
 
 	user, err := repo.GetUserByProviderID(context.Background(), "google", "123")
 
-	assert.Error(t, err)
+	assert.Error(t, err) // It returns an error when user not found
 	assert.Nil(t, user)
-	assert.Contains(t, err.Error(), "not implemented")
+	assert.Contains(t, err.Error(), "user not found")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestLinkProviderAccount_NotImplemented(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewUserRepository(mockDB)
+
+	// Set up expectations for GetUser call
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", &models.User{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "user#testuser").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", "user#testuser").Return(mockQuery)
+	mockQuery.On("First", mock.Anything).Return(nil) // User exists
+
+	// Set up expectations for the provider account creation
+	mockDB.On("Model", mock.AnythingOfType("*models.ProviderAccount")).Return(mockQuery)
+	mockQuery.On("Create").Return(nil)
 
 	err := repo.LinkProviderAccount(context.Background(), "testuser", "google", "123")
 
-	// Now that it's implemented, it should fail due to nil db, not "not implemented"
-	assert.Error(t, err)
-	assert.NotContains(t, err.Error(), "not implemented")
+	assert.NoError(t, err)
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestUnlinkProviderAccount_NotImplemented(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewUserRepository(mockDB)
+
+	// Set up expectations for query
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery).Once()
+	mockQuery.On("Index", "user-providers-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(nil) // Return empty list
+
+	// Since no provider accounts found, no delete will be called
 
 	err := repo.UnlinkProviderAccount(context.Background(), "testuser", "google")
 
-	// Now that it's implemented, it should fail due to nil db, not "not implemented"
-	assert.Error(t, err)
-	assert.NotContains(t, err.Error(), "not implemented")
+	assert.Error(t, err) // Returns error when provider account not found
+	assert.Contains(t, err.Error(), "provider account not found")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetLinkedProviders_ReturnsEmpty(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewUserRepository(mockDB)
+
+	// Set up expectations
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
+	mockQuery.On("Index", "user-providers-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(nil) // Return empty list
 
 	providers, err := repo.GetLinkedProviders(context.Background(), "testuser")
 
 	assert.NoError(t, err)
 	assert.Empty(t, providers)
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestModelToStorage(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	repo := NewUserRepository(mockDB)
 	now := time.Now()
 
 	userModel := &models.User{
@@ -118,7 +181,8 @@ func TestModelToStorage(t *testing.T) {
 }
 
 func TestApplyUpdates(t *testing.T) {
-	repo := &UserRepository{}
+	mockDB := new(mocks.MockDB)
+	repo := NewUserRepository(mockDB)
 	userModel := &models.User{
 		Username: "testuser",
 		Email:    "old@example.com",

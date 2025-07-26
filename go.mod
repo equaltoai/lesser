@@ -1,4 +1,4 @@
-module github.com/aron23/lesser
+module github.com/equaltoai/lesser
 
 go 1.24
 
@@ -42,6 +42,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/pay-theory/dynamorm v1.0.29
 	github.com/pay-theory/lift v1.0.55
+	github.com/shopspring/decimal v1.4.0
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.10.0
 	github.com/vektah/gqlparser/v2 v2.5.27
@@ -108,7 +109,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/relvacode/iso8601 v1.1.1-0.20210511065120-b30b151cc433 // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/supranational/blst v0.3.11 // indirect

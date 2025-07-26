@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/graph/model"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/trust"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
 

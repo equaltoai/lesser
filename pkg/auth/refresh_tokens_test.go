@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,14 +48,19 @@ func (m *MockRefreshTokenDB) UpdateItem(ctx context.Context, params *dynamodb.Up
 	tokenAttr := params.Key["token"]
 	if tokenStr, ok := tokenAttr.(*types.AttributeValueMemberS); ok {
 		if item, exists := m.items[tokenStr.Value]; exists {
-			// Apply the update
-			if params.UpdateExpression != nil && *params.UpdateExpression == "SET revoked = :true, revoked_reason = :reason, last_used_at = :now" {
-				item["revoked"] = &types.AttributeValueMemberBOOL{Value: true}
-				if reason, ok := params.ExpressionAttributeValues[":reason"].(*types.AttributeValueMemberS); ok {
-					item["revoked_reason"] = &types.AttributeValueMemberS{Value: reason.Value}
-				}
-				if now, ok := params.ExpressionAttributeValues[":now"].(*types.AttributeValueMemberN); ok {
-					item["last_used_at"] = &types.AttributeValueMemberN{Value: now.Value}
+			// Apply the update based on the expression
+			if params.UpdateExpression != nil {
+				updateExpr := *params.UpdateExpression
+				
+				// Handle different update expressions
+				if strings.Contains(updateExpr, "SET revoked = :true") {
+					item["revoked"] = &types.AttributeValueMemberBOOL{Value: true}
+					if reason, ok := params.ExpressionAttributeValues[":reason"].(*types.AttributeValueMemberS); ok {
+						item["revoked_reason"] = &types.AttributeValueMemberS{Value: reason.Value}
+					}
+					if now, ok := params.ExpressionAttributeValues[":now"]; ok {
+						item["last_used_at"] = now
+					}
 				}
 			}
 			return &dynamodb.UpdateItemOutput{}, nil

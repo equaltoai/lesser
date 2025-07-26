@@ -7,18 +7,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // IntegrationTestSuite provides a framework for integration testing
 type IntegrationTestSuite struct {
-	Storage    *MockStorage
-	TestData   *TestDataManager
-	Cleanup    []func()
-	Config     *IntegrationConfig
-	t          *testing.T
+	Storage  *MockStorage
+	TestData *TestDataManager
+	Cleanup  []func()
+	Config   *IntegrationConfig
+	t        *testing.T
 }
 
 // IntegrationConfig holds configuration for integration tests
@@ -27,14 +27,14 @@ type IntegrationConfig struct {
 	DynamoDBEndpoint string
 	DynamoDBRegion   string
 	TableName        string
-	
+
 	// Test timeouts
 	DefaultTimeout time.Duration
-	
+
 	// Environment setup
 	SkipTableCreation bool
 	PreserveData      bool
-	
+
 	// Performance thresholds
 	MaxResponseTime time.Duration
 	MaxMemoryUsage  int64
@@ -59,22 +59,22 @@ func NewIntegrationTestSuite(t *testing.T, config *IntegrationConfig) *Integrati
 	if config == nil {
 		config = DefaultIntegrationConfig()
 	}
-	
+
 	suite := &IntegrationTestSuite{
 		TestData: NewTestDataManager(),
 		Cleanup:  make([]func(), 0),
 		Config:   config,
 		t:        t,
 	}
-	
+
 	// Setup storage connection
 	suite.setupStorage()
-	
+
 	// Setup test tables if needed
 	if !config.SkipTableCreation {
 		suite.setupTables()
 	}
-	
+
 	return suite
 }
 
@@ -83,7 +83,7 @@ func (suite *IntegrationTestSuite) setupStorage() {
 	// In a real implementation, this would set up DynamoDB connection
 	// For now, we'll use a mock that can be replaced in actual integration tests
 	suite.Storage = &MockStorage{}
-	
+
 	// Add cleanup for storage connection
 	suite.AddCleanup(func() {
 		// Close storage connections
@@ -94,7 +94,7 @@ func (suite *IntegrationTestSuite) setupStorage() {
 func (suite *IntegrationTestSuite) setupTables() {
 	// Create test tables with proper schema
 	// This would use actual DynamoDB table creation in real implementation
-	
+
 	// Add cleanup for tables
 	if !suite.Config.PreserveData {
 		suite.AddCleanup(func() {
@@ -124,19 +124,19 @@ func (suite *IntegrationTestSuite) RunCleanup() {
 // CreateTestApp creates a test app configured for integration testing
 func (suite *IntegrationTestSuite) CreateTestApp() *TestApp {
 	app := NewTestApp()
-	
+
 	// Configure app with real storage (not mocks)
 	// This would integrate with the actual Lift middleware stack
-	
+
 	return app
 }
 
 // TestDataManager manages test data lifecycle
 type TestDataManager struct {
-	CreatedActors    []*models.Actor
-	CreatedStatuses  []*models.Status
+	CreatedActors     []*models.Actor
+	CreatedStatuses   []*models.Status
 	CreatedActivities []*models.Activity
-	cleanup          []func() error
+	cleanup           []func() error
 }
 
 // NewTestDataManager creates a new test data manager
@@ -145,75 +145,75 @@ func NewTestDataManager() *TestDataManager {
 		CreatedActors:     make([]*models.Actor, 0),
 		CreatedStatuses:   make([]*models.Status, 0),
 		CreatedActivities: make([]*models.Activity, 0),
-		cleanup:          make([]func() error, 0),
+		cleanup:           make([]func() error, 0),
 	}
 }
 
 // CreateTestActor creates a test actor and tracks it for cleanup
 func (tdm *TestDataManager) CreateTestActor(ctx context.Context, storage *MockStorage, username string) (*models.Actor, error) {
 	actor := BuildTestActor(username)
-	
+
 	err := storage.CreateActor(ctx, actor)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	tdm.CreatedActors = append(tdm.CreatedActors, actor)
 	tdm.cleanup = append(tdm.cleanup, func() error {
 		return storage.DeleteActor(ctx, actor.PK)
 	})
-	
+
 	return actor, nil
 }
 
 // CreateTestStatus creates a test status and tracks it for cleanup
 func (tdm *TestDataManager) CreateTestStatus(ctx context.Context, storage *MockStorage, actorID, content string) (*models.Status, error) {
 	status := BuildTestStatus(actorID, content)
-	
+
 	err := storage.CreateStatus(ctx, status)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	tdm.CreatedStatuses = append(tdm.CreatedStatuses, status)
 	tdm.cleanup = append(tdm.cleanup, func() error {
 		return storage.DeleteStatus(ctx, status.PK)
 	})
-	
+
 	return status, nil
 }
 
 // CreateTestActivity creates a test activity and tracks it for cleanup
 func (tdm *TestDataManager) CreateTestActivity(ctx context.Context, storage *MockStorage, actorID, activityType string) (*models.Activity, error) {
 	activity := BuildTestActivity(actorID, activityType)
-	
+
 	err := storage.CreateActivity(ctx, actorID, activityType)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	tdm.CreatedActivities = append(tdm.CreatedActivities, activity)
-	
+
 	return activity, nil
 }
 
 // Cleanup removes all created test data
 func (tdm *TestDataManager) Cleanup() error {
 	var lastError error
-	
+
 	// Run cleanup functions in reverse order
 	for i := len(tdm.cleanup) - 1; i >= 0; i-- {
 		if err := tdm.cleanup[i](); err != nil {
 			lastError = err
 		}
 	}
-	
+
 	// Clear tracking arrays
 	tdm.CreatedActors = tdm.CreatedActors[:0]
 	tdm.CreatedStatuses = tdm.CreatedStatuses[:0]
 	tdm.CreatedActivities = tdm.CreatedActivities[:0]
 	tdm.cleanup = tdm.cleanup[:0]
-	
+
 	return lastError
 }
 
@@ -224,25 +224,25 @@ func RunIntegrationTest(t *testing.T, config *IntegrationConfig, testFn func(*In
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Check if integration tests should run
 	if os.Getenv("INTEGRATION_TESTS") != "true" {
 		t.Skip("Skipping integration test. Set INTEGRATION_TESTS=true to run")
 	}
-	
+
 	suite := NewIntegrationTestSuite(t, config)
 	defer suite.RunCleanup()
-	
+
 	testFn(suite)
 }
 
 // AssertIntegrationResponse validates integration test responses
 func AssertIntegrationResponse(t *testing.T, response *TestResponse, expectedStatus int) {
 	t.Helper()
-	
+
 	require.NotNil(t, response, "Response should not be nil")
 	assert.Equal(t, expectedStatus, response.StatusCode, "Unexpected status code")
-	
+
 	if expectedStatus >= 200 && expectedStatus < 300 {
 		assert.NotEmpty(t, response.Body, "Success response should have body")
 	}
@@ -251,9 +251,9 @@ func AssertIntegrationResponse(t *testing.T, response *TestResponse, expectedSta
 // AssertPerformanceThresholds validates performance requirements
 func AssertPerformanceThresholds(t *testing.T, duration time.Duration, config *IntegrationConfig) {
 	t.Helper()
-	
+
 	if config.MaxResponseTime > 0 {
-		assert.LessOrEqual(t, duration, config.MaxResponseTime, 
+		assert.LessOrEqual(t, duration, config.MaxResponseTime,
 			"Response time %v exceeded threshold %v", duration, config.MaxResponseTime)
 	}
 }
@@ -324,11 +324,11 @@ func (tem *TestEnvironmentManager) IsServiceReady(service string) bool {
 
 // TestWorkflow represents a complete integration test workflow
 type TestWorkflow struct {
-	Name        string
-	Setup       func(*IntegrationTestSuite) error
-	Execute     func(*IntegrationTestSuite) (*TestResponse, error)
-	Validate    func(*TestResponse) error
-	Cleanup     func(*IntegrationTestSuite) error
+	Name     string
+	Setup    func(*IntegrationTestSuite) error
+	Execute  func(*IntegrationTestSuite) (*TestResponse, error)
+	Validate func(*TestResponse) error
+	Cleanup  func(*IntegrationTestSuite) error
 }
 
 // RunWorkflow executes a complete test workflow
@@ -339,27 +339,27 @@ func (suite *IntegrationTestSuite) RunWorkflow(workflow *TestWorkflow) error {
 			return fmt.Errorf("setup failed: %w", err)
 		}
 	}
-	
+
 	// Execute
 	response, err := workflow.Execute(suite)
 	if err != nil {
 		return fmt.Errorf("execution failed: %w", err)
 	}
-	
+
 	// Validate
 	if workflow.Validate != nil {
 		if err := workflow.Validate(response); err != nil {
 			return fmt.Errorf("validation failed: %w", err)
 		}
 	}
-	
+
 	// Cleanup
 	if workflow.Cleanup != nil {
 		if err := workflow.Cleanup(suite); err != nil {
 			return fmt.Errorf("cleanup failed: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 

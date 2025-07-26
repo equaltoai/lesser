@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
 

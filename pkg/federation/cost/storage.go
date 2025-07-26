@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/cost"
 )
 
 // dynamoStorage implements the Storage interface using DynamoDB
@@ -97,7 +97,6 @@ func (s *dynamoStorage) RecordCost(ctx context.Context, cost *FederationCost) er
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		s.logger.Error("failed to record federation cost",
 			zap.Error(err),
@@ -122,7 +121,6 @@ func (s *dynamoStorage) GetInstanceCost(ctx context.Context, domain string, peri
 			},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("get federation cost: %w", err)
 	}
@@ -241,7 +239,6 @@ func (s *dynamoStorage) UpdateInstanceHealth(ctx context.Context, health *Instan
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("update instance health: %w", err)
 	}
@@ -263,7 +260,6 @@ func (s *dynamoStorage) GetInstanceHealth(ctx context.Context, domain string) (*
 			},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("get instance health: %w", err)
 	}
@@ -357,7 +353,6 @@ func (s *dynamoStorage) SaveInstanceConfig(ctx context.Context, config *Instance
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("save instance config: %w", err)
 	}
@@ -379,7 +374,6 @@ func (s *dynamoStorage) GetInstanceConfig(ctx context.Context, domain string) (*
 			},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("get instance config: %w", err)
 	}

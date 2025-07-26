@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
 // Actor represents an ActivityPub actor stored in DynamoDB using DynamORM

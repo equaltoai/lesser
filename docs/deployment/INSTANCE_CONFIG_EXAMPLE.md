@@ -41,7 +41,7 @@ make build-configure-instance
 #### Set Extended Description:
 ```bash
 ./bin/configure-instance -set-description "<h1>Welcome to My Instance</h1>
-<p>This is a personal ActivityPub server running <a href='https://github.com/aron23/lesser'>Lesser</a>.</p>
+<p>This is a personal ActivityPub server running <a href='https://github.com/equaltoai/lesser'>Lesser</a>.</p>
 <h2>About</h2>
 <p>This instance is for personal use. Registration is currently closed.</p>
 <h2>Contact</h2>
@@ -128,7 +128,7 @@ The extended description supports HTML. Here are some examples:
 <h2>Resources</h2>
 <p>
   <a href="https://docs.joinmastodon.org">Mastodon Guide</a> |
-  <a href="https://github.com/aron23/lesser">Lesser on GitHub</a>
+  <a href="https://github.com/equaltoai/lesser">Lesser on GitHub</a>
 </p>
 ```
 

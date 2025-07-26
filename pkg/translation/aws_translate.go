@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/translate"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -259,7 +259,6 @@ func (s *Service) cacheTranslation(ctx context.Context, cacheKey, translatedText
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to cache translation: %w", err)
 	}
@@ -338,7 +337,6 @@ func (s *Service) cacheLanguages(ctx context.Context, languages []LanguageInfo) 
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to cache languages: %w", err)
 	}

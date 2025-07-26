@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/internal/testutil/mocks"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/internal/testutil/mocks"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

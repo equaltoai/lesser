@@ -8,17 +8,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	cfg "github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/mastodon"
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	cfg "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -173,7 +173,6 @@ func (s *dynamoDBStorage) CreateActor(ctx context.Context, actor *activitypub.Ac
 		Item:                item,
 		ConditionExpression: aws.String("attribute_not_exists(PK)"),
 	})
-
 	if err != nil {
 		// Check if it's a conditional check failure (actor already exists)
 		var ccf *types.ConditionalCheckFailedException
@@ -242,7 +241,6 @@ func (s *dynamoDBStorage) GetActor(ctx context.Context, username string) (*activ
 			"SK": &types.AttributeValueMemberS{Value: sk},
 		},
 	})
-
 	if err != nil {
 		log.Error("failed to get actor",
 			zap.String("username", username),
@@ -282,7 +280,6 @@ func (s *dynamoDBStorage) GetActorWithMetadata(ctx context.Context, username str
 			"SK": &types.AttributeValueMemberS{Value: sk},
 		},
 	})
-
 	if err != nil {
 		log.Error("failed to get actor with metadata",
 			zap.String("username", username),
@@ -331,7 +328,6 @@ func (s *dynamoDBStorage) GetActorPrivateKey(ctx context.Context, username strin
 		},
 		ProjectionExpression: aws.String("PrivateKey"),
 	})
-
 	if err != nil {
 		log.Error("failed to get actor private key",
 			zap.String("username", username),
@@ -382,7 +378,6 @@ func (s *dynamoDBStorage) GetActorByNumericID(ctx context.Context, numericID str
 			"SK": &types.AttributeValueMemberS{Value: sk},
 		},
 	})
-
 	if err != nil {
 		log.Error("failed to get numeric ID mapping",
 			zap.String("numericID", numericID),
@@ -465,7 +460,6 @@ func (s *dynamoDBStorage) UpdateActor(ctx context.Context, actor *activitypub.Ac
 		ExpressionAttributeValues: exprValues,
 		ConditionExpression:       aws.String("attribute_exists(PK)"),
 	})
-
 	if err != nil {
 		// Check if actor doesn't exist
 		var ccf *types.ConditionalCheckFailedException
@@ -510,7 +504,6 @@ func (s *dynamoDBStorage) UpdateActorLastStatusTime(ctx context.Context, usernam
 		},
 		ConditionExpression: aws.String("attribute_exists(PK)"),
 	})
-
 	if err != nil {
 		// Check if actor doesn't exist
 		var ccf *types.ConditionalCheckFailedException
@@ -565,7 +558,6 @@ func (s *dynamoDBStorage) SetActorFields(ctx context.Context, username string, f
 		},
 		ConditionExpression: aws.String("attribute_exists(PK)"),
 	})
-
 	if err != nil {
 		// Check if actor doesn't exist
 		var ccf *types.ConditionalCheckFailedException
@@ -734,7 +726,6 @@ func (s *dynamoDBStorage) DeleteActor(ctx context.Context, username string) erro
 		},
 		ConditionExpression: aws.String("attribute_exists(PK)"),
 	})
-
 	if err != nil {
 		// Check if actor doesn't exist
 		var ccf *types.ConditionalCheckFailedException
@@ -811,7 +802,6 @@ func (s *dynamoDBStorage) SearchAccounts(ctx context.Context, query string, limi
 	expr, err := expression.NewBuilder().
 		WithFilter(filterExpr).
 		Build()
-
 	if err != nil {
 		log.Error("failed to build filter expression", zap.Error(err))
 		return nil, fmt.Errorf("failed to build filter expression: %w", err)

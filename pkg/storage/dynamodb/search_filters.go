@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"go.uber.org/zap"
 )
 
@@ -80,7 +80,6 @@ func (f *FollowingOnlyFilter) getFollowingList(ctx context.Context, userID strin
 		},
 		ProjectionExpression: aws.String("TargetActorID"),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query following list: %w", err)
 	}

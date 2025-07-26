@@ -12,8 +12,8 @@ import (
 	"github.com/pay-theory/dynamorm"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/ai"
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 type AIProcessor struct {
@@ -199,16 +199,16 @@ func (ap *AIProcessor) isAnalyzableType(objectType string) bool {
 func (ap *AIProcessor) storeAnalysis(ctx context.Context, analysis *ai.AIAnalysis) error {
 	// Create analysis model for DynamORM
 	analysisRecord := struct {
-		PK               string `dynamorm:"pk"`
-		SK               string `dynamorm:"sk"`
-		Type             string `json:"type"`
-		AnalysisID       string `json:"analysis_id"`
-		ObjectID         string `json:"object_id"`
-		ObjectType       string `json:"object_type"`
+		PK               string  `dynamorm:"pk"`
+		SK               string  `dynamorm:"sk"`
+		Type             string  `json:"type"`
+		AnalysisID       string  `json:"analysis_id"`
+		ObjectID         string  `json:"object_id"`
+		ObjectType       string  `json:"object_type"`
 		OverallRisk      float64 `json:"overall_risk"`
-		ModerationAction string `json:"moderation_action"`
-		CreatedAt        string `json:"created_at"`
-		TTL              int64  `dynamorm:"ttl"`
+		ModerationAction string  `json:"moderation_action"`
+		CreatedAt        string  `json:"created_at"`
+		TTL              int64   `dynamorm:"ttl"`
 	}{
 		PK:               fmt.Sprintf("ANALYSIS#%s", analysis.ObjectID),
 		SK:               fmt.Sprintf("AI#%s", analysis.ID),

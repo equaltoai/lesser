@@ -60,13 +60,16 @@ func NewCostCircuitBreaker(config CostCircuitBreakerConfig) *CostCircuitBreaker 
 
 // CheckCost validates if operation is within cost limits
 func (cb *CostCircuitBreaker) CheckCost(ctx context.Context, estimatedCost float64) error {
+	// First, check current state without holding locks for too long
 	cb.mu.RLock()
-	defer cb.mu.RUnlock()
+	state := cb.state
+	lastFailTime := cb.lastFailTime
+	cb.mu.RUnlock()
 
-	switch cb.state {
+	switch state {
 	case StateOpen:
 		// Check if recovery timeout has passed
-		if time.Since(cb.lastFailTime) > cb.config.RecoveryTimeout {
+		if time.Since(lastFailTime) > cb.config.RecoveryTimeout {
 			cb.transitionToHalfOpen()
 		} else {
 			return fmt.Errorf("circuit breaker open: cost limit exceeded")

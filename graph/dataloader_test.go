@@ -3,7 +3,7 @@ package graph
 import (
 	"context"
 
-	"github.com/aron23/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/stretchr/testify/mock"
 )
 

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // TrendAnalyzer analyzes federation flow trends and patterns
