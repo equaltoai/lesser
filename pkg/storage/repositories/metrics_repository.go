@@ -3,6 +3,8 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -350,8 +352,11 @@ func (r *MetricsRepository) Aggregate(ctx context.Context, metricType, period st
 		}
 	}
 
-	// TODO: Calculate percentiles and standard deviation
-	// This would require sorting values and computing percentiles
+	// Calculate percentiles and standard deviation
+	if len(values) > 0 {
+		aggregated.Percentiles = calculateMetricPercentiles(values)
+		aggregated.StdDev = calculateStandardDeviation(values, aggregated.Average)
+	}
 
 	// Check if aggregation already exists
 	existing, err := r.GetAggregated(ctx, period, metricType, windowStart)
@@ -377,4 +382,75 @@ type ServiceStats struct {
 	Average    float64
 	Min        float64
 	Max        float64
+}
+
+// calculateMetricPercentiles calculates percentiles for a slice of metric values
+// Returns a map with p50, p90, p95, and p99 percentiles
+func calculateMetricPercentiles(values []float64) map[string]float64 {
+	if len(values) == 0 {
+		return map[string]float64{
+			"p50": 0,
+			"p90": 0,
+			"p95": 0,
+			"p99": 0,
+		}
+	}
+
+	// Sort values
+	sorted := make([]float64, len(values))
+	copy(sorted, values)
+	sort.Float64s(sorted)
+
+	// Calculate percentiles
+	percentiles := map[string]float64{
+		"p50": getMetricPercentileValue(sorted, 50),
+		"p90": getMetricPercentileValue(sorted, 90),
+		"p95": getMetricPercentileValue(sorted, 95),
+		"p99": getMetricPercentileValue(sorted, 99),
+	}
+
+	return percentiles
+}
+
+// getMetricPercentileValue calculates the value at a specific percentile
+func getMetricPercentileValue(sorted []float64, percentile float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+
+	if len(sorted) == 1 {
+		return sorted[0]
+	}
+
+	// Calculate the index
+	index := (percentile / 100.0) * float64(len(sorted)-1)
+	lowerIndex := int(math.Floor(index))
+	upperIndex := int(math.Ceil(index))
+
+	if lowerIndex == upperIndex {
+		return sorted[lowerIndex]
+	}
+
+	// Linear interpolation between two values
+	lowerValue := sorted[lowerIndex]
+	upperValue := sorted[upperIndex]
+	fraction := index - float64(lowerIndex)
+
+	return lowerValue + (upperValue-lowerValue)*fraction
+}
+
+// calculateStandardDeviation calculates the standard deviation for a slice of values
+func calculateStandardDeviation(values []float64, mean float64) float64 {
+	if len(values) <= 1 {
+		return 0
+	}
+
+	var sumSquaredDiff float64
+	for _, value := range values {
+		diff := value - mean
+		sumSquaredDiff += diff * diff
+	}
+
+	variance := sumSquaredDiff / float64(len(values))
+	return math.Sqrt(variance)
 }

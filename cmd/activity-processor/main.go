@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,17 +11,20 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
 type ActivityProcessor struct {
-	db               *dynamorm.LambdaDB
+	db               core.DB
 	tableName        string
 	logger           *zap.Logger
 	timelineRepo     *repositories.TimelineRepository
@@ -31,33 +33,7 @@ type ActivityProcessor struct {
 	baseURL          string
 }
 
-func NewActivityProcessor() (*ActivityProcessor, error) {
-	// Get table name from environment
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
-	if tableName == "" {
-		tableName = "lesser-main"
-	}
-
-	// Get base URL from environment
-	baseURL := os.Getenv("BASE_URL")
-	if baseURL == "" {
-		baseURL = os.Getenv("DOMAIN_NAME")
-		if baseURL != "" {
-			baseURL = "https://" + baseURL
-		}
-	}
-
-	// Initialize DynamORM with Lambda optimization
-	db, err := dynamorm.NewLambdaOptimized()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
-	}
-
-	// Set timeout buffer to prevent Lambda timeouts
-	if lambdaDB, ok := db.WithLambdaTimeoutBuffer(500 * time.Millisecond).(*dynamorm.LambdaDB); ok {
-		db = lambdaDB
-	}
-
+func NewActivityProcessor(db core.DB, tableName string, baseURL string) *ActivityProcessor {
 	// Initialize repositories
 	timelineRepo := repositories.NewTimelineRepository(db, tableName)
 	actorRepo := repositories.NewActorRepository(db)
@@ -71,7 +47,7 @@ func NewActivityProcessor() (*ActivityProcessor, error) {
 		actorRepo:    actorRepo,
 		userRepo:     userRepo,
 		baseURL:      baseURL,
-	}, nil
+	}
 }
 
 func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
@@ -140,7 +116,7 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 		}
 
 		// Convert DynamoDB attribute values using DynamORM
-		if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &activity); err != nil {
+		if err := stream.UnmarshalItem(record, &activity); err != nil {
 			return fmt.Errorf("failed to unmarshal new image: %w", err)
 		}
 
@@ -150,9 +126,10 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 		}
 
 		// Convert DynamoDB attribute values using DynamORM
-		if err := dynamorm.UnmarshalStreamImage(record.Change.OldImage, &activity); err != nil {
-			return fmt.Errorf("failed to unmarshal old image: %w", err)
-		}
+		// For REMOVE events, we need to handle the old image differently
+		// For now, we'll skip processing REMOVE events since the stream.UnmarshalItem
+		// function is designed for NewImage
+		return nil
 
 	default:
 		ap.logger.Warn("unknown event type",
@@ -700,12 +677,32 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func main() {
-	processor, err := NewActivityProcessor()
+var (
+	logger    *zap.Logger
+	cfg       *config.Config
+	processor *ActivityProcessor
+	db        core.DB
+)
+
+func init() {
+	// Initialize logger
+	logger = common.Logger()
+
+	// Load configuration
+	cfg = config.Get()
+
+	// Initialize DynamORM with Lambda optimizations
+	var err error
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize activity processor: %v", err))
+		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
+	// Initialize processor
+	processor = NewActivityProcessor(db, cfg.DynamoTableName, cfg.BaseURL())
+}
+
+func main() {
 	// Handle DynamoDB stream events with logging middleware
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()

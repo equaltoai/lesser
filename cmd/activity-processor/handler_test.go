@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -14,9 +14,80 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
-// MockDB is a mock implementation of the dynamorm.LambdaDB interface
+// MockDB is a mock implementation of the core.DB interface
 type MockDB struct {
 	mock.Mock
+}
+
+// Model implements core.DB interface
+func (m *MockDB) Model(model any) core.Query {
+	args := m.Called(model)
+	return args.Get(0).(core.Query)
+}
+
+// Transaction implements core.DB interface
+func (m *MockDB) Transaction(fn func(tx *core.Tx) error) error {
+	args := m.Called(fn)
+	return args.Error(0)
+}
+
+// Migrate implements core.DB interface
+func (m *MockDB) Migrate() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// AutoMigrate implements core.DB interface
+func (m *MockDB) AutoMigrate(models ...any) error {
+	args := m.Called(models)
+	return args.Error(0)
+}
+
+// Close implements core.DB interface
+func (m *MockDB) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// WithContext implements core.DB interface
+func (m *MockDB) WithContext(ctx context.Context) core.DB {
+	args := m.Called(ctx)
+	return args.Get(0).(core.DB)
+}
+
+// MockQuery is a mock implementation of the core.Query interface
+type MockQuery struct {
+	mock.Mock
+}
+
+// Create implements core.Query interface
+func (m *MockQuery) Create() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// Update implements core.Query interface
+func (m *MockQuery) Update() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// Delete implements core.Query interface
+func (m *MockQuery) Delete() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// Find implements core.Query interface
+func (m *MockQuery) Find() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// First implements core.Query interface
+func (m *MockQuery) First() error {
+	args := m.Called()
+	return args.Error(0)
 }
 
 var handler *ActivityHandler
@@ -34,18 +105,13 @@ func handleDynamoDBStream(ctx context.Context, event events.DynamoDBEvent) error
 	return nil
 }
 
-func (m *MockDB) WithLambdaTimeoutBuffer(milliseconds int) *dynamorm.LambdaDB {
-	args := m.Called(milliseconds)
-	return args.Get(0).(*dynamorm.LambdaDB)
-}
 
 func TestActivityHandler_ProcessRecord(t *testing.T) {
 	// Create mock DB
 	mockDB := new(MockDB)
-	mockDB.On("WithLambdaTimeoutBuffer", mock.Anything).Return(&dynamorm.LambdaDB{})
 
 	// Create test handler
-	handler := NewActivityHandler(&dynamorm.LambdaDB{}, "test-table")
+	handler := NewActivityHandler(mockDB, "test-table")
 
 	// Create test activity record
 	activityJSON := `{
@@ -101,10 +167,9 @@ func TestActivityHandler_ProcessRecord(t *testing.T) {
 func TestHandleDynamoDBStream(t *testing.T) {
 	// Create mock DB
 	mockDB := new(MockDB)
-	mockDB.On("WithLambdaTimeoutBuffer", mock.Anything).Return(&dynamorm.LambdaDB{})
 
 	// Create test handler and set global handler
-	handler = NewActivityHandler(&dynamorm.LambdaDB{}, "test-table")
+	handler = NewActivityHandler(mockDB, "test-table")
 
 	// Create test event
 	event := events.DynamoDBEvent{

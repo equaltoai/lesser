@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -24,13 +24,17 @@ const (
 
 // ActivityHandler processes DynamoDB stream events for activities
 type ActivityHandler struct {
-	*stream.BaseHandler
+	DB        core.DB
+	TableName string
+	Logger    *zap.Logger
 }
 
 // NewActivityHandler creates a new ActivityHandler
-func NewActivityHandler(db *dynamorm.LambdaDB, tableName string) *ActivityHandler {
+func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 	return &ActivityHandler{
-		BaseHandler: stream.NewBaseHandler(db, tableName),
+		DB:        db,
+		TableName: tableName,
+		Logger:    zap.L(),
 	}
 }
 

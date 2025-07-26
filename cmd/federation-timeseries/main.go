@@ -3,47 +3,32 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
 
 type TimeseriesProcessor struct {
-	db        *dynamorm.LambdaDB
+	db        core.DB
 	tableName string
 	logger    *zap.Logger
 }
 
-func NewTimeseriesProcessor() (*TimeseriesProcessor, error) {
-	// Get table name from environment
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
-	if tableName == "" {
-		tableName = "lesser-main"
-	}
-
-	// Initialize DynamORM with Lambda optimization
-	db, err := dynamorm.NewLambdaOptimized()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
-	}
-
-	// Set timeout buffer to prevent Lambda timeouts
-	if lambdaDB, ok := db.WithLambdaTimeoutBuffer(500 * time.Millisecond).(*dynamorm.LambdaDB); ok {
-		db = lambdaDB
-	}
-
+func NewTimeseriesProcessor(db core.DB, tableName string) *TimeseriesProcessor {
 	return &TimeseriesProcessor{
 		db:        db,
 		tableName: tableName,
 		logger:    common.Logger(),
-	}, nil
+	}
 }
 
 func (tp *TimeseriesProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
@@ -103,7 +88,7 @@ func (tp *TimeseriesProcessor) isFederationRecord(record events.DynamoDBEventRec
 		Type string `json:"type"`
 	}
 
-	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+	if err := stream.UnmarshalItem(record, &item); err != nil {
 		return false
 	}
 
@@ -124,7 +109,7 @@ func (tp *TimeseriesProcessor) extractTimestamp(record events.DynamoDBEventRecor
 		UpdatedAt string `json:"updated_at"`
 	}
 
-	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+	if err := stream.UnmarshalItem(record, &item); err != nil {
 		return time.Time{}
 	}
 
@@ -174,7 +159,7 @@ func (tp *TimeseriesProcessor) aggregateMetrics(records []events.DynamoDBEventRe
 			Activity string `json:"activity"`
 		}
 
-		if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+		if err := stream.UnmarshalItem(record, &item); err != nil {
 			continue
 		}
 
@@ -299,12 +284,32 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, window time.Tim
 	return nil
 }
 
-func main() {
-	processor, err := NewTimeseriesProcessor()
+var (
+	logger    *zap.Logger
+	cfg       *config.Config
+	processor *TimeseriesProcessor
+	db        core.DB
+)
+
+func init() {
+	// Initialize logger
+	logger = common.Logger()
+
+	// Load configuration
+	cfg = config.Get()
+
+	// Initialize DynamORM with Lambda optimizations
+	var err error
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize timeseries processor: %v", err))
+		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
+	// Initialize processor
+	processor = NewTimeseriesProcessor(db, cfg.DynamoTableName)
+}
+
+func main() {
 	// Handle DynamoDB stream events with logging middleware
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()

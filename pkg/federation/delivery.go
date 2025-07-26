@@ -25,7 +25,7 @@ import (
 
 // DeliveryService handles sending activities to remote instances
 type DeliveryService struct {
-	store      storage.Storage
+	store      FederationStorage
 	httpClient *httpclient.SecureClient
 	logger     *zap.Logger
 	sqsClient  *sqs.Client
@@ -33,7 +33,7 @@ type DeliveryService struct {
 }
 
 // NewDeliveryService creates a new delivery service
-func NewDeliveryService(store storage.Storage) *DeliveryService {
+func NewDeliveryService(store FederationStorage) *DeliveryService {
 	logger := common.Logger()
 
 	svc := &DeliveryService{

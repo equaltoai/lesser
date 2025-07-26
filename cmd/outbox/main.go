@@ -15,20 +15,25 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // OutboxProcessor handles ActivityPub federation delivery via SQS
 type OutboxProcessor struct {
-	federationService *federation.DeliveryService
-	store             storage.Storage
-	logger            *zap.Logger
-	cfg               *config.Config
-	httpClient        *http.Client
-	retryConfig       RetryConfig
+	federationService            *federation.DeliveryService
+	db                           core.DB
+	actorRepository              *repositories.ActorRepository
+	activityRepository           *repositories.ActivityRepository
+	federationActivityRepository *repositories.FederationActivityRepository
+	logger                       *zap.Logger
+	cfg                          *config.Config
+	httpClient                   *http.Client
+	retryConfig                  RetryConfig
 }
 
 // RetryConfig defines retry behavior for federation delivery
@@ -58,20 +63,37 @@ type DeliveryResult struct {
 	Attempt     int
 }
 
+
 // NewOutboxProcessor creates a new outbox processor
 func NewOutboxProcessor() (*OutboxProcessor, error) {
-	store, err := dynamodb.New()
+	logger := common.Logger()
+	cfg := config.Get()
+
+	// Initialize DynamORM with Lambda optimizations
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
 	}
 
-	federationService := federation.NewDeliveryService(store)
+	// Initialize repositories
+	actorRepo := repositories.NewActorRepository(db)
+	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
+	federationActivityRepo := repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
+
+	// Create federation storage using DynamORM repositories
+	federationStorage := federation.NewDynamORMFederationStorage(db, cfg.DynamoTableName)
+	
+	// Create federation service with federation storage
+	federationService := federation.NewDeliveryService(federationStorage)
 
 	return &OutboxProcessor{
-		federationService: federationService,
-		store:             store,
-		logger:            common.Logger(),
-		cfg:               config.Get(),
+		federationService:            federationService,
+		db:                           db,
+		actorRepository:              actorRepo,
+		activityRepository:           activityRepo,
+		federationActivityRepository: federationActivityRepo,
+		logger:                       logger,
+		cfg:                          cfg,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -327,14 +349,13 @@ func (op *OutboxProcessor) trackDeliveryStatus(ctx context.Context, msg Activity
 		payloadSize = int64(len(msg.Activity.ID))
 	}
 
-	// Record the federation delivery status directly using the storage interface
-	federationActivity := &storage.FederationActivity{
+	// Record the federation delivery status using DynamORM repository
+	federationActivity := &models.FederationActivity{
 		Domain:       extractDomainFromURL(msg.TargetInbox),
-		Type:         "egress", // This is outbound federation
 		ActivityType: msg.Activity.Type,
-		ByteSize:     payloadSize,
+		OutboundSize: payloadSize, // This is outbound federation
 		Success:      result.Success,
-		ResponseTime: result.Duration.Milliseconds(),
+		ResponseTime: float64(result.Duration.Milliseconds()),
 		ErrorMessage: "",
 		Timestamp:    now,
 	}
@@ -343,7 +364,7 @@ func (op *OutboxProcessor) trackDeliveryStatus(ctx context.Context, msg Activity
 		federationActivity.ErrorMessage = result.Error.Error()
 	}
 
-	if err := op.store.RecordFederationActivity(ctx, federationActivity); err != nil {
+	if err := op.federationActivityRepository.Create(ctx, federationActivity); err != nil {
 		op.logger.Error("failed to record federation delivery status",
 			zap.String("activity_id", msg.Activity.ID),
 			zap.Error(err),
@@ -384,58 +405,22 @@ func (op *OutboxProcessor) recordDeliveryMetrics(msg ActivityDeliveryMessage, re
 		payloadSize = int64(len(msg.Activity.ID))
 	}
 
-	// Record time series metrics for federation performance
-	timeSeriesData := &storage.FederationTimeSeries{
-		Domain:         domain,
-		Timestamp:      time.Now(),
-		Period:         "hourly", // Default to hourly aggregation
-		InboundVolume:  0,        // This is outbound delivery
-		OutboundVolume: payloadSize,
-		ErrorRate:      0.0, // Will be set based on success
-		ResponseTime:   float64(totalDuration.Milliseconds()),
-		ActivePeers:    1, // One peer per delivery
-	}
-
-	if result.Success {
-		timeSeriesData.ErrorRate = 0.0
-	} else {
-		timeSeriesData.ErrorRate = 1.0
-	}
-
-	// Store time series data
-	// Record time series data using RecordActivity for federation metrics
-	activityType := fmt.Sprintf("federation_%s_%s", msg.Activity.Type, domain)
-	if result.Success {
-		activityType += "_success"
-	} else {
-		activityType += "_failure"
-	}
-
-	if err := op.store.RecordActivity(context.Background(), activityType, msg.Activity.Actor, time.Now()); err != nil {
-		op.logger.Error("failed to record federation time series data",
-			zap.String("domain", domain),
-			zap.String("activity_type", msg.Activity.Type),
-			zap.Error(err),
-		)
-	}
-
-	// Store detailed federation activity with response time and byte size
-	timeSeriesActivity := &storage.FederationActivity{
+	// Store detailed federation activity with response time and byte size for time series
+	timeSeriesActivity := &models.FederationActivity{
 		Domain:       domain,
-		Type:         "time_series",
 		ActivityType: msg.Activity.Type,
-		ByteSize:     payloadSize,
+		OutboundSize: payloadSize,
 		Success:      result.Success,
-		ResponseTime: int64(timeSeriesData.ResponseTime),
+		ResponseTime: float64(totalDuration.Milliseconds()),
 		ErrorMessage: "",
-		Timestamp:    timeSeriesData.Timestamp,
+		Timestamp:    time.Now(),
 	}
 
 	if !result.Success && result.Error != nil {
 		timeSeriesActivity.ErrorMessage = result.Error.Error()
 	}
 
-	if err := op.store.RecordFederationActivity(context.Background(), timeSeriesActivity); err != nil {
+	if err := op.federationActivityRepository.Create(context.Background(), timeSeriesActivity); err != nil {
 		op.logger.Error("failed to record federation time series activity",
 			zap.String("domain", domain),
 			zap.String("activity_type", msg.Activity.Type),
@@ -444,13 +429,12 @@ func (op *OutboxProcessor) recordDeliveryMetrics(msg ActivityDeliveryMessage, re
 	}
 
 	// Record general federation activity for cost tracking
-	federationActivity2 := &storage.FederationActivity{
+	federationActivity2 := &models.FederationActivity{
 		Domain:       domain,
-		Type:         "delivery_attempt",
 		ActivityType: msg.Activity.Type,
-		ByteSize:     payloadSize,
+		OutboundSize: payloadSize,
 		Success:      result.Success,
-		ResponseTime: totalDuration.Milliseconds(),
+		ResponseTime: float64(totalDuration.Milliseconds()),
 		ErrorMessage: "", // Will be set if error occurs
 		Timestamp:    time.Now(),
 	}
@@ -459,7 +443,7 @@ func (op *OutboxProcessor) recordDeliveryMetrics(msg ActivityDeliveryMessage, re
 		federationActivity2.ErrorMessage = result.Error.Error()
 	}
 
-	if err := op.store.RecordFederationActivity(context.Background(), federationActivity2); err != nil {
+	if err := op.federationActivityRepository.Create(context.Background(), federationActivity2); err != nil {
 		op.logger.Error("failed to record federation activity metrics",
 			zap.String("domain", domain),
 			zap.String("activity_type", msg.Activity.Type),
