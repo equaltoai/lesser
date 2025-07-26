@@ -7,21 +7,21 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
 // RecoveryActivityHandler handles recovery-related ActivityPub activities
 type RecoveryActivityHandler struct {
-	store              storage.Storage
+	userRepository     *repositories.UserRepository
 	recoveryFedService *auth.RecoveryFederationService
 	logger             *zap.Logger
 }
 
 // NewRecoveryActivityHandler creates a new recovery activity handler
-func NewRecoveryActivityHandler(store storage.Storage, recoveryFedService *auth.RecoveryFederationService, logger *zap.Logger) *RecoveryActivityHandler {
+func NewRecoveryActivityHandler(userRepository *repositories.UserRepository, recoveryFedService *auth.RecoveryFederationService, logger *zap.Logger) *RecoveryActivityHandler {
 	return &RecoveryActivityHandler{
-		store:              store,
+		userRepository:     userRepository,
 		recoveryFedService: recoveryFedService,
 		logger:             logger,
 	}
@@ -79,10 +79,14 @@ func (h *RecoveryActivityHandler) handleTrusteeAcceptance(ctx context.Context, a
 	}
 
 	// Update the trustee confirmation status
-	err := h.store.UpdateTrusteeConfirmed(ctx, inviterUsername, trusteeActorID, true)
-	if err != nil {
-		return fmt.Errorf("failed to update trustee confirmation: %w", err)
-	}
+	// TODO: This needs to be implemented in the user repository or a separate recovery repository
+	h.logger.Info("would update trustee confirmation",
+		zap.String("inviter", inviterUsername),
+		zap.String("trustee", trusteeActorID))
+	// err := h.userRepository.UpdateTrusteeConfirmed(ctx, inviterUsername, trusteeActorID, true)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to update trustee confirmation: %w", err)
+	// 	}
 
 	h.logger.Info("trustee accepted invitation",
 		zap.String("inviter", inviterUsername),

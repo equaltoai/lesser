@@ -3,71 +3,35 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
+	lesserConfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
 
 type AIProcessor struct {
-	db        *dynamorm.LambdaDB
+	db        core.DB
 	tableName string
 	aiService *ai.AIService
 	logger    *zap.Logger
 }
 
-func NewAIProcessor() (*AIProcessor, error) {
-	// Get table name from environment
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
-	if tableName == "" {
-		tableName = "lesser-main"
-	}
-
-	// Initialize DynamORM with Lambda optimization
-	db, err := dynamorm.NewLambdaOptimized()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
-	}
-
-	// Set timeout buffer to prevent Lambda timeouts
-	if lambdaDB, ok := db.WithLambdaTimeoutBuffer(500 * time.Millisecond).(*dynamorm.LambdaDB); ok {
-		db = lambdaDB
-	}
-
-	// Initialize AI service
-	aiConfig := &ai.AIConfig{
-		NSFWThreshold:       0.8,
-		ToxicityThreshold:   0.7,
-		SpamThreshold:       0.75,
-		AIContentThreshold:  0.85,
-		EnablePIIDetection:  true,
-		EnableAIDetection:   true,
-		EnableImageAnalysis: true,
-		BedrockModelID:      "anthropic.claude-v2",
-		S3Bucket:            os.Getenv("S3_BUCKET_NAME"),
-	}
-
-	// Load AWS config for AI service
-	cfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	aiService := ai.NewAIService(cfg, aiConfig)
-
+func NewAIProcessor(db core.DB, tableName string, aiService *ai.AIService) *AIProcessor {
 	return &AIProcessor{
 		db:        db,
 		tableName: tableName,
 		aiService: aiService,
 		logger:    common.Logger(),
-	}, nil
+	}
 }
 
 func (ap *AIProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
@@ -139,7 +103,7 @@ func (ap *AIProcessor) isAnalyzableRecord(record events.DynamoDBEventRecord) boo
 		Type string `json:"type"`
 	}
 
-	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+	if err := stream.UnmarshalItem(record, &item); err != nil {
 		return false
 	}
 
@@ -160,7 +124,7 @@ func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Co
 		ActorID string `json:"actor_id"`
 	}
 
-	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+	if err := stream.UnmarshalItem(record, &item); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream image: %w", err)
 	}
 
@@ -291,12 +255,53 @@ func (ap *AIProcessor) determineSeverity(analysis *ai.AIAnalysis) string {
 	return "low"
 }
 
-func main() {
-	processor, err := NewAIProcessor()
+var (
+	logger    *zap.Logger
+	cfg       *lesserConfig.Config
+	processor *AIProcessor
+	db        core.DB
+)
+
+func init() {
+	// Initialize logger
+	logger = common.Logger()
+
+	// Load configuration
+	cfg = lesserConfig.Get()
+
+	// Initialize DynamORM with Lambda optimizations
+	var err error
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize AI processor: %v", err))
+		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
+	// Initialize AI service
+	aiConfig := &ai.AIConfig{
+		NSFWThreshold:       0.8,
+		ToxicityThreshold:   0.7,
+		SpamThreshold:       0.75,
+		AIContentThreshold:  0.85,
+		EnablePIIDetection:  true,
+		EnableAIDetection:   true,
+		EnableImageAnalysis: true,
+		BedrockModelID:      "anthropic.claude-v2",
+		S3Bucket:            cfg.S3BucketName,
+	}
+
+	// Load AWS config for AI service
+	awsConfig, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
+
+	aiService := ai.NewAIService(awsConfig, aiConfig)
+
+	// Initialize processor
+	processor = NewAIProcessor(db, cfg.DynamoTableName, aiService)
+}
+
+func main() {
 	// Handle DynamoDB stream events - use direct Lambda handler
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()

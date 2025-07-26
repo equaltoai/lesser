@@ -24,6 +24,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/rekognition v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.83.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.35.7
+	github.com/aws/aws-sdk-go-v2/service/ses v1.30.5
+	github.com/aws/aws-sdk-go-v2/service/sns v1.34.7
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.5
 	github.com/aws/aws-sdk-go-v2/service/translate v1.29.2
 	github.com/aws/aws-xray-sdk-go v1.8.5
@@ -73,7 +75,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/servicediscovery v1.35.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sns v1.34.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.60.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.25.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.2 // indirect

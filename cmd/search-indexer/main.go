@@ -3,47 +3,32 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
 
 type SearchIndexer struct {
-	db        *dynamorm.LambdaDB
+	db        core.DB
 	tableName string
 	logger    *zap.Logger
 }
 
-func NewSearchIndexer() (*SearchIndexer, error) {
-	// Get table name from environment
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
-	if tableName == "" {
-		tableName = "lesser-main"
-	}
-
-	// Initialize DynamORM with Lambda optimization
-	db, err := dynamorm.NewLambdaOptimized()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
-	}
-
-	// Set timeout buffer to prevent Lambda timeouts
-	if lambdaDB, ok := db.WithLambdaTimeoutBuffer(500 * time.Millisecond).(*dynamorm.LambdaDB); ok {
-		db = lambdaDB
-	}
-
+func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
 	return &SearchIndexer{
 		db:        db,
 		tableName: tableName,
 		logger:    common.Logger(),
-	}, nil
+	}
 }
 
 func (si *SearchIndexer) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
@@ -103,7 +88,7 @@ func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bo
 		Content string `json:"content"`
 	}
 
-	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+	if err := stream.UnmarshalItem(record, &item); err != nil {
 		return false
 	}
 
@@ -167,7 +152,7 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 		PublishedAt string   `json:"published_at"`
 	}
 
-	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+	if err := stream.UnmarshalItem(record, &item); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream image: %w", err)
 	}
 
@@ -339,12 +324,32 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *I
 	return nil
 }
 
-func main() {
-	processor, err := NewSearchIndexer()
+var (
+	logger    *zap.Logger
+	cfg       *config.Config
+	processor *SearchIndexer
+	db        core.DB
+)
+
+func init() {
+	// Initialize logger
+	logger = common.Logger()
+
+	// Load configuration
+	cfg = config.Get()
+
+	// Initialize DynamORM with Lambda optimizations
+	var err error
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize search indexer: %v", err))
+		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
+	// Initialize processor
+	processor = NewSearchIndexer(db, cfg.DynamoTableName)
+}
+
+func main() {
 	// Handle DynamoDB stream events with logging middleware
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()

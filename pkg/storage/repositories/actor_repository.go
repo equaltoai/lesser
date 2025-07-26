@@ -2,17 +2,22 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
+	"go.uber.org/zap"
 )
 
 // ActorRepository implements actor operations using DynamORM
@@ -36,11 +41,23 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 	username := actor.PreferredUsername
 	numericID := mastodon.GenerateNumericID(username)
 
+	// Encrypt private key if encryption is available
+	encryptedKey := privateKey
+	if encryptor, err := getEncryptor(); err == nil {
+		if encrypted, err := encryptor.Encrypt([]byte(privateKey)); err == nil {
+			encryptedKey = base64.StdEncoding.EncodeToString(encrypted)
+		} else {
+			common.WithContext(ctx).Warn("failed to encrypt private key", zap.Error(err))
+		}
+	} else {
+		common.WithContext(ctx).Warn("encryption not available, storing private key in plaintext", zap.Error(err))
+	}
+
 	// Create the DynamORM model
 	actorModel := &models.Actor{
 		Username:       username,
 		Actor:          actor,
-		PrivateKey:     privateKey, // TODO: Add encryption
+		PrivateKey:     encryptedKey,
 		NumericID:      numericID,
 		FollowerCount:  0,
 		FollowingCount: 0,
@@ -48,8 +65,7 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 	}
 
 	// Set domain for GSI3 if available
-	// TODO: Get domain from config
-	domain := "example.com" // This should come from config
+	domain := config.Get().Domain
 	if domain != "" {
 		actorModel.GSI3PK = "DOMAIN#" + domain
 		actorModel.GSI3SK = username
@@ -147,8 +163,19 @@ func (r *ActorRepository) GetActorPrivateKey(ctx context.Context, username strin
 		return "", fmt.Errorf("failed to get actor private key: %w", err)
 	}
 
-	// TODO: Add decryption
-	return actorModel.PrivateKey, nil
+	// Decrypt private key if it's encrypted
+	privateKey := actorModel.PrivateKey
+	if encryptor, err := getEncryptor(); err == nil {
+		// Try to decode as base64 - if it fails, assume it's plaintext
+		if decoded, err := base64.StdEncoding.DecodeString(privateKey); err == nil {
+			if decrypted, err := encryptor.Decrypt(decoded); err == nil {
+				privateKey = string(decrypted)
+			} else {
+				common.WithContext(ctx).Warn("failed to decrypt private key", zap.Error(err))
+			}
+		}
+	}
+	return privateKey, nil
 }
 
 // UpdateActor updates an existing actor
@@ -361,4 +388,64 @@ func convertStorageActorFields(fields []storage.ActorField) []models.ActorField 
 		}
 	}
 	return result
+}
+
+// getEncryptor returns an AES encryptor for private key encryption
+// Falls back gracefully if encryption key is not available
+func getEncryptor() (marshalers.Encryptor, error) {
+	// First check for KMS (future implementation)
+	if kmsKeyID := config.Get().KMSKeyID; kmsKeyID != "" {
+		// TODO: Implement KMS encryptor when KMS client is available
+		// For now, fall through to AES encryption
+	}
+
+	// Check for AES encryption key
+	encryptionKey := os.Getenv("DYNAMODB_ENCRYPTION_KEY")
+	if encryptionKey == "" {
+		// Try alternative env var
+		encryptionKey = os.Getenv("ACTOR_PRIVATE_KEY_ENCRYPTION")
+	}
+
+	if encryptionKey != "" {
+		// Decode base64 key
+		key, err := base64.StdEncoding.DecodeString(encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid encryption key format: %w", err)
+		}
+		return marshalers.NewAESEncryptorWithKey(key)
+	}
+
+	return nil, fmt.Errorf("no encryption key available")
+}
+
+// GetActorByUsername retrieves an actor by username
+func (r *ActorRepository) GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {
+	// Query for the actor
+	var actorModel models.Actor
+	
+	query := r.db.Model(&actorModel).
+		Where("PK = ? AND SK = ?",
+			fmt.Sprintf("actor#%s", username),
+			fmt.Sprintf("actor#%s", username))
+
+	if err := query.First(&actorModel); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("actor not found")
+		}
+		return nil, fmt.Errorf("failed to get actor: %w", err)
+	}
+
+	// Convert to ActivityPub actor
+	return r.modelToActivityPubActor(&actorModel)
+}
+
+// modelToActivityPubActor converts a model to an ActivityPub actor
+func (r *ActorRepository) modelToActivityPubActor(model *models.Actor) (*activitypub.Actor, error) {
+	// The actor is stored as a JSON field in the model
+	if model.Actor == nil {
+		return nil, fmt.Errorf("actor data is missing")
+	}
+
+	// Return the stored actor directly
+	return model.Actor, nil
 }

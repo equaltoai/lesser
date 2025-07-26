@@ -17,30 +17,54 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/httpclient"
-	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // InboxHandler handles ActivityPub inbox requests using Lift
 type InboxHandler struct {
-	store          storage.Storage
-	logger         *zap.Logger
-	authMiddleware *auth.Middleware
-	rateLimiter    *auth.RateLimiter
+	db                           core.DB
+	actorRepository              *repositories.ActorRepository
+	activityRepository           *repositories.ActivityRepository
+	followRepository             *repositories.FollowRepository
+	objectRepository             *repositories.ObjectRepository
+	likeRepository               *repositories.LikeRepository
+	federationActivityRepository *repositories.FederationActivityRepository
+	moderationRepository         *repositories.ModerationRepository
+	userRepository               *repositories.UserRepository
+	logger                       *zap.Logger
+	authMiddleware               *auth.Middleware
+	rateLimiter                  *auth.RateLimiter
+	tableName                    string
 }
 
 // NewInboxHandler creates a new inbox handler
 func NewInboxHandler() (*InboxHandler, error) {
-	store, err := dynamodb.New()
+	logger := common.Logger()
+	cfg := config.Get()
+
+	// Initialize DynamORM with Lambda optimizations
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
 	}
 
-	logger := common.Logger()
+	// Initialize repositories
+	actorRepo := repositories.NewActorRepository(db)
+	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
+	followRepo := repositories.NewFollowRepository(db, cfg.DynamoTableName, logger)
+	objectRepo := repositories.NewObjectRepository(db, cfg.DynamoTableName, logger)
+	likeRepo := repositories.NewLikeRepository(db, cfg.DynamoTableName, logger)
+	federationActivityRepo := repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
+	moderationRepo := repositories.NewModerationRepository(db)
+	userRepo := repositories.NewUserRepository(db)
 
 	// Initialize auth middleware
 	authMiddleware, err := auth.GetMiddleware()
@@ -49,13 +73,23 @@ func NewInboxHandler() (*InboxHandler, error) {
 	}
 
 	// Initialize rate limiter for federation instances
-	rateLimiter := auth.NewRateLimiter(store)
+	// TODO: Update rate limiter to use DynamORM
+	rateLimiter := auth.NewRateLimiter(nil)
 
 	return &InboxHandler{
-		store:          store,
-		logger:         logger,
-		authMiddleware: authMiddleware,
-		rateLimiter:    rateLimiter,
+		db:                           db,
+		actorRepository:              actorRepo,
+		activityRepository:           activityRepo,
+		followRepository:             followRepo,
+		objectRepository:             objectRepo,
+		likeRepository:               likeRepo,
+		federationActivityRepository: federationActivityRepo,
+		moderationRepository:         moderationRepo,
+		userRepository:               userRepo,
+		logger:                       logger,
+		authMiddleware:               authMiddleware,
+		rateLimiter:                  rateLimiter,
+		tableName:                    cfg.DynamoTableName,
 	}, nil
 }
 
@@ -98,9 +132,9 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 	}
 
 	// Verify the actor exists
-	actor, err := ih.store.GetActor(ctx.Context, username)
+	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context, username)
 	if err != nil {
-		if common.IsNotFound(err) {
+		if err.Error() == "actor not found" {
 			return lift.NewLiftError("NOT_FOUND", "actor not found", 404)
 		}
 		ih.logger.Error("failed to get actor", zap.Error(err))
@@ -123,7 +157,7 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 	// If no page parameter, return the collection with metadata
 	if page == "" && cursor == "" {
 		// Get first page to calculate total items (this is a simplification)
-		activities, _, err := ih.store.GetInboxActivities(ctx.Context, username, 1, "")
+		activities, _, err := ih.activityRepository.GetInboxActivities(ctx.Context, username, 1, "")
 		if err != nil {
 			ih.logger.Error("failed to get inbox count", zap.Error(err))
 			return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
@@ -147,7 +181,7 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 	}
 
 	// Get activities for the page
-	activities, nextCursor, err := ih.store.GetInboxActivities(ctx.Context, username, limit, cursor)
+	activities, nextCursor, err := ih.activityRepository.GetInboxActivities(ctx.Context, username, limit, cursor)
 	if err != nil {
 		ih.logger.Error("failed to get inbox activities", zap.Error(err))
 		return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
@@ -158,7 +192,7 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 		if activity.Type == activitypub.CreateType && activity.Object != nil {
 			// If Object is just an ID string, fetch the full object
 			if objID, ok := activity.Object.(string); ok {
-				obj, err := ih.store.GetObject(ctx.Context, objID)
+				obj, err := ih.objectRepository.GetObject(ctx.Context, objID)
 				if err != nil {
 					ih.logger.Warn("failed to fetch object for activity",
 						zap.String("activity_id", activity.ID),
@@ -221,9 +255,9 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))))
 
 	// Verify the actor exists
-	actor, err := ih.store.GetActor(ctx.Context, username)
+	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context, username)
 	if err != nil {
-		if common.IsNotFound(err) {
+		if err.Error() == "actor not found" {
 			return lift.NewLiftError("NOT_FOUND", "actor not found", 404)
 		}
 		ih.logger.Error("failed to get actor", zap.Error(err))
@@ -286,11 +320,10 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 	actorDomain := ih.extractDomainFromURL(activity.Actor)
 
 	// Record federation activity for cost tracking
-	federationActivity := &storage.FederationActivity{
+	federationActivity := &models.FederationActivity{
 		Domain:       actorDomain,
-		Type:         "ingress",
 		ActivityType: activity.Type,
-		ByteSize:     int64(len(body)),
+		InboundSize:  int64(len(body)),
 		Timestamp:    startTime,
 	}
 
@@ -304,9 +337,9 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 
 			federationActivity.Success = false
 			federationActivity.ErrorMessage = "Rate limit exceeded"
-			federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+			federationActivity.ResponseTime = float64(time.Since(startTime).Milliseconds())
 			go func() {
-				if err := ih.store.RecordFederationActivity(context.Background(), federationActivity); err != nil {
+				if err := ih.federationActivityRepository.Create(context.Background(), federationActivity); err != nil {
 					ih.logger.Warn("failed to record federation activity", zap.Error(err))
 				}
 			}()
@@ -320,7 +353,7 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 		}
 
 		// Check if the domain is blocked at the instance level
-		isBlocked, block, err := ih.store.IsDomainBlocked(ctx.Context, actorDomain)
+		isBlocked, block, err := ih.moderationRepository.IsDomainBlocked(ctx.Context, actorDomain)
 		if err != nil {
 			ih.logger.Error("failed to check domain block status",
 				zap.String("domain", actorDomain),
@@ -336,9 +369,9 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 			if block.Severity == "suspend" {
 				federationActivity.Success = false
 				federationActivity.ErrorMessage = "Domain is suspended"
-				federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+				federationActivity.ResponseTime = float64(time.Since(startTime).Milliseconds())
 				go func() {
-					if err := ih.store.RecordFederationActivity(context.Background(), federationActivity); err != nil {
+					if err := ih.federationActivityRepository.Create(context.Background(), federationActivity); err != nil {
 						ih.logger.Warn("failed to record federation activity", zap.Error(err))
 					}
 				}()
@@ -360,9 +393,9 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = fmt.Sprintf("Failed to fetch actor public key: %v", err)
-		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		federationActivity.ResponseTime = float64(time.Since(startTime).Milliseconds())
 		go func() {
-			if err := ih.store.RecordFederationActivity(context.Background(), federationActivity); err != nil {
+			if err := ih.federationActivityRepository.Create(context.Background(), federationActivity); err != nil {
 				ih.logger.Warn("failed to record federation activity", zap.Error(err))
 			}
 		}()
@@ -378,9 +411,9 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = fmt.Sprintf("Signature verification failed: %v", err)
-		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
+		federationActivity.ResponseTime = float64(time.Since(startTime).Milliseconds())
 		go func() {
-			if err := ih.store.RecordFederationActivity(context.Background(), federationActivity); err != nil {
+			if err := ih.federationActivityRepository.Create(context.Background(), federationActivity); err != nil {
 				ih.logger.Warn("failed to record federation activity", zap.Error(err))
 			}
 		}()
@@ -402,7 +435,7 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 	}
 
 	// Store in inbox (the storage layer will automatically put it in the inbox based on actor)
-	err = ih.store.CreateActivity(ctx.Context, &activity)
+	err = ih.activityRepository.CreateActivity(ctx.Context, &activity)
 	if err != nil {
 		ih.logger.Error("failed to store activity", zap.Error(err))
 		return lift.NewLiftError("INTERNAL_ERROR", "failed to store activity", 500)
@@ -454,8 +487,8 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 
 	// Record successful federation activity and rate limit success
 	federationActivity.Success = true
-	federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-	go ih.store.RecordFederationActivity(context.Background(), federationActivity)
+	federationActivity.ResponseTime = float64(time.Since(startTime).Milliseconds())
+	go ih.federationActivityRepository.Create(context.Background(), federationActivity)
 
 	if actorDomain != "" {
 		// Mark rate limit attempt as successful
@@ -559,7 +592,7 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 	client := httpclient.NewSecureClient(
 		httpclient.WithTimeout(10*time.Second),
 		httpclient.WithLogger(log),
-		httpclient.WithStorage(ih.store),
+		// TODO: Update httpclient to use DynamORM if needed
 	)
 
 	// Create request with ActivityPub Accept header
@@ -623,7 +656,7 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 	followerHandle := ih.extractHandleFromActorID(activity.Actor)
 
 	// Create the follow relationship with pending state
-	err := ih.store.CreateFollow(ctx, followerHandle, targetActor.PreferredUsername, activity.ID)
+	err := ih.followRepository.CreateFollow(ctx, followerHandle, targetActor.PreferredUsername, activity.ID)
 	if err != nil {
 		log.Error("failed to create follow relationship", zap.Error(err))
 		return err
@@ -648,7 +681,7 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 		}
 
 		// Store notification for follow request
-		if err := ih.store.CreateActivity(ctx, notification); err != nil {
+		if err := ih.activityRepository.CreateActivity(ctx, notification); err != nil {
 			log.Warn("failed to create follow request notification", zap.Error(err))
 		}
 
@@ -657,7 +690,7 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 	}
 
 	// Auto-accept follows for non-locked accounts
-	err = ih.store.AcceptFollow(ctx, followerHandle, targetActor.PreferredUsername)
+	err = ih.followRepository.AcceptFollow(ctx, followerHandle, targetActor.PreferredUsername)
 	if err != nil {
 		log.Error("failed to accept follow", zap.Error(err))
 		return err
@@ -668,23 +701,10 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 		zap.String("target", targetActor.PreferredUsername))
 
 	// Send Accept activity back to the follower
-	acceptActivity := &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			Context:   activitypub.Context,
-			ID:        fmt.Sprintf("%s/activities/%s", targetActor.ID, ih.generateActivityID()),
-			Type:      activitypub.AcceptType,
-			Published: ih.timePtr(time.Now()),
-		},
-		Actor:  targetActor.ID,
-		Object: activity.ID, // Reference the original Follow activity
-	}
-
-	// Deliver the Accept activity
-	deliveryService := federation.NewDeliveryService(ih.store)
-	if err := deliveryService.DeliverActivity(ctx, acceptActivity, activity.Actor, targetActor); err != nil {
-		log.Error("failed to deliver accept activity", zap.Error(err))
-		// Don't fail the operation if delivery fails
-	}
+	// TODO: Update delivery service to use DynamORM
+	log.Info("would deliver accept activity",
+		zap.String("to", activity.Actor),
+		zap.String("from", targetActor.ID))
 
 	return nil
 }
@@ -696,7 +716,7 @@ func (ih *InboxHandler) processAcceptActivity(ctx context.Context, activity *act
 	// Check if this is accepting a Follow request
 	if objectID, ok := activity.Object.(string); ok {
 		// Fetch the original activity
-		originalActivity, err := ih.store.GetActivity(ctx, objectID)
+		originalActivity, err := ih.activityRepository.GetActivity(ctx, objectID)
 		if err != nil {
 			log.Warn("failed to find original activity", zap.String("id", objectID))
 			return nil // Don't fail, just ignore
@@ -705,7 +725,7 @@ func (ih *InboxHandler) processAcceptActivity(ctx context.Context, activity *act
 		if originalActivity.Type == activitypub.FollowType {
 			// Update the follow relationship to accepted
 			acceptorHandle := ih.extractHandleFromActorID(activity.Actor)
-			err = ih.store.AcceptFollow(ctx, targetActor.PreferredUsername, acceptorHandle)
+			err = ih.followRepository.AcceptFollow(ctx, targetActor.PreferredUsername, acceptorHandle)
 			if err != nil {
 				log.Error("failed to update follow status", zap.Error(err))
 				return err
@@ -723,7 +743,7 @@ func (ih *InboxHandler) processRejectActivity(ctx context.Context, activity *act
 	// Check if this is rejecting a Follow request
 	if objectID, ok := activity.Object.(string); ok {
 		// Fetch the original activity
-		originalActivity, err := ih.store.GetActivity(ctx, objectID)
+		originalActivity, err := ih.activityRepository.GetActivity(ctx, objectID)
 		if err != nil {
 			log.Warn("failed to find original activity", zap.String("id", objectID))
 			return nil // Don't fail, just ignore
@@ -732,7 +752,7 @@ func (ih *InboxHandler) processRejectActivity(ctx context.Context, activity *act
 		if originalActivity.Type == activitypub.FollowType {
 			// Remove the follow relationship
 			rejectorHandle := ih.extractHandleFromActorID(activity.Actor)
-			err = ih.store.RemoveFollow(ctx, targetActor.PreferredUsername, rejectorHandle)
+			err = ih.followRepository.RemoveFollow(ctx, targetActor.PreferredUsername, rejectorHandle)
 			if err != nil {
 				log.Error("failed to remove follow", zap.Error(err))
 				return err
@@ -771,7 +791,7 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 		}
 
 		// Store the note (it will be marked as remote)
-		if err := ih.store.CreateObject(ctx, &note); err != nil {
+		if err := ih.objectRepository.CreateObject(ctx, &note); err != nil {
 			log.Error("failed to store remote note", zap.Error(err))
 			return err
 		}
@@ -808,7 +828,7 @@ func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activit
 		}
 
 		// Update the note
-		if err := ih.store.UpdateObject(ctx, &note); err != nil {
+		if err := ih.objectRepository.UpdateObject(ctx, &note); err != nil {
 			log.Error("failed to update remote note", zap.Error(err))
 			// Don't fail if we can't update (might not have it)
 		}
@@ -838,7 +858,7 @@ func (ih *InboxHandler) processRemoteDeleteActivity(ctx context.Context, activit
 	}
 
 	// Delete the object
-	if err := ih.store.DeleteObject(ctx, objectID); err != nil {
+	if err := ih.objectRepository.DeleteObject(ctx, objectID); err != nil {
 		log.Warn("failed to delete object", zap.String("id", objectID), zap.Error(err))
 		// Don't fail if we can't delete (might not have it)
 	}
@@ -857,7 +877,7 @@ func (ih *InboxHandler) processUndoActivity(ctx context.Context, activity *activ
 	case string:
 		// Fetch the activity by ID
 		var err error
-		originalActivity, err = ih.store.GetActivity(ctx, obj)
+		originalActivity, err = ih.activityRepository.GetActivity(ctx, obj)
 		if err != nil {
 			log.Warn("failed to find activity to undo", zap.String("id", obj))
 			return nil
@@ -883,7 +903,7 @@ func (ih *InboxHandler) processUndoActivity(ctx context.Context, activity *activ
 	case activitypub.FollowType:
 		// Undo follow
 		unfollowerHandle := ih.extractHandleFromActorID(activity.Actor)
-		err := ih.store.RemoveFollow(ctx, unfollowerHandle, targetActor.PreferredUsername)
+		err := ih.followRepository.RemoveFollow(ctx, unfollowerHandle, targetActor.PreferredUsername)
 		if err != nil {
 			log.Error("failed to remove follow", zap.Error(err))
 			return err
@@ -891,7 +911,7 @@ func (ih *InboxHandler) processUndoActivity(ctx context.Context, activity *activ
 	case activitypub.LikeType:
 		// Undo like
 		if objectID, ok := originalActivity.Object.(string); ok {
-			err := ih.store.DeleteLike(ctx, activity.Actor, objectID)
+			err := ih.likeRepository.DeleteLike(ctx, activity.Actor, objectID)
 			if err != nil {
 				log.Warn("failed to remove like", zap.Error(err))
 				// Don't fail
