@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"go.uber.org/zap"
 )
 

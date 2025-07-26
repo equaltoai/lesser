@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -14,13 +15,20 @@ import (
 	"github.com/pay-theory/dynamorm"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
 type ActivityProcessor struct {
-	db        *dynamorm.LambdaDB
-	tableName string
-	logger    *zap.Logger
+	db               *dynamorm.LambdaDB
+	tableName        string
+	logger           *zap.Logger
+	timelineRepo     *repositories.TimelineRepository
+	actorRepo        *repositories.ActorRepository
+	userRepo         *repositories.UserRepository
+	baseURL          string
 }
 
 func NewActivityProcessor() (*ActivityProcessor, error) {
@@ -28,6 +36,15 @@ func NewActivityProcessor() (*ActivityProcessor, error) {
 	tableName := os.Getenv("DYNAMO_TABLE_NAME")
 	if tableName == "" {
 		tableName = "lesser-main"
+	}
+
+	// Get base URL from environment
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		baseURL = os.Getenv("DOMAIN_NAME")
+		if baseURL != "" {
+			baseURL = "https://" + baseURL
+		}
 	}
 
 	// Initialize DynamORM with Lambda optimization
@@ -41,10 +58,19 @@ func NewActivityProcessor() (*ActivityProcessor, error) {
 		db = lambdaDB
 	}
 
+	// Initialize repositories
+	timelineRepo := repositories.NewTimelineRepository(db, tableName)
+	actorRepo := repositories.NewActorRepository(db)
+	userRepo := repositories.NewUserRepository(db)
+
 	return &ActivityProcessor{
-		db:        db,
-		tableName: tableName,
-		logger:    common.Logger(),
+		db:           db,
+		tableName:    tableName,
+		logger:       common.Logger(),
+		timelineRepo: timelineRepo,
+		actorRepo:    actorRepo,
+		userRepo:     userRepo,
+		baseURL:      baseURL,
 	}, nil
 }
 
@@ -163,7 +189,8 @@ func (ap *ActivityProcessor) processActivityCreated(ctx context.Context, activit
 	Username  string `json:"username"`
 	ActorID   string `json:"actor_id"`
 	CreatedAt string `json:"created_at"`
-}) error {
+},
+) error {
 	ap.logger.Info("processing activity created",
 		zap.String("pk", activity.PK),
 		zap.String("direction", activity.Direction),
@@ -190,7 +217,8 @@ func (ap *ActivityProcessor) processActivityUpdated(ctx context.Context, activit
 	Username  string `json:"username"`
 	ActorID   string `json:"actor_id"`
 	CreatedAt string `json:"created_at"`
-}) error {
+},
+) error {
 	ap.logger.Info("processing activity updated",
 		zap.String("pk", activity.PK),
 		zap.String("direction", activity.Direction),
@@ -210,7 +238,8 @@ func (ap *ActivityProcessor) processActivityDeleted(ctx context.Context, activit
 	Username  string `json:"username"`
 	ActorID   string `json:"actor_id"`
 	CreatedAt string `json:"created_at"`
-}) error {
+},
+) error {
 	ap.logger.Info("processing activity deleted",
 		zap.String("pk", activity.PK),
 		zap.String("direction", activity.Direction),
@@ -229,7 +258,8 @@ func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity 
 	Username  string `json:"username"`
 	ActorID   string `json:"actor_id"`
 	CreatedAt string `json:"created_at"`
-}) error {
+},
+) error {
 	_ = ctx // unused parameter
 	// Process activities received from other servers
 	ap.logger.Debug("processing inbox activity",
@@ -272,13 +302,35 @@ func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity
 	Username  string `json:"username"`
 	ActorID   string `json:"actor_id"`
 	CreatedAt string `json:"created_at"`
-}) error {
-	_ = ctx // unused parameter
+},
+) error {
 	// Process activities sent by local users
 	ap.logger.Debug("processing outbox activity",
 		zap.String("pk", activity.PK),
 		zap.String("username", activity.Username),
+		zap.String("type", activity.Type),
 	)
+
+	// Parse the activity JSON
+	var activityData activitypub.Activity
+	if err := json.Unmarshal([]byte(activity.Activity), &activityData); err != nil {
+		ap.logger.Error("failed to parse activity", zap.Error(err))
+		return fmt.Errorf("failed to parse activity: %w", err)
+	}
+
+	// Handle timeline fanout based on activity type
+	switch activityData.Type {
+	case activitypub.CreateType:
+		if err := ap.fanOutToTimelines(ctx, &activityData, activity.Username); err != nil {
+			ap.logger.Error("failed to fan out Create activity", zap.Error(err))
+			return err
+		}
+	case activitypub.AnnounceType:
+		if err := ap.fanOutAnnounceToTimelines(ctx, &activityData, activity.Username); err != nil {
+			ap.logger.Error("failed to fan out Announce activity", zap.Error(err))
+			return err
+		}
+	}
 
 	// Create outbox processing record
 	outboxRecord := struct {
@@ -315,7 +367,8 @@ func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity
 	Username  string `json:"username"`
 	ActorID   string `json:"actor_id"`
 	CreatedAt string `json:"created_at"`
-}) error {
+},
+) error {
 	_ = ctx // unused parameter
 	// Update activity metrics for analytics
 	metricsRecord := struct {
@@ -350,7 +403,8 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 	Username  string `json:"username"`
 	ActorID   string `json:"actor_id"`
 	CreatedAt string `json:"created_at"`
-}) error {
+},
+) error {
 	_ = ctx // unused parameter
 	// Create cleanup record for deleted activities
 	cleanupRecord := struct {
@@ -374,6 +428,276 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 	}
 
 	return ap.db.Model(&cleanupRecord).Create()
+}
+
+// fanOutToTimelines handles timeline fanout for Create activities
+func (ap *ActivityProcessor) fanOutToTimelines(ctx context.Context, activity *activitypub.Activity, username string) error {
+	// Extract the note/object from the activity
+	var note *activitypub.Note
+	switch obj := activity.Object.(type) {
+	case map[string]interface{}:
+		// Convert map to Note
+		noteData, err := json.Marshal(obj)
+		if err != nil {
+			return fmt.Errorf("failed to marshal note: %w", err)
+		}
+		note = &activitypub.Note{}
+		if err := json.Unmarshal(noteData, note); err != nil {
+			return fmt.Errorf("failed to unmarshal note: %w", err)
+		}
+	case *activitypub.Note:
+		note = obj
+	default:
+		ap.logger.Warn("unsupported object type in Create activity", zap.Any("object", activity.Object))
+		return nil
+	}
+
+	// Determine visibility from addressing
+	visibility := ap.determineVisibility(note.To, note.CC)
+	
+	// Create timeline entries
+	var entries []*models.Timeline
+	now := time.Now()
+
+	// Extract content and metadata
+	content := note.Content
+	if len(content) > 500 {
+		content = content[:500]
+	}
+
+	// Base entry for all timelines
+	baseEntry := models.Timeline{
+		PostID:      note.ID,
+		ActorID:     activity.Actor,
+		ActorHandle: username,
+		Content:     content,
+		ContentType: "Note",
+		HasMedia:    len(note.Attachment) > 0,
+		IsReply:     note.InReplyTo != "",
+		InReplyTo:   note.InReplyTo,
+		IsBoost:     false,
+		Visibility:  visibility,
+		Language:    ap.extractLanguage(note),
+		Sensitive:   note.Sensitive,
+		SpoilerText: note.Summary,
+		CreatedAt:   ap.extractPublishedTime(activity),
+		TimelineAt:  now,
+	}
+
+	// Add to public timelines if public
+	if visibility == "public" {
+		// Federated timeline
+		publicEntry := baseEntry
+		publicEntry.TimelineType = "PUBLIC"
+		publicEntry.TimelineID = "FEDERATED"
+		publicEntry.EntryID = ap.generateTimelineSK(now, note.ID)
+		entries = append(entries, &publicEntry)
+
+		// Local timeline if it's a local user
+		if strings.HasPrefix(activity.Actor, ap.baseURL) {
+			localEntry := baseEntry
+			localEntry.TimelineType = "PUBLIC"
+			localEntry.TimelineID = "LOCAL"
+			localEntry.EntryID = ap.generateTimelineSK(now, note.ID)
+			entries = append(entries, &localEntry)
+		}
+	}
+
+	// Add to home timeline of the author
+	homeEntry := baseEntry
+	homeEntry.TimelineType = "HOME"
+	homeEntry.TimelineID = username
+	homeEntry.EntryID = ap.generateTimelineSK(now, note.ID)
+	entries = append(entries, &homeEntry)
+
+	// Fan out to followers' home timelines (for all visibility except direct)
+	if visibility != "direct" {
+		followers, err := ap.getFollowers(ctx, username)
+		if err != nil {
+			ap.logger.Error("failed to get followers", zap.Error(err))
+			// Continue even if this fails
+		} else {
+			for _, follower := range followers {
+				followerEntry := baseEntry
+				followerEntry.TimelineType = "HOME"
+				followerEntry.TimelineID = follower
+				followerEntry.EntryID = ap.generateTimelineSK(now, note.ID)
+				entries = append(entries, &followerEntry)
+			}
+		}
+	}
+
+	// Write all entries to timelines
+	if len(entries) > 0 {
+		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
+			return fmt.Errorf("failed to write timeline entries: %w", err)
+		}
+	}
+
+	ap.logger.Info("successfully fanned out Create activity",
+		zap.String("post_id", note.ID),
+		zap.String("visibility", visibility),
+		zap.Int("timeline_count", len(entries)),
+	)
+
+	return nil
+}
+
+// fanOutAnnounceToTimelines handles timeline fanout for Announce (boost) activities
+func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, activity *activitypub.Activity, username string) error {
+	// Extract the announced object ID
+	var announcedID string
+	switch obj := activity.Object.(type) {
+	case string:
+		announcedID = obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			announcedID = id
+		}
+	default:
+		ap.logger.Warn("unsupported object type in Announce activity", zap.Any("object", activity.Object))
+		return nil
+	}
+
+	if announcedID == "" {
+		return fmt.Errorf("no object ID in Announce activity")
+	}
+
+	// For now, we'll create minimal timeline entries for announces
+	// In a full implementation, you'd fetch the original object
+	var entries []*models.Timeline
+	now := time.Now()
+
+	baseEntry := models.Timeline{
+		PostID:      activity.ID,
+		ActorID:     activity.Actor,
+		ActorHandle: username,
+		Content:     fmt.Sprintf("Boosted: %s", announcedID),
+		ContentType: "Announce",
+		IsBoost:     true,
+		BoostedBy:   username,
+		Visibility:  "public", // Announces are typically public
+		CreatedAt:   ap.extractPublishedTime(activity),
+		TimelineAt:  now,
+	}
+
+	// Add to public timelines
+	// Federated timeline
+	publicEntry := baseEntry
+	publicEntry.TimelineType = "PUBLIC"
+	publicEntry.TimelineID = "FEDERATED"
+	publicEntry.EntryID = ap.generateTimelineSK(now, activity.ID)
+	entries = append(entries, &publicEntry)
+
+	// Local timeline if it's a local user
+	if strings.HasPrefix(activity.Actor, ap.baseURL) {
+		localEntry := baseEntry
+		localEntry.TimelineType = "PUBLIC"
+		localEntry.TimelineID = "LOCAL"
+		localEntry.EntryID = ap.generateTimelineSK(now, activity.ID)
+		entries = append(entries, &localEntry)
+	}
+
+	// Add to author's home timeline
+	homeEntry := baseEntry
+	homeEntry.TimelineType = "HOME"
+	homeEntry.TimelineID = username
+	homeEntry.EntryID = ap.generateTimelineSK(now, activity.ID)
+	entries = append(entries, &homeEntry)
+
+	// Fan out to followers
+	followers, err := ap.getFollowers(ctx, username)
+	if err != nil {
+		ap.logger.Error("failed to get followers", zap.Error(err))
+	} else {
+		for _, follower := range followers {
+			followerEntry := baseEntry
+			followerEntry.TimelineType = "HOME"
+			followerEntry.TimelineID = follower
+			followerEntry.EntryID = ap.generateTimelineSK(now, activity.ID)
+			entries = append(entries, &followerEntry)
+		}
+	}
+
+	// Write all entries
+	if len(entries) > 0 {
+		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
+			return fmt.Errorf("failed to write timeline entries: %w", err)
+		}
+	}
+
+	ap.logger.Info("successfully fanned out Announce activity",
+		zap.String("activity_id", activity.ID),
+		zap.String("announced_id", announcedID),
+		zap.Int("timeline_count", len(entries)),
+	)
+
+	return nil
+}
+
+// Helper functions
+
+func (ap *ActivityProcessor) determineVisibility(to, cc []string) string {
+	publicAddress := "https://www.w3.org/ns/activitystreams#Public"
+	
+	// Direct message - no public addressing
+	if !contains(to, publicAddress) && !contains(cc, publicAddress) {
+		return "direct"
+	}
+	
+	// Public - addressed to public in 'to'
+	if contains(to, publicAddress) {
+		return "public"
+	}
+	
+	// Unlisted - public in 'cc'
+	if contains(cc, publicAddress) {
+		return "unlisted"
+	}
+	
+	// Private - followers only
+	return "private"
+}
+
+func (ap *ActivityProcessor) extractLanguage(note *activitypub.Note) string {
+	// For now, default to English
+	// In a full implementation, detect from content or use note.Language
+	return "en"
+}
+
+func (ap *ActivityProcessor) extractPublishedTime(activity *activitypub.Activity) time.Time {
+	if activity.Published != nil && !activity.Published.IsZero() {
+		return *activity.Published
+	}
+	return time.Now()
+}
+
+func (ap *ActivityProcessor) generateTimelineSK(timelineAt time.Time, postID string) string {
+	// Generate sort key with timestamp for timeline ordering
+	timestamp := timelineAt.Unix()
+	return fmt.Sprintf("ENTRY#%d#%s", timestamp, postID)
+}
+
+func (ap *ActivityProcessor) getFollowers(ctx context.Context, username string) ([]string, error) {
+	// Get the actor to find followers
+	actor, err := ap.actorRepo.GetActor(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get actor: %w", err)
+	}
+
+	// For now, return empty list as we'd need a followers repository
+	// In a full implementation, query the followers list
+	_ = actor
+	return []string{}, nil
+}
+
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
 func main() {

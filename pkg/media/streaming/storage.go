@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -324,7 +324,6 @@ func (s *S3MediaStorage) GetPresignedUploadURL(mediaID string, filename string) 
 	}, func(opts *s3.PresignOptions) {
 		opts.Expires = 1 * time.Hour
 	})
-
 	if err != nil {
 		return "", fmt.Errorf("generate presigned upload URL: %w", err)
 	}

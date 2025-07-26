@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -29,9 +29,9 @@ type TestDB struct {
 func NewTestDB(t *testing.T, tableName string) *TestDB {
 	// In a real implementation, this would connect to a test DynamoDB instance
 	// For now, we'll create a mock-based test DB
-	
+
 	logger := zap.NewNop()
-	
+
 	return &TestDB{
 		client:      newMockDB(t),
 		tableName:   tableName,
@@ -61,7 +61,7 @@ func (tdb *TestDB) TrackCreatedItem(item any) {
 func (tdb *TestDB) Cleanup(t *testing.T) {
 	tdb.mu.Lock()
 	defer tdb.mu.Unlock()
-	
+
 	// In a real implementation, this would delete all tracked items
 	// For testing, we'll just log the cleanup
 	if len(tdb.createdData) > 0 {
@@ -74,14 +74,14 @@ func (tdb *TestDB) Cleanup(t *testing.T) {
 
 // FixtureBuilder helps create test data fixtures
 type FixtureBuilder struct {
-	users        []*models.User
-	statuses     []*models.Status
-	follows      []map[string]any
+	users         []*models.User
+	statuses      []*models.Status
+	follows       []map[string]any
 	notifications []*models.Notification
-	media        []*models.Media
-	sessions     []*models.Session
-	providers    []*models.ProviderAccount
-	mu           sync.Mutex
+	media         []*models.Media
+	sessions      []*models.Session
+	providers     []*models.ProviderAccount
+	mu            sync.Mutex
 }
 
 // NewFixtureBuilder creates a new fixture builder
@@ -101,7 +101,7 @@ func NewFixtureBuilder() *FixtureBuilder {
 func (fb *FixtureBuilder) WithUser(username, email string) *FixtureBuilder {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	
+
 	user := &models.User{
 		Username:    username,
 		Email:       email,
@@ -122,7 +122,7 @@ func (fb *FixtureBuilder) WithUser(username, email string) *FixtureBuilder {
 func (fb *FixtureBuilder) WithStatus(userID, content string) *FixtureBuilder {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	
+
 	status := &models.Status{
 		AuthorID:   userID,
 		Content:    content,
@@ -136,7 +136,7 @@ func (fb *FixtureBuilder) WithStatus(userID, content string) *FixtureBuilder {
 func (fb *FixtureBuilder) WithFollow(followerID, followeeID string) *FixtureBuilder {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	
+
 	follow := map[string]any{
 		"FollowerID": followerID,
 		"FolloweeID": followeeID,
@@ -150,7 +150,7 @@ func (fb *FixtureBuilder) WithFollow(followerID, followeeID string) *FixtureBuil
 func (fb *FixtureBuilder) WithNotification(userID, actorID, notifType string) *FixtureBuilder {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	
+
 	notification := &models.Notification{
 		UserID:    userID,
 		Type:      notifType,
@@ -167,7 +167,7 @@ func (fb *FixtureBuilder) WithNotification(userID, actorID, notifType string) *F
 func (fb *FixtureBuilder) WithMedia(userID, fileName string) *FixtureBuilder {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	
+
 	media := &models.Media{
 		UserID:      userID,
 		FileName:    fileName,
@@ -185,7 +185,7 @@ func (fb *FixtureBuilder) WithMedia(userID, fileName string) *FixtureBuilder {
 func (fb *FixtureBuilder) WithSession(userID, ipAddress string) *FixtureBuilder {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	
+
 	session := &models.Session{
 		UserID:    userID,
 		IPAddress: ipAddress,
@@ -203,7 +203,7 @@ func (fb *FixtureBuilder) WithSession(userID, ipAddress string) *FixtureBuilder 
 func (fb *FixtureBuilder) WithProviderAccount(userID, provider, providerID string) *FixtureBuilder {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	
+
 	providerAccount := &models.ProviderAccount{
 		UserID:     userID,
 		Provider:   provider,
@@ -222,7 +222,7 @@ func (fb *FixtureBuilder) WithProviderAccount(userID, provider, providerID strin
 func (fb *FixtureBuilder) Build() *Fixtures {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	
+
 	return &Fixtures{
 		Users:            fb.users,
 		Statuses:         fb.statuses,
@@ -251,45 +251,45 @@ func (f *Fixtures) LoadIntoTestDB(t *testing.T, testDB *TestDB) {
 	for _, user := range f.Users {
 		testDB.TrackCreatedItem(user)
 	}
-	
+
 	// Load statuses
 	for _, status := range f.Statuses {
 		testDB.TrackCreatedItem(status)
 	}
-	
+
 	// Load follows
 	for _, follow := range f.Follows {
 		testDB.TrackCreatedItem(follow)
 	}
-	
+
 	// Load notifications
 	for _, notification := range f.Notifications {
 		testDB.TrackCreatedItem(notification)
 	}
-	
+
 	// Load media
 	for _, media := range f.Media {
 		testDB.TrackCreatedItem(media)
 	}
-	
+
 	// Load sessions
 	for _, session := range f.Sessions {
 		testDB.TrackCreatedItem(session)
 	}
-	
+
 	// Load provider accounts
 	for _, provider := range f.ProviderAccounts {
 		testDB.TrackCreatedItem(provider)
 	}
-	
+
 	t.Logf("Loaded %d fixtures into test database", f.Count())
 }
 
 // Count returns the total number of fixtures
 func (f *Fixtures) Count() int {
-	return len(f.Users) + len(f.Statuses) + len(f.Follows) + 
-		   len(f.Notifications) + len(f.Media) + len(f.Sessions) + 
-		   len(f.ProviderAccounts)
+	return len(f.Users) + len(f.Statuses) + len(f.Follows) +
+		len(f.Notifications) + len(f.Media) + len(f.Sessions) +
+		len(f.ProviderAccounts)
 }
 
 // Repository mocks
@@ -357,7 +357,7 @@ func (m *MockRepository) Query(ctx context.Context, query any, dest any) error {
 func (m *MockRepository) storeItem(item any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	key := m.extractKey(item)
 	m.data[key] = item
 }
@@ -365,7 +365,7 @@ func (m *MockRepository) storeItem(item any) {
 func (m *MockRepository) getItem(key string) (any, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	item, exists := m.data[key]
 	return item, exists
 }
@@ -373,7 +373,7 @@ func (m *MockRepository) getItem(key string) (any, bool) {
 func (m *MockRepository) deleteItem(key string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	delete(m.data, key)
 }
 
@@ -392,7 +392,7 @@ func (m *MockRepository) extractKey(item any) string {
 func (m *MockRepository) copyItem(src, dest any) {
 	srcValue := reflect.ValueOf(src)
 	destValue := reflect.ValueOf(dest)
-	
+
 	if destValue.Kind() == reflect.Ptr && srcValue.Type() == destValue.Elem().Type() {
 		destValue.Elem().Set(srcValue)
 	}
@@ -402,7 +402,7 @@ func (m *MockRepository) copyItem(src, dest any) {
 func (m *MockRepository) GetData() map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	data := make(map[string]any)
 	for k, v := range m.data {
 		data[k] = v
@@ -423,7 +423,7 @@ func (m *MockRepository) Clear() {
 func AssertItemExists(t *testing.T, repo *MockRepository, itemType, key string) {
 	fullKey := fmt.Sprintf("%s:%s", itemType, key)
 	data := repo.GetData()
-	
+
 	_, exists := data[fullKey]
 	assert.True(t, exists, "Expected item %s to exist in repository", fullKey)
 }
@@ -432,7 +432,7 @@ func AssertItemExists(t *testing.T, repo *MockRepository, itemType, key string) 
 func AssertItemNotExists(t *testing.T, repo *MockRepository, itemType, key string) {
 	fullKey := fmt.Sprintf("%s:%s", itemType, key)
 	data := repo.GetData()
-	
+
 	_, exists := data[fullKey]
 	assert.False(t, exists, "Expected item %s to not exist in repository", fullKey)
 }
@@ -441,7 +441,7 @@ func AssertItemNotExists(t *testing.T, repo *MockRepository, itemType, key strin
 func AssertItemCount(t *testing.T, repo *MockRepository, expectedCount int) {
 	data := repo.GetData()
 	actualCount := len(data)
-	
+
 	assert.Equal(t, expectedCount, actualCount, "Expected %d items in repository, got %d", expectedCount, actualCount)
 }
 
@@ -460,61 +460,61 @@ type RepositoryTestSuite struct {
 func (rts *RepositoryTestSuite) RunCRUDTests(t *testing.T, repo *MockRepository) {
 	t.Run(fmt.Sprintf("%s_CRUD", rts.Name), func(t *testing.T) {
 		ctx := context.Background()
-		
+
 		// Test Create
 		t.Run("Create", func(t *testing.T) {
 			item := rts.CreateItem()
 			repo.On("Create", ctx, item).Return(nil)
-			
+
 			err := repo.Create(ctx, item)
 			assert.NoError(t, err)
-			
+
 			key := rts.GetKey(item)
 			data := repo.GetData()
 			assert.Contains(t, data, key)
-			
+
 			repo.AssertExpectations(t)
 		})
-		
+
 		// Test Get
 		t.Run("Get", func(t *testing.T) {
 			item := rts.CreateItem()
 			key := rts.GetKey(item)
-			
+
 			var dest any
 			repo.On("Get", ctx, key, mock.AnythingOfType("*interface {}")).Return(nil).Run(func(args mock.Arguments) {
 				dest = args.Get(2)
 			})
-			
+
 			err := repo.Get(ctx, key, &dest)
 			assert.NoError(t, err)
-			
+
 			repo.AssertExpectations(t)
 		})
-		
+
 		// Test Update
 		t.Run("Update", func(t *testing.T) {
 			item := rts.CreateItem()
 			updatedItem := rts.UpdateItem(item)
-			
+
 			repo.On("Update", ctx, updatedItem).Return(nil)
-			
+
 			err := repo.Update(ctx, updatedItem)
 			assert.NoError(t, err)
-			
+
 			repo.AssertExpectations(t)
 		})
-		
+
 		// Test Delete
 		t.Run("Delete", func(t *testing.T) {
 			item := rts.CreateItem()
 			key := rts.GetKey(item)
-			
+
 			repo.On("Delete", ctx, key).Return(nil)
-			
+
 			err := repo.Delete(ctx, key)
 			assert.NoError(t, err)
-			
+
 			repo.AssertExpectations(t)
 		})
 	})
@@ -524,11 +524,11 @@ func (rts *RepositoryTestSuite) RunCRUDTests(t *testing.T, repo *MockRepository)
 
 // BenchmarkConfig holds configuration for benchmark tests
 type BenchmarkConfig struct {
-	ItemCount      int
-	ConcurrentOps  int
-	OperationType  string
-	SetupFunc      func() any
-	BenchmarkFunc  func(any) error
+	ItemCount     int
+	ConcurrentOps int
+	OperationType string
+	SetupFunc     func() any
+	BenchmarkFunc func(any) error
 }
 
 // RunBenchmark runs a performance benchmark
@@ -538,10 +538,10 @@ func RunBenchmark(b *testing.B, config BenchmarkConfig) {
 	for i := 0; i < config.ItemCount; i++ {
 		items[i] = config.SetupFunc()
 	}
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	if config.ConcurrentOps > 1 {
 		// Concurrent benchmark
 		b.RunParallel(func(pb *testing.PB) {
@@ -565,10 +565,10 @@ func RunBenchmark(b *testing.B, config BenchmarkConfig) {
 
 // IntegrationTestContext provides context for integration tests
 type IntegrationTestContext struct {
-	TestDB     *TestDB
-	Repository any
-	Fixtures   *Fixtures
-	Logger     *zap.Logger
+	TestDB      *TestDB
+	Repository  any
+	Fixtures    *Fixtures
+	Logger      *zap.Logger
 	CostTracker *cost.Tracker
 }
 
@@ -577,7 +577,7 @@ func NewIntegrationTestContext(t *testing.T, tableName string) *IntegrationTestC
 	testDB := NewTestDB(t, tableName)
 	logger := zap.NewNop()
 	costTracker := cost.New()
-	
+
 	return &IntegrationTestContext{
 		TestDB:      testDB,
 		Logger:      logger,
@@ -605,7 +605,7 @@ func (itc *IntegrationTestContext) Cleanup(t *testing.T) {
 // createMockDB creates a mock database for testing
 func newMockDB(t *testing.T) core.DB {
 	mockDB := &MockDB{}
-	
+
 	// Set up default mock behaviors
 	mockQuery := &MockQuery{}
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
@@ -614,7 +614,7 @@ func newMockDB(t *testing.T) core.DB {
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
-	
+
 	return mockDB
 }
 
@@ -622,20 +622,20 @@ func newMockDB(t *testing.T) core.DB {
 func SetupDefaultMockDB() (*MockDB, *MockQuery) {
 	mockDB := &MockDB{}
 	mockQuery := &MockQuery{}
-	
+
 	// Set up default behaviors that work for most tests
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
-	
+
 	// For update operations
 	mockUpdateBuilder := &MockUpdateBuilder{}
 	mockQuery.On("Update", mock.Anything).Return(mockUpdateBuilder).Maybe()
 	mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
 	mockUpdateBuilder.On("Execute").Return(nil).Maybe()
-	
+
 	return mockDB, mockQuery
 }
 

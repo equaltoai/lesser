@@ -3,8 +3,8 @@ package mastodon
 import (
 	"time"
 
-	"github.com/aron23/lesser/cmd/api/models"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // Filter represents a filter group in the Mastodon API v2

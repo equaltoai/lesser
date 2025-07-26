@@ -13,14 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/federation"
-	"github.com/aron23/lesser/pkg/httpclient"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/httpclient"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -90,7 +90,7 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	
+
 	// Validate the token using auth middleware
 	// Note: This is a simplified approach - in production, you'd want to validate the JWT token
 	if len(token) < 10 {
@@ -981,9 +981,9 @@ func main() {
 			start := time.Now()
 			path := ctx.Request.Path
 			method := ctx.Request.Method
-			
+
 			err := next.Handle(ctx)
-			
+
 			handler.logger.Info("inbox request completed",
 				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 				zap.String("method", method),
@@ -991,7 +991,7 @@ func main() {
 				zap.Duration("duration", time.Since(start)),
 				zap.Bool("has_error", err != nil),
 			)
-			
+
 			return err
 		})
 	})
@@ -1008,7 +1008,7 @@ func main() {
 					ctx.Status(500).Text("Internal server error")
 				}
 			}()
-			
+
 			return next.Handle(ctx)
 		})
 	})

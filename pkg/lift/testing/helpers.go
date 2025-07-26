@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 )
@@ -41,7 +41,7 @@ func NewTestContextWithHeaders(method, path string, headers map[string]string) *
 // CreateTestClaims creates test claims for different user types
 func CreateTestClaims(username, userType string) *auth.EnhancedClaims {
 	var scopes []string
-	
+
 	switch userType {
 	case "admin":
 		scopes = []string{"read", "write", "follow", "push", "admin:read", "admin:write", "admin:accounts", "admin:all"}
@@ -56,7 +56,7 @@ func CreateTestClaims(username, userType string) *auth.EnhancedClaims {
 	default:
 		scopes = []string{"read", "write"}
 	}
-	
+
 	return &auth.EnhancedClaims{
 		Claims: auth.Claims{
 			Username: username,
@@ -85,13 +85,13 @@ func CreateCustomClaims(username string, scopes []string) *auth.EnhancedClaims {
 func NewAuthenticatedContext(method, path, username, userType string) *lift.Context {
 	ctx := NewTestContext(method, path)
 	claims := CreateTestClaims(username, userType)
-	
+
 	// Set authentication context
 	ctx.Set("claims", claims)
 	ctx.Set("username", claims.Username)
 	ctx.Set("session_id", claims.SessionID)
 	ctx.Set("device_id", claims.DeviceID)
-	
+
 	return ctx
 }
 
@@ -142,7 +142,7 @@ func AssertErrorResponse(t *testing.T, response *TestResponse, expectedStatus in
 func AssertJSONResponse(t *testing.T, response *TestResponse, expected interface{}) {
 	t.Helper()
 	assert.True(t, response.IsSuccess(), "Response should be successful")
-	
+
 	var actual interface{}
 	err := response.JSON(&actual)
 	assert.NoError(t, err, "Response should be valid JSON")
@@ -151,7 +151,7 @@ func AssertJSONResponse(t *testing.T, response *TestResponse, expected interface
 // AssertAuthenticationRequired verifies that a handler requires authentication
 func AssertAuthenticationRequired(t *testing.T, app *TestApp, method, path string) {
 	t.Helper()
-	
+
 	var response *TestResponse
 	switch method {
 	case "GET":
@@ -165,17 +165,17 @@ func AssertAuthenticationRequired(t *testing.T, app *TestApp, method, path strin
 	default:
 		t.Fatalf("Unsupported method: %s", method)
 	}
-	
+
 	assert.Equal(t, 401, response.StatusCode, "Should require authentication")
 }
 
 // AssertScopeRequired verifies that a handler requires specific scope
 func AssertScopeRequired(t *testing.T, app *TestApp, method, path, requiredScope string) {
 	t.Helper()
-	
+
 	// Test with user that doesn't have the required scope
 	userWithoutScope := app.WithHeader("Authorization", "Bearer "+GenerateTestToken("user", "standard"))
-	
+
 	var response *TestResponse
 	switch method {
 	case "GET":
@@ -189,7 +189,7 @@ func AssertScopeRequired(t *testing.T, app *TestApp, method, path, requiredScope
 	default:
 		t.Fatalf("Unsupported method: %s", method)
 	}
-	
+
 	assert.Equal(t, 403, response.StatusCode, "Should require specific scope")
 }
 
@@ -200,9 +200,9 @@ func CreateSQSEvent(messageBody string) map[string]interface{} {
 	return map[string]interface{}{
 		"Records": []map[string]interface{}{
 			{
-				"eventSource": "aws:sqs",
-				"body":        messageBody,
-				"messageId":   "test-message-id",
+				"eventSource":   "aws:sqs",
+				"body":          messageBody,
+				"messageId":     "test-message-id",
 				"receiptHandle": "test-receipt-handle",
 			},
 		},
@@ -234,7 +234,7 @@ func CreateAPIGatewayEvent(method, path string, body string, headers map[string]
 	if headers == nil {
 		headers = make(map[string]string)
 	}
-	
+
 	return map[string]interface{}{
 		"httpMethod": method,
 		"path":       path,
@@ -259,7 +259,7 @@ func MeasureExecutionTime(fn func()) time.Duration {
 func AssertExecutionTime(t *testing.T, fn func(), maxDuration time.Duration) {
 	t.Helper()
 	duration := MeasureExecutionTime(fn)
-	assert.LessOrEqual(t, duration.Nanoseconds(), maxDuration.Nanoseconds(), 
+	assert.LessOrEqual(t, duration.Nanoseconds(), maxDuration.Nanoseconds(),
 		"Execution took %v, expected less than %v", duration, maxDuration)
 }
 
@@ -311,8 +311,8 @@ type TestEnvironment struct {
 // NewTestEnvironment creates a new test environment
 func NewTestEnvironment() *TestEnvironment {
 	return &TestEnvironment{
-		App:      NewTestApp(),
-		TestData: make(map[string]interface{}),
+		App:        NewTestApp(),
+		TestData:   make(map[string]interface{}),
 		TeardownFn: func() {}, // No-op by default
 	}
 }

@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/mastodon"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/trends"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/trends"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/zap"
 )

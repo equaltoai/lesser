@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 

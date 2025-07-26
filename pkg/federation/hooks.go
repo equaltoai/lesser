@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/aron23/lesser/pkg/monitoring"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/monitoring"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // FederationHooks provides hooks into federation activities for tracking

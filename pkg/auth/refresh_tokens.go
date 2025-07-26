@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -222,7 +222,6 @@ func (s *RefreshTokenStore) RotateRefreshToken(ctx context.Context, oldToken str
 			},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to rotate token: %w", err)
 	}
@@ -243,7 +242,6 @@ func (s *RefreshTokenStore) RevokeTokenFamily(ctx context.Context, family string
 		WithKeyCondition(expression.Key("family").Equal(expression.Value(family))).
 		WithFilter(expression.Name("revoked").Equal(expression.Value(false))).
 		Build()
-
 	if err != nil {
 		return fmt.Errorf("failed to build expression: %w", err)
 	}
@@ -257,7 +255,6 @@ func (s *RefreshTokenStore) RevokeTokenFamily(ctx context.Context, family string
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to query family tokens: %w", err)
 	}
@@ -300,7 +297,6 @@ func (s *RefreshTokenStore) RevokeUserTokens(ctx context.Context, userID string,
 		WithKeyCondition(expression.Key("user_id").Equal(expression.Value(userID))).
 		WithFilter(expression.Name("revoked").Equal(expression.Value(false))).
 		Build()
-
 	if err != nil {
 		return fmt.Errorf("failed to build expression: %w", err)
 	}
@@ -314,7 +310,6 @@ func (s *RefreshTokenStore) RevokeUserTokens(ctx context.Context, userID string,
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to query user tokens: %w", err)
 	}

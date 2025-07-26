@@ -6,9 +6,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
 

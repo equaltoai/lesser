@@ -12,10 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	cfg "github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -23,6 +19,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/equaltoai/lesser/pkg/common"
+	cfg "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -1116,7 +1116,7 @@ var (
 // init initializes the global DynamoDB client for Lambda reuse
 func init() {
 	initTime = time.Now()
-	
+
 	// Skip initialization in test mode
 	if os.Getenv("GO_ENV") == "test" || os.Getenv("TESTING") == "true" {
 		return
@@ -1133,18 +1133,18 @@ func getClient() (DynamoDBAPI, error) {
 	clientOnce.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		awsCfg, err := config.LoadDefaultConfig(ctx,
 			config.WithRegion(cfg.Get().Region),
 			config.WithRetryMaxAttempts(3),
 			config.WithHTTPClient(&http.Client{
 				Timeout: 10 * time.Second,
 				Transport: &http.Transport{
-					MaxIdleConns:        100,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     90 * time.Second,
+					MaxIdleConns:          100,
+					MaxIdleConnsPerHost:   10,
+					IdleConnTimeout:       90 * time.Second,
 					ResponseHeaderTimeout: 5 * time.Second,
-					TLSHandshakeTimeout: 3 * time.Second,
+					TLSHandshakeTimeout:   3 * time.Second,
 					DialContext: (&net.Dialer{
 						Timeout:   5 * time.Second,
 						KeepAlive: 30 * time.Second,
@@ -1174,7 +1174,7 @@ func getClient() (DynamoDBAPI, error) {
 				zap.Duration("init_time", time.Since(initTime)),
 			)
 		}
-		
+
 		// Pre-warm connection with a lightweight operation
 		go func() {
 			_, _ = baseClient.DescribeTable(ctx, &dynamodb.DescribeTableInput{

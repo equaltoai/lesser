@@ -3,8 +3,8 @@ package lift
 import (
 	"strconv"
 
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 

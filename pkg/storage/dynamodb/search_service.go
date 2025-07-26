@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"go.uber.org/zap"
 )
 
@@ -348,7 +348,6 @@ func (s *ExactMatchStrategy) Search(ctx context.Context, query string, options S
 			"SK": &types.AttributeValueMemberS{Value: sk},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("exact match query failed: %w", err)
 	}
@@ -405,7 +404,6 @@ func (s *PrefixSearchStrategy) Search(ctx context.Context, query string, options
 				And(expression.Key("GSI1SK").BeginsWith(prefix)),
 		).
 		Build()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to build expression: %w", err)
 	}
@@ -500,7 +498,6 @@ func (s *DisplayNameSearchStrategy) Search(ctx context.Context, query string, op
 				And(expression.Key("GSI2SK").BeginsWith(searchTerm)),
 		).
 		Build()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to build expression: %w", err)
 	}

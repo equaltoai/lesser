@@ -8,7 +8,7 @@ import (
 	"github.com/pay-theory/dynamorm"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Handler is a generic interface for DynamoDB stream handlers

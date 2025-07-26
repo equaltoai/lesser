@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/mastodon"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 )
@@ -78,7 +78,6 @@ func (r *ActorRepository) GetActor(ctx context.Context, username string) (*activ
 		Where("PK", "=", "actor#"+username).
 		Where("SK", "=", "actor#"+username).
 		First(&actorModel)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, common.ActorNotFoundError{Username: username}
@@ -97,7 +96,6 @@ func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username str
 		Where("PK", "=", "actor#"+username).
 		Where("SK", "=", "actor#"+username).
 		First(&actorModel)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil, common.ActorNotFoundError{Username: username}
@@ -122,7 +120,6 @@ func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID str
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Filter("NumericID", "=", numericID).
 		Scan(&actors)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query actor by numeric ID: %w", err)
 	}
@@ -143,7 +140,6 @@ func (r *ActorRepository) GetActorPrivateKey(ctx context.Context, username strin
 		Where("SK", "=", "actor#"+username).
 		Select("PrivateKey").
 		First(&actorModel)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return "", common.ActorNotFoundError{Username: username}
@@ -168,7 +164,6 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 		Where("PK", "=", "actor#"+username).
 		Where("SK", "=", "actor#"+username).
 		First(&actorModel)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return common.ActorNotFoundError{Username: username}
@@ -196,7 +191,6 @@ func (r *ActorRepository) UpdateActorLastStatusTime(ctx context.Context, usernam
 		Where("PK", "=", "actor#"+username).
 		Where("SK", "=", "actor#"+username).
 		First(&actorModel)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return common.ActorNotFoundError{Username: username}
@@ -225,7 +219,6 @@ func (r *ActorRepository) SetActorFields(ctx context.Context, username string, f
 		Where("PK", "=", "actor#"+username).
 		Where("SK", "=", "actor#"+username).
 		First(&actorModel)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return common.ActorNotFoundError{Username: username}
@@ -252,7 +245,6 @@ func (r *ActorRepository) DeleteActor(ctx context.Context, username string) erro
 		Where("PK", "=", "actor#"+username).
 		Where("SK", "=", "actor#"+username).
 		Delete()
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return common.ActorNotFoundError{Username: username}
@@ -281,7 +273,6 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 			Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to search actors by username: %w", err)
 		}
@@ -296,7 +287,6 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 			Filter("GSI2SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to search actors by name: %w", err)
 		}
@@ -329,7 +319,6 @@ func (r *ActorRepository) GetSearchSuggestions(ctx context.Context, prefix strin
 		Filter("GSI1SK", "BEGINS_WITH", normalizedPrefix).
 		Limit(10).
 		All(&actors)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get search suggestions: %w", err)
 	}

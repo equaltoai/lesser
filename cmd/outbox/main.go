@@ -9,14 +9,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/federation"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -24,11 +24,11 @@ import (
 // OutboxProcessor handles ActivityPub federation delivery via SQS
 type OutboxProcessor struct {
 	federationService *federation.DeliveryService
-	store            storage.Storage
-	logger           *zap.Logger
-	cfg              *config.Config
-	httpClient       *http.Client
-	retryConfig      RetryConfig
+	store             storage.Storage
+	logger            *zap.Logger
+	cfg               *config.Config
+	httpClient        *http.Client
+	retryConfig       RetryConfig
 }
 
 // RetryConfig defines retry behavior for federation delivery
@@ -44,8 +44,8 @@ type RetryConfig struct {
 type ActivityDeliveryMessage struct {
 	Activity    *activitypub.Activity `json:"activity"`
 	Actor       *activitypub.Actor    `json:"actor"`
-	TargetInbox string               `json:"target_inbox"`
-	Attempt     int                  `json:"attempt,omitempty"`
+	TargetInbox string                `json:"target_inbox"`
+	Attempt     int                   `json:"attempt,omitempty"`
 }
 
 // DeliveryResult represents the outcome of an activity delivery attempt
@@ -58,7 +58,6 @@ type DeliveryResult struct {
 	Attempt     int
 }
 
-
 // NewOutboxProcessor creates a new outbox processor
 func NewOutboxProcessor() (*OutboxProcessor, error) {
 	store, err := dynamodb.New()
@@ -70,9 +69,9 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 
 	return &OutboxProcessor{
 		federationService: federationService,
-		store:            store,
-		logger:           common.Logger(),
-		cfg:              config.Get(),
+		store:             store,
+		logger:            common.Logger(),
+		cfg:               config.Get(),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -83,7 +82,7 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 			BackoffFactor: 2.0,
 			PermanentErrors: []int{
 				400, // Bad Request
-				401, // Unauthorized  
+				401, // Unauthorized
 				403, // Forbidden
 				404, // Not Found
 				410, // Gone
@@ -110,7 +109,7 @@ func (op *OutboxProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) e
 	concurrency := 10 // Limit concurrent federation requests
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
-	
+
 	failures := make([]error, 0)
 	var failureMutex sync.Mutex
 
@@ -221,10 +220,10 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 // deliverActivityWithRetry attempts delivery with exponential backoff retry
 func (op *OutboxProcessor) deliverActivityWithRetry(ctx context.Context, msg ActivityDeliveryMessage) DeliveryResult {
 	var lastResult DeliveryResult
-	
+
 	for attempt := 1; attempt <= op.retryConfig.MaxAttempts; attempt++ {
 		start := time.Now()
-		
+
 		// Calculate delay for this attempt (skip delay on first attempt)
 		if attempt > 1 {
 			delay := op.calculateBackoffDelay(attempt - 1)
@@ -239,7 +238,7 @@ func (op *OutboxProcessor) deliverActivityWithRetry(ctx context.Context, msg Act
 
 		// Attempt delivery
 		err := op.federationService.DeliverActivity(ctx, msg.Activity, msg.TargetInbox, msg.Actor)
-		
+
 		lastResult = DeliveryResult{
 			TargetInbox: msg.TargetInbox,
 			Success:     err == nil,
@@ -249,7 +248,7 @@ func (op *OutboxProcessor) deliverActivityWithRetry(ctx context.Context, msg Act
 
 		if err != nil {
 			lastResult.Error = err
-			
+
 			// Try to extract status code from error message
 			// This is a simplified approach - in production you'd have proper error types
 			lastResult.StatusCode = 500 // Default to server error
@@ -278,7 +277,7 @@ func (op *OutboxProcessor) deliverActivityWithRetry(ctx context.Context, msg Act
 		// Success
 		lastResult.Success = true
 		lastResult.StatusCode = 200 // Assume success
-		
+
 		op.logger.Info("activity delivered successfully",
 			zap.String("activity_id", msg.Activity.ID),
 			zap.String("target_inbox", msg.TargetInbox),
@@ -295,14 +294,14 @@ func (op *OutboxProcessor) deliverActivityWithRetry(ctx context.Context, msg Act
 
 // calculateBackoffDelay calculates the delay for exponential backoff
 func (op *OutboxProcessor) calculateBackoffDelay(attempt int) time.Duration {
-	delay := float64(op.retryConfig.InitialDelay) * 
+	delay := float64(op.retryConfig.InitialDelay) *
 		op.retryConfig.BackoffFactor * float64(attempt)
-	
+
 	maxDelay := float64(op.retryConfig.MaxDelay)
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-	
+
 	return time.Duration(delay)
 }
 
@@ -319,7 +318,7 @@ func (op *OutboxProcessor) isPermanentError(statusCode int) bool {
 // trackDeliveryStatus records the delivery attempt in storage
 func (op *OutboxProcessor) trackDeliveryStatus(ctx context.Context, msg ActivityDeliveryMessage, result DeliveryResult) error {
 	now := time.Now()
-	
+
 	// Calculate payload size
 	payloadBytes, err := json.Marshal(msg.Activity)
 	payloadSize := int64(len(payloadBytes))
@@ -411,7 +410,7 @@ func (op *OutboxProcessor) recordDeliveryMetrics(msg ActivityDeliveryMessage, re
 	} else {
 		activityType += "_failure"
 	}
-	
+
 	if err := op.store.RecordActivity(context.Background(), activityType, msg.Activity.Actor, time.Now()); err != nil {
 		op.logger.Error("failed to record federation time series data",
 			zap.String("domain", domain),
@@ -419,7 +418,7 @@ func (op *OutboxProcessor) recordDeliveryMetrics(msg ActivityDeliveryMessage, re
 			zap.Error(err),
 		)
 	}
-	
+
 	// Store detailed federation activity with response time and byte size
 	timeSeriesActivity := &storage.FederationActivity{
 		Domain:       domain,
@@ -431,11 +430,11 @@ func (op *OutboxProcessor) recordDeliveryMetrics(msg ActivityDeliveryMessage, re
 		ErrorMessage: "",
 		Timestamp:    timeSeriesData.Timestamp,
 	}
-	
+
 	if !result.Success && result.Error != nil {
 		timeSeriesActivity.ErrorMessage = result.Error.Error()
 	}
-	
+
 	if err := op.store.RecordFederationActivity(context.Background(), timeSeriesActivity); err != nil {
 		op.logger.Error("failed to record federation time series activity",
 			zap.String("domain", domain),
@@ -455,7 +454,7 @@ func (op *OutboxProcessor) recordDeliveryMetrics(msg ActivityDeliveryMessage, re
 		ErrorMessage: "", // Will be set if error occurs
 		Timestamp:    time.Now(),
 	}
-	
+
 	if result.Error != nil {
 		federationActivity2.ErrorMessage = result.Error.Error()
 	}
@@ -484,7 +483,7 @@ func extractDomainFromURL(urlStr string) string {
 	if urlStr == "" {
 		return ""
 	}
-	
+
 	// Handle https:// URLs
 	if strings.HasPrefix(urlStr, "https://") {
 		parts := urlStr[8:]
@@ -496,7 +495,7 @@ func extractDomainFromURL(urlStr string) string {
 		}
 		return parts
 	}
-	
+
 	// Handle http:// URLs
 	if strings.HasPrefix(urlStr, "http://") {
 		parts := urlStr[7:]
@@ -508,7 +507,7 @@ func extractDomainFromURL(urlStr string) string {
 		}
 		return parts
 	}
-	
+
 	// Return as-is if no protocol prefix
 	return urlStr
 }
@@ -535,13 +534,13 @@ func main() {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			err := next.Handle(ctx)
-			
+
 			processor.logger.Info("outbox request completed",
 				zap.String("request_id", ctx.Get("requestID").(string)),
 				zap.Duration("duration", time.Since(start)),
 				zap.Bool("has_error", err != nil),
 			)
-			
+
 			if err != nil {
 				processor.logger.Error("outbox handler error",
 					zap.String("request_id", ctx.Get("requestID").(string)),
@@ -580,7 +579,7 @@ func main() {
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
 		}
-		
+
 		// Parse the raw event as SQS event
 		var event events.SQSEvent
 		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
@@ -591,12 +590,12 @@ func main() {
 			if err != nil {
 				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
 			}
-			
+
 			if err := json.Unmarshal(eventBytes, &event); err != nil {
 				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
 			}
 		}
-		
+
 		return processor.HandleSQS(ctx, event)
 	})
 

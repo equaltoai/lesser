@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -43,7 +43,7 @@ func (s *dynamoDBStorage) IndexHashtag(ctx context.Context, hashtag string, stat
 	})
 
 	var existingCount int64 = 0
-	var firstSeen = now
+	firstSeen := now
 
 	if err == nil && getResult.Item != nil {
 		// Extract existing values
@@ -81,7 +81,6 @@ func (s *dynamoDBStorage) IndexHashtag(ctx context.Context, hashtag string, stat
 			"GSI3SK": &types.AttributeValueMemberS{Value: tagLower},
 		},
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to update hashtag metadata: %w", err)
 	}
@@ -102,7 +101,6 @@ func (s *dynamoDBStorage) IndexHashtag(ctx context.Context, hashtag string, stat
 			"TTL":        &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", now.Add(30*24*time.Hour).Unix())}, // 30 days TTL
 		},
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to record hashtag usage: %w", err)
 	}
@@ -159,7 +157,6 @@ func (s *dynamoDBStorage) SearchHashtags(ctx context.Context, query string, limi
 					And(expression.Key("GSI3SK").BeginsWith(searchTerm)),
 			).
 			Build()
-
 		if err != nil {
 			return results, fmt.Errorf("failed to build expression: %w", err)
 		}
@@ -206,7 +203,6 @@ func (s *dynamoDBStorage) GetHashtagInfo(ctx context.Context, hashtag string) (*
 			"SK": &types.AttributeValueMemberS{Value: sk},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get hashtag info: %w", err)
 	}
@@ -248,7 +244,6 @@ func (s *dynamoDBStorage) GetHashtagUsageHistory(ctx context.Context, hashtag st
 					And(expression.Key("SK").Between(expression.Value(skStart), expression.Value(skEnd))),
 			).
 			Build()
-
 		if err != nil {
 			continue
 		}

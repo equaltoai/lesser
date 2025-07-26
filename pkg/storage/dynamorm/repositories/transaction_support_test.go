@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
-	. "github.com/aron23/lesser/pkg/storage/dynamorm/repositories/testing"
+	"github.com/equaltoai/lesser/pkg/cost"
+	. "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -50,7 +50,7 @@ func TestTransactionManager_ExecuteTransaction_Success(t *testing.T) {
 	mockDB := &MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
-	
+
 	tm := NewTransactionManager(mockDB, logger, tracker)
 	ctx := context.Background()
 
@@ -79,12 +79,12 @@ func TestTransactionManager_ExecuteTransaction_Error(t *testing.T) {
 	mockDB := &MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
-	
+
 	tm := NewTransactionManager(mockDB, logger, tracker)
 	ctx := context.Background()
 
 	expectedError := errors.New("transaction failed")
-	
+
 	// Mock failed transaction
 	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(expectedError)
 
@@ -125,8 +125,6 @@ func TestTransactionContext_OperationCount(t *testing.T) {
 // These tests didn't provide value as unit tests since they only verified
 // that when db.Transaction() fails, the transaction function doesn't run
 
-
-
 func TestDefaultTransactionConfig(t *testing.T) {
 	config := DefaultTransactionConfig()
 
@@ -139,11 +137,11 @@ func TestDefaultTransactionConfig(t *testing.T) {
 func TestFollowUserTransactional_ConceptualTest(t *testing.T) {
 	// This is a conceptual test since the actual DynamORM transaction API
 	// is not fully implemented. We test the repository setup and call structure.
-	
+
 	mockDB := &MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
-	
+
 	repo := NewTransactionalRepository(mockDB, "users", logger, tracker)
 	ctx := context.Background()
 
@@ -162,7 +160,7 @@ func TestCreateStatusWithChecksTransactional_ConceptualTest(t *testing.T) {
 	mockDB := &MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
-	
+
 	repo := NewTransactionalRepository(mockDB, "statuses", logger, tracker)
 	ctx := context.Background()
 
@@ -186,7 +184,7 @@ func TestTransferOwnershipTransactional_ConceptualTest(t *testing.T) {
 	mockDB := &MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
-	
+
 	repo := NewTransactionalRepository(mockDB, "resources", logger, tracker)
 	ctx := context.Background()
 
@@ -292,7 +290,7 @@ func BenchmarkTransactionManager_ExecuteTransaction(b *testing.B) {
 	mockDB := &MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
-	
+
 	tm := NewTransactionManager(mockDB, logger, tracker)
 	ctx := context.Background()
 

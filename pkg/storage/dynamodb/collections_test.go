@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/internal/testutil"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/internal/testutil"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

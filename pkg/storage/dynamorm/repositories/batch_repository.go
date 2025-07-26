@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/storage/dynamorm"
-	"github.com/aron23/lesser/pkg/storage/dynamorm/batch"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -159,16 +159,16 @@ func (nbo *NotificationBatchOperations) BatchCreateMentionNotifications(ctx cont
 
 	for _, userID := range mentionedUserIDs {
 		notification := map[string]any{
-			"PK":           fmt.Sprintf("USER#%s", userID),
-			"SK":           fmt.Sprintf("NOTIF#%s#%s", now.Format("20060102150405"), statusID),
-			"ID":           fmt.Sprintf("%s_%s", statusID, userID),
-			"Type":         "mention",
-			"ActorID":      authorID,
-			"TargetID":     statusID,
-			"TargetType":   "status",
-			"CreatedAt":    now,
-			"IsRead":       false,
-			"ExpiresAt":    now.Add(30 * 24 * time.Hour), // 30 days TTL
+			"PK":         fmt.Sprintf("USER#%s", userID),
+			"SK":         fmt.Sprintf("NOTIF#%s#%s", now.Format("20060102150405"), statusID),
+			"ID":         fmt.Sprintf("%s_%s", statusID, userID),
+			"Type":       "mention",
+			"ActorID":    authorID,
+			"TargetID":   statusID,
+			"TargetType": "status",
+			"CreatedAt":  now,
+			"IsRead":     false,
+			"ExpiresAt":  now.Add(30 * 24 * time.Hour), // 30 days TTL
 		}
 		notifications = append(notifications, notification)
 	}
@@ -398,7 +398,7 @@ func (abo *AdvancedBatchOperations) BatchProcessWithRetry(ctx context.Context, i
 		}
 
 		lastErr = err
-		
+
 		// Check if error is retryable
 		if !isRetryableError(err) {
 			break
@@ -475,7 +475,7 @@ func (pbp *ParallelBatchProcessor) ProcessWithProgress(ctx context.Context, item
 
 	processed := 0
 	totalBatches := (len(items) + pbp.batchSize - 1) / pbp.batchSize
-	
+
 	for result := range resultChan {
 		processed += len(result.items)
 		if progressCallback != nil {
@@ -636,9 +636,9 @@ func (bvp *BatchValidationProcessor) ProcessWithValidation(ctx context.Context, 
 	}
 
 	result := &ValidationResult{
-		TotalItems:    len(items),
-		ValidItems:    make([]any, 0, len(items)),
-		InvalidItems:  make([]ValidationError, 0),
+		TotalItems:   len(items),
+		ValidItems:   make([]any, 0, len(items)),
+		InvalidItems: make([]ValidationError, 0),
 	}
 
 	// Validate all items first

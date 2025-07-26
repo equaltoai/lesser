@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 )

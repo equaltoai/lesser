@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
-	"github.com/aron23/lesser/pkg/storage/dynamorm/batch"
-	. "github.com/aron23/lesser/pkg/storage/dynamorm/repositories/testing"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
+	. "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -56,7 +56,7 @@ func TestTimelineBatchOperations_BatchInsertTimelineEntries_EmptyFollowers(t *te
 func TestTimelineBatchOperations_BatchInsertTimelineEntries_SmallList(t *testing.T) {
 	// This test validates the method signature and basic structure
 	// For full integration testing, use a real database or complete mock implementation
-	
+
 	// Test with empty followers to avoid complex mocking
 	mockDB := &MockDB{}
 	ops := NewTimelineBatchOperations(mockDB, zap.NewNop(), cost.New())
@@ -64,12 +64,12 @@ func TestTimelineBatchOperations_BatchInsertTimelineEntries_SmallList(t *testing
 	// Test empty case (no batch operations needed)
 	err := ops.BatchInsertTimelineEntries(context.Background(), []string{}, "status123", "author456", time.Now())
 	assert.NoError(t, err) // Empty list should succeed without database calls
-	
+
 	// Verify the operation structure was created correctly
 	assert.NotNil(t, ops)
 	assert.NotNil(t, ops.BatchRepository)
 	assert.Equal(t, "timeline", ops.GetTableName())
-	
+
 	// Test that the method signature is correct with actual data
 	// The method exists and can accept these parameters:
 	// - context.Context
@@ -196,7 +196,7 @@ func TestAdvancedBatchOperations_BatchProcessWithRetry_Success(t *testing.T) {
 
 	items := []any{"item1", "item2", "item3"}
 	processedItems := []any{}
-	
+
 	processor := func(items []any) error {
 		processedItems = append(processedItems, items...)
 		return nil
@@ -214,7 +214,7 @@ func TestAdvancedBatchOperations_BatchProcessWithRetry_SuccessAfterRetry(t *test
 
 	items := []any{"item1", "item2"}
 	attempts := 0
-	
+
 	processor := func(items []any) error {
 		attempts++
 		if attempts == 1 {
@@ -235,7 +235,7 @@ func TestAdvancedBatchOperations_BatchProcessWithRetry_MaxRetriesExceeded(t *tes
 
 	items := []any{"item1"}
 	maxRetries := 2
-	
+
 	processor := func(items []any) error {
 		return errors.New("persistent error")
 	}
@@ -320,11 +320,11 @@ func TestStreamingBatchProcessor_ProcessStream_WithItems(t *testing.T) {
 
 	// Create a channel that won't send items immediately
 	itemChan := make(chan any)
-	
+
 	// Use a context that will timeout quickly to exit the processor
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	
+
 	done := make(chan bool)
 	go func() {
 		processor.ProcessStream(ctx, itemChan, func(err error) {
@@ -332,17 +332,17 @@ func TestStreamingBatchProcessor_ProcessStream_WithItems(t *testing.T) {
 		})
 		done <- true
 	}()
-	
+
 	// Don't send any items - let context timeout
 	// This tests that the processor handles context cancellation properly
-	
+
 	select {
 	case <-done:
 		// Success - processor exited on context timeout
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("Processor did not exit on context timeout")
 	}
-	
+
 	// Test passes if processor handles context cancellation without panic
 }
 
@@ -366,7 +366,7 @@ func TestNewBatchValidationProcessor(t *testing.T) {
 func TestBatchValidationProcessor_ProcessWithValidation_EmptyItems(t *testing.T) {
 	mockDB := &MockDB{}
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
-	
+
 	validator := func(item any) error {
 		return nil
 	}
@@ -386,13 +386,13 @@ func TestBatchValidationProcessor_ProcessWithValidation_AllValid(t *testing.T) {
 	// Use DynamORM's official mocks
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	
+
 	// Set up mock expectations for batch processing
 	mockDB.On("Model", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("BatchCreate", mock.AnythingOfType("[]interface {}")).Return(nil)
-	
+
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
-	
+
 	validator := func(item any) error {
 		return nil // All items are valid
 	}
@@ -410,7 +410,7 @@ func TestBatchValidationProcessor_ProcessWithValidation_AllValid(t *testing.T) {
 	assert.Equal(t, 0, result.InvalidCount)
 	assert.Len(t, result.ValidItems, 3)
 	assert.Len(t, result.InvalidItems, 0)
-	
+
 	// Verify mocks were called
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
@@ -420,13 +420,13 @@ func TestBatchValidationProcessor_ProcessWithValidation_SomeInvalid(t *testing.T
 	// Use DynamORM's official mocks
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	
+
 	// Set up mock expectations - only valid items will be batch processed
 	mockDB.On("Model", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("BatchCreate", mock.AnythingOfType("[]interface {}")).Return(nil)
-	
+
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
-	
+
 	validator := func(item any) error {
 		str, ok := item.(string)
 		if !ok || str == "invalid" {
@@ -454,7 +454,7 @@ func TestBatchValidationProcessor_ProcessWithValidation_SomeInvalid(t *testing.T
 	assert.Equal(t, "invalid", result.InvalidItems[0].Item)
 	assert.Equal(t, 3, result.InvalidItems[1].Index)
 	assert.Equal(t, "invalid", result.InvalidItems[1].Item)
-	
+
 	// Verify mocks were called
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
@@ -477,7 +477,7 @@ func TestValidationResult_GetValidationSummary(t *testing.T) {
 	assert.Equal(t, 2, summary["invalid_count"])
 	assert.Equal(t, 7, summary["processed_count"])
 	assert.Equal(t, 1, summary["failed_count"])
-	assert.Equal(t, float64(87.5), summary["success_rate"]) // 7/8 * 100
+	assert.Equal(t, float64(87.5), summary["success_rate"])  // 7/8 * 100
 	assert.Equal(t, float64(80), summary["validation_rate"]) // 8/10 * 100
 	assert.Equal(t, "100ms", summary["duration"])
 }
@@ -487,7 +487,7 @@ func TestValidationResult_GetValidationSummary(t *testing.T) {
 func BenchmarkTimelineBatchOperations_CreateEntries(b *testing.B) {
 	mockDB := &MockDB{}
 	ops := NewTimelineBatchOperations(mockDB, zap.NewNop(), cost.New())
-	
+
 	followerIDs := make([]string, 1000)
 	for i := 0; i < 1000; i++ {
 		followerIDs[i] = fmt.Sprintf("user%d", i)
@@ -508,7 +508,7 @@ func BenchmarkTimelineBatchOperations_CreateEntries(b *testing.B) {
 func BenchmarkBatchValidationProcessor_Validation(b *testing.B) {
 	mockDB := &MockDB{}
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
-	
+
 	validator := func(item any) error {
 		// Simple validation
 		if str, ok := item.(string); ok && len(str) > 0 {
@@ -532,4 +532,3 @@ func BenchmarkBatchValidationProcessor_Validation(b *testing.B) {
 		processor.ProcessWithValidation(ctx, items)
 	}
 }
-

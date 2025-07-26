@@ -12,7 +12,7 @@ import (
 	"github.com/pay-theory/dynamorm"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 type TimeseriesProcessor struct {
@@ -152,11 +152,11 @@ func (tp *TimeseriesProcessor) processWindow(ctx context.Context, window time.Ti
 }
 
 type FederationMetrics struct {
-	FollowCount    int
-	LikeCount      int
-	AnnounceCount  int
-	ActivityCount  int
-	UniqueActors   map[string]bool
+	FollowCount     int
+	LikeCount       int
+	AnnounceCount   int
+	ActivityCount   int
+	UniqueActors    map[string]bool
 	UniqueInstances map[string]bool
 }
 
@@ -226,18 +226,18 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, window time.Tim
 
 	// Create timeseries record for federation metrics
 	timeseriesRecord := struct {
-		PK                string `dynamorm:"pk"`
-		SK                string `dynamorm:"sk"`
-		Type              string `json:"type"`
-		Window            string `json:"window"`
-		FollowCount       int    `json:"follow_count"`
-		LikeCount         int    `json:"like_count"`
-		AnnounceCount     int    `json:"announce_count"`
-		ActivityCount     int    `json:"activity_count"`
-		UniqueActorCount  int    `json:"unique_actor_count"`
-		UniqueInstanceCount int  `json:"unique_instance_count"`
-		CreatedAt         string `json:"created_at"`
-		TTL               int64  `dynamorm:"ttl"`
+		PK                  string `dynamorm:"pk"`
+		SK                  string `dynamorm:"sk"`
+		Type                string `json:"type"`
+		Window              string `json:"window"`
+		FollowCount         int    `json:"follow_count"`
+		LikeCount           int    `json:"like_count"`
+		AnnounceCount       int    `json:"announce_count"`
+		ActivityCount       int    `json:"activity_count"`
+		UniqueActorCount    int    `json:"unique_actor_count"`
+		UniqueInstanceCount int    `json:"unique_instance_count"`
+		CreatedAt           string `json:"created_at"`
+		TTL                 int64  `dynamorm:"ttl"`
 	}{
 		PK:                  fmt.Sprintf("TIMESERIES#FEDERATION"),
 		SK:                  fmt.Sprintf("WINDOW#%s", windowStr),

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 )
@@ -207,7 +207,6 @@ func (r *UserRepository) GetUserByProviderID(ctx context.Context, provider, prov
 		Where("GSI1SK", "=", providerID+"#").
 		Limit(1).
 		All(&providerAccounts)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query provider account: %w", err)
 	}
@@ -260,7 +259,6 @@ func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, pr
 		Index("user-providers-index").
 		Where("GSI2PK", "=", "USER_PROVIDERS#"+username).
 		All(&allProviderAccounts)
-
 	if err != nil {
 		return fmt.Errorf("failed to query provider accounts: %w", err)
 	}
@@ -296,7 +294,6 @@ func (r *UserRepository) GetLinkedProviders(ctx context.Context, username string
 		Index("user-providers-index").
 		Where("GSI2PK", "=", "USER_PROVIDERS#"+username).
 		All(&providerAccounts)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query provider accounts: %w", err)
 	}

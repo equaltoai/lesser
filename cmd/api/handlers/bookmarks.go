@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aron23/lesser/cmd/api/models"
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 )
@@ -265,4 +265,4 @@ func (h *Handler) convertBookmarkedObjectToStatus(ctx context.Context, obj any, 
 }
 
 // Add import for dynamodb package at the top
-// import "github.com/aron23/lesser/pkg/storage/dynamodb"
+// import "github.com/equaltoai/lesser/pkg/storage/dynamodb"

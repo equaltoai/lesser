@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // CreateCommunityNote creates a new community note
@@ -54,7 +54,6 @@ func (s *dynamoDBStorage) CreateCommunityNote(ctx context.Context, note *storage
 		TableName: s.getTableName(),
 		Item:      noteItem,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to store note: %w", err)
 	}
@@ -76,7 +75,6 @@ func (s *dynamoDBStorage) GetCommunityNote(ctx context.Context, noteID string) (
 			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get note: %w", err)
 	}
@@ -106,7 +104,6 @@ func (s *dynamoDBStorage) GetVisibleCommunityNotes(ctx context.Context, objectID
 		ScanIndexForward: aws.Bool(false), // Descending order by score
 		Limit:            aws.Int32(50),   // Limit to top 50 notes
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query notes: %w", err)
 	}
@@ -202,7 +199,6 @@ func (s *dynamoDBStorage) GetUserCommunityNoteVotes(ctx context.Context, userID 
 				},
 			},
 		})
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to batch get votes: %w", err)
 		}
@@ -234,7 +230,6 @@ func (s *dynamoDBStorage) CheckCommunityNoteRateLimit(ctx context.Context, userI
 		},
 		Select: types.SelectCount,
 	})
-
 	if err != nil {
 		return false, 0, err
 	}

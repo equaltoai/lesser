@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aron23/lesser/internal/testutil/mocks"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/internal/testutil/mocks"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

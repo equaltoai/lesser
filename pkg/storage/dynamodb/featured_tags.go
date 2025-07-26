@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // FeaturedTagRecord represents a featured tag in DynamoDB

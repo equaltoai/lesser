@@ -2,11 +2,14 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestNewTimelineRepository(t *testing.T) {
@@ -18,7 +21,9 @@ func TestNewTimelineRepository(t *testing.T) {
 }
 
 func TestCreateTimelineEntry_ValidEntry(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	timeline := &models.Timeline{
 		TimelineType: "HOME",
@@ -28,21 +33,29 @@ func TestCreateTimelineEntry_ValidEntry(t *testing.T) {
 		Visibility:   "public",
 	}
 
-	// This will fail because db is nil, but we're testing the validation logic
+	// Set up expectations
+	mockDB.On("Model", timeline).Return(mockQuery)
+	mockQuery.On("Create").Return(nil)
+
+	// Execute
 	err := repo.CreateTimelineEntry(context.Background(), timeline)
 
-	// Should fail due to nil db, but not due to validation
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create timeline entry")
+	// Assert
+	assert.NoError(t, err)
 
 	// Verify BeforeCreate was called (keys should be set)
 	assert.NotEmpty(t, timeline.PK)
 	assert.NotEmpty(t, timeline.SK)
 	assert.NotEmpty(t, timeline.EntryID)
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestCreateTimelineEntries_EmptySlice(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	err := repo.CreateTimelineEntries(context.Background(), []*models.Timeline{})
 
@@ -50,7 +63,9 @@ func TestCreateTimelineEntries_EmptySlice(t *testing.T) {
 }
 
 func TestCreateTimelineEntries_ValidEntries(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	entries := []*models.Timeline{
 		{
@@ -69,12 +84,17 @@ func TestCreateTimelineEntries_ValidEntries(t *testing.T) {
 		},
 	}
 
-	// This will fail because db is nil, but we're testing the preparation logic
+	// Set up expectations for each entry creation
+	for _, entry := range entries {
+		mockDB.On("Model", entry).Return(mockQuery).Once()
+		mockQuery.On("Create").Return(nil).Once()
+	}
+
+	// Execute
 	err := repo.CreateTimelineEntries(context.Background(), entries)
 
-	// Should fail due to nil db, but not due to validation
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create timeline entries in batch")
+	// Assert
+	assert.NoError(t, err)
 
 	// Verify BeforeCreate was called for all entries
 	for _, entry := range entries {
@@ -82,108 +102,267 @@ func TestCreateTimelineEntries_ValidEntries(t *testing.T) {
 		assert.NotEmpty(t, entry.SK)
 		assert.NotEmpty(t, entry.EntryID)
 	}
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetHomeTimeline_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
-	// This will fail because db is nil, but we're testing parameter handling
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "timeline#HOME#testuser").Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
+	mockQuery.On("Where", "SK", "<", "cursor123").Return(mockQuery)
+	mockQuery.On("Limit", 21).Return(mockQuery) // limit + 1 for pagination
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+
+	// Execute
 	_, _, err := repo.GetHomeTimeline(context.Background(), "testuser", 20, "cursor123")
 
+	// Assert
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetPublicTimeline_LocalFlag(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations for local timeline
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "timeline#PUBLIC#LOCAL").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 21).Return(mockQuery).Once()
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
 
 	// Test local timeline
 	_, _, err := repo.GetPublicTimeline(context.Background(), true, 20, "")
-	assert.Error(t, err) // Will fail due to nil db
+	assert.Error(t, err)
+
+	// Set up expectations for federated timeline
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "timeline#PUBLIC#FEDERATED").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 21).Return(mockQuery).Once()
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
 
 	// Test federated timeline
 	_, _, err = repo.GetPublicTimeline(context.Background(), false, 20, "")
-	assert.Error(t, err) // Will fail due to nil db
+	assert.Error(t, err)
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetListTimeline_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "timeline#LIST#list123").Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
+	mockQuery.On("Where", "SK", "<", "cursor456").Return(mockQuery)
+	mockQuery.On("Limit", 11).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	_, _, err := repo.GetListTimeline(context.Background(), "list123", 10, "cursor456")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetDirectTimeline_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "timeline#DIRECT#alice").Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
+	mockQuery.On("Limit", 16).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	_, _, err := repo.GetDirectTimeline(context.Background(), "alice", 15, "")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetHashtagTimeline_LocalFlag(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations for local hashtag timeline
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "timeline#HASHTAG#photography#LOCAL").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 21).Return(mockQuery).Once()
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
 
 	// Test local hashtag timeline
 	_, _, err := repo.GetHashtagTimeline(context.Background(), "photography", true, 20, "")
-	assert.Error(t, err) // Will fail due to nil db
+	assert.Error(t, err)
+
+	// Set up expectations for federated hashtag timeline
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "timeline#HASHTAG#photography").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 21).Return(mockQuery).Once()
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
 
 	// Test federated hashtag timeline
 	_, _, err = repo.GetHashtagTimeline(context.Background(), "photography", false, 20, "")
-	assert.Error(t, err) // Will fail due to nil db
+	assert.Error(t, err)
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetTimelineEntriesByPost_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI1PK", "=", "POST#post123").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI1SK", "DESC").Return(mockQuery)
+	mockQuery.On("Where", "GSI1SK", "<", "cursor789").Return(mockQuery)
+	mockQuery.On("Limit", 51).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	_, _, err := repo.GetTimelineEntriesByPost(context.Background(), "post123", 50, "cursor789")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries by post")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetTimelineEntriesByActor_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Index", "actor-timeline-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI2PK", "=", "ACTOR#actor456").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI2SK", "DESC").Return(mockQuery)
+	mockQuery.On("Limit", 26).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	_, _, err := repo.GetTimelineEntriesByActor(context.Background(), "actor456", 25, "")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries by actor")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetTimelineEntriesByVisibility_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations - assuming it uses GSI3 for visibility
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Index", "visibility-timeline-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI3PK", "=", "VISIBILITY#public").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI3SK", "DESC").Return(mockQuery)
+	mockQuery.On("Where", "GSI3SK", "<", "cursor999").Return(mockQuery)
+	mockQuery.On("Limit", 31).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	_, _, err := repo.GetTimelineEntriesByVisibility(context.Background(), "public", 30, "cursor999")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries by visibility")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetTimelineEntriesByLanguage_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations - assuming it uses GSI4 for language
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Index", "language-timeline-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI4PK", "=", "LANGUAGE#en").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI4SK", "DESC").Return(mockQuery)
+	mockQuery.On("Limit", 41).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	_, _, err := repo.GetTimelineEntriesByLanguage(context.Background(), "en", 40, "")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries by language")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetTimelineEntry_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	now := time.Now()
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "timeline#HOME#alice").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", mock.Anything).Return(mockQuery) // SK contains timestamp
+	mockQuery.On("First", mock.Anything).Return(fmt.Errorf("mock error"))
+
 	_, err := repo.GetTimelineEntry(context.Background(), "HOME", "alice", "entry123", now)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entry")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestUpdateTimelineEntry_ValidEntry(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	timeline := &models.Timeline{
 		TimelineType: "HOME",
@@ -191,71 +370,146 @@ func TestUpdateTimelineEntry_ValidEntry(t *testing.T) {
 		PostID:       "post123",
 		ActorID:      "actor456",
 		Visibility:   "unlisted", // Changed visibility
+		PK:           "timeline#HOME#testuser",
+		SK:           "2024-01-01T00:00:00Z#entry123",
 	}
 
-	// This will fail because db is nil, but we're testing the validation logic
+	// Set up expectations
+	mockDB.On("Model", timeline).Return(mockQuery)
+	mockQuery.On("Update", mock.Anything).Return(nil) // Update can take optional fields
+
+	// Execute
 	err := repo.UpdateTimelineEntry(context.Background(), timeline)
 
-	// Should fail due to nil db, but not due to validation
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to update timeline entry")
+	// Assert
+	assert.NoError(t, err)
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 
 	// Verify BeforeUpdate was called (ModifiedAt should be updated)
 	assert.False(t, timeline.ModifiedAt.IsZero())
 }
 
 func TestDeleteTimelineEntry_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	now := time.Now()
+	pk := "timeline#HOME#alice"
+	sk := fmt.Sprintf("%d#entry123", now.Unix())
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{PK: pk, SK: sk}).Return(mockQuery)
+	mockQuery.On("Delete").Return(nil)
+
 	err := repo.DeleteTimelineEntry(context.Background(), "HOME", "alice", "entry123", now)
 
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to delete timeline entry")
+	assert.NoError(t, err)
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestDeleteTimelineEntriesByPost_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations for query (matches GetTimelineEntriesByPost)
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI1PK", "=", "POST#post123").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI1SK", "DESC").Return(mockQuery)
+	mockQuery.On("Limit", 1001).Return(mockQuery) // 1000 + 1
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	err := repo.DeleteTimelineEntriesByPost(context.Background(), "post123")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries for deletion")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestDeleteExpiredTimelineEntries_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	before := time.Now().Add(-24 * time.Hour)
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Filter", "ExpiresAt", "<", mock.Anything).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+
 	err := repo.DeleteExpiredTimelineEntries(context.Background(), before)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to scan for expired timeline entries")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestCountTimelineEntries_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "timeline#HOME#alice").Return(mockQuery)
+	mockQuery.On("Count").Return(int64(0), fmt.Errorf("mock error"))
 
 	_, err := repo.CountTimelineEntries(context.Background(), "HOME", "alice")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to count timeline entries")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetTimelineEntriesInRange_Parameters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	start := time.Now().Add(-2 * time.Hour)
 	end := time.Now().Add(-1 * time.Hour)
+
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "timeline#PUBLIC#FEDERATED").Return(mockQuery)
+	mockQuery.On("Where", "SK", ">=", mock.Anything).Return(mockQuery)
+	mockQuery.On("Where", "SK", "<=", mock.Anything).Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
+	mockQuery.On("Limit", 20).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	_, err := repo.GetTimelineEntriesInRange(context.Background(), "PUBLIC", "FEDERATED", start, end, 20)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get timeline entries in range")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetTimelineEntriesWithFilters_AllFilters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	filters := TimelineFilters{
 		OnlyMedia:      true,
@@ -266,21 +520,52 @@ func TestGetTimelineEntriesWithFilters_AllFilters(t *testing.T) {
 		MaxID:          "9876543210",
 	}
 
+	// Set up expectations
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "timeline#HOME#alice").Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
+	mockQuery.On("Filter", "HasMedia", "=", true).Return(mockQuery)
+	mockQuery.On("Filter", "IsReply", "=", false).Return(mockQuery)
+	mockQuery.On("Filter", "IsBoost", "=", false).Return(mockQuery)
+	mockQuery.On("Filter", "Language", "=", "en").Return(mockQuery)
+	mockQuery.On("Filter", "TimelineAt", ">=", mock.Anything).Return(mockQuery)
+	mockQuery.On("Filter", "TimelineAt", "<=", mock.Anything).Return(mockQuery)
+	mockQuery.On("Where", "SK", "<", "cursor123").Return(mockQuery)
+	mockQuery.On("Limit", 21).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+
 	_, _, err := repo.GetTimelineEntriesWithFilters(context.Background(), "HOME", "alice", filters, 20, "cursor123")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get filtered timeline entries")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestGetTimelineEntriesWithFilters_NoFilters(t *testing.T) {
-	repo := &TimelineRepository{}
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := NewTimelineRepository(mockDB, "test-table")
 
 	filters := TimelineFilters{} // Empty filters
+
+	// Set up expectations - no filter calls when filters are empty
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "timeline#HOME#bob").Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
+	mockQuery.On("Limit", 11).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
 	_, _, err := repo.GetTimelineEntriesWithFilters(context.Background(), "HOME", "bob", filters, 10, "")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get filtered timeline entries")
+
+	// Verify mocks
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestTimelineFilters_Struct(t *testing.T) {

@@ -6,11 +6,11 @@ import (
 	"math"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/trust"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
 
@@ -67,7 +67,6 @@ func (s *dynamoDBStorage) CreateTrustRelationship(ctx context.Context, relations
 		TableName: s.getTableName(),
 		Item:      av,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to create trust relationship: %w", err)
 	}
@@ -94,7 +93,6 @@ func (s *dynamoDBStorage) GetTrustRelationship(ctx context.Context, trusterID, t
 			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("TRUSTEE#%s", trusteeID)},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trust relationship: %w", err)
 	}
@@ -128,7 +126,6 @@ func (s *dynamoDBStorage) DeleteTrustRelationship(ctx context.Context, trusterID
 			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("TRUSTEE#%s", trusteeID)},
 		},
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to delete trust relationship: %w", err)
 	}
@@ -325,7 +322,6 @@ func (s *dynamoDBStorage) UpdateTrustScore(ctx context.Context, score *trust.Tru
 		TableName: s.getTableName(),
 		Item:      av,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to update trust score: %w", err)
 	}
@@ -355,7 +351,6 @@ func (s *dynamoDBStorage) RecordTrustUpdate(ctx context.Context, update *trust.T
 		TableName: s.getTableName(),
 		Item:      av,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to record trust update: %w", err)
 	}
@@ -599,7 +594,6 @@ func (s *dynamoDBStorage) invalidateTrustScoreCache(ctx context.Context, actorID
 			"SK": &types.AttributeValueMemberS{Value: "CURRENT"},
 		},
 	})
-
 	if err != nil {
 		common.Logger().Warn("Failed to invalidate trust score cache",
 			zap.String("actor", actorID),

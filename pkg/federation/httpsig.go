@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 

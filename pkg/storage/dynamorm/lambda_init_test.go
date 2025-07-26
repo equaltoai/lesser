@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -305,7 +305,7 @@ func BenchmarkFirstOperationWarm(b *testing.B) {
 // TestCostTrackingIntegration tests cost tracking integration
 func TestCostTrackingIntegration(t *testing.T) {
 	t.Skip("Skipping integration test that requires real DynamoDB connection")
-	
+
 	// This test requires a real DynamoDB connection which is not available in unit tests
 	// It should be moved to integration tests or use proper mocking
 	// The test was failing with: "UnrecognizedClientException: The security token included in the request is invalid"

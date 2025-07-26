@@ -19,7 +19,7 @@ func TestValidatePassword(t *testing.T) {
 	}{
 		{
 			name:     "valid strong password",
-			password: "MyStr0ng!P@ssXYZ", // Changed to avoid sequential characters
+			password: "MyStr0ng!P@ssW0rd#2024",
 			username: "testuser",
 			wantErr:  false,
 		},
@@ -67,7 +67,7 @@ func TestValidatePassword(t *testing.T) {
 		},
 		{
 			name:     "common password",
-			password: "password@123",
+			password: "Password@123",
 			username: "testuser",
 			wantErr:  true,
 			errMsg:   "too common",
@@ -88,7 +88,7 @@ func TestValidatePassword(t *testing.T) {
 		},
 		{
 			name:     "repeated characters",
-			password: "Passsss123!Word",
+			password: "Passsss159!Word",
 			username: "testuser",
 			wantErr:  true,
 			errMsg:   "repeated characters",

@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -33,14 +33,14 @@ type AuthHandler struct {
 
 // AuthCode represents an OAuth authorization code with PKCE
 type AuthCode struct {
-	Code         string    `json:"code"`
-	Challenge    string    `json:"challenge"`
-	Method       string    `json:"method"`
-	ClientID     string    `json:"client_id"`
-	RedirectURI  string    `json:"redirect_uri"`
-	Scope        string    `json:"scope"`
-	UserID       string    `json:"user_id"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	Code        string    `json:"code"`
+	Challenge   string    `json:"challenge"`
+	Method      string    `json:"method"`
+	ClientID    string    `json:"client_id"`
+	RedirectURI string    `json:"redirect_uri"`
+	Scope       string    `json:"scope"`
+	UserID      string    `json:"user_id"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 // Session represents a user session
@@ -102,7 +102,7 @@ func (ah *AuthHandler) RegisterRoutes(app *lift.App) {
 	app.GET("/oauth/authorize", ah.handleAuthorize)
 	app.POST("/oauth/token", ah.handleToken)
 	app.POST("/oauth/revoke", ah.handleRevoke)
-	
+
 	// Session management
 	app.POST("/auth/login", ah.handleLogin)
 	app.POST("/auth/logout", ah.handleLogout)
@@ -112,7 +112,7 @@ func (ah *AuthHandler) RegisterRoutes(app *lift.App) {
 // handleAuthorize handles OAuth authorization requests with PKCE
 func (ah *AuthHandler) handleAuthorize(ctx *lift.Context) error {
 	ah.logger.Info("handling OAuth authorize request")
-	
+
 	// Parse query parameters
 	responseType := ctx.Query("response_type")
 	clientID := ctx.Query("client_id")
@@ -172,14 +172,14 @@ func (ah *AuthHandler) handleAuthorize(ctx *lift.Context) error {
 
 	// Store authorization code with PKCE data
 	authCode := &AuthCode{
-		Code:         code,
-		Challenge:    codeChallenge,
-		Method:       codeChallengeMethod,
-		ClientID:     clientID,
-		RedirectURI:  redirectURI,
-		Scope:        scope,
-		UserID:       userID,
-		ExpiresAt:    time.Now().Add(10 * time.Minute),
+		Code:        code,
+		Challenge:   codeChallenge,
+		Method:      codeChallengeMethod,
+		ClientID:    clientID,
+		RedirectURI: redirectURI,
+		Scope:       scope,
+		UserID:      userID,
+		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
 
 	if err := ah.saveAuthCode(ctx.Context, authCode); err != nil {
@@ -328,13 +328,13 @@ func (ah *AuthHandler) handleRevoke(ctx *lift.Context) error {
 		// Continue with revocation regardless of recording failure
 	}
 
-	ah.logger.Info("token revocation processed", 
+	ah.logger.Info("token revocation processed",
 		zap.String("token_prefix", token[:8]+"..."),
 		zap.String("user_agent", ctx.Header("User-Agent")),
 	)
-	
+
 	return ctx.Status(http.StatusOK).JSON(map[string]string{
-		"status": "success",
+		"status":  "success",
 		"message": "Token revocation processed",
 	})
 }
@@ -376,9 +376,9 @@ func (ah *AuthHandler) handleLogin(ctx *lift.Context) error {
 		"session_"+authResponse.Me, int(24*time.Hour.Seconds()))
 	ctx.Response.Headers["Set-Cookie"] = cookieValue
 
-	ah.logger.Info("user logged in", 
+	ah.logger.Info("user logged in",
 		zap.String("username", authResponse.Me))
-		
+
 	return ctx.JSON(map[string]string{
 		"status":   "success",
 		"username": authResponse.Me,
@@ -394,15 +394,15 @@ func (ah *AuthHandler) handleLogout(ctx *lift.Context) error {
 		if err := ah.authSvc.Logout(ctx.Context, sessionID); err != nil {
 			ah.logger.Warn("failed to log out session", zap.Error(err))
 		}
-		
+
 		// Clear the session cookie
 		ctx.Response.Headers["Set-Cookie"] = "session_id=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0"
-		
+
 		ah.logger.Info("user logged out", zap.String("session_id", sessionID))
 	} else {
 		ah.logger.Info("logout requested but no session found")
 	}
-	
+
 	return ctx.JSON(map[string]string{"status": "success"})
 }
 
@@ -416,7 +416,7 @@ func (ah *AuthHandler) handleSession(ctx *lift.Context) error {
 			"user_id":       userID,
 		})
 	}
-	
+
 	return ctx.JSON(map[string]interface{}{
 		"authenticated": false,
 	})
@@ -451,7 +451,7 @@ func (ah *AuthHandler) saveAuthCode(ctx context.Context, authCode *AuthCode) err
 		ExpiresAt:     authCode.ExpiresAt,
 		Scopes:        strings.Split(authCode.Scope, " "),
 	}
-	
+
 	return ah.store.CreateAuthorizationCode(ctx, storageAuthCode)
 }
 
@@ -461,19 +461,19 @@ func (ah *AuthHandler) getAuthCode(ctx context.Context, code string) (*AuthCode,
 	if err != nil {
 		return nil, fmt.Errorf("auth code not found: %w", err)
 	}
-	
+
 	// Convert to local auth code format
 	authCode := &AuthCode{
-		Code:         storageAuthCode.Code,
-		Challenge:    storageAuthCode.CodeChallenge,
-		Method:       "S256", // Assume S256 method
-		ClientID:     storageAuthCode.ClientID,
-		RedirectURI:  "", // Not stored in current storage format
-		Scope:        strings.Join(storageAuthCode.Scopes, " "),
-		UserID:       storageAuthCode.Username,
-		ExpiresAt:    storageAuthCode.ExpiresAt,
+		Code:        storageAuthCode.Code,
+		Challenge:   storageAuthCode.CodeChallenge,
+		Method:      "S256", // Assume S256 method
+		ClientID:    storageAuthCode.ClientID,
+		RedirectURI: "", // Not stored in current storage format
+		Scope:       strings.Join(storageAuthCode.Scopes, " "),
+		UserID:      storageAuthCode.Username,
+		ExpiresAt:   storageAuthCode.ExpiresAt,
 	}
-	
+
 	return authCode, nil
 }
 
@@ -489,20 +489,20 @@ func (ah *AuthHandler) getUserFromContext(ctx *lift.Context) string {
 	if sessionID == "" {
 		return ""
 	}
-	
+
 	// Get session from storage directly
 	session, err := ah.store.GetSession(ctx.Context, sessionID)
 	if err != nil {
 		ah.logger.Debug("failed to get session", zap.Error(err))
 		return ""
 	}
-	
+
 	// Check if session is expired
 	if time.Now().After(session.ExpiresAt) {
 		ah.logger.Debug("session expired", zap.String("session_id", sessionID))
 		return ""
 	}
-	
+
 	return session.Username
 }
 
@@ -512,7 +512,7 @@ func (ah *AuthHandler) getSessionCookie(ctx *lift.Context) string {
 	if cookieHeader == "" {
 		return ""
 	}
-	
+
 	// Parse cookies (simplified cookie parsing)
 	cookies := parseCookies(cookieHeader)
 	return cookies["session_id"]
@@ -522,7 +522,7 @@ func (ah *AuthHandler) getSessionCookie(ctx *lift.Context) string {
 func parseCookies(cookieHeader string) map[string]string {
 	cookies := make(map[string]string)
 	parts := strings.Split(cookieHeader, ";")
-	
+
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if idx := strings.Index(part, "="); idx != -1 {
@@ -531,7 +531,7 @@ func parseCookies(cookieHeader string) map[string]string {
 			cookies[key] = value
 		}
 	}
-	
+
 	return cookies
 }
 
@@ -558,9 +558,9 @@ func main() {
 			start := time.Now()
 			path := ctx.Request.Path
 			method := ctx.Request.Method
-			
+
 			err := next.Handle(ctx)
-			
+
 			handler.logger.Info("auth request completed",
 				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 				zap.String("method", method),
@@ -568,7 +568,7 @@ func main() {
 				zap.Duration("duration", time.Since(start)),
 				zap.Bool("has_error", err != nil),
 			)
-			
+
 			return err
 		})
 	})

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -77,7 +77,6 @@ func (a *SearchAnalytics) TrackSearch(ctx context.Context, query string, results
 		TableName: aws.String(a.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		a.logger.Error("failed to store search event",
 			zap.String("query", query),
@@ -114,7 +113,6 @@ func (a *SearchAnalytics) TrackClick(ctx context.Context, query string, clickedA
 		TableName: aws.String(a.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		a.logger.Error("failed to track click",
 			zap.String("query", query),
@@ -161,7 +159,6 @@ func (a *SearchAnalytics) TrackStatusSearch(ctx context.Context, query string, r
 		TableName: aws.String(a.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		a.logger.Error("failed to store status search event",
 			zap.String("query", query),
@@ -193,7 +190,6 @@ func (a *SearchAnalytics) updatePopularStatusQueries(ctx context.Context, query 
 			":now": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 		},
 	})
-
 	if err != nil {
 		a.logger.Warn("failed to update popular status queries",
 			zap.String("query", query),
@@ -219,7 +215,6 @@ func (a *SearchAnalytics) updatePopularQueries(ctx context.Context, query string
 			":now": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 		},
 	})
-
 	if err != nil {
 		a.logger.Warn("failed to update popular queries",
 			zap.String("query", query),
@@ -245,7 +240,6 @@ func (a *SearchAnalytics) updateClickThroughRate(ctx context.Context, query stri
 			":now": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 		},
 	})
-
 	if err != nil {
 		a.logger.Warn("failed to update CTR",
 			zap.String("query", query),
@@ -266,7 +260,6 @@ func (a *SearchAnalytics) GetPopularQueries(ctx context.Context, limit int) ([]s
 		ScanIndexForward: aws.Bool(false), // Sort descending
 		Limit:            safeInt32(limit),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get popular queries: %w", err)
 	}
@@ -296,7 +289,6 @@ func (a *SearchAnalytics) GetClickThroughRate(ctx context.Context, query string)
 			":pk": &types.AttributeValueMemberS{Value: pk},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get CTR data: %w", err)
 	}
@@ -357,7 +349,6 @@ func (a *SearchAnalytics) GetSearchMetrics(ctx context.Context, startDate, endDa
 				":pk": &types.AttributeValueMemberS{Value: pk},
 			},
 		})
-
 		if err != nil {
 			a.logger.Warn("failed to query search logs",
 				zap.String("date", current.Format("2006-01-02")),

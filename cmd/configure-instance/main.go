@@ -12,8 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aron23/lesser/pkg/storage"
-	storageDB "github.com/aron23/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage"
+	storageDB "github.com/equaltoai/lesser/pkg/storage/dynamodb"
 )
 
 func main() {

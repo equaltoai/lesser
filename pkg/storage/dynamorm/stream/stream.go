@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // UnmarshalItem unmarshals a single DynamoDB stream record into a struct

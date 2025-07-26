@@ -4,7 +4,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
@@ -19,6 +20,8 @@ type AppConfig struct {
 	EnableCostTracking bool
 	AuthRequired       bool
 	TenantRequired     bool
+	MetricsConfig      *MetricsConfig
+	AWSConfig          *aws.Config
 }
 
 // DefaultConfig returns a default configuration suitable for most HTTP APIs
@@ -36,9 +39,10 @@ func DefaultConfig() AppConfig {
 
 // AppBuilder provides a fluent interface for building Lift applications
 type AppBuilder struct {
-	config AppConfig
-	app    *lift.App
-	logger *zap.Logger
+	config            AppConfig
+	app               *lift.App
+	logger            *zap.Logger
+	metricsMiddleware *MetricsMiddleware
 }
 
 // NewAppBuilder creates a new application builder with the given configuration and logger
@@ -50,11 +54,22 @@ func NewAppBuilder(config AppConfig, logger *zap.Logger) *AppBuilder {
 		app = lift.New()
 	}
 
-	return &AppBuilder{
+	builder := &AppBuilder{
 		config: config,
 		app:    app,
 		logger: logger,
 	}
+
+	// Initialize metrics middleware if enabled and AWS config is provided
+	if config.EnableMetrics && config.AWSConfig != nil {
+		metricsConfig := DefaultMetricsConfig()
+		if config.MetricsConfig != nil {
+			metricsConfig = *config.MetricsConfig
+		}
+		builder.metricsMiddleware = NewMetricsMiddleware(*config.AWSConfig, metricsConfig, logger)
+	}
+
+	return builder
 }
 
 // WithStandardMiddleware adds the standard middleware stack in the correct order
@@ -65,6 +80,11 @@ func (ab *AppBuilder) WithStandardMiddleware() *AppBuilder {
 		ab.app.Use(middleware.TimeoutMiddleware(middleware.TimeoutConfig{
 			DefaultTimeout: ab.config.Timeout,
 		}))
+	}
+
+	// Metrics middleware (early in stack to capture all metrics)
+	if ab.config.EnableMetrics && ab.metricsMiddleware != nil {
+		ab.app.Use(ab.metricsMiddleware.Middleware())
 	}
 
 	// Custom logging middleware (matches existing pattern)
@@ -86,6 +106,11 @@ func (ab *AppBuilder) WithStandardMiddleware() *AppBuilder {
 // Build returns the configured Lift application
 func (ab *AppBuilder) Build() *lift.App {
 	return ab.app
+}
+
+// GetMetricsMiddleware returns the metrics middleware instance for manual control
+func (ab *AppBuilder) GetMetricsMiddleware() *MetricsMiddleware {
+	return ab.metricsMiddleware
 }
 
 // createLoggingMiddleware creates a logging middleware that matches the existing pattern
@@ -180,12 +205,25 @@ func NewHTTPApp(config AppConfig, logger *zap.Logger) *lift.App {
 		Build()
 }
 
+// NewHTTPAppWithBuilder creates a new HTTP API application and returns both app and builder
+func NewHTTPAppWithBuilder(config AppConfig, logger *zap.Logger) (*lift.App, *AppBuilder) {
+	builder := NewAppBuilder(config, logger).WithStandardMiddleware()
+	return builder.Build(), builder
+}
+
 // NewSQSApp creates a new SQS application with appropriate middleware (no CORS needed)
 func NewSQSApp(config AppConfig, logger *zap.Logger) *lift.App {
 	config.EnableCORS = false // Not needed for SQS
 	return NewAppBuilder(config, logger).
 		WithStandardMiddleware().
 		Build()
+}
+
+// NewSQSAppWithBuilder creates a new SQS application and returns both app and builder
+func NewSQSAppWithBuilder(config AppConfig, logger *zap.Logger) (*lift.App, *AppBuilder) {
+	config.EnableCORS = false // Not needed for SQS
+	builder := NewAppBuilder(config, logger).WithStandardMiddleware()
+	return builder.Build(), builder
 }
 
 // NewDynamoDBStreamApp creates a new DynamoDB stream application with appropriate middleware
@@ -195,4 +233,12 @@ func NewDynamoDBStreamApp(config AppConfig, logger *zap.Logger) *lift.App {
 	return NewAppBuilder(config, logger).
 		WithStandardMiddleware().
 		Build()
+}
+
+// NewDynamoDBStreamAppWithBuilder creates a new DynamoDB stream application and returns both app and builder
+func NewDynamoDBStreamAppWithBuilder(config AppConfig, logger *zap.Logger) (*lift.App, *AppBuilder) {
+	config.EnableCORS = false   // Not needed for DynamoDB streams
+	config.AuthRequired = false // Streams don't need auth
+	builder := NewAppBuilder(config, logger).WithStandardMiddleware()
+	return builder.Build(), builder
 }

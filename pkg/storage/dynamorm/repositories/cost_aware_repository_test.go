@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
-	. "github.com/aron23/lesser/pkg/storage/dynamorm/repositories/testing"
+	"github.com/equaltoai/lesser/pkg/cost"
+	. "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -92,10 +92,10 @@ func TestCostAwareRepository_UpdateOperationStats(t *testing.T) {
 	repo.updateOperationStats(operationName, operationCost, duration, true) // with error
 
 	stats := repo.GetOperationStats()
-	
+
 	assert.Contains(t, stats, operationName)
 	opStats := stats[operationName]
-	
+
 	assert.Equal(t, int64(3), opStats.TotalOperations)
 	assert.Equal(t, operationCost*4, opStats.TotalCost) // 0.001 + 0.002 + 0.001
 	assert.Equal(t, int64(1), opStats.ErrorCount)
@@ -147,10 +147,10 @@ func TestCostAwareRepository_CheckCostAlerts(t *testing.T) {
 	})
 
 	// Add operations that will trigger alerts
-	repo.updateOperationStats("expensive_op", 0.0015, 100*time.Millisecond, false) // Warning
+	repo.updateOperationStats("expensive_op", 0.0015, 100*time.Millisecond, false)     // Warning
 	repo.updateOperationStats("very_expensive_op", 0.003, 200*time.Millisecond, false) // Critical
-	repo.updateOperationStats("error_prone_op", 0.0005, 50*time.Millisecond, true)  // Error
-	repo.updateOperationStats("error_prone_op", 0.0005, 50*time.Millisecond, true)  // Another error
+	repo.updateOperationStats("error_prone_op", 0.0005, 50*time.Millisecond, true)     // Error
+	repo.updateOperationStats("error_prone_op", 0.0005, 50*time.Millisecond, true)     // Another error
 
 	alerts := repo.CheckCostAlerts()
 
@@ -192,13 +192,13 @@ func TestCostAwareRepository_ResetStats(t *testing.T) {
 
 	// Add some stats
 	repo.updateOperationStats("test_op", 0.001, 100*time.Millisecond, false)
-	
+
 	stats := repo.GetOperationStats()
 	assert.Len(t, stats, 1)
 
 	// Reset stats
 	repo.ResetStats()
-	
+
 	stats = repo.GetOperationStats()
 	assert.Len(t, stats, 0)
 }
@@ -223,14 +223,14 @@ func TestWithCostAwareRepository(t *testing.T) {
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	ctx := WithCostAwareRepository(context.Background(), repo)
-	
+
 	retrievedRepo := FromContext(ctx)
 	assert.Equal(t, repo, retrievedRepo)
 }
 
 func TestFromContext_NotFound(t *testing.T) {
 	ctx := context.Background()
-	
+
 	retrievedRepo := FromContext(ctx)
 	assert.Nil(t, retrievedRepo)
 }

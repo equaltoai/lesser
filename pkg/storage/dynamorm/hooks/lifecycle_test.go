@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
@@ -32,19 +32,19 @@ func (u *TestUser) Validate() error {
 	return nil
 }
 
-func (u *TestUser) GetFollowerID() string { return u.ID }
-func (u *TestUser) GetFolloweeID() string { return u.ID }
-func (u *TestUser) GetUserID() string     { return u.ID }
-func (u *TestUser) GetContent() string    { return u.Username }
-func (u *TestUser) GetMentions() []string { return []string{} }
+func (u *TestUser) GetFollowerID() string      { return u.ID }
+func (u *TestUser) GetFolloweeID() string      { return u.ID }
+func (u *TestUser) GetUserID() string          { return u.ID }
+func (u *TestUser) GetContent() string         { return u.Username }
+func (u *TestUser) GetMentions() []string      { return []string{} }
 func (u *TestUser) GetMentionedUserID() string { return u.ID }
-func (u *TestUser) GetStatusID() string   { return u.ID }
+func (u *TestUser) GetStatusID() string        { return u.ID }
 
 type TestStatus struct {
-	ID       string    `json:"id"`
-	UserID   string    `json:"user_id"`
-	Content  string    `json:"content"`
-	Mentions []string  `json:"mentions"`
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Content   string    `json:"content"`
+	Mentions  []string  `json:"mentions"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -344,7 +344,7 @@ func TestValidationHook(t *testing.T) {
 
 func TestTimestampHook(t *testing.T) {
 	user := &TestUser{
-		Username: "test",
+		Username:  "test",
 		UpdatedAt: time.Time{}, // Zero time
 	}
 

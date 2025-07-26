@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -341,13 +341,13 @@ func ExpectStatusNotFound(mockStorage *MockStorage, statusID string) {
 var (
 	// ErrMockDatabase represents a mock database error
 	ErrMockDatabase = errors.New("mock database error")
-	
+
 	// ErrMockAuth represents a mock authentication error
 	ErrMockAuth = errors.New("mock authentication error")
-	
+
 	// ErrMockNetwork represents a mock network error
 	ErrMockNetwork = errors.New("mock network error")
-	
+
 	// ErrMockTimeout represents a mock timeout error
 	ErrMockTimeout = errors.New("mock timeout error")
 )
@@ -388,14 +388,14 @@ func (m *MockWithFailure) ShouldFail() bool {
 // BuildTestActor creates a test actor for mocking
 func BuildTestActor(username string) *models.Actor {
 	return &models.Actor{
-		PK:          fmt.Sprintf("actor#%s", username),
-		SK:          fmt.Sprintf("actor#%s", username),
-		Username:    username,
-		NumericID:   fmt.Sprintf("%d", 123456),
-		GSI1PK:      fmt.Sprintf("USERNAME_SEARCH#%s", username[:2]),
-		GSI1SK:      strings.ToLower(username),
-		GSI3PK:      "DOMAIN#test.example.com",
-		GSI3SK:      username,
+		PK:        fmt.Sprintf("actor#%s", username),
+		SK:        fmt.Sprintf("actor#%s", username),
+		Username:  username,
+		NumericID: fmt.Sprintf("%d", 123456),
+		GSI1PK:    fmt.Sprintf("USERNAME_SEARCH#%s", username[:2]),
+		GSI1SK:    strings.ToLower(username),
+		GSI3PK:    "DOMAIN#test.example.com",
+		GSI3SK:    username,
 	}
 }
 

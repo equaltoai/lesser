@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 )
@@ -46,7 +46,6 @@ func (r *StatusRepository) GetStatus(ctx context.Context, statusID string) (*mod
 		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
 		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
 		First(&status)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("status not found: %s", statusID)
@@ -74,7 +73,6 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
 		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
 		First(&status)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("status not found: %s", statusID)
@@ -104,7 +102,6 @@ func (r *StatusRepository) GetStatusesByAuthor(ctx context.Context, authorID str
 		OrderBy("GSI1SK", "DESC").
 		Limit(limit).
 		All(&statuses)
-
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get statuses by author: %w", err)
 	}
@@ -128,7 +125,6 @@ func (r *StatusRepository) GetPublicTimeline(ctx context.Context, limit int, cur
 		OrderBy("GSI2SK", "DESC").
 		Limit(limit).
 		All(&statuses)
-
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get public timeline: %w", err)
 	}
@@ -152,7 +148,6 @@ func (r *StatusRepository) GetConversationStatuses(ctx context.Context, conversa
 		OrderBy("GSI3SK", "ASC"). // Chronological order for conversations
 		Limit(limit).
 		All(&statuses)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get conversation statuses: %w", err)
 	}
@@ -175,7 +170,6 @@ func (r *StatusRepository) GetReplies(ctx context.Context, statusID string, limi
 		OrderBy("GSI4SK", "ASC"). // Chronological order for replies
 		Limit(limit).
 		All(&statuses)
-
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get replies: %w", err)
 	}
@@ -199,7 +193,6 @@ func (r *StatusRepository) GetHashtagTimeline(ctx context.Context, hashtag strin
 		OrderBy("GSI5SK", "DESC").
 		Limit(limit).
 		All(&statuses)
-
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get hashtag timeline: %w", err)
 	}
@@ -221,7 +214,6 @@ func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID s
 		Index("author-timeline-index").
 		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
 		All(&statuses)
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to count statuses by author: %w", err)
 	}
@@ -236,7 +228,6 @@ func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (i
 		Index("replies-index").
 		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		All(&statuses)
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to count replies: %w", err)
 	}
@@ -251,7 +242,6 @@ func (r *StatusRepository) UpdateEngagementMetrics(ctx context.Context, statusID
 		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
 		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
 		First(&status)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("status not found: %s", statusID)
@@ -280,7 +270,6 @@ func (r *StatusRepository) FlagStatus(ctx context.Context, statusID string) erro
 		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
 		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
 		First(&status)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("status not found: %s", statusID)
@@ -307,7 +296,6 @@ func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, limit int, cu
 		Filter("Flagged", "=", true).
 		Limit(limit).
 		Scan(&statuses)
-
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get flagged statuses: %w", err)
 	}

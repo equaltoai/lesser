@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aron23/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/aws/aws-lambda-go/events"
 	"go.uber.org/zap"
 )

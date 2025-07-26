@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
-	dynamodbStorage "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/equaltoai/lesser/pkg/storage"
+	dynamodbStorage "github.com/equaltoai/lesser/pkg/storage/dynamodb"
 )
 
 // TrendAggregatorEvent represents the Lambda event

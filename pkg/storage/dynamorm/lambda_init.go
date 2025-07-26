@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -286,7 +286,7 @@ package main
 import (
 	"context"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aron23/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 )
 
@@ -310,8 +310,8 @@ import (
 	"context"
 	"time"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aron23/lesser/pkg/storage/dynamorm"
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -399,8 +399,8 @@ func main() {
 package main
 
 import (
-	"github.com/aron23/lesser/pkg/storage/dynamorm"
-	"github.com/aron23/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/ai"
 )
 
 var (

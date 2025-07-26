@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // InstanceData represents dynamic instance data stored in DynamoDB
@@ -29,7 +29,6 @@ func (s *dynamoDBStorage) GetInstanceRules(ctx context.Context) ([]storage.Insta
 			"SK": &types.AttributeValueMemberS{Value: "RULES"},
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get instance rules: %w", err)
 	}
@@ -72,7 +71,6 @@ func (s *dynamoDBStorage) SetInstanceRules(ctx context.Context, rules []storage.
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to save instance rules: %w", err)
 	}
@@ -89,7 +87,6 @@ func (s *dynamoDBStorage) GetExtendedDescription(ctx context.Context) (string, t
 			"SK": &types.AttributeValueMemberS{Value: "EXTENDED_DESC"},
 		},
 	})
-
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to get extended description: %w", err)
 	}
@@ -125,7 +122,6 @@ func (s *dynamoDBStorage) SetExtendedDescription(ctx context.Context, descriptio
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to save extended description: %w", err)
 	}

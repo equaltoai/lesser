@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CSRF-related errors

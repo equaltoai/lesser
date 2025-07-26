@@ -53,7 +53,7 @@ The implementation uses a single-table design with composite keys:
 ## Usage
 
 ```go
-import "github.com/aron23/lesser/pkg/storage/dynamodb"
+import "github.com/equaltoai/lesser/pkg/storage/dynamodb"
 
 // Create a new storage instance
 storage, err := dynamodb.New()

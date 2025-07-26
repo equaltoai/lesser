@@ -11,10 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/notes"
-	"github.com/aron23/lesser/pkg/storage"
-	dynamodbstorage "github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -22,6 +18,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/notes"
+	"github.com/equaltoai/lesser/pkg/storage"
+	dynamodbstorage "github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"go.uber.org/zap"
 )
 

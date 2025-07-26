@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aron23/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

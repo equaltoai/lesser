@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aron23/lesser/internal/testutil/mocks"
-	"github.com/aron23/lesser/pkg/activitypub"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/internal/testutil/mocks"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -63,7 +63,7 @@ func TestOutboxProcessor(t *testing.T) {
 		}
 
 		// Setup mock expectations - outbox processor mainly tracks federation activities
-		mockStore.On("RecordFederationActivity", mock.Anything, mock.AnythingOfType("*github.com/aron23/lesser/pkg/storage.FederationActivity")).Return(nil)
+		mockStore.On("RecordFederationActivity", mock.Anything, mock.AnythingOfType("*github.com/equaltoai/lesser/pkg/storage.FederationActivity")).Return(nil)
 		mockStore.On("RecordActivity", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("time.Time")).Return(nil)
 
 		// Create Lift context with SQS event
@@ -158,8 +158,8 @@ func TestDeliveryRetry(t *testing.T) {
 			expectedMin time.Duration
 			expectedMax time.Duration
 		}{
-			{1, time.Second, 3 * time.Second},     // First retry
-			{2, 2 * time.Second, 6 * time.Second}, // Second retry
+			{1, time.Second, 3 * time.Second},      // First retry
+			{2, 2 * time.Second, 6 * time.Second},  // Second retry
 			{3, 4 * time.Second, 12 * time.Second}, // Third retry
 		}
 

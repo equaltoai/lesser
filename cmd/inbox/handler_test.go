@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/aron23/lesser/internal/testutil/mocks"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/internal/testutil/mocks"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	lifttesting "github.com/pay-theory/lift/pkg/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -156,7 +156,7 @@ func TestIsAddressedTo(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "addressed to public",	
+			name: "addressed to public",
 			activity: &activitypub.Activity{
 				BaseObject: activitypub.BaseObject{
 					To: []string{activitypub.PublicAddress},

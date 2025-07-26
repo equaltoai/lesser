@@ -3,7 +3,7 @@ package dynamodb
 import (
 	"testing"
 
-	"github.com/aron23/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 )
 

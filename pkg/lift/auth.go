@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
@@ -121,7 +121,7 @@ func (las *LiftAuthService) RequireTenantWithConfig(config *TenantIsolationConfi
 			// Store tenant ID and config in context
 			ctx.Set("tenant_id", tenantID)
 			ctx.Set("tenant_config", config)
-			
+
 			// Create tenant context for easy access
 			tenantCtx := &TenantContext{TenantID: tenantID}
 			ctx.Set("tenant_context", tenantCtx)

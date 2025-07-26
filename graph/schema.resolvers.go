@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/99designs/gqlgen/graphql"
-	"github.com/aron23/lesser/graph/model"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/federation"
-	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
 

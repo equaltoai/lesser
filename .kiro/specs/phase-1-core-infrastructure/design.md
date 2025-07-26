@@ -46,7 +46,7 @@ import (
     "time"
     "github.com/pay-theory/lift/pkg/lift"
     "github.com/pay-theory/lift/pkg/middleware"
-    "github.com/aron23/lesser/pkg/auth"
+    "github.com/equaltoai/lesser/pkg/auth"
     "go.uber.org/zap"
 )
 
@@ -246,7 +246,7 @@ import (
     "errors"
     "strconv"
     "github.com/pay-theory/lift/pkg/lift"
-    "github.com/aron23/lesser/pkg/auth"
+    "github.com/equaltoai/lesser/pkg/auth"
 )
 
 // Authentication context helpers (matches existing patterns)
@@ -652,8 +652,8 @@ import (
     "errors"
     "os"
     "github.com/pay-theory/lift/pkg/lift"
-    "github.com/aron23/lesser/pkg/auth"
-    "github.com/aron23/lesser/pkg/storage"
+    "github.com/equaltoai/lesser/pkg/auth"
+    "github.com/equaltoai/lesser/pkg/storage"
 )
 
 // LiftAuthService provides Lift-native authentication
@@ -870,7 +870,7 @@ import (
     "net/http/httptest"
     "strings"
     "github.com/pay-theory/lift/pkg/lift"
-    "github.com/aron23/lesser/pkg/auth"
+    "github.com/equaltoai/lesser/pkg/auth"
 )
 
 // Test context builders
