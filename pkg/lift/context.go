@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/aron23/lesser/pkg/auth"
+	"github.com/aron23/lesser/pkg/cost"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
@@ -303,4 +304,21 @@ func GetCurrentTenant(ctx *lift.Context) (string, error) {
 // GetCurrentSession retrieves the current session ID
 func GetCurrentSession(ctx *lift.Context) (string, error) {
 	return GetSessionID(ctx)
+}
+
+// Cost tracking helpers
+
+// GetCostTracker retrieves the cost tracker from the context
+func GetCostTracker(ctx *lift.Context) *cost.Tracker {
+	if tracker, ok := ctx.Get("cost_tracker").(*cost.Tracker); ok {
+		return tracker
+	}
+	return nil
+}
+
+// TrackCost is a convenience function for tracking costs with a callback
+func TrackCost(ctx *lift.Context, fn func(*cost.Tracker)) {
+	if tracker := GetCostTracker(ctx); tracker != nil {
+		fn(tracker)
+	}
 }

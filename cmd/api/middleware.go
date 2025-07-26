@@ -203,3 +203,8 @@ func GetLogger(ctx *lift.Context) *zap.Logger {
 	}
 	return zap.L() // fallback to global logger
 }
+
+// createEnhancedLoggingMiddleware is an alias for createLoggingMiddleware to maintain API compatibility
+func createEnhancedLoggingMiddleware(logger *zap.Logger) lift.Middleware {
+	return createLoggingMiddleware(logger)
+}

@@ -1,433 +1,359 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	opensearch "github.com/opensearch-project/opensearch-go/v2"
-	opensearchapi "github.com/opensearch-project/opensearch-go/v2/opensearchapi"
-	requestsigner "github.com/opensearch-project/opensearch-go/v2/signer/awsv2"
+	"github.com/pay-theory/dynamorm"
 	"go.uber.org/zap"
+
+	"github.com/aron23/lesser/pkg/common"
 )
 
 type SearchIndexer struct {
-	osClient  *opensearch.Client
-	domain    string
-	embedding *dynamodb.EmbeddingService
+	db        *dynamorm.LambdaDB
+	tableName string
 	logger    *zap.Logger
 }
 
-// Actor represents the data structure we'll index in OpenSearch
-type ActorDocument struct {
-	ID             string    `json:"id"`
-	Username       string    `json:"username"`
-	DisplayName    string    `json:"display_name"`
-	Bio            string    `json:"bio"`
-	Domain         string    `json:"domain"`
-	FollowersCount int       `json:"followers_count"`
-	FollowingCount int       `json:"following_count"`
-	StatusesCount  int       `json:"statuses_count"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	IndexedAt      time.Time `json:"indexed_at"`
-	IsLocal        bool      `json:"is_local"`
-	Embedding      []float32 `json:"embedding,omitempty"` // Vector embedding for semantic search
-}
-
 func NewSearchIndexer() (*SearchIndexer, error) {
-	opensearchEndpoint := os.Getenv("OPENSEARCH_ENDPOINT")
-	if opensearchEndpoint == "" {
-		return nil, fmt.Errorf("OPENSEARCH_ENDPOINT environment variable is required")
-	}
-
-	domain := os.Getenv("DOMAIN")
-	if domain == "" {
-		return nil, fmt.Errorf("DOMAIN environment variable is required")
-	}
-
+	// Get table name from environment
 	tableName := os.Getenv("DYNAMO_TABLE_NAME")
 	if tableName == "" {
-		return nil, fmt.Errorf("DYNAMO_TABLE_NAME environment variable is required")
+		tableName = "lesser-main"
 	}
 
-	// Create logger
-	logger, err := zap.NewProduction()
+	// Initialize DynamORM with Lambda optimization
+	db, err := dynamorm.NewLambdaOptimized()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create logger: %w", err)
+		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
 	}
 
-	// Initialize AWS config
-	ctx := context.Background()
-	cfg, err := awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithRegion(config.Get().Region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	// Create the signer
-	signer, err := requestsigner.NewSignerWithService(cfg, "aoss")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create signer: %w", err)
-	}
-
-	// Create OpenSearch client
-	client, err := opensearch.NewClient(opensearch.Config{
-		Addresses: []string{opensearchEndpoint},
-		Signer:    signer,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: false,
-				MinVersion:         tls.VersionTLS12,
-			},
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OpenSearch client: %w", err)
-	}
-
-	// Verify connection
-	res, err := client.Ping()
-	if err != nil {
-		return nil, fmt.Errorf("failed to ping OpenSearch: %w", err)
-	}
-	defer func() {
-		if err := res.Body.Close(); err != nil {
-			logger.Warn("Failed to close response body", zap.Error(err))
-		}
-	}()
-
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenSearch ping failed with status: %d", res.StatusCode)
-	}
-
-	// Create embedding service
-	embeddingService, err := dynamodb.NewEmbeddingService(cfg, tableName, logger)
-	if err != nil {
-		logger.Warn("Failed to create embedding service, continuing without embeddings", zap.Error(err))
-		// Don't fail - allow indexing to continue without embeddings
-		embeddingService = nil
+	// Set timeout buffer to prevent Lambda timeouts
+	if lambdaDB, ok := db.WithLambdaTimeoutBuffer(500 * time.Millisecond).(*dynamorm.LambdaDB); ok {
+		db = lambdaDB
 	}
 
 	return &SearchIndexer{
-		osClient:  client,
-		domain:    domain,
-		embedding: embeddingService,
-		logger:    logger,
+		db:        db,
+		tableName: tableName,
+		logger:    common.Logger(),
 	}, nil
 }
 
-func (si *SearchIndexer) ensureIndex(ctx context.Context) error {
-	indexName := "actors"
+func (si *SearchIndexer) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
+	si.logger.Info("processing search indexer stream event",
+		zap.Int("record_count", len(event.Records)),
+	)
 
-	// Check if index exists
-	res, err := si.osClient.Indices.Exists([]string{indexName})
-	if err != nil {
-		return fmt.Errorf("failed to check index existence: %w", err)
-	}
-	defer func() {
-		if err := res.Body.Close(); err != nil {
-			si.logger.Warn("Failed to close response body", zap.Error(err))
+	// Filter and process indexable records
+	indexableRecords := si.filterIndexable(event.Records)
+	
+	si.logger.Info("filtered indexable records",
+		zap.Int("total_records", len(event.Records)),
+		zap.Int("indexable_records", len(indexableRecords)),
+	)
+
+	// Process each indexable record
+	for _, record := range indexableRecords {
+		if err := si.processRecord(ctx, record); err != nil {
+			si.logger.Error("failed to process indexable record",
+				zap.String("event_id", record.EventID),
+				zap.String("event_name", record.EventName),
+				zap.Error(err),
+			)
+			// Continue processing other records
 		}
-	}()
-
-	// If index doesn't exist, create it
-	if res.StatusCode == 404 {
-		mapping := map[string]any{
-			"mappings": map[string]any{
-				"properties": map[string]any{
-					"id":       map[string]any{"type": "keyword"},
-					"username": map[string]any{"type": "keyword"},
-					"display_name": map[string]any{
-						"type": "text",
-						"fields": map[string]any{
-							"keyword": map[string]any{"type": "keyword"},
-						},
-					},
-					"bio": map[string]any{
-						"type":     "text",
-						"analyzer": "standard",
-					},
-					"domain":          map[string]any{"type": "keyword"},
-					"followers_count": map[string]any{"type": "integer"},
-					"following_count": map[string]any{"type": "integer"},
-					"statuses_count":  map[string]any{"type": "integer"},
-					"created_at":      map[string]any{"type": "date"},
-					"updated_at":      map[string]any{"type": "date"},
-					"indexed_at":      map[string]any{"type": "date"},
-					"is_local":        map[string]any{"type": "boolean"},
-					"embedding": map[string]any{
-						"type":      "knn_vector",
-						"dimension": 1536, // AWS Titan embedding dimension
-						"method": map[string]any{
-							"name":       "hnsw",
-							"space_type": "cosinesimil",
-							"engine":     "nmslib",
-						},
-					},
-				},
-			},
-			"settings": map[string]any{
-				"number_of_shards":   1,
-				"number_of_replicas": 1,
-				"analysis": map[string]any{
-					"analyzer": map[string]any{
-						"username_analyzer": map[string]any{
-							"type":      "custom",
-							"tokenizer": "lowercase",
-							"filter":    []string{"edge_ngram_filter"},
-						},
-					},
-					"filter": map[string]any{
-						"edge_ngram_filter": map[string]any{
-							"type":     "edge_ngram",
-							"min_gram": 2,
-							"max_gram": 20,
-						},
-					},
-				},
-			},
-		}
-
-		body, err := json.Marshal(mapping)
-		if err != nil {
-			return fmt.Errorf("failed to marshal index mapping: %w", err)
-		}
-
-		req := opensearchapi.IndicesCreateRequest{
-			Index: indexName,
-			Body:  bytes.NewReader(body),
-		}
-
-		res, err := req.Do(ctx, si.osClient)
-		if err != nil {
-			return fmt.Errorf("failed to create index: %w", err)
-		}
-		defer func() {
-			if err := res.Body.Close(); err != nil {
-				si.logger.Warn("Failed to close response body", zap.Error(err))
-			}
-		}()
-
-		if res.IsError() {
-			return fmt.Errorf("failed to create index: %s", res.String())
-		}
-
-		log.Printf("Created actors index successfully")
 	}
 
 	return nil
 }
 
-func (si *SearchIndexer) handleRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
-	switch record.EventName {
-	case "INSERT", "MODIFY":
-		return si.indexActor(ctx, record.Change.NewImage)
-	case "REMOVE":
-		return si.deleteActor(ctx, record.Change.OldImage)
+func (si *SearchIndexer) filterIndexable(records []events.DynamoDBEventRecord) []events.DynamoDBEventRecord {
+	var indexable []events.DynamoDBEventRecord
+
+	for _, record := range records {
+		if si.isIndexableRecord(record) {
+			indexable = append(indexable, record)
+		}
+	}
+
+	return indexable
+}
+
+func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bool {
+	// Only process INSERT and MODIFY events
+	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+		return false
+	}
+
+	if record.Change.NewImage == nil {
+		return false
+	}
+
+	// Check if this is indexable content
+	var item struct {
+		PK      string `dynamorm:"pk"`
+		Type    string `json:"type"`
+		Content string `json:"content"`
+	}
+
+	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+		return false
+	}
+
+	// Check for indexable content types
+	switch item.Type {
+	case "Note", "Article", "Question":
+		// Text content that should be searchable
+		return item.Content != ""
+	case "Actor", "Person":
+		// User profiles that should be searchable
+		return true
 	default:
-		log.Printf("Skipping unsupported event type: %s", record.EventName)
-		return nil
+		// Check if it's an object or status we should index
+		return strings.HasPrefix(item.PK, "OBJECT#") || strings.HasPrefix(item.PK, "STATUS#")
 	}
 }
 
-func (si *SearchIndexer) indexActor(ctx context.Context, item map[string]events.DynamoDBAttributeValue) error {
-	// Extract PK to ensure it's an actor
-	pk, ok := item["PK"]
-	if !ok || !strings.HasPrefix(pk.String(), "ACTOR#") {
-		return nil // Not an actor, skip
+func (si *SearchIndexer) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+	// Extract indexable content from the record
+	content, err := si.extractIndexableContent(record)
+	if err != nil {
+		return fmt.Errorf("failed to extract indexable content: %w", err)
 	}
 
-	// Extract actor ID
-	actorID := strings.TrimPrefix(pk.String(), "ACTOR#")
-
-	// Parse the DynamoDB item into ActorDocument
-	doc := ActorDocument{
-		ID:        actorID,
-		IndexedAt: time.Now(),
+	// Create search index entry
+	if err := si.createSearchIndex(ctx, content); err != nil {
+		return fmt.Errorf("failed to create search index: %w", err)
 	}
 
-	// Extract username
-	if val, ok := item["Username"]; ok {
-		doc.Username = val.String()
+	si.logger.Debug("indexed content for search",
+		zap.String("content_id", content.ID),
+		zap.String("content_type", content.Type),
+		zap.Int("content_length", len(content.Text)),
+	)
+
+	return nil
+}
+
+type IndexableContent struct {
+	ID        string
+	Type      string
+	Text      string
+	ActorID   string
+	Tags      []string
+	Language  string
+	CreatedAt time.Time
+}
+
+func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventRecord) (*IndexableContent, error) {
+	var item struct {
+		PK         string   `dynamorm:"pk"`
+		SK         string   `dynamorm:"sk"`
+		Type       string   `json:"type"`
+		Content    string   `json:"content"`
+		Summary    string   `json:"summary"`
+		Name       string   `json:"name"`
+		ActorID    string   `json:"actor_id"`
+		Tags       []string `json:"tags"`
+		Language   string   `json:"language"`
+		CreatedAt  string   `json:"created_at"`
+		PublishedAt string  `json:"published_at"`
 	}
 
-	// Extract display name
-	if val, ok := item["Name"]; ok {
-		doc.DisplayName = val.String()
+	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal stream image: %w", err)
 	}
 
-	// Extract bio/summary
-	if val, ok := item["Summary"]; ok {
-		doc.Bio = val.String()
+	// Extract ID from PK
+	var contentID string
+	if strings.HasPrefix(item.PK, "OBJECT#") {
+		contentID = item.PK[7:] // Remove "OBJECT#" prefix
+	} else if strings.HasPrefix(item.PK, "STATUS#") {
+		contentID = item.PK[7:] // Remove "STATUS#" prefix
+	} else if strings.HasPrefix(item.PK, "ACTOR#") {
+		contentID = item.PK[6:] // Remove "ACTOR#" prefix
+	} else {
+		contentID = item.PK
 	}
 
-	// Extract domain
-	if val, ok := item["Domain"]; ok {
-		doc.Domain = val.String()
-		doc.IsLocal = doc.Domain == si.domain
+	// Combine available text content
+	var textContent strings.Builder
+	if item.Content != "" {
+		textContent.WriteString(item.Content)
+	}
+	if item.Summary != "" {
+		if textContent.Len() > 0 {
+			textContent.WriteString(" ")
+		}
+		textContent.WriteString(item.Summary)
+	}
+	if item.Name != "" {
+		if textContent.Len() > 0 {
+			textContent.WriteString(" ")
+		}
+		textContent.WriteString(item.Name)
 	}
 
-	// Extract counts
-	if val, ok := item["FollowersCount"]; ok {
-		if _, err := fmt.Sscanf(val.Number(), "%d", &doc.FollowersCount); err != nil {
-			si.logger.Warn("failed to parse followers count", zap.Error(err))
+	// Parse timestamp
+	var createdAt time.Time
+	for _, timeStr := range []string{item.CreatedAt, item.PublishedAt} {
+		if timeStr != "" {
+			if t, err := time.Parse(time.RFC3339, timeStr); err == nil {
+				createdAt = t
+				break
+			}
 		}
 	}
-	if val, ok := item["FollowingCount"]; ok {
-		if _, err := fmt.Sscanf(val.Number(), "%d", &doc.FollowingCount); err != nil {
-			si.logger.Warn("failed to parse following count", zap.Error(err))
-		}
+	if createdAt.IsZero() {
+		createdAt = time.Now()
 	}
-	if val, ok := item["StatusesCount"]; ok {
-		if _, err := fmt.Sscanf(val.Number(), "%d", &doc.StatusesCount); err != nil {
-			si.logger.Warn("failed to parse statuses count", zap.Error(err))
+
+	return &IndexableContent{
+		ID:        contentID,
+		Type:      item.Type,
+		Text:      textContent.String(),
+		ActorID:   item.ActorID,
+		Tags:      item.Tags,
+		Language:  item.Language,
+		CreatedAt: createdAt,
+	}, nil
+}
+
+func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *IndexableContent) error {
+	// Create search index record with full-text search capabilities
+	searchRecord := struct {
+		PK           string   `dynamorm:"pk"`
+		SK           string   `dynamorm:"sk"`
+		Type         string   `json:"type"`
+		ContentID    string   `json:"content_id"`
+		ContentType  string   `json:"content_type"`
+		Text         string   `json:"text"`
+		TextLower    string   `json:"text_lower"`    // For case-insensitive search
+		ActorID      string   `json:"actor_id"`
+		Tags         []string `json:"tags"`
+		Language     string   `json:"language"`
+		WordCount    int      `json:"word_count"`
+		CreatedAt    string   `json:"created_at"`
+		IndexedAt    string   `json:"indexed_at"`
+		TTL          int64    `dynamorm:"ttl"`
+	}{
+		PK:          fmt.Sprintf("SEARCH#%s", content.Type),
+		SK:          fmt.Sprintf("CONTENT#%s#%s", content.CreatedAt.Format("2006-01-02"), content.ID),
+		Type:        "SearchIndex",
+		ContentID:   content.ID,
+		ContentType: content.Type,
+		Text:        content.Text,
+		TextLower:   strings.ToLower(content.Text),
+		ActorID:     content.ActorID,
+		Tags:        content.Tags,
+		Language:    content.Language,
+		WordCount:   len(strings.Fields(content.Text)),
+		CreatedAt:   content.CreatedAt.Format(time.RFC3339),
+		IndexedAt:   time.Now().Format(time.RFC3339),
+		TTL:         time.Now().Add(365 * 24 * time.Hour).Unix(), // 1 year retention
+	}
+
+	// Store the search index record
+	if err := si.db.Model(&searchRecord).Create(); err != nil {
+		return fmt.Errorf("failed to store search index: %w", err)
+	}
+
+	// Create additional indexes for common search patterns
+	if err := si.createAdditionalIndexes(ctx, content); err != nil {
+		si.logger.Warn("failed to create additional search indexes",
+			zap.String("content_id", content.ID),
+			zap.Error(err),
+		)
+		// Don't fail the main indexing operation for additional indexes
+	}
+
+	return nil
+}
+
+func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *IndexableContent) error {
+	// Create actor-specific index for searching user's content
+	if content.ActorID != "" {
+		actorIndex := struct {
+			PK        string `dynamorm:"pk"`
+			SK        string `dynamorm:"sk"`
+			Type      string `json:"type"`
+			ContentID string `json:"content_id"`
+			Text      string `json:"text"`
+			CreatedAt string `json:"created_at"`
+			TTL       int64  `dynamorm:"ttl"`
+		}{
+			PK:        fmt.Sprintf("SEARCH#ACTOR#%s", content.ActorID),
+			SK:        fmt.Sprintf("CONTENT#%s", content.ID),
+			Type:      "ActorSearchIndex",
+			ContentID: content.ID,
+			Text:      content.Text,
+			CreatedAt: content.CreatedAt.Format(time.RFC3339),
+			TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
+		}
+
+		if err := si.db.Model(&actorIndex).Create(); err != nil {
+			return fmt.Errorf("failed to create actor search index: %w", err)
 		}
 	}
 
-	// Extract timestamps
-	if val, ok := item["CreatedAt"]; ok {
-		if t, err := time.Parse(time.RFC3339, val.String()); err == nil {
-			doc.CreatedAt = t
-		}
-	}
-	if val, ok := item["UpdatedAt"]; ok {
-		if t, err := time.Parse(time.RFC3339, val.String()); err == nil {
-			doc.UpdatedAt = t
-		}
-	}
+	// Create tag-based indexes
+	for _, tag := range content.Tags {
+		if tag != "" {
+			tagIndex := struct {
+				PK        string `dynamorm:"pk"`
+				SK        string `dynamorm:"sk"`
+				Type      string `json:"type"`
+				Tag       string `json:"tag"`
+				ContentID string `json:"content_id"`
+				ActorID   string `json:"actor_id"`
+				CreatedAt string `json:"created_at"`
+				TTL       int64  `dynamorm:"ttl"`
+			}{
+				PK:        fmt.Sprintf("SEARCH#TAG#%s", strings.ToLower(tag)),
+				SK:        fmt.Sprintf("CONTENT#%s", content.ID),
+				Type:      "TagSearchIndex",
+				Tag:       tag,
+				ContentID: content.ID,
+				ActorID:   content.ActorID,
+				CreatedAt: content.CreatedAt.Format(time.RFC3339),
+				TTL:       time.Now().Add(180 * 24 * time.Hour).Unix(), // 180 days retention
+			}
 
-	// Generate embedding if service is available
-	if si.embedding != nil {
-		actor := &activitypub.Actor{
-			PreferredUsername: doc.Username,
-			Name:              doc.DisplayName,
-			Summary:           doc.Bio,
-		}
-
-		embedding, err := si.embedding.GenerateActorEmbedding(ctx, actor)
-		if err != nil {
-			si.logger.Warn("Failed to generate embedding for actor",
-				zap.String("actor", actorID),
-				zap.Error(err))
-		} else {
-			doc.Embedding = embedding
-			// Also store embedding in DynamoDB for fallback search
-			if err := si.embedding.StoreActorEmbedding(ctx, actorID, embedding); err != nil {
-				si.logger.Warn("Failed to store embedding in DynamoDB",
-					zap.String("actor", actorID),
-					zap.Error(err))
+			if err := si.db.Model(&tagIndex).Create(); err != nil {
+				si.logger.Warn("failed to create tag search index",
+					zap.String("tag", tag),
+					zap.Error(err),
+				)
+				// Continue with other tags
 			}
 		}
 	}
 
-	// Index the document
-	body, err := json.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("failed to marshal actor document: %w", err)
-	}
-
-	req := opensearchapi.IndexRequest{
-		Index:      "actors",
-		DocumentID: doc.ID,
-		Body:       bytes.NewReader(body),
-		Refresh:    "true",
-	}
-
-	res, err := req.Do(ctx, si.osClient)
-	if err != nil {
-		return fmt.Errorf("failed to index actor: %w", err)
-	}
-	defer func() {
-		if err := res.Body.Close(); err != nil {
-			si.logger.Warn("Failed to close response body", zap.Error(err))
-		}
-	}()
-
-	if res.IsError() {
-		return fmt.Errorf("failed to index actor %s: %s", doc.ID, res.String())
-	}
-
-	log.Printf("Successfully indexed actor: %s (@%s)", doc.ID, doc.Username)
-	return nil
-}
-
-func (si *SearchIndexer) deleteActor(ctx context.Context, item map[string]events.DynamoDBAttributeValue) error {
-	// Extract PK to ensure it's an actor
-	pk, ok := item["PK"]
-	if !ok || !strings.HasPrefix(pk.String(), "ACTOR#") {
-		return nil // Not an actor, skip
-	}
-
-	// Extract actor ID
-	actorID := strings.TrimPrefix(pk.String(), "ACTOR#")
-
-	// Delete the actor from the index
-	req := opensearchapi.DeleteRequest{
-		Index:      "actors",
-		DocumentID: actorID,
-	}
-
-	res, err := req.Do(ctx, si.osClient)
-	if err != nil {
-		return fmt.Errorf("failed to delete actor: %w", err)
-	}
-	defer func() {
-		if err := res.Body.Close(); err != nil {
-			si.logger.Warn("Failed to close response body", zap.Error(err))
-		}
-	}()
-
-	if res.IsError() && res.StatusCode != 404 {
-		return fmt.Errorf("failed to delete actor %s: %s", actorID, res.String())
-	}
-
-	log.Printf("Successfully deleted actor from index: %s", actorID)
-	return nil
-}
-
-func (si *SearchIndexer) Handler(ctx context.Context, event events.DynamoDBEvent) error {
-	// Ensure index exists
-	if err := si.ensureIndex(ctx); err != nil {
-		log.Printf("Failed to ensure index: %v", err)
-		// Continue processing even if index check fails
-	}
-
-	var errors []error
-	for _, record := range event.Records {
-		if err := si.handleRecord(ctx, record); err != nil {
-			log.Printf("Error processing record: %v", err)
-			errors = append(errors, err)
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("processed %d records with %d errors", len(event.Records), len(errors))
-	}
-
-	log.Printf("Successfully processed %d records", len(event.Records))
 	return nil
 }
 
 func main() {
-	indexer, err := NewSearchIndexer()
+	processor, err := NewSearchIndexer()
 	if err != nil {
-		log.Fatalf("Failed to create search indexer: %v", err)
+		panic(fmt.Sprintf("failed to initialize search indexer: %v", err))
 	}
 
-	lambda.Start(indexer.Handler)
+	// Handle DynamoDB stream events with logging middleware
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+		start := time.Now()
+		defer func() {
+			duration := time.Since(start)
+			processor.logger.Info("request completed",
+				zap.Duration("duration", duration),
+			)
+		}()
+		return processor.HandleStream(ctx, event)
+	})
 }

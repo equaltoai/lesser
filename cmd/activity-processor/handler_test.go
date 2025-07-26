@@ -19,6 +19,21 @@ type MockDB struct {
 	mock.Mock
 }
 
+var handler *ActivityHandler
+
+func handleDynamoDBStream(ctx context.Context, event events.DynamoDBEvent) error {
+	if handler == nil {
+		return nil
+	}
+	// Process each record
+	for _, record := range event.Records {
+		if err := handler.processRecord(ctx, record); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *MockDB) WithLambdaTimeoutBuffer(milliseconds int) *dynamorm.LambdaDB {
 	args := m.Called(milliseconds)
 	return args.Get(0).(*dynamorm.LambdaDB)
