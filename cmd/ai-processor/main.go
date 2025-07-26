@@ -2,42 +2,46 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
-	"github.com/aron23/lesser/pkg/ai"
-	"github.com/aron23/lesser/pkg/moderation"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pay-theory/dynamorm"
+	"go.uber.org/zap"
+
+	"github.com/aron23/lesser/pkg/ai"
+	"github.com/aron23/lesser/pkg/common"
 )
 
-var (
-	dynamoClient *dynamodb.Client
-	aiService    *ai.AIService
-	tableName    string
-)
+type AIProcessor struct {
+	db        *dynamorm.LambdaDB
+	tableName string
+	aiService *ai.AIService
+	logger    *zap.Logger
+}
 
-func init() {
-	cfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		log.Fatal("unable to load SDK config:", err)
-	}
-
-	dynamoClient = dynamodb.NewFromConfig(cfg)
-
-	tableName = os.Getenv("DYNAMO_TABLE_NAME")
+func NewAIProcessor() (*AIProcessor, error) {
+	// Get table name from environment
+	tableName := os.Getenv("DYNAMO_TABLE_NAME")
 	if tableName == "" {
 		tableName = "lesser-main"
 	}
 
-	// Initialize services
+	// Initialize DynamORM with Lambda optimization
+	db, err := dynamorm.NewLambdaOptimized()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
+	}
+
+	// Set timeout buffer to prevent Lambda timeouts
+	if lambdaDB, ok := db.WithLambdaTimeoutBuffer(500 * time.Millisecond).(*dynamorm.LambdaDB); ok {
+		db = lambdaDB
+	}
+
+	// Initialize AI service
 	aiConfig := &ai.AIConfig{
 		NSFWThreshold:       0.8,
 		ToxicityThreshold:   0.7,
@@ -49,88 +53,141 @@ func init() {
 		BedrockModelID:      "anthropic.claude-v2",
 		S3Bucket:            os.Getenv("S3_BUCKET_NAME"),
 	}
-	aiService = ai.NewAIService(cfg, aiConfig)
+
+	// Load AWS config for AI service
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	aiService := ai.NewAIService(cfg, aiConfig)
+
+	return &AIProcessor{
+		db:        db,
+		tableName: tableName,
+		aiService: aiService,
+		logger:    common.Logger(),
+	}, nil
 }
 
-func handler(ctx context.Context, event events.DynamoDBEvent) error {
+func (ap *AIProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
+	ap.logger.Info("processing DynamoDB stream event",
+		zap.Int("record_count", len(event.Records)),
+	)
+
 	for _, record := range event.Records {
-		if err := processRecord(ctx, record); err != nil {
-			log.Printf("error processing record: %v", err)
+		if err := ap.processRecord(ctx, record); err != nil {
+			ap.logger.Error("error processing record",
+				zap.String("event_id", record.EventID),
+				zap.Error(err),
+			)
 			// Continue processing other records
 		}
 	}
 	return nil
 }
 
-func processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (ap *AIProcessor) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
 	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
 		return nil
 	}
 
-	// Extract object information
-	var objectID, objectType, contentText, actorID string
-	var mediaURLs []string
-
-	// Simple extraction for MVP
-	if pk, ok := record.Change.NewImage["PK"]; ok {
-		pkStr := pk.String()
-		if len(pkStr) > 7 && pkStr[:7] == "OBJECT#" {
-			objectID = pkStr[7:]
-		} else {
-			return nil // Not an object
-		}
-	}
-
-	if typeAttr, ok := record.Change.NewImage["Type"]; ok {
-		objectType = typeAttr.String()
-	}
-
-	if contentAttr, ok := record.Change.NewImage["Content"]; ok {
-		contentText = contentAttr.String()
-	}
-
-	if actorAttr, ok := record.Change.NewImage["ActorID"]; ok {
-		actorID = actorAttr.String()
-	}
-
-	// Skip if not an analyzable type
-	if !isAnalyzableType(objectType) {
+	// Only process objects with analyzable content
+	if !ap.isAnalyzableRecord(record) {
 		return nil
 	}
 
-	// Create Content struct for analysis
-	content := &ai.Content{
-		ID:        objectID,
-		Type:      objectType,
-		Text:      contentText,
-		MediaURLs: mediaURLs,
-		AuthorID:  actorID,
-		CreatedAt: time.Now(),
+	// Extract content from the stream record
+	content, err := ap.extractContent(record)
+	if err != nil {
+		return fmt.Errorf("failed to extract content: %w", err)
 	}
 
 	// Perform AI analysis
-	analysis, err := aiService.AnalyzeContent(ctx, content)
+	analysis, err := ap.aiService.AnalyzeContent(ctx, content)
 	if err != nil {
 		return fmt.Errorf("failed to analyze content: %w", err)
 	}
 
-	// Store analysis result
-	aiStorage := ai.NewStorage(dynamoClient, tableName)
-	if err := aiStorage.SaveAnalysis(ctx, analysis); err != nil {
+	// Store analysis result using DynamORM
+	if err := ap.storeAnalysis(ctx, analysis); err != nil {
 		return fmt.Errorf("failed to store analysis: %w", err)
 	}
 
 	// Handle moderation action if needed
 	if analysis.ModerationAction != ai.ActionNone {
-		if err := handleModerationAction(ctx, analysis, actorID); err != nil {
-			log.Printf("failed to handle moderation action: %v", err)
+		if err := ap.handleModerationAction(ctx, analysis); err != nil {
+			ap.logger.Error("failed to handle moderation action",
+				zap.String("analysis_id", analysis.ID),
+				zap.Error(err),
+			)
 		}
 	}
 
 	return nil
 }
 
-func isAnalyzableType(objectType string) bool {
+func (ap *AIProcessor) isAnalyzableRecord(record events.DynamoDBEventRecord) bool {
+	// Check if this is an object we should analyze
+	if record.Change.NewImage == nil {
+		return false
+	}
+
+	// Try to unmarshal into a basic model to check PK
+	var item struct {
+		PK   string `dynamorm:"pk"`
+		Type string `json:"type"`
+	}
+
+	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+		return false
+	}
+
+	// Check if it's an object and analyzable type
+	if len(item.PK) > 7 && item.PK[:7] == "OBJECT#" {
+		return ap.isAnalyzableType(item.Type)
+	}
+
+	return false
+}
+
+func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Content, error) {
+	// Unmarshal the stream record into a content model
+	var item struct {
+		PK      string `dynamorm:"pk"`
+		Type    string `json:"type"`
+		Content string `json:"content"`
+		ActorID string `json:"actor_id"`
+	}
+
+	if err := dynamorm.UnmarshalStreamImage(record.Change.NewImage, &item); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal stream image: %w", err)
+	}
+
+	// Extract object ID from PK
+	var objectID string
+	if len(item.PK) > 7 && item.PK[:7] == "OBJECT#" {
+		objectID = item.PK[7:]
+	} else {
+		return nil, fmt.Errorf("invalid object PK: %s", item.PK)
+	}
+
+	// Skip if not an analyzable type
+	if !ap.isAnalyzableType(item.Type) {
+		return nil, fmt.Errorf("not an analyzable type: %s", item.Type)
+	}
+
+	return &ai.Content{
+		ID:        objectID,
+		Type:      item.Type,
+		Text:      item.Content,
+		MediaURLs: []string{}, // TODO: Extract media URLs if present
+		AuthorID:  item.ActorID,
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+func (ap *AIProcessor) isAnalyzableType(objectType string) bool {
 	switch objectType {
 	case "Note", "Article", "Question", "Image", "Video":
 		return true
@@ -139,82 +196,116 @@ func isAnalyzableType(objectType string) bool {
 	}
 }
 
-func handleModerationAction(ctx context.Context, analysis *ai.AIAnalysis, actorID string) error {
-	// Create moderation event
-	event := &moderation.ModerationEvent{
-		ID:              analysis.ID,
-		EventType:       moderation.EventTypeFlagged,
+func (ap *AIProcessor) storeAnalysis(ctx context.Context, analysis *ai.AIAnalysis) error {
+	// Create analysis model for DynamORM
+	analysisRecord := struct {
+		PK               string `dynamorm:"pk"`
+		SK               string `dynamorm:"sk"`
+		Type             string `json:"type"`
+		AnalysisID       string `json:"analysis_id"`
+		ObjectID         string `json:"object_id"`
+		ObjectType       string `json:"object_type"`
+		OverallRisk      float64 `json:"overall_risk"`
+		ModerationAction string `json:"moderation_action"`
+		CreatedAt        string `json:"created_at"`
+		TTL              int64  `dynamorm:"ttl"`
+	}{
+		PK:               fmt.Sprintf("ANALYSIS#%s", analysis.ObjectID),
+		SK:               fmt.Sprintf("AI#%s", analysis.ID),
+		Type:             "AIAnalysis",
+		AnalysisID:       analysis.ID,
+		ObjectID:         analysis.ObjectID,
+		ObjectType:       analysis.ObjectType,
+		OverallRisk:      analysis.OverallRisk,
+		ModerationAction: string(analysis.ModerationAction),
+		CreatedAt:        time.Now().Format(time.RFC3339),
+		TTL:              time.Now().Add(30 * 24 * time.Hour).Unix(),
+	}
+
+	// Store using DynamORM Model Create
+	return ap.db.Model(&analysisRecord).Create()
+}
+
+func (ap *AIProcessor) handleModerationAction(ctx context.Context, analysis *ai.AIAnalysis) error {
+	// Create moderation event model for DynamORM
+	moderationEvent := struct {
+		PK              string  `dynamorm:"pk"`
+		SK              string  `dynamorm:"sk"`
+		Type            string  `json:"type"`
+		EventID         string  `json:"event_id"`
+		EventType       string  `json:"event_type"`
+		ObjectID        string  `json:"object_id"`
+		ObjectType      string  `json:"object_type"`
+		ActorID         string  `json:"actor_id"`
+		Category        string  `json:"category"`
+		Severity        string  `json:"severity"`
+		ConfidenceScore float64 `json:"confidence_score"`
+		CreatedAt       string  `json:"created_at"`
+		TTL             int64   `dynamorm:"ttl"`
+	}{
+		PK:              fmt.Sprintf("MODERATION#%s", analysis.ObjectID),
+		SK:              fmt.Sprintf("EVENT#%s", analysis.ID),
+		Type:            "ModerationEvent",
+		EventID:         analysis.ID,
+		EventType:       "flagged",
 		ObjectID:        analysis.ObjectID,
 		ObjectType:      analysis.ObjectType,
 		ActorID:         "ai-processor",
-		Category:        determineCategory(analysis),
-		Severity:        determineSeverity(analysis),
+		Category:        ap.determineCategory(analysis),
+		Severity:        ap.determineSeverity(analysis),
 		ConfidenceScore: analysis.OverallRisk,
-		Evidence: []moderation.Evidence{
-			{
-				Type:        "ai_analysis",
-				Score:       analysis.OverallRisk,
-				Description: fmt.Sprintf("AI detected %s", analysis.ModerationAction),
-				Metadata: map[string]any{
-					"analysis_id": analysis.ID,
-					"risk_score":  analysis.OverallRisk,
-				},
-				Timestamp: time.Now(),
-			},
-		},
-		Created: time.Now(),
-		Updated: time.Now(),
+		CreatedAt:       time.Now().Format(time.RFC3339),
+		TTL:             time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
 
-	// Store moderation event
-	eventData, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(tableName),
-		Item: map[string]types.AttributeValue{
-			"PK":        &types.AttributeValueMemberS{Value: fmt.Sprintf("MODERATION#%s", event.ObjectID)},
-			"SK":        &types.AttributeValueMemberS{Value: fmt.Sprintf("EVENT#%s", event.ID)},
-			"Type":      &types.AttributeValueMemberS{Value: "ModerationEvent"},
-			"EventData": &types.AttributeValueMemberS{Value: string(eventData)},
-			"TTL":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(30*24*time.Hour).Unix())},
-		},
-	})
-
-	return err
+	// Store moderation event using DynamORM Model Create
+	return ap.db.Model(&moderationEvent).Create()
 }
 
-func determineCategory(analysis *ai.AIAnalysis) moderation.Category {
+func (ap *AIProcessor) determineCategory(analysis *ai.AIAnalysis) string {
 	if analysis.SpamAnalysis != nil && analysis.SpamAnalysis.SpamScore > 0.7 {
-		return moderation.CategorySpam
+		return "spam"
 	}
 	if analysis.TextAnalysis != nil && analysis.TextAnalysis.ToxicityScore > 0.7 {
-		return moderation.CategoryHateSpeech
+		return "hate_speech"
 	}
 	if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW {
-		return moderation.CategoryNSFW
+		return "nsfw"
 	}
 	if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.ViolenceScore > 0.7 {
-		return moderation.CategoryViolence
+		return "violence"
 	}
-	return moderation.CategoryOther
+	return "other"
 }
 
-func determineSeverity(analysis *ai.AIAnalysis) moderation.Severity {
+func (ap *AIProcessor) determineSeverity(analysis *ai.AIAnalysis) string {
 	if analysis.OverallRisk > 0.9 {
-		return moderation.SeverityCritical
+		return "critical"
 	}
 	if analysis.OverallRisk > 0.7 {
-		return moderation.SeverityHigh
+		return "high"
 	}
 	if analysis.OverallRisk > 0.5 {
-		return moderation.SeverityMedium
+		return "medium"
 	}
-	return moderation.SeverityLow
+	return "low"
 }
 
 func main() {
-	lambda.Start(handler)
+	processor, err := NewAIProcessor()
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize AI processor: %v", err))
+	}
+
+	// Handle DynamoDB stream events - use direct Lambda handler
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+		start := time.Now()
+		defer func() {
+			duration := time.Since(start)
+			processor.logger.Info("request completed",
+				zap.Duration("duration", duration),
+			)
+		}()
+		return processor.HandleStream(ctx, event)
+	})
 }

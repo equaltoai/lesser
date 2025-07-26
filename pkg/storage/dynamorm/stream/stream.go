@@ -46,21 +46,11 @@ func UnmarshalItem(record events.DynamoDBEventRecord, out any) error {
 			fieldVal := outVal.Field(i)
 			if fieldVal.CanSet() {
 				// Convert and set the value based on field type
-				switch fieldVal.Kind() {
-				case reflect.String:
-					if strVal, ok := val.(string); ok {
-						fieldVal.SetString(strVal)
-					}
-				case reflect.Int, reflect.Int64:
-					if numStr, ok := val.(string); ok {
-						if num, err := strconv.ParseInt(numStr, 10, 64); err == nil {
-							fieldVal.SetInt(num)
-						}
-					}
-				case reflect.Bool:
-					if boolVal, ok := val.(bool); ok {
-						fieldVal.SetBool(boolVal)
-					}
+				if err := setFieldValue(fieldVal, val); err != nil {
+					common.Logger().Warn("Failed to set field value",
+						zap.String("field", fieldName),
+						zap.Error(err),
+					)
 				}
 			}
 		}
@@ -146,6 +136,87 @@ func convertStreamImageToItem(image map[string]events.DynamoDBAttributeValue) (m
 	}
 
 	return item, nil
+}
+
+// setFieldValue sets a field value using reflection, handling type conversions
+func setFieldValue(field reflect.Value, value any) error {
+	if value == nil {
+		return nil
+	}
+
+	fieldType := field.Type()
+	valueType := reflect.TypeOf(value)
+
+	// Direct assignment if types match
+	if valueType.AssignableTo(fieldType) {
+		field.Set(reflect.ValueOf(value))
+		return nil
+	}
+
+	// Handle type conversions
+	switch field.Kind() {
+	case reflect.String:
+		if str, ok := value.(string); ok {
+			field.SetString(str)
+			return nil
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		switch v := value.(type) {
+		case string:
+			if num, err := strconv.ParseInt(v, 10, 64); err == nil {
+				field.SetInt(num)
+				return nil
+			}
+		case float64:
+			field.SetInt(int64(v))
+			return nil
+		}
+	case reflect.Float32, reflect.Float64:
+		switch v := value.(type) {
+		case string:
+			if num, err := strconv.ParseFloat(v, 64); err == nil {
+				field.SetFloat(num)
+				return nil
+			}
+		case float64:
+			field.SetFloat(v)
+			return nil
+		}
+	case reflect.Bool:
+		if b, ok := value.(bool); ok {
+			field.SetBool(b)
+			return nil
+		}
+	case reflect.Slice:
+		// Handle slice types
+		if list, ok := value.([]any); ok {
+			sliceVal := reflect.MakeSlice(fieldType, len(list), len(list))
+			for i, item := range list {
+				if err := setFieldValue(sliceVal.Index(i), item); err != nil {
+					return err
+				}
+			}
+			field.Set(sliceVal)
+			return nil
+		}
+	case reflect.Map:
+		// Handle map types
+		if m, ok := value.(map[string]any); ok {
+			mapVal := reflect.MakeMap(fieldType)
+			for k, v := range m {
+				keyVal := reflect.ValueOf(k)
+				valVal := reflect.New(fieldType.Elem()).Elem()
+				if err := setFieldValue(valVal, v); err != nil {
+					return err
+				}
+				mapVal.SetMapIndex(keyVal, valVal)
+			}
+			field.Set(mapVal)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("cannot convert %v (type %T) to %v", value, value, fieldType)
 }
 
 // Helper function to convert a single DynamoDB attribute value to a Go type

@@ -58,8 +58,9 @@ func TestLinkProviderAccount_NotImplemented(t *testing.T) {
 
 	err := repo.LinkProviderAccount(context.Background(), "testuser", "google", "123")
 
+	// Now that it's implemented, it should fail due to nil db, not "not implemented"
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not implemented")
+	assert.NotContains(t, err.Error(), "not implemented")
 }
 
 func TestUnlinkProviderAccount_NotImplemented(t *testing.T) {
@@ -67,8 +68,9 @@ func TestUnlinkProviderAccount_NotImplemented(t *testing.T) {
 
 	err := repo.UnlinkProviderAccount(context.Background(), "testuser", "google")
 
+	// Now that it's implemented, it should fail due to nil db, not "not implemented"
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not implemented")
+	assert.NotContains(t, err.Error(), "not implemented")
 }
 
 func TestGetLinkedProviders_ReturnsEmpty(t *testing.T) {

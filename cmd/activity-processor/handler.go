@@ -131,6 +131,7 @@ func (h *ActivityHandler) processOutboxActivity(ctx context.Context, activity *a
 
 // processFollowActivity processes a Follow activity
 func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
+	_ = ctx // unused parameter
 	// Implementation would go here
 	h.Logger.Info("Processing Follow activity",
 		zap.String("username", username),
@@ -141,6 +142,7 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 
 // processAcceptActivity processes an Accept activity
 func (h *ActivityHandler) processAcceptActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
+	_ = ctx // unused parameter
 	// Implementation would go here
 	h.Logger.Info("Processing Accept activity",
 		zap.String("username", username),
@@ -151,6 +153,7 @@ func (h *ActivityHandler) processAcceptActivity(ctx context.Context, activity *a
 
 // processCreateActivity processes a Create activity
 func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
+	_ = ctx // unused parameter
 	// Implementation would go here
 	h.Logger.Info("Processing Create activity",
 		zap.String("username", username),
@@ -161,6 +164,7 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 
 // deliverActivity delivers an activity to remote servers
 func (h *ActivityHandler) deliverActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
+	_ = ctx // unused parameter
 	// Implementation would go here
 	h.Logger.Info("Delivering activity",
 		zap.String("username", username),

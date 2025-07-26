@@ -68,6 +68,11 @@ func LambdaInit(models ...any) (core.DB, error) {
 
 // LambdaInitWithOptions initializes DynamORM with advanced performance options
 func LambdaInitWithOptions(opts *LambdaInitOptions) (core.DB, error) {
+	// Use default options if nil
+	if opts == nil {
+		opts = &LambdaInitOptions{}
+	}
+
 	startTime := time.Now()
 	defer func() {
 		initMetrics.mu.Lock()

@@ -199,30 +199,120 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 
 // GetUserByProviderID gets a user by their OAuth provider ID
 func (r *UserRepository) GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error) {
-	// This would require a separate model/table for provider links
-	// For now, return not implemented error
-	return nil, fmt.Errorf("GetUserByProviderID not implemented in DynamORM repository")
+	// Query the ProviderAccount by provider and providerID using GSI1
+	var providerAccounts []models.ProviderAccount
+	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
+		Index("provider-index").
+		Where("GSI1PK", "=", "PROVIDER#"+provider).
+		Where("GSI1SK", "=", providerID+"#").
+		Limit(1).
+		All(&providerAccounts)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query provider account: %w", err)
+	}
+
+	if len(providerAccounts) == 0 {
+		return nil, fmt.Errorf("user not found with provider %s:%s", provider, providerID)
+	}
+
+	// Now get the user by UserID
+	return r.GetUser(ctx, providerAccounts[0].UserID)
 }
 
 // LinkProviderAccount links an OAuth provider account to a user
 func (r *UserRepository) LinkProviderAccount(ctx context.Context, username, provider, providerID string) error {
-	// This would require a separate model/table for provider links
-	// For now, return not implemented error
-	return fmt.Errorf("LinkProviderAccount not implemented in DynamORM repository")
+	// First verify the user exists
+	_, err := r.GetUser(ctx, username)
+	if err != nil {
+		return err
+	}
+
+	// Create the provider account link
+	providerAccount := &models.ProviderAccount{
+		UserID:     username,
+		Provider:   provider,
+		ProviderID: providerID,
+		IsActive:   true,
+	}
+
+	// Create the provider account using DynamORM
+	err = r.db.WithContext(ctx).Model(providerAccount).Create()
+	if err != nil {
+		if errors.IsConditionFailed(err) {
+			return common.ConflictError{
+				Resource: "provider_account",
+				Message:  fmt.Sprintf("provider account %s:%s already linked", provider, providerID),
+			}
+		}
+		return fmt.Errorf("failed to link provider account: %w", err)
+	}
+
+	return nil
 }
 
 // UnlinkProviderAccount unlinks an OAuth provider account from a user
 func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, provider string) error {
-	// This would require a separate model/table for provider links
-	// For now, return not implemented error
-	return fmt.Errorf("UnlinkProviderAccount not implemented in DynamORM repository")
+	// Find the provider account for this user and provider
+	// First get all provider accounts for this user
+	var allProviderAccounts []models.ProviderAccount
+	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
+		Index("user-providers-index").
+		Where("GSI2PK", "=", "USER_PROVIDERS#"+username).
+		All(&allProviderAccounts)
+
+	if err != nil {
+		return fmt.Errorf("failed to query provider accounts: %w", err)
+	}
+
+	// Filter by provider manually since DynamORM might not support begins_with
+	var providerAccounts []models.ProviderAccount
+	for _, pa := range allProviderAccounts {
+		if pa.Provider == provider {
+			providerAccounts = append(providerAccounts, pa)
+		}
+	}
+
+	if len(providerAccounts) == 0 {
+		return fmt.Errorf("provider account not found for user %s and provider %s", username, provider)
+	}
+
+	// Delete the provider account(s) for this provider
+	for _, pa := range providerAccounts {
+		err = r.db.WithContext(ctx).Model(&pa).Delete()
+		if err != nil {
+			return fmt.Errorf("failed to unlink provider account: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // GetLinkedProviders gets all linked OAuth providers for a user
 func (r *UserRepository) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
-	// This would require a separate model/table for provider links
-	// For now, return empty slice
-	return []string{}, nil
+	// Query all provider accounts for this user
+	var providerAccounts []models.ProviderAccount
+	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
+		Index("user-providers-index").
+		Where("GSI2PK", "=", "USER_PROVIDERS#"+username).
+		All(&providerAccounts)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query provider accounts: %w", err)
+	}
+
+	// Extract unique provider names
+	providers := make([]string, 0, len(providerAccounts))
+	providerSet := make(map[string]bool)
+
+	for _, pa := range providerAccounts {
+		if pa.IsActive && !providerSet[pa.Provider] {
+			providers = append(providers, pa.Provider)
+			providerSet[pa.Provider] = true
+		}
+	}
+
+	return providers, nil
 }
 
 // Helper methods
