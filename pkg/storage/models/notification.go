@@ -1,0 +1,366 @@
+package models
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// Notification represents a user notification
+type Notification struct {
+	// Primary key - using user ID as partition key with notification sort key
+	PK string `dynamorm:"pk" json:"pk"` // Format: "user#{userID}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "notif#{timestamp}#{notificationID}"
+
+	// GSI1 - Notification type queries
+	GSI1PK string `dynamorm:"index:type-index,pk" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"
+	GSI1SK string `dynamorm:"index:type-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{userID}#{id}"
+
+	// GSI2 - Actor notifications (who triggered notifications)
+	GSI2PK string `dynamorm:"index:actor-index,pk" json:"gsi2_pk"` // Format: "NOTIF_ACTOR#{actorID}"
+	GSI2SK string `dynamorm:"index:actor-index,sk" json:"gsi2_sk"` // Format: "{created_at}#{userID}#{id}"
+
+	// GSI3 - Group key for notification consolidation
+	GSI3PK string `dynamorm:"index:group-index,pk" json:"gsi3_pk"` // Format: "NOTIF_GROUP#{groupKey}"
+	GSI3SK string `dynamorm:"index:group-index,sk" json:"gsi3_sk"` // Format: "{created_at}#{id}"
+
+	// Core notification data
+	ID     string `json:"id"`
+	UserID string `json:"user_id"` // User receiving the notification
+	Type   string `json:"type"`    // "mention", "reblog", "favourite", "follow", "follow_request", etc.
+
+	// Actor information (who triggered the notification)
+	ActorID   string `json:"actor_id"`
+	ActorType string `json:"actor_type,omitempty"` // "user", "remote_actor"
+
+	// Target information (what the notification is about)
+	TargetID   string `json:"target_id,omitempty"`
+	TargetType string `json:"target_type,omitempty"` // "status", "user", "account"
+
+	// Notification content
+	Title string `json:"title,omitempty"`
+	Body  string `json:"body,omitempty"`
+
+	// Additional data payload
+	Data map[string]interface{} `json:"data,omitempty"`
+
+	// Status tracking
+	IsRead bool       `json:"is_read"`
+	ReadAt *time.Time `json:"read_at,omitempty"`
+
+	// Push notification status
+	PushSent   bool       `json:"push_sent"`
+	PushSentAt *time.Time `json:"push_sent_at,omitempty"`
+	PushError  string     `json:"push_error,omitempty"`
+
+	// Grouping for similar notifications
+	GroupKey   string `json:"group_key"`   // Key for grouping similar notifications
+	GroupCount int    `json:"group_count"` // Number of notifications in this group
+
+	// Timestamps
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// TTL for automatic cleanup (30 days)
+	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp
+
+	// Version for optimistic locking
+	Version int `dynamorm:"version" json:"version"`
+}
+
+// NotificationBuilder helps create notifications with proper defaults
+type NotificationBuilder struct {
+	notification *Notification
+}
+
+// TableName returns the DynamoDB table name for the Notification model
+func (Notification) TableName() string {
+	return "lesser-main" // Use the main table
+}
+
+// BeforeCreate sets up the model before creation
+func (n *Notification) BeforeCreate() error {
+	now := time.Now()
+	n.CreatedAt = now
+	n.UpdatedAt = now
+
+	// Generate ID if not provided
+	if n.ID == "" {
+		n.ID = uuid.New().String()
+	}
+
+	// Set defaults
+	n.IsRead = false
+	n.PushSent = false
+	n.GroupCount = 1
+
+	// Set expiry to 30 days
+	n.ExpiresAt = now.Add(30 * 24 * time.Hour).Unix()
+
+	// Generate group key for similar notifications
+	if n.GroupKey == "" {
+		n.GroupKey = n.generateGroupKey()
+	}
+
+	// Set up primary key
+	n.PK = "user#" + n.UserID
+	timestamp := n.CreatedAt.Format("20060102150405")
+	n.SK = fmt.Sprintf("notif#%s#%s", timestamp, n.ID)
+
+	// Set up GSI keys
+	n.setupGSIKeys()
+
+	return n.Validate()
+}
+
+// BeforeUpdate sets up the model before update
+func (n *Notification) BeforeUpdate() error {
+	n.UpdatedAt = time.Now()
+
+	// Update GSI keys in case type or other indexed fields changed
+	n.setupGSIKeys()
+
+	return n.Validate()
+}
+
+// setupGSIKeys configures all GSI partition and sort keys
+func (n *Notification) setupGSIKeys() {
+	createdAtStr := n.CreatedAt.Format(time.RFC3339)
+
+	// GSI1 - Notification type queries
+	n.GSI1PK = "NOTIF_TYPE#" + n.Type
+	n.GSI1SK = fmt.Sprintf("%s#%s#%s", createdAtStr, n.UserID, n.ID)
+
+	// GSI2 - Actor notifications
+	if n.ActorID != "" {
+		n.GSI2PK = "NOTIF_ACTOR#" + n.ActorID
+		n.GSI2SK = fmt.Sprintf("%s#%s#%s", createdAtStr, n.UserID, n.ID)
+	} else {
+		n.GSI2PK = ""
+		n.GSI2SK = ""
+	}
+
+	// GSI3 - Group key for notification consolidation
+	n.GSI3PK = "NOTIF_GROUP#" + n.GroupKey
+	n.GSI3SK = fmt.Sprintf("%s#%s", createdAtStr, n.ID)
+}
+
+// Validate performs validation on the Notification
+func (n *Notification) Validate() error {
+	if strings.TrimSpace(n.ID) == "" {
+		return fmt.Errorf("ID is required")
+	}
+	if strings.TrimSpace(n.UserID) == "" {
+		return fmt.Errorf("UserID is required")
+	}
+	if strings.TrimSpace(n.Type) == "" {
+		return fmt.Errorf("Type is required")
+	}
+	if !isValidNotificationType(n.Type) {
+		return fmt.Errorf("invalid notification type: %s", n.Type)
+	}
+	if strings.TrimSpace(n.ActorID) == "" {
+		return fmt.Errorf("ActorID is required")
+	}
+
+	return nil
+}
+
+// generateGroupKey creates a key for grouping similar notifications
+func (n *Notification) generateGroupKey() string {
+	// Group by type, actor, and target within a time window (1 hour)
+	window := n.CreatedAt.Truncate(time.Hour).Format("2006010215")
+	return fmt.Sprintf("%s:%s:%s:%s:%s", n.UserID, n.Type, n.ActorID, n.TargetID, window)
+}
+
+// MarkRead marks the notification as read
+func (n *Notification) MarkRead() {
+	if !n.IsRead {
+		n.IsRead = true
+		now := time.Now()
+		n.ReadAt = &now
+	}
+}
+
+// MarkUnread marks the notification as unread
+func (n *Notification) MarkUnread() {
+	n.IsRead = false
+	n.ReadAt = nil
+}
+
+// MarkPushSent marks the push notification as sent
+func (n *Notification) MarkPushSent() {
+	n.PushSent = true
+	now := time.Now()
+	n.PushSentAt = &now
+	n.PushError = ""
+}
+
+// MarkPushFailed marks the push notification as failed
+func (n *Notification) MarkPushFailed(errorMsg string) {
+	n.PushSent = false
+	n.PushError = errorMsg
+}
+
+// ShouldSendPush determines if a push notification should be sent
+func (n *Notification) ShouldSendPush() bool {
+	return !n.PushSent && n.PushError == ""
+}
+
+// SetData sets a data field
+func (n *Notification) SetData(key string, value interface{}) {
+	if n.Data == nil {
+		n.Data = make(map[string]interface{})
+	}
+	n.Data[key] = value
+}
+
+// GetData gets a data field
+func (n *Notification) GetData(key string) (interface{}, bool) {
+	if n.Data == nil {
+		return nil, false
+	}
+	value, exists := n.Data[key]
+	return value, exists
+}
+
+// IncrementGroupCount increments the group count for consolidated notifications
+func (n *Notification) IncrementGroupCount() {
+	n.GroupCount++
+}
+
+// isValidNotificationType checks if the notification type is valid
+func isValidNotificationType(notifType string) bool {
+	validTypes := map[string]bool{
+		"mention":        true,
+		"reblog":         true,
+		"favourite":      true,
+		"follow":         true,
+		"follow_request": true,
+		"poll":           true,
+		"status":         true,
+		"update":         true,
+		"admin.sign_up":  true,
+		"admin.report":   true,
+	}
+	return validTypes[strings.ToLower(notifType)]
+}
+
+// NewNotificationBuilder creates a new notification builder
+func NewNotificationBuilder() *NotificationBuilder {
+	return &NotificationBuilder{
+		notification: &Notification{},
+	}
+}
+
+// ForUser sets the user ID for the notification
+func (nb *NotificationBuilder) ForUser(userID string) *NotificationBuilder {
+	nb.notification.UserID = userID
+	return nb
+}
+
+// OfType sets the notification type
+func (nb *NotificationBuilder) OfType(notifType string) *NotificationBuilder {
+	nb.notification.Type = notifType
+	return nb
+}
+
+// FromActor sets the actor who triggered the notification
+func (nb *NotificationBuilder) FromActor(actorID, actorType string) *NotificationBuilder {
+	nb.notification.ActorID = actorID
+	nb.notification.ActorType = actorType
+	return nb
+}
+
+// AboutTarget sets the target of the notification
+func (nb *NotificationBuilder) AboutTarget(targetID, targetType string) *NotificationBuilder {
+	nb.notification.TargetID = targetID
+	nb.notification.TargetType = targetType
+	return nb
+}
+
+// WithContent sets the notification content
+func (nb *NotificationBuilder) WithContent(title, body string) *NotificationBuilder {
+	nb.notification.Title = title
+	nb.notification.Body = body
+	return nb
+}
+
+// WithData adds data to the notification
+func (nb *NotificationBuilder) WithData(key string, value interface{}) *NotificationBuilder {
+	if nb.notification.Data == nil {
+		nb.notification.Data = make(map[string]interface{})
+	}
+	nb.notification.Data[key] = value
+	return nb
+}
+
+// WithGroupKey sets a custom group key
+func (nb *NotificationBuilder) WithGroupKey(groupKey string) *NotificationBuilder {
+	nb.notification.GroupKey = groupKey
+	return nb
+}
+
+// Build creates the notification
+func (nb *NotificationBuilder) Build() *Notification {
+	return nb.notification
+}
+
+// Convenience functions for common notification types
+
+// NewMentionNotification creates a mention notification
+func NewMentionNotification(userID, actorID, statusID string) *Notification {
+	return NewNotificationBuilder().
+		ForUser(userID).
+		OfType("mention").
+		FromActor(actorID, "user").
+		AboutTarget(statusID, "status").
+		WithContent("New mention", "You were mentioned in a post").
+		Build()
+}
+
+// NewFollowNotification creates a follow notification
+func NewFollowNotification(userID, followerID string) *Notification {
+	return NewNotificationBuilder().
+		ForUser(userID).
+		OfType("follow").
+		FromActor(followerID, "user").
+		AboutTarget(followerID, "user").
+		WithContent("New follower", "Someone started following you").
+		Build()
+}
+
+// NewReblogNotification creates a reblog notification
+func NewReblogNotification(userID, rebloggerID, statusID string) *Notification {
+	return NewNotificationBuilder().
+		ForUser(userID).
+		OfType("reblog").
+		FromActor(rebloggerID, "user").
+		AboutTarget(statusID, "status").
+		WithContent("Your post was reblogged", "Someone reblogged your post").
+		Build()
+}
+
+// NewFavouriteNotification creates a favourite notification
+func NewFavouriteNotification(userID, likerID, statusID string) *Notification {
+	return NewNotificationBuilder().
+		ForUser(userID).
+		OfType("favourite").
+		FromActor(likerID, "user").
+		AboutTarget(statusID, "status").
+		WithContent("Your post was favourited", "Someone favourited your post").
+		Build()
+}
+
+// NewFollowRequestNotification creates a follow request notification
+func NewFollowRequestNotification(userID, requesterID string) *Notification {
+	return NewNotificationBuilder().
+		ForUser(userID).
+		OfType("follow_request").
+		FromActor(requesterID, "user").
+		AboutTarget(requesterID, "user").
+		WithContent("New follow request", "Someone requested to follow you").
+		Build()
+}
