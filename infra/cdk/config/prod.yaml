@@ -1,0 +1,27 @@
+environment: production
+appName: lesser
+domain: lesser.app
+memorySize: 3008
+timeout: 30
+logLevel: INFO
+features:
+  enableMultiTenant: false
+  enableRateLimiting: true
+  enableMonitoring: true
+  enableDeletionProtection: true
+  enablePointInTimeRecovery: true
+aws:
+  region: us-east-1
+  architecture: arm64
+  runtime: provided.al2023
+monitoring:
+  detailedMetrics: true
+  businessMetrics: true
+  realTimeStreaming: false
+  errorRateThreshold: 1.0
+  latencyP99Threshold: 3000
+  throttleCountThreshold: 10
+  concurrentExecutionsThreshold: 100
+cost:
+  optimized: false
+  reservedConcurrency: 50

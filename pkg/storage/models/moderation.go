@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/moderation"
 )
 
 // ModerationAction represents the type of moderation action taken
@@ -53,59 +55,200 @@ const (
 	ModerationReasonOther           ModerationReason = "other"
 )
 
-// Moderation represents a moderation case stored in DynamoDB using DynamORM
-type Moderation struct {
-	// Primary key - using moderation ID as the primary identifier
-	PK string `dynamorm:"pk" json:"pk"` // Format: "moderation#{moderation_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "moderation#{moderation_id}"
+// ModerationEvent represents a moderation event stored in DynamoDB
+type ModerationEvent struct {
+	// Primary key - Events are stored by object being moderated
+	PK string `dynamorm:"pk" json:"pk"` // Format: "EVENT#{object_id}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "TIME#{RFC3339}#{event_id}"
 
-	// GSI1 - Content lookup (find all moderations for a specific piece of content)
-	GSI1PK string `dynamorm:"index:content-moderation-index,pk" json:"gsi1_pk,omitempty"` // Format: "{content_type}#{content_id}"
-	GSI1SK string `dynamorm:"index:content-moderation-index,sk" json:"gsi1_sk,omitempty"` // Format: "{created_at}#{moderation_id}"
+	// GSI1 - Actor queries (find events by who created the content)
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "ACTOR#{actor_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
-	// GSI2 - Status queries (find all moderations with a specific status)
-	GSI2PK string `dynamorm:"index:moderation-status-index,pk" json:"gsi2_pk"` // Format: "STATUS#{status}"
-	GSI2SK string `dynamorm:"index:moderation-status-index,sk" json:"gsi2_sk"` // Format: "{created_at}#{moderation_id}"
+	// GSI2 - Type/Category/Severity queries
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "TYPE#{event_type}#{category}"
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "SEVERITY#{severity}#{RFC3339}"
 
-	// GSI3 - Moderator queries (find all moderations by a specific moderator)
-	GSI3PK string `dynamorm:"index:moderator-index,pk" json:"gsi3_pk,omitempty"` // Format: "MODERATOR#{moderator_id}"
-	GSI3SK string `dynamorm:"index:moderator-index,sk" json:"gsi3_sk,omitempty"` // Format: "{created_at}#{moderation_id}"
+	// GSI3 - Event ID lookups
+	GSI3PK string `dynamorm:"index:gsi3,pk" json:"gsi3_pk,omitempty"` // Format: "EVENTID#{event_id}"
+	GSI3SK string `dynamorm:"index:gsi3,sk" json:"gsi3_sk,omitempty"` // Format: "EVENTID#{event_id}"
 
-	// GSI4 - User queries (find all moderations affecting a specific user)
-	GSI4PK string `dynamorm:"index:user-moderation-index,pk" json:"gsi4_pk,omitempty"` // Format: "USER_MOD#{user_id}"
-	GSI4SK string `dynamorm:"index:user-moderation-index,sk" json:"gsi4_sk,omitempty"` // Format: "{created_at}#{moderation_id}"
+	// Type marker
+	Type string `json:"type"` // "EVENT"
 
-	// Core moderation data
-	ModerationID  string                `json:"moderation_id"`
-	ContentID     string                `json:"content_id"`
-	ContentType   ModerationContentType `json:"content_type"`
-	UserID        string                `json:"user_id"`        // User who created the content or is being moderated
-	Action        ModerationAction      `json:"action"`         // Action taken
-	Status        ModerationStatus      `json:"status"`         // Current status
-	Reason        ModerationReason      `json:"reason"`         // Primary reason
-	Evidence      ModerationEvidence    `json:"evidence"`       // Detailed evidence
-	ModeratorID   string                `json:"moderator_id"`   // Human or "system" for automated
-	ModeratorType string                `json:"moderator_type"` // "human", "automated", "system"
-	CreatedAt     time.Time             `json:"created_at"`
-	UpdatedAt     time.Time             `json:"updated_at"`
-	ActionedAt    *time.Time            `json:"actioned_at,omitempty"`
-	ResolvedAt    *time.Time            `json:"resolved_at,omitempty"`
+	// Embed the actual moderation event
+	moderation.ModerationEvent
 
-	// Appeal information
-	AppealStatus   string     `json:"appeal_status,omitempty"`   // "none", "requested", "reviewing", "approved", "denied"
-	AppealReason   string     `json:"appeal_reason,omitempty"`   // User's appeal text
-	AppealedAt     *time.Time `json:"appealed_at,omitempty"`     // When appeal was submitted
-	AppealReviewer string     `json:"appeal_reviewer,omitempty"` // Who reviewed the appeal
-	AppealDecision string     `json:"appeal_decision,omitempty"` // Decision explanation
+	// DynamoDB TTL
+	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
-	// Audit trail
-	History []ModerationHistoryEntry `json:"history"`
+// TableName returns the DynamoDB table name
+func (ModerationEvent) TableName() string {
+	return "lesser-main"
+}
 
-	// Additional metadata
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+// UpdateKeys updates the GSI keys based on current field values
+func (m *ModerationEvent) UpdateKeys() {
+	// Primary key - events by object
+	m.PK = fmt.Sprintf("EVENT#%s", m.ObjectID)
+	m.SK = fmt.Sprintf("TIME#%s#%s", m.Created.Format(time.RFC3339), m.ID)
 
-	// Version for optimistic locking
-	Version int `dynamorm:"version" json:"version"`
+	// GSI1 - Actor queries
+	m.GSI1PK = fmt.Sprintf("ACTOR#%s", m.ActorID)
+	m.GSI1SK = fmt.Sprintf("TIME#%s", m.Created.Format(time.RFC3339))
+
+	// GSI2 - Type/Category queries
+	m.GSI2PK = fmt.Sprintf("TYPE#%s#%s", m.EventType, m.Category)
+	m.GSI2SK = fmt.Sprintf("SEVERITY#%d#%s", m.Severity, m.Created.Format(time.RFC3339))
+
+	// GSI3 - Event ID lookup
+	m.GSI3PK = fmt.Sprintf("EVENTID#%s", m.ID)
+	m.GSI3SK = fmt.Sprintf("EVENTID#%s", m.ID)
+
+	// Set type marker
+	m.Type = "EVENT"
+
+	// Set TTL if not already set (30 days default)
+	if m.TTL == 0 {
+		m.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
+	}
+}
+
+// ModerationReview represents a review by a moderator
+type ModerationReview struct {
+	// Primary key - reviews by event
+	PK string `dynamorm:"pk" json:"pk"` // Format: "REVIEW#{event_id}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "REVIEWER#{reviewer_id}"
+
+	// Type marker
+	Type string `json:"type"` // "REVIEW"
+
+	// Embed the actual review
+	moderation.Review
+
+	// DynamoDB TTL
+	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName returns the DynamoDB table name
+func (ModerationReview) TableName() string {
+	return "lesser-main"
+}
+
+// UpdateKeys updates the keys based on current field values
+func (r *ModerationReview) UpdateKeys() {
+	r.PK = fmt.Sprintf("REVIEW#%s", r.EventID)
+	r.SK = fmt.Sprintf("REVIEWER#%s", r.ReviewerID)
+	r.Type = "REVIEW"
+	r.CreatedAt = r.Created
+
+	// Set TTL (30 days)
+	if r.TTL == 0 {
+		r.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
+	}
+}
+
+// ModerationDecision represents a consensus decision
+type ModerationDecision struct {
+	// Primary key - decisions by object
+	PK string `dynamorm:"pk" json:"pk"` // Format: "DECISION#{object_id}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "TIME#{RFC3339}"
+
+	// GSI1 - Active decisions lookup
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // "OBJECT#{object_id}"
+
+	// Type marker
+	Type string `json:"type"` // "DECISION"
+
+	// Embed the actual decision
+	moderation.ModerationDecision
+
+	// DynamoDB TTL
+	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName returns the DynamoDB table name
+func (ModerationDecision) TableName() string {
+	return "lesser-main"
+}
+
+// UpdateKeys updates the keys based on current field values
+func (d *ModerationDecision) UpdateKeys() {
+	d.PK = fmt.Sprintf("DECISION#%s", d.ObjectID)
+	d.SK = fmt.Sprintf("TIME#%s", d.Decided.Format(time.RFC3339))
+	d.GSI1PK = "ACTIVE_DECISIONS"
+	d.GSI1SK = fmt.Sprintf("OBJECT#%s", d.ObjectID)
+	d.Type = "DECISION"
+	d.CreatedAt = d.Decided
+
+	// Set TTL (90 days)
+	if d.TTL == 0 {
+		d.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
+	}
+}
+
+// ModerationPattern represents a moderation pattern
+type ModerationPattern struct {
+	// Primary key
+	PK string `dynamorm:"pk" json:"pk"` // Format: "MODERATION_PATTERN#{pattern_id}"
+	SK string `dynamorm:"sk" json:"sk"` // "PATTERN"
+
+	// GSI1 - Active pattern queries
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // "MODERATION_PATTERNS#ACTIVE" (when active)
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // "{severity}#{type}#{pattern_id}"
+
+	// GSI2 - Severity-based queries
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // "MODERATION_PATTERNS#{severity}"
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // "{updated_at}#{pattern_id}"
+
+	// Pattern data
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Type        string    `json:"type"` // "regex", "keyword", "ai"
+	Pattern     string    `json:"pattern"`
+	Severity    string    `json:"severity"`
+	Active      bool      `json:"active"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	LastMatch   time.Time `json:"last_match,omitempty"`
+
+	// TTL for auto-cleanup
+	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table name
+func (ModerationPattern) TableName() string {
+	return "lesser-main"
+}
+
+// UpdateKeys updates the keys based on current field values
+func (p *ModerationPattern) UpdateKeys() {
+	p.PK = fmt.Sprintf("MODERATION_PATTERN#%s", p.ID)
+	p.SK = "PATTERN"
+
+	// GSI1 - Active patterns
+	if p.Active {
+		p.GSI1PK = "MODERATION_PATTERNS#ACTIVE"
+		p.GSI1SK = fmt.Sprintf("%s#%s#%s", p.Severity, p.Type, p.ID)
+	} else {
+		p.GSI1PK = ""
+		p.GSI1SK = ""
+	}
+
+	// GSI2 - Severity queries
+	p.GSI2PK = fmt.Sprintf("MODERATION_PATTERNS#%s", p.Severity)
+	p.GSI2SK = fmt.Sprintf("%s#%s", p.UpdatedAt.Format(time.RFC3339), p.ID)
+
+	// Set TTL (90 days)
+	if p.TTL == 0 {
+		p.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
+	}
 }
 
 // ModerationEvidence contains detailed evidence for the moderation decision
@@ -168,99 +311,33 @@ type ModerationHistoryEntry struct {
 	ChangedData map[string]interface{} `json:"changed_data,omitempty"`
 }
 
-// TableName returns the DynamoDB table name for the Moderation model
-func (Moderation) TableName() string {
-	return "lesser-main" // Use the main table
+// generateRandomString generates a random string of the specified length
+func generateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	result := make([]byte, length)
+	for i := range result {
+		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	}
+	return string(result)
 }
 
-// BeforeCreate sets up the model before creation
-func (m *Moderation) BeforeCreate() error {
-	now := time.Now()
-	m.CreatedAt = now
-	m.UpdatedAt = now
-
-	// Generate moderation ID if not set
-	if m.ModerationID == "" {
-		m.ModerationID = fmt.Sprintf("mod_%d_%s", now.UnixNano(), generateRandomString(8))
-	}
-
-	// Set default status
-	if m.Status == "" {
-		m.Status = ModerationStatusPending
-	}
-
-	// Set default moderator type
-	if m.ModeratorType == "" {
-		if m.ModeratorID == "system" {
-			m.ModeratorType = "automated"
-		} else if m.ModeratorID != "" {
-			m.ModeratorType = "human"
-		}
-	}
-
-	// Initialize history if empty
-	if m.History == nil {
-		m.History = []ModerationHistoryEntry{}
-	}
-
-	// Add creation history entry
-	m.History = append(m.History, ModerationHistoryEntry{
-		Timestamp:  now,
-		ActorID:    m.ModeratorID,
-		ActorType:  m.ModeratorType,
-		Action:     ModerationActionWarning, // Initial creation
-		FromStatus: "",
-		ToStatus:   m.Status,
-		Note:       "Moderation case created",
-	})
-
-	// Set up primary key
-	m.PK = "moderation#" + m.ModerationID
-	m.SK = "moderation#" + m.ModerationID
-
-	// Set up GSI keys
-	m.setupGSIKeys()
-
-	return nil
-}
-
-// BeforeUpdate sets up the model before update
-func (m *Moderation) BeforeUpdate() error {
-	m.UpdatedAt = time.Now()
-
-	// Update GSI keys in case indexed fields changed
-	m.setupGSIKeys()
-
-	return nil
-}
-
-// setupGSIKeys configures all GSI partition and sort keys
-func (m *Moderation) setupGSIKeys() {
-	// GSI1 - Content lookup
-	m.GSI1PK = fmt.Sprintf("%s#%s", m.ContentType, m.ContentID)
-	m.GSI1SK = fmt.Sprintf("%s#%s", m.CreatedAt.Format(time.RFC3339), m.ModerationID)
-
-	// GSI2 - Status queries
-	m.GSI2PK = "STATUS#" + string(m.Status)
-	m.GSI2SK = fmt.Sprintf("%s#%s", m.CreatedAt.Format(time.RFC3339), m.ModerationID)
-
-	// GSI3 - Moderator queries (only if moderator is set)
-	if m.ModeratorID != "" {
-		m.GSI3PK = "MODERATOR#" + m.ModeratorID
-		m.GSI3SK = fmt.Sprintf("%s#%s", m.CreatedAt.Format(time.RFC3339), m.ModerationID)
-	} else {
-		m.GSI3PK = ""
-		m.GSI3SK = ""
-	}
-
-	// GSI4 - User queries (only if user is set)
-	if m.UserID != "" {
-		m.GSI4PK = "USER_MOD#" + m.UserID
-		m.GSI4SK = fmt.Sprintf("%s#%s", m.CreatedAt.Format(time.RFC3339), m.ModerationID)
-	} else {
-		m.GSI4PK = ""
-		m.GSI4SK = ""
-	}
+// Moderation represents an active moderation case being processed
+type Moderation struct {
+	ModerationID  string                    `json:"moderation_id"`
+	ContentID     string                    `json:"content_id"`
+	ContentType   ModerationContentType     `json:"content_type"`
+	UserID        string                    `json:"user_id"`
+	Status        ModerationStatus          `json:"status"`
+	Action        ModerationAction          `json:"action"`
+	Reason        ModerationReason          `json:"reason"`
+	Evidence      ModerationEvidence        `json:"evidence"`
+	ModeratorID   string                    `json:"moderator_id"`
+	ModeratorType string                    `json:"moderator_type"` // "user", "automated", "admin"
+	Metadata      map[string]interface{}    `json:"metadata,omitempty"`
+	History       []ModerationHistoryEntry  `json:"history,omitempty"`
+	CreatedAt     time.Time                 `json:"created_at"`
+	ActionedAt    *time.Time                `json:"actioned_at,omitempty"`
+	ResolvedAt    *time.Time                `json:"resolved_at,omitempty"`
 }
 
 // AddHistoryEntry adds a new entry to the moderation history
@@ -277,101 +354,21 @@ func (m *Moderation) AddHistoryEntry(actorID, actorType string, action Moderatio
 	m.History = append(m.History, entry)
 }
 
-// CanBeAppealed returns true if the moderation can be appealed
-func (m *Moderation) CanBeAppealed() bool {
-	// Can appeal if actioned and not already appealed
-	return m.Status == ModerationStatusActioned && m.AppealStatus != "requested" && m.AppealStatus != "reviewing"
+// GetRateLimitViolationSeverity determines the severity of rate limit violations
+func (m *Moderation) GetRateLimitViolationSeverity() string {
+	if m.Evidence.ViolationCount > 10 || m.Evidence.RequestCount > 1000 {
+		return "severe"
+	}
+	if m.Evidence.ViolationCount > 5 || m.Evidence.RequestCount > 500 {
+		return "moderate"
+	}
+	return "minor"
 }
 
-// IsAutomated returns true if this is an automated moderation
-func (m *Moderation) IsAutomated() bool {
-	return m.ModeratorType == "automated" || m.ModeratorType == "system"
-}
-
-// RequiresHumanReview returns true if this moderation needs human review
-func (m *Moderation) RequiresHumanReview() bool {
-	// Always require review for severe actions
-	if m.Action == ModerationActionSuspend || m.Action == ModerationActionRemove {
-		return true
-	}
-	// Check evidence confidence
-	if m.Evidence.RequiresReview {
-		return true
-	}
-	// Low confidence automated decisions need review
-	if m.IsAutomated() && m.Evidence.ConfidenceScore < 0.8 {
-		return true
-	}
-	// High false positive risk needs review
-	if m.Evidence.FalsePositiveRisk > 0.3 {
-		return true
-	}
-	return false
-}
-
-// GetSeverity returns the severity level of the moderation (1-5)
-func (m *Moderation) GetSeverity() int {
-	switch m.Action {
-	case ModerationActionSuspend:
-		return 5
-	case ModerationActionRemove:
-		return 4
-	case ModerationActionSilence:
-		return 3
-	case ModerationActionWarning:
-		return 2
-	case ModerationActionDismiss, ModerationActionRestore:
-		return 1
-	default:
-		return 1
-	}
-}
-
-// generateRandomString generates a random string of the specified length
-func generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	result := make([]byte, length)
-	for i := range result {
-		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
-	}
-	return string(result)
-}
-
-// IsActive returns true if the moderation is still active (not resolved or dismissed)
-func (m *Moderation) IsActive() bool {
-	return m.Status != ModerationStatusResolved && m.Status != ModerationStatusDismissed
-}
-
-// GetPrimaryProhibitedWord returns the first prohibited word found, if any
+// GetPrimaryProhibitedWord returns the first prohibited word found, or empty string
 func (m *Moderation) GetPrimaryProhibitedWord() string {
 	if len(m.Evidence.ProhibitedWords) > 0 {
 		return m.Evidence.ProhibitedWords[0]
 	}
 	return ""
-}
-
-// GetTotalReports returns the total number of reports for this content
-func (m *Moderation) GetTotalReports() int {
-	return m.Evidence.ReportCount
-}
-
-// HasHighSpamScore returns true if the spam score indicates likely spam
-func (m *Moderation) HasHighSpamScore() bool {
-	return m.Evidence.SpamScore > 0.7
-}
-
-// GetRateLimitViolationSeverity returns how severe the rate limit violation is
-func (m *Moderation) GetRateLimitViolationSeverity() string {
-	if m.Reason != ModerationReasonRateLimiting {
-		return "none"
-	}
-	
-	if m.Evidence.ViolationCount > 10 {
-		return "severe"
-	} else if m.Evidence.ViolationCount > 5 {
-		return "moderate"
-	} else if m.Evidence.ViolationCount > 2 {
-		return "mild"
-	}
-	return "minor"
 }

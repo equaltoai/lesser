@@ -1,0 +1,23 @@
+environment: development
+appName: lesser
+domain: dev.lesser.host
+memorySize: 512
+timeout: 30
+logLevel: DEBUG
+features:
+  enableMultiTenant: false
+  enableRateLimiting: true
+  enableMonitoring: true
+  enableDeletionProtection: false
+  enablePointInTimeRecovery: false
+aws:
+  region: us-east-1
+  architecture: arm64
+  runtime: provided.al2023
+monitoring:
+  detailedMetrics: false
+  businessMetrics: false
+  realTimeStreaming: false
+cost:
+  optimized: true
+  reservedConcurrency: 0

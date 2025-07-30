@@ -340,3 +340,8 @@ func (s *Status) IsDeleted() bool {
 func (s *Status) IsFlagged() bool {
 	return s.Flagged
 }
+
+// UpdateKeys updates the GSI keys for this status (required by DynamORM)
+func (s *Status) UpdateKeys() {
+	s.setupGSIKeys()
+}

@@ -10,17 +10,22 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
+	"go.uber.org/zap"
 )
 
 // StatusRepository implements status operations using DynamORM
 type StatusRepository struct {
-	db core.DB
+	db        core.DB
+	tableName string
+	logger    *zap.Logger
 }
 
 // NewStatusRepository creates a new status repository
-func NewStatusRepository(db core.DB) *StatusRepository {
+func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger) *StatusRepository {
 	return &StatusRepository{
-		db: db,
+		db:        db,
+		tableName: tableName,
+		logger:    logger,
 	}
 }
 

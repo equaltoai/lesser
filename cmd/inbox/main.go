@@ -33,11 +33,11 @@ type InboxHandler struct {
 	db                           core.DB
 	actorRepository              *repositories.ActorRepository
 	activityRepository           *repositories.ActivityRepository
-	followRepository             *repositories.FollowRepository
+	relationshipRepository       *repositories.RelationshipRepository
 	objectRepository             *repositories.ObjectRepository
 	likeRepository               *repositories.LikeRepository
 	federationActivityRepository *repositories.FederationActivityRepository
-	moderationRepository         *repositories.ModerationRepository
+	domainBlockRepository        *repositories.DomainBlockRepository
 	userRepository               *repositories.UserRepository
 	logger                       *zap.Logger
 	authMiddleware               *auth.Middleware
@@ -57,14 +57,14 @@ func NewInboxHandler() (*InboxHandler, error) {
 	}
 
 	// Initialize repositories
-	actorRepo := repositories.NewActorRepository(db)
+	actorRepo := repositories.NewActorRepository(db, cfg.DynamoTableName, logger)
 	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
-	followRepo := repositories.NewFollowRepository(db, cfg.DynamoTableName, logger)
+	followRepo := repositories.NewRelationshipRepository(db, cfg.DynamoTableName, logger)
 	objectRepo := repositories.NewObjectRepository(db, cfg.DynamoTableName, logger)
 	likeRepo := repositories.NewLikeRepository(db, cfg.DynamoTableName, logger)
 	federationActivityRepo := repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
-	moderationRepo := repositories.NewModerationRepository(db)
-	userRepo := repositories.NewUserRepository(db)
+	domainBlockRepo := repositories.NewDomainBlockRepository(db, cfg.DynamoTableName, logger)
+	userRepo := repositories.NewUserRepository(db, cfg.DynamoTableName, logger)
 
 	// Initialize auth middleware
 	authMiddleware, err := auth.GetMiddleware()
@@ -80,11 +80,11 @@ func NewInboxHandler() (*InboxHandler, error) {
 		db:                           db,
 		actorRepository:              actorRepo,
 		activityRepository:           activityRepo,
-		followRepository:             followRepo,
+		relationshipRepository:       followRepo,
 		objectRepository:             objectRepo,
 		likeRepository:               likeRepo,
 		federationActivityRepository: federationActivityRepo,
-		moderationRepository:         moderationRepo,
+		domainBlockRepository:        domainBlockRepo,
 		userRepository:               userRepo,
 		logger:                       logger,
 		authMiddleware:               authMiddleware,
@@ -353,7 +353,7 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 		}
 
 		// Check if the domain is blocked at the instance level
-		isBlocked, block, err := ih.moderationRepository.IsDomainBlocked(ctx.Context, actorDomain)
+		isBlocked, block, err := ih.domainBlockRepository.IsDomainBlocked(ctx.Context, actorDomain)
 		if err != nil {
 			ih.logger.Error("failed to check domain block status",
 				zap.String("domain", actorDomain),
@@ -656,7 +656,7 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 	followerHandle := ih.extractHandleFromActorID(activity.Actor)
 
 	// Create the follow relationship with pending state
-	err := ih.followRepository.CreateFollow(ctx, followerHandle, targetActor.PreferredUsername, activity.ID)
+	err := ih.relationshipRepository.CreateRelationship(ctx, followerHandle, targetActor.PreferredUsername, activity.ID)
 	if err != nil {
 		log.Error("failed to create follow relationship", zap.Error(err))
 		return err
@@ -690,7 +690,7 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 	}
 
 	// Auto-accept follows for non-locked accounts
-	err = ih.followRepository.AcceptFollow(ctx, followerHandle, targetActor.PreferredUsername)
+	err = ih.relationshipRepository.AcceptFollowRequest(ctx, followerHandle, targetActor.PreferredUsername)
 	if err != nil {
 		log.Error("failed to accept follow", zap.Error(err))
 		return err
@@ -725,7 +725,7 @@ func (ih *InboxHandler) processAcceptActivity(ctx context.Context, activity *act
 		if originalActivity.Type == activitypub.FollowType {
 			// Update the follow relationship to accepted
 			acceptorHandle := ih.extractHandleFromActorID(activity.Actor)
-			err = ih.followRepository.AcceptFollow(ctx, targetActor.PreferredUsername, acceptorHandle)
+			err = ih.relationshipRepository.AcceptFollowRequest(ctx, targetActor.PreferredUsername, acceptorHandle)
 			if err != nil {
 				log.Error("failed to update follow status", zap.Error(err))
 				return err
@@ -752,7 +752,7 @@ func (ih *InboxHandler) processRejectActivity(ctx context.Context, activity *act
 		if originalActivity.Type == activitypub.FollowType {
 			// Remove the follow relationship
 			rejectorHandle := ih.extractHandleFromActorID(activity.Actor)
-			err = ih.followRepository.RemoveFollow(ctx, targetActor.PreferredUsername, rejectorHandle)
+			err = ih.relationshipRepository.DeleteRelationship(ctx, targetActor.PreferredUsername, rejectorHandle)
 			if err != nil {
 				log.Error("failed to remove follow", zap.Error(err))
 				return err
@@ -764,7 +764,7 @@ func (ih *InboxHandler) processRejectActivity(ctx context.Context, activity *act
 }
 
 // processRemoteCreateActivity processes an incoming Create activity from a remote instance
-func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activity *activitypub.Activity, _ *activitypub.Actor) error {
 	log := common.WithContext(ctx)
 
 	// Extract the object
@@ -801,7 +801,7 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 }
 
 // processRemoteUpdateActivity processes an incoming Update activity from a remote instance
-func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activity *activitypub.Activity, _ *activitypub.Actor) error {
 	log := common.WithContext(ctx)
 
 	// Extract the object
@@ -838,7 +838,7 @@ func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activit
 }
 
 // processRemoteDeleteActivity processes an incoming Delete activity from a remote instance
-func (ih *InboxHandler) processRemoteDeleteActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
+func (ih *InboxHandler) processRemoteDeleteActivity(ctx context.Context, activity *activitypub.Activity, _ *activitypub.Actor) error {
 	log := common.WithContext(ctx)
 
 	// Get the object ID to delete
@@ -903,7 +903,7 @@ func (ih *InboxHandler) processUndoActivity(ctx context.Context, activity *activ
 	case activitypub.FollowType:
 		// Undo follow
 		unfollowerHandle := ih.extractHandleFromActorID(activity.Actor)
-		err := ih.followRepository.RemoveFollow(ctx, unfollowerHandle, targetActor.PreferredUsername)
+		err := ih.relationshipRepository.DeleteRelationship(ctx, unfollowerHandle, targetActor.PreferredUsername)
 		if err != nil {
 			log.Error("failed to remove follow", zap.Error(err))
 			return err

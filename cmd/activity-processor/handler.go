@@ -11,7 +11,6 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // ActivityDirection represents the direction of an activity (inbox or outbox)
@@ -57,7 +56,7 @@ func (h *ActivityHandler) processRecord(ctx context.Context, record events.Dynam
 	}
 
 	// Unmarshal the activity record
-	var activityRecord models.Activity
+	var activityRecord ActivityRecord
 	if err := stream.UnmarshalItem(record, &activityRecord); err != nil {
 		return fmt.Errorf("failed to unmarshal activity record: %w", err)
 	}

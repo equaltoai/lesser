@@ -8,19 +8,22 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"go.uber.org/zap"
 )
 
 // TimelineRepository handles timeline operations using DynamORM
 type TimelineRepository struct {
 	db        core.DB
 	tableName string
+	logger    *zap.Logger
 }
 
 // NewTimelineRepository creates a new timeline repository
-func NewTimelineRepository(db core.DB, tableName string) *TimelineRepository {
+func NewTimelineRepository(db core.DB, tableName string, logger *zap.Logger) *TimelineRepository {
 	return &TimelineRepository{
 		db:        db,
 		tableName: tableName,
+		logger:    logger,
 	}
 }
 
@@ -69,11 +72,43 @@ func (r *TimelineRepository) GetHomeTimeline(ctx context.Context, username strin
 
 // GetPublicTimeline retrieves public timeline entries
 func (r *TimelineRepository) GetPublicTimeline(ctx context.Context, local bool, limit int, cursor string) ([]*models.Timeline, string, error) {
+	// Public timeline uses GSI1 in legacy code
 	timelineID := "FEDERATED"
 	if local {
 		timelineID = "LOCAL"
 	}
-	return r.getTimelineEntries(ctx, "PUBLIC", timelineID, limit, cursor)
+	
+	gsi1pk := fmt.Sprintf("TIMELINE#PUBLIC#%s", timelineID)
+	
+	query := r.db.Model(&models.Timeline{}).
+		Index("post-timeline-index"). // GSI1
+		Where("GSI1PK", "=", gsi1pk).
+		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamp
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		// With reverse timestamp, we use > for getting older entries
+		query = query.Where("GSI1SK", ">", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get public timeline entries: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].GSI1SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	return entries, nextCursor, nil
 }
 
 // GetListTimeline retrieves timeline entries for a specific list
@@ -104,7 +139,8 @@ func (r *TimelineRepository) getTimelineEntries(ctx context.Context, timelineTyp
 
 	// Handle cursor-based pagination
 	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
+		// With reverse timestamp, we use > for getting older entries
+		query = query.Where("SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -132,10 +168,10 @@ func (r *TimelineRepository) GetTimelineEntriesByPost(ctx context.Context, postI
 	query := r.db.Model(&models.Timeline{}).
 		Index("post-timeline-index").
 		Where("GSI1PK", "=", "POST#"+postID).
-		OrderBy("GSI1SK", "DESC")
+		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamp
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", "<", cursor)
+		query = query.Where("GSI1SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -163,10 +199,10 @@ func (r *TimelineRepository) GetTimelineEntriesByActor(ctx context.Context, acto
 	query := r.db.Model(&models.Timeline{}).
 		Index("actor-timeline-index").
 		Where("GSI2PK", "=", "ACTOR#"+actorID).
-		OrderBy("GSI2SK", "DESC")
+		OrderBy("GSI2SK", "ASC") // ASC because we use reverse timestamp
 
 	if cursor != "" {
-		query = query.Where("GSI2SK", "<", cursor)
+		query = query.Where("GSI2SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -194,10 +230,10 @@ func (r *TimelineRepository) GetTimelineEntriesByVisibility(ctx context.Context,
 	query := r.db.Model(&models.Timeline{}).
 		Index("visibility-timeline-index").
 		Where("GSI3PK", "=", "VISIBILITY#"+visibility).
-		OrderBy("GSI3SK", "DESC")
+		OrderBy("GSI3SK", "ASC") // ASC because we use reverse timestamp
 
 	if cursor != "" {
-		query = query.Where("GSI3SK", "<", cursor)
+		query = query.Where("GSI3SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -225,10 +261,10 @@ func (r *TimelineRepository) GetTimelineEntriesByLanguage(ctx context.Context, l
 	query := r.db.Model(&models.Timeline{}).
 		Index("language-timeline-index").
 		Where("GSI4PK", "=", "LANGUAGE#"+language).
-		OrderBy("GSI4SK", "DESC")
+		OrderBy("GSI4SK", "ASC") // ASC because we use reverse timestamp
 
 	if cursor != "" {
-		query = query.Where("GSI4SK", "<", cursor)
+		query = query.Where("GSI4SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -431,7 +467,8 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, 
 
 	// Handle cursor-based pagination
 	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
+		// With reverse timestamp, we use > for getting older entries
+		query = query.Where("SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results

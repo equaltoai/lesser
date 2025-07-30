@@ -142,7 +142,7 @@ func (s *dynamoDBStorage) GetHashtagTimelineAdvanced(ctx context.Context, hashta
 }
 
 // fallbackHashtagTimeline provides a fallback when GSI is not available
-func (s *dynamoDBStorage) fallbackHashtagTimeline(ctx context.Context, hashtag string, maxID *string, limit int, userID string) ([]*storage.StatusSearchResult, error) {
+func (s *dynamoDBStorage) fallbackHashtagTimeline(ctx context.Context, hashtag string, _ *string, limit int, userID string) ([]*storage.StatusSearchResult, error) {
 	// Use status search service if available
 	if s.statusSearchService != nil {
 		query := "#" + hashtag

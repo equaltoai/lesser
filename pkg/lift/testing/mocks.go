@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
@@ -418,10 +420,15 @@ func BuildTestStatus(actorID string, content string) *models.Status {
 // BuildTestActivity creates a test activity for mocking
 func BuildTestActivity(actorID string, activityType string) *models.Activity {
 	return &models.Activity{
-		PK:         fmt.Sprintf("activity#%s-%s", actorID, activityType),
-		SK:         fmt.Sprintf("inbox#%s#123456", actorID),
-		ActivityID: fmt.Sprintf("activity-%s-%s", actorID, activityType),
-		Username:   actorID,
-		Direction:  "inbox",
+		PK:       fmt.Sprintf("ACTOR#%s", actorID),
+		SK:       fmt.Sprintf("ACTIVITY#%s#%s", time.Now().Format(time.RFC3339), fmt.Sprintf("activity-%s-%s", actorID, activityType)),
+		Activity: &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   fmt.Sprintf("https://example.com/activities/%s-%s", actorID, activityType),
+				Type: activityType,
+			},
+			Actor: fmt.Sprintf("https://example.com/users/%s", actorID),
+		},
+		CreatedAt: time.Now(),
 	}
 }

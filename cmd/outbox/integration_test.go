@@ -129,7 +129,7 @@ func setupTestEnvironment(t *testing.T) (*repositories.ActorRepository, *reposit
 	require.NoError(t, err)
 
 	// Create repositories
-	actorRepo := repositories.NewActorRepository(db)
+	actorRepo := repositories.NewActorRepository(db, tableName, logger)
 	federationActivityRepo := repositories.NewFederationActivityRepository(db, tableName, logger)
 
 	// Cleanup function

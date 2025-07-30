@@ -2,24 +2,28 @@ package models
 
 import (
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
 // Activity represents an ActivityPub activity in DynamoDB
+// This matches the legacy storage.ActivityRecord structure
 type Activity struct {
-	// Primary key - using composite key for activities
-	PK string `dynamorm:"pk" json:"pk"` // Format: "activity#{activity_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "{direction}#{username}#{timestamp}"
+	// Primary keys - MUST match legacy patterns exactly
+	PK string `dynamorm:"pk" json:"PK"` // Format: "ACTOR#{username}"
+	SK string `dynamorm:"sk" json:"SK"` // Format: "ACTIVITY#{timestamp}#{activity_id}"
 
-	// GSI for username queries
-	Username string `dynamorm:"index:username-index,pk" json:"username"`
-
-	// GSI for timestamp sorting
-	Timestamp string `dynamorm:"index:timestamp-index,sk" json:"timestamp"`
+	// GSI for inbox activities - MUST match legacy patterns exactly
+	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK,omitempty"` // Format: "INBOX#{username}" (only for inbox activities)
+	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK,omitempty"` // Format: timestamp (only for inbox activities)
 
 	// Activity data
-	ActivityID  string     `json:"activity_id"`
-	Activity    string     `json:"activity"`  // JSON string of the activity
-	Direction   string     `json:"direction"` // "inbox" or "outbox"
-	CreatedAt   time.Time  `json:"created_at"`
-	ProcessedAt *time.Time `json:"processed_at,omitempty"`
+	Activity  *activitypub.Activity `json:"Activity"`
+	CreatedAt time.Time             `json:"CreatedAt"`
+}
+
+// UpdateKeys updates the GSI keys for inbox activities
+func (a *Activity) UpdateKeys() {
+	// GSI keys are set conditionally based on whether it's an inbox activity
+	// This is handled in the repository methods
 }

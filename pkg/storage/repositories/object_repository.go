@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -251,6 +252,88 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 	return result, nextCursor, nil
 }
 
+// CountObjectReplies counts the number of replies to an object
+func (r *ObjectRepository) CountObjectReplies(ctx context.Context, objectID string) (int, error) {
+	// Query objects that have InReplyTo set to this objectID
+	query := r.db.WithContext(ctx).Model(&models.Object{}).
+		Index("gsi2-index").  // Assuming GSI2 is used for reply relationships
+		Where("GSI2PK", "=", fmt.Sprintf("reply#%s", objectID))
+
+	var objects []models.Object
+	if err := query.All(&objects); err != nil {
+		r.logger.Error("failed to count object replies",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return 0, fmt.Errorf("failed to count object replies: %w", err)
+	}
+
+	count := len(objects)
+	r.logger.Debug("counted object replies",
+		zap.String("object_id", objectID),
+		zap.Int("count", count))
+
+	return count, nil
+}
+
+// TombstoneObject marks an object as deleted by creating a tombstone
+func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string, deletedBy string) error {
+	// First verify the object exists
+	existingObj, err := r.GetObject(ctx, objectID)
+	if err != nil {
+		return fmt.Errorf("object not found for tombstoning: %w", err)
+	}
+
+	// Get the object ID from the result
+	var objID string
+	if objMap, ok := existingObj.(map[string]any); ok {
+		if id, ok := objMap["id"].(string); ok {
+			objID = id
+		}
+	} else if note, ok := existingObj.(*activitypub.Note); ok {
+		objID = note.ID
+	}
+
+	if objID == "" {
+		return fmt.Errorf("could not extract object ID")
+	}
+
+	// Create a tombstone object
+	tombstone := models.NewObject(objectID, "Tombstone", deletedBy)
+	tombstone.Content = fmt.Sprintf("Object %s was deleted", objectID)
+	tombstone.Published = time.Now()
+	tombstone.Updated = time.Now()
+	
+	// Set tombstone-specific fields
+	tombstone.AttributedTo = deletedBy
+	
+	// Update GSI keys
+	tombstone.UpdateGSIKeys()
+
+	// Delete the original object and create tombstone in a transaction-like manner
+	// First delete the original
+	if err := r.DeleteObject(ctx, objectID); err != nil {
+		r.logger.Error("failed to delete original object for tombstoning",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return fmt.Errorf("failed to delete original object: %w", err)
+	}
+
+	// Then create the tombstone
+	if err := r.db.WithContext(ctx).Model(tombstone).Create(); err != nil {
+		r.logger.Error("failed to create tombstone",
+			zap.String("object_id", objectID),
+			zap.String("deleted_by", deletedBy),
+			zap.Error(err))
+		return fmt.Errorf("failed to create tombstone: %w", err)
+	}
+
+	r.logger.Info("tombstoned object",
+		zap.String("object_id", objectID),
+		zap.String("deleted_by", deletedBy))
+
+	return nil
+}
+
 // modelToActivityPubObject converts a model to the appropriate ActivityPub object
 func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (any, error) {
 	switch objModel.Type {
@@ -307,4 +390,76 @@ func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (an
 		
 		return result, nil
 	}
+}
+
+// CreateUpdateHistory creates a new update history entry for an object
+func (r *ObjectRepository) CreateUpdateHistory(ctx context.Context, history *storage.UpdateHistory) error {
+	// Convert storage.UpdateHistory to models.UpdateHistory
+	updateHistory := &models.UpdateHistory{
+		ObjectID:      history.ObjectID,
+		Version:       history.Version,
+		UpdatedAt:     history.UpdatedAt,
+		UpdatedBy:     history.UpdatedBy,
+		PreviousState: history.PreviousState,
+		Summary:       history.Summary,
+		CreatedAt:     time.Now(),
+	}
+
+	// Update the key fields
+	updateHistory.UpdateKeys()
+
+	// Create the update history record
+	err := r.db.WithContext(ctx).Model(updateHistory).Create()
+	if err != nil {
+		r.logger.Error("failed to create update history",
+			zap.String("object_id", history.ObjectID),
+			zap.Int("version", history.Version),
+			zap.Error(err))
+		return fmt.Errorf("failed to create update history: %w", err)
+	}
+
+	r.logger.Info("update history created",
+		zap.String("object_id", history.ObjectID),
+		zap.Int("version", history.Version))
+
+	return nil
+}
+
+// GetUpdateHistory retrieves update history for an object
+func (r *ObjectRepository) GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*storage.UpdateHistory, error) {
+	// Validate limit
+	if limit <= 0 || limit > 100 {
+		limit = 10 // default
+	}
+
+	// Build the query - query by PK and SK prefix
+	query := r.db.WithContext(ctx).Model(&models.UpdateHistory{}).
+		Where("PK", "=", fmt.Sprintf("OBJECT#%s#HISTORY", objectID)).
+		OrderBy("SK", "DESC"). // Newest version first
+		Limit(limit)
+
+	var histories []models.UpdateHistory
+	err := query.All(&histories)
+
+	if err != nil {
+		r.logger.Error("failed to query update history",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query update history: %w", err)
+	}
+
+	// Convert to storage.UpdateHistory
+	result := make([]*storage.UpdateHistory, len(histories))
+	for i, h := range histories {
+		result[i] = &storage.UpdateHistory{
+			ObjectID:      h.ObjectID,
+			Version:       h.Version,
+			UpdatedAt:     h.UpdatedAt,
+			UpdatedBy:     h.UpdatedBy,
+			PreviousState: h.PreviousState,
+			Summary:       h.Summary,
+		}
+	}
+
+	return result, nil
 }

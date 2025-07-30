@@ -11,8 +11,8 @@ import (
 // Actor represents an ActivityPub actor stored in DynamoDB using DynamORM
 type Actor struct {
 	// Primary key - using actor username as the primary identifier
-	PK string `dynamorm:"pk" json:"pk"` // Format: "actor#{username}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "actor#{username}"
+	PK string `dynamorm:"pk" json:"pk"` // Format: "ACTOR#{username}" - MUST match legacy exactly
+	SK string `dynamorm:"sk" json:"sk"` // Format: "PROFILE" - MUST match legacy exactly
 
 	// GSI1 - Username search with prefix partitioning for efficient queries
 	GSI1PK string `dynamorm:"index:username-search-index,pk" json:"gsi1_pk"` // Format: "USERNAME_SEARCH#{first_2_chars}"
@@ -81,9 +81,9 @@ func (a *Actor) BeforeCreate() error {
 	a.CreatedAt = now
 	a.UpdatedAt = now
 
-	// Set up primary key
-	a.PK = "actor#" + a.Username
-	a.SK = "actor#" + a.Username
+	// Set up primary key - matches legacy pattern exactly
+	a.PK = "ACTOR#" + a.Username
+	a.SK = "PROFILE"
 
 	// Set up GSI keys
 	a.setupGSIKeys()
@@ -156,4 +156,9 @@ func getFollowerCountBucket(count int) string {
 func formatFollowerCountForGSI(count int, username string) string {
 	// Pad count to 10 digits for proper sorting, then add username for uniqueness
 	return fmt.Sprintf("%010d#%s", count, username)
+}
+
+// UpdateKeys updates the GSI keys for this actor (required by DynamORM)
+func (a *Actor) UpdateKeys() {
+	a.setupGSIKeys()
 }

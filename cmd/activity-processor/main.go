@@ -34,15 +34,18 @@ type ActivityProcessor struct {
 }
 
 func NewActivityProcessor(db core.DB, tableName string, baseURL string) *ActivityProcessor {
+	// Get logger
+	logger := common.Logger()
+	
 	// Initialize repositories
-	timelineRepo := repositories.NewTimelineRepository(db, tableName)
-	actorRepo := repositories.NewActorRepository(db)
-	userRepo := repositories.NewUserRepository(db)
+	timelineRepo := repositories.NewTimelineRepository(db, tableName, logger)
+	actorRepo := repositories.NewActorRepository(db, tableName, logger)
+	userRepo := repositories.NewUserRepository(db, tableName, logger)
 
 	return &ActivityProcessor{
 		db:           db,
 		tableName:    tableName,
-		logger:       common.Logger(),
+		logger:       logger,
 		timelineRepo: timelineRepo,
 		actorRepo:    actorRepo,
 		userRepo:     userRepo,

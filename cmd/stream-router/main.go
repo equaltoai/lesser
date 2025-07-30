@@ -80,9 +80,11 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 
 	// Initialize repositories
 	db := lambdaDB.WithLambdaTimeoutBuffer(500) // 500ms buffer
-	userRepo := repositories.NewUserRepository(db)
-	actorRepo := repositories.NewActorRepository(db)
-	statusRepo := repositories.NewStatusRepository(db)
+	logger := common.Logger()
+	tableName := "lesser-main"
+	userRepo := repositories.NewUserRepository(db, tableName, logger)
+	actorRepo := repositories.NewActorRepository(db, tableName, logger)
+	statusRepo := repositories.NewStatusRepository(db, tableName, logger)
 
 	// Create base handler
 	baseHandler := stream.NewBaseHandler(lambdaDB, "lesser-main")
