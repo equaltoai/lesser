@@ -46,6 +46,12 @@ Thumbs.db
 .terraform/
 Pulumi.*.yaml
 
+# CDK
+infra/cdk/cdk
+infra/cdk/cdk.out/
+infra/cdk/cdk.context.json
+node_modules/
+
 # Test outputs
 *.log
 *.out
