@@ -371,3 +371,43 @@ func (s *dynamoDBStorage) CountUnreadNotifications(ctx context.Context, username
 
 	return count, nil
 }
+
+// GetNotificationPreferences retrieves notification preferences for a user
+func (s *dynamoDBStorage) GetNotificationPreferences(ctx context.Context, username string) (*storage.NotificationPreferences, error) {
+	// For now, return default preferences
+	// In a real implementation, this would fetch from DynamoDB
+	return &storage.NotificationPreferences{
+		Username:        username,
+		EmailEnabled:    true,
+		PushEnabled:     true,
+		FollowEnabled:   true,
+		MentionEnabled:  true,
+		ReblogEnabled:   true,
+		FavoriteEnabled: true,
+		PollEnabled:     true,
+		UpdatedAt:       time.Now(),
+	}, nil
+}
+
+// UpdateNotificationPreferences updates notification preferences for a user
+func (s *dynamoDBStorage) UpdateNotificationPreferences(ctx context.Context, username string, prefs *storage.NotificationPreferences) error {
+	// For now, this is a no-op
+	// In a real implementation, this would save to DynamoDB
+	prefs.Username = username
+	prefs.UpdatedAt = time.Now()
+	return nil
+}
+
+// BatchMarkNotificationsAsRead marks multiple notifications as read
+func (s *dynamoDBStorage) BatchMarkNotificationsAsRead(ctx context.Context, username string, notificationIDs []string) error {
+	// Mark each notification as read
+	for _, id := range notificationIDs {
+		if err := s.MarkNotificationAsRead(ctx, id); err != nil {
+			common.Logger().Warn("failed to mark notification as read",
+				zap.String("notification_id", id),
+				zap.Error(err))
+			// Continue with other notifications
+		}
+	}
+	return nil
+}

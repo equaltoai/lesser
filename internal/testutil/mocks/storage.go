@@ -1818,6 +1818,21 @@ func (m *MockStorage) GetNotificationsFiltered(ctx context.Context, username str
 	return args.Get(0).([]*storage.Notification), args.String(1), args.Error(2)
 }
 
+// GetNotificationPreferences mocks the GetNotificationPreferences method
+func (m *MockStorage) GetNotificationPreferences(ctx context.Context, username string) (*storage.NotificationPreferences, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.NotificationPreferences), args.Error(1)
+}
+
+// UpdateNotificationPreferences mocks the UpdateNotificationPreferences method
+func (m *MockStorage) UpdateNotificationPreferences(ctx context.Context, username string, prefs *storage.NotificationPreferences) error {
+	args := m.Called(ctx, username, prefs)
+	return args.Error(0)
+}
+
 // GetOAuthClient mocks the GetOAuthClient method
 func (m *MockStorage) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
 	args := m.Called(ctx, clientID)
@@ -2550,6 +2565,12 @@ func (m *MockStorage) MarkConversationRead(ctx context.Context, id string, usern
 // MarkNotificationAsRead mocks the MarkNotificationAsRead method
 func (m *MockStorage) MarkNotificationAsRead(ctx context.Context, id string) error {
 	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// BatchMarkNotificationsAsRead mocks the BatchMarkNotificationsAsRead method
+func (m *MockStorage) BatchMarkNotificationsAsRead(ctx context.Context, username string, notificationIDs []string) error {
+	args := m.Called(ctx, username, notificationIDs)
 	return args.Error(0)
 }
 
@@ -3687,6 +3708,11 @@ func (m *MockStorage) MuteHashtag(ctx context.Context, userID, hashtag string) e
 	return args.Error(0)
 }
 
+func (m *MockStorage) UnmuteHashtag(ctx context.Context, userID, hashtag string) error {
+	args := m.Called(ctx, userID, hashtag)
+	return args.Error(0)
+}
+
 func (m *MockStorage) IsHashtagMuted(ctx context.Context, userID, hashtag string) (bool, error) {
 	args := m.Called(ctx, userID, hashtag)
 	return args.Bool(0), args.Error(1)
@@ -3826,4 +3852,64 @@ func (m *MockStorage) GetAffectedRelationships(ctx context.Context, userID, doma
 func (m *MockStorage) TrackFederationIssue(ctx context.Context, domain, issueType string) error {
 	args := m.Called(ctx, domain, issueType)
 	return args.Error(0)
+}
+
+// CreateSeveredRelationship mocks the CreateSeveredRelationship method
+func (m *MockStorage) CreateSeveredRelationship(ctx context.Context, rel *storage.SeveredRelationship) error {
+	args := m.Called(ctx, rel)
+	return args.Error(0)
+}
+
+// GetSeveredRelationships mocks the GetSeveredRelationships method
+func (m *MockStorage) GetSeveredRelationships(ctx context.Context, localInstance string, limit int, cursor string) ([]*storage.SeveredRelationship, string, error) {
+	args := m.Called(ctx, localInstance, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.SeveredRelationship), args.String(1), args.Error(2)
+}
+
+// GetSeveredRelationship mocks the GetSeveredRelationship method
+func (m *MockStorage) GetSeveredRelationship(ctx context.Context, localInstance, remoteInstance string) (*storage.SeveredRelationship, error) {
+	args := m.Called(ctx, localInstance, remoteInstance)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.SeveredRelationship), args.Error(1)
+}
+
+// UpdateSeveredRelationship mocks the UpdateSeveredRelationship method
+func (m *MockStorage) UpdateSeveredRelationship(ctx context.Context, rel *storage.SeveredRelationship) error {
+	args := m.Called(ctx, rel)
+	return args.Error(0)
+}
+
+// GetAffectedFollows mocks the GetAffectedFollows method
+func (m *MockStorage) GetAffectedFollows(ctx context.Context, localInstance, remoteInstance string) ([]storage.AffectedFollow, error) {
+	args := m.Called(ctx, localInstance, remoteInstance)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.AffectedFollow), args.Error(1)
+}
+
+// RecordAffectedFollow mocks the RecordAffectedFollow method
+func (m *MockStorage) RecordAffectedFollow(ctx context.Context, localInstance, remoteInstance string, follow storage.AffectedFollow) error {
+	args := m.Called(ctx, localInstance, remoteInstance, follow)
+	return args.Error(0)
+}
+
+// ReverseSeverance mocks the ReverseSeverance method
+func (m *MockStorage) ReverseSeverance(ctx context.Context, localInstance, remoteInstance string) error {
+	args := m.Called(ctx, localInstance, remoteInstance)
+	return args.Error(0)
+}
+
+// GetSeveranceHistory mocks the GetSeveranceHistory method
+func (m *MockStorage) GetSeveranceHistory(ctx context.Context, localInstance, remoteInstance string, limit int) ([]*storage.SeveredRelationship, error) {
+	args := m.Called(ctx, localInstance, remoteInstance, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.SeveredRelationship), args.Error(1)
 }

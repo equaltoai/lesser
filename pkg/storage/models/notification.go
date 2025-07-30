@@ -105,7 +105,7 @@ func (n *Notification) BeforeCreate() error {
 	}
 
 	// Set up primary key
-	n.PK = "user#" + n.UserID
+	n.PK = "USER#" + n.UserID
 	timestamp := n.CreatedAt.Format("20060102150405")
 	n.SK = fmt.Sprintf("notif#%s#%s", timestamp, n.ID)
 
@@ -363,4 +363,9 @@ func NewFollowRequestNotification(userID, requesterID string) *Notification {
 		AboutTarget(requesterID, "user").
 		WithContent("New follow request", "Someone requested to follow you").
 		Build()
+}
+
+// UpdateKeys updates the GSI keys for this notification (required by DynamORM)
+func (n *Notification) UpdateKeys() {
+	n.setupGSIKeys()
 }

@@ -1,0 +1,360 @@
+package stacks
+
+import (
+	localconstructs "cdk/constructs"
+	"fmt"
+
+	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
+	"github.com/aws/constructs-go/constructs/v10"
+	"github.com/aws/jsii-runtime-go"
+)
+
+type LesserStackProps struct {
+	awscdk.StackProps
+	Environment string
+	Domain      string
+	JWTSecret   *string // JWT secret for auth
+	Config      map[string]interface{} // Environment-specific configuration
+}
+
+type LesserStack struct {
+	awscdk.Stack
+	MainTable           awsdynamodb.Table
+	MediaBucket         awss3.Bucket
+	MediaDistribution   awscloudfront.Distribution
+	FederationQueue     awssqs.Queue
+	FederationDLQ       awssqs.Queue
+	PushQueue           awssqs.Queue
+	PrivateKey          awssecretsmanager.ISecret
+	Certificate         awscertificatemanager.Certificate
+	Functions           *localconstructs.LambdaFunctions
+	API                 *localconstructs.APIGateway
+	Environment         string
+	Configuration       map[string]interface{}
+}
+
+func NewLesserStack(scope constructs.Construct, id string, props *LesserStackProps) *LesserStack {
+	stack := awscdk.NewStack(scope, &id, &props.StackProps)
+
+	lesserStack := &LesserStack{
+		Stack:         stack,
+		Environment:   props.Environment,
+		Configuration: props.Config,
+	}
+
+	// Create ACM certificate for HTTPS (like Pulumi did)
+	lesserStack.createCertificate(props.Domain)
+
+	// Create shared resources
+	lesserStack.createSharedResources()
+	
+	// Create S3 and CloudFront (Phase 6.6)
+	lesserStack.createMediaInfrastructure(props.Domain)
+	
+	// Create SQS queues (Phase 6.6)
+	lesserStack.createSQSQueues()
+	
+	// Create Lambda functions
+	lesserStack.createLambdaFunctions()
+	
+	// Create API Gateway
+	lesserStack.createAPIGateway(props.Domain)
+	
+	// Create stream processors
+	lesserStack.createStreamProcessors()
+	
+	// Setup monitoring
+	if features, ok := lesserStack.Configuration["features"].(map[string]interface{}); ok {
+		if enableMonitoring, ok := features["enableMonitoring"].(bool); ok && enableMonitoring {
+			lesserStack.setupMonitoring()
+		}
+	}
+	
+	// Setup security
+	lesserStack.setupSecurity()
+	
+	// Create outputs
+	lesserStack.createOutputs()
+	
+	return lesserStack
+}
+
+func (s *LesserStack) createCertificate(domain string) {
+	// Create ACM certificate for HTTPS (matching Pulumi implementation)
+	s.Certificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("LesserCertificate"), &awscertificatemanager.CertificateProps{
+		DomainName: jsii.String(domain),
+		SubjectAlternativeNames: &[]*string{
+			jsii.String(fmt.Sprintf("*.%s", domain)),
+			jsii.String(fmt.Sprintf("www.%s", domain)),
+		},
+		Validation: awscertificatemanager.CertificateValidation_FromDns(nil),
+	})
+}
+
+func (s *LesserStack) createSharedResources() {
+	isProd := s.Environment == "production"
+	
+	// Create main DynamoDB table with streams
+	s.MainTable = awsdynamodb.NewTable(s.Stack, jsii.String("LesserTable"), &awsdynamodb.TableProps{
+		TableName: jsii.String(fmt.Sprintf("lesser-%s", s.Environment)),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String("PK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String("SK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		BillingMode:          awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		Stream:               awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
+		TimeToLiveAttribute:  jsii.String("TTL"),
+		PointInTimeRecovery:  jsii.Bool(isProd),
+		DeletionProtection:   jsii.Bool(isProd),
+		RemovalPolicy:        getRemovalPolicy(isProd),
+	})
+	
+	// Add GSIs
+	for i := 1; i <= 8; i++ {
+		s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+			IndexName: jsii.String(fmt.Sprintf("GSI%d", i)),
+			PartitionKey: &awsdynamodb.Attribute{
+				Name: jsii.String(fmt.Sprintf("GSI%dPK", i)),
+				Type: awsdynamodb.AttributeType_STRING,
+			},
+			SortKey: &awsdynamodb.Attribute{
+				Name: jsii.String(fmt.Sprintf("GSI%dSK", i)),
+				Type: awsdynamodb.AttributeType_STRING,
+			},
+		})
+	}
+	
+	// Basic S3 bucket setup - CloudFront integration moved to createMediaInfrastructure
+	s.MediaBucket = awss3.NewBucket(s.Stack, jsii.String("MediaBucket"), &awss3.BucketProps{
+		BucketName:        jsii.String(fmt.Sprintf("lesser-media-%s", s.Environment)),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		RemovalPolicy:     getRemovalPolicy(isProd),
+		AutoDeleteObjects: jsii.Bool(!isProd),
+		// CORS and policies configured in createMediaInfrastructure
+	})
+}
+
+func (s *LesserStack) createMediaInfrastructure(domain string) {
+	// Create Origin Access Identity for CloudFront
+	oai := awscloudfront.NewOriginAccessIdentity(s.Stack, jsii.String("MediaOAI"), &awscloudfront.OriginAccessIdentityProps{
+		Comment: jsii.String("Lesser Media OAI"),
+	})
+
+	// Grant read access to the OAI directly on the bucket
+	s.MediaBucket.GrantRead(oai, jsii.String("*"))
+
+	// Enhanced CORS configuration matching Pulumi
+	s.MediaBucket.AddCorsRule(&awss3.CorsRule{
+		AllowedMethods: &[]awss3.HttpMethods{
+			awss3.HttpMethods_GET,
+			awss3.HttpMethods_PUT,
+			awss3.HttpMethods_POST,
+			awss3.HttpMethods_HEAD,
+		},
+		AllowedOrigins: &[]*string{jsii.String("*")},
+		AllowedHeaders: &[]*string{jsii.String("*")},
+		ExposedHeaders: &[]*string{jsii.String("ETag")},
+		MaxAge:         jsii.Number(3000),
+	})
+
+	// Add lifecycle rules for cleanup
+	s.MediaBucket.AddLifecycleRule(&awss3.LifecycleRule{
+		Id:                                  jsii.String("delete-incomplete-uploads"),
+		AbortIncompleteMultipartUploadAfter: awscdk.Duration_Days(jsii.Number(7)),
+		Enabled:                             jsii.Bool(true),
+	})
+
+	// Create CloudFront distribution for media.{domain}
+	mediaDomain := fmt.Sprintf("media.%s", domain)
+	s.MediaDistribution = awscloudfront.NewDistribution(s.Stack, jsii.String("MediaDistribution"), &awscloudfront.DistributionProps{
+		Enabled:           jsii.Bool(true),
+		HttpVersion:       awscloudfront.HttpVersion_HTTP2,
+		Comment:           jsii.String("Lesser Media CDN"),
+		DefaultRootObject: jsii.String("index.html"),
+		DomainNames:       &[]*string{jsii.String(mediaDomain)},
+		Certificate:       s.Certificate,
+		MinimumProtocolVersion: awscloudfront.SecurityPolicyProtocol_TLS_V1_2_2021,
+		DefaultBehavior: &awscloudfront.BehaviorOptions{
+			Origin: awscloudfrontorigins.NewS3Origin(s.MediaBucket, &awscloudfrontorigins.S3OriginProps{
+				OriginAccessIdentity: oai,
+			}),
+			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_GET_HEAD_OPTIONS(),
+			CachedMethods:        awscloudfront.CachedMethods_CACHE_GET_HEAD(),
+			CachePolicy:          awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
+			OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_CORS_S3_ORIGIN(),
+			Compress:             jsii.Bool(true),
+		},
+		PriceClass: awscloudfront.PriceClass_PRICE_CLASS_100, // US and Europe only for cost optimization
+	})
+}
+
+func (s *LesserStack) createSQSQueues() {
+	// Create federation dead letter queue
+	s.FederationDLQ = awssqs.NewQueue(s.Stack, jsii.String("FederationDLQ"), &awssqs.QueueProps{
+		QueueName:         jsii.String(fmt.Sprintf("lesser-federation-dlq-%s", s.Environment)),
+		RetentionPeriod:   awscdk.Duration_Days(jsii.Number(14)), // 14 days
+		VisibilityTimeout: awscdk.Duration_Seconds(jsii.Number(30)),
+	})
+
+	// Create federation queue with DLQ redrive policy
+	s.FederationQueue = awssqs.NewQueue(s.Stack, jsii.String("FederationQueue"), &awssqs.QueueProps{
+		QueueName:              jsii.String(fmt.Sprintf("lesser-federation-queue-%s", s.Environment)),
+		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(5)), // 5 minutes
+		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(4)),    // 4 days
+		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
+		DeadLetterQueue: &awssqs.DeadLetterQueue{
+			MaxReceiveCount: jsii.Number(5), // After 5 failed attempts, send to DLQ
+			Queue:           s.FederationDLQ,
+		},
+	})
+
+	// Create push notification queue
+	s.PushQueue = awssqs.NewQueue(s.Stack, jsii.String("PushNotificationQueue"), &awssqs.QueueProps{
+		QueueName:              jsii.String(fmt.Sprintf("lesser-push-notification-queue-%s", s.Environment)),
+		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(1)), // 1 minute
+		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(1)),    // 1 day
+		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
+	})
+}
+
+func (s *LesserStack) createLambdaFunctions() {
+	// Load private key secret from shared stack
+	s.PrivateKey = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("PrivateKeySecret"), jsii.String("lesser/actor-private-key"))
+	
+	s.Functions = localconstructs.CreateLambdaFunctions(s.Stack, &localconstructs.LambdaFunctionsProps{
+		Environment:     s.Environment,
+		Table:           s.MainTable,
+		MediaBucket:     s.MediaBucket,
+		FederationQueue: s.FederationQueue,
+		FederationDLQ:   s.FederationDLQ,
+		PushQueue:       s.PushQueue,
+		PrivateKey:      s.PrivateKey,
+		Config:          s.Configuration,
+	})
+}
+
+func (s *LesserStack) createAPIGateway(domain string) {
+	s.API = localconstructs.CreateAPIGateway(s.Stack, &localconstructs.APIGatewayProps{
+		Environment: s.Environment,
+		Domain:      domain,
+		Certificate: s.Certificate,
+		Functions:   s.Functions,
+	})
+	
+	// Output API URLs
+	awscdk.NewCfnOutput(s.Stack, jsii.String("HttpApiUrl"), &awscdk.CfnOutputProps{
+		Value:       s.API.HttpApi.Url(),
+		Description: jsii.String("HTTP API Gateway URL"),
+	})
+	
+	awscdk.NewCfnOutput(s.Stack, jsii.String("WebSocketApiUrl"), &awscdk.CfnOutputProps{
+		Value:       s.API.WebSocketApi.ApiEndpoint(),
+		Description: jsii.String("WebSocket API Gateway URL"),
+	})
+}
+
+func (s *LesserStack) createStreamProcessors() {
+	localconstructs.CreateStreamProcessors(s.Stack, &localconstructs.StreamProcessorsProps{
+		Table:     s.MainTable,
+		Functions: s.Functions,
+	})
+}
+
+func (s *LesserStack) setupMonitoring() {
+	// Implementation will use monitoring_stack.go
+}
+
+func (s *LesserStack) setupSecurity() {
+	// Enhanced security setup (Phase 6.7) - comprehensive IAM policies are
+	// now integrated into Lambda functions via security constructs
+	// All policies match Pulumi configuration exactly:
+	// - DynamoDB: Full table + GSI + streams access
+	// - S3: GetObject, PutObject, DeleteObject, PutObjectAcl
+	// - SQS: Full queue operations for federation and push notifications
+	// - Bedrock: InvokeModel for amazon.titan-embed-text-v1
+	// - KMS: Encrypt/Decrypt with SharedStack key (alias/lesser-encryption)
+	// - Comprehend: AI text analysis capabilities
+}
+
+func (s *LesserStack) createOutputs() {
+	awscdk.NewCfnOutput(s.Stack, jsii.String("TableName"), &awscdk.CfnOutputProps{
+		Value:       s.MainTable.TableName(),
+		Description: jsii.String("DynamoDB table name"),
+	})
+	
+	awscdk.NewCfnOutput(s.Stack, jsii.String("MediaBucketName"), &awscdk.CfnOutputProps{
+		Value:       s.MediaBucket.BucketName(),
+		Description: jsii.String("S3 media bucket name"),
+	})
+	
+	awscdk.NewCfnOutput(s.Stack, jsii.String("MediaDistributionDomain"), &awscdk.CfnOutputProps{
+		Value:       s.MediaDistribution.DistributionDomainName(),
+		Description: jsii.String("CloudFront distribution domain name for media"),
+	})
+	
+	awscdk.NewCfnOutput(s.Stack, jsii.String("FederationQueueUrl"), &awscdk.CfnOutputProps{
+		Value:       s.FederationQueue.QueueUrl(),
+		Description: jsii.String("Federation queue URL"),
+	})
+	
+	awscdk.NewCfnOutput(s.Stack, jsii.String("FederationDLQUrl"), &awscdk.CfnOutputProps{
+		Value:       s.FederationDLQ.QueueUrl(),
+		Description: jsii.String("Federation dead letter queue URL"),
+	})
+	
+	awscdk.NewCfnOutput(s.Stack, jsii.String("PushNotificationQueueUrl"), &awscdk.CfnOutputProps{
+		Value:       s.PushQueue.QueueUrl(),
+		Description: jsii.String("Push notification queue URL"),
+	})
+	
+	awscdk.NewCfnOutput(s.Stack, jsii.String("Environment"), &awscdk.CfnOutputProps{
+		Value:       jsii.String(s.Environment),
+		Description: jsii.String("Deployment environment"),
+	})
+}
+
+func loadEnvironmentConfig(environment string) map[string]interface{} {
+	// Configuration from Pulumi legacy - uses external domain config
+	// These will be overridden by CDK context or environment variables
+	config := map[string]interface{}{
+		"logLevel":   "INFO",
+		"memorySize": 3008.0,  // ARM64 Lambda optimized (from Pulumi line 650)
+		"timeout":    30.0,
+		"features": map[string]interface{}{
+			"enableMonitoring": true,
+		},
+	}
+	
+	// Environment-specific overrides (matching Pulumi behavior)
+	switch environment {
+	case "development":
+		config["logLevel"] = "DEBUG"
+		config["memorySize"] = 1024.0
+	case "staging":
+		config["memorySize"] = 1024.0
+	case "production":
+		config["memorySize"] = 3008.0  // Max memory for production
+	}
+	
+	return config
+}
+
+func getRemovalPolicy(isProd bool) awscdk.RemovalPolicy {
+	if isProd {
+		return awscdk.RemovalPolicy_RETAIN
+	}
+	return awscdk.RemovalPolicy_DESTROY
+}

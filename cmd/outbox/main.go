@@ -76,7 +76,7 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 	}
 
 	// Initialize repositories
-	actorRepo := repositories.NewActorRepository(db)
+	actorRepo := repositories.NewActorRepository(db, cfg.DynamoTableName, logger)
 	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
 	federationActivityRepo := repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
 

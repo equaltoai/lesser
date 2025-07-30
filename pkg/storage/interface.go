@@ -230,6 +230,10 @@ type Storage interface {
 	GetNotificationsAdvanced(ctx context.Context, userID string, excludeTypes []string, maxID, sinceID, minID *string, limit int, includeFiltered bool) ([]*Notification, error)
 	GetNotificationsByAccount(ctx context.Context, userID, accountID string, limit int) ([]*Notification, error)
 	GetUnreadNotificationCount(ctx context.Context, userID string) (int64, error)
+	// Notification preferences
+	GetNotificationPreferences(ctx context.Context, username string) (*NotificationPreferences, error)
+	UpdateNotificationPreferences(ctx context.Context, username string, prefs *NotificationPreferences) error
+	BatchMarkNotificationsAsRead(ctx context.Context, username string, notificationIDs []string) error
 
 	// Remote actor caching operations
 	CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error
@@ -351,6 +355,7 @@ type Storage interface {
 	// Enhanced hashtag operations for GraphQL
 	UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, notify bool) error
 	MuteHashtag(ctx context.Context, userID, hashtag string) error
+	UnmuteHashtag(ctx context.Context, userID, hashtag string) error
 	IsHashtagMuted(ctx context.Context, userID, hashtag string) (bool, error)
 	GetHashtagTimelineAdvanced(ctx context.Context, hashtag string, maxID *string, limit int, userID string) ([]*StatusSearchResult, error)
 	GetMultiHashtagTimeline(ctx context.Context, hashtags []string, maxID *string, limit int, userID string) ([]*StatusSearchResult, error)
@@ -710,6 +715,16 @@ type Storage interface {
 	GetUserSeveredRelationships(ctx context.Context, userID string) ([]*SeveredRelationship, error)
 	GetAffectedRelationships(ctx context.Context, userID, domain string) ([]*RelationshipRecord, error)
 	TrackFederationIssue(ctx context.Context, domain, issueType string) error
+	
+	// Additional federation severance operations from legacy implementation
+	CreateSeveredRelationship(ctx context.Context, rel *SeveredRelationship) error
+	GetSeveredRelationships(ctx context.Context, localInstance string, limit int, cursor string) ([]*SeveredRelationship, string, error)
+	GetSeveredRelationship(ctx context.Context, localInstance, remoteInstance string) (*SeveredRelationship, error)
+	UpdateSeveredRelationship(ctx context.Context, rel *SeveredRelationship) error
+	GetAffectedFollows(ctx context.Context, localInstance, remoteInstance string) ([]AffectedFollow, error)
+	RecordAffectedFollow(ctx context.Context, localInstance, remoteInstance string, follow AffectedFollow) error
+	ReverseSeverance(ctx context.Context, localInstance, remoteInstance string) error
+	GetSeveranceHistory(ctx context.Context, localInstance, remoteInstance string, limit int) ([]*SeveredRelationship, error)
 }
 
 // User represents a user account in the system
@@ -1086,6 +1101,19 @@ type NotificationFilter struct {
 	MinID        string   // Return results newer than this ID
 	MaxID        string   // Return results older than this ID
 	SinceID      string   // Return results newer than this ID (for polling)
+}
+
+// NotificationPreferences represents user preferences for notifications
+type NotificationPreferences struct {
+	Username        string   `json:"username"`
+	EmailEnabled    bool     `json:"email_enabled"`
+	PushEnabled     bool     `json:"push_enabled"`
+	FollowEnabled   bool     `json:"follow_enabled"`
+	MentionEnabled  bool     `json:"mention_enabled"`
+	ReblogEnabled   bool     `json:"reblog_enabled"`
+	FavoriteEnabled bool     `json:"favorite_enabled"`
+	PollEnabled     bool     `json:"poll_enabled"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // SearchSuggestion represents a search suggestion
@@ -2147,9 +2175,38 @@ type ThreadContext struct {
 
 // SeveredRelationship represents a severed federation relationship
 type SeveredRelationship struct {
+	ID              string           `json:"id"`
+	LocalInstance   string           `json:"local_instance"`
+	RemoteInstance  string           `json:"remote_instance"`
+	Reason          SeveranceReason  `json:"reason"`
+	AffectedFollows []AffectedFollow `json:"affected_follows"`
+	Timestamp       time.Time        `json:"timestamp"`
+	Reversible      bool             `json:"reversible"`
+	Details         string           `json:"details,omitempty"`
+	EstimatedImpact int              `json:"estimated_impact"`
+	
+	// Original fields for backward compatibility
 	Domain       string    `json:"domain"`
 	SeveredAt    time.Time `json:"severed_at"`
 	Acknowledged bool      `json:"acknowledged"`
-	Reason       string    `json:"reason"`
 	Type         string    `json:"type"` // domain_block, suspension, etc.
+}
+
+// SeveranceReason represents why a federation relationship was severed
+type SeveranceReason string
+
+const (
+	SeveranceReasonBlocked     SeveranceReason = "blocked"
+	SeveranceReasonUnavailable SeveranceReason = "unavailable"
+	SeveranceReasonSuspended   SeveranceReason = "suspended"
+	SeveranceReasonDefederated SeveranceReason = "defederated"
+	SeveranceReasonLimited     SeveranceReason = "limited"
+)
+
+// AffectedFollow represents a follow relationship affected by severance
+type AffectedFollow struct {
+	LocalUser    string    `json:"local_user"`
+	RemoteUser   string    `json:"remote_user"`
+	Direction    string    `json:"direction"` // "following", "follower", "mutual"
+	LastActivity time.Time `json:"last_activity"`
 }

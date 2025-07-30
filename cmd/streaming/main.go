@@ -89,7 +89,9 @@ func NewStreamingHandler() (*StreamingHandler, error) {
 	}
 
 	// Initialize repositories
-	userRepo := repositories.NewUserRepository(db)
+	logger := common.Logger()
+	tableName := "lesser-main"
+	userRepo := repositories.NewUserRepository(db, tableName, logger)
 
 	// Get environment variables
 	connectionsTable := os.Getenv("CONNECTIONS_TABLE")

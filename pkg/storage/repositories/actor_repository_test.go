@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestCreateActor_MissingUsername(t *testing.T) {
@@ -94,8 +95,12 @@ func TestConvertStorageActorFields(t *testing.T) {
 }
 
 func TestNewActorRepository(t *testing.T) {
-	repo := NewActorRepository(nil)
+	logger := zap.NewNop()
+	tableName := "test-table"
+	repo := NewActorRepository(nil, tableName, logger)
 
 	assert.NotNil(t, repo)
 	assert.Nil(t, repo.db)
+	assert.Equal(t, tableName, repo.tableName)
+	assert.Equal(t, logger, repo.logger)
 }

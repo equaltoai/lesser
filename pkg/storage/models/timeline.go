@@ -85,9 +85,11 @@ func (t *Timeline) BeforeCreate() error {
 		t.EntryID = fmt.Sprintf("%d_%s", t.TimelineAt.Unix(), t.PostID)
 	}
 
-	// Set up primary key
-	t.PK = fmt.Sprintf("timeline#%s#%s", t.TimelineType, t.TimelineID)
-	t.SK = fmt.Sprintf("%d#%s", t.TimelineAt.Unix(), t.EntryID)
+	// Set up primary key - match legacy pattern
+	t.PK = fmt.Sprintf("TIMELINE#%s#%s", t.TimelineType, t.TimelineID)
+	// Use reverse timestamp for newest-first ordering like legacy
+	reverseTimestamp := 9999999999 - t.TimelineAt.Unix()
+	t.SK = fmt.Sprintf("%010d#%s", reverseTimestamp, t.PostID)
 
 	// Set up GSI keys
 	t.setupGSIKeys()
@@ -109,10 +111,15 @@ func (t *Timeline) BeforeUpdate() error {
 func (t *Timeline) setupGSIKeys() {
 	entryID := t.EntryID
 	timestamp := t.TimelineAt.Unix()
-	timestampStr := fmt.Sprintf("%d", timestamp)
+	reverseTimestamp := 9999999999 - timestamp
+	timestampStr := fmt.Sprintf("%010d", reverseTimestamp)
 
-	// GSI1 - Post timeline
-	if t.PostID != "" {
+	// GSI1 - Used for public timeline in legacy (TIMELINE#PUBLIC#LOCAL/FEDERATED)
+	if t.TimelineType == "PUBLIC" {
+		t.GSI1PK = fmt.Sprintf("TIMELINE#PUBLIC#%s", t.TimelineID) // LOCAL or FEDERATED
+		t.GSI1SK = fmt.Sprintf("%s#%s", timestampStr, t.PostID)
+	} else if t.PostID != "" {
+		// Also used for post timeline
 		t.GSI1PK = "POST#" + t.PostID
 		t.GSI1SK = fmt.Sprintf("%s#%s", timestampStr, entryID)
 	}
@@ -199,5 +206,12 @@ func (t *Timeline) GetTimelineKey() string {
 
 // GetSortKey returns the sort key for this entry
 func (t *Timeline) GetSortKey() string {
-	return fmt.Sprintf("%d#%s", t.TimelineAt.Unix(), t.EntryID)
+	// Use reverse timestamp like legacy
+	reverseTimestamp := 9999999999 - t.TimelineAt.Unix()
+	return fmt.Sprintf("%010d#%s", reverseTimestamp, t.EntryID)
+}
+
+// UpdateKeys updates the GSI keys for this timeline entry (required by DynamORM)
+func (t *Timeline) UpdateKeys() {
+	t.setupGSIKeys()
 }

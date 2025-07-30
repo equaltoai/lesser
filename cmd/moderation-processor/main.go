@@ -2,484 +2,454 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/trust"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
-type ModerationProcessor struct {
-	db             core.DB
-	cfg            *config.Config
-	moderationRepo *repositories.ModerationRepository
-	userRepo       *repositories.UserRepository
-	activityRepo   *repositories.ActivityRepository
-	objectRepo     *repositories.ObjectRepository
-	actorRepo      *repositories.ActorRepository
-	followRepo     *repositories.FollowRepository
-	likeRepo       *repositories.LikeRepository
-	timelineRepo   *repositories.TimelineRepository
-	logger         *zap.Logger
-}
-
-// ModerationRequest represents an SQS message for moderation
-type ModerationRequest struct {
-	ContentID     string                       `json:"content_id"`
-	ContentType   models.ModerationContentType `json:"content_type"`
-	UserID        string                       `json:"user_id"`
-	Content       string                       `json:"content"`
-	ReportedBy    []string                     `json:"reported_by,omitempty"`
-	ReportReason  string                       `json:"report_reason,omitempty"`
-	AutomatedFlag bool                         `json:"automated_flag,omitempty"`
-	RequestedAt   time.Time                    `json:"requested_at"`
-}
-
 var (
-	logger         *zap.Logger
-	cfg            *config.Config
-	db             core.DB
-	moderationRepo *repositories.ModerationRepository
-	userRepo       *repositories.UserRepository
-	activityRepo   *repositories.ActivityRepository
-	objectRepo     *repositories.ObjectRepository
-	actorRepo      *repositories.ActorRepository
-	followRepo     *repositories.FollowRepository
-	likeRepo       *repositories.LikeRepository
-	timelineRepo   *repositories.TimelineRepository
+	store           storage.Storage
+	consensusEngine *moderation.ConsensusEngine
+	logger          *zap.Logger
 )
+
+// storageAdapter adapts storage.Storage to moderation.StorageInterface
+type storageAdapter struct {
+	storage storage.Storage
+}
+
+func (s *storageAdapter) GetModerationEvent(ctx context.Context, eventID string) (*moderation.ModerationEvent, error) {
+	return s.storage.GetModerationEvent(ctx, eventID)
+}
+
+func (s *storageAdapter) AddModerationReview(ctx context.Context, review *moderation.Review) error {
+	return s.storage.AddModerationReview(ctx, review)
+}
+
+func (s *storageAdapter) GetModerationReviews(ctx context.Context, eventID string) ([]*moderation.Review, error) {
+	return s.storage.GetModerationReviews(ctx, eventID)
+}
+
+func (s *storageAdapter) CreateModerationDecision(ctx context.Context, decision *moderation.ModerationDecision) error {
+	return s.storage.CreateModerationDecision(ctx, decision)
+}
+
+func (s *storageAdapter) GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*moderation.QueueItem, string, error) {
+	return s.storage.GetModerationQueuePaginated(ctx, limit, cursor)
+}
+
+func (s *storageAdapter) GetTrustScore(ctx context.Context, actorID, category string) (*trust.TrustScore, error) {
+	return s.storage.GetTrustScore(ctx, actorID, category)
+}
+
+func (s *storageAdapter) RecordTrustUpdate(ctx context.Context, update *trust.TrustUpdate) error {
+	return s.storage.RecordTrustUpdate(ctx, update)
+}
 
 func init() {
 	// Initialize logger
 	logger = common.Logger()
 
-	// Load configuration
-	cfg = config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
+	// Initialize storage
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	store, err = dynamodb.New()
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		logger.Fatal("Failed to initialize storage", zap.Error(err))
 	}
 
-	// Initialize repositories
-	moderationRepo = repositories.NewModerationRepository(db)
-	userRepo = repositories.NewUserRepository(db)
-	activityRepo = repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
-	objectRepo = repositories.NewObjectRepository(db, cfg.DynamoTableName, logger)
-	actorRepo = repositories.NewActorRepository(db)
-	followRepo = repositories.NewFollowRepository(db, cfg.DynamoTableName, logger)
-	likeRepo = repositories.NewLikeRepository(db, cfg.DynamoTableName, logger)
-	timelineRepo = repositories.NewTimelineRepository(db, cfg.DynamoTableName)
+	// Initialize consensus engine with storage adapter
+	adapter := &storageAdapter{storage: store}
+	consensusEngine = moderation.NewConsensusEngine(adapter, nil)
 }
 
-func NewModerationProcessor() *ModerationProcessor {
-	return &ModerationProcessor{
-		db:             db,
-		cfg:            cfg,
-		moderationRepo: moderationRepo,
-		userRepo:       userRepo,
-		activityRepo:   activityRepo,
-		objectRepo:     objectRepo,
-		actorRepo:      actorRepo,
-		followRepo:     followRepo,
-		likeRepo:       likeRepo,
-		timelineRepo:   timelineRepo,
-		logger:         logger,
-	}
-}
-
-// HandleSQS processes SQS messages containing moderation requests
-func HandleSQS(ctx context.Context, event events.SQSEvent) error {
-	mp := NewModerationProcessor()
-	mp.logger.Info("Processing SQS moderation requests",
-		zap.Int("message_count", len(event.Records)),
+// handler processes DynamoDB stream events for moderation
+func handler(ctx context.Context, event events.DynamoDBEvent) error {
+	logger.Info("Processing DynamoDB stream event",
+		zap.Int("records", len(event.Records)),
 	)
 
 	for _, record := range event.Records {
-		var req ModerationRequest
-		if err := json.Unmarshal([]byte(record.Body), &req); err != nil {
-			mp.logger.Error("Failed to unmarshal moderation request",
-				zap.String("message_id", record.MessageId),
+		if err := processRecord(ctx, record); err != nil {
+			// Log error but continue processing other records
+			logger.Error("Failed to process record",
+				zap.String("event_id", record.EventID),
 				zap.Error(err),
 			)
-			continue
-		}
-
-		// Process the moderation request
-		if err := mp.processModerationRequest(ctx, req); err != nil {
-			mp.logger.Error("Failed to process moderation request",
-				zap.String("content_id", req.ContentID),
-				zap.Error(err),
-			)
-			// Don't fail the batch - just log the error
 		}
 	}
 
 	return nil
 }
 
-// processModerationRequest handles a single moderation request
-func (mp *ModerationProcessor) processModerationRequest(ctx context.Context, req ModerationRequest) error {
-	mp.logger.Info("Processing moderation request",
-		zap.String("content_id", req.ContentID),
-		zap.String("content_type", string(req.ContentType)),
-		zap.String("user_id", req.UserID),
+// processRecord processes a single DynamoDB stream record
+func processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+	// Only process INSERT and MODIFY events
+	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+		return nil
+	}
+
+	// Check if this is a moderation-related record
+	pk := getStringAttribute(record.Change.Keys["PK"])
+	sk := getStringAttribute(record.Change.Keys["SK"])
+
+	if pk == "" || sk == "" {
+		return nil
+	}
+
+	logger.Debug("Processing record",
+		zap.String("pk", pk),
+		zap.String("sk", sk),
+		zap.String("event_name", record.EventName),
 	)
 
-	// Analyze content for moderation
-	evidence, err := mp.moderationRepo.AnalyzeContent(ctx, req.Content, req.UserID, req.ContentType)
+	// Handle different types of moderation records
+	switch {
+	case strings.HasPrefix(pk, "REVIEW#"):
+		// New review added
+		return handleNewReview(ctx, record)
+
+	case strings.HasPrefix(pk, "EVENT#") && record.EventName == "INSERT":
+		// New moderation event created
+		return handleNewEvent(ctx, record)
+
+	case strings.HasPrefix(pk, "DECISION#"):
+		// Decision made - trigger actions
+		return handleDecision(ctx, record)
+	}
+
+	return nil
+}
+
+// handleNewReview processes a new review and checks for consensus
+func handleNewReview(ctx context.Context, record events.DynamoDBEventRecord) error {
+	// Extract event ID from PK (REVIEW#eventID)
+	pk := getStringAttribute(record.Change.Keys["PK"])
+	parts := strings.Split(pk, "#")
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid review PK format: %s", pk)
+	}
+	eventID := parts[1]
+
+	// Extract reviewer ID from SK (REVIEWER#reviewerID)
+	sk := getStringAttribute(record.Change.Keys["SK"])
+	reviewerParts := strings.Split(sk, "#")
+	if len(reviewerParts) < 2 {
+		return fmt.Errorf("invalid review SK format: %s", sk)
+	}
+	reviewerID := reviewerParts[1]
+
+	logger.Info("Processing new review",
+		zap.String("event_id", eventID),
+		zap.String("reviewer_id", reviewerID),
+	)
+
+	// Get the review details
+	review, err := getReviewFromRecord(record)
 	if err != nil {
-		return fmt.Errorf("failed to analyze content: %w", err)
+		return fmt.Errorf("failed to extract review: %w", err)
 	}
 
-	// Determine action and reason based on evidence
-	action, reason := mp.determineModeration(evidence, req)
-
-	// Create moderation record
-	moderation := &models.Moderation{
-		ContentID:     req.ContentID,
-		ContentType:   req.ContentType,
-		UserID:        req.UserID,
-		Action:        action,
-		Reason:        reason,
-		Evidence:      *evidence,
-		ModeratorID:   "system",
-		ModeratorType: "automated",
+	// Process the review and check for consensus
+	decision, err := consensusEngine.ProcessReview(ctx, eventID, review)
+	if err != nil {
+		logger.Warn("Failed to process review",
+			zap.String("event_id", eventID),
+			zap.Error(err),
+		)
+		return nil // Don't fail the whole batch
 	}
 
-	// Add report information if this was user-reported
-	if len(req.ReportedBy) > 0 {
-		moderation.Evidence.ReportCount = len(req.ReportedBy)
-		moderation.Evidence.ReporterIDs = req.ReportedBy
-		if req.ReportReason != "" {
-			moderation.Metadata = map[string]interface{}{
-				"report_reason": req.ReportReason,
+	if decision != nil {
+		logger.Info("Consensus reached",
+			zap.String("event_id", eventID),
+			zap.String("decision_id", decision.ID),
+			zap.String("action", string(decision.Action)),
+			zap.Float64("consensus_score", decision.ConsensusScore),
+		)
+	}
+
+	return nil
+}
+
+// handleNewEvent processes a new moderation event
+func handleNewEvent(ctx context.Context, record events.DynamoDBEventRecord) error {
+	event, err := getEventFromRecord(record)
+	if err != nil {
+		return fmt.Errorf("failed to extract event: %w", err)
+	}
+
+	logger.Info("New moderation event created",
+		zap.String("event_id", event.ID),
+		zap.String("object_id", event.ObjectID),
+		zap.String("type", string(event.EventType)),
+		zap.String("category", string(event.Category)),
+		zap.Int("severity", int(event.Severity)),
+	)
+
+	// Send notifications to moderators
+	if err := sendModeratorNotification(ctx, event); err != nil {
+		logger.Error("failed to send moderator notification", zap.Error(err))
+	}
+
+	// Trigger automatic actions based on severity
+	if err := triggerAutomaticActions(ctx, event); err != nil {
+		logger.Error("failed to trigger automatic actions", zap.Error(err))
+	}
+
+	return nil
+}
+
+// handleDecision processes a moderation decision
+func handleDecision(ctx context.Context, record events.DynamoDBEventRecord) error {
+	decision, err := getDecisionFromRecord(record)
+	if err != nil {
+		return fmt.Errorf("failed to extract decision: %w", err)
+	}
+
+	logger.Info("Processing moderation decision",
+		zap.String("decision_id", decision.ID),
+		zap.String("object_id", decision.ObjectID),
+		zap.String("action", string(decision.Action)),
+	)
+
+	// Apply the decision based on action type
+	switch decision.Action {
+	case moderation.ActionTypeSilence:
+		// Implement account silencing
+		if err := silenceAccount(ctx, decision.ObjectID, decision.Reason); err != nil {
+			logger.Error("failed to silence account", zap.Error(err))
+			return err
+		}
+		logger.Info("Account silenced", zap.String("object_id", decision.ObjectID))
+
+	case moderation.ActionTypeSuspend:
+		// Implement account suspension
+		if err := suspendAccount(ctx, decision.ObjectID, decision.Reason); err != nil {
+			logger.Error("failed to suspend account", zap.Error(err))
+			return err
+		}
+		logger.Info("Account suspended", zap.String("object_id", decision.ObjectID))
+
+	case moderation.ActionTypeRemove:
+		// Implement content removal
+		if err := removeContent(ctx, decision.ObjectID); err != nil {
+			logger.Error("failed to remove content", zap.Error(err))
+			return err
+		}
+		logger.Info("Content removed", zap.String("object_id", decision.ObjectID))
+
+	case moderation.ActionTypeNone:
+		logger.Info("No action taken", zap.String("object_id", decision.ObjectID))
+
+	default:
+		logger.Warn("Unknown action type",
+			zap.String("action", string(decision.Action)),
+			zap.String("object_id", decision.ObjectID),
+		)
+	}
+
+	return nil
+}
+
+// getReviewFromRecord extracts review from DynamoDB record
+func getReviewFromRecord(record events.DynamoDBEventRecord) (*moderation.Review, error) {
+	// Extract from NewImage
+	typeAttr, ok := record.Change.NewImage["Type"]
+	if !ok || getStringAttribute(typeAttr) != "REVIEW" {
+		return nil, fmt.Errorf("not a review record")
+	}
+
+	// Extract event ID from PK
+	pk := getStringAttribute(record.Change.Keys["PK"])
+	eventID := strings.TrimPrefix(pk, "REVIEW#")
+
+	// Extract reviewer ID from SK
+	sk := getStringAttribute(record.Change.Keys["SK"])
+	reviewerID := strings.TrimPrefix(sk, "REVIEWER#")
+
+	// Extract review data from NewImage
+	review := &moderation.Review{
+		EventID:    eventID,
+		ReviewerID: reviewerID,
+		Action:     moderation.ActionTypeWarning, // Default
+		Weight:     1.0,                          // Default
+	}
+
+	// Extract action if present
+	if actionAttr, ok := record.Change.NewImage["Action"]; ok {
+		if action := getStringAttribute(actionAttr); action != "" {
+			review.Action = moderation.ActionType(action)
+		}
+	}
+
+	// Extract weight if present
+	if weightAttr, ok := record.Change.NewImage["Weight"]; ok {
+		if weightAttr.DataType() == events.DataTypeNumber {
+			if weight, err := weightAttr.Float(); err == nil {
+				review.Weight = weight
 			}
 		}
 	}
 
-	// Create the moderation case
-	if err := mp.moderationRepo.CreateModeration(ctx, moderation); err != nil {
-		return fmt.Errorf("failed to create moderation: %w", err)
-	}
-
-	// Execute the moderation action if confidence is high enough
-	if evidence.ConfidenceScore >= 0.8 && !evidence.RequiresReview {
-		if err := mp.executeModeration(ctx, moderation); err != nil {
-			mp.logger.Error("Failed to execute moderation",
-				zap.String("moderation_id", moderation.ModerationID),
-				zap.Error(err),
-			)
-			// Don't fail - moderation record is created for manual review
-		}
-	} else {
-		// Send to human review queue
-		if err := mp.sendForHumanReview(ctx, moderation); err != nil {
-			mp.logger.Error("Failed to send for human review",
-				zap.String("moderation_id", moderation.ModerationID),
-				zap.Error(err),
-			)
+	// Extract created timestamp if present
+	if createdAttr, ok := record.Change.NewImage["Created"]; ok {
+		if timestamp := getStringAttribute(createdAttr); timestamp != "" {
+			if t, err := time.Parse(time.RFC3339, timestamp); err == nil {
+				review.Created = t
+			}
 		}
 	}
 
-	return nil
+	return review, nil
 }
 
-// determineModeration determines the moderation action and reason based on evidence
-func (mp *ModerationProcessor) determineModeration(evidence *models.ModerationEvidence, req ModerationRequest) (models.ModerationAction, models.ModerationReason) {
-	// Check prohibited words first - highest priority
-	if len(evidence.ProhibitedWords) > 0 {
-		return models.ModerationActionRemove, models.ModerationReasonProhibitedWords
+// getEventFromRecord extracts moderation event from DynamoDB record
+func getEventFromRecord(record events.DynamoDBEventRecord) (*moderation.ModerationEvent, error) {
+	// Extract from NewImage
+	typeAttr, ok := record.Change.NewImage["Type"]
+	if !ok || getStringAttribute(typeAttr) != "EVENT" {
+		return nil, fmt.Errorf("not an event record")
 	}
 
-	// Check spam score
-	if evidence.SpamScore > 0.8 {
-		return models.ModerationActionSilence, models.ModerationReasonSpam
+	// Extract event ID from PK
+	pk := getStringAttribute(record.Change.Keys["PK"])
+	objectID := strings.TrimPrefix(pk, "EVENT#")
+
+	// Create event with extracted data
+	event := &moderation.ModerationEvent{
+		ObjectID:  objectID,
+		EventType: moderation.EventTypeFlagged,   // Default
+		Category:  moderation.CategoryHateSpeech, // Default
+		Severity:  moderation.SeverityMedium,     // Default
 	}
 
-	// Check for rate limiting (would be set externally)
-	if req.AutomatedFlag && strings.Contains(req.ReportReason, "rate_limit") {
-		return models.ModerationActionWarning, models.ModerationReasonRateLimiting
+	// Extract ID if present
+	if idAttr, ok := record.Change.NewImage["ID"]; ok {
+		event.ID = getStringAttribute(idAttr)
 	}
 
-	// Check matched patterns
-	if len(evidence.MatchedPatterns) > 0 {
-		if evidence.ConfidenceScore > 0.7 {
-			return models.ModerationActionRemove, models.ModerationReasonSpam
+	// Extract actor ID if present
+	if actorAttr, ok := record.Change.NewImage["ActorID"]; ok {
+		event.ActorID = getStringAttribute(actorAttr)
+	}
+
+	// Extract event type if present
+	if typeAttr, ok := record.Change.NewImage["EventType"]; ok {
+		if eventType := getStringAttribute(typeAttr); eventType != "" {
+			event.EventType = moderation.EventType(eventType)
 		}
-		return models.ModerationActionWarning, models.ModerationReasonSpam
 	}
 
-	// User reports with no clear violation
-	if len(req.ReportedBy) > 0 {
-		if len(req.ReportedBy) >= 3 {
-			// Multiple reports - escalate
-			return models.ModerationActionWarning, models.ModerationReasonOther
+	// Extract category if present
+	if catAttr, ok := record.Change.NewImage["Category"]; ok {
+		if category := getStringAttribute(catAttr); category != "" {
+			event.Category = moderation.Category(category)
 		}
-		return models.ModerationActionDismiss, models.ModerationReasonOther
 	}
 
-	// Default - dismiss if no clear issue
-	return models.ModerationActionDismiss, models.ModerationReasonOther
+	// Extract severity if present
+	if sevAttr, ok := record.Change.NewImage["Severity"]; ok {
+		if sevAttr.DataType() == events.DataTypeNumber {
+			if sev, err := sevAttr.Float(); err == nil {
+				event.Severity = moderation.Severity(sev)
+			}
+		}
+	}
+
+	return event, nil
 }
 
-// executeModeration executes the moderation action
-func (mp *ModerationProcessor) executeModeration(ctx context.Context, moderation *models.Moderation) error {
-	mp.logger.Info("Executing moderation action",
-		zap.String("moderation_id", moderation.ModerationID),
-		zap.String("action", string(moderation.Action)),
-		zap.String("content_type", string(moderation.ContentType)),
-	)
+// getDecisionFromRecord extracts moderation decision from DynamoDB record
+func getDecisionFromRecord(record events.DynamoDBEventRecord) (*moderation.ModerationDecision, error) {
+	// Extract from NewImage
+	typeAttr, ok := record.Change.NewImage["Type"]
+	if !ok || getStringAttribute(typeAttr) != "DECISION" {
+		return nil, fmt.Errorf("not a decision record")
+	}
 
-	// Update moderation status
-	now := time.Now()
-	moderation.Status = models.ModerationStatusActioned
-	moderation.ActionedAt = &now
-	moderation.AddHistoryEntry("system", "automated", moderation.Action,
-		models.ModerationStatusPending, models.ModerationStatusActioned,
-		"Automated moderation executed")
+	// Extract object ID from PK
+	pk := getStringAttribute(record.Change.Keys["PK"])
+	objectID := strings.TrimPrefix(pk, "DECISION#")
 
-	// Execute based on action type
-	switch moderation.Action {
-	case models.ModerationActionRemove:
-		if err := mp.removeContent(ctx, moderation); err != nil {
-			return fmt.Errorf("failed to remove content: %w", err)
-		}
+	// Create decision with extracted data
+	decision := &moderation.ModerationDecision{
+		ObjectID: objectID,
+		Action:   moderation.ActionTypeWarning, // Default
+	}
 
-	case models.ModerationActionSuspend:
-		if err := mp.suspendUser(ctx, moderation); err != nil {
-			return fmt.Errorf("failed to suspend user: %w", err)
-		}
+	// Extract ID if present
+	if idAttr, ok := record.Change.NewImage["ID"]; ok {
+		decision.ID = getStringAttribute(idAttr)
+	}
 
-	case models.ModerationActionSilence:
-		if err := mp.silenceUser(ctx, moderation); err != nil {
-			return fmt.Errorf("failed to silence user: %w", err)
-		}
+	// Extract event ID if present
+	if eventAttr, ok := record.Change.NewImage["EventID"]; ok {
+		decision.EventID = getStringAttribute(eventAttr)
+	}
 
-	case models.ModerationActionWarning:
-		if err := mp.sendWarning(ctx, moderation); err != nil {
-			return fmt.Errorf("failed to send warning: %w", err)
-		}
-
-	case models.ModerationActionDismiss:
-		// Mark as resolved without action
-		moderation.Status = models.ModerationStatusDismissed
-		now := time.Now()
-		moderation.ResolvedAt = &now
-
-	case models.ModerationActionRestore:
-		// Handle content restoration
-		if err := mp.restoreContent(ctx, moderation); err != nil {
-			return fmt.Errorf("failed to restore content: %w", err)
+	// Extract action if present
+	if actionAttr, ok := record.Change.NewImage["Action"]; ok {
+		if action := getStringAttribute(actionAttr); action != "" {
+			decision.Action = moderation.ActionType(action)
 		}
 	}
 
-	// Update the moderation record
-	return mp.moderationRepo.UpdateModeration(ctx, moderation)
+	// Extract reason if present
+	if reasonAttr, ok := record.Change.NewImage["Reason"]; ok {
+		decision.Reason = getStringAttribute(reasonAttr)
+	}
+
+	// Extract consensus score if present
+	if scoreAttr, ok := record.Change.NewImage["ConsensusScore"]; ok {
+		if scoreAttr.DataType() == events.DataTypeNumber {
+			if score, err := scoreAttr.Float(); err == nil {
+				decision.ConsensusScore = score
+			}
+		}
+	}
+
+	return decision, nil
 }
 
-// removeContent removes content from the system
-func (mp *ModerationProcessor) removeContent(ctx context.Context, moderation *models.Moderation) error {
-	mp.logger.Info("Removing content",
-		zap.String("content_id", moderation.ContentID),
-		zap.String("content_type", string(moderation.ContentType)),
-	)
-
-	switch moderation.ContentType {
-	case models.ModerationContentTypeStatus:
-		// Delete the object/status
-		if err := mp.objectRepo.DeleteObject(ctx, moderation.ContentID); err != nil {
-			mp.logger.Error("Failed to delete object", zap.Error(err))
-			// Continue with cleanup even if deletion fails
-		}
-
-		// Clean up related data
-		if err := mp.cleanupRemovedStatus(ctx, moderation.ContentID); err != nil {
-			mp.logger.Error("Failed to clean up removed status",
-				zap.String("status_id", moderation.ContentID),
-				zap.Error(err),
-			)
-		}
-
-	case models.ModerationContentTypeMedia:
-		// Remove media object
-		if err := mp.objectRepo.DeleteObject(ctx, moderation.ContentID); err != nil {
-			return fmt.Errorf("failed to remove media: %w", err)
-		}
-
-	default:
-		mp.logger.Warn("Unsupported content type for removal",
-			zap.String("content_type", string(moderation.ContentType)),
-		)
-	}
-
-	// Send notification to user
-	if err := mp.notifyContentRemoval(ctx, moderation); err != nil {
-		mp.logger.Error("Failed to notify content removal",
-			zap.String("user_id", moderation.UserID),
-			zap.Error(err),
-		)
-	}
-
-	return nil
-}
-
-// suspendUser suspends a user account
-func (mp *ModerationProcessor) suspendUser(ctx context.Context, moderation *models.Moderation) error {
-	mp.logger.Info("Suspending user",
-		zap.String("user_id", moderation.UserID),
-		zap.String("reason", string(moderation.Reason)),
-	)
-
-	// Update user status
-	updates := map[string]any{
-		"suspended":         true,
-		"moderation_reason": fmt.Sprintf("%s: %s", moderation.Reason, moderation.Evidence.TextContent),
-		"moderated_at":      time.Now(),
-	}
-
-	if err := mp.userRepo.UpdateUser(ctx, moderation.UserID, updates); err != nil {
-		return fmt.Errorf("failed to suspend user: %w", err)
-	}
-
-	// Clean up user relationships
-	if err := mp.cleanupSuspendedUser(ctx, moderation.UserID); err != nil {
-		mp.logger.Error("Failed to clean up suspended user",
-			zap.String("user_id", moderation.UserID),
-			zap.Error(err),
-		)
-	}
-
-	// Send notification
-	if err := mp.notifyUserSuspension(ctx, moderation); err != nil {
-		mp.logger.Error("Failed to notify user suspension",
-			zap.String("user_id", moderation.UserID),
-			zap.Error(err),
-		)
-	}
-
-	return nil
-}
-
-// silenceUser silences a user account
-func (mp *ModerationProcessor) silenceUser(ctx context.Context, moderation *models.Moderation) error {
-	mp.logger.Info("Silencing user",
-		zap.String("user_id", moderation.UserID),
-		zap.String("reason", string(moderation.Reason)),
-	)
-
-	// Update user status
-	updates := map[string]any{
-		"silenced":          true,
-		"moderation_reason": fmt.Sprintf("%s: %s", moderation.Reason, moderation.GetPrimaryProhibitedWord()),
-		"moderated_at":      time.Now(),
-	}
-
-	if err := mp.userRepo.UpdateUser(ctx, moderation.UserID, updates); err != nil {
-		return fmt.Errorf("failed to silence user: %w", err)
-	}
-
-	// Send notification
-	if err := mp.notifyUserSilencing(ctx, moderation); err != nil {
-		mp.logger.Error("Failed to notify user silencing",
-			zap.String("user_id", moderation.UserID),
-			zap.Error(err),
-		)
-	}
-
-	return nil
-}
-
-// sendWarning sends a warning to the user
-func (mp *ModerationProcessor) sendWarning(ctx context.Context, moderation *models.Moderation) error {
-	mp.logger.Info("Sending warning to user",
-		zap.String("user_id", moderation.UserID),
-		zap.String("reason", string(moderation.Reason)),
-	)
-
-	// Create warning notification using DynamORM model
-	notification := models.NewNotificationBuilder().
-		ForUser(moderation.UserID).
-		OfType("moderation_warning").
-		FromActor("system", "system").
-		AboutTarget(moderation.ContentID, "status").
-		WithContent("Moderation Warning", fmt.Sprintf("Content moderated for: %s", moderation.Reason)).
-		Build()
-
-	return mp.db.WithContext(ctx).Model(notification).Create()
-}
-
-// restoreContent restores previously moderated content
-func (mp *ModerationProcessor) restoreContent(ctx context.Context, moderation *models.Moderation) error {
-	mp.logger.Info("Restoring content",
-		zap.String("content_id", moderation.ContentID),
-		zap.String("content_type", string(moderation.ContentType)),
-	)
-
-	// For now, log the restoration
-	// In a real system, this would restore from a tombstone or backup
-	mp.logger.Info("Content restoration completed",
-		zap.String("content_id", moderation.ContentID),
-	)
-
-	return nil
-}
-
-// sendForHumanReview sends moderation case for human review
-func (mp *ModerationProcessor) sendForHumanReview(ctx context.Context, moderation *models.Moderation) error {
-	mp.logger.Info("Sending moderation for human review",
-		zap.String("moderation_id", moderation.ModerationID),
-		zap.Float64("confidence", moderation.Evidence.ConfidenceScore),
-		zap.Bool("requires_review", moderation.Evidence.RequiresReview),
-	)
-
-	// Update status to reviewing
-	moderation.Status = models.ModerationStatusReviewing
-	moderation.AddHistoryEntry("system", "automated", models.ModerationActionWarning,
-		models.ModerationStatusPending, models.ModerationStatusReviewing,
-		"Sent for human review due to low confidence or high risk")
-
-	if err := mp.moderationRepo.UpdateModeration(ctx, moderation); err != nil {
-		return fmt.Errorf("failed to update moderation status: %w", err)
-	}
-
-	// Notify moderators
-	return mp.notifyModeratorsForReview(ctx, moderation)
-}
-
-// notifyModeratorsForReview notifies moderators about cases needing review
-func (mp *ModerationProcessor) notifyModeratorsForReview(ctx context.Context, moderation *models.Moderation) error {
-	// Get moderators
-	moderators, err := mp.getModerators(ctx)
+// sendModeratorNotification sends notifications to moderators about moderation events
+func sendModeratorNotification(ctx context.Context, event *moderation.ModerationEvent) error {
+	// Get list of moderators - using ListUsers with role filter
+	users, _, err := store.ListUsers(ctx, 100, "") // Get first 100 users
 	if err != nil {
-		return fmt.Errorf("failed to get moderators: %w", err)
+		return fmt.Errorf("failed to get users: %w", err)
+	}
+
+	// Filter for moderators
+	var moderators []string
+	for _, user := range users {
+		if user.Role == "moderator" || user.Role == "admin" {
+			moderators = append(moderators, user.Username)
+		}
 	}
 
 	// Create notification for each moderator
-	for _, moderator := range moderators {
-		notification := models.NewNotificationBuilder().
-			ForUser(moderator.Username).
-			OfType("moderation_review").
-			FromActor(moderation.UserID, "user").
-			AboutTarget(moderation.ContentID, "moderation").
-			WithContent("Moderation Review Required", fmt.Sprintf("Content needs review: %s", moderation.Reason)).
-			WithData("moderation_id", moderation.ModerationID).
-			Build()
+	for _, moderatorID := range moderators {
+		notification := &storage.Notification{
+			ID:        fmt.Sprintf("mod_%s_%d", event.ID, time.Now().UnixNano()),
+			Username:  moderatorID,
+			Type:      "moderation",
+			CreatedAt: time.Now(),
+			AccountID: event.ActorID,
+			StatusID:  event.ObjectID,
+		}
 
-		if err := mp.db.WithContext(ctx).Model(notification).Create(); err != nil {
-			mp.logger.Error("Failed to create moderator notification",
-				zap.String("moderator", moderator.Username),
+		if err := store.CreateNotification(ctx, notification); err != nil {
+			logger.Error("Failed to create notification",
+				zap.String("moderator_id", moderatorID),
 				zap.Error(err),
 			)
 		}
@@ -488,149 +458,84 @@ func (mp *ModerationProcessor) notifyModeratorsForReview(ctx context.Context, mo
 	return nil
 }
 
-// getModerators retrieves all users with moderator or admin role
-func (mp *ModerationProcessor) getModerators(ctx context.Context) ([]*models.User, error) {
-	// For now, return empty slice as we need to implement proper user filtering in DynamORM
-	// TODO: Implement GetUsersByRole in UserRepository
-	mp.logger.Info("Getting moderators - placeholder implementation")
-	return []*models.User{}, nil
-}
+// triggerAutomaticActions triggers automatic actions based on event severity
+func triggerAutomaticActions(ctx context.Context, event *moderation.ModerationEvent) error {
+	// High severity events trigger automatic actions
+	if event.Severity >= 8 {
+		logger.Info("High severity event - triggering automatic action",
+			zap.String("event_id", event.ID),
+			zap.Int("severity", int(event.Severity)),
+		)
 
-// cleanupRemovedStatus cleans up data related to a removed status
-func (mp *ModerationProcessor) cleanupRemovedStatus(ctx context.Context, statusID string) error {
-	// Remove from timelines using available method
-	if err := mp.timelineRepo.DeleteTimelineEntriesByPost(ctx, statusID); err != nil {
-		mp.logger.Error("Failed to remove from timelines", zap.Error(err))
-	}
+		// Create automatic review from system
+		review := &moderation.Review{
+			ID:         fmt.Sprintf("auto_%s_%d", event.ID, time.Now().UnixNano()),
+			EventID:    event.ID,
+			ReviewerID: "system",
+			Action:     moderation.ActionTypeRemove,
+			Weight:     1000.0, // System reviews have high weight
+			Created:    time.Now(),
+		}
 
-	// Note: Individual like/activity cleanup would require specific queries
-	// For now, we rely on the object deletion removing the main content
-	mp.logger.Info("Status cleanup completed", zap.String("status_id", statusID))
+		if err := store.AddModerationReview(ctx, review); err != nil {
+			return fmt.Errorf("failed to add automatic review: %w", err)
+		}
 
-	return nil
-}
+		// Process immediately to potentially trigger consensus
+		decision, err := consensusEngine.ProcessReview(ctx, event.ID, review)
+		if err != nil {
+			return fmt.Errorf("failed to process automatic review: %w", err)
+		}
 
-// cleanupSuspendedUser cleans up data for a suspended user
-func (mp *ModerationProcessor) cleanupSuspendedUser(ctx context.Context, userID string) error {
-	// Note: For suspended users, we typically don't delete all relationships
-	// Instead, we mark them as suspended which affects visibility
-	// This is a placeholder for any specific cleanup needed during suspension
-	mp.logger.Info("User suspension cleanup completed", zap.String("user_id", userID))
-
-	// In a full implementation, we might:
-	// - Remove pending follow requests
-	// - Update activity visibility
-	// - Clear cached data
-
-	return nil
-}
-
-// notifyContentRemoval notifies user about content removal
-func (mp *ModerationProcessor) notifyContentRemoval(ctx context.Context, moderation *models.Moderation) error {
-	notification := models.NewNotificationBuilder().
-		ForUser(moderation.UserID).
-		OfType("content_removed").
-		FromActor("system", "system").
-		AboutTarget(moderation.ContentID, "status").
-		WithContent("Content Removed", fmt.Sprintf("Your content was removed for: %s", moderation.Reason)).
-		WithData("moderation_id", moderation.ModerationID).
-		Build()
-
-	return mp.db.WithContext(ctx).Model(notification).Create()
-}
-
-// notifyUserSuspension notifies user about account suspension
-func (mp *ModerationProcessor) notifyUserSuspension(ctx context.Context, moderation *models.Moderation) error {
-	notification := models.NewNotificationBuilder().
-		ForUser(moderation.UserID).
-		OfType("account_suspended").
-		FromActor("system", "system").
-		AboutTarget(moderation.UserID, "user").
-		WithContent("Account Suspended", fmt.Sprintf("Your account was suspended for: %s", moderation.Reason)).
-		WithData("moderation_id", moderation.ModerationID).
-		Build()
-
-	return mp.db.WithContext(ctx).Model(notification).Create()
-}
-
-// notifyUserSilencing notifies user about account silencing
-func (mp *ModerationProcessor) notifyUserSilencing(ctx context.Context, moderation *models.Moderation) error {
-	notification := models.NewNotificationBuilder().
-		ForUser(moderation.UserID).
-		OfType("account_silenced").
-		FromActor("system", "system").
-		AboutTarget(moderation.UserID, "user").
-		WithContent("Account Silenced", fmt.Sprintf("Your account was silenced for: %s", moderation.Reason)).
-		WithData("moderation_id", moderation.ModerationID).
-		Build()
-
-	return mp.db.WithContext(ctx).Model(notification).Create()
-}
-
-// extractUsernameFromActorID extracts username from an actor ID
-func (mp *ModerationProcessor) extractUsernameFromActorID(actorID string) string {
-	// For local actors: https://domain.com/users/username -> username
-	if strings.Contains(actorID, "/users/") {
-		parts := strings.Split(actorID, "/users/")
-		if len(parts) == 2 {
-			return parts[1]
+		if decision != nil {
+			logger.Info("Automatic decision made",
+				zap.String("event_id", event.ID),
+				zap.String("decision_id", decision.ID),
+				zap.String("action", string(decision.Action)),
+			)
 		}
 	}
 
-	// For simple usernames without URL
-	if !strings.Contains(actorID, "://") {
-		return actorID
-	}
-
-	return "" // Unable to extract
+	return nil
 }
 
-// processRateLimitViolation processes rate limit violations
-func (mp *ModerationProcessor) processRateLimitViolation(ctx context.Context, userID string, action string) error {
-	// Check rate limit status
-	result, err := mp.moderationRepo.CheckRateLimit(ctx, userID, action, 10, time.Hour)
-	if err != nil {
-		return fmt.Errorf("failed to check rate limit: %w", err)
+// silenceAccount silences a user account
+func silenceAccount(ctx context.Context, username string, reason string) error {
+	updates := map[string]interface{}{
+		"silenced":    true,
+		"silenced_at": time.Now().Format(time.RFC3339),
+		"silenced_reason": reason,
 	}
+	
+	return store.UpdateUser(ctx, username, updates)
+}
 
-	if !result.Exceeded {
-		return nil
+// suspendAccount suspends a user account
+func suspendAccount(ctx context.Context, username string, reason string) error {
+	updates := map[string]interface{}{
+		"suspended":    true,
+		"suspended_at": time.Now().Format(time.RFC3339),
+		"suspended_reason": reason,
 	}
+	
+	return store.UpdateUser(ctx, username, updates)
+}
 
-	// Create moderation for rate limit violation
-	moderation := &models.Moderation{
-		ContentID:     fmt.Sprintf("rate_limit_%s_%d", userID, time.Now().Unix()),
-		ContentType:   models.ModerationContentTypeUser,
-		UserID:        userID,
-		Action:        models.ModerationActionWarning,
-		Reason:        models.ModerationReasonRateLimiting,
-		ModeratorID:   "system",
-		ModeratorType: "automated",
-		Evidence: models.ModerationEvidence{
-			RequestCount:    result.CurrentCount,
-			RequestPeriod:   result.Period.String(),
-			ViolationCount:  result.ViolationCount,
-			AverageInterval: result.AverageInterval,
-			ConfidenceScore: 1.0,
-		},
+// removeContent removes content (status/object)
+func removeContent(ctx context.Context, objectID string) error {
+	// Delete the object
+	return store.DeleteObject(ctx, objectID)
+}
+
+// Helper functions to extract data from DynamoDB records
+
+func getStringAttribute(attr events.DynamoDBAttributeValue) string {
+	if attr.DataType() == events.DataTypeString {
+		return attr.String()
 	}
-
-	// Escalate action based on violation severity
-	severity := moderation.GetRateLimitViolationSeverity()
-	if severity == "severe" {
-		moderation.Action = models.ModerationActionSuspend
-	} else if severity == "moderate" {
-		moderation.Action = models.ModerationActionSilence
-	}
-
-	// Create and execute moderation
-	if err := mp.moderationRepo.CreateModeration(ctx, moderation); err != nil {
-		return fmt.Errorf("failed to create rate limit moderation: %w", err)
-	}
-
-	return mp.executeModeration(ctx, moderation)
+	return ""
 }
 
 func main() {
-	lambda.Start(HandleSQS)
+	lambda.Start(handler)
 }

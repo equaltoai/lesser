@@ -22,13 +22,17 @@ import (
 
 // ActorRepository implements actor operations using DynamORM
 type ActorRepository struct {
-	db core.DB
+	db        core.DB
+	tableName string
+	logger    *zap.Logger
 }
 
 // NewActorRepository creates a new actor repository
-func NewActorRepository(db core.DB) *ActorRepository {
+func NewActorRepository(db core.DB, tableName string, logger *zap.Logger) *ActorRepository {
 	return &ActorRepository{
-		db: db,
+		db:        db,
+		tableName: tableName,
+		logger:    logger,
 	}
 }
 
@@ -91,8 +95,8 @@ func (r *ActorRepository) GetActor(ctx context.Context, username string) (*activ
 	var actorModel models.Actor
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "actor#"+username).
-		Where("SK", "=", "actor#"+username).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
 		First(&actorModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -109,8 +113,8 @@ func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username str
 	var actorModel models.Actor
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "actor#"+username).
-		Where("SK", "=", "actor#"+username).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
 		First(&actorModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -131,20 +135,21 @@ func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username str
 
 // GetActorByNumericID retrieves an actor by numeric ID
 func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID string) (*activitypub.Actor, error) {
-	// Query by numeric ID using scan (could be optimized with GSI)
-	var actors []models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Filter("NumericID", "=", numericID).
-		Scan(&actors)
+	// First get the numeric ID mapping
+	var mapping models.NumericIDMapping
+	err := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
+		Where("PK", "=", "NUMERIC_ID#"+numericID).
+		Where("SK", "=", "METADATA").
+		First(&mapping)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query actor by numeric ID: %w", err)
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("actor not found: %s", numericID)
+		}
+		return nil, fmt.Errorf("failed to get numeric ID mapping: %w", err)
 	}
 
-	if len(actors) == 0 {
-		return nil, fmt.Errorf("actor not found: %s", numericID)
-	}
-
-	return actors[0].Actor, nil
+	// Now get the actual actor using the username
+	return r.GetActor(ctx, mapping.Username)
 }
 
 // GetActorPrivateKey retrieves an actor's private key
@@ -152,8 +157,8 @@ func (r *ActorRepository) GetActorPrivateKey(ctx context.Context, username strin
 	var actorModel models.Actor
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "actor#"+username).
-		Where("SK", "=", "actor#"+username).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
 		Select("PrivateKey").
 		First(&actorModel)
 	if err != nil {
@@ -188,8 +193,8 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 	// Get existing actor first
 	var actorModel models.Actor
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "actor#"+username).
-		Where("SK", "=", "actor#"+username).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
 		First(&actorModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -215,8 +220,8 @@ func (r *ActorRepository) UpdateActorLastStatusTime(ctx context.Context, usernam
 	// Get existing actor first
 	var actorModel models.Actor
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "actor#"+username).
-		Where("SK", "=", "actor#"+username).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
 		First(&actorModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -243,8 +248,8 @@ func (r *ActorRepository) SetActorFields(ctx context.Context, username string, f
 	// Get existing actor first
 	var actorModel models.Actor
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "actor#"+username).
-		Where("SK", "=", "actor#"+username).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
 		First(&actorModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -269,8 +274,8 @@ func (r *ActorRepository) SetActorFields(ctx context.Context, username string, f
 func (r *ActorRepository) DeleteActor(ctx context.Context, username string) error {
 	// Delete the actor using DynamORM
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "actor#"+username).
-		Where("SK", "=", "actor#"+username).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
 		Delete()
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -425,8 +430,8 @@ func (r *ActorRepository) GetActorByUsername(ctx context.Context, username strin
 	
 	query := r.db.Model(&actorModel).
 		Where("PK = ? AND SK = ?",
-			fmt.Sprintf("actor#%s", username),
-			fmt.Sprintf("actor#%s", username))
+			fmt.Sprintf("ACTOR#%s", username),
+			"PROFILE")
 
 	if err := query.First(&actorModel); err != nil {
 		if errors.IsNotFound(err) {

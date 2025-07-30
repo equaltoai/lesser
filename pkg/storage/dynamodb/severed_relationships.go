@@ -8,47 +8,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
-// SeveranceReason represents why a federation relationship was severed
-type SeveranceReason string
-
-const (
-	SeveranceReasonBlocked     SeveranceReason = "blocked"
-	SeveranceReasonUnavailable SeveranceReason = "unavailable"
-	SeveranceReasonSuspended   SeveranceReason = "suspended"
-	SeveranceReasonDefederated SeveranceReason = "defederated"
-	SeveranceReasonLimited     SeveranceReason = "limited"
-)
-
-// SeveredRelationship represents a broken federation relationship
-type SeveredRelationship struct {
-	ID              string           `dynamodbav:"ID"`
-	LocalInstance   string           `dynamodbav:"LocalInstance"`
-	RemoteInstance  string           `dynamodbav:"RemoteInstance"`
-	Reason          SeveranceReason  `dynamodbav:"Reason"`
-	AffectedFollows []AffectedFollow `dynamodbav:"AffectedFollows"`
-	Timestamp       time.Time        `dynamodbav:"Timestamp"`
-	Reversible      bool             `dynamodbav:"Reversible"`
-	Details         string           `dynamodbav:"Details,omitempty"`
-	EstimatedImpact int              `dynamodbav:"EstimatedImpact"` // Number of affected relationships
-
+// SeveredRelationshipRecord is the DynamoDB record for SeveredRelationship
+type SeveredRelationshipRecord struct {
+	storage.SeveredRelationship
 	// DynamoDB keys
 	PK string `dynamodbav:"PK"` // SEVERED#localInstance#remoteInstance
 	SK string `dynamodbav:"SK"` // TIMESTAMP#timestamp
 }
 
-// AffectedFollow represents a follow relationship affected by severance
-type AffectedFollow struct {
-	LocalUser    string    `dynamodbav:"LocalUser"`
-	RemoteUser   string    `dynamodbav:"RemoteUser"`
-	Direction    string    `dynamodbav:"Direction"` // "following", "follower", "mutual"
-	LastActivity time.Time `dynamodbav:"LastActivity"`
-}
-
 // CreateSeveredRelationship records a new severed federation relationship
-func (s *dynamoDBStorage) CreateSeveredRelationship(ctx context.Context, rel *SeveredRelationship) error {
+func (s *dynamoDBStorage) CreateSeveredRelationship(ctx context.Context, rel *storage.SeveredRelationship) error {
 	// Generate ID if not provided
 	if rel.ID == "" {
 		rel.ID = fmt.Sprintf("%s-%s-%d", rel.LocalInstance, rel.RemoteInstance, time.Now().Unix())
@@ -59,12 +32,15 @@ func (s *dynamoDBStorage) CreateSeveredRelationship(ctx context.Context, rel *Se
 		rel.Timestamp = time.Now()
 	}
 
-	// Set DynamoDB keys
-	rel.PK = fmt.Sprintf("SEVERED#%s#%s", rel.LocalInstance, rel.RemoteInstance)
-	rel.SK = fmt.Sprintf("TIMESTAMP#%d", rel.Timestamp.Unix())
+	// Create record with DynamoDB keys
+	record := &SeveredRelationshipRecord{
+		SeveredRelationship: *rel,
+		PK: fmt.Sprintf("SEVERED#%s#%s", rel.LocalInstance, rel.RemoteInstance),
+		SK: fmt.Sprintf("TIMESTAMP#%d", rel.Timestamp.Unix()),
+	}
 
 	// Marshal the relationship
-	av, err := s.MarshalItem(rel)
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal severed relationship: %w", err)
 	}
@@ -90,7 +66,7 @@ func (s *dynamoDBStorage) CreateSeveredRelationship(ctx context.Context, rel *Se
 }
 
 // GetSeveredRelationships retrieves severed relationships for a local instance
-func (s *dynamoDBStorage) GetSeveredRelationships(ctx context.Context, localInstance string, limit int, cursor string) ([]*SeveredRelationship, string, error) {
+func (s *dynamoDBStorage) GetSeveredRelationships(ctx context.Context, localInstance string, limit int, cursor string) ([]*storage.SeveredRelationship, string, error) {
 	var exclusiveStartKey map[string]types.AttributeValue
 	if cursor != "" {
 		exclusiveStartKey = map[string]types.AttributeValue{
@@ -117,13 +93,14 @@ func (s *dynamoDBStorage) GetSeveredRelationships(ctx context.Context, localInst
 	}
 
 	// Unmarshal results
-	relationships := make([]*SeveredRelationship, 0, len(result.Items))
+	relationships := make([]*storage.SeveredRelationship, 0, len(result.Items))
 	for _, item := range result.Items {
-		var rel SeveredRelationship
-		if err := s.UnmarshalItem(item, &rel); err != nil {
+		var record SeveredRelationshipRecord
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			s.logger().Warn("failed to unmarshal severed relationship", zap.Error(err))
 			continue
 		}
+		rel := record.SeveredRelationship
 		relationships = append(relationships, &rel)
 	}
 
@@ -141,7 +118,7 @@ func (s *dynamoDBStorage) GetSeveredRelationships(ctx context.Context, localInst
 }
 
 // GetSeveredRelationship retrieves a specific severed relationship
-func (s *dynamoDBStorage) GetSeveredRelationship(ctx context.Context, localInstance, remoteInstance string) (*SeveredRelationship, error) {
+func (s *dynamoDBStorage) GetSeveredRelationship(ctx context.Context, localInstance, remoteInstance string) (*storage.SeveredRelationship, error) {
 	// Query for the most recent severance between these instances
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
@@ -162,22 +139,27 @@ func (s *dynamoDBStorage) GetSeveredRelationship(ctx context.Context, localInsta
 		return nil, fmt.Errorf("no severed relationship found between %s and %s", localInstance, remoteInstance)
 	}
 
-	var rel SeveredRelationship
-	if err := s.UnmarshalItem(result.Items[0], &rel); err != nil {
+	var record SeveredRelationshipRecord
+	if err := s.UnmarshalItem(result.Items[0], &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal severed relationship: %w", err)
 	}
-
+	
+	rel := record.SeveredRelationship
 	return &rel, nil
 }
 
 // UpdateSeveredRelationship updates an existing severed relationship
-func (s *dynamoDBStorage) UpdateSeveredRelationship(ctx context.Context, rel *SeveredRelationship) error {
+func (s *dynamoDBStorage) UpdateSeveredRelationship(ctx context.Context, rel *storage.SeveredRelationship) error {
+	// Calculate DynamoDB keys
+	pk := fmt.Sprintf("SEVERED#%s#%s", rel.LocalInstance, rel.RemoteInstance)
+	sk := fmt.Sprintf("TIMESTAMP#%d", rel.Timestamp.Unix())
+	
 	// Update the relationship
 	updateInput := &dynamodb.UpdateItemInput{
 		TableName: aws.String(s.tableName),
 		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: rel.PK},
-			"SK": &types.AttributeValueMemberS{Value: rel.SK},
+			"PK": &types.AttributeValueMemberS{Value: pk},
+			"SK": &types.AttributeValueMemberS{Value: sk},
 		},
 		UpdateExpression: aws.String("SET #reason = :reason, Reversible = :reversible, Details = :details, EstimatedImpact = :impact"),
 		ExpressionAttributeNames: map[string]string{
@@ -201,7 +183,7 @@ func (s *dynamoDBStorage) UpdateSeveredRelationship(ctx context.Context, rel *Se
 }
 
 // GetAffectedFollows retrieves follow relationships affected by a severance
-func (s *dynamoDBStorage) GetAffectedFollows(ctx context.Context, localInstance, remoteInstance string) ([]AffectedFollow, error) {
+func (s *dynamoDBStorage) GetAffectedFollows(ctx context.Context, localInstance, remoteInstance string) ([]storage.AffectedFollow, error) {
 	// Get the severed relationship
 	rel, err := s.GetSeveredRelationship(ctx, localInstance, remoteInstance)
 	if err != nil {
@@ -212,7 +194,7 @@ func (s *dynamoDBStorage) GetAffectedFollows(ctx context.Context, localInstance,
 }
 
 // RecordAffectedFollow adds an affected follow to a severed relationship
-func (s *dynamoDBStorage) RecordAffectedFollow(ctx context.Context, localInstance, remoteInstance string, follow AffectedFollow) error {
+func (s *dynamoDBStorage) RecordAffectedFollow(ctx context.Context, localInstance, remoteInstance string, follow storage.AffectedFollow) error {
 	// Get the current relationship
 	rel, err := s.GetSeveredRelationship(ctx, localInstance, remoteInstance)
 	if err != nil {
@@ -223,8 +205,15 @@ func (s *dynamoDBStorage) RecordAffectedFollow(ctx context.Context, localInstanc
 	rel.AffectedFollows = append(rel.AffectedFollows, follow)
 	rel.EstimatedImpact = len(rel.AffectedFollows)
 
-	// Update the relationship
-	av, err := s.MarshalItem(rel)
+	// Create record with DynamoDB keys for update
+	record := &SeveredRelationshipRecord{
+		SeveredRelationship: *rel,
+		PK: fmt.Sprintf("SEVERED#%s#%s", rel.LocalInstance, rel.RemoteInstance),
+		SK: fmt.Sprintf("TIMESTAMP#%d", rel.Timestamp.Unix()),
+	}
+	
+	// Marshal and update
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal updated relationship: %w", err)
 	}
@@ -253,7 +242,7 @@ func (s *dynamoDBStorage) ReverseSeverance(ctx context.Context, localInstance, r
 	}
 
 	// Create a new "restored" entry
-	restored := &SeveredRelationship{
+	restored := &storage.SeveredRelationship{
 		ID:              fmt.Sprintf("%s-restored-%d", rel.ID, time.Now().Unix()),
 		LocalInstance:   localInstance,
 		RemoteInstance:  remoteInstance,
@@ -262,11 +251,16 @@ func (s *dynamoDBStorage) ReverseSeverance(ctx context.Context, localInstance, r
 		Reversible:      false,
 		Details:         fmt.Sprintf("Relationship restored after previous severance: %s", rel.Reason),
 		EstimatedImpact: 0,
-		PK:              rel.PK,
-		SK:              fmt.Sprintf("TIMESTAMP#%d", time.Now().Unix()),
 	}
 
-	av, err := s.MarshalItem(restored)
+	// Create record with DynamoDB keys
+	record := &SeveredRelationshipRecord{
+		SeveredRelationship: *restored,
+		PK: fmt.Sprintf("SEVERED#%s#%s", restored.LocalInstance, restored.RemoteInstance),
+		SK: fmt.Sprintf("TIMESTAMP#%d", restored.Timestamp.Unix()),
+	}
+
+	av, err := s.MarshalItem(record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal restored relationship: %w", err)
 	}
@@ -287,7 +281,7 @@ func (s *dynamoDBStorage) ReverseSeverance(ctx context.Context, localInstance, r
 }
 
 // GetSeveranceHistory retrieves the history of severances between two instances
-func (s *dynamoDBStorage) GetSeveranceHistory(ctx context.Context, localInstance, remoteInstance string, limit int) ([]*SeveredRelationship, error) {
+func (s *dynamoDBStorage) GetSeveranceHistory(ctx context.Context, localInstance, remoteInstance string, limit int) ([]*storage.SeveredRelationship, error) {
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
 		KeyConditionExpression: aws.String("PK = :pk"),
@@ -303,13 +297,14 @@ func (s *dynamoDBStorage) GetSeveranceHistory(ctx context.Context, localInstance
 		return nil, fmt.Errorf("failed to query severance history: %w", err)
 	}
 
-	history := make([]*SeveredRelationship, 0, len(result.Items))
+	history := make([]*storage.SeveredRelationship, 0, len(result.Items))
 	for _, item := range result.Items {
-		var rel SeveredRelationship
-		if err := s.UnmarshalItem(item, &rel); err != nil {
+		var record SeveredRelationshipRecord
+		if err := s.UnmarshalItem(item, &record); err != nil {
 			s.logger().Warn("failed to unmarshal severance history item", zap.Error(err))
 			continue
 		}
+		rel := record.SeveredRelationship
 		history = append(history, &rel)
 	}
 

@@ -25,7 +25,7 @@ func NewDynamORMFederationStorage(
 	tableName string,
 ) *DynamORMFederationStorage {
 	return &DynamORMFederationStorage{
-		actorRepository:              repositories.NewActorRepository(db),
+		actorRepository:              repositories.NewActorRepository(db, tableName, nil),
 		federationActivityRepository: repositories.NewFederationActivityRepository(db, tableName, nil),
 	}
 }

@@ -5,21 +5,26 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/dynamorm/pkg/errors"
+	"go.uber.org/zap"
 )
 
 // NotificationRepository handles notification operations using DynamORM
 type NotificationRepository struct {
 	db        core.DB
 	tableName string
+	logger    *zap.Logger
 }
 
 // NewNotificationRepository creates a new notification repository
-func NewNotificationRepository(db core.DB, tableName string) *NotificationRepository {
+func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger) *NotificationRepository {
 	return &NotificationRepository{
 		db:        db,
 		tableName: tableName,
+		logger:    logger,
 	}
 }
 
@@ -467,4 +472,770 @@ type DeliveryStats struct {
 	Unread     int `json:"unread"`
 	PushSent   int `json:"push_sent"`
 	PushFailed int `json:"push_failed"`
+}
+
+// GetNotificationsFiltered retrieves notifications with filtering options using legacy key patterns
+func (r *NotificationRepository) GetNotificationsFiltered(ctx context.Context, username string, filter *storage.NotificationFilter) ([]*storage.Notification, string, error) {
+	// Query all notifications for the user and filter in memory (matching legacy behavior)
+	pk := fmt.Sprintf("NOTIFICATIONS#%s", username)
+	
+	// Set reasonable limit
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	
+	var legacyNotifications []*models.NotificationLegacy
+	err := r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).
+		Where("PK", "=", pk).
+		OrderBy("SK", "DESC"). // Newest first
+		Limit(limit).
+		All(&legacyNotifications)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to query notifications: %w", err)
+	}
+	
+	// Convert to storage.Notification and apply filters
+	filtered := make([]*storage.Notification, 0)
+	
+	for _, record := range legacyNotifications {
+		// Apply type filters
+		if len(filter.Types) > 0 {
+			found := false
+			for _, t := range filter.Types {
+				if record.Type == t {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		
+		// Apply exclude type filters
+		if len(filter.ExcludeTypes) > 0 {
+			excluded := false
+			for _, t := range filter.ExcludeTypes {
+				if record.Type == t {
+					excluded = true
+					break
+				}
+			}
+			if excluded {
+				continue
+			}
+		}
+		
+		// Apply account filter
+		if filter.AccountID != "" && record.AccountID != filter.AccountID {
+			continue
+		}
+		
+		// Apply ID filters
+		if filter.MinID != "" && record.ID <= filter.MinID {
+			continue
+		}
+		if filter.MaxID != "" && record.ID >= filter.MaxID {
+			continue
+		}
+		if filter.SinceID != "" && record.ID <= filter.SinceID {
+			continue
+		}
+		
+		// Convert to storage.Notification
+		notification := &storage.Notification{
+			ID:        record.ID,
+			Type:      record.Type,
+			Username:  record.Username,
+			AccountID: record.AccountID,
+			StatusID:  record.StatusID,
+			Read:      record.Read,
+			CreatedAt: time.Unix(record.CreatedAt, 0),
+		}
+		
+		filtered = append(filtered, notification)
+	}
+	
+	// Apply final limit
+	if len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+	
+	return filtered, "", nil
+}
+
+// MarkAllNotificationsAsRead marks all notifications as read for a user using legacy key patterns
+func (r *NotificationRepository) MarkAllNotificationsAsRead(ctx context.Context, username string) error {
+	// Query all unread notifications
+	pk := fmt.Sprintf("NOTIFICATIONS#%s", username)
+	
+	var notifications []*models.NotificationLegacy
+	err := r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).
+		Where("PK", "=", pk).
+		Filter("Read", "=", false).
+		Limit(100). // Process in chunks
+		All(&notifications)
+	if err != nil {
+		return fmt.Errorf("failed to query unread notifications: %w", err)
+	}
+	
+	// Update each notification individually (matching legacy behavior)
+	for _, notif := range notifications {
+		notif.Read = true
+		err := r.db.WithContext(ctx).Model(notif).Update()
+		if err != nil {
+			r.logger.Warn("failed to mark notification as read",
+				zap.String("notification_id", notif.ID),
+				zap.Error(err))
+		}
+	}
+	
+	return nil
+}
+
+// GetNotificationsAdvanced retrieves notifications with advanced filtering using legacy key patterns
+func (r *NotificationRepository) GetNotificationsAdvanced(ctx context.Context, userID string, excludeTypes []string, maxID, sinceID, minID *string, limit int, includeFiltered bool) ([]*storage.Notification, error) {
+	pk := fmt.Sprintf("NOTIFICATIONS#%s", userID)
+	
+	// Build query
+	query := r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).
+		Where("PK", "=", pk).
+		OrderBy("SK", "DESC") // Recent first
+	
+	// Get more items for filtering
+	if limit <= 0 {
+		limit = 20
+	}
+	query = query.Limit(limit * 2)
+	
+	var notifications []*models.NotificationLegacy
+	err := query.All(&notifications)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query notifications: %w", err)
+	}
+	
+	// Convert and filter
+	result := make([]*storage.Notification, 0)
+	
+	for _, record := range notifications {
+		// Apply exclude types filter
+		if len(excludeTypes) > 0 {
+			excluded := false
+			for _, excludeType := range excludeTypes {
+				if record.Type == excludeType {
+					excluded = true
+					break
+				}
+			}
+			if excluded {
+				continue
+			}
+		}
+		
+		// Apply ID filters
+		if maxID != nil && record.SK >= *maxID {
+			continue
+		}
+		if minID != nil && record.SK <= *minID {
+			continue
+		}
+		if sinceID != nil && record.SK <= *sinceID {
+			continue
+		}
+		
+		// Convert to storage.Notification
+		notification := &storage.Notification{
+			ID:        record.ID,
+			Type:      record.Type,
+			Username:  record.Username,
+			AccountID: record.AccountID,
+			StatusID:  record.StatusID,
+			Read:      record.Read,
+			CreatedAt: time.Unix(record.CreatedAt, 0),
+		}
+		
+		result = append(result, notification)
+		
+		if len(result) >= limit {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// GetUnreadNotificationCount returns the count of unread notifications using legacy key patterns
+func (r *NotificationRepository) GetUnreadNotificationCount(ctx context.Context, userID string) (int64, error) {
+	pk := fmt.Sprintf("NOTIFICATIONS#%s", userID)
+	
+	count, err := r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).
+		Where("PK", "=", pk).
+		Filter("Read", "=", false).
+		Count()
+	if err != nil {
+		return 0, fmt.Errorf("failed to count unread notifications: %w", err)
+	}
+	
+	return count, nil
+}
+
+// GetNotificationPreferences retrieves notification preferences for a user
+func (r *NotificationRepository) GetNotificationPreferences(ctx context.Context, username string) (*storage.NotificationPreferences, error) {
+	var prefs models.NotificationPreferences
+	prefs.Username = username
+	prefs.UpdateKeys()
+	
+	err := r.db.WithContext(ctx).Model(&models.NotificationPreferences{}).
+		Where("PK", "=", prefs.PK).
+		Where("SK", "=", prefs.SK).
+		First(&prefs)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Return nil if not found (not an error)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get notification preferences: %w", err)
+	}
+	
+	// Convert to storage.NotificationPreferences
+	result := &storage.NotificationPreferences{
+		Username:        prefs.Username,
+		EmailEnabled:    prefs.EmailEnabled,
+		PushEnabled:     prefs.PushEnabled,
+		FollowEnabled:   prefs.FollowEnabled,
+		MentionEnabled:  prefs.MentionEnabled,
+		ReblogEnabled:   prefs.ReblogEnabled,
+		FavoriteEnabled: prefs.FavoriteEnabled,
+		PollEnabled:     prefs.PollEnabled,
+		UpdatedAt:       prefs.UpdatedAt,
+	}
+	
+	return result, nil
+}
+
+// UpdateNotificationPreferences creates or updates notification preferences for a user
+func (r *NotificationRepository) UpdateNotificationPreferences(ctx context.Context, username string, prefs *storage.NotificationPreferences) error {
+	// Create model
+	modelPrefs := &models.NotificationPreferences{
+		Username:        username,
+		EmailEnabled:    prefs.EmailEnabled,
+		PushEnabled:     prefs.PushEnabled,
+		FollowEnabled:   prefs.FollowEnabled,
+		MentionEnabled:  prefs.MentionEnabled,
+		ReblogEnabled:   prefs.ReblogEnabled,
+		FavoriteEnabled: prefs.FavoriteEnabled,
+		PollEnabled:     prefs.PollEnabled,
+	}
+	
+	// Set keys and timestamp
+	if err := modelPrefs.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare preferences for update: %w", err)
+	}
+	
+	// Try to update existing record first
+	err := r.db.WithContext(ctx).Model(modelPrefs).Update()
+	
+	if err != nil {
+		// If not found, create new record
+		if errors.IsNotFound(err) {
+			err = r.db.WithContext(ctx).Model(modelPrefs).Create()
+			if err != nil {
+				return fmt.Errorf("failed to create notification preferences: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to update notification preferences: %w", err)
+		}
+	}
+	
+	// Update the passed in preferences with the new timestamp
+	prefs.UpdatedAt = modelPrefs.UpdatedAt
+	
+	return nil
+}
+
+// BatchMarkNotificationsAsRead marks multiple notifications as read
+func (r *NotificationRepository) BatchMarkNotificationsAsRead(ctx context.Context, username string, notificationIDs []string) error {
+	if len(notificationIDs) == 0 {
+		return nil
+	}
+	
+	// For each notification ID, we need to find the full key (with timestamp)
+	pk := fmt.Sprintf("NOTIFICATIONS#%s", username)
+	
+	// First, query all user's notifications to find the ones we need to update
+	var allNotifications []*models.NotificationLegacy
+	err := r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).
+		Where("PK", "=", pk).
+		All(&allNotifications)
+	if err != nil {
+		return fmt.Errorf("failed to query notifications: %w", err)
+	}
+	
+	// Create a map for quick lookup
+	idMap := make(map[string]bool)
+	for _, id := range notificationIDs {
+		idMap[id] = true
+	}
+	
+	// Update each matching notification
+	updatedCount := 0
+	for _, notif := range allNotifications {
+		if idMap[notif.ID] && !notif.Read {
+			notif.Read = true
+			err := r.db.WithContext(ctx).Model(notif).Update()
+			if err != nil {
+				r.logger.Warn("failed to mark notification as read in batch",
+					zap.String("notification_id", notif.ID),
+					zap.Error(err))
+			} else {
+				updatedCount++
+			}
+		}
+	}
+	
+	r.logger.Info("batch marked notifications as read",
+		zap.String("username", username),
+		zap.Int("requested", len(notificationIDs)),
+		zap.Int("updated", updatedCount))
+	
+	return nil
+}
+
+// SetNotificationPreference sets a specific notification preference
+func (r *NotificationRepository) SetNotificationPreference(ctx context.Context, username string, preference string, enabled bool) error {
+	// Get existing preferences or create new ones
+	prefs, err := r.GetNotificationPreferences(ctx, username)
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	
+	if prefs == nil {
+		prefs = &storage.NotificationPreferences{
+			Username: username,
+		}
+	}
+	
+	// Update specific preference
+	switch preference {
+	case "email":
+		prefs.EmailEnabled = enabled
+	case "push":
+		prefs.PushEnabled = enabled
+	case "follow":
+		prefs.FollowEnabled = enabled
+	case "mention":
+		prefs.MentionEnabled = enabled
+	case "reblog":
+		prefs.ReblogEnabled = enabled
+	case "favorite":
+		prefs.FavoriteEnabled = enabled
+	case "poll":
+		prefs.PollEnabled = enabled
+	default:
+		return fmt.Errorf("unknown preference: %s", preference)
+	}
+	
+	return r.UpdateNotificationPreferences(ctx, username, prefs)
+}
+
+// GetDigestEmailUsers retrieves users who have digest email enabled
+func (r *NotificationRepository) GetDigestEmailUsers(ctx context.Context) ([]string, error) {
+	// This would require a GSI in production for efficient querying
+	// For now, return empty slice as digest email is not implemented
+	var users []string
+	
+	// In production, you'd query with a GSI on digest_email = true
+	r.logger.Info("GetDigestEmailUsers called - digest email not implemented")
+	
+	return users, nil
+}
+
+// RecordDeliveryAttempt records a notification delivery attempt
+func (r *NotificationRepository) RecordDeliveryAttempt(ctx context.Context, notificationID, method string, success bool, errorMsg string) error {
+	delivery := models.NewNotificationDelivery(notificationID, method)
+	
+	if success {
+		delivery.MarkSent()
+	} else {
+		delivery.MarkFailed(errorMsg)
+	}
+	
+	if err := delivery.BeforeCreate(); err != nil {
+		return fmt.Errorf("failed to prepare delivery record: %w", err)
+	}
+	
+	err := r.db.WithContext(ctx).Model(delivery).Create()
+	if err != nil {
+		return fmt.Errorf("failed to record delivery attempt: %w", err)
+	}
+	
+	return nil
+}
+
+// GetDeliveryStatus gets the delivery status for a notification
+func (r *NotificationRepository) GetDeliveryStatus(ctx context.Context, notificationID, method string) (*models.NotificationDelivery, error) {
+	var delivery models.NotificationDelivery
+	delivery.NotificationID = notificationID
+	delivery.DeliveryMethod = method
+	delivery.UpdateKeys()
+	
+	err := r.db.WithContext(ctx).Model(&models.NotificationDelivery{}).
+		Where("PK", "=", delivery.PK).
+		Where("SK", "=", delivery.SK).
+		First(&delivery)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get delivery status: %w", err)
+	}
+	
+	return &delivery, nil
+}
+
+// MarkDeliveryComplete marks a delivery as complete
+func (r *NotificationRepository) MarkDeliveryComplete(ctx context.Context, notificationID, method string) error {
+	delivery, err := r.GetDeliveryStatus(ctx, notificationID, method)
+	if err != nil {
+		return err
+	}
+	
+	if delivery == nil {
+		// Create new delivery record
+		delivery = models.NewNotificationDelivery(notificationID, method)
+	}
+	
+	delivery.MarkSent()
+	
+	if err := delivery.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare delivery update: %w", err)
+	}
+	
+	err = r.db.WithContext(ctx).Model(delivery).Update()
+	if err != nil {
+		// If not found, create it
+		if errors.IsNotFound(err) {
+			if err := delivery.BeforeCreate(); err != nil {
+				return fmt.Errorf("failed to prepare delivery record: %w", err)
+			}
+			err = r.db.WithContext(ctx).Model(delivery).Create()
+		}
+		if err != nil {
+			return fmt.Errorf("failed to mark delivery complete: %w", err)
+		}
+	}
+	
+	return nil
+}
+
+// GetFailedDeliveries gets failed delivery attempts
+func (r *NotificationRepository) GetFailedDeliveries(ctx context.Context, since time.Time, limit int) ([]*models.NotificationDelivery, error) {
+	// This would benefit from a GSI on status in production
+	var deliveries []*models.NotificationDelivery
+	
+	// For now, we'll scan with filters (inefficient for large datasets)
+	err := r.db.WithContext(ctx).Model(&models.NotificationDelivery{}).
+		Filter("Status", "=", "failed").
+		Filter("LastAttempt", ">=", since.Unix()).
+		Limit(limit).
+		All(&deliveries)
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to get failed deliveries: %w", err)
+	}
+	
+	return deliveries, nil
+}
+
+// RetryFailedDeliveries retries failed delivery attempts
+func (r *NotificationRepository) RetryFailedDeliveries(ctx context.Context, before time.Time) error {
+	deliveries, err := r.GetFailedDeliveries(ctx, before, 100)
+	if err != nil {
+		return err
+	}
+	
+	for _, delivery := range deliveries {
+		if delivery.CanRetry() {
+			delivery.MarkPending()
+			delivery.IncrementAttempt()
+			
+			if err := delivery.BeforeUpdate(); err != nil {
+				r.logger.Warn("failed to prepare delivery retry",
+					zap.String("notification_id", delivery.NotificationID),
+					zap.String("method", delivery.DeliveryMethod),
+					zap.Error(err))
+				continue
+			}
+			
+			err := r.db.WithContext(ctx).Model(delivery).Update()
+			if err != nil {
+				r.logger.Warn("failed to retry delivery",
+					zap.String("notification_id", delivery.NotificationID),
+					zap.String("method", delivery.DeliveryMethod),
+					zap.Error(err))
+			}
+		}
+	}
+	
+	return nil
+}
+
+// CreatePushSubscription creates a new push subscription
+func (r *NotificationRepository) CreatePushSubscription(ctx context.Context, username string, subscription *storage.PushSubscription) error {
+	model := &models.PushSubscription{
+		ID:        subscription.ID,
+		Username:  username,
+		Endpoint:  subscription.Endpoint,
+		P256dh:    subscription.P256dh,
+		Auth:      subscription.Auth,
+		Alerts:    convertStorageToPushAlerts(subscription.Alerts),
+		Policy:    subscription.Policy,
+		CreatedAt: subscription.CreatedAt,
+		UpdatedAt: subscription.UpdatedAt,
+	}
+	
+	if err := model.BeforeCreate(); err != nil {
+		return fmt.Errorf("failed to prepare push subscription: %w", err)
+	}
+	
+	err := r.db.WithContext(ctx).Model(model).Create()
+	if err != nil {
+		return fmt.Errorf("failed to create push subscription: %w", err)
+	}
+	
+	// Update the storage object with generated ID
+	subscription.ID = model.ID
+	
+	return nil
+}
+
+// GetPushSubscriptions retrieves all push subscriptions for a user
+func (r *NotificationRepository) GetPushSubscriptions(ctx context.Context, username string) ([]*storage.PushSubscription, error) {
+	pk := fmt.Sprintf("PUSH#%s", username)
+	
+	var subscriptions []*models.PushSubscription
+	err := r.db.WithContext(ctx).Model(&models.PushSubscription{}).
+		Where("PK", "=", pk).
+		All(&subscriptions)
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to get push subscriptions: %w", err)
+	}
+	
+	// Convert to storage types
+	result := make([]*storage.PushSubscription, len(subscriptions))
+	for i, sub := range subscriptions {
+		result[i] = &storage.PushSubscription{
+			ID:        sub.ID,
+			Username:  sub.Username,
+			Endpoint:  sub.Endpoint,
+			P256dh:    sub.P256dh,
+			Auth:      sub.Auth,
+			Alerts:    convertPushToStorageAlerts(sub.Alerts),
+			Policy:    sub.Policy,
+			CreatedAt: sub.CreatedAt,
+			UpdatedAt: sub.UpdatedAt,
+		}
+	}
+	
+	return result, nil
+}
+
+// UpdatePushSubscription updates a push subscription's alerts
+func (r *NotificationRepository) UpdatePushSubscription(ctx context.Context, username, subscriptionID string, alerts storage.PushSubscriptionAlerts) error {
+	// Get existing subscription
+	var sub models.PushSubscription
+	sub.Username = username
+	sub.ID = subscriptionID
+	sub.UpdateKeys()
+	
+	err := r.db.WithContext(ctx).Model(&models.PushSubscription{}).
+		Where("PK", "=", sub.PK).
+		Where("SK", "=", sub.SK).
+		First(&sub)
+	
+	if err != nil {
+		return fmt.Errorf("failed to get push subscription: %w", err)
+	}
+	
+	// Update alerts
+	sub.Alerts = convertStorageToPushAlerts(alerts)
+	
+	if err := sub.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare push subscription update: %w", err)
+	}
+	
+	err = r.db.WithContext(ctx).Model(&sub).Update()
+	if err != nil {
+		return fmt.Errorf("failed to update push subscription: %w", err)
+	}
+	
+	return nil
+}
+
+// DeletePushSubscription deletes a push subscription
+func (r *NotificationRepository) DeletePushSubscription(ctx context.Context, username, subscriptionID string) error {
+	var sub models.PushSubscription
+	sub.Username = username
+	sub.ID = subscriptionID
+	sub.UpdateKeys()
+	
+	err := r.db.WithContext(ctx).Model(&sub).Delete()
+	if err != nil {
+		return fmt.Errorf("failed to delete push subscription: %w", err)
+	}
+	
+	return nil
+}
+
+// DeleteExpiredSubscriptions deletes expired push subscriptions
+func (r *NotificationRepository) DeleteExpiredSubscriptions(ctx context.Context, before time.Time) error {
+	// This would benefit from a GSI on LastUsed in production
+	// For now, we'll scan and delete old subscriptions
+	
+	// Query subscriptions not used in 90 days
+	cutoff := before.Add(-90 * 24 * time.Hour)
+	
+	var oldSubscriptions []*models.PushSubscription
+	err := r.db.WithContext(ctx).Model(&models.PushSubscription{}).
+		Filter("LastUsed", "<", cutoff.Unix()).
+		Limit(100).
+		All(&oldSubscriptions)
+	
+	if err != nil {
+		return fmt.Errorf("failed to find expired subscriptions: %w", err)
+	}
+	
+	for _, sub := range oldSubscriptions {
+		err := r.db.WithContext(ctx).Model(sub).Delete()
+		if err != nil {
+			r.logger.Warn("failed to delete expired subscription",
+				zap.String("subscription_id", sub.ID),
+				zap.Error(err))
+		}
+	}
+	
+	return nil
+}
+
+// UpdateLastUsed updates the last used timestamp for a push subscription
+func (r *NotificationRepository) UpdateLastUsed(ctx context.Context, username, subscriptionID string) error {
+	var sub models.PushSubscription
+	sub.Username = username
+	sub.ID = subscriptionID
+	sub.UpdateKeys()
+	
+	err := r.db.WithContext(ctx).Model(&models.PushSubscription{}).
+		Where("PK", "=", sub.PK).
+		Where("SK", "=", sub.SK).
+		First(&sub)
+	
+	if err != nil {
+		return fmt.Errorf("failed to get push subscription: %w", err)
+	}
+	
+	sub.UpdateLastUsed()
+	
+	if err := sub.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare last used update: %w", err)
+	}
+	
+	err = r.db.WithContext(ctx).Model(&sub).Update()
+	if err != nil {
+		return fmt.Errorf("failed to update last used: %w", err)
+	}
+	
+	return nil
+}
+
+// GetNotificationStats gets notification statistics for a user
+func (r *NotificationRepository) GetNotificationStats(ctx context.Context, username string) (map[string]int64, error) {
+	stats := make(map[string]int64)
+	
+	// Get total count
+	pk := fmt.Sprintf("NOTIFICATIONS#%s", username)
+	total, err := r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).
+		Where("PK", "=", pk).
+		Count()
+	if err != nil {
+		return nil, fmt.Errorf("failed to count total notifications: %w", err)
+	}
+	stats["total"] = total
+	
+	// Get unread count
+	unread, err := r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).
+		Where("PK", "=", pk).
+		Filter("Read", "=", false).
+		Count()
+	if err != nil {
+		return nil, fmt.Errorf("failed to count unread notifications: %w", err)
+	}
+	stats["unread"] = unread
+	stats["read"] = total - unread
+	
+	return stats, nil
+}
+
+// ClearOldNotifications deletes notifications older than the specified duration
+func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, username string, olderThan time.Duration) error {
+	cutoff := time.Now().Add(-olderThan).Unix()
+	pk := fmt.Sprintf("NOTIFICATIONS#%s", username)
+	
+	// Get old notifications
+	var oldNotifications []*models.NotificationLegacy
+	err := r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).
+		Where("PK", "=", pk).
+		Filter("CreatedAt", "<", cutoff).
+		Limit(100).
+		All(&oldNotifications)
+	
+	if err != nil {
+		return fmt.Errorf("failed to find old notifications: %w", err)
+	}
+	
+	// Delete each notification
+	for _, notif := range oldNotifications {
+		err := r.db.WithContext(ctx).Model(notif).Delete()
+		if err != nil {
+			r.logger.Warn("failed to delete old notification",
+				zap.String("notification_id", notif.ID),
+				zap.Error(err))
+		}
+	}
+	
+	return nil
+}
+// convertStorageToPushAlerts converts storage.PushSubscriptionAlerts to models.PushSubscriptionAlerts
+func convertStorageToPushAlerts(alerts storage.PushSubscriptionAlerts) models.PushSubscriptionAlerts {
+	return models.PushSubscriptionAlerts{
+		Follow:        alerts.Follow,
+		Favourite:     alerts.Favourite,
+		Reblog:        alerts.Reblog,
+		Mention:       alerts.Mention,
+		Poll:          alerts.Poll,
+		FollowRequest: alerts.FollowRequest,
+		Status:        alerts.Status,
+		Update:        alerts.Update,
+		AdminSignUp:   alerts.AdminSignUp,
+		AdminReport:   alerts.AdminReport,
+	}
+}
+
+// convertPushToStorageAlerts converts models.PushSubscriptionAlerts to storage.PushSubscriptionAlerts
+func convertPushToStorageAlerts(alerts models.PushSubscriptionAlerts) storage.PushSubscriptionAlerts {
+	return storage.PushSubscriptionAlerts{
+		Follow:        alerts.Follow,
+		Favourite:     alerts.Favourite,
+		Reblog:        alerts.Reblog,
+		Mention:       alerts.Mention,
+		Poll:          alerts.Poll,
+		FollowRequest: alerts.FollowRequest,
+		Status:        alerts.Status,
+		Update:        alerts.Update,
+		AdminSignUp:   alerts.AdminSignUp,
+		AdminReport:   alerts.AdminReport,
+	}
 }

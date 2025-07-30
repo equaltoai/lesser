@@ -183,3 +183,139 @@ Modified files:
 - Load tests use k6 and test real performance characteristics
 - Federation tests require ngrok or public endpoint
 - All tests can run against local or deployed instances
+
+## Storage Access Patterns (CRITICAL)
+
+### DynamORM/Lift Migration Status
+We are in Phase 4 of migrating from direct DynamoDB SDK usage to DynamORM with Lift framework. This is a critical architectural change.
+
+### Correct Storage Implementation Patterns
+
+**NEVER use direct DynamoDB SDK:**
+```go
+// ❌ WRONG - Never do this
+import "github.com/aws/aws-sdk-go-v2/service/dynamodb"
+result, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{...})
+```
+
+**ALWAYS use DynamORM patterns:**
+```go
+// ✅ CORRECT - Use DynamORM
+var model models.User
+err := r.db.WithContext(ctx).Model(&models.User{}).
+    Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+    Where("SK", "=", "PROFILE").
+    First(&model)
+```
+
+### Key Patterns That Must Be Preserved
+- **Users**: PK=`USER#username`, SK=`PROFILE`
+- **Actors**: PK=`ACTOR#username`, SK=`PROFILE`
+- **Objects**: PK=`object#id`, SK=`object#id`
+- **DNS Cache**: PK=`DNSCACHE#hostname`, SK=`ENTRY`
+- **Reputation**: PK=`ACTOR#username`, SK=`REP#timestamp`
+- **Vouch**: PK=`VOUCH#id`, SK=`METADATA`
+- **Trust**: PK=`TRUST#trusterID#category`, SK=`TRUSTEE#trusteeID`
+- **Account Pins**: PK=`ACCOUNT_PIN#username`, SK=`PIN#pinnedActorID`
+- **Account Notes**: PK=`ACCOUNT_NOTE#username`, SK=`NOTE#targetActorID`
+
+### Repository Pattern Requirements
+1. All storage access goes through repository interfaces in StorageAdapter
+2. Repositories use DynamORM models with proper tags
+3. StorageAdapter bridges storage.Storage interface to repositories
+4. NO direct calls to originalStorage in StorageAdapter (this is an architectural violation)
+
+## Working with AI Agents (lift-dynamorm-expert)
+
+### CRITICAL: Agent Implementation Verification
+
+When using the lift-dynamorm-expert agent for ANY implementation:
+
+#### 1. Pre-Implementation Instructions Must Include:
+- Exact legacy file paths to analyze
+- Exact key patterns to preserve (with case sensitivity)
+- Complete list of methods needing implementation
+- Warning about NO AWS SDK usage
+- Requirement to match legacy behavior exactly
+
+#### 2. Post-Implementation Verification (MANDATORY):
+```bash
+# Verify no AWS SDK usage
+grep -n "github.com/aws/aws-sdk-go" <file> | wc -l  # Must be 0
+grep -n "dynamodb\." <file> | grep -v "//" | wc -l  # Must be 0
+
+# Verify no originalStorage delegation
+grep -n "originalStorage\." adapter.go | wc -l  # Must be 0
+
+# Check model exists if creating new feature
+ls pkg/storage/models/<feature>.go  # Must exist
+
+# Check compilation
+go build ./pkg/storage/...
+```
+
+#### 3. Key Pattern Verification:
+- Compare EVERY key generation with legacy implementation
+- Verify GSI keys match exactly (including case)
+- Check TTL fields are preserved where used
+- Ensure composite keys use correct separators
+
+#### 4. Functionality Verification:
+- Error handling must match legacy (nil vs error)
+- Not found cases must return same as legacy
+- All struct fields must be mapped correctly
+- GSI queries must use correct index names
+
+### Common Agent Mistakes to ALWAYS Check:
+1. **Wrong Key Case**: `actor#id` instead of `ACTOR#id`
+2. **Missing UpdateKeys()**: Not updating GSI keys in models
+3. **AWS SDK Usage**: Using AWS SDK instead of DynamORM
+4. **Missing TTL**: Not preserving TTL/expiration logic
+5. **Wrong Error Returns**: Returning error where legacy returns nil
+6. **Interface Mismatch**: Repository methods don't match adapter calls
+7. **Missing Fields**: Model missing fields that legacy uses
+8. **Wrong GSI Names**: Using incorrect GSI index names
+
+### Proper Agent Instruction Template:
+```
+CRITICAL: Implement [Feature] using DynamORM/Lift patterns ONLY
+
+1. Analyze legacy implementation:
+   - File: /pkg/storage/dynamodb/[file].go
+   - Document ALL key patterns used
+   - List ALL DynamoDB operations
+
+2. Create model at: /pkg/storage/models/[name].go
+   - Use EXACT key patterns: PK=X, SK=Y (preserve case!)
+   - Include ALL fields from legacy
+   - Add UpdateKeys() method if GSIs used
+   - Use proper DynamORM tags
+
+3. Add methods to [Repository] interface in adapter.go
+   - Match exact signatures from Storage interface
+
+4. Implement in /pkg/storage/repositories/[repo].go
+   - Use DynamORM ONLY (no AWS SDK imports)
+   - Match legacy logic EXACTLY
+   - Preserve ALL error handling behavior
+   - Use zap.Logger for logging
+
+5. Verify implementation:
+   - No AWS imports
+   - No dynamodb. usage  
+   - Compilation succeeds
+   - Keys match legacy exactly
+   - All methods implemented
+```
+
+### Post-Agent Review Checklist:
+- [ ] Read the implementation line by line
+- [ ] Compare with legacy implementation
+- [ ] Run all verification commands
+- [ ] Check key patterns match exactly
+- [ ] Verify no AWS SDK usage
+- [ ] Ensure compilation succeeds
+- [ ] Confirm all requested methods implemented
+- [ ] Check error handling matches legacy
+
+NEVER trust agent output without verification. ALWAYS compare with legacy implementation.

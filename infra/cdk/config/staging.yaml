@@ -1,0 +1,23 @@
+environment: staging
+appName: lesser
+domain: staging.lesser.app
+memorySize: 1024
+timeout: 30
+logLevel: INFO
+features:
+  enableMultiTenant: false
+  enableRateLimiting: true
+  enableMonitoring: true
+  enableDeletionProtection: true
+  enablePointInTimeRecovery: true
+aws:
+  region: us-east-1
+  architecture: arm64
+  runtime: provided.al2023
+monitoring:
+  detailedMetrics: true
+  businessMetrics: true
+  realTimeStreaming: false
+cost:
+  optimized: true
+  reservedConcurrency: 10

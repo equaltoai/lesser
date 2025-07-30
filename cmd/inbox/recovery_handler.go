@@ -67,7 +67,7 @@ func (h *RecoveryActivityHandler) handleTrusteeConfirmation(ctx context.Context,
 }
 
 // handleTrusteeAcceptance processes a trustee accepting an invitation
-func (h *RecoveryActivityHandler) handleTrusteeAcceptance(ctx context.Context, activity *activitypub.Activity, inviteData map[string]any) error {
+func (h *RecoveryActivityHandler) handleTrusteeAcceptance(_ context.Context, activity *activitypub.Activity, inviteData map[string]any) error {
 	inviterUsername, ok := inviteData["inviterUsername"].(string)
 	if !ok {
 		return fmt.Errorf("missing inviter username in trustee acceptance")

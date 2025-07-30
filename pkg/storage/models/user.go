@@ -9,16 +9,16 @@ import (
 // User represents a user account stored in DynamoDB using DynamORM
 type User struct {
 	// Primary key - using username as the primary identifier
-	PK string `dynamorm:"pk" json:"pk"` // Format: "user#{username}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "user#{username}"
+	PK string `dynamorm:"pk" json:"pk"` // Format: "USER#{username}" - MUST match legacy exactly
+	SK string `dynamorm:"sk" json:"sk"` // Format: "METADATA" - MUST match legacy exactly
 
-	// GSI1 - Email lookup for authentication
-	GSI1PK string `dynamorm:"index:email-index,pk" json:"gsi1_pk,omitempty"` // Format: "EMAIL#{email}"
-	GSI1SK string `dynamorm:"index:email-index,sk" json:"gsi1_sk,omitempty"` // Format: "user#{username}"
+	// GSI1 - User listing and pagination (legacy uses GSI1 for user lists)
+	GSI1PK string `dynamorm:"index:user-list-index,pk" json:"gsi1_pk"` // Format: "USERS"
+	GSI1SK string `dynamorm:"index:user-list-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{username}"
 
-	// GSI2 - User listing and pagination
-	GSI2PK string `dynamorm:"index:user-list-index,pk" json:"gsi2_pk"` // Format: "USERS"
-	GSI2SK string `dynamorm:"index:user-list-index,sk" json:"gsi2_sk"` // Format: "{created_at}#{username}"
+	// GSI2 - Email lookup for authentication (legacy uses GSI2 for email)
+	GSI2PK string `dynamorm:"index:email-index,pk" json:"gsi2_pk,omitempty"` // Format: "EMAIL#{email}"
+	GSI2SK string `dynamorm:"index:email-index,sk" json:"gsi2_sk,omitempty"` // Format: "USERNAME#{username}"
 
 	// GSI3 - Role-based queries
 	GSI3PK string `dynamorm:"index:role-index,pk" json:"gsi3_pk"` // Format: "ROLE#{role}"
@@ -64,9 +64,9 @@ func (u *User) BeforeCreate() error {
 		u.Role = "user"
 	}
 
-	// Set up primary key
-	u.PK = "user#" + u.Username
-	u.SK = "user#" + u.Username
+	// Set up primary key - matches legacy exactly
+	u.PK = "USER#" + u.Username
+	u.SK = "METADATA"
 
 	// Set up GSI keys
 	u.setupGSIKeys()
@@ -88,18 +88,18 @@ func (u *User) BeforeUpdate() error {
 func (u *User) setupGSIKeys() {
 	username := u.Username
 
-	// GSI1 - Email lookup (only if email is provided)
-	if u.Email != "" {
-		u.GSI1PK = "EMAIL#" + strings.ToLower(u.Email)
-		u.GSI1SK = "user#" + username
-	} else {
-		u.GSI1PK = ""
-		u.GSI1SK = ""
-	}
+	// GSI1 - User listing and pagination (legacy GSI1 pattern)
+	u.GSI1PK = "USERS"
+	u.GSI1SK = fmt.Sprintf("%s#%s", u.CreatedAt.Format(time.RFC3339), username)
 
-	// GSI2 - User listing and pagination
-	u.GSI2PK = "USERS"
-	u.GSI2SK = fmt.Sprintf("%s#%s", u.CreatedAt.Format(time.RFC3339), username)
+	// GSI2 - Email lookup (legacy GSI2 pattern - only if email is provided)
+	if u.Email != "" {
+		u.GSI2PK = "EMAIL#" + strings.ToLower(u.Email)
+		u.GSI2SK = "USERNAME#" + username
+	} else {
+		u.GSI2PK = ""
+		u.GSI2SK = ""
+	}
 
 	// GSI3 - Role-based queries
 	u.GSI3PK = "ROLE#" + u.Role
@@ -148,4 +148,9 @@ func (u *User) IsAdmin() bool {
 // IsModerator returns true if the user has moderator or admin role
 func (u *User) IsModerator() bool {
 	return u.Role == "moderator" || u.Role == "admin"
+}
+
+// UpdateKeys updates the GSI keys for this user (required by DynamORM)
+func (u *User) UpdateKeys() {
+	u.setupGSIKeys()
 }

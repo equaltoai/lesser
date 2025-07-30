@@ -431,31 +431,6 @@ func (s *dynamoDBStorage) markThreadSyncCompleted(ctx context.Context, statusID 
 	return err
 }
 
-func (s *dynamoDBStorage) recordMissingReplies(ctx context.Context, statusID string, missingReplies []string) error {
-	now := time.Now()
-
-	// Convert to attribute value
-	missingAV := make([]types.AttributeValue, len(missingReplies))
-	for i, reply := range missingReplies {
-		missingAV[i] = &types.AttributeValueMemberS{Value: reply}
-	}
-
-	input := &dynamodb.UpdateItemInput{
-		TableName: aws.String(s.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("THREAD_SYNC#%s", statusID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-		UpdateExpression: aws.String("SET MissingReplies = :missing, UpdatedAt = :now"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":missing": &types.AttributeValueMemberL{Value: missingAV},
-			":now":     &types.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
-		},
-	}
-
-	_, err := s.client.UpdateItem(ctx, input)
-	return err
-}
 
 func (s *dynamoDBStorage) identifyMissingReplies(ctx context.Context, rootStatusID string, threadContext *storage.ThreadContext) []string {
 	missing := make([]string, 0)

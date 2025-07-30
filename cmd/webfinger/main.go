@@ -39,8 +39,9 @@ func NewWebFingerHandler() (*WebFingerHandler, error) {
 	}
 
 	// Initialize repositories
-	actorRepo := repositories.NewActorRepository(db)
-	userRepo := repositories.NewUserRepository(db)
+	tableName := "lesser-main"
+	actorRepo := repositories.NewActorRepository(db, tableName, logger)
+	userRepo := repositories.NewUserRepository(db, tableName, logger)
 
 	// Initialize legacy storage for reputation service (temporary bridge)
 	// TODO: Migrate reputation service to DynamORM in future phase

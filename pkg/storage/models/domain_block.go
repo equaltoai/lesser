@@ -5,30 +5,89 @@ import (
 	"time"
 )
 
-// DomainBlock represents an instance-level domain block in DynamoDB
-type DomainBlock struct {
-	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "domain#{domain}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "block#{domain}"
+// UserDomainBlock represents a user-level domain block
+type UserDomainBlock struct {
+	PK        string    `dynamorm:"pk"`
+	SK        string    `dynamorm:"sk"`
+	Username  string    `json:"username"`
+	Domain    string    `json:"domain"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
-	// GSI1 - by severity
-	GSI1PK string `dynamorm:"index:gsi1-index,pk" json:"gsi1_pk"` // Format: "domainblock#severity#{severity}"
-	GSI1SK string `dynamorm:"index:gsi1-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{domain}"
+// UpdateKeys updates the keys for the user domain block
+func (d *UserDomainBlock) UpdateKeys() {
+	d.PK = fmt.Sprintf("USER#%s", d.Username)
+	d.SK = fmt.Sprintf("DOMAIN_BLOCK#%s", d.Domain)
+}
 
-	// Block data
-	ID             string     `json:"id"`
-	Domain         string     `json:"domain"`
-	Severity       string     `json:"severity"`        // "silence" or "suspend"
-	RejectMedia    bool       `json:"reject_media"`
-	RejectReports  bool       `json:"reject_reports"`
-	PrivateComment string     `json:"private_comment"` // Admin-only notes
-	PublicComment  string     `json:"public_comment"`  // Public reason
-	Obfuscate      bool       `json:"obfuscate"`       // Whether to obfuscate in public lists
-	CreatedBy      string     `json:"created_by"`      // Admin username who created
-	CreatedByID    string     `json:"created_by_id"`   // Admin actor ID
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	ExpiresAt      *time.Time `json:"expires_at,omitempty"` // Optional expiration
+// InstanceDomainBlock represents an instance-level domain block
+type InstanceDomainBlock struct {
+	PK             string    `dynamorm:"pk"`
+	SK             string    `dynamorm:"sk"`
+	GSI1PK         string    `dynamorm:"index:GSI1,pk"`
+	GSI1SK         string    `dynamorm:"index:GSI1,sk"`
+	ID             string    `json:"ID"`
+	Domain         string    `json:"Domain"`
+	Severity       string    `json:"Severity"` // "silence" or "suspend"
+	RejectMedia    bool      `json:"RejectMedia"`
+	RejectReports  bool      `json:"RejectReports"`
+	PrivateComment string    `json:"PrivateComment"` // Admin-only notes
+	PublicComment  string    `json:"PublicComment"`  // Public reason
+	Obfuscate      bool      `json:"Obfuscate"`      // Whether to obfuscate in public lists
+	CreatedBy      string    `json:"CreatedBy"`      // Admin username who created
+	CreatedByID    string    `json:"CreatedByID"`    // Admin actor ID
+	CreatedAt      time.Time `json:"CreatedAt"`
+	UpdatedAt      time.Time `json:"UpdatedAt"`
+	Type           string    `json:"Type"`
+}
+
+// UpdateKeys updates the keys for the instance domain block
+func (d *InstanceDomainBlock) UpdateKeys() {
+	d.PK = fmt.Sprintf("DOMAIN_BLOCK#%s", d.Domain)
+	d.SK = fmt.Sprintf("DOMAIN_BLOCK#%s", d.Domain)
+	d.GSI1PK = "DOMAIN_BLOCKS"
+	d.GSI1SK = fmt.Sprintf("%d#%s", d.CreatedAt.Unix(), d.Domain)
+	d.Type = "INSTANCE_DOMAIN_BLOCK"
+}
+
+// EmailDomainBlock represents an email domain block
+type EmailDomainBlock struct {
+	PK        string    `dynamorm:"pk"`
+	SK        string    `dynamorm:"sk"`
+	GSI1PK    string    `dynamorm:"index:GSI1,pk"`
+	GSI1SK    string    `dynamorm:"index:GSI1,sk"`
+	ID        string    `json:"ID"`
+	Domain    string    `json:"Domain"`
+	CreatedBy string    `json:"CreatedBy"`
+	CreatedAt time.Time `json:"CreatedAt"`
+}
+
+// UpdateKeys updates the keys for the email domain block
+func (d *EmailDomainBlock) UpdateKeys() {
+	d.PK = fmt.Sprintf("EMAIL_DOMAIN_BLOCK#%s", d.Domain)
+	d.SK = fmt.Sprintf("EMAIL_DOMAIN_BLOCK#%s", d.Domain)
+	d.GSI1PK = "EMAIL_DOMAIN_BLOCKS"
+	d.GSI1SK = d.CreatedAt.Format(time.RFC3339)
+}
+
+// DomainAllow represents a domain in the allowlist
+type DomainAllow struct {
+	PK        string    `dynamorm:"pk"`
+	SK        string    `dynamorm:"sk"`
+	GSI1PK    string    `dynamorm:"index:GSI1,pk"`
+	GSI1SK    string    `dynamorm:"index:GSI1,sk"`
+	ID        string    `json:"ID"`
+	Domain    string    `json:"Domain"`
+	CreatedBy string    `json:"CreatedBy"`
+	CreatedAt time.Time `json:"CreatedAt"`
+}
+
+// UpdateKeys updates the keys for the domain allow
+func (d *DomainAllow) UpdateKeys() {
+	d.PK = fmt.Sprintf("DOMAIN_ALLOW#%s", d.Domain)
+	d.SK = fmt.Sprintf("DOMAIN_ALLOW#%s", d.Domain)
+	d.GSI1PK = "DOMAIN_ALLOWS"
+	d.GSI1SK = d.CreatedAt.Format(time.RFC3339)
 }
 
 // Domain block severity constants
@@ -36,25 +95,3 @@ const (
 	DomainBlockSeveritySilence = "silence"
 	DomainBlockSeveritySuspend = "suspend"
 )
-
-// NewDomainBlock creates a new domain block
-func NewDomainBlock(domain, severity, createdBy, createdByID string) *DomainBlock {
-	now := time.Now()
-	id := fmt.Sprintf("domainblock-%d-%s", now.Unix(), domain)
-	
-	block := &DomainBlock{
-		PK:          fmt.Sprintf("domain#%s", domain),
-		SK:          fmt.Sprintf("block#%s", domain),
-		GSI1PK:      fmt.Sprintf("domainblock#severity#%s", severity),
-		GSI1SK:      fmt.Sprintf("%s#%s", now.Format(time.RFC3339), domain),
-		ID:          id,
-		Domain:      domain,
-		Severity:    severity,
-		CreatedBy:   createdBy,
-		CreatedByID: createdByID,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-	
-	return block
-}

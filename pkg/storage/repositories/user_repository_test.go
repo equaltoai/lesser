@@ -11,11 +11,13 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
 )
 
 func TestCreateUser_MissingUsername(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 
 	user := &storage.User{
 		Email: "test@example.com",
@@ -29,7 +31,8 @@ func TestCreateUser_MissingUsername(t *testing.T) {
 
 func TestGetUserByEmail_EmptyEmail(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 
 	user, err := repo.GetUserByEmail(context.Background(), "")
 
@@ -40,7 +43,8 @@ func TestGetUserByEmail_EmptyEmail(t *testing.T) {
 
 func TestUpdateUser_EmptyUpdates(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 
 	err := repo.UpdateUser(context.Background(), "testuser", map[string]any{})
 
@@ -51,7 +55,8 @@ func TestUpdateUser_EmptyUpdates(t *testing.T) {
 func TestGetUserByProviderID_NotImplemented(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 
 	// Set up expectations
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -76,7 +81,8 @@ func TestGetUserByProviderID_NotImplemented(t *testing.T) {
 func TestLinkProviderAccount_NotImplemented(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 
 	// Set up expectations for GetUser call
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -101,7 +107,8 @@ func TestLinkProviderAccount_NotImplemented(t *testing.T) {
 func TestUnlinkProviderAccount_NotImplemented(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 
 	// Set up expectations for query
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -125,7 +132,8 @@ func TestUnlinkProviderAccount_NotImplemented(t *testing.T) {
 func TestGetLinkedProviders_ReturnsEmpty(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 
 	// Set up expectations
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -146,7 +154,8 @@ func TestGetLinkedProviders_ReturnsEmpty(t *testing.T) {
 
 func TestModelToStorage(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 	now := time.Now()
 
 	userModel := &models.User{
@@ -182,7 +191,8 @@ func TestModelToStorage(t *testing.T) {
 
 func TestApplyUpdates(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	repo := NewUserRepository(mockDB)
+	logger := zap.NewNop()
+	repo := NewUserRepository(mockDB, "test-table", logger)
 	userModel := &models.User{
 		Username: "testuser",
 		Email:    "old@example.com",
@@ -217,7 +227,8 @@ func TestApplyUpdates(t *testing.T) {
 }
 
 func TestNewUserRepository(t *testing.T) {
-	repo := NewUserRepository(nil)
+	logger := zap.NewNop()
+	repo := NewUserRepository(nil, "test-table", logger)
 
 	assert.NotNil(t, repo)
 	assert.Nil(t, repo.db)

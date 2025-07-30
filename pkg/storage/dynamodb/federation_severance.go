@@ -150,7 +150,7 @@ func (s *dynamoDBStorage) GetUserSeveredRelationships(ctx context.Context, userI
 			Domain:       record.Domain,
 			SeveredAt:    record.SeveredAt,
 			Acknowledged: record.Acknowledged,
-			Reason:       record.Reason,
+			Reason:       storage.SeveranceReason(record.Reason),
 			Type:         record.Type,
 		}
 
@@ -348,7 +348,7 @@ func (s *dynamoDBStorage) GetDomainSeverances(ctx context.Context, domain string
 			Domain:       record.Domain,
 			SeveredAt:    record.SeveredAt,
 			Acknowledged: record.Acknowledged,
-			Reason:       record.Reason,
+			Reason:       storage.SeveranceReason(record.Reason),
 			Type:         record.Type,
 		}
 

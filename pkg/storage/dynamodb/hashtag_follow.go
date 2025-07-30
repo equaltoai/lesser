@@ -332,3 +332,9 @@ func (s *dynamoDBStorage) UpdateHashtagNotificationPreference(ctx context.Contex
 
 	return nil
 }
+
+
+// UnmuteHashtag unmutes a hashtag for a user (stub for interface compatibility)
+func (s *dynamoDBStorage) UnmuteHashtag(ctx context.Context, userID, hashtag string) error {
+	return fmt.Errorf("UnmuteHashtag not implemented in legacy storage")
+}

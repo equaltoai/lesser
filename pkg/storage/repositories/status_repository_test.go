@@ -4,13 +4,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestNewStatusRepository(t *testing.T) {
-	repo := NewStatusRepository(nil)
+	logger := zap.NewNop()
+	repo := NewStatusRepository(nil, "test-table", logger)
 
 	assert.NotNil(t, repo)
 	assert.Nil(t, repo.db)
+	assert.Equal(t, "test-table", repo.tableName)
+	assert.NotNil(t, repo.logger)
 }
 
 func TestExtractStatusIDFromURL(t *testing.T) {

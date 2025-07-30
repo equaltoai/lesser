@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // MockDB is a mock implementation of the core.DB interface
@@ -127,7 +126,7 @@ func TestActivityHandler_ProcessRecord(t *testing.T) {
 	}`
 
 	now := time.Now()
-	activity := models.Activity{
+	activity := ActivityRecord{
 		PK:         "activity#123",
 		SK:         "inbox#alice#" + now.Format(time.RFC3339),
 		Username:   "alice",

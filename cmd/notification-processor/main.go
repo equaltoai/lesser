@@ -79,8 +79,9 @@ type UserPreferences struct {
 
 func NewNotificationProcessor(db core.DB, tableName string, domain string) *NotificationProcessor {
 	// Initialize repositories
-	notificationRepo := repositories.NewNotificationRepository(db, tableName)
-	userRepo := repositories.NewUserRepository(db)
+	logger := common.Logger()
+	notificationRepo := repositories.NewNotificationRepository(db, tableName, logger)
+	userRepo := repositories.NewUserRepository(db, tableName, logger)
 
 	// Get configuration from environment
 	fromEmail := os.Getenv("FROM_EMAIL")
