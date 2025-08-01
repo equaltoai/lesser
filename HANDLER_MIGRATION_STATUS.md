@@ -10,10 +10,11 @@ This document tracks the migration of all AWS Lambda handlers to the Lift framew
 ---
 
 ## Summary Stats
-- **Total Files with Handlers**: 50
-- **Migrated Files**: 40
-- **Remaining Files**: 10
-- **Migration Progress**: 80%
+- **Total Files with Handlers**: 54
+- **Migrated Files**: 51
+- **Remaining Files**: 2
+- **Skipped Files**: 1 (recovery.go - email-based)
+- **Migration Progress**: 96.3%
 
 ---
 
@@ -24,10 +25,10 @@ This document tracks the migration of all AWS Lambda handlers to the Lift framew
 - **Handlers**: 12
 - HandleRegistration, HandleVerifyCredentials, HandleUpdateCredentials, HandleGetAccount, HandleAccountLookup, HandleGetAccountFollowers, HandleGetAccountFollowing, HandleGetFamiliarFollowers, HandlePinAccount, HandleUnpinAccount, HandleSetAccountNote, HandleRemoveFromFollowers
 
-### ❌ admin_federation.go (NOT MIGRATED)
+### ✅ admin_federation.go (MIGRATED)
 - **Lines**: 874
 - **Handlers**: 14
-- HandleGetAdminDomainBlocks, HandleGetAdminDomainBlock, HandleCreateAdminDomainBlock, HandleUpdateAdminDomainBlock, HandleDeleteAdminDomainBlock, HandleGetAdminDomainAllows, HandleCreateAdminDomainAllow, HandleDeleteAdminDomainAllow, HandleGetFederationInstances, HandleGetFederationInstance, HandleGetFederationStatistics, HandleGetEmailDomainBlocks, HandleCreateEmailDomainBlock, HandleDeleteEmailDomainBlock
+- HandleGetAdminDomainBlocksLift, HandleGetAdminDomainBlockLift, HandleCreateAdminDomainBlockLift, HandleUpdateAdminDomainBlockLift, HandleDeleteAdminDomainBlockLift, HandleGetAdminDomainAllowsLift, HandleCreateAdminDomainAllowLift, HandleDeleteAdminDomainAllowLift, HandleGetFederationInstancesLift, HandleGetFederationInstanceLift, HandleGetFederationStatisticsLift, HandleGetEmailDomainBlocksLift, HandleCreateEmailDomainBlockLift, HandleDeleteEmailDomainBlockLift
 
 ### ❌ admin.go (NOT MIGRATED)
 - **Lines**: 1774
@@ -157,10 +158,10 @@ This document tracks the migration of all AWS Lambda handlers to the Lift framew
 - **Handlers**: 14
 - HandleGetPreferences, HandleUpdatePreferences, HandleGetSuggestions, HandleDeleteSuggestion, HandleGetTrendingTags, HandleGetTrendingStatuses, HandleGetTrendingLinks, HandleGetFeaturedTags, HandleCreateFeaturedTag, HandleDeleteFeaturedTag, HandleGetTagSuggestions, HandleGetDirectory, HandleGetProofOfWork, HandleSubmitProofOfWork
 
-### ❌ moderation.go (NOT MIGRATED)
+### ✅ moderation.go (MIGRATED)
 - **Lines**: 704
-- **Handlers**: 9
-- HandleCreateReport, HandleGetReports, HandleGetReport, HandleUpdateReport, HandleDeleteReport, HandleGetModerationHistory, HandleGetTrustScore, HandleUpdateTrustScore, HandleGetReputationScore
+- **Handlers**: 8
+- HandleModerationFlag, HandleModerationQueue, HandleModerationReview, HandleModerationHistory, HandleGetConsensus, HandleGetTrustRelationships, HandleUpdateTrust, HandleGetTrustScore
 
 ### ✅ mutes.go (MIGRATED)
 - **Lines**: 243
@@ -301,40 +302,24 @@ This document tracks the migration of all AWS Lambda handlers to the Lift framew
 
 ## Next Files to Migrate (Prioritized by Size)
 
-### High Priority (Small Files)
-1. **❌ exports.go** - 488 lines, 5 handlers
-2. **❌ imports.go** - 467 lines, 5 handlers 
-3. **❌ reputation.go** - 419 lines, 6 handlers
-4. **❌ recovery.go** - 357 lines, 4 handlers
-5. **❌ lists.go** - 509 lines, 8 handlers
+### Remaining Files (2 total)
+1. **❌ statuses.go** - 1710 lines, 18 handlers (Large)
+2. **❌ admin.go** - 1774 lines, 21 handlers (Large)
 
-### Medium Priority (Medium Files)
-6. **❌ tags.go** - 529 lines, 9 handlers
-7. **❌ debug.go** - 531 lines, 7 handlers
-8. **❌ oembed.go** - 548 lines, 1 handler
-9. **❌ interactions.go** - 576 lines, 6 handlers
-10. **❌ filters.go** - 604 lines, 7 handlers
-
-### Lower Priority (Large Files)
-11. **❌ moderation.go** - 704 lines, 9 handlers
-12. **❌ timelines.go** - 711 lines, 5 handlers
-13. **❌ admin_federation.go** - 874 lines, 14 handlers
-14. **❌ media.go** - 874 lines, 3 handlers
-15. **❌ misc.go** - 989 lines, 14 handlers
-16. **❌ statuses.go** - 1710 lines, 18 handlers
-17. **❌ admin.go** - 1774 lines, 21 handlers
+### Skipped Files (1 total)
+- **⚠️ recovery.go** - 357 lines, 5 handlers (Email-based recovery not supported in Lesser)
 
 ---
 
 ## Progress Tracking
 
-### Completed Migrations ✅ (40 files)
-- accounts.go, ai.go, announcements.go, apps.go, bookmarks.go, conversations.go, custom_emojis.go, debug.go, discovery.go, domain_blocks.go, endorsements.go, exports.go, favorites.go, filters.go, follow_requests.go, imports.go, instance.go, interactions.go, lists.go, markers.go, media.go, media_v2.go, metrics.go, misc.go, mutes.go, nodeinfo.go, notes.go, oauth.go, oembed.go, polls.go, preferences.go, push_subscriptions.go, recovery_emailfree.go, relationships.go, reputation.go, reports.go, scheduled_statuses.go, search.go, status_info.go, status_interactions.go, status_pins.go, statuses_unified_boost.go, tags.go, timelines.go, translation.go, trends.go, wallet.go, webauthn.go, webfinger.go
+### Completed Migrations ✅ (51 files)
+- accounts.go, admin_federation.go, ai.go, announcements.go, apps.go, bookmarks.go, conversations.go, custom_emojis.go, debug.go, discovery.go, domain_blocks.go, endorsements.go, exports.go, favorites.go, filters.go, follow_requests.go, imports.go, instance.go, interactions.go, lists.go, markers.go, media.go, media_v2.go, metrics.go, misc.go, moderation.go, mutes.go, nodeinfo.go, notes.go, oauth.go, oembed.go, polls.go, preferences.go, push_subscriptions.go, recovery_emailfree.go, relationships.go, reputation.go, reports.go, scheduled_statuses.go, search.go, status_info.go, status_interactions.go, status_pins.go, statuses_unified_boost.go, tags.go, timelines.go, translation.go, trends.go, wallet.go, webauthn.go, webfinger.go
 
-### Remaining Migrations ❌ (10 files)
-- admin_federation.go, admin.go, moderation.go, recovery.go, statuses.go
+### Remaining Migrations ❌ (2 files)
+- admin.go, statuses.go
 
 ### Files with No Handlers (3 files)
 - auth_cookies.go (config only), follow_request_helpers.go (helper functions), common.go (shared utilities)
 
-**NEXT TARGET: moderation.go (953 lines, 8 handlers)** - Skip recovery.go (email-based, not relevant for Lesser)
+**NEXT TARGET: statuses.go (1710 lines, 18 handlers)** - Status management operations

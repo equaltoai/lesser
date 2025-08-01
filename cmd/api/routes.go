@@ -169,8 +169,37 @@ func configureAuthenticatedWriteRoutes(app *lift.App) {
 
 // configureAdminRoutes configures routes that require admin role
 func configureAdminRoutes(app *lift.App) {
-	// Admin routes
+	// Admin index
 	app.GET("/admin", wrapAdminHandler(lift.HandlerFunc(func(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"status": "admin area"})
 	})))
+
+	// Account Management (9 handlers)
+	app.GET("/admin/accounts", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminGetAccountsLift)))
+	app.GET("/admin/accounts/{id}", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminGetAccountLift)))
+	app.POST("/admin/accounts/{id}/action", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminAccountActionLift)))
+	app.POST("/admin/accounts/{id}/approve", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminApproveAccountLift)))
+	app.POST("/admin/accounts/{id}/reject", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminRejectAccountLift)))
+	app.POST("/admin/accounts/{id}/enable", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminEnableAccountLift)))
+	app.POST("/admin/accounts/{id}/unsilence", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminUnsilenceAccountLift)))
+	app.POST("/admin/accounts/{id}/unsuspend", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminUnsuspendAccountLift)))
+	app.POST("/admin/accounts/{id}/unsensitive", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminUnsensitiveAccountLift)))
+
+	// Report Management (6 handlers)
+	app.GET("/admin/reports", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminGetReportsLift)))
+	app.GET("/admin/reports/{id}", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminGetReportLift)))
+	app.POST("/admin/reports/{id}/resolve", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminResolveReportLift)))
+	app.POST("/admin/reports/{id}/reopen", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminReopenReportLift)))
+	app.POST("/admin/reports/{id}/assign_to_self", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminAssignReportLift)))
+	app.POST("/admin/reports/{id}/unassign", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminUnassignReportLift)))
+
+	// Moderation Management (8 handlers)
+	app.GET("/admin/moderation/overview", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminModerationOverviewLift)))
+	app.GET("/admin/moderation/events", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminGetModerationEventsLift)))
+	app.POST("/admin/moderation/events/{id}/override", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminOverrideModerationEventLift)))
+	app.GET("/admin/moderation/trust/graph", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminGetTrustGraphLift)))
+	app.PUT("/admin/moderation/trust/{from}/{to}", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminUpdateTrustLift)))
+	app.GET("/admin/moderation/reviewers", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminGetReviewersLift)))
+	app.POST("/admin/moderation/reviewers/{id}/promote", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminPromoteModeratorLift)))
+	app.POST("/admin/moderation/reviewers/{id}/demote", wrapAdminHandler(lift.HandlerFunc(liftHandler.HandleAdminDemoteModeratorLift)))
 }
