@@ -8,8 +8,6 @@ bin/
 main
 auth-api
 activity-processor.test
-api
-graphql
 
 # Go
 vendor/
@@ -40,11 +38,6 @@ Thumbs.db
 .aws/
 .aws-sam/
 
-# Terraform/Pulumi
-*.tfstate
-*.tfstate.*
-.terraform/
-Pulumi.*.yaml
 
 # CDK
 infra/cdk/cdk

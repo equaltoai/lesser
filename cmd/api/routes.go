@@ -65,6 +65,10 @@ func configureAuthenticatedReadRoutes(app *lift.App) {
 	app.GET("/mutes", wrapAuthHandler(wrapHandler(handler.HandleGetMutedAccounts)))
 	app.GET("/domain_blocks", wrapAuthHandler(wrapHandler(handler.HandleGetDomainBlocks)))
 
+	// Data exports
+	app.GET("/exports", wrapAuthHandler(wrapHandler(handler.HandleListExports)))
+	app.GET("/exports/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetExportStatus, "id")))
+
 	// Lists
 	app.GET("/lists", wrapAuthHandler(wrapHandler(handler.HandleGetLists)))
 	app.GET("/lists/{id}", wrapAuthHandler(wrapHandlerWithParam(handler.HandleGetList, "id")))
@@ -158,6 +162,9 @@ func configureAuthenticatedWriteRoutes(app *lift.App) {
 	// Media
 	app.POST("/media", wrapAuthHandler(wrapHandler(handler.HandleMediaUpload)))
 	app.PUT("/media/{id}", wrapAuthHandler(wrapHandler(handler.HandleUpdateMedia)))
+
+	// Data exports
+	app.POST("/exports", wrapAuthHandler(wrapHandler(handler.HandleCreateExport)))
 }
 
 // configureAdminRoutes configures routes that require admin role

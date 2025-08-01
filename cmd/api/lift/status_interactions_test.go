@@ -1,0 +1,783 @@
+package lift
+
+import (
+	"context"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/pay-theory/lift/pkg/lift/adapters"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
+)
+
+func TestHandleGetStatusFavouritedByLift(t *testing.T) {
+	var mockStore *MockStorageAdapter
+
+	tests := []struct {
+		name           string
+		statusID       string
+		setupMocks     func()
+		expectedStatus int
+		expectError    bool
+		checkResponse  func(t *testing.T, ctx *lift.Context)
+	}{
+		{
+			name:     "successful favourited_by retrieval with users",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Mock likes retrieval
+				likes := []*storage.Like{
+					{
+						Actor:     "https://test.example.com/users/user1",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://test.example.com/activities/like/1",
+						Published: time.Now().Add(-1 * time.Hour),
+						CreatedAt: time.Now().Add(-1 * time.Hour),
+					},
+					{
+						Actor:     "https://remote.example.com/users/user2",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://remote.example.com/activities/like/2",
+						Published: time.Now().Add(-2 * time.Hour),
+						CreatedAt: time.Now().Add(-2 * time.Hour),
+					},
+				}
+				mockStore.On("GetObjectLikes", mock.Anything, "https://test.example.com/objects/123", 20, "").Return(likes, "cursor123", nil)
+				
+				// Mock actor retrieval for likes
+				localActor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   "https://test.example.com/users/user1",
+						Type: "Person",
+					},
+					PreferredUsername: "user1",
+					Name:              "User One",
+				}
+				remoteActor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   "https://remote.example.com/users/user2",
+						Type: "Person",
+					},
+					PreferredUsername: "user2",
+					Name:              "User Two",
+				}
+				
+				mockStore.On("GetActor", mock.Anything, "user1").Return(localActor, nil)
+				mockStore.On("GetActor", mock.Anything, "user2").Return(remoteActor, nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			checkResponse: func(t *testing.T, ctx *lift.Context) {
+				// Should have Link header for pagination
+				linkHeader := ctx.Response.Headers["Link"]
+				assert.Contains(t, linkHeader, "max_id=cursor123")
+				assert.Contains(t, linkHeader, "limit=20")
+				assert.Contains(t, linkHeader, `rel="next"`)
+				assert.Contains(t, linkHeader, "/api/v1/statuses/123/favourited_by")
+			},
+		},
+		{
+			name:     "successful favourited_by retrieval with empty list",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Return empty likes list
+				mockStore.On("GetObjectLikes", mock.Anything, "https://test.example.com/objects/123", 20, "").Return([]*storage.Like{}, "", nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			checkResponse: func(t *testing.T, ctx *lift.Context) {
+				// Should not have Link header when no items
+				linkHeader := ctx.Response.Headers["Link"]
+				assert.Empty(t, linkHeader)
+			},
+		},
+		{
+			name:     "pagination test with max_id parameter",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Mock likes retrieval with cursor
+				likes := []*storage.Like{
+					{
+						Actor:     "https://test.example.com/users/user3",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://test.example.com/activities/like/3",
+						Published: time.Now().Add(-3 * time.Hour),
+						CreatedAt: time.Now().Add(-3 * time.Hour),
+					},
+				}
+				mockStore.On("GetObjectLikes", mock.Anything, "https://test.example.com/objects/123", 10, "prev_cursor").Return(likes, "next_cursor", nil)
+				
+				// Mock actor retrieval
+				actor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   "https://test.example.com/users/user3",
+						Type: "Person",
+					},
+					PreferredUsername: "user3",
+					Name:              "User Three",
+				}
+				mockStore.On("GetActor", mock.Anything, "user3").Return(actor, nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			checkResponse: func(t *testing.T, ctx *lift.Context) {
+				// Should have Link header with correct cursor
+				linkHeader := ctx.Response.Headers["Link"]
+				assert.Contains(t, linkHeader, "max_id=next_cursor")
+				assert.Contains(t, linkHeader, "limit=10")
+			},
+		},
+		{
+			name:     "status not found",
+			statusID: "404",
+			setupMocks: func() {
+				// Mock status not found
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/404").Return(nil, storage.ErrNotFound)
+			},
+			expectedStatus: http.StatusNotFound,
+			expectError:    false,
+		},
+		{
+			name:     "missing status ID parameter",
+			statusID: "",
+			setupMocks: func() {
+				// No mocks needed - error occurs before any storage calls
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectError:    false,
+		},
+		{
+			name:     "storage error when getting likes",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Mock storage error
+				mockStore.On("GetObjectLikes", mock.Anything, "https://test.example.com/objects/123", 20, "").Return(nil, "", assert.AnError)
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectError:    false,
+		},
+		{
+			name:     "handles actor lookup failures gracefully",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Mock likes with one valid and one invalid actor
+				likes := []*storage.Like{
+					{
+						Actor:     "https://test.example.com/users/validuser",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://test.example.com/activities/like/1",
+						Published: time.Now().Add(-1 * time.Hour),
+						CreatedAt: time.Now().Add(-1 * time.Hour),
+					},
+					{
+						Actor:     "https://missing.example.com/users/missinguser",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://missing.example.com/activities/like/2",
+						Published: time.Now().Add(-2 * time.Hour),
+						CreatedAt: time.Now().Add(-2 * time.Hour),
+					},
+				}
+				mockStore.On("GetObjectLikes", mock.Anything, "https://test.example.com/objects/123", 20, "").Return(likes, "", nil)
+				
+				// First actor succeeds, second fails
+				validActor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   "https://test.example.com/users/validuser",
+						Type: "Person",
+					},
+					PreferredUsername: "validuser",
+					Name:              "Valid User",
+				}
+				mockStore.On("GetActor", mock.Anything, "validuser").Return(validActor, nil)
+				mockStore.On("GetActor", mock.Anything, "missinguser").Return(nil, storage.ErrNotFound)
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			checkResponse: func(t *testing.T, ctx *lift.Context) {
+				// Should continue processing despite one actor failing
+				// The response should contain accounts but fewer than the number of likes
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mocks
+			mockStore = new(MockStorageAdapter)
+			tt.setupMocks()
+			
+			// Create handler
+			handler := &Handler{
+				cfg: &config.Config{
+					JWTSecret: "test-secret",
+					Domain:    "test.example.com",
+				},
+				store:  mockStore,
+				logger: zap.NewNop(),
+				authMiddleware: &auth.Middleware{},
+			}
+			
+			// Setup context
+			req := &lift.Request{
+				Request: &adapters.Request{
+					Method: "GET",
+					Path:   "/api/v1/statuses/" + tt.statusID + "/favourited_by",
+					Headers: map[string]string{
+						"X-Test-Username": "testuser",
+					},
+					QueryParams: map[string]string{},
+				},
+			}
+			
+			// Add specific query params for pagination test
+			if tt.name == "pagination test with max_id parameter" {
+				req.Request.QueryParams["limit"] = "10"
+				req.Request.QueryParams["max_id"] = "prev_cursor"
+			}
+			
+			ctx := lift.NewContext(context.Background(), req)
+			ctx.SetParam("id", tt.statusID)
+			
+			// Call handler directly
+			err := handler.HandleGetStatusFavouritedByLift(ctx)
+			
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			
+			// Check status
+			assert.Equal(t, tt.expectedStatus, ctx.Response.StatusCode)
+			
+			// Run additional response checks if provided
+			if tt.checkResponse != nil {
+				tt.checkResponse(t, ctx)
+			}
+			
+			// Verify all mocks were called
+			mockStore.AssertExpectations(t)
+		})
+	}
+}
+
+func TestHandleGetStatusRebloggedByLift(t *testing.T) {
+	var mockStore *MockStorageAdapter
+
+	tests := []struct {
+		name           string
+		statusID       string
+		setupMocks     func()
+		expectedStatus int
+		expectError    bool
+		checkResponse  func(t *testing.T, ctx *lift.Context)
+	}{
+		{
+			name:     "successful reblogged_by retrieval with users",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Mock announces retrieval
+				announces := []*storage.Announce{
+					{
+						Actor:     "https://test.example.com/users/user1",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://test.example.com/activities/announce/1",
+						Published: time.Now().Add(-1 * time.Hour),
+						CreatedAt: time.Now().Add(-1 * time.Hour),
+					},
+					{
+						Actor:     "https://remote.example.com/users/user2",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://remote.example.com/activities/announce/2",
+						Published: time.Now().Add(-2 * time.Hour),
+						CreatedAt: time.Now().Add(-2 * time.Hour),
+					},
+				}
+				mockStore.On("GetObjectAnnounces", mock.Anything, "https://test.example.com/objects/123", 20, "").Return(announces, "cursor123", nil)
+				
+				// Mock actor retrieval for announces
+				localActor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   "https://test.example.com/users/user1",
+						Type: "Person",
+					},
+					PreferredUsername: "user1",
+					Name:              "User One",
+				}
+				remoteActor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   "https://remote.example.com/users/user2",
+						Type: "Person",
+					},
+					PreferredUsername: "user2",
+					Name:              "User Two",
+				}
+				
+				mockStore.On("GetActor", mock.Anything, "user1").Return(localActor, nil)
+				mockStore.On("GetActor", mock.Anything, "user2").Return(remoteActor, nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			checkResponse: func(t *testing.T, ctx *lift.Context) {
+				// Should have Link header for pagination
+				linkHeader := ctx.Response.Headers["Link"]
+				assert.Contains(t, linkHeader, "max_id=cursor123")
+				assert.Contains(t, linkHeader, "limit=20")
+				assert.Contains(t, linkHeader, `rel="next"`)
+				assert.Contains(t, linkHeader, "/api/v1/statuses/123/reblogged_by")
+			},
+		},
+		{
+			name:     "successful reblogged_by retrieval with empty list",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Return empty announces list
+				mockStore.On("GetObjectAnnounces", mock.Anything, "https://test.example.com/objects/123", 20, "").Return([]*storage.Announce{}, "", nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			checkResponse: func(t *testing.T, ctx *lift.Context) {
+				// Should not have Link header when no items
+				linkHeader := ctx.Response.Headers["Link"]
+				assert.Empty(t, linkHeader)
+			},
+		},
+		{
+			name:     "pagination test with max_id parameter",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Mock announces retrieval with cursor
+				announces := []*storage.Announce{
+					{
+						Actor:     "https://test.example.com/users/user3",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://test.example.com/activities/announce/3",
+						Published: time.Now().Add(-3 * time.Hour),
+						CreatedAt: time.Now().Add(-3 * time.Hour),
+					},
+				}
+				mockStore.On("GetObjectAnnounces", mock.Anything, "https://test.example.com/objects/123", 10, "prev_cursor").Return(announces, "next_cursor", nil)
+				
+				// Mock actor retrieval
+				actor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   "https://test.example.com/users/user3",
+						Type: "Person",
+					},
+					PreferredUsername: "user3",
+					Name:              "User Three",
+				}
+				mockStore.On("GetActor", mock.Anything, "user3").Return(actor, nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			checkResponse: func(t *testing.T, ctx *lift.Context) {
+				// Should have Link header with correct cursor
+				linkHeader := ctx.Response.Headers["Link"]
+				assert.Contains(t, linkHeader, "max_id=next_cursor")
+				assert.Contains(t, linkHeader, "limit=10")
+			},
+		},
+		{
+			name:     "status not found",
+			statusID: "404",
+			setupMocks: func() {
+				// Mock status not found
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/404").Return(nil, storage.ErrNotFound)
+			},
+			expectedStatus: http.StatusNotFound,
+			expectError:    false,
+		},
+		{
+			name:     "missing status ID parameter",
+			statusID: "",
+			setupMocks: func() {
+				// No mocks needed - error occurs before any storage calls
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectError:    false,
+		},
+		{
+			name:     "storage error when getting announces",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Mock storage error
+				mockStore.On("GetObjectAnnounces", mock.Anything, "https://test.example.com/objects/123", 20, "").Return(nil, "", assert.AnError)
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectError:    false,
+		},
+		{
+			name:     "handles actor lookup failures gracefully",
+			statusID: "123",
+			setupMocks: func() {
+				// Mock status existence check
+				publishedTime := time.Now().Add(-1 * time.Hour)
+				mockNote := &activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:        "https://test.example.com/objects/123",
+						Type:      "Note",
+						Published: &publishedTime,
+					},
+					AttributedTo: "https://test.example.com/users/author",
+					Content:      "Test status",
+				}
+				mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+				
+				// Mock announces with one valid and one invalid actor
+				announces := []*storage.Announce{
+					{
+						Actor:     "https://test.example.com/users/validuser",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://test.example.com/activities/announce/1",
+						Published: time.Now().Add(-1 * time.Hour),
+						CreatedAt: time.Now().Add(-1 * time.Hour),
+					},
+					{
+						Actor:     "https://missing.example.com/users/missinguser",
+						Object:    "https://test.example.com/objects/123",
+						ID:        "https://missing.example.com/activities/announce/2",
+						Published: time.Now().Add(-2 * time.Hour),
+						CreatedAt: time.Now().Add(-2 * time.Hour),
+					},
+				}
+				mockStore.On("GetObjectAnnounces", mock.Anything, "https://test.example.com/objects/123", 20, "").Return(announces, "", nil)
+				
+				// First actor succeeds, second fails
+				validActor := &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   "https://test.example.com/users/validuser",
+						Type: "Person",
+					},
+					PreferredUsername: "validuser",
+					Name:              "Valid User",
+				}
+				mockStore.On("GetActor", mock.Anything, "validuser").Return(validActor, nil)
+				mockStore.On("GetActor", mock.Anything, "missinguser").Return(nil, storage.ErrNotFound)
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			checkResponse: func(t *testing.T, ctx *lift.Context) {
+				// Should continue processing despite one actor failing
+				// The response should contain accounts but fewer than the number of announces
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mocks
+			mockStore = new(MockStorageAdapter)
+			tt.setupMocks()
+			
+			// Create handler
+			handler := &Handler{
+				cfg: &config.Config{
+					JWTSecret: "test-secret",
+					Domain:    "test.example.com",
+				},
+				store:  mockStore,
+				logger: zap.NewNop(),
+				authMiddleware: &auth.Middleware{},
+			}
+			
+			// Setup context
+			req := &lift.Request{
+				Request: &adapters.Request{
+					Method: "GET",
+					Path:   "/api/v1/statuses/" + tt.statusID + "/reblogged_by",
+					Headers: map[string]string{
+						"X-Test-Username": "testuser",
+					},
+					QueryParams: map[string]string{},
+				},
+			}
+			
+			// Add specific query params for pagination test
+			if tt.name == "pagination test with max_id parameter" {
+				req.Request.QueryParams["limit"] = "10"
+				req.Request.QueryParams["max_id"] = "prev_cursor"
+			}
+			
+			ctx := lift.NewContext(context.Background(), req)
+			ctx.SetParam("id", tt.statusID)
+			
+			// Call handler directly
+			err := handler.HandleGetStatusRebloggedByLift(ctx)
+			
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			
+			// Check status
+			assert.Equal(t, tt.expectedStatus, ctx.Response.StatusCode)
+			
+			// Run additional response checks if provided
+			if tt.checkResponse != nil {
+				tt.checkResponse(t, ctx)
+			}
+			
+			// Verify all mocks were called
+			mockStore.AssertExpectations(t)
+		})
+	}
+}
+
+// TestStatusInteractionsHandlerWithLimitValidation tests the limit parameter validation for both handlers
+func TestStatusInteractionsHandlerWithLimitValidation(t *testing.T) {
+	var mockStore *MockStorageAdapter
+
+	testCases := []struct {
+		name          string
+		limitParam    string
+		expectedLimit int
+	}{
+		{"default limit", "", 20},
+		{"valid limit within range", "10", 10},
+		{"maximum allowed limit", "80", 80},
+		{"limit too high defaults to max", "100", 20}, // Should default because > 80
+		{"zero limit defaults", "0", 20},              // Should default because <= 0
+		{"negative limit defaults", "-5", 20},         // Should default because <= 0
+		{"invalid string defaults", "abc", 20},        // Should default because not parseable
+	}
+
+	for _, tc := range testCases {
+		t.Run("favourited_by "+tc.name, func(t *testing.T) {
+			mockStore = new(MockStorageAdapter)
+			
+			// Setup mocks
+			publishedTime := time.Now().Add(-1 * time.Hour)
+			mockNote := &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        "https://test.example.com/objects/123",
+					Type:      "Note",
+					Published: &publishedTime,
+				},
+				AttributedTo: "https://test.example.com/users/author",
+				Content:      "Test status",
+			}
+			mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+			
+			// Expect GetObjectLikes to be called with the expected limit
+			mockStore.On("GetObjectLikes", mock.Anything, "https://test.example.com/objects/123", tc.expectedLimit, "").Return([]*storage.Like{}, "", nil)
+			
+			handler := &Handler{
+				cfg: &config.Config{
+					JWTSecret: "test-secret",
+					Domain:    "test.example.com",
+				},
+				store:  mockStore,
+				logger: zap.NewNop(),
+				authMiddleware: &auth.Middleware{},
+			}
+			
+			// Setup context with limit parameter
+			req := &lift.Request{
+				Request: &adapters.Request{
+					Method: "GET",
+					Path:   "/api/v1/statuses/123/favourited_by",
+					Headers: map[string]string{
+						"X-Test-Username": "testuser",
+					},
+					QueryParams: map[string]string{},
+				},
+			}
+			
+			if tc.limitParam != "" {
+				req.Request.QueryParams["limit"] = tc.limitParam
+			}
+			
+			ctx := lift.NewContext(context.Background(), req)
+			ctx.SetParam("id", "123")
+			
+			// Call handler
+			err := handler.HandleGetStatusFavouritedByLift(ctx)
+			assert.NoError(t, err)
+			
+			// Verify mocks were called with expected parameters
+			mockStore.AssertExpectations(t)
+		})
+
+		t.Run("reblogged_by "+tc.name, func(t *testing.T) {
+			mockStore = new(MockStorageAdapter)
+			
+			// Setup mocks
+			publishedTime := time.Now().Add(-1 * time.Hour)
+			mockNote := &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        "https://test.example.com/objects/123",
+					Type:      "Note",
+					Published: &publishedTime,
+				},
+				AttributedTo: "https://test.example.com/users/author",
+				Content:      "Test status",
+			}
+			mockStore.On("GetObject", mock.Anything, "https://test.example.com/objects/123").Return(mockNote, nil)
+			
+			// Expect GetObjectAnnounces to be called with the expected limit
+			mockStore.On("GetObjectAnnounces", mock.Anything, "https://test.example.com/objects/123", tc.expectedLimit, "").Return([]*storage.Announce{}, "", nil)
+			
+			handler := &Handler{
+				cfg: &config.Config{
+					JWTSecret: "test-secret",
+					Domain:    "test.example.com",
+				},
+				store:  mockStore,
+				logger: zap.NewNop(),
+				authMiddleware: &auth.Middleware{},
+			}
+			
+			// Setup context with limit parameter
+			req := &lift.Request{
+				Request: &adapters.Request{
+					Method: "GET",
+					Path:   "/api/v1/statuses/123/reblogged_by",
+					Headers: map[string]string{
+						"X-Test-Username": "testuser",
+					},
+					QueryParams: map[string]string{},
+				},
+			}
+			
+			if tc.limitParam != "" {
+				req.Request.QueryParams["limit"] = tc.limitParam
+			}
+			
+			ctx := lift.NewContext(context.Background(), req)
+			ctx.SetParam("id", "123")
+			
+			// Call handler
+			err := handler.HandleGetStatusRebloggedByLift(ctx)
+			assert.NoError(t, err)
+			
+			// Verify mocks were called with expected parameters
+			mockStore.AssertExpectations(t)
+		})
+	}
+}

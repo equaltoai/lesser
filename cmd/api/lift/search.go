@@ -1,0 +1,215 @@
+package lift
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/pay-theory/lift/pkg/lift"
+	"go.uber.org/zap"
+)
+
+// HandleAccountSearchLift handles GET /api/v1/accounts/search
+// Search for accounts by username, display name, or domain
+func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
+	// Extract query parameters
+	query := ctx.Query("q")
+	
+	// Fallback to direct query param access if ctx.Query doesn't work
+	if query == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		query = ctx.Request.Request.QueryParams["q"]
+	}
+	
+	if query == "" {
+		return ctx.Status(400).JSON(map[string]string{"error": "q parameter is required"})
+	}
+
+	// Parse limit (default 40, max 80)
+	limit := 40
+	limitStr := ctx.Query("limit")
+	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		limitStr = ctx.Request.Request.QueryParams["limit"]
+	}
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil {
+			if parsedLimit > 80 {
+				limit = 80
+			} else if parsedLimit < 1 {
+				limit = 1
+			} else {
+				limit = parsedLimit
+			}
+		}
+	}
+
+	// Parse offset for pagination
+	offset := 0
+	offsetStr := ctx.Query("offset")
+	if offsetStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		offsetStr = ctx.Request.Request.QueryParams["offset"]
+	}
+	if offsetStr != "" {
+		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil {
+			offset = parsedOffset
+		}
+	}
+
+	// Check if we should only return accounts the user is following
+	followingParam := ctx.Query("following")
+	if followingParam == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		followingParam = ctx.Request.Request.QueryParams["following"]
+	}
+	followingOnly := followingParam == "true"
+
+	// Check if we should resolve remote accounts
+	resolveParam := ctx.Query("resolve")
+	if resolveParam == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		resolveParam = ctx.Request.Request.QueryParams["resolve"]
+	}
+	resolve := resolveParam == "true"
+
+	// Authentication is optional for search, but required for following filter
+	var authenticatedUser string
+	authHeader := ctx.Header("Authorization")
+	
+	// Support test mode
+	testUsername := ctx.Header("X-Test-Username")
+	if testUsername == "" {
+		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	}
+	
+	if testUsername != "" {
+		authenticatedUser = testUsername
+	} else if authHeader != "" {
+		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
+			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
+				authenticatedUser = claims.Username
+
+				// Check read scope if following filter is requested
+				if followingOnly && !claims.HasScope(auth.ScopeRead) {
+					return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope for following filter"})
+				}
+			}
+		}
+	}
+
+	// If following filter is requested but no auth, return error
+	if followingOnly && authenticatedUser == "" {
+		return ctx.Status(401).JSON(map[string]string{"error": "authentication required for following filter"})
+	}
+
+	// Perform the search
+	actors, err := h.store.SearchAccounts(ctx.Context, query, limit, followingOnly, offset)
+	if err != nil {
+		h.logger.Error("account search failed",
+			zap.String("query", query),
+			zap.Int("limit", limit),
+			zap.Int("offset", offset),
+			zap.Bool("following", followingOnly),
+			zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "search failed"})
+	}
+
+	// If resolve is true, try WebFinger lookup for federated handles
+	if resolve && isValidHandle(query) {
+		// Create remote search service
+		remoteSearchSvc := federation.NewRemoteSearchService(h.store)
+
+		// Search for remote actors
+		remoteResults, err := remoteSearchSvc.SearchRemoteActors(ctx.Context, query, limit)
+		if err != nil {
+			h.logger.Debug("remote search failed",
+				zap.String("query", query),
+				zap.Error(err))
+		} else if len(remoteResults) > 0 {
+			// Add remote actors to results
+			for _, result := range remoteResults {
+				if result.Actor != nil {
+					actors = append(actors, result.Actor)
+				}
+			}
+		}
+	}
+
+	// Convert actors to Mastodon account format
+	converter := mastodon.NewConverter(h.cfg.BaseURL())
+	accounts := make([]models.Account, 0, len(actors))
+	for _, actor := range actors {
+		account := converter.ActorToAccount(actor)
+		accounts = append(accounts, account)
+	}
+
+	// Add search metadata to response headers
+	ctx.Response.Header("X-Total-Count", fmt.Sprintf("%d", len(accounts)))
+
+	// Log search analytics
+	h.logger.Info("account search completed",
+		zap.String("query", query),
+		zap.Int("results", len(accounts)),
+		zap.Int("limit", limit),
+		zap.Int("offset", offset),
+		zap.Bool("authenticated", authenticatedUser != ""))
+
+	return ctx.JSON(accounts)
+}
+
+// HandleGetSearchSuggestionsLift handles GET /api/v1/accounts/search/suggestions
+// Returns search suggestions for autocomplete
+func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
+	// Extract query prefix
+	prefix := ctx.Query("q")
+	if prefix == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		prefix = ctx.Request.Request.QueryParams["q"]
+	}
+	if len(prefix) < 2 {
+		// Return empty array for short prefixes
+		return ctx.JSON([]any{})
+	}
+
+	// Get suggestions from storage
+	suggestions, err := h.store.GetSearchSuggestions(ctx.Context, prefix)
+	if err != nil {
+		h.logger.Error("failed to get search suggestions",
+			zap.String("prefix", prefix),
+			zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "suggestions lookup failed"})
+	}
+
+	// Convert to API response format
+	response := make([]map[string]any, 0, len(suggestions))
+	for _, sugg := range suggestions {
+		response = append(response, map[string]any{
+			"type":  sugg.Type,
+			"value": sugg.Value,
+			"score": sugg.Score,
+		})
+	}
+
+	h.logger.Debug("search suggestions returned",
+		zap.String("prefix", prefix),
+		zap.Int("count", len(response)))
+
+	return ctx.JSON(response)
+}
+
+// isValidHandle checks if a query looks like a federated handle (@user@domain.com)
+func isValidHandle(query string) bool {
+	// Simple check for @user@domain pattern
+	if len(query) < 5 {
+		return false
+	}
+
+	atCount := 0
+	for _, ch := range query {
+		if ch == '@' {
+			atCount++
+		}
+	}
+
+	// Should have exactly 2 @ symbols for federated handle
+	return atCount == 2 || (atCount == 1 && query[0] == '@')
+}

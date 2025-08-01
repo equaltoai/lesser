@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/handlers"
+	liftHandlers "github.com/equaltoai/lesser/cmd/api/lift"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -36,6 +37,7 @@ var (
 	store            storage.Storage
 	logger           *zap.Logger
 	handler          *handlers.Handler
+	liftHandler      *liftHandlers.Handler
 	authService      *auth.AuthService
 	liftAuthSvc      *liftAuth.LiftAuthService
 	metricsCollector *observability.MetricsCollector
@@ -84,6 +86,9 @@ func init() {
 		logger.Fatal("failed to initialize legacy auth middleware", zap.Error(err))
 	}
 	handler = handlers.NewHandler(cfg, store, logger, legacyAuthMiddleware)
+	
+	// Create Lift handler for native Lift endpoints
+	liftHandler = liftHandlers.NewHandler(cfg, store, logger, legacyAuthMiddleware)
 }
 
 func main() {
@@ -118,6 +123,9 @@ func main() {
 	configureAuthenticatedReadRoutes(app)
 	configureAuthenticatedWriteRoutes(app)
 	configureAdminRoutes(app)
+	
+	// Configure native Lift routes (controlled by environment variable)
+	configureLiftRoutes(app)
 
 	// Start the Lambda handler
 	// Note: Cost tracking is handled within the handlers via context

@@ -7,8 +7,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
-	"go.uber.org/zap"
+	// "github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	// "go.uber.org/zap"
 )
 
 // ContextKey is a type for context keys
@@ -45,18 +45,9 @@ func GetMiddleware() (*Middleware, error) {
 		jwtSecret = "development-secret-change-me"
 	}
 
-	// Initialize storage
-	store, err := dynamodb.New()
-	if err != nil {
-		common.Logger().Error("failed to initialize storage for middleware", zap.Error(err))
-		return nil, err
-	}
-
-	globalMiddleware = &Middleware{
-		oauthService: NewOAuthService(jwtSecret, store),
-	}
-
-	return globalMiddleware, nil
+	// TEMPORARY: Storage initialization needs to be passed in
+	// This is part of the migration to Lift
+	return nil, errors.New("GetMiddleware needs storage - use handler's auth middleware instead")
 }
 
 // NewMiddleware creates a new auth middleware (deprecated - use GetMiddleware)
