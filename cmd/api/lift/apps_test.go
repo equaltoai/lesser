@@ -1,0 +1,721 @@
+package lift
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"testing"
+
+	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/pay-theory/lift/pkg/lift/adapters"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
+)
+
+func TestHandleAppRegistrationLift(t *testing.T) {
+	// Create mock storage adapter
+	var mockStore *MockStorageAdapter
+
+	tests := []struct {
+		name           string
+		setupContext   func() *lift.Context
+		setupMocks     func()
+		expectedStatus int
+		expectError    bool
+		validateResp   func(t *testing.T, ctx *lift.Context)
+	}{
+		{
+			name: "successful app registration with form request",
+			setupContext: func() *lift.Context {
+				reqBody := "client_name=Test+App&redirect_uris=https%3A%2F%2Fexample.com%2Fcallback&scopes=read+write&website=https%3A%2F%2Fexample.com"
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "POST",
+						Path:   "/api/v1/apps",
+						Headers: map[string]string{
+							"Content-Type": "application/x-www-form-urlencoded",
+						},
+						Body: []byte(reqBody),
+					},
+					Method:  "POST",
+					Path:    "/api/v1/apps",
+					Headers: map[string]string{
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					Body: []byte(reqBody),
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client creation
+				mockStore.On("CreateOAuthClient", mock.Anything, mock.MatchedBy(func(client *storage.OAuthClient) bool {
+					return client.Name == "Test App" &&
+						len(client.RedirectURIs) == 1 &&
+						client.RedirectURIs[0] == "https://example.com/callback" &&
+						client.Website == "https://example.com"
+				})).Run(func(args mock.Arguments) {
+					client := args.Get(1).(*storage.OAuthClient)
+					client.ClientID = "test-client-id"
+					client.ClientSecret = "test-client-secret"
+				}).Return(nil).Once()
+
+				// Mock VAPID keys retrieval
+				mockStore.On("GetVAPIDKeys", mock.Anything).Return(&storage.VAPIDKeys{
+					PublicKey:  "test-vapid-public-key",
+					PrivateKey: "test-vapid-private-key",
+				}, nil).Once()
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var resp models.AppRegistrationResponse
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &resp)
+				assert.NoError(t, err)
+				assert.Equal(t, "test-client-id", resp.ID)
+				assert.Equal(t, "Test App", resp.Name)
+				assert.Equal(t, "https://example.com", resp.Website)
+				assert.Equal(t, "https://example.com/callback", resp.RedirectURI)
+				assert.Equal(t, "test-client-id", resp.ClientID)
+				assert.Equal(t, "test-client-secret", resp.ClientSecret)
+				assert.Equal(t, "test-vapid-public-key", resp.VapidKey)
+			},
+		},
+		{
+			name: "successful app registration with form data",
+			setupContext: func() *lift.Context {
+				reqBody := "client_name=Form%20App&redirect_uris=myapp%3A%2F%2Fcallback&scopes=read"
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "POST",
+						Path:   "/api/v1/apps",
+						Headers: map[string]string{
+							"Content-Type": "application/x-www-form-urlencoded",
+						},
+						Body: []byte(reqBody),
+					},
+					Method:  "POST",
+					Path:    "/api/v1/apps",
+					Headers: map[string]string{
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					Body: []byte(reqBody),
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client creation
+				mockStore.On("CreateOAuthClient", mock.Anything, mock.MatchedBy(func(client *storage.OAuthClient) bool {
+					return client.Name == "Form App" &&
+						len(client.RedirectURIs) == 1 &&
+						client.RedirectURIs[0] == "myapp://callback"
+				})).Run(func(args mock.Arguments) {
+					client := args.Get(1).(*storage.OAuthClient)
+					client.ClientID = "form-client-id"
+					client.ClientSecret = "form-client-secret"
+				}).Return(nil).Once()
+
+				// Mock VAPID keys retrieval
+				mockStore.On("GetVAPIDKeys", mock.Anything).Return(&storage.VAPIDKeys{
+					PublicKey:  "test-vapid-public-key",
+					PrivateKey: "test-vapid-private-key",
+				}, nil).Once()
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var resp models.AppRegistrationResponse
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &resp)
+				assert.NoError(t, err)
+				assert.Equal(t, "form-client-id", resp.ID)
+				assert.Equal(t, "Form App", resp.Name)
+				assert.Equal(t, "myapp://callback", resp.RedirectURI)
+				assert.Equal(t, "form-client-id", resp.ClientID)
+				assert.Equal(t, "form-client-secret", resp.ClientSecret)
+			},
+		},
+		{
+			name: "successful app registration with special redirect URI",
+			setupContext: func() *lift.Context {
+				reqBody := "client_name=Special+App&redirect_uris=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob&scopes=read+write+follow"
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "POST",
+						Path:   "/api/v1/apps",
+						Headers: map[string]string{
+							"Content-Type": "application/x-www-form-urlencoded",
+						},
+						Body: []byte(reqBody),
+					},
+					Method:  "POST",
+					Path:    "/api/v1/apps",
+					Headers: map[string]string{
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					Body: []byte(reqBody),
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client creation
+				mockStore.On("CreateOAuthClient", mock.Anything, mock.MatchedBy(func(client *storage.OAuthClient) bool {
+					return client.Name == "Special App" &&
+						len(client.RedirectURIs) == 1 &&
+						client.RedirectURIs[0] == "urn:ietf:wg:oauth:2.0:oob"
+				})).Run(func(args mock.Arguments) {
+					client := args.Get(1).(*storage.OAuthClient)
+					client.ClientID = "special-client-id"
+					client.ClientSecret = "special-client-secret"
+				}).Return(nil).Once()
+
+				// Mock VAPID keys retrieval
+				mockStore.On("GetVAPIDKeys", mock.Anything).Return(&storage.VAPIDKeys{
+					PublicKey:  "test-vapid-public-key",
+					PrivateKey: "test-vapid-private-key",
+				}, nil).Once()
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var resp models.AppRegistrationResponse
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &resp)
+				assert.NoError(t, err)
+				assert.Equal(t, "special-client-id", resp.ID)
+				assert.Equal(t, "Special App", resp.Name)
+				assert.Equal(t, "urn:ietf:wg:oauth:2.0:oob", resp.RedirectURI)
+				assert.Equal(t, "special-client-id", resp.ClientID)
+				assert.Equal(t, "special-client-secret", resp.ClientSecret)
+			},
+		},
+		{
+			name: "validation error - missing client name",
+			setupContext: func() *lift.Context {
+				reqBody := `{"redirect_uris":"https://example.com/callback","scopes":"read write"}`
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "POST",
+						Path:   "/api/v1/apps",
+						Headers: map[string]string{
+							"Content-Type": "application/json",
+						},
+						Body: []byte(reqBody),
+					},
+					Method:  "POST",
+					Path:    "/api/v1/apps",
+					Headers: map[string]string{
+						"Content-Type": "application/json",
+					},
+					Body: []byte(reqBody),
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// No mocks needed - should fail validation before storage calls
+			},
+			expectedStatus: 422,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var errorResp map[string]string
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &errorResp)
+				assert.NoError(t, err)
+				assert.Equal(t, "client_name is required", errorResp["error"])
+			},
+		},
+		{
+			name: "validation error - missing redirect URIs",
+			setupContext: func() *lift.Context {
+				reqBody := "client_name=Test+App&scopes=read+write"
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "POST",
+						Path:   "/api/v1/apps",
+						Headers: map[string]string{
+							"Content-Type": "application/x-www-form-urlencoded",
+						},
+						Body: []byte(reqBody),
+					},
+					Method:  "POST",
+					Path:    "/api/v1/apps",
+					Headers: map[string]string{
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					Body: []byte(reqBody),
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// No mocks needed - should fail validation before storage calls
+			},
+			expectedStatus: 422,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var errorResp map[string]string
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &errorResp)
+				assert.NoError(t, err)
+				assert.Equal(t, "redirect_uris is required", errorResp["error"])
+			},
+		},
+		{
+			name: "storage error during client creation",
+			setupContext: func() *lift.Context {
+				reqBody := "client_name=Test+App&redirect_uris=https%3A%2F%2Fexample.com%2Fcallback&scopes=read+write"
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "POST",
+						Path:   "/api/v1/apps",
+						Headers: map[string]string{
+							"Content-Type": "application/x-www-form-urlencoded",
+						},
+						Body: []byte(reqBody),
+					},
+					Method:  "POST",
+					Path:    "/api/v1/apps",
+					Headers: map[string]string{
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					Body: []byte(reqBody),
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client creation failure
+				mockStore.On("CreateOAuthClient", mock.Anything, mock.Anything).Return(fmt.Errorf("database error")).Once()
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var errorResp map[string]string
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &errorResp)
+				assert.NoError(t, err)
+				assert.Equal(t, "Internal server error", errorResp["error"])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mocks
+			mockStore = new(MockStorageAdapter)
+			if tt.setupMocks != nil {
+				tt.setupMocks()
+			}
+			
+			handler := &Handler{
+				cfg: &config.Config{
+					JWTSecret: "test-secret",
+					Domain:    "test.example.com",
+				},
+				store:  mockStore,
+				logger: zap.NewNop(),
+				authMiddleware: &auth.Middleware{},
+			}
+			
+			// Get context
+			ctx := tt.setupContext()
+			
+			// Call handler directly
+			err := handler.HandleAppRegistrationLift(ctx)
+			
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			
+			
+			// Check status
+			assert.Equal(t, tt.expectedStatus, ctx.Response.StatusCode)
+			
+			// Validate response if provided
+			if tt.validateResp != nil {
+				tt.validateResp(t, ctx)
+			}
+			
+			// Verify all mocks were called
+			mockStore.AssertExpectations(t)
+		})
+	}
+}
+
+func TestHandleAppVerifyCredentialsLift(t *testing.T) {
+	// Create mock storage adapter
+	var mockStore *MockStorageAdapter
+
+	tests := []struct {
+		name           string
+		setupContext   func() *lift.Context
+		setupMocks     func()
+		expectedStatus int
+		expectError    bool
+		validateResp   func(t *testing.T, ctx *lift.Context)
+	}{
+		{
+			name: "successful credential verification with basic auth (OAuth token path fails and falls back to basic auth)",
+			setupContext: func() *lift.Context {
+				// Use base64 encoded client credentials since OAuth token validation will fail
+				credentials := base64.StdEncoding.EncodeToString([]byte("test-client-id:test-client-secret"))
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "GET",
+						Path:   "/api/v1/apps/verify_credentials",
+						Headers: map[string]string{
+							"Authorization": "Bearer " + credentials,
+						},
+					},
+					Method: "GET",
+					Path:   "/api/v1/apps/verify_credentials",
+					Headers: map[string]string{
+						"Authorization": "Bearer " + credentials,
+					},
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client lookup for basic auth
+				mockStore.On("GetOAuthClient", mock.Anything, "test-client-id").Return(&storage.OAuthClient{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+					Name:         "Test OAuth App",
+					Website:      "https://oauth-example.com",
+					RedirectURIs: []string{"https://oauth-example.com/callback"},
+					Scopes:       []string{"read", "write"},
+				}, nil).Once()
+
+				// Mock VAPID keys retrieval
+				mockStore.On("GetVAPIDKeys", mock.Anything).Return(&storage.VAPIDKeys{
+					PublicKey:  "test-vapid-public-key",
+					PrivateKey: "test-vapid-private-key",
+				}, nil).Once()
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var resp models.AppRegistrationResponse
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &resp)
+				assert.NoError(t, err)
+				assert.Equal(t, "test-client-id", resp.ID)
+				assert.Equal(t, "Test OAuth App", resp.Name)
+				assert.Equal(t, "https://oauth-example.com", resp.Website)
+				assert.Equal(t, "https://oauth-example.com/callback", resp.RedirectURI)
+				assert.Equal(t, "test-client-id", resp.ClientID)
+				assert.Equal(t, "test-client-secret", resp.ClientSecret)
+				assert.Equal(t, "test-vapid-public-key", resp.VapidKey)
+			},
+		},
+		{
+			name: "successful credential verification with basic auth",
+			setupContext: func() *lift.Context {
+				// Create base64 encoded credentials
+				credentials := base64.StdEncoding.EncodeToString([]byte("basic-client-id:basic-client-secret"))
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "GET",
+						Path:   "/api/v1/apps/verify_credentials",
+						Headers: map[string]string{
+							"Authorization": "Bearer " + credentials,
+						},
+					},
+					Method: "GET",
+					Path:   "/api/v1/apps/verify_credentials",
+					Headers: map[string]string{
+						"Authorization": "Bearer " + credentials,
+					},
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client lookup
+				mockStore.On("GetOAuthClient", mock.Anything, "basic-client-id").Return(&storage.OAuthClient{
+					ClientID:     "basic-client-id",
+					ClientSecret: "basic-client-secret",
+					Name:         "Test Basic App",
+					Website:      "https://basic-example.com",
+					RedirectURIs: []string{"https://basic-example.com/callback"},
+					Scopes:       []string{"read"},
+				}, nil).Once()
+
+				// Mock VAPID keys retrieval
+				mockStore.On("GetVAPIDKeys", mock.Anything).Return(&storage.VAPIDKeys{
+					PublicKey:  "test-vapid-public-key",
+					PrivateKey: "test-vapid-private-key",
+				}, nil).Once()
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var resp models.AppRegistrationResponse
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &resp)
+				assert.NoError(t, err)
+				assert.Equal(t, "basic-client-id", resp.ID)
+				assert.Equal(t, "Test Basic App", resp.Name)
+				assert.Equal(t, "https://basic-example.com", resp.Website)
+				assert.Equal(t, "basic-client-id", resp.ClientID)
+				assert.Equal(t, "basic-client-secret", resp.ClientSecret)
+			},
+		},
+		{
+			name: "missing authorization header",
+			setupContext: func() *lift.Context {
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "GET",
+						Path:   "/api/v1/apps/verify_credentials",
+						Headers: map[string]string{},
+					},
+					Method: "GET",
+					Path:   "/api/v1/apps/verify_credentials",
+					Headers: map[string]string{},
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// No mocks needed - should fail auth before storage calls
+			},
+			expectedStatus: http.StatusUnauthorized,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var errorResp map[string]string
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &errorResp)
+				assert.NoError(t, err)
+				assert.Equal(t, "Unauthorized", errorResp["error"])
+			},
+		},
+		{
+			name: "invalid bearer token format",
+			setupContext: func() *lift.Context {
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "GET",
+						Path:   "/api/v1/apps/verify_credentials",
+						Headers: map[string]string{
+							"Authorization": "Invalid-Token-Format",
+						},
+					},
+					Method: "GET",
+					Path:   "/api/v1/apps/verify_credentials",
+					Headers: map[string]string{
+						"Authorization": "Invalid-Token-Format",
+					},
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// No mocks needed - should fail auth before storage calls
+			},
+			expectedStatus: http.StatusUnauthorized,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var errorResp map[string]string
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &errorResp)
+				assert.NoError(t, err)
+				assert.Equal(t, "Unauthorized", errorResp["error"])
+			},
+		},
+		{
+			name: "invalid basic auth credentials - wrong secret",
+			setupContext: func() *lift.Context {
+				// Create base64 encoded credentials with wrong secret
+				credentials := base64.StdEncoding.EncodeToString([]byte("client-id:wrong-secret"))
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "GET",
+						Path:   "/api/v1/apps/verify_credentials",
+						Headers: map[string]string{
+							"Authorization": "Bearer " + credentials,
+						},
+					},
+					Method: "GET",
+					Path:   "/api/v1/apps/verify_credentials",
+					Headers: map[string]string{
+						"Authorization": "Bearer " + credentials,
+					},
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client lookup - returns client with different secret
+				mockStore.On("GetOAuthClient", mock.Anything, "client-id").Return(&storage.OAuthClient{
+					ClientID:     "client-id",
+					ClientSecret: "correct-secret",
+					Name:         "Test App",
+					RedirectURIs: []string{"https://example.com/callback"},
+				}, nil).Once()
+			},
+			expectedStatus: http.StatusUnauthorized,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var errorResp map[string]string
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &errorResp)
+				assert.NoError(t, err)
+				assert.Equal(t, "invalid credentials", errorResp["error"])
+			},
+		},
+		{
+			name: "client not found",
+			setupContext: func() *lift.Context {
+				credentials := base64.StdEncoding.EncodeToString([]byte("nonexistent-client:secret"))
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "GET",
+						Path:   "/api/v1/apps/verify_credentials",
+						Headers: map[string]string{
+							"Authorization": "Bearer " + credentials,
+						},
+					},
+					Method: "GET",
+					Path:   "/api/v1/apps/verify_credentials",
+					Headers: map[string]string{
+						"Authorization": "Bearer " + credentials,
+					},
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client lookup - returns not found error
+				mockStore.On("GetOAuthClient", mock.Anything, "nonexistent-client").Return(nil, fmt.Errorf("client not found")).Once()
+			},
+			expectedStatus: http.StatusUnauthorized,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var errorResp map[string]string
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &errorResp)
+				assert.NoError(t, err)
+				assert.Equal(t, "invalid credentials", errorResp["error"])
+			},
+		},
+		{
+			name: "VAPID keys unavailable - should still succeed",
+			setupContext: func() *lift.Context {
+				credentials := base64.StdEncoding.EncodeToString([]byte("client-id:client-secret"))
+				req := &lift.Request{
+					Request: &adapters.Request{
+						Method: "GET",
+						Path:   "/api/v1/apps/verify_credentials",
+						Headers: map[string]string{
+							"Authorization": "Bearer " + credentials,
+						},
+					},
+					Method: "GET",
+					Path:   "/api/v1/apps/verify_credentials",
+					Headers: map[string]string{
+						"Authorization": "Bearer " + credentials,
+					},
+				}
+				
+				return lift.NewContext(context.Background(), req)
+			},
+			setupMocks: func() {
+				// Mock OAuth client lookup
+				mockStore.On("GetOAuthClient", mock.Anything, "client-id").Return(&storage.OAuthClient{
+					ClientID:     "client-id",
+					ClientSecret: "client-secret",
+					Name:         "Test App",
+					Website:      "https://example.com",
+					RedirectURIs: []string{"https://example.com/callback"},
+				}, nil).Once()
+
+				// Mock VAPID keys retrieval failure
+				mockStore.On("GetVAPIDKeys", mock.Anything).Return(nil, fmt.Errorf("VAPID keys not configured")).Once()
+			},
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+			validateResp: func(t *testing.T, ctx *lift.Context) {
+				var resp models.AppRegistrationResponse
+				bodyBytes, err := json.Marshal(ctx.Response.Body)
+				assert.NoError(t, err)
+				err = json.Unmarshal(bodyBytes, &resp)
+				assert.NoError(t, err)
+				assert.Equal(t, "client-id", resp.ClientID)
+				assert.Equal(t, "Test App", resp.Name)
+				assert.Empty(t, resp.VapidKey) // Should be empty when VAPID keys fail
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mocks
+			mockStore = new(MockStorageAdapter)
+			if tt.setupMocks != nil {
+				tt.setupMocks()
+			}
+			
+			// OAuth service would be used for token validation in real scenarios
+			
+			handler := &Handler{
+				cfg: &config.Config{
+					JWTSecret: "test-secret",
+					Domain:    "test.example.com",
+				},
+				store:  mockStore,
+				logger: zap.NewNop(),
+				authMiddleware: &auth.Middleware{},
+			}
+			
+			// Get context
+			ctx := tt.setupContext()
+			
+			// Call handler directly
+			err := handler.HandleAppVerifyCredentialsLift(ctx)
+			
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			
+			// Check status
+			assert.Equal(t, tt.expectedStatus, ctx.Response.StatusCode)
+			
+			// Validate response if provided
+			if tt.validateResp != nil {
+				tt.validateResp(t, ctx)
+			}
+			
+			// Verify all mocks were called
+			mockStore.AssertExpectations(t)
+		})
+	}
+}
