@@ -30,6 +30,63 @@ func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger)
 
 // ===== RelationshipRecord Methods =====
 
+// GetFollowRequest gets a follow request by follower and target IDs
+func (r *RelationshipRepository) GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error) {
+	var relationship models.RelationshipRecord
+	
+	err := r.db.WithContext(ctx).Model(&relationship).
+		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerID)).
+		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
+		First(&relationship)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("follow request not found")
+		}
+		r.logger.Error("failed to get follow request",
+			zap.String("follower_id", followerID),
+			zap.String("target_id", targetID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get follow request: %w", err)
+	}
+
+	// Convert models.RelationshipRecord to storage.RelationshipRecord
+	return &storage.RelationshipRecord{
+		PK:         relationship.PK,
+		SK:         relationship.SK,
+		GSI1PK:     relationship.GSI1PK,
+		GSI1SK:     relationship.GSI1SK,
+		ActivityID: relationship.ActivityID,
+		State:      relationship.State,
+		CreatedAt:  relationship.CreatedAt,
+		UpdatedAt:  relationship.UpdatedAt,
+	}, nil
+}
+
+// HasFollowRequest checks if there's a follow request between two users
+func (r *RelationshipRepository) HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
+	var relationship models.RelationshipRecord
+	
+	err := r.db.WithContext(ctx).Model(&relationship).
+		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", requesterID)).
+		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
+		First(&relationship)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to check for follow request",
+			zap.String("requester_id", requesterID),
+			zap.String("target_id", targetID),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to check for follow request: %w", err)
+	}
+
+	// Return true if any relationship exists (pending, accepted, or rejected)
+	return true, nil
+}
+
 // CreateRelationship creates a new follow relationship
 func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followerUsername, followingUsername, activityID string) error {
 	relationship := models.NewRelationshipRecord(followerUsername, followingUsername, activityID)
@@ -331,6 +388,30 @@ func (r *RelationshipRepository) RejectFollowRequest(ctx context.Context, follow
 	return nil
 }
 
+// HasPendingFollowRequest checks if there's a pending follow request between two users
+func (r *RelationshipRepository) HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
+	var relationship models.RelationshipRecord
+	
+	err := r.db.WithContext(ctx).Model(&relationship).
+		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", requesterID)).
+		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
+		First(&relationship)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to check for pending follow request",
+			zap.String("requester", requesterID),
+			zap.String("target", targetID),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to check for pending follow request: %w", err)
+	}
+
+	// Check if the relationship is in pending state
+	return relationship.State == models.RelationshipPending, nil
+}
+
 // ===== Move Methods =====
 
 // CreateMove creates a new move record
@@ -475,6 +556,124 @@ func (r *RelationshipRepository) GetPendingMoves(ctx context.Context, limit int)
 	}
 
 	return moves, nil
+}
+
+// GetMoveByTarget retrieves all moves to a specific target account
+func (r *RelationshipRepository) GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error) {
+	query := r.db.WithContext(ctx).Model(&models.Move{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("MOVE#TARGET#%s", target))
+
+	var moveRecords []models.Move
+	if err := query.All(&moveRecords); err != nil {
+		r.logger.Error("failed to get moves by target",
+			zap.String("target", target),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get moves by target: %w", err)
+	}
+
+	// Convert to storage.Move slice
+	moves := make([]*storage.Move, len(moveRecords))
+	for i, record := range moveRecords {
+		moves[i] = &storage.Move{
+			ID:        record.ID,
+			Actor:     record.Actor,
+			Target:    record.Target,
+			Published: record.Published,
+			CreatedAt: record.CreatedAt,
+		}
+	}
+
+	r.logger.Info("retrieved moves by target",
+		zap.String("target", target),
+		zap.Int("count", len(moves)))
+
+	return moves, nil
+}
+
+// HasMovedFrom checks if newActor has moved from oldActor
+func (r *RelationshipRepository) HasMovedFrom(ctx context.Context, oldActor, newActor string) (bool, error) {
+	var moveRecord models.Move
+	
+	err := r.db.WithContext(ctx).Model(&moveRecord).
+		Where("PK", "=", fmt.Sprintf("MOVE#ACTOR#%s", oldActor)).
+		Where("SK", "=", fmt.Sprintf("TARGET#%s", newActor)).
+		First(&moveRecord)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to check move relationship",
+			zap.String("old_actor", oldActor),
+			zap.String("new_actor", newActor),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to check move relationship: %w", err)
+	}
+
+	r.logger.Info("checked move relationship",
+		zap.String("old_actor", oldActor),
+		zap.String("new_actor", newActor),
+		zap.Bool("exists", true))
+
+	return true, nil
+}
+
+// ===== Endorsement Methods =====
+
+// IsEndorsed checks if a user has endorsed (pinned) a target account
+func (r *RelationshipRepository) IsEndorsed(ctx context.Context, userID, targetID string) (bool, error) {
+	var pin models.AccountPin
+	
+	err := r.db.WithContext(ctx).Model(&pin).
+		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", userID)).
+		Where("SK", "=", fmt.Sprintf("PIN#%s", targetID)).
+		First(&pin)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to check endorsement",
+			zap.String("user_id", userID),
+			zap.String("target_id", targetID),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to check endorsement: %w", err)
+	}
+
+	return true, nil
+}
+
+// ===== Relationship Note Methods =====
+
+// GetRelationshipNote retrieves a private note on an account
+func (r *RelationshipRepository) GetRelationshipNote(ctx context.Context, userID, targetID string) (*storage.AccountNote, error) {
+	var noteRecord models.AccountNote
+	
+	err := r.db.WithContext(ctx).Model(&noteRecord).
+		Where("PK", "=", fmt.Sprintf("ACCOUNT_NOTE#%s", userID)).
+		Where("SK", "=", fmt.Sprintf("NOTE#%s", targetID)).
+		First(&noteRecord)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil // Return nil for not found (matches legacy behavior)
+		}
+		r.logger.Error("failed to get relationship note",
+			zap.String("user_id", userID),
+			zap.String("target_id", targetID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get relationship note: %w", err)
+	}
+
+	// Convert to storage.AccountNote
+	return &storage.AccountNote{
+		Username:      noteRecord.Username,
+		TargetActorID: noteRecord.TargetActorID,
+		Note:          noteRecord.Note,
+		CreatedAt:     noteRecord.CreatedAt,
+		UpdatedAt:     noteRecord.UpdatedAt,
+	}, nil
 }
 
 // ===== CollectionItem Methods =====

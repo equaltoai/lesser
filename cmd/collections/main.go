@@ -2,86 +2,119 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
+	"time"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
-var (
-	cfg    *config.Config
-	store  storage.Storage
-	logger *zap.Logger
-)
-
-func init() {
-	cfg = config.Get()
-	logger = common.Logger()
-
-	var err error
-	store, err = dynamodb.New()
-	if err != nil {
-		logger.Fatal("failed to initialize storage", zap.Error(err))
-	}
+// CollectionsHandler handles ActivityPub federation collections using Lift
+type CollectionsHandler struct {
+	actorRepo        *repositories.ActorRepository
+	relationshipRepo *repositories.RelationshipRepository
+	likeRepo         *repositories.LikeRepository
+	logger           *zap.Logger
+	cfg              *config.Config
 }
 
-func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	log := common.WithContext(ctx)
+// NewCollectionsHandler creates a new collections handler with DynamORM repositories
+func NewCollectionsHandler() (*CollectionsHandler, error) {
+	logger := common.Logger()
+	cfg := config.Get()
 
-	// Ensure this is a GET request
-	if request.RequestContext.HTTP.Method != http.MethodGet {
-		return common.MethodNotAllowed(fmt.Errorf("method %s not allowed", request.RequestContext.HTTP.Method)), nil
+	// Initialize DynamORM database connection using the established pattern
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize DynamORM database: %w", err)
 	}
 
-	username := request.PathParameters["username"]
+	// Initialize repositories
+	tableName := cfg.DynamoTableName
+	if tableName == "" {
+		tableName = "lesser-main" // Default table name
+	}
+	actorRepo := repositories.NewActorRepository(db, tableName, logger)
+	relationshipRepo := repositories.NewRelationshipRepository(db, tableName, logger)
+	likeRepo := repositories.NewLikeRepository(db, tableName, logger)
+
+	return &CollectionsHandler{
+		actorRepo:        actorRepo,
+		relationshipRepo: relationshipRepo,
+		likeRepo:         likeRepo,
+		logger:           logger,
+		cfg:              cfg,
+	}, nil
+}
+
+// RegisterRoutes registers all collections routes
+func (ch *CollectionsHandler) RegisterRoutes(app *lift.App) {
+	// ActivityPub federation collection endpoints
+	app.GET("/users/:username/followers", ch.handleFollowersCollection)
+	app.GET("/users/:username/following", ch.handleFollowingCollection)
+	app.GET("/users/:username/liked", ch.handleLikedCollection)
+}
+
+// handleFollowersCollection handles the followers collection endpoint
+func (ch *CollectionsHandler) handleFollowersCollection(ctx *lift.Context) error {
+	return ch.handleCollection(ctx, "followers")
+}
+
+// handleFollowingCollection handles the following collection endpoint
+func (ch *CollectionsHandler) handleFollowingCollection(ctx *lift.Context) error {
+	return ch.handleCollection(ctx, "following")
+}
+
+// handleLikedCollection handles the liked collection endpoint
+func (ch *CollectionsHandler) handleLikedCollection(ctx *lift.Context) error {
+	return ch.handleCollection(ctx, "liked")
+}
+
+// handleCollection handles ActivityPub collection requests
+func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType string) error {
+	// Extract username from path parameters
+	username := ctx.Param("username")
 	if username == "" {
-		return common.BadRequest(errors.New("missing username")), nil
+		return lift.ValidationError("missing username")
 	}
 
-	// Extract collection type from path
-	// Path should be /users/{username}/followers or /users/{username}/following
-	path := request.RawPath
-	// Remove stage prefix if present
-	if request.RequestContext.Stage != "" && strings.HasPrefix(path, "/"+request.RequestContext.Stage) {
-		path = strings.TrimPrefix(path, "/"+request.RequestContext.Stage)
+	// Get request ID from context
+	requestID := ctx.Get("requestID")
+	if requestID == nil {
+		requestID = "unknown"
 	}
 
-	var collectionType string
-	if strings.HasSuffix(path, "/followers") {
-		collectionType = "followers"
-	} else if strings.HasSuffix(path, "/following") {
-		collectionType = "following"
-	} else if strings.HasSuffix(path, "/liked") {
-		collectionType = "liked"
-	} else {
-		return common.NotFound(errors.New("unknown collection")), nil
-	}
+	ch.logger.Info("processing collections request",
+		zap.String("username", username),
+		zap.String("collection_type", collectionType),
+		zap.Any("request_id", requestID))
 
-	// Check if actor exists
-	actor, err := store.GetActor(ctx, username)
+	// Check if actor exists using DynamORM repository
+	actor, err := ch.actorRepo.GetActor(ctx.Context, username)
 	if err != nil {
 		if common.IsNotFound(err) {
-			return common.NotFound(err), nil
+			ch.logger.Debug("actor not found",
+				zap.String("username", username))
+			return lift.NotFound("actor not found")
 		}
-		log.Error("failed to get actor", zap.Error(err))
-		return common.InternalServerError(err), nil
+		ch.logger.Error("failed to get actor", zap.Error(err))
+		return lift.NewLiftError("DATABASE_ERROR", "database error", 500)
 	}
 
 	// Parse query parameters
-	isPage := request.QueryStringParameters["page"] == "true"
-	cursor := request.QueryStringParameters["cursor"]
+	isPage := ctx.Query("page") == "true"
+	cursor := ctx.Query("cursor")
 	limit := 20 // default
-	if l := request.QueryStringParameters["limit"]; l != "" {
+	if l := ctx.Query("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed >= 1 && parsed <= 100 {
 			limit = parsed
 		}
@@ -89,7 +122,7 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 
 	// If not requesting a page, return the collection metadata
 	if !isPage {
-		return returnCollection(ctx, actor, collectionType)
+		return ch.returnCollection(ctx, actor, collectionType)
 	}
 
 	// Get relationships based on type
@@ -99,29 +132,40 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 
 	switch collectionType {
 	case "followers":
-		usernames, nextCursor, err = store.GetFollowers(ctx, username, limit, cursor)
+		usernames, nextCursor, err = ch.relationshipRepo.GetFollowers(ctx.Context, username, limit, cursor)
 	case "following":
-		usernames, nextCursor, err = store.GetFollowing(ctx, username, limit, cursor)
-	default:
-		// For liked collection, we get Like objects
-		likes, nextCursor, err = store.GetActorLikes(ctx, actor.ID, limit, cursor)
+		usernames, nextCursor, err = ch.relationshipRepo.GetFollowing(ctx.Context, username, limit, cursor)
+	case "liked":
+		// For liked collection, we get Like objects and convert to storage.Like
+		modelLikes, likesNextCursor, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, limit, cursor)
+		if err == nil {
+			nextCursor = likesNextCursor
+			// Convert models.Like to storage.Like
+			likes = make([]*storage.Like, len(modelLikes))
+			for i, modelLike := range modelLikes {
+				likes[i] = &storage.Like{
+					ID:        modelLike.ID,
+					Actor:     modelLike.Actor,
+					Object:    modelLike.Object,
+					CreatedAt: modelLike.CreatedAt,
+				}
+			}
+		}
 	}
 
 	if err != nil {
-		log.Error("failed to get relationships",
+		ch.logger.Error("failed to get relationships",
 			zap.String("type", collectionType),
 			zap.Error(err))
-		return common.InternalServerError(err), nil
+		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
 	}
 
 	// Build and return page
-	return returnCollectionPage(ctx, actor, collectionType, usernames, likes, cursor, nextCursor, limit)
+	return ch.returnCollectionPage(ctx, actor, collectionType, usernames, likes, cursor, nextCursor, limit)
 }
 
 // returnCollection returns the collection metadata (not a page)
-func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionType string) (*events.APIGatewayV2HTTPResponse, error) {
-	log := common.WithContext(ctx)
-
+func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activitypub.Actor, collectionType string) error {
 	// Get total count (we'll get a small sample to determine if there are any items)
 	// In a production system, you might want to add a count method to storage
 	var hasItems bool
@@ -129,26 +173,26 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 
 	switch collectionType {
 	case "followers":
-		usernames, _, err := store.GetFollowers(ctx, actor.PreferredUsername, 1, "")
+		usernames, _, err := ch.relationshipRepo.GetFollowers(ctx.Context, actor.PreferredUsername, 1, "")
 		if err != nil {
-			log.Error("failed to get count", zap.Error(err))
-			return common.InternalServerError(err), nil
+			ch.logger.Error("failed to get count", zap.Error(err))
+			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
 		hasItems = len(usernames) > 0
 		itemCount = len(usernames)
 	case "following":
-		usernames, _, err := store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
+		usernames, _, err := ch.relationshipRepo.GetFollowing(ctx.Context, actor.PreferredUsername, 1, "")
 		if err != nil {
-			log.Error("failed to get count", zap.Error(err))
-			return common.InternalServerError(err), nil
+			ch.logger.Error("failed to get count", zap.Error(err))
+			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
 		hasItems = len(usernames) > 0
 		itemCount = len(usernames)
-	default:
-		likes, _, err := store.GetActorLikes(ctx, actor.ID, 1, "")
+	case "liked":
+		likes, _, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, 1, "")
 		if err != nil {
-			log.Error("failed to get count", zap.Error(err))
-			return common.InternalServerError(err), nil
+			ch.logger.Error("failed to get count", zap.Error(err))
+			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
 		hasItems = len(likes) > 0
 		itemCount = len(likes)
@@ -174,16 +218,19 @@ func returnCollection(ctx context.Context, actor *activitypub.Actor, collectionT
 		collection.First = fmt.Sprintf("%s?page=true", collectionID)
 	}
 
-	return common.JSONResponse(http.StatusOK, collection), nil
+	// Set ActivityPub content type and caching headers
+	ctx.Response.Headers["Content-Type"] = "application/activity+json"
+	ctx.Response.Headers["Cache-Control"] = "max-age=300"
+	return ctx.JSON(collection)
 }
 
 // returnCollectionPage returns a page of the collection
-func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collectionType string, usernames []string, likes []*storage.Like, cursor, nextCursor string, limit int) (*events.APIGatewayV2HTTPResponse, error) {
-	log := common.WithContext(ctx)
-	log.Debug("returning collection page",
+func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *activitypub.Actor, collectionType string, usernames []string, likes []*storage.Like, cursor, nextCursor string, limit int) error {
+	ch.logger.Debug("returning collection page",
 		zap.String("actor", actor.ID),
 		zap.String("collection_type", collectionType),
-		zap.Int("item_count", len(usernames)))
+		zap.Int("usernames_count", len(usernames)),
+		zap.Int("likes_count", len(likes)))
 
 	// Build collection and page URLs
 	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
@@ -205,7 +252,7 @@ func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collect
 		// For followers/following, convert usernames to actor URLs
 		orderedItems = make([]any, len(usernames))
 		for i, username := range usernames {
-			orderedItems[i] = fmt.Sprintf("%s/users/%s", cfg.Domain, username)
+			orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.cfg.Domain, username)
 		}
 	}
 
@@ -236,9 +283,88 @@ func returnCollectionPage(ctx context.Context, actor *activitypub.Actor, collect
 		page.Prev = fmt.Sprintf("%s?page=true", collectionID)
 	}
 
-	return common.JSONResponse(http.StatusOK, page), nil
+	// Set ActivityPub content type and caching headers
+	ctx.Response.Headers["Content-Type"] = "application/activity+json"
+	ctx.Response.Headers["Cache-Control"] = "max-age=300"
+	return ctx.JSON(page)
 }
 
 func main() {
-	lambda.Start(handler)
+	// Create the handler
+	handler, err := NewCollectionsHandler()
+	if err != nil {
+		panic(fmt.Sprintf("failed to create handler: %v", err))
+	}
+
+	// Create new Lift app
+	app := lift.New()
+
+	// Add request ID middleware (first - generates request ID)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			requestID := fmt.Sprintf("collections-%d", time.Now().UnixNano())
+			ctx.Set("requestID", requestID)
+			return next.Handle(ctx)
+		})
+	})
+
+	// Add logging middleware (second - logs with request ID)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			start := time.Now()
+			path := ctx.Request.Path
+			method := ctx.Request.Method
+
+			err := next.Handle(ctx)
+
+			handler.logger.Info("collections request completed",
+				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+				zap.String("method", method),
+				zap.String("path", path),
+				zap.Duration("duration", time.Since(start)),
+				zap.Bool("has_error", err != nil),
+			)
+
+			return err
+		})
+	})
+
+	// Add recovery middleware (third - catches panics)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			defer func() {
+				if r := recover(); r != nil {
+					handler.logger.Error("panic recovered in collections handler",
+						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+						zap.Any("panic", r))
+					ctx.Status(500).Text("Internal server error")
+				}
+			}()
+
+			return next.Handle(ctx)
+		})
+	})
+
+	// Add CORS middleware for ActivityPub federation compatibility
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			// Set CORS headers for ActivityPub federation
+			ctx.Response.Headers["Access-Control-Allow-Origin"] = "*"
+			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Accept, Authorization, Content-Type, Signature, Date, Digest"
+			
+			// Handle preflight requests
+			if ctx.Request.Method == "OPTIONS" {
+				return ctx.Status(http.StatusNoContent).JSON(nil)
+			}
+			
+			return next.Handle(ctx)
+		})
+	})
+
+	// Register all collections routes
+	handler.RegisterRoutes(app)
+
+	// Use app.HandleRequest for Lambda (not app.Start())
+	lambda.Start(app.HandleRequest)
 }

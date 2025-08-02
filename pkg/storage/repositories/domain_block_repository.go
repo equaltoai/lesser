@@ -102,6 +102,28 @@ func (r *DomainBlockRepository) GetUserDomainBlocks(ctx context.Context, usernam
 	return domains, "", nil
 }
 
+// IsBlockedDomain checks if a domain is blocked by a user
+func (r *DomainBlockRepository) IsBlockedDomain(ctx context.Context, username, domain string) (bool, error) {
+	var block models.UserDomainBlock
+	err := r.db.WithContext(ctx).Model(&block).
+		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", "=", fmt.Sprintf("DOMAIN_BLOCK#%s", strings.ToLower(strings.TrimSpace(domain)))).
+		First(&block)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to check if domain is blocked",
+			zap.String("username", username),
+			zap.String("domain", domain),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to check if domain is blocked: %w", err)
+	}
+
+	return true, nil
+}
+
 // CreateInstanceDomainBlock creates an instance-level domain block
 func (r *DomainBlockRepository) CreateInstanceDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error {
 	// Generate ID if not provided

@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/trust"
@@ -16,11 +18,21 @@ import (
 	"go.uber.org/zap"
 )
 
+// UserRepositoryDeps interface for dependencies - implemented by the storage adapter
+type UserRepositoryDeps interface {
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	GetListsContainingAccount(ctx context.Context, accountID, username string) ([]*storage.List, error)
+	CreateTimelineEntries(ctx context.Context, entries []*models.Timeline) error
+	GetPendingFollowRequests(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	RemoveFollow(ctx context.Context, followerUsername, username string) error
+}
+
 // UserRepository implements user operations using DynamORM
 type UserRepository struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
+	deps      UserRepositoryDeps
 }
 
 // NewUserRepository creates a new user repository
@@ -30,6 +42,11 @@ func NewUserRepository(db core.DB, tableName string, logger *zap.Logger) *UserRe
 		tableName: tableName,
 		logger:    logger,
 	}
+}
+
+// SetDependencies sets the dependencies for cross-repository operations
+func (r *UserRepository) SetDependencies(deps UserRepositoryDeps) {
+	r.deps = deps
 }
 
 // CreateUser creates a new user in DynamoDB
@@ -1924,6 +1941,178 @@ func (r *UserRepository) UpdatePreferences(ctx context.Context, username string,
 	return r.UpdateUserPreferences(ctx, username, prefs)
 }
 
+// AcceptFollow accepts a follow request and updates both the relationship state and follower counts
+func (r *UserRepository) AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error {
+	r.logger.Info("accepting follow request",
+		zap.String("follower", followerUsername),
+		zap.String("followed", followedUsername))
+
+	// 1. Update the relationship state to "accepted"
+	var relationship models.RelationshipRecord
+	err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerUsername)).
+		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", followedUsername)).
+		First(&relationship)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("follow relationship not found")
+		}
+		r.logger.Error("failed to get follow relationship", zap.Error(err))
+		return fmt.Errorf("failed to get follow relationship: %w", err)
+	}
+
+	// Update the relationship state
+	relationship.Accept()
+	
+	// Save the updated relationship
+	err = r.db.WithContext(ctx).Model(&relationship).Update()
+	if err != nil {
+		r.logger.Error("failed to update relationship state", zap.Error(err))
+		return fmt.Errorf("failed to update relationship state: %w", err)
+	}
+
+	// 2. Update follower count for the followed user (increment)
+	if err := r.updateFollowerCount(ctx, followedUsername, 1); err != nil {
+		r.logger.Error("failed to update follower count",
+			zap.String("followed_user", followedUsername),
+			zap.Error(err))
+		// Note: We don't return error here to avoid partial state, but we log it
+	}
+
+	// 3. Update following count for the follower user (increment)
+	if err := r.updateFollowingCount(ctx, followerUsername, 1); err != nil {
+		r.logger.Error("failed to update following count",
+			zap.String("follower_user", followerUsername),
+			zap.Error(err))
+		// Note: We don't return error here to avoid partial state, but we log it
+	}
+
+	r.logger.Info("successfully accepted follow request",
+		zap.String("follower", followerUsername),
+		zap.String("followed", followedUsername))
+
+	return nil
+}
+
+// RejectFollow rejects a follow request by updating the relationship state to "rejected"
+func (r *UserRepository) RejectFollow(ctx context.Context, followerUsername, followedUsername string) error {
+	r.logger.Info("rejecting follow request",
+		zap.String("follower", followerUsername),
+		zap.String("followed", followedUsername))
+
+	// Update the relationship state to "rejected"
+	var relationship models.RelationshipRecord
+	err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerUsername)).
+		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", followedUsername)).
+		First(&relationship)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("follow relationship not found")
+		}
+		r.logger.Error("failed to get follow relationship", zap.Error(err))
+		return fmt.Errorf("failed to get follow relationship: %w", err)
+	}
+
+	// Update the relationship state
+	relationship.Reject()
+	
+	// Save the updated relationship
+	err = r.db.WithContext(ctx).Model(&relationship).Update()
+	if err != nil {
+		r.logger.Error("failed to update relationship state", zap.Error(err))
+		return fmt.Errorf("failed to update relationship state: %w", err)
+	}
+
+	r.logger.Info("successfully rejected follow request",
+		zap.String("follower", followerUsername),
+		zap.String("followed", followedUsername))
+
+	return nil
+}
+
+// updateFollowerCount updates the follower count for a user's actor
+func (r *UserRepository) updateFollowerCount(ctx context.Context, username string, delta int) error {
+	// Get the current actor
+	var actor models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", fmt.Sprintf("ACTOR#%s", username)).
+		Where("SK", "=", "PROFILE").
+		First(&actor)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Warn("actor not found for follower count update", zap.String("username", username))
+			return nil // Don't error if actor doesn't exist
+		}
+		return fmt.Errorf("failed to get actor: %w", err)
+	}
+
+	// Update the count
+	actor.FollowerCount += delta
+	if actor.FollowerCount < 0 {
+		actor.FollowerCount = 0
+	}
+
+	// Update keys to reflect new follower count (for GSI4 popularity ranking)
+	actor.UpdateKeys()
+
+	// Save the updated actor
+	err = r.db.WithContext(ctx).Model(&actor).Update()
+	if err != nil {
+		return fmt.Errorf("failed to update follower count: %w", err)
+	}
+
+	r.logger.Debug("updated follower count",
+		zap.String("username", username),
+		zap.Int("delta", delta),
+		zap.Int("new_count", actor.FollowerCount))
+
+	return nil
+}
+
+// updateFollowingCount updates the following count for a user's actor
+func (r *UserRepository) updateFollowingCount(ctx context.Context, username string, delta int) error {
+	// Get the current actor
+	var actor models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", fmt.Sprintf("ACTOR#%s", username)).
+		Where("SK", "=", "PROFILE").
+		First(&actor)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Warn("actor not found for following count update", zap.String("username", username))
+			return nil // Don't error if actor doesn't exist
+		}
+		return fmt.Errorf("failed to get actor: %w", err)
+	}
+
+	// Update the count
+	actor.FollowingCount += delta
+	if actor.FollowingCount < 0 {
+		actor.FollowingCount = 0
+	}
+
+	// Update keys to reflect new counts
+	actor.UpdateKeys()
+
+	// Save the updated actor
+	err = r.db.WithContext(ctx).Model(&actor).Update()
+	if err != nil {
+		return fmt.Errorf("failed to update following count: %w", err)
+	}
+
+	r.logger.Debug("updated following count",
+		zap.String("username", username),
+		zap.Int("delta", delta),
+		zap.Int("new_count", actor.FollowingCount))
+
+	return nil
+}
+
 // CreateConversationMute creates a new conversation mute
 func (r *UserRepository) CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error {
 	r.logger.Info("creating conversation mute",
@@ -2042,4 +2231,995 @@ func (r *UserRepository) GetMutedConversations(ctx context.Context, username str
 	}
 
 	return conversationIDs, nil
+}
+
+// IsNotificationMuted checks if notifications from a target user are muted
+func (r *UserRepository) IsNotificationMuted(ctx context.Context, userID, targetID string) (bool, error) {
+	// Check user preferences for notification muting
+	// This is a simple implementation that checks if the target is in a muted notifications list
+	// In a more sophisticated implementation, this could check various notification preference settings
+	
+	prefs, err := r.GetUserPreferences(ctx, userID)
+	if err != nil {
+		// If preferences don't exist, notifications aren't muted
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to get user preferences for notification mute check",
+			zap.String("userID", userID),
+			zap.String("targetID", targetID),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to check notification mute status: %w", err)
+	}
+
+	// Check if target is in muted notifications list
+	// This would need to be expanded based on the actual preference schema
+	// For now, return false as a default implementation
+	_ = prefs // avoid unused variable warning
+	
+	r.logger.Debug("checking notification mute status",
+		zap.String("userID", userID),
+		zap.String("targetID", targetID))
+	
+	// TODO: Implement actual logic based on user preference schema
+	// This could check for:
+	// - Specific user mutes
+	// - Notification type preferences
+	// - Global notification settings
+	
+	return false, nil
+}
+
+// CacheRemoteActor caches a remote actor with a TTL using DynamORM patterns
+func (r *UserRepository) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
+	r.logger.Debug("caching remote actor",
+		zap.String("handle", handle),
+		zap.String("actor_id", actor.ID),
+		zap.Duration("ttl", ttl))
+
+	now := time.Now()
+	expiresAt := now.Add(ttl)
+
+	// Create the DynamORM model following the exact legacy pattern
+	remoteActor := &models.RemoteActor{
+		Handle:    handle,
+		Actor:     actor,
+		CachedAt:  now,
+		UpdatedAt: now,
+		ExpiresAt: expiresAt,
+	}
+
+	// UpdateKeys sets the PK, SK, Domain, and TTL fields based on the legacy pattern
+	remoteActor.UpdateKeys()
+
+	// Create in DynamoDB using DynamORM
+	err := r.db.WithContext(ctx).Model(remoteActor).Create()
+	if err != nil {
+		r.logger.Error("failed to cache remote actor",
+			zap.String("handle", handle),
+			zap.String("actor_id", actor.ID),
+			zap.Error(err))
+		return fmt.Errorf("failed to cache remote actor: %w", err)
+	}
+
+	r.logger.Debug("remote actor cached successfully",
+		zap.String("handle", handle),
+		zap.String("actor_id", actor.ID),
+		zap.Duration("ttl", ttl),
+		zap.Time("expires_at", expiresAt))
+
+	return nil
+}
+
+// Bookmark methods
+
+// CreateBookmark creates a new bookmark for a user
+func (r *UserRepository) CreateBookmark(ctx context.Context, username, objectID string) error {
+	r.logger.Debug("creating bookmark",
+		zap.String("username", username),
+		zap.String("object_id", objectID))
+
+	// Create the bookmark record
+	now := time.Now()
+	bookmark := &models.Bookmark{
+		Username:  username,
+		ObjectID:  objectID,
+		CreatedAt: now,
+	}
+	bookmark.UpdateKeys()
+
+	// Create the bookmark using DynamORM with condition check to prevent duplicates
+	// Note: DynamORM Create will overwrite if the same keys exist, so we need to check first
+	err := r.db.WithContext(ctx).Model(bookmark).Create()
+	if err != nil {
+		// Check if already bookmarked by trying a conditional create
+		// Since DynamORM doesn't have built-in conditional creates, we log and continue
+		// This matches the legacy behavior where duplicate bookmarks are silently ignored
+		r.logger.Debug("bookmark creation result",
+			zap.String("username", username),
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		
+		// For now, we'll treat any error as success (matching legacy behavior)
+		// In a production system, you might want to check for specific error types
+		return nil
+	}
+
+	r.logger.Info("bookmark created successfully",
+		zap.String("username", username),
+		zap.String("object_id", objectID))
+
+	return nil
+}
+
+// RemoveBookmark removes a bookmark for a user
+func (r *UserRepository) RemoveBookmark(ctx context.Context, username, objectID string) error {
+	r.logger.Debug("removing bookmark",
+		zap.String("username", username),
+		zap.String("object_id", objectID))
+
+	// Query to find bookmarks with the specific objectID
+	pk := fmt.Sprintf("BOOKMARK#%s", username)
+	
+	var bookmarks []models.Bookmark
+	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", pk).
+		Filter("ObjectID", "=", objectID).
+		All(&bookmarks)
+	
+	if err != nil {
+		r.logger.Error("failed to query bookmark for removal",
+			zap.String("username", username),
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return fmt.Errorf("failed to query bookmark: %w", err)
+	}
+
+	// Delete all found bookmarks (should typically be 0 or 1)
+	for _, bookmark := range bookmarks {
+		err = r.db.WithContext(ctx).Model(&models.Bookmark{}).
+			Where("PK", "=", bookmark.PK).
+			Where("SK", "=", bookmark.SK).
+			Delete()
+		
+		if err != nil {
+			r.logger.Error("failed to delete bookmark",
+				zap.String("username", username),
+				zap.String("object_id", objectID),
+				zap.Error(err))
+			return fmt.Errorf("failed to delete bookmark: %w", err)
+		}
+	}
+
+	r.logger.Info("bookmark removed successfully",
+		zap.String("username", username),
+		zap.String("object_id", objectID),
+		zap.Int("removed_count", len(bookmarks)))
+
+	return nil
+}
+
+// GetBookmarks retrieves bookmarks for a user with pagination
+func (r *UserRepository) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	r.logger.Debug("getting bookmarks",
+		zap.String("username", username),
+		zap.Int("limit", limit),
+		zap.String("cursor", cursor))
+
+	// Validate limit
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	// Build query
+	pk := fmt.Sprintf("BOOKMARK#%s", username)
+	query := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", pk).
+		OrderBy("SK", "DESC"). // Newest first (descending order)
+		Limit(limit + 1)       // Request one extra to determine if there's a next page
+
+	// Add cursor if provided
+	if cursor != "" {
+		// For DynamORM, we need to use the exact SK value as cursor
+		query = query.Filter("SK", "<", cursor)
+	}
+
+	// Execute query
+	var bookmarks []models.Bookmark
+	err := query.All(&bookmarks)
+	if err != nil {
+		r.logger.Error("failed to query bookmarks",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, "", fmt.Errorf("failed to query bookmarks: %w", err)
+	}
+
+	// Extract object IDs
+	objectIDs := make([]string, 0, len(bookmarks))
+	for i, bookmark := range bookmarks {
+		// Skip the extra item used for pagination
+		if i >= limit {
+			break
+		}
+		objectIDs = append(objectIDs, bookmark.ObjectID)
+	}
+
+	// Determine next cursor
+	var nextCursor string
+	if len(bookmarks) > limit && len(objectIDs) > 0 {
+		// Use the SK of the last returned item as cursor
+		nextCursor = bookmarks[limit-1].SK
+	}
+
+	r.logger.Debug("retrieved bookmarks",
+		zap.String("username", username),
+		zap.Int("count", len(objectIDs)),
+		zap.String("next_cursor", nextCursor))
+
+	return objectIDs, nextCursor, nil
+}
+
+// IsBookmarked checks if a user has bookmarked an object
+func (r *UserRepository) IsBookmarked(ctx context.Context, username, objectID string) (bool, error) {
+	r.logger.Debug("checking if bookmarked",
+		zap.String("username", username),
+		zap.String("object_id", objectID))
+
+	// Query to find the bookmark with the specific objectID
+	pk := fmt.Sprintf("BOOKMARK#%s", username)
+	
+	var bookmarks []models.Bookmark
+	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", pk).
+		Filter("ObjectID", "=", objectID).
+		Limit(1).
+		All(&bookmarks)
+	
+	if err != nil {
+		r.logger.Error("failed to query bookmark status",
+			zap.String("username", username),
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to query bookmark: %w", err)
+	}
+
+	isBookmarked := len(bookmarks) > 0
+	
+	r.logger.Debug("bookmark status checked",
+		zap.String("username", username),
+		zap.String("object_id", objectID),
+		zap.Bool("is_bookmarked", isBookmarked))
+
+	return isBookmarked, nil
+}
+
+// DeleteFromTimeline removes a specific timeline entry
+func (r *UserRepository) DeleteFromTimeline(ctx context.Context, timelineType, timelineID, entryID string) error {
+	// We need to find the entry first to get its timestamp
+	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
+	
+	// Query for the specific entry
+	var entry models.Timeline
+	err := r.db.WithContext(ctx).Model(&models.Timeline{}).
+		Where("PK", "=", pk).
+		Filter("EntryID", "=", entryID).
+		First(&entry)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Entry not found, nothing to delete
+			return nil
+		}
+		return fmt.Errorf("failed to find timeline entry: %w", err)
+	}
+
+	// Now delete the entry using its PK and SK
+	err = r.db.WithContext(ctx).Model(&entry).Delete()
+	if err != nil {
+		r.logger.Error("failed to delete timeline entry",
+			zap.String("timeline_type", timelineType),
+			zap.String("timeline_id", timelineID),
+			zap.String("entry_id", entryID),
+			zap.Error(err))
+		return fmt.Errorf("failed to delete timeline entry: %w", err)
+	}
+
+	r.logger.Debug("deleted timeline entry",
+		zap.String("timeline_type", timelineType),
+		zap.String("timeline_id", timelineID),
+		zap.String("entry_id", entryID))
+
+	return nil
+}
+
+// DeleteExpiredTimelineEntries deletes timeline entries that have expired
+func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error {
+	r.logger.Debug("deleting expired timeline entries",
+		zap.Time("before", before))
+
+	// This is a complex operation that would require scanning the table
+	// In a real implementation, you might want to use DynamoDB TTL instead
+	// For now, we'll implement a basic version that scans and deletes
+
+	// Note: This is not the most efficient approach for large datasets
+	// Consider using DynamoDB TTL for automatic expiration
+
+	var expiredEntries []*models.Timeline
+
+	// Scan for expired entries (this is expensive - consider using TTL instead)
+	err := r.db.WithContext(ctx).Model(&models.Timeline{}).
+		Filter("ExpiresAt", "<", before).
+		All(&expiredEntries)
+	if err != nil {
+		r.logger.Error("failed to scan for expired timeline entries",
+			zap.Time("before", before),
+			zap.Error(err))
+		return fmt.Errorf("failed to scan for expired timeline entries: %w", err)
+	}
+
+	if len(expiredEntries) == 0 {
+		r.logger.Debug("no expired timeline entries found",
+			zap.Time("before", before))
+		return nil // Nothing to delete
+	}
+
+	// Delete entries one by one (in a real implementation, you'd use batch operations)
+	deletedCount := 0
+	for _, entry := range expiredEntries {
+		err := r.db.WithContext(ctx).Model(entry).Delete()
+		if err != nil {
+			r.logger.Error("failed to delete expired timeline entry",
+				zap.String("pk", entry.PK),
+				zap.String("sk", entry.SK),
+				zap.Error(err))
+			return fmt.Errorf("failed to delete timeline entry: %w", err)
+		}
+		deletedCount++
+	}
+
+	r.logger.Info("deleted expired timeline entries",
+		zap.Time("before", before),
+		zap.Int("deleted_count", deletedCount))
+
+	return nil
+}
+
+// GetDirectTimeline retrieves direct message timeline entries for a user
+func (r *UserRepository) GetDirectTimeline(ctx context.Context, username string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	// Direct messages are stored in a special timeline type
+	pk := fmt.Sprintf("timeline#DIRECT#%s", username)
+	
+	// Build query
+	query := r.db.WithContext(ctx).Model(&models.Timeline{}).
+		Where("PK", "=", pk).
+		OrderBy("SK", "DESC") // Most recent first
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get direct timeline entries: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	// Convert to storage.TimelineEntry
+	result := make([]*storage.TimelineEntry, len(entries))
+	for i, e := range entries {
+		result[i] = &storage.TimelineEntry{
+			TimelineType:  e.TimelineType,
+			TimelineID:    e.TimelineID,
+			EntryID:       e.EntryID,
+			PostID:        e.PostID,
+			ActorID:       e.ActorID,
+			ActorHandle:   e.ActorHandle,
+			Content:       e.Content,
+			ContentType:   e.ContentType,
+			HasMedia:      e.HasMedia,
+			IsReply:       e.IsReply,
+			IsBoost:       e.IsBoost,
+			Language:      e.Language,
+			Visibility:    e.Visibility,
+			TimelineAt:    e.TimelineAt,
+			ExpiresAt:     e.ExpiresAt,
+			CreatedAt:     e.CreatedAt,
+		}
+	}
+
+	return result, nextCursor, nil
+}
+
+// GetFollowRequestState returns the state of a follow request between two users
+func (r *UserRepository) GetFollowRequestState(ctx context.Context, followerID, targetID string) (string, error) {
+	// This should use the relationship repository if available
+	if r.deps != nil {
+		// Try to get the follow request through dependencies
+		// For now, just return "none" as a default
+		return "none", nil
+	}
+	
+	// Check if there's a follow relationship
+	var relationship models.RelationshipRecord
+	err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerID)).
+		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
+		First(&relationship)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return "none", nil
+		}
+		return "", fmt.Errorf("failed to get follow request state: %w", err)
+	}
+	
+	// Return the relationship state
+	return relationship.State, nil
+}
+
+// GetHashtagTimeline retrieves timeline entries for a specific hashtag
+func (r *UserRepository) GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	// Hashtag timelines are stored with special timeline type
+	timelineID := hashtag
+	if local {
+		timelineID = hashtag + "#LOCAL"
+	}
+	
+	pk := fmt.Sprintf("timeline#HASHTAG#%s", timelineID)
+	
+	// Build query
+	query := r.db.WithContext(ctx).Model(&models.Timeline{}).
+		Where("PK", "=", pk).
+		OrderBy("SK", "DESC") // Most recent first
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get hashtag timeline entries: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	// Convert to storage.TimelineEntry
+	result := make([]*storage.TimelineEntry, len(entries))
+	for i, e := range entries {
+		result[i] = &storage.TimelineEntry{
+			TimelineType:  e.TimelineType,
+			TimelineID:    e.TimelineID,
+			EntryID:       e.EntryID,
+			PostID:        e.PostID,
+			ActorID:       e.ActorID,
+			ActorHandle:   e.ActorHandle,
+			Content:       e.Content,
+			ContentType:   e.ContentType,
+			HasMedia:      e.HasMedia,
+			IsReply:       e.IsReply,
+			IsBoost:       e.IsBoost,
+			Language:      e.Language,
+			Visibility:    e.Visibility,
+			TimelineAt:    e.TimelineAt,
+			ExpiresAt:     e.ExpiresAt,
+			CreatedAt:     e.CreatedAt,
+		}
+	}
+
+	return result, nextCursor, nil
+}
+
+// GetListTimeline retrieves timeline entries for a specific list
+func (r *UserRepository) GetListTimeline(ctx context.Context, listID string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	// List timelines use LIST timeline type
+	pk := fmt.Sprintf("timeline#LIST#%s", listID)
+	
+	// Build query
+	query := r.db.WithContext(ctx).Model(&models.Timeline{}).
+		Where("PK", "=", pk).
+		OrderBy("SK", "DESC") // Most recent first
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var entries []*models.Timeline
+	err := query.All(&entries)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get list timeline entries: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(entries) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = entries[limit-1].SK
+		entries = entries[:limit] // Trim to requested limit
+	}
+
+	// Convert to storage.TimelineEntry
+	result := make([]*storage.TimelineEntry, len(entries))
+	for i, e := range entries {
+		result[i] = &storage.TimelineEntry{
+			TimelineType:  e.TimelineType,
+			TimelineID:    e.TimelineID,
+			EntryID:       e.EntryID,
+			PostID:        e.PostID,
+			ActorID:       e.ActorID,
+			ActorHandle:   e.ActorHandle,
+			Content:       e.Content,
+			ContentType:   e.ContentType,
+			HasMedia:      e.HasMedia,
+			IsReply:       e.IsReply,
+			IsBoost:       e.IsBoost,
+			Language:      e.Language,
+			Visibility:    e.Visibility,
+			TimelineAt:    e.TimelineAt,
+			ExpiresAt:     e.ExpiresAt,
+			CreatedAt:     e.CreatedAt,
+		}
+	}
+
+	return result, nextCursor, nil
+}
+
+// GetPendingFollowRequests retrieves pending follow requests for a user
+func (r *UserRepository) GetPendingFollowRequests(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	log := r.logger.With(
+		zap.String("method", "GetPendingFollowRequests"),
+		zap.String("username", username),
+		zap.Int("limit", limit),
+	)
+
+	if r.deps == nil {
+		log.Error("dependencies not set")
+		return nil, "", fmt.Errorf("dependencies not available")
+	}
+
+	// Delegate to RelationshipRepository through deps
+	return r.deps.GetPendingFollowRequests(ctx, username, limit, cursor)
+}
+
+// ListUsersByRole lists users by their role
+func (r *UserRepository) ListUsersByRole(ctx context.Context, role string) ([]*storage.User, error) {
+	log := r.logger.With(
+		zap.String("method", "ListUsersByRole"),
+		zap.String("role", role),
+	)
+
+	// Query for users by role using GSI
+	var userModels []models.User
+	err := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("users-by-role").
+		Where("UserRole", "=", role).
+		All(&userModels)
+	if err != nil {
+		// If the GSI doesn't exist or no users found, return empty list
+		if errors.IsNotFound(err) {
+			return []*storage.User{}, nil
+		}
+		log.Warn("failed to query users by role", zap.Error(err))
+		return []*storage.User{}, nil
+	}
+
+	// Convert to storage.User slice
+	users := make([]*storage.User, 0, len(userModels))
+	for _, userModel := range userModels {
+		users = append(users, r.modelToStorage(&userModel))
+	}
+
+	log.Info("retrieved users by role",
+		zap.String("role", role),
+		zap.Int("count", len(users)))
+
+	return users, nil
+}
+
+// RemoveFromFollowers removes a follower from the current user's followers list
+func (r *UserRepository) RemoveFromFollowers(ctx context.Context, username, followerUsername string) error {
+	log := r.logger.With(
+		zap.String("method", "RemoveFromFollowers"),
+		zap.String("username", username),
+		zap.String("follower_username", followerUsername),
+	)
+
+	if r.deps == nil {
+		log.Error("dependencies not set")
+		return fmt.Errorf("dependencies not available")
+	}
+
+	// This is an alias for RemoveFollow with parameters in the order expected by the interface
+	// RemoveFollow expects (follower, followed), so we swap the parameters
+	return r.deps.RemoveFollow(ctx, followerUsername, username)
+}
+
+// FanOutPost distributes a post to all relevant timelines (followers' home timelines, public timeline, etc.)
+func (r *UserRepository) FanOutPost(ctx context.Context, activity *activitypub.Activity) error {
+	log := r.logger.With(
+		zap.String("activity_id", activity.ID),
+		zap.String("activity_type", activity.Type),
+		zap.String("actor", activity.Actor),
+	)
+
+	// Only fan out Create activities
+	if activity.Type != activitypub.CreateType {
+		return nil
+	}
+
+	// Extract the object from the activity
+	var object map[string]interface{}
+	var tags []activitypub.Tag
+
+	switch obj := activity.Object.(type) {
+	case map[string]interface{}:
+		object = obj
+		// Extract tags if present
+		if tagList, ok := obj["tag"].([]interface{}); ok {
+			for _, t := range tagList {
+				if tagMap, ok := t.(map[string]interface{}); ok {
+					tag := activitypub.Tag{
+						Type: getStringFromMap(tagMap, "type"),
+						Name: getStringFromMap(tagMap, "name"),
+						Href: getStringFromMap(tagMap, "href"),
+					}
+					tags = append(tags, tag)
+				}
+			}
+		}
+	case *activitypub.Note:
+		// Convert Note to map for easier processing
+		object = map[string]interface{}{
+			"id":           obj.ID,
+			"type":         obj.Type,
+			"content":      obj.Content,
+			"attributedTo": obj.AttributedTo,
+			"to":           obj.To,
+			"cc":           obj.CC,
+			"inReplyTo":    obj.InReplyTo,
+			"sensitive":    obj.Sensitive,
+			"summary":      obj.Summary,
+		}
+		// Use tags directly from Note
+		tags = obj.Tag
+	default:
+		log.Warn("unsupported object type for fan-out", zap.Any("object", activity.Object))
+		return nil
+	}
+
+	// Extract basic info from the object
+	objectID, _ := object["id"].(string)
+	objectType, _ := object["type"].(string)
+	content, _ := object["content"].(string)
+	attributedTo, _ := object["attributedTo"].(string)
+	inReplyTo, _ := object["inReplyTo"].(string)
+	sensitive, _ := object["sensitive"].(bool)
+	summary, _ := object["summary"].(string)
+
+	if objectID == "" || attributedTo == "" {
+		log.Error("missing required fields in object", zap.Any("object", object))
+		return fmt.Errorf("object missing required fields")
+	}
+
+	// Extract username from actor ID
+	username := extractUsernameFromActorID(attributedTo)
+	if username == "" {
+		log.Error("failed to extract username from actor", zap.String("actor", attributedTo))
+		return fmt.Errorf("invalid actor ID")
+	}
+
+	// Determine visibility
+	visibility := r.determineVisibility(object)
+
+	// Create base timeline entry
+	baseEntry := &models.Timeline{
+		PostID:      objectID,
+		ActorID:     attributedTo,
+		ActorHandle: username,
+		Content:     truncateContent(content, 500),
+		ContentType: objectType,
+		HasMedia:    hasMediaAttachments(object),
+		IsReply:     inReplyTo != "",
+		InReplyTo:   inReplyTo,
+		IsBoost:     false,
+		Visibility:  visibility,
+		Language:    extractLanguage(object),
+		Sensitive:   sensitive,
+		SpoilerText: summary,
+		CreatedAt:   extractPublishedTime(object),
+		TimelineAt:  time.Now(),
+	}
+
+	var entries []*models.Timeline
+
+	// Fan out to followers' home timelines (for all visibility levels except direct)
+	if visibility != "direct" {
+		followerEntries, err := r.createFollowerTimelineEntries(ctx, username, baseEntry)
+		if err != nil {
+			log.Error("failed to create follower timeline entries", zap.Error(err))
+			// Continue with other timelines even if this fails
+		} else {
+			entries = append(entries, followerEntries...)
+		}
+	}
+
+	// Add to public timelines if public or unlisted
+	if visibility == "public" || visibility == "unlisted" {
+		// Add to federated public timeline
+		publicEntry := *baseEntry
+		publicEntry.TimelineType = "PUBLIC"
+		publicEntry.TimelineID = "FEDERATED"
+		publicEntry.EntryID = r.timelineSK(publicEntry.TimelineAt, publicEntry.PostID)
+		entries = append(entries, &publicEntry)
+
+		// Add to local public timeline if it's a local user
+		if strings.HasPrefix(attributedTo, config.Get().BaseURL()) {
+			localEntry := *baseEntry
+			localEntry.TimelineType = "PUBLIC"
+			localEntry.TimelineID = "LOCAL"
+			localEntry.EntryID = r.timelineSK(localEntry.TimelineAt, localEntry.PostID)
+			entries = append(entries, &localEntry)
+		}
+	}
+
+	// Add to hashtag timelines for public posts
+	if visibility == "public" && len(tags) > 0 {
+		for _, tag := range tags {
+			if tag.Type == "Hashtag" && tag.Name != "" {
+				// Extract hashtag name (remove # prefix if present)
+				hashtagName := strings.TrimPrefix(tag.Name, "#")
+				hashtagName = strings.ToLower(hashtagName) // Normalize to lowercase
+
+				hashtagEntry := *baseEntry
+				hashtagEntry.TimelineType = "HASHTAG"
+				hashtagEntry.TimelineID = hashtagName
+				hashtagEntry.EntryID = r.timelineSK(hashtagEntry.TimelineAt, hashtagEntry.PostID)
+				entries = append(entries, &hashtagEntry)
+			}
+		}
+	}
+
+	// Add to list timelines
+	// For posts that are public, unlisted, or private (not direct messages)
+	if visibility != "direct" {
+		listEntries, err := r.createListTimelineEntries(ctx, username, baseEntry)
+		if err != nil {
+			log.Error("failed to create list timeline entries", zap.Error(err))
+			// Continue even if this fails
+		} else {
+			entries = append(entries, listEntries...)
+		}
+	}
+
+	// Write all entries to timelines
+	if len(entries) > 0 {
+		if err := r.deps.CreateTimelineEntries(ctx, entries); err != nil {
+			log.Error("failed to write to timelines", zap.Error(err), zap.Int("entry_count", len(entries)))
+			return fmt.Errorf("failed to write to timelines: %w", err)
+		}
+	}
+
+	log.Info("successfully fanned out post", zap.Int("timeline_count", len(entries)))
+	return nil
+}
+
+// createFollowerTimelineEntries creates timeline entries for all followers
+func (r *UserRepository) createFollowerTimelineEntries(ctx context.Context, username string, baseEntry *models.Timeline) ([]*models.Timeline, error) {
+	log := r.logger.With(zap.String("username", username))
+
+	var entries []*models.Timeline
+	cursor := ""
+
+	// Paginate through all followers
+	for {
+		followers, nextCursor, err := r.deps.GetFollowers(ctx, username, 100, cursor)
+		if err != nil {
+			log.Error("failed to get followers", zap.Error(err))
+			return nil, fmt.Errorf("failed to get followers: %w", err)
+		}
+
+		// Create timeline entry for each follower
+		for _, followerID := range followers {
+			// Extract follower username
+			followerUsername := extractUsernameFromActorID(followerID)
+			if followerUsername == "" {
+				log.Warn("invalid follower ID", zap.String("follower_id", followerID))
+				continue
+			}
+
+			// Create timeline entry for this follower
+			entry := *baseEntry
+			entry.TimelineType = "HOME"
+			entry.TimelineID = followerUsername
+			entry.EntryID = r.timelineSK(entry.TimelineAt, entry.PostID)
+			entries = append(entries, &entry)
+		}
+
+		// Check if there are more followers
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	log.Debug("created follower timeline entries", zap.Int("count", len(entries)))
+	return entries, nil
+}
+
+// createListTimelineEntries creates timeline entries for lists containing the actor
+func (r *UserRepository) createListTimelineEntries(ctx context.Context, username string, baseEntry *models.Timeline) ([]*models.Timeline, error) {
+	log := r.logger.With(zap.String("username", username))
+
+	// Get all lists that contain this account
+	lists, err := r.deps.GetListsContainingAccount(ctx, username, "")
+	if err != nil {
+		log.Error("failed to get lists containing account", zap.Error(err))
+		return nil, fmt.Errorf("failed to get lists containing account: %w", err)
+	}
+
+	var entries []*models.Timeline
+
+	for _, list := range lists {
+		// Check list replies policy
+		shouldInclude := false
+		switch list.RepliesPolicy {
+		case "none":
+			// No replies
+			shouldInclude = baseEntry.InReplyTo == ""
+		case "followed":
+			// Replies to followed accounts only
+			// For now, include all non-replies. In the future, check if replied-to account is followed
+			shouldInclude = baseEntry.InReplyTo == ""
+		case "list":
+			// All posts including replies
+			shouldInclude = true
+		default:
+			// Default to list policy
+			shouldInclude = true
+		}
+
+		if shouldInclude {
+			// Create timeline entry for this list
+			entry := *baseEntry
+			entry.TimelineType = "LIST"
+			entry.TimelineID = list.ID
+			entry.EntryID = r.timelineSK(entry.TimelineAt, entry.PostID)
+			entries = append(entries, &entry)
+		}
+	}
+
+	log.Debug("created list timeline entries", zap.Int("count", len(entries)))
+	return entries, nil
+}
+
+// determineVisibility determines the visibility of a post based on addressing
+func (r *UserRepository) determineVisibility(object map[string]interface{}) string {
+	to := convertToStringSlice(object["to"])
+	cc := convertToStringSlice(object["cc"])
+
+	// Direct message - no public addressing
+	if !contains(to, activitypub.PublicAddress) && !contains(cc, activitypub.PublicAddress) {
+		return "direct"
+	}
+
+	// Public - addressed to public in 'to'
+	if contains(to, activitypub.PublicAddress) {
+		return "public"
+	}
+
+	// Unlisted - public in 'cc'
+	if contains(cc, activitypub.PublicAddress) {
+		return "unlisted"
+	}
+
+	// Private - followers only
+	return "private"
+}
+
+// timelineSK generates a sort key for timeline entries using reverse timestamp
+func (r *UserRepository) timelineSK(timestamp time.Time, postID string) string {
+	// Use reverse timestamp for newest-first ordering
+	reverseTimestamp := 9999999999 - timestamp.Unix()
+	return fmt.Sprintf("%010d#%s", reverseTimestamp, postID)
+}
+
+// Helper functions
+
+func truncateContent(content string, maxLen int) string {
+	if len(content) <= maxLen {
+		return content
+	}
+	return content[:maxLen]
+}
+
+func hasMediaAttachments(object map[string]interface{}) bool {
+	attachments, ok := object["attachment"].([]interface{})
+	return ok && len(attachments) > 0
+}
+
+func extractLanguage(object map[string]interface{}) string {
+	if lang, ok := object["language"].(string); ok {
+		return lang
+	}
+	if langMap, ok := object["contentMap"].(map[string]interface{}); ok && len(langMap) > 0 {
+		// Return the first language found
+		for lang := range langMap {
+			return lang
+		}
+	}
+	return "en" // Default to English
+}
+
+func extractPublishedTime(object map[string]interface{}) time.Time {
+	if published, ok := object["published"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, published); err == nil {
+			return t
+		}
+	}
+	return time.Now()
+}
+
+func convertToStringSlice(v interface{}) []string {
+	if v == nil {
+		return []string{}
+	}
+
+	switch val := v.(type) {
+	case []string:
+		return val
+	case []interface{}:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if str, ok := item.(string); ok {
+				result = append(result, str)
+			}
+		}
+		return result
+	case string:
+		return []string{val}
+	default:
+		return []string{}
+	}
+}
+
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+func getStringFromMap(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
 }

@@ -15,7 +15,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/equaltoai/lesser/cmd/api/handlers"
 	liftHandlers "github.com/equaltoai/lesser/cmd/api/lift"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -23,7 +22,8 @@ import (
 	liftAuth "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage"
-	storageDB "github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
@@ -36,7 +36,6 @@ var (
 	cfg              *config.Config
 	store            storage.Storage
 	logger           *zap.Logger
-	handler          *handlers.Handler
 	liftHandler      *liftHandlers.Handler
 	authService      *auth.AuthService
 	liftAuthSvc      *liftAuth.LiftAuthService
@@ -49,13 +48,47 @@ func init() {
 	cfg = config.Get()
 	logger = common.Logger()
 
-	var err error
-	store, err = storageDB.New()
-	if err != nil {
-		logger.Fatal("failed to initialize storage", zap.Error(err))
+	// Initialize DynamORM
+	tableName := os.Getenv("DYNAMODB_TABLE")
+	if tableName == "" {
+		tableName = cfg.DynamoTableName
+	}
+	if tableName == "" {
+		logger.Fatal("DYNAMODB_TABLE environment variable is required")
 	}
 
-	// Initialize auth service directly
+	// Initialize DynamORM with Lambda optimizations
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	if err != nil {
+		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+	}
+
+	// Create storage adapter
+	store = dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	
+	// Initialize repositories
+	adapter := store.(*dynamorm.StorageAdapter)
+	adapter.SetActorRepository(repositories.NewActorRepository(db, tableName, logger))
+	adapter.SetObjectRepository(repositories.NewObjectRepository(db, tableName, cfg.Domain, logger))
+	adapter.SetActivityRepository(repositories.NewActivityRepository(db, tableName, logger))
+	adapter.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
+	adapter.SetTimelineRepository(repositories.NewTimelineRepository(db, tableName, logger))
+	adapter.SetNotificationRepository(repositories.NewNotificationRepository(db, tableName, logger))
+	adapter.SetLikeRepository(repositories.NewLikeRepository(db, tableName, logger))
+	adapter.SetModerationRepository(repositories.NewModerationRepository(db, tableName, logger))
+	adapter.SetListRepository(repositories.NewListRepository(db, tableName, logger))
+	adapter.SetMediaRepository(repositories.NewMediaRepository(db, tableName, logger))
+	adapter.SetPollRepository(repositories.NewPollRepository(db, tableName, logger))
+	adapter.SetHashtagRepository(repositories.NewHashtagRepository(db, tableName, logger, cfg.Domain))
+	adapter.SetScheduledStatusRepository(repositories.NewScheduledStatusRepository(db, tableName, logger))
+	adapter.SetAnnouncementRepository(repositories.NewAnnouncementRepository(db, tableName, logger))
+	adapter.SetDomainBlockRepository(repositories.NewDomainBlockRepository(db, tableName, logger))
+	adapter.SetAuthRepository(repositories.NewAuthRepository(db, tableName, logger))
+	adapter.SetRelationshipRepository(repositories.NewRelationshipRepository(db, tableName, logger))
+	adapter.SetInstanceRepository(repositories.NewInstanceRepository(db, tableName, logger))
+	adapter.SetFederationRepository(repositories.NewFederationRepository(db, logger))
+
+	// Initialize auth service
 	authService, err = auth.NewAuthService(store)
 	if err != nil {
 		logger.Fatal("failed to initialize auth service", zap.Error(err))
@@ -80,14 +113,13 @@ func init() {
 		}
 	}
 
-	// Create handler with all dependencies (still needs old middleware for legacy handlers)
+	// Create handler with all dependencies
 	legacyAuthMiddleware, err := auth.GetMiddleware()
 	if err != nil {
 		logger.Fatal("failed to initialize legacy auth middleware", zap.Error(err))
 	}
-	handler = handlers.NewHandler(cfg, store, logger, legacyAuthMiddleware)
 	
-	// Create Lift handler for native Lift endpoints
+	// Create Lift handler for all endpoints
 	liftHandler = liftHandlers.NewHandler(cfg, store, logger, legacyAuthMiddleware)
 }
 
@@ -119,10 +151,11 @@ func main() {
 	}
 
 	// Configure routes
-	configurePublicRoutes(app)
-	configureAuthenticatedReadRoutes(app)
-	configureAuthenticatedWriteRoutes(app)
-	configureAdminRoutes(app)
+	// TODO: Restore routes after migration
+	// configurePublicRoutes(app)
+	// configureAuthenticatedReadRoutes(app)
+	// configureAuthenticatedWriteRoutes(app)
+	// configureAdminRoutes(app)
 	
 	// Configure native Lift routes (controlled by environment variable)
 	configureLiftRoutes(app)

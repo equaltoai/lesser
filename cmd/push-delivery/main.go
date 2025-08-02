@@ -25,7 +25,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -99,10 +100,26 @@ func (rl *RateLimiter) Allow(userID string) bool {
 
 // NewPushDeliveryProcessor creates a new push delivery processor
 func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
-	store, err := dynamodb.New()
+	// Initialize DynamORM
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
 	}
+
+	// Get table name
+	cfg := config.Get()
+	tableName := cfg.DynamoTableName
+	if tableName == "" {
+		tableName = "lesser-main"
+	}
+
+	// Create storage adapter
+	logger := common.Logger()
+	store := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	
+	// Initialize required repositories
+	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
+	store.SetPushSubscriptionRepository(repositories.NewPushSubscriptionRepository(db, tableName, logger))
 
 	return &PushDeliveryProcessor{
 		store:  store,

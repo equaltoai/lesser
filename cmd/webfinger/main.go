@@ -11,7 +11,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/reputation"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -43,23 +42,17 @@ func NewWebFingerHandler() (*WebFingerHandler, error) {
 	actorRepo := repositories.NewActorRepository(db, tableName, logger)
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
 
-	// Initialize legacy storage for reputation service (temporary bridge)
-	// TODO: Migrate reputation service to DynamORM in future phase
-	legacyStore, err := dynamodb.New()
-	if err != nil {
-		logger.Warn("failed to initialize legacy storage for reputation, disabling reputation features", zap.Error(err))
-		// Continue without reputation service rather than failing
-		return &WebFingerHandler{
-			actorRepo:  actorRepo,
-			userRepo:   userRepo,
-			logger:     logger,
-			cfg:        cfg,
-			repService: nil, // Disabled
-		}, nil
-	}
+	// Initialize storage adapter for reputation service
+	// TODO: Migrate reputation service to use repositories directly
+	storageAdapter := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	
+	// Initialize repositories on the adapter
+	storageAdapter.SetActorRepository(actorRepo)
+	storageAdapter.SetUserRepository(userRepo)
 
+	// Initialize reputation service with storage adapter
 	repService, err := reputation.NewService(&reputation.Config{
-		Storage:     legacyStore,
+		Storage:     storageAdapter,
 		Logger:      logger,
 		InstanceURL: cfg.BaseURL(),
 		PrivateKey:  cfg.ReputationPrivateKey,

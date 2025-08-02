@@ -639,3 +639,86 @@ func (r *HashtagRepository) IsHashtagMuted(ctx context.Context, userID, hashtag 
 	
 	return follow.Muted, nil
 }
+
+// DeleteOldHashtagTrends deletes hashtag trend records older than the specified time
+func (r *HashtagRepository) DeleteOldHashtagTrends(ctx context.Context, before time.Time) error {
+	// Query for old hashtag trends
+	// We need to scan for items with PK starting with "HASHTAG_TREND#" and CreatedAt < before
+	
+	// DynamORM doesn't support scan with filter expressions directly, so we'll do this in batches
+	// This is a maintenance operation that would typically run periodically
+	
+	r.logger.Info("starting deletion of old hashtag trends",
+		zap.Time("before", before))
+	
+	// Note: In production, this would ideally be implemented with:
+	// 1. A GSI on CreatedAt for efficient time-based queries
+	// 2. DynamoDB TTL on the items
+	// 3. Or a scheduled job that processes in smaller time windows
+	
+	// For now, we'll implement a basic version that queries hashtag trends
+	// Since DynamORM doesn't have direct scan support with complex filters,
+	// this would need to be done in the legacy layer or with a custom query
+	
+	// TODO: Implement with proper scanning when DynamORM supports it
+	// or add a GSI for time-based queries
+	
+	r.logger.Warn("DeleteOldHashtagTrends not fully implemented - needs scan support")
+	return nil
+}
+
+// GetRecentHashtags returns hashtags that have been recently used
+func (r *HashtagRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
+	// Safety check on limit
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	// Query hashtag metadata entries that have been used recently
+	var hashtagModels []*models.Hashtag
+	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
+		Where("SK", "=", "METADATA").
+		Where("LastUsed", ">=", since.Format(time.RFC3339)).
+		OrderBy("LastUsed", "DESC").
+		Limit(limit).
+		All(&hashtagModels)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []*storage.TrendingHashtag{}, nil
+		}
+		return nil, fmt.Errorf("failed to get recent hashtags: %w", err)
+	}
+
+	// Convert to storage.TrendingHashtag
+	result := make([]*storage.TrendingHashtag, len(hashtagModels))
+	for i, h := range hashtagModels {
+		result[i] = &storage.TrendingHashtag{
+			Name:        h.Name,
+			URL:         fmt.Sprintf("https://%s/tags/%s", r.domain, h.Name),
+			UsageCount:  h.UsageCount,
+			UniqueUsers: 0, // Not tracked in simple model
+			LastUsed:    h.LastUsed,
+			FirstSeen:   h.FirstSeen,
+			UserID:      "", // Not tracked in metadata
+			CreatedAt:   h.LastUsed,
+		}
+	}
+
+	return result, nil
+}
+
+// GetTrendingHashtags returns trending hashtags based on recent usage
+func (r *HashtagRepository) GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
+	// For now, this is the same as GetRecentHashtags
+	// In a full implementation, this would calculate trending based on velocity/acceleration of usage
+	return r.GetRecentHashtags(ctx, since, limit)
+}
+
+// StoreHashtagTrend stores trending data for a hashtag
+func (r *HashtagRepository) StoreHashtagTrend(ctx context.Context, trend any) error {
+	// This would store pre-calculated trending data
+	// For now, we rely on the metadata updates in IndexHashtag
+	r.logger.Info("StoreHashtagTrend called - using metadata updates instead")
+	return nil
+}

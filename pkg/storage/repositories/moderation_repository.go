@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -990,6 +991,1218 @@ func (r *ModerationRepository) RecordPatternMatch(ctx context.Context, patternID
 		return fmt.Errorf("failed to record pattern match: %w", err)
 	}
 	
+	return nil
+}
+
+// FILTER METHODS
+
+// CreateFilter creates a new filter
+func (r *ModerationRepository) CreateFilter(ctx context.Context, filter *storage.Filter) error {
+	// Generate ID if not provided
+	if filter.ID == "" {
+		filter.ID = uuid.New().String()
+	}
+
+	// Set timestamps
+	now := time.Now()
+	filter.CreatedAt = now
+	filter.UpdatedAt = now
+
+	// Create model and update keys
+	model := &models.Filter{
+		ID:           filter.ID,
+		Username:     filter.Username,
+		Title:        filter.Title,
+		Context:      filter.Context,
+		FilterAction: filter.FilterAction,
+		ExpiresAt:    filter.ExpiresAt,
+		CreatedAt:    filter.CreatedAt,
+		UpdatedAt:    filter.UpdatedAt,
+	}
+	model.UpdateKeys()
+
+	// Create the filter
+	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("Failed to create filter",
+			zap.Error(err),
+			zap.String("filter_id", filter.ID),
+			zap.String("username", filter.Username))
+		return fmt.Errorf("failed to create filter: %w", err)
+	}
+
+	r.logger.Debug("Created filter",
+		zap.String("filter_id", filter.ID),
+		zap.String("username", filter.Username),
+		zap.String("title", filter.Title))
+
+	return nil
+}
+
+// GetFilter retrieves a filter by ID
+func (r *ModerationRepository) GetFilter(ctx context.Context, filterID string) (*storage.Filter, error) {
+	// We need to scan for the filter since we don't know the username
+	var models []models.Filter
+	
+	err := r.db.WithContext(ctx).Model(&models).
+		Where("SK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Limit(10). // Reasonable limit
+		All(&models)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query filter: %w", err)
+	}
+
+	// Find the matching filter
+	for _, model := range models {
+		if model.ID == filterID {
+			return &storage.Filter{
+				ID:           model.ID,
+				Username:     model.Username,
+				Title:        model.Title,
+				Context:      model.Context,
+				FilterAction: model.FilterAction,
+				ExpiresAt:    model.ExpiresAt,
+				CreatedAt:    model.CreatedAt,
+				UpdatedAt:    model.UpdatedAt,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("filter not found")
+}
+
+// GetFiltersForUser retrieves all filters for a user
+func (r *ModerationRepository) GetFiltersForUser(ctx context.Context, username string) ([]*storage.Filter, error) {
+	var models []models.Filter
+
+	err := r.db.WithContext(ctx).Model(&models).
+		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", ">=", "FILTER#").
+		Where("SK", "<", "FILTER~"). // Use ~ as upper bound since it's after # in ASCII
+		All(&models)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query filters for user: %w", err)
+	}
+
+	filters := make([]*storage.Filter, len(models))
+	for i, model := range models {
+		filters[i] = &storage.Filter{
+			ID:           model.ID,
+			Username:     model.Username,
+			Title:        model.Title,
+			Context:      model.Context,
+			FilterAction: model.FilterAction,
+			ExpiresAt:    model.ExpiresAt,
+			CreatedAt:    model.CreatedAt,
+			UpdatedAt:    model.UpdatedAt,
+		}
+	}
+
+	return filters, nil
+}
+
+// UpdateFilter updates a filter
+func (r *ModerationRepository) UpdateFilter(ctx context.Context, filterID string, updates map[string]any) error {
+	// First get the existing filter to find the username
+	filter, err := r.GetFilter(ctx, filterID)
+	if err != nil {
+		return fmt.Errorf("failed to find filter for update: %w", err)
+	}
+
+	// Apply updates
+	if title, ok := updates["title"].(string); ok {
+		filter.Title = title
+	}
+	if context, ok := updates["context"].([]string); ok {
+		filter.Context = context
+	}
+	if filterAction, ok := updates["filter_action"].(string); ok {
+		filter.FilterAction = filterAction
+	}
+	if expiresAt, ok := updates["expires_at"].(*time.Time); ok {
+		filter.ExpiresAt = expiresAt
+	}
+
+	// Set updated timestamp
+	filter.UpdatedAt = time.Now()
+
+	// Convert to model and update
+	model := &models.Filter{
+		ID:           filter.ID,
+		Username:     filter.Username,
+		Title:        filter.Title,
+		Context:      filter.Context,
+		FilterAction: filter.FilterAction,
+		ExpiresAt:    filter.ExpiresAt,
+		CreatedAt:    filter.CreatedAt,
+		UpdatedAt:    filter.UpdatedAt,
+	}
+	model.UpdateKeys()
+
+	if err := r.db.WithContext(ctx).Model(model).Update(); err != nil {
+		r.logger.Error("Failed to update filter",
+			zap.Error(err),
+			zap.String("filter_id", filterID))
+		return fmt.Errorf("failed to update filter: %w", err)
+	}
+
+	r.logger.Debug("Updated filter",
+		zap.String("filter_id", filterID),
+		zap.String("username", filter.Username))
+
+	return nil
+}
+
+// DeleteFilter deletes a filter and all its associated keywords and statuses
+func (r *ModerationRepository) DeleteFilter(ctx context.Context, filterID string) error {
+	// First get the filter to find the username
+	filter, err := r.GetFilter(ctx, filterID)
+	if err != nil {
+		return fmt.Errorf("failed to find filter for deletion: %w", err)
+	}
+
+	// Delete all keywords first
+	keywords, err := r.GetFilterKeywords(ctx, filterID)
+	if err != nil {
+		return fmt.Errorf("failed to get filter keywords for deletion: %w", err)
+	}
+	for _, keyword := range keywords {
+		if err := r.DeleteFilterKeyword(ctx, keyword.ID); err != nil {
+			r.logger.Error("Failed to delete filter keyword during filter deletion",
+				zap.Error(err),
+				zap.String("keyword_id", keyword.ID))
+			// Continue with other deletions
+		}
+	}
+
+	// Delete all statuses
+	statuses, err := r.GetFilterStatuses(ctx, filterID)
+	if err != nil {
+		return fmt.Errorf("failed to get filter statuses for deletion: %w", err)
+	}
+	for _, status := range statuses {
+		if err := r.DeleteFilterStatus(ctx, status.StatusID); err != nil {
+			r.logger.Error("Failed to delete filter status during filter deletion",
+				zap.Error(err),
+				zap.String("status_id", status.StatusID))
+			// Continue with other deletions
+		}
+	}
+
+	// Delete the filter itself
+	err = r.db.WithContext(ctx).Model(&models.Filter{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s", filter.Username)).
+		Where("SK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Delete()
+
+	if err != nil {
+		r.logger.Error("Failed to delete filter",
+			zap.Error(err),
+			zap.String("filter_id", filterID),
+			zap.String("username", filter.Username))
+		return fmt.Errorf("failed to delete filter: %w", err)
+	}
+
+	r.logger.Debug("Deleted filter",
+		zap.String("filter_id", filterID),
+		zap.String("username", filter.Username))
+
+	return nil
+}
+
+// AddFilterKeyword adds a new keyword to a filter
+func (r *ModerationRepository) AddFilterKeyword(ctx context.Context, filterID string, keyword *storage.FilterKeyword) error {
+	// Generate UUID if not provided
+	if keyword.ID == "" {
+		keyword.ID = uuid.New().String()
+	}
+
+	// Set FilterID and CreatedAt
+	keyword.FilterID = filterID
+	keyword.CreatedAt = time.Now()
+
+	// Create model and update keys
+	model := &models.FilterKeyword{
+		ID:        keyword.ID,
+		FilterID:  keyword.FilterID,
+		Keyword:   keyword.Keyword,
+		WholeWord: keyword.WholeWord,
+		CreatedAt: keyword.CreatedAt,
+	}
+	model.UpdateKeys()
+
+	// Create the keyword
+	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("Failed to add filter keyword",
+			zap.Error(err),
+			zap.String("filter_id", filterID),
+			zap.String("keyword_id", keyword.ID),
+			zap.String("keyword", keyword.Keyword))
+		return fmt.Errorf("failed to add filter keyword: %w", err)
+	}
+
+	r.logger.Debug("Added filter keyword",
+		zap.String("filter_id", filterID),
+		zap.String("keyword_id", keyword.ID),
+		zap.String("keyword", keyword.Keyword))
+
+	return nil
+}
+
+// GetFilterKeywords retrieves all keywords for a filter
+func (r *ModerationRepository) GetFilterKeywords(ctx context.Context, filterID string) ([]*storage.FilterKeyword, error) {
+	var models []models.FilterKeyword
+
+	// Use range query to get all items with SK starting with "KEYWORD#"
+	err := r.db.WithContext(ctx).Model(&models).
+		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Where("SK", ">=", "KEYWORD#").
+		Where("SK", "<", "KEYWORD~"). // Use ~ as upper bound since it's after # in ASCII
+		All(&models)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query filter keywords: %w", err)
+	}
+
+	keywords := make([]*storage.FilterKeyword, len(models))
+	for i, model := range models {
+		keywords[i] = &storage.FilterKeyword{
+			ID:        model.ID,
+			FilterID:  model.FilterID,
+			Keyword:   model.Keyword,
+			WholeWord: model.WholeWord,
+			CreatedAt: model.CreatedAt,
+		}
+	}
+
+	return keywords, nil
+}
+
+// UpdateFilterKeyword updates a filter keyword
+func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error {
+	// First get the existing keyword to find its FilterID
+	var existingModels []models.FilterKeyword
+	
+	// We need to scan for the keyword since we don't have the FilterID
+	err := r.db.WithContext(ctx).Model(&existingModels).
+		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
+		All(&existingModels)
+
+	if err != nil || len(existingModels) == 0 {
+		if errors.IsNotFound(err) || len(existingModels) == 0 {
+			return fmt.Errorf("filter keyword not found")
+		}
+		return fmt.Errorf("failed to find filter keyword: %w", err)
+	}
+
+	existing := existingModels[0]
+
+	// Apply updates
+	if keyword, ok := updates["keyword"].(string); ok {
+		existing.Keyword = keyword
+	}
+	if wholeWord, ok := updates["whole_word"].(bool); ok {
+		existing.WholeWord = wholeWord
+	}
+
+	// Update the keyword
+	if err := r.db.WithContext(ctx).Model(&existing).Update(); err != nil {
+		return fmt.Errorf("failed to update filter keyword: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteFilterKeyword deletes a filter keyword
+func (r *ModerationRepository) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
+	// First find the keyword to get its FilterID
+	var existingModels []models.FilterKeyword
+	
+	err := r.db.WithContext(ctx).Model(&existingModels).
+		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
+		All(&existingModels)
+
+	if err != nil || len(existingModels) == 0 {
+		if errors.IsNotFound(err) || len(existingModels) == 0 {
+			return fmt.Errorf("filter keyword not found")
+		}
+		return fmt.Errorf("failed to find filter keyword: %w", err)
+	}
+
+	existing := existingModels[0]
+
+	// Delete the keyword
+	err = r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
+		Where("PK", "=", fmt.Sprintf("FILTER#%s", existing.FilterID)).
+		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
+		Delete()
+
+	if err != nil {
+		return fmt.Errorf("failed to delete filter keyword: %w", err)
+	}
+
+	return nil
+}
+
+// AddFilterStatus adds a new status to a filter
+func (r *ModerationRepository) AddFilterStatus(ctx context.Context, filterID string, status *storage.FilterStatus) error {
+	// Generate UUID if not provided
+	if status.ID == "" {
+		status.ID = uuid.New().String()
+	}
+
+	// Set FilterID and CreatedAt
+	status.FilterID = filterID
+	status.CreatedAt = time.Now()
+
+	// Create model and update keys
+	model := &models.FilterStatus{
+		ID:        status.ID,
+		FilterID:  status.FilterID,
+		StatusID:  status.StatusID,
+		CreatedAt: status.CreatedAt,
+	}
+	model.UpdateKeys()
+
+	// Create the status
+	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("Failed to add filter status",
+			zap.Error(err),
+			zap.String("filter_id", filterID),
+			zap.String("status_filter_id", status.ID),
+			zap.String("status_id", status.StatusID))
+		return fmt.Errorf("failed to add filter status: %w", err)
+	}
+
+	r.logger.Debug("Added filter status",
+		zap.String("filter_id", filterID),
+		zap.String("status_filter_id", status.ID),
+		zap.String("status_id", status.StatusID))
+
+	return nil
+}
+
+// GetFilterStatuses retrieves all statuses for a filter
+func (r *ModerationRepository) GetFilterStatuses(ctx context.Context, filterID string) ([]*storage.FilterStatus, error) {
+	var models []models.FilterStatus
+
+	// Use range query to get all items with SK starting with "STATUS#"
+	err := r.db.WithContext(ctx).Model(&models).
+		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Where("SK", ">=", "STATUS#").
+		Where("SK", "<", "STATUS~"). // Use ~ as upper bound since it's after # in ASCII
+		All(&models)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query filter statuses: %w", err)
+	}
+
+	statuses := make([]*storage.FilterStatus, len(models))
+	for i, model := range models {
+		statuses[i] = &storage.FilterStatus{
+			ID:        model.ID,
+			FilterID:  model.FilterID,
+			StatusID:  model.StatusID,
+			CreatedAt: model.CreatedAt,
+		}
+	}
+
+	return statuses, nil
+}
+
+// DeleteFilterStatus deletes a filter status by statusID (the ID being filtered, not the filter entry ID)
+func (r *ModerationRepository) DeleteFilterStatus(ctx context.Context, statusID string) error {
+	// First find the status to get its FilterID
+	var existingModels []models.FilterStatus
+	
+	// Look for the filter status entry that filters this statusID
+	err := r.db.WithContext(ctx).Model(&existingModels).
+		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
+		All(&existingModels)
+
+	if err != nil || len(existingModels) == 0 {
+		if errors.IsNotFound(err) || len(existingModels) == 0 {
+			return fmt.Errorf("filter status not found")
+		}
+		return fmt.Errorf("failed to find filter status: %w", err)
+	}
+
+	existing := existingModels[0]
+
+	// Delete the status
+	err = r.db.WithContext(ctx).Model(&models.FilterStatus{}).
+		Where("PK", "=", fmt.Sprintf("FILTER#%s", existing.FilterID)).
+		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
+		Delete()
+
+	if err != nil {
+		return fmt.Errorf("failed to delete filter status: %w", err)
+	}
+
+	return nil
+}
+
+// REPORT METHODS
+
+// AssignReport assigns a report to a moderator
+func (r *ModerationRepository) AssignReport(ctx context.Context, reportID string, assignedTo string) error {
+	// First get the existing report
+	report, err := r.GetReport(ctx, reportID)
+	if err != nil {
+		return fmt.Errorf("failed to get report for assignment: %w", err)
+	}
+
+	// Update the fields
+	now := time.Now()
+	report.AssignedTo = assignedTo
+	report.UpdatedAt = now
+
+	// Convert to model and update
+	model := &models.Report{
+		ID:                report.ID,
+		ReporterID:        report.ReporterID,
+		TargetAccountID:   report.TargetAccountID,
+		StatusIDs:         report.StatusIDs,
+		Comment:           report.Comment,
+		Category:          report.Category,
+		RuleIDs:           report.RuleIDs,
+		Forwarded:         report.Forwarded,
+		Status:            string(report.Status),
+		ActionTaken:       report.ActionTaken,
+		ActionTakenAt:     report.ActionTakenAt,
+		ModeratorID:       report.ModeratorID,
+		ModerationEventID: report.ModerationEventID,
+		CreatedAt:         report.CreatedAt,
+		UpdatedAt:         report.UpdatedAt,
+		AssignedTo:        report.AssignedTo,
+	}
+	model.UpdateKeys()
+
+	err = r.db.WithContext(ctx).Model(model).Update()
+
+	if err != nil {
+		r.logger.Error("Failed to assign report",
+			zap.Error(err),
+			zap.String("report_id", reportID),
+			zap.String("assigned_to", assignedTo))
+		return fmt.Errorf("failed to assign report: %w", err)
+	}
+
+	r.logger.Debug("Assigned report",
+		zap.String("report_id", reportID),
+		zap.String("assigned_to", assignedTo))
+
+	return nil
+}
+
+// UnassignReport removes assignment from a report
+func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID string) error {
+	// First get the existing report
+	report, err := r.GetReport(ctx, reportID)
+	if err != nil {
+		return fmt.Errorf("failed to get report for unassignment: %w", err)
+	}
+
+	// Update the fields
+	now := time.Now()
+	report.AssignedTo = ""
+	report.UpdatedAt = now
+
+	// Convert to model and update
+	model := &models.Report{
+		ID:                report.ID,
+		ReporterID:        report.ReporterID,
+		TargetAccountID:   report.TargetAccountID,
+		StatusIDs:         report.StatusIDs,
+		Comment:           report.Comment,
+		Category:          report.Category,
+		RuleIDs:           report.RuleIDs,
+		Forwarded:         report.Forwarded,
+		Status:            string(report.Status),
+		ActionTaken:       report.ActionTaken,
+		ActionTakenAt:     report.ActionTakenAt,
+		ModeratorID:       report.ModeratorID,
+		ModerationEventID: report.ModerationEventID,
+		CreatedAt:         report.CreatedAt,
+		UpdatedAt:         report.UpdatedAt,
+		AssignedTo:        report.AssignedTo,
+	}
+	model.UpdateKeys()
+
+	err = r.db.WithContext(ctx).Model(model).Update()
+
+	if err != nil {
+		r.logger.Error("Failed to unassign report",
+			zap.Error(err),
+			zap.String("report_id", reportID))
+		return fmt.Errorf("failed to unassign report: %w", err)
+	}
+
+	r.logger.Debug("Unassigned report",
+		zap.String("report_id", reportID))
+
+	return nil
+}
+
+// GetOpenReportsCount returns the count of open reports
+func (r *ModerationRepository) GetOpenReportsCount(ctx context.Context) (int, error) {
+	// Count reports with status "open" using GSI3
+	count, err := r.db.WithContext(ctx).Model(&models.Report{}).
+		Index("GSI3").
+		Where("GSI3PK", "=", "STATUS#open").
+		Count()
+
+	if err != nil {
+		r.logger.Error("Failed to count open reports", zap.Error(err))
+		// Return 0 instead of error to match legacy behavior
+		return 0, nil
+	}
+
+	return int(count), nil
+}
+
+// GetReportedStatuses retrieves statuses associated with a report
+func (r *ModerationRepository) GetReportedStatuses(ctx context.Context, reportID string) ([]any, error) {
+	// First get the report to access its StatusIDs
+	var report models.Report
+	err := r.db.WithContext(ctx).Model(&report).
+		Where("PK", "=", fmt.Sprintf("REPORT#%s", reportID)).
+		Where("SK", "=", "REPORT").
+		First(&report)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("report not found")
+		}
+		return nil, fmt.Errorf("failed to get report: %w", err)
+	}
+
+	// Convert string slice to []any to match interface
+	result := make([]any, len(report.StatusIDs))
+	for i, statusID := range report.StatusIDs {
+		result[i] = statusID
+	}
+
+	return result, nil
+}
+
+// FLAG METHODS
+
+// CreateFlag creates a new flag
+func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Flag) error {
+	// Generate ID if not provided
+	if flag.ID == "" {
+		flag.ID = fmt.Sprintf("flag_%s", generateRandomString(12))
+	}
+
+	// Set timestamps and defaults
+	now := time.Now()
+	flag.CreatedAt = now
+	if flag.Published.IsZero() {
+		flag.Published = now
+	}
+	if flag.Status == "" {
+		flag.Status = "pending"
+	}
+
+	// Create model and update keys
+	model := &models.Flag{
+		ID:         flag.ID,
+		Actor:      flag.Actor,
+		Object:     flag.Object,
+		Content:    flag.Content,
+		Published:  flag.Published,
+		Status:     string(flag.Status),
+		ReviewedBy: flag.ReviewedBy,
+		ReviewedAt: flag.ReviewedAt,
+		ReviewNote: flag.ReviewNote,
+		CreatedAt:  flag.CreatedAt,
+	}
+	model.UpdateKeys()
+
+	// Create the flag
+	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("Failed to create flag",
+			zap.Error(err),
+			zap.String("flag_id", flag.ID),
+			zap.String("actor", flag.Actor))
+		return fmt.Errorf("failed to create flag: %w", err)
+	}
+
+	r.logger.Debug("Created flag",
+		zap.String("flag_id", flag.ID),
+		zap.String("actor", flag.Actor),
+		zap.Strings("objects", flag.Object))
+
+	return nil
+}
+
+// GetFlag retrieves a flag by ID
+func (r *ModerationRepository) GetFlag(ctx context.Context, id string) (*storage.Flag, error) {
+	// We need to scan for the flag since we don't know which object it's under
+	var models []models.Flag
+	err := r.db.WithContext(ctx).Model(&models).
+		Where("SK", "LIKE", fmt.Sprintf("%%#%s", id)). // SK ends with the flag ID
+		Limit(10). // Reasonable limit
+		All(&models)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query flag: %w", err)
+	}
+
+	// Find the matching flag
+	for _, model := range models {
+		if model.ID == id {
+			return &storage.Flag{
+				ID:         model.ID,
+				Actor:      model.Actor,
+				Object:     model.Object,
+				Content:    model.Content,
+				Published:  model.Published,
+				Status:     storage.FlagStatus(model.Status),
+				ReviewedBy: model.ReviewedBy,
+				ReviewedAt: model.ReviewedAt,
+				ReviewNote: model.ReviewNote,
+				CreatedAt:  model.CreatedAt,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("flag not found")
+}
+
+// GetFlagsByObject retrieves all flags for a specific object
+func (r *ModerationRepository) GetFlagsByObject(ctx context.Context, objectID string, limit int, cursor string) ([]*storage.Flag, string, error) {
+	var models []models.Flag
+
+	query := r.db.WithContext(ctx).Model(&models).
+		Where("PK", "=", fmt.Sprintf("FLAG#%s", objectID)).
+		Limit(limit)
+
+	// TODO: Implement cursor-based pagination
+	if err := query.All(&models); err != nil {
+		return nil, "", fmt.Errorf("failed to query flags by object: %w", err)
+	}
+
+	flags := make([]*storage.Flag, len(models))
+	for i, model := range models {
+		flags[i] = &storage.Flag{
+			ID:         model.ID,
+			Actor:      model.Actor,
+			Object:     model.Object,
+			Content:    model.Content,
+			Published:  model.Published,
+			Status:     storage.FlagStatus(model.Status),
+			ReviewedBy: model.ReviewedBy,
+			ReviewedAt: model.ReviewedAt,
+			ReviewNote: model.ReviewNote,
+			CreatedAt:  model.CreatedAt,
+		}
+	}
+
+	// TODO: Implement proper cursor generation
+	nextCursor := ""
+
+	return flags, nextCursor, nil
+}
+
+// GetFlagsByActor retrieves all flags created by a specific actor
+func (r *ModerationRepository) GetFlagsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.Flag, string, error) {
+	var models []models.Flag
+
+	query := r.db.WithContext(ctx).Model(&models).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
+		Limit(limit)
+
+	// TODO: Implement cursor-based pagination
+	if err := query.All(&models); err != nil {
+		return nil, "", fmt.Errorf("failed to query flags by actor: %w", err)
+	}
+
+	flags := make([]*storage.Flag, len(models))
+	for i, model := range models {
+		flags[i] = &storage.Flag{
+			ID:         model.ID,
+			Actor:      model.Actor,
+			Object:     model.Object,
+			Content:    model.Content,
+			Published:  model.Published,
+			Status:     storage.FlagStatus(model.Status),
+			ReviewedBy: model.ReviewedBy,
+			ReviewedAt: model.ReviewedAt,
+			ReviewNote: model.ReviewNote,
+			CreatedAt:  model.CreatedAt,
+		}
+	}
+
+	// TODO: Implement proper cursor generation
+	nextCursor := ""
+
+	return flags, nextCursor, nil
+}
+
+// GetPendingFlags retrieves all pending flags
+func (r *ModerationRepository) GetPendingFlags(ctx context.Context, limit int, cursor string) ([]*storage.Flag, string, error) {
+	var models []models.Flag
+
+	query := r.db.WithContext(ctx).Model(&models).
+		Index("GSI2").
+		Where("GSI2PK", "=", "FLAG_STATUS#pending").
+		Limit(limit)
+
+	// TODO: Implement cursor-based pagination
+	if err := query.All(&models); err != nil {
+		return nil, "", fmt.Errorf("failed to query pending flags: %w", err)
+	}
+
+	flags := make([]*storage.Flag, len(models))
+	for i, model := range models {
+		flags[i] = &storage.Flag{
+			ID:         model.ID,
+			Actor:      model.Actor,
+			Object:     model.Object,
+			Content:    model.Content,
+			Published:  model.Published,
+			Status:     storage.FlagStatus(model.Status),
+			ReviewedBy: model.ReviewedBy,
+			ReviewedAt: model.ReviewedAt,
+			ReviewNote: model.ReviewNote,
+			CreatedAt:  model.CreatedAt,
+		}
+	}
+
+	// TODO: Implement proper cursor generation
+	nextCursor := ""
+
+	return flags, nextCursor, nil
+}
+
+// UpdateFlagStatus updates the status of a flag
+func (r *ModerationRepository) UpdateFlagStatus(ctx context.Context, id string, status storage.FlagStatus, reviewedBy string, reviewNote string) error {
+	// First find the flag to get its primary key
+	flag, err := r.GetFlag(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to find flag: %w", err)
+	}
+
+	// Update the fields
+	now := time.Now()
+	flag.Status = status
+	flag.ReviewedBy = reviewedBy
+	flag.ReviewedAt = &now
+	flag.ReviewNote = reviewNote
+
+	// Convert to model and update
+	model := &models.Flag{
+		ID:         flag.ID,
+		Actor:      flag.Actor,
+		Object:     flag.Object,
+		Content:    flag.Content,
+		Published:  flag.Published,
+		Status:     string(flag.Status),
+		ReviewedBy: flag.ReviewedBy,
+		ReviewedAt: flag.ReviewedAt,
+		ReviewNote: flag.ReviewNote,
+		CreatedAt:  flag.CreatedAt,
+	}
+	model.UpdateKeys()
+
+	err = r.db.WithContext(ctx).Model(model).Update()
+
+	if err != nil {
+		r.logger.Error("Failed to update flag status",
+			zap.Error(err),
+			zap.String("flag_id", id),
+			zap.String("status", string(status)))
+		return fmt.Errorf("failed to update flag status: %w", err)
+	}
+
+	r.logger.Debug("Updated flag status",
+		zap.String("flag_id", id),
+		zap.String("status", string(status)),
+		zap.String("reviewed_by", reviewedBy))
+
+	return nil
+}
+
+// CountPendingFlags returns the count of pending flags
+func (r *ModerationRepository) CountPendingFlags(ctx context.Context) (int, error) {
+	// Count flags with status "pending" using GSI2
+	count, err := r.db.WithContext(ctx).Model(&models.Flag{}).
+		Index("GSI2").
+		Where("GSI2PK", "=", "FLAG_STATUS#pending").
+		Count()
+
+	if err != nil {
+		r.logger.Error("Failed to count pending flags", zap.Error(err))
+		// Return 0 instead of error to match legacy behavior
+		return 0, nil
+	}
+
+	return int(count), nil
+}
+
+// ADDITIONAL REPORT METHODS
+
+// CreateReport creates a new report
+func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage.Report) error {
+	// Generate ID if not provided
+	if report.ID == "" {
+		report.ID = fmt.Sprintf("report_%s", generateRandomString(12))
+	}
+
+	// Set timestamps
+	now := time.Now()
+	report.CreatedAt = now
+	report.UpdatedAt = now
+
+	// Set default status if not provided
+	if report.Status == "" {
+		report.Status = "open"
+	}
+
+	// Create model and update keys
+	model := &models.Report{
+		ID:                report.ID,
+		ReporterID:        report.ReporterID,
+		TargetAccountID:   report.TargetAccountID,
+		StatusIDs:         report.StatusIDs,
+		Comment:           report.Comment,
+		Category:          report.Category,
+		RuleIDs:           report.RuleIDs,
+		Forwarded:         report.Forwarded,
+		Status:            string(report.Status),
+		ActionTaken:       report.ActionTaken,
+		ActionTakenAt:     report.ActionTakenAt,
+		ModeratorID:       report.ModeratorID,
+		ModerationEventID: report.ModerationEventID,
+		CreatedAt:         report.CreatedAt,
+		UpdatedAt:         report.UpdatedAt,
+		AssignedTo:        report.AssignedTo,
+	}
+	model.UpdateKeys()
+
+	// Create the report
+	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("Failed to create report",
+			zap.Error(err),
+			zap.String("report_id", report.ID),
+			zap.String("reporter_id", report.ReporterID))
+		return fmt.Errorf("failed to create report: %w", err)
+	}
+
+	r.logger.Debug("Created report",
+		zap.String("report_id", report.ID),
+		zap.String("reporter_id", report.ReporterID),
+		zap.String("target_account_id", report.TargetAccountID))
+
+	return nil
+}
+
+// GetReport retrieves a report by ID
+func (r *ModerationRepository) GetReport(ctx context.Context, id string) (*storage.Report, error) {
+	var model models.Report
+
+	err := r.db.WithContext(ctx).Model(&model).
+		Where("PK", "=", fmt.Sprintf("REPORT#%s", id)).
+		Where("SK", "=", "REPORT").
+		First(&model)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("report not found")
+		}
+		return nil, fmt.Errorf("failed to get report: %w", err)
+	}
+
+	return &storage.Report{
+		ID:                model.ID,
+		ReporterID:        model.ReporterID,
+		TargetAccountID:   model.TargetAccountID,
+		StatusIDs:         model.StatusIDs,
+		Comment:           model.Comment,
+		Category:          model.Category,
+		RuleIDs:           model.RuleIDs,
+		Forwarded:         model.Forwarded,
+		Status:            storage.ReportStatus(model.Status),
+		ActionTaken:       model.ActionTaken,
+		ActionTakenAt:     model.ActionTakenAt,
+		ModeratorID:       model.ModeratorID,
+		ModerationEventID: model.ModerationEventID,
+		CreatedAt:         model.CreatedAt,
+		UpdatedAt:         model.UpdatedAt,
+		AssignedTo:        model.AssignedTo,
+	}, nil
+}
+
+// GetUserReports retrieves all reports created by a user
+func (r *ModerationRepository) GetUserReports(ctx context.Context, username string, limit int, cursor string) ([]*storage.Report, string, error) {
+	var models []models.Report
+
+	query := r.db.WithContext(ctx).Model(&models).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username)).
+		Limit(limit)
+
+	// TODO: Implement cursor-based pagination
+	if err := query.All(&models); err != nil {
+		return nil, "", fmt.Errorf("failed to query user reports: %w", err)
+	}
+
+	reports := make([]*storage.Report, len(models))
+	for i, model := range models {
+		reports[i] = &storage.Report{
+			ID:                model.ID,
+			ReporterID:        model.ReporterID,
+			TargetAccountID:   model.TargetAccountID,
+			StatusIDs:         model.StatusIDs,
+			Comment:           model.Comment,
+			Category:          model.Category,
+			RuleIDs:           model.RuleIDs,
+			Forwarded:         model.Forwarded,
+			Status:            storage.ReportStatus(model.Status),
+			ActionTaken:       model.ActionTaken,
+			ActionTakenAt:     model.ActionTakenAt,
+			ModeratorID:       model.ModeratorID,
+			ModerationEventID: model.ModerationEventID,
+			CreatedAt:         model.CreatedAt,
+			UpdatedAt:         model.UpdatedAt,
+			AssignedTo:        model.AssignedTo,
+		}
+	}
+
+	// TODO: Implement proper cursor generation
+	nextCursor := ""
+
+	return reports, nextCursor, nil
+}
+
+// UpdateReportStatus updates the status of a report
+func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string, status storage.ReportStatus, actionTaken string, moderatorID string) error {
+	// First get the existing report
+	report, err := r.GetReport(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to get report for status update: %w", err)
+	}
+
+	// Update the fields
+	now := time.Now()
+	report.Status = status
+	report.ActionTaken = actionTaken
+	report.ModeratorID = moderatorID
+	report.UpdatedAt = now
+
+	// Set ActionTakenAt if action was taken
+	if actionTaken != "" {
+		report.ActionTakenAt = &now
+	}
+
+	// Convert to model and update
+	model := &models.Report{
+		ID:                report.ID,
+		ReporterID:        report.ReporterID,
+		TargetAccountID:   report.TargetAccountID,
+		StatusIDs:         report.StatusIDs,
+		Comment:           report.Comment,
+		Category:          report.Category,
+		RuleIDs:           report.RuleIDs,
+		Forwarded:         report.Forwarded,
+		Status:            string(report.Status),
+		ActionTaken:       report.ActionTaken,
+		ActionTakenAt:     report.ActionTakenAt,
+		ModeratorID:       report.ModeratorID,
+		ModerationEventID: report.ModerationEventID,
+		CreatedAt:         report.CreatedAt,
+		UpdatedAt:         report.UpdatedAt,
+		AssignedTo:        report.AssignedTo,
+	}
+	model.UpdateKeys()
+
+	err = r.db.WithContext(ctx).Model(model).Update()
+
+	if err != nil {
+		r.logger.Error("Failed to update report status",
+			zap.Error(err),
+			zap.String("report_id", id),
+			zap.String("status", string(status)))
+		return fmt.Errorf("failed to update report status: %w", err)
+	}
+
+	r.logger.Debug("Updated report status",
+		zap.String("report_id", id),
+		zap.String("status", string(status)),
+		zap.String("moderator_id", moderatorID))
+
+	return nil
+}
+
+// GetReportsByTarget retrieves reports targeting a specific account
+func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAccountID string, limit int, cursor string) ([]*storage.Report, string, error) {
+	var models []models.Report
+
+	query := r.db.WithContext(ctx).Model(&models).
+		Index("GSI2").
+		Where("GSI2PK", "=", fmt.Sprintf("REPORTED#%s", targetAccountID)).
+		Limit(limit)
+
+	// TODO: Implement cursor-based pagination
+	if err := query.All(&models); err != nil {
+		return nil, "", fmt.Errorf("failed to query reports by target: %w", err)
+	}
+
+	reports := make([]*storage.Report, len(models))
+	for i, model := range models {
+		reports[i] = &storage.Report{
+			ID:                model.ID,
+			ReporterID:        model.ReporterID,
+			TargetAccountID:   model.TargetAccountID,
+			StatusIDs:         model.StatusIDs,
+			Comment:           model.Comment,
+			Category:          model.Category,
+			RuleIDs:           model.RuleIDs,
+			Forwarded:         model.Forwarded,
+			Status:            storage.ReportStatus(model.Status),
+			ActionTaken:       model.ActionTaken,
+			ActionTakenAt:     model.ActionTakenAt,
+			ModeratorID:       model.ModeratorID,
+			ModerationEventID: model.ModerationEventID,
+			CreatedAt:         model.CreatedAt,
+			UpdatedAt:         model.UpdatedAt,
+			AssignedTo:        model.AssignedTo,
+		}
+	}
+
+	// TODO: Implement proper cursor generation
+	nextCursor := ""
+
+	return reports, nextCursor, nil
+}
+
+// GetReportsByStatus retrieves reports with a specific status
+func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status storage.ReportStatus, limit int, cursor string) ([]*storage.Report, string, error) {
+	var models []models.Report
+
+	query := r.db.WithContext(ctx).Model(&models).
+		Index("GSI3").
+		Where("GSI3PK", "=", fmt.Sprintf("STATUS#%s", string(status))).
+		Limit(limit)
+
+	// TODO: Implement cursor-based pagination
+	if err := query.All(&models); err != nil {
+		return nil, "", fmt.Errorf("failed to query reports by status: %w", err)
+	}
+
+	reports := make([]*storage.Report, len(models))
+	for i, model := range models {
+		reports[i] = &storage.Report{
+			ID:                model.ID,
+			ReporterID:        model.ReporterID,
+			TargetAccountID:   model.TargetAccountID,
+			StatusIDs:         model.StatusIDs,
+			Comment:           model.Comment,
+			Category:          model.Category,
+			RuleIDs:           model.RuleIDs,
+			Forwarded:         model.Forwarded,
+			Status:            storage.ReportStatus(model.Status),
+			ActionTaken:       model.ActionTaken,
+			ActionTakenAt:     model.ActionTakenAt,
+			ModeratorID:       model.ModeratorID,
+			ModerationEventID: model.ModerationEventID,
+			CreatedAt:         model.CreatedAt,
+			UpdatedAt:         model.UpdatedAt,
+			AssignedTo:        model.AssignedTo,
+		}
+	}
+
+	// TODO: Implement proper cursor generation
+	nextCursor := ""
+
+	return reports, nextCursor, nil
+}
+
+// GetReportStats retrieves reporting statistics for a user
+func (r *ModerationRepository) GetReportStats(ctx context.Context, username string) (*storage.ReportStats, error) {
+	var model models.ReportStats
+
+	err := r.db.WithContext(ctx).Model(&model).
+		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", "=", "REPORT_STATS").
+		First(&model)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Return empty stats if none exist
+			return &storage.ReportStats{
+				TotalReports:    0,
+				ResolvedReports: 0,
+				FalseReports:    0,
+				LastReportAt:    time.Time{},
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to get report stats: %w", err)
+	}
+
+	// Convert pointer to value
+	lastReportAt := time.Time{}
+	if model.LastReportAt != nil {
+		lastReportAt = *model.LastReportAt
+	}
+
+	return &storage.ReportStats{
+		TotalReports:    model.TotalReports,
+		ResolvedReports: model.ResolvedReports,
+		FalseReports:    model.FalseReports,
+		LastReportAt:    lastReportAt,
+	}, nil
+}
+
+// IncrementFalseReports increments the false report count for a user
+func (r *ModerationRepository) IncrementFalseReports(ctx context.Context, username string) error {
+	now := time.Now()
+
+	// Try to get existing stats
+	existingStats, err := r.GetReportStats(ctx, username)
+	if err != nil {
+		return fmt.Errorf("failed to get existing report stats: %w", err)
+	}
+
+	// Convert time.Time to *time.Time for the model
+	var lastReportAt *time.Time
+	if !existingStats.LastReportAt.IsZero() {
+		lastReportAt = &existingStats.LastReportAt
+	}
+
+	// Create/update the stats model
+	model := &models.ReportStats{
+		TotalReports:      existingStats.TotalReports,
+		ResolvedReports:   existingStats.ResolvedReports,
+		FalseReports:      existingStats.FalseReports + 1,
+		LastReportAt:      lastReportAt,
+		LastFalseReportAt: &now,
+	}
+	model.UpdateKeys(username)
+
+	// Try update first, then create if not found
+	err = r.db.WithContext(ctx).Model(model).Update()
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create new record if not found
+			err = r.db.WithContext(ctx).Model(model).Create()
+		}
+		if err != nil {
+			r.logger.Error("Failed to increment false reports",
+				zap.Error(err),
+				zap.String("username", username))
+			return fmt.Errorf("failed to increment false reports: %w", err)
+		}
+	}
+
+	r.logger.Debug("Incremented false reports",
+		zap.String("username", username),
+		zap.Int("new_count", model.FalseReports))
+
 	return nil
 }
 

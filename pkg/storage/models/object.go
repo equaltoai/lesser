@@ -20,6 +20,10 @@ type Object struct {
 	GSI2PK string `dynamorm:"index:gsi2-index,pk" json:"gsi2_pk"` // Format: "object#type#{type}"
 	GSI2SK string `dynamorm:"index:gsi2-index,sk" json:"gsi2_sk"` // Format: "{published}#{id}"
 
+	// GSI6 - for replies (used when InReplyTo is set)
+	GSI6PK string `dynamorm:"index:gsi6-index,pk" json:"gsi6_pk,omitempty"` // Format: "REPLIES#{parent_object_id}"
+	GSI6SK string `dynamorm:"index:gsi6-index,sk" json:"gsi6_sk,omitempty"` // Format: "{timestamp}#{id}"
+
 	// Object data - stored as JSON
 	ID           string    `json:"id"`
 	Type         string    `json:"type"`
@@ -80,5 +84,10 @@ func (o *Object) UpdateGSIKeys() {
 	if o.Type != "" {
 		o.GSI2PK = fmt.Sprintf("object#type#%s", o.Type)
 		o.GSI2SK = fmt.Sprintf("%s#%s", o.Published.Format(time.RFC3339), o.ID)
+	}
+	// Set GSI6 fields if this is a reply
+	if o.InReplyTo != nil && *o.InReplyTo != "" {
+		o.GSI6PK = fmt.Sprintf("REPLIES#%s", *o.InReplyTo)
+		o.GSI6SK = fmt.Sprintf("%s#%s", o.Published.Format(time.RFC3339), o.ID)
 	}
 }

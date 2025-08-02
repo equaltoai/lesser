@@ -7,22 +7,24 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	dmerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // ListRepository handles list-related database operations
 type ListRepository struct {
-	db     dynamorm.DB
-	logger *zap.Logger
+	db        core.DB
+	tableName string
+	logger    *zap.Logger
 }
 
 // NewListRepository creates a new list repository
-func NewListRepository(db dynamorm.DB, logger *zap.Logger) *ListRepository {
+func NewListRepository(db core.DB, tableName string, logger *zap.Logger) *ListRepository {
 	return &ListRepository{
-		db:     db,
-		logger: logger,
+		db:        db,
+		tableName: tableName,
+		logger:    logger,
 	}
 }
 

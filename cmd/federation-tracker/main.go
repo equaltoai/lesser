@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +24,13 @@ var (
 	federationActivityRepository *repositories.FederationActivityRepository
 	db                           core.DB
 )
+
+// FederationTracker implements the DynamoDBStreamHandler interface
+type FederationTracker struct {
+	logger                       *zap.Logger
+	cfg                          *config.Config
+	federationActivityRepository *repositories.FederationActivityRepository
+}
 
 func init() {
 	// Initialize logger
@@ -43,18 +51,29 @@ func init() {
 }
 
 func main() {
-	lambda.Start(handleDynamoDBStream)
+	// Create the handler
+	handler := &FederationTracker{
+		logger:                       logger,
+		cfg:                          cfg,
+		federationActivityRepository: federationActivityRepository,
+	}
+
+	// Start the Lambda using Lift DynamoDB stream pattern
+	patterns.StartDynamoDBStreamLambda("federation-tracker", handler, logger)
 }
 
-func handleDynamoDBStream(ctx context.Context, event events.DynamoDBEvent) error {
-	logger.Info("Processing DynamoDB stream event",
+// HandleStream implements the DynamoDBStreamHandler interface
+func (ft *FederationTracker) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
+	ft.logger.Info("Processing DynamoDB stream event",
+		zap.String("request_id", ctx.GetRequestID()),
 		zap.Int("records", len(event.Records)),
 	)
 
 	// Process each record in the stream
 	for _, record := range event.Records {
-		if err := processRecord(ctx, record); err != nil {
-			logger.Error("failed to process record",
+		if err := ft.processRecord(ctx, record); err != nil {
+			ft.logger.Error("failed to process record",
+				zap.String("request_id", ctx.GetRequestID()),
 				zap.String("eventID", record.EventID),
 				zap.Error(err))
 			// Continue processing other records
@@ -64,7 +83,7 @@ func handleDynamoDBStream(ctx context.Context, event events.DynamoDBEvent) error
 	return nil
 }
 
-func processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (ft *FederationTracker) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// We're interested in INSERT and MODIFY events that indicate federation activity
 	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
 		return nil
@@ -92,7 +111,8 @@ func processRecord(ctx context.Context, record events.DynamoDBEventRecord) error
 		sk = skAttr.String()
 	}
 
-	logger.Debug("Processing record",
+	ft.logger.Debug("Processing record",
+		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("pk", pkStr),
 		zap.String("sk", sk),
 		zap.String("event_name", record.EventName),
@@ -102,17 +122,17 @@ func processRecord(ctx context.Context, record events.DynamoDBEventRecord) error
 	switch {
 	case strings.HasPrefix(pkStr, "ACTIVITY#"):
 		// New activity from remote actors
-		return trackActivityFromInstance(ctx, record)
+		return ft.trackActivityFromInstance(ctx, record)
 
 	case strings.HasPrefix(pkStr, "ACTOR#"):
 		// New remote actor
-		return trackActorFromInstance(ctx, record)
+		return ft.trackActorFromInstance(ctx, record)
 	}
 
 	return nil
 }
 
-func trackActivityFromInstance(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (ft *FederationTracker) trackActivityFromInstance(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// Extract the activity data
 	activityData, ok := record.Change.NewImage["Activity"]
 	if !ok || activityData.DataType() != events.DataTypeMap {
@@ -134,7 +154,7 @@ func trackActivityFromInstance(ctx context.Context, record events.DynamoDBEventR
 
 	// Parse the domain from the actor ID
 	domain := extractDomain(actorID)
-	if domain == "" || domain == cfg.Domain {
+	if domain == "" || domain == ft.cfg.Domain {
 		// Local activity, not from a remote instance
 		return nil
 	}
@@ -186,8 +206,9 @@ func trackActivityFromInstance(ctx context.Context, record events.DynamoDBEventR
 	activity.InstanceInfo = instanceInfo
 
 	// Save the activity record
-	if err := federationActivityRepository.Create(ctx, activity); err != nil {
-		logger.Error("failed to create federation activity",
+	if err := ft.federationActivityRepository.Create(context.Background(), activity); err != nil {
+		ft.logger.Error("failed to create federation activity",
+			zap.String("request_id", ctx.GetRequestID()),
 			zap.String("domain", domain),
 			zap.String("actor_id", actorID),
 			zap.Error(err))
@@ -195,13 +216,15 @@ func trackActivityFromInstance(ctx context.Context, record events.DynamoDBEventR
 	}
 
 	// Update instance information
-	if err := federationActivityRepository.UpdateInstanceInfo(ctx, instanceInfo); err != nil {
-		logger.Warn("failed to update instance info",
+	if err := ft.federationActivityRepository.UpdateInstanceInfo(context.Background(), instanceInfo); err != nil {
+		ft.logger.Warn("failed to update instance info",
+			zap.String("request_id", ctx.GetRequestID()),
 			zap.String("domain", domain),
 			zap.Error(err))
 	}
 
-	logger.Debug("tracked activity from instance",
+	ft.logger.Debug("tracked activity from instance",
+		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("domain", domain),
 		zap.String("actor_id", actorID),
 		zap.String("activity_type", activityType))
@@ -209,7 +232,7 @@ func trackActivityFromInstance(ctx context.Context, record events.DynamoDBEventR
 	return nil
 }
 
-func trackActorFromInstance(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (ft *FederationTracker) trackActorFromInstance(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// Extract the actor data
 	actorData, ok := record.Change.NewImage["Actor"]
 	if !ok || actorData.DataType() != events.DataTypeMap {
@@ -231,7 +254,7 @@ func trackActorFromInstance(ctx context.Context, record events.DynamoDBEventReco
 
 	// Parse the domain from the actor ID
 	domain := extractDomain(actorID)
-	if domain == "" || domain == cfg.Domain {
+	if domain == "" || domain == ft.cfg.Domain {
 		// Local actor, not from a remote instance
 		return nil
 	}
@@ -274,8 +297,9 @@ func trackActorFromInstance(ctx context.Context, record events.DynamoDBEventReco
 		Build()
 
 	// Save the activity record
-	if err := federationActivityRepository.Create(ctx, activity); err != nil {
-		logger.Error("failed to create federation activity for actor",
+	if err := ft.federationActivityRepository.Create(context.Background(), activity); err != nil {
+		ft.logger.Error("failed to create federation activity for actor",
+			zap.String("request_id", ctx.GetRequestID()),
 			zap.String("domain", domain),
 			zap.String("actor_id", actorID),
 			zap.Error(err))
@@ -283,13 +307,15 @@ func trackActorFromInstance(ctx context.Context, record events.DynamoDBEventReco
 	}
 
 	// Update instance information
-	if err := federationActivityRepository.UpdateInstanceInfo(ctx, instanceInfo); err != nil {
-		logger.Warn("failed to update instance info from actor",
+	if err := ft.federationActivityRepository.UpdateInstanceInfo(context.Background(), instanceInfo); err != nil {
+		ft.logger.Warn("failed to update instance info from actor",
+			zap.String("request_id", ctx.GetRequestID()),
 			zap.String("domain", domain),
 			zap.Error(err))
 	}
 
-	logger.Debug("tracked actor from instance",
+	ft.logger.Debug("tracked actor from instance",
+		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("domain", domain),
 		zap.String("actor_id", actorID))
 

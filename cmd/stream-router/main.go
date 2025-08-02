@@ -9,15 +9,17 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -33,7 +35,9 @@ type StreamMessage struct {
 
 // StreamRouterHandler handles DynamoDB stream events and routes them to WebSocket subscribers
 type StreamRouterHandler struct {
-	*stream.BaseHandler
+	db                 core.DB
+	tableName          string
+	logger             *zap.Logger
 	apiClient          *apigatewaymanagementapi.Client
 	subscriptionsTable string
 	wsEndpoint         string
@@ -44,18 +48,25 @@ type StreamRouterHandler struct {
 
 var (
 	globalCfg aws.Config
-	log       *zap.Logger
+	logger    *zap.Logger
+	handler   *StreamRouterHandler
 )
 
 func init() {
 	// Initialize logger
-	log = common.Logger()
+	logger = common.Logger()
 
 	// Initialize AWS config
 	var err error
 	globalCfg, err = config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		log.Fatal("failed to load AWS config", zap.Error(err))
+		logger.Fatal("failed to load AWS config", zap.Error(err))
+	}
+
+	// Initialize the handler
+	handler, err = NewStreamRouterHandler()
+	if err != nil {
+		logger.Fatal("failed to create stream router handler", zap.Error(err))
 	}
 }
 
@@ -80,14 +91,10 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 
 	// Initialize repositories
 	db := lambdaDB.WithLambdaTimeoutBuffer(500) // 500ms buffer
-	logger := common.Logger()
 	tableName := "lesser-main"
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
 	actorRepo := repositories.NewActorRepository(db, tableName, logger)
 	statusRepo := repositories.NewStatusRepository(db, tableName, logger)
-
-	// Create base handler
-	baseHandler := stream.NewBaseHandler(lambdaDB, "lesser-main")
 
 	// Initialize API Gateway Management API client
 	apiClient := apigatewaymanagementapi.NewFromConfig(globalCfg, func(o *apigatewaymanagementapi.Options) {
@@ -95,7 +102,9 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	})
 
 	return &StreamRouterHandler{
-		BaseHandler:        baseHandler,
+		db:                 db,
+		tableName:          tableName,
+		logger:             logger,
 		apiClient:          apiClient,
 		subscriptionsTable: subscriptionsTable,
 		wsEndpoint:         wsEndpoint,
@@ -105,26 +114,50 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	}, nil
 }
 
-// HandleDynamoDBStream processes DynamoDB stream events
-func (h *StreamRouterHandler) HandleDynamoDBStream(ctx context.Context, event events.DynamoDBEvent) error {
-	h.Logger.Info("Processing stream event",
-		zap.Int("records", len(event.Records)),
+// HandleStream implements the patterns.DynamoDBStreamHandler interface
+func (h *StreamRouterHandler) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
+	h.logger.Info("processing stream router batch",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.Int("record_count", len(event.Records)),
 	)
 
+	// Process all records, collecting errors but not failing fast
+	var errors []error
 	for _, record := range event.Records {
 		if err := h.processRecord(ctx, record); err != nil {
-			h.Logger.Error("failed to process record", zap.Error(err))
+			h.logger.Error("failed to process record",
+				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("event_id", record.EventID),
+				zap.Error(err),
+			)
+			errors = append(errors, err)
 			// Continue processing other records
 		}
 	}
+
+	// Return error only if all records failed
+	if len(errors) == len(event.Records) && len(errors) > 0 {
+		return fmt.Errorf("all %d records failed processing", len(errors))
+	}
+
+	// Log partial failures but don't return error
+	if len(errors) > 0 {
+		h.logger.Warn("partial batch failure",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.Int("failed_count", len(errors)),
+			zap.Int("total_count", len(event.Records)),
+		)
+	}
+
 	return nil
 }
 
 // processRecord processes a single DynamoDB stream record using DynamORM patterns
-func (h *StreamRouterHandler) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
-	logger := h.Logger.With(
-		zap.String("eventName", record.EventName),
-		zap.String("eventID", record.EventID),
+func (h *StreamRouterHandler) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+	logger := h.logger.With(
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("event_name", record.EventName),
+		zap.String("event_id", record.EventID),
 	)
 
 	// Only process INSERT and MODIFY events
@@ -139,7 +172,7 @@ func (h *StreamRouterHandler) processRecord(ctx context.Context, record events.D
 		return nil // Skip records we can't identify
 	}
 
-	logger = logger.With(zap.String("entityType", entityType))
+	logger = logger.With(zap.String("entity_type", entityType))
 
 	// Route to appropriate handler based on entity type
 	switch entityType {
@@ -156,17 +189,20 @@ func (h *StreamRouterHandler) processRecord(ctx context.Context, record events.D
 }
 
 // processStatusEvent processes status/object events using DynamORM stream utilities
-func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// Use DynamORM stream utilities to unmarshal the status
 	var status models.Status
 	if err := stream.UnmarshalItem(record, &status); err != nil {
-		h.Logger.Debug("failed to unmarshal status from stream", zap.Error(err))
+		h.logger.Debug("failed to unmarshal status from stream", 
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.Error(err))
 		return nil // Skip records we can't unmarshal
 	}
 
 	// Validate that we have a proper status
 	if status.StatusID == "" || status.Note == nil {
-		h.Logger.Debug("invalid status record, missing required fields")
+		h.logger.Debug("invalid status record, missing required fields",
+			zap.String("request_id", ctx.GetRequestID()))
 		return nil
 	}
 
@@ -225,7 +261,9 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, record eve
 	if note.Attachment != nil {
 		// Skip attachment processing for now - complex type conversion needed
 		// TODO: Implement proper attachment processing based on ActivityPub attachment structure
-		h.Logger.Debug("skipping attachment processing for now", zap.Int("attachment_count", len(note.Attachment)))
+		h.logger.Debug("skipping attachment processing for now", 
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.Int("attachment_count", len(note.Attachment)))
 	}
 
 	// Marshal the status for payload
@@ -255,7 +293,8 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, record eve
 
 	for _, streamName := range streams {
 		if err := h.broadcastToStream(ctx, streamName, eventType, payload); err != nil {
-			h.Logger.Error("failed to broadcast to stream",
+			h.logger.Error("failed to broadcast to stream",
+				zap.String("request_id", ctx.GetRequestID()),
 				zap.String("stream", streamName),
 				zap.Error(err))
 			// Continue with other streams
@@ -266,7 +305,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, record eve
 }
 
 // processNotificationEvent processes notification events using DynamORM stream utilities
-func (h *StreamRouterHandler) processNotificationEvent(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// Extract the notification from the DynamoDB image
 	if record.EventName != "INSERT" {
 		return nil
@@ -313,7 +352,9 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx context.Context, reco
 	}
 
 	if err := attributevalue.UnmarshalMap(notifItem, &notifRecord); err != nil {
-		log.Error("failed to unmarshal notification record", zap.Error(err))
+		h.logger.Error("failed to unmarshal notification record", 
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.Error(err))
 		return nil
 	}
 
@@ -359,7 +400,7 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx context.Context, reco
 }
 
 // processAccountEvent processes account/user events using DynamORM stream utilities  
-func (h *StreamRouterHandler) processAccountEvent(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// Account updates (profile changes, etc.)
 	if record.EventName != "MODIFY" {
 		return nil
@@ -396,12 +437,15 @@ func (h *StreamRouterHandler) processAccountEvent(ctx context.Context, record ev
 
 	// Send account update to followers' streams
 	if err := broadcastToFollowers(accountID, payload); err != nil {
-		log.Error("failed to broadcast to followers", zap.Error(err))
+		h.logger.Error("failed to broadcast to followers", 
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.Error(err))
 		// Don't return error - logging is sufficient for broadcast failures
 	}
-	log.Info("account update event",
-		zap.String("accountID", accountID),
-		zap.Int("payloadSize", len(payload)))
+	h.logger.Info("account update event",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("account_id", accountID),
+		zap.Int("payload_size", len(payload)))
 
 	return nil
 }
@@ -521,7 +565,7 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 	// - Query subscriptions table for each follower's connections
 	// - Send via API Gateway WebSocket
 
-	log.Info("broadcasting account update to followers",
+	logger.Info("broadcasting account update to followers",
 		zap.String("account_id", accountID),
 		zap.Int("payload_size", len(payload)))
 
@@ -554,9 +598,10 @@ func (h *StreamRouterHandler) getAttachmentType(attMap map[string]any) string {
 }
 
 // broadcastToStream sends a message to a specific stream
-func (h *StreamRouterHandler) broadcastToStream(ctx context.Context, streamName, eventType string, payload []byte) error {
+func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, eventType string, payload []byte) error {
 	// TODO: Implement actual broadcasting to stream using DynamoDB subscriptions table
-	h.Logger.Debug("broadcasting to stream",
+	h.logger.Debug("broadcasting to stream",
+		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("stream", streamName),
 		zap.String("event", eventType),
 		zap.Int("payload_size", len(payload)))
@@ -564,12 +609,6 @@ func (h *StreamRouterHandler) broadcastToStream(ctx context.Context, streamName,
 }
 
 func main() {
-	// Create the handler
-	handler, err := NewStreamRouterHandler()
-	if err != nil {
-		log.Fatal("failed to create stream router handler", zap.Error(err))
-	}
-
-	// Start Lambda with the handler
-	lambda.Start(handler.HandleDynamoDBStream)
+	// Use the Lift pattern for DynamoDB streams with proper middleware
+	patterns.StartDynamoDBStreamLambda("stream-router", handler, logger)
 }

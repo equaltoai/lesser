@@ -444,67 +444,40 @@ func extractDomainFromURL(rawURL string) string {
 
 // GetRecentHashtags returns recent hashtags since the given time (no trending calculation)
 func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	// Query recent hashtag usage directly without trend calculations
-	var usageRecords []models.HashtagUsage
-	err := r.db.WithContext(ctx).Model(&models.HashtagUsage{}).
-		Where("UsedAt", ">=", since).
-		OrderBy("UsedAt", "DESC").
-		Limit(limit * 5). // Get more to aggregate by hashtag
-		All(&usageRecords)
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	// Since DynamoDB doesn't allow direct queries on non-key attributes like UsedAt,
+	// we'll use the existing hashtag metadata approach which tracks LastUsed
+	var hashtagModels []*models.Hashtag
+	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
+		Where("SK", "=", "METADATA").
+		Where("LastUsed", ">=", since.Format(time.RFC3339)).
+		OrderBy("LastUsed", "DESC"). // Recent first
+		Limit(limit).
+		All(&hashtagModels)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			r.logger.Debug("no recent hashtag usage found", zap.Time("since", since))
+			r.logger.Debug("no recent hashtags found", zap.Time("since", since))
 			return []*storage.TrendingHashtag{}, nil
 		}
-		r.logger.Error("failed to query recent hashtag usage", zap.Error(err))
+		r.logger.Error("failed to query recent hashtags", zap.Error(err))
 		return nil, err
 	}
 
-	// Count usage for each hashtag
-	usageCounts := make(map[string]int64)
-	uniqueUsers := make(map[string]map[string]bool)
-	lastUsed := make(map[string]time.Time)
-
-	for _, record := range usageRecords {
-		hashtag := record.PK[8:] // Remove "HASHTAG#" prefix
-		usageCounts[hashtag]++
-
-		if uniqueUsers[hashtag] == nil {
-			uniqueUsers[hashtag] = make(map[string]bool)
+	// Convert to storage TrendingHashtag format
+	hashtags := make([]*storage.TrendingHashtag, len(hashtagModels))
+	for i, hashtag := range hashtagModels {
+		hashtags[i] = &storage.TrendingHashtag{
+			Name:        hashtag.Name,
+			URL:         hashtag.URL,
+			UsageCount:  hashtag.UsageCount,
+			UniqueUsers: 0, // Not calculated in this query for performance
+			LastUsed:    hashtag.LastUsed,
+			FirstSeen:   hashtag.FirstSeen,
 		}
-		uniqueUsers[hashtag][record.AuthorID] = true
-
-		if record.UsedAt.After(lastUsed[hashtag]) {
-			lastUsed[hashtag] = record.UsedAt
-		}
-	}
-
-	// Convert to trending hashtags
-	hashtags := make([]*storage.TrendingHashtag, 0, len(usageCounts))
-	for hashtag, count := range usageCounts {
-		trend := &storage.TrendingHashtag{
-			Name:        hashtag,
-			URL:         fmt.Sprintf("https://example.com/tags/%s", hashtag), // TODO: use actual domain
-			UsageCount:  count,
-			UniqueUsers: int64(len(uniqueUsers[hashtag])),
-			LastUsed:    lastUsed[hashtag],
-			FirstSeen:   lastUsed[hashtag], // Simplified
-		}
-		hashtags = append(hashtags, trend)
-	}
-
-	// Sort by usage count and limit
-	for i := 0; i < len(hashtags)-1; i++ {
-		for j := i + 1; j < len(hashtags); j++ {
-			if hashtags[i].UsageCount < hashtags[j].UsageCount {
-				hashtags[i], hashtags[j] = hashtags[j], hashtags[i]
-			}
-		}
-	}
-
-	if len(hashtags) > limit {
-		hashtags = hashtags[:limit]
 	}
 
 	return hashtags, nil

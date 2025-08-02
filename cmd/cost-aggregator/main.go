@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
@@ -21,22 +20,57 @@ import (
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
+// CostAggregator implements the DynamoDBStreamHandler interface for Lift
+type CostAggregator struct {
+	db                     core.DB
+	tableName              string
+	logger                 *zap.Logger
+	costTrackingRepository *repositories.CostTrackingRepository
+	snsClient              *sns.Client
+	cloudwatchClient       *cloudwatch.Client
+	lambdaClient           *awslambda.Client
+	sqsClient              *sqs.Client
+	cfg                    *config.Config
+}
+
+// NewCostAggregator creates a new cost aggregator instance
+func NewCostAggregator(db core.DB, tableName string, cfg *config.Config) *CostAggregator {
+	logger := common.Logger()
+	costTrackingRepository := repositories.NewCostTrackingRepository(db, tableName, logger)
+
+	// Initialize AWS service clients
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
+
+	return &CostAggregator{
+		db:                     db,
+		tableName:              tableName,
+		logger:                 logger,
+		costTrackingRepository: costTrackingRepository,
+		snsClient:              sns.NewFromConfig(awsCfg),
+		cloudwatchClient:       cloudwatch.NewFromConfig(awsCfg),
+		lambdaClient:           awslambda.NewFromConfig(awsCfg),
+		sqsClient:              sqs.NewFromConfig(awsCfg),
+		cfg:                    cfg,
+	}
+}
+
 var (
-	logger                  *zap.Logger
-	cfg                     *config.Config
-	costTrackingRepository  *repositories.CostTrackingRepository
-	db                      core.DB
-	snsClient               *sns.Client
-	cloudwatchClient        *cloudwatch.Client
-	lambdaClient            *awslambda.Client
-	sqsClient               *sqs.Client
+	logger    *zap.Logger
+	cfg       *config.Config
+	processor *CostAggregator
+	db        core.DB
 )
 
 // AggregationEvent represents the input for cost aggregation
@@ -81,52 +115,65 @@ func init() {
 	// Load configuration
 	cfg = config.Get()
 
-	// Initialize DynamORM
+	// Initialize DynamORM with Lambda optimizations
 	var err error
-	db, err = dynamorm.GetClient(context.Background())
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Initialize AWS service clients
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
-	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
-	}
-	snsClient = sns.NewFromConfig(awsCfg)
-	cloudwatchClient = cloudwatch.NewFromConfig(awsCfg)
-	lambdaClient = awslambda.NewFromConfig(awsCfg)
-	sqsClient = sqs.NewFromConfig(awsCfg)
-
-	// Initialize repository
-	costTrackingRepository = repositories.NewCostTrackingRepository(db, cfg.DynamoTableName, logger)
+	// Initialize processor
+	processor = NewCostAggregator(db, cfg.DynamoTableName, cfg)
 }
 
 func main() {
-	lambda.Start(handleRequest)
+	// Use Lift DynamoDB stream pattern for primary stream processing
+	patterns.StartDynamoDBStreamLambda("cost-aggregator", processor, logger)
 }
 
-func handleRequest(ctx context.Context, event interface{}) error {
-	// Handle different event types
-	switch e := event.(type) {
-	case events.CloudWatchEvent:
-		return handleCloudWatchEvent(ctx, e)
-	case events.DynamoDBEvent:
-		return handleDynamoDBStream(ctx, e)
-	case json.RawMessage:
-		// Try to parse as custom aggregation event
-		var aggEvent AggregationEvent
-		if err := json.Unmarshal(e, &aggEvent); err == nil {
-			return handleAggregationEvent(ctx, aggEvent)
+// HandleStream implements the DynamoDBStreamHandler interface for Lift
+func (ca *CostAggregator) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
+	ca.logger.Info("processing cost tracking stream batch",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.Int("record_count", len(event.Records)),
+	)
+
+	// Collect cost tracking records from stream
+	var costRecords []*models.DynamoDBCostRecord
+
+	for _, record := range event.Records {
+		// Process INSERT and MODIFY events that might contain cost information
+		if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+			continue
 		}
-		return fmt.Errorf("unable to parse event: %s", string(e))
-	default:
-		return fmt.Errorf("unknown event type: %T", event)
+
+		// Extract cost information from the stream record
+		costRecord, err := ca.extractCostFromStreamRecord(record)
+		if err != nil {
+			ca.logger.Warn("failed to extract cost from stream record",
+				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("event_id", record.EventID),
+				zap.Error(err))
+			continue
+		}
+
+		if costRecord != nil {
+			costRecords = append(costRecords, costRecord)
+		}
 	}
+
+	// Process real-time cost tracking
+	if len(costRecords) > 0 {
+		return ca.processRealtimeCosts(ctx, costRecords)
+	}
+
+	return nil
 }
 
-func handleCloudWatchEvent(ctx context.Context, event events.CloudWatchEvent) error {
-	logger.Info("Processing CloudWatch scheduled event",
+// HandleCloudWatchEvent handles scheduled aggregation events
+// This method can be called separately for scheduled aggregation tasks
+func (ca *CostAggregator) HandleCloudWatchEvent(ctx context.Context, event events.CloudWatchEvent) error {
+	ca.logger.Info("Processing CloudWatch scheduled event",
 		zap.String("detail_type", event.DetailType),
 		zap.String("source", event.Source))
 
@@ -142,46 +189,13 @@ func handleCloudWatchEvent(ctx context.Context, event events.CloudWatchEvent) er
 		}
 	}
 
-	return handleAggregationEvent(ctx, aggEvent)
+	return ca.handleAggregationEvent(ctx, aggEvent)
 }
 
-func handleDynamoDBStream(ctx context.Context, event events.DynamoDBEvent) error {
-	logger.Info("Processing DynamoDB stream event for real-time cost tracking",
-		zap.Int("records", len(event.Records)))
+// Note: handleDynamoDBStream is now replaced by HandleStream method above
 
-	// Collect cost tracking records from stream
-	var costRecords []*models.DynamoDBCostRecord
-
-	for _, record := range event.Records {
-		// Process INSERT and MODIFY events that might contain cost information
-		if record.EventName != "INSERT" && record.EventName != "MODIFY" {
-			continue
-		}
-
-		// Extract cost information from the stream record
-		costRecord, err := extractCostFromStreamRecord(record)
-		if err != nil {
-			logger.Warn("failed to extract cost from stream record",
-				zap.String("event_id", record.EventID),
-				zap.Error(err))
-			continue
-		}
-
-		if costRecord != nil {
-			costRecords = append(costRecords, costRecord)
-		}
-	}
-
-	// Process real-time cost tracking
-	if len(costRecords) > 0 {
-		return processRealtimeCosts(ctx, costRecords)
-	}
-
-	return nil
-}
-
-func handleAggregationEvent(ctx context.Context, event AggregationEvent) error {
-	logger.Info("Processing cost aggregation event",
+func (ca *CostAggregator) handleAggregationEvent(ctx context.Context, event AggregationEvent) error {
+	ca.logger.Info("Processing cost aggregation event",
 		zap.String("type", event.Type),
 		zap.Time("start_time", event.StartTime),
 		zap.Time("end_time", event.EndTime),
@@ -201,8 +215,8 @@ func handleAggregationEvent(ctx context.Context, event AggregationEvent) error {
 
 	// Perform aggregation for each operation type
 	for _, opType := range operationTypes {
-		if err := aggregateCosts(ctx, opType, event.Type, event.StartTime, event.EndTime); err != nil {
-			logger.Error("failed to aggregate costs",
+		if err := ca.aggregateCosts(ctx, opType, event.Type, event.StartTime, event.EndTime); err != nil {
+			ca.logger.Error("failed to aggregate costs",
 				zap.String("operation_type", opType),
 				zap.String("period", event.Type),
 				zap.Error(err))
@@ -220,8 +234,8 @@ func handleAggregationEvent(ctx context.Context, event AggregationEvent) error {
 				EndTime:        event.EndTime,
 				OperationTypes: operationTypes,
 			}
-			if err := triggerAggregation(ctx, dailyEvent); err != nil {
-				logger.Warn("failed to trigger daily aggregation", zap.Error(err))
+			if err := ca.triggerAggregation(ctx, dailyEvent); err != nil {
+				ca.logger.Warn("failed to trigger daily aggregation", zap.Error(err))
 			}
 		}
 	} else if event.Type == "daily" {
@@ -233,21 +247,21 @@ func handleAggregationEvent(ctx context.Context, event AggregationEvent) error {
 				EndTime:        event.EndTime,
 				OperationTypes: operationTypes,
 			}
-			if err := triggerAggregation(ctx, monthlyEvent); err != nil {
-				logger.Warn("failed to trigger monthly aggregation", zap.Error(err))
+			if err := ca.triggerAggregation(ctx, monthlyEvent); err != nil {
+				ca.logger.Warn("failed to trigger monthly aggregation", zap.Error(err))
 			}
 		}
 	}
 
 	// Generate cost alerts if thresholds are exceeded
-	if err := checkCostAlerts(ctx, event.Type, event.StartTime, event.EndTime); err != nil {
-		logger.Warn("failed to check cost alerts", zap.Error(err))
+	if err := ca.checkCostAlerts(ctx, event.Type, event.StartTime, event.EndTime); err != nil {
+		ca.logger.Warn("failed to check cost alerts", zap.Error(err))
 	}
 
 	return nil
 }
 
-func extractCostFromStreamRecord(record events.DynamoDBEventRecord) (*models.DynamoDBCostRecord, error) {
+func (ca *CostAggregator) extractCostFromStreamRecord(record events.DynamoDBEventRecord) (*models.DynamoDBCostRecord, error) {
 	// Look for cost tracking information in the stream record
 	// This could be from:
 	// 1. Direct cost tracking records
@@ -262,25 +276,27 @@ func extractCostFromStreamRecord(record events.DynamoDBEventRecord) (*models.Dyn
 
 	// Check if this is a cost tracking record
 	pk, pkExists := image["PK"]
-	if pkExists && pk.DataType() == events.DataTypeString && isCostRecord(pk.String()) {
-		return extractCostTrackingRecord(image)
+	if pkExists && pk.DataType() == events.DataTypeString && ca.isCostRecord(pk.String()) {
+		return ca.extractCostTrackingRecord(image)
 	}
 
 	// Check for embedded cost information in other records
 	// Look for ConsumedCapacity field that might be stored
 	if consumedCapacity, exists := image["ConsumedCapacity"]; exists {
-		return extractEmbeddedCostInfo(image, consumedCapacity)
+		return ca.extractEmbeddedCostInfo(image, consumedCapacity)
 	}
 
 	return nil, nil
 }
 
-func isCostRecord(pk string) bool {
+func (ca *CostAggregator) isCostRecord(pk string) bool {
 	// Check if this is a cost tracking record based on PK pattern
 	return len(pk) > 5 && pk[:5] == "cost#"
 }
 
-func extractCostTrackingRecord(image map[string]events.DynamoDBAttributeValue) (*models.DynamoDBCostRecord, error) {
+func (ca *CostAggregator) extractCostTrackingRecord(image map[string]events.DynamoDBAttributeValue) (*models.DynamoDBCostRecord, error) {
+	// For cost tracking records, use manual extraction since the image format might be different
+	// than what stream.UnmarshalItem expects
 	tracking := &models.DynamoDBCostRecord{}
 
 	// Extract fields from DynamoDB image
@@ -323,7 +339,7 @@ func extractCostTrackingRecord(image map[string]events.DynamoDBAttributeValue) (
 	return tracking, nil
 }
 
-func extractEmbeddedCostInfo(image map[string]events.DynamoDBAttributeValue, consumedCapacity events.DynamoDBAttributeValue) (*models.DynamoDBCostRecord, error) {
+func (ca *CostAggregator) extractEmbeddedCostInfo(image map[string]events.DynamoDBAttributeValue, consumedCapacity events.DynamoDBAttributeValue) (*models.DynamoDBCostRecord, error) {
 	// Extract cost information embedded in other records
 	// This would parse ConsumedCapacity structures that might be stored
 
@@ -361,7 +377,7 @@ func extractEmbeddedCostInfo(image map[string]events.DynamoDBAttributeValue, con
 	return tracking.Build(), nil
 }
 
-func processRealtimeCosts(ctx context.Context, costs []*models.DynamoDBCostRecord) error {
+func (ca *CostAggregator) processRealtimeCosts(ctx *lift.Context, costs []*models.DynamoDBCostRecord) error {
 	// Create or update minute-level aggregations in real-time
 	now := time.Now()
 	windowStart := now.Truncate(time.Minute)
@@ -433,31 +449,40 @@ func processRealtimeCosts(ctx context.Context, costs []*models.DynamoDBCostRecor
 		}
 
 		// Store or update the aggregation
-		if err := costTrackingRepository.CreateAggregated(ctx, aggregated); err != nil {
-			logger.Error("failed to create real-time aggregation",
+		if err := ca.costTrackingRepository.CreateAggregated(context.TODO(), aggregated); err != nil {
+			ca.logger.Error("failed to create real-time aggregation",
+				zap.String("request_id", ctx.GetRequestID()),
 				zap.String("operation_type", opType),
 				zap.Error(err))
 		}
 	}
 
-	// Also store the raw cost tracking records
-	return costTrackingRepository.BatchCreate(ctx, costs)
+	// Store the raw cost tracking records individually
+	for _, cost := range costs {
+		if err := ca.costTrackingRepository.Create(context.TODO(), cost); err != nil {
+			ca.logger.Error("failed to create cost tracking record",
+				zap.String("request_id", ctx.GetRequestID()),
+				zap.Error(err))
+		}
+	}
+
+	return nil
 }
 
-func aggregateCosts(ctx context.Context, operationType, period string, startTime, endTime time.Time) error {
-	logger.Debug("aggregating costs",
+func (ca *CostAggregator) aggregateCosts(ctx context.Context, operationType, period string, startTime, endTime time.Time) error {
+	ca.logger.Debug("aggregating costs",
 		zap.String("operation_type", operationType),
 		zap.String("period", period))
 
 	// Use repository's aggregation method
-	if err := costTrackingRepository.Aggregate(ctx, operationType, period, startTime, endTime); err != nil {
+	if err := ca.costTrackingRepository.Aggregate(ctx, operationType, period, startTime, endTime); err != nil {
 		return fmt.Errorf("failed to aggregate: %w", err)
 	}
 
 	// Get the aggregated data to log summary
-	aggregated, err := costTrackingRepository.GetAggregated(ctx, period, operationType, startTime)
+	aggregated, err := ca.costTrackingRepository.GetAggregated(ctx, period, operationType, startTime)
 	if err == nil && aggregated != nil {
-		logger.Info("cost aggregation completed",
+		ca.logger.Info("cost aggregation completed",
 			zap.String("operation_type", operationType),
 			zap.String("period", period),
 			zap.Int64("total_operations", aggregated.TotalOperations),
@@ -468,7 +493,7 @@ func aggregateCosts(ctx context.Context, operationType, period string, startTime
 	return nil
 }
 
-func checkCostAlerts(ctx context.Context, period string, startTime, endTime time.Time) error {
+func (ca *CostAggregator) checkCostAlerts(ctx context.Context, period string, startTime, endTime time.Time) error {
 	// Check for operations or periods that exceed cost thresholds
 	// This is a simplified version - you would want configurable thresholds
 
@@ -491,13 +516,13 @@ func checkCostAlerts(ctx context.Context, period string, startTime, endTime time
 	}
 
 	for _, opType := range operationTypes {
-		aggregated, err := costTrackingRepository.GetAggregated(ctx, period, opType, startTime)
+		aggregated, err := ca.costTrackingRepository.GetAggregated(ctx, period, opType, startTime)
 		if err != nil {
 			continue
 		}
 
 		if aggregated.TotalCostDollars > threshold {
-			logger.Warn("cost threshold exceeded",
+			ca.logger.Warn("cost threshold exceeded",
 				zap.String("operation_type", opType),
 				zap.String("period", period),
 				zap.Float64("cost", aggregated.TotalCostDollars),
@@ -505,7 +530,7 @@ func checkCostAlerts(ctx context.Context, period string, startTime, endTime time
 				zap.Int64("operations", aggregated.TotalOperations))
 
 			// Send alert via multiple channels
-			if err := sendCostAlert(ctx, CostAlert{
+			if err := ca.sendCostAlert(ctx, CostAlert{
 				Type:           "threshold_exceeded",
 				OperationType:  opType,
 				Period:         period,
@@ -513,18 +538,18 @@ func checkCostAlerts(ctx context.Context, period string, startTime, endTime time
 				Threshold:      threshold,
 				Operations:     aggregated.TotalOperations,
 				Timestamp:      time.Now(),
-				Severity:       determineSeverity(aggregated.TotalCostDollars, threshold),
+				Severity:       ca.determineSeverity(aggregated.TotalCostDollars, threshold),
 			}); err != nil {
-				logger.Error("failed to send cost alert", zap.Error(err))
+				ca.logger.Error("failed to send cost alert", zap.Error(err))
 			}
 		}
 	}
 
 	// Check high-cost individual operations
-	highCostOps, err := costTrackingRepository.GetHighCostOperations(ctx, 0.01, startTime, endTime, 10)
+	highCostOps, err := ca.costTrackingRepository.GetHighCostOperations(ctx, 0.01, startTime, endTime, 10)
 	if err == nil && len(highCostOps) > 0 {
 		for _, op := range highCostOps {
-			logger.Warn("high cost operation detected",
+			ca.logger.Warn("high cost operation detected",
 				zap.String("operation_type", op.OperationType),
 				zap.String("table", op.Table),
 				zap.Float64("cost", op.EstimatedCostDollars),
@@ -536,38 +561,38 @@ func checkCostAlerts(ctx context.Context, period string, startTime, endTime time
 	return nil
 }
 
-func sendCostAlert(ctx context.Context, alert CostAlert) error {
+func (ca *CostAggregator) sendCostAlert(ctx context.Context, alert CostAlert) error {
 	// Create alert message
 	alert.Message = fmt.Sprintf("DynamoDB cost threshold exceeded: %s operation costs $%.4f in %s period (threshold: $%.2f)",
 		alert.OperationType, alert.Cost, alert.Period, alert.Threshold)
 	
 	// Add additional details
 	alert.Details = map[string]interface{}{
-		"region":          cfg.Region,
-		"table":           cfg.DynamoTableName,
+		"region":          ca.cfg.Region,
+		"table":           ca.cfg.DynamoTableName,
 		"cost_per_op":     alert.Cost / float64(alert.Operations),
 		"operations_count": alert.Operations,
 		"alert_id":        fmt.Sprintf("%s-%s-%d", alert.OperationType, alert.Period, alert.Timestamp.Unix()),
 	}
 
-	logger.Info("Sending cost alert",
+	ca.logger.Info("Sending cost alert",
 		zap.String("type", alert.Type),
 		zap.String("severity", alert.Severity),
 		zap.Float64("cost", alert.Cost),
 		zap.String("message", alert.Message))
 
 	// 1. Send SNS notification for immediate alerts
-	if err := sendSNSAlert(ctx, alert); err != nil {
-		logger.Warn("Failed to send SNS alert", zap.Error(err))
+	if err := ca.sendSNSAlert(ctx, alert); err != nil {
+		ca.logger.Warn("Failed to send SNS alert", zap.Error(err))
 	}
 
 	// 2. Put CloudWatch metric for monitoring
-	if err := putCloudWatchMetric(ctx, alert); err != nil {
-		logger.Warn("Failed to put CloudWatch metric", zap.Error(err))
+	if err := ca.putCloudWatchMetric(ctx, alert); err != nil {
+		ca.logger.Warn("Failed to put CloudWatch metric", zap.Error(err))
 	}
 
 	// 3. Log structured alert for log-based monitoring
-	logger.Warn("COST_ALERT",
+	ca.logger.Warn("COST_ALERT",
 		zap.String("alert_type", alert.Type),
 		zap.String("operation_type", alert.OperationType),
 		zap.String("period", alert.Period),
@@ -581,9 +606,9 @@ func sendCostAlert(ctx context.Context, alert CostAlert) error {
 	return nil
 }
 
-func sendSNSAlert(ctx context.Context, alert CostAlert) error {
+func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) error {
 	// Construct SNS topic ARN - assuming standard naming convention
-	topicARN := fmt.Sprintf("arn:aws:sns:%s:%s:cost-alerts", cfg.Region, cfg.AWSAccountID)
+	topicARN := fmt.Sprintf("arn:aws:sns:%s:%s:cost-alerts", ca.cfg.Region, ca.cfg.AWSAccountID)
 
 	// Create message with structured data
 	message := map[string]interface{}{
@@ -615,19 +640,19 @@ func sendSNSAlert(ctx context.Context, alert CostAlert) error {
 		},
 	}
 
-	result, err := snsClient.Publish(ctx, input)
+	result, err := ca.snsClient.Publish(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to publish SNS message: %w", err)
 	}
 
-	logger.Info("SNS alert sent successfully",
+	ca.logger.Info("SNS alert sent successfully",
 		zap.String("message_id", *result.MessageId),
 		zap.String("topic_arn", topicARN))
 
 	return nil
 }
 
-func putCloudWatchMetric(ctx context.Context, alert CostAlert) error {
+func (ca *CostAggregator) putCloudWatchMetric(ctx context.Context, alert CostAlert) error {
 	namespace := "Lesser/DynamoDB/Costs"
 
 	// Put metric for cost threshold breach
@@ -671,19 +696,19 @@ func putCloudWatchMetric(ctx context.Context, alert CostAlert) error {
 		MetricData: metricData,
 	}
 
-	_, err := cloudwatchClient.PutMetricData(ctx, input)
+	_, err := ca.cloudwatchClient.PutMetricData(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to put CloudWatch metric: %w", err)
 	}
 
-	logger.Info("CloudWatch metrics published",
+	ca.logger.Info("CloudWatch metrics published",
 		zap.String("namespace", namespace),
 		zap.Int("metric_count", len(metricData)))
 
 	return nil
 }
 
-func determineSeverity(cost, threshold float64) string {
+func (ca *CostAggregator) determineSeverity(cost, threshold float64) string {
 	ratio := cost / threshold
 	
 	if ratio >= 5.0 {
@@ -695,8 +720,8 @@ func determineSeverity(cost, threshold float64) string {
 	}
 }
 
-func triggerAggregation(ctx context.Context, event AggregationEvent) error {
-	logger.Info("Triggering next level cost aggregation",
+func (ca *CostAggregator) triggerAggregation(ctx context.Context, event AggregationEvent) error {
+	ca.logger.Info("Triggering next level cost aggregation",
 		zap.String("type", event.Type),
 		zap.Time("start", event.StartTime),
 		zap.Time("end", event.EndTime))
@@ -709,7 +734,7 @@ func triggerAggregation(ctx context.Context, event AggregationEvent) error {
 	
 	// Option 1: Use SQS for async processing (preferred for resilience)
 	queueURL := fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/cost-aggregator-queue", 
-		cfg.Region, cfg.AWSAccountID)
+		ca.cfg.Region, ca.cfg.AWSAccountID)
 	
 	sqsInput := &sqs.SendMessageInput{
 		QueueUrl:    aws.String(queueURL),
@@ -727,16 +752,16 @@ func triggerAggregation(ctx context.Context, event AggregationEvent) error {
 		DelaySeconds: 0, // Process immediately
 	}
 	
-	sqsResult, sqsErr := sqsClient.SendMessage(ctx, sqsInput)
+	sqsResult, sqsErr := ca.sqsClient.SendMessage(ctx, sqsInput)
 	if sqsErr == nil {
-		logger.Info("Successfully queued cost aggregation via SQS",
+		ca.logger.Info("Successfully queued cost aggregation via SQS",
 			zap.String("message_id", *sqsResult.MessageId),
 			zap.String("type", event.Type))
 		return nil
 	}
 	
 	// If SQS fails, fallback to direct Lambda invocation
-	logger.Warn("SQS send failed, falling back to direct Lambda invocation",
+	ca.logger.Warn("SQS send failed, falling back to direct Lambda invocation",
 		zap.Error(sqsErr))
 	
 	// Option 2: Direct Lambda invocation (fallback)
@@ -749,7 +774,7 @@ func triggerAggregation(ctx context.Context, event AggregationEvent) error {
 		Qualifier:      stringPtr("$LATEST"), // Use latest version
 	}
 	
-	lambdaResult, err := lambdaClient.Invoke(ctx, lambdaInput)
+	lambdaResult, err := ca.lambdaClient.Invoke(ctx, lambdaInput)
 	if err != nil {
 		return fmt.Errorf("failed to invoke lambda and send SQS message: lambda_err=%w, sqs_err=%v", err, sqsErr)
 	}
@@ -758,7 +783,7 @@ func triggerAggregation(ctx context.Context, event AggregationEvent) error {
 		return fmt.Errorf("lambda function returned error: %s", *lambdaResult.FunctionError)
 	}
 	
-	logger.Info("Successfully triggered cost aggregation via direct Lambda invocation",
+	ca.logger.Info("Successfully triggered cost aggregation via direct Lambda invocation",
 		zap.String("function_name", functionName),
 		zap.String("type", event.Type),
 		zap.Int32("status_code", lambdaResult.StatusCode))

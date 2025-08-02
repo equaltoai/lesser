@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -262,6 +263,10 @@ func TestHandleSQSMessages_Integration(t *testing.T) {
 		},
 	}
 
-	err := processor.HandleSQSMessages(context.Background(), event)
+	// Create a lift context for the handler
+	liftCtx := &lift.Context{
+		Context: context.Background(),
+	}
+	err := processor.HandleSQS(liftCtx, event)
 	assert.NoError(t, err)
 }

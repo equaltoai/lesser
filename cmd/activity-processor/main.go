@@ -53,9 +53,13 @@ func NewActivityProcessor(db core.DB, tableName string, baseURL string) *Activit
 	}
 }
 
+// HandleStream processes DynamoDB stream events with Lift-style patterns
 func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
-	// Add request tracking
+	// Generate request ID for tracking (Lift pattern)
 	requestID := uuid.New().String()
+
+	// Add request ID to context for downstream use
+	ctx = context.WithValue(ctx, "request_id", requestID)
 
 	ap.logger.Info("processing activity stream batch",
 		zap.String("request_id", requestID),
@@ -240,7 +244,6 @@ func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity 
 	CreatedAt string `json:"created_at"`
 },
 ) error {
-	_ = ctx // unused parameter
 	// Process activities received from other servers
 	ap.logger.Debug("processing inbox activity",
 		zap.String("pk", activity.PK),
@@ -270,7 +273,7 @@ func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity 
 		TTL:         time.Now().Add(7 * 24 * time.Hour).Unix(), // 7 days retention
 	}
 
-	return ap.db.Model(&inboxRecord).Create()
+	return ap.db.WithContext(ctx).Model(&inboxRecord).Create()
 }
 
 func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity struct {
@@ -335,7 +338,7 @@ func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity
 		TTL:         time.Now().Add(7 * 24 * time.Hour).Unix(), // 7 days retention
 	}
 
-	return ap.db.Model(&outboxRecord).Create()
+	return ap.db.WithContext(ctx).Model(&outboxRecord).Create()
 }
 
 func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity struct {
@@ -349,7 +352,6 @@ func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity
 	CreatedAt string `json:"created_at"`
 },
 ) error {
-	_ = ctx // unused parameter
 	// Update activity metrics for analytics
 	metricsRecord := struct {
 		PK         string `dynamorm:"pk"`
@@ -371,7 +373,7 @@ func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity
 		TTL:        time.Now().Add(30 * 24 * time.Hour).Unix(), // 30 days retention
 	}
 
-	return ap.db.Model(&metricsRecord).Create()
+	return ap.db.WithContext(ctx).Model(&metricsRecord).Create()
 }
 
 func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, activity struct {
@@ -385,7 +387,6 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 	CreatedAt string `json:"created_at"`
 },
 ) error {
-	_ = ctx // unused parameter
 	// Create cleanup record for deleted activities
 	cleanupRecord := struct {
 		PK         string `dynamorm:"pk"`
@@ -407,7 +408,7 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 		TTL:        time.Now().Add(24 * time.Hour).Unix(), // 24 hours retention
 	}
 
-	return ap.db.Model(&cleanupRecord).Create()
+	return ap.db.WithContext(ctx).Model(&cleanupRecord).Create()
 }
 
 // fanOutToTimelines handles timeline fanout for Create activities
@@ -706,15 +707,51 @@ func init() {
 }
 
 func main() {
-	// Handle DynamoDB stream events with logging middleware
+	// DynamoDB Stream handler with Lift-style patterns but traditional Lambda execution
+	// This provides structured logging, error handling, and request tracking
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()
+		
+		// Recovery handling (Lift pattern)
 		defer func() {
-			duration := time.Since(start)
-			processor.logger.Info("request completed",
-				zap.Duration("duration", duration),
-			)
+			if r := recover(); r != nil {
+				requestID := ctx.Value("request_id")
+				if requestID == nil {
+					requestID = "unknown"
+				}
+				logger.Error("panic in DynamoDB stream handler",
+					zap.Any("request_id", requestID),
+					zap.Any("panic", r),
+					zap.Stack("stack"),
+				)
+			}
 		}()
-		return processor.HandleStream(ctx, event)
+
+		// Process the stream event
+		err := processor.HandleStream(ctx, event)
+
+		// Log completion (Lift pattern)
+		duration := time.Since(start)
+		requestID := ctx.Value("request_id")
+		if requestID == nil {
+			requestID = "unknown"
+		}
+
+		if err != nil {
+			logger.Error("DynamoDB stream processing failed",
+				zap.Any("request_id", requestID),
+				zap.Error(err),
+				zap.Duration("duration", duration),
+				zap.Int("record_count", len(event.Records)),
+			)
+		} else {
+			logger.Info("DynamoDB stream processing completed",
+				zap.Any("request_id", requestID),
+				zap.Duration("duration", duration),
+				zap.Int("record_count", len(event.Records)),
+			)
+		}
+
+		return err
 	})
 }

@@ -16,7 +16,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -53,13 +54,46 @@ type Session struct {
 
 // NewAuthHandler creates a new authentication handler
 func NewAuthHandler() (*AuthHandler, error) {
-	store, err := dynamodb.New()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage: %w", err)
-	}
-
 	cfg := config.Get()
 	logger := common.Logger()
+
+	// Initialize DynamORM
+	tableName := os.Getenv("DYNAMODB_TABLE")
+	if tableName == "" {
+		tableName = cfg.DynamoTableName
+	}
+	if tableName == "" {
+		return nil, fmt.Errorf("DYNAMODB_TABLE environment variable is required")
+	}
+
+	// Initialize DynamORM with Lambda optimizations
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
+	}
+
+	// Create storage adapter
+	store := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	
+	// Initialize repositories
+	store.SetActorRepository(repositories.NewActorRepository(db, tableName, logger))
+	store.SetObjectRepository(repositories.NewObjectRepository(db, tableName, cfg.Domain, logger))
+	store.SetActivityRepository(repositories.NewActivityRepository(db, tableName, logger))
+	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
+	store.SetTimelineRepository(repositories.NewTimelineRepository(db, tableName, logger))
+	store.SetNotificationRepository(repositories.NewNotificationRepository(db, tableName, logger))
+	store.SetLikeRepository(repositories.NewLikeRepository(db, tableName, logger))
+	store.SetModerationRepository(repositories.NewModerationRepository(db, tableName, logger))
+	store.SetListRepository(repositories.NewListRepository(db, tableName, logger))
+	store.SetMediaRepository(repositories.NewMediaRepository(db, tableName, logger))
+	store.SetPollRepository(repositories.NewPollRepository(db, tableName, logger))
+	store.SetHashtagRepository(repositories.NewHashtagRepository(db, tableName, logger, cfg.Domain))
+	store.SetTrendingRepository(repositories.NewTrendingRepository(db, logger))
+	store.SetScheduledStatusRepository(repositories.NewScheduledStatusRepository(db, tableName, logger))
+	store.SetAnnouncementRepository(repositories.NewAnnouncementRepository(db, tableName, logger))
+	store.SetDomainBlockRepository(repositories.NewDomainBlockRepository(db, tableName, logger))
+	store.SetAuthRepository(repositories.NewAuthRepository(db, tableName, logger))
+	store.SetRelationshipRepository(repositories.NewRelationshipRepository(db, tableName, logger))
 
 	// Initialize comprehensive auth service
 	authSvc, err := auth.NewAuthService(store)
