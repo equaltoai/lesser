@@ -6,14 +6,15 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
 	lesserConfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
@@ -34,14 +35,19 @@ func NewAIProcessor(db core.DB, tableName string, aiService *ai.AIService) *AIPr
 	}
 }
 
-func (ap *AIProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
-	ap.logger.Info("processing DynamoDB stream event",
+// HandleStream processes DynamoDB stream events with Lift-style patterns
+func (ap *AIProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
+	requestID := ctx.GetRequestID()
+	
+	ap.logger.Info("processing AI analysis stream batch",
+		zap.String("request_id", requestID),
 		zap.Int("record_count", len(event.Records)),
 	)
 
 	for _, record := range event.Records {
 		if err := ap.processRecord(ctx, record); err != nil {
 			ap.logger.Error("error processing record",
+				zap.String("request_id", requestID),
 				zap.String("event_id", record.EventID),
 				zap.Error(err),
 			)
@@ -51,7 +57,7 @@ func (ap *AIProcessor) HandleStream(ctx context.Context, event events.DynamoDBEv
 	return nil
 }
 
-func (ap *AIProcessor) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (ap *AIProcessor) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
 		return nil
 	}
@@ -67,8 +73,8 @@ func (ap *AIProcessor) processRecord(ctx context.Context, record events.DynamoDB
 		return fmt.Errorf("failed to extract content: %w", err)
 	}
 
-	// Perform AI analysis
-	analysis, err := ap.aiService.AnalyzeContent(ctx, content)
+	// Perform AI analysis (use underlying context)
+	analysis, err := ap.aiService.AnalyzeContent(ctx.Request.Context(), content)
 	if err != nil {
 		return fmt.Errorf("failed to analyze content: %w", err)
 	}
@@ -81,7 +87,9 @@ func (ap *AIProcessor) processRecord(ctx context.Context, record events.DynamoDB
 	// Handle moderation action if needed
 	if analysis.ModerationAction != ai.ActionNone {
 		if err := ap.handleModerationAction(ctx, analysis); err != nil {
+			requestID := ctx.GetRequestID()
 			ap.logger.Error("failed to handle moderation action",
+				zap.String("request_id", requestID),
 				zap.String("analysis_id", analysis.ID),
 				zap.Error(err),
 			)
@@ -160,7 +168,7 @@ func (ap *AIProcessor) isAnalyzableType(objectType string) bool {
 	}
 }
 
-func (ap *AIProcessor) storeAnalysis(ctx context.Context, analysis *ai.AIAnalysis) error {
+func (ap *AIProcessor) storeAnalysis(ctx *lift.Context, analysis *ai.AIAnalysis) error {
 	// Create analysis model for DynamORM
 	analysisRecord := struct {
 		PK               string  `dynamorm:"pk"`
@@ -186,11 +194,11 @@ func (ap *AIProcessor) storeAnalysis(ctx context.Context, analysis *ai.AIAnalysi
 		TTL:              time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
 
-	// Store using DynamORM Model Create
-	return ap.db.Model(&analysisRecord).Create()
+	// Store using DynamORM Model Create (use underlying context)
+	return ap.db.WithContext(ctx.Request.Context()).Model(&analysisRecord).Create()
 }
 
-func (ap *AIProcessor) handleModerationAction(ctx context.Context, analysis *ai.AIAnalysis) error {
+func (ap *AIProcessor) handleModerationAction(ctx *lift.Context, analysis *ai.AIAnalysis) error {
 	// Create moderation event model for DynamORM
 	moderationEvent := struct {
 		PK              string  `dynamorm:"pk"`
@@ -222,8 +230,8 @@ func (ap *AIProcessor) handleModerationAction(ctx context.Context, analysis *ai.
 		TTL:             time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
 
-	// Store moderation event using DynamORM Model Create
-	return ap.db.Model(&moderationEvent).Create()
+	// Store moderation event using DynamORM Model Create (use underlying context)
+	return ap.db.WithContext(ctx.Request.Context()).Model(&moderationEvent).Create()
 }
 
 func (ap *AIProcessor) determineCategory(analysis *ai.AIAnalysis) string {
@@ -302,15 +310,6 @@ func init() {
 }
 
 func main() {
-	// Handle DynamoDB stream events - use direct Lambda handler
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
-		start := time.Now()
-		defer func() {
-			duration := time.Since(start)
-			processor.logger.Info("request completed",
-				zap.Duration("duration", duration),
-			)
-		}()
-		return processor.HandleStream(ctx, event)
-	})
+	// Use Lift DynamoDB stream pattern with proper middleware and error handling
+	patterns.StartDynamoDBStreamLambda("ai-processor", processor, logger)
 }

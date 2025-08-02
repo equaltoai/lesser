@@ -16,8 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
-	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -126,22 +126,20 @@ func (np *NotificationProcessor) initializeAWSClients(ctx context.Context) error
 	return nil
 }
 
-func (np *NotificationProcessor) HandleSQSMessages(ctx context.Context, event events.SQSEvent) error {
-	// Add request tracking
-	requestID := uuid.New().String()
+// HandleSQS implements the SQS handler interface for Lift
+func (np *NotificationProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
+	// Initialize AWS clients using the underlying context
+	if err := np.initializeAWSClients(ctx.Request.Context()); err != nil {
+		np.logger.Error("failed to initialize AWS clients", zap.Error(err))
+		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
+	}
 
 	np.logger.Info("processing notification delivery batch",
-		zap.String("request_id", requestID),
+		zap.String("request_id", ctx.GetRequestID()),
 		zap.Int("message_count", len(event.Records)),
 	)
 
-	// Initialize AWS clients
-	if err := np.initializeAWSClients(ctx); err != nil {
-		np.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return err
-	}
-
-	// Process messages in parallel with error collection
+	// Process messages in parallel with error collection (preserving existing pattern)
 	var errors []error
 	var errorMutex sync.Mutex
 
@@ -156,7 +154,7 @@ func (np *NotificationProcessor) HandleSQSMessages(ctx context.Context, event ev
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if err := np.processMessage(ctx, record); err != nil {
+			if err := np.processMessage(ctx.Request.Context(), record); err != nil {
 				errorMutex.Lock()
 				errors = append(errors, err)
 				errorMutex.Unlock()
@@ -172,7 +170,9 @@ func (np *NotificationProcessor) HandleSQSMessages(ctx context.Context, event ev
 	wg.Wait()
 
 	if len(errors) > 0 {
-		return fmt.Errorf("partial batch failure: %d of %d messages failed", len(errors), len(event.Records))
+		return lift.NewLiftError("PARTIAL_BATCH_FAILURE", 
+			fmt.Sprintf("partial batch failure: %d of %d messages failed", len(errors), len(event.Records)), 
+			500)
 	}
 
 	return nil
@@ -636,15 +636,87 @@ func init() {
 }
 
 func main() {
-	// Handle SQS messages with logging middleware
-	lambda.Start(func(ctx context.Context, event events.SQSEvent) error {
-		start := time.Now()
-		defer func() {
-			duration := time.Since(start)
-			processor.logger.Info("request completed",
-				zap.Duration("duration", duration),
-			)
-		}()
-		return processor.HandleSQSMessages(ctx, event)
+	// Create Lift app
+	app := lift.New()
+
+	// Add request ID middleware
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			requestID := fmt.Sprintf("notification-%d", time.Now().UnixNano())
+			ctx.Set("requestID", requestID)
+			return next.Handle(ctx)
+		})
 	})
+
+	// Add logging middleware
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			start := time.Now()
+			requestID := ctx.Get("requestID").(string)
+
+			logger.Info("processing SQS batch",
+				zap.String("request_id", requestID),
+			)
+
+			err := next.Handle(ctx)
+
+			duration := time.Since(start)
+			if err != nil {
+				logger.Error("failed to process SQS batch",
+					zap.String("request_id", requestID),
+					zap.Error(err),
+					zap.Duration("duration", duration),
+				)
+			} else {
+				logger.Info("successfully processed SQS batch",
+					zap.String("request_id", requestID),
+					zap.Duration("duration", duration),
+				)
+			}
+
+			return err
+		})
+	})
+
+	// Add error handling middleware
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			err := next.Handle(ctx)
+			if err != nil {
+				processor.logger.Error("handler error",
+					zap.String("request_id", ctx.Get("requestID").(string)),
+					zap.Error(err),
+				)
+			}
+			return err
+		})
+	})
+
+	// Set SQS handler for notification delivery
+	app.SQS("notification-delivery", func(ctx *lift.Context) error {
+		// Extract SQS event from Lift context
+		if ctx.Request.RawEvent == nil {
+			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+		}
+
+		// Parse the raw event as SQS event
+		var event events.SQSEvent
+		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
+			event = sqsEvent
+		} else {
+			// Try to parse from interface if it's a map
+			eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+			if err != nil {
+				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
+			}
+
+			if err := json.Unmarshal(eventBytes, &event); err != nil {
+				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
+			}
+		}
+
+		return processor.HandleSQS(ctx, event)
+	})
+
+	lambda.Start(app.HandleRequest)
 }

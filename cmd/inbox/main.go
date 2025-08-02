@@ -60,7 +60,7 @@ func NewInboxHandler() (*InboxHandler, error) {
 	actorRepo := repositories.NewActorRepository(db, cfg.DynamoTableName, logger)
 	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
 	followRepo := repositories.NewRelationshipRepository(db, cfg.DynamoTableName, logger)
-	objectRepo := repositories.NewObjectRepository(db, cfg.DynamoTableName, logger)
+	objectRepo := repositories.NewObjectRepository(db, cfg.DynamoTableName, cfg.Domain, logger)
 	likeRepo := repositories.NewLikeRepository(db, cfg.DynamoTableName, logger)
 	federationActivityRepo := repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
 	domainBlockRepo := repositories.NewDomainBlockRepository(db, cfg.DynamoTableName, logger)

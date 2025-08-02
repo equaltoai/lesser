@@ -13,7 +13,9 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	storageDB "github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -25,11 +27,27 @@ func main() {
 	)
 	flag.Parse()
 
-	// Initialize storage
-	store, err := storageDB.New()
+	// Initialize logger
+	logger, _ := zap.NewProduction()
+	defer logger.Sync()
+
+	// Initialize DynamORM
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		log.Fatalf("Failed to initialize storage: %v", err)
+		log.Fatalf("Failed to initialize DynamORM: %v", err)
 	}
+
+	// Get table name from environment
+	tableName := os.Getenv("DYNAMODB_TABLE")
+	if tableName == "" {
+		tableName = "lesser-main"
+	}
+
+	// Create storage adapter
+	store := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	
+	// Initialize required repositories
+	store.SetInstanceRepository(repositories.NewInstanceRepository(db, tableName, logger))
 
 	ctx := context.Background()
 

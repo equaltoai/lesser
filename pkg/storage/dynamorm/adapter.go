@@ -15,6 +15,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// ActorRepositoryDeps interface defines dependencies that an actor repository might need
+type ActorRepositoryDeps interface {
+	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	GetPreference(ctx context.Context, username, key string) (any, error)
+	SetPreference(ctx context.Context, username, key string, value any) error
+}
+
 // ActorRepository interface defines the methods we need from the actor repository
 type ActorRepository interface {
 	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
@@ -28,11 +35,8 @@ type ActorRepository interface {
 	SetActorFields(ctx context.Context, username string, fields []storage.ActorField) error
 	GetSearchSuggestions(ctx context.Context, prefix string) ([]storage.SearchSuggestion, error)
 
-	// Move methods
-	CreateMove(ctx context.Context, move *storage.Move) error
-	GetMove(ctx context.Context, actor string) (*storage.Move, error)
-	GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error)
-	HasMovedFrom(ctx context.Context, oldActor, newActor string) (bool, error)
+	// Search operations
+	SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error)
 
 	// Remote actor cache operations
 	GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error)
@@ -40,14 +44,6 @@ type ActorRepository interface {
 	// Account suggestions
 	GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error)
 	RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error
-
-	// Relationship operations
-	GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error)
-	AcceptFollowRequest(ctx context.Context, followerID, targetID string) error
-	RejectFollowRequest(ctx context.Context, followerID, targetID string) error
-	HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error)
-	IsEndorsed(ctx context.Context, userID, targetID string) (bool, error)
-	GetRelationshipNote(ctx context.Context, userID, targetID string) (*storage.AccountNote, error)
 }
 
 // ObjectRepository interface defines the methods we need from the object repository
@@ -190,6 +186,33 @@ type UserRepository interface {
 	GetPreference(ctx context.Context, username, key string) (any, error)
 	GetAllPreferences(ctx context.Context, username string) (map[string]any, error)
 	UpdatePreferences(ctx context.Context, username string, preferences map[string]any) error
+	
+	// Notification methods
+	IsNotificationMuted(ctx context.Context, userID, targetID string) (bool, error)
+	
+	// Provider account methods
+	GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error)
+	LinkProviderAccount(ctx context.Context, username, provider, providerID string) error
+	UnlinkProviderAccount(ctx context.Context, username, provider string) error
+	GetLinkedProviders(ctx context.Context, username string) ([]string, error)
+
+	// Conversation mute methods
+	CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error
+	DeleteConversationMute(ctx context.Context, username, conversationID string) error
+	IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error)
+	GetMutedConversations(ctx context.Context, username string) ([]string, error)
+
+	// Account Pin methods
+	CreateAccountPin(ctx context.Context, pin *storage.AccountPin) error
+	DeleteAccountPin(ctx context.Context, username, pinnedActorID string) error
+	GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error)
+	IsAccountPinned(ctx context.Context, username, pinnedActorID string) (bool, error)
+
+	// Account Note methods
+	CreateAccountNote(ctx context.Context, note *storage.AccountNote) error
+	UpdateAccountNote(ctx context.Context, note *storage.AccountNote) error
+	DeleteAccountNote(ctx context.Context, username, targetActorID string) error
+	GetAccountNote(ctx context.Context, username, targetActorID string) (*storage.AccountNote, error)
 }
 
 // ConversationRepository interface defines the methods we need from the conversation repository
@@ -259,6 +282,7 @@ type NotificationRepository interface {
 	MarkAllNotificationsAsRead(ctx context.Context, username string) error
 	GetNotificationsAdvanced(ctx context.Context, userID string, excludeTypes []string, maxID, sinceID, minID *string, limit int, includeFiltered bool) ([]*storage.Notification, error)
 	GetUnreadNotificationCount(ctx context.Context, userID string) (int64, error)
+	CountUnreadNotifications(ctx context.Context, username string) (int, error)
 	
 	// Notification preferences
 	GetNotificationPreferences(ctx context.Context, username string) (*storage.NotificationPreferences, error)
@@ -319,10 +343,15 @@ type OAuthRepository interface {
 	DeleteRefreshToken(ctx context.Context, token string) error
 	CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error
 	GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error)
+	UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error
 	DeleteOAuthClient(ctx context.Context, clientID string) error
+	ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*storage.OAuthClient, string, error)
 	StoreOAuthState(ctx context.Context, state string, data *storage.OAuthState) error
 	GetOAuthState(ctx context.Context, state string) (*storage.OAuthState, error)
 	DeleteOAuthState(ctx context.Context, state string) error
+	GetOAuthApp(ctx context.Context, clientID string) (*storage.OAuthApp, error)
+	SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error
+	GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error)
 }
 
 // SearchRepository interface defines the methods we need from the search repository
@@ -481,6 +510,28 @@ type SocialRepository interface {
 	ReorderStatusPins(ctx context.Context, username string, statusIDs []string) error
 }
 
+// RelationshipRepository interface defines the methods we need from the relationship repository
+type RelationshipRepository interface {
+	// Follow request methods
+	GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error)
+	AcceptFollowRequest(ctx context.Context, followerID, targetID string) error
+	RejectFollowRequest(ctx context.Context, followerID, targetID string) error
+	HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error)
+	HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error)
+	
+	// Endorsement methods
+	IsEndorsed(ctx context.Context, userID, targetID string) (bool, error)
+	
+	// Relationship note methods
+	GetRelationshipNote(ctx context.Context, userID, targetID string) (*storage.AccountNote, error)
+	
+	// Move methods
+	CreateMove(ctx context.Context, move *storage.Move) error
+	GetMove(ctx context.Context, actor string) (*storage.Move, error)
+	GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error)
+	HasMovedFrom(ctx context.Context, oldActor, newActor string) (bool, error)
+}
+
 // ListRepository interface defines the methods we need from the list repository
 type ListRepository interface {
 	// List methods
@@ -517,6 +568,16 @@ type MediaRepository interface {
 	GetUserMedia(ctx context.Context, username string) ([]any, error)
 	UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error
 	UnmarkAllMediaAsSensitive(ctx context.Context, username string) error
+	
+	// Media job operations
+	CreateMediaJob(ctx context.Context, job *models.MediaJob) error
+	GetMediaJob(ctx context.Context, jobID string) (*models.MediaJob, error)
+	UpdateMediaJob(ctx context.Context, job *models.MediaJob) error
+	
+	// Media operations  
+	CreateMedia(ctx context.Context, media *models.Media) error
+	GetMedia(ctx context.Context, mediaID string) (*models.Media, error)
+	UpdateMedia(ctx context.Context, media *models.Media) error
 }
 
 // PollRepository interface defines the methods we need from the poll repository
@@ -688,6 +749,7 @@ type DomainBlockRepository interface {
 	AddDomainBlock(ctx context.Context, username, domain string) error
 	RemoveDomainBlock(ctx context.Context, username, domain string) error
 	GetUserDomainBlocks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	IsBlockedDomain(ctx context.Context, username, domain string) (bool, error)
 
 	// Instance domain blocks
 	CreateInstanceDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error
@@ -894,6 +956,7 @@ type StorageAdapter struct {
 	sessionRepo          SessionRepository
 	moderationRepo       ModerationRepository
 	socialRepo           SocialRepository
+	relationshipRepo     RelationshipRepository
 	listRepo             ListRepository
 	mediaRepo            MediaRepository
 	pollRepo             PollRepository
@@ -939,6 +1002,11 @@ func NewStorageAdapter(db core.DB, tableName string, logger *zap.Logger, origina
 // SetActorRepository sets the actor repository
 func (a *StorageAdapter) SetActorRepository(repo ActorRepository) {
 	a.actorRepo = repo
+	
+	// Set dependencies if the repository supports it
+	if repoWithDeps, ok := repo.(interface{ SetDependencies(ActorRepositoryDeps) }); ok {
+		repoWithDeps.SetDependencies(a)
+	}
 }
 
 // SetObjectRepository sets the object repository
@@ -1004,6 +1072,11 @@ func (a *StorageAdapter) SetModerationRepository(repo ModerationRepository) {
 // SetSocialRepository sets the social repository
 func (a *StorageAdapter) SetSocialRepository(repo SocialRepository) {
 	a.socialRepo = repo
+}
+
+// SetRelationshipRepository sets the relationship repository
+func (a *StorageAdapter) SetRelationshipRepository(repo RelationshipRepository) {
+	a.relationshipRepo = repo
 }
 
 // SetListRepository sets the list repository
@@ -1183,6 +1256,34 @@ func IsConditionalCheckFailedError(err error) bool {
 // IsThrottlingError checks if an error is a throttling error
 func IsThrottlingError(err error) bool {
 	return errors.Is(err, ErrThrottling)
+}
+
+// IsNotificationEnabled checks if notifications are enabled for a user and type
+func (a *StorageAdapter) IsNotificationEnabled(ctx context.Context, userID, notificationType string) (bool, error) {
+	// Default to enabled if preferences haven't been set
+	// This matches the legacy behavior
+	return true, nil
+}
+
+// IsNotificationMuted checks if notifications are muted for a specific target
+func (a *StorageAdapter) IsNotificationMuted(ctx context.Context, userID, targetID string) (bool, error) {
+	// Check if the target is muted by this user
+	if a.socialRepo != nil {
+		return a.socialRepo.IsMuted(ctx, userID, targetID)
+	}
+	return false, nil
+}
+
+// HasPendingFollowRequest checks if there's a pending follow request
+func (a *StorageAdapter) HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
+	if a.relationshipRepo != nil {
+		request, err := a.relationshipRepo.GetFollowRequest(ctx, requesterID, targetID)
+		if err != nil {
+			return false, nil // No pending request if error
+		}
+		return request != nil && request.State == "pending", nil
+	}
+	return false, fmt.Errorf("relationship repository not initialized")
 }
 
 // Implement storage.Storage interface methods as they are migrated to DynamORM
@@ -1883,6 +1984,56 @@ func (a *StorageAdapter) DeleteUser(ctx context.Context, username string) error 
 	err := a.userRepo.DeleteUser(ctx, username)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteUser", "User", username)
+	}
+
+	return nil
+}
+
+// OAuth Provider User Methods
+
+// GetUserByProviderID gets a user by their OAuth provider ID
+func (a *StorageAdapter) GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error) {
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return nil, fmt.Errorf("user repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	user, err := a.userRepo.GetUserByProviderID(ctx, provider, providerID)
+	if err != nil {
+		return nil, MapRepositoryError(err, "GetUserByProviderID", "User", fmt.Sprintf("%s:%s", provider, providerID))
+	}
+
+	return user, nil
+}
+
+// LinkProviderAccount links an OAuth provider account to a user
+func (a *StorageAdapter) LinkProviderAccount(ctx context.Context, username, provider, providerID string) error {
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	err := a.userRepo.LinkProviderAccount(ctx, username, provider, providerID)
+	if err != nil {
+		return MapRepositoryError(err, "LinkProviderAccount", "ProviderAccount", fmt.Sprintf("%s:%s->%s", provider, providerID, username))
+	}
+
+	return nil
+}
+
+// UnlinkProviderAccount unlinks an OAuth provider account from a user
+func (a *StorageAdapter) UnlinkProviderAccount(ctx context.Context, username, provider string) error {
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	err := a.userRepo.UnlinkProviderAccount(ctx, username, provider)
+	if err != nil {
+		return MapRepositoryError(err, "UnlinkProviderAccount", "ProviderAccount", fmt.Sprintf("%s->%s", provider, username))
 	}
 
 	return nil
@@ -2707,6 +2858,86 @@ func (a *StorageAdapter) DeleteOAuthState(ctx context.Context, state string) err
 	}
 
 	return nil
+}
+
+// UpdateOAuthClient updates an existing OAuth client
+func (a *StorageAdapter) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
+	// Check if OAuth repository is set
+	if a.oauthRepo == nil {
+		return fmt.Errorf("OAuth repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	err := a.oauthRepo.UpdateOAuthClient(ctx, clientID, updates)
+	if err != nil {
+		return MapRepositoryError(err, "UpdateOAuthClient", "OAuthClient", clientID)
+	}
+
+	return nil
+}
+
+// ListOAuthClients lists OAuth clients with pagination
+func (a *StorageAdapter) ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*storage.OAuthClient, string, error) {
+	// Check if OAuth repository is set
+	if a.oauthRepo == nil {
+		return nil, "", fmt.Errorf("OAuth repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	clients, nextCursor, err := a.oauthRepo.ListOAuthClients(ctx, limit, cursor)
+	if err != nil {
+		return nil, "", MapRepositoryError(err, "ListOAuthClients", "OAuthClient", "")
+	}
+
+	return clients, nextCursor, nil
+}
+
+// GetOAuthApp retrieves an OAuth app by client ID
+func (a *StorageAdapter) GetOAuthApp(ctx context.Context, clientID string) (*storage.OAuthApp, error) {
+	// Check if OAuth repository is set
+	if a.oauthRepo == nil {
+		return nil, fmt.Errorf("OAuth repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	app, err := a.oauthRepo.GetOAuthApp(ctx, clientID)
+	if err != nil {
+		return nil, MapRepositoryError(err, "GetOAuthApp", "OAuthApp", clientID)
+	}
+
+	return app, nil
+}
+
+// SaveUserAppConsent saves user consent for an OAuth app
+func (a *StorageAdapter) SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error {
+	// Check if OAuth repository is set
+	if a.oauthRepo == nil {
+		return fmt.Errorf("OAuth repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	err := a.oauthRepo.SaveUserAppConsent(ctx, consent)
+	if err != nil {
+		return MapRepositoryError(err, "SaveUserAppConsent", "UserAppConsent", consent.UserID+":"+consent.AppID)
+	}
+
+	return nil
+}
+
+// GetUserAppConsent retrieves user consent for an OAuth app
+func (a *StorageAdapter) GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
+	// Check if OAuth repository is set
+	if a.oauthRepo == nil {
+		return nil, fmt.Errorf("OAuth repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	consent, err := a.oauthRepo.GetUserAppConsent(ctx, userID, appID)
+	if err != nil {
+		return nil, MapRepositoryError(err, "GetUserAppConsent", "UserAppConsent", userID+":"+appID)
+	}
+
+	return consent, nil
 }
 
 // Search-related methods
@@ -3899,6 +4130,106 @@ func (a *StorageAdapter) UnmarkAllMediaAsSensitive(ctx context.Context, username
 	return nil
 }
 
+// Media Job-related methods
+
+// CreateMediaJob creates a new media processing job
+func (a *StorageAdapter) CreateMediaJob(ctx context.Context, job *models.MediaJob) error {
+	// Check if media repository is set
+	if a.mediaRepo == nil {
+		return fmt.Errorf("media repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	err := a.mediaRepo.CreateMediaJob(ctx, job)
+	if err != nil {
+		return MapRepositoryError(err, "CreateMediaJob", "MediaJob", job.JobID)
+	}
+
+	return nil
+}
+
+// GetMediaJob retrieves a media job by ID
+func (a *StorageAdapter) GetMediaJob(ctx context.Context, jobID string) (*models.MediaJob, error) {
+	// Check if media repository is set
+	if a.mediaRepo == nil {
+		return nil, fmt.Errorf("media repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	job, err := a.mediaRepo.GetMediaJob(ctx, jobID)
+	if err != nil {
+		return nil, MapRepositoryError(err, "GetMediaJob", "MediaJob", jobID)
+	}
+
+	return job, nil
+}
+
+// UpdateMediaJob updates an existing media job
+func (a *StorageAdapter) UpdateMediaJob(ctx context.Context, job *models.MediaJob) error {
+	// Check if media repository is set
+	if a.mediaRepo == nil {
+		return fmt.Errorf("media repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	err := a.mediaRepo.UpdateMediaJob(ctx, job)
+	if err != nil {
+		return MapRepositoryError(err, "UpdateMediaJob", "MediaJob", job.JobID)
+	}
+
+	return nil
+}
+
+// Media-related methods
+
+// CreateMedia creates a new media record
+func (a *StorageAdapter) CreateMedia(ctx context.Context, media *models.Media) error {
+	// Check if media repository is set
+	if a.mediaRepo == nil {
+		return fmt.Errorf("media repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	err := a.mediaRepo.CreateMedia(ctx, media)
+	if err != nil {
+		return MapRepositoryError(err, "CreateMedia", "Media", media.MediaID)
+	}
+
+	return nil
+}
+
+// GetMedia retrieves a media record by ID
+func (a *StorageAdapter) GetMedia(ctx context.Context, mediaID string) (*models.Media, error) {
+	// Check if media repository is set
+	if a.mediaRepo == nil {
+		return nil, fmt.Errorf("media repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	media, err := a.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		return nil, MapRepositoryError(err, "GetMedia", "Media", mediaID)
+	}
+
+	return media, nil
+}
+
+// UpdateMedia updates an existing media record
+func (a *StorageAdapter) UpdateMedia(ctx context.Context, media *models.Media) error {
+	// Check if media repository is set
+	if a.mediaRepo == nil {
+		return fmt.Errorf("media repository not initialized")
+	}
+
+	// Call the DynamORM repository
+	err := a.mediaRepo.UpdateMedia(ctx, media)
+	if err != nil {
+		return MapRepositoryError(err, "UpdateMedia", "Media", media.MediaID)
+	}
+
+	return nil
+}
+
 // Push Subscription-related methods
 
 // CreatePushSubscription creates a new push subscription
@@ -4209,10 +4540,10 @@ func (a *StorageAdapter) IsMuted(ctx context.Context, actor, targetActor string)
 
 // Move methods
 func (a *StorageAdapter) CreateMove(ctx context.Context, move *storage.Move) error {
-	if a.actorRepo == nil {
-		return fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return fmt.Errorf("relationship repository not initialized")
 	}
-	err := a.actorRepo.CreateMove(ctx, move)
+	err := a.relationshipRepo.CreateMove(ctx, move)
 	if err != nil {
 		return MapRepositoryError(err, "CreateMove", "Move", move.Actor)
 	}
@@ -4220,10 +4551,10 @@ func (a *StorageAdapter) CreateMove(ctx context.Context, move *storage.Move) err
 }
 
 func (a *StorageAdapter) GetMove(ctx context.Context, actor string) (*storage.Move, error) {
-	if a.actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return nil, fmt.Errorf("relationship repository not initialized")
 	}
-	move, err := a.actorRepo.GetMove(ctx, actor)
+	move, err := a.relationshipRepo.GetMove(ctx, actor)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetMove", "Move", actor)
 	}
@@ -4231,10 +4562,10 @@ func (a *StorageAdapter) GetMove(ctx context.Context, actor string) (*storage.Mo
 }
 
 func (a *StorageAdapter) GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error) {
-	if a.actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return nil, fmt.Errorf("relationship repository not initialized")
 	}
-	moves, err := a.actorRepo.GetMoveByTarget(ctx, target)
+	moves, err := a.relationshipRepo.GetMoveByTarget(ctx, target)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetMoveByTarget", "Move", target)
 	}
@@ -4242,10 +4573,10 @@ func (a *StorageAdapter) GetMoveByTarget(ctx context.Context, target string) ([]
 }
 
 func (a *StorageAdapter) HasMovedFrom(ctx context.Context, oldActor, newActor string) (bool, error) {
-	if a.actorRepo == nil {
-		return false, fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return false, fmt.Errorf("relationship repository not initialized")
 	}
-	moved, err := a.actorRepo.HasMovedFrom(ctx, oldActor, newActor)
+	moved, err := a.relationshipRepo.HasMovedFrom(ctx, oldActor, newActor)
 	if err != nil {
 		return false, MapRepositoryError(err, "HasMovedFrom", "Move", fmt.Sprintf("%s->%s", oldActor, newActor))
 	}
@@ -4641,12 +4972,12 @@ func (a *StorageAdapter) IsBookmarked(ctx context.Context, username, objectID st
 
 // CreateAccountPin creates a new account pin (endorsed account)
 func (a *StorageAdapter) CreateAccountPin(ctx context.Context, pin *storage.AccountPin) error {
-	// Check if social repository is set
-	if a.socialRepo == nil {
-		return fmt.Errorf("social repository not initialized")
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
 	}
 
-	err := a.socialRepo.CreateAccountPin(ctx, pin)
+	err := a.userRepo.CreateAccountPin(ctx, pin)
 	if err != nil {
 		return MapRepositoryError(err, "CreateAccountPin", "AccountPin", pin.Username)
 	}
@@ -4656,12 +4987,12 @@ func (a *StorageAdapter) CreateAccountPin(ctx context.Context, pin *storage.Acco
 
 // DeleteAccountPin deletes an account pin
 func (a *StorageAdapter) DeleteAccountPin(ctx context.Context, username, pinnedActorID string) error {
-	// Check if social repository is set
-	if a.socialRepo == nil {
-		return fmt.Errorf("social repository not initialized")
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
 	}
 
-	err := a.socialRepo.DeleteAccountPin(ctx, username, pinnedActorID)
+	err := a.userRepo.DeleteAccountPin(ctx, username, pinnedActorID)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteAccountPin", "AccountPin", username)
 	}
@@ -4671,12 +5002,12 @@ func (a *StorageAdapter) DeleteAccountPin(ctx context.Context, username, pinnedA
 
 // GetAccountPins retrieves all account pins for a user
 func (a *StorageAdapter) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
-	// Check if social repository is set
-	if a.socialRepo == nil {
-		return nil, fmt.Errorf("social repository not initialized")
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return nil, fmt.Errorf("user repository not initialized")
 	}
 
-	pins, err := a.socialRepo.GetAccountPins(ctx, username)
+	pins, err := a.userRepo.GetAccountPins(ctx, username)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetAccountPins", "AccountPin", username)
 	}
@@ -4686,12 +5017,12 @@ func (a *StorageAdapter) GetAccountPins(ctx context.Context, username string) ([
 
 // IsAccountPinned checks if an account is pinned
 func (a *StorageAdapter) IsAccountPinned(ctx context.Context, username, actorID string) (bool, error) {
-	// Check if social repository is set
-	if a.socialRepo == nil {
-		return false, fmt.Errorf("social repository not initialized")
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return false, fmt.Errorf("user repository not initialized")
 	}
 
-	pinned, err := a.socialRepo.IsAccountPinned(ctx, username, actorID)
+	pinned, err := a.userRepo.IsAccountPinned(ctx, username, actorID)
 	if err != nil {
 		return false, MapRepositoryError(err, "IsAccountPinned", "AccountPin", username)
 	}
@@ -4701,12 +5032,12 @@ func (a *StorageAdapter) IsAccountPinned(ctx context.Context, username, actorID 
 
 // CreateAccountNote creates a new account note
 func (a *StorageAdapter) CreateAccountNote(ctx context.Context, note *storage.AccountNote) error {
-	// Check if social repository is set
-	if a.socialRepo == nil {
-		return fmt.Errorf("social repository not initialized")
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
 	}
 
-	err := a.socialRepo.CreateAccountNote(ctx, note)
+	err := a.userRepo.CreateAccountNote(ctx, note)
 	if err != nil {
 		return MapRepositoryError(err, "CreateAccountNote", "AccountNote", note.Username)
 	}
@@ -4716,12 +5047,12 @@ func (a *StorageAdapter) CreateAccountNote(ctx context.Context, note *storage.Ac
 
 // GetAccountNote retrieves an account note
 func (a *StorageAdapter) GetAccountNote(ctx context.Context, username, targetActorID string) (*storage.AccountNote, error) {
-	// Check if social repository is set
-	if a.socialRepo == nil {
-		return nil, fmt.Errorf("social repository not initialized")
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return nil, fmt.Errorf("user repository not initialized")
 	}
 
-	note, err := a.socialRepo.GetAccountNote(ctx, username, targetActorID)
+	note, err := a.userRepo.GetAccountNote(ctx, username, targetActorID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetAccountNote", "AccountNote", username)
 	}
@@ -4731,12 +5062,12 @@ func (a *StorageAdapter) GetAccountNote(ctx context.Context, username, targetAct
 
 // UpdateAccountNote updates an existing account note
 func (a *StorageAdapter) UpdateAccountNote(ctx context.Context, note *storage.AccountNote) error {
-	// Check if social repository is set
-	if a.socialRepo == nil {
-		return fmt.Errorf("social repository not initialized")
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
 	}
 
-	err := a.socialRepo.UpdateAccountNote(ctx, note)
+	err := a.userRepo.UpdateAccountNote(ctx, note)
 	if err != nil {
 		return MapRepositoryError(err, "UpdateAccountNote", "AccountNote", note.Username)
 	}
@@ -4746,12 +5077,12 @@ func (a *StorageAdapter) UpdateAccountNote(ctx context.Context, note *storage.Ac
 
 // DeleteAccountNote deletes an account note
 func (a *StorageAdapter) DeleteAccountNote(ctx context.Context, username, targetActorID string) error {
-	// Check if social repository is set
-	if a.socialRepo == nil {
-		return fmt.Errorf("social repository not initialized")
+	// Check if user repository is set
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
 	}
 
-	err := a.socialRepo.DeleteAccountNote(ctx, username, targetActorID)
+	err := a.userRepo.DeleteAccountNote(ctx, username, targetActorID)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteAccountNote", "AccountNote", username)
 	}
@@ -6256,11 +6587,11 @@ func (a *StorageAdapter) RemoveAccountSuggestion(ctx context.Context, userID, ta
 
 // Relationship operations
 func (a *StorageAdapter) GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error) {
-	if a.actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return nil, fmt.Errorf("relationship repository not initialized")
 	}
 
-	relationship, err := a.actorRepo.GetFollowRequest(ctx, followerID, targetID)
+	relationship, err := a.relationshipRepo.GetFollowRequest(ctx, followerID, targetID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetFollowRequest", "Relationship", followerID+"->"+targetID)
 	}
@@ -6269,11 +6600,11 @@ func (a *StorageAdapter) GetFollowRequest(ctx context.Context, followerID, targe
 }
 
 func (a *StorageAdapter) AcceptFollowRequest(ctx context.Context, followerID, targetID string) error {
-	if a.actorRepo == nil {
-		return fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return fmt.Errorf("relationship repository not initialized")
 	}
 
-	err := a.actorRepo.AcceptFollowRequest(ctx, followerID, targetID)
+	err := a.relationshipRepo.AcceptFollowRequest(ctx, followerID, targetID)
 	if err != nil {
 		return MapRepositoryError(err, "AcceptFollowRequest", "Relationship", followerID+"->"+targetID)
 	}
@@ -6282,11 +6613,11 @@ func (a *StorageAdapter) AcceptFollowRequest(ctx context.Context, followerID, ta
 }
 
 func (a *StorageAdapter) RejectFollowRequest(ctx context.Context, followerID, targetID string) error {
-	if a.actorRepo == nil {
-		return fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return fmt.Errorf("relationship repository not initialized")
 	}
 
-	err := a.actorRepo.RejectFollowRequest(ctx, followerID, targetID)
+	err := a.relationshipRepo.RejectFollowRequest(ctx, followerID, targetID)
 	if err != nil {
 		return MapRepositoryError(err, "RejectFollowRequest", "Relationship", followerID+"->"+targetID)
 	}
@@ -6295,11 +6626,11 @@ func (a *StorageAdapter) RejectFollowRequest(ctx context.Context, followerID, ta
 }
 
 func (a *StorageAdapter) HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
-	if a.actorRepo == nil {
-		return false, fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return false, fmt.Errorf("relationship repository not initialized")
 	}
 
-	hasRequest, err := a.actorRepo.HasFollowRequest(ctx, requesterID, targetID)
+	hasRequest, err := a.relationshipRepo.HasFollowRequest(ctx, requesterID, targetID)
 	if err != nil {
 		return false, MapRepositoryError(err, "HasFollowRequest", "Relationship", requesterID+"->"+targetID)
 	}
@@ -6308,11 +6639,11 @@ func (a *StorageAdapter) HasFollowRequest(ctx context.Context, requesterID, targ
 }
 
 func (a *StorageAdapter) IsEndorsed(ctx context.Context, userID, targetID string) (bool, error) {
-	if a.actorRepo == nil {
-		return false, fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return false, fmt.Errorf("relationship repository not initialized")
 	}
 
-	isEndorsed, err := a.actorRepo.IsEndorsed(ctx, userID, targetID)
+	isEndorsed, err := a.relationshipRepo.IsEndorsed(ctx, userID, targetID)
 	if err != nil {
 		return false, MapRepositoryError(err, "IsEndorsed", "Relationship", userID+"->"+targetID)
 	}
@@ -6321,11 +6652,11 @@ func (a *StorageAdapter) IsEndorsed(ctx context.Context, userID, targetID string
 }
 
 func (a *StorageAdapter) GetRelationshipNote(ctx context.Context, userID, targetID string) (*storage.AccountNote, error) {
-	if a.actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not initialized")
+	if a.relationshipRepo == nil {
+		return nil, fmt.Errorf("relationship repository not initialized")
 	}
 
-	note, err := a.actorRepo.GetRelationshipNote(ctx, userID, targetID)
+	note, err := a.relationshipRepo.GetRelationshipNote(ctx, userID, targetID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetRelationshipNote", "Relationship", userID+"->"+targetID)
 	}
@@ -6335,17 +6666,26 @@ func (a *StorageAdapter) GetRelationshipNote(ctx context.Context, userID, target
 
 // Featured Tag adapter methods
 
-func (a *StorageAdapter) CreateFeaturedTag(ctx context.Context, tag *storage.FeaturedTag) error {
+func (a *StorageAdapter) CreateFeaturedTag(ctx context.Context, userID string, tagName string) (*storage.FeaturedTag, error) {
 	if a.featuredTagRepo == nil {
-		return fmt.Errorf("featured tag repository not initialized")
+		return nil, fmt.Errorf("featured tag repository not initialized")
+	}
+
+	// Create the featured tag object
+	tag := &storage.FeaturedTag{
+		ID:           fmt.Sprintf("%s-%s", userID, tagName),
+		Username:     userID,
+		Name:         tagName,
+		LastStatusAt: time.Now().Format(time.RFC3339),
+		CreatedAt:    time.Now(),
 	}
 
 	err := a.featuredTagRepo.CreateFeaturedTag(ctx, tag)
 	if err != nil {
-		return MapRepositoryError(err, "CreateFeaturedTag", "FeaturedTag", tag.ID)
+		return nil, MapRepositoryError(err, "CreateFeaturedTag", "FeaturedTag", tag.ID)
 	}
 
-	return nil
+	return tag, nil
 }
 
 func (a *StorageAdapter) DeleteFeaturedTag(ctx context.Context, username, name string) error {
@@ -7083,6 +7423,20 @@ func (a *StorageAdapter) GetUserDomainBlocks(ctx context.Context, username strin
 	}
 
 	return domains, nextCursor, nil
+}
+
+// IsBlockedDomain checks if a domain is blocked by a user
+func (a *StorageAdapter) IsBlockedDomain(ctx context.Context, username, domain string) (bool, error) {
+	if a.domainBlockRepo == nil {
+		return false, fmt.Errorf("domain block repository not initialized")
+	}
+
+	isBlocked, err := a.domainBlockRepo.IsBlockedDomain(ctx, username, domain)
+	if err != nil {
+		return false, MapRepositoryError(err, "IsBlockedDomain", "DomainBlock", fmt.Sprintf("%s#%s", username, domain))
+	}
+
+	return isBlocked, nil
 }
 
 // CreateInstanceDomainBlock creates an instance-level domain block
@@ -8942,10 +9296,10 @@ func (a *StorageAdapter) GenerateSearchSuggestions(ctx context.Context, userID, 
 
 // CreateConversationMute creates a new conversation mute
 func (a *StorageAdapter) CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error {
-	if a.conversationRepo == nil {
-		return fmt.Errorf("conversation repository not initialized")
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
 	}
-	err := a.conversationRepo.CreateConversationMute(ctx, mute)
+	err := a.userRepo.CreateConversationMute(ctx, mute)
 	if err != nil {
 		return MapRepositoryError(err, "CreateConversationMute", "ConversationMute", mute.ConversationID)
 	}
@@ -8954,10 +9308,10 @@ func (a *StorageAdapter) CreateConversationMute(ctx context.Context, mute *stora
 
 // DeleteConversationMute removes a conversation mute
 func (a *StorageAdapter) DeleteConversationMute(ctx context.Context, username, conversationID string) error {
-	if a.conversationRepo == nil {
-		return fmt.Errorf("conversation repository not initialized")
+	if a.userRepo == nil {
+		return fmt.Errorf("user repository not initialized")
 	}
-	err := a.conversationRepo.DeleteConversationMute(ctx, username, conversationID)
+	err := a.userRepo.DeleteConversationMute(ctx, username, conversationID)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteConversationMute", "ConversationMute", conversationID)
 	}
@@ -8966,10 +9320,10 @@ func (a *StorageAdapter) DeleteConversationMute(ctx context.Context, username, c
 
 // IsConversationMuted checks if a conversation is muted by a user
 func (a *StorageAdapter) IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error) {
-	if a.conversationRepo == nil {
-		return false, fmt.Errorf("conversation repository not initialized")
+	if a.userRepo == nil {
+		return false, fmt.Errorf("user repository not initialized")
 	}
-	isMuted, err := a.conversationRepo.IsConversationMuted(ctx, username, conversationID)
+	isMuted, err := a.userRepo.IsConversationMuted(ctx, username, conversationID)
 	if err != nil {
 		return false, MapRepositoryError(err, "IsConversationMuted", "ConversationMute", conversationID)
 	}
@@ -8978,10 +9332,10 @@ func (a *StorageAdapter) IsConversationMuted(ctx context.Context, username, conv
 
 // GetMutedConversations retrieves all muted conversations for a user
 func (a *StorageAdapter) GetMutedConversations(ctx context.Context, username string) ([]string, error) {
-	if a.conversationRepo == nil {
-		return nil, fmt.Errorf("conversation repository not initialized")
+	if a.userRepo == nil {
+		return nil, fmt.Errorf("user repository not initialized")
 	}
-	conversationIDs, err := a.conversationRepo.GetMutedConversations(ctx, username)
+	conversationIDs, err := a.userRepo.GetMutedConversations(ctx, username)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetMutedConversations", "ConversationMute", username)
 	}
@@ -9289,4 +9643,105 @@ func (a *StorageAdapter) ClearOldNotifications(ctx context.Context, username str
 		return fmt.Errorf("notification repository not initialized")
 	}
 	return a.notificationRepo.ClearOldNotifications(ctx, username, olderThan)
+}
+
+// ClearNotifications clears all notifications for a user
+func (a *StorageAdapter) ClearNotifications(ctx context.Context, username string) error {
+	if a.notificationRepo == nil {
+		return fmt.Errorf("notification repository not initialized")
+	}
+	// Clear all notifications by marking them as read
+	return a.notificationRepo.MarkAllNotificationsAsRead(ctx, username)
+}
+
+// CountUnreadNotifications counts unread notifications for a user
+func (a *StorageAdapter) CountUnreadNotifications(ctx context.Context, username string) (int, error) {
+	if a.notificationRepo == nil {
+		return 0, fmt.Errorf("notification repository not initialized")
+	}
+	return a.notificationRepo.CountUnreadNotifications(ctx, username)
+}
+
+// GetFieldVerification gets field verification status
+func (a *StorageAdapter) GetFieldVerification(ctx context.Context, username, fieldName string) (*storage.ActorField, error) {
+	// TODO: Implement field verification when repository is ready
+	return nil, fmt.Errorf("field verification not implemented")
+}
+
+// GetStatusCount gets the total number of statuses for an actor
+func (a *StorageAdapter) GetStatusCount(ctx context.Context, actorID string) (int, error) {
+	if a.objectRepo == nil {
+		return 0, fmt.Errorf("object repository not initialized")
+	}
+	// TODO: Implement status count
+	return 0, nil
+}
+
+// GetFollowersCount gets the total number of followers for an actor
+func (a *StorageAdapter) GetFollowersCount(ctx context.Context, actorID string) (int, error) {
+	if a.actorRepo == nil {
+		return 0, fmt.Errorf("actor repository not initialized")
+	}
+	// TODO: Implement followers count
+	return 0, nil
+}
+
+// GetFollowingCount gets the total number of accounts an actor is following
+func (a *StorageAdapter) GetFollowingCount(ctx context.Context, actorID string) (int, error) {
+	if a.actorRepo == nil {
+		return 0, fmt.Errorf("actor repository not initialized")
+	}
+	// TODO: Implement following count
+	return 0, nil
+}
+
+// GetLatestStatus gets the latest status for an actor
+func (a *StorageAdapter) GetLatestStatus(ctx context.Context, actorID string) (*storage.StatusSearchResult, error) {
+	if a.objectRepo == nil {
+		return nil, fmt.Errorf("object repository not initialized")
+	}
+	// TODO: Implement latest status
+	return nil, nil
+}
+
+// GetLinkedProviders gets all linked OAuth providers for a user
+func (a *StorageAdapter) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
+	if a.userRepo == nil {
+		return nil, fmt.Errorf("user repository not initialized")
+	}
+	return a.userRepo.GetLinkedProviders(ctx, username)
+}
+
+// GetNotificationsByAccount gets notifications for a user filtered by a specific account
+func (a *StorageAdapter) GetNotificationsByAccount(ctx context.Context, userID, accountID string, limit int) ([]*storage.Notification, error) {
+	if a.notificationRepo == nil {
+		return nil, fmt.Errorf("notification repository not initialized")
+	}
+	
+	// For now, we'll get all notifications and filter by account
+	// TODO: Implement a more efficient method in the repository
+	notifications, _, err := a.notificationRepo.GetNotificationsByUser(ctx, userID, limit, "")
+	if err != nil {
+		return nil, MapRepositoryError(err, "GetNotificationsByAccount", "Notification", userID)
+	}
+	
+	// Convert models.Notification to storage.Notification and filter by account
+	var filtered []*storage.Notification
+	for _, n := range notifications {
+		// Filter by actor ID (who triggered the notification)
+		if n.ActorID == accountID {
+			notif := &storage.Notification{
+				ID:        n.ID,
+				Type:      n.Type,
+				Username:  n.UserID, // Map UserID to Username
+				AccountID: n.ActorID, // Who triggered the notification
+				StatusID:  n.TargetID, // Assuming target is the status when TargetType is "status"
+				Read:      n.IsRead,
+				CreatedAt: n.CreatedAt,
+			}
+			filtered = append(filtered, notif)
+		}
+	}
+	
+	return filtered, nil
 }

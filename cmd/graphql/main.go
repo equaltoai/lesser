@@ -1,127 +1,172 @@
 package main
 
-import (
-	"context"
-	"fmt"
-	"net/http"
-	"os"
+/*
+Lesser GraphQL Server - GraphQL API for ActivityPub implementation
 
-	"github.com/99designs/gqlgen/graphql/handler"
-	"github.com/99designs/gqlgen/graphql/playground"
-	"github.com/aws/aws-lambda-go/events"
+This Lambda function serves the Lesser GraphQL API using the Lift framework.
+
+IMPORTANT: This service is temporarily disabled during the DynamORM migration.
+All GraphQL requests will return a "service disabled" message until migration is complete.
+*/
+
+import (
+	"fmt"
+	"os"
+	"time"
+
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
-	"github.com/equaltoai/lesser/cmd/graphql/middleware"
-	"github.com/equaltoai/lesser/graph"
-	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/equaltoai/lesser/pkg/mastodon"
-	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 var (
-	logger          *zap.Logger
-	graphqlHandler  *handler.Server
-	playgroundProxy *httpadapter.HandlerAdapter
-	costTracker     *cost.Tracker
-	storageInstance storage.Storage
-	authMiddleware  *auth.Middleware
+	logger   *zap.Logger
+	initTime time.Time
 )
 
 func init() {
-	// Initialize logger
+	initTime = time.Now()
 	logger = common.Logger()
-
-	// Create storage using the package's New() function which uses global config
-	var err error
-	storageInstance, err = dynamodb.New()
-	if err != nil {
-		logger.Fatal("Failed to create storage", zap.Error(err))
-	}
-
-	// Initialize auth middleware
-	authMiddleware, err = auth.GetMiddleware()
-	if err != nil {
-		logger.Fatal("Failed to initialize auth middleware", zap.Error(err))
-	}
-
-	// Create cost tracker
-	costTracker = cost.New()
-
-	// Create Mastodon converter
-	domain := os.Getenv("DOMAIN")
-	if domain == "" {
-		domain = "example.com"
-	}
-	mastodonConv := mastodon.NewConverter(domain)
-
-	// Create resolver with dependencies
-	resolver := &graph.Resolver{
-		Storage:      storageInstance,
-		CostTracker:  costTracker,
-		MastodonConv: mastodonConv,
-		Logger:       logger,
-	}
-
-	// Create GraphQL server
-	srv := handler.NewDefaultServer(graph.NewExecutableSchema(graph.Config{
-		Resolvers: resolver,
-	}))
-
-	graphqlHandler = srv
-
-	// Create playground handler for development
-	if os.Getenv("ENABLE_PLAYGROUND") == "true" {
-		playgroundHandler := playground.Handler("GraphQL playground", "/graphql")
-		playgroundProxy = httpadapter.New(playgroundHandler)
-	}
+	
+	logger.Warn("GraphQL service starting in disabled mode during DynamORM migration")
 }
 
-// Lambda handler
-func lambdaHandler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// Handle GraphQL playground in development
-	if request.Path == "/playground" && playgroundProxy != nil {
-		return playgroundProxy.ProxyWithContext(ctx, request)
-	}
+// Simplified GraphQL handler that returns service disabled message
+func handleGraphQL(ctx *lift.Context) error {
+	logger.Info("GraphQL request received during migration",
+		zap.String("method", ctx.Request.Method),
+		zap.String("path", ctx.Request.Path))
 
-	// Create DataLoader for this request
-	loaders := graph.NewLoaders(storageInstance, logger)
-
-	// Create a wrapper handler that injects loaders into context and applies authentication
-	wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add loaders to request context
-		r = r.WithContext(graph.WithLoaders(r.Context(), loaders))
-		graphqlHandler.ServeHTTP(w, r)
+	// Set content type for GraphQL response
+	ctx.Response.Headers["Content-Type"] = "application/json"
+	
+	// Return GraphQL-formatted error indicating service is disabled
+	return ctx.JSON(map[string]interface{}{
+		"errors": []map[string]interface{}{
+			{
+				"message": "GraphQL API is temporarily disabled during DynamORM migration. Please check back later.",
+				"extensions": map[string]interface{}{
+					"code":      "SERVICE_DISABLED",
+					"temporary": true,
+				},
+			},
+		},
 	})
+}
 
-	// Apply authentication middleware
-	authenticatedHandler := middleware.AuthMiddleware(authMiddleware, logger)(wrappedHandler)
-
-	// Use httpadapter to convert Lambda event to http.Request for gqlgen
-	adapter := httpadapter.New(authenticatedHandler)
-	response, err := adapter.ProxyWithContext(ctx, request)
-
-	// Add cost headers
-	if response.Headers == nil {
-		response.Headers = make(map[string]string)
+// Simplified playground handler
+func handlePlayground(ctx *lift.Context) error {
+	if os.Getenv("ENABLE_PLAYGROUND") != "true" {
+		return lift.NotFound("Playground not enabled")
 	}
 
-	// Calculate and add cost information
-	operationCost := costTracker.CalculateCost()
-	response.Headers["X-Cost-Total-Micros"] = fmt.Sprintf("%d", operationCost.TotalCostMicroCents)
-	response.Headers["X-Cost-DynamoDB-Reads"] = fmt.Sprintf("%d", operationCost.DynamoDBReads)
-	response.Headers["X-Cost-DynamoDB-Writes"] = fmt.Sprintf("%d", operationCost.DynamoDBWrites)
+	logger.Info("GraphQL playground request received during migration")
 
-	// Reset tracker for next request
-	costTracker.Reset()
-
-	return response, err
+	// Set content type for HTML response
+	ctx.Response.Headers["Content-Type"] = "text/html"
+	
+	// Return HTML page explaining the service is disabled
+	return ctx.HTML(`<!DOCTYPE html>
+<html>
+<head>
+	<title>GraphQL Playground - Service Disabled</title>
+	<style>
+		body { font-family: Arial, sans-serif; margin: 40px; }
+		.banner { background: #ff6b6b; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+		.info { background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff; }
+	</style>
+</head>
+<body>
+	<div class="banner">
+		<h1>🚧 GraphQL Playground - Service Temporarily Disabled</h1>
+	</div>
+	<div class="info">
+		<h2>Migration in Progress</h2>
+		<p>The Lesser GraphQL API is currently undergoing a migration to the DynamORM framework.</p>
+		<p>This service will be restored once the migration is complete.</p>
+		<p><strong>Status:</strong> Phase 4 - GraphQL Service Migration</p>
+		<p><strong>Expected:</strong> Service will be restored after storage layer migration</p>
+	</div>
+</body>
+</html>`)
 }
 
 func main() {
-	// Start Lambda runtime
-	lambda.Start(lambdaHandler)
+	// Create a new Lift application
+	app := lift.New()
+	if os.Getenv("DEBUG") == "true" {
+		app = lift.New(lift.WithDebug())
+	}
+
+	// Add basic request ID middleware
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			requestID := fmt.Sprintf("graphql-%d", time.Now().UnixNano())
+			ctx.Set("requestID", requestID)
+			return next.Handle(ctx)
+		})
+	})
+
+	// Add logging middleware
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			start := time.Now()
+			path := ctx.Request.Path
+			method := ctx.Request.Method
+
+			err := next.Handle(ctx)
+
+			logger.Info("request completed",
+				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+				zap.String("method", method),
+				zap.String("path", path),
+				zap.Duration("duration", time.Since(start)),
+				zap.Int("status", ctx.Response.StatusCode))
+
+			return err
+		})
+	})
+
+	// Add CORS middleware for GraphQL compatibility
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			// Set CORS headers
+			ctx.Response.Headers["Access-Control-Allow-Origin"] = "*"
+			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+
+			// Handle preflight requests
+			if ctx.Request.Method == "OPTIONS" {
+				ctx.Response.StatusCode = 200
+				return nil
+			}
+
+			return next.Handle(ctx)
+		})
+	})
+
+	// Configure routes for GraphQL
+	app.POST("/graphql", handleGraphQL)
+	app.GET("/graphql", handleGraphQL)
+	app.GET("/playground", handlePlayground)
+
+	// Add a health check endpoint
+	app.GET("/health", func(ctx *lift.Context) error {
+		return ctx.JSON(map[string]interface{}{
+			"status":      "disabled",
+			"service":     "graphql",
+			"migration":   "in_progress",
+			"phase":       "dynamorm_migration",
+			"uptime":      time.Since(initTime).String(),
+		})
+	})
+
+	logger.Info("GraphQL service starting (disabled mode)",
+		zap.String("version", "lift-migration"),
+		zap.Bool("enabled", false),
+		zap.String("reason", "DynamORM migration in progress"))
+
+	// Start the Lambda handler
+	lambda.Start(app.HandleRequest)
 }

@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
@@ -31,8 +32,12 @@ func NewTimeseriesProcessor(db core.DB, tableName string) *TimeseriesProcessor {
 	}
 }
 
-func (tp *TimeseriesProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
+// HandleStream implements the DynamoDBStreamHandler interface for Lift framework
+func (tp *TimeseriesProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
+	requestID := ctx.GetRequestID()
+	
 	tp.logger.Info("processing federation timeseries stream event",
+		zap.String("request_id", requestID),
 		zap.Int("record_count", len(event.Records)),
 	)
 
@@ -43,6 +48,7 @@ func (tp *TimeseriesProcessor) HandleStream(ctx context.Context, event events.Dy
 	for window, records := range windows {
 		if err := tp.processWindow(ctx, window, records); err != nil {
 			tp.logger.Error("failed to process time window",
+				zap.String("request_id", requestID),
 				zap.Time("window", window),
 				zap.Int("record_count", len(records)),
 				zap.Error(err),
@@ -128,7 +134,7 @@ func (tp *TimeseriesProcessor) extractTimestamp(record events.DynamoDBEventRecor
 	return time.Time{}
 }
 
-func (tp *TimeseriesProcessor) processWindow(ctx context.Context, window time.Time, records []events.DynamoDBEventRecord) error {
+func (tp *TimeseriesProcessor) processWindow(ctx *lift.Context, window time.Time, records []events.DynamoDBEventRecord) error {
 	// Aggregate metrics for this time window
 	metrics := tp.aggregateMetrics(records)
 
@@ -206,7 +212,7 @@ func (tp *TimeseriesProcessor) extractInstance(actorID string) string {
 	return ""
 }
 
-func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, window time.Time, metrics *FederationMetrics) error {
+func (tp *TimeseriesProcessor) storeMetrics(ctx *lift.Context, window time.Time, metrics *FederationMetrics) error {
 	windowStr := window.Format(time.RFC3339)
 
 	// Create timeseries record for federation metrics
@@ -238,9 +244,9 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, window time.Tim
 		TTL:                 time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
 
-	// Store the aggregated metrics
-	if err := tp.db.Model(&timeseriesRecord).Create(); err != nil {
-		return fmt.Errorf("failed to store timeseries metrics: %w", err)
+	// Store the aggregated metrics with Lift context
+	if err := tp.db.WithContext(ctx.Context).Model(&timeseriesRecord).Create(); err != nil {
+		return lift.NewLiftError("TIMESERIES_STORE_FAILED", "failed to store timeseries metrics", 500).WithCause(err)
 	}
 
 	// Also store per-instance metrics for detailed analytics
@@ -263,8 +269,9 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, window time.Tim
 			TTL:       time.Now().Add(30 * 24 * time.Hour).Unix(), // 30 days retention
 		}
 
-		if err := tp.db.Model(&instanceRecord).Create(); err != nil {
+		if err := tp.db.WithContext(ctx.Context).Model(&instanceRecord).Create(); err != nil {
 			tp.logger.Error("failed to store instance metrics",
+				zap.String("request_id", ctx.GetRequestID()),
 				zap.String("instance", instance),
 				zap.Error(err),
 			)
@@ -273,6 +280,7 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, window time.Tim
 	}
 
 	tp.logger.Info("stored federation timeseries metrics",
+		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("window", windowStr),
 		zap.Int("follow_count", metrics.FollowCount),
 		zap.Int("like_count", metrics.LikeCount),
@@ -310,15 +318,6 @@ func init() {
 }
 
 func main() {
-	// Handle DynamoDB stream events with logging middleware
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
-		start := time.Now()
-		defer func() {
-			duration := time.Since(start)
-			processor.logger.Info("request completed",
-				zap.Duration("duration", duration),
-			)
-		}()
-		return processor.HandleStream(ctx, event)
-	})
+	// Use Lift's DynamoDB stream pattern with full middleware stack
+	patterns.StartDynamoDBStreamLambda("federation-timeseries", processor, logger)
 }

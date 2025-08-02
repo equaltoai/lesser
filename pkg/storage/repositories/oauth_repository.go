@@ -596,3 +596,154 @@ func generateClientSecret() (string, error) {
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
 }
+
+// ListOAuthClients lists OAuth clients with pagination
+func (r *OAuthRepository) ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*storage.OAuthClient, string, error) {
+	// For now, implement a simple scan since DynamORM doesn't have great pagination support
+	// In production, you might want to add a GSI for listing clients
+	var clientModels []*models.OAuthClient
+	
+	query := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
+		Where("PK", "begins_with", "CLIENT#").
+		Where("SK", "=", "METADATA")
+	
+	if limit > 0 {
+		query = query.Limit(int(limit))
+	}
+	
+	// For cursor-based pagination, you would need additional GSI setup
+	// This is a simplified implementation
+	err := query.Scan(&clientModels)
+	if err != nil {
+		r.logger.Error("failed to list OAuth clients", zap.Error(err))
+		return nil, "", fmt.Errorf("failed to list OAuth clients: %w", err)
+	}
+	
+	// Convert to storage models
+	clients := make([]*storage.OAuthClient, len(clientModels))
+	for i, model := range clientModels {
+		clients[i] = &storage.OAuthClient{
+			ClientID:     model.ClientID,
+			ClientSecret: model.ClientSecret,
+			Name:         model.Name,
+			Website:      model.Website,
+			RedirectURIs: model.RedirectURIs,
+			Scopes:       model.Scopes,
+			CreatedAt:    model.CreatedAt,
+			UpdatedAt:    model.UpdatedAt,
+		}
+	}
+	
+	// Simple pagination - in production you'd want proper cursor implementation
+	nextCursor := ""
+	if len(clientModels) == int(limit) {
+		nextCursor = "has_more" // Simplified cursor
+	}
+	
+	r.logger.Debug("listed OAuth clients", zap.Int("count", len(clients)))
+	return clients, nextCursor, nil
+}
+
+// GetOAuthApp retrieves an OAuth app (alias for GetOAuthClient for compatibility)
+func (r *OAuthRepository) GetOAuthApp(ctx context.Context, clientID string) (*storage.OAuthApp, error) {
+	// Get the OAuth client first
+	client, err := r.GetOAuthClient(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert OAuthClient to OAuthApp format based on storage interface
+	app := &storage.OAuthApp{
+		ClientID:     client.ClientID,
+		ClientSecret: client.ClientSecret,
+		Name:         client.Name,
+		RedirectURIs: client.RedirectURIs,
+		Scopes:       client.Scopes,
+		CreatedAt:    client.CreatedAt,
+	}
+	
+	return app, nil
+}
+
+// SaveUserAppConsent saves user consent for an OAuth app
+func (r *OAuthRepository) SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error {
+	// Create DynamORM model
+	model := &models.UserAppConsent{
+		UserID:    consent.UserID,
+		AppID:     consent.AppID,
+		Scopes:    consent.Scopes,
+		CreatedAt: consent.CreatedAt,
+		UpdatedAt: time.Now(),
+		Active:    true, // Default to active
+	}
+	
+	// Set default timestamps if not provided
+	if model.CreatedAt.IsZero() {
+		model.CreatedAt = time.Now()
+	}
+	
+	// Update keys
+	model.UpdateKeys()
+	
+	// Use upsert logic - try to update first, then create if not exists
+	err := r.db.WithContext(ctx).Model(model).
+		Where("PK", "=", model.PK).
+		Where("SK", "=", model.SK).
+		Update()
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Item doesn't exist, create it
+			err = r.db.WithContext(ctx).Model(model).Create()
+			if err != nil {
+				r.logger.Error("failed to create user app consent", zap.Error(err))
+				return fmt.Errorf("failed to create user app consent: %w", err)
+			}
+		} else {
+			r.logger.Error("failed to update user app consent", zap.Error(err))
+			return fmt.Errorf("failed to update user app consent: %w", err)
+		}
+	}
+	
+	r.logger.Debug("saved user app consent",
+		zap.String("user_id", consent.UserID),
+		zap.String("app_id", consent.AppID))
+	
+	return nil
+}
+
+// GetUserAppConsent retrieves user consent for an OAuth app
+func (r *OAuthRepository) GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
+	// Construct the key using the model's pattern
+	pk := fmt.Sprintf("USER#%s", userID)
+	sk := fmt.Sprintf("CONSENT#%s", appID)
+	
+	// Query for the item
+	var model models.UserAppConsent
+	err := r.db.WithContext(ctx).Model(&models.UserAppConsent{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&model)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("user app consent not found: %s:%s", userID, appID)
+		}
+		r.logger.Error("failed to get user app consent", zap.Error(err))
+		return nil, fmt.Errorf("failed to get user app consent: %w", err)
+	}
+	
+	// Convert to storage model (only fields that exist in storage interface)
+	result := &storage.UserAppConsent{
+		UserID:    model.UserID,
+		AppID:     model.AppID,
+		Scopes:    model.Scopes,
+		CreatedAt: model.CreatedAt,
+	}
+	
+	r.logger.Debug("retrieved user app consent",
+		zap.String("user_id", userID),
+		zap.String("app_id", appID))
+	
+	return result, nil
+}

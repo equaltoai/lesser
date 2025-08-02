@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,11 +21,19 @@ import (
 	"go.uber.org/zap"
 )
 
+// ActorRepositoryDeps interface for dependencies - implemented by the storage adapter
+type ActorRepositoryDeps interface {
+	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	GetPreference(ctx context.Context, username, key string) (any, error)
+	SetPreference(ctx context.Context, username, key string, value any) error
+}
+
 // ActorRepository implements actor operations using DynamORM
 type ActorRepository struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
+	deps      ActorRepositoryDeps
 }
 
 // NewActorRepository creates a new actor repository
@@ -34,6 +43,11 @@ func NewActorRepository(db core.DB, tableName string, logger *zap.Logger) *Actor
 		tableName: tableName,
 		logger:    logger,
 	}
+}
+
+// SetDependencies sets the dependencies for cross-repository operations
+func (r *ActorRepository) SetDependencies(deps ActorRepositoryDeps) {
+	r.deps = deps
 }
 
 // CreateActor creates a new actor in DynamoDB
@@ -453,4 +467,238 @@ func (r *ActorRepository) modelToActivityPubActor(model *models.Actor) (*activit
 
 	// Return the stored actor directly
 	return model.Actor, nil
+}
+
+// GetAccountSuggestions gets suggested accounts for a user based on "friends of friends" algorithm
+func (r *ActorRepository) GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error) {
+	log := r.logger.With(zap.String("method", "GetAccountSuggestions"), zap.String("user_id", userID))
+
+	if r.deps == nil {
+		log.Warn("dependencies not set, returning empty suggestions")
+		return []*activitypub.Actor{}, nil
+	}
+
+	// Step 1: Get users that the current user follows
+	following, _, err := r.deps.GetFollowing(ctx, userID, 100, "")
+	if err != nil {
+		log.Error("failed to get user following for suggestions", zap.Error(err))
+		// Fall back to discoverable users if we can't get following
+		return r.getDiscoverableActors(ctx, limit)
+	}
+
+	suggestionCandidates := make(map[string]int) // actorID -> score
+	processedActors := make(map[string]bool)
+
+	// Get who the user already follows to exclude them
+	userFollows := make(map[string]bool)
+	for _, followedID := range following {
+		userFollows[followedID] = true
+	}
+	userFollows[userID] = true // Exclude self
+
+	// For each user the current user follows, get who they follow
+	for i, followedUserID := range following {
+		if i >= 20 { // Limit to prevent excessive API calls
+			break
+		}
+
+		followedUsername := r.extractUsernameFromActorID(followedUserID)
+		if followedUsername == "" {
+			continue
+		}
+
+		// Get who this followed user follows
+		theirFollowing, _, err := r.deps.GetFollowing(ctx, followedUsername, 50, "")
+		if err != nil {
+			continue // Skip if we can't get their following
+		}
+
+		// Score each of their follows
+		for _, candidate := range theirFollowing {
+			if userFollows[candidate] || processedActors[candidate] {
+				continue // Skip if user already follows or we've processed
+			}
+
+			// Check if user has dismissed this suggestion
+			dismissedKey := fmt.Sprintf("dismissed_suggestion:%s", candidate)
+			dismissed, _ := r.deps.GetPreference(ctx, userID, dismissedKey)
+			if dismissed != nil {
+				if isDismissed, ok := dismissed.(bool); ok && isDismissed {
+					continue // Skip dismissed suggestions
+				}
+			}
+
+			suggestionCandidates[candidate]++
+			processedActors[candidate] = true
+		}
+	}
+
+	// Step 2: Get actors with high scores (multiple mutual connections)
+	type scoredActor struct {
+		actorID string
+		score   int
+	}
+
+	var scored []scoredActor
+	for actorID, score := range suggestionCandidates {
+		scored = append(scored, scoredActor{actorID: actorID, score: score})
+	}
+
+	// Sort by score (highest first)
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	// Step 3: Get actor details for top suggestions
+	var suggestions []*activitypub.Actor
+	for _, scoredActor := range scored {
+		if len(suggestions) >= limit {
+			break
+		}
+
+		username := r.extractUsernameFromActorID(scoredActor.actorID)
+		if username == "" {
+			continue
+		}
+
+		actor, err := r.GetActor(ctx, username)
+		if err != nil {
+			continue // Skip if we can't get actor details
+		}
+
+		// Only suggest discoverable accounts
+		if actor.Discoverable {
+			suggestions = append(suggestions, actor)
+		}
+	}
+
+	// Step 4: Fill remaining slots with discoverable users if needed
+	if len(suggestions) < limit {
+		remaining := limit - len(suggestions)
+		discoverable, err := r.getDiscoverableActors(ctx, remaining*2) // Get more to filter
+		if err == nil {
+			for _, actor := range discoverable {
+				if len(suggestions) >= limit {
+					break
+				}
+
+				// Skip if already in suggestions or user follows them
+				skip := false
+				for _, existing := range suggestions {
+					if existing.ID == actor.ID {
+						skip = true
+						break
+					}
+				}
+				if skip || userFollows[actor.ID] {
+					continue
+				}
+
+				suggestions = append(suggestions, actor)
+			}
+		}
+	}
+
+	log.Info("generated account suggestions",
+		zap.Int("requested_limit", limit),
+		zap.Int("returned_count", len(suggestions)))
+
+	return suggestions, nil
+}
+
+// RemoveAccountSuggestion removes an account from suggestions for a user
+func (r *ActorRepository) RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error {
+	log := r.logger.With(
+		zap.String("method", "RemoveAccountSuggestion"),
+		zap.String("user_id", userID),
+		zap.String("target_id", targetID),
+	)
+
+	if r.deps == nil {
+		log.Error("dependencies not set")
+		return fmt.Errorf("dependencies not available")
+	}
+
+	// Store the dismissed suggestion in user preferences
+	// This prevents the account from being suggested again
+	dismissedKey := fmt.Sprintf("dismissed_suggestion:%s", targetID)
+	err := r.deps.SetPreference(ctx, userID, dismissedKey, true)
+	if err != nil {
+		log.Error("failed to store dismissed suggestion preference", zap.Error(err))
+		return fmt.Errorf("failed to remove account suggestion: %w", err)
+	}
+
+	log.Info("account suggestion removed")
+
+	return nil
+}
+
+// Helper functions
+
+// getDiscoverableActors returns actors marked as discoverable
+func (r *ActorRepository) getDiscoverableActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
+	// Use the existing SearchAccounts method with empty query to get discoverable accounts
+	actors, err := r.SearchAccounts(ctx, "", limit*2, false, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get discoverable actors: %w", err)
+	}
+
+	// Filter for discoverable only
+	var discoverable []*activitypub.Actor
+	for _, actor := range actors {
+		if actor.Discoverable && len(discoverable) < limit {
+			discoverable = append(discoverable, actor)
+		}
+	}
+
+	return discoverable, nil
+}
+
+// extractUsernameFromActorID extracts username from actor ID
+func (r *ActorRepository) extractUsernameFromActorID(actorID string) string {
+	// Handle local actor IDs like "https://example.com/users/username"
+	parts := strings.Split(actorID, "/")
+	if len(parts) > 0 {
+		username := parts[len(parts)-1]
+		// Remove any @ prefix if present
+		username = strings.TrimPrefix(username, "@")
+		return username
+	}
+	
+	// Handle direct username format
+	return strings.TrimPrefix(actorID, "@")
+}
+
+// GetCachedRemoteActor retrieves a cached remote actor by handle
+func (r *ActorRepository) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
+	log := r.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("handle", handle))
+
+	var remoteActor models.RemoteActor
+
+	err := r.db.WithContext(ctx).Model(&models.RemoteActor{}).
+		Where("PK", "=", fmt.Sprintf("REMOTE_ACTOR#%s", handle)).
+		Where("SK", "=", "PROFILE").
+		First(&remoteActor)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Extract username from handle for error (consistent with legacy)
+			username := strings.Split(handle, "@")[0]
+			return nil, common.ActorNotFoundError{Username: username}
+		}
+		return nil, fmt.Errorf("failed to get cached remote actor: %w", err)
+	}
+
+	// Check if the cache has expired (consistent with legacy behavior)
+	if time.Now().After(remoteActor.ExpiresAt) {
+		log.Debug("cached remote actor expired",
+			zap.Time("expired_at", remoteActor.ExpiresAt))
+		// Extract username from handle for error (consistent with legacy)
+		username := strings.Split(handle, "@")[0]
+		return nil, common.ActorNotFoundError{Username: username}
+	}
+
+	log.Debug("retrieved cached remote actor",
+		zap.String("actor_id", remoteActor.Actor.ID))
+
+	return remoteActor.Actor, nil
 }

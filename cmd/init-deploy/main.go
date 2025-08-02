@@ -19,7 +19,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
@@ -116,10 +117,19 @@ func main() {
 		tableName = fmt.Sprintf("lesser-%s", domain)
 	}
 
-	store, err := dynamodb.New()
+	// Initialize DynamORM
+	db, err := dynamorm.GetClient(ctx)
 	if err != nil {
-		logger.Fatal("Failed to initialize storage", zap.Error(err))
+		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
+
+	// Create storage adapter
+	store := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	
+	// Initialize required repositories
+	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
+	store.SetActorRepository(repositories.NewActorRepository(db, tableName, logger))
+	store.SetInstanceRepository(repositories.NewInstanceRepository(db, tableName, logger))
 
 	// Create admin user
 	hashedPassword, err := auth.HashPassword(adminPassword)

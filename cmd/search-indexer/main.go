@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
@@ -31,8 +32,12 @@ func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
 	}
 }
 
-func (si *SearchIndexer) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
+// HandleStream implements patterns.DynamoDBStreamHandler interface
+func (si *SearchIndexer) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
+	requestID := ctx.GetRequestID()
+	
 	si.logger.Info("processing search indexer stream event",
+		zap.String("request_id", requestID),
 		zap.Int("record_count", len(event.Records)),
 	)
 
@@ -40,20 +45,29 @@ func (si *SearchIndexer) HandleStream(ctx context.Context, event events.DynamoDB
 	indexableRecords := si.filterIndexable(event.Records)
 
 	si.logger.Info("filtered indexable records",
+		zap.String("request_id", requestID),
 		zap.Int("total_records", len(event.Records)),
 		zap.Int("indexable_records", len(indexableRecords)),
 	)
 
 	// Process each indexable record
+	var errors []error
 	for _, record := range indexableRecords {
 		if err := si.processRecord(ctx, record); err != nil {
 			si.logger.Error("failed to process indexable record",
+				zap.String("request_id", requestID),
 				zap.String("event_id", record.EventID),
 				zap.String("event_name", record.EventName),
 				zap.Error(err),
 			)
+			errors = append(errors, err)
 			// Continue processing other records
 		}
+	}
+
+	// Return error if there were any failures
+	if len(errors) > 0 {
+		return fmt.Errorf("partial batch failure: %d of %d records failed", len(errors), len(indexableRecords))
 	}
 
 	return nil
@@ -106,7 +120,7 @@ func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bo
 	}
 }
 
-func (si *SearchIndexer) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// Extract indexable content from the record
 	content, err := si.extractIndexableContent(record)
 	if err != nil {
@@ -211,7 +225,7 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 	}, nil
 }
 
-func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *IndexableContent) error {
+func (si *SearchIndexer) createSearchIndex(ctx *lift.Context, content *IndexableContent) error {
 	// Create search index record with full-text search capabilities
 	searchRecord := struct {
 		PK          string   `dynamorm:"pk"`
@@ -245,8 +259,8 @@ func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *Indexab
 		TTL:         time.Now().Add(365 * 24 * time.Hour).Unix(), // 1 year retention
 	}
 
-	// Store the search index record
-	if err := si.db.Model(&searchRecord).Create(); err != nil {
+	// Store the search index record using Lift context
+	if err := si.db.WithContext(ctx).Model(&searchRecord).Create(); err != nil {
 		return fmt.Errorf("failed to store search index: %w", err)
 	}
 
@@ -262,7 +276,7 @@ func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *Indexab
 	return nil
 }
 
-func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *IndexableContent) error {
+func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *IndexableContent) error {
 	// Create actor-specific index for searching user's content
 	if content.ActorID != "" {
 		actorIndex := struct {
@@ -283,7 +297,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *I
 			TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 		}
 
-		if err := si.db.Model(&actorIndex).Create(); err != nil {
+		if err := si.db.WithContext(ctx).Model(&actorIndex).Create(); err != nil {
 			return fmt.Errorf("failed to create actor search index: %w", err)
 		}
 	}
@@ -311,7 +325,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *I
 				TTL:       time.Now().Add(180 * 24 * time.Hour).Unix(), // 180 days retention
 			}
 
-			if err := si.db.Model(&tagIndex).Create(); err != nil {
+			if err := si.db.WithContext(ctx).Model(&tagIndex).Create(); err != nil {
 				si.logger.Warn("failed to create tag search index",
 					zap.String("tag", tag),
 					zap.Error(err),
@@ -350,15 +364,6 @@ func init() {
 }
 
 func main() {
-	// Handle DynamoDB stream events with logging middleware
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
-		start := time.Now()
-		defer func() {
-			duration := time.Since(start)
-			processor.logger.Info("request completed",
-				zap.Duration("duration", duration),
-			)
-		}()
-		return processor.HandleStream(ctx, event)
-	})
+	// Use Lift DynamoDB stream pattern with proper middleware and error handling
+	patterns.StartDynamoDBStreamLambda("search-indexer", processor, logger)
 }

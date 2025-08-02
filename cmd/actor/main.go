@@ -1,66 +1,109 @@
 package main
 
+/*
+Actor Service - ActivityPub Federation Handler
+
+This Lambda function handles ActivityPub federation requests for actor profiles.
+It serves ActivityPub JSON to other ActivityPub servers and HTML to browsers.
+
+This is NOT the Mastodon client API - that's handled by the /cmd/api service.
+This service handles federation requests from other ActivityPub servers.
+*/
+
 import (
 	"context"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	liftErrors "github.com/equaltoai/lesser/pkg/lift"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 var (
-	cfg    *config.Config
-	store  storage.Storage
-	logger *zap.Logger
+	cfg       *config.Config
+	actorRepo *repositories.ActorRepository
+	logger    *zap.Logger
 )
 
 func init() {
 	cfg = config.Get()
 	logger = common.Logger()
 
-	// Initialize storage
-	var err error
-	store, err = dynamodb.New()
+	// Initialize DynamORM database connection
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		logger.Fatal("failed to initialize storage", zap.Error(err))
+		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
+
+	// Initialize actor repository
+	tableName := cfg.DynamoTableName
+	if tableName == "" {
+		tableName = "lesser-main" // Default table name
+	}
+	actorRepo = repositories.NewActorRepository(db, tableName, logger)
+}
+
+// Handler contains dependencies for the actor service
+type Handler struct {
+	cfg       *config.Config
+	actorRepo *repositories.ActorRepository
+	logger    *zap.Logger
+}
+
+// NewHandler creates a new handler instance
+func NewHandler(cfg *config.Config, actorRepo *repositories.ActorRepository, logger *zap.Logger) *Handler {
+	return &Handler{
+		cfg:       cfg,
+		actorRepo: actorRepo,
+		logger:    logger,
 	}
 }
 
-func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	log := common.WithContext(ctx)
-
-	// Extract username from path
-	username := request.PathParameters["username"]
+// HandleActorProfile handles ActivityPub actor profile requests
+func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
+	// Extract username from path parameters
+	username := ctx.Param("username")
 	if username == "" {
-		return common.BadRequest(common.ValidationError{Field: "username", Message: "missing username"}), nil
+		return liftErrors.ValidationErrorWithField("username", "missing username")
 	}
 
-	log.Info("fetching actor profile",
-		zap.String("username", username),
-		zap.String("accept", request.Headers["Accept"]))
+	// Get request ID from context
+	requestID := ctx.Get("requestID")
+	if requestID == nil {
+		requestID = "unknown"
+	}
 
-	// Get actor from storage
-	actor, err := store.GetActor(ctx, username)
+	h.logger.Info("fetching actor profile",
+		zap.String("username", username),
+		zap.String("accept", ctx.Header("Accept")),
+		zap.Any("request_id", requestID))
+
+	// Get actor from repository
+	actor, err := h.actorRepo.GetActorByUsername(ctx.Context, username)
 	if err != nil {
 		if common.IsNotFound(err) {
-			return common.NotFound(err), nil
+			return liftErrors.NotFoundError("actor")
 		}
-		log.Error("failed to get actor", zap.Error(err))
-		return common.InternalServerError(err), nil
+		h.logger.Error("failed to get actor", 
+			zap.Error(err),
+			zap.String("username", username),
+			zap.Any("request_id", requestID))
+		return fmt.Errorf("failed to get actor: %w", err)
 	}
 
 	// Content negotiation
-	accept := request.Headers["Accept"]
+	accept := ctx.Header("Accept")
 	if accept == "" {
-		accept = request.Headers["accept"] // Try lowercase
+		accept = ctx.Header("accept") // Try lowercase
 	}
 
 	// Check if client wants ActivityStreams JSON
@@ -68,21 +111,19 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*even
 		strings.Contains(accept, "application/ld+json") ||
 		strings.Contains(accept, "application/json") {
 		// Return ActivityStreams JSON
-		return common.ActivityPubResponse(http.StatusOK, actor), nil
+		ctx.Response.Headers["Content-Type"] = "application/activity+json"
+		return ctx.JSON(actor)
 	}
 
 	// Return HTML for browsers
-	html := generateHTMLProfile(actor)
-	return &events.APIGatewayV2HTTPResponse{
-		StatusCode: http.StatusOK,
-		Headers: map[string]string{
-			"Content-Type": "text/html; charset=utf-8",
-		},
-		Body: html,
-	}, nil
+	html := h.generateHTMLProfile(actor)
+	ctx.Response.Headers["Content-Type"] = "text/html; charset=utf-8"
+	ctx.Response.StatusCode = http.StatusOK
+	ctx.Response.Body = html
+	return nil
 }
 
-func generateHTMLProfile(actor *activitypub.Actor) string {
+func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 	// Extract display name or fall back to username
 	displayName := actor.Name
 	if displayName == "" {
@@ -184,7 +225,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 </head>
 <body>
 	<div class="profile">`,
-		displayName, actor.PreferredUsername, cfg.Domain,
+		displayName, actor.PreferredUsername, h.cfg.Domain,
 		metaTags,
 		actor.ID)
 
@@ -197,7 +238,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 	// Add profile content
 	html += fmt.Sprintf(`
 		<h1>%s</h1>
-		<div class="username">@%s@%s</div>`, displayName, actor.PreferredUsername, cfg.Domain)
+		<div class="username">@%s@%s</div>`, displayName, actor.PreferredUsername, h.cfg.Domain)
 
 	// Add bio if available
 	if actor.BaseObject.Summary != "" {
@@ -213,7 +254,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 		<div class="meta">
 			<p>This is an ActivityPub profile. You can follow @%s@%s from any compatible server.</p>
 			<p><a href="%s" type="application/activity+json">View ActivityPub data</a></p>
-		</div>`, actor.PreferredUsername, cfg.Domain, actor.ID)
+		</div>`, actor.PreferredUsername, h.cfg.Domain, actor.ID)
 
 	html += `
 	</div>
@@ -224,5 +265,79 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 }
 
 func main() {
-	lambda.Start(handler)
+	// Create a new Lift application
+	app := lift.New()
+
+	// Add request ID middleware (first - generates request ID)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			requestID := fmt.Sprintf("actor-%d", time.Now().UnixNano())
+			ctx.Set("requestID", requestID)
+			return next.Handle(ctx)
+		})
+	})
+
+	// Add logging middleware (second - logs with request ID)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			start := time.Now()
+			err := next.Handle(ctx)
+			duration := time.Since(start)
+			
+			requestID := ctx.Get("requestID")
+			logger.Info("request completed",
+				zap.Any("request_id", requestID),
+				zap.String("method", ctx.Request.Method),
+				zap.String("path", ctx.Request.URL().Path),
+				zap.Duration("duration", duration),
+				zap.Int("status", ctx.Response.StatusCode),
+			)
+			return err
+		})
+	})
+
+	// Add recovery middleware (third - catches panics)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			defer func() {
+				if r := recover(); r != nil {
+					requestID := ctx.Get("requestID")
+					logger.Error("panic recovered",
+						zap.Any("request_id", requestID),
+						zap.Any("panic", r),
+					)
+					_ = ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
+						"error": "Internal server error",
+					})
+				}
+			}()
+			return next.Handle(ctx)
+		})
+	})
+
+	// Add CORS middleware for federation compatibility
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			// Set CORS headers for ActivityPub federation
+			ctx.Response.Headers["Access-Control-Allow-Origin"] = "*"
+			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Accept, Authorization, Content-Type, Signature, Date, Digest"
+			
+			// Handle preflight requests
+			if ctx.Request.Method == "OPTIONS" {
+				return ctx.Status(http.StatusNoContent).JSON(nil)
+			}
+			
+			return next.Handle(ctx)
+		})
+	})
+
+	// Create handler instance
+	handler := NewHandler(cfg, actorRepo, logger)
+
+	// Define routes for ActivityPub federation
+	app.GET("/users/:username", handler.HandleActorProfile)
+
+	// Start the Lambda handler
+	lambda.Start(app.HandleRequest)
 }

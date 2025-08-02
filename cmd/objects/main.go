@@ -2,100 +2,217 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
-var store storage.Storage
-
-func init() {
-	// Initialize storage
-	var err error
-	store, err = dynamodb.New()
-	if err != nil {
-		common.Logger().Fatal("failed to initialize storage", zap.Error(err))
-	}
+// Handler handles ActivityPub federation object requests
+type Handler struct {
+	db             core.DB
+	objectRepo     *repositories.ObjectRepository
+	logger         *zap.Logger
+	cfg            *config.Config
 }
 
-func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	log := common.WithContext(ctx)
+// NewHandler creates a new objects handler
+func NewHandler() (*Handler, error) {
+	logger := common.Logger()
+	cfg := config.Get()
 
-	// Ensure this is a GET request
-	if request.RequestContext.HTTP.Method != http.MethodGet {
-		return common.BadRequest(fmt.Errorf("method %s not allowed", request.RequestContext.HTTP.Method)), nil
+	// Initialize DynamORM with Lambda optimizations
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
 	}
 
-	// Extract object ID from path
-	objectID := request.PathParameters["id"]
+	// Initialize object repository
+	objectRepo := repositories.NewObjectRepository(db, cfg.DynamoTableName, cfg.Domain, logger)
+
+	return &Handler{
+		db:         db,
+		objectRepo: objectRepo,
+		logger:     logger,
+		cfg:        cfg,
+	}, nil
+}
+
+// HandleGetObject handles GET requests for ActivityPub objects
+func (h *Handler) HandleGetObject(ctx *lift.Context) error {
+	// Extract object ID from path parameters
+	objectID := ctx.Param("id")
 	if objectID == "" {
-		return common.BadRequest(fmt.Errorf("object ID is required")), nil
+		return lift.ValidationError("object ID is required")
 	}
 
-	// Get the object
-	objInterface, err := store.GetObject(ctx, objectID)
+	h.logger.Info("fetching object",
+		zap.String("object_id", objectID),
+		zap.String("request_id", ctx.GetRequestID()),
+	)
+
+	// Get the object from storage
+	objInterface, err := h.objectRepo.GetObject(ctx.Request.Context(), objectID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return common.NotFound(fmt.Errorf("object %s not found", objectID)), nil
+			h.logger.Debug("object not found",
+				zap.String("object_id", objectID),
+				zap.String("request_id", ctx.GetRequestID()),
+			)
+			return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
 		}
-		log.Error("failed to get object", zap.String("object_id", objectID), zap.Error(err))
-		return common.InternalServerError(err), nil
+		h.logger.Error("failed to get object",
+			zap.String("object_id", objectID),
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.Error(err),
+		)
+		return lift.NewLiftError("OBJECT_FETCH_ERROR", "failed to fetch object", 500).WithCause(err)
 	}
 
-	// Type assert to our Object type
-	obj, ok := objInterface.(*dynamodb.Object)
-	if !ok {
-		log.Error("invalid object type in storage", zap.String("object_id", objectID))
-		return common.InternalServerError(fmt.Errorf("invalid object type")), nil
-	}
-
-	// Check if HTML is requested
-	acceptHeader := request.Headers["Accept"]
+	// Check Accept header for content negotiation
+	acceptHeader := ctx.Header("Accept")
 	if acceptHeader == "" {
-		acceptHeader = request.Headers["accept"]
+		acceptHeader = ctx.Header("accept")
 	}
 
+	// Return HTML for browsers
 	if strings.Contains(acceptHeader, "text/html") {
-		// Return HTML representation
-		htmlContent := generateObjectHTML(obj)
-		return &events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusOK,
-			Headers: map[string]string{
-				"Content-Type": "text/html; charset=utf-8",
-			},
-			Body: htmlContent,
-		}, nil
+		h.logger.Debug("returning HTML representation",
+			zap.String("object_id", objectID),
+			zap.String("request_id", ctx.GetRequestID()),
+		)
+		htmlContent := h.generateObjectHTML(objInterface)
+		ctx.Response.Header("Content-Type", "text/html; charset=utf-8")
+		return ctx.HTML(htmlContent)
 	}
 
-	// Return JSON representation
-	return common.JSONResponse(http.StatusOK, obj), nil
+	// Return ActivityPub JSON (default)
+	h.logger.Debug("returning ActivityPub JSON representation",
+		zap.String("object_id", objectID),
+		zap.String("request_id", ctx.GetRequestID()),
+	)
+	ctx.Response.Header("Content-Type", "application/activity+json")
+	return ctx.Status(http.StatusOK).JSON(objInterface)
 }
 
-func generateObjectHTML(obj *dynamodb.Object) string {
-	// Generate a beautiful HTML page for the object
-	var content string
-	if obj.Content != "" {
-		content = html.EscapeString(obj.Content)
-	} else if obj.Name != "" && obj.Type == "Article" {
-		content = fmt.Sprintf("<h1>%s</h1>", html.EscapeString(obj.Name))
-		if obj.Summary != "" {
-			content += fmt.Sprintf("<p class=\"summary\">%s</p>", html.EscapeString(obj.Summary))
+// generateObjectHTML creates HTML representation of an ActivityPub object
+func (h *Handler) generateObjectHTML(objInterface any) string {
+	// Convert to ActivityPub Note if possible
+	var objectType, content, name, summary, attributedTo, id string
+	var published, updated time.Time
+	var sensitive bool
+	var attachments []activitypub.Attachment
+	var tags []activitypub.Tag
+
+	// Try to convert to Note first
+	if note, ok := objInterface.(*activitypub.Note); ok {
+		objectType = note.Type
+		content = note.Content
+		id = note.ID
+		attributedTo = note.AttributedTo
+		sensitive = note.Sensitive
+		attachments = note.Attachment
+		tags = note.Tag
+		if note.Published != nil {
+			published = *note.Published
+		}
+		if note.Updated != nil {
+			updated = *note.Updated
+		}
+		// Note: ActivityPub Note doesn't have Name field, only content
+		// name remains empty for Note objects
+		if note.Summary != "" {
+			summary = note.Summary
+		}
+	} else if objMap, ok := objInterface.(map[string]any); ok {
+		// Handle generic object as map
+		if v, ok := objMap["type"].(string); ok {
+			objectType = v
+		}
+		if v, ok := objMap["content"].(string); ok {
+			content = v
+		}
+		if v, ok := objMap["id"].(string); ok {
+			id = v
+		}
+		if v, ok := objMap["attributedTo"].(string); ok {
+			attributedTo = v
+		}
+		if v, ok := objMap["name"].(string); ok {
+			name = v
+		}
+		if v, ok := objMap["summary"].(string); ok {
+			summary = v
+		}
+		if v, ok := objMap["sensitive"].(bool); ok {
+			sensitive = v
+		}
+		// Handle published/updated dates
+		if v, ok := objMap["published"].(time.Time); ok {
+			published = v
+		} else if v, ok := objMap["published"].(string); ok {
+			if t, err := time.Parse(time.RFC3339, v); err == nil {
+				published = t
+			}
+		}
+		if v, ok := objMap["updated"].(time.Time); ok {
+			updated = v
+		} else if v, ok := objMap["updated"].(string); ok {
+			if t, err := time.Parse(time.RFC3339, v); err == nil {
+				updated = t
+			}
+		}
+		// Try to parse attachments and tags from interface
+		if v, ok := objMap["attachment"]; ok {
+			if attBytes, err := json.Marshal(v); err == nil {
+				json.Unmarshal(attBytes, &attachments)
+			}
+		}
+		if v, ok := objMap["tag"]; ok {
+			if tagBytes, err := json.Marshal(v); err == nil {
+				json.Unmarshal(tagBytes, &tags)
+			}
+		}
+	} else {
+		// Fallback for unknown object types
+		objectType = "Object"
+		content = "Unknown object type"
+		id = "unknown"
+	}
+
+	return h.generateHTML(objectType, content, name, summary, attributedTo, id, published, updated, sensitive, attachments, tags)
+}
+
+// generateHTML creates the actual HTML content
+func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo, id string, published, updated time.Time, sensitive bool, attachments []activitypub.Attachment, tags []activitypub.Tag) string {
+	// Generate content based on object type and available fields
+	var htmlContent string
+	if content != "" {
+		htmlContent = html.EscapeString(content)
+	} else if name != "" && objectType == "Article" {
+		htmlContent = fmt.Sprintf("<h1>%s</h1>", html.EscapeString(name))
+		if summary != "" {
+			htmlContent += fmt.Sprintf("<p class=\"summary\">%s</p>", html.EscapeString(summary))
 		}
 	}
 
 	// Handle attachments
 	var attachmentsHTML string
-	if len(obj.Attachment) > 0 {
+	if len(attachments) > 0 {
 		attachmentsHTML = `<div class="attachments">`
-		for _, att := range obj.Attachment {
+		for _, att := range attachments {
 			if att.Type == "Image" {
 				attachmentsHTML += fmt.Sprintf(`<img src="%s" alt="%s" class="attachment-image">`,
 					html.EscapeString(att.URL), html.EscapeString(att.Name))
@@ -106,9 +223,9 @@ func generateObjectHTML(obj *dynamodb.Object) string {
 
 	// Handle tags
 	var tagsHTML string
-	if len(obj.Tag) > 0 {
+	if len(tags) > 0 {
 		tagsHTML = `<div class="tags">`
-		for _, tag := range obj.Tag {
+		for _, tag := range tags {
 			if tag.Type == "Hashtag" {
 				tagsHTML += fmt.Sprintf(`<a href="%s" class="hashtag">%s</a> `,
 					html.EscapeString(tag.Href), html.EscapeString(tag.Name))
@@ -253,36 +370,39 @@ func generateObjectHTML(obj *dynamodb.Object) string {
     </div>
 </body>
 </html>`,
-		html.EscapeString(obj.Type),
-		obj.Type,
-		generateWarningHTML(obj),
-		content,
+		html.EscapeString(objectType),
+		objectType,
+		h.generateWarningHTML(sensitive, summary),
+		htmlContent,
 		attachmentsHTML,
 		tagsHTML,
-		obj.Published.Format("January 2, 2006 at 3:04 PM"),
-		html.EscapeString(obj.AttributedTo),
-		html.EscapeString(extractUsernameFromURL(obj.AttributedTo)),
-		generateUpdatedHTML(obj),
+		published.Format("January 2, 2006 at 3:04 PM"),
+		html.EscapeString(attributedTo),
+		html.EscapeString(h.extractUsernameFromURL(attributedTo)),
+		h.generateUpdatedHTML(updated),
 	)
 }
 
-func generateWarningHTML(obj *dynamodb.Object) string {
-	if obj.Sensitive && obj.Summary != "" {
+// generateWarningHTML creates content warning HTML if needed
+func (h *Handler) generateWarningHTML(sensitive bool, summary string) string {
+	if sensitive && summary != "" {
 		return fmt.Sprintf(`<div class="warning">
             <strong>Content Warning:</strong> %s
-        </div>`, html.EscapeString(obj.Summary))
+        </div>`, html.EscapeString(summary))
 	}
 	return ""
 }
 
-func generateUpdatedHTML(obj *dynamodb.Object) string {
-	if !obj.Updated.IsZero() {
-		return fmt.Sprintf(`<p>Updated: %s</p>`, obj.Updated.Format("January 2, 2006 at 3:04 PM"))
+// generateUpdatedHTML creates updated date HTML if object was updated
+func (h *Handler) generateUpdatedHTML(updated time.Time) string {
+	if !updated.IsZero() {
+		return fmt.Sprintf(`<p>Updated: %s</p>`, updated.Format("January 2, 2006 at 3:04 PM"))
 	}
 	return ""
 }
 
-func extractUsernameFromURL(url string) string {
+// extractUsernameFromURL extracts username from ActivityPub actor URL
+func (h *Handler) extractUsernameFromURL(url string) string {
 	// Extract username from URL like https://example.com/users/alice
 	parts := strings.Split(url, "/")
 	if len(parts) > 0 {
@@ -292,5 +412,64 @@ func extractUsernameFromURL(url string) string {
 }
 
 func main() {
-	lambda.Start(handler)
+	// Initialize handler
+	handler, err := NewHandler()
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize handler: %v", err))
+	}
+
+	// Create Lift application
+	app := lift.New()
+
+	// Add request ID middleware (first - generates request ID)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			requestID := fmt.Sprintf("objects-%d", time.Now().UnixNano())
+			ctx.Set("requestID", requestID)
+			return next.Handle(ctx)
+		})
+	})
+
+	// Add logging middleware (second - logs with request ID)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			start := time.Now()
+			err := next.Handle(ctx)
+
+			handler.logger.Info("objects request completed",
+				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+				zap.Duration("duration", time.Since(start)),
+				zap.Bool("has_error", err != nil),
+			)
+
+			if err != nil {
+				handler.logger.Error("objects handler error",
+					zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+					zap.Error(err),
+				)
+			}
+			return err
+		})
+	})
+
+	// Add recovery middleware (third - catches panics)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			defer func() {
+				if r := recover(); r != nil {
+					handler.logger.Error("panic recovered in objects handler",
+						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+						zap.Any("panic", r),
+					)
+				}
+			}()
+			return next.Handle(ctx)
+		})
+	})
+
+	// ActivityPub federation endpoint
+	app.GET("/objects/:id", handler.HandleGetObject)
+
+	// Start Lambda handler
+	lambda.Start(app.HandleRequest)
 }
