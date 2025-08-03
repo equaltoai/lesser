@@ -331,6 +331,27 @@ type PatternFilter struct {
 	CreatedBy  string
 }
 
+// RealtimeStats represents current real-time statistics
+type RealtimeStats struct {
+	Uptime          time.Duration
+	TotalAnalyzed   int64
+	AnalysisRate    float64 // per second
+	AllowRate       float64
+	FlagRate        float64
+	RemoveRate      float64
+	QuarantineRate  float64
+	AvgResponseTime time.Duration
+	P95ResponseTime time.Duration
+}
+
+// PatternStats represents pattern matching statistics
+type PatternStats struct {
+	PatternID   string
+	PatternName string
+	HitCount    int64
+	LastHit     time.Time
+}
+
 // Configuration for the moderation engine
 type ModerationConfig struct {
 	// Thresholds

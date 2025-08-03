@@ -115,7 +115,7 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 
 	// Create storage adapter
 	logger := common.Logger()
-	store := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	store := dynamorm.NewStorageAdapter(db, tableName, logger)
 	
 	// Initialize required repositories
 	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))

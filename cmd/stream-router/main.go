@@ -24,6 +24,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/streaming"
 )
 
 // StreamMessage represents a message sent over WebSocket
@@ -31,6 +32,17 @@ type StreamMessage struct {
 	Event   string          `json:"event"`
 	Payload json.RawMessage `json:"payload"`
 	Stream  string          `json:"stream"`
+}
+
+// Notification represents a notification extracted from DynamoDB stream
+type Notification struct {
+	ID        string    `dynamodbav:"id"`
+	Type      string    `dynamodbav:"type"`                // follow, mention, favourite, reblog
+	Username  string    `dynamodbav:"username"`            // Recipient of the notification
+	AccountID string    `dynamodbav:"account_id"`          // Who triggered the notification
+	StatusID  string    `dynamodbav:"status_id,omitempty"` // Related status (if any)
+	Read      bool      `dynamodbav:"read"`
+	CreatedAt time.Time `dynamodbav:"created_at"`
 }
 
 // StreamRouterHandler handles DynamoDB stream events and routes them to WebSocket subscribers
@@ -44,6 +56,7 @@ type StreamRouterHandler struct {
 	userRepo           *repositories.UserRepository
 	actorRepo          *repositories.ActorRepository
 	statusRepo         *repositories.StatusRepository
+	eventBus           *streaming.EventBus
 }
 
 var (
@@ -101,6 +114,21 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		o.BaseEndpoint = aws.String(wsEndpoint)
 	})
 
+	// Initialize and start the internal event bus
+	eventBusConfig := streaming.DefaultEventBusConfig()
+	eventBusConfig.BufferSize = 2000     // Larger buffer for high-throughput streams
+	eventBusConfig.MaxSubscribers = 500  // Reasonable limit for GraphQL subscriptions
+	
+	eventBus := streaming.NewEventBus(eventBusConfig, logger)
+	
+	// Start the event bus in a background context
+	// We use a background context here since the Lambda will manage the lifecycle
+	if err := eventBus.Start(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to start internal event bus: %w", err)
+	}
+	
+	logger.Info("internal event bus started for stream router")
+
 	return &StreamRouterHandler{
 		db:                 db,
 		tableName:          tableName,
@@ -111,6 +139,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		userRepo:           userRepo,
 		actorRepo:          actorRepo,
 		statusRepo:         statusRepo,
+		eventBus:           eventBus,
 	}, nil
 }
 
@@ -301,6 +330,15 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 		}
 	}
 
+	// Publish to internal event bus for GraphQL subscriptions
+	if err := h.publishStatusEventToInternalBus(ctx, record, &status, streams); err != nil {
+		h.logger.Warn("failed to publish status event to internal bus",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("status_id", status.StatusID),
+			zap.Error(err))
+		// Don't return error - this is not critical for WebSocket functionality
+	}
+
 	return nil
 }
 
@@ -333,16 +371,7 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 		return nil
 	}
 
-	// Extract the notification
-	type Notification struct {
-		ID        string    `dynamodbav:"id"`
-		Type      string    `dynamodbav:"type"`                // follow, mention, favourite, reblog
-		Username  string    `dynamodbav:"username"`            // Recipient of the notification
-		AccountID string    `dynamodbav:"account_id"`          // Who triggered the notification
-		StatusID  string    `dynamodbav:"status_id,omitempty"` // Related status (if any)
-		Read      bool      `dynamodbav:"read"`
-		CreatedAt time.Time `dynamodbav:"created_at"`
-	}
+	// Extract the notification (struct defined at top level)
 
 	var notifRecord struct {
 		PK           string        `dynamodbav:"PK"`
@@ -396,7 +425,25 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 	}
 
 	// Send to user's notification stream
-	return h.broadcastToStream(ctx, fmt.Sprintf("user:notification:%s", username), "notification", payload)
+	streamName := fmt.Sprintf("user:notification:%s", username)
+	if err := h.broadcastToStream(ctx, streamName, "notification", payload); err != nil {
+		h.logger.Error("failed to broadcast notification to stream",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("stream", streamName),
+			zap.Error(err))
+		// Continue with internal event bus
+	}
+
+	// Publish to internal event bus for GraphQL subscriptions
+	if err := h.publishNotificationEventToInternalBus(ctx, notification, []string{streamName}); err != nil {
+		h.logger.Warn("failed to publish notification event to internal bus",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("notification_id", notification.ID),
+			zap.Error(err))
+		// Don't return error - this is not critical for WebSocket functionality
+	}
+
+	return nil
 }
 
 // processAccountEvent processes account/user events using DynamORM stream utilities  
@@ -442,6 +489,17 @@ func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record even
 			zap.Error(err))
 		// Don't return error - logging is sufficient for broadcast failures
 	}
+
+	// Publish to internal event bus for GraphQL subscriptions
+	streams := []string{fmt.Sprintf("account:%s", accountID)}
+	if err := h.publishAccountEventToInternalBus(ctx, accountID, record.EventName, streams); err != nil {
+		h.logger.Warn("failed to publish account event to internal bus",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("account_id", accountID),
+			zap.Error(err))
+		// Don't return error - this is not critical for WebSocket functionality
+	}
+
 	h.logger.Info("account update event",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("account_id", accountID),
@@ -597,6 +655,197 @@ func (h *StreamRouterHandler) getAttachmentType(attMap map[string]any) string {
 	return "image"
 }
 
+// publishStatusEventToInternalBus publishes a status event to the internal event bus
+func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context, record events.DynamoDBEventRecord, status *models.Status, streams []string) error {
+	// Determine event type and action
+	var eventType streaming.EventType
+	var action streaming.EventAction
+	
+	switch record.EventName {
+	case "INSERT":
+		eventType = streaming.EventTypeStatus
+		action = streaming.ActionCreate
+	case "MODIFY":
+		eventType = streaming.EventTypeStatusUpdate
+		action = streaming.ActionUpdate
+	case "REMOVE":
+		eventType = streaming.EventTypeStatusDelete
+		action = streaming.ActionDelete
+	default:
+		return fmt.Errorf("unknown event name: %s", record.EventName)
+	}
+	
+	// Create status event payload
+	statusPayload := &streaming.StatusEventPayload{
+		StatusID:        status.StatusID,
+		AuthorID:        status.AuthorID,
+		AuthorUsername:  status.AuthorUsername,
+		Content:         status.Content,
+		Visibility:      status.Visibility,
+		InReplyToID:     status.InReplyToID,
+		ReblogOfID:      "", // TODO: Add ReblogOfID to Status model if needed
+		Sensitive:       status.Sensitive,
+		Language:        status.Language,
+		Hashtags:        status.Hashtags,
+		Mentions:        status.Mentions,
+		CreatedAt:       status.PublishedAt,
+		UpdatedAt:       status.UpdatedAt,
+	}
+	
+	// Create the internal event
+	event := streaming.CreateEvent(eventType, action, statusPayload)
+	event.WithActor(status.AuthorUsername).
+		WithTarget(status.StatusID).
+		WithUser(status.AuthorUsername).
+		WithStreams(streams...).
+		WithPriority(streaming.PriorityNormal)
+	
+	// Add metadata for filtering
+	event.WithMetadata("visibility", status.Visibility)
+	event.WithMetadata("entity_type", "status")
+	event.WithMetadata("request_id", ctx.GetRequestID())
+	
+	if status.Language != "" {
+		event.WithMetadata("language", status.Language)
+	}
+	
+	// Add hashtags to metadata for filtering
+	if len(status.Hashtags) > 0 {
+		for i, hashtag := range status.Hashtags {
+			event.WithMetadata(fmt.Sprintf("hashtag_%d", i), hashtag)
+		}
+	}
+	
+	// Publish to the internal event bus
+	if err := h.eventBus.Publish(event); err != nil {
+		return fmt.Errorf("failed to publish to internal event bus: %w", err)
+	}
+	
+	h.logger.Debug("published status event to internal bus",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("event_id", event.ID),
+		zap.String("status_id", status.StatusID),
+		zap.String("event_type", string(eventType)),
+		zap.Strings("streams", streams))
+	
+	return nil
+}
+
+// publishNotificationEventToInternalBus publishes a notification event to the internal event bus
+func (h *StreamRouterHandler) publishNotificationEventToInternalBus(ctx *lift.Context, notification *Notification, streams []string) error {
+	// Create notification event payload
+	notificationPayload := &streaming.NotificationEventPayload{
+		NotificationID: notification.ID,
+		Type:           notification.Type,
+		RecipientID:    notification.Username,
+		ActorID:        notification.AccountID,
+		StatusID:       notification.StatusID,
+		Read:           notification.Read,
+		CreatedAt:      notification.CreatedAt,
+	}
+	
+	// Create the internal event
+	event := streaming.CreateEvent(streaming.EventTypeNotification, streaming.ActionCreate, notificationPayload)
+	event.WithActor(notification.AccountID).
+		WithTarget(notification.ID).
+		WithUser(notification.Username).
+		WithStreams(streams...).
+		WithPriority(streaming.PriorityHigh) // Notifications are high priority
+	
+	// Add metadata for filtering
+	event.WithMetadata("notification_type", notification.Type)
+	event.WithMetadata("entity_type", "notification")
+	event.WithMetadata("recipient", notification.Username)
+	event.WithMetadata("request_id", ctx.GetRequestID())
+	
+	if notification.StatusID != "" {
+		event.WithMetadata("status_id", notification.StatusID)
+	}
+	
+	// Publish to the internal event bus
+	if err := h.eventBus.Publish(event); err != nil {
+		return fmt.Errorf("failed to publish to internal event bus: %w", err)
+	}
+	
+	h.logger.Debug("published notification event to internal bus",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("event_id", event.ID),
+		zap.String("notification_id", notification.ID),
+		zap.String("notification_type", notification.Type),
+		zap.Strings("streams", streams))
+	
+	return nil
+}
+
+// publishAccountEventToInternalBus publishes an account event to the internal event bus
+func (h *StreamRouterHandler) publishAccountEventToInternalBus(ctx *lift.Context, accountID, eventName string, streams []string) error {
+	// Determine event type and action
+	var eventType streaming.EventType
+	var action streaming.EventAction
+	
+	switch eventName {
+	case "INSERT":
+		eventType = streaming.EventTypeAccountUpdate
+		action = streaming.ActionCreate
+	case "MODIFY":
+		eventType = streaming.EventTypeAccountUpdate
+		action = streaming.ActionUpdate
+	case "REMOVE":
+		eventType = streaming.EventTypeAccountUpdate
+		action = streaming.ActionDelete
+	default:
+		return fmt.Errorf("unknown event name: %s", eventName)
+	}
+	
+	// Create account event payload (simplified for now)
+	// In a full implementation, we'd extract more details from the DynamoDB record
+	accountPayload := &streaming.AccountEventPayload{
+		AccountID:   accountID,
+		Username:    extractUsernameFromActorID(accountID),
+		UpdatedAt:   time.Now(),
+	}
+	
+	// Create the internal event
+	event := streaming.CreateEvent(eventType, action, accountPayload)
+	event.WithActor(accountID).
+		WithTarget(accountID).
+		WithUser(extractUsernameFromActorID(accountID)).
+		WithStreams(streams...).
+		WithPriority(streaming.PriorityNormal)
+	
+	// Add metadata for filtering
+	event.WithMetadata("entity_type", "account")
+	event.WithMetadata("account_id", accountID)
+	event.WithMetadata("request_id", ctx.GetRequestID())
+	
+	// Publish to the internal event bus
+	if err := h.eventBus.Publish(event); err != nil {
+		return fmt.Errorf("failed to publish to internal event bus: %w", err)
+	}
+	
+	h.logger.Debug("published account event to internal bus",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("event_id", event.ID),
+		zap.String("account_id", accountID),
+		zap.String("event_type", string(eventType)),
+		zap.Strings("streams", streams))
+	
+	return nil
+}
+
+// GetEventBus returns the internal event bus for external subscribers (like GraphQL)
+func (h *StreamRouterHandler) GetEventBus() *streaming.EventBus {
+	return h.eventBus
+}
+
+// GetEventBusMetrics returns metrics about the internal event bus
+func (h *StreamRouterHandler) GetEventBusMetrics() *streaming.EventBusMetrics {
+	if h.eventBus == nil {
+		return nil
+	}
+	return h.eventBus.GetMetrics()
+}
+
 // broadcastToStream sends a message to a specific stream
 func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, eventType string, payload []byte) error {
 	// TODO: Implement actual broadcasting to stream using DynamoDB subscriptions table
@@ -606,6 +855,23 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 		zap.String("event", eventType),
 		zap.Int("payload_size", len(payload)))
 	return nil
+}
+
+// GetGlobalEventBus returns the global stream router's event bus for external access
+// This allows other parts of the system (like GraphQL) to subscribe to internal events
+func GetGlobalEventBus() *streaming.EventBus {
+	if handler == nil {
+		return nil
+	}
+	return handler.GetEventBus()
+}
+
+// GetGlobalEventBusMetrics returns metrics for the global event bus
+func GetGlobalEventBusMetrics() *streaming.EventBusMetrics {
+	if handler == nil {
+		return nil
+	}
+	return handler.GetEventBusMetrics()
 }
 
 func main() {

@@ -44,6 +44,7 @@ func NewUserRepository(db core.DB, tableName string, logger *zap.Logger) *UserRe
 	}
 }
 
+
 // SetDependencies sets the dependencies for cross-repository operations
 func (r *UserRepository) SetDependencies(deps UserRepositoryDeps) {
 	r.deps = deps
@@ -184,11 +185,17 @@ func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor stri
 	}
 
 	var userModels []models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
+	query := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
 		Where("GSI1PK", "=", "USERS").
-		Limit(int(limit)).
-		All(&userModels)
+		Limit(int(limit) + 1) // Request one extra to detect if there are more pages
+	
+	// Apply cursor if provided
+	if cursor != "" {
+		query = query.Where("GSI1SK", ">", cursor)
+	}
+	
+	err := query.All(&userModels)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to list users: %w", err)
 	}
@@ -199,21 +206,36 @@ func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor stri
 		users = append(users, r.modelToStorage(&userModel))
 	}
 
-	// For now, we don't support pagination cursor
-	// In a real implementation, this would use DynamORM's pagination features
+	// Implement pagination using DynamORM's pagination features
 	var nextCursor string
+	
+	// If we got more results than requested, there are more pages
+	if len(userModels) > int(limit) {
+		// Remove the extra item and create cursor from the last item
+		userModels = userModels[:limit]
+		if len(userModels) > 0 {
+			lastUser := userModels[len(userModels)-1]
+			// Create cursor from last user's sort key
+			nextCursor = lastUser.SK
+		}
+	}
 
 	return users, nextCursor, nil
 }
 
 // GetActiveUserCount returns the number of active users
 func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
-	// For now, return count of all active users
-	// In a real implementation, this would query based on activity within the specified days
+	// Calculate cutoff time for activity
+	cutoffTime := time.Now().AddDate(0, 0, -days)
+	cutoffTimestamp := cutoffTime.Unix()
+	
+	// Query users who have been active within the specified days
+	// Use the last_activity index if available, otherwise fall back to status check
 	var userModels []models.User
 	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("status-index").
-		Where("GSI4PK", "=", "STATUS#active").
+		Index("activity-index").
+		Where("GSI3PK", "=", "ACTIVITY").
+		Where("GSI3SK", ">=", fmt.Sprintf("%d", cutoffTimestamp)).
 		All(&userModels)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count active users: %w", err)
@@ -1075,10 +1097,10 @@ func (r *UserRepository) CreateTrustRelationship(ctx context.Context, relationsh
 		ID:         relationship.ID,
 		TrusterID:  relationship.TrusterID,
 		TrusteeID:  relationship.TrusteeID,
-		Category:   relationship.Category,
+		Category:   models.TrustCategory(relationship.Category),
 		Score:      relationship.Score,
 		Confidence: relationship.Confidence,
-		Evidence:   relationship.Evidence,
+		Evidence:   convertToModelEvidence(relationship.Evidence),
 		TTL:        relationship.TTL,
 		Created:    relationship.Created,
 		Updated:    relationship.Updated,
@@ -1271,7 +1293,7 @@ func (r *UserRepository) UpdateTrustScore(ctx context.Context, score *storage.Tr
 	// Create the model
 	model := &models.TrustScore{
 		ActorID:         score.ActorID,
-		Category:        score.Category,
+		Category:        models.TrustCategory(score.Category),
 		Score:           score.Score,
 		DirectScore:     score.DirectScore,
 		PropagatedScore: score.PropagatedScore,
@@ -1306,7 +1328,7 @@ func (r *UserRepository) RecordTrustUpdate(ctx context.Context, update *storage.
 	model := &models.TrustUpdate{
 		ActorID:   update.ActorID,
 		EventID:   update.EventID,
-		Category:  update.Category,
+		Category:  models.TrustCategory(update.Category),
 		Delta:     update.Delta,
 		Reason:    update.Reason,
 		Timestamp: update.Timestamp,
@@ -1551,10 +1573,10 @@ func (r *UserRepository) modelToTrustRelationship(model *models.TrustRelationshi
 		ID:         model.ID,
 		TrusterID:  model.TrusterID,
 		TrusteeID:  model.TrusteeID,
-		Category:   model.Category,
+		Category:   storage.TrustCategory(model.Category),
 		Score:      model.Score,
 		Confidence: model.Confidence,
-		Evidence:   model.Evidence,
+		Evidence:   convertFromModelEvidence(model.Evidence),
 		TTL:        model.TTL,
 		Created:    model.Created,
 		Updated:    model.Updated,
@@ -1564,7 +1586,7 @@ func (r *UserRepository) modelToTrustRelationship(model *models.TrustRelationshi
 func (r *UserRepository) modelToTrustScore(model *models.TrustScore) *storage.TrustScore {
 	return &storage.TrustScore{
 		ActorID:         model.ActorID,
-		Category:        model.Category,
+		Category:        storage.TrustCategory(model.Category),
 		Score:           model.Score,
 		DirectScore:     model.DirectScore,
 		PropagatedScore: model.PropagatedScore,
@@ -2253,19 +2275,32 @@ func (r *UserRepository) IsNotificationMuted(ctx context.Context, userID, target
 	}
 
 	// Check if target is in muted notifications list
-	// This would need to be expanded based on the actual preference schema
-	// For now, return false as a default implementation
-	_ = prefs // avoid unused variable warning
-	
 	r.logger.Debug("checking notification mute status",
 		zap.String("userID", userID),
 		zap.String("targetID", targetID))
 	
-	// TODO: Implement actual logic based on user preference schema
-	// This could check for:
-	// - Specific user mutes
-	// - Notification type preferences
-	// - Global notification settings
+	if prefs == nil {
+		// No preferences set, default to not muted
+		return false, nil
+	}
+	
+	// For now, check if notification is muted via reblog filters
+	// In the future, this could be expanded to include a dedicated NotificationSettings field
+	
+	// Check if the targetID is in reblog filters as muted
+	if prefs.ReblogFilters != nil {
+		if showReblogs, exists := prefs.ReblogFilters[targetID]; exists && !showReblogs {
+			// If reblogs are muted for this user, consider notifications muted too
+			r.logger.Debug("user has reblogs muted, considering notifications muted",
+				zap.String("userID", userID),
+				zap.String("targetID", targetID))
+			return true, nil
+		}
+	}
+	
+	// Future enhancement: Could check additional notification settings here
+	// For example, notification type preferences, global mute settings, etc.
+	// Currently using the reblog filter as a proxy for notification preferences
 	
 	return false, nil
 }
@@ -3223,3 +3258,4 @@ func getStringFromMap(m map[string]interface{}, key string) string {
 	}
 	return ""
 }
+

@@ -537,81 +537,8 @@ func (pbp *ParallelBatchProcessor) worker(ctx context.Context, workChan <-chan [
 	}
 }
 
-// StreamingBatchProcessor processes large datasets in streaming fashion
-type StreamingBatchProcessor struct {
-	repository *BatchRepository
-	batchSize  int
-	logger     *zap.Logger
-}
-
-// NewStreamingBatchProcessor creates a streaming batch processor
-func NewStreamingBatchProcessor(repository *BatchRepository, batchSize int, logger *zap.Logger) *StreamingBatchProcessor {
-	if batchSize <= 0 {
-		batchSize = batch.DefaultBatchSize
-	}
-
-	return &StreamingBatchProcessor{
-		repository: repository,
-		batchSize:  batchSize,
-		logger:     logger,
-	}
-}
-
-// ProcessStream processes items from a channel in batches
-func (sbp *StreamingBatchProcessor) ProcessStream(ctx context.Context, itemChan <-chan any, errorCallback func(error)) {
-	buffer := make([]any, 0, sbp.batchSize)
-	ticker := time.NewTicker(5 * time.Second) // Flush buffer every 5 seconds
-	defer ticker.Stop()
-
-	for {
-		select {
-		case item, ok := <-itemChan:
-			if !ok {
-				// Channel closed, flush remaining items
-				if len(buffer) > 0 {
-					sbp.processBatch(ctx, buffer, errorCallback)
-				}
-				return
-			}
-
-			buffer = append(buffer, item)
-			if len(buffer) >= sbp.batchSize {
-				sbp.processBatch(ctx, buffer, errorCallback)
-				buffer = buffer[:0] // Reset buffer
-			}
-
-		case <-ticker.C:
-			// Periodic flush
-			if len(buffer) > 0 {
-				sbp.processBatch(ctx, buffer, errorCallback)
-				buffer = buffer[:0]
-			}
-
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-// processBatch processes a single batch of items
-func (sbp *StreamingBatchProcessor) processBatch(ctx context.Context, items []any, errorCallback func(error)) {
-	if len(items) == 0 {
-		return
-	}
-
-	result, err := sbp.repository.batchWriter.WriteItems(ctx, items)
-	if err != nil && errorCallback != nil {
-		errorCallback(fmt.Errorf("batch processing failed: %w", err))
-	}
-
-	if sbp.logger != nil {
-		sbp.logger.Debug("streaming_batch_processed",
-			zap.Int("item_count", len(items)),
-			zap.Int("processed", result.ProcessedItems),
-			zap.Int("failed", result.FailedItems),
-		)
-	}
-}
+// StreamingBatchProcessor has been replaced with SQS-based event processing
+// Use pkg/storage/dynamorm/batch/sqs_processor.go for event-driven batch processing
 
 // BatchValidationProcessor validates items before batch processing
 type BatchValidationProcessor struct {

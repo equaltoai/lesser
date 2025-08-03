@@ -73,7 +73,7 @@ func NewAuthHandler() (*AuthHandler, error) {
 	}
 
 	// Create storage adapter
-	store := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	store := dynamorm.NewStorageAdapter(db, tableName, logger)
 	
 	// Initialize repositories
 	store.SetActorRepository(repositories.NewActorRepository(db, tableName, logger))

@@ -3,8 +3,6 @@ package models
 import (
 	"fmt"
 	"time"
-
-	"github.com/equaltoai/lesser/pkg/moderation"
 )
 
 // ModerationAction represents the type of moderation action taken
@@ -76,8 +74,19 @@ type ModerationEvent struct {
 	// Type marker
 	Type string `json:"type"` // "EVENT"
 
-	// Embed the actual moderation event
-	moderation.ModerationEvent
+	// ModerationEvent fields (copied to avoid circular import)
+	ID              string    `json:"id"`
+	EventType       string    `json:"event_type"`
+	ObjectID        string    `json:"object_id"`   // ID of content being moderated
+	ObjectType      string    `json:"object_type"` // status, account, media
+	ActorID         string    `json:"actor_id"`    // Who triggered this event
+	Category        string    `json:"category"`
+	Severity        string    `json:"severity"`
+	ConfidenceScore float64   `json:"confidence_score"` // 0.0-1.0
+	Evidence        []any     `json:"evidence"`
+	Reason          string    `json:"reason,omitempty"` // Human-provided reason
+	Created         time.Time `json:"created"`
+	Updated         time.Time `json:"updated"`
 
 	// DynamoDB TTL
 	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
@@ -101,7 +110,7 @@ func (m *ModerationEvent) UpdateKeys() {
 
 	// GSI2 - Type/Category queries
 	m.GSI2PK = fmt.Sprintf("TYPE#%s#%s", m.EventType, m.Category)
-	m.GSI2SK = fmt.Sprintf("SEVERITY#%d#%s", m.Severity, m.Created.Format(time.RFC3339))
+	m.GSI2SK = fmt.Sprintf("SEVERITY#%s#%s", m.Severity, m.Created.Format(time.RFC3339))
 
 	// GSI3 - Event ID lookup
 	m.GSI3PK = fmt.Sprintf("EVENTID#%s", m.ID)
@@ -125,8 +134,18 @@ type ModerationReview struct {
 	// Type marker
 	Type string `json:"type"` // "REVIEW"
 
-	// Embed the actual review
-	moderation.Review
+	// Review fields (copied to avoid circular import)
+	ID          string    `json:"id"`
+	EventID     string    `json:"event_id"`
+	ReviewerID  string    `json:"reviewer_id"`
+	ReviewerRep float64   `json:"reviewer_rep,omitempty"`
+	Action      string    `json:"action"` // none, remove, silence, suspend, warning
+	Severity    string    `json:"severity"` // low, medium, high, critical
+	Note        string    `json:"note,omitempty"`
+	Tags        []string  `json:"tags,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Confidence  float64   `json:"confidence"` // 0.0-1.0
+	Created     time.Time `json:"created"`
 
 	// DynamoDB TTL
 	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
@@ -164,8 +183,18 @@ type ModerationDecision struct {
 	// Type marker
 	Type string `json:"type"` // "DECISION"
 
-	// Embed the actual decision
-	moderation.ModerationDecision
+	// ModerationDecision fields (copied to avoid circular import)
+	ID               string                 `json:"id"`
+	EventID          string                 `json:"event_id"`
+	ObjectID         string                 `json:"object_id"`
+	Action           string                 `json:"action"` // none, remove, silence, suspend, warning
+	ConsensusScore   float64                `json:"consensus_score"` // 0.0-1.0
+	ReviewerCount    int                    `json:"reviewer_count"`
+	TrustWeightTotal float64                `json:"trust_weight_total"`
+	Reviews          []interface{}          `json:"reviews,omitempty"` // Array of Review objects
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+	Decided          time.Time              `json:"decided"`
+	Expires          *time.Time             `json:"expires,omitempty"`
 
 	// DynamoDB TTL
 	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`

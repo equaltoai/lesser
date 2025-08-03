@@ -55,6 +55,9 @@ func (r *CommunityNoteRepository) CreateCommunityNote(ctx context.Context, note 
 		NotHelpfulVotes:  note.NotHelpfulVotes,
 		Score:            note.Score,
 		VisibilityStatus: note.VisibilityStatus,
+		Sentiment:        note.Sentiment,
+		Objectivity:      note.Objectivity,
+		SourceQuality:    note.SourceQuality,
 		CreatedAt:        note.CreatedAt,
 		UpdatedAt:        note.UpdatedAt,
 		TTL:              now.Add(90 * 24 * time.Hour).Unix(), // 90 days TTL
@@ -113,6 +116,9 @@ func (r *CommunityNoteRepository) GetCommunityNote(ctx context.Context, noteID s
 		NotHelpfulVotes:  model.NotHelpfulVotes,
 		Score:            model.Score,
 		VisibilityStatus: model.VisibilityStatus,
+		Sentiment:        model.Sentiment,
+		Objectivity:      model.Objectivity,
+		SourceQuality:    model.SourceQuality,
 		CreatedAt:        model.CreatedAt,
 		UpdatedAt:        model.UpdatedAt,
 	}
@@ -158,6 +164,9 @@ func (r *CommunityNoteRepository) GetVisibleCommunityNotes(ctx context.Context, 
 				NotHelpfulVotes:  model.NotHelpfulVotes,
 				Score:            model.Score,
 				VisibilityStatus: model.VisibilityStatus,
+				Sentiment:        model.Sentiment,
+				Objectivity:      model.Objectivity,
+				SourceQuality:    model.SourceQuality,
 				CreatedAt:        model.CreatedAt,
 				UpdatedAt:        model.UpdatedAt,
 			}
@@ -335,6 +344,9 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context,
 			NotHelpfulVotes:  model.NotHelpfulVotes,
 			Score:            model.Score,
 			VisibilityStatus: model.VisibilityStatus,
+			Sentiment:        model.Sentiment,
+			Objectivity:      model.Objectivity,
+			SourceQuality:    model.SourceQuality,
 			CreatedAt:        model.CreatedAt,
 			UpdatedAt:        model.UpdatedAt,
 		}
@@ -389,4 +401,58 @@ func (r *CommunityNoteRepository) GetCommunityNoteVotes(ctx context.Context, not
 	}
 
 	return votes, nil
+}
+
+// UpdateCommunityNoteAnalysis updates AI analysis results for a note
+func (r *CommunityNoteRepository) UpdateCommunityNoteAnalysis(ctx context.Context, noteID string, sentiment, objectivity, sourceQuality float64) error {
+	// Get the current note to preserve other fields
+	note, err := r.GetCommunityNote(ctx, noteID)
+	if err != nil {
+		return err
+	}
+
+	// Update analysis fields
+	note.Sentiment = sentiment
+	note.Objectivity = objectivity
+	note.SourceQuality = sourceQuality
+	note.UpdatedAt = time.Now()
+
+	// Create updated model
+	model := &models.CommunityNote{
+		ID:               note.ID,
+		ObjectID:         note.ObjectID,
+		ObjectType:       note.ObjectType,
+		AuthorID:         note.AuthorID,
+		Content:          note.Content,
+		Language:         note.Language,
+		Sources:          note.Sources,
+		HelpfulVotes:     note.HelpfulVotes,
+		NotHelpfulVotes:  note.NotHelpfulVotes,
+		Score:            note.Score,
+		VisibilityStatus: note.VisibilityStatus,
+		Sentiment:        note.Sentiment,
+		Objectivity:      note.Objectivity,
+		SourceQuality:    note.SourceQuality,
+		CreatedAt:        note.CreatedAt,
+		UpdatedAt:        note.UpdatedAt,
+		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(),
+	}
+
+	// Update keys
+	model.UpdateKeys()
+
+	// Update in DynamoDB
+	err = r.db.Model(model).Update()
+
+	if err != nil {
+		r.logger.Error("failed to update community note analysis",
+			zap.String("noteID", noteID),
+			zap.Float64("sentiment", sentiment),
+			zap.Float64("objectivity", objectivity),
+			zap.Float64("sourceQuality", sourceQuality),
+			zap.Error(err))
+		return fmt.Errorf("failed to update community note analysis: %w", err)
+	}
+
+	return nil
 }

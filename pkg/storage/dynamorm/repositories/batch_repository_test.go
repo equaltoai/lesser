@@ -278,73 +278,8 @@ func TestParallelBatchProcessor_ProcessWithProgress_EmptyItems(t *testing.T) {
 	assert.False(t, progressCalled)
 }
 
-func TestNewStreamingBatchProcessor(t *testing.T) {
-	mockDB := &MockDB{}
-	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
-	logger := zap.NewNop()
-
-	// Test with default batch size
-	processor := NewStreamingBatchProcessor(repo, 0, logger)
-	assert.Equal(t, batch.DefaultBatchSize, processor.batchSize)
-
-	// Test with custom batch size
-	processor = NewStreamingBatchProcessor(repo, 50, logger)
-	assert.Equal(t, 50, processor.batchSize)
-}
-
-func TestStreamingBatchProcessor_ProcessStream_EmptyChannel(t *testing.T) {
-	mockDB := &MockDB{}
-	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
-	processor := NewStreamingBatchProcessor(repo, 10, zap.NewNop())
-
-	itemChan := make(chan any)
-	close(itemChan) // Close immediately
-
-	errorCalled := false
-	errorCallback := func(err error) {
-		errorCalled = true
-	}
-
-	// This should return immediately without processing anything
-	processor.ProcessStream(context.Background(), itemChan, errorCallback)
-
-	assert.False(t, errorCalled)
-}
-
-func TestStreamingBatchProcessor_ProcessStream_WithItems(t *testing.T) {
-	// Test verifies that the streaming processor can handle items from a channel
-	// This is a simplified test that verifies the basic structure works
-	mockDB := &MockDB{}
-	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
-	processor := NewStreamingBatchProcessor(repo, 2, zap.NewNop()) // Small batch size
-
-	// Create a channel that won't send items immediately
-	itemChan := make(chan any)
-
-	// Use a context that will timeout quickly to exit the processor
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	done := make(chan bool)
-	go func() {
-		processor.ProcessStream(ctx, itemChan, func(err error) {
-			// In a real test with proper mocks, we would verify errors
-		})
-		done <- true
-	}()
-
-	// Don't send any items - let context timeout
-	// This tests that the processor handles context cancellation properly
-
-	select {
-	case <-done:
-		// Success - processor exited on context timeout
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Processor did not exit on context timeout")
-	}
-
-	// Test passes if processor handles context cancellation without panic
-}
+// StreamingBatchProcessor tests have been removed
+// Use SQS-based batch processor tests instead
 
 func TestNewBatchValidationProcessor(t *testing.T) {
 	mockDB := &MockDB{}

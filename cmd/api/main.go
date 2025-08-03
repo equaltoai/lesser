@@ -25,8 +25,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
@@ -39,7 +37,7 @@ var (
 	liftHandler      *liftHandlers.Handler
 	authService      *auth.AuthService
 	liftAuthSvc      *liftAuth.LiftAuthService
-	metricsCollector *observability.MetricsCollector
+	emfMetricsService *observability.EMFMetricsService
 	initTime         time.Time
 )
 
@@ -64,7 +62,7 @@ func init() {
 	}
 
 	// Create storage adapter
-	store = dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	store = dynamorm.NewStorageAdapter(db, tableName, logger)
 	
 	// Initialize repositories
 	adapter := store.(*dynamorm.StorageAdapter)
@@ -97,20 +95,10 @@ func init() {
 	// Initialize Lift-native auth service
 	liftAuthSvc = liftAuth.NewLiftAuthService(authService)
 
-	// Initialize metrics collector
+	// Initialize EMF metrics service (replaces polling-based metrics)
 	if os.Getenv("DISABLE_METRICS") != "true" {
-		ctx := context.Background()
-		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.Region))
-		if err != nil {
-			logger.Warn("failed to load AWS config for metrics", zap.Error(err))
-		} else {
-			cloudwatchClient := cloudwatch.NewFromConfig(awsCfg)
-			metricsCollector = observability.NewMetricsCollector(
-				cloudwatchClient,
-				"Lesser/API",
-				logger,
-			)
-		}
+		emfMetricsService = observability.NewEMFMetricsService(logger)
+		logger.Info("initialized EMF metrics service for serverless")
 	}
 
 	// Create handler with all dependencies
@@ -145,9 +133,9 @@ func main() {
 	// Add cost tracking middleware
 	app.Use(createCostTrackingMiddleware(logger))
 	
-	// Add performance monitoring middleware
-	if metricsCollector != nil {
-		app.Use(createPerformanceMonitoringMiddleware(metricsCollector))
+	// Add EMF-based performance monitoring middleware (no polling)
+	if emfMetricsService != nil {
+		app.Use(observability.CreateEMFPerformanceMonitoringMiddleware(emfMetricsService))
 	}
 
 	// Configure routes
@@ -160,7 +148,23 @@ func main() {
 	// Configure native Lift routes (controlled by environment variable)
 	configureLiftRoutes(app)
 
-	// Start the Lambda handler
+	// Start the Lambda handler with EMF metrics flushing
 	// Note: Cost tracking is handled within the handlers via context
-	lambda.Start(app.HandleRequest)
+	lambdaHandler := func(ctx context.Context, event interface{}) (interface{}, error) {
+		// Process the request
+		result, err := app.HandleRequest(ctx, event)
+		
+		// CRITICAL: Flush EMF metrics before Lambda terminates
+		// This ensures all metrics are written to CloudWatch
+		if emfMetricsService != nil {
+			if flushErr := emfMetricsService.FlushMetrics(); flushErr != nil {
+				logger.Error("failed to flush EMF metrics", zap.Error(flushErr))
+				// Don't fail the request due to metrics issues
+			}
+		}
+		
+		return result, err
+	}
+	
+	lambda.Start(lambdaHandler)
 }

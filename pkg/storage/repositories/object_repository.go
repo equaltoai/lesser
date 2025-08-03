@@ -893,10 +893,34 @@ func (r *ObjectRepository) IncrementReplyCount(ctx context.Context, objectID str
 		return fmt.Errorf("failed to get object for reply count increment: %w", err)
 	}
 
-	// For now, just log that we would increment the count
-	// In a real implementation, we'd have a ReplyCount field in the Object model
-	r.logger.Debug("would increment reply count for object",
-		zap.String("object_id", objectID))
+	// Get the status to update reply count
+	var status models.Status
+	err = r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", fmt.Sprintf("status#%s", objectID)).
+		Where("SK", "=", fmt.Sprintf("status#%s", objectID)).
+		First(&status)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Status doesn't exist, nothing to increment
+			return nil
+		}
+		return fmt.Errorf("failed to get status for reply count increment: %w", err)
+	}
+
+	// Increment the reply count
+	status.ReplyCount++
+	if err := status.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare status update: %w", err)
+	}
+
+	err = r.db.WithContext(ctx).Model(&status).Update()
+	if err != nil {
+		return fmt.Errorf("failed to update reply count: %w", err)
+	}
+
+	r.logger.Debug("incremented reply count for object",
+		zap.String("object_id", objectID),
+		zap.Int("new_count", status.ReplyCount))
 
 	return nil
 }
@@ -909,25 +933,47 @@ func (r *ObjectRepository) GetReplyCount(ctx context.Context, statusID string) (
 
 // SyncThreadFromRemote syncs a thread from a remote server
 func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID string) (*storage.StatusSearchResult, error) {
-	// This would implement the remote fetching logic from the legacy implementation
-	// For now, return a placeholder
-	r.logger.Info("syncing thread from remote",
+	r.logger.Info("syncing thread from remote", zap.String("status_id", statusID))
+	
+	// Try to find the status locally first
+	var objectModel models.Object
+	err := r.db.WithContext(ctx).Model(&models.Object{}).
+		Where("PK", "=", fmt.Sprintf("object#%s", statusID)).
+		Where("SK", "=", fmt.Sprintf("object#%s", statusID)).
+		First(&objectModel)
+
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("Failed to query local object for sync", 
+			zap.String("status_id", statusID), 
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query local object: %w", err)
+	}
+
+	// If found locally, return it as a search result
+	if err == nil {
+		// Convert Object to StatusSearchResult
+		published := objectModel.Published
+		if published.IsZero() {
+			published = objectModel.CreatedAt
+		}
+
+		return &storage.StatusSearchResult{
+			StatusID:  statusID,
+			Content:   objectModel.Content,
+			AuthorID:  objectModel.AttributedTo,
+			Published: published,
+			Score:     1.0, // Local object gets high score
+		}, nil
+	}
+
+	// If not found locally, this would normally trigger remote fetching
+	// For now, return nil to indicate the thread couldn't be synced
+	r.logger.Info("thread not found locally, remote fetching not yet implemented",
 		zap.String("status_id", statusID))
 	
-	// In a real implementation, this would:
-	// 1. Mark the thread as syncing
-	// 2. Fetch from remote using authorized fetch
-	// 3. Process and store the thread
-	// 4. Mark as completed
-	
-	// Return a placeholder result
-	return &storage.StatusSearchResult{
-		StatusID:  statusID,
-		Content:   "Remote thread sync not implemented",
-		AuthorID:  "",
-		Published: time.Now(),
-		Score:     0.0,
-	}, nil
+	// Return nil instead of error to indicate "not found but not an error"
+	// This allows callers to handle the case gracefully
+	return nil, nil
 }
 
 // SyncMissingRepliesFromRemote syncs missing replies from remote servers
@@ -942,13 +988,37 @@ func (r *ObjectRepository) SyncMissingRepliesFromRemote(ctx context.Context, sta
 		zap.String("status_id", statusID),
 		zap.Int("missing_count", len(missing)))
 	
-	// In a real implementation, this would:
-	// 1. For each missing reply, attempt to fetch from remote
-	// 2. Store successfully fetched replies
-	// 3. Update the sync record
+	// Implement basic remote reply sync tracking
+	syncRecord := &models.ReplySyncRecord{
+		StatusID:    statusID,
+		SyncAttempt: time.Now(),
+		SyncResult:  "partial", // Mark as partial sync
+	}
+	syncRecord.UpdateKeys()
 	
-	// For now, return the current missing list
-	return missing, nil
+	// Store sync attempt record
+	if err := syncRecord.BeforeCreate(); err == nil {
+		r.db.WithContext(ctx).Model(syncRecord).Create()
+	}
+	
+	// Filter missing replies that are too old to fetch (> 30 days)
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+	fetchableReplies := make([]*storage.StatusSearchResult, 0)
+	
+	for _, reply := range missing {
+		// Check if reply is recent enough to attempt fetching
+		if reply.Published.After(cutoff) {
+			fetchableReplies = append(fetchableReplies, reply)
+		}
+	}
+	
+	r.logger.Info("filtered fetchable replies",
+		zap.String("status_id", statusID),
+		zap.Int("total_missing", len(missing)),
+		zap.Int("fetchable", len(fetchableReplies)))
+	
+	// Return only fetchable replies for further processing by federation layer
+	return fetchableReplies, nil
 }
 
 // GetThreadContext retrieves the thread context for a status
@@ -1117,9 +1187,27 @@ func (r *ObjectRepository) WithdrawStatusFromQuotes(ctx context.Context, statusI
 	r.logger.Info("withdrawing status from quotes",
 		zap.String("status_id", statusID))
 	
-	// In a real implementation, this would:
-	// 1. Update the status metadata to mark as not quotable
-	// 2. Possibly withdraw existing quotes
+	// Get or create status metadata
+	metadata, err := r.getOrCreateStatusMetadata(ctx, statusID)
+	if err != nil {
+		return fmt.Errorf("failed to get status metadata: %w", err)
+	}
+	
+	// Mark as withdrawn from quotes
+	metadata.WithdrawFromQuotes()
+	
+	// Update the metadata
+	if err := metadata.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare metadata update: %w", err)
+	}
+	
+	err = r.db.WithContext(ctx).Model(metadata).Update()
+	if err != nil {
+		return fmt.Errorf("failed to update status metadata: %w", err)
+	}
+	
+	r.logger.Info("status withdrawn from quotes",
+		zap.String("status_id", statusID))
 	
 	return nil
 }
@@ -1129,47 +1217,138 @@ func (r *ObjectRepository) UpdateQuotePermissions(ctx context.Context, statusID 
 	r.logger.Info("updating quote permissions",
 		zap.String("status_id", statusID))
 	
-	// In a real implementation, this would store quote permissions
-	// as metadata for the status
+	// Get or create status metadata
+	metadata, err := r.getOrCreateStatusMetadata(ctx, statusID)
+	if err != nil {
+		return fmt.Errorf("failed to get status metadata: %w", err)
+	}
+	
+	// Update quote permissions
+	metadata.AllowQuotes = permissions.AllowPublic || permissions.AllowFollowers || permissions.AllowMentioned
+	
+	// Set quote type based on permissions
+	if permissions.AllowPublic {
+		metadata.QuoteType = "public"
+	} else if permissions.AllowFollowers {
+		metadata.QuoteType = "followers"
+	} else if permissions.AllowMentioned {
+		metadata.QuoteType = "mentioned"
+	} else {
+		metadata.QuoteType = "disabled"
+		metadata.AllowQuotes = false
+	}
+	
+	// Serialize and store permissions as JSON
+	permissionsJSON := fmt.Sprintf(`{"allow_public":%t,"allow_followers":%t,"allow_mentioned":%t,"block_list":[]}`,
+		permissions.AllowPublic, permissions.AllowFollowers, permissions.AllowMentioned)
+	metadata.QuotePermissions = permissionsJSON
+	
+	// Update the metadata
+	if err := metadata.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare metadata update: %w", err)
+	}
+	
+	err = r.db.WithContext(ctx).Model(metadata).Update()
+	if err != nil {
+		return fmt.Errorf("failed to update quote permissions: %w", err)
+	}
+	
+	r.logger.Info("updated quote permissions",
+		zap.String("status_id", statusID),
+		zap.String("quote_type", metadata.QuoteType))
 	
 	return nil
 }
 
 // IsQuoteAllowed checks if a quote is allowed for a status by a quoter
 func (r *ObjectRepository) IsQuoteAllowed(ctx context.Context, statusID, quoterID string) (bool, error) {
-	// For now, allow all quotes
-	// In a real implementation, this would check:
-	// 1. Status quote permissions
-	// 2. Blocklist/mutelist
-	// 3. Visibility settings
+	// Get status metadata to check quote permissions
+	metadata, err := r.getStatusMetadata(ctx, statusID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// No metadata means default permissions (allow public quotes)
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to get status metadata: %w", err)
+	}
 	
-	r.logger.Debug("checking if quote allowed",
-		zap.String("status_id", statusID),
-		zap.String("quoter_id", quoterID))
+	// Check if quotes are allowed at all
+	if !metadata.IsQuotable() {
+		r.logger.Debug("quotes not allowed for status",
+			zap.String("status_id", statusID),
+			zap.String("quoter_id", quoterID),
+			zap.String("quote_type", metadata.QuoteType))
+		return false, nil
+	}
 	
-	return true, nil
+	// If public quotes are allowed, allow all quotes
+	if metadata.IsPubliclyQuotable() {
+		return true, nil
+	}
+	
+	// For followers/mentioned permissions, we'd need to check relationships
+	// For now, implement basic logic based on quote type
+	switch metadata.QuoteType {
+	case "public":
+		return true, nil
+	case "followers":
+		// Would need to check if quoter follows the author
+		// For now, allow (this would be implemented with relationship checks)
+		r.logger.Debug("allowing follower quote (relationship check not implemented)",
+			zap.String("status_id", statusID),
+			zap.String("quoter_id", quoterID))
+		return true, nil
+	case "mentioned":
+		// Would need to check if quoter is mentioned in the status
+		// For now, allow (this would be implemented with mention parsing)
+		r.logger.Debug("allowing mentioned quote (mention check not implemented)",
+			zap.String("status_id", statusID),
+			zap.String("quoter_id", quoterID))
+		return true, nil
+	case "disabled":
+		return false, nil
+	default:
+		// Unknown type, default to allow
+		return true, nil
+	}
 }
 
 // GetQuoteType returns the quote type for a status
 func (r *ObjectRepository) GetQuoteType(ctx context.Context, statusID string) (string, error) {
-	// In a real implementation, this would check status metadata
-	// For now, return "public" as default
+	// Get status metadata to check quote type
+	metadata, err := r.getStatusMetadata(ctx, statusID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// No metadata means default to public
+			return "public", nil
+		}
+		return "", fmt.Errorf("failed to get status metadata: %w", err)
+	}
 	
 	r.logger.Debug("getting quote type",
-		zap.String("status_id", statusID))
+		zap.String("status_id", statusID),
+		zap.String("quote_type", metadata.QuoteType))
 	
-	return "public", nil
+	return metadata.QuoteType, nil
 }
 
 // IsWithdrawnFromQuotes checks if a status is withdrawn from quotes
 func (r *ObjectRepository) IsWithdrawnFromQuotes(ctx context.Context, statusID string) (bool, error) {
-	// In a real implementation, this would check status metadata
-	// For now, return false (not withdrawn)
+	// Get status metadata to check withdrawal status
+	metadata, err := r.getStatusMetadata(ctx, statusID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// No metadata means not withdrawn
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get status metadata: %w", err)
+	}
 	
 	r.logger.Debug("checking if withdrawn from quotes",
-		zap.String("status_id", statusID))
+		zap.String("status_id", statusID),
+		zap.Bool("withdrawn", metadata.WithdrawnFromQuotes))
 	
-	return false, nil
+	return metadata.WithdrawnFromQuotes, nil
 }
 
 // GetQuotesOfStatus retrieves quotes of a specific status
@@ -1214,4 +1393,53 @@ func (r *ObjectRepository) GetQuotesOfStatus(ctx context.Context, statusID strin
 		zap.Int("count", len(quotes)))
 
 	return quotes, nil
+}
+
+// Helper methods for status metadata
+
+// getStatusMetadata retrieves status metadata for a given status ID
+func (r *ObjectRepository) getStatusMetadata(ctx context.Context, statusID string) (*models.StatusMetadata, error) {
+	var metadata models.StatusMetadata
+	metadata.StatusID = statusID
+	metadata.UpdateKeys()
+	
+	err := r.db.WithContext(ctx).Model(&models.StatusMetadata{}).
+		Where("PK", "=", metadata.PK).
+		Where("SK", "=", metadata.SK).
+		First(&metadata)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return &metadata, nil
+}
+
+// getOrCreateStatusMetadata gets existing metadata or creates new with defaults
+func (r *ObjectRepository) getOrCreateStatusMetadata(ctx context.Context, statusID string) (*models.StatusMetadata, error) {
+	// Try to get existing metadata first
+	metadata, err := r.getStatusMetadata(ctx, statusID)
+	if err == nil {
+		return metadata, nil
+	}
+	
+	// If not found, create new metadata with defaults
+	if errors.IsNotFound(err) {
+		metadata = models.NewStatusMetadata(statusID)
+		
+		// Save the new metadata
+		if err := metadata.BeforeCreate(); err != nil {
+			return nil, fmt.Errorf("failed to prepare metadata creation: %w", err)
+		}
+		
+		err = r.db.WithContext(ctx).Model(metadata).Create()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create status metadata: %w", err)
+		}
+		
+		return metadata, nil
+	}
+	
+	// Other error occurred
+	return nil, err
 }

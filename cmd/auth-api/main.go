@@ -262,7 +262,7 @@ func main() {
 	}
 
 	// Create storage adapter
-	store := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	store := dynamorm.NewStorageAdapter(db, tableName, logger)
 	
 	// Initialize repositories
 	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))

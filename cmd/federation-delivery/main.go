@@ -94,7 +94,7 @@ func init() {
 	}
 
 	// Initialize DynamORM storage adapter
-	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger, nil)
+	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger)
 	
 	// Create federation storage adapter that implements FederationStorage interface
 	federationStore := &FederationStorageAdapter{storage: storageAdapter}

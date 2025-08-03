@@ -315,26 +315,56 @@ func (r *InstanceRepository) RecordActivity(ctx context.Context, activityType st
 }
 
 // GetContactAccount returns the contact account for the instance
+// This returns the first admin user as the contact account
 func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.ActorRecord, error) {
-	// This would typically be stored in instance config or as a special actor
-	// For now, we'll look for an admin account or return nil
-	var config models.InstanceConfig
-	err := r.db.WithContext(ctx).Model(&models.InstanceConfig{}).
-		Where("PK", "=", "INSTANCE#CONFIG").
-		Where("SK", "=", "CONTACT_ACCOUNT").
-		First(&config)
+	// Look for the first admin user to serve as contact account
+	var users []models.User
+	err := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("role-index").
+		Where("GSI3PK", "=", "ROLE#admin").
+		Limit(1).
+		All(&users)
+
+	if err != nil {
+		r.logger.Error("Failed to query admin users for contact account", zap.Error(err))
+		return nil, fmt.Errorf("failed to query admin users: %w", err)
+	}
+
+	if len(users) == 0 {
+		// No admin users found, return nil (no contact account)
+		return nil, nil
+	}
+
+	user := users[0]
+
+	// Get the corresponding actor for this user
+	var actor models.Actor
+	err = r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", fmt.Sprintf("ACTOR#%s", user.Username)).
+		Where("SK", "=", "PROFILE").
+		First(&actor)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
+			// Admin user exists but no actor profile - this is unusual but not an error
 			return nil, nil
 		}
-		r.logger.Error("Failed to get contact account", zap.Error(err))
-		return nil, fmt.Errorf("failed to get contact account: %w", err)
+		r.logger.Error("Failed to get actor for contact account", 
+			zap.String("username", user.Username), 
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get actor for contact user: %w", err)
 	}
 
-	// This would need to be implemented based on how contact account is stored
-	// For now, return nil as this method needs more definition
-	return nil, fmt.Errorf("contact account retrieval not implemented")
+	// Convert the actor model to storage.ActorRecord format
+	actorRecord := &storage.ActorRecord{
+		PK:       actor.PK,
+		SK:       actor.SK,
+		Actor:    actor.Actor,
+		Username: actor.Username,
+		// PrivateKey is not included for security reasons when returning contact info
+	}
+
+	return actorRecord, nil
 }
 
 // GetStorageUsage returns current storage usage statistics

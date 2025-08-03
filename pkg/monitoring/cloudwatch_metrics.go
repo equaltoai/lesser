@@ -16,15 +16,12 @@ import (
 
 // CloudWatchMetrics provides enhanced metrics collection with DynamORM integration
 type CloudWatchMetrics struct {
-	client        *cloudwatch.Client
-	namespace     string
-	environment   string
-	logger        *zap.Logger
-	buffer        *EnhancedMetricBuffer
-	flushTicker   *time.Ticker
-	stopChan      chan struct{}
-	wg            sync.WaitGroup
-	dimensions    map[string]string
+	client      *cloudwatch.Client
+	namespace   string
+	environment string
+	logger      *zap.Logger
+	buffer      *EnhancedMetricBuffer
+	dimensions  map[string]string
 }
 
 // EnhancedMetricBuffer provides thread-safe buffering with automatic flushing
@@ -84,45 +81,21 @@ func NewCloudWatchMetrics(awsConfig aws.Config, config MetricConfig, logger *zap
 		namespace:   config.Namespace,
 		environment: config.Environment,
 		logger:      logger,
-		stopChan:    make(chan struct{}),
 		dimensions:  config.DefaultDims,
 	}
 
 	// Initialize buffer
 	cwm.buffer = &EnhancedMetricBuffer{
-		metrics:     make([]types.MetricDatum, 0, config.BufferSize),
-		maxSize:     config.BufferSize,
-		flushSize:   config.FlushSize,
-		lastFlush:   time.Now(),
-		flushFunc:   cwm.flushToCloudWatch,
-	}
-
-	// Start automatic flushing if enabled
-	if config.EnableBatching && config.FlushInterval > 0 {
-		cwm.flushTicker = time.NewTicker(config.FlushInterval)
-		cwm.wg.Add(1)
-		go cwm.flushLoop()
+		metrics:   make([]types.MetricDatum, 0, config.BufferSize),
+		maxSize:   config.BufferSize,
+		flushSize: config.FlushSize,
+		lastFlush: time.Now(),
+		flushFunc: cwm.flushToCloudWatch,
 	}
 
 	return cwm
 }
 
-// flushLoop periodically flushes metrics
-func (cwm *CloudWatchMetrics) flushLoop() {
-	defer cwm.wg.Done()
-	defer cwm.flushTicker.Stop()
-
-	for {
-		select {
-		case <-cwm.flushTicker.C:
-			cwm.FlushMetrics(context.Background())
-		case <-cwm.stopChan:
-			// Final flush before stopping
-			cwm.FlushMetrics(context.Background())
-			return
-		}
-	}
-}
 
 // RecordLiftMetric records a Lift framework specific metric
 func (cwm *CloudWatchMetrics) RecordLiftMetric(ctx *lift.Context, name string, value float64, unit types.StandardUnit, extraDims map[string]string) {
@@ -256,13 +229,14 @@ func (cwm *CloudWatchMetrics) addMetric(name string, value float64, unit types.S
 
 	cwm.buffer.Add(metric)
 
-	// Immediate flush if buffer is full
+	// Synchronous flush if buffer is full to avoid background goroutines
 	if cwm.buffer.ShouldFlush() {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			cwm.FlushMetrics(ctx)
-		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		// Log any flush errors but don't block the main operation
+		if err := cwm.FlushMetrics(ctx); err != nil {
+			cwm.logger.Warn("failed to flush metrics buffer", zap.Error(err))
+		}
 	}
 }
 
@@ -271,12 +245,6 @@ func (cwm *CloudWatchMetrics) FlushMetrics(ctx context.Context) error {
 	return cwm.buffer.Flush()
 }
 
-// Stop gracefully shuts down the metrics collector
-func (cwm *CloudWatchMetrics) Stop(ctx context.Context) error {
-	close(cwm.stopChan)
-	cwm.wg.Wait()
-	return cwm.FlushMetrics(ctx)
-}
 
 // buildDimensions combines base dimensions with additional dimensions
 func (cwm *CloudWatchMetrics) buildDimensions(baseDims, extraDims map[string]string) []types.Dimension {
@@ -370,12 +338,12 @@ func (emb *EnhancedMetricBuffer) Add(metric types.MetricDatum) {
 }
 
 // ShouldFlush determines if the buffer should be flushed
+// In serverless mode, we only flush when buffer reaches capacity to avoid time-based triggers
 func (emb *EnhancedMetricBuffer) ShouldFlush() bool {
 	emb.mu.RLock()
 	defer emb.mu.RUnlock()
 
-	return len(emb.metrics) >= emb.flushSize ||
-		time.Since(emb.lastFlush) > 60*time.Second
+	return len(emb.metrics) >= emb.flushSize
 }
 
 // Flush sends all buffered metrics using the flush function

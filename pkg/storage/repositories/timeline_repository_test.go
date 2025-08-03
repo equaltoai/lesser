@@ -124,7 +124,7 @@ func TestGetHomeTimeline_Parameters(t *testing.T) {
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "timeline#HOME#testuser").Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
-	mockQuery.On("Where", "SK", "<", "cursor123").Return(mockQuery)
+	mockQuery.On("Where", "SK", ">", "cursor123").Return(mockQuery)
 	mockQuery.On("Limit", 21).Return(mockQuery) // limit + 1 for pagination
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
@@ -148,8 +148,9 @@ func TestGetPublicTimeline_LocalFlag(t *testing.T) {
 
 	// Set up expectations for local timeline
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery).Once()
-	mockQuery.On("Where", "PK", "=", "timeline#PUBLIC#LOCAL").Return(mockQuery).Once()
-	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Index", "post-timeline-index").Return(mockQuery).Once()
+	mockQuery.On("Where", "GSI1PK", "=", "TIMELINE#PUBLIC#LOCAL").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 21).Return(mockQuery).Once()
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
 
@@ -159,8 +160,9 @@ func TestGetPublicTimeline_LocalFlag(t *testing.T) {
 
 	// Set up expectations for federated timeline
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery).Once()
-	mockQuery.On("Where", "PK", "=", "timeline#PUBLIC#FEDERATED").Return(mockQuery).Once()
-	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Index", "post-timeline-index").Return(mockQuery).Once()
+	mockQuery.On("Where", "GSI1PK", "=", "TIMELINE#PUBLIC#FEDERATED").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 21).Return(mockQuery).Once()
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
 
@@ -183,7 +185,7 @@ func TestGetListTimeline_Parameters(t *testing.T) {
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "timeline#LIST#list123").Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
-	mockQuery.On("Where", "SK", "<", "cursor456").Return(mockQuery)
+	mockQuery.On("Where", "SK", ">", "cursor456").Return(mockQuery)
 	mockQuery.On("Limit", 11).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
@@ -263,8 +265,8 @@ func TestGetTimelineEntriesByPost_Parameters(t *testing.T) {
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
 	mockQuery.On("Where", "GSI1PK", "=", "POST#post123").Return(mockQuery)
-	mockQuery.On("OrderBy", "GSI1SK", "DESC").Return(mockQuery)
-	mockQuery.On("Where", "GSI1SK", "<", "cursor789").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery)
+	mockQuery.On("Where", "GSI1SK", ">", "cursor789").Return(mockQuery)
 	mockQuery.On("Limit", 51).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
@@ -288,7 +290,7 @@ func TestGetTimelineEntriesByActor_Parameters(t *testing.T) {
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Index", "actor-timeline-index").Return(mockQuery)
 	mockQuery.On("Where", "GSI2PK", "=", "ACTOR#actor456").Return(mockQuery)
-	mockQuery.On("OrderBy", "GSI2SK", "DESC").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI2SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 26).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
@@ -312,8 +314,8 @@ func TestGetTimelineEntriesByVisibility_Parameters(t *testing.T) {
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Index", "visibility-timeline-index").Return(mockQuery)
 	mockQuery.On("Where", "GSI3PK", "=", "VISIBILITY#public").Return(mockQuery)
-	mockQuery.On("OrderBy", "GSI3SK", "DESC").Return(mockQuery)
-	mockQuery.On("Where", "GSI3SK", "<", "cursor999").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI3SK", "ASC").Return(mockQuery)
+	mockQuery.On("Where", "GSI3SK", ">", "cursor999").Return(mockQuery)
 	mockQuery.On("Limit", 31).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
@@ -337,7 +339,7 @@ func TestGetTimelineEntriesByLanguage_Parameters(t *testing.T) {
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Index", "language-timeline-index").Return(mockQuery)
 	mockQuery.On("Where", "GSI4PK", "=", "LANGUAGE#en").Return(mockQuery)
-	mockQuery.On("OrderBy", "GSI4SK", "DESC").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI4SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 41).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
@@ -442,7 +444,7 @@ func TestDeleteTimelineEntriesByPost_Parameters(t *testing.T) {
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
 	mockQuery.On("Where", "GSI1PK", "=", "POST#post123").Return(mockQuery)
-	mockQuery.On("OrderBy", "GSI1SK", "DESC").Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 1001).Return(mockQuery) // 1000 + 1
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 
@@ -553,7 +555,7 @@ func TestGetTimelineEntriesWithFilters_AllFilters(t *testing.T) {
 	mockQuery.On("Filter", "Language", "=", "en").Return(mockQuery)
 	mockQuery.On("Filter", "TimelineAt", ">=", mock.Anything).Return(mockQuery)
 	mockQuery.On("Filter", "TimelineAt", "<=", mock.Anything).Return(mockQuery)
-	mockQuery.On("Where", "SK", "<", "cursor123").Return(mockQuery)
+	mockQuery.On("Where", "SK", ">", "cursor123").Return(mockQuery)
 	mockQuery.On("Limit", 21).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
 

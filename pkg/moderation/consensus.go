@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -17,8 +17,8 @@ type StorageInterface interface {
 	GetModerationReviews(ctx context.Context, eventID string) ([]*Review, error)
 	CreateModerationDecision(ctx context.Context, decision *ModerationDecision) error
 	GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*QueueItem, string, error)
-	GetTrustScore(ctx context.Context, actorID, category string) (*trust.TrustScore, error)
-	RecordTrustUpdate(ctx context.Context, update *trust.TrustUpdate) error
+	GetTrustScore(ctx context.Context, actorID, category string) (*models.TrustScore, error)
+	RecordTrustUpdate(ctx context.Context, update *models.TrustUpdate) error
 }
 
 // ConsensusEngine handles consensus calculation for moderation decisions
@@ -50,10 +50,10 @@ func (e *ConsensusEngine) CalculateConsensus(ctx context.Context, event *Moderat
 
 	for _, review := range reviews {
 		// Get reviewer's trust score
-		trustScore, err := e.storage.GetTrustScore(ctx, review.ReviewerID, string(trust.TrustCategoryContent))
+		trustScore, err := e.storage.GetTrustScore(ctx, review.ReviewerID, string(models.TrustCategoryContent))
 		if err != nil {
 			// If we can't get trust score, use default
-			trustScore = &trust.TrustScore{
+			trustScore = &models.TrustScore{
 				Score:      0.5,
 				Confidence: 0.1,
 			}
@@ -190,9 +190,9 @@ func (e *ConsensusEngine) updateTrustScores(ctx context.Context, decision *Moder
 			delta *= 2.0
 		}
 
-		update := &trust.TrustUpdate{
+		update := &models.TrustUpdate{
 			ActorID:  review.ReviewerID,
-			Category: trust.TrustCategoryContent,
+			Category: models.TrustCategoryContent,
 			Delta:    delta,
 			Reason:   fmt.Sprintf("Moderation consensus alignment for event %s", decision.EventID),
 			EventID:  decision.EventID,
@@ -211,12 +211,12 @@ func (e *ConsensusEngine) updateTrustScores(ctx context.Context, decision *Moder
 // ReviewWithTrust combines a review with trust information
 type ReviewWithTrust struct {
 	Review *Review
-	Trust  *trust.TrustScore
+	Trust  *models.TrustScore
 	Weight float64
 }
 
 // calculateReviewWeight calculates the weight of a review based on trust
-func calculateReviewWeight(trust *trust.TrustScore, review *Review) float64 {
+func calculateReviewWeight(trust *models.TrustScore, review *Review) float64 {
 	// Base weight from trust score (0-1 range)
 	baseWeight := (trust.Score + 1.0) / 2.0 // Convert from -1..1 to 0..1
 

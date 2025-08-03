@@ -3,6 +3,7 @@ package lift
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -192,7 +193,23 @@ func (h *Handler) createBasicModerationEventLift(ctx context.Context, report *st
 		moderationEvent.ObjectID = report.StatusIDs[0]
 	}
 
-	if err := h.store.CreateModerationEvent(ctx, moderationEvent); err != nil {
+	// Convert to storage type
+	storageEvent := &storage.ModerationEvent{
+		ID:              moderationEvent.ID,
+		EventType:       string(moderationEvent.EventType),
+		ObjectID:        moderationEvent.ObjectID,
+		ObjectType:      moderationEvent.ObjectType,
+		ActorID:         moderationEvent.ActorID,
+		Category:        string(moderationEvent.Category),
+		Severity:        fmt.Sprintf("%d", moderationEvent.Severity),
+		ConfidenceScore: moderationEvent.ConfidenceScore,
+		Evidence:        []any{},
+		Reason:          moderationEvent.Reason,
+		Created:         moderationEvent.Created,
+		Updated:         moderationEvent.Updated,
+		TTL:             moderationEvent.TTL,
+	}
+	if err := h.store.CreateModerationEvent(ctx, storageEvent); err != nil {
 		h.logger.Error("failed to create basic moderation event", zap.Error(err))
 	} else {
 		// Update the report with the moderation event ID

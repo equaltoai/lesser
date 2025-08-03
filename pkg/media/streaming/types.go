@@ -96,6 +96,13 @@ type BandwidthStats struct {
 	MeasurementWindow time.Duration
 }
 
+// BandwidthMeasurement represents a single bandwidth measurement
+type BandwidthMeasurement struct {
+	UserID    string
+	Bandwidth int // in kbps
+	Timestamp time.Time
+}
+
 // StreamingSession represents an active streaming session
 type StreamingSession struct {
 	SessionID        string
@@ -154,6 +161,22 @@ type MediaMetadata struct {
 	ProcessedAt        time.Time
 	AvailableQualities []Quality
 	Status             ProcessingStatus
+	
+	// Codec information for HLS/DASH manifest generation
+	VideoCodec         string `json:"video_codec,omitempty"`         // e.g., "avc1.640028"
+	AudioCodec         string `json:"audio_codec,omitempty"`         // e.g., "mp4a.40.2"
+	VideoProfile       string `json:"video_profile,omitempty"`       // e.g., "High", "Main", "Baseline"
+	VideoLevel         string `json:"video_level,omitempty"`         // e.g., "4.0", "3.1"
+	QualitySettings    map[Quality]QualityCodecInfo `json:"quality_settings,omitempty"` // Per-quality codec info
+}
+
+// QualityCodecInfo contains codec information for a specific quality level
+type QualityCodecInfo struct {
+	VideoCodec string `json:"video_codec"` // H.264 profile/level string like "avc1.640028"
+	AudioCodec string `json:"audio_codec"` // Audio codec string like "mp4a.40.2"
+	Bandwidth  int    `json:"bandwidth"`   // Required bandwidth in bps
+	Width      int    `json:"width"`       // Video width in pixels
+	Height     int    `json:"height"`      // Video height in pixels
 }
 
 // ProcessingStatus represents the processing status of media

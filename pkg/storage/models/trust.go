@@ -3,9 +3,25 @@ package models
 import (
 	"fmt"
 	"time"
-
-	"github.com/equaltoai/lesser/pkg/trust"
 )
+
+// TrustCategory represents the category of trust
+type TrustCategory string
+
+const (
+	TrustCategoryContent   TrustCategory = "content"   // Trust in content moderation
+	TrustCategoryBehavior  TrustCategory = "behavior"  // Trust in behavior assessment
+	TrustCategoryTechnical TrustCategory = "technical" // Trust in technical decisions
+	TrustCategoryGeneral   TrustCategory = "general"   // General trust
+)
+
+// TrustEvidence represents evidence supporting a trust relationship
+type TrustEvidence struct {
+	Type        string    `json:"type"`  // consensus_agreement, direct_interaction, etc.
+	Score       float64   `json:"score"` // Impact on trust score
+	Description string    `json:"description"`
+	Timestamp   time.Time `json:"timestamp"`
+}
 
 // TrustRelationship represents a trust relationship between two actors
 type TrustRelationship struct {
@@ -25,10 +41,10 @@ type TrustRelationship struct {
 	ID         string                `json:"id"`
 	TrusterID  string                `json:"truster_id"`
 	TrusteeID  string                `json:"trustee_id"`
-	Category   trust.TrustCategory `json:"category"`
+	Category   TrustCategory `json:"category"`
 	Score      float64               `json:"score"`      // -1.0 to 1.0
 	Confidence float64               `json:"confidence"` // 0.0 to 1.0
-	Evidence   []trust.TrustEvidence `json:"evidence,omitempty"`
+	Evidence   []TrustEvidence `json:"evidence,omitempty"`
 	TTL        int64                 `json:"ttl,omitempty" dynamorm:"ttl"`
 	Created    time.Time             `json:"created"`
 	Updated    time.Time             `json:"updated"`
@@ -64,7 +80,7 @@ type TrustScore struct {
 
 	// Business fields
 	ActorID         string                       `json:"actor_id"`
-	Category        trust.TrustCategory        `json:"category"`
+	Category        TrustCategory        `json:"category"`
 	Score           float64                      `json:"score"`            // Aggregated score
 	DirectScore     float64                      `json:"direct_score"`     // Score from direct relationships
 	PropagatedScore float64                      `json:"propagated_score"` // Score from network propagation
@@ -98,13 +114,13 @@ type TrustUpdate struct {
 	SK string `dynamorm:"sk"` // TIME#timestamp#eventID
 
 	// Business fields
-	ActorID   string                `json:"actor_id"`
-	EventID   string                `json:"event_id"`
-	Category  trust.TrustCategory `json:"category"`
-	Delta     float64               `json:"delta"`    // Change in trust score
-	Reason    string                `json:"reason"`   // Why the update occurred
-	Timestamp time.Time             `json:"timestamp"`
-	TTL       int64                 `json:"ttl,omitempty" dynamorm:"ttl"`
+	ActorID   string        `json:"actor_id"`
+	EventID   string        `json:"event_id"`
+	Category  TrustCategory `json:"category"`
+	Delta     float64       `json:"delta"`    // Change in trust score
+	Reason    string        `json:"reason"`   // Why the update occurred
+	Timestamp time.Time     `json:"timestamp"`
+	TTL       int64         `json:"ttl,omitempty" dynamorm:"ttl"`
 
 	// Type marker
 	Type string `json:"type"` // Always "UPDATE"

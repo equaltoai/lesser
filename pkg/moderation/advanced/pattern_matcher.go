@@ -8,17 +8,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 )
 
+// PatternRepository defines the interface for pattern operations
+type PatternRepository interface {
+	CreatePattern(ctx context.Context, pattern *ModerationPattern) error
+	UpdatePattern(ctx context.Context, patternID string, pattern *ModerationPattern) error
+	DeletePattern(ctx context.Context, patternID string) error
+	GetPattern(ctx context.Context, patternID string) (*ModerationPattern, error)
+	GetPatterns(ctx context.Context, filter PatternFilter) ([]*ModerationPattern, error)
+	IncrementHitCount(ctx context.Context, patternID string) error
+	LoadActivePatterns(ctx context.Context) ([]*ModerationPattern, error)
+}
+
 // PatternMatcher handles pattern-based content matching
 type PatternMatcher struct {
-	db        *dynamodb.Client
-	tableName string
-	logger    *zap.Logger
+	repository PatternRepository
+	logger     *zap.Logger
 
 	// In-memory cache of active patterns
 	patterns    sync.Map
@@ -28,11 +35,11 @@ type PatternMatcher struct {
 }
 
 // NewPatternMatcher creates a new pattern matcher
-func NewPatternMatcher(db *dynamodb.Client, tableName string, logger *zap.Logger) *PatternMatcher {
+// Pattern updates should be triggered by DynamoDB stream events when patterns are modified
+func NewPatternMatcher(repository PatternRepository, logger *zap.Logger) *PatternMatcher {
 	pm := &PatternMatcher{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		repository: repository,
+		logger:     logger,
 	}
 
 	// Load patterns on initialization
@@ -40,9 +47,6 @@ func NewPatternMatcher(db *dynamodb.Client, tableName string, logger *zap.Logger
 	if err := pm.loadPatterns(ctx); err != nil {
 		logger.Warn("failed to load patterns on init", zap.Error(err))
 	}
-
-	// Start periodic refresh
-	go pm.refreshPatternsPeriodically()
 
 	return pm
 }
@@ -63,46 +67,8 @@ func (pm *PatternMatcher) CreatePattern(ctx context.Context, pattern *Moderation
 	pattern.UpdatedAt = time.Now()
 	pattern.HitCount = 0
 
-	// Store in DynamoDB
-	item := map[string]types.AttributeValue{
-		"PK":          &types.AttributeValueMemberS{Value: fmt.Sprintf("PATTERN#%s", pattern.ID)},
-		"SK":          &types.AttributeValueMemberS{Value: "METADATA"},
-		"ID":          &types.AttributeValueMemberS{Value: pattern.ID},
-		"Name":        &types.AttributeValueMemberS{Value: pattern.Name},
-		"Description": &types.AttributeValueMemberS{Value: pattern.Description},
-		"Pattern":     &types.AttributeValueMemberS{Value: pattern.Pattern},
-		"PatternType": &types.AttributeValueMemberS{Value: pattern.PatternType},
-		"Severity":    &types.AttributeValueMemberS{Value: string(pattern.Severity)},
-		"Action":      &types.AttributeValueMemberS{Value: string(pattern.Action)},
-		"CreatedBy":   &types.AttributeValueMemberS{Value: pattern.CreatedBy},
-		"CreatedAt":   &types.AttributeValueMemberS{Value: pattern.CreatedAt.Format(time.RFC3339)},
-		"UpdatedAt":   &types.AttributeValueMemberS{Value: pattern.UpdatedAt.Format(time.RFC3339)},
-		"Active":      &types.AttributeValueMemberBOOL{Value: pattern.Active},
-		"HitCount":    &types.AttributeValueMemberN{Value: "0"},
-
-		// GSI for filtering
-		"GSI1PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("SEVERITY#%s", pattern.Severity)},
-		"GSI1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PATTERN#%s", pattern.ID)},
-	}
-
-	// Add categories
-	if len(pattern.Categories) > 0 {
-		categoryList := &types.AttributeValueMemberL{
-			Value: make([]types.AttributeValue, len(pattern.Categories)),
-		}
-		for i, cat := range pattern.Categories {
-			categoryList.Value[i] = &types.AttributeValueMemberS{Value: cat}
-		}
-		item["Categories"] = categoryList
-	}
-
-	putInput := &dynamodb.PutItemInput{
-		TableName:           aws.String(pm.tableName),
-		Item:                item,
-		ConditionExpression: aws.String("attribute_not_exists(PK)"),
-	}
-
-	_, err := pm.db.PutItem(ctx, putInput)
+	// Store using repository
+	err := pm.repository.CreatePattern(ctx, pattern)
 	if err != nil {
 		return fmt.Errorf("create pattern: %w", err)
 	}
@@ -127,99 +93,40 @@ func (pm *PatternMatcher) CreatePattern(ctx context.Context, pattern *Moderation
 
 // UpdatePattern updates an existing pattern
 func (pm *PatternMatcher) UpdatePattern(ctx context.Context, patternID string, updates *ModerationPattern) error {
-	// Get existing pattern
-	existing, err := pm.getPattern(ctx, patternID)
-	if err != nil {
-		return fmt.Errorf("get existing pattern: %w", err)
-	}
-
-	// Apply updates
-	if updates.Name != "" {
-		existing.Name = updates.Name
-	}
-	if updates.Description != "" {
-		existing.Description = updates.Description
-	}
+	// Clear regex cache if pattern is being updated
 	if updates.Pattern != "" {
-		existing.Pattern = updates.Pattern
-		// Clear regex cache
 		pm.regexCache.Delete(patternID)
 	}
-	if updates.PatternType != "" {
-		existing.PatternType = updates.PatternType
-	}
-	if updates.Severity != "" {
-		existing.Severity = updates.Severity
-	}
-	if updates.Action != "" {
-		existing.Action = updates.Action
-	}
-	if len(updates.Categories) > 0 {
-		existing.Categories = updates.Categories
-	}
 
-	existing.UpdatedAt = time.Now()
-
-	// Update in DynamoDB
-	updateInput := &dynamodb.UpdateItemInput{
-		TableName: aws.String(pm.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PATTERN#%s", patternID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-		UpdateExpression: aws.String(`
-			SET #name = :name,
-			    Description = :desc,
-			    Pattern = :pattern,
-			    PatternType = :type,
-			    Severity = :severity,
-			    #action = :action,
-			    UpdatedAt = :updated,
-			    GSI1PK = :gsi1pk
-		`),
-		ExpressionAttributeNames: map[string]string{
-			"#name":   "Name",
-			"#action": "Action",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":name":     &types.AttributeValueMemberS{Value: existing.Name},
-			":desc":     &types.AttributeValueMemberS{Value: existing.Description},
-			":pattern":  &types.AttributeValueMemberS{Value: existing.Pattern},
-			":type":     &types.AttributeValueMemberS{Value: existing.PatternType},
-			":severity": &types.AttributeValueMemberS{Value: string(existing.Severity)},
-			":action":   &types.AttributeValueMemberS{Value: string(existing.Action)},
-			":updated":  &types.AttributeValueMemberS{Value: existing.UpdatedAt.Format(time.RFC3339)},
-			":gsi1pk":   &types.AttributeValueMemberS{Value: fmt.Sprintf("SEVERITY#%s", existing.Severity)},
-		},
-	}
-
-	_, err = pm.db.UpdateItem(ctx, updateInput)
+	// Update using repository
+	err := pm.repository.UpdatePattern(ctx, patternID, updates)
 	if err != nil {
 		return fmt.Errorf("update pattern: %w", err)
 	}
 
+	// Get the updated pattern to update cache
+	updated, err := pm.repository.GetPattern(ctx, patternID)
+	if err != nil {
+		return fmt.Errorf("get updated pattern: %w", err)
+	}
+
 	// Update cache
-	pm.patterns.Store(patternID, existing)
+	pm.patterns.Store(patternID, updated)
+
+	// Pre-compile regex if applicable
+	if updated.PatternType == "regex" {
+		if regex, err := regexp.Compile(updated.Pattern); err == nil {
+			pm.regexCache.Store(updated.ID, regex)
+		}
+	}
 
 	return nil
 }
 
 // DeletePattern deletes a pattern (soft delete by marking inactive)
 func (pm *PatternMatcher) DeletePattern(ctx context.Context, patternID string) error {
-	updateInput := &dynamodb.UpdateItemInput{
-		TableName: aws.String(pm.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PATTERN#%s", patternID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-		UpdateExpression: aws.String("SET Active = :false, UpdatedAt = :updated"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":false":   &types.AttributeValueMemberBOOL{Value: false},
-			":updated": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		},
-	}
-
-	_, err := pm.db.UpdateItem(ctx, updateInput)
+	// Delete using repository
+	err := pm.repository.DeletePattern(ctx, patternID)
 	if err != nil {
 		return fmt.Errorf("delete pattern: %w", err)
 	}
@@ -233,74 +140,13 @@ func (pm *PatternMatcher) DeletePattern(ctx context.Context, patternID string) e
 
 // GetPatterns retrieves patterns based on filter
 func (pm *PatternMatcher) GetPatterns(ctx context.Context, filter PatternFilter) ([]*ModerationPattern, error) {
-	patterns := []*ModerationPattern{}
-
-	if filter.Severity != "" {
-		// Query by severity using GSI
-		queryInput := &dynamodb.QueryInput{
-			TableName:              aws.String(pm.tableName),
-			IndexName:              aws.String("GSI1"),
-			KeyConditionExpression: aws.String("GSI1PK = :pk"),
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("SEVERITY#%s", filter.Severity)},
-			},
-		}
-
-		if filter.Active != nil {
-			queryInput.FilterExpression = aws.String("Active = :active")
-			queryInput.ExpressionAttributeValues[":active"] = &types.AttributeValueMemberBOOL{Value: *filter.Active}
-		}
-
-		result, err := pm.db.Query(ctx, queryInput)
-		if err != nil {
-			return nil, fmt.Errorf("query patterns by severity: %w", err)
-		}
-
-		for _, item := range result.Items {
-			pattern, err := pm.parsePattern(item)
-			if err != nil {
-				continue
-			}
-			patterns = append(patterns, pattern)
-		}
-	} else {
-		// Scan all patterns
-		scanInput := &dynamodb.ScanInput{
-			TableName:        aws.String(pm.tableName),
-			FilterExpression: aws.String("begins_with(PK, :prefix)"),
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":prefix": &types.AttributeValueMemberS{Value: "PATTERN#"},
-			},
-		}
-
-		if filter.Active != nil {
-			scanInput.FilterExpression = aws.String("begins_with(PK, :prefix) AND Active = :active")
-			scanInput.ExpressionAttributeValues[":active"] = &types.AttributeValueMemberBOOL{Value: *filter.Active}
-		}
-
-		result, err := pm.db.Scan(ctx, scanInput)
-		if err != nil {
-			return nil, fmt.Errorf("scan patterns: %w", err)
-		}
-
-		for _, item := range result.Items {
-			pattern, err := pm.parsePattern(item)
-			if err != nil {
-				continue
-			}
-			patterns = append(patterns, pattern)
-		}
+	// Use repository to get patterns
+	patterns, err := pm.repository.GetPatterns(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("get patterns: %w", err)
 	}
 
-	// Apply additional filters
-	filtered := patterns[:0]
-	for _, pattern := range patterns {
-		if pm.matchesFilter(pattern, filter) {
-			filtered = append(filtered, pattern)
-		}
-	}
-
-	return filtered, nil
+	return patterns, nil
 }
 
 // MatchContent checks content against all active patterns
@@ -424,19 +270,10 @@ func (pm *PatternMatcher) loadPatterns(ctx context.Context) error {
 	pm.updateMutex.Lock()
 	defer pm.updateMutex.Unlock()
 
-	// Query all active patterns
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(pm.tableName),
-		FilterExpression: aws.String("begins_with(PK, :prefix) AND Active = :true"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":prefix": &types.AttributeValueMemberS{Value: "PATTERN#"},
-			":true":   &types.AttributeValueMemberBOOL{Value: true},
-		},
-	}
-
-	result, err := pm.db.Scan(ctx, scanInput)
+	// Load all active patterns using repository
+	patterns, err := pm.repository.LoadActivePatterns(ctx)
 	if err != nil {
-		return fmt.Errorf("scan patterns: %w", err)
+		return fmt.Errorf("load active patterns: %w", err)
 	}
 
 	// Clear existing patterns
@@ -450,13 +287,7 @@ func (pm *PatternMatcher) loadPatterns(ctx context.Context) error {
 	})
 
 	// Load new patterns
-	for _, item := range result.Items {
-		pattern, err := pm.parsePattern(item)
-		if err != nil {
-			pm.logger.Warn("failed to parse pattern", zap.Error(err))
-			continue
-		}
-
+	for _, pattern := range patterns {
 		pm.patterns.Store(pattern.ID, pattern)
 
 		// Pre-compile regex
@@ -470,39 +301,35 @@ func (pm *PatternMatcher) loadPatterns(ctx context.Context) error {
 	pm.lastUpdate = time.Now()
 
 	pm.logger.Info("loaded patterns",
-		zap.Int("count", len(result.Items)))
+		zap.Int("count", len(patterns)))
 
 	return nil
 }
 
-func (pm *PatternMatcher) refreshPatternsPeriodically() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		ctx := context.Background()
-		if err := pm.loadPatterns(ctx); err != nil {
-			pm.logger.Error("failed to refresh patterns", zap.Error(err))
-		}
+// RefreshPatterns refreshes the pattern cache from DynamoDB
+// This method should be called in response to DynamoDB stream events when patterns are modified.
+// In a serverless architecture, the stream-router Lambda should process DynamoDB stream events
+// and invoke this method when pattern records (PK=PATTERN#*) are created, updated, or deleted.
+//
+// Event-driven pattern refresh ensures:
+// - No wasted compute from polling
+// - Immediate cache updates when patterns change
+// - Compatibility with Lambda execution limits
+// - Efficient resource utilization in serverless environments
+func (pm *PatternMatcher) RefreshPatterns(ctx context.Context) error {
+	if err := pm.loadPatterns(ctx); err != nil {
+		pm.logger.Error("failed to refresh patterns", zap.Error(err))
+		return fmt.Errorf("refresh patterns: %w", err)
 	}
+
+	pm.logger.Info("pattern cache refreshed successfully")
+	return nil
 }
 
 func (pm *PatternMatcher) incrementHitCount(patternID string) {
 	ctx := context.Background()
 
-	updateInput := &dynamodb.UpdateItemInput{
-		TableName: aws.String(pm.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PATTERN#%s", patternID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-		UpdateExpression: aws.String("ADD HitCount :one"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":one": &types.AttributeValueMemberN{Value: "1"},
-		},
-	}
-
-	_, err := pm.db.UpdateItem(ctx, updateInput)
+	err := pm.repository.IncrementHitCount(ctx, patternID)
 	if err != nil {
 		pm.logger.Warn("failed to increment hit count",
 			zap.String("patternID", patternID),
@@ -510,112 +337,8 @@ func (pm *PatternMatcher) incrementHitCount(patternID string) {
 	}
 }
 
-func (pm *PatternMatcher) getPattern(ctx context.Context, patternID string) (*ModerationPattern, error) {
-	getInput := &dynamodb.GetItemInput{
-		TableName: aws.String(pm.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PATTERN#%s", patternID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-	}
 
-	result, err := pm.db.GetItem(ctx, getInput)
-	if err != nil {
-		return nil, err
-	}
 
-	if result.Item == nil {
-		return nil, fmt.Errorf("pattern not found")
-	}
-
-	return pm.parsePattern(result.Item)
-}
-
-func (pm *PatternMatcher) parsePattern(item map[string]types.AttributeValue) (*ModerationPattern, error) {
-	pattern := &ModerationPattern{}
-
-	// Parse fields
-	if v, ok := item["ID"].(*types.AttributeValueMemberS); ok {
-		pattern.ID = v.Value
-	}
-	if v, ok := item["Name"].(*types.AttributeValueMemberS); ok {
-		pattern.Name = v.Value
-	}
-	if v, ok := item["Description"].(*types.AttributeValueMemberS); ok {
-		pattern.Description = v.Value
-	}
-	if v, ok := item["Pattern"].(*types.AttributeValueMemberS); ok {
-		pattern.Pattern = v.Value
-	}
-	if v, ok := item["PatternType"].(*types.AttributeValueMemberS); ok {
-		pattern.PatternType = v.Value
-	}
-	if v, ok := item["Severity"].(*types.AttributeValueMemberS); ok {
-		pattern.Severity = Severity(v.Value)
-	}
-	if v, ok := item["Action"].(*types.AttributeValueMemberS); ok {
-		pattern.Action = ModerationAction(v.Value)
-	}
-	if v, ok := item["CreatedBy"].(*types.AttributeValueMemberS); ok {
-		pattern.CreatedBy = v.Value
-	}
-	if v, ok := item["Active"].(*types.AttributeValueMemberBOOL); ok {
-		pattern.Active = v.Value
-	}
-	if v, ok := item["HitCount"].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%d", &pattern.HitCount); err != nil {
-			pm.logger.Warn("failed to parse HitCount for pattern",
-				zap.String("patternID", pattern.ID),
-				zap.String("value", v.Value),
-				zap.Error(err))
-		}
-	}
-
-	// Parse timestamps
-	if v, ok := item["CreatedAt"].(*types.AttributeValueMemberS); ok {
-		pattern.CreatedAt, _ = time.Parse(time.RFC3339, v.Value)
-	}
-	if v, ok := item["UpdatedAt"].(*types.AttributeValueMemberS); ok {
-		pattern.UpdatedAt, _ = time.Parse(time.RFC3339, v.Value)
-	}
-
-	// Parse categories
-	if v, ok := item["Categories"].(*types.AttributeValueMemberL); ok {
-		pattern.Categories = make([]string, 0, len(v.Value))
-		for _, cat := range v.Value {
-			if s, ok := cat.(*types.AttributeValueMemberS); ok {
-				pattern.Categories = append(pattern.Categories, s.Value)
-			}
-		}
-	}
-
-	return pattern, nil
-}
-
-func (pm *PatternMatcher) matchesFilter(pattern *ModerationPattern, filter PatternFilter) bool {
-	// Check categories
-	if len(filter.Categories) > 0 {
-		hasCategory := false
-		for _, filterCat := range filter.Categories {
-			for _, patternCat := range pattern.Categories {
-				if filterCat == patternCat {
-					hasCategory = true
-					break
-				}
-			}
-		}
-		if !hasCategory {
-			return false
-		}
-	}
-
-	// Check created by
-	if filter.CreatedBy != "" && pattern.CreatedBy != filter.CreatedBy {
-		return false
-	}
-
-	return true
-}
 
 func generatePatternID(name string) string {
 	// Simple ID generation

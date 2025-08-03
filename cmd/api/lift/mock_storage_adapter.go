@@ -3450,6 +3450,38 @@ func (m *MockStorageAdapter) GetReplyCount(ctx context.Context, statusID string)
 	return args.Get(0).(int64), args.Error(1)
 }
 
+// Media Analytics operations
+func (m *MockStorageAdapter) RecordManifestGeneration(ctx context.Context, mediaID, format string, duration float64) error {
+	args := m.Called(ctx, mediaID, format, duration)
+	return args.Error(0)
+}
+
+func (m *MockStorageAdapter) RecordQualityChange(ctx context.Context, mediaID, userID, oldQuality, newQuality string) error {
+	args := m.Called(ctx, mediaID, userID, oldQuality, newQuality)
+	return args.Error(0)
+}
+
+func (m *MockStorageAdapter) RecordMediaEvent(ctx context.Context, eventType, mediaID, userID string) error {
+	args := m.Called(ctx, eventType, mediaID, userID)
+	return args.Error(0)
+}
+
+func (m *MockStorageAdapter) GetManifestGenerationStats(ctx context.Context, format, startDate, endDate string) (map[string]int64, error) {
+	args := m.Called(ctx, format, startDate, endDate)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]int64), args.Error(1)
+}
+
+func (m *MockStorageAdapter) GetMediaEventStats(ctx context.Context, eventType, startDate, endDate string) (map[string]int64, error) {
+	args := m.Called(ctx, eventType, startDate, endDate)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]int64), args.Error(1)
+}
+
 func (m *MockStorageAdapter) GetModerationQueueCount(ctx context.Context) (int, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(int), args.Error(1)
@@ -3491,6 +3523,24 @@ func (m *MockStorageAdapter) GetSeveranceHistory(ctx context.Context, localInsta
 	return args.Get(0).([]*storage.SeveredRelationship), args.Error(1)
 }
 
+
+// UpdateCommunityNoteAnalysis updates AI analysis results for a community note
+func (m *MockStorageAdapter) UpdateCommunityNoteAnalysis(ctx context.Context, noteID string, sentiment, objectivity, sourceQuality float64) error {
+	args := m.Called(ctx, noteID, sentiment, objectivity, sourceQuality)
+	return args.Error(0)
+}
+
+// CheckAPIRateLimit checks if API rate limit is exceeded
+func (m *MockStorageAdapter) CheckAPIRateLimit(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error {
+	args := m.Called(ctx, userID, endpoint, limit, window)
+	return args.Error(0)
+}
+
+// GetAPIRateLimitInfo returns current rate limit info
+func (m *MockStorageAdapter) GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
+	args := m.Called(ctx, userID, endpoint, limit, window)
+	return args.Int(0), args.Get(1).(time.Time), args.Error(2)
+}
 
 // NewMockStorageAdapter creates a new mock storage adapter
 func NewMockStorageAdapter() *MockStorageAdapter {

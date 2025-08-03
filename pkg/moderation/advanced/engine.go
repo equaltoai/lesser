@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -45,17 +47,26 @@ func NewEngine(
 	rekognitionClient *rekognition.Client,
 	db *dynamodb.Client,
 	tableName string,
+	patternRepo PatternRepository,
 	logger *zap.Logger,
 	costTracker CostTracker,
+	dynamoRM core.DB,
 ) *Engine {
 	// Create components
 	textAnalyzer := NewTextAnalyzer(comprehendClient, logger, config, costTracker)
 	imageAnalyzer := NewImageAnalyzer(rekognitionClient, logger, config, costTracker)
-	patternMatcher := NewPatternMatcher(db, tableName, logger)
+	patternMatcher := NewPatternMatcher(patternRepo, logger)
 	reputationScorer := NewReputationScorer(db, tableName, logger, config)
-	threatIntel := NewThreatIntelligence(db, tableName, logger)
+	
+	// Create threat intelligence repository and component
+	threatRepo := repositories.NewThreatIntelRepository(dynamoRM, tableName, logger)
+	threatIntel := NewThreatIntelligence(threatRepo, logger)
+	
 	decisionEngine := NewDecisionEngine(config, logger, reputationScorer)
-	metrics := NewModerationMetrics(db, tableName, logger)
+	
+	// Create moderation metrics repository and component
+	metricsRepo := repositories.NewModerationMetricsRepository(dynamoRM, logger)
+	metrics := NewModerationMetrics(metricsRepo, logger)
 
 	return &Engine{
 		config:           config,

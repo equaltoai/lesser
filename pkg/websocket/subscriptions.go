@@ -4,17 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"go.uber.org/zap"
 )
 
 // SubscriptionManager manages WebSocket subscriptions
@@ -118,17 +116,17 @@ type WebSocketMessage struct {
 
 // subscriptionManager implements SubscriptionManager
 type subscriptionManager struct {
-	dynamoDB      *dynamodb.Client
+	repo          *repositories.WebSocketSubscriptionManagerRepository
 	apiGW         *apigatewaymanagementapi.Client
-	tableName     string
 	endpoint      string
 	connections   map[string]*Connection
 	subscriptions map[string]map[string]*Subscription // connectionID -> subscriptionType -> subscription
 	mutex         sync.RWMutex
+	logger        *zap.Logger
 }
 
 // NewSubscriptionManager creates a new subscription manager
-func NewSubscriptionManager(tableName, apiGWEndpoint string) (SubscriptionManager, error) {
+func NewSubscriptionManager(repo *repositories.WebSocketSubscriptionManagerRepository, apiGWEndpoint string, logger *zap.Logger) (SubscriptionManager, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
@@ -139,12 +137,12 @@ func NewSubscriptionManager(tableName, apiGWEndpoint string) (SubscriptionManage
 	apiGWCfg.BaseEndpoint = aws.String(apiGWEndpoint)
 
 	return &subscriptionManager{
-		dynamoDB:      dynamodb.NewFromConfig(cfg),
+		repo:          repo,
 		apiGW:         apigatewaymanagementapi.NewFromConfig(apiGWCfg),
-		tableName:     tableName,
 		endpoint:      apiGWEndpoint,
 		connections:   make(map[string]*Connection),
 		subscriptions: make(map[string]map[string]*Subscription),
+		logger:        logger,
 	}, nil
 }
 
@@ -164,26 +162,16 @@ func (sm *subscriptionManager) HandleConnect(connectionID, userID string) error 
 	// Store in memory
 	sm.connections[connectionID] = connection
 
-	// Store in DynamoDB
-	item, err := attributevalue.MarshalMap(connection)
-	if err != nil {
-		return fmt.Errorf("failed to marshal connection: %w", err)
-	}
-
-	item["PK"] = &types.AttributeValueMemberS{Value: "CONNECTION#" + connectionID}
-	item["SK"] = &types.AttributeValueMemberS{Value: "METADATA"}
-
-	input := &dynamodb.PutItemInput{
-		TableName: aws.String(sm.tableName),
-		Item:      item,
-	}
-
-	_, err = sm.dynamoDB.PutItem(context.TODO(), input)
+	// Store in DynamoDB using repository
+	err := sm.repo.HandleConnect(context.TODO(), connectionID, userID)
 	if err != nil {
 		return fmt.Errorf("failed to store connection: %w", err)
 	}
 
-	log.Printf("WebSocket connection established: %s (user: %s)", connectionID, userID)
+	sm.logger.Info("WebSocket connection established",
+		zap.String("connection_id", connectionID),
+		zap.String("user_id", userID),
+	)
 	return nil
 }
 
@@ -196,24 +184,18 @@ func (sm *subscriptionManager) HandleDisconnect(connectionID string) error {
 	delete(sm.connections, connectionID)
 	delete(sm.subscriptions, connectionID)
 
-	// Remove from DynamoDB
-	input := &dynamodb.DeleteItemInput{
-		TableName: aws.String(sm.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: "CONNECTION#" + connectionID},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-	}
-
-	_, err := sm.dynamoDB.DeleteItem(context.TODO(), input)
+	// Remove from DynamoDB using repository
+	err := sm.repo.HandleDisconnect(context.TODO(), connectionID)
 	if err != nil {
-		log.Printf("Failed to delete connection from DynamoDB: %v", err)
+		sm.logger.Warn("Failed to delete connection from DynamoDB",
+			zap.String("connection_id", connectionID),
+			zap.Error(err),
+		)
 	}
 
-	// Clean up subscriptions
-	sm.cleanupSubscriptions(connectionID)
-
-	log.Printf("WebSocket connection disconnected: %s", connectionID)
+	sm.logger.Info("WebSocket connection disconnected",
+		zap.String("connection_id", connectionID),
+	)
 	return nil
 }
 
@@ -257,8 +239,10 @@ func (sm *subscriptionManager) createSubscription(connectionID string, subscript
 		TTL:              time.Now().Add(24 * time.Hour).Unix(),
 	}
 
+	var filterMap map[string]any
 	if filter != nil {
-		filterMap, err := convertToMap(filter)
+		var err error
+		filterMap, err = convertToMap(filter)
 		if err != nil {
 			return fmt.Errorf("failed to convert filter: %w", err)
 		}
@@ -271,26 +255,16 @@ func (sm *subscriptionManager) createSubscription(connectionID string, subscript
 	}
 	sm.subscriptions[connectionID][subscriptionType] = subscription
 
-	// Store in DynamoDB
-	item, err := attributevalue.MarshalMap(subscription)
-	if err != nil {
-		return fmt.Errorf("failed to marshal subscription: %w", err)
-	}
-
-	item["PK"] = &types.AttributeValueMemberS{Value: "CONNECTION#" + connectionID}
-	item["SK"] = &types.AttributeValueMemberS{Value: "SUBSCRIPTION#" + subscriptionType}
-
-	input := &dynamodb.PutItemInput{
-		TableName: aws.String(sm.tableName),
-		Item:      item,
-	}
-
-	_, err = sm.dynamoDB.PutItem(context.TODO(), input)
+	// Store in DynamoDB using repository
+	err := sm.repo.CreateSubscription(context.TODO(), connectionID, subscriptionType, filterMap)
 	if err != nil {
 		return fmt.Errorf("failed to store subscription: %w", err)
 	}
 
-	log.Printf("Subscription created: %s -> %s", connectionID, subscriptionType)
+	sm.logger.Info("Subscription created",
+		zap.String("connection_id", connectionID),
+		zap.String("subscription_type", subscriptionType),
+	)
 	return nil
 }
 
@@ -304,21 +278,16 @@ func (sm *subscriptionManager) Unsubscribe(connectionID string, subscriptionType
 		delete(subs, subscriptionType)
 	}
 
-	// Remove from DynamoDB
-	input := &dynamodb.DeleteItemInput{
-		TableName: aws.String(sm.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: "CONNECTION#" + connectionID},
-			"SK": &types.AttributeValueMemberS{Value: "SUBSCRIPTION#" + subscriptionType},
-		},
-	}
-
-	_, err := sm.dynamoDB.DeleteItem(context.TODO(), input)
+	// Remove from DynamoDB using repository
+	err := sm.repo.DeleteSubscription(context.TODO(), connectionID, subscriptionType)
 	if err != nil {
 		return fmt.Errorf("failed to delete subscription: %w", err)
 	}
 
-	log.Printf("Subscription removed: %s -> %s", connectionID, subscriptionType)
+	sm.logger.Info("Subscription removed",
+		zap.String("connection_id", connectionID),
+		zap.String("subscription_type", subscriptionType),
+	)
 	return nil
 }
 
@@ -372,28 +341,38 @@ func (sm *subscriptionManager) PublishInfrastructureEvent(event *InfrastructureE
 
 // publishToSubscribers publishes a message to all matching subscribers
 func (sm *subscriptionManager) publishToSubscribers(subscriptionType string, message WebSocketMessage, filter func(*Subscription) bool) error {
-	sm.mutex.RLock()
-	defer sm.mutex.RUnlock()
-
 	messageData, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	var errors []error
-	for connectionID, subscriptions := range sm.subscriptions {
-		if sub, exists := subscriptions[subscriptionType]; exists {
-			// Apply filter if provided
-			if filter != nil && !filter(sub) {
-				continue
-			}
+	// Get subscriptions from repository instead of memory
+	subscriptions, err := sm.repo.GetSubscriptionsForType(context.TODO(), subscriptionType)
+	if err != nil {
+		return fmt.Errorf("failed to get subscriptions for type %s: %w", subscriptionType, err)
+	}
 
-			// Send message to connection
-			if err := sm.sendMessage(connectionID, messageData); err != nil {
-				errors = append(errors, fmt.Errorf("failed to send to %s: %w", connectionID, err))
-				// Remove dead connections
-				sm.handleDeadConnection(connectionID)
-			}
+	var errors []error
+	for _, dbSub := range subscriptions {
+		// Convert repository model to legacy Subscription for filter compatibility
+		sub := &Subscription{
+			ConnectionID:     dbSub.ConnectionID,
+			SubscriptionType: dbSub.SubscriptionType,
+			Filter:           dbSub.Filter,
+			CreatedAt:        dbSub.CreatedAt,
+			TTL:              dbSub.TTL,
+		}
+
+		// Apply filter if provided
+		if filter != nil && !filter(sub) {
+			continue
+		}
+
+		// Send message to connection
+		if err := sm.sendMessage(dbSub.ConnectionID, messageData); err != nil {
+			errors = append(errors, fmt.Errorf("failed to send to %s: %w", dbSub.ConnectionID, err))
+			// Remove dead connections
+			sm.handleDeadConnection(dbSub.ConnectionID)
 		}
 	}
 
@@ -419,7 +398,10 @@ func (sm *subscriptionManager) sendMessage(connectionID string, data []byte) err
 func (sm *subscriptionManager) handleDeadConnection(connectionID string) {
 	go func() {
 		if err := sm.HandleDisconnect(connectionID); err != nil {
-			log.Printf("Failed to handle dead connection %s: %v", connectionID, err)
+			sm.logger.Error("Failed to handle dead connection",
+				zap.String("connection_id", connectionID),
+				zap.Error(err),
+			)
 		}
 	}()
 }
@@ -485,38 +467,10 @@ func (sm *subscriptionManager) matchesPerformanceFilter(alert *PerformanceAlert,
 	return true
 }
 
-// cleanupSubscriptions removes all subscriptions for a connection
+// cleanupSubscriptions is now handled by the repository HandleDisconnect method
+// This method is kept for backward compatibility but does nothing
 func (sm *subscriptionManager) cleanupSubscriptions(connectionID string) {
-	// Query DynamoDB for all subscriptions for this connection
-	input := &dynamodb.QueryInput{
-		TableName:              aws.String(sm.tableName),
-		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :sk_prefix)"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":        &types.AttributeValueMemberS{Value: "CONNECTION#" + connectionID},
-			":sk_prefix": &types.AttributeValueMemberS{Value: "SUBSCRIPTION#"},
-		},
-	}
-
-	result, err := sm.dynamoDB.Query(context.TODO(), input)
-	if err != nil {
-		log.Printf("Failed to query subscriptions for cleanup: %v", err)
-		return
-	}
-
-	// Delete each subscription
-	for _, item := range result.Items {
-		deleteInput := &dynamodb.DeleteItemInput{
-			TableName: aws.String(sm.tableName),
-			Key: map[string]types.AttributeValue{
-				"PK": item["PK"],
-				"SK": item["SK"],
-			},
-		}
-
-		if _, err := sm.dynamoDB.DeleteItem(context.TODO(), deleteInput); err != nil {
-			log.Printf("Failed to delete subscription: %v", err)
-		}
-	}
+	// No-op: cleanup is now handled by repository
 }
 
 // convertToMap converts an any to map[string]any
@@ -537,12 +491,14 @@ func convertToMap(v any) (map[string]any, error) {
 // WebSocketHandler handles API Gateway WebSocket events
 type WebSocketHandler struct {
 	subscriptionManager SubscriptionManager
+	logger              *zap.Logger
 }
 
 // NewWebSocketHandler creates a new WebSocket handler
-func NewWebSocketHandler(sm SubscriptionManager) *WebSocketHandler {
+func NewWebSocketHandler(sm SubscriptionManager, logger *zap.Logger) *WebSocketHandler {
 	return &WebSocketHandler{
 		subscriptionManager: sm,
+		logger:              logger,
 	}
 }
 
@@ -560,7 +516,11 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(ctx context.Context, e
 		}
 
 		if err := h.subscriptionManager.HandleConnect(connectionID, userID); err != nil {
-			log.Printf("Failed to handle connect: %v", err)
+			h.logger.Error("Failed to handle connect",
+				zap.String("connection_id", connectionID),
+				zap.String("user_id", userID),
+				zap.Error(err),
+			)
 			return events.APIGatewayProxyResponse{StatusCode: 500}, err
 		}
 
@@ -568,7 +528,10 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(ctx context.Context, e
 
 	case "$disconnect":
 		if err := h.subscriptionManager.HandleDisconnect(connectionID); err != nil {
-			log.Printf("Failed to handle disconnect: %v", err)
+			h.logger.Error("Failed to handle disconnect",
+				zap.String("connection_id", connectionID),
+				zap.Error(err),
+			)
 		}
 
 		return events.APIGatewayProxyResponse{StatusCode: 200}, nil

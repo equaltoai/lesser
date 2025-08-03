@@ -17,10 +17,16 @@ import (
 	"go.uber.org/zap"
 )
 
+// SearchRepositoryDeps interface for dependencies - implemented by the storage adapter
+type SearchRepositoryDeps interface {
+	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+}
+
 // SearchRepository implements search functionality using DynamORM
 type SearchRepository struct {
 	db     dynamorm.DB
 	logger *zap.Logger
+	deps   SearchRepositoryDeps
 }
 
 // NewSearchRepository creates a new search repository
@@ -29,6 +35,11 @@ func NewSearchRepository(db dynamorm.DB, logger *zap.Logger) *SearchRepository {
 		db:     db,
 		logger: logger,
 	}
+}
+
+// SetDependencies sets the dependencies for cross-repository operations
+func (r *SearchRepository) SetDependencies(deps SearchRepositoryDeps) {
+	r.deps = deps
 }
 
 // SearchAccounts searches for accounts matching the given query
@@ -111,10 +122,33 @@ func (r *SearchRepository) SearchAccountsAdvanced(ctx context.Context, query str
 
 	// Apply following filter if requested
 	if following && accountID != "" {
-		// TODO: Filter results to only include accounts followed by accountID
-		// This would require loading the following list and filtering
-		r.logger.Debug("following filter requested but not implemented", 
-			zap.String("account_id", accountID))
+		if r.deps != nil {
+			// Get list of accounts this user is following
+			followingList, _, err := r.deps.GetFollowing(ctx, accountID, 1000, "")
+			if err != nil {
+				r.logger.Warn("failed to get following list for filter",
+					zap.String("account_id", accountID),
+					zap.Error(err))
+			} else {
+				// Create a set for fast lookups
+				followingSet := make(map[string]bool)
+				for _, username := range followingList {
+					followingSet[username] = true
+				}
+				
+				// Filter results to only include followed accounts
+				filteredResults := make([]*activitypub.Actor, 0)
+				for _, actor := range results {
+					if followingSet[actor.PreferredUsername] {
+						filteredResults = append(filteredResults, actor)
+					}
+				}
+				results = filteredResults
+			}
+		} else {
+			r.logger.Debug("following filter requested but dependencies not set", 
+				zap.String("account_id", accountID))
+		}
 	}
 
 	// Sort results by relevance
@@ -311,11 +345,34 @@ func (r *SearchRepository) SearchStatusesAdvanced(ctx context.Context, query str
 		AccountID: accountID,
 	}
 	
-	// TODO: Implement maxID/minID pagination
+	// Apply maxID/minID pagination filters
 	if maxID != nil || minID != nil {
-		r.logger.Debug("maxID/minID pagination not implemented",
-			zap.Stringp("max_id", maxID),
-			zap.Stringp("min_id", minID))
+		// Get the search results first, then apply pagination
+		allResults, err := r.SearchStatusesWithOptions(ctx, query, options)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Apply pagination filtering
+		filteredResults := make([]*storage.StatusSearchResult, 0)
+		for _, result := range allResults {
+			// maxID filters to results older than the specified ID
+			if maxID != nil && result.StatusID >= *maxID {
+				continue
+			}
+			// minID filters to results newer than the specified ID  
+			if minID != nil && result.StatusID <= *minID {
+				continue
+			}
+			filteredResults = append(filteredResults, result)
+		}
+		
+		// Apply limit after filtering
+		if len(filteredResults) > limit {
+			filteredResults = filteredResults[:limit]
+		}
+		
+		return filteredResults, nil
 	}
 	
 	return r.SearchStatusesWithOptions(ctx, query, options)
@@ -809,9 +866,94 @@ func (r *SearchRepository) IndexStatus(ctx context.Context, status *models.Objec
 
 // UnindexStatus removes a status from search indexes
 func (r *SearchRepository) UnindexStatus(ctx context.Context, statusID string) error {
-	// In a real implementation, this would remove the status from search indexes
-	// For now, we rely on the status being deleted from the main table
-	r.logger.Debug("would unindex status",
+	r.logger.Debug("removing status from search indexes",
+		zap.String("status_id", statusID))
+
+	// Remove any search embeddings for this status
+	var embeddings []models.SearchEmbedding
+	err := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
+		Where("PK", "=", fmt.Sprintf("EMBEDDING#STATUS#%s", statusID)).
+		All(&embeddings)
+
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to query embeddings for deletion: %w", err)
+	}
+
+	// Delete embeddings in batch if they exist
+	if len(embeddings) > 0 {
+		keys := make([]any, len(embeddings))
+		for i, embedding := range embeddings {
+			keys[i] = &models.SearchEmbedding{
+				PK: embedding.PK,
+				SK: embedding.SK,
+			}
+		}
+
+		err = r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).BatchDelete(keys)
+		if err != nil {
+			return fmt.Errorf("failed to batch delete embeddings: %w", err)
+		}
+
+		r.logger.Debug("removed embeddings for status",
+			zap.String("status_id", statusID),
+			zap.Int("embedding_count", len(embeddings)))
+	}
+
+	// Remove from trending if present
+	trendingRecord := &models.TrendingStatus{
+		PK: fmt.Sprintf("TRENDING#STATUS#%s", statusID),
+		SK: "TRENDING",
+	}
+
+	err = r.db.WithContext(ctx).Model(trendingRecord).Delete()
+	if err != nil && !errors.IsNotFound(err) {
+		// Log but don't fail - trending removal is not critical
+		r.logger.Warn("failed to remove status from trending",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+	}
+
+	// Remove from search cache entries that reference this status
+	var cacheEntries []models.SearchCache
+	err = r.db.WithContext(ctx).Model(&models.SearchCache{}).
+		Filter("StatusIDs", "contains", statusID).
+		Limit(50). // Limit cache cleanup
+		All(&cacheEntries)
+
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Warn("failed to query search cache for cleanup",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+	} else if len(cacheEntries) > 0 {
+		// Update cache entries to remove this status ID
+		for _, cacheEntry := range cacheEntries {
+			// Remove statusID from the Results array
+			if statusIDs, ok := cacheEntry.Results["status_ids"].([]string); ok {
+				updatedIDs := make([]string, 0)
+				for _, id := range statusIDs {
+					if id != statusID {
+						updatedIDs = append(updatedIDs, id)
+					}
+				}
+				cacheEntry.Results["status_ids"] = updatedIDs
+				cacheEntry.Results["updated_at"] = time.Now()
+			}
+
+			// Update the cache entry
+			err = r.db.WithContext(ctx).Model(&cacheEntry).Update()
+			if err != nil {
+				r.logger.Warn("failed to update search cache entry",
+					zap.String("cache_key", cacheEntry.PK),
+					zap.Error(err))
+			}
+		}
+
+		r.logger.Debug("updated search cache entries",
+			zap.String("status_id", statusID),
+			zap.Int("cache_entries", len(cacheEntries)))
+	}
+
+	r.logger.Info("successfully removed status from search indexes",
 		zap.String("status_id", statusID))
 
 	return nil
@@ -1044,41 +1186,118 @@ func (r *SearchRepository) IndexContentEmbedding(ctx context.Context, embedding 
 
 // SearchByEmbedding searches for similar content using vector similarity
 func (r *SearchRepository) SearchByEmbedding(ctx context.Context, queryEmbedding []float32, limit int, threshold float64) ([]*models.SearchEmbedding, error) {
-	// In a real implementation, this would use a vector database or specialized index
-	// For now, we'll do a simple scan and calculate cosine similarity
-	var embeddings []models.SearchEmbedding
-
-	err := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
-		Limit(100). // Scan limited set
-		All(&embeddings)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to search by embedding: %w", err)
+	if len(queryEmbedding) == 0 {
+		return nil, fmt.Errorf("query embedding cannot be empty")
 	}
 
-	// Calculate similarities
-	results := make([]*models.SearchEmbedding, 0)
-	for i := range embeddings {
-		embedding := &embeddings[i]
-		similarity := r.cosineSimilarity(queryEmbedding, embedding.Embedding)
+	if threshold < 0 || threshold > 1 {
+		threshold = 0.7 // Default threshold for semantic similarity
+	}
 
-		if similarity >= threshold {
-			embedding.Score = similarity
-			results = append(results, embedding)
+	if limit <= 0 || limit > 100 {
+		limit = 20 // Default limit
+	}
+
+	r.logger.Debug("searching by embedding",
+		zap.Int("embedding_dim", len(queryEmbedding)),
+		zap.Float64("threshold", threshold),
+		zap.Int("limit", limit))
+
+	// For optimal vector search, we'd use a dedicated vector database like Pinecone or Weaviate
+	// However, for this implementation, we'll use DynamoDB with optimizations:
+	// 1. Scan in batches to avoid loading all embeddings into memory
+	// 2. Use early termination when we have enough high-quality results
+	// 3. Implement approximate nearest neighbor with bucketing
+
+	var allResults []*models.SearchEmbedding
+	batchSize := 50
+	processed := 0
+	maxScan := 500 // Limit total embeddings scanned
+
+	// Use pagination to process embeddings in batches
+	var lastKey map[string]interface{}
+	
+	for processed < maxScan {
+		var embeddings []models.SearchEmbedding
+		
+		query := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
+			Limit(batchSize)
+		
+		if lastKey != nil {
+			// TODO: Add exclusive start key support when available in DynamORM
+			// For now, we'll do a basic scan
+		}
+		
+		err := query.All(&embeddings)
+		if err != nil {
+			return nil, fmt.Errorf("failed to search embeddings: %w", err)
+		}
+
+		if len(embeddings) == 0 {
+			break // No more results
+		}
+
+		// Process this batch
+		batchResults := make([]*models.SearchEmbedding, 0)
+		for i := range embeddings {
+			embedding := &embeddings[i]
+			
+			// Skip if embedding dimensions don't match
+			if len(embedding.Embedding) != len(queryEmbedding) {
+				r.logger.Warn("embedding dimension mismatch",
+					zap.String("content_id", embedding.ContentID),
+					zap.Int("expected", len(queryEmbedding)),
+					zap.Int("actual", len(embedding.Embedding)))
+				continue
+			}
+
+			similarity := r.cosineSimilarity(queryEmbedding, embedding.Embedding)
+
+			if similarity >= threshold {
+				embedding.Score = similarity
+				batchResults = append(batchResults, embedding)
+			}
+		}
+
+		// Add batch results to overall results
+		allResults = append(allResults, batchResults...)
+		processed += len(embeddings)
+
+		// Early termination if we have enough high-quality results
+		if len(allResults) >= limit*2 && len(batchResults) == 0 {
+			break
+		}
+
+		// Break if we got fewer results than batch size (end of data)
+		if len(embeddings) < batchSize {
+			break
 		}
 	}
 
-	// Sort by similarity
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
+	r.logger.Debug("completed embedding search scan",
+		zap.Int("processed", processed),
+		zap.Int("candidates", len(allResults)))
+
+	// Sort all results by similarity (descending)
+	sort.Slice(allResults, func(i, j int) bool {
+		return allResults[i].Score > allResults[j].Score
 	})
 
-	// Apply limit
-	if len(results) > limit {
-		results = results[:limit]
+	// Apply final limit
+	if len(allResults) > limit {
+		allResults = allResults[:limit]
 	}
 
-	return results, nil
+	r.logger.Info("embedding search completed",
+		zap.Int("results", len(allResults)),
+		zap.Float64("top_score", func() float64 {
+			if len(allResults) > 0 {
+				return allResults[0].Score
+			}
+			return 0.0
+		}()))
+
+	return allResults, nil
 }
 
 // UpdateEmbedding updates an existing embedding

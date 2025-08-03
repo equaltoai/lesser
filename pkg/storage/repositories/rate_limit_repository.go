@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -19,16 +16,14 @@ type RateLimitRepository struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
-	client    *dynamodb.Client // For GSI queries that DynamORM doesn't support well
 }
 
 // NewRateLimitRepository creates a new RateLimitRepository
-func NewRateLimitRepository(db core.DB, tableName string, logger *zap.Logger, client *dynamodb.Client) *RateLimitRepository {
+func NewRateLimitRepository(db core.DB, tableName string, logger *zap.Logger) *RateLimitRepository {
 	return &RateLimitRepository{
 		db:        db,
 		tableName: tableName,
 		logger:    logger,
-		client:    client,
 	}
 }
 
@@ -180,22 +175,17 @@ func (r *RateLimitRepository) CheckCommunityNoteRateLimit(ctx context.Context, u
 	// This matches the legacy implementation pattern exactly
 	yesterday := time.Now().Add(-24 * time.Hour)
 	
-	if r.client == nil {
-		r.logger.Warn("no DynamoDB client available for community note rate limit check")
-		// Fall back to allowing creation
-		return true, limit, nil
-	}
+	// Use DynamORM to query CommunityNote model with GSI3
+	var notes []models.CommunityNote
+	gsi3PK := fmt.Sprintf("AUTHOR#%s#NOTES", userID)
+	gsi3SKPrefix := yesterday.Format(time.RFC3339)
 	
-	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(r.tableName),
-		IndexName:              aws.String("GSI3"),
-		KeyConditionExpression: aws.String("GSI3PK = :pk AND GSI3SK > :sk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("AUTHOR#%s#NOTES", userID)},
-			":sk": &types.AttributeValueMemberS{Value: yesterday.Format(time.RFC3339)},
-		},
-		Select: types.SelectCount,
-	})
+	err := r.db.WithContext(ctx).Model(&models.CommunityNote{}).
+		Index("gsi3").
+		Where("GSI3PK", "=", gsi3PK).
+		Where("GSI3SK", ">", gsi3SKPrefix).
+		All(&notes)
+	
 	if err != nil {
 		r.logger.Error("failed to check community note rate limit",
 			zap.String("userID", userID),
@@ -204,7 +194,7 @@ func (r *RateLimitRepository) CheckCommunityNoteRateLimit(ctx context.Context, u
 		return false, 0, err
 	}
 	
-	count := int(result.Count)
+	count := len(notes)
 	canCreate := count < limit
 	remaining := limit - count
 	if remaining < 0 {
@@ -219,4 +209,143 @@ func (r *RateLimitRepository) CheckCommunityNoteRateLimit(ctx context.Context, u
 		zap.Int("remaining", remaining))
 	
 	return canCreate, remaining, nil
+}
+
+// CheckAPIRateLimit checks and updates API rate limiting for a user/endpoint combination
+// This matches the behavior from the original limiter.go implementation
+func (r *RateLimitRepository) CheckAPIRateLimit(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error {
+	now := time.Now()
+	windowStart := now.Truncate(window)
+	key := fmt.Sprintf("%s:%s", userID, endpoint)
+	
+	// Get current rate limit data
+	var current models.APIRateLimit
+	pk := fmt.Sprintf("RATELIMIT#%s", key)
+	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
+	
+	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&current)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create new rate limit record
+			current = *models.NewAPIRateLimit(userID, endpoint, windowStart)
+		} else {
+			r.logger.Error("failed to get API rate limit",
+				zap.String("user_id", userID),
+				zap.String("endpoint", endpoint),
+				zap.Error(err))
+			// Don't fail the request if we can't get rate limit data
+			return nil
+		}
+	}
+	
+	// Check if explicitly blocked
+	if current.Blocked && now.Before(current.BlockedUntil) {
+		return fmt.Errorf("rate limit exceeded, blocked until %v", current.BlockedUntil)
+	}
+	
+	// Reset if new window (this shouldn't happen with our PK/SK design, but safety check)
+	if current.Window.Before(windowStart) {
+		current.Count = 0
+		current.Window = windowStart
+		current.Blocked = false
+	}
+	
+	// Increment counter
+	current.Count++
+	current.UpdatedAt = now
+	
+	// Check limit
+	if current.Count > limit {
+		// Block for increasing durations based on how much over limit
+		blockDuration := time.Duration(current.Count/limit) * time.Hour
+		if blockDuration > 24*time.Hour {
+			blockDuration = 24 * time.Hour
+		}
+		
+		current.Blocked = true
+		current.BlockedUntil = now.Add(blockDuration)
+		
+		// Update the record
+		if err := r.updateAPIRateLimit(ctx, &current); err != nil {
+			r.logger.Error("failed to update blocked API rate limit",
+				zap.String("user_id", userID),
+				zap.String("endpoint", endpoint),
+				zap.Error(err))
+		}
+		
+		return fmt.Errorf("rate limit exceeded (%d > %d)", current.Count, limit)
+	}
+	
+	// Update counter
+	if err := r.updateAPIRateLimit(ctx, &current); err != nil {
+		r.logger.Error("failed to update API rate limit counter",
+			zap.String("user_id", userID),
+			zap.String("endpoint", endpoint),
+			zap.Error(err))
+		// Don't fail the request if we can't update the counter
+	}
+	
+	return nil
+}
+
+// GetAPIRateLimitInfo returns current rate limit info for response headers
+func (r *RateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
+	now := time.Now()
+	windowStart := now.Truncate(window)
+	resetTime = windowStart.Add(window)
+	key := fmt.Sprintf("%s:%s", userID, endpoint)
+	
+	// Get current rate limit data
+	var current models.APIRateLimit
+	pk := fmt.Sprintf("RATELIMIT#%s", key)
+	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
+	
+	err = r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&current)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// No data yet, full limit available
+			return limit, resetTime, nil
+		}
+		r.logger.Error("failed to get API rate limit info",
+			zap.String("user_id", userID),
+			zap.String("endpoint", endpoint),
+			zap.Error(err))
+		// Return full limit on error to avoid blocking legitimate requests
+		return limit, resetTime, nil
+	}
+	
+	// Calculate remaining
+	remaining = limit - current.Count
+	if remaining < 0 {
+		remaining = 0
+	}
+	
+	return remaining, resetTime, nil
+}
+
+// updateAPIRateLimit updates an API rate limit record using DynamORM
+func (r *RateLimitRepository) updateAPIRateLimit(ctx context.Context, limit *models.APIRateLimit) error {
+	// Ensure keys are set correctly
+	limit.UpdateKeys()
+	
+	// For DynamORM, we can use Create which will overwrite existing items
+	// This acts like a PUT operation in DynamoDB
+	err := r.db.WithContext(ctx).Model(limit).Create()
+	if err != nil {
+		r.logger.Error("failed to create/update API rate limit",
+			zap.String("pk", limit.PK),
+			zap.String("sk", limit.SK),
+			zap.Error(err))
+		return err
+	}
+	
+	return nil
 }

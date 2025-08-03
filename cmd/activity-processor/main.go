@@ -30,6 +30,7 @@ type ActivityProcessor struct {
 	timelineRepo     *repositories.TimelineRepository
 	actorRepo        *repositories.ActorRepository
 	userRepo         *repositories.UserRepository
+	relationshipRepo *repositories.RelationshipRepository
 	baseURL          string
 }
 
@@ -41,15 +42,17 @@ func NewActivityProcessor(db core.DB, tableName string, baseURL string) *Activit
 	timelineRepo := repositories.NewTimelineRepository(db, tableName, logger)
 	actorRepo := repositories.NewActorRepository(db, tableName, logger)
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
+	relationshipRepo := repositories.NewRelationshipRepository(db, tableName, logger)
 
 	return &ActivityProcessor{
-		db:           db,
-		tableName:    tableName,
-		logger:       logger,
-		timelineRepo: timelineRepo,
-		actorRepo:    actorRepo,
-		userRepo:     userRepo,
-		baseURL:      baseURL,
+		db:               db,
+		tableName:        tableName,
+		logger:           logger,
+		timelineRepo:     timelineRepo,
+		actorRepo:        actorRepo,
+		userRepo:         userRepo,
+		relationshipRepo: relationshipRepo,
+		baseURL:          baseURL,
 	}
 }
 
@@ -544,8 +547,14 @@ func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, acti
 		return fmt.Errorf("no object ID in Announce activity")
 	}
 
-	// For now, we'll create minimal timeline entries for announces
-	// In a full implementation, you'd fetch the original object
+	// TODO: Fetch original object from remote servers
+	// A full implementation would:
+	// 1. Check if object exists in local cache/database
+	// 2. If not found locally, fetch from the original server using HTTP signature
+	// 3. Validate the fetched object and store it locally
+	// 4. Extract rich content (title, summary, media) for timeline display
+	// 5. Handle different object types (Note, Article, Video, etc.)
+	// For now, we create a minimal announce entry
 	var entries []*models.Timeline
 	now := time.Now()
 
@@ -641,8 +650,28 @@ func (ap *ActivityProcessor) determineVisibility(to, cc []string) string {
 }
 
 func (ap *ActivityProcessor) extractLanguage(note *activitypub.Note) string {
+	// Check if the note has explicit language information in content
+	// ActivityPub notes may include language hints in various formats
+	if note.Summary != "" {
+		// Some implementations put language codes in summary
+		if strings.HasPrefix(note.Summary, "[lang:") {
+			if end := strings.Index(note.Summary, "]"); end > 6 {
+				lang := note.Summary[6:end]
+				if len(lang) == 2 || len(lang) == 5 { // "en" or "en-US" format
+					return lang
+				}
+			}
+		}
+	}
+	
+	// TODO: Implement content-based language detection
+	// A full implementation could:
+	// 1. Use a language detection library (like go-lingua or whatlanggo)
+	// 2. Check ActivityPub contentMap field if present
+	// 3. Analyze character patterns and common words
+	// 4. Default to instance's primary language from config
+	
 	// For now, default to English
-	// In a full implementation, detect from content or use note.Language
 	return "en"
 }
 
@@ -666,10 +695,22 @@ func (ap *ActivityProcessor) getFollowers(ctx context.Context, username string) 
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
 
-	// For now, return empty list as we'd need a followers repository
-	// In a full implementation, query the followers list
-	_ = actor
-	return []string{}, nil
+	// Query followers using the relationship repository
+	// Use a reasonable limit to avoid overwhelming the timeline fanout
+	followers, _, err := ap.relationshipRepo.GetFollowers(ctx, username, 1000, "")
+	if err != nil {
+		ap.logger.Error("failed to query followers",
+			zap.String("username", username),
+			zap.String("actor_id", actor.ID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query followers: %w", err)
+	}
+	
+	ap.logger.Debug("retrieved followers for timeline fanout",
+		zap.String("username", username),
+		zap.Int("follower_count", len(followers)))
+	
+	return followers, nil
 }
 
 func contains(slice []string, item string) bool {

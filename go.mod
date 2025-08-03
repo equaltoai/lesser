@@ -8,10 +8,10 @@ require (
 	github.com/99designs/gqlgen v0.17.74
 	github.com/aws/aws-lambda-go v1.49.0
 	github.com/aws/aws-sdk-go v1.55.7
-	github.com/aws/aws-sdk-go-v2 v1.36.5
+	github.com/aws/aws-sdk-go-v2 v1.37.1
 	github.com/aws/aws-sdk-go-v2/config v1.29.16
+	github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign v1.9.1
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.19.2
-	github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.7.82
 	github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.3
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.7.2
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.46.3
@@ -28,7 +28,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.5
 	github.com/aws/aws-sdk-go-v2/service/translate v1.29.2
 	github.com/aws/aws-xray-sdk-go v1.8.5
-	github.com/aws/smithy-go v1.22.4
+	github.com/aws/smithy-go v1.22.5
 	github.com/bbrks/go-blurhash v1.1.1
 	github.com/bytedance/sonic v1.13.3
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8

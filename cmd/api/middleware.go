@@ -166,32 +166,16 @@ func TrackCost(ctx *lift.Context, fn func(*cost.Tracker)) {
 	}
 }
 
-// createPerformanceMonitoringMiddleware creates middleware for performance monitoring
+// createPerformanceMonitoringMiddleware is deprecated in favor of EMF-based metrics
+// Use observability.CreateEMFPerformanceMonitoringMiddleware instead
+// This function is kept for backwards compatibility but should not be used in new code
 func createPerformanceMonitoringMiddleware(metricsCollector *observability.MetricsCollector) lift.Middleware {
+	// This is now a no-op since we've migrated to EMF
+	// The EMF middleware handles all performance monitoring without polling
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			startTime := time.Now()
-			
-			// Process the request
-			err := next.Handle(ctx)
-			
-			// Collect performance metrics
-			metrics := observability.GetPerformanceMetrics(startTime, time.Time{})
-			
-			// Record metrics
-			if metricsCollector != nil {
-				metricsCollector.RecordPerformanceMetrics(metrics)
-				metricsCollector.RecordLatency(ctx.Request.Path, metrics.ExecutionDuration)
-				
-				// Record success/error metrics
-				if err != nil {
-					metricsCollector.RecordErrorRate("api_request", 1, 1)
-				} else {
-					metricsCollector.RecordErrorRate("api_request", 0, 1)
-				}
-			}
-			
-			return err
+			// Just pass through - EMF middleware handles metrics collection
+			return next.Handle(ctx)
 		})
 	}
 }

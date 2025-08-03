@@ -8,17 +8,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
 // SmartRouteOptimizer implements intelligent route optimization
 type SmartRouteOptimizer struct {
-	db        *dynamodb.Client
-	tableName string
-	logger    *zap.Logger
+	repoInterface RepositoryInterface
+	logger        *zap.Logger
 
 	// Performance history cache
 	perfCache sync.Map // routeID -> *routePerformance
@@ -88,8 +87,26 @@ type timeCosts struct {
 	hourly [24]float64 // Cost per byte by hour
 }
 
-// NewSmartRouteOptimizer creates a new route optimizer
-func NewSmartRouteOptimizer(db *dynamodb.Client, tableName string, logger *zap.Logger, config *OptimizerConfig) *SmartRouteOptimizer {
+// RepositoryInterface defines the methods needed from a repository
+type RepositoryInterface interface {
+	RecordDeliveryResult(ctx context.Context, result *types.DeliveryResult) error
+	GetRouteMetrics(ctx context.Context, routeID string) (*types.RouteMetrics, error)
+	GetRoutePerformance(ctx context.Context, routeID string) (interface{}, error)
+	StoreOptimizationDecision(ctx context.Context, routes []*types.Route, messageSize int64) error
+}
+
+// NewSmartRouteOptimizer creates a new route optimizer with concrete repository
+func NewSmartRouteOptimizer(repo *repositories.RouteOptimizerRepository, logger *zap.Logger, config *OptimizerConfig) *SmartRouteOptimizer {
+	return newSmartRouteOptimizer(repo, logger, config)
+}
+
+// NewSmartRouteOptimizerFromInterface creates a new route optimizer from interface
+func NewSmartRouteOptimizerFromInterface(repo RepositoryInterface, logger *zap.Logger, config *OptimizerConfig) *SmartRouteOptimizer {
+	return newSmartRouteOptimizer(repo, logger, config)
+}
+
+// newSmartRouteOptimizer is the internal constructor
+func newSmartRouteOptimizer(repo RepositoryInterface, logger *zap.Logger, config *OptimizerConfig) *SmartRouteOptimizer {
 	if config == nil {
 		config = &OptimizerConfig{
 			LatencyWeight:        0.4,
@@ -105,9 +122,8 @@ func NewSmartRouteOptimizer(db *dynamodb.Client, tableName string, logger *zap.L
 	}
 
 	sro := &SmartRouteOptimizer{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		repoInterface: repo,
+		logger:        logger,
 		cacheTTL:  5 * time.Minute,
 		config:    config,
 		latencyModel: &latencyPredictor{
@@ -119,14 +135,11 @@ func NewSmartRouteOptimizer(db *dynamodb.Client, tableName string, logger *zap.L
 		},
 	}
 
-	// Start background optimization
-	go sro.continuousOptimization()
-
 	return sro
 }
 
 // OptimizeRoutes optimizes route selection based on historical performance
-func (sro *SmartRouteOptimizer) OptimizeRoutes(ctx context.Context, routes []*Route, messageSize int64) ([]*Route, error) {
+func (sro *SmartRouteOptimizer) OptimizeRoutes(ctx context.Context, routes []*types.Route, messageSize int64) ([]*types.Route, error) {
 	if len(routes) == 0 {
 		return routes, nil
 	}
@@ -167,7 +180,7 @@ func (sro *SmartRouteOptimizer) OptimizeRoutes(ctx context.Context, routes []*Ro
 	})
 
 	// Extract sorted routes
-	optimized := make([]*Route, len(scoredRoutes))
+	optimized := make([]*types.Route, len(scoredRoutes))
 	for i, sr := range scoredRoutes {
 		optimized[i] = sr.route
 		// Update route priority based on ranking
@@ -181,7 +194,7 @@ func (sro *SmartRouteOptimizer) OptimizeRoutes(ctx context.Context, routes []*Ro
 }
 
 // PredictLatency predicts latency for a route based on historical data
-func (sro *SmartRouteOptimizer) PredictLatency(route *Route, messageSize int64) time.Duration {
+func (sro *SmartRouteOptimizer) PredictLatency(route *types.Route, messageSize int64) time.Duration {
 	sro.latencyModel.mu.RLock()
 	defer sro.latencyModel.mu.RUnlock()
 
@@ -205,7 +218,7 @@ func (sro *SmartRouteOptimizer) PredictLatency(route *Route, messageSize int64) 
 }
 
 // EstimateCost estimates the cost of sending a message through a route
-func (sro *SmartRouteOptimizer) EstimateCost(route *Route, messageSize int64) float64 {
+func (sro *SmartRouteOptimizer) EstimateCost(route *types.Route, messageSize int64) float64 {
 	sro.costModel.mu.RLock()
 	defer sro.costModel.mu.RUnlock()
 
@@ -227,38 +240,9 @@ func (sro *SmartRouteOptimizer) EstimateCost(route *Route, messageSize int64) fl
 }
 
 // RecordDeliveryResult records the result of a delivery for learning
-func (sro *SmartRouteOptimizer) RecordDeliveryResult(ctx context.Context, result *DeliveryResult) error {
-	// Store in DynamoDB for persistence
-	item := map[string]types.AttributeValue{
-		"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("ROUTE#%s", result.RouteID)},
-		"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("RESULT#%d", time.Now().UnixNano())},
-
-		"MessageID":  &types.AttributeValueMemberS{Value: result.MessageID},
-		"Success":    &types.AttributeValueMemberBOOL{Value: result.Success},
-		"StatusCode": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", result.StatusCode)},
-		"Duration":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", result.Duration.Milliseconds())},
-		"BytesSent":  &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", result.BytesSent)},
-		"Cost":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%.6f", result.Cost)},
-		"Timestamp":  &types.AttributeValueMemberS{Value: result.Timestamp.Format(time.RFC3339)},
-
-		// GSI for time-based queries
-		"GSI1PK": &types.AttributeValueMemberS{Value: "RESULTS"},
-		"GSI1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d#%s", result.Timestamp.Unix(), result.RouteID)},
-
-		// TTL for cleanup (30 days)
-		"TTL": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(30*24*time.Hour).Unix())},
-	}
-
-	if result.ErrorMessage != "" {
-		item["ErrorMessage"] = &types.AttributeValueMemberS{Value: result.ErrorMessage}
-	}
-
-	putInput := &dynamodb.PutItemInput{
-		TableName: aws.String(sro.tableName),
-		Item:      item,
-	}
-
-	_, err := sro.db.PutItem(ctx, putInput)
+func (sro *SmartRouteOptimizer) RecordDeliveryResult(ctx context.Context, result *types.DeliveryResult) error {
+	// Use repository to store the result
+	err := sro.repoInterface.RecordDeliveryResult(ctx, result)
 	if err != nil {
 		return fmt.Errorf("record delivery result: %w", err)
 	}
@@ -297,96 +281,8 @@ func (sro *SmartRouteOptimizer) RecordDeliveryResult(ctx context.Context, result
 }
 
 // GetRouteMetrics retrieves detailed metrics for a route
-func (sro *SmartRouteOptimizer) GetRouteMetrics(ctx context.Context, routeID string) (*RouteMetrics, error) {
-	// Query recent results
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(sro.tableName),
-		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :prefix)"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":     &types.AttributeValueMemberS{Value: fmt.Sprintf("ROUTE#%s", routeID)},
-			":prefix": &types.AttributeValueMemberS{Value: "RESULT#"},
-		},
-		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:            aws.Int32(1000), // Last 1000 results
-	}
-
-	result, err := sro.db.Query(ctx, queryInput)
-	if err != nil {
-		return nil, fmt.Errorf("query route metrics: %w", err)
-	}
-
-	metrics := &RouteMetrics{
-		LastUpdated: time.Now(),
-	}
-
-	latencies := []time.Duration{}
-
-	for _, item := range result.Items {
-		// Parse result
-		var success bool
-		var duration, bytesSent int64
-		var cost float64
-
-		if v, ok := item["Success"].(*types.AttributeValueMemberBOOL); ok {
-			success = v.Value
-		}
-		if v, ok := item["Duration"].(*types.AttributeValueMemberN); ok {
-			if _, err := fmt.Sscanf(v.Value, "%d", &duration); err != nil {
-				sro.logger.Warn("failed to parse duration", zap.String("value", v.Value), zap.Error(err))
-			}
-			latencies = append(latencies, time.Duration(duration)*time.Millisecond)
-		}
-		if v, ok := item["BytesSent"].(*types.AttributeValueMemberN); ok {
-			if _, err := fmt.Sscanf(v.Value, "%d", &bytesSent); err != nil {
-				sro.logger.Warn("failed to parse bytes sent", zap.String("value", v.Value), zap.Error(err))
-			}
-		}
-		if v, ok := item["Cost"].(*types.AttributeValueMemberN); ok {
-			if _, err := fmt.Sscanf(v.Value, "%f", &cost); err != nil {
-				sro.logger.Warn("failed to parse cost", zap.String("value", v.Value), zap.Error(err))
-			}
-		}
-
-		// Update counters
-		metrics.TotalMessages++
-		if success {
-			metrics.SuccessfulCount++
-		} else {
-			metrics.FailedCount++
-		}
-		metrics.TotalBytes += bytesSent
-		metrics.TotalCost += cost
-	}
-
-	// Calculate latency percentiles
-	if len(latencies) > 0 {
-		sort.Slice(latencies, func(i, j int) bool {
-			return latencies[i] < latencies[j]
-		})
-
-		// Average
-		var total time.Duration
-		for _, l := range latencies {
-			total += l
-		}
-		metrics.AvgLatency = total / time.Duration(len(latencies))
-
-		// P95
-		p95Index := int(float64(len(latencies)) * 0.95)
-		if p95Index >= len(latencies) {
-			p95Index = len(latencies) - 1
-		}
-		metrics.P95Latency = latencies[p95Index]
-
-		// P99
-		p99Index := int(float64(len(latencies)) * 0.99)
-		if p99Index >= len(latencies) {
-			p99Index = len(latencies) - 1
-		}
-		metrics.P99Latency = latencies[p99Index]
-	}
-
-	return metrics, nil
+func (sro *SmartRouteOptimizer) GetRouteMetrics(ctx context.Context, routeID string) (*types.RouteMetrics, error) {
+	return sro.repoInterface.GetRouteMetrics(ctx, routeID)
 }
 
 // Helper methods
@@ -414,8 +310,31 @@ func (sro *SmartRouteOptimizer) getRoutePerformance(ctx context.Context, routeID
 		AvgCostPerByte: metrics.TotalCost / float64(metrics.TotalBytes),
 	}
 
-	// Determine trend
-	perf.TrendDirection = sro.calculateTrend(perf)
+	// Get raw performance data for trend calculation
+	rawData, err := sro.repoInterface.GetRoutePerformance(ctx, routeID)
+	if err != nil {
+		sro.logger.Warn("failed to get raw performance data", zap.String("routeID", routeID), zap.Error(err))
+		perf.TrendDirection = "stable" // Default to stable if we can't calculate trend
+	} else {
+		// Convert raw data to samples for trend calculation
+		if results, ok := rawData.([]*models.RouteDeliveryResult); ok {
+			perf.Samples = make([]performanceSample, len(results))
+			for i, result := range results {
+				perf.Samples[i] = performanceSample{
+					Timestamp: result.Timestamp,
+					Latency:   time.Duration(result.Duration) * time.Millisecond,
+					Success:   result.Success,
+					BytesSent: result.BytesSent,
+					Cost:      result.Cost,
+					ErrorType: result.ErrorMessage,
+				}
+			}
+			// Determine trend
+			perf.TrendDirection = sro.calculateTrend(perf)
+		} else {
+			perf.TrendDirection = "stable"
+		}
+	}
 
 	// Cache it
 	sro.perfCache.Store(routeID, perf)
@@ -431,11 +350,11 @@ type routeScore struct {
 }
 
 type scoredRoute struct {
-	route *Route
+	route *types.Route
 	score routeScore
 }
 
-func (sro *SmartRouteOptimizer) scoreRoute(route *Route, perf *routePerformance, messageSize int64) routeScore {
+func (sro *SmartRouteOptimizer) scoreRoute(route *types.Route, perf *routePerformance, messageSize int64) routeScore {
 	score := routeScore{}
 
 	// Default values if no performance data
@@ -462,8 +381,8 @@ func (sro *SmartRouteOptimizer) scoreRoute(route *Route, perf *routePerformance,
 	}
 
 	// Apply circuit breaker penalty
-	if route.CircuitStatus != CircuitClosed {
-		if route.CircuitStatus == CircuitOpen {
+	if route.CircuitStatus != types.CircuitClosed {
+		if route.CircuitStatus == types.CircuitOpen {
 			score.reliability *= 0.1
 		} else { // Half-open
 			score.reliability *= 0.5
@@ -478,7 +397,7 @@ func (sro *SmartRouteOptimizer) scoreRoute(route *Route, perf *routePerformance,
 	return score
 }
 
-func (sro *SmartRouteOptimizer) updatePredictions(result *DeliveryResult) {
+func (sro *SmartRouteOptimizer) updatePredictions(result *types.DeliveryResult) {
 	// Update latency prediction
 	sro.latencyModel.mu.Lock()
 	current, exists := sro.latencyModel.predictions[result.RouteID]
@@ -609,73 +528,14 @@ func (sro *SmartRouteOptimizer) getHourlyLatencyFactor() float64 {
 	}
 }
 
-func (sro *SmartRouteOptimizer) storeOptimizationDecision(_ context.Context, routes []*Route, messageSize int64) {
-	// Store decision for later analysis
-	decision := map[string]any{
-		"timestamp":   time.Now(),
-		"messageSize": messageSize,
-		"routes":      []string{},
-	}
-
-	for _, route := range routes {
-		decision["routes"] = append(decision["routes"].([]string), route.ID)
-	}
-
-	// Store asynchronously
-	go func() {
-		item := map[string]types.AttributeValue{
-			"PK":       &types.AttributeValueMemberS{Value: "OPTIMIZATION"},
-			"SK":       &types.AttributeValueMemberS{Value: fmt.Sprintf("DECISION#%d", time.Now().UnixNano())},
-			"Decision": &types.AttributeValueMemberS{Value: fmt.Sprintf("%v", decision)},
-			"TTL":      &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(7*24*time.Hour).Unix())},
-		}
-
-		putInput := &dynamodb.PutItemInput{
-			TableName: aws.String(sro.tableName),
-			Item:      item,
-		}
-
-		_, err := sro.db.PutItem(context.Background(), putInput)
-		if err != nil {
-			sro.logger.Warn("failed to store optimization decision", zap.Error(err))
-		}
-	}()
-}
-
-func (sro *SmartRouteOptimizer) continuousOptimization() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		// Refresh predictions based on recent data
-		ctx := context.Background()
-
-		// Query recent results
-		queryInput := &dynamodb.QueryInput{
-			TableName:              aws.String(sro.tableName),
-			IndexName:              aws.String("GSI1"),
-			KeyConditionExpression: aws.String("GSI1PK = :pk AND GSI1SK > :since"),
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":pk":    &types.AttributeValueMemberS{Value: "RESULTS"},
-				":since": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d", time.Now().Add(-1*time.Hour).Unix())},
-			},
-			Limit: aws.Int32(500),
-		}
-
-		result, err := sro.db.Query(ctx, queryInput)
-		if err != nil {
-			sro.logger.Error("continuous optimization query failed", zap.Error(err))
-			continue
-		}
-
-		// Update models with recent data
-		for _, item := range result.Items {
-			// Parse and update predictions
-			// Implementation details omitted for brevity
-			_ = item // Mark as used
-		}
-
-		sro.logger.Info("continuous optimization completed",
-			zap.Int("samplesProcessed", len(result.Items)))
+func (sro *SmartRouteOptimizer) storeOptimizationDecision(ctx context.Context, routes []*types.Route, messageSize int64) {
+	// Store decision using repository
+	err := sro.repoInterface.StoreOptimizationDecision(ctx, routes, messageSize)
+	if err != nil {
+		sro.logger.Warn("failed to store optimization decision", zap.Error(err))
 	}
 }
+
+// Note: RefreshPredictions was removed since predictions are now updated
+// automatically whenever RecordDeliveryResult is called, eliminating the
+// need for separate background processing or manual refresh calls.

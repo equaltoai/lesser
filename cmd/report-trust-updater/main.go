@@ -80,7 +80,7 @@ func (r *ReportTrustService) UpdateReporterTrustOnDecision(ctx context.Context, 
 		ID:         fmt.Sprintf("system_%s_%s_%d", reporterActorID, trust.TrustCategoryContent, time.Now().Unix()),
 		TrusterID:  "system",
 		TrusteeID:  reporterActorID,
-		Category:   trust.TrustCategoryContent,
+		Category:   models.TrustCategoryContent,
 		Score:      0.5, // Default score, would be calculated based on history
 		Confidence: 0.8, // Confidence in this assessment
 		Created:    time.Now(),
@@ -279,10 +279,15 @@ func (rtu *ReportTrustUpdater) processRecord(ctx context.Context, record events.
 	// Check if this event has report metadata
 	var reportID string
 	for _, evidence := range event.Evidence {
-		if evidence.Type == "user_report" {
-			if metadata, ok := evidence.Metadata["report_id"].(string); ok {
-				reportID = metadata
-				break
+		// Type assert evidence to map
+		if evidenceMap, ok := evidence.(map[string]interface{}); ok {
+			if evidenceType, ok := evidenceMap["type"].(string); ok && evidenceType == "user_report" {
+				if metadata, ok := evidenceMap["metadata"].(map[string]interface{}); ok {
+					if rid, ok := metadata["report_id"].(string); ok {
+						reportID = rid
+						break
+					}
+				}
 			}
 		}
 	}

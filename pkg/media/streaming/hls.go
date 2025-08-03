@@ -34,12 +34,26 @@ func (g *HLSGenerator) GenerateMasterPlaylist(mediaID string, metadata *MediaMet
 	// Add variants for each available quality
 	for _, quality := range metadata.AvailableQualities {
 		info := GetQualityInfo(quality)
+		
+		// Use metadata-specific settings if available, otherwise use defaults
+		bandwidth := info.Bandwidth * 1000 // Convert to bps for HLS (default)
+		resolution := info.Resolution        // Default resolution
+		
+		if codecInfo, exists := metadata.QualitySettings[quality]; exists {
+			if codecInfo.Bandwidth > 0 {
+				bandwidth = codecInfo.Bandwidth
+			}
+			if codecInfo.Width > 0 && codecInfo.Height > 0 {
+				resolution = fmt.Sprintf("%dx%d", codecInfo.Width, codecInfo.Height)
+			}
+		}
+		
 		variant := HLSVariant{
 			Quality:     quality,
-			Bandwidth:   info.Bandwidth * 1000, // Convert to bps for HLS
-			Resolution:  info.Resolution,
+			Bandwidth:   bandwidth,
+			Resolution:  resolution,
 			PlaylistURL: g.getVariantPlaylistURL(mediaID, quality),
-			Codecs:      g.getCodecs(quality),
+			Codecs:      g.getCodecsWithMetadata(mediaID, quality),
 		}
 		manifest.Variants = append(manifest.Variants, variant)
 	}
@@ -169,8 +183,31 @@ func (g *HLSGenerator) getSegmentURL(mediaID string, quality Quality, index int)
 }
 
 func (g *HLSGenerator) getCodecs(quality Quality) string {
-	// Return appropriate codec string based on quality
-	// In production, this would be determined by actual encoding settings
+	// Attempt to get codec info from metadata if available
+	// This method now supports both static fallback and dynamic metadata-based codec selection
+	return g.getCodecsWithMetadata("", quality)
+}
+
+// getCodecsWithMetadata returns codec string using metadata if available, otherwise falls back to defaults
+func (g *HLSGenerator) getCodecsWithMetadata(mediaID string, quality Quality) string {
+	// Try to get metadata if mediaID is provided and storage is available
+	if mediaID != "" && g.storage != nil {
+		if metadata, err := g.storage.GetMediaMetadata(mediaID); err == nil {
+			// Use quality-specific codec info if available
+			if codecInfo, exists := metadata.QualitySettings[quality]; exists {
+				if codecInfo.VideoCodec != "" && codecInfo.AudioCodec != "" {
+					return fmt.Sprintf("%s,%s", codecInfo.VideoCodec, codecInfo.AudioCodec)
+				}
+			}
+			
+			// Use general codec info from metadata if available
+			if metadata.VideoCodec != "" && metadata.AudioCodec != "" {
+				return fmt.Sprintf("%s,%s", metadata.VideoCodec, metadata.AudioCodec)
+			}
+		}
+	}
+	
+	// Fallback to quality-based defaults (preserving original behavior)
 	switch quality {
 	case Quality4K, Quality1080p:
 		return "avc1.640028,mp4a.40.2" // H.264 High Profile + AAC

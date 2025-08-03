@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -54,12 +55,31 @@ func (r *TimelineRepository) CreateTimelineEntries(ctx context.Context, entries 
 		}
 	}
 
-	// Create entries one by one (in a real implementation, you'd use batch operations)
-	for _, entry := range entries {
-		err := r.db.Model(entry).Create()
-		if err != nil {
-			return fmt.Errorf("failed to create timeline entry: %w", err)
-		}
+	// Convert to []any for batch operations
+	items := make([]any, len(entries))
+	for i, entry := range entries {
+		items[i] = entry
+	}
+
+	// Use batch writer for efficient bulk creation
+	batchWriter := batch.NewBatchWriter(r.db, batch.BatchWriterConfig{
+		BatchSize: batch.DefaultBatchSize,
+		Logger:    r.logger,
+	})
+
+	result, err := batchWriter.WriteItems(ctx, items)
+	if err != nil {
+		return fmt.Errorf("failed to batch create timeline entries: %w", err)
+	}
+
+	// Check if any items failed
+	if result.FailedItems > 0 {
+		r.logger.Warn("some timeline entries failed to create",
+			zap.Int("failed_items", result.FailedItems),
+			zap.Int("total_items", result.TotalItems),
+		)
+		// For timeline entries, we'll continue even with some failures
+		// since they're not critical for app functionality
 	}
 
 	return nil
@@ -348,13 +368,26 @@ func (r *TimelineRepository) DeleteTimelineEntriesByPost(ctx context.Context, po
 		return nil // Nothing to delete
 	}
 
-	// Delete entries one by one (in a real implementation, you'd use batch operations)
-	for _, entry := range entries {
-		err := r.db.Model(entry).Delete()
-		if err != nil {
-			return fmt.Errorf("failed to delete timeline entry: %w", err)
+	// Use batch delete for efficient bulk deletion
+	keys := make([]any, len(entries))
+	for i, entry := range entries {
+		// Create key structs with PK and SK for deletion
+		keys[i] = &models.Timeline{
+			PK: entry.PK,
+			SK: entry.SK,
 		}
 	}
+
+	// Use DynamORM's batch delete functionality
+	err = r.db.Model(&models.Timeline{}).BatchDelete(keys)
+	if err != nil {
+		return fmt.Errorf("failed to batch delete timeline entries: %w", err)
+	}
+
+	r.logger.Info("batch deleted timeline entries for post",
+		zap.String("post_id", postID),
+		zap.Int("deleted_count", len(entries)),
+	)
 
 	return nil
 }
@@ -382,13 +415,26 @@ func (r *TimelineRepository) DeleteExpiredTimelineEntries(ctx context.Context, b
 		return nil // Nothing to delete
 	}
 
-	// Delete entries one by one (in a real implementation, you'd use batch operations)
-	for _, entry := range expiredEntries {
-		err := r.db.Model(entry).Delete()
-		if err != nil {
-			return fmt.Errorf("failed to delete timeline entry: %w", err)
+	// Use batch delete for efficient bulk deletion
+	keys := make([]any, len(expiredEntries))
+	for i, entry := range expiredEntries {
+		// Create key structs with PK and SK for deletion
+		keys[i] = &models.Timeline{
+			PK: entry.PK,
+			SK: entry.SK,
 		}
 	}
+
+	// Use DynamORM's batch delete functionality
+	err = r.db.Model(&models.Timeline{}).BatchDelete(keys)
+	if err != nil {
+		return fmt.Errorf("failed to batch delete expired timeline entries: %w", err)
+	}
+
+	r.logger.Info("batch deleted expired timeline entries",
+		zap.Time("before", before),
+		zap.Int("deleted_count", len(expiredEntries)),
+	)
 
 	return nil
 }

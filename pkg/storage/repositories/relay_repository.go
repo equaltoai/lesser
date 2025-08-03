@@ -166,24 +166,48 @@ func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.Relay
 func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor string) ([]*storage.RelayInfo, string, error) {
 	logger := r.logger.With(zap.String("operation", "GetAllRelays"))
 
-	// For now, use scan with filter since DynamORM doesn't support BEGINS_WITH on PK
-	// In production, consider adding a GSI for this query pattern
-	var relays []models.Relay
-	err := r.db.WithContext(ctx).Model(&models.Relay{}).
-		Limit(limit).
-		All(&relays)
-	
-	// Filter results to only include relays
-	var filtered []models.Relay
-	for _, model := range relays {
-		if strings.HasPrefix(model.PK, "RELAY#") {
-			filtered = append(filtered, model)
+	// Build the query - we need to scan for items where PK starts with "RELAY#"
+	// Since we can't use BEGINS_WITH on PK in main table, we'll use a Filter approach
+	query := r.db.WithContext(ctx).Model(&models.Relay{}).
+		Filter("PK", "BEGINS_WITH", "RELAY#").
+		OrderBy("PK", "ASC")
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		// Decode cursor to get the last key
+		lastKey, err := decodeCursor(cursor)
+		if err != nil {
+			logger.Warn("invalid cursor provided", zap.String("cursor", cursor), zap.Error(err))
+		} else {
+			// Extract PK from cursor
+			if pk, ok := lastKey["PK"].(string); ok {
+				// Continue from where we left off - use simple PK comparison
+				query = query.Where("PK", ">", pk)
+			}
 		}
 	}
-	relays = filtered
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var relays []models.Relay
+	err := query.All(&relays)
 	if err != nil {
 		logger.Error("failed to query all relays", zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query all relays: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(relays) > limit {
+		// We got more results than requested, so there are more pages
+		lastRelay := relays[limit-1]
+		lastKey := map[string]interface{}{
+			"PK": lastRelay.PK,
+			"SK": lastRelay.SK,
+		}
+		nextCursor = encodeCursor(lastKey)
+		relays = relays[:limit] // Trim to requested limit
 	}
 
 	// Convert to storage types
@@ -201,10 +225,6 @@ func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor st
 			TTL:        model.TTL,
 		}
 	}
-
-	// For now, pagination not implemented - return empty cursor
-	// TODO: Implement proper pagination with DynamORM
-	var nextCursor string
 
 	logger.Info("retrieved all relays", zap.Int("count", len(relays)))
 	return results, nextCursor, nil
