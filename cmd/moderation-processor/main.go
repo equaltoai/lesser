@@ -18,7 +18,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/equaltoai/lesser/pkg/trust"
 )
 
 var (
@@ -68,12 +67,12 @@ func (s *repositoryStorageAdapter) GetModerationEvent(ctx context.Context, event
 	if err != nil {
 		return nil, err
 	}
-	return (*moderation.ModerationEvent)(storageEvent), nil
+	return convertStorageToModerationEvent(storageEvent), nil
 }
 
 func (s *repositoryStorageAdapter) AddModerationReview(ctx context.Context, review *moderation.Review) error {
 	// Convert moderation.Review to storage.ModerationReview
-	storageReview := (*storage.ModerationReview)(review)
+	storageReview := convertModerationToStorageReview(review)
 	return s.moderationRepo.AddModerationReview(ctx, storageReview)
 }
 
@@ -85,14 +84,14 @@ func (s *repositoryStorageAdapter) GetModerationReviews(ctx context.Context, eve
 	// Convert []*storage.ModerationReview to []*moderation.Review
 	reviews := make([]*moderation.Review, len(storageReviews))
 	for i, sr := range storageReviews {
-		reviews[i] = (*moderation.Review)(sr)
+		reviews[i] = convertStorageToModerationReview(sr)
 	}
 	return reviews, nil
 }
 
 func (s *repositoryStorageAdapter) CreateModerationDecision(ctx context.Context, decision *moderation.ModerationDecision) error {
 	// Convert moderation.ModerationDecision to storage.ModerationDecision
-	storageDecision := (*storage.ModerationDecision)(decision)
+	storageDecision := convertModerationToStorageDecision(decision)
 	return s.moderationRepo.CreateModerationDecision(ctx, storageDecision)
 }
 
@@ -104,19 +103,260 @@ func (s *repositoryStorageAdapter) GetModerationQueue(ctx context.Context, limit
 	// Convert []*storage.ModerationQueueItem to []*moderation.QueueItem
 	items := make([]*moderation.QueueItem, len(storageItems))
 	for i, si := range storageItems {
-		items[i] = (*moderation.QueueItem)(si)
+		items[i] = convertStorageToModerationQueueItem(si)
 	}
 	return items, nextCursor, nil
 }
 
-func (s *repositoryStorageAdapter) GetTrustScore(ctx context.Context, actorID, category string) (*trust.TrustScore, error) {
-	// This would need a trust repository - for now return nil
-	return nil, fmt.Errorf("trust score retrieval not implemented in repository adapter")
+func (s *repositoryStorageAdapter) GetTrustScore(ctx context.Context, actorID, category string) (*models.TrustScore, error) {
+	// Use the UserRepository which has trust functionality implemented
+	score, err := s.userRepo.GetTrustScore(ctx, actorID, category)
+	if err != nil {
+		return nil, err
+	}
+	// Convert storage.TrustScore to models.TrustScore
+	return &models.TrustScore{
+		ActorID:         score.ActorID,
+		Category:        models.TrustCategory(score.Category),
+		Score:           score.Score,
+		DirectScore:     score.DirectScore,
+		PropagatedScore: score.PropagatedScore,
+		Confidence:      score.Confidence,
+		TrusterCount:    score.TrusterCount,
+		LastCalculated:  score.LastCalculated,
+		CacheTTL:        score.CacheTTL,
+	}, nil
 }
 
-func (s *repositoryStorageAdapter) RecordTrustUpdate(ctx context.Context, update *trust.TrustUpdate) error {
-	// This would need a trust repository - for now return nil
-	return fmt.Errorf("trust update recording not implemented in repository adapter")
+func (s *repositoryStorageAdapter) RecordTrustUpdate(ctx context.Context, update *models.TrustUpdate) error {
+	// Use the UserRepository which has trust functionality implemented
+	// Convert models.TrustUpdate to storage.TrustUpdate
+	return s.userRepo.RecordTrustUpdate(ctx, &storage.TrustUpdate{
+		ActorID:   update.ActorID,
+		Category:  storage.TrustCategory(update.Category),
+		Delta:     update.Delta,
+		Reason:    update.Reason,
+		EventID:   update.EventID,
+		Timestamp: update.Timestamp,
+	})
+}
+
+// Conversion functions between moderation and storage types
+
+func convertStorageToModerationEvent(storageEvent *storage.ModerationEvent) *moderation.ModerationEvent {
+	if storageEvent == nil {
+		return nil
+	}
+
+	// Convert Evidence from []any to []Evidence
+	var evidence []moderation.Evidence
+	for _, e := range storageEvent.Evidence {
+		if evidenceMap, ok := e.(map[string]interface{}); ok {
+			evidence = append(evidence, moderation.Evidence{
+				Type:        getStringFromMap(evidenceMap, "type"),
+				Score:       getFloatFromMap(evidenceMap, "score"),
+				Description: getStringFromMap(evidenceMap, "description"),
+				Metadata:    getMapFromMap(evidenceMap, "metadata"),
+				Timestamp:   getTimeFromMap(evidenceMap, "timestamp"),
+			})
+		}
+	}
+
+	return &moderation.ModerationEvent{
+		ID:              storageEvent.ID,
+		EventType:       moderation.EventType(storageEvent.EventType),
+		ObjectID:        storageEvent.ObjectID,
+		ObjectType:      storageEvent.ObjectType,
+		ActorID:         storageEvent.ActorID,
+		Category:        moderation.Category(storageEvent.Category),
+		Severity:        parseSeverity(storageEvent.Severity),
+		ConfidenceScore: storageEvent.ConfidenceScore,
+		Evidence:        evidence,
+		Reason:          storageEvent.Reason,
+		Created:         storageEvent.Created,
+		Updated:         storageEvent.Updated,
+		TTL:             storageEvent.TTL,
+	}
+}
+
+func convertStorageToModerationReview(storageReview *storage.ModerationReview) *moderation.Review {
+	if storageReview == nil {
+		return nil
+	}
+
+	return &moderation.Review{
+		ID:         storageReview.ID,
+		EventID:    storageReview.EventID,
+		ReviewerID: storageReview.ReviewerID,
+		Action:     moderation.ActionType(storageReview.Action),
+		Category:   parseCategoryFromString(storageReview.Severity), // Map severity to category
+		Severity:   parseSeverity(storageReview.Severity),
+		Confidence: storageReview.Confidence,
+		Notes:      storageReview.Note,
+		Weight:     storageReview.ReviewerRep, // Use reviewer rep as weight
+		Created:    storageReview.Created,
+	}
+}
+
+func convertModerationToStorageReview(review *moderation.Review) *storage.ModerationReview {
+	if review == nil {
+		return nil
+	}
+
+	return &storage.ModerationReview{
+		ID:          review.ID,
+		EventID:     review.EventID,
+		ReviewerID:  review.ReviewerID,
+		ReviewerRep: review.Weight,
+		Action:      string(review.Action),
+		Severity:    severityToString(review.Severity),
+		Note:        review.Notes,
+		Confidence:  review.Confidence,
+		Created:     review.Created,
+	}
+}
+
+func convertModerationToStorageDecision(decision *moderation.ModerationDecision) *storage.ModerationDecision {
+	if decision == nil {
+		return nil
+	}
+
+	// Convert Reviews to interface{} slice
+	var reviews []interface{}
+	for _, review := range decision.Reviews {
+		reviews = append(reviews, convertModerationToStorageReview(review))
+	}
+
+	storageDecision := &storage.ModerationDecision{
+		ID:               decision.ID,
+		EventID:          decision.EventID,
+		ObjectID:         decision.ObjectID,
+		Action:           string(decision.Action),
+		ConsensusScore:   decision.ConsensusScore,
+		ReviewerCount:    decision.ReviewerCount,
+		TrustWeightTotal: decision.TrustWeightTotal,
+		Reviews:          reviews,
+		Decided:          decision.Decided,
+	}
+
+	// Set expires if AppliedAt is set
+	if decision.AppliedAt != nil {
+		storageDecision.Expires = decision.AppliedAt
+	}
+
+	return storageDecision
+}
+
+func convertStorageToModerationQueueItem(storageItem *storage.ModerationQueueItem) *moderation.QueueItem {
+	if storageItem == nil {
+		return nil
+	}
+
+	return &moderation.QueueItem{
+		Event:          convertStorageToModerationEvent(storageItem.Event),
+		Priority:       storageItem.Priority,
+		ReviewCount:    storageItem.ReviewCount,
+		LastReviewedAt: storageItem.LastReviewedAt,
+	}
+}
+
+// Helper functions for type conversions
+
+func getStringFromMap(m map[string]interface{}, key string) string {
+	if v, ok := m[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func getFloatFromMap(m map[string]interface{}, key string) float64 {
+	if v, ok := m[key]; ok {
+		if f, ok := v.(float64); ok {
+			return f
+		}
+		if i, ok := v.(int); ok {
+			return float64(i)
+		}
+	}
+	return 0.0
+}
+
+func getMapFromMap(m map[string]interface{}, key string) map[string]any {
+	if v, ok := m[key]; ok {
+		if subMap, ok := v.(map[string]interface{}); ok {
+			result := make(map[string]any)
+			for k, v := range subMap {
+				result[k] = v
+			}
+			return result
+		}
+	}
+	return nil
+}
+
+func getTimeFromMap(m map[string]interface{}, key string) time.Time {
+	if v, ok := m[key]; ok {
+		if t, ok := v.(time.Time); ok {
+			return t
+		}
+		if s, ok := v.(string); ok {
+			if parsed, err := time.Parse(time.RFC3339, s); err == nil {
+				return parsed
+			}
+		}
+	}
+	return time.Time{}
+}
+
+func parseSeverity(severityStr string) moderation.Severity {
+	switch strings.ToLower(severityStr) {
+	case "low", "1":
+		return moderation.SeverityLow
+	case "medium", "2":
+		return moderation.SeverityMedium
+	case "high", "3":
+		return moderation.SeverityHigh
+	case "critical", "4":
+		return moderation.SeverityCritical
+	default:
+		return moderation.SeverityMedium
+	}
+}
+
+func severityToString(severity moderation.Severity) string {
+	switch severity {
+	case moderation.SeverityLow:
+		return "low"
+	case moderation.SeverityMedium:
+		return "medium"
+	case moderation.SeverityHigh:
+		return "high"
+	case moderation.SeverityCritical:
+		return "critical"
+	default:
+		return "medium"
+	}
+}
+
+func parseCategoryFromString(s string) moderation.Category {
+	switch strings.ToLower(s) {
+	case "spam":
+		return moderation.CategorySpam
+	case "hate_speech":
+		return moderation.CategoryHateSpeech
+	case "harassment":
+		return moderation.CategoryHarassment
+	case "misinformation":
+		return moderation.CategoryMisinformation
+	case "nsfw":
+		return moderation.CategoryNSFW
+	case "violence":
+		return moderation.CategoryViolence
+	default:
+		return moderation.CategoryOther
+	}
 }
 
 func init() {
@@ -529,7 +769,7 @@ func (mp *ModerationProcessor) triggerAutomaticActions(ctx context.Context, even
 			Created:    time.Now(),
 		}
 
-		storageReview := (*storage.ModerationReview)(review)
+		storageReview := convertModerationToStorageReview(review)
 		if err := mp.moderationRepo.AddModerationReview(ctx, storageReview); err != nil {
 			return fmt.Errorf("failed to add automatic review: %w", err)
 		}

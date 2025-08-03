@@ -126,7 +126,7 @@ func init() {
 	}
 
 	// Initialize repositories
-	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger, nil)
+	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger)
 	mediaRepo := repositories.NewMediaRepository(db, cfg.DynamoTableName, logger)
 
 	// Set media repository in storage adapter

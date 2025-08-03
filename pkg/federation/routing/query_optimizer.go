@@ -6,19 +6,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	fedTypes "github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
 // QueryOptimizer optimizes DynamoDB query patterns for federation routing
 type QueryOptimizer struct {
-	db        *dynamodb.Client
-	tableName string
+	cacheRepo *repositories.QueryCacheRepository
 	logger    *zap.Logger
 
-	// Query result cache
+	// Query result cache (in-memory for batching)
 	cache *queryCache
 
 	// Batch query coordinator
@@ -53,17 +51,15 @@ type lruList struct {
 	tail *lruNode
 }
 
-// queryBatcher batches multiple queries for efficiency
+// queryBatcher batches multiple queries for efficiency (serverless-compatible)
 type queryBatcher struct {
-	mu          sync.Mutex
-	batches     map[string]*queryBatch
-	flushTicker *time.Ticker
+	mu      sync.Mutex
+	batches map[string]*queryBatch
 }
 
 type queryBatch struct {
-	queries    []batchedQuery
-	resultChan chan batchResult
-	created    time.Time
+	queries []batchedQuery
+	created time.Time
 }
 
 type batchedQuery struct {
@@ -71,13 +67,10 @@ type batchedQuery struct {
 	resultChan chan any
 }
 
-type batchResult struct{}
-
 // NewQueryOptimizer creates a new query optimizer
-func NewQueryOptimizer(db *dynamodb.Client, tableName string, logger *zap.Logger) *QueryOptimizer {
+func NewQueryOptimizer(cacheRepo *repositories.QueryCacheRepository, logger *zap.Logger) *QueryOptimizer {
 	qo := &QueryOptimizer{
-		db:        db,
-		tableName: tableName,
+		cacheRepo: cacheRepo,
 		logger:    logger,
 		cache: &queryCache{
 			entries: make(map[string]*cacheEntry),
@@ -86,65 +79,72 @@ func NewQueryOptimizer(db *dynamodb.Client, tableName string, logger *zap.Logger
 			ttl:     5 * time.Minute,
 		},
 		batcher: &queryBatcher{
-			batches:     make(map[string]*queryBatch),
-			flushTicker: time.NewTicker(10 * time.Millisecond),
+			batches: make(map[string]*queryBatch),
 		},
 	}
-
-	// Start background processes
-	go qo.batcher.processBatches(qo)
-	go qo.cache.evictionLoop()
 
 	return qo
 }
 
 // OptimizedGetInstance retrieves an instance with caching and batching
-func (qo *QueryOptimizer) OptimizedGetInstance(ctx context.Context, instanceID string) (*Instance, error) {
+func (qo *QueryOptimizer) OptimizedGetInstance(ctx context.Context, instanceID string) (*fedTypes.Instance, error) {
 	cacheKey := fmt.Sprintf("instance:%s", instanceID)
 
-	// Check cache first
+	// Check in-memory cache first
 	if cached := qo.cache.get(cacheKey); cached != nil {
-		if instance, ok := cached.(*Instance); ok {
-			qo.logger.Debug("cache hit", zap.String("instanceID", instanceID))
+		if instance, ok := cached.(*fedTypes.Instance); ok {
+			qo.logger.Debug("in-memory cache hit", zap.String("instanceID", instanceID))
 			return instance, nil
 		}
 	}
 
-	// Use batch query
-	resultChan := make(chan any, 1)
-	qo.batcher.addQuery("instance", batchedQuery{
-		key:        instanceID,
-		resultChan: resultChan,
-	})
-
-	// Wait for result
-	select {
-	case result := <-resultChan:
-		if result == nil {
-			return nil, fmt.Errorf("instance not found: %s", instanceID)
-		}
-		instance := result.(*Instance)
-
-		// Cache the result
-		qo.cache.set(cacheKey, instance, 1)
-
-		return instance, nil
-
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	// Try persistent cache (DynamoDB)
+	instance, err := qo.cacheRepo.GetInstance(ctx, instanceID)
+	if err != nil {
+		qo.logger.Warn("Error getting instance from persistent cache",
+			zap.String("instanceID", instanceID),
+			zap.Error(err))
 	}
+	if instance != nil {
+		// Cache in memory for faster access
+		qo.cache.set(cacheKey, instance, 1)
+		qo.logger.Debug("persistent cache hit", zap.String("instanceID", instanceID))
+		return instance, nil
+	}
+
+	// Direct fetch on cache miss (no background batching)
+	instances, err := qo.cacheRepo.BatchGetInstances(ctx, []string{instanceID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance: %w", err)
+	}
+
+	if len(instances) == 0 {
+		return nil, fmt.Errorf("instance not found: %s", instanceID)
+	}
+
+	fetchedInstance := instances[0]
+
+	// Cache the result in memory and persistent store
+	qo.cache.set(cacheKey, fetchedInstance, 1)
+	if err := qo.cacheRepo.SetInstance(ctx, fetchedInstance, 5*time.Minute); err != nil {
+		qo.logger.Warn("Failed to cache instance persistently",
+			zap.String("instanceID", instanceID),
+			zap.Error(err))
+	}
+
+	return fetchedInstance, nil
 }
 
 // OptimizedBatchGetInstances retrieves multiple instances efficiently
-func (qo *QueryOptimizer) OptimizedBatchGetInstances(ctx context.Context, instanceIDs []string) ([]*Instance, error) {
-	instances := make([]*Instance, 0, len(instanceIDs))
+func (qo *QueryOptimizer) OptimizedBatchGetInstances(ctx context.Context, instanceIDs []string) ([]*fedTypes.Instance, error) {
+	instances := make([]*fedTypes.Instance, 0, len(instanceIDs))
 	uncachedIDs := make([]string, 0)
 
-	// Check cache for each instance
+	// Check in-memory cache for each instance
 	for _, id := range instanceIDs {
 		cacheKey := fmt.Sprintf("instance:%s", id)
 		if cached := qo.cache.get(cacheKey); cached != nil {
-			if instance, ok := cached.(*Instance); ok {
+			if instance, ok := cached.(*fedTypes.Instance); ok {
 				instances = append(instances, instance)
 				continue
 			}
@@ -153,93 +153,50 @@ func (qo *QueryOptimizer) OptimizedBatchGetInstances(ctx context.Context, instan
 	}
 
 	if len(uncachedIDs) == 0 {
-		return instances, nil // All cached
+		return instances, nil // All cached in memory
 	}
 
-	// Batch query uncached instances
-	keys := make([]map[string]types.AttributeValue, 0, len(uncachedIDs))
-	for _, id := range uncachedIDs {
-		keys = append(keys, map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("INSTANCE#%s", id)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		})
-	}
-
-	// Use BatchGetItem for efficiency
-	batchInput := &dynamodb.BatchGetItemInput{
-		RequestItems: map[string]types.KeysAndAttributes{
-			qo.tableName: {
-				Keys: keys,
-			},
-		},
-	}
-
-	result, err := qo.db.BatchGetItem(ctx, batchInput)
+	// Use repository for batch get (handles persistent cache and database)
+	freshInstances, err := qo.cacheRepo.BatchGetInstances(ctx, uncachedIDs)
 	if err != nil {
 		return nil, fmt.Errorf("batch get instances: %w", err)
 	}
 
-	// Parse results
-	if items, ok := result.Responses[qo.tableName]; ok {
-		for _, item := range items {
-			instance := qo.parseInstance(item)
-			if instance != nil {
-				instances = append(instances, instance)
-
-				// Cache the result
-				cacheKey := fmt.Sprintf("instance:%s", instance.ID)
-				qo.cache.set(cacheKey, instance, 1)
-			}
-		}
+	// Cache in memory and add to results
+	for _, instance := range freshInstances {
+		cacheKey := fmt.Sprintf("instance:%s", instance.ID)
+		qo.cache.set(cacheKey, instance, 1)
+		instances = append(instances, instance)
 	}
 
 	return instances, nil
 }
 
 // OptimizedQueryByStatus queries instances by status with result caching
-func (qo *QueryOptimizer) OptimizedQueryByStatus(ctx context.Context, status InstanceStatus) ([]*Instance, error) {
+func (qo *QueryOptimizer) OptimizedQueryByStatus(ctx context.Context, status fedTypes.InstanceStatus) ([]*fedTypes.Instance, error) {
 	cacheKey := fmt.Sprintf("status:%s", status)
 
-	// Check cache
+	// Check in-memory cache
 	if cached := qo.cache.get(cacheKey); cached != nil {
-		if instances, ok := cached.([]*Instance); ok {
+		if instances, ok := cached.([]*fedTypes.Instance); ok {
 			return instances, nil
 		}
 	}
 
-	// Query using GSI
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(qo.tableName),
-		IndexName:              aws.String("GSI1"),
-		KeyConditionExpression: aws.String("GSI1PK = :status"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":status": &types.AttributeValueMemberS{Value: fmt.Sprintf("STATUS#%s", status)},
-		},
-		Limit: aws.Int32(100),
-	}
-
-	instances := make([]*Instance, 0)
-
-	// Execute query
-	result, err := qo.db.Query(ctx, queryInput)
+	// Use repository (handles persistent cache and database query)
+	instances, err := qo.cacheRepo.GetInstancesByStatus(ctx, status)
 	if err != nil {
 		return nil, fmt.Errorf("query by status: %w", err)
 	}
 
-	for _, item := range result.Items {
-		if instance := qo.parseInstance(item); instance != nil {
-			instances = append(instances, instance)
-		}
-	}
-
-	// Cache the result set
+	// Cache in memory
 	qo.cache.set(cacheKey, instances, len(instances))
 
 	return instances, nil
 }
 
 // OptimizedQueryRecentMetrics queries recent metrics with intelligent pagination
-func (qo *QueryOptimizer) OptimizedQueryRecentMetrics(ctx context.Context, routeID string, limit int) ([]*DeliveryResult, error) {
+func (qo *QueryOptimizer) OptimizedQueryRecentMetrics(ctx context.Context, routeID string, limit int) ([]*fedTypes.DeliveryResult, error) {
 	// Use parallel queries for different time ranges
 	now := time.Now()
 	timeRanges := []struct {
@@ -252,14 +209,14 @@ func (qo *QueryOptimizer) OptimizedQueryRecentMetrics(ctx context.Context, route
 	}
 
 	var wg sync.WaitGroup
-	resultsChan := make(chan []*DeliveryResult, len(timeRanges))
+	resultsChan := make(chan []*fedTypes.DeliveryResult, len(timeRanges))
 
 	for _, tr := range timeRanges {
 		wg.Add(1)
 		go func(start, end time.Time) {
 			defer wg.Done()
 
-			results, err := qo.queryMetricsInRange(ctx, routeID, start, end, limit/len(timeRanges))
+			results, err := qo.cacheRepo.GetMetricsInRange(ctx, routeID, start, end, limit/len(timeRanges))
 			if err != nil {
 				qo.logger.Warn("failed to query range",
 					zap.String("routeID", routeID),
@@ -279,7 +236,7 @@ func (qo *QueryOptimizer) OptimizedQueryRecentMetrics(ctx context.Context, route
 		close(resultsChan)
 	}()
 
-	allResults := make([]*DeliveryResult, 0, limit)
+	allResults := make([]*fedTypes.DeliveryResult, 0, limit)
 	for results := range resultsChan {
 		allResults = append(allResults, results...)
 	}
@@ -296,67 +253,45 @@ func (qo *QueryOptimizer) OptimizedQueryRecentMetrics(ctx context.Context, route
 func (qo *QueryOptimizer) PrewarmCache(ctx context.Context) error {
 	qo.logger.Info("prewarming cache")
 
-	// Prewarm active instances
-	activeInstances, err := qo.OptimizedQueryByStatus(ctx, InstanceStatusActive)
+	// Prewarm active instances using repository
+	err := qo.cacheRepo.PrewarmActiveInstances(ctx)
 	if err != nil {
 		return fmt.Errorf("prewarm active instances: %w", err)
 	}
 
+	// Also load into in-memory cache
+	activeInstances, err := qo.OptimizedQueryByStatus(ctx, fedTypes.InstanceStatusActive)
+	if err != nil {
+		return fmt.Errorf("prewarm active instances in memory: %w", err)
+	}
+
 	qo.logger.Info("prewarmed cache",
 		zap.Int("activeInstances", len(activeInstances)))
-
-	// Prewarm recent routes
-	// This would query and cache frequently used routes
 
 	return nil
 }
 
 // InvalidateCache invalidates cache entries matching a pattern
 func (qo *QueryOptimizer) InvalidateCache(pattern string) {
+	// Invalidate in-memory cache
 	qo.cache.invalidatePattern(pattern)
+	
+	// Invalidate persistent cache
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	if err := qo.cacheRepo.InvalidateCachePattern(ctx, pattern); err != nil {
+		qo.logger.Warn("Failed to invalidate persistent cache",
+			zap.String("pattern", pattern),
+			zap.Error(err))
+	}
 }
 
 // Helper methods
 
-func (qo *QueryOptimizer) parseInstance(item map[string]types.AttributeValue) *Instance {
-	// Parse instance from DynamoDB item
-	// Implementation similar to instance_registry.go
-	instance := &Instance{}
+// parseInstance method removed - using repository pattern instead
 
-	if v, ok := item["ID"].(*types.AttributeValueMemberS); ok {
-		instance.ID = v.Value
-	}
-	if v, ok := item["Domain"].(*types.AttributeValueMemberS); ok {
-		instance.Domain = v.Value
-	}
-	// ... parse other fields
-
-	return instance
-}
-
-func (qo *QueryOptimizer) queryMetricsInRange(ctx context.Context, routeID string, start, end time.Time, limit int) ([]*DeliveryResult, error) {
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(qo.tableName),
-		KeyConditionExpression: aws.String("PK = :pk AND SK BETWEEN :start AND :end"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":    &types.AttributeValueMemberS{Value: fmt.Sprintf("ROUTE#%s", routeID)},
-			":start": &types.AttributeValueMemberS{Value: fmt.Sprintf("RESULT#%d", start.UnixNano())},
-			":end":   &types.AttributeValueMemberS{Value: fmt.Sprintf("RESULT#%d", end.UnixNano())},
-		},
-		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:            aws.Int32(safeIntToInt32(limit)),
-	}
-
-	result, err := qo.db.Query(ctx, queryInput)
-	if err != nil {
-		return nil, err
-	}
-
-	results := make([]*DeliveryResult, 0, len(result.Items))
-	// Parse results...
-
-	return results, nil
-}
+// queryMetricsInRange method removed - using repository pattern instead
 
 // Cache implementation
 
@@ -427,14 +362,7 @@ func (c *queryCache) invalidatePattern(pattern string) {
 	}
 }
 
-func (c *queryCache) evictionLoop() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		c.evictExpired()
-	}
-}
+// evictionLoop removed - using passive eviction instead
 
 func (c *queryCache) evictExpired() {
 	c.mu.Lock()
@@ -486,104 +414,13 @@ func (l *lruList) remove(node *lruNode) {
 	}
 }
 
-// Batch processor
+// addQuery removed - using direct queries instead of background batching
 
-func (b *queryBatcher) addQuery(batchKey string, query batchedQuery) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+// processBatches removed - using direct queries instead of background batching
 
-	batch, exists := b.batches[batchKey]
-	if !exists {
-		batch = &queryBatch{
-			queries:    make([]batchedQuery, 0, 25),
-			resultChan: make(chan batchResult, 25),
-			created:    time.Now(),
-		}
-		b.batches[batchKey] = batch
-	}
+// executeBatch removed - using direct queries instead of background batching
 
-	batch.queries = append(batch.queries, query)
-}
-
-func (b *queryBatcher) processBatches(qo *QueryOptimizer) {
-	for range b.flushTicker.C {
-		b.mu.Lock()
-
-		for key, batch := range b.batches {
-			// Process if batch is full or old enough
-			if len(batch.queries) >= 25 || time.Since(batch.created) > 50*time.Millisecond {
-				go qo.executeBatch(key, batch)
-				delete(b.batches, key)
-			}
-		}
-
-		b.mu.Unlock()
-	}
-}
-
-func (qo *QueryOptimizer) executeBatch(batchKey string, batch *queryBatch) {
-	// Execute batch query based on type
-	switch batchKey {
-	case "instance":
-		qo.executeBatchGetInstances(batch)
-	default:
-		// Handle other batch types
-	}
-}
-
-func (qo *QueryOptimizer) executeBatchGetInstances(batch *queryBatch) {
-	// Build batch get request
-	keys := make([]map[string]types.AttributeValue, 0, len(batch.queries))
-	keyMap := make(map[string]batchedQuery)
-
-	for _, query := range batch.queries {
-		key := fmt.Sprintf("INSTANCE#%s", query.key)
-		keys = append(keys, map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: key},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		})
-		keyMap[key] = query
-	}
-
-	// Execute batch get
-	batchInput := &dynamodb.BatchGetItemInput{
-		RequestItems: map[string]types.KeysAndAttributes{
-			qo.tableName: {
-				Keys: keys,
-			},
-		},
-	}
-
-	result, err := qo.db.BatchGetItem(context.Background(), batchInput)
-	if err != nil {
-		// Send error to all queries
-		for _, query := range batch.queries {
-			query.resultChan <- nil
-		}
-		return
-	}
-
-	// Process results
-	foundKeys := make(map[string]bool)
-	if items, ok := result.Responses[qo.tableName]; ok {
-		for _, item := range items {
-			if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
-				if query, exists := keyMap[pk.Value]; exists {
-					instance := qo.parseInstance(item)
-					query.resultChan <- instance
-					foundKeys[pk.Value] = true
-				}
-			}
-		}
-	}
-
-	// Send nil for not found items
-	for key, query := range keyMap {
-		if !foundKeys[key] {
-			query.resultChan <- nil
-		}
-	}
-}
+// executeBatchGetInstances removed - using direct queries instead of background batching
 
 func matchPattern(str, pattern string) (bool, error) {
 	// Simple pattern matching (can be enhanced)

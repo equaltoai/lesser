@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/federation/types"
 	"go.uber.org/zap"
 )
 
@@ -55,7 +56,7 @@ func NewAdaptiveLoadBalancer(logger *zap.Logger) *AdaptiveLoadBalancer {
 }
 
 // Balance distributes load across routes
-func (alb *AdaptiveLoadBalancer) Balance(routes []*Route, load int) map[string]int {
+func (alb *AdaptiveLoadBalancer) Balance(routes []*types.Route, load int) map[string]int {
 	if len(routes) == 0 {
 		return make(map[string]int)
 	}
@@ -83,7 +84,7 @@ func (alb *AdaptiveLoadBalancer) Balance(routes []*Route, load int) map[string]i
 }
 
 // UpdateWeights updates route weights based on metrics
-func (alb *AdaptiveLoadBalancer) UpdateWeights(metrics map[string]*RouteMetrics) error {
+func (alb *AdaptiveLoadBalancer) UpdateWeights(metrics map[string]*types.RouteMetrics) error {
 	for routeID, metric := range metrics {
 		weight, _ := alb.weights.LoadOrStore(routeID, &routeWeight{
 			RouteID:     routeID,
@@ -133,7 +134,7 @@ func (alb *AdaptiveLoadBalancer) GetCurrentWeights() map[string]float64 {
 
 // Private methods
 
-func (alb *AdaptiveLoadBalancer) updateWeights(routes []*Route) {
+func (alb *AdaptiveLoadBalancer) updateWeights(routes []*types.Route) {
 	for _, route := range routes {
 		weight, _ := alb.weights.LoadOrStore(route.ID, &routeWeight{
 			RouteID:       route.ID,
@@ -152,7 +153,7 @@ func (alb *AdaptiveLoadBalancer) updateWeights(routes []*Route) {
 	}
 }
 
-func (alb *AdaptiveLoadBalancer) roundRobin(routes []*Route, load int) map[string]int {
+func (alb *AdaptiveLoadBalancer) roundRobin(routes []*types.Route, load int) map[string]int {
 	distribution := make(map[string]int)
 
 	// Simple round-robin distribution
@@ -164,7 +165,7 @@ func (alb *AdaptiveLoadBalancer) roundRobin(routes []*Route, load int) map[strin
 	return distribution
 }
 
-func (alb *AdaptiveLoadBalancer) weightedRandom(routes []*Route, load int) map[string]int {
+func (alb *AdaptiveLoadBalancer) weightedRandom(routes []*types.Route, load int) map[string]int {
 	distribution := make(map[string]int)
 
 	// Calculate total weight
@@ -210,7 +211,7 @@ func (alb *AdaptiveLoadBalancer) weightedRandom(routes []*Route, load int) map[s
 	return distribution
 }
 
-func (alb *AdaptiveLoadBalancer) leastConnections(routes []*Route, load int) map[string]int {
+func (alb *AdaptiveLoadBalancer) leastConnections(routes []*types.Route, load int) map[string]int {
 	distribution := make(map[string]int)
 
 	// Sort routes by active connections
@@ -251,7 +252,7 @@ func (alb *AdaptiveLoadBalancer) leastConnections(routes []*Route, load int) map
 	return distribution
 }
 
-func (alb *AdaptiveLoadBalancer) adaptive(routes []*Route, load int) map[string]int {
+func (alb *AdaptiveLoadBalancer) adaptive(routes []*types.Route, load int) map[string]int {
 	distribution := make(map[string]int)
 
 	// Score each route
@@ -331,7 +332,7 @@ func (alb *AdaptiveLoadBalancer) calculateWeight(rw *routeWeight) float64 {
 	return math.Max(0.1, weight) // Minimum weight of 0.1
 }
 
-func (alb *AdaptiveLoadBalancer) scoreRoute(route *Route) float64 {
+func (alb *AdaptiveLoadBalancer) scoreRoute(route *types.Route) float64 {
 	score := 1.0
 
 	// Get weight data
@@ -345,9 +346,9 @@ func (alb *AdaptiveLoadBalancer) scoreRoute(route *Route) float64 {
 
 		// Circuit breaker factor
 		switch route.CircuitStatus {
-		case CircuitOpen:
+		case types.CircuitOpen:
 			score *= 0.0 // No traffic to open circuits
-		case CircuitHalfOpen:
+		case types.CircuitHalfOpen:
 			score *= 0.1 // Minimal traffic for testing
 		}
 
@@ -362,7 +363,7 @@ func (alb *AdaptiveLoadBalancer) scoreRoute(route *Route) float64 {
 }
 
 type routeConnection struct {
-	route       *Route
+	route       *types.Route
 	connections int64
 }
 

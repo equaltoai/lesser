@@ -888,10 +888,80 @@ func (r *SocialRepository) IsStatusPinned(ctx context.Context, username, statusI
 	return true, nil
 }
 
-// ReorderStatusPins is not implemented as the legacy system doesn't have a PinOrder field
+// ReorderStatusPins reorders pinned statuses by re-creating them with new timestamps
+// Since the legacy system doesn't have a PinOrder field, we use creation timestamps for ordering
 func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username string, statusIDs []string) error {
-	// TODO: Implement if pin ordering is needed
-	return fmt.Errorf("status pin reordering not implemented")
+	// Get existing pins to validate all statusIDs are currently pinned
+	existing, err := r.GetStatusPins(ctx, username)
+	if err != nil {
+		return fmt.Errorf("failed to get existing pins: %w", err)
+	}
+
+	// Create a map of existing pins for validation
+	existingMap := make(map[string]*storage.StatusPin)
+	for _, pin := range existing {
+		existingMap[pin.StatusID] = pin
+	}
+
+	// Validate that all provided statusIDs are currently pinned
+	for _, statusID := range statusIDs {
+		if _, exists := existingMap[statusID]; !exists {
+			return fmt.Errorf("status %s is not currently pinned", statusID)
+		}
+	}
+
+	// Validate we're not missing any pinned statuses
+	if len(statusIDs) != len(existing) {
+		return fmt.Errorf("must provide all pinned status IDs for reordering")
+	}
+
+	// Re-create pins with new timestamps to establish order
+	baseTime := time.Now()
+	for i, statusID := range statusIDs {
+		// Delete the existing pin
+		err := r.db.WithContext(ctx).Model(&models.StatusPin{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s#PINS", username)).
+			Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
+			Delete()
+		if err != nil {
+			r.logger.Error("Failed to delete existing pin for reordering", 
+				zap.String("username", username), 
+				zap.String("status_id", statusID), 
+				zap.Error(err))
+			return fmt.Errorf("failed to delete existing pin: %w", err)
+		}
+
+		// Create new pin with incremental timestamp
+		newPin := &models.StatusPin{
+			Username:  username,
+			StatusID:  statusID,
+			CreatedAt: baseTime.Add(time.Duration(i) * time.Second),
+		}
+
+		// BeforeCreate will set the keys
+		if err := newPin.BeforeCreate(); err != nil {
+			r.logger.Error("Failed to prepare pin for creation", 
+				zap.String("username", username), 
+				zap.String("status_id", statusID), 
+				zap.Error(err))
+			return fmt.Errorf("failed to prepare pin: %w", err)
+		}
+
+		err = r.db.WithContext(ctx).Model(newPin).Create()
+		if err != nil {
+			r.logger.Error("Failed to create reordered pin", 
+				zap.String("username", username), 
+				zap.String("status_id", statusID), 
+				zap.Error(err))
+			return fmt.Errorf("failed to create reordered pin: %w", err)
+		}
+	}
+
+	r.logger.Info("Successfully reordered status pins", 
+		zap.String("username", username), 
+		zap.Int("count", len(statusIDs)))
+
+	return nil
 }
 
 // CountUserPinnedStatuses counts how many statuses a user has pinned

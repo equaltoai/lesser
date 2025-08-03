@@ -5,10 +5,13 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
 
@@ -740,7 +743,28 @@ func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input mo
 		pattern.Active = *input.Active
 	}
 
-	// In production, would save to database
+	// Save to database using storage adapter
+	storagePattern := &storage.ModerationPattern{
+		ID:          pattern.ID,
+		Name:        pattern.ID, // Using ID as name for now
+		Description: "GraphQL created pattern",
+		Type:        string(pattern.Type),
+		Content:     pattern.Pattern,
+		Severity:    string(pattern.Severity),
+		Active:      pattern.Active,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		CreatedBy:   "graphql-api", // TODO: get from auth context
+	}
+
+	err := r.Storage.CreateModerationPattern(ctx, storagePattern)
+	if err != nil {
+		r.Logger.Error("Failed to create moderation pattern",
+			zap.String("id", pattern.ID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to create moderation pattern: %w", err)
+	}
+
 	r.Logger.Info("Created moderation pattern",
 		zap.String("id", pattern.ID),
 		zap.String("type", string(pattern.Type)))
@@ -753,21 +777,44 @@ func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id strin
 	// Track the mutation
 	r.CostTracker.TrackDynamoWrite(1)
 
-	// In production, would fetch and update from database
-	pattern := &model.ModerationPattern{
-		ID:                id,
-		Pattern:           input.Pattern,
-		Type:              input.Type,
-		Severity:          input.Severity,
-		MatchCount:        1234, // Would be preserved from existing
-		FalsePositiveRate: 0.03,
-		CreatedAt:         model.Time(time.Now().Add(-30 * 24 * time.Hour)),
-		UpdatedAt:         model.Time(time.Now()),
-		Active:            true,
+	// Fetch existing pattern from database
+	existingPattern, err := r.Storage.GetModerationPattern(ctx, id)
+	if err != nil {
+		r.Logger.Error("Failed to get moderation pattern",
+			zap.String("id", id),
+			zap.Error(err))
+		return nil, fmt.Errorf("pattern not found: %w", err)
 	}
 
+	// Update the pattern
+	existingPattern.Content = input.Pattern
+	existingPattern.Type = string(input.Type)
+	existingPattern.Severity = string(input.Severity)
+	existingPattern.UpdatedAt = time.Now()
 	if input.Active != nil {
-		pattern.Active = *input.Active
+		existingPattern.Active = *input.Active
+	}
+
+	// Save updated pattern
+	err = r.Storage.UpdateModerationPattern(ctx, existingPattern)
+	if err != nil {
+		r.Logger.Error("Failed to update moderation pattern",
+			zap.String("id", id),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to update moderation pattern: %w", err)
+	}
+
+	// Convert back to GraphQL model
+	pattern := &model.ModerationPattern{
+		ID:                existingPattern.ID,
+		Pattern:           existingPattern.Content,
+		Type:              model.PatternType(existingPattern.Type),
+		Severity:          model.ModerationSeverity(existingPattern.Severity),
+		MatchCount:        int(existingPattern.MatchCount),
+		FalsePositiveRate: float64(existingPattern.FalsePositiveCount) / float64(max(existingPattern.MatchCount, 1)),
+		CreatedAt:         model.Time(existingPattern.CreatedAt),
+		UpdatedAt:         model.Time(existingPattern.UpdatedAt),
+		Active:            existingPattern.Active,
 	}
 
 	return pattern, nil
@@ -778,7 +825,15 @@ func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id strin
 	// Track the mutation
 	r.CostTracker.TrackDynamoWrite(1)
 
-	// In production, would delete from database
+	// Delete from database
+	err := r.Storage.DeleteModerationPattern(ctx, id)
+	if err != nil {
+		r.Logger.Error("Failed to delete moderation pattern",
+			zap.String("id", id),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to delete moderation pattern: %w", err)
+	}
+
 	r.Logger.Info("Deleted moderation pattern", zap.String("id", id))
 
 	return true, nil
@@ -975,31 +1030,64 @@ func (r *mutationResolver) OptimizeFederationCosts(ctx context.Context, threshol
 
 // ModerationAlerts streams real-time moderation alerts
 func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *model.ModerationSeverity) (<-chan *model.ModerationAlert, error) {
-	// Create channel for alerts
-	alerts := make(chan *model.ModerationAlert, 1)
+	// Initialize subscription manager if not already done
+	if r.SubscriptionManager == nil {
+		subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
+		if subscriptionsTable == "" {
+			subscriptionsTable = "lesser-streaming-subscriptions"
+		}
+		r.SubscriptionManager = NewSubscriptionManager(r.Logger)
+	}
 
-	// Start goroutine to simulate alerts
+	// Track read for subscription
+	r.CostTracker.TrackDynamoRead(1)
+
+	// Create channel for alerts
+	alerts := make(chan *model.ModerationAlert, 10)
+
+	// Subscribe to moderation events via event bus
 	go func() {
 		defer close(alerts)
 
-		// Simulate periodic alerts
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
+		// Create event filter for moderation events
+		filter := &streaming.EventFilter{
+			Types: []streaming.EventType{
+				streaming.EventTypeModeration,
+				streaming.EventTypeModerationFlag,
+				streaming.EventTypeModerationReview,
+			},
+			MinPriority: streaming.PriorityNormal,
+		}
+
+		// Try to get the global event bus
+		eventBus := getGlobalStreamRouterEventBus()
+		if eventBus == nil {
+			r.Logger.Warn("Event bus not available for ModerationAlerts subscription")
+			return
+		}
+
+		// Create a subscription to the event bus
+		subscriptionID := fmt.Sprintf("moderation-alerts-%s", generateUniqueID())
+		subscriber, err := eventBus.Subscribe(subscriptionID, filter, 100)
+		if err != nil {
+			r.Logger.Error("Failed to subscribe to moderation events", zap.Error(err))
+			return
+		}
+		defer eventBus.Unsubscribe(subscriber.ID)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				// Generate sample alert
-				alert := &model.ModerationAlert{
-					ID:              fmt.Sprintf("alert-%s", generateUniqueID()),
-					Severity:        model.ModerationSeverityHigh,
-					MatchedText:     "Suspicious content detected",
-					Confidence:      0.92,
-					SuggestedAction: model.ModerationActionFlag,
-					Timestamp:       model.Time(time.Now()),
-					Handled:         false,
+			case event := <-subscriber.Channel:
+				if event == nil {
+					continue
+				}
+
+				// Convert streaming event to moderation alert
+				alert := convertModerationEventToAlert(event)
+				if alert == nil {
+					continue
 				}
 
 				// Apply severity filter
@@ -1021,40 +1109,69 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 
 // CostAlerts streams cost threshold alerts
 func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD float64) (<-chan *model.CostAlert, error) {
-	// Create channel for alerts
-	alerts := make(chan *model.CostAlert, 1)
+	// Initialize subscription manager if not already done
+	if r.SubscriptionManager == nil {
+		subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
+		if subscriptionsTable == "" {
+			subscriptionsTable = "lesser-streaming-subscriptions"
+		}
+		r.SubscriptionManager = NewSubscriptionManager(r.Logger)
+	}
 
-	// Start goroutine to simulate alerts
+	// Track read for subscription
+	r.CostTracker.TrackDynamoRead(1)
+
+	// Create channel for alerts
+	alerts := make(chan *model.CostAlert, 10)
+
+	// Subscribe to cost alert events via event bus
 	go func() {
 		defer close(alerts)
 
-		// Simulate periodic cost checks
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
+		// Create event filter for cost alert events
+		filter := &streaming.EventFilter{
+			Types: []streaming.EventType{
+				streaming.EventTypeCostAlert,
+				streaming.EventTypeCostUpdate,
+			},
+			MinPriority: streaming.PriorityNormal,
+		}
+
+		// Try to get the global event bus
+		eventBus := getGlobalStreamRouterEventBus()
+		if eventBus == nil {
+			r.Logger.Warn("Event bus not available for CostAlerts subscription")
+			return
+		}
+
+		// Create a subscription to the event bus
+		subscriptionID := fmt.Sprintf("cost-alerts-%s", generateUniqueID())
+		subscriber, err := eventBus.Subscribe(subscriptionID, filter, 100)
+		if err != nil {
+			r.Logger.Error("Failed to subscribe to cost alert events", zap.Error(err))
+			return
+		}
+		defer eventBus.Unsubscribe(subscriber.ID)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				// Generate sample alert if threshold exceeded
-				currentCost := randomFloat64() * 200 // $0-200
-				if currentCost > thresholdUSD {
-					alert := &model.CostAlert{
-						ID:        fmt.Sprintf("cost-alert-%s", generateUniqueID()),
-						Type:      "THRESHOLD_EXCEEDED",
-						Amount:    currentCost,
-						Threshold: thresholdUSD,
-						Domain:    stringPtr("expensive.instance"),
-						Message:   fmt.Sprintf("Cost exceeded threshold: $%.2f > $%.2f", currentCost, thresholdUSD),
-						Timestamp: model.Time(time.Now()),
-					}
+			case event := <-subscriber.Channel:
+				if event == nil {
+					continue
+				}
 
-					select {
-					case alerts <- alert:
-					case <-ctx.Done():
-						return
-					}
+				// Convert streaming event to cost alert
+				alert := convertCostEventToAlert(event, thresholdUSD)
+				if alert == nil {
+					continue
+				}
+
+				select {
+				case alerts <- alert:
+				case <-ctx.Done():
+					return
 				}
 			}
 		}
@@ -1065,61 +1182,76 @@ func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD floa
 
 // BudgetAlerts streams budget alerts for instances
 func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string) (<-chan *model.BudgetAlert, error) {
-	// Create channel for alerts
-	alerts := make(chan *model.BudgetAlert, 1)
+	// Initialize subscription manager if not already done
+	if r.SubscriptionManager == nil {
+		subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
+		if subscriptionsTable == "" {
+			subscriptionsTable = "lesser-streaming-subscriptions"
+		}
+		r.SubscriptionManager = NewSubscriptionManager(r.Logger)
+	}
 
-	// Start goroutine to simulate alerts
+	// Track read for subscription
+	r.CostTracker.TrackDynamoRead(1)
+
+	// Create channel for alerts
+	alerts := make(chan *model.BudgetAlert, 10)
+
+	// Subscribe to budget/cost events via event bus
 	go func() {
 		defer close(alerts)
 
-		// Simulate periodic budget checks
-		ticker := time.NewTicker(20 * time.Second)
-		defer ticker.Stop()
+		// Create event filter for budget-related cost events
+		filter := &streaming.EventFilter{
+			Types: []streaming.EventType{
+				streaming.EventTypeCostAlert,
+				streaming.EventTypeCostUpdate,
+			},
+			MinPriority: streaming.PriorityNormal,
+		}
+
+		// Add domain filter if specified
+		if domain != nil {
+			filter.Metadata = map[string]string{
+				"domain": *domain,
+			}
+		}
+
+		// Try to get the global event bus
+		eventBus := getGlobalStreamRouterEventBus()
+		if eventBus == nil {
+			r.Logger.Warn("Event bus not available for BudgetAlerts subscription")
+			return
+		}
+
+		// Create a subscription to the event bus
+		subscriptionID := fmt.Sprintf("budget-alerts-%s", generateUniqueID())
+		subscriber, err := eventBus.Subscribe(subscriptionID, filter, 100)
+		if err != nil {
+			r.Logger.Error("Failed to subscribe to budget alert events", zap.Error(err))
+			return
+		}
+		defer eventBus.Unsubscribe(subscriber.ID)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				// Generate sample budget alert
-				budgetUSD := 100.0
-				spentUSD := randomFloat64() * 150 // $0-150
-				percentUsed := (spentUSD / budgetUSD) * 100
-
-				alertLevel := model.AlertLevelInfo
-				if percentUsed > 90 {
-					alertLevel = model.AlertLevelCritical
-				} else if percentUsed > 80 {
-					alertLevel = model.AlertLevelWarning
-				}
-
-				alert := &model.BudgetAlert{
-					ID:          fmt.Sprintf("budget-alert-%s", generateUniqueID()),
-					Domain:      "sample.instance",
-					BudgetUsd:   budgetUSD,
-					SpentUsd:    spentUSD,
-					PercentUsed: percentUsed,
-					AlertLevel:  alertLevel,
-					Timestamp:   model.Time(time.Now()),
-				}
-
-				if spentUSD > budgetUSD {
-					overspend := spentUSD - budgetUSD
-					alert.ProjectedOverspend = &overspend
-				}
-
-				// Apply domain filter
-				if domain != nil && alert.Domain != *domain {
+			case event := <-subscriber.Channel:
+				if event == nil {
 					continue
 				}
 
-				// Only send alerts for warning or critical levels
-				if alertLevel != model.AlertLevelInfo {
-					select {
-					case alerts <- alert:
-					case <-ctx.Done():
-						return
-					}
+				// Convert streaming event to budget alert
+				alert := convertCostEventToBudgetAlert(event, domain)
+				if alert == nil {
+					continue
+				}
+
+				select {
+				case alerts <- alert:
+				case <-ctx.Done():
+					return
 				}
 			}
 		}
@@ -1130,66 +1262,76 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 
 // FederationHealthUpdates streams federation health status changes
 func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, domain *string) (<-chan *model.FederationHealthUpdate, error) {
-	// Create channel for updates
-	updates := make(chan *model.FederationHealthUpdate, 1)
+	// Initialize subscription manager if not already done
+	if r.SubscriptionManager == nil {
+		subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
+		if subscriptionsTable == "" {
+			subscriptionsTable = "lesser-streaming-subscriptions"
+		}
+		r.SubscriptionManager = NewSubscriptionManager(r.Logger)
+	}
 
-	// Start goroutine to simulate health updates
+	// Track read for subscription
+	r.CostTracker.TrackDynamoRead(1)
+
+	// Create channel for updates
+	updates := make(chan *model.FederationHealthUpdate, 10)
+
+	// Subscribe to health check events via event bus
 	go func() {
 		defer close(updates)
 
-		// Track previous status
-		previousStatus := model.InstanceHealthStatusHealthy
+		// Create event filter for health check events
+		filter := &streaming.EventFilter{
+			Types: []streaming.EventType{
+				streaming.EventTypeHealthCheck,
+				streaming.EventTypeSystemAlert,
+			},
+			MinPriority: streaming.PriorityNormal,
+		}
 
-		// Simulate periodic health checks
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
+		// Add domain filter if specified
+		if domain != nil {
+			filter.Metadata = map[string]string{
+				"domain": *domain,
+			}
+		}
+
+		// Try to get the global event bus
+		eventBus := getGlobalStreamRouterEventBus()
+		if eventBus == nil {
+			r.Logger.Warn("Event bus not available for FederationHealthUpdates subscription")
+			return
+		}
+
+		// Create a subscription to the event bus
+		subscriptionID := fmt.Sprintf("federation-health-%s", generateUniqueID())
+		subscriber, err := eventBus.Subscribe(subscriptionID, filter, 100)
+		if err != nil {
+			r.Logger.Error("Failed to subscribe to health check events", zap.Error(err))
+			return
+		}
+		defer eventBus.Unsubscribe(subscriber.ID)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				// Randomly change health status
-				statuses := []model.InstanceHealthStatus{
-					model.InstanceHealthStatusHealthy,
-					model.InstanceHealthStatusWarning,
-					model.InstanceHealthStatusCritical,
+			case event := <-subscriber.Channel:
+				if event == nil {
+					continue
 				}
 
-				currentStatus := statuses[randomInt(len(statuses))]
+				// Convert streaming event to federation health update
+				update := convertHealthEventToFederationUpdate(event, domain)
+				if update == nil {
+					continue
+				}
 
-				// Only send update if status changed
-				if currentStatus != previousStatus {
-					updateDomain := "monitored.instance"
-					if domain != nil {
-						updateDomain = *domain
-					}
-
-					var issues []*model.HealthIssue
-					if currentStatus != model.InstanceHealthStatusHealthy {
-						issues = append(issues, &model.HealthIssue{
-							Type:        "PERFORMANCE_DEGRADATION",
-							Severity:    model.IssueSeverityMedium,
-							Description: "Response times increasing",
-							DetectedAt:  model.Time(time.Now()),
-							Impact:      "Federation delays expected",
-						})
-					}
-
-					update := &model.FederationHealthUpdate{
-						Domain:         updateDomain,
-						PreviousStatus: previousStatus,
-						CurrentStatus:  currentStatus,
-						Issues:         issues,
-						Timestamp:      model.Time(time.Now()),
-					}
-
-					select {
-					case updates <- update:
-						previousStatus = currentStatus
-					case <-ctx.Done():
-						return
-					}
+				select {
+				case updates <- update:
+				case <-ctx.Done():
+					return
 				}
 			}
 		}
@@ -1223,4 +1365,236 @@ func randomFloat64() float64 {
 		return 0.0
 	}
 	return float64(n.Int64()) / (1 << 53)
+}
+
+// Event conversion functions for subscriptions
+
+// convertModerationEventToAlert converts a streaming moderation event to a ModerationAlert
+func convertModerationEventToAlert(event *streaming.InternalEvent) *model.ModerationAlert {
+	if event == nil {
+		return nil
+	}
+
+	// Extract moderation payload if available
+	var payload *streaming.ModerationEventPayload
+	if event.Data != nil {
+		if moderationData, ok := event.Data.(*streaming.ModerationEventPayload); ok {
+			payload = moderationData
+		} else {
+			// Try to parse from generic interface
+			return nil
+		}
+	}
+
+	// Determine severity based on action and reason
+	severity := model.ModerationSeverityMedium
+	suggestedAction := model.ModerationActionFlag
+
+	if payload != nil {
+		switch payload.Action {
+		case "flag":
+			severity = model.ModerationSeverityHigh
+			suggestedAction = model.ModerationActionFlag
+		case "review":
+			severity = model.ModerationSeverityMedium
+			suggestedAction = model.ModerationActionReview
+		case "reject":
+			severity = model.ModerationSeverityHigh
+			suggestedAction = model.ModerationActionRemove
+		case "approve":
+			severity = model.ModerationSeverityLow
+			suggestedAction = model.ModerationActionNone
+		}
+	}
+
+	matchedText := "Content flagged for review"
+	if payload != nil && payload.Reason != "" {
+		matchedText = payload.Reason
+	}
+
+	return &model.ModerationAlert{
+		ID:              event.ID,
+		Severity:        severity,
+		MatchedText:     matchedText,
+		Confidence:      0.85, // Default confidence score
+		SuggestedAction: suggestedAction,
+		Timestamp:       model.Time(event.Timestamp),
+		Handled:         false,
+	}
+}
+
+// convertCostEventToAlert converts a streaming cost event to a CostAlert
+func convertCostEventToAlert(event *streaming.InternalEvent, thresholdUSD float64) *model.CostAlert {
+	if event == nil {
+		return nil
+	}
+
+	// Extract cost payload if available
+	var payload *streaming.CostEventPayload
+	if event.Data != nil {
+		if costData, ok := event.Data.(*streaming.CostEventPayload); ok {
+			payload = costData
+		} else {
+			// Try to parse from generic interface
+			return nil
+		}
+	}
+
+	if payload == nil {
+		return nil
+	}
+
+	// Only create alert if cost exceeds threshold
+	if payload.CostUSD <= thresholdUSD {
+		return nil
+	}
+
+	domain := "unknown.instance"
+	if payload.TenantID != "" {
+		domain = payload.TenantID + ".instance"
+	}
+
+	return &model.CostAlert{
+		ID:        event.ID,
+		Type:      "THRESHOLD_EXCEEDED",
+		Amount:    payload.CostUSD,
+		Threshold: thresholdUSD,
+		Domain:    &domain,
+		Message:   fmt.Sprintf("Cost exceeded threshold: $%.2f > $%.2f for %s", payload.CostUSD, thresholdUSD, payload.Service),
+		Timestamp: model.Time(event.Timestamp),
+	}
+}
+
+// convertCostEventToBudgetAlert converts a streaming cost event to a BudgetAlert
+func convertCostEventToBudgetAlert(event *streaming.InternalEvent, domain *string) *model.BudgetAlert {
+	if event == nil {
+		return nil
+	}
+
+	// Extract cost payload if available
+	var payload *streaming.CostEventPayload
+	if event.Data != nil {
+		if costData, ok := event.Data.(*streaming.CostEventPayload); ok {
+			payload = costData
+		} else {
+			return nil
+		}
+	}
+
+	if payload == nil {
+		return nil
+	}
+
+	// Set default budget (in real implementation, this would be looked up)
+	budgetUSD := 100.0
+	spentUSD := payload.CostUSD
+	percentUsed := (spentUSD / budgetUSD) * 100
+
+	// Determine alert level
+	alertLevel := model.AlertLevelInfo
+	if percentUsed > 90 {
+		alertLevel = model.AlertLevelCritical
+	} else if percentUsed > 80 {
+		alertLevel = model.AlertLevelWarning
+	}
+
+	// Only send alerts for warning or critical levels
+	if alertLevel == model.AlertLevelInfo {
+		return nil
+	}
+
+	alertDomain := "default.instance"
+	if domain != nil {
+		alertDomain = *domain
+	} else if payload.TenantID != "" {
+		alertDomain = payload.TenantID + ".instance"
+	}
+
+	alert := &model.BudgetAlert{
+		ID:          event.ID,
+		Domain:      alertDomain,
+		BudgetUsd:   budgetUSD,
+		SpentUsd:    spentUSD,
+		PercentUsed: percentUsed,
+		AlertLevel:  alertLevel,
+		Timestamp:   model.Time(event.Timestamp),
+	}
+
+	// Add overspend projection if budget exceeded
+	if spentUSD > budgetUSD {
+		overspend := spentUSD - budgetUSD
+		alert.ProjectedOverspend = &overspend
+	}
+
+	return alert
+}
+
+// convertHealthEventToFederationUpdate converts a streaming health event to a FederationHealthUpdate
+func convertHealthEventToFederationUpdate(event *streaming.InternalEvent, domain *string) *model.FederationHealthUpdate {
+	if event == nil {
+		return nil
+	}
+
+	// Default values
+	currentStatus := model.InstanceHealthStatusHealthy
+	previousStatus := model.InstanceHealthStatusHealthy
+	updateDomain := "monitored.instance"
+
+	if domain != nil {
+		updateDomain = *domain
+	}
+
+	// Try to extract health information from event metadata
+	if event.Metadata != nil {
+		if status, exists := event.Metadata["current_status"]; exists {
+			switch status {
+			case "healthy":
+				currentStatus = model.InstanceHealthStatusHealthy
+			case "warning":
+				currentStatus = model.InstanceHealthStatusWarning
+			case "critical":
+				currentStatus = model.InstanceHealthStatusCritical
+			}
+		}
+
+		if status, exists := event.Metadata["previous_status"]; exists {
+			switch status {
+			case "healthy":
+				previousStatus = model.InstanceHealthStatusHealthy
+			case "warning":
+				previousStatus = model.InstanceHealthStatusWarning
+			case "critical":
+				previousStatus = model.InstanceHealthStatusCritical
+			}
+		}
+
+		if eventDomain, exists := event.Metadata["domain"]; exists {
+			updateDomain = eventDomain
+		}
+	}
+
+	// Create issues if status is not healthy
+	var issues []*model.HealthIssue
+	if currentStatus != model.InstanceHealthStatusHealthy {
+		severity := model.IssueSeverityMedium
+		if currentStatus == model.InstanceHealthStatusCritical {
+			severity = model.IssueSeverityHigh
+		}
+
+		issues = append(issues, &model.HealthIssue{
+			Type:        "PERFORMANCE_DEGRADATION",
+			Severity:    severity,
+			Description: "System health status changed",
+			DetectedAt:  model.Time(event.Timestamp),
+			Impact:      "Federation delays may occur",
+		})
+	}
+
+	return &model.FederationHealthUpdate{
+		Domain:         updateDomain,
+		PreviousStatus: previousStatus,
+		CurrentStatus:  currentStatus,
+		Issues:         issues,
+		Timestamp:      model.Time(event.Timestamp),
+	}
 }

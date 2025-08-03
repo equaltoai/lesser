@@ -45,13 +45,7 @@ func NewMemoryCSRFStore() *MemoryCSRFStore {
 		tokens: make(map[string]CSRFToken),
 	}
 
-	// Start cleanup goroutine
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		for range ticker.C {
-			store.CleanExpired()
-		}
-	}()
+	// Note: Removed polling goroutine - cleanup is now handled manually or by TTL in production stores
 
 	return store
 }
@@ -143,8 +137,8 @@ func (m *CSRFManager) ValidateToken(token string, userID string) error {
 		return ErrMissingCSRF
 	}
 
-	// For DynamoDB store, use ValidateAndConsume for atomic operation
-	if dynamoStore, ok := m.store.(*DynamoDBCSRFStore); ok {
+	// For DynamORM store, use ValidateAndConsume for atomic operation
+	if dynamoStore, ok := m.store.(*DynamORMCSRFStore); ok {
 		return dynamoStore.ValidateAndConsume(token, userID)
 	}
 

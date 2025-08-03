@@ -31,6 +31,12 @@ type CommunityNote struct {
 	NotHelpfulVotes  int       `json:"not_helpful_votes"`
 	Score            float64   `json:"score"`
 	VisibilityStatus string    `json:"visibility_status"`
+	
+	// AI Analysis fields
+	Sentiment     float64 `json:"sentiment"`
+	Objectivity   float64 `json:"objectivity"`
+	SourceQuality float64 `json:"source_quality"`
+	
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 

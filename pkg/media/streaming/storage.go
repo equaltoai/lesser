@@ -2,35 +2,54 @@ package streaming
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
-	"log"
+	"os"
 	"path"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
-// S3MediaStorage implements MediaStorage using S3
+// S3MediaStorage implements MediaStorage using S3 for files and DynamORM for metadata
 type S3MediaStorage struct {
-	client    *s3.Client
-	bucket    string
-	region    string
-	metaCache sync.Map // Cache for metadata
+	client               *s3.Client
+	bucket               string
+	region               string
+	db                   core.DB                          // DynamORM client for metadata storage
+	metaCache            sync.Map                         // Cache for metadata
+	cloudfrontDomain     string
+	cloudfrontKeyPairID  string
+	cloudfrontPrivateKey *rsa.PrivateKey
+	urlSigner            *sign.URLSigner
 }
 
-// NewS3MediaStorage creates a new S3-based media storage
-func NewS3MediaStorage(client *s3.Client, bucket, region string) *S3MediaStorage {
-	return &S3MediaStorage{
+// NewS3MediaStorage creates a new S3-based media storage with DynamORM for metadata
+func NewS3MediaStorage(client *s3.Client, bucket, region string, db core.DB) *S3MediaStorage {
+	storage := &S3MediaStorage{
 		client: client,
 		bucket: bucket,
 		region: region,
+		db:     db,
 	}
+
+	// Initialize CloudFront if environment variables are set
+	if err := storage.initializeCloudFront(); err != nil {
+		common.Logger().Warn("CloudFront initialization failed, falling back to S3 URLs",
+			zap.Error(err))
+	}
+
+	return storage
 }
 
 // GetManifestPath returns the S3 path for a manifest file
@@ -62,39 +81,49 @@ func (s *S3MediaStorage) GetMediaMetadata(mediaID string) (*MediaMetadata, error
 		}
 	}
 
-	// Fetch from S3
+	// Fetch from DynamoDB using DynamORM
 	ctx := context.Background()
-	metadataKey := fmt.Sprintf("media/%s/metadata.json", mediaID)
+	var metadataModel models.MediaMetadata
+	
+	err := s.db.WithContext(ctx).Model(&models.MediaMetadata{}).
+		Where("PK", "=", fmt.Sprintf("MEDIA#%s", mediaID)).
+		Where("SK", "=", "METADATA").
+		First(&metadataModel)
 
-	getInput := &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(metadataKey),
-	}
-
-	result, err := s.client.GetObject(ctx, getInput)
 	if err != nil {
-		return nil, fmt.Errorf("get metadata from S3: %w", err)
-	}
-	defer func() {
-		if closeErr := result.Body.Close(); closeErr != nil {
-			log.Printf("Warning: failed to close S3 object body: %v", closeErr)
+		// Check for "not found" error pattern in DynamORM
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "item not found") {
+			return nil, fmt.Errorf("media metadata not found: %s", mediaID)
 		}
-	}()
+		return nil, fmt.Errorf("get metadata from DynamoDB: %w", err)
+	}
 
-	// Parse metadata
-	var metadata MediaMetadata
-	decoder := json.NewDecoder(result.Body)
-	if err := decoder.Decode(&metadata); err != nil {
-		return nil, fmt.Errorf("decode metadata: %w", err)
+	// Convert from DynamORM model to streaming MediaMetadata
+	metadata := &MediaMetadata{
+		MediaID:            metadataModel.MediaID,
+		OriginalURL:        metadataModel.OriginalURL,
+		Duration:           metadataModel.Duration,
+		Width:              metadataModel.Width,
+		Height:             metadataModel.Height,
+		Bitrate:            metadataModel.Bitrate,
+		FileSize:           metadataModel.FileSize,
+		ProcessedAt:        metadataModel.ProcessedAt,
+		AvailableQualities: convertQualities(metadataModel.AvailableQualities),
+		Status:             ProcessingStatus(metadataModel.Status),
+		VideoCodec:         metadataModel.VideoCodec,
+		AudioCodec:         metadataModel.AudioCodec,
+		VideoProfile:       metadataModel.VideoProfile,
+		VideoLevel:         metadataModel.VideoLevel,
+		QualitySettings:    convertQualitySettings(metadataModel.QualitySettings),
 	}
 
 	// Cache the metadata
 	s.metaCache.Store(mediaID, &cachedMetadata{
-		metadata: &metadata,
+		metadata: metadata,
 		cachedAt: time.Now(),
 	})
 
-	return &metadata, nil
+	return metadata, nil
 }
 
 // ManifestExists checks if a manifest file exists
@@ -215,25 +244,46 @@ func (s *S3MediaStorage) ListSegments(mediaID string, quality Quality) ([]*Segme
 // UpdateMediaMetadata updates the metadata for a media item
 func (s *S3MediaStorage) UpdateMediaMetadata(mediaID string, metadata *MediaMetadata) error {
 	ctx := context.Background()
-	metadataKey := fmt.Sprintf("media/%s/metadata.json", mediaID)
 
-	// Marshal metadata to JSON
-	data, err := json.Marshal(metadata)
-	if err != nil {
-		return fmt.Errorf("marshal metadata: %w", err)
+	// Convert from streaming MediaMetadata to DynamORM model
+	metadataModel := &models.MediaMetadata{
+		MediaID:            metadata.MediaID,
+		OriginalURL:        metadata.OriginalURL,
+		Duration:           metadata.Duration,
+		Width:              metadata.Width,
+		Height:             metadata.Height,
+		Bitrate:            metadata.Bitrate,
+		FileSize:           metadata.FileSize,
+		ProcessedAt:        metadata.ProcessedAt,
+		AvailableQualities: convertQualitiesFromStreaming(metadata.AvailableQualities),
+		Status:             string(metadata.Status),
+		VideoCodec:         metadata.VideoCodec,
+		AudioCodec:         metadata.AudioCodec,
+		VideoProfile:       metadata.VideoProfile,
+		VideoLevel:         metadata.VideoLevel,
+		QualitySettings:    convertQualitySettingsFromStreaming(metadata.QualitySettings),
 	}
 
-	putInput := &s3.PutObjectInput{
-		Bucket:       aws.String(s.bucket),
-		Key:          aws.String(metadataKey),
-		Body:         strings.NewReader(string(data)),
-		ContentType:  aws.String("application/json"),
-		CacheControl: aws.String("max-age=300"),
-	}
+	// Set the keys
+	metadataModel.UpdateKeys()
 
-	_, err = s.client.PutObject(ctx, putInput)
+	// Try to update first, if not found then create
+	err := s.db.WithContext(ctx).Model(metadataModel).
+		Where("PK", "=", fmt.Sprintf("MEDIA#%s", mediaID)).
+		Where("SK", "=", "METADATA").
+		Update()
+
 	if err != nil {
-		return fmt.Errorf("update metadata in S3: %w", err)
+		// Check for "not found" error pattern in DynamORM
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "item not found") {
+			// Record doesn't exist, create it
+			err = s.db.WithContext(ctx).Model(metadataModel).Create()
+			if err != nil {
+				return fmt.Errorf("create metadata in DynamoDB: %w", err)
+			}
+		} else {
+			return fmt.Errorf("update metadata in DynamoDB: %w", err)
+		}
 	}
 
 	// Invalidate cache
@@ -261,7 +311,12 @@ func (s *S3MediaStorage) getManifestContentType(format MediaFormat) string {
 }
 
 func (s *S3MediaStorage) getSegmentURL(s3Key string) string {
-	// In production, this would generate a CloudFront URL
+	// Use CloudFront if configured, otherwise fall back to S3
+	if s.urlSigner != nil && s.cloudfrontDomain != "" {
+		return s.generateCloudFrontURL(s3Key)
+	}
+	
+	// Fallback to S3 direct URL
 	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", s.bucket, s.region, s3Key)
 }
 
@@ -286,7 +341,7 @@ func (s *S3MediaStorage) extractSegmentIndex(key string) int {
 func (s *S3MediaStorage) CreateMediaStructure(mediaID string, qualities []Quality) error {
 	ctx := context.Background()
 
-	// Create placeholder objects for each quality directory
+	// Create placeholder objects for each quality directory in S3
 	for _, quality := range qualities {
 		key := fmt.Sprintf("media/%s/%s/.placeholder", mediaID, quality)
 		putInput := &s3.PutObjectInput{
@@ -301,7 +356,7 @@ func (s *S3MediaStorage) CreateMediaStructure(mediaID string, qualities []Qualit
 		}
 	}
 
-	// Create initial metadata
+	// Create initial metadata in DynamoDB
 	metadata := &MediaMetadata{
 		MediaID:            mediaID,
 		Status:             StatusPending,
@@ -329,4 +384,153 @@ func (s *S3MediaStorage) GetPresignedUploadURL(mediaID string, filename string) 
 	}
 
 	return request.URL, nil
+}
+
+// initializeCloudFront sets up CloudFront signing if environment variables are configured
+func (s *S3MediaStorage) initializeCloudFront() error {
+	// Get CloudFront configuration from environment
+	cfDomain := os.Getenv("CLOUDFRONT_DISTRIBUTION_DOMAIN")
+	cfKeyPairID := os.Getenv("CLOUDFRONT_KEY_PAIR_ID")
+	cfPrivateKeyPath := os.Getenv("CLOUDFRONT_PRIVATE_KEY_PATH")
+	cfPrivateKeyContent := os.Getenv("CLOUDFRONT_PRIVATE_KEY")
+
+	// Check if CloudFront is configured
+	if cfDomain == "" || cfKeyPairID == "" {
+		return fmt.Errorf("CloudFront not configured: missing domain or key pair ID")
+	}
+
+	// Load private key
+	var privateKeyPEM []byte
+	var err error
+
+	if cfPrivateKeyPath != "" {
+		// Load from file path
+		privateKeyPEM, err = os.ReadFile(cfPrivateKeyPath)
+		if err != nil {
+			return fmt.Errorf("failed to read CloudFront private key file: %w", err)
+		}
+	} else if cfPrivateKeyContent != "" {
+		// Use key content directly
+		privateKeyPEM = []byte(cfPrivateKeyContent)
+	} else {
+		return fmt.Errorf("CloudFront private key not provided")
+	}
+
+	// Parse PEM block
+	block, _ := pem.Decode(privateKeyPEM)
+	if block == nil || block.Type != "RSA PRIVATE KEY" {
+		return fmt.Errorf("invalid RSA private key PEM")
+	}
+
+	// Parse RSA private key
+	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse RSA private key: %w", err)
+	}
+
+	// Create URL signer
+	urlSigner := sign.NewURLSigner(cfKeyPairID, privateKey)
+
+	// Store configuration
+	s.cloudfrontDomain = cfDomain
+	s.cloudfrontKeyPairID = cfKeyPairID
+	s.cloudfrontPrivateKey = privateKey
+	s.urlSigner = urlSigner
+
+	common.Logger().Info("CloudFront URL signing enabled",
+		zap.String("domain", cfDomain),
+		zap.String("key_pair_id", cfKeyPairID))
+
+	return nil
+}
+
+// generateCloudFrontURL creates a signed CloudFront URL for the given S3 key
+func (s *S3MediaStorage) generateCloudFrontURL(s3Key string) string {
+	if s.urlSigner == nil {
+		// Fallback to S3 if signer not available
+		return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", s.bucket, s.region, s3Key)
+	}
+
+	// Create the CloudFront URL
+	rawURL := fmt.Sprintf("https://%s/%s", s.cloudfrontDomain, s3Key)
+
+	// Set expiration to 1 hour from now
+	expiresAt := time.Now().Add(time.Hour)
+
+	// Sign the URL
+	signedURL, err := s.urlSigner.Sign(rawURL, expiresAt)
+	if err != nil {
+		common.Logger().Error("Failed to sign CloudFront URL, falling back to S3",
+			zap.String("url", rawURL),
+			zap.Error(err))
+		return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", s.bucket, s.region, s3Key)
+	}
+
+	return signedURL
+}
+
+// GetCloudFrontDomain returns the configured CloudFront domain
+func (s *S3MediaStorage) GetCloudFrontDomain() string {
+	return s.cloudfrontDomain
+}
+
+// IsCloudFrontEnabled returns true if CloudFront is properly configured
+func (s *S3MediaStorage) IsCloudFrontEnabled() bool {
+	return s.urlSigner != nil && s.cloudfrontDomain != ""
+}
+
+// Helper conversion functions for types between streaming and DynamORM models
+
+// convertQualities converts from DynamORM model string slice to streaming Quality slice
+func convertQualities(qualities []string) []Quality {
+	result := make([]Quality, len(qualities))
+	for i, q := range qualities {
+		result[i] = Quality(q)
+	}
+	return result
+}
+
+// convertQualitiesFromStreaming converts from streaming Quality slice to string slice
+func convertQualitiesFromStreaming(qualities []Quality) []string {
+	result := make([]string, len(qualities))
+	for i, q := range qualities {
+		result[i] = string(q)
+	}
+	return result
+}
+
+// convertQualitySettings converts from DynamORM model QualityCodecInfo to streaming QualityCodecInfo
+func convertQualitySettings(settings map[string]models.QualityCodecInfo) map[Quality]QualityCodecInfo {
+	if settings == nil {
+		return nil
+	}
+	result := make(map[Quality]QualityCodecInfo)
+	for k, v := range settings {
+		result[Quality(k)] = QualityCodecInfo{
+			VideoCodec: v.VideoCodec,
+			AudioCodec: v.AudioCodec,
+			Bandwidth:  v.Bandwidth,
+			Width:      v.Width,
+			Height:     v.Height,
+		}
+	}
+	return result
+}
+
+// convertQualitySettingsFromStreaming converts from streaming QualityCodecInfo to DynamORM model QualityCodecInfo
+func convertQualitySettingsFromStreaming(settings map[Quality]QualityCodecInfo) map[string]models.QualityCodecInfo {
+	if settings == nil {
+		return nil
+	}
+	result := make(map[string]models.QualityCodecInfo)
+	for k, v := range settings {
+		result[string(k)] = models.QualityCodecInfo{
+			VideoCodec: v.VideoCodec,
+			AudioCodec: v.AudioCodec,
+			Bandwidth:  v.Bandwidth,
+			Width:      v.Width,
+			Height:     v.Height,
+		}
+	}
+	return result
 }

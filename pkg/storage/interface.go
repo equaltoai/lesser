@@ -6,9 +6,80 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/moderation"
-	"github.com/equaltoai/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
+
+// Type aliases for moderation types to avoid circular dependencies
+type ModerationEvent = models.ModerationEvent
+type ModerationReview = models.ModerationReview
+type ModerationDecision = models.ModerationDecision
+
+// Moderation-related types redefined to avoid circular dependency
+type EventType string
+
+const (
+	EventTypeFlagged  EventType = "flagged"
+	EventTypeReviewed EventType = "reviewed"
+	EventTypeAppealed EventType = "appealed"
+	EventTypeExpired  EventType = "expired"
+)
+
+type Category string
+
+const (
+	CategorySpam           Category = "spam"
+	CategoryHateSpeech     Category = "hate_speech"
+	CategoryHarassment     Category = "harassment"
+	CategoryMisinformation Category = "misinformation"
+	CategoryNSFW           Category = "nsfw"
+	CategoryViolence       Category = "violence"
+	CategoryOther          Category = "other"
+)
+
+type Severity int
+
+const (
+	SeverityLow      Severity = 1
+	SeverityMedium   Severity = 2
+	SeverityHigh     Severity = 3
+	SeverityCritical Severity = 4
+)
+
+type ActionType string
+
+const (
+	ActionTypeNone    ActionType = "none"
+	ActionTypeWarning ActionType = "warning"
+	ActionTypeSilence ActionType = "silence"
+	ActionTypeSuspend ActionType = "suspend"
+	ActionTypeRemove  ActionType = "remove"
+)
+
+// ModerationQueueItem represents an item in the moderation queue
+type ModerationQueueItem struct {
+	Event          *ModerationEvent `json:"event"`
+	Priority       float64          `json:"priority"`
+	ReviewCount    int              `json:"review_count"`
+	LastReviewedAt *time.Time       `json:"last_reviewed_at,omitempty"`
+}
+
+// ModerationTimelineEntry represents an entry in the moderation timeline
+type ModerationTimelineEntry struct {
+	Timestamp   time.Time      `json:"timestamp"`
+	Type        string         `json:"type"`
+	ActorID     string         `json:"actor_id"`
+	Description string         `json:"description"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
+// ModerationHistory represents the complete history for an object
+type ModerationHistory struct {
+	ObjectID      string                    `json:"object_id"`
+	Events        []ModerationEvent         `json:"events"`
+	Decisions     []ModerationDecision      `json:"decisions"`
+	CurrentStatus string                    `json:"current_status"`
+	Timeline      []ModerationTimelineEntry `json:"timeline"`
+}
 
 // Storage defines the interface for data storage operations
 type Storage interface {
@@ -398,6 +469,12 @@ type Storage interface {
 	StoreEngagementMetrics(ctx context.Context, metrics *EngagementMetrics) error
 	IndexByEngagement(ctx context.Context, statusID string, bucket string) error
 	GetEngagementMetrics(ctx context.Context, statusID string) (*EngagementMetrics, error)
+	// Media analytics operations
+	RecordManifestGeneration(ctx context.Context, mediaID, format string, duration float64) error
+	RecordQualityChange(ctx context.Context, mediaID, userID, oldQuality, newQuality string) error
+	RecordMediaEvent(ctx context.Context, eventType, mediaID, userID string) error
+	GetManifestGenerationStats(ctx context.Context, format, startDate, endDate string) (map[string]int64, error)
+	GetMediaEventStats(ctx context.Context, eventType, startDate, endDate string) (map[string]int64, error)
 
 	// Announcement operations
 	CreateAnnouncement(ctx context.Context, announcement *Announcement) error
@@ -446,6 +523,7 @@ type Storage interface {
 	GetCommunityNote(ctx context.Context, noteID string) (*CommunityNote, error)
 	GetVisibleCommunityNotes(ctx context.Context, objectID string) ([]*CommunityNote, error)
 	UpdateCommunityNoteScore(ctx context.Context, noteID string, score float64, status string) error
+	UpdateCommunityNoteAnalysis(ctx context.Context, noteID string, sentiment, objectivity, sourceQuality float64) error
 	CreateCommunityNoteVote(ctx context.Context, vote *CommunityNoteVote) error
 	GetUserCommunityNoteVotes(ctx context.Context, userID string, noteIDs []string) (map[string]*CommunityNoteVote, error)
 	CheckCommunityNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int, error)
@@ -558,6 +636,10 @@ type Storage interface {
 	GetLoginAttemptCount(ctx context.Context, identifier string, since time.Time) (int, error)
 	IsRateLimited(ctx context.Context, identifier string) (bool, time.Time, error)
 	ClearLoginAttempts(ctx context.Context, identifier string) error
+	
+	// API rate limiting operations
+	CheckAPIRateLimit(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error
+	GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error)
 
 	// WebAuthn operations
 	StoreWebAuthnCredential(ctx context.Context, credential *WebAuthnCredential) error
@@ -1225,41 +1307,6 @@ type FilterStatus struct {
 	CreatedAt time.Time `dynamodbav:"created_at"`
 }
 
-// Type aliases for moderation and trust types to avoid repetition
-type (
-	ModerationEvent     = moderation.ModerationEvent
-	ModerationReview    = moderation.Review
-	ModerationDecision  = moderation.ModerationDecision
-	ModerationHistory   = moderation.ModerationHistory
-	ModerationQueueItem = moderation.QueueItem
-	EventType           = moderation.EventType
-	Category            = moderation.Category
-	Severity            = moderation.Severity
-	ActionType          = moderation.ActionType
-)
-
-type (
-	TrustRelationship = trust.TrustRelationship
-	TrustScore        = trust.TrustScore
-	TrustUpdate       = trust.TrustUpdate
-	TrustCategory     = trust.TrustCategory
-)
-
-// Constant aliases for moderation types
-const (
-	// Severity levels
-	SeverityLow      = moderation.SeverityLow
-	SeverityMedium   = moderation.SeverityMedium
-	SeverityHigh     = moderation.SeverityHigh
-	SeverityCritical = moderation.SeverityCritical
-
-	// Action types
-	ActionTypeNone    = moderation.ActionTypeNone
-	ActionTypeWarning = moderation.ActionTypeWarning
-	ActionTypeSilence = moderation.ActionTypeSilence
-	ActionTypeSuspend = moderation.ActionTypeSuspend
-	ActionTypeRemove  = moderation.ActionTypeRemove
-)
 
 // AccountPin represents a pinned/endorsed account
 type AccountPin struct {
@@ -1684,6 +1731,12 @@ type CommunityNote struct {
 	NotHelpfulVotes  int       `dynamodbav:"not_helpful_votes"`
 	Score            float64   `dynamodbav:"score"`
 	VisibilityStatus string    `dynamodbav:"visibility_status"`
+	
+	// AI Analysis fields
+	Sentiment     float64 `dynamodbav:"sentiment"`
+	Objectivity   float64 `dynamodbav:"objectivity"`
+	SourceQuality float64 `dynamodbav:"source_quality"`
+	
 	CreatedAt        time.Time `dynamodbav:"created_at"`
 	UpdatedAt        time.Time `dynamodbav:"updated_at"`
 }

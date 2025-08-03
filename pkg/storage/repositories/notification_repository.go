@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -415,12 +416,31 @@ func (r *NotificationRepository) BatchCreateNotifications(ctx context.Context, n
 		}
 	}
 
-	// Create notifications one by one (in a real implementation, you'd use batch operations)
-	for _, notification := range notifications {
-		err := r.db.Model(notification).Create()
-		if err != nil {
-			return fmt.Errorf("failed to create notification in batch: %w", err)
-		}
+	// Convert to []any for batch operations
+	items := make([]any, len(notifications))
+	for i, notification := range notifications {
+		items[i] = notification
+	}
+
+	// Use batch writer for efficient bulk creation
+	batchWriter := batch.NewBatchWriter(r.db, batch.BatchWriterConfig{
+		BatchSize: batch.DefaultBatchSize,
+		Logger:    r.logger,
+	})
+
+	result, err := batchWriter.WriteItems(ctx, items)
+	if err != nil {
+		return fmt.Errorf("failed to batch create notifications: %w", err)
+	}
+
+	// Check if any items failed
+	if result.FailedItems > 0 {
+		r.logger.Warn("some notifications failed to create",
+			zap.Int("failed_items", result.FailedItems),
+			zap.Int("total_items", result.TotalItems),
+		)
+		// For notifications, we'll continue even with some failures
+		// since they're not critical for app functionality
 	}
 
 	return nil
@@ -443,13 +463,26 @@ func (r *NotificationRepository) DeleteExpiredNotifications(ctx context.Context,
 		return nil // Nothing to delete
 	}
 
-	// Delete notifications one by one (in a real implementation, you'd use batch operations)
-	for _, notification := range expiredNotifications {
-		err := r.db.Model(notification).Delete()
-		if err != nil {
-			return fmt.Errorf("failed to delete expired notification: %w", err)
+	// Use batch delete for efficient bulk deletion
+	keys := make([]any, len(expiredNotifications))
+	for i, notification := range expiredNotifications {
+		// Create key structs with PK and SK for deletion
+		keys[i] = &models.Notification{
+			PK: notification.PK,
+			SK: notification.SK,
 		}
 	}
+
+	// Use DynamORM's batch delete functionality
+	err = r.db.Model(&models.Notification{}).BatchDelete(keys)
+	if err != nil {
+		return fmt.Errorf("failed to batch delete expired notifications: %w", err)
+	}
+
+	r.logger.Info("batch deleted expired notifications",
+		zap.Time("before", before),
+		zap.Int("deleted_count", len(expiredNotifications)),
+	)
 
 	return nil
 }
@@ -840,17 +873,6 @@ func (r *NotificationRepository) SetNotificationPreference(ctx context.Context, 
 	return r.UpdateNotificationPreferences(ctx, username, prefs)
 }
 
-// GetDigestEmailUsers retrieves users who have digest email enabled
-func (r *NotificationRepository) GetDigestEmailUsers(ctx context.Context) ([]string, error) {
-	// This would require a GSI in production for efficient querying
-	// For now, return empty slice as digest email is not implemented
-	var users []string
-	
-	// In production, you'd query with a GSI on digest_email = true
-	r.logger.Info("GetDigestEmailUsers called - digest email not implemented")
-	
-	return users, nil
-}
 
 // RecordDeliveryAttempt records a notification delivery attempt
 func (r *NotificationRepository) RecordDeliveryAttempt(ctx context.Context, notificationID, method string, success bool, errorMsg string) error {
@@ -1109,14 +1131,30 @@ func (r *NotificationRepository) DeleteExpiredSubscriptions(ctx context.Context,
 		return fmt.Errorf("failed to find expired subscriptions: %w", err)
 	}
 	
-	for _, sub := range oldSubscriptions {
-		err := r.db.WithContext(ctx).Model(sub).Delete()
-		if err != nil {
-			r.logger.Warn("failed to delete expired subscription",
-				zap.String("subscription_id", sub.ID),
-				zap.Error(err))
+	if len(oldSubscriptions) == 0 {
+		return nil // Nothing to delete
+	}
+
+	// Use batch delete for efficient bulk deletion
+	keys := make([]any, len(oldSubscriptions))
+	for i, sub := range oldSubscriptions {
+		// Create key structs with PK and SK for deletion
+		keys[i] = &models.PushSubscription{
+			PK: sub.PK,
+			SK: sub.SK,
 		}
 	}
+
+	// Use DynamORM's batch delete functionality
+	err = r.db.WithContext(ctx).Model(&models.PushSubscription{}).BatchDelete(keys)
+	if err != nil {
+		return fmt.Errorf("failed to batch delete expired subscriptions: %w", err)
+	}
+
+	r.logger.Info("batch deleted expired push subscriptions",
+		zap.Time("cutoff", cutoff),
+		zap.Int("deleted_count", len(oldSubscriptions)),
+	)
 	
 	return nil
 }
@@ -1196,15 +1234,31 @@ func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, user
 		return fmt.Errorf("failed to find old notifications: %w", err)
 	}
 	
-	// Delete each notification
-	for _, notif := range oldNotifications {
-		err := r.db.WithContext(ctx).Model(notif).Delete()
-		if err != nil {
-			r.logger.Warn("failed to delete old notification",
-				zap.String("notification_id", notif.ID),
-				zap.Error(err))
+	if len(oldNotifications) == 0 {
+		return nil // Nothing to delete
+	}
+
+	// Use batch delete for efficient bulk deletion
+	keys := make([]any, len(oldNotifications))
+	for i, notif := range oldNotifications {
+		// Create key structs with PK and SK for deletion
+		keys[i] = &models.NotificationLegacy{
+			PK: notif.PK,
+			SK: notif.SK,
 		}
 	}
+
+	// Use DynamORM's batch delete functionality
+	err = r.db.WithContext(ctx).Model(&models.NotificationLegacy{}).BatchDelete(keys)
+	if err != nil {
+		return fmt.Errorf("failed to batch delete old notifications: %w", err)
+	}
+
+	r.logger.Info("batch deleted old notifications",
+		zap.String("username", username),
+		zap.Duration("older_than", olderThan),
+		zap.Int("deleted_count", len(oldNotifications)),
+	)
 	
 	return nil
 }

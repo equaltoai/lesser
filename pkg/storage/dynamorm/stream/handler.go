@@ -54,9 +54,24 @@ func (h *BaseHandler) HandleDynamoDBStream(ctx context.Context, event events.Dyn
 }
 
 // processRecord processes a single DynamoDB stream record
-// This is a placeholder that should be overridden by specific handlers
+// This is a base implementation that should be overridden by specific handlers
 func (h *BaseHandler) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
-	return fmt.Errorf("processRecord not implemented")
+	// Extract event type for logging
+	eventType, err := GetEventType(record)
+	if err != nil {
+		h.Logger.Warn("Could not determine event type", zap.Error(err))
+		eventType = "unknown"
+	}
+
+	h.Logger.Info("BaseHandler processing record - concrete handler should override this method",
+		zap.String("eventID", record.EventID),
+		zap.String("eventName", record.EventName),
+		zap.String("eventType", eventType),
+	)
+
+	// Base implementation does nothing but log - this is expected behavior
+	// Concrete handlers should override this method to provide specific processing logic
+	return nil
 }
 
 // GetEventType extracts the entity type from a DynamoDB stream record

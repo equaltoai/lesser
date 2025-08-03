@@ -1,3 +1,12 @@
+// Package observability provides serverless-friendly metrics collection for AWS Lambda.
+// 
+// Usage in Lambda functions:
+//   1. Create a collector during init() or at handler start
+//   2. Record metrics during execution
+//   3. Call Flush() before handler returns to send metrics to CloudWatch
+//
+// This implementation avoids background goroutines and polling to be compatible
+// with serverless environments where Lambda containers can be frozen.
 package observability
 
 import (
@@ -16,15 +25,12 @@ import (
 
 // MetricsCollector aggregates and publishes custom metrics
 type MetricsCollector struct {
-	client        *cloudwatch.Client
-	namespace     string
-	dimensions    []types.Dimension
-	metrics       map[string]*MetricBuffer
-	flushInterval time.Duration
-	logger        *zap.Logger
-	mu            sync.RWMutex
-	stopChan      chan struct{}
-	wg            sync.WaitGroup
+	client     *cloudwatch.Client
+	namespace  string
+	dimensions []types.Dimension
+	metrics    map[string]*MetricBuffer
+	logger     *zap.Logger
+	mu         sync.RWMutex
 }
 
 type MetricBuffer struct {
@@ -47,13 +53,11 @@ type PerformanceMetrics struct {
 
 // NewMetricsCollector creates a new metrics collector
 func NewMetricsCollector(client *cloudwatch.Client, namespace string, logger *zap.Logger) *MetricsCollector {
-	collector := &MetricsCollector{
-		client:        client,
-		namespace:     namespace,
-		metrics:       make(map[string]*MetricBuffer),
-		flushInterval: 60 * time.Second,
-		logger:        logger,
-		stopChan:      make(chan struct{}),
+	return &MetricsCollector{
+		client:    client,
+		namespace: namespace,
+		metrics:   make(map[string]*MetricBuffer),
+		logger:    logger,
 		dimensions: []types.Dimension{
 			{
 				Name:  aws.String("FunctionName"),
@@ -65,12 +69,6 @@ func NewMetricsCollector(client *cloudwatch.Client, namespace string, logger *za
 			},
 		},
 	}
-
-	// Start metrics flushing
-	collector.wg.Add(1)
-	go collector.flushLoop()
-
-	return collector
 }
 
 // RecordMetric records a custom metric
@@ -183,21 +181,11 @@ func GetPerformanceMetrics(startTime time.Time, initTime time.Time) *Performance
 	}
 }
 
-// flushLoop periodically flushes metrics to CloudWatch
-func (mc *MetricsCollector) flushLoop() {
-	defer mc.wg.Done()
-	ticker := time.NewTicker(mc.flushInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			mc.flushMetrics()
-		case <-mc.stopChan:
-			mc.flushMetrics() // Final flush
-			return
-		}
-	}
+// Flush manually flushes all accumulated metrics to CloudWatch.
+// This should be called before Lambda function returns to ensure metrics are sent.
+// In serverless environments, call this at the end of each request handler.
+func (mc *MetricsCollector) Flush() {
+	mc.flushMetrics()
 }
 
 // flushMetrics sends accumulated metrics to CloudWatch
@@ -255,12 +243,6 @@ func (mc *MetricsCollector) flushMetrics() {
 			mc.logger.Debug("published metrics", zap.Int("count", len(metricData)))
 		}
 	}
-}
-
-// Stop stops the metrics collector
-func (mc *MetricsCollector) Stop() {
-	close(mc.stopChan)
-	mc.wg.Wait()
 }
 
 // Helper functions

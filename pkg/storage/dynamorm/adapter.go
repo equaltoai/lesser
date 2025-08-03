@@ -9,6 +9,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/media/streaming"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -20,6 +22,11 @@ type ActorRepositoryDeps interface {
 	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 	GetPreference(ctx context.Context, username, key string) (any, error)
 	SetPreference(ctx context.Context, username, key string, value any) error
+}
+
+// SearchRepositoryDeps interface defines dependencies that a search repository might need
+type SearchRepositoryDeps interface {
+	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 }
 
 // ActorRepository interface defines the methods we need from the actor repository
@@ -110,6 +117,21 @@ type ActivityRepository interface {
 	GetCollection(ctx context.Context, username, collectionType string, limit int, cursor string) (*activitypub.OrderedCollectionPage, error)
 }
 
+// TrustRepository interface defines the methods we need from the trust repository
+type TrustRepository interface {
+	CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
+	GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error)
+	UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
+	DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error
+	GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
+	GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
+	GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error)
+	UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error
+	RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error
+	GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error)
+	GetUserTrustScore(ctx context.Context, userID string) (float64, error)
+}
+
 // UserRepository interface defines the methods we need from the user repository
 type UserRepository interface {
 	CreateUser(ctx context.Context, user *storage.User) error
@@ -127,23 +149,10 @@ type UserRepository interface {
 	// Account management methods
 	RemoveFromFollowers(ctx context.Context, username, followerUsername string) error
 
-	// Trust relationship methods
-	CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
-	GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error)
-	UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
-	DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error
-	GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
-	GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
-	GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error)
-	UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error
-	RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error
-	GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error)
-
 	// Reputation storage operations
 	StoreReputation(ctx context.Context, actorID string, reputation *storage.Reputation) error
 	GetReputation(ctx context.Context, actorID string) (*storage.Reputation, error)
 	GetReputationHistory(ctx context.Context, actorID string, limit int) ([]*storage.Reputation, error)
-	GetUserTrustScore(ctx context.Context, userID string) (float64, error)
 
 	// Vouch operations
 	CreateVouch(ctx context.Context, vouch *storage.Vouch) error
@@ -289,7 +298,6 @@ type NotificationRepository interface {
 	UpdateNotificationPreferences(ctx context.Context, username string, prefs *storage.NotificationPreferences) error
 	BatchMarkNotificationsAsRead(ctx context.Context, username string, notificationIDs []string) error
 	SetNotificationPreference(ctx context.Context, username string, preference string, enabled bool) error
-	GetDigestEmailUsers(ctx context.Context) ([]string, error)
 	
 	// Delivery tracking
 	RecordDeliveryAttempt(ctx context.Context, notificationID, method string, success bool, errorMsg string) error
@@ -462,6 +470,30 @@ type ModerationRepository interface {
 	DeleteFilterStatus(ctx context.Context, statusID string) error
 }
 
+// ModerationMetricsRepository interface defines the methods we need from the moderation metrics repository
+type ModerationMetricsRepository interface {
+	// Metrics recording
+	RecordMetricsEntry(ctx context.Context, entry *models.ModerationMetricsEntry) error
+	RecordMetricsEntries(ctx context.Context, entries []*models.ModerationMetricsEntry) error
+	
+	// False positive tracking
+	RecordFalsePositive(ctx context.Context, fp *models.ModerationFalsePositive) error
+	GetFalsePositives(ctx context.Context, timeRange models.ModerationMetricsTimeRange) ([]*models.ModerationFalsePositive, error)
+	
+	// Decision sampling
+	RecordDecisionSample(ctx context.Context, sample *models.ModerationDecisionSample) error
+	GetDecisionSamples(ctx context.Context, timeRange models.ModerationMetricsTimeRange, decision string) ([]*models.ModerationDecisionSample, error)
+	
+	// Pattern statistics
+	UpdatePatternStats(ctx context.Context, stats *models.ModerationPatternStats) error
+	GetTopPatterns(ctx context.Context, limit int) ([]*models.ModerationPatternStats, error)
+	IncrementPatternHit(ctx context.Context, patternID, patternName string) error
+	
+	// Statistics retrieval
+	GetMetricsEntries(ctx context.Context, timeRange models.ModerationMetricsTimeRange, metricTypes []string) ([]*models.ModerationMetricsEntry, error)
+	GetAggregatedStats(ctx context.Context, timeRange models.ModerationMetricsTimeRange) (*models.ModerationMetricsStats, error)
+}
+
 // SocialRepository interface defines the methods we need from the social repository
 type SocialRepository interface {
 	// Block methods
@@ -631,6 +663,27 @@ type InstanceRepository interface {
 	GetDomainStats(ctx context.Context, domain string) (any, error)
 }
 
+// InstanceHealthRepository interface defines methods for health checking operations
+type InstanceHealthRepository interface {
+	// Health check data operations
+	SaveHealthCheck(ctx context.Context, health *models.InstanceHealth) error
+	SaveHealthChecks(ctx context.Context, healthChecks []*models.InstanceHealth) error
+	GetLatestHealthCheck(ctx context.Context, domain string) (*models.InstanceHealth, error)
+	GetHealthHistory(ctx context.Context, domain string, since time.Time, limit int) ([]*models.InstanceHealth, error)
+	
+	// Domain management
+	GetDomainsForHealthCheck(ctx context.Context, limit int) ([]string, error)
+	GetUnhealthyInstances(ctx context.Context, threshold float64) ([]string, error)
+	
+	// Health summary operations
+	SaveHealthSummary(ctx context.Context, summary *models.InstanceHealthSummary) error
+	GetHealthSummary(ctx context.Context, domain string, window time.Duration) (*models.InstanceHealthSummary, error)
+	CalculateHealthSummary(ctx context.Context, domain string, window time.Duration) (*models.InstanceHealthSummary, error)
+	
+	// Cleanup operations
+	CleanupOldHealthData(ctx context.Context, olderThan time.Duration) (int, error)
+}
+
 // HashtagRepository interface defines the methods we need from the hashtag repository
 type HashtagRepository interface {
 	// Hashtag operations
@@ -691,6 +744,12 @@ type TrendingRepository interface {
 	IndexByEngagement(ctx context.Context, statusID string, bucket string) error
 	// Search suggestions
 	GenerateSearchSuggestions(ctx context.Context, userID, partialQuery string, limit int) ([]string, error)
+	// Media analytics methods
+	RecordManifestGeneration(ctx context.Context, mediaID, format string, duration float64) error
+	RecordQualityChange(ctx context.Context, mediaID, userID, oldQuality, newQuality string) error
+	RecordMediaEvent(ctx context.Context, eventType, mediaID, userID string) error
+	GetManifestGenerationStats(ctx context.Context, format, startDate, endDate string) (map[string]int64, error)
+	GetMediaEventStats(ctx context.Context, eventType, startDate, endDate string) (map[string]int64, error)
 }
 
 // FeaturedTagRepository interface defines the methods we need from the featured tag repository
@@ -835,6 +894,29 @@ type FederationRepository interface {
 	GetStrongestConnectionsByType(ctx context.Context, connectionType string, limit int) ([]*storage.FederationEdge, error)
 }
 
+// FederationInstanceRepository interface defines the methods for federation instance registry operations
+type FederationInstanceRepository interface {
+	// Instance CRUD operations
+	CreateInstance(ctx context.Context, instance *types.Instance) error
+	GetInstance(ctx context.Context, instanceID string) (*types.Instance, error)
+	GetInstanceByDomain(ctx context.Context, domain string) (*types.Instance, error)
+	UpdateInstance(ctx context.Context, instance *types.Instance) error
+	DeleteInstance(ctx context.Context, instanceID string) error
+
+	// Instance queries
+	ListInstancesByStatus(ctx context.Context, status types.InstanceStatus, limit int) ([]*types.Instance, error)
+	ListHealthyInstances(ctx context.Context) ([]*types.Instance, error)
+	GetInstancesByTier(ctx context.Context, tier types.TierLevel, limit int) ([]*types.Instance, error)
+	BatchGetInstances(ctx context.Context, instanceIDs []string) ([]*types.Instance, error)
+	SearchInstances(ctx context.Context, domainPattern string, limit int) ([]*types.Instance, error)
+	ListAllInstances(ctx context.Context, limit int, startKey map[string]interface{}) ([]*types.Instance, map[string]interface{}, error)
+
+	// Instance health and metrics
+	UpdateInstanceHealth(ctx context.Context, instanceID string, health *types.HealthStatus) error
+	UpdateInstanceUsage(ctx context.Context, instanceID string, bytesUsed int64) error
+	GetHealthHistory(ctx context.Context, instanceID string, duration time.Duration) ([]*types.HealthStatus, error)
+}
+
 // AuthRepository interface defines methods for WebAuthn and Wallet authentication
 type AuthRepository interface {
 	// WebAuthn credential operations
@@ -912,6 +994,10 @@ type RateLimitRepository interface {
 	IsRateLimited(ctx context.Context, identifier string) (bool, time.Time, error)
 	ClearLoginAttempts(ctx context.Context, identifier string) error
 	CheckCommunityNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int, error)
+	
+	// API rate limiting operations
+	CheckAPIRateLimit(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error
+	GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error)
 }
 
 // StreamingRepository interface defines the methods we need from the streaming repository
@@ -932,10 +1018,64 @@ type CommunityNoteRepository interface {
 	GetCommunityNote(ctx context.Context, noteID string) (*storage.CommunityNote, error)
 	GetVisibleCommunityNotes(ctx context.Context, objectID string) ([]*storage.CommunityNote, error)
 	UpdateCommunityNoteScore(ctx context.Context, noteID string, score float64, status string) error
+	UpdateCommunityNoteAnalysis(ctx context.Context, noteID string, sentiment, objectivity, sourceQuality float64) error
 	CreateCommunityNoteVote(ctx context.Context, vote *storage.CommunityNoteVote) error
 	GetUserCommunityNoteVotes(ctx context.Context, userID string, noteIDs []string) (map[string]*storage.CommunityNoteVote, error)
 	GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error)
 	GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error)
+}
+
+// CSRFRepository interface defines the methods we need from the CSRF repository
+type CSRFRepository interface {
+	Store(ctx context.Context, token string, userID string, expiresAt time.Time) error
+	Get(ctx context.Context, token string) (string, string, time.Time, bool, error)
+	Delete(ctx context.Context, token string) error
+	ValidateAndConsume(ctx context.Context, token string, userID string) error
+	GetUserActiveTokenCount(ctx context.Context, userID string) (int, error)
+	CleanupUserTokens(ctx context.Context, userID string) error
+	CleanExpired(ctx context.Context) error
+}
+
+// CircuitBreakerRepository interface defines the methods we need from the circuit breaker repository
+type CircuitBreakerRepository interface {
+	GetCircuitState(ctx context.Context, instanceID string) (*models.CircuitBreakerState, error)
+	SaveCircuitState(ctx context.Context, state *models.CircuitBreakerState) error
+	UpdateCircuitState(ctx context.Context, instanceID string, updateFn func(*models.CircuitBreakerState) error) (*models.CircuitBreakerState, error)
+	RecordEvent(ctx context.Context, event *models.CircuitBreakerEvent) error
+	RecordStateChange(ctx context.Context, instanceID, oldStatus, newStatus, reason string) error
+	RecordMetric(ctx context.Context, instanceID string, success bool, err error, errorType string) error
+	GetRecentEvents(ctx context.Context, instanceID string, limit int) ([]*models.CircuitBreakerEvent, error)
+	DeleteCircuitState(ctx context.Context, instanceID string) error
+	GetAllCircuitStates(ctx context.Context) ([]*models.CircuitBreakerState, error)
+}
+
+// RouteOptimizationRepository interface defines the methods for route performance tracking and optimization  
+type RouteOptimizationRepository interface {
+	// Core operations used by SmartRouteOptimizer
+	RecordDeliveryResult(ctx context.Context, result *types.DeliveryResult) error
+	GetRouteMetrics(ctx context.Context, routeID string) (*types.RouteMetrics, error)
+	GetRoutePerformance(ctx context.Context, routeID string) (interface{}, error) // Returns internal perf data
+	StoreOptimizationDecision(ctx context.Context, routes []*types.Route, messageSize int64) error
+}
+
+// RoutingMetricsRepository interface defines the methods for routing metrics aggregation
+type RoutingMetricsRepository interface {
+	// Core operations used by RoutingMetrics component
+	RecordRouteSelection(ctx context.Context, routeID, destination, messageType string) error
+	RecordDelivery(ctx context.Context, result *types.DeliveryResult) error
+	GetMetrics(ctx context.Context, timeWindow time.Duration) (interface{}, error) // Returns aggregated metrics
+}
+
+// MediaSessionRepository interface defines the methods for media session management
+type MediaSessionRepository interface {
+	CreateSession(ctx context.Context, session *streaming.StreamingSession) error
+	GetSession(ctx context.Context, sessionID string) (*streaming.StreamingSession, error)
+	UpdateSession(ctx context.Context, session *streaming.StreamingSession) error
+	EndSession(ctx context.Context, sessionID string) error
+	GetUserSessions(ctx context.Context, userID string) ([]*streaming.StreamingSession, error)
+	GetMediaSessions(ctx context.Context, mediaID string, limit int32) ([]*streaming.StreamingSession, error)
+	CleanupExpiredSessions(ctx context.Context, maxAge time.Duration) error
+	SetSessionTTL(ttl time.Duration)
 }
 
 // StorageAdapter adapts the DynamORM repositories to the storage.Storage interface
@@ -946,6 +1086,7 @@ type StorageAdapter struct {
 	objectRepo           ObjectRepository
 	activityRepo         ActivityRepository
 	userRepo             UserRepository
+	trustRepo            TrustRepository
 	conversationRepo     ConversationRepository
 	followRepo           FollowRepository
 	timelineRepo         TimelineRepository
@@ -962,6 +1103,7 @@ type StorageAdapter struct {
 	pollRepo             PollRepository
 	pushSubscriptionRepo PushSubscriptionRepository
 	instanceRepo         InstanceRepository
+	instanceHealthRepo   InstanceHealthRepository
 	hashtagRepo          HashtagRepository
 	featuredTagRepo      FeaturedTagRepository
 	trendingRepo         TrendingRepository
@@ -972,15 +1114,18 @@ type StorageAdapter struct {
 	domainBlockRepo      DomainBlockRepository
 	relayRepo            RelayRepository
 	federationRepo       FederationRepository
+	federationInstanceRepo FederationInstanceRepository
 	walletRepo           WalletRepository
 	authRepo             AuthRepository
 	recoveryRepo         RecoveryRepository
 	rateLimitRepo        RateLimitRepository
 	streamingRepo        StreamingRepository
 	communityNoteRepo    CommunityNoteRepository
-
-	// Keep a reference to the original storage implementation for methods not yet migrated
-	originalStorage storage.Storage
+	csrfRepo             CSRFRepository
+	circuitBreakerRepo   CircuitBreakerRepository
+	routeOptimizationRepo RouteOptimizationRepository
+	routingMetricsRepo   RoutingMetricsRepository
+	mediaSessionRepo     MediaSessionRepository
 
 	// Common fields
 	db        core.DB
@@ -989,13 +1134,12 @@ type StorageAdapter struct {
 }
 
 // NewStorageAdapter creates a new StorageAdapter
-func NewStorageAdapter(db core.DB, tableName string, logger *zap.Logger, originalStorage storage.Storage) *StorageAdapter {
+func NewStorageAdapter(db core.DB, tableName string, logger *zap.Logger) *StorageAdapter {
 	return &StorageAdapter{
 		// Repositories will be set via SetActorRepository method
-		originalStorage: originalStorage,
-		db:              db,
-		tableName:       tableName,
-		logger:          logger,
+		db:        db,
+		tableName: tableName,
+		logger:    logger,
 	}
 }
 
@@ -1022,6 +1166,11 @@ func (a *StorageAdapter) SetActivityRepository(repo ActivityRepository) {
 // SetUserRepository sets the user repository
 func (a *StorageAdapter) SetUserRepository(repo UserRepository) {
 	a.userRepo = repo
+}
+
+// SetTrustRepository sets the trust repository
+func (a *StorageAdapter) SetTrustRepository(repo TrustRepository) {
+	a.trustRepo = repo
 }
 
 // SetConversationRepository sets the conversation repository
@@ -1057,6 +1206,11 @@ func (a *StorageAdapter) SetOAuthRepository(repo OAuthRepository) {
 // SetSearchRepository sets the search repository
 func (a *StorageAdapter) SetSearchRepository(repo SearchRepository) {
 	a.searchRepo = repo
+	
+	// Set dependencies if the repository supports it
+	if repoWithDeps, ok := repo.(interface{ SetDependencies(SearchRepositoryDeps) }); ok {
+		repoWithDeps.SetDependencies(a)
+	}
 }
 
 // SetSessionRepository sets the session repository
@@ -1102,6 +1256,11 @@ func (a *StorageAdapter) SetPushSubscriptionRepository(repo PushSubscriptionRepo
 // SetInstanceRepository sets the instance repository
 func (a *StorageAdapter) SetInstanceRepository(repo InstanceRepository) {
 	a.instanceRepo = repo
+}
+
+// SetInstanceHealthRepository sets the instance health repository
+func (a *StorageAdapter) SetInstanceHealthRepository(repo InstanceHealthRepository) {
+	a.instanceHealthRepo = repo
 }
 
 // SetHashtagRepository sets the hashtag repository
@@ -1154,6 +1313,11 @@ func (a *StorageAdapter) SetFederationRepository(repo FederationRepository) {
 	a.federationRepo = repo
 }
 
+// SetFederationInstanceRepository sets the federation instance repository
+func (a *StorageAdapter) SetFederationInstanceRepository(repo FederationInstanceRepository) {
+	a.federationInstanceRepo = repo
+}
+
 // SetAuthRepository sets the auth repository
 func (a *StorageAdapter) SetAuthRepository(repo AuthRepository) {
 	a.authRepo = repo
@@ -1179,9 +1343,33 @@ func (a *StorageAdapter) SetStreamingRepository(repo StreamingRepository) {
 	a.streamingRepo = repo
 }
 
+// SetMediaSessionRepository sets the media session repository
+func (a *StorageAdapter) SetMediaSessionRepository(repo MediaSessionRepository) {
+	a.mediaSessionRepo = repo
+}
+
 // SetCommunityNoteRepository sets the community note repository
 func (a *StorageAdapter) SetCommunityNoteRepository(repo CommunityNoteRepository) {
 	a.communityNoteRepo = repo
+}
+
+// SetCSRFRepository sets the CSRF repository
+func (a *StorageAdapter) SetCSRFRepository(repo CSRFRepository) {
+	a.csrfRepo = repo
+}
+
+func (a *StorageAdapter) SetCircuitBreakerRepository(repo CircuitBreakerRepository) {
+	a.circuitBreakerRepo = repo
+}
+
+// SetRouteOptimizationRepository sets the route optimization repository
+func (a *StorageAdapter) SetRouteOptimizationRepository(repo RouteOptimizationRepository) {
+	a.routeOptimizationRepo = repo
+}
+
+// SetRoutingMetricsRepository sets the routing metrics repository
+func (a *StorageAdapter) SetRoutingMetricsRepository(repo RoutingMetricsRepository) {
+	a.routingMetricsRepo = repo
 }
 
 // RepositoryAdapter is a generic adapter for repository interfaces
@@ -1288,19 +1476,6 @@ func (a *StorageAdapter) HasPendingFollowRequest(ctx context.Context, requesterI
 
 // Implement storage.Storage interface methods as they are migrated to DynamORM
 
-// For methods not yet migrated, delegate to the original storage implementation
-// This allows for incremental migration
-func (a *StorageAdapter) delegateToOriginal(methodName string, args ...any) (any, error) {
-	if a.originalStorage == nil {
-		return nil, fmt.Errorf("method %s not implemented and no original storage available", methodName)
-	}
-
-	// Log the delegation for monitoring migration progress
-	// log.Printf("Delegating %s to original storage implementation", methodName)
-
-	// The actual delegation happens in the specific method implementations
-	return nil, fmt.Errorf("delegation not implemented for method %s", methodName)
-}
 
 
 // GetActor retrieves an actor by username
@@ -5110,12 +5285,12 @@ func (a *StorageAdapter) RemoveFromFollowers(ctx context.Context, username, foll
 
 // CreateTrustRelationship creates a new trust relationship
 func (a *StorageAdapter) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return fmt.Errorf("trust repository not initialized")
 	}
 
-	err := a.userRepo.CreateTrustRelationship(ctx, relationship)
+	err := a.trustRepo.CreateTrustRelationship(ctx, relationship)
 	if err != nil {
 		return MapRepositoryError(err, "CreateTrustRelationship", "TrustRelationship", relationship.TrusterID)
 	}
@@ -5125,12 +5300,12 @@ func (a *StorageAdapter) CreateTrustRelationship(ctx context.Context, relationsh
 
 // GetTrustRelationship retrieves a trust relationship
 func (a *StorageAdapter) GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error) {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return nil, fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return nil, fmt.Errorf("trust repository not initialized")
 	}
 
-	relationship, err := a.userRepo.GetTrustRelationship(ctx, trusterID, trusteeID, category)
+	relationship, err := a.trustRepo.GetTrustRelationship(ctx, trusterID, trusteeID, category)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetTrustRelationship", "TrustRelationship", trusterID)
 	}
@@ -5140,12 +5315,12 @@ func (a *StorageAdapter) GetTrustRelationship(ctx context.Context, trusterID, tr
 
 // UpdateTrustRelationship updates an existing trust relationship
 func (a *StorageAdapter) UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return fmt.Errorf("trust repository not initialized")
 	}
 
-	err := a.userRepo.UpdateTrustRelationship(ctx, relationship)
+	err := a.trustRepo.UpdateTrustRelationship(ctx, relationship)
 	if err != nil {
 		return MapRepositoryError(err, "UpdateTrustRelationship", "TrustRelationship", relationship.TrusterID)
 	}
@@ -5155,12 +5330,12 @@ func (a *StorageAdapter) UpdateTrustRelationship(ctx context.Context, relationsh
 
 // DeleteTrustRelationship deletes a trust relationship
 func (a *StorageAdapter) DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return fmt.Errorf("trust repository not initialized")
 	}
 
-	err := a.userRepo.DeleteTrustRelationship(ctx, trusterID, trusteeID, category)
+	err := a.trustRepo.DeleteTrustRelationship(ctx, trusterID, trusteeID, category)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteTrustRelationship", "TrustRelationship", trusterID)
 	}
@@ -5170,12 +5345,12 @@ func (a *StorageAdapter) DeleteTrustRelationship(ctx context.Context, trusterID,
 
 // GetTrustRelationships retrieves trust relationships for a truster
 func (a *StorageAdapter) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return nil, "", fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return nil, "", fmt.Errorf("trust repository not initialized")
 	}
 
-	relationships, nextCursor, err := a.userRepo.GetTrustRelationships(ctx, trusterID, limit, cursor)
+	relationships, nextCursor, err := a.trustRepo.GetTrustRelationships(ctx, trusterID, limit, cursor)
 	if err != nil {
 		return nil, "", MapRepositoryError(err, "GetTrustRelationships", "TrustRelationship", trusterID)
 	}
@@ -5185,12 +5360,12 @@ func (a *StorageAdapter) GetTrustRelationships(ctx context.Context, trusterID st
 
 // GetTrustedByRelationships retrieves trust relationships where the actor is trusted
 func (a *StorageAdapter) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return nil, "", fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return nil, "", fmt.Errorf("trust repository not initialized")
 	}
 
-	relationships, nextCursor, err := a.userRepo.GetTrustedByRelationships(ctx, trusteeID, limit, cursor)
+	relationships, nextCursor, err := a.trustRepo.GetTrustedByRelationships(ctx, trusteeID, limit, cursor)
 	if err != nil {
 		return nil, "", MapRepositoryError(err, "GetTrustedByRelationships", "TrustRelationship", trusteeID)
 	}
@@ -5200,12 +5375,12 @@ func (a *StorageAdapter) GetTrustedByRelationships(ctx context.Context, trusteeI
 
 // GetTrustScore retrieves a trust score for an actor in a category
 func (a *StorageAdapter) GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error) {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return nil, fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return nil, fmt.Errorf("trust repository not initialized")
 	}
 
-	score, err := a.userRepo.GetTrustScore(ctx, actorID, category)
+	score, err := a.trustRepo.GetTrustScore(ctx, actorID, category)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetTrustScore", "TrustScore", actorID)
 	}
@@ -5215,12 +5390,12 @@ func (a *StorageAdapter) GetTrustScore(ctx context.Context, actorID, category st
 
 // UpdateTrustScore updates a trust score
 func (a *StorageAdapter) UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return fmt.Errorf("trust repository not initialized")
 	}
 
-	err := a.userRepo.UpdateTrustScore(ctx, score)
+	err := a.trustRepo.UpdateTrustScore(ctx, score)
 	if err != nil {
 		return MapRepositoryError(err, "UpdateTrustScore", "TrustScore", score.ActorID)
 	}
@@ -5230,12 +5405,12 @@ func (a *StorageAdapter) UpdateTrustScore(ctx context.Context, score *storage.Tr
 
 // RecordTrustUpdate records a trust update event
 func (a *StorageAdapter) RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return fmt.Errorf("trust repository not initialized")
 	}
 
-	err := a.userRepo.RecordTrustUpdate(ctx, update)
+	err := a.trustRepo.RecordTrustUpdate(ctx, update)
 	if err != nil {
 		return MapRepositoryError(err, "RecordTrustUpdate", "TrustUpdate", update.ActorID)
 	}
@@ -5245,12 +5420,12 @@ func (a *StorageAdapter) RecordTrustUpdate(ctx context.Context, update *storage.
 
 // GetAllTrustRelationships retrieves all trust relationships (admin function)
 func (a *StorageAdapter) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
-	// Check if user repository is set
-	if a.userRepo == nil {
-		return nil, fmt.Errorf("user repository not initialized")
+	// Check if trust repository is set
+	if a.trustRepo == nil {
+		return nil, fmt.Errorf("trust repository not initialized")
 	}
 
-	relationships, err := a.userRepo.GetAllTrustRelationships(ctx, limit)
+	relationships, err := a.trustRepo.GetAllTrustRelationships(ctx, limit)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetAllTrustRelationships", "TrustRelationship", "all")
 	}
@@ -6185,11 +6360,11 @@ func (a *StorageAdapter) GetReputationHistory(ctx context.Context, actorID strin
 }
 
 func (a *StorageAdapter) GetUserTrustScore(ctx context.Context, userID string) (float64, error) {
-	if a.userRepo == nil {
-		return 0.0, fmt.Errorf("user repository not initialized")
+	if a.trustRepo == nil {
+		return 0.0, fmt.Errorf("trust repository not initialized")
 	}
 	
-	score, err := a.userRepo.GetUserTrustScore(ctx, userID)
+	score, err := a.trustRepo.GetUserTrustScore(ctx, userID)
 	if err != nil {
 		return 0.0, MapRepositoryError(err, "GetUserTrustScore", "TrustScore", userID)
 	}
@@ -8510,6 +8685,36 @@ func (a *StorageAdapter) ClearLoginAttempts(ctx context.Context, identifier stri
 	return nil
 }
 
+// API rate limiting operations
+
+// CheckAPIRateLimit checks and updates API rate limiting for a user/endpoint combination
+func (a *StorageAdapter) CheckAPIRateLimit(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error {
+	if a.rateLimitRepo == nil {
+		return fmt.Errorf("rate limit repository not initialized")
+	}
+
+	err := a.rateLimitRepo.CheckAPIRateLimit(ctx, userID, endpoint, limit, window)
+	if err != nil {
+		return MapRepositoryError(err, "CheckAPIRateLimit", "APIRateLimit", fmt.Sprintf("%s:%s", userID, endpoint))
+	}
+
+	return nil
+}
+
+// GetAPIRateLimitInfo returns current rate limit info for response headers
+func (a *StorageAdapter) GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
+	if a.rateLimitRepo == nil {
+		return 0, time.Time{}, fmt.Errorf("rate limit repository not initialized")
+	}
+
+	remaining, resetTime, err = a.rateLimitRepo.GetAPIRateLimitInfo(ctx, userID, endpoint, limit, window)
+	if err != nil {
+		return 0, time.Time{}, MapRepositoryError(err, "GetAPIRateLimitInfo", "APIRateLimit", fmt.Sprintf("%s:%s", userID, endpoint))
+	}
+
+	return remaining, resetTime, nil
+}
+
 // CheckCommunityNoteRateLimit checks if a user can create more community notes today
 func (a *StorageAdapter) CheckCommunityNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int, error) {
 	if a.rateLimitRepo == nil {
@@ -8677,6 +8882,20 @@ func (a *StorageAdapter) UpdateCommunityNoteScore(ctx context.Context, noteID st
 	err := a.communityNoteRepo.UpdateCommunityNoteScore(ctx, noteID, score, status)
 	if err != nil {
 		return MapRepositoryError(err, "UpdateCommunityNoteScore", "CommunityNote", noteID)
+	}
+
+	return nil
+}
+
+// UpdateCommunityNoteAnalysis updates AI analysis results for a note
+func (a *StorageAdapter) UpdateCommunityNoteAnalysis(ctx context.Context, noteID string, sentiment, objectivity, sourceQuality float64) error {
+	if a.communityNoteRepo == nil {
+		return fmt.Errorf("community note repository not initialized")
+	}
+
+	err := a.communityNoteRepo.UpdateCommunityNoteAnalysis(ctx, noteID, sentiment, objectivity, sourceQuality)
+	if err != nil {
+		return MapRepositoryError(err, "UpdateCommunityNoteAnalysis", "CommunityNote", noteID)
 	}
 
 	return nil
@@ -9294,6 +9513,68 @@ func (a *StorageAdapter) GenerateSearchSuggestions(ctx context.Context, userID, 
 	return suggestions, nil
 }
 
+// ========== Media Analytics Methods ==========
+
+// RecordManifestGeneration records when a media manifest is generated
+func (a *StorageAdapter) RecordManifestGeneration(ctx context.Context, mediaID, format string, duration float64) error {
+	if a.trendingRepo == nil {
+		return fmt.Errorf("trending repository not initialized")
+	}
+	err := a.trendingRepo.RecordManifestGeneration(ctx, mediaID, format, duration)
+	if err != nil {
+		return MapRepositoryError(err, "RecordManifestGeneration", "MediaAnalytics", mediaID)
+	}
+	return nil
+}
+
+// RecordQualityChange records when a user changes video quality
+func (a *StorageAdapter) RecordQualityChange(ctx context.Context, mediaID, userID, oldQuality, newQuality string) error {
+	if a.trendingRepo == nil {
+		return fmt.Errorf("trending repository not initialized")
+	}
+	err := a.trendingRepo.RecordQualityChange(ctx, mediaID, userID, oldQuality, newQuality)
+	if err != nil {
+		return MapRepositoryError(err, "RecordQualityChange", "MediaAnalytics", mediaID)
+	}
+	return nil
+}
+
+// RecordMediaEvent records general media streaming events
+func (a *StorageAdapter) RecordMediaEvent(ctx context.Context, eventType, mediaID, userID string) error {
+	if a.trendingRepo == nil {
+		return fmt.Errorf("trending repository not initialized")
+	}
+	err := a.trendingRepo.RecordMediaEvent(ctx, eventType, mediaID, userID)
+	if err != nil {
+		return MapRepositoryError(err, "RecordMediaEvent", "MediaAnalytics", mediaID)
+	}
+	return nil
+}
+
+// GetManifestGenerationStats retrieves manifest generation statistics for a date range
+func (a *StorageAdapter) GetManifestGenerationStats(ctx context.Context, format, startDate, endDate string) (map[string]int64, error) {
+	if a.trendingRepo == nil {
+		return nil, fmt.Errorf("trending repository not initialized")
+	}
+	stats, err := a.trendingRepo.GetManifestGenerationStats(ctx, format, startDate, endDate)
+	if err != nil {
+		return nil, MapRepositoryError(err, "GetManifestGenerationStats", "MediaAnalytics", format)
+	}
+	return stats, nil
+}
+
+// GetMediaEventStats retrieves general media event statistics
+func (a *StorageAdapter) GetMediaEventStats(ctx context.Context, eventType, startDate, endDate string) (map[string]int64, error) {
+	if a.trendingRepo == nil {
+		return nil, fmt.Errorf("trending repository not initialized")
+	}
+	stats, err := a.trendingRepo.GetMediaEventStats(ctx, eventType, startDate, endDate)
+	if err != nil {
+		return nil, MapRepositoryError(err, "GetMediaEventStats", "MediaAnalytics", eventType)
+	}
+	return stats, nil
+}
+
 // CreateConversationMute creates a new conversation mute
 func (a *StorageAdapter) CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error {
 	if a.userRepo == nil {
@@ -9565,13 +9846,6 @@ func (a *StorageAdapter) SetNotificationPreference(ctx context.Context, username
 	return a.notificationRepo.SetNotificationPreference(ctx, username, preference, enabled)
 }
 
-// GetDigestEmailUsers retrieves users who have digest email enabled
-func (a *StorageAdapter) GetDigestEmailUsers(ctx context.Context) ([]string, error) {
-	if a.notificationRepo == nil {
-		return nil, fmt.Errorf("notification repository not initialized")
-	}
-	return a.notificationRepo.GetDigestEmailUsers(ctx)
-}
 
 // RecordDeliveryAttempt records a notification delivery attempt
 func (a *StorageAdapter) RecordDeliveryAttempt(ctx context.Context, notificationID, method string, success bool, errorMsg string) error {
@@ -9744,4 +10018,35 @@ func (a *StorageAdapter) GetNotificationsByAccount(ctx context.Context, userID, 
 	}
 	
 	return filtered, nil
+}
+
+// Circuit Breaker methods - provide access to circuit breaker functionality
+
+// GetCircuitBreakerRepository returns the circuit breaker repository for direct access
+func (a *StorageAdapter) GetCircuitBreakerRepository() CircuitBreakerRepository {
+	return a.circuitBreakerRepo
+}
+
+// GetCircuitState retrieves the current state of a circuit breaker for an instance
+func (a *StorageAdapter) GetCircuitState(ctx context.Context, instanceID string) (*models.CircuitBreakerState, error) {
+	if a.circuitBreakerRepo == nil {
+		return nil, fmt.Errorf("circuit breaker repository not initialized")
+	}
+	return a.circuitBreakerRepo.GetCircuitState(ctx, instanceID)
+}
+
+// SaveCircuitState saves the circuit breaker state
+func (a *StorageAdapter) SaveCircuitState(ctx context.Context, state *models.CircuitBreakerState) error {
+	if a.circuitBreakerRepo == nil {
+		return fmt.Errorf("circuit breaker repository not initialized")
+	}
+	return a.circuitBreakerRepo.SaveCircuitState(ctx, state)
+}
+
+// UpdateCircuitState updates an existing circuit state atomically
+func (a *StorageAdapter) UpdateCircuitState(ctx context.Context, instanceID string, updateFn func(*models.CircuitBreakerState) error) (*models.CircuitBreakerState, error) {
+	if a.circuitBreakerRepo == nil {
+		return nil, fmt.Errorf("circuit breaker repository not initialized")
+	}
+	return a.circuitBreakerRepo.UpdateCircuitState(ctx, instanceID, updateFn)
 }

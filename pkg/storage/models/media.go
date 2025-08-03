@@ -53,6 +53,10 @@ type Media struct {
 	// Media variants (thumbnails, different sizes, formats)
 	Variants map[string]MediaVariant `json:"variants,omitempty"`
 
+	// Media metadata for Mastodon API compatibility
+	Description string `json:"description,omitempty"` // Alt text description
+	Focus       string `json:"focus,omitempty"`       // Focus point for cropping (x,y)
+
 	// Content moderation
 	IsNSFW          bool     `json:"is_nsfw"`
 	ModerationScore float64  `json:"moderation_score"` // 0.0 - 1.0

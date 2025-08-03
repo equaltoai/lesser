@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -71,7 +72,7 @@ func init() {
 	}
 
 	// Initialize storage adapter (for compatibility with existing storage interface)
-	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger, nil)
+	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger)
 
 	// Initialize export repository
 	exportRepo := repositories.NewExportRepository(db, cfg.DynamoTableName, logger)
@@ -1107,83 +1108,127 @@ func (ep *ExportProcessor) getDomainBlocks(ctx context.Context, username string)
 
 // includeMediaFiles downloads and includes user's media files in the export ZIP
 func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip.Writer, username string, dateRange *DateRange) (int, error) {
-	// Query user's media files from DynamoDB
-	// Note: Media files export temporarily disabled during migration
+	ep.logger.Info("including media files in export", 
+		zap.String("username", username),
+		zap.Bool("has_date_range", dateRange != nil))
 
-	for {
-		// Query media files for the user
-		// Note: This would need to be migrated to use DynamORM patterns
-		// For now, we'll skip media files in the export
-		ep.logger.Warn("media files not included in export - migration needed")
-		return 0, nil
-		/*
-		queryInput := &dynamodbsdk.QueryInput{
-			TableName:              aws.String(ep.tableName),
-			IndexName:              aws.String("GSI1"), // Assuming GSI1 is used for media queries
-			KeyConditionExpression: aws.String("GSI1PK = :pk"),
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("MEDIA_USER#%s", username)},
-			},
-			Limit: aws.Int32(100),
+	// Get user's media files using the storage adapter (DynamORM pattern)
+	userMediaAny, err := ep.storageAdapter.GetUserMedia(ctx, username)
+	if err != nil {
+		ep.logger.Error("failed to get user media", 
+			zap.String("username", username),
+			zap.Error(err))
+		return 0, fmt.Errorf("get user media: %w", err)
+	}
+
+	// Convert to proper media type
+	userMedia := make([]map[string]any, 0, len(userMediaAny))
+	for _, mediaAny := range userMediaAny {
+		if mediaMap, ok := mediaAny.(map[string]any); ok {
+			userMedia = append(userMedia, mediaMap)
 		}
+	}
 
-		if cursor != "" {
-			// Add cursor for pagination
-			queryInput.ExclusiveStartKey = map[string]types.AttributeValue{
-				"GSI1PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("MEDIA_USER#%s", username)},
-				"GSI1SK": &types.AttributeValueMemberS{Value: cursor},
-			}
-		}
+	ep.logger.Info("found user media files", 
+		zap.String("username", username),
+		zap.Int("total_count", len(userMedia)))
 
-		result, err := dynamoClient.Query(ctx, queryInput)
-		if err != nil {
-			ep.logger.Error("failed to query media files", zap.String("username", username), zap.Error(err))
-			return 0, fmt.Errorf("query media files: %w", err)
-		}
+	var totalDownloaded int
+	var allMediaKeys []string
 
-		// Process each media item
-		for _, item := range result.Items {
-			// Extract S3 key from the media item
-			if s3KeyAttr, exists := item["S3Key"]; exists {
-				if s3Key, ok := s3KeyAttr.(*types.AttributeValueMemberS); ok {
-					// Check date range if specified
-					if dateRange != nil {
-						if createdAtAttr, exists := item["CreatedAt"]; exists {
-							if createdAt, ok := createdAtAttr.(*types.AttributeValueMemberS); ok {
-								mediaDate, err := time.Parse(time.RFC3339, createdAt.Value)
-								if err == nil {
-									if mediaDate.Before(dateRange.Start) || mediaDate.After(dateRange.End) {
-										continue // Skip media outside date range
-									}
-								}
-							}
+	// Process each media item
+	for _, mediaItem := range userMedia {
+		// Check date range if specified
+		if dateRange != nil {
+			if createdAtAny, exists := mediaItem["CreatedAt"]; exists {
+				if createdAtStr, ok := createdAtAny.(string); ok {
+					if mediaDate, err := time.Parse(time.RFC3339, createdAtStr); err == nil {
+						if mediaDate.Before(dateRange.Start) || mediaDate.After(dateRange.End) {
+							continue // Skip media outside date range
 						}
 					}
-
-					allMediaKeys = append(allMediaKeys, s3Key.Value)
 				}
 			}
 		}
 
-		// Check for more results
-		if result.LastEvaluatedKey == nil {
-			break
+		// Extract S3 key from the media item
+		if s3KeyAny, exists := mediaItem["S3Key"]; exists {
+			if s3Key, ok := s3KeyAny.(string); ok && s3Key != "" {
+				allMediaKeys = append(allMediaKeys, s3Key)
+			}
 		}
 
-		// Extract cursor for next iteration
-		if cursorAttr, exists := result.LastEvaluatedKey["GSI1SK"]; exists {
-			if cursorVal, ok := cursorAttr.(*types.AttributeValueMemberS); ok {
-				cursor = cursorVal.Value
-			} else {
-				break
+		// Also include variants if they exist
+		if variantsAny, exists := mediaItem["Variants"]; exists {
+			if variants, ok := variantsAny.(map[string]any); ok {
+				for variantName, variantAny := range variants {
+					if variant, ok := variantAny.(map[string]any); ok {
+						if variantS3Key, exists := variant["S3Key"]; exists {
+							if s3Key, ok := variantS3Key.(string); ok && s3Key != "" {
+								allMediaKeys = append(allMediaKeys, s3Key)
+								ep.logger.Debug("added variant to export", 
+									zap.String("variant_name", variantName),
+									zap.String("s3_key", s3Key))
+							}
+						}
+					}
+				}
 			}
-		} else {
-			break
 		}
-		*/
 	}
 
-	// Media files export is not implemented in this migration
-	// This would require implementing proper DynamORM queries for media records
-	return 0, nil
+	ep.logger.Info("downloading media files", 
+		zap.String("username", username),
+		zap.Int("files_to_download", len(allMediaKeys)))
+
+	// Download each media file and add to ZIP
+	for _, s3Key := range allMediaKeys {
+		// Download file from S3
+		getObjectInput := &s3.GetObjectInput{
+			Bucket: &ep.bucketName,
+			Key:    &s3Key,
+		}
+
+		result, err := ep.s3Client.GetObject(ctx, getObjectInput)
+		if err != nil {
+			ep.logger.Warn("failed to download media file", 
+				zap.String("s3_key", s3Key),
+				zap.Error(err))
+			continue
+		}
+
+		// Create file in ZIP
+		fileName := fmt.Sprintf("media/%s", strings.TrimPrefix(s3Key, "media/"))
+		zipFile, err := zipWriter.Create(fileName)
+		if err != nil {
+			result.Body.Close()
+			ep.logger.Warn("failed to create ZIP entry", 
+				zap.String("file_name", fileName),
+				zap.Error(err))
+			continue
+		}
+
+		// Copy content to ZIP
+		if _, err := io.Copy(zipFile, result.Body); err != nil {
+			result.Body.Close()
+			ep.logger.Warn("failed to copy media to ZIP", 
+				zap.String("s3_key", s3Key),
+				zap.Error(err))
+			continue
+		}
+
+		result.Body.Close()
+		totalDownloaded++
+
+		ep.logger.Debug("added media file to export", 
+			zap.String("s3_key", s3Key),
+			zap.String("zip_path", fileName))
+	}
+
+	ep.logger.Info("completed media files export", 
+		zap.String("username", username),
+		zap.Int("files_downloaded", totalDownloaded),
+		zap.Int("files_requested", len(allMediaKeys)))
+
+	return totalDownloaded, nil
 }

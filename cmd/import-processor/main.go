@@ -71,7 +71,7 @@ func init() {
 	importRepo := repositories.NewImportRepository(db, cfg.DynamoTableName, logger)
 
 	// Initialize legacy storage for backward compatibility
-	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger, nil)
+	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger)
 	store := storageAdapter // Use storage adapter directly
 
 	// Get configuration from environment

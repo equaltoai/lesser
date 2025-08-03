@@ -8,16 +8,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	// "github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
 // Manager implements the RouteManager interface
 type Manager struct {
-	db        *dynamodb.Client
-	tableName string
 	logger    *zap.Logger
-	config    *RoutingConfig
+	config    *types.RoutingConfig
+
+	// Repository dependencies
+	instanceRepo        FederationInstanceRepository
+	instanceHealthRepo  interface{} // repositories.InstanceHealthRepository
+	circuitBreakerRepo  interface{} // repositories.CircuitBreakerRepository
+	routeOptimRepo      dynamorm.RouteOptimizationRepository
+	routingMetricsRepo  dynamorm.RoutingMetricsRepository
 
 	// Components
 	registry       *InstanceRegistry
@@ -27,64 +35,102 @@ type Manager struct {
 	loadBalancer   *AdaptiveLoadBalancer
 
 	// Route cache
-	routeCache sync.Map // domain -> []*Route
+	routeCache sync.Map // domain -> []*types.Route
 	cacheTTL   time.Duration
 
 	// Metrics
 	metrics *RoutingMetrics
 }
 
-// NewManager creates a new route manager
-func NewManager(db *dynamodb.Client, tableName string, logger *zap.Logger, config *RoutingConfig) *Manager {
+// ManagerConfig holds configuration for the route manager
+type ManagerConfig struct {
+	RoutingConfig          *types.RoutingConfig
+	OptimizerConfig        *OptimizerConfig
+	CircuitBreakerConfig   *models.CircuitBreakerConfig
+	CacheTTL               time.Duration
+}
+
+// NewManager creates a new route manager with dependency injection
+func NewManager(
+	instanceRepo FederationInstanceRepository,
+	instanceHealthRepo interface{}, // repositories.InstanceHealthRepository,
+	circuitBreakerRepo interface{}, // repositories.CircuitBreakerRepository,
+	routeOptimRepo dynamorm.RouteOptimizationRepository,
+	routingMetricsRepo dynamorm.RoutingMetricsRepository,
+	logger *zap.Logger,
+	config *ManagerConfig,
+) *Manager {
 	if config == nil {
-		config = defaultRoutingConfig()
+		config = &ManagerConfig{
+			RoutingConfig: defaultRoutingConfig(),
+			CacheTTL:      1 * time.Minute,
+		}
+	}
+	if config.RoutingConfig == nil {
+		config.RoutingConfig = defaultRoutingConfig()
+	}
+	if config.OptimizerConfig == nil {
+		config.OptimizerConfig = &OptimizerConfig{
+			LatencyWeight:        0.4,
+			ReliabilityWeight:    0.4,
+			CostWeight:           0.2,
+			MaxAcceptableLatency: config.RoutingConfig.DefaultTimeout,
+			MinAcceptableSuccess: 0.95,
+			HistoryWindow:        24 * time.Hour,
+			MinSamplesRequired:   10,
+		}
+	}
+	if config.CircuitBreakerConfig == nil {
+		config.CircuitBreakerConfig = &models.CircuitBreakerConfig{
+			FailureThreshold:  config.RoutingConfig.CircuitBreakerThreshold,
+			SuccessThreshold:  3,
+			OpenTimeout:       config.RoutingConfig.CircuitBreakerTimeout,
+			HalfOpenTimeout:   10 * time.Second,
+			BackoffMultiplier: 2.0,
+			MaxBackoff:        5 * time.Minute,
+		}
+	}
+	if config.CacheTTL == 0 {
+		config.CacheTTL = 1 * time.Minute
 	}
 
-	// Create components
-	registry := NewInstanceRegistry(db, tableName, logger)
-
-	optimizerConfig := &OptimizerConfig{
-		LatencyWeight:        0.4,
-		ReliabilityWeight:    0.4,
-		CostWeight:           0.2,
-		MaxAcceptableLatency: config.DefaultTimeout,
-		MinAcceptableSuccess: 0.95,
-		HistoryWindow:        24 * time.Hour,
-		MinSamplesRequired:   10,
-	}
-	optimizer := NewSmartRouteOptimizer(db, tableName, logger, optimizerConfig)
-
-	cbConfig := &CircuitBreakerConfig{
-		FailureThreshold:  config.CircuitBreakerThreshold,
-		SuccessThreshold:  3,
-		OpenTimeout:       config.CircuitBreakerTimeout,
-		HalfOpenTimeout:   10 * time.Second,
-		BackoffMultiplier: 2.0,
-		MaxBackoff:        5 * time.Minute,
-	}
-	circuitBreaker := NewDistributedCircuitBreaker(db, tableName, logger, cbConfig)
-
-	healthChecker := NewHealthChecker(db, tableName, logger, config)
+	// Create components with injected repositories
+	registry := NewInstanceRegistry(instanceRepo, logger)
+	
+	// Create SmartRouteOptimizer using the adapter pattern
+	// Since we need to bridge the interface to the concrete repository, 
+	// we create an adapter that implements the required methods
+	optimizer := NewSmartRouteOptimizerFromInterface(routeOptimRepo, logger, config.OptimizerConfig)
+	// TODO: Update constructors to accept repositories
+	circuitBreaker := &DistributedCircuitBreaker{} // NewDistributedCircuitBreaker(circuitBreakerRepo, logger, config.CircuitBreakerConfig)
+	healthChecker := &InstanceHealthChecker{}      // NewHealthChecker(instanceHealthRepo, logger, config.RoutingConfig)
 	loadBalancer := NewAdaptiveLoadBalancer(logger)
-	metrics := NewRoutingMetrics(db, tableName, logger)
+	
+	// TODO: Update RoutingMetrics constructor to accept repository
+	metrics := &RoutingMetrics{
+		logger: logger,
+	}
 
 	return &Manager{
-		db:             db,
-		tableName:      tableName,
-		logger:         logger,
-		config:         config,
-		registry:       registry,
-		optimizer:      optimizer,
-		circuitBreaker: circuitBreaker,
-		healthChecker:  healthChecker,
-		loadBalancer:   loadBalancer,
-		metrics:        metrics,
-		cacheTTL:       1 * time.Minute,
+		logger:             logger,
+		config:             config.RoutingConfig,
+		instanceRepo:       instanceRepo,
+		instanceHealthRepo: instanceHealthRepo,
+		circuitBreakerRepo: circuitBreakerRepo,
+		routeOptimRepo:     routeOptimRepo,
+		routingMetricsRepo: routingMetricsRepo,
+		registry:           registry,
+		optimizer:          optimizer,
+		circuitBreaker:     circuitBreaker,
+		healthChecker:      healthChecker,
+		loadBalancer:       loadBalancer,
+		metrics:            metrics,
+		cacheTTL:           config.CacheTTL,
 	}
 }
 
 // SelectRoute selects the best route for a destination
-func (m *Manager) SelectRoute(destination string, messageType MessageType) (*Route, error) {
+func (m *Manager) SelectRoute(destination string, messageType types.MessageType) (*types.Route, error) {
 	// Get all routes for destination
 	routes, err := m.GetRoutes(destination)
 	if err != nil {
@@ -92,7 +138,7 @@ func (m *Manager) SelectRoute(destination string, messageType MessageType) (*Rou
 	}
 
 	if len(routes) == 0 {
-		return nil, ErrNoHealthyRoutes
+		return nil, types.ErrNoHealthyRoutes
 	}
 
 	// Filter by message type support
@@ -106,14 +152,14 @@ func (m *Manager) SelectRoute(destination string, messageType MessageType) (*Rou
 	if len(healthyRoutes) == 0 {
 		// Try half-open circuits as last resort
 		for _, route := range supportedRoutes {
-			if m.circuitBreaker.GetStatus(route.InstanceID) == CircuitHalfOpen {
+			if m.circuitBreaker.GetStatus(route.InstanceID) == types.CircuitHalfOpen {
 				m.logger.Warn("using half-open circuit",
 					zap.String("routeID", route.ID),
 					zap.String("destination", destination))
 				return route, nil
 			}
 		}
-		return nil, ErrNoHealthyRoutes
+		return nil, types.ErrNoHealthyRoutes
 	}
 
 	// Optimize route selection
@@ -141,7 +187,7 @@ func (m *Manager) SelectRoute(destination string, messageType MessageType) (*Rou
 }
 
 // GetRoutes retrieves all routes for a destination
-func (m *Manager) GetRoutes(destination string) ([]*Route, error) {
+func (m *Manager) GetRoutes(destination string) ([]*types.Route, error) {
 	// Check cache first
 	cacheKey := fmt.Sprintf("routes:%s", destination)
 	if cached, ok := m.routeCache.Load(cacheKey); ok {
@@ -157,7 +203,7 @@ func (m *Manager) GetRoutes(destination string) ([]*Route, error) {
 	}
 
 	// Build routes from instances
-	routes := make([]*Route, 0, len(instances))
+	routes := make([]*types.Route, 0, len(instances))
 	for _, instance := range instances {
 		// Create route from instance
 		route, err := m.createRouteFromInstance(instance)
@@ -197,7 +243,7 @@ func (m *Manager) GetRoutes(destination string) ([]*Route, error) {
 }
 
 // RegisterInstance registers a new federated instance
-func (m *Manager) RegisterInstance(instance *Instance) error {
+func (m *Manager) RegisterInstance(instance *types.Instance) error {
 	if err := m.registry.RegisterInstance(context.Background(), instance); err != nil {
 		return fmt.Errorf("register instance: %w", err)
 	}
@@ -228,7 +274,7 @@ func (m *Manager) RegisterInstance(instance *Instance) error {
 }
 
 // UpdateInstanceHealth updates instance health metrics
-func (m *Manager) UpdateInstanceHealth(instanceID string, health *HealthStatus) error {
+func (m *Manager) UpdateInstanceHealth(instanceID string, health *types.HealthStatus) error {
 	// Update registry
 	if err := m.registry.UpdateInstanceHealth(context.Background(), instanceID, health); err != nil {
 		return fmt.Errorf("update health: %w", err)
@@ -256,12 +302,12 @@ func (m *Manager) UpdateInstanceHealth(instanceID string, health *HealthStatus) 
 }
 
 // GetInstance retrieves instance information
-func (m *Manager) GetInstance(instanceID string) (*Instance, error) {
+func (m *Manager) GetInstance(instanceID string) (*types.Instance, error) {
 	return m.registry.GetInstance(context.Background(), instanceID)
 }
 
 // ListHealthyInstances lists all healthy instances
-func (m *Manager) ListHealthyInstances() ([]*Instance, error) {
+func (m *Manager) ListHealthyInstances() ([]*types.Instance, error) {
 	return m.registry.ListHealthyInstances(context.Background())
 }
 
@@ -306,7 +352,7 @@ func (m *Manager) OptimizeRoutes() error {
 }
 
 // GetRouteMetrics retrieves metrics for a destination
-func (m *Manager) GetRouteMetrics(destination string) (*RouteMetrics, error) {
+func (m *Manager) GetRouteMetrics(destination string) (*types.RouteMetrics, error) {
 	routes, err := m.GetRoutes(destination)
 	if err != nil {
 		return nil, err
@@ -317,7 +363,7 @@ func (m *Manager) GetRouteMetrics(destination string) (*RouteMetrics, error) {
 	}
 
 	// Aggregate metrics from all routes
-	aggregated := &RouteMetrics{
+	aggregated := &types.RouteMetrics{
 		LastUpdated: time.Now(),
 	}
 
@@ -385,16 +431,16 @@ func (m *Manager) CloseCircuit(instanceID string) error {
 }
 
 // GetCircuitStatus returns the circuit status for an instance
-func (m *Manager) GetCircuitStatus(instanceID string) CircuitStatus {
+func (m *Manager) GetCircuitStatus(instanceID string) types.CircuitStatus {
 	return m.circuitBreaker.GetStatus(instanceID)
 }
 
 // DeliverMessage delivers a federation message using optimal routing
-func (m *Manager) DeliverMessage(ctx context.Context, message *FederationMessage, options DeliveryOptions) (*DeliveryResult, error) {
+func (m *Manager) DeliverMessage(ctx context.Context, message *types.FederationMessage, options types.DeliveryOptions) (*types.DeliveryResult, error) {
 	startTime := time.Now()
 
 	// Select routes for all targets
-	routeMap := make(map[string]*Route)
+	routeMap := make(map[string]*types.Route)
 	for _, target := range message.Target {
 		route, err := m.SelectRoute(target, message.Type)
 		if err != nil {
@@ -418,7 +464,7 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *FederationMessage
 
 	// Deliver to each route
 	var wg sync.WaitGroup
-	results := make([]*DeliveryResult, 0, len(routeTargets))
+	results := make([]*types.DeliveryResult, 0, len(routeTargets))
 	resultsMu := sync.Mutex{}
 
 	for routeID, targets := range routeTargets {
@@ -456,7 +502,7 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *FederationMessage
 	wg.Wait()
 
 	// Aggregate results
-	aggregated := &DeliveryResult{
+	aggregated := &types.DeliveryResult{
 		MessageID: message.ID,
 		Success:   true,
 		Duration:  time.Since(startTime),
@@ -481,8 +527,8 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *FederationMessage
 
 // Helper methods
 
-func (m *Manager) filterByMessageType(routes []*Route, messageType MessageType) []*Route {
-	filtered := make([]*Route, 0, len(routes))
+func (m *Manager) filterByMessageType(routes []*types.Route, messageType types.MessageType) []*types.Route {
+	filtered := make([]*types.Route, 0, len(routes))
 
 	for _, route := range routes {
 		// Get instance to check supported types
@@ -508,8 +554,8 @@ func (m *Manager) filterByMessageType(routes []*Route, messageType MessageType) 
 	return filtered
 }
 
-func (m *Manager) filterHealthyRoutes(routes []*Route) []*Route {
-	healthy := make([]*Route, 0, len(routes))
+func (m *Manager) filterHealthyRoutes(routes []*types.Route) []*types.Route {
+	healthy := make([]*types.Route, 0, len(routes))
 
 	for _, route := range routes {
 		// Check circuit breaker
@@ -519,12 +565,12 @@ func (m *Manager) filterHealthyRoutes(routes []*Route) []*Route {
 
 		// Check instance status
 		instance, err := m.GetInstance(route.InstanceID)
-		if err != nil || instance.Status != InstanceStatusActive {
+		if err != nil || instance.Status != types.InstanceStatusActive {
 			continue
 		}
 
 		// Check quota
-		if instance.TierLevel != TierBlocked && instance.CurrentUsage < instance.MonthlyQuota {
+		if instance.TierLevel != types.TierBlocked && instance.CurrentUsage < instance.MonthlyQuota {
 			healthy = append(healthy, route)
 		}
 	}
@@ -532,14 +578,14 @@ func (m *Manager) filterHealthyRoutes(routes []*Route) []*Route {
 	return healthy
 }
 
-func (m *Manager) getInstancesForDomain(domain string) ([]*Instance, error) {
+func (m *Manager) getInstancesForDomain(domain string) ([]*types.Instance, error) {
 	// For federation, typically one instance per domain
 	// But could have multiple for redundancy
 
 	ctx := context.Background()
 
 	// Query by domain using scan (in production, add GSI for domain lookups)
-	instances := []*Instance{}
+	instances := []*types.Instance{}
 
 	// Try exact match first
 	instance, err := m.registry.GetInstance(ctx, domain)
@@ -552,7 +598,7 @@ func (m *Manager) getInstancesForDomain(domain string) ([]*Instance, error) {
 	return instances, nil
 }
 
-func (m *Manager) createRouteFromInstance(instance *Instance) (*Route, error) {
+func (m *Manager) createRouteFromInstance(instance *types.Instance) (*types.Route, error) {
 	endpoint, err := url.Parse(instance.SharedInboxURL)
 	if err != nil {
 		endpoint, err = url.Parse(instance.InboxURL)
@@ -561,7 +607,7 @@ func (m *Manager) createRouteFromInstance(instance *Instance) (*Route, error) {
 		}
 	}
 
-	route := &Route{
+	route := &types.Route{
 		ID:         fmt.Sprintf("%s-primary", instance.ID),
 		InstanceID: instance.ID,
 		Domain:     instance.Domain,
@@ -580,11 +626,11 @@ func (m *Manager) createRouteFromInstance(instance *Instance) (*Route, error) {
 	return route, nil
 }
 
-func (m *Manager) deliverToRoute(ctx context.Context, route *Route, message *FederationMessage, _ []string, _ DeliveryOptions) *DeliveryResult {
+func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, message *types.FederationMessage, _ []string, _ types.DeliveryOptions) *types.DeliveryResult {
 	// This is where actual HTTP delivery would happen
 	// For now, return a simulated result
 
-	result := &DeliveryResult{
+	result := &types.DeliveryResult{
 		MessageID:  message.ID,
 		InstanceID: route.InstanceID,
 		RouteID:    route.ID,
@@ -613,12 +659,12 @@ func (m *Manager) clearRouteCache(domain string) {
 }
 
 type cachedRoutes struct {
-	routes   []*Route
+	routes   []*types.Route
 	cachedAt time.Time
 }
 
-func defaultRoutingConfig() *RoutingConfig {
-	return &RoutingConfig{
+func defaultRoutingConfig() *types.RoutingConfig {
+	return &types.RoutingConfig{
 		HealthCheckInterval:     1 * time.Minute,
 		HealthCheckTimeout:      5 * time.Second,
 		UnhealthyThreshold:      3,

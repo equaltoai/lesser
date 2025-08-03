@@ -87,8 +87,8 @@ func TestLinkProviderAccount_NotImplemented(t *testing.T) {
 	// Set up expectations for GetUser call
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", &models.User{}).Return(mockQuery)
-	mockQuery.On("Where", "PK", "=", "user#testuser").Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "user#testuser").Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "USER#testuser").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Return(nil) // User exists
 
 	// Set up expectations for the provider account creation

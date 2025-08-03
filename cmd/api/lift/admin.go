@@ -350,13 +350,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 		}
 	}
 
-	// Send notification if requested
-	if req.SendEmailNotification {
-		// Send email notification
-		if err := h.sendModerationEmail(ctx.Context, username, req.Type, req.Text); err != nil {
-			h.logger.Error("failed to send moderation email", zap.Error(err))
-		}
-	}
+	// Lesser does not support email functionality
 
 	// Return empty response
 	ctx.Status(http.StatusNoContent)
@@ -394,10 +388,7 @@ func (h *Handler) HandleAdminApproveAccountLift(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
-	// Send welcome email
-	if err := h.sendWelcomeEmail(ctx.Context, username); err != nil {
-		h.logger.Error("failed to send welcome email", zap.Error(err))
-	}
+	// Lesser does not support email functionality
 
 	ctx.Status(http.StatusNoContent)
 	return nil
@@ -429,10 +420,7 @@ func (h *Handler) HandleAdminRejectAccountLift(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
-	// Send rejection email
-	if err := h.sendRejectionEmail(ctx.Context, username); err != nil {
-		h.logger.Error("failed to send rejection email", zap.Error(err))
-	}
+	// Lesser does not support email functionality
 
 	ctx.Status(http.StatusNoContent)
 	return nil
@@ -1101,9 +1089,9 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	case "reject":
 		// Choose action based on event severity
 		switch event.Severity {
-		case storage.SeverityCritical:
+		case "4": // Critical
 			action = storage.ActionTypeSuspend
-		case storage.SeverityHigh:
+		case "3": // High
 			action = storage.ActionTypeSilence
 		default:
 			action = storage.ActionTypeWarning
@@ -1520,82 +1508,6 @@ func getAdminRolePermissions(role string) int {
 	}
 }
 
-// sendModerationEmail sends an email notification for moderation actions
-func (h *Handler) sendModerationEmail(ctx context.Context, username, actionType, reason string) error {
-	// Get user email
-	user, err := h.store.GetUser(ctx, username)
-	if err != nil {
-		return err
-	}
-
-	// Prepare email content based on action type
-	var subject, body string
-	switch actionType {
-	case "suspend":
-		subject = "Account Suspended"
-		body = fmt.Sprintf("Your account has been suspended. Reason: %s", reason)
-	case "silence":
-		subject = "Account Silenced"
-		body = fmt.Sprintf("Your account has been silenced. Reason: %s", reason)
-	case "sensitive":
-		subject = "Media Marked as Sensitive"
-		body = fmt.Sprintf("Your media has been marked as sensitive. Reason: %s", reason)
-	default:
-		subject = "Account Action Taken"
-		body = fmt.Sprintf("An action has been taken on your account: %s. Reason: %s", actionType, reason)
-	}
-
-	// Log the email sending (actual implementation would use SES)
-	h.logger.Info("sending moderation email",
-		zap.String("username", username),
-		zap.String("email", user.Email),
-		zap.String("action", actionType),
-		zap.String("subject", subject),
-		zap.String("body", body))
-
-	// Email sending via AWS SES not implemented in this version
-	return nil
-}
-
-// sendWelcomeEmail sends a welcome email to newly approved users
-func (h *Handler) sendWelcomeEmail(ctx context.Context, username string) error {
-	user, err := h.store.GetUser(ctx, username)
-	if err != nil {
-		return err
-	}
-
-	subject := "Welcome to the Community!"
-	body := "Your account has been approved. Welcome to our community!"
-
-	h.logger.Info("sending welcome email",
-		zap.String("username", username),
-		zap.String("email", user.Email),
-		zap.String("subject", subject),
-		zap.String("body", body))
-
-	// Email sending via AWS SES not implemented in this version
-	return nil
-}
-
-// sendRejectionEmail sends a rejection email to declined users
-func (h *Handler) sendRejectionEmail(ctx context.Context, username string) error {
-	user, err := h.store.GetUser(ctx, username)
-	if err != nil {
-		return err
-	}
-
-	subject := "Account Registration Declined"
-	body := "Your account registration has been declined. If you believe this is an error, please contact support."
-
-	h.logger.Info("sending rejection email",
-		zap.String("username", username),
-		zap.String("email", user.Email),
-		zap.String("subject", subject),
-		zap.String("body", body))
-
-	// Email sending via AWS SES not implemented in this version
-	return nil
-}
 
 // getActiveModeratorsCount returns the number of active moderators
 func (h *Handler) getActiveModeratorsCount(ctx context.Context) int {

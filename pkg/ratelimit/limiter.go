@@ -4,172 +4,41 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
+// RateLimitStorage defines the interface for rate limiting storage operations
+type RateLimitStorage interface {
+	CheckAPIRateLimit(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error
+	GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error)
+}
+
 type RateLimiter struct {
-	db        *dynamodb.Client
-	tableName string
-	logger    *zap.Logger
+	storage storage.Storage
+	logger  *zap.Logger
 }
 
-type RateLimit struct {
-	Key          string    `dynamodbav:"key"`
-	Count        int       `dynamodbav:"count"`
-	Window       time.Time `dynamodbav:"window"`
-	Blocked      bool      `dynamodbav:"blocked"`
-	BlockedUntil time.Time `dynamodbav:"blocked_until"`
-	UpdatedAt    time.Time `dynamodbav:"updated_at"`
-}
 
-func NewRateLimiter(db *dynamodb.Client, tableName string) *RateLimiter {
+func NewRateLimiter(storage storage.Storage) *RateLimiter {
 	return &RateLimiter{
-		db:        db,
-		tableName: tableName,
-		logger:    common.Logger(),
+		storage: storage,
+		logger:  common.Logger(),
 	}
 }
 
 func (rl *RateLimiter) Check(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error {
-	key := fmt.Sprintf("%s:%s", userID, endpoint)
-	now := time.Now()
-	windowStart := now.Truncate(window)
-
-	// Get current rate limit data
-	result, err := rl.db.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(rl.tableName),
-		Key: map[string]types.AttributeValue{
-			"key": &types.AttributeValueMemberS{Value: key},
-		},
-	})
-
-	var current RateLimit
-	if err == nil && result.Item != nil {
-		// Parse existing item
-		if err := attributevalue.UnmarshalMap(result.Item, &current); err != nil {
-			rl.logger.Error("failed to unmarshal rate limit",
-				zap.String("key", key),
-				zap.Error(err))
-			// Continue with fresh rate limit
-			current = RateLimit{Key: key}
-		}
-	} else {
-		// New rate limit
-		current.Key = key
-	}
-
-	// Check if explicitly blocked
-	if current.Blocked && now.Before(current.BlockedUntil) {
-		return fmt.Errorf("rate limit exceeded, blocked until %v", current.BlockedUntil)
-	}
-
-	// Reset if new window
-	if current.Window.Before(windowStart) {
-		current.Count = 0
-		current.Window = windowStart
-	}
-
-	// Increment counter
-	current.Count++
-	current.UpdatedAt = now
-
-	// Check limit
-	if current.Count > limit {
-		// Block for increasing durations
-		blockDuration := time.Duration(current.Count/limit) * time.Hour
-		if blockDuration > 24*time.Hour {
-			blockDuration = 24 * time.Hour
-		}
-
-		current.Blocked = true
-		current.BlockedUntil = now.Add(blockDuration)
-
-		// Update database
-		if err := rl.updateLimit(ctx, current); err != nil {
-			rl.logger.Error("failed to update rate limit",
-				zap.String("key", key),
-				zap.Error(err))
-		}
-
-		return fmt.Errorf("rate limit exceeded (%d > %d)", current.Count, limit)
-	}
-
-	// Update counter
-	if err := rl.updateLimit(ctx, current); err != nil {
-		rl.logger.Error("failed to update rate limit",
-			zap.String("key", key),
-			zap.Error(err))
-		// Don't fail the request if we can't update the counter
-	}
-
-	return nil
+	return rl.storage.CheckAPIRateLimit(ctx, userID, endpoint, limit, window)
 }
 
-func (rl *RateLimiter) updateLimit(ctx context.Context, limit RateLimit) error {
-	item, err := attributevalue.MarshalMap(limit)
-	if err != nil {
-		return fmt.Errorf("failed to marshal rate limit: %w", err)
-	}
-
-	// Set TTL to expire after window + 1 day
-	ttl := limit.Window.Add(25 * time.Hour).Unix()
-	item["ttl"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(ttl, 10)}
-
-	_, err = rl.db.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(rl.tableName),
-		Item:      item,
-	})
-
-	return err
-}
 
 // GetLimitInfo returns current limit info for headers
 func (rl *RateLimiter) GetLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
-	key := fmt.Sprintf("%s:%s", userID, endpoint)
-	now := time.Now()
-	windowStart := now.Truncate(window)
-	resetTime = windowStart.Add(window)
-
-	// Get current rate limit data
-	result, err := rl.db.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(rl.tableName),
-		Key: map[string]types.AttributeValue{
-			"key": &types.AttributeValueMemberS{Value: key},
-		},
-	})
-
-	if err != nil || result.Item == nil {
-		// No data yet, full limit available
-		return limit, resetTime, nil
-	}
-
-	var current RateLimit
-	if err := attributevalue.UnmarshalMap(result.Item, &current); err != nil {
-		// Error parsing, assume full limit
-		return limit, resetTime, nil
-	}
-
-	// If different window, full limit available
-	if current.Window.Before(windowStart) {
-		return limit, resetTime, nil
-	}
-
-	// Calculate remaining
-	remaining = limit - current.Count
-	if remaining < 0 {
-		remaining = 0
-	}
-
-	return remaining, resetTime, nil
+	return rl.storage.GetAPIRateLimitInfo(ctx, userID, endpoint, limit, window)
 }
 
 // RateLimitMiddleware creates a middleware for rate limiting

@@ -11,10 +11,42 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
+
+// convertEvidenceToAny converts moderation.Evidence to []any
+func convertEvidenceToAny(evidence []moderation.Evidence) []any {
+	result := make([]any, len(evidence))
+	for i, e := range evidence {
+		result[i] = map[string]any{
+			"type":        e.Type,
+			"score":       e.Score,
+			"description": e.Description,
+			"metadata":    e.Metadata,
+			"timestamp":   e.Timestamp,
+		}
+	}
+	return result
+}
+
+// parseSeverity converts string severity to int
+func parseSeverity(severity string) int {
+	switch severity {
+	case "1":
+		return 1
+	case "2":
+		return 2
+	case "3":
+		return 3
+	case "4":
+		return 4
+	default:
+		return 2 // Default to medium
+	}
+}
 
 // HandleModerationFlagLift handles POST /api/v1/moderation/flag
 func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
@@ -100,8 +132,23 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 		Updated: time.Now(),
 	}
 
-	// Store the event
-	if err := h.store.CreateModerationEvent(ctx.Context, event); err != nil {
+	// Convert to storage type and store the event
+	storageEvent := &storage.ModerationEvent{
+		ID:              event.ID,
+		EventType:       string(event.EventType),
+		ObjectID:        event.ObjectID,
+		ObjectType:      event.ObjectType,
+		ActorID:         event.ActorID,
+		Category:        string(event.Category),
+		Severity:        fmt.Sprintf("%d", event.Severity),
+		ConfidenceScore: event.ConfidenceScore,
+		Evidence:        convertEvidenceToAny(event.Evidence),
+		Reason:          event.Reason,
+		Created:         event.Created,
+		Updated:         event.Updated,
+		TTL:             event.TTL,
+	}
+	if err := h.store.CreateModerationEvent(ctx.Context, storageEvent); err != nil {
 		h.logger.Error("failed to create moderation event", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -187,7 +234,7 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 			ObjectPreview:   h.getObjectPreview(ctx.Context, item.Event.ObjectID, item.Event.ObjectType),
 			AuthorID:        item.Event.ActorID,
 			Category:        string(item.Event.Category),
-			Severity:        int(item.Event.Severity),
+			Severity:        parseSeverity(item.Event.Severity),
 			ConfidenceScore: item.Event.ConfidenceScore,
 			PriorityScore:   item.Priority,
 			ReportCount:     len(item.Event.Evidence),
@@ -281,8 +328,21 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 		Created:    time.Now(),
 	}
 
-	// Submit review
-	if err := h.store.AddModerationReview(ctx.Context, review); err != nil {
+	// Convert to storage type and submit review
+	storageReview := &storage.ModerationReview{
+		ID:          review.ID,
+		EventID:     review.EventID,
+		ReviewerID:  review.ReviewerID,
+		ReviewerRep: 0.5, // Default reputation
+		Action:      string(review.Action),
+		Severity:    fmt.Sprintf("%d", review.Severity),
+		Note:        review.Notes,
+		Tags:        []string{},
+		Metadata:    map[string]interface{}{},
+		Confidence:  review.Confidence,
+		Created:     review.Created,
+	}
+	if err := h.store.AddModerationReview(ctx.Context, storageReview); err != nil {
 		h.logger.Error("failed to add moderation review", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -467,7 +527,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 		EventID:         event.ID,
 		ObjectID:        event.ObjectID,
 		Category:        string(event.Category),
-		Severity:        int(event.Severity),
+		Severity:        parseSeverity(event.Severity),
 		ConfidenceScore: event.ConfidenceScore,
 		Reviews:         reviewResponses,
 		ReviewerCount:   len(reviews),

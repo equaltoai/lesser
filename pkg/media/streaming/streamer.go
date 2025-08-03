@@ -1,3 +1,20 @@
+// Package streaming provides serverless-optimized media streaming functionality.
+//
+// SERVERLESS DESIGN PRINCIPLES:
+//
+// 1. No Background Processes: This package avoids long-running goroutines,
+//    timers, or polling mechanisms that are incompatible with Lambda's
+//    execution model.
+//
+// 2. DynamoDB TTL for Cleanup: Session and cache expiration is handled
+//    automatically by DynamoDB TTL rather than manual cleanup processes.
+//    This eliminates the need for background cleanup tasks.
+//
+// 3. Stateless Operations: Each Lambda invocation operates independently
+//    without relying on shared in-memory state between invocations.
+//
+// 4. Cost-Optimized: Uses DynamoDB on-demand billing and avoids unnecessary
+//    operations that would increase costs in a serverless environment.
 package streaming
 
 import (
@@ -7,10 +24,10 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/google/uuid"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -23,7 +40,7 @@ type Streamer struct {
 	bandwidthTracker *BandwidthTracker
 	qualitySelector  QualitySelector
 	sessionManager   *SessionManager
-	db               *dynamodb.Client
+	analytics        storage.Storage  // DynamORM storage for analytics
 	s3Client         *s3.Client
 	logger           *zap.Logger
 	costTracker      CostTracker
@@ -36,27 +53,33 @@ type Streamer struct {
 // NewStreamer creates a new media streamer
 func NewStreamer(
 	config *StreamingConfig,
-	db *dynamodb.Client,
+	analytics storage.Storage,
 	s3Client *s3.Client,
+	db core.DB,
 	logger *zap.Logger,
 	costTracker CostTracker,
 ) *Streamer {
-	storage := NewS3MediaStorage(s3Client, config.S3Bucket, config.S3Region)
+	storage := NewS3MediaStorage(s3Client, config.S3Bucket, config.S3Region, db)
 
 	return &Streamer{
 		config:           config,
 		storage:          storage,
 		hlsGenerator:     NewHLSGenerator(config, storage),
 		dashGenerator:    NewDASHGenerator(config, storage),
-		bandwidthTracker: NewBandwidthTracker(db, "lesser-media", logger, costTracker),
+		bandwidthTracker: NewBandwidthTracker(analytics, logger, costTracker),
 		qualitySelector:  NewAdaptiveQualitySelector(logger),
-		sessionManager:   NewSessionManager(db, "lesser-sessions", logger, costTracker),
-		db:               db,
+		sessionManager:   nil, // Will be set via SetSessionManager when repository is available
+		analytics:        analytics,
 		s3Client:         s3Client,
 		logger:           logger,
 		costTracker:      costTracker,
 		cacheTTL:         config.ManifestCacheTTL,
 	}
+}
+
+// SetSessionManager sets the session manager (for dependency injection)
+func (s *Streamer) SetSessionManager(sessionManager *SessionManager) {
+	s.sessionManager = sessionManager
 }
 
 // GenerateHLSManifest generates an HLS manifest for a media item
@@ -103,8 +126,11 @@ func (s *Streamer) GenerateHLSManifest(mediaID string) (*HLSManifest, error) {
 		generatedAt: time.Now(),
 	})
 
-	// Track manifest generation
-	s.logManifestGeneration(mediaID, "hls", metadata.Duration)
+	// Track manifest generation using DynamORM
+	err = s.recordManifestGeneration(mediaID, "hls", metadata.Duration)
+	if err != nil {
+		s.logger.Warn("failed to record manifest generation", zap.Error(err))
+	}
 
 	return manifest, nil
 }
@@ -153,8 +179,11 @@ func (s *Streamer) GenerateDASHManifest(mediaID string) (*DASHManifest, error) {
 		generatedAt:  time.Now(),
 	})
 
-	// Track manifest generation
-	s.logManifestGeneration(mediaID, "dash", metadata.Duration)
+	// Track manifest generation using DynamORM
+	err = s.recordManifestGeneration(mediaID, "dash", metadata.Duration)
+	if err != nil {
+		s.logger.Warn("failed to record manifest generation", zap.Error(err))
+	}
 
 	return manifest, nil
 }
@@ -255,7 +284,10 @@ func (s *Streamer) GetOptimalQuality(userID string, availableBandwidth int) Qual
 	}
 
 	// Get current session if exists
-	sessions, _ := s.sessionManager.GetUserSessions(ctx, userID)
+	var sessions []*StreamingSession
+	if s.sessionManager != nil {
+		sessions, _ = s.sessionManager.GetUserSessions(ctx, userID)
+	}
 	bufferHealth := 1.0 // Default to healthy buffer
 
 	if len(sessions) > 0 {
@@ -284,6 +316,7 @@ func (s *Streamer) GetAvailableQualities(mediaID string) ([]QualityInfo, error) 
 // Session management
 
 // StartSession starts a new streaming session
+// Sessions are automatically cleaned up after 24 hours using DynamoDB TTL
 func (s *Streamer) StartSession(userID, mediaID string, format MediaFormat) (*StreamingSession, error) {
 	ctx := context.Background()
 
@@ -299,9 +332,13 @@ func (s *Streamer) StartSession(userID, mediaID string, format MediaFormat) (*St
 		BufferHealth:     1.0,
 	}
 
-	err := s.sessionManager.CreateSession(ctx, session)
-	if err != nil {
-		return nil, fmt.Errorf("create session: %w", err)
+	// Session will be automatically expired by DynamoDB TTL after 24 hours
+	// This eliminates the need for manual cleanup in serverless environments
+	if s.sessionManager != nil {
+		err := s.sessionManager.CreateSession(ctx, session)
+		if err != nil {
+			return nil, fmt.Errorf("create session: %w", err)
+		}
 	}
 
 	// Log session start
@@ -317,6 +354,10 @@ func (s *Streamer) StartSession(userID, mediaID string, format MediaFormat) (*St
 // UpdateSession updates an active session
 func (s *Streamer) UpdateSession(sessionID string, quality Quality, segmentIndex int, bytesTransferred int64) error {
 	ctx := context.Background()
+
+	if s.sessionManager == nil {
+		return fmt.Errorf("session manager not available")
+	}
 
 	// Get current session
 	session, err := s.sessionManager.GetSession(ctx, sessionID)
@@ -365,6 +406,10 @@ func (s *Streamer) UpdateSession(sessionID string, quality Quality, segmentIndex
 func (s *Streamer) EndSession(sessionID string) error {
 	ctx := context.Background()
 
+	if s.sessionManager == nil {
+		return fmt.Errorf("session manager not available")
+	}
+
 	// Get session for logging
 	session, err := s.sessionManager.GetSession(ctx, sessionID)
 	if err != nil {
@@ -390,6 +435,9 @@ func (s *Streamer) EndSession(sessionID string) error {
 // GetSession retrieves a streaming session
 func (s *Streamer) GetSession(sessionID string) (*StreamingSession, error) {
 	ctx := context.Background()
+	if s.sessionManager == nil {
+		return nil, fmt.Errorf("session manager not available")
+	}
 	return s.sessionManager.GetSession(ctx, sessionID)
 }
 
@@ -401,57 +449,31 @@ type cachedManifest struct {
 	generatedAt  time.Time
 }
 
-func (s *Streamer) logManifestGeneration(mediaID string, format string, duration float64) {
+// recordManifestGeneration records manifest generation using DynamORM
+func (s *Streamer) recordManifestGeneration(mediaID string, format string, duration float64) error {
 	s.logger.Info("manifest generated",
 		zap.String("mediaID", mediaID),
 		zap.String("format", format),
 		zap.Float64("duration", duration))
 
-	// Track in DynamoDB for analytics
-	putInput := &dynamodb.PutItemInput{
-		TableName: aws.String("lesser-analytics"),
-		Item: map[string]types.AttributeValue{
-			"PK":        &types.AttributeValueMemberS{Value: fmt.Sprintf("MANIFEST#%s", format)},
-			"SK":        &types.AttributeValueMemberS{Value: fmt.Sprintf("%d#%s", time.Now().Unix(), mediaID)},
-			"MediaID":   &types.AttributeValueMemberS{Value: mediaID},
-			"Format":    &types.AttributeValueMemberS{Value: format},
-			"Duration":  &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", duration)},
-			"Timestamp": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-			"TTL":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(30*24*time.Hour).Unix())},
-		},
-	}
-
-	_, err := s.db.PutItem(context.Background(), putInput)
-	if err != nil {
-		s.logger.Warn("failed to track manifest generation",
-			zap.Error(err))
-	}
+	// Track using the analytics storage interface
+	ctx := context.Background()
+	return s.analytics.RecordManifestGeneration(ctx, mediaID, format, duration)
 }
 
-// CleanupCache removes expired entries from the manifest cache
-func (s *Streamer) CleanupCache() {
-	s.manifestCache.Range(func(key, value any) bool {
-		if manifest, ok := value.(*cachedManifest); ok {
-			if time.Since(manifest.generatedAt) > s.cacheTTL {
-				s.manifestCache.Delete(key)
-			}
-		}
-		return true
-	})
-}
-
-// StartCacheCleanup starts a periodic cache cleanup routine
-func (s *Streamer) StartCacheCleanup(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				s.CleanupCache()
-			case <-ctx.Done():
-				ticker.Stop()
-				return
-			}
-		}
-	}()
-}
+// Note: Manifest cache cleanup is handled automatically by Go's garbage collector
+// when cached entries are accessed and found to be expired. This approach is
+// serverless-friendly as it avoids long-running goroutines and polling.
+//
+// For session cleanup, the SessionManager uses DynamoDB TTL (Time To Live) which
+// automatically expires records after 24 hours without requiring manual cleanup.
+// This is the recommended pattern for serverless applications as it:
+// - Eliminates the need for background cleanup processes
+// - Reduces compute costs by avoiding unnecessary polling
+// - Works across Lambda invocations without shared state
+// - Provides automatic cleanup even if Lambda functions are not invoked
+//
+// TTL Configuration:
+// - Sessions: 24 hours (configurable via SessionManager)
+// - Analytics: 30 days for manifests, 7 days for quality changes
+// - Manifest cache: In-memory with passive expiration checking

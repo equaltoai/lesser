@@ -44,7 +44,7 @@ func NewWebFingerHandler() (*WebFingerHandler, error) {
 
 	// Initialize storage adapter for reputation service
 	// TODO: Migrate reputation service to use repositories directly
-	storageAdapter := dynamorm.NewStorageAdapter(db, tableName, logger, nil)
+	storageAdapter := dynamorm.NewStorageAdapter(db, tableName, logger)
 	
 	// Initialize repositories on the adapter
 	storageAdapter.SetActorRepository(actorRepo)
@@ -365,10 +365,12 @@ func (wh *WebFingerHandler) getUserCount(ctx *lift.Context) (int, error) {
 
 // getActiveUserCount gets active user count for a given number of days
 func (wh *WebFingerHandler) getActiveUserCount(ctx *lift.Context, days int) int {
-	// TODO: Implement GetActiveUserCount in UserRepository
-	// For now, return -1 to indicate not implemented
-	wh.logger.Debug("getActiveUserCount not implemented", zap.Int("days", days))
-	return -1
+	count, err := wh.userRepo.GetActiveUserCount(ctx, days)
+	if err != nil {
+		wh.logger.Error("failed to get active user count", zap.Error(err), zap.Int("days", days))
+		return -1
+	}
+	return int(count)
 }
 
 // getPostCount gets the total post count using StatusRepository

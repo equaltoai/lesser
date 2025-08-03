@@ -1725,6 +1725,132 @@ func (r *TrendingRepository) CalculateGrowthRate(ctx context.Context, metricType
 	}, nil
 }
 
+// ========== MediaAnalytics Methods ==========
+
+// RecordManifestGeneration records when a media manifest is generated
+func (r *TrendingRepository) RecordManifestGeneration(ctx context.Context, mediaID, format string, duration float64) error {
+	analytics := &models.MediaAnalytics{}
+	analytics.SetManifestGeneration(mediaID, format, duration)
+	
+	err := r.db.WithContext(ctx).Model(analytics).Create()
+	if err != nil {
+		r.logger.Error("failed to record manifest generation",
+			zap.String("mediaID", mediaID),
+			zap.String("format", format),
+			zap.Float64("duration", duration),
+			zap.Error(err))
+		return fmt.Errorf("failed to record manifest generation: %w", err)
+	}
+	
+	r.logger.Debug("recorded manifest generation",
+		zap.String("mediaID", mediaID),
+		zap.String("format", format),
+		zap.Float64("duration", duration))
+	
+	return nil
+}
+
+// RecordQualityChange records when a user changes video quality
+func (r *TrendingRepository) RecordQualityChange(ctx context.Context, mediaID, userID, oldQuality, newQuality string) error {
+	analytics := &models.MediaAnalytics{}
+	analytics.SetQualityChange(mediaID, userID, oldQuality, newQuality)
+	
+	err := r.db.WithContext(ctx).Model(analytics).Create()
+	if err != nil {
+		r.logger.Error("failed to record quality change",
+			zap.String("mediaID", mediaID),
+			zap.String("userID", userID),
+			zap.String("oldQuality", oldQuality),
+			zap.String("newQuality", newQuality),
+			zap.Error(err))
+		return fmt.Errorf("failed to record quality change: %w", err)
+	}
+	
+	return nil
+}
+
+// RecordMediaEvent records general media streaming events
+func (r *TrendingRepository) RecordMediaEvent(ctx context.Context, eventType, mediaID, userID string) error {
+	analytics := &models.MediaAnalytics{}
+	analytics.SetGeneralEvent(eventType, mediaID, userID)
+	
+	err := r.db.WithContext(ctx).Model(analytics).Create()
+	if err != nil {
+		r.logger.Error("failed to record media event",
+			zap.String("eventType", eventType),
+			zap.String("mediaID", mediaID),
+			zap.String("userID", userID),
+			zap.Error(err))
+		return fmt.Errorf("failed to record media event: %w", err)
+	}
+	
+	return nil
+}
+
+// GetManifestGenerationStats retrieves manifest generation statistics for a date range
+func (r *TrendingRepository) GetManifestGenerationStats(ctx context.Context, format, startDate, endDate string) (map[string]int64, error) {
+	stats := make(map[string]int64)
+	
+	// Query manifest generation records
+	var analytics []models.MediaAnalytics
+	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+		Where("PK", "=", fmt.Sprintf("MANIFEST#%s", format)).
+		Where("Date", ">=", startDate).
+		Where("Date", "<=", endDate).
+		All(&analytics)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return stats, nil
+		}
+		r.logger.Error("failed to get manifest generation stats",
+			zap.String("format", format),
+			zap.String("startDate", startDate),
+			zap.String("endDate", endDate),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get manifest generation stats: %w", err)
+	}
+	
+	// Count by date
+	for _, record := range analytics {
+		stats[record.Date]++
+	}
+	
+	return stats, nil
+}
+
+// GetMediaEventStats retrieves general media event statistics
+func (r *TrendingRepository) GetMediaEventStats(ctx context.Context, eventType, startDate, endDate string) (map[string]int64, error) {
+	stats := make(map[string]int64)
+	
+	// Query media event records
+	var analytics []models.MediaAnalytics
+	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+		Where("PK", "=", fmt.Sprintf("MEDIA_EVENT#%s", eventType)).
+		Where("Date", ">=", startDate).
+		Where("Date", "<=", endDate).
+		All(&analytics)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return stats, nil
+		}
+		r.logger.Error("failed to get media event stats",
+			zap.String("eventType", eventType),
+			zap.String("startDate", startDate),
+			zap.String("endDate", endDate),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get media event stats: %w", err)
+	}
+	
+	// Count by date
+	for _, record := range analytics {
+		stats[record.Date]++
+	}
+	
+	return stats, nil
+}
+
 // ========== ModerationAnalytics Methods ==========
 
 // RecordModerationAction records a moderation action for analytics

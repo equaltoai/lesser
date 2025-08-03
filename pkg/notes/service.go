@@ -4,24 +4,18 @@ import (
 	"context"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/zap"
 )
 
 // Service provides methods for managing community notes
 type Service struct {
-	dynamoClient *dynamodb.Client
-	logger       *zap.Logger
+	logger *zap.Logger
 }
 
 // NewService creates a new notes service
-func NewService(dynamoClient *dynamodb.Client, logger *zap.Logger) *Service {
-	// Set the package-level client
-	SetDynamoClient(dynamoClient)
-
+func NewService(logger *zap.Logger) *Service {
 	return &Service{
-		dynamoClient: dynamoClient,
-		logger:       logger,
+		logger: logger,
 	}
 }
 

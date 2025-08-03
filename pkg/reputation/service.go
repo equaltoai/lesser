@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -16,7 +15,6 @@ import (
 
 // Service provides reputation management functionality
 type Service struct {
-	db             *dynamodb.Client
 	storage        storage.Storage
 	calculator     *Calculator
 	signer         *Signer
@@ -25,20 +23,15 @@ type Service struct {
 	logger         *zap.Logger
 	costTracker    *cost.Tracker
 	instanceURL    string
-	repTableName   string
-	vouchTableName string
 }
 
 // Config contains configuration for the reputation service
 type Config struct {
-	DynamoClient   *dynamodb.Client
 	Storage        storage.Storage
 	Logger         *zap.Logger
 	CostTracker    *cost.Tracker
 	InstanceURL    string
 	PrivateKey     string
-	RepTableName   string
-	VouchTableName string
 }
 
 // NewService creates a new reputation service
@@ -60,7 +53,6 @@ func NewService(cfg *Config) (*Service, error) {
 	vouchManager := NewVouchManager(cfg.Storage, signer, cfg.InstanceURL, cfg.Logger)
 
 	return &Service{
-		db:             cfg.DynamoClient, // Keep for backward compatibility
 		storage:        cfg.Storage,
 		calculator:     calculator,
 		signer:         signer,
@@ -69,8 +61,6 @@ func NewService(cfg *Config) (*Service, error) {
 		logger:         cfg.Logger,
 		costTracker:    cfg.CostTracker,
 		instanceURL:    cfg.InstanceURL,
-		repTableName:   cfg.RepTableName,
-		vouchTableName: cfg.VouchTableName,
 	}, nil
 }
 
@@ -286,7 +276,19 @@ func (s *Service) gatherCalculationInput(ctx context.Context, actorID string) (*
 			}
 
 			// Add severity based on event severity
-			modEvent.Severity = int(event.Severity)
+			// Parse severity string to int
+			switch event.Severity {
+			case "1":
+				modEvent.Severity = 1
+			case "2":
+				modEvent.Severity = 2
+			case "3":
+				modEvent.Severity = 3
+			case "4":
+				modEvent.Severity = 4
+			default:
+				modEvent.Severity = 2 // Default to medium
+			}
 
 			moderationHistory = append(moderationHistory, modEvent)
 		}

@@ -56,7 +56,18 @@ func (r *ModerationRepository) CreateModerationEvent(ctx context.Context, event 
 
 	// Create model and update keys
 	model := &models.ModerationEvent{
-		ModerationEvent: *event,
+		ID:              event.ID,
+		EventType:       event.EventType,
+		ObjectID:        event.ObjectID,
+		ObjectType:      event.ObjectType,
+		ActorID:         event.ActorID,
+		Category:        event.Category,
+		Severity:        event.Severity,
+		ConfidenceScore: event.ConfidenceScore,
+		Evidence:        event.Evidence,
+		Reason:          event.Reason,
+		Created:         event.Created,
+		Updated:         event.Updated,
 		Type:            "EVENT",
 		TTL:             event.TTL,
 		CreatedAt:       event.Created,
@@ -97,7 +108,23 @@ func (r *ModerationRepository) GetModerationEvent(ctx context.Context, eventID s
 		return nil, fmt.Errorf("failed to get moderation event: %w", err)
 	}
 
-	return &model.ModerationEvent, nil
+	// Convert model to storage.ModerationEvent
+	result := &storage.ModerationEvent{
+		ID:              model.ID,
+		EventType:       model.EventType,
+		ObjectID:        model.ObjectID,
+		ObjectType:      model.ObjectType,
+		ActorID:         model.ActorID,
+		Category:        model.Category,
+		Severity:        model.Severity,
+		ConfidenceScore: model.ConfidenceScore,
+		Evidence:        model.Evidence,
+		Reason:          model.Reason,
+		Created:         model.Created,
+		Updated:         model.Updated,
+		TTL:             model.TTL,
+	}
+	return result, nil
 }
 
 // GetModerationQueue retrieves pending moderation events
@@ -121,7 +148,22 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 
 	items := make([]*storage.ModerationQueueItem, 0, len(models))
 	for _, model := range models {
-		event := &model.ModerationEvent
+		// Convert model to storage.ModerationEvent
+		event := &storage.ModerationEvent{
+			ID:              model.ID,
+			EventType:       model.EventType,
+			ObjectID:        model.ObjectID,
+			ObjectType:      model.ObjectType,
+			ActorID:         model.ActorID,
+			Category:        model.Category,
+			Severity:        model.Severity,
+			ConfidenceScore: model.ConfidenceScore,
+			Evidence:        model.Evidence,
+			Reason:          model.Reason,
+			Created:         model.Created,
+			Updated:         model.Updated,
+			TTL:             model.TTL,
+		}
 
 		// Apply filters
 		if filter != nil {
@@ -157,7 +199,7 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 
 		queueItem := &storage.ModerationQueueItem{
 			Event:       event,
-			Priority:    float64(event.Severity) * event.ConfidenceScore,
+			Priority:    r.getSeverityValue(event.Severity) * event.ConfidenceScore,
 			ReviewCount: reviewCount,
 		}
 		items = append(items, queueItem)
@@ -184,14 +226,29 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 
 	items := make([]*storage.ModerationQueueItem, 0, len(models))
 	for _, model := range models {
-		event := &model.ModerationEvent
+		// Convert model to storage.ModerationEvent
+		event := &storage.ModerationEvent{
+			ID:              model.ID,
+			EventType:       model.EventType,
+			ObjectID:        model.ObjectID,
+			ObjectType:      model.ObjectType,
+			ActorID:         model.ActorID,
+			Category:        model.Category,
+			Severity:        model.Severity,
+			ConfidenceScore: model.ConfidenceScore,
+			Evidence:        model.Evidence,
+			Reason:          model.Reason,
+			Created:         model.Created,
+			Updated:         model.Updated,
+			TTL:             model.TTL,
+		}
 
 		// Get review count for this event
 		reviewCount, _ := r.countReviews(ctx, event.ID)
 
 		queueItem := &storage.ModerationQueueItem{
 			Event:       event,
-			Priority:    float64(event.Severity) * event.ConfidenceScore,
+			Priority:    r.getSeverityValue(event.Severity) * event.ConfidenceScore,
 			ReviewCount: reviewCount,
 		}
 		items = append(items, queueItem)
@@ -216,10 +273,25 @@ func (r *ModerationRepository) GetModerationEventsByObject(ctx context.Context, 
 		return nil, "", fmt.Errorf("failed to query moderation events: %w", err)
 	}
 
-	events := make([]*storage.ModerationEvent, len(models))
-	for i, model := range models {
+	events := make([]*storage.ModerationEvent, 0, len(models))
+	for _, model := range models {
 		if model.Type == "EVENT" {
-			events[i] = &model.ModerationEvent
+			event := &storage.ModerationEvent{
+				ID:              model.ID,
+				EventType:       model.EventType,
+				ObjectID:        model.ObjectID,
+				ObjectType:      model.ObjectType,
+				ActorID:         model.ActorID,
+				Category:        model.Category,
+				Severity:        model.Severity,
+				ConfidenceScore: model.ConfidenceScore,
+				Evidence:        model.Evidence,
+				Reason:          model.Reason,
+				Created:         model.Created,
+				Updated:         model.Updated,
+				TTL:             model.TTL,
+			}
+			events = append(events, event)
 		}
 	}
 
@@ -243,10 +315,25 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 		return nil, "", fmt.Errorf("failed to query moderation events by actor: %w", err)
 	}
 
-	events := make([]*storage.ModerationEvent, len(models))
-	for i, model := range models {
+	events := make([]*storage.ModerationEvent, 0, len(models))
+	for _, model := range models {
 		if model.Type == "EVENT" {
-			events[i] = &model.ModerationEvent
+			event := &storage.ModerationEvent{
+				ID:              model.ID,
+				EventType:       model.EventType,
+				ObjectID:        model.ObjectID,
+				ObjectType:      model.ObjectType,
+				ActorID:         model.ActorID,
+				Category:        model.Category,
+				Severity:        model.Severity,
+				ConfidenceScore: model.ConfidenceScore,
+				Evidence:        model.Evidence,
+				Reason:          model.Reason,
+				Created:         model.Created,
+				Updated:         model.Updated,
+				TTL:             model.TTL,
+			}
+			events = append(events, event)
 		}
 	}
 
@@ -265,10 +352,20 @@ func (r *ModerationRepository) AddModerationReview(ctx context.Context, review *
 
 	// Create model
 	model := &models.ModerationReview{
-		Review:    *review,
-		Type:      "REVIEW",
-		CreatedAt: review.Created,
-		TTL:       time.Now().Add(30 * 24 * time.Hour).Unix(),
+		ID:          review.ID,
+		EventID:     review.EventID,
+		ReviewerID:  review.ReviewerID,
+		ReviewerRep: review.ReviewerRep,
+		Action:      review.Action,
+		Severity:    review.Severity,
+		Note:        review.Note,
+		Tags:        review.Tags,
+		Metadata:    review.Metadata,
+		Confidence:  review.Confidence,
+		Created:     review.Created,
+		Type:        "REVIEW",
+		CreatedAt:   review.Created,
+		TTL:         time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
 	model.UpdateKeys()
 
@@ -304,7 +401,20 @@ func (r *ModerationRepository) GetModerationReviews(ctx context.Context, eventID
 	reviews := make([]*storage.ModerationReview, 0, len(models))
 	for _, model := range models {
 		if model.Type == "REVIEW" {
-			reviews = append(reviews, &model.Review)
+			review := &storage.ModerationReview{
+				ID:          model.ID,
+				EventID:     model.EventID,
+				ReviewerID:  model.ReviewerID,
+				ReviewerRep: model.ReviewerRep,
+				Action:      model.Action,
+				Severity:    model.Severity,
+				Note:        model.Note,
+				Tags:        model.Tags,
+				Metadata:    model.Metadata,
+				Confidence:  model.Confidence,
+				Created:     model.Created,
+			}
+			reviews = append(reviews, review)
 		}
 	}
 
@@ -320,10 +430,20 @@ func (r *ModerationRepository) CreateModerationDecision(ctx context.Context, dec
 
 	// Create model
 	model := &models.ModerationDecision{
-		ModerationDecision: *decision,
-		Type:               "DECISION",
-		CreatedAt:          decision.Decided,
-		TTL:                time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
+		ID:               decision.ID,
+		EventID:          decision.EventID,
+		ObjectID:         decision.ObjectID,
+		Action:           decision.Action,
+		ConsensusScore:   decision.ConsensusScore,
+		ReviewerCount:    decision.ReviewerCount,
+		TrustWeightTotal: decision.TrustWeightTotal,
+		Reviews:          decision.Reviews,
+		Metadata:         decision.Metadata,
+		Decided:          decision.Decided,
+		Expires:          decision.Expires,
+		Type:             "DECISION",
+		CreatedAt:        decision.Decided,
+		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
 	model.UpdateKeys()
 
@@ -363,7 +483,19 @@ func (r *ModerationRepository) GetModerationDecision(ctx context.Context, object
 		return nil, fmt.Errorf("failed to get moderation decision: %w", err)
 	}
 
-	return &model.ModerationDecision, nil
+	return &storage.ModerationDecision{
+		ID:               model.ID,
+		EventID:          model.EventID,
+		ObjectID:         model.ObjectID,
+		Action:           model.Action,
+		ConsensusScore:   model.ConsensusScore,
+		ReviewerCount:    model.ReviewerCount,
+		TrustWeightTotal: model.TrustWeightTotal,
+		Reviews:          model.Reviews,
+		Metadata:         model.Metadata,
+		Decided:          model.Decided,
+		Expires:          model.Expires,
+	}, nil
 }
 
 // StoreModerationDecision stores a moderation decision (alias for CreateModerationDecision)
@@ -392,19 +524,19 @@ func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, con
 		Action:           review.Action,
 		ConsensusScore:   review.Confidence,
 		ReviewerCount:    1,
-		TrustWeightTotal: review.Weight,
-		Reviews: []*moderation.Review{
-			{
-				ID:         fmt.Sprintf("rev_%s", generateRandomString(12)),
-				EventID:    currentDecision.EventID,
-				ReviewerID: review.ReviewerID,
-				Action:     review.Action,
-				Category:   review.Category,
-				Severity:   review.Severity,
-				Confidence: review.Confidence,
-				Notes:      review.Notes,
-				Weight:     review.Weight,
-				Created:    time.Now(),
+		TrustWeightTotal: review.Confidence, // Using Confidence as Weight substitute
+		Reviews: []interface{}{
+			map[string]interface{}{
+				"id":          fmt.Sprintf("rev_%s", generateRandomString(12)),
+				"event_id":    currentDecision.EventID,
+				"reviewer_id": review.ReviewerID,
+				"action":      review.Action,
+				"category":    "other", // Default category since ModerationReview doesn't have Category field
+				"severity":    review.Severity,
+				"confidence":  review.Confidence,
+				"notes":       review.Note,
+				"weight":      review.Confidence,
+				"created":     time.Now(),
 			},
 		},
 		Decided: time.Now(),
@@ -552,6 +684,22 @@ func (r *ModerationRepository) DeleteModerationPattern(ctx context.Context, patt
 	return nil
 }
 
+// getSeverityValue converts severity string to numeric value
+func (r *ModerationRepository) getSeverityValue(severity string) float64 {
+	switch severity {
+	case "low":
+		return 1.0
+	case "medium":
+		return 2.0
+	case "high":
+		return 3.0
+	case "critical":
+		return 4.0
+	default:
+		return 1.0
+	}
+}
+
 // countReviews is a helper to count reviews for an event
 func (r *ModerationRepository) countReviews(ctx context.Context, eventID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.ModerationReview{}).
@@ -642,7 +790,7 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 		ObjectID:  objectID,
 		Events:    []storage.ModerationEvent{},
 		Decisions: []storage.ModerationDecision{},
-		Timeline:  []moderation.TimelineEntry{},
+		Timeline:  []storage.ModerationTimelineEntry{},
 	}
 
 	// Get all events for the object
@@ -665,14 +813,27 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 	if err == nil {
 		for _, model := range decisionModels {
 			if model.Type == "DECISION" {
-				history.Decisions = append(history.Decisions, model.ModerationDecision)
+				decision := storage.ModerationDecision{
+					ID:               model.ID,
+					EventID:          model.EventID,
+					ObjectID:         model.ObjectID,
+					Action:           model.Action,
+					ConsensusScore:   model.ConsensusScore,
+					ReviewerCount:    model.ReviewerCount,
+					TrustWeightTotal: model.TrustWeightTotal,
+					Reviews:          model.Reviews,
+					Metadata:         model.Metadata,
+					Decided:          model.Decided,
+					Expires:          model.Expires,
+				}
+				history.Decisions = append(history.Decisions, decision)
 			}
 		}
 	}
 
 	// Build timeline
 	for _, event := range history.Events {
-		history.Timeline = append(history.Timeline, moderation.TimelineEntry{
+		history.Timeline = append(history.Timeline, storage.ModerationTimelineEntry{
 			Timestamp:   event.Created,
 			Type:        "event",
 			ActorID:     event.ActorID,
@@ -685,7 +846,7 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 	}
 
 	for _, decision := range history.Decisions {
-		history.Timeline = append(history.Timeline, moderation.TimelineEntry{
+		history.Timeline = append(history.Timeline, storage.ModerationTimelineEntry{
 			Timestamp:   decision.Decided,
 			Type:        "decision",
 			ActorID:     "system",
@@ -726,7 +887,7 @@ func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *
 
 	// Query by event type and category using GSI2
 	if filter.EventType != nil || filter.Category != nil {
-		eventType := moderation.EventTypeFlagged
+		eventType := storage.EventTypeFlagged
 		if filter.EventType != nil {
 			eventType = *filter.EventType
 		}
@@ -754,8 +915,25 @@ func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *
 
 		events := make([]*storage.ModerationEvent, 0, len(models))
 		for _, model := range models {
-			if model.Type == "EVENT" && r.matchesEventFilter(&model.ModerationEvent, filter) {
-				events = append(events, &model.ModerationEvent)
+			if model.Type == "EVENT" {
+				event := &storage.ModerationEvent{
+					ID:              model.ID,
+					EventType:       model.EventType,
+					ObjectID:        model.ObjectID,
+					ObjectType:      model.ObjectType,
+					ActorID:         model.ActorID,
+					Category:        model.Category,
+					Severity:        model.Severity,
+					ConfidenceScore: model.ConfidenceScore,
+					Evidence:        model.Evidence,
+					Reason:          model.Reason,
+					Created:         model.Created,
+					Updated:         model.Updated,
+					TTL:             model.TTL,
+				}
+				if r.matchesEventFilter(event, filter) {
+					events = append(events, event)
+				}
 			}
 		}
 
@@ -785,10 +963,27 @@ func (r *ModerationRepository) scanAllModerationEvents(ctx context.Context, filt
 
 	events := make([]*storage.ModerationEvent, 0, limit)
 	for _, model := range models {
-		if model.Type == "EVENT" && r.matchesEventFilter(&model.ModerationEvent, filter) {
-			events = append(events, &model.ModerationEvent)
-			if len(events) >= limit {
-				break
+		if model.Type == "EVENT" {
+			event := &storage.ModerationEvent{
+				ID:              model.ID,
+				EventType:       model.EventType,
+				ObjectID:        model.ObjectID,
+				ObjectType:      model.ObjectType,
+				ActorID:         model.ActorID,
+				Category:        model.Category,
+				Severity:        model.Severity,
+				ConfidenceScore: model.ConfidenceScore,
+				Evidence:        model.Evidence,
+				Reason:          model.Reason,
+				Created:         model.Created,
+				Updated:         model.Updated,
+				TTL:             model.TTL,
+			}
+			if r.matchesEventFilter(event, filter) {
+				events = append(events, event)
+				if len(events) >= limit {
+					break
+				}
 			}
 		}
 	}
@@ -805,15 +1000,15 @@ func (r *ModerationRepository) matchesEventFilter(event *storage.ModerationEvent
 		return true
 	}
 
-	if filter.EventType != nil && event.EventType != *filter.EventType {
+	if filter.EventType != nil && event.EventType != string(*filter.EventType) {
 		return false
 	}
 
-	if filter.Category != nil && event.Category != *filter.Category {
+	if filter.Category != nil && event.Category != string(*filter.Category) {
 		return false
 	}
 
-	if filter.MinSeverity != nil && event.Severity < *filter.MinSeverity {
+	if filter.MinSeverity != nil && r.getSeverityValue(event.Severity) < float64(*filter.MinSeverity) {
 		return false
 	}
 
@@ -832,16 +1027,15 @@ func (r *ModerationRepository) matchesEventFilter(event *storage.ModerationEvent
 func (r *ModerationRepository) CreateAdminReview(ctx context.Context, eventID string, adminID string, action storage.ActionType, reason string) error {
 	// Create a special review with maximum weight
 	review := &storage.ModerationReview{
-		ID:         fmt.Sprintf("admin_rev_%s", generateRandomString(12)),
-		EventID:    eventID,
-		ReviewerID: adminID,
-		Action:     action,
-		Category:   moderation.CategoryOther,    // Admin override doesn't need specific category
-		Severity:   moderation.SeverityCritical, // Max severity for admin actions
-		Confidence: 1.0,                         // Full confidence
-		Notes:      fmt.Sprintf("Admin override: %s", reason),
-		Weight:     1000.0, // Very high weight to override consensus
-		Created:    time.Now(),
+		ID:          fmt.Sprintf("admin_rev_%s", generateRandomString(12)),
+		EventID:     eventID,
+		ReviewerID:  adminID,
+		Action:      string(action), // Convert ActionType to string
+		Severity:    "critical",     // Max severity for admin actions
+		Confidence:  1.0,            // Full confidence
+		Note:        fmt.Sprintf("Admin override: %s", reason),
+		Created:     time.Now(),
+		ReviewerRep: 1000.0, // Very high reputation to override consensus
 	}
 
 	// Add the review
@@ -860,11 +1054,23 @@ func (r *ModerationRepository) CreateAdminReview(ctx context.Context, eventID st
 		ID:               fmt.Sprintf("admin_dec_%s", generateRandomString(12)),
 		EventID:          eventID,
 		ObjectID:         event.ObjectID,
-		Action:           action,
+		Action:           string(action), // Convert ActionType to string
 		ConsensusScore:   1.0, // Admin override has full consensus
 		ReviewerCount:    1,
 		TrustWeightTotal: 1000.0,
-		Reviews:          []*moderation.Review{(*moderation.Review)(review)},
+		Reviews:          []interface{}{
+			map[string]interface{}{
+				"id":          review.ID,
+				"event_id":    review.EventID,
+				"reviewer_id": review.ReviewerID,
+				"action":      review.Action,
+				"severity":    review.Severity,
+				"confidence":  review.Confidence,
+				"notes":       review.Note,
+				"weight":      review.ReviewerRep,
+				"created":     review.Created,
+			},
+		},
 		Decided:          time.Now(),
 	}
 
@@ -929,8 +1135,8 @@ func (r *ModerationRepository) GetReviewerStats(ctx context.Context, reviewerID 
 		if review.Type == "REVIEW" && review.ReviewerID == reviewerID {
 			stats.TotalReviews++
 			
-			// Track by category
-			category := string(review.Category)
+			// Track by category - use severity as category since Category field doesn't exist
+			category := review.Severity
 			stats.ReviewsByCategory[category]++
 			
 			// Update last review time
@@ -938,8 +1144,8 @@ func (r *ModerationRepository) GetReviewerStats(ctx context.Context, reviewerID 
 				lastReviewTime = review.Created
 			}
 			
-			// Simplified accuracy check
-			if review.Weight > 0.5 {
+			// Simplified accuracy check - use ReviewerRep instead of Weight
+			if review.ReviewerRep > 0.5 {
 				stats.AccurateReviews++
 			}
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/equaltoai/lesser/pkg/media/streaming"
 )
 
 // StreamingService handles media streaming operations
@@ -105,10 +106,11 @@ type streamingService struct {
 	privateKey         []byte
 	cloudFront         *cloudfront.Client
 	cloudWatch         *cloudwatch.Client
+	mediaStorage       streaming.MediaStorage
 }
 
 // NewStreamingService creates a new streaming service
-func NewStreamingService(distributionDomain, keyPairID string, privateKey []byte) (StreamingService, error) {
+func NewStreamingService(distributionDomain, keyPairID string, privateKey []byte, mediaStorage streaming.MediaStorage) (StreamingService, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
@@ -120,6 +122,7 @@ func NewStreamingService(distributionDomain, keyPairID string, privateKey []byte
 		privateKey:         privateKey,
 		cloudFront:         cloudfront.NewFromConfig(cfg),
 		cloudWatch:         cloudwatch.NewFromConfig(cfg),
+		mediaStorage:       mediaStorage,
 	}, nil
 }
 
@@ -228,6 +231,15 @@ func (s *streamingService) createSignature(policy string) (string, error) {
 func (s *streamingService) GenerateHLSManifest(mediaID string) (*HLSManifest, error) {
 	baseURL := fmt.Sprintf("https://%s/media/%s", s.distributionDomain, mediaID)
 
+	// Fetch actual media metadata
+	var duration float64
+	if s.mediaStorage != nil {
+		if metadata, err := s.mediaStorage.GetMediaMetadata(mediaID); err == nil {
+			duration = metadata.Duration
+		}
+		// If metadata fetch fails, duration remains 0 as fallback
+	}
+
 	variants := []HLSVariant{
 		{
 			Quality:    "480p",
@@ -263,7 +275,7 @@ func (s *streamingService) GenerateHLSManifest(mediaID string) (*HLSManifest, er
 		MediaID:   mediaID,
 		MasterURL: fmt.Sprintf("%s/master.m3u8", baseURL),
 		Variants:  variants,
-		Duration:  0, // Would be populated from actual media metadata
+		Duration:  duration, // Now populated from actual media metadata
 		CreatedAt: time.Now(),
 	}, nil
 }
@@ -271,6 +283,15 @@ func (s *streamingService) GenerateHLSManifest(mediaID string) (*HLSManifest, er
 // GenerateDASHManifest generates a DASH manifest
 func (s *streamingService) GenerateDASHManifest(mediaID string) (*DASHManifest, error) {
 	baseURL := fmt.Sprintf("https://%s/media/%s", s.distributionDomain, mediaID)
+
+	// Fetch actual media metadata
+	var duration float64
+	if s.mediaStorage != nil {
+		if metadata, err := s.mediaStorage.GetMediaMetadata(mediaID); err == nil {
+			duration = metadata.Duration
+		}
+		// If metadata fetch fails, duration remains 0 as fallback
+	}
 
 	videoTracks := []DASHTrack{
 		{
@@ -326,7 +347,7 @@ func (s *streamingService) GenerateDASHManifest(mediaID string) (*DASHManifest, 
 		ManifestURL: fmt.Sprintf("%s/manifest.mpd", baseURL),
 		VideoTracks: videoTracks,
 		AudioTracks: audioTracks,
-		Duration:    0, // Would be populated from actual media metadata
+		Duration:    duration, // Now populated from actual media metadata
 		CreatedAt:   time.Now(),
 	}, nil
 }

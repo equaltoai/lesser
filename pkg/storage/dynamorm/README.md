@@ -188,7 +188,7 @@ if err != nil {
 }
 
 // Create the adapter
-adapter := dynamorm.NewStorageAdapter(db, tableName, originalStorage)
+adapter := dynamorm.NewStorageAdapter(db, tableName, logger)
 
 // Use the adapter as a storage.Storage implementation
 user, err := adapter.GetUser(ctx, "username")

@@ -4,22 +4,30 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
+// ThreatIntelRepository interface for dependency injection
+type ThreatIntelRepository interface {
+	ShareThreat(ctx context.Context, threat *repositories.ThreatIntel) error
+	GetSharedThreats(ctx context.Context, since time.Time) ([]*repositories.ThreatIntel, error)
+	GetThreatsByType(ctx context.Context, threatType string, limit int) ([]*repositories.ThreatIntel, error)
+	UpdateThreatConfidence(ctx context.Context, threatID string, newConfidence float64) error
+	IncrementHitCount(ctx context.Context, threatID string) error
+	LoadActiveThreats(ctx context.Context) ([]*repositories.ThreatIntel, error)
+	GetThreatByID(ctx context.Context, threatID string) (*repositories.ThreatIntel, error)
+	GetIndicatorThreat(ctx context.Context, indicator string) (string, error)
+}
+
 // ThreatIntelligence manages cross-instance threat sharing
 type ThreatIntelligence struct {
-	db        *dynamodb.Client
-	tableName string
-	logger    *zap.Logger
+	repo   ThreatIntelRepository
+	logger *zap.Logger
 
 	// Cache for active threats
 	threatCache sync.Map
@@ -28,11 +36,10 @@ type ThreatIntelligence struct {
 }
 
 // NewThreatIntelligence creates a new threat intelligence component
-func NewThreatIntelligence(db *dynamodb.Client, tableName string, logger *zap.Logger) *ThreatIntelligence {
+func NewThreatIntelligence(repo ThreatIntelRepository, logger *zap.Logger) *ThreatIntelligence {
 	ti := &ThreatIntelligence{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		repo:   repo,
+		logger: logger,
 	}
 
 	// Load threats on initialization
@@ -40,9 +47,6 @@ func NewThreatIntelligence(db *dynamodb.Client, tableName string, logger *zap.Lo
 	if err := ti.loadThreats(ctx); err != nil {
 		logger.Warn("failed to load threats on init", zap.Error(err))
 	}
-
-	// Start periodic refresh
-	go ti.refreshThreatsPeriodically()
 
 	return ti
 }
@@ -66,58 +70,28 @@ func (ti *ThreatIntelligence) ShareThreat(ctx context.Context, threat *ThreatInt
 	}
 	threat.LastSeen = now
 
-	// Store in DynamoDB
-	item := map[string]types.AttributeValue{
-		"PK":           &types.AttributeValueMemberS{Value: fmt.Sprintf("THREAT#%s", threat.ID)},
-		"SK":           &types.AttributeValueMemberS{Value: "METADATA"},
-		"ID":           &types.AttributeValueMemberS{Value: threat.ID},
-		"ThreatType":   &types.AttributeValueMemberS{Value: threat.ThreatType},
-		"Severity":     &types.AttributeValueMemberS{Value: string(threat.Severity)},
-		"Description":  &types.AttributeValueMemberS{Value: threat.Description},
-		"SourceDomain": &types.AttributeValueMemberS{Value: threat.SourceDomain},
-		"FirstSeen":    &types.AttributeValueMemberS{Value: threat.FirstSeen.Format(time.RFC3339)},
-		"LastSeen":     &types.AttributeValueMemberS{Value: threat.LastSeen.Format(time.RFC3339)},
-		"HitCount":     &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", threat.HitCount)},
-		"Confidence":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", threat.Confidence)},
-		"TTL":          &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", now.Add(threat.TTL).Unix())},
-
-		// GSI for querying by type
-		"GSI1PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("TYPE#%s", threat.ThreatType)},
-		"GSI1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("THREAT#%s", threat.ID)},
-
-		// GSI for querying by time
-		"GSI2PK": &types.AttributeValueMemberS{Value: "THREATS"},
-		"GSI2SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d#%s", threat.LastSeen.Unix(), threat.ID)},
+	// Convert to repository threat
+	repoThreat := &repositories.ThreatIntel{
+		ID:           threat.ID,
+		ThreatType:   threat.ThreatType,
+		Indicators:   threat.Indicators,
+		Severity:     string(threat.Severity),
+		Description:  threat.Description,
+		SourceDomain: threat.SourceDomain,
+		FirstSeen:    threat.FirstSeen,
+		LastSeen:     threat.LastSeen,
+		HitCount:     threat.HitCount,
+		Confidence:   threat.Confidence,
+		TTL:          threat.TTL,
 	}
 
-	// Add indicators
-	if len(threat.Indicators) > 0 {
-		indicatorList := &types.AttributeValueMemberL{
-			Value: make([]types.AttributeValue, len(threat.Indicators)),
-		}
-		for i, indicator := range threat.Indicators {
-			indicatorList.Value[i] = &types.AttributeValueMemberS{Value: indicator}
-		}
-		item["Indicators"] = indicatorList
-	}
-
-	putInput := &dynamodb.PutItemInput{
-		TableName: aws.String(ti.tableName),
-		Item:      item,
-	}
-
-	_, err := ti.db.PutItem(ctx, putInput)
-	if err != nil {
+	// Store in repository
+	if err := ti.repo.ShareThreat(ctx, repoThreat); err != nil {
 		return fmt.Errorf("share threat: %w", err)
 	}
 
 	// Update cache
 	ti.threatCache.Store(threat.ID, threat)
-
-	// Store indicators for fast lookup
-	for _, indicator := range threat.Indicators {
-		ti.storeIndicator(ctx, indicator, threat.ID)
-	}
 
 	ti.logger.Info("shared threat",
 		zap.String("threatID", threat.ID),
@@ -130,29 +104,25 @@ func (ti *ThreatIntelligence) ShareThreat(ctx context.Context, threat *ThreatInt
 
 // GetSharedThreats retrieves threats shared since a given time
 func (ti *ThreatIntelligence) GetSharedThreats(ctx context.Context, since time.Time) ([]*ThreatIntel, error) {
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(ti.tableName),
-		IndexName:              aws.String("GSI2"),
-		KeyConditionExpression: aws.String("GSI2PK = :pk AND GSI2SK > :since"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":    &types.AttributeValueMemberS{Value: "THREATS"},
-			":since": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d", since.Unix())},
-		},
-		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:            aws.Int32(100),  // Limit to recent threats
-	}
-
-	result, err := ti.db.Query(ctx, queryInput)
+	repoThreats, err := ti.repo.GetSharedThreats(ctx, since)
 	if err != nil {
 		return nil, fmt.Errorf("query threats: %w", err)
 	}
 
-	threats := make([]*ThreatIntel, 0, len(result.Items))
-	for _, item := range result.Items {
-		threat, err := ti.parseThreat(item)
-		if err != nil {
-			ti.logger.Warn("failed to parse threat", zap.Error(err))
-			continue
+	threats := make([]*ThreatIntel, 0, len(repoThreats))
+	for _, repoThreat := range repoThreats {
+		threat := &ThreatIntel{
+			ID:           repoThreat.ID,
+			ThreatType:   repoThreat.ThreatType,
+			Indicators:   repoThreat.Indicators,
+			Severity:     Severity(repoThreat.Severity),
+			Description:  repoThreat.Description,
+			SourceDomain: repoThreat.SourceDomain,
+			FirstSeen:    repoThreat.FirstSeen,
+			LastSeen:     repoThreat.LastSeen,
+			HitCount:     repoThreat.HitCount,
+			Confidence:   repoThreat.Confidence,
+			TTL:          repoThreat.TTL,
 		}
 		threats = append(threats, threat)
 	}
@@ -220,26 +190,25 @@ func (ti *ThreatIntelligence) CheckContent(ctx context.Context, content string, 
 
 // GetThreatsByType retrieves threats of a specific type
 func (ti *ThreatIntelligence) GetThreatsByType(ctx context.Context, threatType string, limit int) ([]*ThreatIntel, error) {
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(ti.tableName),
-		IndexName:              aws.String("GSI1"),
-		KeyConditionExpression: aws.String("GSI1PK = :pk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("TYPE#%s", threatType)},
-		},
-		Limit: aws.Int32(safeIntToInt32(limit)),
-	}
-
-	result, err := ti.db.Query(ctx, queryInput)
+	repoThreats, err := ti.repo.GetThreatsByType(ctx, threatType, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query threats by type: %w", err)
 	}
 
-	threats := make([]*ThreatIntel, 0, len(result.Items))
-	for _, item := range result.Items {
-		threat, err := ti.parseThreat(item)
-		if err != nil {
-			continue
+	threats := make([]*ThreatIntel, 0, len(repoThreats))
+	for _, repoThreat := range repoThreats {
+		threat := &ThreatIntel{
+			ID:           repoThreat.ID,
+			ThreatType:   repoThreat.ThreatType,
+			Indicators:   repoThreat.Indicators,
+			Severity:     Severity(repoThreat.Severity),
+			Description:  repoThreat.Description,
+			SourceDomain: repoThreat.SourceDomain,
+			FirstSeen:    repoThreat.FirstSeen,
+			LastSeen:     repoThreat.LastSeen,
+			HitCount:     repoThreat.HitCount,
+			Confidence:   repoThreat.Confidence,
+			TTL:          repoThreat.TTL,
 		}
 		threats = append(threats, threat)
 	}
@@ -249,21 +218,7 @@ func (ti *ThreatIntelligence) GetThreatsByType(ctx context.Context, threatType s
 
 // UpdateThreatConfidence updates the confidence score of a threat
 func (ti *ThreatIntelligence) UpdateThreatConfidence(ctx context.Context, threatID string, newConfidence float64) error {
-	updateInput := &dynamodb.UpdateItemInput{
-		TableName: aws.String(ti.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("THREAT#%s", threatID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-		UpdateExpression: aws.String("SET Confidence = :conf, LastSeen = :seen"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":conf": &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", newConfidence)},
-			":seen": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		},
-	}
-
-	_, err := ti.db.UpdateItem(ctx, updateInput)
-	return err
+	return ti.repo.UpdateThreatConfidence(ctx, threatID, newConfidence)
 }
 
 // Helper methods
@@ -348,9 +303,16 @@ func (ti *ThreatIntelligence) checkURLThreat(url string) string {
 }
 
 func (ti *ThreatIntelligence) checkHashThreat(hash string) string {
-	// Check if hash matches known malicious content
-	// In production, query the database for hash matches
-	return ""
+	// Check if hash matches known malicious content using repository
+	ctx := context.Background()
+	threatID, err := ti.repo.GetIndicatorThreat(ctx, hash)
+	if err != nil {
+		ti.logger.Warn("failed to check hash threat",
+			zap.String("hash", hash),
+			zap.Error(err))
+		return ""
+	}
+	return threatID
 }
 
 func (ti *ThreatIntelligence) hashContent(content string) string {
@@ -358,46 +320,11 @@ func (ti *ThreatIntelligence) hashContent(content string) string {
 	return fmt.Sprintf("%x", h)
 }
 
-func (ti *ThreatIntelligence) storeIndicator(ctx context.Context, indicator, threatID string) {
-	// Store indicator for fast lookup
-	item := map[string]types.AttributeValue{
-		"PK":       &types.AttributeValueMemberS{Value: fmt.Sprintf("INDICATOR#%s", indicator)},
-		"SK":       &types.AttributeValueMemberS{Value: fmt.Sprintf("THREAT#%s", threatID)},
-		"ThreatID": &types.AttributeValueMemberS{Value: threatID},
-		"TTL":      &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(30*24*time.Hour).Unix())},
-	}
-
-	putInput := &dynamodb.PutItemInput{
-		TableName: aws.String(ti.tableName),
-		Item:      item,
-	}
-
-	_, err := ti.db.PutItem(ctx, putInput)
-	if err != nil {
-		ti.logger.Warn("failed to store indicator",
-			zap.String("indicator", indicator),
-			zap.Error(err))
-	}
-}
 
 func (ti *ThreatIntelligence) incrementHitCount(threatID string) {
 	ctx := context.Background()
 
-	updateInput := &dynamodb.UpdateItemInput{
-		TableName: aws.String(ti.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("THREAT#%s", threatID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-		UpdateExpression: aws.String("ADD HitCount :one SET LastSeen = :seen"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":one":  &types.AttributeValueMemberN{Value: "1"},
-			":seen": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		},
-	}
-
-	_, err := ti.db.UpdateItem(ctx, updateInput)
-	if err != nil {
+	if err := ti.repo.IncrementHitCount(ctx, threatID); err != nil {
 		ti.logger.Warn("failed to increment hit count",
 			zap.String("threatID", threatID),
 			zap.Error(err))
@@ -414,120 +341,51 @@ func (ti *ThreatIntelligence) loadThreats(ctx context.Context) error {
 		return true
 	})
 
-	// Load active threats (not expired)
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(ti.tableName),
-		FilterExpression: aws.String("begins_with(PK, :prefix) AND #ttl > :now"),
-		ExpressionAttributeNames: map[string]string{
-			"#ttl": "TTL",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":prefix": &types.AttributeValueMemberS{Value: "THREAT#"},
-			":now":    &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Unix())},
-		},
-	}
-
-	result, err := ti.db.Scan(ctx, scanInput)
+	// Load active threats from repository
+	repoThreats, err := ti.repo.LoadActiveThreats(ctx)
 	if err != nil {
-		return fmt.Errorf("scan threats: %w", err)
+		return fmt.Errorf("load active threats: %w", err)
 	}
 
-	for _, item := range result.Items {
-		threat, err := ti.parseThreat(item)
-		if err != nil {
-			ti.logger.Warn("failed to parse threat", zap.Error(err))
-			continue
+	for _, repoThreat := range repoThreats {
+		threat := &ThreatIntel{
+			ID:           repoThreat.ID,
+			ThreatType:   repoThreat.ThreatType,
+			Indicators:   repoThreat.Indicators,
+			Severity:     Severity(repoThreat.Severity),
+			Description:  repoThreat.Description,
+			SourceDomain: repoThreat.SourceDomain,
+			FirstSeen:    repoThreat.FirstSeen,
+			LastSeen:     repoThreat.LastSeen,
+			HitCount:     repoThreat.HitCount,
+			Confidence:   repoThreat.Confidence,
+			TTL:          repoThreat.TTL,
 		}
 
 		ti.threatCache.Store(threat.ID, threat)
 	}
 
 	ti.lastUpdate = time.Now()
-	ti.logger.Info("loaded threats", zap.Int("count", len(result.Items)))
+	ti.logger.Info("loaded threats", zap.Int("count", len(repoThreats)))
 
 	return nil
 }
 
-func (ti *ThreatIntelligence) refreshThreatsPeriodically() {
-	ticker := time.NewTicker(15 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		ctx := context.Background()
-		if err := ti.loadThreats(ctx); err != nil {
-			ti.logger.Error("failed to refresh threats", zap.Error(err))
-		}
+// RefreshThreats loads the latest threats from the database into the cache.
+// This method should be called on-demand, typically triggered by EventBridge
+// scheduled events in a serverless environment.
+//
+// Example usage in a Lambda function:
+//   func handler(ctx context.Context, event events.CloudWatchEvent) error {
+//       return threatIntel.RefreshThreats(ctx)
+//   }
+func (ti *ThreatIntelligence) RefreshThreats(ctx context.Context) error {
+	if err := ti.loadThreats(ctx); err != nil {
+		ti.logger.Error("failed to refresh threats", zap.Error(err))
+		return fmt.Errorf("refresh threats: %w", err)
 	}
+
+	ti.logger.Info("successfully refreshed threat intelligence cache")
+	return nil
 }
 
-func (ti *ThreatIntelligence) parseThreat(item map[string]types.AttributeValue) (*ThreatIntel, error) {
-	threat := &ThreatIntel{}
-
-	// Parse fields
-	if v, ok := item["ID"].(*types.AttributeValueMemberS); ok {
-		threat.ID = v.Value
-	}
-	if v, ok := item["ThreatType"].(*types.AttributeValueMemberS); ok {
-		threat.ThreatType = v.Value
-	}
-	if v, ok := item["Severity"].(*types.AttributeValueMemberS); ok {
-		threat.Severity = Severity(v.Value)
-	}
-	if v, ok := item["Description"].(*types.AttributeValueMemberS); ok {
-		threat.Description = v.Value
-	}
-	if v, ok := item["SourceDomain"].(*types.AttributeValueMemberS); ok {
-		threat.SourceDomain = v.Value
-	}
-	if v, ok := item["HitCount"].(*types.AttributeValueMemberN); ok {
-		hitCount, err := strconv.ParseInt(v.Value, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("parsing HitCount: %w", err)
-		}
-		threat.HitCount = hitCount
-	}
-	if v, ok := item["Confidence"].(*types.AttributeValueMemberN); ok {
-		confidence, err := strconv.ParseFloat(v.Value, 64)
-		if err != nil {
-			return nil, fmt.Errorf("parsing Confidence: %w", err)
-		}
-		threat.Confidence = confidence
-	}
-
-	// Parse timestamps
-	if v, ok := item["FirstSeen"].(*types.AttributeValueMemberS); ok {
-		var err error
-		threat.FirstSeen, err = time.Parse(time.RFC3339, v.Value)
-		if err != nil {
-			return nil, fmt.Errorf("parsing FirstSeen: %w", err)
-		}
-	}
-	if v, ok := item["LastSeen"].(*types.AttributeValueMemberS); ok {
-		var err error
-		threat.LastSeen, err = time.Parse(time.RFC3339, v.Value)
-		if err != nil {
-			return nil, fmt.Errorf("parsing LastSeen: %w", err)
-		}
-	}
-
-	// Parse TTL
-	if v, ok := item["TTL"].(*types.AttributeValueMemberN); ok {
-		ttlUnix, err := strconv.ParseInt(v.Value, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("parsing TTL: %w", err)
-		}
-		threat.TTL = time.Until(time.Unix(ttlUnix, 0))
-	}
-
-	// Parse indicators
-	if v, ok := item["Indicators"].(*types.AttributeValueMemberL); ok {
-		threat.Indicators = make([]string, 0, len(v.Value))
-		for _, indicator := range v.Value {
-			if s, ok := indicator.(*types.AttributeValueMemberS); ok {
-				threat.Indicators = append(threat.Indicators, s.Value)
-			}
-		}
-	}
-
-	return threat, nil
-}

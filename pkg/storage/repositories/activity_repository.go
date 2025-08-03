@@ -84,9 +84,30 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 	// In a production system, you might want to extract username from the ID
 	// or maintain a separate GSI for activity lookups
 	
-	// For now, return error as scanning is not supported in DynamORM the same way
-	// This would need a different approach or a GSI
-	return nil, fmt.Errorf("GetActivity requires scanning - not implemented in DynamORM version")
+	// Use DynamORM to scan the table for the activity by ID
+	// This is a simplified approach - in production you might want a GSI for activity ID lookups
+	var activities []models.Activity
+	err := r.db.WithContext(ctx).Model(&models.Activity{}).
+		Where("SK", "CONTAINS", id).
+		Limit(50). // Limit results to avoid scanning too much
+		All(&activities)
+	
+	if err != nil {
+		r.logger.Error("failed to search for activity",
+			zap.String("activity_id", id),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get activity: %w", err)
+	}
+
+	// Filter activities to find exact match
+	for _, activity := range activities {
+		if activity.Activity != nil && activity.Activity.ID == id {
+			return activity.Activity, nil
+		}
+	}
+
+	// Activity not found
+	return nil, fmt.Errorf("activity not found: %s", id)
 }
 
 // GetInboxActivities retrieves inbox activities for a user - matches legacy implementation
@@ -224,15 +245,93 @@ func (r *ActivityRepository) GetCollection(ctx context.Context, username, collec
 		zap.String("collection_type", collectionType),
 		zap.Int("limit", limit))
 
-	// For now, return error for collection types that need other repositories
-	// The adapter should handle these by calling the appropriate repositories
+	// Handle activity-related collections directly
 	switch collectionType {
-	case activitypub.InboxCollection, activitypub.OutboxCollection:
-		// These are handled by GetInboxActivities/GetOutboxActivities
-		return nil, fmt.Errorf("use GetInboxActivities/GetOutboxActivities for %s", collectionType)
+	case activitypub.InboxCollection:
+		// Get inbox activities and convert to collection page
+		activities, nextCursor, err := r.GetInboxActivities(ctx, username, limit, cursor)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get inbox activities: %w", err)
+		}
+		return r.createActivityCollectionPage(username, collectionType, activities, nextCursor, limit), nil
+
+	case activitypub.OutboxCollection:
+		// Get outbox activities and convert to collection page
+		activities, nextCursor, err := r.GetOutboxActivities(ctx, username, limit, cursor)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get outbox activities: %w", err)
+		}
+		return r.createActivityCollectionPage(username, collectionType, activities, nextCursor, limit), nil
+
+	case activitypub.FollowersCollection, activitypub.FollowingCollection, activitypub.LikedCollection:
+		// These collections are handled by other repositories
+		// The adapter should route these to the appropriate repository
+		return nil, fmt.Errorf("collection type %s should be handled by adapter routing to appropriate repository", collectionType)
+		
 	default:
-		return nil, fmt.Errorf("collection type %s not implemented in ActivityRepository", collectionType)
+		// Unknown collection type - return empty collection
+		return r.createEmptyCollectionPage(username, collectionType), nil
 	}
+}
+
+// createActivityCollectionPage creates an OrderedCollectionPage from activities
+func (r *ActivityRepository) createActivityCollectionPage(username, collectionType string, activities []*activitypub.Activity, nextCursor string, limit int) *activitypub.OrderedCollectionPage {
+	// Note: config import would be needed for baseURL, but this is a simplified version
+	baseURL := "https://your-domain.com" // This should be injected or retrieved from config
+	actorID := fmt.Sprintf("%s/users/%s", baseURL, username)
+	collectionID := fmt.Sprintf("%s/%s", actorID, collectionType)
+
+	page := &activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      collectionID,
+					Type:    activitypub.OrderedCollectionType,
+				},
+			},
+			PartOf: collectionID,
+		},
+	}
+
+	// Convert activities to interfaces
+	items := make([]any, len(activities))
+	for i, activity := range activities {
+		items[i] = activity
+	}
+	page.Collection.OrderedItems = items
+
+	// Set pagination info
+	if nextCursor != "" {
+		page.Next = fmt.Sprintf("%s?cursor=%s&limit=%d", collectionID, nextCursor, limit)
+	}
+
+	page.Collection.TotalItems = len(items)
+	return page
+}
+
+// createEmptyCollectionPage creates an empty OrderedCollectionPage
+func (r *ActivityRepository) createEmptyCollectionPage(username, collectionType string) *activitypub.OrderedCollectionPage {
+	baseURL := "https://your-domain.com" // This should be injected or retrieved from config
+	actorID := fmt.Sprintf("%s/users/%s", baseURL, username)
+	collectionID := fmt.Sprintf("%s/%s", actorID, collectionType)
+
+	page := &activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      collectionID,
+					Type:    activitypub.OrderedCollectionType,
+				},
+				OrderedItems: []any{},
+				TotalItems:   0,
+			},
+			PartOf: collectionID,
+		},
+	}
+	
+	return page
 }
 
 // GetWeeklyActivity retrieves weekly activity statistics

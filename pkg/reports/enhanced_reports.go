@@ -18,6 +18,22 @@ type EnhancedReportService struct {
 	logger *zap.Logger
 }
 
+// getSeverityString converts moderation.Severity to string
+func getSeverityString(severity moderation.Severity) string {
+	switch severity {
+	case moderation.SeverityLow:
+		return "1"
+	case moderation.SeverityMedium:
+		return "2"
+	case moderation.SeverityHigh:
+		return "3"
+	case moderation.SeverityCritical:
+		return "4"
+	default:
+		return "2" // Default to medium
+	}
+}
+
 // NewEnhancedReportService creates a new enhanced report service
 func NewEnhancedReportService(store storage.Storage, logger *zap.Logger) *EnhancedReportService {
 	return &EnhancedReportService{
@@ -145,21 +161,21 @@ func (s *EnhancedReportService) CreateEnhancedModerationEvent(ctx context.Contex
 
 	// Create the enhanced moderation event
 	now := time.Now()
-	event := &moderation.ModerationEvent{
+	event := &storage.ModerationEvent{
 		ID:              fmt.Sprintf("mod-report-%s-%d", report.ID, now.Unix()),
-		EventType:       moderation.EventTypeFlagged,
+		EventType:       "flagged",
 		ObjectID:        objectID,
 		ObjectType:      objectType,
 		ActorID:         reporterActorID,
-		Category:        modCategory,
-		Severity:        severity,
+		Category:        string(modCategory),
+		Severity:        getSeverityString(severity),
 		ConfidenceScore: finalConfidence,
-		Evidence: []moderation.Evidence{
-			{
-				Type:        "user_report",
-				Score:       finalConfidence,
-				Description: report.Comment,
-				Metadata: map[string]any{
+		Evidence: []any{
+			map[string]any{
+				"type":        "user_report",
+				"score":       finalConfidence,
+				"description": report.Comment,
+				"metadata": map[string]any{
 					"report_id":            report.ID,
 					"reporter_username":    report.ReporterID,
 					"reporter_reliability": reliability.ReliabilityScore,
@@ -167,7 +183,7 @@ func (s *EnhancedReportService) CreateEnhancedModerationEvent(ctx context.Contex
 					"rule_violations":      report.RuleIDs,
 					"forwarded":            report.Forwarded,
 				},
-				Timestamp: now,
+				"timestamp": now,
 			},
 		},
 		Reason:  report.Comment,
@@ -188,7 +204,23 @@ func (s *EnhancedReportService) CreateEnhancedModerationEvent(ctx context.Contex
 		zap.Float64("reporter_reliability", reliability.ReliabilityScore),
 		zap.Float64("final_confidence", finalConfidence))
 
-	return event, nil
+	// Convert back to moderation.ModerationEvent for the return type
+	result := &moderation.ModerationEvent{
+		ID:              event.ID,
+		EventType:       moderation.EventType(event.EventType),
+		ObjectID:        event.ObjectID,
+		ObjectType:      event.ObjectType,
+		ActorID:         event.ActorID,
+		Category:        moderation.Category(event.Category),
+		Severity:        severity,
+		ConfidenceScore: event.ConfidenceScore,
+		Evidence:        []moderation.Evidence{},
+		Reason:          event.Reason,
+		Created:         event.Created,
+		Updated:         event.Updated,
+		TTL:             event.TTL,
+	}
+	return result, nil
 }
 
 // UpdateReporterTrustOnDecision updates reporter's trust score based on moderation decision

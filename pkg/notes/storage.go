@@ -3,330 +3,304 @@ package notes
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/google/uuid"
 )
 
 var (
-	dynamoClient *dynamodb.Client
-	tableName    = aws.String("lesser-main")
+	storageAdapter storage.Storage
 )
 
-// SetDynamoClient allows external packages to set the DynamoDB client
-func SetDynamoClient(client *dynamodb.Client) {
-	dynamoClient = client
+// SetStorageAdapter allows external packages to set the storage adapter
+func SetStorageAdapter(adapter storage.Storage) {
+	storageAdapter = adapter
 }
 
-// StoreNote stores a community note in DynamoDB
-func StoreNote(ctx context.Context, note *CommunityNote) error {
-	// Set TTL
-	note.TTL = time.Now().Add(NoteTTLDays * 24 * time.Hour).Unix()
-
-	// Store main note entry
-	noteItem, err := attributevalue.MarshalMap(note)
-	if err != nil {
-		return fmt.Errorf("failed to marshal note: %w", err)
+// convertToStorageNote converts notes.CommunityNote to storage.CommunityNote
+func convertToStorageNote(note *CommunityNote) *storage.CommunityNote {
+	// Convert sources from []Source to []string
+	sources := make([]string, len(note.Sources))
+	for i, source := range note.Sources {
+		sources[i] = source.URL // Use URL as the simple string representation
 	}
 
-	// Add keys
-	noteItem["PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", note.ID)}
-	noteItem["SK"] = &types.AttributeValueMemberS{Value: "METADATA"}
+	return &storage.CommunityNote{
+		ID:               note.ID,
+		ObjectID:         note.ObjectID,
+		ObjectType:       note.ObjectType,
+		AuthorID:         note.AuthorID,
+		Content:          note.Content,
+		Language:         note.Language,
+		Sources:          sources,
+		HelpfulVotes:     note.HelpfulVotes,
+		NotHelpfulVotes:  note.NotHelpfulVotes,
+		Score:            note.Score,
+		VisibilityStatus: string(note.VisibilityStatus),
+		Sentiment:        note.Sentiment,
+		Objectivity:      note.Objectivity,
+		SourceQuality:    note.SourceQuality,
+		CreatedAt:        note.CreatedAt,
+		UpdatedAt:        note.UpdatedAt,
+	}
+}
 
-	// GSI entries for querying
-	noteItem["GSI1PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s#NOTES", note.ObjectID)}
-	noteItem["GSI1SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("SCORE#%010.6f#%s", note.Score, note.ID)}
-	noteItem["GSI2PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTES#%s", note.VisibilityStatus)}
-	noteItem["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", note.CreatedAt.Format(time.RFC3339), note.ID)}
-	noteItem["GSI3PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("AUTHOR#%s#NOTES", note.AuthorID)}
-	noteItem["GSI3SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", note.CreatedAt.Format(time.RFC3339), note.ID)}
+// convertFromStorageNote converts storage.CommunityNote to notes.CommunityNote
+func convertFromStorageNote(storageNote *storage.CommunityNote) *CommunityNote {
+	// Convert sources from []string to []Source (simplified conversion)
+	sources := make([]Source, len(storageNote.Sources))
+	for i, sourceURL := range storageNote.Sources {
+		sources[i] = Source{
+			URL:         sourceURL,
+			Title:       "", // Not stored in simplified format
+			Domain:      "", // Not stored in simplified format
+			Reliability: 0,  // Not stored in simplified format
+		}
+	}
 
-	// Store main note
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: tableName,
-		Item:      noteItem,
-	})
+	return &CommunityNote{
+		ID:               storageNote.ID,
+		ObjectID:         storageNote.ObjectID,
+		ObjectType:       storageNote.ObjectType,
+		AuthorID:         storageNote.AuthorID,
+		Content:          storageNote.Content,
+		Language:         storageNote.Language,
+		Sources:          sources,
+		HelpfulVotes:     storageNote.HelpfulVotes,
+		NotHelpfulVotes:  storageNote.NotHelpfulVotes,
+		Score:            storageNote.Score,
+		VisibilityStatus: VisibilityStatus(storageNote.VisibilityStatus),
+		Sentiment:        storageNote.Sentiment,
+		Objectivity:      storageNote.Objectivity,
+		SourceQuality:    storageNote.SourceQuality,
+		CreatedAt:        storageNote.CreatedAt,
+		UpdatedAt:        storageNote.UpdatedAt,
+	}
+}
+
+// convertToStorageVote converts notes.Vote to storage.CommunityNoteVote
+func convertToStorageVote(vote *Vote) *storage.CommunityNoteVote {
+	return &storage.CommunityNoteVote{
+		NoteID:    vote.NoteID,
+		VoterID:   vote.VoterID,
+		VoteType:  string(vote.VoteType),
+		Helpful:   vote.VoteType == VoteHelpful,
+		Weight:    vote.Weight,
+		CreatedAt: vote.CreatedAt,
+	}
+}
+
+// convertFromStorageVote converts storage.CommunityNoteVote to notes.Vote
+func convertFromStorageVote(storageVote *storage.CommunityNoteVote) Vote {
+	return Vote{
+		NoteID:    storageVote.NoteID,
+		VoterID:   storageVote.VoterID,
+		VoterRep:  0, // Not stored in storage layer
+		VoteType:  VoteType(storageVote.VoteType),
+		Reason:    "", // Not stored in storage layer  
+		Weight:    storageVote.Weight,
+		CreatedAt: storageVote.CreatedAt,
+	}
+}
+
+// StoreNote stores a community note using the storage adapter
+func StoreNote(ctx context.Context, note *CommunityNote) error {
+	if storageAdapter == nil {
+		return fmt.Errorf("storage adapter not initialized")
+	}
+
+	// Generate ID if not provided
+	if note.ID == "" {
+		note.ID = GenerateNoteID()
+	}
+
+	// Convert to storage note
+	storageNote := convertToStorageNote(note)
+
+	// Create note using storage adapter
+	err := storageAdapter.CreateCommunityNote(ctx, storageNote)
 	if err != nil {
 		return fmt.Errorf("failed to store note: %w", err)
 	}
 
-	// Store object index entry
-	objectIndexItem := map[string]types.AttributeValue{
-		"PK":  &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", note.ObjectID)},
-		"SK":  &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", note.ID)},
-		"TTL": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", note.TTL)},
-	}
+	// Update the original note with any changes made by storage layer
+	note.CreatedAt = storageNote.CreatedAt
+	note.UpdatedAt = storageNote.UpdatedAt
 
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: tableName,
-		Item:      objectIndexItem,
-	})
-
-	return err
+	return nil
 }
 
-// GetNote retrieves a note by ID
+// GetNote retrieves a note by ID using the storage adapter
 func GetNote(ctx context.Context, noteID string) (*CommunityNote, error) {
-	result, err := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: tableName,
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", noteID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-	})
+	if storageAdapter == nil {
+		return nil, fmt.Errorf("storage adapter not initialized")
+	}
 
+	// Get note from storage adapter
+	storageNote, err := storageAdapter.GetCommunityNote(ctx, noteID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get note: %w", err)
 	}
 
-	if result.Item == nil {
-		return nil, fmt.Errorf("note not found")
-	}
-
-	var note CommunityNote
-	if err := attributevalue.UnmarshalMap(result.Item, &note); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal note: %w", err)
-	}
-
-	return &note, nil
+	// Convert to notes type
+	note := convertFromStorageNote(storageNote)
+	return note, nil
 }
 
-// GetVisibleNotes retrieves visible notes for an object
+// GetVisibleNotes retrieves visible notes for an object using the storage adapter
 func GetVisibleNotes(ctx context.Context, objectID string) ([]CommunityNote, error) {
-	// Query by object ID and score
-	result, err := dynamoClient.Query(ctx, &dynamodb.QueryInput{
-		TableName:              tableName,
-		IndexName:              aws.String("GSI1"),
-		KeyConditionExpression: aws.String("GSI1PK = :pk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s#NOTES", objectID)},
-		},
-		ScanIndexForward: aws.Bool(false), // Descending order by score
-		Limit:            aws.Int32(50),   // Limit to top 50 notes
-	})
+	if storageAdapter == nil {
+		return nil, fmt.Errorf("storage adapter not initialized")
+	}
 
+	// Get visible notes from storage adapter
+	storageNotes, err := storageAdapter.GetVisibleCommunityNotes(ctx, objectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query notes: %w", err)
 	}
 
-	notes := make([]CommunityNote, 0, len(result.Items))
-	for _, item := range result.Items {
-		// Get full note data
-		pk, _ := item["PK"].(*types.AttributeValueMemberS)
-		noteID := pk.Value[5:] // Remove "NOTE#" prefix
-
-		note, err := GetNote(ctx, noteID)
-		if err != nil {
-			continue
-		}
-
-		// Only include visible notes
-		if note.VisibilityStatus == VisibilityVisible || note.VisibilityStatus == VisibilityProminent {
-			notes = append(notes, *note)
-		}
-	}
-
-	return notes, nil
-}
-
-// StoreVote stores a vote on a note
-func StoreVote(ctx context.Context, vote *Vote) error {
-	voteItem, err := attributevalue.MarshalMap(vote)
-	if err != nil {
-		return fmt.Errorf("failed to marshal vote: %w", err)
-	}
-
-	// Add keys
-	voteItem["PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", vote.NoteID)}
-	voteItem["SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("VOTE#%s", vote.VoterID)}
-	voteItem["TTL"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(NoteTTLDays*24*time.Hour).Unix())}
-
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: tableName,
-		Item:      voteItem,
-	})
-
-	return err
-}
-
-// GetVotesForNote retrieves all votes for a note
-func GetVotesForNote(ctx context.Context, noteID string) ([]Vote, error) {
-	result, err := dynamoClient.Query(ctx, &dynamodb.QueryInput{
-		TableName:              tableName,
-		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :sk)"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", noteID)},
-			":sk": &types.AttributeValueMemberS{Value: "VOTE#"},
-		},
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query votes: %w", err)
-	}
-
-	votes := make([]Vote, 0, len(result.Items))
-	for _, item := range result.Items {
-		var vote Vote
-		if err := attributevalue.UnmarshalMap(item, &vote); err != nil {
-			continue
-		}
-		votes = append(votes, vote)
-	}
-
-	return votes, nil
-}
-
-// GetUserVotes retrieves a user's votes on specific notes
-func GetUserVotes(ctx context.Context, userID string, noteIDs []string) (map[string]Vote, error) {
-	votes := make(map[string]Vote)
-
-	// Batch get votes
-	keys := make([]map[string]types.AttributeValue, 0, len(noteIDs))
-	for _, noteID := range noteIDs {
-		keys = append(keys, map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", noteID)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("VOTE#%s", userID)},
-		})
-	}
-
-	// DynamoDB limits batch gets to 100 items
-	for i := 0; i < len(keys); i += 100 {
-		end := i + 100
-		if end > len(keys) {
-			end = len(keys)
-		}
-
-		result, err := dynamoClient.BatchGetItem(ctx, &dynamodb.BatchGetItemInput{
-			RequestItems: map[string]types.KeysAndAttributes{
-				*tableName: {
-					Keys: keys[i:end],
-				},
-			},
-		})
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to batch get votes: %w", err)
-		}
-
-		for _, item := range result.Responses[*tableName] {
-			var vote Vote
-			if err := attributevalue.UnmarshalMap(item, &vote); err != nil {
-				continue
-			}
-			votes[vote.NoteID] = vote
-		}
-	}
-
-	return votes, nil
-}
-
-// UpdateNoteScore updates a note's score and visibility
-func UpdateNoteScore(ctx context.Context, noteID string, score float64, status VisibilityStatus) error {
-	_, err := dynamoClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName: tableName,
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", noteID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-		UpdateExpression: aws.String("SET Score = :score, VisibilityStatus = :status, UpdatedAt = :updated"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":score":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%f", score)},
-			":status":  &types.AttributeValueMemberS{Value: string(status)},
-			":updated": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		},
-	})
-
-	return err
-}
-
-// UpdateNoteAnalysis updates AI analysis results
-func UpdateNoteAnalysis(ctx context.Context, noteID string, analysis *Analysis, sourceQuality float64) error {
-	_, err := dynamoClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName: tableName,
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("NOTE#%s", noteID)},
-			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
-		},
-		UpdateExpression: aws.String("SET Sentiment = :sentiment, Objectivity = :objectivity, SourceQuality = :quality, UpdatedAt = :updated"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":sentiment":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%f", analysis.Sentiment)},
-			":objectivity": &types.AttributeValueMemberN{Value: fmt.Sprintf("%f", analysis.Objectivity)},
-			":quality":     &types.AttributeValueMemberN{Value: fmt.Sprintf("%f", sourceQuality)},
-			":updated":     &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		},
-	})
-
-	return err
-}
-
-// GetNotesByAuthor retrieves notes created by a specific author
-func GetNotesByAuthor(ctx context.Context, authorID string, limit int32) ([]CommunityNote, error) {
-	result, err := dynamoClient.Query(ctx, &dynamodb.QueryInput{
-		TableName:              tableName,
-		IndexName:              aws.String("GSI3"),
-		KeyConditionExpression: aws.String("GSI3PK = :pk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("AUTHOR#%s#NOTES", authorID)},
-		},
-		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:            aws.Int32(limit),
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query author notes: %w", err)
-	}
-
-	notes := make([]CommunityNote, 0, len(result.Items))
-	for _, item := range result.Items {
-		// Get full note data
-		pk, _ := item["PK"].(*types.AttributeValueMemberS)
-		noteID := pk.Value[5:] // Remove "NOTE#" prefix
-
-		note, err := GetNote(ctx, noteID)
-		if err != nil {
-			continue
-		}
-
+	// Convert to notes type
+	notes := make([]CommunityNote, 0, len(storageNotes))
+	for _, storageNote := range storageNotes {
+		note := convertFromStorageNote(storageNote)
 		notes = append(notes, *note)
 	}
 
 	return notes, nil
 }
 
-// CheckNoteRateLimit checks if a user can create more notes today
-func CheckNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int) {
-	// Query notes created by user in last 24 hours
-	yesterday := time.Now().Add(-24 * time.Hour)
-
-	result, err := dynamoClient.Query(ctx, &dynamodb.QueryInput{
-		TableName:              tableName,
-		IndexName:              aws.String("GSI3"),
-		KeyConditionExpression: aws.String("GSI3PK = :pk AND GSI3SK > :sk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("AUTHOR#%s#NOTES", userID)},
-			":sk": &types.AttributeValueMemberS{Value: yesterday.Format(time.RFC3339)},
-		},
-		Select: types.SelectCount,
-	})
-
-	if err != nil {
-		return false, 0
+// StoreVote stores a vote on a note using the storage adapter
+func StoreVote(ctx context.Context, vote *Vote) error {
+	if storageAdapter == nil {
+		return fmt.Errorf("storage adapter not initialized")
 	}
 
-	count := int(result.Count)
-	return count < limit, limit - count
+	// Convert to storage vote
+	storageVote := convertToStorageVote(vote)
+
+	// Create vote using storage adapter
+	err := storageAdapter.CreateCommunityNoteVote(ctx, storageVote)
+	if err != nil {
+		return fmt.Errorf("failed to store vote: %w", err)
+	}
+
+	return nil
+}
+
+// GetVotesForNote retrieves all votes for a note using the storage adapter
+func GetVotesForNote(ctx context.Context, noteID string) ([]Vote, error) {
+	if storageAdapter == nil {
+		return nil, fmt.Errorf("storage adapter not initialized")
+	}
+
+	// Get votes from storage adapter
+	storageVotes, err := storageAdapter.GetCommunityNoteVotes(ctx, noteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query votes: %w", err)
+	}
+
+	// Convert to notes type
+	votes := make([]Vote, 0, len(storageVotes))
+	for _, storageVote := range storageVotes {
+		vote := convertFromStorageVote(storageVote)
+		votes = append(votes, vote)
+	}
+
+	return votes, nil
+}
+
+// GetUserVotes retrieves a user's votes on specific notes using the storage adapter
+func GetUserVotes(ctx context.Context, userID string, noteIDs []string) (map[string]Vote, error) {
+	if storageAdapter == nil {
+		return nil, fmt.Errorf("storage adapter not initialized")
+	}
+
+	// Get votes from storage adapter
+	storageVotes, err := storageAdapter.GetUserCommunityNoteVotes(ctx, userID, noteIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user votes: %w", err)
+	}
+
+	// Convert to notes type
+	votes := make(map[string]Vote)
+	for noteID, storageVote := range storageVotes {
+		vote := convertFromStorageVote(storageVote)
+		votes[noteID] = vote
+	}
+
+	return votes, nil
+}
+
+// UpdateNoteScore updates a note's score and visibility using the storage adapter
+func UpdateNoteScore(ctx context.Context, noteID string, score float64, status VisibilityStatus) error {
+	if storageAdapter == nil {
+		return fmt.Errorf("storage adapter not initialized")
+	}
+
+	// Update score using storage adapter
+	err := storageAdapter.UpdateCommunityNoteScore(ctx, noteID, score, string(status))
+	if err != nil {
+		return fmt.Errorf("failed to update note score: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateNoteAnalysis updates AI analysis results using the storage adapter
+func UpdateNoteAnalysis(ctx context.Context, noteID string, analysis *Analysis, sourceQuality float64) error {
+	if storageAdapter == nil {
+		return fmt.Errorf("storage adapter not initialized")
+	}
+
+	// Update analysis using storage adapter
+	err := storageAdapter.UpdateCommunityNoteAnalysis(ctx, noteID, analysis.Sentiment, analysis.Objectivity, sourceQuality)
+	if err != nil {
+		return fmt.Errorf("failed to update note analysis: %w", err)
+	}
+
+	return nil
+}
+
+// GetNotesByAuthor retrieves notes created by a specific author using the storage adapter
+func GetNotesByAuthor(ctx context.Context, authorID string, limit int32) ([]CommunityNote, error) {
+	if storageAdapter == nil {
+		return nil, fmt.Errorf("storage adapter not initialized")
+	}
+
+	// Get notes by author from storage adapter
+	storageNotes, _, err := storageAdapter.GetCommunityNotesByAuthor(ctx, authorID, int(limit), "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query author notes: %w", err)
+	}
+
+	// Convert to notes type
+	notes := make([]CommunityNote, 0, len(storageNotes))
+	for _, storageNote := range storageNotes {
+		note := convertFromStorageNote(storageNote)
+		notes = append(notes, *note)
+	}
+
+	return notes, nil
+}
+
+// CheckNoteRateLimit checks if a user can create more notes today using the storage adapter
+func CheckNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int) {
+	if storageAdapter == nil {
+		// If storage not initialized, allow creation
+		return true, limit
+	}
+
+	// Check rate limit using storage adapter
+	canCreate, remaining, err := storageAdapter.CheckCommunityNoteRateLimit(ctx, userID, limit)
+	if err != nil {
+		// If error checking, allow creation
+		return true, limit
+	}
+
+	return canCreate, remaining
 }
 
 // GenerateNoteID generates a unique ID for a note
 func GenerateNoteID() string {
 	return uuid.New().String()
 }
-
-// Constants for visibility status
-const (
-	VisibilityProminent VisibilityStatus = "prominent" // High-scoring notes
-)

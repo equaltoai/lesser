@@ -285,12 +285,24 @@ func (r *MediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID str
 		switch key {
 		case "description":
 			if desc, ok := value.(string); ok {
-				// Media model doesn't have description field, could add to Variants data
-				r.logger.Debug("description update not implemented", zap.String("description", desc))
+				media.Description = desc
+				r.logger.Debug("updated media description", 
+					zap.String("media_id", mediaID),
+					zap.String("description", desc))
+			}
+		case "focus":
+			if focus, ok := value.(string); ok {
+				media.Focus = focus
+				r.logger.Debug("updated media focus", 
+					zap.String("media_id", mediaID),
+					zap.String("focus", focus))
 			}
 		case "sensitive":
 			if sensitive, ok := value.(bool); ok {
 				media.IsNSFW = sensitive
+				r.logger.Debug("updated media sensitivity", 
+					zap.String("media_id", mediaID),
+					zap.Bool("is_nsfw", sensitive))
 			}
 		}
 	}
