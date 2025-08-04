@@ -13,6 +13,37 @@ import (
 	"go.uber.org/zap"
 )
 
+// costTrackerAdapter adapts cost.Tracker to batch.CostTracker interface
+type costTrackerAdapter struct {
+	tracker *cost.Tracker
+}
+
+func (a *costTrackerAdapter) CalculateCost() batch.CostMetrics {
+	if a.tracker == nil {
+		return batch.CostMetrics{}
+	}
+	opCost := a.tracker.CalculateCost()
+	if opCost == nil {
+		return batch.CostMetrics{}
+	}
+	return batch.CostMetrics{
+		DynamoDBReads:  opCost.DynamoDBReads,
+		DynamoDBWrites: opCost.DynamoDBWrites,
+	}
+}
+
+func (a *costTrackerAdapter) TrackDynamoWrite(items int) {
+	if a.tracker != nil {
+		a.tracker.TrackDynamoWrite(items)
+	}
+}
+
+func (a *costTrackerAdapter) TrackDynamoRead(items int) {
+	if a.tracker != nil {
+		a.tracker.TrackDynamoRead(items)
+	}
+}
+
 // BatchRepository extends BaseRepository with advanced batch operations
 type BatchRepository struct {
 	*dynamorm.BaseRepository
@@ -24,16 +55,22 @@ type BatchRepository struct {
 
 // NewBatchRepository creates a new repository with batch capabilities
 func NewBatchRepository(db core.DB, tableName string, logger *zap.Logger, tracker *cost.Tracker) *BatchRepository {
+	// Create adapter for cost tracker
+	var costTrackerInterface batch.CostTracker
+	if tracker != nil {
+		costTrackerInterface = &costTrackerAdapter{tracker: tracker}
+	}
+
 	batchWriter := batch.NewBatchWriter(db, batch.BatchWriterConfig{
 		BatchSize: batch.DefaultBatchSize,
 		Logger:    logger,
-		Tracker:   tracker,
+		Tracker:   costTrackerInterface,
 	})
 
 	batchReader := batch.NewBatchReader(db, batch.BatchReaderConfig{
 		BatchSize: batch.MaxBatchReadSize,
 		Logger:    logger,
-		Tracker:   tracker,
+		Tracker:   costTrackerInterface,
 	})
 
 	return &BatchRepository{

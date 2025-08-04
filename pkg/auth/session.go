@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // Session errors
@@ -34,13 +35,13 @@ type (
 
 // SessionManager handles session operations
 type SessionManager struct {
-	storage storage.Storage
+	repos core.RepositoryStorage
 }
 
 // NewSessionManager creates a new session manager
-func NewSessionManager(storage storage.Storage) *SessionManager {
+func NewSessionManager(repos core.RepositoryStorage) *SessionManager {
 	return &SessionManager{
-		storage: storage,
+		repos: repos,
 	}
 }
 
@@ -80,7 +81,8 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 	}
 
 	// Store session
-	if err := sm.storage.CreateSession(ctx, session); err != nil {
+	_, err = sm.repos.Account().CreateSession(ctx, session.Username, session.IPAddress, session.UserAgent)
+	if err != nil {
 		return nil, fmt.Errorf("failed to store session: %w", err)
 	}
 
@@ -97,7 +99,7 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 		TrustLevel:    "untrusted", // New devices start as untrusted
 	}
 
-	if err := sm.storage.CreateDevice(ctx, device); err != nil {
+	if err := sm.repos.Account().CreateDevice(ctx, device); err != nil {
 		// Non-fatal error, log but continue
 		fmt.Printf("Failed to create device record: %v\n", err)
 	}
@@ -108,7 +110,7 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 // ValidateRefreshToken validates a refresh token and returns the session
 func (sm *SessionManager) ValidateRefreshToken(ctx context.Context, refreshToken string) (*Session, error) {
 	// Get session by refresh token
-	session, err := sm.storage.GetSessionByRefreshToken(ctx, refreshToken)
+	session, err := sm.repos.Account().GetSessionByRefreshToken(ctx, refreshToken)
 	if err != nil {
 		return nil, ErrInvalidRefreshToken
 	}
@@ -149,7 +151,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 	}
 
 	// Update in storage
-	if err := sm.storage.UpdateSession(ctx, session); err != nil {
+	if err := sm.repos.Account().UpdateSession(ctx, session); err != nil {
 		return "", fmt.Errorf("failed to update session: %w", err)
 	}
 
@@ -158,7 +160,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 
 // UpdateSessionActivity updates the last activity timestamp
 func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID, ipAddress string) error {
-	session, err := sm.storage.GetSession(ctx, sessionID)
+	session, err := sm.repos.Account().GetSession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -171,23 +173,23 @@ func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID, 
 		session.ExpiresAt = time.Now().Add(SessionDuration)
 	}
 
-	return sm.storage.UpdateSession(ctx, session)
+	return sm.repos.Account().UpdateSession(ctx, session)
 }
 
 // RevokeSession revokes a specific session
 func (sm *SessionManager) RevokeSession(ctx context.Context, sessionID string) error {
-	return sm.storage.DeleteSession(ctx, sessionID)
+	return sm.repos.Account().DeleteSession(ctx, sessionID)
 }
 
 // RevokeAllUserSessions revokes all sessions for a user
 func (sm *SessionManager) RevokeAllUserSessions(ctx context.Context, username string) error {
-	sessions, err := sm.storage.GetUserSessions(ctx, username)
+	sessions, err := sm.repos.Account().GetUserSessions(ctx, username)
 	if err != nil {
 		return err
 	}
 
 	for _, session := range sessions {
-		if err := sm.storage.DeleteSession(ctx, session.SessionID); err != nil {
+		if err := sm.repos.Account().DeleteSession(ctx, session.SessionID); err != nil {
 			// Log error but continue
 			fmt.Printf("Failed to delete session %s: %v\n", session.SessionID, err)
 		}
@@ -198,18 +200,18 @@ func (sm *SessionManager) RevokeAllUserSessions(ctx context.Context, username st
 
 // GetUserDevices returns all devices for a user
 func (sm *SessionManager) GetUserDevices(ctx context.Context, username string) ([]*Device, error) {
-	return sm.storage.GetUserDevices(ctx, username)
+	return sm.repos.Account().GetUserDevices(ctx, username)
 }
 
 // TrustDevice marks a device as trusted
 func (sm *SessionManager) TrustDevice(ctx context.Context, deviceID string) error {
-	device, err := sm.storage.GetDevice(ctx, deviceID)
+	device, err := sm.repos.Account().GetDevice(ctx, deviceID)
 	if err != nil {
 		return err
 	}
 
 	device.TrustLevel = "trusted"
-	return sm.storage.UpdateDevice(ctx, device)
+	return sm.repos.Account().UpdateDevice(ctx, device)
 }
 
 // Helper functions

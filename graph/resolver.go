@@ -4,7 +4,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/mastodon"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
@@ -13,7 +13,7 @@ import (
 // It serves as dependency injection for your app, add any dependencies you require here.
 
 type Resolver struct {
-	Storage             storage.Storage
+	Storage             core.RepositoryStorage
 	CostTracker         *cost.Tracker
 	MastodonConv        mastodon.Converter
 	Logger              *zap.Logger

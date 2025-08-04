@@ -237,11 +237,21 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var objects []models.Object
 	err := query.All(&objects)
-	nextCursor := "" // TODO: implement pagination
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to scan objects: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(objects) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = objects[limit-1].SK
+		objects = objects[:limit] // Trim to requested limit
 	}
 
 	// Convert to ActivityPub objects
@@ -545,14 +555,24 @@ func (r *ObjectRepository) GetCollectionItems(ctx context.Context, collection st
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var items []models.CollectionItem
 	err := query.All(&items)
-	nextCursor := "" // TODO: implement pagination
 	if err != nil {
 		r.logger.Error("failed to get collection items",
 			zap.String("collection", collection),
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get collection items: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(items) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = items[limit-1].SK
+		items = items[:limit] // Trim to requested limit
 	}
 
 	// Convert to storage.CollectionItem slice
@@ -842,15 +862,25 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var objects []models.Object
 	err := query.All(&objects)
-	nextCursor := "" // TODO: implement proper pagination
 	if err != nil {
 		r.logger.Error("failed to get replies",
 			zap.String("object_id", objectID),
 			zap.String("parent_id", parentID),
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get replies: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(objects) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = objects[limit-1].GSI6SK
+		objects = objects[:limit] // Trim to requested limit
 	}
 
 	// Convert to ActivityPub objects
@@ -1077,9 +1107,11 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var quoteModels []models.QuoteRelationship
 	err := query.All(&quoteModels)
-	nextCursor := "" // TODO: implement proper pagination
 	if err != nil {
 		r.logger.Error("failed to get quotes for note",
 			zap.String("note_id", noteID),
@@ -1087,6 +1119,14 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 		return nil, "", fmt.Errorf("failed to get quotes for note: %w", err)
 	}
 
+	// Generate next cursor
+	var nextCursor string
+	if len(quoteModels) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = quoteModels[limit-1].GSI1SK
+		quoteModels = quoteModels[:limit] // Trim to requested limit
+	}
+	
 	// Convert to storage.QuoteRelationship
 	quotes := make([]*storage.QuoteRelationship, len(quoteModels))
 	for i, model := range quoteModels {

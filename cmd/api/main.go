@@ -22,8 +22,9 @@ import (
 	liftAuth "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
@@ -32,7 +33,8 @@ import (
 
 var (
 	cfg              *config.Config
-	store            storage.Storage
+	repos            core.RepositoryStorage
+	store            storage.Storage // Legacy compatibility - to be removed
 	logger           *zap.Logger
 	liftHandler      *liftHandlers.Handler
 	authService      *auth.AuthService
@@ -61,33 +63,37 @@ func init() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Create storage adapter
+	// Create repository storage using new factory pattern
+	repos, err = factory.NewRepositoryFactory(db, tableName, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
+
+	// Create legacy storage adapter for backward compatibility during migration
+	// TODO: Remove this once all services are migrated to repository pattern
 	store = dynamorm.NewStorageAdapter(db, tableName, logger)
-	
-	// Initialize repositories
 	adapter := store.(*dynamorm.StorageAdapter)
-	adapter.SetActorRepository(repositories.NewActorRepository(db, tableName, logger))
-	adapter.SetObjectRepository(repositories.NewObjectRepository(db, tableName, cfg.Domain, logger))
-	adapter.SetActivityRepository(repositories.NewActivityRepository(db, tableName, logger))
-	adapter.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
-	adapter.SetTimelineRepository(repositories.NewTimelineRepository(db, tableName, logger))
-	adapter.SetNotificationRepository(repositories.NewNotificationRepository(db, tableName, logger))
-	adapter.SetLikeRepository(repositories.NewLikeRepository(db, tableName, logger))
-	adapter.SetModerationRepository(repositories.NewModerationRepository(db, tableName, logger))
-	adapter.SetListRepository(repositories.NewListRepository(db, tableName, logger))
-	adapter.SetMediaRepository(repositories.NewMediaRepository(db, tableName, logger))
-	adapter.SetPollRepository(repositories.NewPollRepository(db, tableName, logger))
-	adapter.SetHashtagRepository(repositories.NewHashtagRepository(db, tableName, logger, cfg.Domain))
-	adapter.SetScheduledStatusRepository(repositories.NewScheduledStatusRepository(db, tableName, logger))
-	adapter.SetAnnouncementRepository(repositories.NewAnnouncementRepository(db, tableName, logger))
-	adapter.SetDomainBlockRepository(repositories.NewDomainBlockRepository(db, tableName, logger))
-	adapter.SetAuthRepository(repositories.NewAuthRepository(db, tableName, logger))
-	adapter.SetRelationshipRepository(repositories.NewRelationshipRepository(db, tableName, logger))
-	adapter.SetInstanceRepository(repositories.NewInstanceRepository(db, tableName, logger))
-	adapter.SetFederationRepository(repositories.NewFederationRepository(db, logger))
+	adapter.SetAccountRepository(repos.Account())
+	adapter.SetActorRepository(repos.Actor())
+	adapter.SetObjectRepository(repos.Object())
+	adapter.SetActivityRepository(repos.Activity())
+	adapter.SetTimelineRepository(repos.Timeline())
+	adapter.SetNotificationRepository(repos.Notification())
+	adapter.SetLikeRepository(repos.Like())
+	adapter.SetModerationRepository(repos.Moderation())
+	adapter.SetListRepository(repos.List())
+	adapter.SetMediaRepository(repos.Media())
+	adapter.SetPollRepository(repos.Poll())
+	adapter.SetHashtagRepository(repos.Hashtag())
+	adapter.SetScheduledStatusRepository(repos.ScheduledStatus())
+	adapter.SetAnnouncementRepository(repos.Announcement())
+	adapter.SetDomainBlockRepository(repos.DomainBlock())
+	adapter.SetRelationshipRepository(repos.Relationship())
+	adapter.SetInstanceRepository(repos.Instance())
+	adapter.SetFederationRepository(repos.Federation())
 
 	// Initialize auth service
-	authService, err = auth.NewAuthService(store)
+	authService, err = auth.NewAuthService(repos)
 	if err != nil {
 		logger.Fatal("failed to initialize auth service", zap.Error(err))
 	}
@@ -108,6 +114,7 @@ func init() {
 	}
 	
 	// Create Lift handler for all endpoints
+	// The handler uses the store which implements RepositoryStorage
 	liftHandler = liftHandlers.NewHandler(cfg, store, logger, legacyAuthMiddleware)
 }
 

@@ -22,7 +22,7 @@ func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *lift.Context) error {
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.store)
+	authService, err := auth.NewAuthService(h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -83,7 +83,7 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.store)
+	authService, err := auth.NewAuthService(h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -136,7 +136,7 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.store)
+	authService, err := auth.NewAuthService(h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -215,7 +215,7 @@ func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.store)
+	authService, err := auth.NewAuthService(h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -263,7 +263,7 @@ func (h *Handler) HandleListWebAuthnCredentialsLift(ctx *lift.Context) error {
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.store)
+	authService, err := auth.NewAuthService(h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -321,7 +321,7 @@ func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *lift.Context) error {
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.store)
+	authService, err := auth.NewAuthService(h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -398,7 +398,7 @@ func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) erro
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.store)
+	authService, err := auth.NewAuthService(h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)

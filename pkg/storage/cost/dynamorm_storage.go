@@ -1,0 +1,258 @@
+package storagecost
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/dynamorm/pkg/core"
+	"go.uber.org/zap"
+)
+
+// DynamORMStorage handles persistence of cost data using DynamORM
+type DynamORMStorage struct {
+	repo   *repositories.CostTrackingRepository
+	logger *zap.Logger
+}
+
+// NewDynamORMStorage creates a new DynamORM-based cost storage instance
+func NewDynamORMStorage(db core.DB, tableName string, logger *zap.Logger) *DynamORMStorage {
+	return &DynamORMStorage{
+		repo:   repositories.NewCostTrackingRepository(db, tableName, logger),
+		logger: logger,
+	}
+}
+
+// SaveOperationCost saves a single operation cost to DynamoDB using DynamORM
+func (s *DynamORMStorage) SaveOperationCost(ctx context.Context, opCost *cost.OperationCost) error {
+	// Convert OperationCost to DynamoDBCostRecord
+	record := &models.DynamoDBCostRecord{
+		OperationType: opCost.OperationType,
+		Table:         "main", // Default table name
+		Timestamp:     opCost.Timestamp,
+		Period:        "raw", // Raw data point
+		
+		// Map the costs
+		ReadCapacityUnits:  float64(opCost.DynamoDBReads),
+		WriteCapacityUnits: float64(opCost.DynamoDBWrites),
+		ReadCostMicroCents:  opCost.DynamoDBReads * cost.DynamoDBReadRequestUnit / 1000,
+		WriteCostMicroCents: opCost.DynamoDBWrites * cost.DynamoDBWriteRequestUnit / 1000,
+		TotalCostMicroCents: opCost.TotalCostMicroCents,
+		
+		// Operation details
+		ItemCount:       1, // Default to 1 for single operations
+		RequestDuration: opCost.LambdaDurationMs,
+		RequestID:       opCost.RequestID,
+		
+		// Lambda details
+		FunctionName: opCost.OperationType,
+		
+		// Store additional metrics in properties
+		Properties: map[string]interface{}{
+			"lambda_invocations":   opCost.LambdaInvocations,
+			"lambda_memory_mb":     opCost.LambdaMemoryMB,
+			"s3_gets":              opCost.S3Gets,
+			"s3_puts":              opCost.S3Puts,
+			"s3_storage_bytes":     opCost.S3Storage,
+			"data_transfer_bytes":  opCost.DataTransferBytes,
+			"dynamodb_storage_bytes": opCost.DynamoDBStorage,
+		},
+	}
+	
+	// Save using repository
+	return s.repo.Create(ctx, record)
+}
+
+// GetDailyCosts retrieves daily cost aggregates for a date range
+func (s *DynamORMStorage) GetDailyCosts(ctx context.Context, startDate, endDate time.Time) ([]cost.DailyCostAggregate, error) {
+	// Query aggregated data by day
+	aggregates, err := s.repo.GetAggregatedCostsByPeriod(ctx, "day", startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get daily costs: %w", err)
+	}
+	
+	// Convert to cost.DailyCostAggregate format
+	results := make([]cost.DailyCostAggregate, 0, len(aggregates))
+	for _, agg := range aggregates {
+		results = append(results, cost.DailyCostAggregate{
+			Date:                agg.WindowStart.Format("2006-01-02"),
+			TotalCostMicrocents: agg.TotalCostMicroCents,
+			RequestCount:        agg.TotalOperations,
+			UniqueUsers:         0, // TODO: Extract from agg
+			DynamoDBReads:       int64(agg.TotalReadCapacityUnits),
+			DynamoDBWrites:      int64(agg.TotalWriteCapacityUnits),
+			LambdaInvocations:   agg.TotalOperations, // Approximation
+			LambdaDurationMs:    int64(agg.AverageDuration * float64(agg.TotalOperations)),
+			DataTransferBytes:   0, // TODO: Extract from properties
+		})
+	}
+	
+	return results, nil
+}
+
+// GetMonthlyCost retrieves cost data for a specific month
+func (s *DynamORMStorage) GetMonthlyCost(ctx context.Context, year int, month time.Month) (*cost.MonthlyCostAggregate, error) {
+	startDate := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 1, -1) // Last day of the month
+	
+	// Query aggregated data for the specific month
+	aggregates, err := s.repo.GetAggregatedCostsByPeriod(ctx, "month", startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get monthly cost: %w", err)
+	}
+	
+	// If no data found, return empty result
+	if len(aggregates) == 0 {
+		return &cost.MonthlyCostAggregate{
+			Year:                    year,
+			Month:                   int(month),
+			TotalCostMicrocents:     0,
+			ProjectedCostMicrocents: 0,
+			RequestCount:            0,
+		}, nil
+	}
+	
+	// Convert the first (and should be only) aggregate
+	agg := aggregates[0]
+	return &cost.MonthlyCostAggregate{
+		Year:                    agg.WindowStart.Year(),
+		Month:                   int(agg.WindowStart.Month()),
+		TotalCostMicrocents:     agg.TotalCostMicroCents,
+		ProjectedCostMicrocents: int64(agg.TotalCostDollars * 1000000), // Convert dollars to microcents
+		RequestCount:            agg.TotalOperations,
+		UniqueUsers:             0, // TODO: Extract from agg
+		DynamoDBReads:           int64(agg.TotalReadCapacityUnits),
+		DynamoDBWrites:          int64(agg.TotalWriteCapacityUnits),
+		LambdaInvocations:       agg.TotalOperations, // Approximation
+		LambdaDurationMs:        int64(agg.AverageDuration * float64(agg.TotalOperations)),
+		DataTransferGB:          0, // TODO: Extract from properties
+	}, nil
+}
+
+// GetMonthlyCosts retrieves monthly cost aggregates
+func (s *DynamORMStorage) GetMonthlyCosts(ctx context.Context, months int) ([]cost.MonthlyCostAggregate, error) {
+	endDate := time.Now()
+	startDate := endDate.AddDate(0, -months, 0)
+	
+	// Query aggregated data by month
+	aggregates, err := s.repo.GetAggregatedCostsByPeriod(ctx, "month", startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get monthly costs: %w", err)
+	}
+	
+	// Convert to cost.MonthlyCostAggregate format
+	results := make([]cost.MonthlyCostAggregate, 0, len(aggregates))
+	for _, agg := range aggregates {
+		results = append(results, cost.MonthlyCostAggregate{
+			Year:                    agg.WindowStart.Year(),
+			Month:                   int(agg.WindowStart.Month()),
+			TotalCostMicrocents:     agg.TotalCostMicroCents,
+			ProjectedCostMicrocents: int64(agg.TotalCostDollars * 1000000), // Convert dollars to microcents
+			RequestCount:            agg.TotalOperations,
+			UniqueUsers:             0, // TODO: Extract from agg
+			DynamoDBReads:           int64(agg.TotalReadCapacityUnits),
+			DynamoDBWrites:          int64(agg.TotalWriteCapacityUnits),
+			LambdaInvocations:       agg.TotalOperations, // Approximation
+			LambdaDurationMs:        int64(agg.AverageDuration * float64(agg.TotalOperations)),
+			DataTransferGB:          0, // TODO: Extract from properties
+		})
+	}
+	
+	return results, nil
+}
+
+// GetCostByOperation retrieves costs grouped by operation type
+func (s *DynamORMStorage) GetCostByOperation(ctx context.Context, startDate, endDate time.Time) (map[string]int64, error) {
+	// Query costs by operation type
+	operationCosts, err := s.repo.GetCostsByOperationType(ctx, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get costs by operation: %w", err)
+	}
+	
+	// Convert to map format
+	results := make(map[string]int64)
+	for opType, cost := range operationCosts {
+		results[opType] = cost.TotalCostMicroCents
+	}
+	
+	return results, nil
+}
+
+// GetCostByService retrieves costs grouped by service/function
+func (s *DynamORMStorage) GetCostByService(ctx context.Context, startDate, endDate time.Time) (map[string]int64, error) {
+	// Query costs by service
+	serviceCosts, err := s.repo.GetCostsByService(ctx, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get costs by service: %w", err)
+	}
+	
+	// Convert to map format
+	results := make(map[string]int64)
+	for service, cost := range serviceCosts {
+		results[service] = cost.TotalCostMicroCents
+	}
+	
+	return results, nil
+}
+
+// GetCurrentMonthProjection projects costs for the current month
+func (s *DynamORMStorage) GetCurrentMonthProjection(ctx context.Context) (*cost.MonthlyCostAggregate, error) {
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	
+	// Get costs so far this month
+	dailyCosts, err := s.GetDailyCosts(ctx, startOfMonth, now)
+	if err != nil {
+		return nil, err
+	}
+	
+	if len(dailyCosts) == 0 {
+		return &cost.MonthlyCostAggregate{
+			Year:                    now.Year(),
+			Month:                   int(now.Month()),
+			TotalCostMicrocents:     0,
+			ProjectedCostMicrocents: 0,
+		}, nil
+	}
+	
+	// Calculate projection
+	var totalCost int64
+	var totalRequests int64
+	var totalDynamoReads int64
+	var totalDynamoWrites int64
+	var totalLambdaDuration int64
+	
+	for _, daily := range dailyCosts {
+		totalCost += daily.TotalCostMicrocents
+		totalRequests += daily.RequestCount
+		totalDynamoReads += daily.DynamoDBReads
+		totalDynamoWrites += daily.DynamoDBWrites
+		totalLambdaDuration += daily.LambdaDurationMs
+	}
+	
+	daysInMonth := float64(daysInMonth(now.Year(), int(now.Month())))
+	daysSoFar := float64(now.Day())
+	projectionMultiplier := daysInMonth / daysSoFar
+	
+	return &cost.MonthlyCostAggregate{
+		Year:                    now.Year(),
+		Month:                   int(now.Month()),
+		TotalCostMicrocents:     totalCost,
+		ProjectedCostMicrocents: int64(float64(totalCost) * projectionMultiplier),
+		RequestCount:            totalRequests,
+		UniqueUsers:             0, // TODO: Calculate from daily data
+		DynamoDBReads:           totalDynamoReads,
+		DynamoDBWrites:          totalDynamoWrites,
+		LambdaInvocations:       totalRequests, // Approximation
+		LambdaDurationMs:        totalLambdaDuration,
+		DataTransferGB:          0, // TODO: Calculate from daily data
+	}, nil
+}
+
+// daysInMonth returns the number of days in a given month
+func daysInMonth(year, month int) int {
+	return time.Date(year, time.Month(month+1), 0, 0, 0, 0, 0, time.UTC).Day()
+}

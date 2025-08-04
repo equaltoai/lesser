@@ -8,20 +8,21 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // SocialRecoveryService handles account recovery through trusted contacts
 type SocialRecoveryService struct {
-	store      storage.Storage
+	repos      core.RepositoryStorage
 	logger     *zap.Logger
 	fedService *RecoveryFederationService
 }
 
 // NewSocialRecoveryService creates a new social recovery service
-func NewSocialRecoveryService(store storage.Storage, logger *zap.Logger) *SocialRecoveryService {
+func NewSocialRecoveryService(repos core.RepositoryStorage, logger *zap.Logger) *SocialRecoveryService {
 	return &SocialRecoveryService{
-		store:  store,
+		repos:  repos,
 		logger: logger,
 		// fedService is optional and can be set separately
 	}
@@ -50,7 +51,7 @@ func (s *SocialRecoveryService) AddTrustee(ctx context.Context, username, truste
 	}
 
 	// Store in DynamoDB
-	if err := s.store.StoreTrustee(ctx, username, trustee); err != nil {
+	if err := s.repos.Recovery().StoreTrustee(ctx, username, trustee); err != nil {
 		return fmt.Errorf("failed to store trustee: %w", err)
 	}
 
@@ -65,7 +66,7 @@ func (s *SocialRecoveryService) AddTrustee(ctx context.Context, username, truste
 // RemoveTrustee removes a trusted contact
 func (s *SocialRecoveryService) RemoveTrustee(ctx context.Context, username, trusteeActorID string) error {
 	// Delete from DynamoDB
-	if err := s.store.DeleteTrustee(ctx, username, trusteeActorID); err != nil {
+	if err := s.repos.Recovery().DeleteTrustee(ctx, username, trusteeActorID); err != nil {
 		return fmt.Errorf("failed to delete trustee: %w", err)
 	}
 
@@ -78,7 +79,7 @@ func (s *SocialRecoveryService) RemoveTrustee(ctx context.Context, username, tru
 
 // GetTrustees returns all trustees for a user
 func (s *SocialRecoveryService) GetTrustees(ctx context.Context, username string) ([]*storage.TrusteeConfig, error) {
-	return s.store.GetTrustees(ctx, username)
+	return s.repos.Recovery().GetTrustees(ctx, username)
 }
 
 // InitiateRecovery starts the social recovery process
@@ -122,7 +123,7 @@ func (s *SocialRecoveryService) InitiateRecovery(ctx context.Context, username s
 	}
 
 	// Store recovery request
-	if err := s.store.StoreRecoveryRequest(ctx, request); err != nil {
+	if err := s.repos.Recovery().StoreRecoveryRequest(ctx, request); err != nil {
 		return nil, fmt.Errorf("failed to store recovery request: %w", err)
 	}
 
@@ -149,7 +150,7 @@ func (s *SocialRecoveryService) InitiateRecovery(ctx context.Context, username s
 // ConfirmRecovery processes a trustee's confirmation
 func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, trusteeActorID string) error {
 	// Get recovery request
-	request, err := s.store.GetRecoveryRequest(ctx, requestID)
+	request, err := s.repos.Recovery().GetRecoveryRequest(ctx, requestID)
 	if err != nil {
 		return fmt.Errorf("failed to get recovery request: %w", err)
 	}
@@ -164,7 +165,7 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 
 	if time.Now().After(request.ExpiresAt) {
 		request.Status = "expired"
-		s.store.UpdateRecoveryRequest(ctx, request)
+		s.repos.Recovery().UpdateRecoveryRequest(ctx, request)
 		return fmt.Errorf("recovery request expired")
 	}
 
@@ -189,7 +190,7 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 	}
 
 	// Update request in DynamoDB
-	if err := s.store.UpdateRecoveryRequest(ctx, request); err != nil {
+	if err := s.repos.Recovery().UpdateRecoveryRequest(ctx, request); err != nil {
 		return fmt.Errorf("failed to update recovery request: %w", err)
 	}
 
@@ -252,7 +253,7 @@ func (s *SocialRecoveryService) enableRecoveryToken(ctx context.Context, request
 	recoveryKey := fmt.Sprintf("RECOVERY#%s", request.RecoveryToken)
 
 	// Store recovery token using existing recovery token storage
-	return s.store.StoreRecoveryToken(ctx, recoveryKey, recoveryData)
+	return s.repos.Recovery().StoreRecoveryToken(ctx, recoveryKey, recoveryData)
 }
 
 func (s *SocialRecoveryService) notifyRecoveryApproved(ctx context.Context, request *storage.SocialRecoveryRequest) error {

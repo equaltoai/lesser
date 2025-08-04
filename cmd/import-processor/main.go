@@ -18,7 +18,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -31,7 +33,7 @@ type ImportProcessor struct {
 	db               core.DB
 	importRepo       *repositories.ImportRepository
 	s3Client         *s3.Client
-	store            *dynamorm.StorageAdapter
+	repos            storageCore.RepositoryStorage
 	cfg              *config.Config
 	logger           *zap.Logger
 	bucketName       string
@@ -67,12 +69,14 @@ func init() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
+
 	// Initialize repositories
 	importRepo := repositories.NewImportRepository(db, cfg.DynamoTableName, logger)
-
-	// Initialize legacy storage for backward compatibility
-	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger)
-	store := storageAdapter // Use storage adapter directly
 
 	// Get configuration from environment
 	bucketName := os.Getenv("S3_BUCKET_NAME")
@@ -89,7 +93,7 @@ func init() {
 	processor = &ImportProcessor{
 		db:         db,
 		importRepo: importRepo,
-		store:      store,
+		repos:      repos,
 		cfg:        cfg,
 		logger:     logger,
 		bucketName: bucketName,
@@ -528,12 +532,12 @@ func (p *ImportProcessor) followAccount(ctx context.Context, username, targetAcc
 	follow := models.NewFollow(username, actorID, fmt.Sprintf("%s/activities/follow-%d", actorID, time.Now().Unix()))
 	follow.State = models.FollowStateAccepted // Import assumes accepted
 
-	if err := p.store.CreateObject(ctx, follow); err != nil {
+	if err := p.repos.Object().CreateObject(ctx, follow); err != nil {
 		return fmt.Errorf("failed to store follow relationship: %w", err)
 	}
 
 	// Get the follower actor to send the follow activity
-	followerActor, err := p.store.GetActor(ctx, username)
+	followerActor, err := p.repos.Account().GetActor(ctx, username)
 	if err != nil {
 		return fmt.Errorf("failed to get follower actor: %w", err)
 	}
@@ -553,7 +557,7 @@ func (p *ImportProcessor) followAccount(ctx context.Context, username, targetAcc
 	followActivity.Published = &now
 
 	// Store the activity in the outbox (this will trigger delivery)
-	err = p.store.CreateActivity(ctx, followActivity)
+	err = p.repos.Activity().CreateActivity(ctx, followActivity)
 	if err != nil {
 		p.logger.Warn("failed to store follow activity in outbox",
 			zap.String("follower", username),
@@ -586,7 +590,7 @@ func (p *ImportProcessor) blockAccount(ctx context.Context, username, targetAcco
 		return fmt.Errorf("failed to prepare block: %w", err)
 	}
 
-	return p.store.CreateObject(ctx, block)
+	return p.repos.Object().CreateObject(ctx, block)
 }
 
 func (p *ImportProcessor) muteAccount(ctx context.Context, username, targetAccount string, hideNotifications bool) error {
@@ -606,7 +610,7 @@ func (p *ImportProcessor) muteAccount(ctx context.Context, username, targetAccou
 		return fmt.Errorf("failed to prepare mute: %w", err)
 	}
 
-	return p.store.CreateObject(ctx, mute)
+	return p.repos.Object().CreateObject(ctx, mute)
 }
 
 func (p *ImportProcessor) bookmarkStatus(ctx context.Context, username, statusURL string) error {
@@ -649,7 +653,7 @@ func (p *ImportProcessor) createOrUpdateList(ctx context.Context, username, list
 		return "", fmt.Errorf("failed to prepare list: %w", err)
 	}
 
-	if err := p.store.CreateObject(ctx, list); err != nil {
+	if err := p.repos.Object().CreateObject(ctx, list); err != nil {
 		return "", fmt.Errorf("failed to create list: %w", err)
 	}
 
@@ -673,7 +677,7 @@ func (p *ImportProcessor) addToList(ctx context.Context, username, listID, accou
 		return fmt.Errorf("failed to prepare list member: %w", err)
 	}
 
-	return p.store.CreateObject(ctx, listMember)
+	return p.repos.Object().CreateObject(ctx, listMember)
 }
 
 func (p *ImportProcessor) resolveAccount(ctx context.Context, accountAddress string) (string, error) {

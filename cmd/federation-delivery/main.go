@@ -32,7 +32,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -40,7 +42,7 @@ import (
 
 // FederationDeliveryProcessor handles federation delivery from SQS messages
 type FederationDeliveryProcessor struct {
-	storage         *dynamorm.StorageAdapter  // For storing delivery status
+	repos           core.RepositoryStorage      // Repository storage for data access
 	deliveryService *federation.DeliveryService
 	cfg             *config.Config
 	sqsClient       *sqs.Client
@@ -50,36 +52,36 @@ type FederationDeliveryProcessor struct {
 
 var processor *FederationDeliveryProcessor
 
-// FederationStorageAdapter adapts the DynamORM storage to implement FederationStorage interface
+// FederationStorageAdapter adapts the repository storage to implement FederationStorage interface
 type FederationStorageAdapter struct {
-	storage *dynamorm.StorageAdapter
+	repos core.RepositoryStorage
 }
 
 // Ensure we implement the FederationStorage interface
 var _ federation.FederationStorage = (*FederationStorageAdapter)(nil)
 
 func (f *FederationStorageAdapter) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
-	return f.storage.GetActorPrivateKey(ctx, username)
+	return f.repos.Account().GetActorPrivateKey(ctx, username)
 }
 
 func (f *FederationStorageAdapter) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	return f.storage.GetActor(ctx, username)
+	return f.repos.Account().GetActor(ctx, username)
 }
 
 func (f *FederationStorageAdapter) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	return f.storage.GetFollowers(ctx, username, limit, cursor)
+	return f.repos.Relationship().GetFollowers(ctx, username, limit, cursor)
 }
 
 func (f *FederationStorageAdapter) GetCachedRemoteActor(ctx context.Context, actorID string) (*activitypub.Actor, error) {
-	return f.storage.GetCachedRemoteActor(ctx, actorID)
+	return f.repos.Actor().GetCachedRemoteActor(ctx, actorID)
 }
 
 func (f *FederationStorageAdapter) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
-	return f.storage.CacheRemoteActor(ctx, handle, actor, ttl)
+	return f.repos.User().CacheRemoteActor(ctx, handle, actor, ttl)
 }
 
 func (f *FederationStorageAdapter) RecordFederationActivity(ctx context.Context, activity *storage.FederationActivity) error {
-	return f.storage.RecordFederationActivity(ctx, activity)
+	return f.repos.Federation().RecordFederationActivity(ctx, activity)
 }
 
 func init() {
@@ -93,11 +95,14 @@ func init() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Initialize DynamORM storage adapter
-	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger)
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
 	
 	// Create federation storage adapter that implements FederationStorage interface
-	federationStore := &FederationStorageAdapter{storage: storageAdapter}
+	federationStore := &FederationStorageAdapter{repos: repos}
 
 	// Initialize federation delivery service
 	deliveryService := federation.NewDeliveryService(federationStore)
@@ -117,7 +122,7 @@ func init() {
 
 	// Create processor instance
 	processor = &FederationDeliveryProcessor{
-		storage:         storageAdapter,
+		repos:           repos,
 		deliveryService: deliveryService,
 		cfg:             cfg,
 		sqsClient:       sqsClient,
@@ -260,7 +265,7 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 	}
 
 	// Get the signing actor
-	signingActor, err := p.storage.GetActor(ctx, msg.SigningActorID)
+	signingActor, err := p.repos.Account().GetActor(ctx, msg.SigningActorID)
 	if err != nil {
 		return fmt.Errorf("failed to get signing actor: %w", err)
 	}
@@ -428,8 +433,8 @@ func (p *FederationDeliveryProcessor) storeDeliveryStatus(ctx context.Context, s
 		zap.String("sk", status.SK))
 
 	// Use the CreateObject method to store the delivery status record
-	// The DynamORM storage adapter will handle the operations
-	return p.storage.CreateObject(ctx, status)
+	// The Object repository will handle the operations
+	return p.repos.Object().CreateObject(ctx, status)
 }
 
 // extractDomainFromURL extracts the domain from a URL (helper function)

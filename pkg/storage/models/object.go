@@ -91,3 +91,19 @@ func (o *Object) UpdateGSIKeys() {
 		o.GSI6SK = fmt.Sprintf("%s#%s", o.Published.Format(time.RFC3339), o.ID)
 	}
 }
+
+// UpdateKeys updates the GSI keys (required by BaseModel)
+func (o *Object) UpdateKeys() error {
+	o.UpdateGSIKeys()
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (o *Object) GetPK() string {
+	return o.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (o *Object) GetSK() string {
+	return o.SK
+}

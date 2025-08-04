@@ -85,7 +85,7 @@ func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
 		authenticatedUser = testUsername
 	} else if authHeader != "" {
 		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 				authenticatedUser = claims.Username
 

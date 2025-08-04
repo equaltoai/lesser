@@ -613,3 +613,169 @@ func getPercentileValue(sorted []float64, percentile float64) float64 {
 
 	return lowerValue + (upperValue-lowerValue)*fraction
 }
+
+// GetAggregatedCostsByPeriod retrieves aggregated costs for a specific period
+func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
+	// Query all operation types for the period
+	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan", 
+		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
+	
+	var allAggregates []*models.DynamoDBCostAggregation
+	
+	for _, opType := range operationTypes {
+		aggregates, err := r.ListAggregatedByPeriod(ctx, period, opType, startDate, endDate, 1000)
+		if err != nil {
+			r.logger.Warn("failed to get aggregates for operation type",
+				zap.String("operation_type", opType),
+				zap.Error(err))
+			continue
+		}
+		allAggregates = append(allAggregates, aggregates...)
+	}
+	
+	// Merge aggregates by window
+	mergedByWindow := make(map[string]*models.DynamoDBCostAggregation)
+	
+	for _, agg := range allAggregates {
+		windowKey := agg.WindowStart.Format(time.RFC3339)
+		
+		if existing, exists := mergedByWindow[windowKey]; exists {
+			// Merge the aggregates
+			existing.TotalOperations += agg.TotalOperations
+			existing.TotalReadCapacityUnits += agg.TotalReadCapacityUnits
+			existing.TotalWriteCapacityUnits += agg.TotalWriteCapacityUnits
+			existing.TotalReadCostMicroCents += agg.TotalReadCostMicroCents
+			existing.TotalWriteCostMicroCents += agg.TotalWriteCostMicroCents
+			existing.TotalCostMicroCents += agg.TotalCostMicroCents
+			existing.TotalItemCount += agg.TotalItemCount
+			
+			// Merge table breakdown
+			for table, stats := range agg.TableBreakdown {
+				if existingStats, exists := existing.TableBreakdown[table]; exists {
+					existingStats.OperationCount += stats.OperationCount
+					existingStats.ReadCapacityUnits += stats.ReadCapacityUnits
+					existingStats.WriteCapacityUnits += stats.WriteCapacityUnits
+					existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
+					existingStats.TotalCostDollars += stats.TotalCostDollars
+				} else {
+					existing.TableBreakdown[table] = stats
+				}
+			}
+			
+			// Merge service breakdown
+			for service, stats := range agg.ServiceBreakdown {
+				if existingStats, exists := existing.ServiceBreakdown[service]; exists {
+					existingStats.OperationCount += stats.OperationCount
+					existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
+					existingStats.TotalCostDollars += stats.TotalCostDollars
+				} else {
+					existing.ServiceBreakdown[service] = stats
+				}
+			}
+		} else {
+			mergedByWindow[windowKey] = agg
+		}
+	}
+	
+	// Convert map back to slice
+	var result []*models.DynamoDBCostAggregation
+	for _, agg := range mergedByWindow {
+		// Recalculate averages and totals
+		agg.TotalCostDollars = float64(agg.TotalCostMicroCents) / 1_000_000.0
+		if agg.TotalOperations > 0 {
+			agg.AverageCostPerOperation = agg.TotalCostDollars / float64(agg.TotalOperations)
+		}
+		result = append(result, agg)
+	}
+	
+	// Sort by window start time
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].WindowStart.Before(result[j].WindowStart)
+	})
+	
+	return result, nil
+}
+
+// GetCostsByOperationType retrieves costs grouped by operation type
+func (r *CostTrackingRepository) GetCostsByOperationType(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
+	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan", 
+		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
+	
+	result := make(map[string]*models.DynamoDBServiceCostStats)
+	
+	for _, opType := range operationTypes {
+		costs, err := r.ListByOperationType(ctx, opType, startDate, endDate, 10000)
+		if err != nil {
+			r.logger.Warn("failed to get costs for operation type",
+				zap.String("operation_type", opType),
+				zap.Error(err))
+			continue
+		}
+		
+		if len(costs) == 0 {
+			continue
+		}
+		
+		stats := &models.DynamoDBServiceCostStats{
+			ServiceName: opType,
+		}
+		
+		for _, cost := range costs {
+			stats.OperationCount++
+			stats.TotalCostMicroCents += cost.TotalCostMicroCents
+		}
+		
+		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
+		if stats.OperationCount > 0 {
+			stats.AverageCostPerOp = stats.TotalCostDollars / float64(stats.OperationCount)
+		}
+		
+		result[opType] = stats
+	}
+	
+	return result, nil
+}
+
+// GetCostsByService retrieves costs grouped by service/function
+func (r *CostTrackingRepository) GetCostsByService(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
+	// Get all costs in the time range
+	costs, err := r.GetRecentCosts(ctx, startDate, 10000)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Group by service
+	result := make(map[string]*models.DynamoDBServiceCostStats)
+	
+	for _, cost := range costs {
+		if cost.Timestamp.After(endDate) {
+			continue
+		}
+		
+		serviceName := cost.ServiceName
+		if serviceName == "" {
+			serviceName = "unknown"
+		}
+		
+		stats, exists := result[serviceName]
+		if !exists {
+			stats = &models.DynamoDBServiceCostStats{
+				ServiceName: serviceName,
+			}
+			result[serviceName] = stats
+		}
+		
+		stats.OperationCount++
+		stats.TotalCostMicroCents += cost.TotalCostMicroCents
+	}
+	
+	// Calculate totals and averages
+	for _, stats := range result {
+		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
+		if stats.OperationCount > 0 {
+			stats.AverageCostPerOp = stats.TotalCostDollars / float64(stats.OperationCount)
+		}
+	}
+	
+	return result, nil
+}

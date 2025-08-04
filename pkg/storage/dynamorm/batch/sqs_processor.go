@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -16,7 +15,7 @@ import (
 type SQSBatchProcessor struct {
 	db           core.DB
 	logger       *zap.Logger
-	tracker      *cost.Tracker
+	tracker      CostTracker
 	batchWriter  *BatchWriter
 	maxBatchSize int
 }
@@ -24,7 +23,7 @@ type SQSBatchProcessor struct {
 // SQSBatchProcessorConfig holds configuration for SQSBatchProcessor
 type SQSBatchProcessorConfig struct {
 	Logger       *zap.Logger
-	Tracker      *cost.Tracker
+	Tracker      CostTracker
 	MaxBatchSize int // Maximum items to process in a single batch (default: 25)
 }
 

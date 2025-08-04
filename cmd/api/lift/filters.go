@@ -44,7 +44,7 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -59,7 +59,7 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 	}
 
 	// Get all filters for the user
-	filters, err := h.store.GetFiltersForUser(ctx.Context, username)
+	filters, err := h.repos.Moderation().GetFiltersForUser(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get filters", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -69,13 +69,13 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 	result := make([]*mastodon.Filter, 0, len(filters))
 	for _, filter := range filters {
 		// Get keywords and statuses for each filter
-		keywords, err := h.store.GetFilterKeywords(ctx.Context, filter.ID)
+		keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context, filter.ID)
 		if err != nil {
 			h.logger.Error("failed to get filter keywords", zap.String("filter_id", filter.ID), zap.Error(err))
 			continue
 		}
 
-		statuses, err := h.store.GetFilterStatuses(ctx.Context, filter.ID)
+		statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context, filter.ID)
 		if err != nil {
 			h.logger.Error("failed to get filter statuses", zap.String("filter_id", filter.ID), zap.Error(err))
 			continue
@@ -126,7 +126,7 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -141,7 +141,7 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter
-	filter, err := h.store.GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -152,13 +152,13 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get keywords and statuses
-	keywords, err := h.store.GetFilterKeywords(ctx.Context, filter.ID)
+	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context, filter.ID)
 	if err != nil {
 		h.logger.Error("failed to get filter keywords", zap.String("filter_id", filter.ID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	statuses, err := h.store.GetFilterStatuses(ctx.Context, filter.ID)
+	statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context, filter.ID)
 	if err != nil {
 		h.logger.Error("failed to get filter statuses", zap.String("filter_id", filter.ID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -201,7 +201,7 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -281,7 +281,7 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 		filter.ExpiresAt = &expiresAt
 	}
 
-	if err := h.store.CreateFilter(ctx.Context, filter); err != nil {
+	if err := h.repos.Moderation().CreateFilter(ctx.Context, filter); err != nil {
 		h.logger.Error("failed to create filter", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -305,7 +305,7 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 				WholeWord: wholeWord,
 			}
 
-			if err := h.store.AddFilterKeyword(ctx.Context, filter.ID, kw); err != nil {
+			if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filter.ID, kw); err != nil {
 				h.logger.Error("failed to add filter keyword", zap.Error(err))
 				// Continue with other keywords
 			} else {
@@ -357,7 +357,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -372,7 +372,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get the existing filter
-	filter, err := h.store.GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -423,7 +423,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 	}
 
 	// Update the filter
-	if err := h.store.UpdateFilter(ctx.Context, filterID, updates); err != nil {
+	if err := h.repos.Moderation().UpdateFilter(ctx.Context, filterID, updates); err != nil {
 		h.logger.Error("failed to update filter", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -440,7 +440,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 			if id, hasID := kwMap["id"].(string); hasID {
 				if destroy, ok := kwMap["_destroy"].(bool); ok && destroy {
 					// Delete the keyword
-					if err := h.store.DeleteFilterKeyword(ctx.Context, id); err != nil {
+					if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context, id); err != nil {
 						h.logger.Error("failed to delete filter keyword", zap.String("keyword_id", id), zap.Error(err))
 					}
 				} else {
@@ -452,7 +452,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 					if wholeWord, ok := kwMap["whole_word"].(bool); ok {
 						kwUpdates["whole_word"] = wholeWord
 					}
-					if err := h.store.UpdateFilterKeyword(ctx.Context, id, kwUpdates); err != nil {
+					if err := h.repos.Moderation().UpdateFilterKeyword(ctx.Context, id, kwUpdates); err != nil {
 						h.logger.Error("failed to update filter keyword", zap.String("keyword_id", id), zap.Error(err))
 					}
 				}
@@ -473,7 +473,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 					WholeWord: wholeWord,
 				}
 
-				if err := h.store.AddFilterKeyword(ctx.Context, filterID, kw); err != nil {
+				if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, kw); err != nil {
 					h.logger.Error("failed to add filter keyword", zap.Error(err))
 				}
 			}
@@ -481,9 +481,9 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get updated filter with keywords and statuses
-	updatedFilter, _ := h.store.GetFilter(ctx.Context, filterID)
-	keywords, _ := h.store.GetFilterKeywords(ctx.Context, filterID)
-	statuses, _ := h.store.GetFilterStatuses(ctx.Context, filterID)
+	updatedFilter, _ := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	keywords, _ := h.repos.Moderation().GetFilterKeywords(ctx.Context, filterID)
+	statuses, _ := h.repos.Moderation().GetFilterStatuses(ctx.Context, filterID)
 
 	mastodonFilter := h.converter.ConvertFilterToMastodon(updatedFilter, keywords, statuses)
 	return ctx.Status(200).JSON(mastodonFilter)
@@ -527,7 +527,7 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -542,7 +542,7 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.store.GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -553,7 +553,7 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 	}
 
 	// Delete the filter (this should cascade delete keywords and statuses)
-	if err := h.store.DeleteFilter(ctx.Context, filterID); err != nil {
+	if err := h.repos.Moderation().DeleteFilter(ctx.Context, filterID); err != nil {
 		h.logger.Error("failed to delete filter", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -599,7 +599,7 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -614,7 +614,7 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.store.GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -625,7 +625,7 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 	}
 
 	// Get keywords
-	keywords, err := h.store.GetFilterKeywords(ctx.Context, filterID)
+	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter keywords", zap.String("filter_id", filterID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -682,7 +682,7 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -697,7 +697,7 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.store.GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -708,7 +708,7 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Get statuses
-	statuses, err := h.store.GetFilterStatuses(ctx.Context, filterID)
+	statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter statuses", zap.String("filter_id", filterID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -764,7 +764,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -779,7 +779,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.store.GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -816,7 +816,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 		WholeWord: params.WholeWord,
 	}
 
-	if err := h.store.AddFilterKeyword(ctx.Context, filterID, keyword); err != nil {
+	if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, keyword); err != nil {
 		h.logger.Error("failed to add filter keyword", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}

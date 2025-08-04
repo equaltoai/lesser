@@ -47,8 +47,19 @@ func (l *List) BeforeUpdate() error {
 }
 
 // UpdateKeys updates the GSI keys based on current field values
-func (l *List) UpdateKeys() {
+func (l *List) UpdateKeys() error {
 	// Set up GSI1 keys for user's lists index
 	l.GSI1PK = fmt.Sprintf("USER_LISTS#%s", l.Username)
 	l.GSI1SK = l.ID
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (l *List) GetPK() string {
+	return l.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (l *List) GetSK() string {
+	return l.SK
 }

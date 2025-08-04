@@ -114,11 +114,21 @@ func (r *LikeRepository) GetObjectLikes(ctx context.Context, objectID string, li
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var likes []models.Like
 	err := query.All(&likes)
-	nextCursor := "" // TODO: implement pagination
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to scan likes: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(likes) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = likes[limit-1].SK
+		likes = likes[:limit] // Trim to requested limit
 	}
 
 	// Convert to pointer slice
@@ -141,11 +151,21 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var likes []models.Like
 	err := query.All(&likes)
-	nextCursor := "" // TODO: implement pagination
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to scan likes: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(likes) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = likes[limit-1].GSI1SK
+		likes = likes[:limit] // Trim to requested limit
 	}
 
 	// Convert to pointer slice

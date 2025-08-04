@@ -52,7 +52,7 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -511,7 +511,7 @@ func (h *Handler) HandleUpdateMediaV2Lift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {

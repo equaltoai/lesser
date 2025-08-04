@@ -28,7 +28,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": err.Error()})
@@ -103,7 +103,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
@@ -150,7 +150,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		attachments := make([]activitypub.Attachment, 0, len(req.MediaIDs))
 		for _, mediaID := range req.MediaIDs {
 			// Get media metadata from storage (it was stored by the media upload handler)
-			mediaObj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
+			mediaObj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
 			if err != nil {
 				h.logger.Warn("failed to get media metadata", zap.String("media_id", mediaID), zap.Error(err))
 				continue
@@ -196,7 +196,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		note.InReplyTo = req.InReplyToID
 
 		// Record reply engagement for trending
-		if err := h.store.RecordStatusEngagement(ctx.Context, req.InReplyToID, "reply", actor.ID); err != nil {
+		if err := h.repos.Analytics().RecordStatusEngagement(ctx.Context, req.InReplyToID, "reply", actor.ID); err != nil {
 			h.logger.Warn("failed to record reply engagement",
 				zap.String("parent_status_id", req.InReplyToID),
 				zap.Error(err))
@@ -224,7 +224,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 			ExpiresAt:  expiresAt,
 		}
 
-		if err := h.store.CreatePoll(ctx.Context, poll); err != nil {
+		if err := h.repos.Poll().CreatePoll(ctx.Context, poll); err != nil {
 			h.logger.Error("failed to create poll", zap.Error(err))
 			return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 		}
@@ -265,14 +265,14 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Create the Note object
-	if err := h.store.CreateObject(ctx.Context, note); err != nil {
+	if err := h.repos.Object().CreateObject(ctx.Context, note); err != nil {
 		h.logger.Error("failed to create note object", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// If this is a reply, increment the reply count on the parent
 	if req.InReplyToID != "" {
-		if err := h.store.IncrementReplyCount(ctx.Context, req.InReplyToID); err != nil {
+		if err := h.repos.Object().IncrementReplyCount(ctx.Context, req.InReplyToID); err != nil {
 			// Log but don't fail the request
 			h.logger.Warn("failed to increment reply count",
 				zap.String("parent_id", req.InReplyToID),
@@ -294,19 +294,19 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, createActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, createActivity); err != nil {
 		h.logger.Error("failed to create activity", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Fan out the post to timelines
-	if err := h.store.FanOutPost(ctx.Context, createActivity); err != nil {
+	if err := h.repos.User().FanOutPost(ctx.Context, createActivity); err != nil {
 		// Log the error but don't fail the request
 		h.logger.Error("failed to fan out post to timelines", zap.Error(err))
 	}
 
 	// Record status creation activity for metrics
-	if err := h.store.RecordActivity(ctx.Context, "status", actor.ID, now); err != nil {
+	if err := h.repos.Activity().RecordActivity(ctx.Context, "status", actor.ID, now); err != nil {
 		// Log the error but don't fail the request
 		h.logger.Warn("failed to record status activity", zap.Error(err))
 	}
@@ -315,7 +315,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	for _, hashtag := range hashtags {
 		// Remove the # prefix if present
 		cleanHashtag := strings.TrimPrefix(hashtag, "#")
-		if err := h.store.RecordHashtagUsage(ctx.Context, cleanHashtag, noteID, actor.ID); err != nil {
+		if err := h.repos.Analytics().RecordHashtagUsage(ctx.Context, cleanHashtag, noteID, actor.ID); err != nil {
 			h.logger.Warn("failed to record hashtag usage",
 				zap.String("hashtag", cleanHashtag),
 				zap.Error(err))
@@ -325,7 +325,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	// Extract and record links for trending
 	links := extractLinksFromContent(req.Status)
 	for _, link := range links {
-		if err := h.store.RecordLinkShare(ctx.Context, link, noteID, actor.ID); err != nil {
+		if err := h.repos.Analytics().RecordLinkShare(ctx.Context, link, noteID, actor.ID); err != nil {
 			h.logger.Warn("failed to record link share",
 				zap.String("link", link),
 				zap.Error(err))
@@ -333,7 +333,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Update actor's last status time
-	if err := h.store.UpdateActorLastStatusTime(ctx.Context, claims.Username); err != nil {
+	if err := h.repos.Actor().UpdateActorLastStatusTime(ctx.Context, claims.Username); err != nil {
 		h.logger.Warn("failed to update actor last status time", zap.Error(err))
 	}
 
@@ -446,7 +446,7 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 		return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": err.Error()})
@@ -458,7 +458,7 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
@@ -472,7 +472,7 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the object to verify ownership
-	object, err := h.store.GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
 	}
@@ -527,13 +527,13 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	deleteActivity.Published = &now
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, deleteActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, deleteActivity); err != nil {
 		h.logger.Error("failed to create delete activity", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Tombstone the object from storage
-	if err := h.store.TombstoneObject(ctx.Context, objectID, actor.ID); err != nil {
+	if err := h.repos.Object().TombstoneObject(ctx.Context, objectID, actor.ID); err != nil {
 		h.logger.Error("failed to tombstone object", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -556,7 +556,7 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 		return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": err.Error()})
@@ -568,7 +568,7 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
@@ -582,7 +582,7 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the object to verify ownership
-	object, err := h.store.GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
 	}
@@ -664,7 +664,7 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	note.Updated = &now
 
 	// Update the object in storage
-	if err := h.store.UpdateObject(ctx.Context, note); err != nil {
+	if err := h.repos.Object().UpdateObject(ctx.Context, note); err != nil {
 		h.logger.Error("failed to update object", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -684,7 +684,7 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, updateActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, updateActivity); err != nil {
 		h.logger.Error("failed to create update activity", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -717,7 +717,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the object
-	object, err := h.store.GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
 	}
@@ -760,7 +760,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 		parts := strings.Split(attributedTo, "/")
 		if len(parts) > 0 {
 			username := parts[len(parts)-1]
-			actor, _ = h.store.GetActor(ctx.Context, username)
+			actor, _ = h.repos.Account().GetActor(ctx.Context, username)
 		}
 	}
 
@@ -791,13 +791,14 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get interaction counts
-	likeCount, _ := h.store.CountObjectLikes(ctx.Context, objectID)
-	announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
+	likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
+	likeCount := int(likeCount64)
+	announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, objectID)
 	status.FavouritesCount = likeCount
 	status.ReblogsCount = announceCount
 
 	// Check if status has a poll
-	poll, err := h.store.GetPollByStatusID(ctx.Context, objectID)
+	poll, err := h.repos.Poll().GetPollByStatusID(ctx.Context, objectID)
 	if err == nil && poll != nil {
 		// Calculate vote counts per option
 		optionVotes := make([]int, len(poll.Options))
@@ -850,15 +851,15 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	// Check if the current user has interacted with this status
 	token := h.getBearerTokenLift(ctx)
 	if token != "" {
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-			if userActor, err := h.store.GetActor(ctx.Context, claims.Username); err == nil {
+			if userActor, err := h.repos.Account().GetActor(ctx.Context, claims.Username); err == nil {
 				// Check if user has liked this status
-				if _, err := h.store.GetLike(ctx.Context, userActor.ID, objectID); err == nil {
+				if _, err := h.repos.Like().GetLike(ctx.Context, userActor.ID, objectID); err == nil {
 					status.Favourited = true
 				}
 				// Check if user has reblogged this status
-				if _, err := h.store.GetAnnounce(ctx.Context, userActor.ID, objectID); err == nil {
+				if _, err := h.repos.Social().GetAnnounce(ctx.Context, userActor.ID, objectID); err == nil {
 					status.Reblogged = true
 				}
 				// Check if user has voted on the poll
@@ -891,7 +892,7 @@ func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 	}
 
 	// Get the object to check it exists
-	_, err := h.store.GetObject(ctx.Context, objectID)
+	_, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
 	}
@@ -900,7 +901,7 @@ func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 	ancestors := []models.Status{}
 	currentID := objectID
 	for i := 0; i < 10; i++ { // Limit depth to prevent infinite loops
-		obj, err := h.store.GetObject(ctx.Context, currentID)
+		obj, err := h.repos.Object().GetObject(ctx.Context, currentID)
 		if err != nil {
 			break
 		}
@@ -939,7 +940,7 @@ func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 			break
 		}
 
-		parentObj, err := h.store.GetObject(ctx.Context, inReplyTo)
+		parentObj, err := h.repos.Object().GetObject(ctx.Context, inReplyTo)
 		if err != nil {
 			break
 		}
@@ -972,7 +973,7 @@ func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 		if attributedTo != "" {
 			username := h.converter.ExtractUsernameFromActorID(attributedTo)
 			if username != "" {
-				parentActor, _ = h.store.GetActor(ctx.Context, username)
+				parentActor, _ = h.repos.Account().GetActor(ctx.Context, username)
 			}
 		}
 
@@ -1007,7 +1008,7 @@ func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 			if attributedTo != "" {
 				username := h.converter.ExtractUsernameFromActorID(attributedTo)
 				if username != "" {
-					replyActor, _ = h.store.GetActor(ctx.Context, username)
+					replyActor, _ = h.repos.Account().GetActor(ctx.Context, username)
 				}
 			}
 

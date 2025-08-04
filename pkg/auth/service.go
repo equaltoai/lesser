@@ -11,13 +11,14 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
 
 // AuthService provides comprehensive authentication functionality
 type AuthService struct {
-	storage         storage.Storage
+	repos           core.RepositoryStorage
 	oauthService    *OAuthService
 	sessionManager  *SessionManager
 	rateLimiter     *RateLimiter
@@ -35,7 +36,7 @@ var (
 )
 
 // NewAuthService creates a comprehensive auth service
-func NewAuthService(storage storage.Storage) (*AuthService, error) {
+func NewAuthService(repos core.RepositoryStorage) (*AuthService, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "development-secret-change-me"
@@ -51,7 +52,7 @@ func NewAuthService(storage storage.Storage) (*AuthService, error) {
 	}
 
 	// Initialize WebAuthn service
-	webAuthnService, err := NewWebAuthnService(storage, domain, "Lesser")
+	webAuthnService, err := NewWebAuthnService(repos, domain, "Lesser")
 	if err != nil {
 		common.Logger().Warn("failed to initialize WebAuthn service", zap.Error(err))
 		// Continue without WebAuthn support
@@ -59,13 +60,13 @@ func NewAuthService(storage storage.Storage) (*AuthService, error) {
 	}
 
 	// Initialize Wallet service
-	walletService := NewWalletService(storage)
+	walletService := NewWalletService(repos)
 
 	return &AuthService{
-		storage:         storage,
-		oauthService:    NewOAuthService(jwtSecret, storage),
-		sessionManager:  NewSessionManager(storage),
-		rateLimiter:     NewRateLimiter(storage),
+		repos:           repos,
+		oauthService:    NewOAuthService(jwtSecret, repos),
+		sessionManager:  NewSessionManager(repos),
+		rateLimiter:     NewRateLimiter(repos),
 		webAuthnService: webAuthnService,
 		walletService:   walletService,
 		jwtSecret:       []byte(jwtSecret),
@@ -80,7 +81,7 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	}
 
 	// Get user from storage
-	user, err := as.storage.GetUser(ctx, username)
+	user, err := as.repos.Account().GetUser(ctx, username)
 	if err != nil {
 		// Record failed attempt
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
@@ -110,13 +111,13 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	}
 
 	// Get actor ID for activity recording
-	actor, err := as.storage.GetActor(ctx, username)
+	actor, err := as.repos.Account().GetActor(ctx, username)
 	if err != nil {
 		// Log but don't fail login
 		common.Logger().Warn("failed to get actor for activity recording", zap.Error(err))
 	} else {
 		// Record login activity for metrics
-		if err := as.storage.RecordActivity(ctx, "login", actor.ID, time.Now()); err != nil {
+		if err := as.repos.Activity().RecordActivity(ctx, "login", actor.ID, time.Now()); err != nil {
 			// Log the error but don't fail the login
 			common.Logger().Warn("failed to record login activity", zap.Error(err))
 		}
@@ -201,7 +202,7 @@ func (as *AuthService) GetUserDevices(ctx context.Context, username string) ([]*
 // TrustDevice marks a device as trusted
 func (as *AuthService) TrustDevice(ctx context.Context, username, deviceID string) error {
 	// Verify the device belongs to the user
-	device, err := as.storage.GetDevice(ctx, deviceID)
+	device, err := as.repos.Account().GetDevice(ctx, deviceID)
 	if err != nil {
 		return err
 	}
@@ -249,7 +250,7 @@ func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims,
 
 	if claims, ok := token.Claims.(*EnhancedClaims); ok && token.Valid {
 		// Verify session is still valid
-		session, err := as.storage.GetSession(context.Background(), claims.SessionID)
+		session, err := as.repos.Account().GetSession(context.Background(), claims.SessionID)
 		if err != nil || time.Now().After(session.ExpiresAt) {
 			return nil, ErrInvalidToken
 		}
@@ -263,7 +264,7 @@ func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims,
 // ChangePassword changes a user's password
 func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword, newPassword string) error {
 	// Get user
-	user, err := as.storage.GetUser(ctx, username)
+	user, err := as.repos.Account().GetUser(ctx, username)
 	if err != nil {
 		return ErrUserNotFound
 	}
@@ -285,7 +286,7 @@ func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword
 		"updated_at":    time.Now(),
 	}
 
-	if err := as.storage.UpdateUser(ctx, username, updates); err != nil {
+	if err := as.repos.Account().UpdateUser(ctx, username, updates); err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 
@@ -437,7 +438,7 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 	}
 
 	// Check if user is active
-	user, err := as.storage.GetUser(ctx, username)
+	user, err := as.repos.Account().GetUser(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
@@ -486,9 +487,9 @@ func (as *AuthService) GetUserWallets(ctx context.Context, username string) ([]*
 	return as.walletService.GetUserWallets(ctx, username)
 }
 
-// GetStore returns the storage instance (for handlers that need direct access)
-func (as *AuthService) GetStore() storage.Storage {
-	return as.storage
+// GetStore returns the repository storage instance (for handlers that need direct access)
+func (as *AuthService) GetStore() core.RepositoryStorage {
+	return as.repos
 }
 
 // GetConfig returns configuration (for handlers that need environment info)
@@ -521,7 +522,7 @@ func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username strin
 	}
 
 	recoveryKey := fmt.Sprintf("RECOVERY#%s", token)
-	if err := as.storage.StoreRecoveryToken(ctx, recoveryKey, recoveryData); err != nil {
+	if err := as.repos.Account().StoreRecoveryToken(ctx, recoveryKey, recoveryData); err != nil {
 		return "", fmt.Errorf("failed to store recovery token: %w", err)
 	}
 

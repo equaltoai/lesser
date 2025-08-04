@@ -34,7 +34,7 @@ type Poll struct {
 }
 
 // UpdateKeys updates the DynamoDB keys based on the business fields
-func (p *Poll) UpdateKeys() {
+func (p *Poll) UpdateKeys() error {
 	p.PK = fmt.Sprintf("POLL#%s", p.ID)
 	p.SK = "METADATA"
 	p.GSI1PK = fmt.Sprintf("STATUS#%s", p.StatusID)
@@ -44,6 +44,17 @@ func (p *Poll) UpdateKeys() {
 	if !p.ExpiresAt.IsZero() {
 		p.TTL = p.ExpiresAt.Add(24 * time.Hour).Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (p *Poll) GetPK() string {
+	return p.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (p *Poll) GetSK() string {
+	return p.SK
 }
 
 // PollVote represents an individual vote on a poll

@@ -175,14 +175,24 @@ func (r *RelationshipRepository) GetFollowers(ctx context.Context, username stri
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var relationships []models.RelationshipRecord
 	err := query.All(&relationships)
-	nextCursor := "" // TODO: implement pagination
 	if err != nil {
 		r.logger.Error("failed to query followers",
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query followers: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(relationships) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = relationships[limit-1].GSI1SK
+		relationships = relationships[:limit] // Trim to requested limit
 	}
 
 	// Extract follower usernames
@@ -207,14 +217,24 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var relationships []models.RelationshipRecord
 	err := query.All(&relationships)
-	nextCursor := "" // TODO: implement pagination
 	if err != nil {
 		r.logger.Error("failed to query following",
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query following: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(relationships) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = relationships[limit-1].SK
+		relationships = relationships[:limit] // Trim to requested limit
 	}
 
 	// Extract following usernames
@@ -307,14 +327,24 @@ func (r *RelationshipRepository) GetPendingFollowRequests(ctx context.Context, u
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var relationships []models.RelationshipRecord
 	err := query.All(&relationships)
-	nextCursor := "" // TODO: implement pagination
 	if err != nil {
 		r.logger.Error("failed to query pending requests",
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query pending requests: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(relationships) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = relationships[limit-1].GSI1SK
+		relationships = relationships[:limit] // Trim to requested limit
 	}
 
 	// Extract follower usernames
@@ -749,14 +779,24 @@ func (r *RelationshipRepository) GetCollectionItems(ctx context.Context, collect
 		query = query.Cursor(cursor)
 	}
 
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+	
 	var items []models.CollectionItem
 	err := query.All(&items)
-	nextCursor := "" // TODO: implement pagination
 	if err != nil {
 		r.logger.Error("failed to get collection items",
 			zap.String("collection", collection),
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get collection items: %w", err)
+	}
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(items) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = items[limit-1].SK
+		items = items[:limit] // Trim to requested limit
 	}
 
 	// Convert to storage.CollectionItem slice

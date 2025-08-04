@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
@@ -18,12 +18,12 @@ import (
 
 // OAuthRepository handles OAuth-related storage operations
 type OAuthRepository struct {
-	db     *dynamorm.LambdaDB
+	db     core.DB
 	logger *zap.Logger
 }
 
 // NewOAuthRepository creates a new OAuth repository
-func NewOAuthRepository(db *dynamorm.LambdaDB, logger *zap.Logger) *OAuthRepository {
+func NewOAuthRepository(db core.DB, logger *zap.Logger) *OAuthRepository {
 	return &OAuthRepository{
 		db:     db,
 		logger: logger,

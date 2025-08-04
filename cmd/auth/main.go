@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -72,8 +73,12 @@ func NewAuthHandler() (*AuthHandler, error) {
 		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
 	}
 
-	// Create storage adapter
+	// Create storage adapter and repository factory
 	store := dynamorm.NewStorageAdapter(db, tableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
+	}
 	
 	// Initialize repositories
 	store.SetActorRepository(repositories.NewActorRepository(db, tableName, logger))
@@ -92,11 +97,11 @@ func NewAuthHandler() (*AuthHandler, error) {
 	store.SetScheduledStatusRepository(repositories.NewScheduledStatusRepository(db, tableName, logger))
 	store.SetAnnouncementRepository(repositories.NewAnnouncementRepository(db, tableName, logger))
 	store.SetDomainBlockRepository(repositories.NewDomainBlockRepository(db, tableName, logger))
-	store.SetAuthRepository(repositories.NewAuthRepository(db, tableName, logger))
+	store.SetAccountRepository(repositories.NewAccountRepository(db, tableName, cfg.Domain, logger))
 	store.SetRelationshipRepository(repositories.NewRelationshipRepository(db, tableName, logger))
 
-	// Initialize comprehensive auth service
-	authSvc, err := auth.NewAuthService(store)
+	// Initialize comprehensive auth service using repositories
+	authSvc, err := auth.NewAuthService(repos)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize auth service: %w", err)
 	}
@@ -107,14 +112,14 @@ func NewAuthHandler() (*AuthHandler, error) {
 		jwtSecret = "development-secret-change-me"
 		logger.Warn("JWT_SECRET not set, using development default")
 	}
-	oauthSvc := auth.NewOAuthService(jwtSecret, store)
+	oauthSvc := auth.NewOAuthService(jwtSecret, repos)
 
 	// Initialize WebAuthn service
 	domain := cfg.Domain
 	if domain == "" {
 		domain = "lesser.host"
 	}
-	webAuthnSvc, err := auth.NewWebAuthnService(store, domain, "Lesser")
+	webAuthnSvc, err := auth.NewWebAuthnService(repos, domain, "Lesser")
 	if err != nil {
 		logger.Error("failed to initialize WebAuthn service", zap.Error(err))
 		webAuthnSvc = nil

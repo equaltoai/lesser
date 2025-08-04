@@ -76,7 +76,7 @@ func (h *Handler) requireAdminLift(ctx *lift.Context) (*auth.Claims, error) {
 		return nil, errors.New("missing authentication")
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return nil, err

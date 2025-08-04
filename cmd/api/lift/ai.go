@@ -57,7 +57,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	_, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)
@@ -122,7 +122,7 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)

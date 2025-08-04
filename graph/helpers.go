@@ -443,7 +443,7 @@ func determineModerationCategory(reason string) string {
 
 // Helper methods for getting object interaction counts
 func (r *queryResolver) getObjectReplyCount(ctx context.Context, objectID string) int {
-	count, err := r.Storage.CountObjectReplies(ctx, objectID)
+	count, err := r.Storage.Object().CountObjectReplies(ctx, objectID)
 	if err != nil {
 		r.Logger.Error("failed to get reply count", zap.Error(err), zap.String("objectID", objectID))
 		return 0
@@ -452,21 +452,21 @@ func (r *queryResolver) getObjectReplyCount(ctx context.Context, objectID string
 }
 
 func (r *queryResolver) getObjectLikeCount(ctx context.Context, objectID string) int {
-	count, err := r.Storage.CountObjectLikes(ctx, objectID)
+	count, err := r.Storage.Like().GetLikeCount(ctx, objectID)
 	if err != nil {
 		r.Logger.Error("failed to get like count", zap.Error(err), zap.String("objectID", objectID))
 		return 0
 	}
-	return count
+	return int(count)
 }
 
 func (r *queryResolver) getObjectShareCount(ctx context.Context, objectID string) int {
-	count, err := r.Storage.CountObjectAnnounces(ctx, objectID)
+	count, err := r.Storage.Like().GetBoostCount(ctx, objectID)
 	if err != nil {
 		r.Logger.Error("failed to get share count", zap.Error(err), zap.String("objectID", objectID))
 		return 0
 	}
-	return count
+	return int(count)
 }
 
 // calculateMissingPosts calculates the number of missing posts in a thread
@@ -487,7 +487,7 @@ func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *sto
 	// StatusSearchResult doesn't have Object field, so we check if we can retrieve the actual object
 	for _, ancestor := range threadContext.Ancestors {
 		if ancestor.StatusID != "" {
-			if _, err := r.Storage.GetObject(ctx, ancestor.StatusID); err != nil {
+			if _, err := r.Storage.Object().GetObject(ctx, ancestor.StatusID); err != nil {
 				missingCount++
 			}
 		}
@@ -495,7 +495,7 @@ func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *sto
 
 	for _, descendant := range threadContext.Descendants {
 		if descendant.StatusID != "" {
-			if _, err := r.Storage.GetObject(ctx, descendant.StatusID); err != nil {
+			if _, err := r.Storage.Object().GetObject(ctx, descendant.StatusID); err != nil {
 				missingCount++
 			}
 		}
@@ -530,11 +530,11 @@ func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext
 	for _, post := range allPosts {
 		if post.StatusID != "" {
 			// Get engagement metrics for this post using StatusID
-			likes, _ := r.Storage.CountObjectLikes(ctx, post.StatusID)
-			shares, _ := r.Storage.CountObjectAnnounces(ctx, post.StatusID)
-			replies, _ := r.Storage.CountObjectReplies(ctx, post.StatusID)
+			likes, _ := r.Storage.Like().GetLikeCount(ctx, post.StatusID)
+			shares, _ := r.Storage.Like().GetBoostCount(ctx, post.StatusID)
+			replies, _ := r.Storage.Object().CountObjectReplies(ctx, post.StatusID)
 
-			totalEngagement += likes + shares + replies
+			totalEngagement += int(likes) + int(shares) + replies
 			postCount++
 		}
 	}

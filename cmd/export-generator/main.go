@@ -23,14 +23,16 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
 // ExportProcessor handles data export generation from SQS messages
 type ExportProcessor struct {
 	db           core.DB
-	storageAdapter *dynamorm.StorageAdapter
+	repos        storageCore.RepositoryStorage
 	exportRepo   *repositories.ExportRepository
 	s3Client     *s3.Client
 	logger       *zap.Logger
@@ -71,8 +73,11 @@ func init() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Initialize storage adapter (for compatibility with existing storage interface)
-	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger)
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
 
 	// Initialize export repository
 	exportRepo := repositories.NewExportRepository(db, cfg.DynamoTableName, logger)
@@ -80,7 +85,7 @@ func init() {
 	// Create processor instance
 	processor = &ExportProcessor{
 		db:           db,
-		storageAdapter: storageAdapter,
+		repos:        repos,
 		exportRepo:   exportRepo,
 		logger:       logger,
 		tableName:    cfg.DynamoTableName,
@@ -592,7 +597,7 @@ func (ep *ExportProcessor) generateMastodonExport(ctx context.Context, event Exp
 // Helper functions for data retrieval
 func (ep *ExportProcessor) getActor(ctx context.Context, username string) (*activitypub.Actor, error) {
 	// Get actor using storage client (already migrated to DynamORM)
-	actor, err := ep.storageAdapter.GetActor(ctx, username)
+	actor, err := ep.repos.Account().GetActor(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
@@ -606,7 +611,7 @@ func (ep *ExportProcessor) getFollowers(ctx context.Context, username string) ([
 	cursor := ""
 
 	for {
-		followers, nextCursor, err := ep.storageAdapter.GetFollowers(ctx, username, 1000, cursor)
+		followers, nextCursor, err := ep.repos.Relationship().GetFollowers(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get followers", zap.String("username", username), zap.Error(err))
 			return nil, fmt.Errorf("get followers: %w", err)
@@ -633,7 +638,7 @@ func (ep *ExportProcessor) getFollowing(ctx context.Context, username string) ([
 	cursor := ""
 
 	for {
-		following, nextCursor, err := ep.storageAdapter.GetFollowing(ctx, username, 1000, cursor)
+		following, nextCursor, err := ep.repos.Relationship().GetFollowing(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get following", zap.String("username", username), zap.Error(err))
 			return nil, fmt.Errorf("get following: %w", err)
@@ -660,7 +665,7 @@ func (ep *ExportProcessor) getBlocks(ctx context.Context, username string) ([]st
 	cursor := ""
 
 	for {
-		blocks, nextCursor, err := ep.storageAdapter.GetBlockedActors(ctx, username, 1000, cursor)
+		blocks, nextCursor, err := ep.repos.Social().GetBlockedUsers(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get blocked actors", zap.String("username", username), zap.Error(err))
 			return nil, fmt.Errorf("get blocked actors: %w", err)
@@ -691,7 +696,7 @@ func (ep *ExportProcessor) getMutes(ctx context.Context, username string) ([]Mut
 	cursor := ""
 
 	for {
-		mutes, nextCursor, err := ep.storageAdapter.GetMutedActors(ctx, username, 1000, cursor)
+		mutes, nextCursor, err := ep.repos.Social().GetMutedUsers(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get muted actors", zap.String("username", username), zap.Error(err))
 			return nil, fmt.Errorf("get muted actors: %w", err)
@@ -715,7 +720,7 @@ func (ep *ExportProcessor) getMutes(ctx context.Context, username string) ([]Mut
 
 func (ep *ExportProcessor) getListsWithMembers(ctx context.Context, username string) (map[string][]string, error) {
 	// Query lists and their members from DynamoDB using storage client
-	lists, err := ep.storageAdapter.GetListsForUser(ctx, username)
+	lists, err := ep.repos.List().GetListsForUser(ctx, username)
 	if err != nil {
 		ep.logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
 		return nil, fmt.Errorf("get lists: %w", err)
@@ -724,7 +729,7 @@ func (ep *ExportProcessor) getListsWithMembers(ctx context.Context, username str
 	result := make(map[string][]string)
 
 	for _, list := range lists {
-		members, err := ep.storageAdapter.GetListAccounts(ctx, list.ID)
+		members, err := ep.repos.List().GetListAccounts(ctx, list.ID)
 		if err != nil {
 			ep.logger.Error("failed to get list members",
 				zap.String("list_id", list.ID),
@@ -757,7 +762,7 @@ func (ep *ExportProcessor) getBookmarks(ctx context.Context, username string) ([
 	cursor := ""
 
 	for {
-		bookmarkIDs, nextCursor, err := ep.storageAdapter.GetBookmarks(ctx, username, 1000, cursor)
+		bookmarkIDs, nextCursor, err := ep.repos.User().GetBookmarks(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get bookmarks", zap.String("username", username), zap.Error(err))
 			return nil, fmt.Errorf("get bookmarks: %w", err)
@@ -766,7 +771,7 @@ func (ep *ExportProcessor) getBookmarks(ctx context.Context, username string) ([
 		// Convert bookmark IDs to BookmarkInfo
 		// Note: We need to get the actual status objects to get their URLs
 		for _, bookmarkID := range bookmarkIDs {
-			obj, err := ep.storageAdapter.GetObject(ctx, bookmarkID)
+			obj, err := ep.repos.Object().GetObject(ctx, bookmarkID)
 			if err != nil {
 				ep.logger.Warn("failed to get bookmarked object",
 					zap.String("bookmark_id", bookmarkID),
@@ -840,7 +845,7 @@ func (ep *ExportProcessor) getOutbox(ctx context.Context, username string, dateR
 	cursor := ""
 
 	for {
-		activities, nextCursor, err := ep.storageAdapter.GetOutboxActivities(ctx, username, 1000, cursor)
+		activities, nextCursor, err := ep.repos.Activity().GetOutboxActivities(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get outbox activities", zap.String("username", username), zap.Error(err))
 			return nil, 0, fmt.Errorf("get outbox activities: %w", err)
@@ -876,7 +881,7 @@ func (ep *ExportProcessor) getFollowingActors(ctx context.Context, username stri
 	cursor := ""
 
 	for {
-		following, nextCursor, err := ep.storageAdapter.GetFollowing(ctx, username, 1000, cursor)
+		following, nextCursor, err := ep.repos.Relationship().GetFollowing(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get following actors", zap.String("username", username), zap.Error(err))
 			return nil, fmt.Errorf("get following actors: %w", err)
@@ -901,7 +906,7 @@ func (ep *ExportProcessor) getFollowersActors(ctx context.Context, username stri
 	cursor := ""
 
 	for {
-		followers, nextCursor, err := ep.storageAdapter.GetFollowers(ctx, username, 1000, cursor)
+		followers, nextCursor, err := ep.repos.Relationship().GetFollowers(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get follower actors", zap.String("username", username), zap.Error(err))
 			return nil, fmt.Errorf("get follower actors: %w", err)
@@ -925,14 +930,14 @@ func (ep *ExportProcessor) getLikes(ctx context.Context, username string) ([]any
 	cursor := ""
 
 	// First get the actor ID for the username
-	actor, err := ep.storageAdapter.GetActor(ctx, username)
+	actor, err := ep.repos.Account().GetActor(ctx, username)
 	if err != nil {
 		ep.logger.Error("failed to get actor", zap.String("username", username), zap.Error(err))
 		return nil, fmt.Errorf("get actor: %w", err)
 	}
 
 	for {
-		likes, nextCursor, err := ep.storageAdapter.GetActorLikes(ctx, actor.ID, 1000, cursor)
+		likes, nextCursor, err := ep.repos.Like().GetActorLikes(ctx, actor.ID, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get actor likes",
 				zap.String("username", username),
@@ -989,7 +994,7 @@ func (ep *ExportProcessor) getBookmarksForExport(ctx context.Context, username s
 
 func (ep *ExportProcessor) getListsForExport(ctx context.Context, username string) ([]any, error) {
 	// Query lists and convert to export format
-	lists, err := ep.storageAdapter.GetListsForUser(ctx, username)
+	lists, err := ep.repos.List().GetListsForUser(ctx, username)
 	if err != nil {
 		ep.logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
 		return nil, fmt.Errorf("get lists: %w", err)
@@ -999,7 +1004,7 @@ func (ep *ExportProcessor) getListsForExport(ctx context.Context, username strin
 	var result []any
 	for _, list := range lists {
 		// Get members for each list
-		members, err := ep.storageAdapter.GetListAccounts(ctx, list.ID)
+		members, err := ep.repos.List().GetListAccounts(ctx, list.ID)
 		if err != nil {
 			ep.logger.Warn("failed to get list members",
 				zap.String("list_id", list.ID),
@@ -1089,7 +1094,7 @@ func (ep *ExportProcessor) getDomainBlocks(ctx context.Context, username string)
 	cursor := ""
 
 	for {
-		domains, nextCursor, err := ep.storageAdapter.GetUserDomainBlocks(ctx, username, 1000, cursor)
+		domains, nextCursor, err := ep.repos.DomainBlock().GetUserDomainBlocks(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get domain blocks", zap.String("username", username), zap.Error(err))
 			return nil, fmt.Errorf("get domain blocks: %w", err)
@@ -1113,7 +1118,7 @@ func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip
 		zap.Bool("has_date_range", dateRange != nil))
 
 	// Get user's media files using the storage adapter (DynamORM pattern)
-	userMediaAny, err := ep.storageAdapter.GetUserMedia(ctx, username)
+	userMediaAny, err := ep.repos.Media().GetUserMedia(ctx, username)
 	if err != nil {
 		ep.logger.Error("failed to get user media", 
 			zap.String("username", username),

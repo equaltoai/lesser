@@ -21,9 +21,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
@@ -32,16 +32,16 @@ import (
 // AuthAPIHandler handles all auth API endpoints
 type AuthAPIHandler struct {
 	authService *auth.AuthService
-	store       storage.Storage
+	repos       core.RepositoryStorage
 	logger      *zap.Logger
 	cfg         *config.Config
 }
 
 // NewAuthAPIHandler creates a new auth API handler
-func NewAuthAPIHandler(authService *auth.AuthService, store storage.Storage, logger *zap.Logger, cfg *config.Config) *AuthAPIHandler {
+func NewAuthAPIHandler(authService *auth.AuthService, repos core.RepositoryStorage, logger *zap.Logger, cfg *config.Config) *AuthAPIHandler {
 	return &AuthAPIHandler{
 		authService: authService,
-		store:       store,
+		repos:       repos,
 		logger:      logger,
 		cfg:         cfg,
 	}
@@ -261,22 +261,20 @@ func main() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Create storage adapter
-	store := dynamorm.NewStorageAdapter(db, tableName, logger)
-	
-	// Initialize repositories
-	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
-	store.SetAuthRepository(repositories.NewAuthRepository(db, tableName, logger))
-	store.SetRelationshipRepository(repositories.NewRelationshipRepository(db, tableName, logger))
+	// Create repository storage using new factory pattern
+	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(store)
+	authService, err := auth.NewAuthService(repos)
 	if err != nil {
 		logger.Fatal("failed to initialize auth service", zap.Error(err))
 	}
 
 	// Create handler
-	handler := NewAuthAPIHandler(authService, store, logger, cfg)
+	handler := NewAuthAPIHandler(authService, repos, logger, cfg)
 
 	// Create Lift app
 	app := lift.New()

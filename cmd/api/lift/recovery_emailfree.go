@@ -22,11 +22,11 @@ type EmailFreeRecoveryHandler struct {
 // NewEmailFreeRecoveryHandler creates a new email-free recovery handler
 func NewEmailFreeRecoveryHandler(authService *auth.AuthService) *EmailFreeRecoveryHandler {
 	logger := common.Logger()
-	store := authService.GetStore()
+	repos := authService.GetStore()
 
 	return &EmailFreeRecoveryHandler{
-		socialRecovery: auth.NewSocialRecoveryService(store, logger),
-		recoveryCode:   auth.NewRecoveryCodeService(store, logger),
+		socialRecovery: auth.NewSocialRecoveryService(repos, logger),
+		recoveryCode:   auth.NewRecoveryCodeService(repos, logger),
 		authService:    authService,
 		logger:         logger,
 	}
@@ -42,7 +42,7 @@ func (h *EmailFreeRecoveryHandler) HandleGetRecoveryOptionsLift(ctx *lift.Contex
 	}
 
 	// Get user to check what recovery methods are available
-	user, err := h.authService.GetStore().GetUser(ctx.Context, username)
+	user, err := h.authService.GetStore().Account().GetUser(ctx.Context, username)
 	if err != nil {
 		// Return generic response to prevent user enumeration
 		ctx.Status(http.StatusOK)
@@ -57,19 +57,19 @@ func (h *EmailFreeRecoveryHandler) HandleGetRecoveryOptionsLift(ctx *lift.Contex
 	// Check available recovery methods
 
 	// 1. Passkeys (if user has any registered)
-	credentials, err := h.authService.GetStore().GetUserWebAuthnCredentials(ctx.Context, username)
+	credentials, err := h.authService.GetStore().Account().GetUserWebAuthnCredentials(ctx.Context, username)
 	if err == nil && len(credentials) > 0 {
 		options = append(options, "passkey")
 	}
 
 	// 2. Crypto wallets (if user has any linked)
-	wallets, err := h.authService.GetStore().GetUserWalletCredentials(ctx.Context, username)
+	wallets, err := h.authService.GetStore().Account().GetUserWalletCredentials(ctx.Context, username)
 	if err == nil && len(wallets) > 0 {
 		options = append(options, "wallet")
 	}
 
 	// 3. OAuth providers (if user has any linked)
-	providers, err := h.authService.GetStore().GetLinkedProviders(ctx.Context, username)
+	providers, err := h.authService.GetStore().Account().GetLinkedProviders(ctx.Context, username)
 	if err == nil && len(providers) > 0 {
 		for _, provider := range providers {
 			options = append(options, fmt.Sprintf("oauth_%s", provider))
@@ -437,7 +437,7 @@ func (h *EmailFreeRecoveryHandler) HandleDeviceRecoveryLift(ctx *lift.Context) e
 	}
 
 	// Check if device is trusted
-	device, err := h.authService.GetStore().GetDevice(ctx.Context, req.DeviceID)
+	device, err := h.authService.GetStore().Account().GetDevice(ctx.Context, req.DeviceID)
 	if err != nil || device.Username != req.Username || device.TrustLevel != "trusted" {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]any{"error": "device not found or not trusted"})

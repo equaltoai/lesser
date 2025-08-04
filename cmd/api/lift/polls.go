@@ -45,7 +45,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	} else if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Get the user's actor to get their ID
@@ -171,7 +171,7 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			ctx.Status(http.StatusUnauthorized)

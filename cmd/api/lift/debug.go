@@ -92,7 +92,7 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -210,7 +210,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -309,7 +309,7 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -392,7 +392,7 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -465,7 +465,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -572,7 +572,7 @@ func (h *Handler) HandleDebugFeatureToggleLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			ctx.Status(http.StatusUnauthorized)
@@ -616,7 +616,7 @@ func (h *Handler) HandleDebugConfigLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			ctx.Status(http.StatusUnauthorized)
@@ -663,7 +663,7 @@ func (h *Handler) HandleDebugStorageLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			ctx.Status(http.StatusUnauthorized)
@@ -714,7 +714,7 @@ func (h *Handler) HandleDebugCacheLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			ctx.Status(http.StatusUnauthorized)
@@ -761,7 +761,7 @@ func (h *Handler) HandleDebugQueueLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			ctx.Status(http.StatusUnauthorized)
@@ -811,7 +811,7 @@ func (h *Handler) HandleDebugMetricsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			ctx.Status(http.StatusUnauthorized)
@@ -862,7 +862,7 @@ func (h *Handler) HandleDebugHealthLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			ctx.Status(http.StatusUnauthorized)

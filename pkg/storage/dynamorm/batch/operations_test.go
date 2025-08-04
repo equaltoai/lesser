@@ -8,12 +8,32 @@ import (
 	"testing"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap/zaptest"
 )
+
+// MockCostTracker implements CostTracker interface for testing
+type MockCostTracker struct {
+	reads  int64
+	writes int64
+}
+
+func (m *MockCostTracker) CalculateCost() CostMetrics {
+	return CostMetrics{
+		DynamoDBReads:  m.reads,
+		DynamoDBWrites: m.writes,
+	}
+}
+
+func (m *MockCostTracker) TrackDynamoWrite(items int) {
+	m.writes += int64(items)
+}
+
+func (m *MockCostTracker) TrackDynamoRead(items int) {
+	m.reads += int64(items)
+}
 
 // MockDB implements core.DB interface for testing
 type MockDB struct {
@@ -257,7 +277,7 @@ func TestNewBatchWriter(t *testing.T) {
 			config: BatchWriterConfig{
 				BatchSize: 15,
 				Logger:    zaptest.NewLogger(t),
-				Tracker:   cost.New(),
+				Tracker:   &MockCostTracker{},
 			},
 			expectedBatch:   15,
 			expectedLogger:  true,
@@ -413,7 +433,7 @@ func TestBatchWriter_WriteItems_WithError(t *testing.T) {
 func TestBatchWriter_WriteItems_WithCostTracking(t *testing.T) {
 	mockDB := &MockDB{}
 	mockQuery := &MockQuery{}
-	tracker := cost.New()
+	tracker := &MockCostTracker{}
 	logger := zaptest.NewLogger(t)
 
 	items := []any{
@@ -577,7 +597,7 @@ func TestNewBatchReader(t *testing.T) {
 			config: BatchReaderConfig{
 				BatchSize: 75,
 				Logger:    zaptest.NewLogger(t),
-				Tracker:   cost.New(),
+				Tracker:   &MockCostTracker{},
 			},
 			expectedBatch:   75,
 			expectedLogger:  true,
@@ -704,7 +724,7 @@ func TestBatchReader_ReadItems_WithError(t *testing.T) {
 func TestBatchReader_ReadItems_WithCostTracking(t *testing.T) {
 	mockDB := &MockDB{}
 	mockQuery := &MockQuery{}
-	tracker := cost.New()
+	tracker := &MockCostTracker{}
 	logger := zaptest.NewLogger(t)
 
 	keys := []any{"key1", "key2"}
@@ -921,7 +941,7 @@ func TestConvenienceFunctions(t *testing.T) {
 		items := []any{
 			&TestItem{ID: "1", Name: "Item 1"},
 		}
-		tracker := cost.New()
+		tracker := &MockCostTracker{}
 		logger := zaptest.NewLogger(t)
 
 		mockDB.On("Model", mock.AnythingOfType("*batch.TestItem")).Return(mockQuery)
@@ -944,7 +964,7 @@ func TestConvenienceFunctions(t *testing.T) {
 
 	t.Run("BatchReadWithCostTracking", func(t *testing.T) {
 		keys := []any{"key1"}
-		tracker := cost.New()
+		tracker := &MockCostTracker{}
 		logger := zaptest.NewLogger(t)
 
 		mockDB.On("Model", "key1").Return(mockQuery)

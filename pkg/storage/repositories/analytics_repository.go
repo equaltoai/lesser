@@ -2058,3 +2058,83 @@ func (r *TrendingRepository) GetReportTrends(ctx context.Context, reportTypes []
 	
 	return trends, nil
 }
+
+// GetActiveUserCount returns the number of active users in the last N days
+func (r *TrendingRepository) GetActiveUserCount(ctx context.Context, days int) (int, error) {
+	// Calculate the cutoff time for active users
+	cutoff := time.Now().AddDate(0, 0, -days)
+	
+	// Query for unique users who had activity after the cutoff
+	// This is a simplified implementation - in production, you'd want proper indexing
+	var activities []models.Activity
+	err := r.db.WithContext(ctx).Model(&models.Activity{}).
+		Filter("PublishedAt", ">", cutoff).
+		All(&activities)
+	if err != nil {
+		r.logger.Error("failed to get active users", zap.Error(err))
+		return 0, err
+	}
+	
+	// Count unique actors
+	uniqueActors := make(map[string]bool)
+	for _, activity := range activities {
+		if activity.Activity != nil && activity.Activity.Actor != "" {
+			uniqueActors[activity.Activity.Actor] = true
+		}
+	}
+	
+	return len(uniqueActors), nil
+}
+
+// GetTotalUserCount returns the total number of users
+func (r *TrendingRepository) GetTotalUserCount(ctx context.Context) (int, error) {
+	var users []models.User
+	err := r.db.WithContext(ctx).Model(&models.User{}).
+		All(&users)
+	if err != nil {
+		r.logger.Error("failed to get total user count", zap.Error(err))
+		return 0, err
+	}
+	
+	return len(users), nil
+}
+
+// GetTotalStatusCount returns the total number of statuses
+func (r *TrendingRepository) GetTotalStatusCount(ctx context.Context) (*int, error) {
+	var objects []models.Object
+	err := r.db.WithContext(ctx).Model(&models.Object{}).
+		Filter("Type", "=", "Note"). // Only count Note objects (statuses)
+		All(&objects)
+	if err != nil {
+		r.logger.Error("failed to get total status count", zap.Error(err))
+		return nil, err
+	}
+	
+	count := len(objects)
+	return &count, nil
+}
+
+// GetTotalDomainCount returns the total number of federated domains
+func (r *TrendingRepository) GetTotalDomainCount(ctx context.Context) (int, error) {
+	var actors []models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		All(&actors)
+	if err != nil {
+		r.logger.Error("failed to get total domain count", zap.Error(err))
+		return 0, err
+	}
+	
+	// Count unique domains from actor URLs  
+	uniqueDomains := make(map[string]bool)
+	for _, actor := range actors {
+		if actor.Actor != nil && actor.Actor.ID != "" {
+			// Extract domain from actor ID (typically a URL)
+			if u, err := url.Parse(actor.Actor.ID); err == nil && u.Host != "" {
+				uniqueDomains[u.Host] = true
+			}
+		}
+	}
+	
+	return len(uniqueDomains), nil
+}
+

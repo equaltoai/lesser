@@ -11,6 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"go.uber.org/zap"
@@ -34,12 +35,12 @@ const (
 // WebAuthnService handles WebAuthn operations
 type WebAuthnService struct {
 	webAuthn *webauthn.WebAuthn
-	storage  storage.Storage
+	repos    core.RepositoryStorage
 	domain   string
 }
 
 // NewWebAuthnService creates a new WebAuthn service
-func NewWebAuthnService(storage storage.Storage, domain string, displayName string) (*WebAuthnService, error) {
+func NewWebAuthnService(repos core.RepositoryStorage, domain string, displayName string) (*WebAuthnService, error) {
 	// Configure WebAuthn
 	wconfig := &webauthn.Config{
 		RPDisplayName: displayName,                   // Display name for the site
@@ -54,7 +55,7 @@ func NewWebAuthnService(storage storage.Storage, domain string, displayName stri
 
 	return &WebAuthnService{
 		webAuthn: webAuthn,
-		storage:  storage,
+		repos:    repos,
 		domain:   domain,
 	}, nil
 }
@@ -62,7 +63,7 @@ func NewWebAuthnService(storage storage.Storage, domain string, displayName stri
 // BeginRegistration starts the WebAuthn registration process
 func (s *WebAuthnService) BeginRegistration(ctx context.Context, username string) (any, string, error) {
 	// Get user from storage
-	user, err := s.storage.GetUser(ctx, username)
+	user, err := s.repos.Account().GetUser(ctx, username)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get user: %w", err)
 	}
@@ -76,7 +77,7 @@ func (s *WebAuthnService) BeginRegistration(ctx context.Context, username string
 	}
 
 	// Get existing credentials for exclusion
-	credentials, err := s.storage.GetUserWebAuthnCredentials(ctx, username)
+	credentials, err := s.repos.Account().GetUserWebAuthnCredentials(ctx, username)
 	if err != nil {
 		common.Logger().Warn("failed to get existing credentials", zap.Error(err))
 	} else {
@@ -106,7 +107,7 @@ func (s *WebAuthnService) BeginRegistration(ctx context.Context, username string
 		Type:        "registration",
 	}
 
-	if err := s.storage.StoreWebAuthnChallenge(ctx, challengeData); err != nil {
+	if err := s.repos.Account().StoreWebAuthnChallenge(ctx, challengeData); err != nil {
 		return nil, "", fmt.Errorf("failed to store challenge: %w", err)
 	}
 
@@ -116,7 +117,7 @@ func (s *WebAuthnService) BeginRegistration(ctx context.Context, username string
 // FinishRegistration completes the WebAuthn registration process
 func (s *WebAuthnService) FinishRegistration(ctx context.Context, username string, challenge string, response []byte, credentialName string) error {
 	// Get challenge data
-	challengeData, err := s.storage.GetWebAuthnChallenge(ctx, challenge)
+	challengeData, err := s.repos.Account().GetWebAuthnChallenge(ctx, challenge)
 	if err != nil {
 		return ErrChallengeNotFound
 	}
@@ -136,7 +137,7 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 	}
 
 	// Get user
-	user, err := s.storage.GetUser(ctx, username)
+	user, err := s.repos.Account().GetUser(ctx, username)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
@@ -162,7 +163,7 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 	}
 
 	// Check if user has too many credentials
-	existingCreds, _ := s.storage.GetUserWebAuthnCredentials(ctx, username)
+	existingCreds, _ := s.repos.Account().GetUserWebAuthnCredentials(ctx, username)
 	if len(existingCreds) >= MaxCredentialsPerUser {
 		return fmt.Errorf("maximum number of credentials reached")
 	}
@@ -188,12 +189,12 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 		Name:            credentialName,
 	}
 
-	if err := s.storage.StoreWebAuthnCredential(ctx, storedCredential); err != nil {
+	if err := s.repos.Account().StoreWebAuthnCredential(ctx, storedCredential); err != nil {
 		return fmt.Errorf("failed to store credential: %w", err)
 	}
 
 	// Delete the used challenge
-	_ = s.storage.DeleteWebAuthnChallenge(ctx, challenge)
+	_ = s.repos.Account().DeleteWebAuthnChallenge(ctx, challenge)
 
 	return nil
 }
@@ -201,7 +202,7 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 // BeginLogin starts the WebAuthn login process
 func (s *WebAuthnService) BeginLogin(ctx context.Context, username string) (any, string, error) {
 	// Get user credentials
-	credentials, err := s.storage.GetUserWebAuthnCredentials(ctx, username)
+	credentials, err := s.repos.Account().GetUserWebAuthnCredentials(ctx, username)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get credentials: %w", err)
 	}
@@ -243,7 +244,7 @@ func (s *WebAuthnService) BeginLogin(ctx context.Context, username string) (any,
 		Type:        "authentication",
 	}
 
-	if err := s.storage.StoreWebAuthnChallenge(ctx, challengeData); err != nil {
+	if err := s.repos.Account().StoreWebAuthnChallenge(ctx, challengeData); err != nil {
 		return nil, "", fmt.Errorf("failed to store challenge: %w", err)
 	}
 
@@ -253,7 +254,7 @@ func (s *WebAuthnService) BeginLogin(ctx context.Context, username string) (any,
 // FinishLogin completes the WebAuthn login process
 func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, challenge string, response []byte) (*storage.WebAuthnCredential, error) {
 	// Get challenge data
-	challengeData, err := s.storage.GetWebAuthnChallenge(ctx, challenge)
+	challengeData, err := s.repos.Account().GetWebAuthnChallenge(ctx, challenge)
 	if err != nil {
 		return nil, ErrChallengeNotFound
 	}
@@ -273,7 +274,7 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 	}
 
 	// Get user credentials
-	credentials, err := s.storage.GetUserWebAuthnCredentials(ctx, username)
+	credentials, err := s.repos.Account().GetUserWebAuthnCredentials(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get credentials: %w", err)
 	}
@@ -318,25 +319,25 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 	usedCredential.BackupState = credential.Flags.BackupState
 	usedCredential.LastUsedAt = time.Now()
 
-	if err := s.storage.UpdateWebAuthnCredential(ctx, usedCredential); err != nil {
+	if err := s.repos.Account().UpdateWebAuthnCredential(ctx, usedCredential); err != nil {
 		common.Logger().Error("failed to update credential", zap.Error(err))
 	}
 
 	// Delete the used challenge
-	_ = s.storage.DeleteWebAuthnChallenge(ctx, challenge)
+	_ = s.repos.Account().DeleteWebAuthnChallenge(ctx, challenge)
 
 	return usedCredential, nil
 }
 
 // GetUserCredentials returns all WebAuthn credentials for a user
 func (s *WebAuthnService) GetUserCredentials(ctx context.Context, username string) ([]*storage.WebAuthnCredential, error) {
-	return s.storage.GetUserWebAuthnCredentials(ctx, username)
+	return s.repos.Account().GetUserWebAuthnCredentials(ctx, username)
 }
 
 // DeleteCredential removes a WebAuthn credential
 func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string, credentialID string) error {
 	// Verify the credential belongs to the user
-	credential, err := s.storage.GetWebAuthnCredential(ctx, credentialID)
+	credential, err := s.repos.Account().GetWebAuthnCredential(ctx, credentialID)
 	if err != nil {
 		return err
 	}
@@ -346,14 +347,14 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 	}
 
 	// Make sure user has at least one other auth method
-	credentials, err := s.storage.GetUserWebAuthnCredentials(ctx, username)
+	credentials, err := s.repos.Account().GetUserWebAuthnCredentials(ctx, username)
 	if err != nil {
 		return err
 	}
 
 	if len(credentials) <= 1 {
 		// Check if user has a password set
-		user, err := s.storage.GetUser(ctx, username)
+		user, err := s.repos.Account().GetUser(ctx, username)
 		if err != nil {
 			return err
 		}
@@ -363,13 +364,13 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 		}
 	}
 
-	return s.storage.DeleteWebAuthnCredential(ctx, credentialID)
+	return s.repos.Account().DeleteWebAuthnCredential(ctx, credentialID)
 }
 
 // UpdateCredentialName updates the display name of a credential
 func (s *WebAuthnService) UpdateCredentialName(ctx context.Context, username string, credentialID string, newName string) error {
 	// Verify the credential belongs to the user
-	credential, err := s.storage.GetWebAuthnCredential(ctx, credentialID)
+	credential, err := s.repos.Account().GetWebAuthnCredential(ctx, credentialID)
 	if err != nil {
 		return err
 	}
@@ -379,7 +380,7 @@ func (s *WebAuthnService) UpdateCredentialName(ctx context.Context, username str
 	}
 
 	credential.Name = newName
-	return s.storage.UpdateWebAuthnCredential(ctx, credential)
+	return s.repos.Account().UpdateWebAuthnCredential(ctx, credential)
 }
 
 // webAuthnUser implements the webauthn.User interface

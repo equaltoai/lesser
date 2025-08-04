@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -18,7 +17,7 @@ import (
 func TestNewSQSBatchProcessor(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	logger := zap.NewNop()
-	tracker := cost.New()
+	tracker := &MockCostTracker{}
 
 	// Test with default config
 	processor := NewSQSBatchProcessor(mockDB, SQSBatchProcessorConfig{

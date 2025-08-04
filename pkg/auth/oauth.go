@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -65,20 +65,20 @@ type Claims struct {
 // OAuthService handles OAuth 2.0 operations
 type OAuthService struct {
 	jwtSecret []byte
-	storage   storage.Storage
+	repos     core.RepositoryStorage
 }
 
 // NewOAuthService creates a new OAuth service
-func NewOAuthService(jwtSecret string, storage storage.Storage) *OAuthService {
+func NewOAuthService(jwtSecret string, repos core.RepositoryStorage) *OAuthService {
 	return &OAuthService{
 		jwtSecret: []byte(jwtSecret),
-		storage:   storage,
+		repos:     repos,
 	}
 }
 
 // ValidateClient validates client credentials
 func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) error {
-	client, err := s.storage.GetOAuthClient(ctx, clientID)
+	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
 	if err != nil {
 		return ErrInvalidClient
 	}
@@ -92,7 +92,7 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 
 // ValidateRedirectURI validates that the redirect URI matches the registered one
 func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error {
-	client, err := s.storage.GetOAuthClient(ctx, clientID)
+	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
 	if err != nil {
 		return ErrInvalidClient
 	}
