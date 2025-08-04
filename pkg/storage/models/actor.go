@@ -159,6 +159,17 @@ func formatFollowerCountForGSI(count int, username string) string {
 }
 
 // UpdateKeys updates the GSI keys for this actor (required by DynamORM)
-func (a *Actor) UpdateKeys() {
+func (a *Actor) UpdateKeys() error {
 	a.setupGSIKeys()
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (a *Actor) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (a *Actor) GetSK() string {
+	return a.SK
 }

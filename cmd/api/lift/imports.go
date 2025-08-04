@@ -84,7 +84,7 @@ func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
@@ -267,7 +267,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
@@ -367,7 +367,7 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})

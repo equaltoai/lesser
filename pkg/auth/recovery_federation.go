@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
@@ -18,16 +19,16 @@ type FederationDeliveryService interface {
 
 // RecoveryFederationService handles ActivityPub notifications for recovery
 type RecoveryFederationService struct {
-	store      storage.Storage
+	repos      core.RepositoryStorage
 	fedService FederationDeliveryService
 	logger     *zap.Logger
 	domain     string
 }
 
 // NewRecoveryFederationService creates a new recovery federation service
-func NewRecoveryFederationService(store storage.Storage, fedService FederationDeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
+func NewRecoveryFederationService(repos core.RepositoryStorage, fedService FederationDeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
 	return &RecoveryFederationService{
-		store:      store,
+		repos:      repos,
 		fedService: fedService,
 		domain:     domain,
 		logger:     logger,
@@ -82,7 +83,7 @@ func (s *RecoveryFederationService) SendTrusteeInvitation(ctx context.Context, f
 	}
 
 	// Get the signing actor (not used in current interface)
-	_, err := s.store.GetActor(ctx, fromUser)
+	_, err := s.repos.Actor().GetActor(ctx, fromUser)
 	if err != nil {
 		return fmt.Errorf("failed to get signing actor: %w", err)
 	}
@@ -144,7 +145,7 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 	}
 
 	// Get the system actor for signing (not used in current interface)
-	_, err := s.store.GetActor(ctx, "system")
+	_, err := s.repos.Actor().GetActor(ctx, "system")
 	if err != nil {
 		// Create a minimal system actor if it doesn't exist (not used)
 		_ = &activitypub.Actor{
@@ -184,7 +185,7 @@ func (s *RecoveryFederationService) HandleTrusteeConfirmation(ctx context.Contex
 	trusteeActorID := activity.Actor
 
 	// Process the confirmation
-	socialRecovery := NewSocialRecoveryService(s.store, s.logger)
+	socialRecovery := NewSocialRecoveryService(s.repos, s.logger)
 	if err := socialRecovery.ConfirmRecovery(ctx, requestID, trusteeActorID); err != nil {
 		return fmt.Errorf("failed to process recovery confirmation: %w", err)
 	}
@@ -199,7 +200,7 @@ func (s *RecoveryFederationService) HandleTrusteeConfirmation(ctx context.Contex
 // SendRecoveryApprovalNotification notifies the user their recovery was approved
 func (s *RecoveryFederationService) SendRecoveryApprovalNotification(ctx context.Context, username string, recoveryToken string) error {
 	// Get user's actor
-	actor, err := s.store.GetActor(ctx, username)
+	actor, err := s.repos.Actor().GetActor(ctx, username)
 	if err != nil {
 		return fmt.Errorf("failed to get actor: %w", err)
 	}

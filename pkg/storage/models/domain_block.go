@@ -15,9 +15,20 @@ type UserDomainBlock struct {
 }
 
 // UpdateKeys updates the keys for the user domain block
-func (d *UserDomainBlock) UpdateKeys() {
+func (d *UserDomainBlock) UpdateKeys() error {
 	d.PK = fmt.Sprintf("USER#%s", d.Username)
 	d.SK = fmt.Sprintf("DOMAIN_BLOCK#%s", d.Domain)
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (d *UserDomainBlock) GetPK() string {
+	return d.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (d *UserDomainBlock) GetSK() string {
+	return d.SK
 }
 
 // InstanceDomainBlock represents an instance-level domain block

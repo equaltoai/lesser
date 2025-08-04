@@ -8,10 +8,22 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
+
+// CostMetrics represents the cost metrics at a point in time
+type CostMetrics struct {
+	DynamoDBReads  int64
+	DynamoDBWrites int64
+}
+
+// CostTracker interface defines the methods needed for cost tracking
+type CostTracker interface {
+	CalculateCost() CostMetrics
+	TrackDynamoWrite(items int)
+	TrackDynamoRead(items int)
+}
 
 // DynamoDB batch operation limits
 const (
@@ -26,14 +38,14 @@ type BatchWriter struct {
 	client    core.DB
 	batchSize int
 	logger    *zap.Logger
-	tracker   *cost.Tracker
+	tracker   CostTracker
 }
 
 // BatchWriterConfig holds configuration for BatchWriter
 type BatchWriterConfig struct {
 	BatchSize int
 	Logger    *zap.Logger
-	Tracker   *cost.Tracker
+	Tracker   CostTracker
 }
 
 // NewBatchWriter creates a new BatchWriter with the specified configuration
@@ -303,14 +315,14 @@ type BatchReader struct {
 	client    core.DB
 	batchSize int
 	logger    *zap.Logger
-	tracker   *cost.Tracker
+	tracker   CostTracker
 }
 
 // BatchReaderConfig holds configuration for BatchReader
 type BatchReaderConfig struct {
 	BatchSize int
 	Logger    *zap.Logger
-	Tracker   *cost.Tracker
+	Tracker   CostTracker
 }
 
 // NewBatchReader creates a new BatchReader with the specified configuration
@@ -619,7 +631,7 @@ func BatchRead(ctx context.Context, client core.DB, keys []any, dest any) (*Batc
 }
 
 // BatchWriteWithCostTracking performs batch write with cost tracking
-func BatchWriteWithCostTracking(ctx context.Context, client core.DB, items []any, tracker *cost.Tracker, logger *zap.Logger) (*BatchWriteResult, error) {
+func BatchWriteWithCostTracking(ctx context.Context, client core.DB, items []any, tracker CostTracker, logger *zap.Logger) (*BatchWriteResult, error) {
 	writer := NewBatchWriter(client, BatchWriterConfig{
 		BatchSize: DefaultBatchSize,
 		Logger:    logger,
@@ -629,7 +641,7 @@ func BatchWriteWithCostTracking(ctx context.Context, client core.DB, items []any
 }
 
 // BatchReadWithCostTracking performs batch read with cost tracking
-func BatchReadWithCostTracking(ctx context.Context, client core.DB, keys []any, dest any, tracker *cost.Tracker, logger *zap.Logger) (*BatchReadResult, error) {
+func BatchReadWithCostTracking(ctx context.Context, client core.DB, keys []any, dest any, tracker CostTracker, logger *zap.Logger) (*BatchReadResult, error) {
 	reader := NewBatchReader(client, BatchReaderConfig{
 		BatchSize: MaxBatchReadSize,
 		Logger:    logger,

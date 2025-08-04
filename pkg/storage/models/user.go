@@ -151,6 +151,17 @@ func (u *User) IsModerator() bool {
 }
 
 // UpdateKeys updates the GSI keys for this user (required by DynamORM)
-func (u *User) UpdateKeys() {
+func (u *User) UpdateKeys() error {
 	u.setupGSIKeys()
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel interface)
+func (u *User) GetPK() string {
+	return u.PK
+}
+
+// GetSK returns the sort key (required by BaseModel interface)
+func (u *User) GetSK() string {
+	return u.SK
 }

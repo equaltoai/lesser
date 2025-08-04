@@ -5,6 +5,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -13,6 +14,7 @@ import (
 type Handler struct {
 	cfg            *config.Config
 	store          storage.Storage
+	repos          core.RepositoryStorage
 	logger         *zap.Logger
 	authMiddleware *auth.Middleware
 	converter      mastodon.Converter
@@ -24,6 +26,7 @@ func NewHandler(cfg *config.Config, store storage.Storage, logger *zap.Logger, a
 	return &Handler{
 		cfg:            cfg,
 		store:          store,
+		repos:          store.(core.RepositoryStorage), // Cast storage to get repository access
 		logger:         logger,
 		authMiddleware: authMiddleware,
 		converter:      converter,

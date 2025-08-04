@@ -8,7 +8,12 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/dynamorm"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
 )
 
 // MockStorage is a mock implementation of the Storage interface
@@ -3551,4 +3556,230 @@ func (m *MockStorage) WriteToTimelines(ctx context.Context, entries []*storage.T
 	args := m.Called(ctx, entries)
 	return args.Error(0)
 }
+
+// MockRepositoryStorage implements the RepositoryStorage interface for testing
+type MockRepositoryStorage struct {
+	mock.Mock
+	accountRepo         *repositories.AccountRepository
+	actorRepo           *repositories.ActorRepository
+	objectRepo          *repositories.ObjectRepository
+	activityRepo        *repositories.ActivityRepository
+	timelineRepo        *repositories.TimelineRepository
+	notificationRepo    *repositories.NotificationRepository
+	likeRepo            *repositories.LikeRepository
+	moderationRepo      *repositories.ModerationRepository
+	listRepo            *repositories.ListRepository
+	mediaRepo           *repositories.MediaRepository
+	pollRepo            *repositories.PollRepository
+	hashtagRepo         *repositories.HashtagRepository
+	scheduledStatusRepo *repositories.ScheduledStatusRepository
+	announcementRepo    *repositories.AnnouncementRepository
+	domainBlockRepo     *repositories.DomainBlockRepository
+	relationshipRepo    *repositories.RelationshipRepository
+	instanceRepo        *repositories.InstanceRepository
+	federationRepo      *repositories.FederationRepository
+	recoveryRepo        *repositories.RecoveryRepository
+	analyticsRepo       *repositories.TrendingRepository
+	socialRepo          *repositories.SocialRepository
+	userRepo            *repositories.UserRepository
+	statusRepo          *repositories.StatusRepository
+	costRepo            *repositories.CostTrackingRepository
+	trustRepo           *repositories.TrustRepository
+	searchRepo          *repositories.SearchRepository
+}
+
+// NewMockRepositoryStorage creates a new mock repository storage with mock repositories
+func NewMockRepositoryStorage() *MockRepositoryStorage {
+	// Create mock repositories that can handle method calls during testing
+	// We'll use a mock logger and nil DB for testing since we're not actually using DynamoDB
+	logger := zap.NewNop()
+	
+	// Create repository instances with nil DB - they'll return "not implemented" errors
+	// which is what we expect during testing phase
+	accountRepo := repositories.NewAccountRepository(nil, "test-table", "test.example.com", logger)
+	actorRepo := repositories.NewActorRepository(nil, "test-table", logger)
+	objectRepo := repositories.NewObjectRepository(nil, "test-table", "test.example.com", logger)
+	activityRepo := repositories.NewActivityRepository(nil, "test-table", logger)
+	timelineRepo := repositories.NewTimelineRepository(nil, "test-table", logger)
+	notificationRepo := repositories.NewNotificationRepository(nil, "test-table", logger)
+	likeRepo := repositories.NewLikeRepository(nil, "test-table", logger)
+	moderationRepo := repositories.NewModerationRepository(nil, "test-table", logger)
+	listRepo := repositories.NewListRepository(nil, "test-table", logger)
+	mediaRepo := repositories.NewMediaRepository(nil, "test-table", logger)
+	pollRepo := repositories.NewPollRepository(nil, "test-table", logger)
+	hashtagRepo := repositories.NewHashtagRepository(nil, "test-table", logger, "test.example.com")
+	scheduledStatusRepo := repositories.NewScheduledStatusRepository(nil, "test-table", logger)
+	announcementRepo := repositories.NewAnnouncementRepository(nil, "test-table", logger)
+	domainBlockRepo := repositories.NewDomainBlockRepository(nil, "test-table", logger)
+	relationshipRepo := repositories.NewRelationshipRepository(nil, "test-table", logger)
+	instanceRepo := repositories.NewInstanceRepository(nil, "test-table", logger)
+	federationRepo := repositories.NewFederationRepository(nil, logger)
+	recoveryRepo := repositories.NewRecoveryRepository(nil, "test-table", logger)
+	analyticsRepo := repositories.NewTrendingRepository(nil, logger)
+	socialRepo := repositories.NewSocialRepository(nil, logger)
+	userRepo := repositories.NewUserRepository(nil, "test-table", logger)
+	statusRepo := repositories.NewStatusRepository(nil, "test-table", logger)
+	costRepo := repositories.NewCostTrackingRepository(nil, "test-table", logger)
+	trustRepo := repositories.NewTrustRepository(nil, logger)
+	searchRepo := repositories.NewSearchRepository(dynamorm.DB{}, logger)
+	
+	return &MockRepositoryStorage{
+		accountRepo:         accountRepo,
+		actorRepo:           actorRepo,
+		objectRepo:          objectRepo,
+		activityRepo:        activityRepo,
+		timelineRepo:        timelineRepo,
+		notificationRepo:    notificationRepo,
+		likeRepo:            likeRepo,
+		moderationRepo:      moderationRepo,
+		listRepo:            listRepo,
+		mediaRepo:           mediaRepo,
+		pollRepo:            pollRepo,
+		hashtagRepo:         hashtagRepo,
+		scheduledStatusRepo: scheduledStatusRepo,
+		announcementRepo:    announcementRepo,
+		domainBlockRepo:     domainBlockRepo,
+		relationshipRepo:    relationshipRepo,
+		instanceRepo:        instanceRepo,
+		federationRepo:      federationRepo,
+		recoveryRepo:        recoveryRepo,
+		analyticsRepo:       analyticsRepo,
+		socialRepo:          socialRepo,
+		userRepo:            userRepo,
+		statusRepo:          statusRepo,
+		costRepo:            costRepo,
+		trustRepo:           trustRepo,
+		searchRepo:          searchRepo,
+	}
+}
+
+// Repository access methods for MockRepositoryStorage
+func (m *MockRepositoryStorage) Account() *repositories.AccountRepository {
+	return m.accountRepo
+}
+
+func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository {
+	return m.actorRepo
+}
+
+func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository {
+	return m.objectRepo
+}
+
+func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository {
+	return m.activityRepo
+}
+
+func (m *MockRepositoryStorage) Timeline() *repositories.TimelineRepository {
+	return m.timelineRepo
+}
+
+func (m *MockRepositoryStorage) Notification() *repositories.NotificationRepository {
+	return m.notificationRepo
+}
+
+func (m *MockRepositoryStorage) Like() *repositories.LikeRepository {
+	return m.likeRepo
+}
+
+func (m *MockRepositoryStorage) Moderation() *repositories.ModerationRepository {
+	return m.moderationRepo
+}
+
+func (m *MockRepositoryStorage) List() *repositories.ListRepository {
+	return m.listRepo
+}
+
+func (m *MockRepositoryStorage) Media() *repositories.MediaRepository {
+	return m.mediaRepo
+}
+
+func (m *MockRepositoryStorage) Poll() *repositories.PollRepository {
+	return m.pollRepo
+}
+
+func (m *MockRepositoryStorage) Hashtag() *repositories.HashtagRepository {
+	return m.hashtagRepo
+}
+
+func (m *MockRepositoryStorage) ScheduledStatus() *repositories.ScheduledStatusRepository {
+	return m.scheduledStatusRepo
+}
+
+func (m *MockRepositoryStorage) Announcement() *repositories.AnnouncementRepository {
+	return m.announcementRepo
+}
+
+func (m *MockRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository {
+	return m.domainBlockRepo
+}
+
+func (m *MockRepositoryStorage) Relationship() *repositories.RelationshipRepository {
+	return m.relationshipRepo
+}
+
+func (m *MockRepositoryStorage) Instance() *repositories.InstanceRepository {
+	return m.instanceRepo
+}
+
+func (m *MockRepositoryStorage) Federation() *repositories.FederationRepository {
+	return m.federationRepo
+}
+
+func (m *MockRepositoryStorage) Recovery() *repositories.RecoveryRepository {
+	return m.recoveryRepo
+}
+
+func (m *MockRepositoryStorage) Analytics() *repositories.TrendingRepository {
+	return m.analyticsRepo
+}
+
+func (m *MockRepositoryStorage) Social() *repositories.SocialRepository {
+	return m.socialRepo
+}
+
+func (m *MockRepositoryStorage) User() *repositories.UserRepository {
+	return m.userRepo
+}
+
+func (m *MockRepositoryStorage) Status() *repositories.StatusRepository {
+	return m.statusRepo
+}
+
+func (m *MockRepositoryStorage) Cost() *repositories.CostTrackingRepository {
+	return m.costRepo
+}
+
+func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository {
+	return m.trustRepo
+}
+
+func (m *MockRepositoryStorage) Search() *repositories.SearchRepository {
+	return m.searchRepo
+}
+
+// Utility methods
+func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(dynamormCore.DB)
+}
+
+func (m *MockRepositoryStorage) GetTableName() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockRepositoryStorage) GetLogger() *zap.Logger {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*zap.Logger)
+}
+
+// Ensure MockRepositoryStorage implements RepositoryStorage interface
+var _ core.RepositoryStorage = (*MockRepositoryStorage)(nil)
 

@@ -26,7 +26,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/media"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
@@ -34,7 +36,7 @@ import (
 // MediaProcessor handles media processing from SQS messages using Lift and DynamORM
 type MediaProcessor struct {
 	db                   core.DB
-	storage              *dynamorm.StorageAdapter
+	repos                storageCore.RepositoryStorage
 	mediaRepo            *repositories.MediaRepository
 	s3Client             *s3.Client
 	mediaConvertClient   *mediaconvert.Client
@@ -125,12 +127,14 @@ func init() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Initialize repositories
-	storageAdapter := dynamorm.NewStorageAdapter(db, cfg.DynamoTableName, logger)
-	mediaRepo := repositories.NewMediaRepository(db, cfg.DynamoTableName, logger)
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
 
-	// Set media repository in storage adapter
-	storageAdapter.SetMediaRepository(mediaRepo)
+	// Initialize media repository directly for backward compatibility
+	mediaRepo := repositories.NewMediaRepository(db, cfg.DynamoTableName, logger)
 
 	// Get configuration from environment
 	bucketName := os.Getenv("S3_BUCKET_NAME")
@@ -153,7 +157,7 @@ func init() {
 	// Create processor instance
 	processor = &MediaProcessor{
 		db:                   db,
-		storage:              storageAdapter,
+		repos:                repos,
 		mediaRepo:            mediaRepo,
 		costTracker:          cost.New(),
 		tableName:            cfg.DynamoTableName,

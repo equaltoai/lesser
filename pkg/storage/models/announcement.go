@@ -57,9 +57,10 @@ type Announcement struct {
 }
 
 // UpdateKeys updates the PK and SK based on the announcement data
-func (a *Announcement) UpdateKeys() {
+func (a *Announcement) UpdateKeys() error {
 	a.PK = fmt.Sprintf("ANNOUNCEMENT#%s", a.ID)
 	a.SK = "ANNOUNCEMENT"
+	return nil
 }
 
 // BeforeCreate prepares the announcement for creation
@@ -71,8 +72,7 @@ func (a *Announcement) BeforeCreate() error {
 	a.PublishedAt = now
 	a.UpdatedAt = now
 	a.CreatedAt = now
-	a.UpdateKeys()
-	return nil
+	return a.UpdateKeys()
 }
 
 // AnnouncementDismissal represents a user dismissing an announcement
@@ -88,16 +88,16 @@ type AnnouncementDismissal struct {
 }
 
 // UpdateKeys updates the PK and SK based on the dismissal data
-func (d *AnnouncementDismissal) UpdateKeys() {
+func (d *AnnouncementDismissal) UpdateKeys() error {
 	d.PK = fmt.Sprintf("USER#%s", d.Username)
 	d.SK = fmt.Sprintf("ANNOUNCEMENT_DISMISSED#%s", d.AnnouncementID)
+	return nil
 }
 
 // BeforeCreate prepares the dismissal for creation
 func (d *AnnouncementDismissal) BeforeCreate() error {
 	d.DismissedAt = time.Now()
-	d.UpdateKeys()
-	return nil
+	return d.UpdateKeys()
 }
 
 // AnnouncementReaction represents a user's reaction to an announcement
@@ -114,9 +114,10 @@ type AnnouncementReaction struct {
 }
 
 // UpdateKeys updates the PK and SK based on the reaction data
-func (r *AnnouncementReaction) UpdateKeys() {
+func (r *AnnouncementReaction) UpdateKeys() error {
 	r.PK = fmt.Sprintf("ANNOUNCEMENT_REACTION#%s", r.AnnouncementID)
 	r.SK = fmt.Sprintf("USER#%s#%s", r.Username, r.EmojiName)
+	return nil
 }
 
 // BeforeCreate prepares the reaction for creation
@@ -124,4 +125,34 @@ func (r *AnnouncementReaction) BeforeCreate() error {
 	r.ReactedAt = time.Now()
 	r.UpdateKeys()
 	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (a *Announcement) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (a *Announcement) GetSK() string {
+	return a.SK
+}
+
+// GetPK returns the partition key for dismissal
+func (d *AnnouncementDismissal) GetPK() string {
+	return d.PK
+}
+
+// GetSK returns the sort key for dismissal
+func (d *AnnouncementDismissal) GetSK() string {
+	return d.SK
+}
+
+// GetPK returns the partition key for reaction
+func (r *AnnouncementReaction) GetPK() string {
+	return r.PK
+}
+
+// GetSK returns the sort key for reaction
+func (r *AnnouncementReaction) GetSK() string {
+	return r.SK
 }

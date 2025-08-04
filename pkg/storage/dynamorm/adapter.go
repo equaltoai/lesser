@@ -1082,6 +1082,7 @@ type MediaSessionRepository interface {
 // This allows for incremental migration to DynamORM while maintaining backward compatibility
 type StorageAdapter struct {
 	// Repository fields
+	accountRepo          AccountRepository
 	actorRepo            ActorRepository
 	objectRepo           ObjectRepository
 	activityRepo         ActivityRepository
@@ -1092,7 +1093,6 @@ type StorageAdapter struct {
 	timelineRepo         TimelineRepository
 	notificationRepo     NotificationRepository
 	likeRepo             LikeRepository
-	oauthRepo            OAuthRepository
 	searchRepo           SearchRepository
 	sessionRepo          SessionRepository
 	moderationRepo       ModerationRepository
@@ -1116,7 +1116,6 @@ type StorageAdapter struct {
 	federationRepo       FederationRepository
 	federationInstanceRepo FederationInstanceRepository
 	walletRepo           WalletRepository
-	authRepo             AuthRepository
 	recoveryRepo         RecoveryRepository
 	rateLimitRepo        RateLimitRepository
 	streamingRepo        StreamingRepository
@@ -1141,6 +1140,11 @@ func NewStorageAdapter(db core.DB, tableName string, logger *zap.Logger) *Storag
 		tableName: tableName,
 		logger:    logger,
 	}
+}
+
+// GetDB returns the underlying DynamORM database connection
+func (a *StorageAdapter) GetDB() core.DB {
+	return a.db
 }
 
 // SetActorRepository sets the actor repository
@@ -1198,10 +1202,6 @@ func (a *StorageAdapter) SetLikeRepository(repo LikeRepository) {
 	a.likeRepo = repo
 }
 
-// SetOAuthRepository sets the OAuth repository
-func (a *StorageAdapter) SetOAuthRepository(repo OAuthRepository) {
-	a.oauthRepo = repo
-}
 
 // SetSearchRepository sets the search repository
 func (a *StorageAdapter) SetSearchRepository(repo SearchRepository) {
@@ -1318,9 +1318,9 @@ func (a *StorageAdapter) SetFederationInstanceRepository(repo FederationInstance
 	a.federationInstanceRepo = repo
 }
 
-// SetAuthRepository sets the auth repository
-func (a *StorageAdapter) SetAuthRepository(repo AuthRepository) {
-	a.authRepo = repo
+// SetAccountRepository sets the account repository
+func (a *StorageAdapter) SetAccountRepository(repo AccountRepository) {
+	a.accountRepo = repo
 }
 
 // SetWalletRepository sets the wallet repository
@@ -2831,12 +2831,12 @@ func (a *StorageAdapter) GetActorLikes(ctx context.Context, actorID string, limi
 // CreateAuthorizationCode creates a new OAuth authorization code
 func (a *StorageAdapter) CreateAuthorizationCode(ctx context.Context, code *storage.AuthorizationCode) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.CreateAuthorizationCode(ctx, code)
+	err := a.accountRepo.CreateAuthorizationCode(ctx, code)
 	if err != nil {
 		return MapRepositoryError(err, "CreateAuthorizationCode", "AuthorizationCode", code.Code)
 	}
@@ -2847,12 +2847,12 @@ func (a *StorageAdapter) CreateAuthorizationCode(ctx context.Context, code *stor
 // GetAuthorizationCode retrieves an OAuth authorization code
 func (a *StorageAdapter) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return nil, fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return nil, fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	authCode, err := a.oauthRepo.GetAuthorizationCode(ctx, code)
+	authCode, err := a.accountRepo.GetAuthorizationCode(ctx, code)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetAuthorizationCode", "AuthorizationCode", code)
 	}
@@ -2863,12 +2863,12 @@ func (a *StorageAdapter) GetAuthorizationCode(ctx context.Context, code string) 
 // DeleteAuthorizationCode deletes an OAuth authorization code
 func (a *StorageAdapter) DeleteAuthorizationCode(ctx context.Context, code string) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.DeleteAuthorizationCode(ctx, code)
+	err := a.accountRepo.DeleteAuthorizationCode(ctx, code)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteAuthorizationCode", "AuthorizationCode", code)
 	}
@@ -2879,12 +2879,12 @@ func (a *StorageAdapter) DeleteAuthorizationCode(ctx context.Context, code strin
 // CreateRefreshToken creates a new OAuth refresh token
 func (a *StorageAdapter) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.CreateRefreshToken(ctx, token)
+	err := a.accountRepo.CreateRefreshToken(ctx, token)
 	if err != nil {
 		return MapRepositoryError(err, "CreateRefreshToken", "RefreshToken", token.Token)
 	}
@@ -2895,12 +2895,12 @@ func (a *StorageAdapter) CreateRefreshToken(ctx context.Context, token *storage.
 // GetRefreshToken retrieves an OAuth refresh token
 func (a *StorageAdapter) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return nil, fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return nil, fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	refreshToken, err := a.oauthRepo.GetRefreshToken(ctx, token)
+	refreshToken, err := a.accountRepo.GetRefreshToken(ctx, token)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetRefreshToken", "RefreshToken", token)
 	}
@@ -2911,12 +2911,12 @@ func (a *StorageAdapter) GetRefreshToken(ctx context.Context, token string) (*st
 // DeleteRefreshToken deletes an OAuth refresh token
 func (a *StorageAdapter) DeleteRefreshToken(ctx context.Context, token string) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.DeleteRefreshToken(ctx, token)
+	err := a.accountRepo.DeleteRefreshToken(ctx, token)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteRefreshToken", "RefreshToken", token)
 	}
@@ -2927,12 +2927,12 @@ func (a *StorageAdapter) DeleteRefreshToken(ctx context.Context, token string) e
 // CreateOAuthClient creates a new OAuth client
 func (a *StorageAdapter) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.CreateOAuthClient(ctx, client)
+	err := a.accountRepo.CreateOAuthClient(ctx, client)
 	if err != nil {
 		return MapRepositoryError(err, "CreateOAuthClient", "OAuthClient", client.ClientID)
 	}
@@ -2943,12 +2943,12 @@ func (a *StorageAdapter) CreateOAuthClient(ctx context.Context, client *storage.
 // GetOAuthClient retrieves an OAuth client by client ID
 func (a *StorageAdapter) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return nil, fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return nil, fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	client, err := a.oauthRepo.GetOAuthClient(ctx, clientID)
+	client, err := a.accountRepo.GetOAuthClient(ctx, clientID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetOAuthClient", "OAuthClient", clientID)
 	}
@@ -2959,12 +2959,12 @@ func (a *StorageAdapter) GetOAuthClient(ctx context.Context, clientID string) (*
 // DeleteOAuthClient deletes an OAuth client
 func (a *StorageAdapter) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.DeleteOAuthClient(ctx, clientID)
+	err := a.accountRepo.DeleteOAuthClient(ctx, clientID)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteOAuthClient", "OAuthClient", clientID)
 	}
@@ -2975,12 +2975,12 @@ func (a *StorageAdapter) DeleteOAuthClient(ctx context.Context, clientID string)
 // StoreOAuthState stores OAuth state for CSRF protection
 func (a *StorageAdapter) StoreOAuthState(ctx context.Context, state string, data *storage.OAuthState) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.StoreOAuthState(ctx, state, data)
+	err := a.accountRepo.StoreOAuthState(ctx, state, data)
 	if err != nil {
 		return MapRepositoryError(err, "StoreOAuthState", "OAuthState", state)
 	}
@@ -2991,12 +2991,12 @@ func (a *StorageAdapter) StoreOAuthState(ctx context.Context, state string, data
 // GetOAuthState retrieves OAuth state
 func (a *StorageAdapter) GetOAuthState(ctx context.Context, state string) (*storage.OAuthState, error) {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return nil, fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return nil, fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	result, err := a.oauthRepo.GetOAuthState(ctx, state)
+	result, err := a.accountRepo.GetOAuthState(ctx, state)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetOAuthState", "OAuthState", state)
 	}
@@ -3006,12 +3006,12 @@ func (a *StorageAdapter) GetOAuthState(ctx context.Context, state string) (*stor
 
 // SaveOAuthState saves OAuth state (alternate method with different signature)
 func (a *StorageAdapter) SaveOAuthState(ctx context.Context, state *storage.OAuthState) error {
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 	
 	// Call StoreOAuthState with the state key from the object
-	err := a.oauthRepo.StoreOAuthState(ctx, state.State, state)
+	err := a.accountRepo.StoreOAuthState(ctx, state.State, state)
 	if err != nil {
 		return MapRepositoryError(err, "SaveOAuthState", "OAuthState", state.State)
 	}
@@ -3022,12 +3022,12 @@ func (a *StorageAdapter) SaveOAuthState(ctx context.Context, state *storage.OAut
 // DeleteOAuthState deletes OAuth state
 func (a *StorageAdapter) DeleteOAuthState(ctx context.Context, state string) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.DeleteOAuthState(ctx, state)
+	err := a.accountRepo.DeleteOAuthState(ctx, state)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteOAuthState", "OAuthState", state)
 	}
@@ -3038,12 +3038,12 @@ func (a *StorageAdapter) DeleteOAuthState(ctx context.Context, state string) err
 // UpdateOAuthClient updates an existing OAuth client
 func (a *StorageAdapter) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.UpdateOAuthClient(ctx, clientID, updates)
+	err := a.accountRepo.UpdateOAuthClient(ctx, clientID, updates)
 	if err != nil {
 		return MapRepositoryError(err, "UpdateOAuthClient", "OAuthClient", clientID)
 	}
@@ -3054,12 +3054,12 @@ func (a *StorageAdapter) UpdateOAuthClient(ctx context.Context, clientID string,
 // ListOAuthClients lists OAuth clients with pagination
 func (a *StorageAdapter) ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*storage.OAuthClient, string, error) {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return nil, "", fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return nil, "", fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	clients, nextCursor, err := a.oauthRepo.ListOAuthClients(ctx, limit, cursor)
+	clients, nextCursor, err := a.accountRepo.ListOAuthClients(ctx, int(limit), cursor)
 	if err != nil {
 		return nil, "", MapRepositoryError(err, "ListOAuthClients", "OAuthClient", "")
 	}
@@ -3070,12 +3070,12 @@ func (a *StorageAdapter) ListOAuthClients(ctx context.Context, limit int32, curs
 // GetOAuthApp retrieves an OAuth app by client ID
 func (a *StorageAdapter) GetOAuthApp(ctx context.Context, clientID string) (*storage.OAuthApp, error) {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return nil, fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return nil, fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	app, err := a.oauthRepo.GetOAuthApp(ctx, clientID)
+	app, err := a.accountRepo.GetOAuthApp(ctx, clientID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetOAuthApp", "OAuthApp", clientID)
 	}
@@ -3086,12 +3086,12 @@ func (a *StorageAdapter) GetOAuthApp(ctx context.Context, clientID string) (*sto
 // SaveUserAppConsent saves user consent for an OAuth app
 func (a *StorageAdapter) SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.oauthRepo.SaveUserAppConsent(ctx, consent)
+	err := a.accountRepo.SaveUserAppConsent(ctx, consent)
 	if err != nil {
 		return MapRepositoryError(err, "SaveUserAppConsent", "UserAppConsent", consent.UserID+":"+consent.AppID)
 	}
@@ -3102,12 +3102,12 @@ func (a *StorageAdapter) SaveUserAppConsent(ctx context.Context, consent *storag
 // GetUserAppConsent retrieves user consent for an OAuth app
 func (a *StorageAdapter) GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
 	// Check if OAuth repository is set
-	if a.oauthRepo == nil {
-		return nil, fmt.Errorf("OAuth repository not initialized")
+	if a.accountRepo == nil {
+		return nil, fmt.Errorf("Account repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	consent, err := a.oauthRepo.GetUserAppConsent(ctx, userID, appID)
+	consent, err := a.accountRepo.GetUserAppConsent(ctx, userID, appID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetUserAppConsent", "UserAppConsent", userID+":"+appID)
 	}
@@ -3542,12 +3542,12 @@ func (a *StorageAdapter) GetUserDevices(ctx context.Context, username string) ([
 // StoreWebAuthnCredential stores a new WebAuthn credential
 func (a *StorageAdapter) StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
 	// Check if auth repository is set
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.authRepo.CreateWebAuthnCredential(ctx, credential)
+	err := a.accountRepo.CreateWebAuthnCredential(ctx, credential)
 	if err != nil {
 		return MapRepositoryError(err, "StoreWebAuthnCredential", "WebAuthnCredential", credential.ID)
 	}
@@ -3558,12 +3558,12 @@ func (a *StorageAdapter) StoreWebAuthnCredential(ctx context.Context, credential
 // GetWebAuthnCredential retrieves a WebAuthn credential by ID
 func (a *StorageAdapter) GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error) {
 	// Check if auth repository is set
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return nil, fmt.Errorf("auth repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	credential, err := a.authRepo.GetWebAuthnCredential(ctx, credentialID)
+	credential, err := a.accountRepo.GetWebAuthnCredential(ctx, credentialID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetWebAuthnCredential", "WebAuthnCredential", credentialID)
 	}
@@ -3574,12 +3574,12 @@ func (a *StorageAdapter) GetWebAuthnCredential(ctx context.Context, credentialID
 // GetUserWebAuthnCredentials retrieves all WebAuthn credentials for a user
 func (a *StorageAdapter) GetUserWebAuthnCredentials(ctx context.Context, username string) ([]*storage.WebAuthnCredential, error) {
 	// Check if auth repository is set
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return nil, fmt.Errorf("auth repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	credentials, err := a.authRepo.GetUserWebAuthnCredentials(ctx, username)
+	credentials, err := a.accountRepo.GetUserWebAuthnCredentials(ctx, username)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetUserWebAuthnCredentials", "WebAuthnCredential", username)
 	}
@@ -3590,12 +3590,12 @@ func (a *StorageAdapter) GetUserWebAuthnCredentials(ctx context.Context, usernam
 // UpdateWebAuthnCredential updates an existing WebAuthn credential
 func (a *StorageAdapter) UpdateWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
 	// Check if auth repository is set
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.authRepo.UpdateWebAuthnLastUsed(ctx, credential.ID, credential.SignCount)
+	err := a.accountRepo.UpdateWebAuthnLastUsed(ctx, credential.ID, credential.SignCount)
 	if err != nil {
 		return MapRepositoryError(err, "UpdateWebAuthnCredential", "WebAuthnCredential", credential.ID)
 	}
@@ -3606,12 +3606,12 @@ func (a *StorageAdapter) UpdateWebAuthnCredential(ctx context.Context, credentia
 // DeleteWebAuthnCredential deletes a WebAuthn credential by ID
 func (a *StorageAdapter) DeleteWebAuthnCredential(ctx context.Context, credentialID string) error {
 	// Check if auth repository is set
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.authRepo.DeleteWebAuthnCredential(ctx, credentialID)
+	err := a.accountRepo.DeleteWebAuthnCredential(ctx, credentialID)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteWebAuthnCredential", "WebAuthnCredential", credentialID)
 	}
@@ -3622,12 +3622,12 @@ func (a *StorageAdapter) DeleteWebAuthnCredential(ctx context.Context, credentia
 // StoreWebAuthnChallenge stores a new WebAuthn challenge
 func (a *StorageAdapter) StoreWebAuthnChallenge(ctx context.Context, challenge *storage.WebAuthnChallenge) error {
 	// Check if auth repository is set
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.authRepo.CreateWebAuthnChallenge(ctx, challenge)
+	err := a.accountRepo.CreateWebAuthnChallenge(ctx, challenge)
 	if err != nil {
 		return MapRepositoryError(err, "StoreWebAuthnChallenge", "WebAuthnChallenge", challenge.Challenge)
 	}
@@ -3638,12 +3638,12 @@ func (a *StorageAdapter) StoreWebAuthnChallenge(ctx context.Context, challenge *
 // GetWebAuthnChallenge retrieves a WebAuthn challenge by ID
 func (a *StorageAdapter) GetWebAuthnChallenge(ctx context.Context, challengeID string) (*storage.WebAuthnChallenge, error) {
 	// Check if auth repository is set
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return nil, fmt.Errorf("auth repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	challenge, err := a.authRepo.GetWebAuthnChallenge(ctx, challengeID)
+	challenge, err := a.accountRepo.GetWebAuthnChallenge(ctx, challengeID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetWebAuthnChallenge", "WebAuthnChallenge", challengeID)
 	}
@@ -3654,12 +3654,12 @@ func (a *StorageAdapter) GetWebAuthnChallenge(ctx context.Context, challengeID s
 // DeleteWebAuthnChallenge deletes a WebAuthn challenge by ID
 func (a *StorageAdapter) DeleteWebAuthnChallenge(ctx context.Context, challengeID string) error {
 	// Check if auth repository is set
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
 	// Call the DynamORM repository
-	err := a.authRepo.DeleteWebAuthnChallenge(ctx, challengeID)
+	err := a.accountRepo.DeleteWebAuthnChallenge(ctx, challengeID)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteWebAuthnChallenge", "WebAuthnChallenge", challengeID)
 	}
@@ -8314,11 +8314,11 @@ func (a *StorageAdapter) StoreInstanceCluster(ctx context.Context, cluster *stor
 
 // StoreWalletChallenge stores a temporary wallet authentication challenge
 func (a *StorageAdapter) StoreWalletChallenge(ctx context.Context, challenge *storage.WalletChallenge) error {
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
-	err := a.authRepo.StoreWalletChallenge(ctx, challenge)
+	err := a.accountRepo.StoreWalletChallenge(ctx, challenge)
 	if err != nil {
 		return MapRepositoryError(err, "StoreWalletChallenge", "WalletChallenge", challenge.ID)
 	}
@@ -8328,11 +8328,11 @@ func (a *StorageAdapter) StoreWalletChallenge(ctx context.Context, challenge *st
 
 // GetWalletChallenge retrieves a wallet challenge by ID
 func (a *StorageAdapter) GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error) {
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return nil, fmt.Errorf("auth repository not initialized")
 	}
 
-	challenge, err := a.authRepo.GetWalletChallenge(ctx, challengeID)
+	challenge, err := a.accountRepo.GetWalletChallenge(ctx, challengeID)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetWalletChallenge", "WalletChallenge", challengeID)
 	}
@@ -8342,11 +8342,11 @@ func (a *StorageAdapter) GetWalletChallenge(ctx context.Context, challengeID str
 
 // StoreWalletCredential stores a wallet credential linked to a user
 func (a *StorageAdapter) StoreWalletCredential(ctx context.Context, credential *storage.WalletCredential) error {
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
-	err := a.authRepo.StoreWalletCredential(ctx, credential)
+	err := a.accountRepo.StoreWalletCredential(ctx, credential)
 	if err != nil {
 		return MapRepositoryError(err, "StoreWalletCredential", "WalletCredential", credential.Address)
 	}
@@ -8356,11 +8356,11 @@ func (a *StorageAdapter) StoreWalletCredential(ctx context.Context, credential *
 
 // GetWalletCredential retrieves a wallet credential by wallet type and address
 func (a *StorageAdapter) GetWalletCredential(ctx context.Context, walletType, address string) (*storage.WalletCredential, error) {
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return nil, fmt.Errorf("auth repository not initialized")
 	}
 
-	credential, err := a.authRepo.GetWalletByAddress(ctx, walletType, address)
+	credential, err := a.accountRepo.GetWalletByAddress(ctx, walletType, address)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetWalletCredential", "WalletCredential", address)
 	}
@@ -8370,11 +8370,11 @@ func (a *StorageAdapter) GetWalletCredential(ctx context.Context, walletType, ad
 
 // DeleteWalletChallenge deletes a wallet challenge
 func (a *StorageAdapter) DeleteWalletChallenge(ctx context.Context, challengeID string) error {
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
-	err := a.authRepo.DeleteWalletChallenge(ctx, challengeID)
+	err := a.accountRepo.DeleteWalletChallenge(ctx, challengeID)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteWalletChallenge", "WalletChallenge", challengeID)
 	}
@@ -8384,11 +8384,11 @@ func (a *StorageAdapter) DeleteWalletChallenge(ctx context.Context, challengeID 
 
 // GetUserWalletCredentials retrieves all wallet credentials for a user
 func (a *StorageAdapter) GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error) {
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return nil, fmt.Errorf("auth repository not initialized")
 	}
 
-	credentials, err := a.authRepo.GetUserWallets(ctx, username)
+	credentials, err := a.accountRepo.GetUserWallets(ctx, username)
 	if err != nil {
 		return nil, MapRepositoryError(err, "GetUserWalletCredentials", "WalletCredential", username)
 	}
@@ -8398,11 +8398,11 @@ func (a *StorageAdapter) GetUserWalletCredentials(ctx context.Context, username 
 
 // DeleteWalletCredential deletes a wallet credential
 func (a *StorageAdapter) DeleteWalletCredential(ctx context.Context, username, address string) error {
-	if a.authRepo == nil {
+	if a.accountRepo == nil {
 		return fmt.Errorf("auth repository not initialized")
 	}
 
-	err := a.authRepo.DeleteWalletCredential(ctx, username, address)
+	err := a.accountRepo.DeleteWalletCredential(ctx, username, address)
 	if err != nil {
 		return MapRepositoryError(err, "DeleteWalletCredential", "WalletCredential", fmt.Sprintf("%s/%s", username, address))
 	}

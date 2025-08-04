@@ -28,7 +28,7 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
 			// Validate token
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				username = claims.Username
@@ -186,7 +186,7 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -238,7 +238,7 @@ func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -316,7 +316,7 @@ func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error 
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -359,7 +359,7 @@ func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})

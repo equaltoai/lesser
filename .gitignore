@@ -68,3 +68,10 @@ test-reports*
 .env.k6
 
 reference
+# Lambda build binaries
+/api
+/auth
+/export-generator
+/federation-delivery
+/import-processor
+/media-processor

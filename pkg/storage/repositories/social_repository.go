@@ -8,19 +8,19 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // SocialRepository handles all social interaction operations
 type SocialRepository struct {
-	db     *dynamorm.LambdaDB
+	db     core.DB
 	logger *zap.Logger
 }
 
 // NewSocialRepository creates a new social repository
-func NewSocialRepository(db *dynamorm.LambdaDB, logger *zap.Logger) *SocialRepository {
+func NewSocialRepository(db core.DB, logger *zap.Logger) *SocialRepository {
 	return &SocialRepository{
 		db:     db,
 		logger: logger,

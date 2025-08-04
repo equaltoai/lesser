@@ -43,7 +43,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 	}
 
 	// Initialize OAuth service
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 
 	// Validate client and redirect URI
 	if err := oauthSvc.ValidateRedirectURI(ctx.Context, clientID, redirectURI); err != nil {

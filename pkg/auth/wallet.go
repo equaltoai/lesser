@@ -11,6 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -52,14 +53,14 @@ type WalletVerifyRequest struct {
 
 // WalletService handles wallet authentication
 type WalletService struct {
-	store  storage.Storage
+	repos  core.RepositoryStorage
 	logger *zap.Logger
 }
 
 // NewWalletService creates a new wallet service
-func NewWalletService(store storage.Storage) *WalletService {
+func NewWalletService(repos core.RepositoryStorage) *WalletService {
 	return &WalletService{
-		store:  store,
+		repos:  repos,
 		logger: common.Logger(),
 	}
 }
@@ -99,7 +100,7 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 	}
 
 	// Store challenge in DynamoDB
-	if err := s.store.StoreWalletChallenge(ctx, challenge); err != nil {
+	if err := s.repos.Account().StoreWalletChallenge(ctx, challenge); err != nil {
 		return nil, fmt.Errorf("failed to store challenge: %w", err)
 	}
 
@@ -114,7 +115,7 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 // VerifySignature verifies a wallet signature and returns user info
 func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRequest) (string, error) {
 	// Get challenge from DynamoDB
-	challenge, err := s.store.GetWalletChallenge(ctx, req.ChallengeID)
+	challenge, err := s.repos.Account().GetWalletChallenge(ctx, req.ChallengeID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get challenge: %w", err)
 	}
@@ -122,7 +123,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 	// Check expiration
 	if time.Now().After(challenge.ExpiresAt) {
 		// Delete expired challenge
-		_ = s.store.DeleteWalletChallenge(ctx, req.ChallengeID)
+		_ = s.repos.Account().DeleteWalletChallenge(ctx, req.ChallengeID)
 		return "", errors.New("challenge expired")
 	}
 
@@ -146,7 +147,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 	}
 
 	// Delete used challenge
-	if err := s.store.DeleteWalletChallenge(ctx, req.ChallengeID); err != nil {
+	if err := s.repos.Account().DeleteWalletChallenge(ctx, req.ChallengeID); err != nil {
 		s.logger.Error("failed to delete challenge", zap.Error(err))
 	}
 
@@ -154,7 +155,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 	username := challenge.Username
 	if username == "" {
 		// Try to find existing link
-		wallet, err := s.store.GetWalletCredential(ctx, "ethereum", req.Address)
+		wallet, err := s.repos.Account().GetWalletCredential(ctx, req.Address)
 		if err == nil && wallet != nil {
 			username = wallet.Username
 		}
@@ -162,7 +163,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 
 	// Update last used time if wallet exists
 	if username != "" {
-		if err := s.store.UpdateWalletLastUsed(ctx, username, req.Address); err != nil {
+		if err := s.repos.Account().UpdateWalletLastUsed(ctx, username, req.Address); err != nil {
 			s.logger.Error("failed to update wallet last used", zap.Error(err))
 		}
 	}
@@ -180,7 +181,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 	address = strings.ToLower(address)
 
 	// Check if wallet is already linked
-	existing, err := s.store.GetWalletCredential(ctx, walletType, address)
+	existing, err := s.repos.Account().GetWalletCredential(ctx, address)
 	if err != nil {
 		return fmt.Errorf("failed to check existing wallet: %w", err)
 	}
@@ -203,7 +204,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 	}
 
 	// Store wallet credential
-	if err := s.store.StoreWalletCredential(ctx, wallet); err != nil {
+	if err := s.repos.Account().StoreWalletCredential(ctx, wallet); err != nil {
 		return fmt.Errorf("failed to store wallet: %w", err)
 	}
 
@@ -217,7 +218,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 
 // GetUserWallets returns all wallets linked to a user
 func (s *WalletService) GetUserWallets(ctx context.Context, username string) ([]*storage.WalletCredential, error) {
-	wallets, err := s.store.GetUserWalletCredentials(ctx, username)
+	wallets, err := s.repos.Account().GetUserWalletCredentials(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user wallets: %w", err)
 	}
@@ -235,7 +236,7 @@ func (s *WalletService) UnlinkWallet(ctx context.Context, username, address stri
 	address = strings.ToLower(address)
 
 	// Delete wallet credential
-	if err := s.store.DeleteWalletCredential(ctx, username, address); err != nil {
+	if err := s.repos.Account().DeleteWalletCredential(ctx, username, address); err != nil {
 		return fmt.Errorf("failed to delete wallet: %w", err)
 	}
 

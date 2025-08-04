@@ -128,7 +128,7 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 			_, _ = oauthSvc.ValidateAccessToken(token)
 		}
 	}

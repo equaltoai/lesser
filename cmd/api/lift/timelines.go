@@ -44,7 +44,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -59,7 +59,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Account().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -83,7 +83,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get home timeline items (posts from followed accounts)
-	entries, cursor, err := h.store.GetHomeTimeline(ctx.Context, username, limit, maxID)
+	entries, cursor, err := h.repos.Timeline().GetHomeTimeline(ctx.Context, username, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get home timeline", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -101,7 +101,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 		objectID := h.converter.ExtractIDFromURL(entry.PostID)
 
 		// Get the actual object
-		obj, err := h.store.GetObject(ctx.Context, objectID)
+		obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 		if err != nil {
 			h.logger.Warn("failed to get object from timeline",
 				zap.String("post_id", entry.PostID),
@@ -127,7 +127,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 			// Extract username from actor ID
 			objUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
 			if objUsername != "" {
-				objActor, _ = h.store.GetActor(ctx.Context, objUsername)
+				objActor, _ = h.repos.Account().GetActor(ctx.Context, objUsername)
 			}
 		}
 
@@ -135,7 +135,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 
 		// Check if blocked
 		if objActor != nil {
-			if _, err := h.store.GetBlock(ctx.Context, actor.ID, objActor.ID); err == nil {
+			if _, err := h.repos.Social().GetBlock(ctx.Context, actor.ID, objActor.ID); err == nil {
 				// Blocked user, skip
 				continue
 			}
@@ -143,19 +143,19 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 
 		// Get interaction counts using the full PostID URL
 		if entry.PostID != "" {
-			likeCount, _ := h.store.CountObjectLikes(ctx.Context, entry.PostID)
-			announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, entry.PostID)
-			status.FavouritesCount = likeCount
+			likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, entry.PostID)
+			announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, entry.PostID)
+			status.FavouritesCount = int(likeCount64)
 			status.ReblogsCount = announceCount
 
 			// Check if current user has interacted
-			if _, err := h.store.GetLike(ctx.Context, actor.ID, entry.PostID); err == nil {
+			if _, err := h.repos.Like().GetLike(ctx.Context, actor.ID, entry.PostID); err == nil {
 				status.Favourited = true
 			}
-			if _, err := h.store.GetAnnounce(ctx.Context, actor.ID, entry.PostID); err == nil {
+			if _, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, entry.PostID); err == nil {
 				status.Reblogged = true
 			}
-			bookmarked, _ := h.store.IsBookmarked(ctx.Context, username, entry.PostID)
+			bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, username, entry.PostID)
 			status.Bookmarked = bookmarked
 		}
 
@@ -188,7 +188,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 
 	if testUsername != "" {
 		// Test mode - get actor if username provided
-		currentActor, _ = h.store.GetActor(ctx.Context, testUsername)
+		currentActor, _ = h.repos.Account().GetActor(ctx.Context, testUsername)
 	} else {
 		// Try to authenticate user but don't fail if not authenticated
 		authHeader := ctx.Header("Authorization")
@@ -205,9 +205,9 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 		}
 
 		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-				currentActor, _ = h.store.GetActor(ctx.Context, claims.Username)
+				currentActor, _ = h.repos.Account().GetActor(ctx.Context, claims.Username)
 			}
 		}
 	}
@@ -245,7 +245,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get timeline items
-	entries, cursor, err := h.store.GetPublicTimeline(ctx.Context, local, limit, maxID)
+	entries, cursor, err := h.repos.Timeline().GetPublicTimeline(ctx.Context, local, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get public timeline", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -260,7 +260,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 		}
 
 		// Get the actual object
-		obj, err := h.store.GetObject(ctx.Context, entry.PostID)
+		obj, err := h.repos.Object().GetObject(ctx.Context, entry.PostID)
 		if err != nil {
 			h.logger.Warn("failed to get object from timeline", zap.String("id", entry.PostID), zap.Error(err))
 			continue
@@ -283,13 +283,13 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 			// Extract username from actor ID
 			objUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
 			if objUsername != "" {
-				objActor, _ = h.store.GetActor(ctx.Context, objUsername)
+				objActor, _ = h.repos.Account().GetActor(ctx.Context, objUsername)
 			}
 		}
 
 		// Check if blocked (only if authenticated)
 		if currentActor != nil && objActor != nil {
-			if _, err := h.store.GetBlock(ctx.Context, currentActor.ID, objActor.ID); err == nil {
+			if _, err := h.repos.Social().GetBlock(ctx.Context, currentActor.ID, objActor.ID); err == nil {
 				// Blocked user, skip
 				continue
 			}
@@ -301,17 +301,17 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 		objectID := entry.PostID
 
 		if objectID != "" {
-			likeCount, _ := h.store.CountObjectLikes(ctx.Context, objectID)
-			announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
-			status.FavouritesCount = likeCount
+			likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
+			announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, objectID)
+			status.FavouritesCount = int(likeCount64)
 			status.ReblogsCount = announceCount
 
 			// Check if current user has interacted (if authenticated)
 			if currentActor != nil {
-				if _, err := h.store.GetLike(ctx.Context, currentActor.ID, objectID); err == nil {
+				if _, err := h.repos.Like().GetLike(ctx.Context, currentActor.ID, objectID); err == nil {
 					status.Favourited = true
 				}
-				if _, err := h.store.GetAnnounce(ctx.Context, currentActor.ID, objectID); err == nil {
+				if _, err := h.repos.Social().GetAnnounce(ctx.Context, currentActor.ID, objectID); err == nil {
 					status.Reblogged = true
 				}
 			}
@@ -361,7 +361,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 
 	if testUsername != "" {
 		// Test mode - get actor if username provided
-		currentActor, _ = h.store.GetActor(ctx.Context, testUsername)
+		currentActor, _ = h.repos.Account().GetActor(ctx.Context, testUsername)
 		currentUsername = testUsername
 	} else {
 		// Try to authenticate user but don't fail if not authenticated
@@ -379,9 +379,9 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 		}
 
 		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-				currentActor, _ = h.store.GetActor(ctx.Context, claims.Username)
+				currentActor, _ = h.repos.Account().GetActor(ctx.Context, claims.Username)
 				currentUsername = claims.Username
 			}
 		}
@@ -415,7 +415,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get timeline items
-	entries, cursor, err := h.store.GetHashtagTimeline(ctx.Context, hashtag, local, limit, maxID)
+	entries, cursor, err := h.repos.Timeline().GetHashtagTimeline(ctx.Context, hashtag, local, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get hashtag timeline",
 			zap.String("hashtag", hashtag),
@@ -432,7 +432,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 		}
 
 		// Get the actual object
-		obj, err := h.store.GetObject(ctx.Context, entry.PostID)
+		obj, err := h.repos.Object().GetObject(ctx.Context, entry.PostID)
 		if err != nil {
 			h.logger.Warn("failed to get object from timeline", zap.String("id", entry.PostID), zap.Error(err))
 			continue
@@ -455,13 +455,13 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 			// Extract username from actor ID
 			objUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
 			if objUsername != "" {
-				objActor, _ = h.store.GetActor(ctx.Context, objUsername)
+				objActor, _ = h.repos.Account().GetActor(ctx.Context, objUsername)
 			}
 		}
 
 		// Check if blocked (only if authenticated)
 		if currentActor != nil && objActor != nil {
-			if _, err := h.store.GetBlock(ctx.Context, currentActor.ID, objActor.ID); err == nil {
+			if _, err := h.repos.Social().GetBlock(ctx.Context, currentActor.ID, objActor.ID); err == nil {
 				// Blocked user, skip
 				continue
 			}
@@ -473,21 +473,21 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 		objectID := entry.PostID
 
 		if objectID != "" {
-			likeCount, _ := h.store.CountObjectLikes(ctx.Context, objectID)
-			announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
-			status.FavouritesCount = likeCount
+			likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
+			announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, objectID)
+			status.FavouritesCount = int(likeCount64)
 			status.ReblogsCount = announceCount
 
 			// Check if current user has interacted (if authenticated)
 			if currentActor != nil {
-				if _, err := h.store.GetLike(ctx.Context, currentActor.ID, objectID); err == nil {
+				if _, err := h.repos.Like().GetLike(ctx.Context, currentActor.ID, objectID); err == nil {
 					status.Favourited = true
 				}
-				if _, err := h.store.GetAnnounce(ctx.Context, currentActor.ID, objectID); err == nil {
+				if _, err := h.repos.Social().GetAnnounce(ctx.Context, currentActor.ID, objectID); err == nil {
 					status.Reblogged = true
 				}
 				if currentUsername != "" {
-					bookmarked, _ := h.store.IsBookmarked(ctx.Context, currentUsername, objectID)
+					bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, currentUsername, objectID)
 					status.Bookmarked = bookmarked
 				}
 			}
@@ -553,7 +553,7 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -568,7 +568,7 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get the list to verify ownership
-	list, err := h.store.GetList(ctx.Context, listID)
+	list, err := h.repos.List().GetList(ctx.Context, listID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
 	}
@@ -596,7 +596,7 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get list timeline entries
-	entries, nextCursor, err := h.store.GetListTimeline(ctx.Context, listID, limit, cursor)
+	entries, nextCursor, err := h.repos.List().GetListTimeline(ctx.Context, listID, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get list timeline",
 			zap.String("list_id", listID),
@@ -605,7 +605,7 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Account().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -614,7 +614,7 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	// Retrieve the actual objects for each entry
 	statuses := make([]models.Status, 0, len(entries))
 	for _, entry := range entries {
-		obj, err := h.store.GetObject(ctx.Context, entry.PostID)
+		obj, err := h.repos.Object().GetObject(ctx.Context, entry.PostID)
 		if err != nil {
 			h.logger.Warn("failed to get object from timeline",
 				zap.String("object_id", entry.PostID),
@@ -639,13 +639,13 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 			// Extract username from actor ID
 			objUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
 			if objUsername != "" {
-				objActor, _ = h.store.GetActor(ctx.Context, objUsername)
+				objActor, _ = h.repos.Account().GetActor(ctx.Context, objUsername)
 			}
 		}
 
 		// Check if blocked
 		if objActor != nil {
-			if _, err := h.store.GetBlock(ctx.Context, actor.ID, objActor.ID); err == nil {
+			if _, err := h.repos.Social().GetBlock(ctx.Context, actor.ID, objActor.ID); err == nil {
 				// Blocked user, skip
 				continue
 			}
@@ -656,19 +656,19 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 		// Get interaction counts
 		objectID := entry.PostID
 		if objectID != "" {
-			likeCount, _ := h.store.CountObjectLikes(ctx.Context, objectID)
-			announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
-			status.FavouritesCount = likeCount
+			likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
+			announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, objectID)
+			status.FavouritesCount = int(likeCount64)
 			status.ReblogsCount = announceCount
 
 			// Check if current user has interacted
-			if _, err := h.store.GetLike(ctx.Context, actor.ID, objectID); err == nil {
+			if _, err := h.repos.Like().GetLike(ctx.Context, actor.ID, objectID); err == nil {
 				status.Favourited = true
 			}
-			if _, err := h.store.GetAnnounce(ctx.Context, actor.ID, objectID); err == nil {
+			if _, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, objectID); err == nil {
 				status.Reblogged = true
 			}
-			bookmarked, _ := h.store.IsBookmarked(ctx.Context, username, objectID)
+			bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, username, objectID)
 			status.Bookmarked = bookmarked
 		}
 
@@ -717,7 +717,7 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -732,7 +732,7 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Account().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -756,7 +756,7 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get direct timeline items
-	entries, cursor, err := h.store.GetDirectTimeline(ctx.Context, username, limit, maxID)
+	entries, cursor, err := h.repos.Timeline().GetDirectTimeline(ctx.Context, username, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get direct timeline", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -774,7 +774,7 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 		objectID := h.converter.ExtractIDFromURL(entry.PostID)
 
 		// Get the actual object
-		obj, err := h.store.GetObject(ctx.Context, objectID)
+		obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 		if err != nil {
 			h.logger.Warn("failed to get object from direct timeline",
 				zap.String("post_id", entry.PostID),
@@ -800,7 +800,7 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 			// Extract username from actor ID
 			objUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
 			if objUsername != "" {
-				objActor, _ = h.store.GetActor(ctx.Context, objUsername)
+				objActor, _ = h.repos.Account().GetActor(ctx.Context, objUsername)
 			}
 		}
 
@@ -808,7 +808,7 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 
 		// Check if blocked
 		if objActor != nil {
-			if _, err := h.store.GetBlock(ctx.Context, actor.ID, objActor.ID); err == nil {
+			if _, err := h.repos.Social().GetBlock(ctx.Context, actor.ID, objActor.ID); err == nil {
 				// Blocked user, skip
 				continue
 			}
@@ -816,19 +816,19 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 
 		// Get interaction counts using the full PostID URL
 		if entry.PostID != "" {
-			likeCount, _ := h.store.CountObjectLikes(ctx.Context, entry.PostID)
-			announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, entry.PostID)
-			status.FavouritesCount = likeCount
+			likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, entry.PostID)
+			announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, entry.PostID)
+			status.FavouritesCount = int(likeCount64)
 			status.ReblogsCount = announceCount
 
 			// Check if current user has interacted
-			if _, err := h.store.GetLike(ctx.Context, actor.ID, entry.PostID); err == nil {
+			if _, err := h.repos.Like().GetLike(ctx.Context, actor.ID, entry.PostID); err == nil {
 				status.Favourited = true
 			}
-			if _, err := h.store.GetAnnounce(ctx.Context, actor.ID, entry.PostID); err == nil {
+			if _, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, entry.PostID); err == nil {
 				status.Reblogged = true
 			}
-			bookmarked, _ := h.store.IsBookmarked(ctx.Context, username, entry.PostID)
+			bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, username, entry.PostID)
 			status.Bookmarked = bookmarked
 		}
 

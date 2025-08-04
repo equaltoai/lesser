@@ -28,7 +28,7 @@ func (h *Handler) HandleSearchLift(ctx *lift.Context) error {
 		// Try JWT authentication
 		token := h.getBearerTokenLift(ctx)
 		if token != "" {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 				h.logger.Debug("Authenticated search", zap.String("username", claims.Username))
 			}
@@ -292,7 +292,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 		}
 
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
@@ -573,7 +573,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 		}
 
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
@@ -652,7 +652,7 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 		}
 
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
@@ -697,7 +697,7 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 		}
 
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.store)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})

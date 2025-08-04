@@ -6,7 +6,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -36,13 +35,10 @@ func init() {
 		logger.Fatal("failed to initialize database", zap.Error(err))
 	}
 	
-	// Initialize cost tracker
-	tracker := cost.New()
-	
 	// Initialize SQS batch processor
 	processor = NewSQSBatchProcessor(db, SQSBatchProcessorConfig{
 		Logger:       logger,
-		Tracker:      tracker,
+		Tracker:      nil, // Cost tracker can be provided if needed
 		MaxBatchSize: 25, // DynamoDB batch write limit
 	})
 	

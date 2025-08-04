@@ -8,6 +8,13 @@ import (
 
 // Domain-specific error types
 
+// Token-related errors
+var (
+	ErrTokenNotFound = fmt.Errorf("token not found")
+	ErrTokenExpired  = fmt.Errorf("token expired")
+	ErrTokenRevoked  = fmt.Errorf("token revoked")
+)
+
 // ActorNotFoundError indicates an actor was not found
 type ActorNotFoundError struct {
 	Username string
@@ -63,6 +70,86 @@ type ConflictError struct {
 
 func (e ConflictError) Error() string {
 	return fmt.Sprintf("conflict with %s: %s", e.Resource, e.Message)
+}
+
+// UserNotFoundError indicates a user was not found
+type UserNotFoundError struct {
+	Username string
+}
+
+func (e UserNotFoundError) Error() string {
+	return fmt.Sprintf("user not found: %s", e.Username)
+}
+
+// AccountSuspendedError indicates an account is suspended
+type AccountSuspendedError struct {
+	Username string
+}
+
+func (e AccountSuspendedError) Error() string {
+	return fmt.Sprintf("account suspended: %s", e.Username)
+}
+
+// InvalidPasswordError indicates password validation failed
+type InvalidPasswordError struct{}
+
+func (e InvalidPasswordError) Error() string {
+	return "invalid password"
+}
+
+// InvalidTokenError indicates a token is invalid
+type InvalidTokenError struct {
+	Token string
+}
+
+func (e InvalidTokenError) Error() string {
+	return fmt.Sprintf("invalid token: %s", e.Token)
+}
+
+// ExpiredTokenError indicates a token has expired
+type ExpiredTokenError struct {
+	Token string
+}
+
+func (e ExpiredTokenError) Error() string {
+	return fmt.Sprintf("token expired: %s", e.Token)
+}
+
+// UsedTokenError indicates a token has already been used
+type UsedTokenError struct {
+	Token string
+}
+
+func (e UsedTokenError) Error() string {
+	return fmt.Sprintf("token already used: %s", e.Token)
+}
+
+// SessionNotFoundError indicates a session was not found
+type SessionNotFoundError struct {
+	SessionID string
+}
+
+func (e SessionNotFoundError) Error() string {
+	return fmt.Sprintf("session not found: %s", e.SessionID)
+}
+
+// AlreadyFollowingError indicates already following the user
+type AlreadyFollowingError struct {
+	Follower string
+	Followee string
+}
+
+func (e AlreadyFollowingError) Error() string {
+	return fmt.Sprintf("%s is already following %s", e.Follower, e.Followee)
+}
+
+// ListNotFoundError indicates a list was not found
+type ListNotFoundError struct {
+	ID string
+}
+
+func (e ListNotFoundError) Error() string {
+	return fmt.Sprintf("list not found: %s", e.ID)
 }
 
 // FederationError indicates a federation operation failed
