@@ -1,48 +1,17 @@
 package lift
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pay-theory/lift/pkg/lift"
-	"go.uber.org/zap"
 )
 
-// Initialize AI storage globally for reuse
-var (
-	aiStorage     *ai.Storage
-	aiStorageInit sync.Once
-)
-
-func getAIStorage() (*ai.Storage, error) {
-	var initErr error
-	aiStorageInit.Do(func() {
-		cfg, err := config.LoadDefaultConfig(context.Background())
-		if err != nil {
-			initErr = err
-			return
-		}
-		dynamoClient := dynamodb.NewFromConfig(cfg)
-		tableName := os.Getenv("DYNAMO_TABLE_NAME")
-		if tableName == "" {
-			tableName = "lesser-main"
-		}
-		aiStorage = ai.NewStorage(dynamoClient, tableName)
-	})
-	return aiStorage, initErr
-}
+// Removed global AI storage - now using AIRepository
 
 // HandleGetAIAnalysisLift returns AI analysis for an object
 // GET /api/v1/ai/analysis/:object_id
@@ -85,18 +54,8 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Get AI storage
-	aiStore, err := getAIStorage()
-	if err != nil {
-		h.logger.Error("failed to get AI storage", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
-	}
-
-	// Get analysis
-	analysis, err := aiStore.GetAnalysis(ctx.Context, objectID)
+	// Get analysis from repository
+	analysis, err := h.repos.AI().GetAnalysis(ctx.Context, objectID)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{
@@ -169,19 +128,9 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Get AI storage
-	aiStore, err := getAIStorage()
-	if err != nil {
-		h.logger.Error("failed to get AI storage", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
-	}
-
 	// Check if analysis exists and is recent
 	if !req.Force {
-		existing, _ := aiStore.GetAnalysis(ctx.Context, req.ObjectID)
+		existing, _ := h.repos.AI().GetAnalysis(ctx.Context, req.ObjectID)
 		if existing != nil && time.Since(existing.AnalyzedAt) < 24*time.Hour {
 			ctx.Status(http.StatusOK)
 			return ctx.JSON(existing)
@@ -189,7 +138,7 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 	}
 
 	// Queue for analysis by updating the object
-	err = h.queueForAnalysisLift(ctx.Context, req.ObjectID)
+	err = h.repos.AI().QueueForAnalysis(ctx.Context, req.ObjectID)
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -234,17 +183,8 @@ func (h *Handler) HandleGetAIStatsLift(ctx *lift.Context) error {
 		period = "day"
 	}
 
-	// Get AI storage
-	aiStore, err := getAIStorage()
-	if err != nil {
-		h.logger.Error("failed to get AI storage", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
-	}
-
-	stats, err := aiStore.GetStats(ctx.Context, period)
+	// Get stats from repository
+	stats, err := h.repos.AI().GetStats(ctx.Context, period)
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -295,32 +235,5 @@ func (h *Handler) HandleGetAISummaryLift(ctx *lift.Context) error {
 	return ctx.JSON(capabilities)
 }
 
-// Helper methods
-
-func (h *Handler) queueForAnalysisLift(ctx context.Context, objectID string) error {
-	// Create a temporary DynamoDB client for this operation
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return err
-	}
-
-	dynamoClient := dynamodb.NewFromConfig(cfg)
-	tableName := h.cfg.DynamoTableName
-
-	// Update the object to trigger DynamoDB stream
-	_, err = dynamoClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName: aws.String(tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", objectID)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("OBJECT#%s", objectID)},
-		},
-		UpdateExpression: aws.String("SET ForceAnalysis = :true, UpdatedAt = :now"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":true": &types.AttributeValueMemberBOOL{Value: true},
-			":now":  &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		},
-	})
-
-	return err
-}
+// Helper methods removed - now handled by AIRepository
 
