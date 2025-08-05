@@ -295,6 +295,14 @@ func (m *MockRepositoryStorage) FeaturedTag() *repositories.FeaturedTagRepositor
 	return args.Get(0).(*repositories.FeaturedTagRepository)
 }
 
+func (m *MockRepositoryStorage) AI() *repositories.AIRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.AIRepository)
+}
+
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
 	args := m.Called()
 	if args.Get(0) == nil {

@@ -51,6 +51,7 @@ type RepositoryFactory struct {
 	rateLimitRepo             *repositories.RateLimitRepository
 	markerRepo                *repositories.MarkerRepository
 	featuredTagRepo           *repositories.FeaturedTagRepository
+	aiRepo                    *repositories.AIRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -112,6 +113,7 @@ func (f *RepositoryFactory) initializeRepositories() error {
 	f.rateLimitRepo = repositories.NewRateLimitRepository(f.db, f.tableName, f.logger)
 	f.markerRepo = repositories.NewMarkerRepository(f.db, f.tableName, f.logger)
 	f.featuredTagRepo = repositories.NewFeaturedTagRepository(f.db, f.tableName, f.logger)
+	f.aiRepo = repositories.NewAIRepository(f.db, f.tableName, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -259,6 +261,10 @@ func (f *RepositoryFactory) Marker() *repositories.MarkerRepository {
 }
 func (f *RepositoryFactory) FeaturedTag() *repositories.FeaturedTagRepository {
 	return f.featuredTagRepo
+}
+
+func (f *RepositoryFactory) AI() *repositories.AIRepository {
+	return f.aiRepo
 }
 
 // Additional repositories can be added here as needed

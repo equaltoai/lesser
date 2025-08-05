@@ -44,6 +44,7 @@ type RepositoryStorage interface {
 	Conversation() *repositories.ConversationRepository
 	Marker() *repositories.MarkerRepository
 	FeaturedTag() *repositories.FeaturedTagRepository
+	AI() *repositories.AIRepository
 	
 	// Utility methods
 	GetDB() dynamormCore.DB
