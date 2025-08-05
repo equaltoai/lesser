@@ -406,7 +406,13 @@ func (r *ObjectRepositoryV2) CreateUpdateHistory(ctx context.Context, history *s
 		Version:       history.Version,
 		UpdatedAt:     history.UpdatedAt,
 		UpdatedBy:     history.UpdatedBy,
-		PreviousState: history.PreviousState,
+		PreviousState: func() string {
+			if history.PreviousState != nil {
+				jsonBytes, _ := json.Marshal(history.PreviousState)
+				return string(jsonBytes)
+			}
+			return ""
+		}(),
 		Summary:       history.Summary,
 		CreatedAt:     time.Now(),
 	}
@@ -457,12 +463,24 @@ func (r *ObjectRepositoryV2) GetUpdateHistory(ctx context.Context, objectID stri
 	// Convert to storage.UpdateHistory
 	result := make([]*storage.UpdateHistory, len(histories))
 	for i, h := range histories {
+		// Convert PreviousState JSON string back to map
+		var previousState map[string]interface{}
+		if h.PreviousState != "" {
+			if err := json.Unmarshal([]byte(h.PreviousState), &previousState); err != nil {
+				r.logger.Warn("failed to unmarshal previous state", 
+					zap.String("object_id", h.ObjectID),
+					zap.Int("version", h.Version),
+					zap.Error(err))
+				// Continue without previous state rather than failing
+			}
+		}
+		
 		result[i] = &storage.UpdateHistory{
 			ObjectID:      h.ObjectID,
 			Version:       h.Version,
 			UpdatedAt:     h.UpdatedAt,
 			UpdatedBy:     h.UpdatedBy,
-			PreviousState: h.PreviousState,
+			PreviousState: previousState,
 			Summary:       h.Summary,
 		}
 	}

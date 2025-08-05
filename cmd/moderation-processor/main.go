@@ -254,9 +254,9 @@ func convertStorageToModerationQueueItem(storageItem *storage.ModerationQueueIte
 
 	return &moderation.QueueItem{
 		Event:          convertStorageToModerationEvent(storageItem.Event),
-		Priority:       storageItem.Priority,
+		Priority:       float64(storageItem.Priority),
 		ReviewCount:    storageItem.ReviewCount,
-		LastReviewedAt: storageItem.LastReviewedAt,
+		LastReviewedAt: storageItem.ReviewedAt,
 	}
 }
 

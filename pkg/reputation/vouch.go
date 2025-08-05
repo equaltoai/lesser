@@ -6,20 +6,21 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 // VouchManager handles vouch creation and management
 type VouchManager struct {
-	store       storage.Storage
+	store       core.RepositoryStorage
 	signer      *Signer
 	logger      *zap.Logger
 	instanceURL string
 }
 
 // NewVouchManager creates a new vouch manager
-func NewVouchManager(store storage.Storage, signer *Signer, instanceURL string, logger *zap.Logger) *VouchManager {
+func NewVouchManager(store core.RepositoryStorage, signer *Signer, instanceURL string, logger *zap.Logger) *VouchManager {
 	return &VouchManager{
 		store:       store,
 		signer:      signer,
@@ -88,12 +89,11 @@ func (vm *VouchManager) CreateVouch(ctx context.Context, input *CreateVouchInput
 		ID:                vouch.ID,
 		From:              vouch.From,
 		To:                vouch.To,
-		InstanceURL:       vouch.InstanceURL,
 		CreatedAt:         vouch.CreatedAt,
-		ExpiresAt:         vouch.ExpiresAt,
+		ExpiresAt:         &vouch.ExpiresAt,
 		Confidence:        vouch.Confidence,
 		Context:           vouch.Context,
-		VoucherReputation: vouch.VoucherReputation,
+		VoucherReputation: float64(vouch.VoucherReputation), // Convert int to float64
 		Active:            vouch.Active,
 		Revoked:           vouch.Revoked,
 		RevokedAt:         vouch.RevokedAt,
@@ -101,7 +101,7 @@ func (vm *VouchManager) CreateVouch(ctx context.Context, input *CreateVouchInput
 	}
 
 	// Store using storage interface
-	if err := vm.store.CreateVouch(ctx, storageVouch); err != nil {
+	if err := vm.store.User().CreateVouch(ctx, storageVouch); err != nil {
 		return nil, fmt.Errorf("failed to store vouch: %w", err)
 	}
 
@@ -129,7 +129,7 @@ func (vm *VouchManager) RevokeVouch(ctx context.Context, vouchID string, actorID
 
 	// Update vouch status
 	now := time.Now()
-	err = vm.store.UpdateVouchStatus(ctx, vouchID, false, &now)
+	err = vm.store.User().UpdateVouchStatus(ctx, vouchID, false, &now)
 	if err != nil {
 		return fmt.Errorf("failed to revoke vouch: %w", err)
 	}
@@ -143,7 +143,7 @@ func (vm *VouchManager) RevokeVouch(ctx context.Context, vouchID string, actorID
 
 // GetVouchByID retrieves a vouch by ID
 func (vm *VouchManager) GetVouchByID(ctx context.Context, vouchID string) (*Vouch, error) {
-	storageVouch, err := vm.store.GetVouch(ctx, vouchID)
+	storageVouch, err := vm.store.User().GetVouch(ctx, vouchID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vouch: %w", err)
 	}
@@ -157,12 +157,12 @@ func (vm *VouchManager) GetVouchByID(ctx context.Context, vouchID string) (*Vouc
 		ID:                storageVouch.ID,
 		From:              storageVouch.From,
 		To:                storageVouch.To,
-		InstanceURL:       storageVouch.InstanceURL,
+		InstanceURL:       vm.instanceURL, // Use service's instance URL
 		CreatedAt:         storageVouch.CreatedAt,
-		ExpiresAt:         storageVouch.ExpiresAt,
+		ExpiresAt:         func() time.Time { if storageVouch.ExpiresAt == nil { return time.Time{} }; return *storageVouch.ExpiresAt }(),
 		Confidence:        storageVouch.Confidence,
 		Context:           storageVouch.Context,
-		VoucherReputation: storageVouch.VoucherReputation,
+		VoucherReputation: int(storageVouch.VoucherReputation), // Convert float64 to int
 		Active:            storageVouch.Active,
 		Revoked:           storageVouch.Revoked,
 		RevokedAt:         storageVouch.RevokedAt,
@@ -174,7 +174,7 @@ func (vm *VouchManager) GetVouchByID(ctx context.Context, vouchID string) (*Vouc
 
 // GetVouchesForActor gets all vouches for an actor
 func (vm *VouchManager) GetVouchesForActor(ctx context.Context, actorID string) ([]Vouch, error) {
-	storageVouches, err := vm.store.GetVouchesForActor(ctx, actorID, true) // Get only active vouches
+	storageVouches, err := vm.store.User().GetVouchesForActor(ctx, actorID, true) // Get only active vouches
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vouches: %w", err)
 	}
@@ -186,12 +186,12 @@ func (vm *VouchManager) GetVouchesForActor(ctx context.Context, actorID string) 
 			ID:                sv.ID,
 			From:              sv.From,
 			To:                sv.To,
-			InstanceURL:       sv.InstanceURL,
+			InstanceURL:       vm.instanceURL, // Use service's instance URL
 			CreatedAt:         sv.CreatedAt,
-			ExpiresAt:         sv.ExpiresAt,
+			ExpiresAt:         func() time.Time { if sv.ExpiresAt == nil { return time.Time{} }; return *sv.ExpiresAt }(),
 			Confidence:        sv.Confidence,
 			Context:           sv.Context,
-			VoucherReputation: sv.VoucherReputation,
+			VoucherReputation: int(sv.VoucherReputation), // Convert float64 to int
 			Active:            sv.Active,
 			Revoked:           sv.Revoked,
 			RevokedAt:         sv.RevokedAt,
@@ -205,7 +205,7 @@ func (vm *VouchManager) GetVouchesForActor(ctx context.Context, actorID string) 
 
 // GetVouchesFromActor gets all vouches created by an actor
 func (vm *VouchManager) GetVouchesFromActor(ctx context.Context, actorID string) ([]Vouch, error) {
-	storageVouches, err := vm.store.GetVouchesByActor(ctx, actorID, false) // Get all vouches, not just active
+	storageVouches, err := vm.store.User().GetVouchesByActor(ctx, actorID, false) // Get all vouches, not just active
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vouches: %w", err)
 	}
@@ -217,12 +217,12 @@ func (vm *VouchManager) GetVouchesFromActor(ctx context.Context, actorID string)
 			ID:                sv.ID,
 			From:              sv.From,
 			To:                sv.To,
-			InstanceURL:       sv.InstanceURL,
+			InstanceURL:       vm.instanceURL, // Use service's instance URL
 			CreatedAt:         sv.CreatedAt,
-			ExpiresAt:         sv.ExpiresAt,
+			ExpiresAt:         func() time.Time { if sv.ExpiresAt == nil { return time.Time{} }; return *sv.ExpiresAt }(),
 			Confidence:        sv.Confidence,
 			Context:           sv.Context,
-			VoucherReputation: sv.VoucherReputation,
+			VoucherReputation: int(sv.VoucherReputation), // Convert float64 to int
 			Active:            sv.Active,
 			Revoked:           sv.Revoked,
 			RevokedAt:         sv.RevokedAt,
@@ -238,7 +238,7 @@ func (vm *VouchManager) GetVouchesFromActor(ctx context.Context, actorID string)
 func (vm *VouchManager) canCreateVouch(ctx context.Context, actorID string) (bool, error) {
 	// Get month count using storage interface
 	now := time.Now()
-	count, err := vm.store.GetMonthlyVouchCount(ctx, actorID, now.Year(), now.Month())
+	count, err := vm.store.User().GetMonthlyVouchCount(ctx, actorID, now.Year(), now.Month())
 	if err != nil {
 		return false, fmt.Errorf("failed to get monthly vouch count: %w", err)
 	}
@@ -250,7 +250,7 @@ func (vm *VouchManager) canCreateVouch(ctx context.Context, actorID string) (boo
 // getActorReputation gets an actor's current reputation score
 func (vm *VouchManager) getActorReputation(ctx context.Context, actorID string) (int, error) {
 	// Get reputation from storage
-	rep, err := vm.store.GetReputation(ctx, actorID)
+	rep, err := vm.store.User().GetReputation(ctx, actorID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get reputation: %w", err)
 	}
@@ -260,7 +260,7 @@ func (vm *VouchManager) getActorReputation(ctx context.Context, actorID string) 
 		return 0, nil
 	}
 
-	return rep.TotalScore, nil
+	return int(rep.TotalScore), nil
 }
 
 // ImportVouch imports a vouch from another instance
@@ -306,12 +306,11 @@ func (vm *VouchManager) ImportVouch(ctx context.Context, vouch *Vouch, verifier 
 		ID:                vouch.ID,
 		From:              vouch.From,
 		To:                vouch.To,
-		InstanceURL:       vouch.InstanceURL,
 		CreatedAt:         vouch.CreatedAt,
-		ExpiresAt:         vouch.ExpiresAt,
+		ExpiresAt:         &vouch.ExpiresAt,
 		Confidence:        vouch.Confidence,
 		Context:           vouch.Context,
-		VoucherReputation: vouch.VoucherReputation,
+		VoucherReputation: float64(vouch.VoucherReputation), // Convert int to float64
 		Active:            vouch.Active,
 		Revoked:           vouch.Revoked,
 		RevokedAt:         vouch.RevokedAt,
@@ -319,7 +318,7 @@ func (vm *VouchManager) ImportVouch(ctx context.Context, vouch *Vouch, verifier 
 	}
 
 	// Store the imported vouch
-	if err := vm.store.CreateVouch(ctx, storageVouch); err != nil {
+	if err := vm.store.User().CreateVouch(ctx, storageVouch); err != nil {
 		// Check if it's a duplicate error
 		if err.Error() == "vouch already exists" {
 			vm.logger.Debug("Vouch already exists", zap.String("vouch_id", vouch.ID))

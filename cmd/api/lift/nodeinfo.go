@@ -104,26 +104,26 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 	}
 
 	// Get user statistics
-	totalUsers, err := h.store.GetTotalUserCount(ctx.Context)
+	totalUsers, err := h.repos.Analytics().GetTotalUserCount(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get total user count", zap.Error(err))
 		totalUsers = 1 // Default fallback
 	}
 
-	activeMonth, err := h.store.GetActiveUserCount(ctx.Context, 30) // Last 30 days
+	activeMonth, err := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30) // Last 30 days
 	if err != nil {
 		h.logger.Warn("failed to get monthly active users", zap.Error(err))
 		activeMonth = 1 // Default fallback
 	}
 
-	activeHalfyear, err := h.store.GetActiveUserCount(ctx.Context, 180) // Last 6 months
+	activeHalfyear, err := h.repos.Analytics().GetActiveUserCount(ctx.Context, 180) // Last 6 months
 	if err != nil {
 		h.logger.Warn("failed to get halfyear active users", zap.Error(err))
 		activeHalfyear = activeMonth // Fallback to monthly
 	}
 
 	// Get post statistics
-	localPosts, err := h.store.GetLocalPostCount(ctx.Context)
+	localPosts, err := h.repos.Instance().GetLocalPostCount(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get local post count", zap.Error(err))
 		localPosts = 0

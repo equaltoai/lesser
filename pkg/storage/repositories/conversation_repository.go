@@ -385,7 +385,7 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 			ConversationID: msg.ConversationID,
 			UserID:         msg.SenderUsername,
 			Unread:         false,
-			LastReadAt:     msg.CreatedAt,
+			LastReadAt:     &msg.CreatedAt,
 		})
 	}
 	

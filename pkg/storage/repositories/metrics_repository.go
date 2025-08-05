@@ -7,7 +7,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -15,15 +14,17 @@ import (
 
 // MetricsRepository handles metrics persistence
 type MetricsRepository struct {
-	dynamorm.BaseRepository
-	logger *zap.Logger
+	db        core.DB
+	tableName string
+	logger    *zap.Logger
 }
 
 // NewMetricsRepository creates a new metrics repository
 func NewMetricsRepository(db core.DB, tableName string, logger *zap.Logger) *MetricsRepository {
 	return &MetricsRepository{
-		BaseRepository: *dynamorm.NewBaseRepository(db, tableName),
-		logger:         logger,
+		db:        db,
+		tableName: tableName,
+		logger:    logger,
 	}
 }
 
@@ -35,9 +36,9 @@ func (r *MetricsRepository) Create(ctx context.Context, metrics *models.Metrics)
 	}
 
 	// Create the metrics
-	err := r.GetDB().Model(metrics).Create()
+	err := r.db.Model(metrics).Create()
 	if err != nil {
-		return dynamorm.MapErrorWithContext(err, "failed to create metrics")
+		return MapErrorWithContext(err, "failed to create metrics")
 	}
 
 	r.logger.Debug("created metrics",
@@ -64,7 +65,7 @@ func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*mode
 	// Use batch writer for efficiency
 	// Note: This is a simplified version - real implementation would use DynamORM's batch capabilities
 	for _, m := range metricsList {
-		if err := r.GetDB().Model(m).Create(); err != nil {
+		if err := r.db.Model(m).Create(); err != nil {
 			r.logger.Error("failed to create metric in batch",
 				zap.String("id", m.ID),
 				zap.Error(err))
@@ -83,13 +84,13 @@ func (r *MetricsRepository) Get(ctx context.Context, metricType, id string, time
 	pk := fmt.Sprintf("metrics#%s", metricType)
 	sk := fmt.Sprintf("ts#%s#%s", timestamp.Format("20060102150405"), id)
 
-	err := r.GetDB().Model(metrics).
+	err := r.db.Model(metrics).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(metrics)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to get metrics")
+		return nil, MapErrorWithContext(err, "failed to get metrics")
 	}
 
 	return metrics, nil
@@ -104,7 +105,7 @@ func (r *MetricsRepository) ListByType(ctx context.Context, metricType string, s
 	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
 
-	query := r.GetDB().Model(&models.Metrics{}).
+	query := r.db.Model(&models.Metrics{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -113,7 +114,7 @@ func (r *MetricsRepository) ListByType(ctx context.Context, metricType string, s
 
 	err := query.All(&metricsList)
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list metrics by type")
+		return nil, MapErrorWithContext(err, "failed to list metrics by type")
 	}
 
 	return metricsList, nil
@@ -127,7 +128,7 @@ func (r *MetricsRepository) ListByService(ctx context.Context, service string, s
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.GetDB().Model(&models.Metrics{}).
+	query := r.db.Model(&models.Metrics{}).
 		Index("service-index").
 		Where("GSI1PK", "=", fmt.Sprintf("METRICS_SVC#%s", service)).
 		Where("GSI1SK", ">=", startSK).
@@ -137,7 +138,7 @@ func (r *MetricsRepository) ListByService(ctx context.Context, service string, s
 
 	err := query.All(&metricsList)
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list metrics by service")
+		return nil, MapErrorWithContext(err, "failed to list metrics by service")
 	}
 
 	return metricsList, nil
@@ -150,13 +151,13 @@ func (r *MetricsRepository) GetAggregated(ctx context.Context, period, metricTyp
 	pk := fmt.Sprintf("metrics_agg#%s#%s", period, metricType)
 	sk := fmt.Sprintf("window#%s", windowStart.Format(time.RFC3339))
 
-	err := r.GetDB().Model(aggregated).
+	err := r.db.Model(aggregated).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(aggregated)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to get aggregated metrics")
+		return nil, MapErrorWithContext(err, "failed to get aggregated metrics")
 	}
 
 	return aggregated, nil
@@ -170,9 +171,9 @@ func (r *MetricsRepository) CreateAggregated(ctx context.Context, aggregated *mo
 	}
 
 	// Create the aggregated metrics
-	err := r.GetDB().Model(aggregated).Create()
+	err := r.db.Model(aggregated).Create()
 	if err != nil {
-		return dynamorm.MapErrorWithContext(err, "failed to create aggregated metrics")
+		return MapErrorWithContext(err, "failed to create aggregated metrics")
 	}
 
 	r.logger.Debug("created aggregated metrics",
@@ -191,9 +192,9 @@ func (r *MetricsRepository) UpdateAggregated(ctx context.Context, aggregated *mo
 	}
 
 	// Update the aggregated metrics
-	err := r.GetDB().Model(aggregated).Update()
+	err := r.db.Model(aggregated).Update()
 	if err != nil {
-		return dynamorm.MapErrorWithContext(err, "failed to update aggregated metrics")
+		return MapErrorWithContext(err, "failed to update aggregated metrics")
 	}
 
 	return nil
@@ -207,7 +208,7 @@ func (r *MetricsRepository) ListAggregatedByPeriod(ctx context.Context, period, 
 	startSK := fmt.Sprintf("window#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
 
-	query := r.GetDB().Model(&models.AggregatedMetrics{}).
+	query := r.db.Model(&models.AggregatedMetrics{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -216,7 +217,7 @@ func (r *MetricsRepository) ListAggregatedByPeriod(ctx context.Context, period, 
 
 	err := query.All(&aggregatedList)
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list aggregated metrics")
+		return nil, MapErrorWithContext(err, "failed to list aggregated metrics")
 	}
 
 	return aggregatedList, nil

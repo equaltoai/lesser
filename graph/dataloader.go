@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/graph-gophers/dataloader"
 	"go.uber.org/zap"
 )
@@ -20,22 +20,22 @@ type Loaders struct {
 }
 
 // NewLoaders creates new instances of all dataloaders
-func NewLoaders(storage storage.Storage, logger *zap.Logger) *Loaders {
+func NewLoaders(repos core.RepositoryStorage, logger *zap.Logger) *Loaders {
 	return &Loaders{
-		ActorLoader:      newActorLoader(storage, logger),
-		ObjectLoader:     newObjectLoader(storage, logger),
-		TrustScoreLoader: newTrustScoreLoader(storage, logger),
+		ActorLoader:      newActorLoader(repos, logger),
+		ObjectLoader:     newObjectLoader(repos, logger),
+		TrustScoreLoader: newTrustScoreLoader(repos, logger),
 	}
 }
 
 // Actor loader functions
-func newActorLoader(storage storage.Storage, logger *zap.Logger) *dataloader.Loader {
+func newActorLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
 	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
 		results := make([]*dataloader.Result, len(keys))
 
 		for i, key := range keys {
 			username := key.String()
-			actor, err := storage.GetActor(ctx, username)
+			actor, err := repos.Actor().GetActor(ctx, username)
 			if err != nil {
 				logger.Error("Failed to load actor", zap.String("username", username), zap.Error(err))
 				results[i] = &dataloader.Result{Error: err}
@@ -51,14 +51,14 @@ func newActorLoader(storage storage.Storage, logger *zap.Logger) *dataloader.Loa
 }
 
 // Object loader functions
-func newObjectLoader(storage storage.Storage, logger *zap.Logger) *dataloader.Loader {
+func newObjectLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
 	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
 		results := make([]*dataloader.Result, len(keys))
 
 		for i, key := range keys {
 			objectID := key.String()
 			// Get object from storage - this will need to handle different object types
-			obj, err := storage.GetObject(ctx, objectID)
+			obj, err := repos.Object().GetObject(ctx, objectID)
 			if err != nil {
 				logger.Error("Failed to load object", zap.String("id", objectID), zap.Error(err))
 				results[i] = &dataloader.Result{Error: err}
@@ -74,7 +74,7 @@ func newObjectLoader(storage storage.Storage, logger *zap.Logger) *dataloader.Lo
 }
 
 // Trust score loader functions
-func newTrustScoreLoader(storage storage.Storage, logger *zap.Logger) *dataloader.Loader {
+func newTrustScoreLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
 	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
 		results := make([]*dataloader.Result, len(keys))
 
@@ -88,7 +88,7 @@ func newTrustScoreLoader(storage storage.Storage, logger *zap.Logger) *dataloade
 
 			actorID, category := keyParts[0], keyParts[1]
 			// Get trust score from storage
-			score, err := storage.GetTrustScore(ctx, actorID, category)
+			score, err := repos.Trust().GetTrustScore(ctx, actorID, category)
 			if err != nil {
 				logger.Error("Failed to load trust score",
 					zap.String("actorID", actorID),
@@ -148,7 +148,7 @@ func LoadObject(ctx context.Context, id string) (any, error) {
 }
 
 // LoadTrustScore loads a trust score using DataLoader
-func LoadTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error) {
+func LoadTrustScore(ctx context.Context, actorID, category string) (any, error) {
 	loaders := GetLoaders(ctx)
 	key := fmt.Sprintf("%s:%s", actorID, category)
 	thunk := loaders.TrustScoreLoader.Load(ctx, dataloader.StringKey(key))
@@ -156,5 +156,5 @@ func LoadTrustScore(ctx context.Context, actorID, category string) (*storage.Tru
 	if err != nil {
 		return nil, err
 	}
-	return result.(*storage.TrustScore), nil
+	return result, nil
 }

@@ -296,7 +296,7 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 		"UpdatedAt":   now,
 	}
 
-	if err := h.store.CreateObject(ctx.Context, mediaRecord); err != nil {
+	if err := h.repos.Object().CreateObject(ctx.Context, mediaRecord); err != nil {
 		h.logger.Error("failed to store media metadata", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -340,7 +340,7 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 		"TTL":             now.Add(7 * 24 * time.Hour).Unix(), // 7 days TTL
 	}
 
-	if err := h.store.CreateObject(ctx.Context, jobRecord); err != nil {
+	if err := h.repos.Object().CreateObject(ctx.Context, jobRecord); err != nil {
 		h.logger.Error("failed to create processing job", zap.Error(err))
 		// Don't fail the request, media is uploaded
 	}
@@ -393,7 +393,7 @@ func (h *Handler) HandleGetMediaV2Lift(ctx *lift.Context) error {
 	}
 
 	// Get media metadata from DynamoDB
-	obj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
+	obj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
 	if err != nil {
 		h.logger.Error("media not found", zap.String("media_id", mediaID), zap.Error(err))
 		ctx.Status(http.StatusNotFound)
@@ -551,7 +551,7 @@ func (h *Handler) HandleUpdateMediaV2Lift(ctx *lift.Context) error {
 	}
 
 	// Get existing media
-	obj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
+	obj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
 	if err != nil {
 		h.logger.Error("media not found", zap.String("media_id", mediaID), zap.Error(err))
 		ctx.Status(http.StatusNotFound)
@@ -586,7 +586,7 @@ func (h *Handler) HandleUpdateMediaV2Lift(ctx *lift.Context) error {
 	mediaData["Focus"] = updateReq.Focus
 	mediaData["UpdatedAt"] = time.Now()
 
-	if err := h.store.UpdateObject(ctx.Context, mediaData); err != nil {
+	if err := h.repos.Object().UpdateObject(ctx.Context, mediaData); err != nil {
 		h.logger.Error("failed to update media", zap.String("media_id", mediaID), zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -778,7 +778,7 @@ func calculateAspectRatioLift(width, height int) float64 {
 // GetMediaProcessingStatusLift checks if a media item is still processing
 func (h *Handler) GetMediaProcessingStatusLift(ctx *lift.Context, mediaID string) (bool, int, error) {
 	// Get media record
-	obj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
+	obj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
 	if err != nil {
 		return false, 0, err
 	}
@@ -801,7 +801,7 @@ func (h *Handler) GetMediaProcessingStatusLift(ctx *lift.Context, mediaID string
 	}
 
 	// Get job record
-	jobObj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("JOB#%s", jobID))
+	jobObj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("JOB#%s", jobID))
 	if err != nil {
 		// Job not found, assume still processing
 		return true, 0, nil

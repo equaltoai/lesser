@@ -432,7 +432,6 @@ func TestHandleOEmbedLift(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock storage adapter
-			mockStore := new(MockStorageAdapter)
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockStore)
 			}
@@ -443,7 +442,7 @@ func TestHandleOEmbedLift(t *testing.T) {
 			}
 			logger := zap.NewNop()
 			authMiddleware := &auth.Middleware{}
-			handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+			handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 			// Setup context
 			ctx := tt.setupContext()
@@ -647,7 +646,6 @@ func TestHandleEmbedPageLift(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock storage adapter
-			mockStore := new(MockStorageAdapter)
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockStore)
 			}
@@ -658,7 +656,7 @@ func TestHandleEmbedPageLift(t *testing.T) {
 			}
 			logger := zap.NewNop()
 			authMiddleware := &auth.Middleware{}
-			handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+			handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 			// Setup context
 			ctx := tt.setupContext()
@@ -689,8 +687,7 @@ func TestExtractStatusID(t *testing.T) {
 	cfg := &config.Config{Domain: "example.com"}
 	logger := zap.NewNop()
 	authMiddleware := &auth.Middleware{}
-	mockStore := new(MockStorageAdapter)
-	handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+	handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 	tests := []struct {
 		name     string
@@ -746,8 +743,7 @@ func TestGenerateOEmbed(t *testing.T) {
 	cfg := &config.Config{Domain: "example.com"}
 	logger := zap.NewNop()
 	authMiddleware := &auth.Middleware{}
-	mockStore := new(MockStorageAdapter)
-	handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+	handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 	publishedTime := time.Now()
 	testNote := &activitypub.Note{

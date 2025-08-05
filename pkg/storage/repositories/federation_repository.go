@@ -59,7 +59,7 @@ func (r *FederationRepository) GetInstanceInfo(ctx context.Context, domain strin
 		PublicKey:     instance.PublicKey,
 		SharedInbox:   instance.SharedInbox,
 		TrustScore:    instance.TrustScore,
-		ActiveUsers:   instance.ActiveUsers,
+		ActiveUsers:   int64(instance.ActiveUsers),
 		TotalMessages: instance.TotalMessages,
 	}, nil
 }
@@ -76,7 +76,7 @@ func (r *FederationRepository) UpsertInstanceInfo(ctx context.Context, info *sto
 		PublicKey:     info.PublicKey,
 		SharedInbox:   info.SharedInbox,
 		TrustScore:    info.TrustScore,
-		ActiveUsers:   info.ActiveUsers,
+		ActiveUsers:   int(info.ActiveUsers),
 		TotalMessages: info.TotalMessages,
 	}
 	
@@ -123,7 +123,7 @@ func (r *FederationRepository) GetKnownInstances(ctx context.Context, limit int,
 			PublicKey:     instance.PublicKey,
 			SharedInbox:   instance.SharedInbox,
 			TrustScore:    instance.TrustScore,
-			ActiveUsers:   instance.ActiveUsers,
+			ActiveUsers:   int64(instance.ActiveUsers),
 			TotalMessages: instance.TotalMessages,
 		}
 	}
@@ -156,14 +156,14 @@ func (r *FederationRepository) GetFederationStatistics(ctx context.Context, star
 	
 	// Aggregate statistics
 	stats := &storage.FederationStats{
-		ActiveInstances: len(instances),
+		ActiveInstances: int64(len(instances)),
 		TotalMessages:   0,
 		TotalUsers:      0,
 	}
 	
 	for _, instance := range instances {
 		stats.TotalMessages += instance.TotalMessages
-		stats.TotalUsers += instance.ActiveUsers
+		stats.TotalUsers += int64(instance.ActiveUsers)
 	}
 	
 	return stats, nil
@@ -401,7 +401,7 @@ func (r *FederationRepository) GetInstanceHealthReport(ctx context.Context, doma
 		ResponseTime:    avgResponseTime,
 		ErrorRate:       errorRate,
 		FederationDelay: avgResponseTime / 1000, // Convert to seconds
-		QueueDepth:      queueDepth,
+		QueueDepth:      int64(queueDepth),
 		Issues:          issues,
 		Recommendations: recommendations,
 		LastChecked:     time.Now(),
@@ -857,7 +857,7 @@ func (r *FederationRepository) GetUserSeveredRelationships(ctx context.Context, 
 			Domain:       sev.Domain,
 			SeveredAt:    sev.SeveredAt,
 			Acknowledged: sev.Acknowledged,
-			Reason:       storage.SeveranceReason(sev.Reason),
+			Reason:       sev.Reason,
 			Type:         sev.Type,
 		}
 	}
@@ -1565,8 +1565,8 @@ func (r *FederationRepository) GetDeliveryStatus(ctx context.Context, activityID
 		LastAttempt:  delivery.LastAttempt,
 		Error:        delivery.Error,
 		CreatedAt:    delivery.CreatedAt,
-		DeliveredAt:  delivery.DeliveredAt,
-		NextRetry:    delivery.NextRetry,
+		DeliveredAt:  &delivery.DeliveredAt,
+		NextRetry:    &delivery.NextRetry,
 	}, nil
 }
 
@@ -1600,8 +1600,8 @@ func (r *FederationRepository) ListFailedDeliveries(ctx context.Context, limit i
 			LastAttempt:  delivery.LastAttempt,
 			Error:        delivery.Error,
 			CreatedAt:    delivery.CreatedAt,
-			DeliveredAt:  delivery.DeliveredAt,
-			NextRetry:    delivery.NextRetry,
+			DeliveredAt:  &delivery.DeliveredAt,
+			NextRetry:    &delivery.NextRetry,
 		}
 	}
 	

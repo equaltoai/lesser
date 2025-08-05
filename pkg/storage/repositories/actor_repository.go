@@ -12,7 +12,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -57,7 +56,7 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 	}
 
 	username := actor.PreferredUsername
-	numericID := mastodon.GenerateNumericID(username)
+	numericID := common.GenerateNumericID(username)
 
 	// Encrypt private key if encryption is available
 	encryptedKey := privateKey
@@ -390,7 +389,7 @@ func convertActorFields(fields []models.ActorField) []storage.ActorField {
 		result[i] = storage.ActorField{
 			Name:       field.Name,
 			Value:      field.Value,
-			VerifiedAt: field.VerifiedAt,
+			VerifiedAt: func() time.Time { if field.VerifiedAt != nil { return *field.VerifiedAt } else { return time.Time{} } }(),
 		}
 	}
 	return result
@@ -403,7 +402,7 @@ func convertStorageActorFields(fields []storage.ActorField) []models.ActorField 
 		result[i] = models.ActorField{
 			Name:       field.Name,
 			Value:      field.Value,
-			VerifiedAt: field.VerifiedAt,
+			VerifiedAt: func() *time.Time { if !field.VerifiedAt.IsZero() { return &field.VerifiedAt } else { return nil } }(),
 		}
 	}
 	return result

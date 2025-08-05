@@ -121,7 +121,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 			ExpiresAt:           time.Now().Add(10 * time.Minute),
 		}
 
-		if err := h.store.SaveOAuthState(ctx.Context, authState); err != nil {
+		if err := h.repos.Account().StoreOAuthState(ctx.Context, authState.State, authState); err != nil {
 			h.logger.Error("failed to save OAuth state", zap.Error(err))
 			return h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", redirectURI, state)
 		}
@@ -146,7 +146,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 		Scopes:        scopes,
 	}
 
-	if err := h.store.CreateAuthorizationCode(ctx.Context, authCode); err != nil {
+	if err := h.repos.Account().CreateAuthorizationCode(ctx.Context, authCode); err != nil {
 		h.logger.Error("failed to store authorization code", zap.Error(err))
 		return h.oauthErrorLift(ctx, "server_error", "Failed to store authorization code", redirectURI, state)
 	}
@@ -231,7 +231,7 @@ func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
 // showConsentScreenLift shows the consent screen using Lift patterns
 func (h *Handler) showConsentScreenLift(ctx *lift.Context, authState *storage.OAuthState) error {
 	// Get app details
-	app, err := h.store.GetOAuthApp(ctx.Context, authState.ClientID)
+	app, err := h.repos.Account().GetOAuthApp(ctx.Context, authState.ClientID)
 	if err != nil {
 		h.logger.Error("failed to get OAuth app", zap.Error(err))
 		return errors.New("client not found")
@@ -308,7 +308,7 @@ func (h *Handler) getScopeDescription(scope string) string {
 
 // hasUserConsentedToApp checks if user has consented to the app with required scopes
 func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID string, scopes []string) bool {
-	consent, err := h.store.GetUserAppConsent(ctx, username, clientID)
+	consent, err := h.repos.Account().GetUserAppConsent(ctx, username, clientID)
 	if err != nil || consent == nil {
 		return false
 	}

@@ -21,7 +21,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	liftAuth "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/observability"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -34,7 +33,6 @@ import (
 var (
 	cfg              *config.Config
 	repos            core.RepositoryStorage
-	store            storage.Storage // Legacy compatibility - to be removed
 	logger           *zap.Logger
 	liftHandler      *liftHandlers.Handler
 	authService      *auth.AuthService
@@ -69,29 +67,6 @@ func init() {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
-	// Create legacy storage adapter for backward compatibility during migration
-	// TODO: Remove this once all services are migrated to repository pattern
-	store = dynamorm.NewStorageAdapter(db, tableName, logger)
-	adapter := store.(*dynamorm.StorageAdapter)
-	adapter.SetAccountRepository(repos.Account())
-	adapter.SetActorRepository(repos.Actor())
-	adapter.SetObjectRepository(repos.Object())
-	adapter.SetActivityRepository(repos.Activity())
-	adapter.SetTimelineRepository(repos.Timeline())
-	adapter.SetNotificationRepository(repos.Notification())
-	adapter.SetLikeRepository(repos.Like())
-	adapter.SetModerationRepository(repos.Moderation())
-	adapter.SetListRepository(repos.List())
-	adapter.SetMediaRepository(repos.Media())
-	adapter.SetPollRepository(repos.Poll())
-	adapter.SetHashtagRepository(repos.Hashtag())
-	adapter.SetScheduledStatusRepository(repos.ScheduledStatus())
-	adapter.SetAnnouncementRepository(repos.Announcement())
-	adapter.SetDomainBlockRepository(repos.DomainBlock())
-	adapter.SetRelationshipRepository(repos.Relationship())
-	adapter.SetInstanceRepository(repos.Instance())
-	adapter.SetFederationRepository(repos.Federation())
-
 	// Initialize auth service
 	authService, err = auth.NewAuthService(repos)
 	if err != nil {
@@ -114,8 +89,8 @@ func init() {
 	}
 	
 	// Create Lift handler for all endpoints
-	// The handler uses the store which implements RepositoryStorage
-	liftHandler = liftHandlers.NewHandler(cfg, store, logger, legacyAuthMiddleware)
+	// The handler uses repos which implements RepositoryStorage
+	liftHandler = liftHandlers.NewHandler(cfg, repos, logger, legacyAuthMiddleware)
 }
 
 func main() {

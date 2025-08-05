@@ -216,7 +216,7 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 			ResponseTime:    healthReport.ResponseTime / 1000, // Convert ms to seconds
 			ErrorRate:       healthReport.ErrorRate,
 			FederationDelay: healthReport.FederationDelay,
-			QueueDepth:      healthReport.QueueDepth,
+			QueueDepth:      int(healthReport.QueueDepth),
 			CostEfficiency:  costEfficiency,
 		},
 		Issues:          issues,

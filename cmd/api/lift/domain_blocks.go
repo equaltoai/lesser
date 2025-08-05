@@ -82,7 +82,7 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Get blocked domains
-	domains, nextCursor, err := h.store.GetUserDomainBlocks(ctx.Context, username, limit, cursor)
+	domains, nextCursor, err := h.repos.DomainBlock().GetUserDomainBlocks(ctx.Context, username, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get domain blocks",
 			zap.String("username", username),
@@ -181,7 +181,7 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Add domain block
-	if err := h.store.AddDomainBlock(ctx.Context, username, req.Domain); err != nil {
+	if err := h.repos.DomainBlock().AddDomainBlock(ctx.Context, username, req.Domain); err != nil {
 		h.logger.Error("failed to add domain block",
 			zap.String("username", username),
 			zap.String("domain", req.Domain),
@@ -252,7 +252,7 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Remove domain block
-	if err := h.store.RemoveDomainBlock(ctx.Context, username, domain); err != nil {
+	if err := h.repos.DomainBlock().RemoveDomainBlock(ctx.Context, username, domain); err != nil {
 		h.logger.Error("failed to remove domain block",
 			zap.String("username", username),
 			zap.String("domain", domain),

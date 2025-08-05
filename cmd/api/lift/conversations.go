@@ -62,7 +62,7 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 	}
 
 	// Get current user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -79,7 +79,7 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 	maxID := ctx.Query("max_id")
 
 	// Get conversations
-	conversations, cursor, err := h.store.GetUserConversations(ctx.Context, actor.ID, limit, maxID)
+	conversations, cursor, err := h.repos.Conversation().GetUserConversations(ctx.Context, actor.PreferredUsername, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get conversations", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -100,7 +100,7 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 			// Extract username from actor ID
 			username := converter.ExtractUsernameFromActorID(participantID)
 			if username != "" {
-				participantActor, err := h.store.GetActor(ctx.Context, username)
+				participantActor, err := h.repos.Actor().GetActor(ctx.Context, username)
 				if err == nil {
 					participantActors = append(participantActors, participantActor)
 				}
@@ -110,7 +110,7 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 		// Get last status
 		var lastStatus any
 		if conv.LastStatusID != "" {
-			lastStatus, _ = h.store.GetObject(ctx.Context, conv.LastStatusID)
+			lastStatus, _ = h.repos.Object().GetObject(ctx.Context, conv.LastStatusID)
 		}
 
 		// Check unread status by comparing last message time with user's last read time
@@ -185,14 +185,14 @@ func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 	}
 
 	// Get current user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Get conversation to verify ownership
-	conversation, err := h.store.GetConversation(ctx.Context, conversationID)
+	conversation, err := h.repos.Conversation().GetConversation(ctx.Context, conversationID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "conversation not found"})
 	}
@@ -211,7 +211,7 @@ func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 	}
 
 	// Delete conversation (or remove user from it)
-	err = h.store.DeleteConversation(ctx.Context, conversationID)
+	err = h.repos.Conversation().DeleteConversation(ctx.Context, conversationID)
 	if err != nil {
 		h.logger.Error("failed to delete conversation", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -273,14 +273,14 @@ func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 	}
 
 	// Get current user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Get conversation to verify ownership
-	conversation, err := h.store.GetConversation(ctx.Context, conversationID)
+	conversation, err := h.repos.Conversation().GetConversation(ctx.Context, conversationID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "conversation not found"})
 	}
@@ -299,7 +299,7 @@ func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 	}
 
 	// Mark as read
-	err = h.store.MarkConversationRead(ctx.Context, conversationID, username)
+	err = h.repos.Conversation().MarkConversationRead(ctx.Context, conversationID, username)
 	if err != nil {
 		h.logger.Error("failed to mark conversation as read", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -317,7 +317,7 @@ func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 
 		username := converter.ExtractUsernameFromActorID(participantID)
 		if username != "" {
-			participantActor, err := h.store.GetActor(ctx.Context, username)
+			participantActor, err := h.repos.Actor().GetActor(ctx.Context, username)
 			if err == nil {
 				participantActors = append(participantActors, participantActor)
 			}
@@ -326,7 +326,7 @@ func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 
 	var lastStatus any
 	if conversation.LastStatusID != "" {
-		lastStatus, _ = h.store.GetObject(ctx.Context, conversation.LastStatusID)
+		lastStatus, _ = h.repos.Object().GetObject(ctx.Context, conversation.LastStatusID)
 	}
 
 	// Conversation is now read, so unread = false
@@ -344,7 +344,7 @@ func (h *Handler) isConversationUnreadLift(ctx context.Context, conversationID, 
 	}
 
 	// Check if conversation is muted (if muted, it's not considered unread)
-	isMuted, err := h.store.IsConversationMuted(ctx, userID, conversationID)
+	isMuted, err := h.repos.Conversation().IsConversationMuted(ctx, userID, conversationID)
 	if err != nil {
 		h.logger.Warn("failed to check conversation mute status", zap.Error(err))
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
@@ -27,14 +28,14 @@ type DynamoDBAPI interface {
 
 // RelayService handles ActivityPub relay functionality
 type RelayService struct {
-	store      storage.Storage
+	store      core.RepositoryStorage
 	logger     *zap.Logger
 	httpClient *httpclient.SecureClient
 	domain     string
 }
 
 // NewRelayService creates a new relay service
-func NewRelayService(store storage.Storage, domain string, logger *zap.Logger) *RelayService {
+func NewRelayService(store core.RepositoryStorage, domain string, logger *zap.Logger) *RelayService {
 	return &RelayService{
 		store:  store,
 		logger: logger,
@@ -74,7 +75,7 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	}
 
 	// Get subscribing actor
-	actor, err := r.store.GetActor(ctx, actorUsername)
+	actor, err := r.store.Actor().GetActorByUsername(ctx, actorUsername)
 	if err != nil {
 		return fmt.Errorf("failed to get actor: %w", err)
 	}
@@ -106,7 +107,7 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	}
 
 	// Send follow activity to relay
-	deliverySvc := NewDeliveryService(r.store)
+	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store))
 	if err := deliverySvc.DeliverActivity(ctx, followActivity, relayActor.Inbox, actor); err != nil {
 		return fmt.Errorf("failed to deliver follow activity: %w", err)
 	}
@@ -130,7 +131,7 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 	}
 
 	// Get actor
-	actor, err := r.store.GetActor(ctx, actorUsername)
+	actor, err := r.store.Actor().GetActorByUsername(ctx, actorUsername)
 	if err != nil {
 		return fmt.Errorf("failed to get actor: %w", err)
 	}
@@ -153,7 +154,7 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 	}
 
 	// Send undo activity to relay
-	deliverySvc := NewDeliveryService(r.store)
+	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store))
 	if err := deliverySvc.DeliverActivity(ctx, undoActivity, relayInfo.InboxURL, actor); err != nil {
 		r.logger.Error("failed to deliver undo activity",
 			zap.String("relay_url", relayURL),
@@ -246,7 +247,7 @@ func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypu
 	}
 
 	// Send to each relay
-	deliverySvc := NewDeliveryService(r.store)
+	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store))
 	var errors []error
 
 	for _, relay := range relays {
@@ -361,11 +362,11 @@ func (r *RelayService) storeRelayInfo(ctx context.Context, relay *RelayInfo) err
 		LastSeenAt: relay.LastSeenAt,
 	}
 
-	return r.store.StoreRelayInfo(ctx, storageRelay)
+	return r.store.Relay().StoreRelayInfo(ctx, storageRelay)
 }
 
 func (r *RelayService) getRelayInfo(ctx context.Context, relayURL string) (*RelayInfo, error) {
-	storageRelay, err := r.store.GetRelayInfo(ctx, relayURL)
+	storageRelay, err := r.store.Relay().GetRelayInfo(ctx, relayURL)
 	if err != nil {
 		return nil, err
 	}
@@ -381,11 +382,11 @@ func (r *RelayService) getRelayInfo(ctx context.Context, relayURL string) (*Rela
 }
 
 func (r *RelayService) removeRelayInfo(ctx context.Context, relayURL string) error {
-	return r.store.RemoveRelayInfo(ctx, relayURL)
+	return r.store.Relay().RemoveRelayInfo(ctx, relayURL)
 }
 
 func (r *RelayService) getActiveRelays(ctx context.Context) ([]*RelayInfo, error) {
-	storageRelays, err := r.store.GetActiveRelays(ctx)
+	storageRelays, err := r.store.Relay().GetActiveRelays(ctx)
 	if err != nil {
 		return nil, err
 	}

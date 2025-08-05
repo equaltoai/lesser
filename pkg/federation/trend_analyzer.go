@@ -8,15 +8,16 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // TrendAnalyzer analyzes federation flow trends and patterns
 type TrendAnalyzer struct {
-	storage storage.Storage
+	storage core.RepositoryStorage
 }
 
 // NewTrendAnalyzer creates a new trend analyzer
-func NewTrendAnalyzer(store storage.Storage) *TrendAnalyzer {
+func NewTrendAnalyzer(store core.RepositoryStorage) *TrendAnalyzer {
 	return &TrendAnalyzer{
 		storage: store,
 	}
@@ -30,7 +31,7 @@ func (ta *TrendAnalyzer) AnalyzeTrends(ctx context.Context, domain string, perio
 
 	// This would require implementing GetFederationTimeSeriesRange
 	// For now, we'll work with available connection data
-	connections, err := ta.storage.GetInstanceConnections(ctx, domain, "")
+	connections, err := ta.storage.Federation().GetInstanceConnections(ctx, domain, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connections: %w", err)
 	}

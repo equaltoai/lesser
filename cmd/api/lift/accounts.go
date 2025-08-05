@@ -588,7 +588,7 @@ func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 	}
 
 	// Get the actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
 	}
@@ -617,7 +617,7 @@ func (h *Handler) HandleGetAccountFollowersLift(ctx *lift.Context) error {
 	username := accountID
 
 	// Get the actor to verify it exists
-	_, err := h.store.GetActor(ctx.Context, username)
+	_, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
 	}
@@ -634,7 +634,7 @@ func (h *Handler) HandleGetAccountFollowersLift(ctx *lift.Context) error {
 	}
 
 	// Get followers
-	followers, nextCursor, err := h.store.GetFollowers(ctx.Context, username, limit, cursor)
+	followers, nextCursor, err := h.repos.Relationship().GetFollowers(ctx.Context, username, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get followers", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -653,7 +653,7 @@ func (h *Handler) HandleGetAccountFollowersLift(ctx *lift.Context) error {
 		}
 
 		// Get the follower actor
-		followerActor, err := h.store.GetActor(ctx.Context, followerUsername)
+		followerActor, err := h.repos.Actor().GetActor(ctx.Context, followerUsername)
 		if err != nil {
 			h.logger.Warn("could not get follower actor",
 				zap.String("username", followerUsername),
@@ -687,7 +687,7 @@ func (h *Handler) HandleGetAccountFollowingLift(ctx *lift.Context) error {
 	username := accountID
 
 	// Get the actor to verify it exists
-	_, err := h.store.GetActor(ctx.Context, username)
+	_, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
 	}
@@ -704,7 +704,7 @@ func (h *Handler) HandleGetAccountFollowingLift(ctx *lift.Context) error {
 	}
 
 	// Get following
-	following, nextCursor, err := h.store.GetFollowing(ctx.Context, username, limit, cursor)
+	following, nextCursor, err := h.repos.Relationship().GetFollowing(ctx.Context, username, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get following", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -723,7 +723,7 @@ func (h *Handler) HandleGetAccountFollowingLift(ctx *lift.Context) error {
 		}
 
 		// Get the followed actor
-		followedActor, err := h.store.GetActor(ctx.Context, followedUsername)
+		followedActor, err := h.repos.Actor().GetActor(ctx.Context, followedUsername)
 		if err != nil {
 			h.logger.Warn("could not get followed actor",
 				zap.String("username", followedUsername),
@@ -775,7 +775,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 	}
 
 	// Get current user's following list
-	following, _, err := h.store.GetFollowing(ctx.Context, claims.Username, 1000, "") // Get a reasonable number
+	following, _, err := h.repos.Relationship().GetFollowing(ctx.Context, claims.Username, 1000, "") // Get a reasonable number
 	if err != nil {
 		h.logger.Error("failed to get following", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -798,7 +798,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 
 	for _, accountID := range ids {
 		// Get followers of this account
-		followers, _, err := h.store.GetFollowers(ctx.Context, accountID, 100, "")
+		followers, _, err := h.repos.Relationship().GetFollowers(ctx.Context, accountID, 100, "")
 		if err != nil {
 			// Skip if account not found
 			continue
@@ -811,7 +811,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 				// Get actor details
 				username := converter.ExtractUsernameFromActorID(followerActorID)
 				if username != "" {
-					actor, err := h.store.GetActor(ctx.Context, username)
+					actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 					if err == nil {
 						account := converter.ActorToAccount(actor)
 						mutualAccounts = append(mutualAccounts, account)
@@ -856,7 +856,7 @@ func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 	}
 
 	// Get target actor to verify it exists
-	targetActor, err := h.store.GetActor(ctx.Context, accountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
 	}
@@ -870,7 +870,7 @@ func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 	}
 
 	// Store the pin
-	if err := h.store.CreateAccountPin(ctx.Context, pin); err != nil {
+	if err := h.repos.Account().CreateAccountPin(ctx.Context, pin); err != nil {
 		if strings.Contains(err.Error(), "already pinned") {
 			return ctx.Status(422).JSON(map[string]string{"error": "Account already pinned"})
 		}
@@ -915,13 +915,13 @@ func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 	}
 
 	// Get target actor to verify it exists
-	targetActor, err := h.store.GetActor(ctx.Context, accountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
 	}
 
 	// Delete the pin
-	if err := h.store.DeleteAccountPin(ctx.Context, claims.Username, targetActor.ID); err != nil {
+	if err := h.repos.Account().DeleteAccountPin(ctx.Context, claims.Username, targetActor.ID); err != nil {
 		h.logger.Error("failed to unpin account", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -971,7 +971,7 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 	}
 
 	// Get target actor to verify it exists
-	targetActor, err := h.store.GetActor(ctx.Context, accountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
 	}
@@ -986,7 +986,7 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 	}
 
 	// Store the note
-	if err := h.store.CreateAccountNote(ctx.Context, note); err != nil {
+	if err := h.repos.Account().CreateAccountNote(ctx.Context, note); err != nil {
 		h.logger.Error("failed to set account note", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -1031,36 +1031,31 @@ func (h *Handler) HandleRemoveFromFollowersLift(ctx *lift.Context) error {
 	}
 
 	// Get target actor to verify it exists
-	_, err = h.store.GetActor(ctx.Context, accountID)
+	_, err = h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
 	}
 
-	// Check if target follows current user using IsFollowing
-	follows, err := h.store.IsFollowing(ctx.Context, accountID, claims.Username)
-	if err != nil {
-		h.logger.Error("failed to check follow status", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	if !follows {
+	// Check if target follows current user using GetRelationship
+	relationship, err := h.repos.Relationship().GetRelationship(ctx.Context, accountID, claims.Username)
+	if err != nil || relationship == nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account is not following you"})
 	}
 
 	// Remove the follow relationship
-	if err := h.store.RemoveFollow(ctx.Context, accountID, claims.Username); err != nil {
+	if err := h.repos.Relationship().DeleteRelationship(ctx.Context, accountID, claims.Username); err != nil {
 		h.logger.Error("failed to remove follower", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Get relationship status to return
-	relationship, err := h.getRelationshipMapLift(ctx.Context, claims.Username, accountID)
+	relationshipMap, err := h.getRelationshipMapLift(ctx.Context, claims.Username, accountID)
 	if err != nil {
 		h.logger.Error("failed to get relationship", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	return ctx.JSON(relationship)
+	return ctx.JSON(relationshipMap)
 }
 
 // Helper methods for Lift implementation
@@ -1097,7 +1092,7 @@ func (h *Handler) resolveAccountIDLift(ctx context.Context, accountID string) (*
 			parts := strings.Split(accountID, "/users/")
 			if len(parts) == 2 {
 				username := parts[1]
-				return h.store.GetActor(ctx, username)
+				return h.repos.Actor().GetActor(ctx, username)
 			}
 			return nil, fmt.Errorf("invalid account URL")
 		}
@@ -1108,46 +1103,48 @@ func (h *Handler) resolveAccountIDLift(ctx context.Context, accountID string) (*
 	// Check if it's a numeric ID (Mastodon compatibility)
 	if _, err := strconv.ParseInt(accountID, 10, 64); err == nil && len(accountID) >= 10 {
 		// It's a numeric ID - use the dedicated lookup method
-		return h.store.GetActorByNumericID(ctx, accountID)
+		return h.repos.Actor().GetActorByNumericID(ctx, accountID)
 	}
 
 	// Assume it's a username for local accounts
-	return h.store.GetActor(ctx, accountID)
+	return h.repos.Actor().GetActor(ctx, accountID)
 }
 
 // getRelationshipMapLift gets relationship status for Lift implementation
 func (h *Handler) getRelationshipMapLift(ctx context.Context, currentUsername, targetUsername string) (map[string]any, error) {
 	// Get actors
-	currentActor, err := h.store.GetActor(ctx, currentUsername)
+	currentActor, err := h.repos.Actor().GetActor(ctx, currentUsername)
 	if err != nil {
 		return nil, err
 	}
 
-	targetActor, err := h.store.GetActor(ctx, targetUsername)
+	targetActor, err := h.repos.Actor().GetActor(ctx, targetUsername)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check various relationship statuses using IsFollowing
-	following, _ := h.store.IsFollowing(ctx, currentUsername, targetUsername)
-	followedBy, _ := h.store.IsFollowing(ctx, targetUsername, currentUsername)
+	// Check various relationship statuses using GetRelationship
+	followingRel, _ := h.repos.Relationship().GetRelationship(ctx, currentUsername, targetUsername)
+	following := followingRel != nil
+	followedByRel, _ := h.repos.Relationship().GetRelationship(ctx, targetUsername, currentUsername)
+	followedBy := followedByRel != nil
 
 	// Check if pinned
-	endorsed, _ := h.store.IsAccountPinned(ctx, currentUsername, targetActor.ID)
+	endorsed, _ := h.repos.Account().IsAccountPinned(ctx, currentUsername, targetActor.ID)
 
 	// Get note if exists
-	note, _ := h.store.GetAccountNote(ctx, currentUsername, targetActor.ID)
+	note, _ := h.repos.User().GetAccountNote(ctx, currentUsername, targetActor.ID)
 	noteText := ""
 	if note != nil {
 		noteText = note.Note
 	}
 
 	// Check if muted
-	muted, _ := h.store.IsMuted(ctx, currentActor.ID, targetActor.ID)
+	muted, _ := h.repos.Social().IsMuted(ctx, currentActor.ID, targetActor.ID)
 
 	// Check if blocked
-	blocking, _ := h.store.IsBlocked(ctx, currentActor.ID, targetActor.ID)
-	blockedBy, _ := h.store.IsBlocked(ctx, targetActor.ID, currentActor.ID)
+	blocking, _ := h.repos.Social().IsBlocked(ctx, currentActor.ID, targetActor.ID)
+	blockedBy, _ := h.repos.Social().IsBlocked(ctx, targetActor.ID, currentActor.ID)
 
 	// Build relationship response
 	relationship := map[string]any{
@@ -1304,16 +1301,16 @@ func (h *Handler) parseActorFieldsLift(ctx context.Context, actor *activitypub.A
 func (h *Handler) isReblogFilteredLift(ctx context.Context, followerID, followeeID string) bool {
 	// Check user preference for showing reblogs from this user
 	// Use extended preferences to check if reblogs are filtered
-	showReblogs, err := h.store.GetPreference(ctx, followerID, fmt.Sprintf("show_reblogs:%s", followeeID))
+	showReblogs, err := h.repos.Account().GetPreference(ctx, followerID, fmt.Sprintf("show_reblogs:%s", followeeID))
 	if err != nil {
 		h.logger.Debug("failed to get reblog preference", zap.Error(err))
 		return false // Default to showing reblogs if error
 	}
 
-	// If preference exists and is false, reblogs are filtered
-	if showReblogs != nil {
-		if show, ok := showReblogs.(bool); ok {
-			return !show // Filtered if show is false
+	// If preference exists and is "false", reblogs are filtered
+	if showReblogs != "" {
+		if showReblogs == "false" {
+			return true // Filtered if show is false
 		}
 	}
 
@@ -1323,17 +1320,15 @@ func (h *Handler) isReblogFilteredLift(ctx context.Context, followerID, followee
 // isNotifyingEnabledLift checks if notifications are enabled for a relationship
 func (h *Handler) isNotifyingEnabledLift(ctx context.Context, followerID, followeeID string) bool {
 	// Check user preference for notifications from this user
-	notifyEnabled, err := h.store.GetPreference(ctx, followerID, fmt.Sprintf("notify:%s", followeeID))
+	notifyEnabled, err := h.repos.Account().GetPreference(ctx, followerID, fmt.Sprintf("notify:%s", followeeID))
 	if err != nil {
 		h.logger.Debug("failed to check notification preference", zap.Error(err))
 		return false // Default to not notifying if error
 	}
 
-	// If preference exists and is true, notifications are enabled
-	if notifyEnabled != nil {
-		if enabled, ok := notifyEnabled.(bool); ok {
-			return enabled
-		}
+	// If preference exists and is "true", notifications are enabled
+	if notifyEnabled != "" {
+		return notifyEnabled == "true"
 	}
 
 	return false // Default to not notifying
@@ -1342,17 +1337,15 @@ func (h *Handler) isNotifyingEnabledLift(ctx context.Context, followerID, follow
 // isNotificationsMutedLift checks if notifications are muted for a relationship
 func (h *Handler) isNotificationsMutedLift(ctx context.Context, muterID, muteeID string) bool {
 	// Check user preference for muting notifications from this user
-	notifMuted, err := h.store.GetPreference(ctx, muterID, fmt.Sprintf("mute_notifications:%s", muteeID))
+	notifMuted, err := h.repos.Account().GetPreference(ctx, muterID, fmt.Sprintf("mute_notifications:%s", muteeID))
 	if err != nil {
 		h.logger.Debug("failed to check notification mute preference", zap.Error(err))
 		return false // Default to not muted if error
 	}
 
-	// If preference exists and is true, notifications are muted
-	if notifMuted != nil {
-		if muted, ok := notifMuted.(bool); ok {
-			return muted
-		}
+	// If preference exists and is "true", notifications are muted
+	if notifMuted != "" {
+		return notifMuted == "true"
 	}
 
 	return false // Default to not muted
@@ -1361,7 +1354,7 @@ func (h *Handler) isNotificationsMutedLift(ctx context.Context, muterID, muteeID
 // hasFollowRequestLift checks if there's a pending follow request
 func (h *Handler) hasFollowRequestLift(ctx context.Context, requesterID, targetID string) bool {
 	// Check follow request state - returns "pending", "accepted", "rejected", or ""
-	state, err := h.store.GetFollowRequestState(ctx, requesterID, targetID)
+	state, err := h.repos.Account().GetFollowRequestState(ctx, requesterID, targetID)
 	if err != nil {
 		h.logger.Debug("failed to check follow request state", zap.Error(err))
 		return false // Default to no pending request if error
@@ -1379,7 +1372,7 @@ func (h *Handler) isDomainBlockedLift(ctx context.Context, userID, targetID stri
 	}
 
 	// Check if user has blocked this domain
-	blocked, err := h.store.IsBlockedDomain(ctx, userID, targetDomain)
+	blocked, err := h.repos.Account().IsBlockedDomain(ctx, userID, targetDomain)
 	if err != nil {
 		h.logger.Debug("failed to check domain block status", zap.Error(err))
 		return false // Default to not blocked if error
@@ -1408,7 +1401,7 @@ func (h *Handler) extractDomainFromActorIDLift(actorID string) string {
 
 // getFieldVerificationTimeLift gets the verification time for a profile field
 func (h *Handler) getFieldVerificationTimeLift(ctx context.Context, username, fieldName string) any {
-	field, err := h.store.GetFieldVerification(ctx, username, fieldName)
+	field, err := h.repos.Account().GetFieldVerification(ctx, username, fieldName)
 	if err != nil {
 		h.logger.Warn("failed to get field verification",
 			zap.String("username", username),
@@ -1417,7 +1410,7 @@ func (h *Handler) getFieldVerificationTimeLift(ctx context.Context, username, fi
 		return nil
 	}
 
-	if field.VerifiedAt != nil {
+	if !field.VerifiedAt.IsZero() {
 		return field.VerifiedAt.Format("2006-01-02T15:04:05.000Z")
 	}
 

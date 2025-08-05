@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -13,15 +12,17 @@ import (
 
 // FederationActivityRepository handles federation activity persistence
 type FederationActivityRepository struct {
-	dynamorm.BaseRepository
-	logger *zap.Logger
+	db        core.DB
+	tableName string
+	logger    *zap.Logger
 }
 
 // NewFederationActivityRepository creates a new federation activity repository
 func NewFederationActivityRepository(db core.DB, tableName string, logger *zap.Logger) *FederationActivityRepository {
 	return &FederationActivityRepository{
-		BaseRepository: *dynamorm.NewBaseRepository(db, tableName),
-		logger:         logger,
+		db:        db,
+		tableName: tableName,
+		logger:    logger,
 	}
 }
 
@@ -33,9 +34,9 @@ func (r *FederationActivityRepository) Create(ctx context.Context, activity *mod
 	}
 
 	// Create the activity
-	err := r.GetDB().Model(activity).Create()
+	err := r.db.Model(activity).Create()
 	if err != nil {
-		return dynamorm.MapErrorWithContext(err, "failed to create federation activity")
+		return MapErrorWithContext(err, "failed to create federation activity")
 	}
 
 	r.logger.Debug("created federation activity",
@@ -51,14 +52,14 @@ func (r *FederationActivityRepository) Get(ctx context.Context, domain, id strin
 	activity := &models.FederationActivity{}
 
 	// We need to know the timestamp to construct the SK, so we'll query by GSI
-	err := r.GetDB().Model(activity).
+	err := r.db.Model(activity).
 		Index("actor-index"). // Use actor index as a workaround
 		Where("Domain", "=", domain).
 		Where("ID", "=", id).
 		First(activity)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to get federation activity")
+		return nil, MapErrorWithContext(err, "failed to get federation activity")
 	}
 
 	return activity, nil
@@ -72,7 +73,7 @@ func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain 
 	startSK := fmt.Sprintf("activity#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("activity#%s", endTime.Format("20060102150405"))
 
-	query := r.GetDB().Model(&models.FederationActivity{}).
+	query := r.db.Model(&models.FederationActivity{}).
 		Where("PK", "=", fmt.Sprintf("fed_activity#%s", domain)).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -82,7 +83,7 @@ func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain 
 	err := query.All(&activities)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list federation activities by domain")
+		return nil, MapErrorWithContext(err, "failed to list federation activities by domain")
 	}
 
 	return activities, nil
@@ -96,7 +97,7 @@ func (r *FederationActivityRepository) ListByType(ctx context.Context, activityT
 	startSK := fmt.Sprintf("%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("%s", endTime.Format(time.RFC3339))
 
-	query := r.GetDB().Model(&models.FederationActivity{}).
+	query := r.db.Model(&models.FederationActivity{}).
 		Index("type-index").
 		Where("GSI1PK", "=", fmt.Sprintf("FED_TYPE#%s", activityType)).
 		Where("GSI1SK", ">=", startSK).
@@ -107,7 +108,7 @@ func (r *FederationActivityRepository) ListByType(ctx context.Context, activityT
 	err := query.All(&activities)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list federation activities by type")
+		return nil, MapErrorWithContext(err, "failed to list federation activities by type")
 	}
 
 	return activities, nil
@@ -121,7 +122,7 @@ func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID 
 	startSK := fmt.Sprintf("%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("%s", endTime.Format(time.RFC3339))
 
-	query := r.GetDB().Model(&models.FederationActivity{}).
+	query := r.db.Model(&models.FederationActivity{}).
 		Index("actor-index").
 		Where("GSI2PK", "=", fmt.Sprintf("FED_ACTOR#%s", actorID)).
 		Where("GSI2SK", ">=", startSK).
@@ -132,7 +133,7 @@ func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID 
 	err := query.All(&activities)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list federation activities by actor")
+		return nil, MapErrorWithContext(err, "failed to list federation activities by actor")
 	}
 
 	return activities, nil
@@ -145,7 +146,7 @@ func (r *FederationActivityRepository) GetRecentActivities(ctx context.Context, 
 	// Use type index to get recent activities
 	startSK := since.Format(time.RFC3339)
 
-	err := r.GetDB().Model(&models.FederationActivity{}).
+	err := r.db.Model(&models.FederationActivity{}).
 		Index("type-index").
 		Where("GSI1SK", ">=", startSK).
 		OrderBy("GSI1SK", "DESC").
@@ -153,7 +154,7 @@ func (r *FederationActivityRepository) GetRecentActivities(ctx context.Context, 
 		All(&activities)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to get recent federation activities")
+		return nil, MapErrorWithContext(err, "failed to get recent federation activities")
 	}
 
 	return activities, nil
@@ -221,16 +222,16 @@ func (r *FederationActivityRepository) UpdateInstanceInfo(ctx context.Context, i
 		UpdatedAt:   time.Now(),
 	}
 
-	err := r.GetDB().Model(item).Update()
+	err := r.db.Model(item).Update()
 	if err != nil {
 		// If update fails, try create
 		item.CreatedAt = time.Now()
 		if info.FirstSeen.IsZero() {
 			item.FirstSeen = time.Now()
 		}
-		err = r.GetDB().Model(item).Create()
+		err = r.db.Model(item).Create()
 		if err != nil {
-			return dynamorm.MapErrorWithContext(err, "failed to update instance info")
+			return MapErrorWithContext(err, "failed to update instance info")
 		}
 	}
 
@@ -241,13 +242,13 @@ func (r *FederationActivityRepository) UpdateInstanceInfo(ctx context.Context, i
 func (r *FederationActivityRepository) GetInstanceInfo(ctx context.Context, domain string) (*models.InstanceInfo, error) {
 	item := &InstanceInfoItem{}
 
-	err := r.GetDB().Model(item).
+	err := r.db.Model(item).
 		Where("PK", "=", fmt.Sprintf("instance#%s", domain)).
 		Where("SK", "=", "info").
 		First(item)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to get instance info")
+		return nil, MapErrorWithContext(err, "failed to get instance info")
 	}
 
 	return &models.InstanceInfo{

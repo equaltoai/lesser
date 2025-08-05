@@ -499,7 +499,7 @@ func (h *Handler) HandleGetReputationKeysLift(ctx *lift.Context) error {
 func (h *Handler) getReputationService() (*reputation.Service, error) {
 	// Create service config using existing store
 	cfg := &reputation.Config{
-		Storage:     h.store,
+		Storage:     h.repos,
 		Logger:      h.logger,
 		InstanceURL: h.cfg.BaseURL(),
 		PrivateKey:  h.cfg.ReputationPrivateKey,

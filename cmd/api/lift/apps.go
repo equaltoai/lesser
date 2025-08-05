@@ -166,14 +166,14 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 		zap.Strings("redirect_uris", client.RedirectURIs),
 		zap.Strings("scopes", client.Scopes))
 
-	if err := h.store.CreateOAuthClient(ctx.Context, client); err != nil {
+	if err := h.repos.Account().CreateOAuthClient(ctx.Context, client); err != nil {
 		h.logger.Error("failed to create OAuth client", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Get VAPID public key
 	var vapidKey string
-	vapidKeys, err := h.store.GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys, push notifications will not be available", zap.Error(err))
 		vapidKey = ""
@@ -222,7 +222,7 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err == nil && claims.ClientID != "" {
 		// Valid access token, get the client
-		client, err := h.store.GetOAuthClient(ctx.Context, claims.ClientID)
+		client, err := h.repos.Account().GetOAuthClient(ctx.Context, claims.ClientID)
 		if err != nil {
 			h.logger.Error("failed to get OAuth client", zap.Error(err))
 			return ctx.Status(401).JSON(map[string]string{"error": "invalid credentials"})
@@ -230,7 +230,7 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 
 		// Get VAPID public key
 		var vapidKey string
-		vapidKeys, err := h.store.GetVAPIDKeys(ctx.Context)
+		vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 		if err != nil {
 			h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 			vapidKey = ""
@@ -266,14 +266,14 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	clientSecret := parts[1]
 
 	// Verify client credentials
-	client, err := h.store.GetOAuthClient(ctx.Context, clientID)
+	client, err := h.repos.Account().GetOAuthClient(ctx.Context, clientID)
 	if err != nil || client.ClientSecret != clientSecret {
 		return ctx.Status(401).JSON(map[string]string{"error": "invalid credentials"})
 	}
 
 	// Get VAPID public key
 	var vapidKey string
-	vapidKeys, err := h.store.GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		vapidKey = ""

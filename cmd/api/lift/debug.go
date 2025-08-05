@@ -114,7 +114,7 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 	}
 
 	// Get the activity
-	activity, err := h.store.GetActivity(ctx.Context, activityID)
+	activity, err := h.repos.Activity().GetActivity(ctx.Context, activityID)
 	if err != nil {
 		h.logger.Info("activity not found", zap.String("activity_id", activityID), zap.Error(err))
 		ctx.Status(http.StatusNotFound)
@@ -232,7 +232,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 	}
 
 	// Get the object
-	obj, err := h.store.GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{"error": "object not found"})
@@ -261,7 +261,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 			parts := strings.Split(actorStr, "/")
 			if len(parts) > 0 {
 				username := parts[len(parts)-1]
-				if actor, err := h.store.GetActor(ctx.Context, username); err == nil {
+				if actor, err := h.repos.Actor().GetActor(ctx.Context, username); err == nil {
 					response.Actor = map[string]any{
 						"id":       actor.ID,
 						"username": actor.PreferredUsername,
@@ -274,8 +274,8 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 	}
 
 	// Check relationships
-	likeCount, _ := h.store.CountObjectLikes(ctx.Context, objectID)
-	announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
+	likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
 
 	response.Relationships["likes"] = map[string]any{
 		"count": likeCount,
@@ -331,7 +331,7 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 	}
 
 	// Get the activity
-	activity, err := h.store.GetActivity(ctx.Context, activityID)
+	activity, err := h.repos.Activity().GetActivity(ctx.Context, activityID)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{"error": "activity not found"})
@@ -487,7 +487,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 	}
 
 	// Get the object
-	obj, err := h.store.GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{"error": "object not found"})
@@ -520,8 +520,8 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 	}
 
 	// Add references
-	likeCount, _ := h.store.CountObjectLikes(ctx.Context, objectID)
-	announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
+	likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
 
 	response.References = map[string]any{
 		"likes":     likeCount,
@@ -549,7 +549,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 
 // Helper method to count status replies
 func (h *Handler) countStatusRepliesLift(ctx context.Context, statusID string) int {
-	count, err := h.store.GetStatusReplyCount(ctx, statusID)
+	count, err := h.repos.Object().GetStatusReplyCount(ctx, statusID)
 	if err != nil {
 		h.logger.Warn("failed to count status replies", zap.Error(err))
 		return 0
@@ -678,8 +678,8 @@ func (h *Handler) HandleDebugStorageLift(ctx *lift.Context) error {
 	}
 
 	// Get storage usage
-	storageUsage, _ := h.store.GetStorageUsage(ctx.Context)
-	activeUsers, _ := h.store.GetActiveUserCount(ctx.Context, 30)
+	storageUsage, _ := h.repos.Instance().GetStorageUsage(ctx.Context)
+	activeUsers, _ := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30)
 
 	response := map[string]any{
 		"storage": map[string]any{
@@ -825,7 +825,7 @@ func (h *Handler) HandleDebugMetricsLift(ctx *lift.Context) error {
 		}
 	}
 
-	activeUsers, _ := h.store.GetActiveUserCount(ctx.Context, 30)
+	activeUsers, _ := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30)
 
 	response := map[string]any{
 		"metrics": map[string]any{

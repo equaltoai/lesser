@@ -25,15 +25,16 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // PushDeliveryProcessor handles push notification delivery via SQS
 type PushDeliveryProcessor struct {
-	store       storage.Storage
+	repos       core.RepositoryStorage
 	logger      *zap.Logger
 	cfg         *config.Config
 	rateLimiter *RateLimiter
@@ -113,16 +114,15 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 		tableName = "lesser-main"
 	}
 
-	// Create storage adapter
+	// Create repository factory
 	logger := common.Logger()
-	store := dynamorm.NewStorageAdapter(db, tableName, logger)
-	
-	// Initialize required repositories
-	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
-	store.SetPushSubscriptionRepository(repositories.NewPushSubscriptionRepository(db, tableName, logger))
+	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create repository factory: %w", err)
+	}
 
 	return &PushDeliveryProcessor{
-		store:  store,
+		repos:  repos,
 		logger: common.Logger(),
 		cfg:    config.Get(),
 		rateLimiter: &RateLimiter{
@@ -222,7 +222,7 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 	}
 
 	// Get user's push subscriptions
-	subscriptions, err := pdp.store.GetUserPushSubscriptions(ctx.Context, notification.Username)
+	subscriptions, err := pdp.repos.PushSubscription().GetUserPushSubscriptions(ctx.Context, notification.Username)
 	if err != nil {
 		pdp.logger.Error("failed to get push subscriptions",
 			zap.String("username", notification.Username),
@@ -239,7 +239,7 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 	}
 
 	// Get VAPID keys
-	vapidKeys, err := pdp.store.GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := pdp.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		pdp.logger.Error("failed to get VAPID keys", zap.Error(err))
 		return fmt.Errorf("failed to get VAPID keys: %w", err)
@@ -374,7 +374,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 				zap.String("subscription_id", subscription.ID),
 				zap.Int("status_code", resp.StatusCode),
 			)
-			if err := pdp.store.DeletePushSubscription(ctx, subscription.Username, subscription.ID); err != nil {
+			if err := pdp.repos.PushSubscription().DeletePushSubscription(ctx, subscription.Username, subscription.ID); err != nil {
 				pdp.logger.Error("failed to delete invalid subscription",
 					zap.String("subscription_id", subscription.ID),
 					zap.Error(err),
@@ -407,7 +407,7 @@ func (pdp *PushDeliveryProcessor) trackDelivery(ctx context.Context, notificatio
 
 	// Record the push notification delivery attempt using RecordActivity
 	activityType := fmt.Sprintf("push_delivery_%s_%s", notification.NotificationType, result.Status)
-	if err := pdp.store.RecordActivity(ctx, activityType, notification.Username, now); err != nil {
+	if err := pdp.repos.Activity().RecordActivity(ctx, activityType, notification.Username, now); err != nil {
 		pdp.logger.Error("failed to record push delivery activity",
 			zap.String("notification_id", notification.NotificationID),
 			zap.String("username", notification.Username),

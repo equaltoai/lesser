@@ -57,7 +57,7 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 	}
 
 	// Get user's push subscriptions
-	subscriptions, err := h.store.GetUserPushSubscriptions(ctx.Context, claims.Username)
+	subscriptions, err := h.repos.PushSubscription().GetUserPushSubscriptions(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get push subscriptions",
 			zap.String("username", claims.Username),
@@ -93,7 +93,7 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 
 	// Get VAPID public key
 	var serverKey string
-	vapidKeys, err := h.store.GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		serverKey = ""
@@ -214,7 +214,7 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 	}
 
 	// Delete any existing subscriptions for this user
-	if err := h.store.DeleteAllPushSubscriptions(ctx.Context, claims.Username); err != nil {
+	if err := h.repos.PushSubscription().DeleteAllPushSubscriptions(ctx.Context, claims.Username); err != nil {
 		h.logger.Warn("failed to delete existing push subscriptions",
 			zap.String("username", claims.Username),
 			zap.Error(err))
@@ -241,7 +241,7 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 		Policy: "all", // Default policy
 	}
 
-	if err := h.store.CreatePushSubscription(ctx.Context, claims.Username, subscription); err != nil {
+	if err := h.repos.PushSubscription().CreatePushSubscription(ctx.Context, claims.Username, subscription); err != nil {
 		h.logger.Error("failed to create push subscription",
 			zap.String("username", claims.Username),
 			zap.Error(err))
@@ -253,7 +253,7 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 
 	// Get VAPID public key
 	var serverKey string
-	vapidKeys, err := h.store.GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		serverKey = ""
@@ -345,7 +345,7 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 	}
 
 	// Get existing subscription
-	subscriptions, err := h.store.GetUserPushSubscriptions(ctx.Context, claims.Username)
+	subscriptions, err := h.repos.PushSubscription().GetUserPushSubscriptions(ctx.Context, claims.Username)
 	if err != nil || len(subscriptions) == 0 {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{
@@ -369,7 +369,7 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 		AdminReport:   req.Data.AdminReport,
 	}
 
-	if err := h.store.UpdatePushSubscription(ctx.Context, claims.Username, sub.ID, alerts); err != nil {
+	if err := h.repos.PushSubscription().UpdatePushSubscription(ctx.Context, claims.Username, sub.ID, alerts); err != nil {
 		h.logger.Error("failed to update push subscription",
 			zap.String("username", claims.Username),
 			zap.String("subscription_id", sub.ID),
@@ -382,7 +382,7 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 
 	// Get VAPID public key
 	var serverKey string
-	vapidKeys, err := h.store.GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		serverKey = ""
@@ -453,7 +453,7 @@ func (h *Handler) HandleDeletePushSubscriptionLift(ctx *lift.Context) error {
 	}
 
 	// Delete all push subscriptions for this user
-	if err := h.store.DeleteAllPushSubscriptions(ctx.Context, claims.Username); err != nil {
+	if err := h.repos.PushSubscription().DeleteAllPushSubscriptions(ctx.Context, claims.Username); err != nil {
 		h.logger.Error("failed to delete push subscriptions",
 			zap.String("username", claims.Username),
 			zap.Error(err))

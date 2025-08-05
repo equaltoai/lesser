@@ -40,7 +40,7 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 	}
 
 	// Get active announcements
-	announcements, err := h.store.GetAnnouncements(ctx.Context, true) // Only active announcements
+	announcements, err := h.repos.Announcement().GetAnnouncements(ctx.Context, true) // Only active announcements
 	if err != nil {
 		h.logger.Error("failed to get announcements", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -49,7 +49,7 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 	// Get dismissed announcements for authenticated user
 	dismissedIDs := make(map[string]bool)
 	if username != "" {
-		dismissed, err := h.store.GetDismissedAnnouncements(ctx.Context, username)
+		dismissed, err := h.repos.Announcement().GetDismissedAnnouncements(ctx.Context, username)
 		if err != nil {
 			h.logger.Warn("failed to get dismissed announcements",
 				zap.String("username", username),
@@ -70,7 +70,7 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 		}
 
 		// Get reactions for this announcement
-		reactions, err := h.store.GetAnnouncementReactions(ctx.Context, announcement.ID)
+		reactions, err := h.repos.Announcement().GetAnnouncementReactions(ctx.Context, announcement.ID)
 		if err != nil {
 			h.logger.Warn("failed to get announcement reactions",
 				zap.String("announcement_id", announcement.ID),
@@ -104,7 +104,7 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 				shortcode := strings.TrimPrefix(strings.TrimSuffix(emojiName, ":"), ":")
 
 				// Look up custom emoji
-				emoji, err := h.store.GetCustomEmoji(ctx.Context, shortcode)
+				emoji, err := h.repos.Emoji().GetCustomEmoji(ctx.Context, shortcode)
 				if err == nil && emoji != nil && !emoji.Disabled {
 					reaction.URL = emoji.URL
 					reaction.StaticURL = emoji.StaticURL
@@ -193,7 +193,7 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Check if announcement exists
-	_, err = h.store.GetAnnouncement(ctx.Context, announcementID)
+	_, err = h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
@@ -205,7 +205,7 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Dismiss the announcement
-	err = h.store.DismissAnnouncement(ctx.Context, claims.Username, announcementID)
+	err = h.repos.Announcement().DismissAnnouncement(ctx.Context, claims.Username, announcementID)
 	if err != nil {
 		h.logger.Error("failed to dismiss announcement",
 			zap.String("username", claims.Username),
@@ -245,7 +245,7 @@ func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
 	}
 
 	// Check if announcement exists
-	announcement, err := h.store.GetAnnouncement(ctx.Context, announcementID)
+	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
@@ -282,7 +282,7 @@ func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
 	}
 
 	// Add the reaction
-	err = h.store.AddAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
+	err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
 	if err != nil {
 		h.logger.Error("failed to add announcement reaction",
 			zap.String("username", claims.Username),
@@ -323,7 +323,7 @@ func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error 
 	}
 
 	// Check if announcement exists
-	_, err = h.store.GetAnnouncement(ctx.Context, announcementID)
+	_, err = h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
@@ -335,7 +335,7 @@ func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error 
 	}
 
 	// Remove the reaction
-	err = h.store.RemoveAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
+	err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
 	if err != nil {
 		h.logger.Error("failed to remove announcement reaction",
 			zap.String("username", claims.Username),
@@ -366,7 +366,7 @@ func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Check admin role
-	user, err := h.store.GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
 	if err != nil || user.Role != "admin" {
 		return ctx.Status(403).JSON(map[string]string{"error": "Admin access required"})
 	}
@@ -415,7 +415,7 @@ func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Create the announcement
-	if err := h.store.CreateAnnouncement(ctx.Context, announcement); err != nil {
+	if err := h.repos.Announcement().CreateAnnouncement(ctx.Context, announcement); err != nil {
 		h.logger.Error("failed to create announcement",
 			zap.String("admin", claims.Username),
 			zap.Error(err))

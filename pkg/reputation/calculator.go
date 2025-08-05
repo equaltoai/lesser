@@ -5,19 +5,19 @@ import (
 	"math"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // Calculator computes reputation scores for actors
 type Calculator struct {
-	store       storage.Storage
+	store       core.RepositoryStorage
 	logger      *zap.Logger
 	instanceURL string
 }
 
 // NewCalculator creates a new reputation calculator
-func NewCalculator(store storage.Storage, instanceURL string, logger *zap.Logger) *Calculator {
+func NewCalculator(store core.RepositoryStorage, instanceURL string, logger *zap.Logger) *Calculator {
 	return &Calculator{
 		store:       store,
 		logger:      logger,

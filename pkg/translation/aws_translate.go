@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/translate"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
@@ -23,14 +23,14 @@ type Service struct {
 	client       *translate.Client
 	dynamoClient *dynamodb.Client
 	tableName    string
-	store        storage.Storage
+	store        core.RepositoryStorage
 	logger       *zap.Logger
 	cacheEnabled bool
 	cacheTTL     time.Duration
 }
 
 // NewService creates a new translation service
-func NewService(ctx context.Context, store storage.Storage, logger *zap.Logger, cacheEnabled bool) (*Service, error) {
+func NewService(ctx context.Context, store core.RepositoryStorage, logger *zap.Logger, cacheEnabled bool) (*Service, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)

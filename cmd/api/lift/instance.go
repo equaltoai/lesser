@@ -21,14 +21,14 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	instanceConfig := config.GetInstanceConfig()
 
 	// Get rules from storage
-	rules, err := h.store.GetInstanceRules(ctx.Context)
+	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get instance rules", zap.Error(err))
 		rules = []storage.InstanceRule{}
 	}
 
 	// Get extended description
-	extendedDescription, _, err := h.store.GetExtendedDescription(ctx.Context)
+	extendedDescription, _, err := h.repos.Instance().GetExtendedDescription(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get extended description", zap.Error(err))
 		extendedDescription = ""
@@ -36,7 +36,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 
 	// Get VAPID public key
 	var vapidPublicKey string
-	vapidKeys, err := h.store.GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		vapidPublicKey = ""
@@ -45,19 +45,19 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	}
 
 	// Get real instance metrics
-	userCount, err := h.store.GetTotalUserCount(ctx.Context)
+	userCount, err := h.repos.Analytics().GetTotalUserCount(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get user count", zap.Error(err))
 		userCount = 0
 	}
 
-	statusCount, err := h.store.GetTotalStatusCount(ctx.Context)
+	statusCount, err := h.repos.Instance().GetTotalStatusCount(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get status count", zap.Error(err))
 		statusCount = 0
 	}
 
-	domainCount, err := h.store.GetTotalDomainCount(ctx.Context)
+	domainCount, err := h.repos.Instance().GetTotalDomainCount(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get domain count", zap.Error(err))
 		domainCount = 0
@@ -65,32 +65,32 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 
 	// Get contact account (admin)
 	var contactAccount map[string]any
-	adminActor, err := h.store.GetContactAccount(ctx.Context)
+	adminActor, err := h.repos.Instance().GetContactAccount(ctx.Context)
 	if err != nil {
 		h.logger.Warn("failed to get contact account", zap.Error(err))
-	} else if adminActor != nil && adminActor.Actor != nil {
+	} else if adminActor != nil {
 		contactAccount = map[string]any{
-			"id":              adminActor.Actor.ID,
-			"username":        adminActor.Actor.PreferredUsername,
-			"acct":            adminActor.Actor.PreferredUsername,
-			"display_name":    adminActor.Actor.Name,
-			"locked":          adminActor.Actor.ManuallyApprovesFollowers,
-			"bot":             false, // Default to false as Actor doesn't have Bot field
-			"discoverable":    adminActor.Actor.Discoverable,
-			"group":           adminActor.Actor.Type == "Group",
+			"id":              adminActor.ID,
+			"username":        adminActor.Username,
+			"acct":            adminActor.Username,
+			"display_name":    adminActor.DisplayName,
+			"locked":          false, // Default to false as ActorRecord doesn't have this field
+			"bot":             false, // Default to false as ActorRecord doesn't have Bot field
+			"discoverable":    true,  // Default to true as ActorRecord doesn't have this field
+			"group":           adminActor.ActorType == "Group",
 			"created_at":      adminActor.CreatedAt.Format(time.RFC3339),
-			"note":            adminActor.Actor.Summary,
-			"url":             adminActor.Actor.URL,
-			"uri":             adminActor.Actor.ID,
-			"avatar":          adminActor.Actor.Icon.URL,
-			"avatar_static":   adminActor.Actor.Icon.URL,
-			"header":          adminActor.Actor.Image.URL,
-			"header_static":   adminActor.Actor.Image.URL,
+			"note":            "", // ActorRecord doesn't have summary
+			"url":             fmt.Sprintf("https://%s/@%s", h.cfg.Domain, adminActor.Username),
+			"uri":             adminActor.ID,
+			"avatar":          adminActor.Avatar,
+			"avatar_static":   adminActor.Avatar,
+			"header":          "", // ActorRecord doesn't have header
+			"header_static":   "", // ActorRecord doesn't have header
 			"followers_count": h.getAccountFollowersCountLift(ctx.Context, adminActor.Username),
 			"following_count": h.getAccountFollowingCountLift(ctx.Context, adminActor.Username),
 			"statuses_count":  h.getAccountStatusesCountLift(ctx.Context, adminActor.Username),
 			"emojis":          []any{},
-			"fields":          adminActor.Fields,
+			"fields":          []any{}, // ActorRecord doesn't have fields
 		}
 	}
 
@@ -163,7 +163,7 @@ func (h *Handler) HandleGetInstancePeersLift(ctx *lift.Context) error {
 
 	// Get unique domains from remote actors
 	// This is a simplified implementation - in production you'd want to track this separately
-	actors, err := h.store.SearchAccounts(ctx.Context, "@", 100, false, 0)
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context, "@", 100, false, 0)
 	if err != nil {
 		h.logger.Warn("failed to search for remote actors", zap.Error(err))
 	} else {
@@ -210,14 +210,14 @@ func (h *Handler) HandleGetInstanceActivityLift(ctx *lift.Context) error {
 		weekTimestamp := thisWeekStart.Unix()
 
 		// Get activity data from storage
-		weekActivity, err := h.store.GetWeeklyActivity(ctx.Context, weekTimestamp)
+		weekActivity, err := h.repos.Instance().GetWeeklyActivity(ctx.Context, weekTimestamp)
 		if err != nil {
 			h.logger.Warn("failed to get weekly activity",
 				zap.Int64("week", weekTimestamp),
 				zap.Error(err))
 			// Use zero values on error
 			weekActivity = &storage.WeeklyActivity{
-				Week:          weekTimestamp,
+				Week:          fmt.Sprintf("%d", weekTimestamp),
 				Statuses:      0,
 				Logins:        0,
 				Registrations: 0,
@@ -240,7 +240,7 @@ func (h *Handler) HandleGetInstanceActivityLift(ctx *lift.Context) error {
 // HandleGetInstanceDomainBlocksLift returns public domain blocks
 func (h *Handler) HandleGetInstanceDomainBlocksLift(ctx *lift.Context) error {
 	// Get domain blocks from storage
-	domainBlocks, _, err := h.store.ListInstanceDomainBlocks(ctx.Context, 100, "")
+	domainBlocks, _, err := h.repos.DomainBlock().ListInstanceDomainBlocks(ctx.Context, 100, "")
 	if err != nil {
 		h.logger.Warn("failed to get domain blocks", zap.Error(err))
 		// Return empty array on error
@@ -419,7 +419,7 @@ func (h *Handler) markdownToHTMLLift(markdown string) string {
 
 // Helper methods for getting account statistics
 func (h *Handler) getAccountFollowersCountLift(ctx context.Context, username string) int {
-	count, err := h.store.GetFollowersCount(ctx, username)
+	count, err := h.repos.Relationship().CountFollowers(ctx, username)
 	if err != nil {
 		h.logger.Warn("failed to get followers count", zap.Error(err))
 		return 0
@@ -428,7 +428,7 @@ func (h *Handler) getAccountFollowersCountLift(ctx context.Context, username str
 }
 
 func (h *Handler) getAccountFollowingCountLift(ctx context.Context, username string) int {
-	count, err := h.store.GetFollowingCount(ctx, username)
+	count, err := h.repos.Relationship().CountFollowing(ctx, username)
 	if err != nil {
 		h.logger.Warn("failed to get following count", zap.Error(err))
 		return 0
@@ -437,7 +437,7 @@ func (h *Handler) getAccountFollowingCountLift(ctx context.Context, username str
 }
 
 func (h *Handler) getAccountStatusesCountLift(ctx context.Context, username string) int {
-	count, err := h.store.GetUserStatusCount(ctx, username)
+	count, err := h.repos.Object().GetUserStatusCount(ctx, username)
 	if err != nil {
 		h.logger.Warn("failed to get statuses count", zap.Error(err))
 		return 0

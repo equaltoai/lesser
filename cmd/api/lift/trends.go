@@ -16,7 +16,7 @@ import (
 // Returns general trends (mix of all types)
 func (h *Handler) HandleGetTrendsLift(ctx *lift.Context) error {
 	// Initialize trend service if not already initialized
-	trendService := trends.NewService(h.store)
+	trendService := trends.NewService(h.repos)
 
 	// Get limit from query params, default to 10
 	limit := 10
@@ -47,7 +47,7 @@ func (h *Handler) HandleGetTrendsLift(ctx *lift.Context) error {
 // Returns trending statuses
 func (h *Handler) HandleGetTrendingStatusesLift(ctx *lift.Context) error {
 	// Initialize trend service if not already initialized
-	trendService := trends.NewService(h.store)
+	trendService := trends.NewService(h.repos)
 
 	// Get limit from query params, default to 20
 	limit := 20
@@ -90,7 +90,7 @@ func (h *Handler) HandleGetTrendingStatusesLift(ctx *lift.Context) error {
 // Returns trending hashtags
 func (h *Handler) HandleGetTrendingTagsLift(ctx *lift.Context) error {
 	// Initialize trend service if not already initialized
-	trendService := trends.NewService(h.store)
+	trendService := trends.NewService(h.repos)
 
 	// Get limit from query params, default to 10
 	limit := 10
@@ -141,7 +141,7 @@ func (h *Handler) HandleGetTrendingTagsLift(ctx *lift.Context) error {
 // Returns trending links
 func (h *Handler) HandleGetTrendingLinksLift(ctx *lift.Context) error {
 	// Initialize trend service if not already initialized
-	trendService := trends.NewService(h.store)
+	trendService := trends.NewService(h.repos)
 
 	// Get limit from query params, default to 10
 	limit := 10
@@ -205,7 +205,7 @@ func (h *Handler) HandleGetLinkTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get all statuses that contain this link
-	statuses, err := h.store.GetStatusesByLink(ctx.Context, url, 20)
+	statuses, err := h.repos.Analytics().GetStatusesByLink(ctx.Context, url, 20)
 	if err != nil {
 		h.logger.Error("failed to get statuses by link", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})

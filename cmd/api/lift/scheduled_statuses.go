@@ -111,7 +111,7 @@ func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Get scheduled statuses
-	scheduledStatuses, nextCursor, err := h.store.GetScheduledStatuses(ctx.Context, username, limit, cursor)
+	scheduledStatuses, nextCursor, err := h.repos.ScheduledStatus().GetScheduledStatuses(ctx.Context, username, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get scheduled statuses",
 			zap.String("username", username),
@@ -213,7 +213,7 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get scheduled status
-	scheduled, err := h.store.GetScheduledStatus(ctx.Context, id)
+	scheduled, err := h.repos.ScheduledStatus().GetScheduledStatus(ctx.Context, id)
 	if err != nil || scheduled == nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "scheduled status not found"})
 	}
@@ -300,7 +300,7 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get existing scheduled status
-	existing, err := h.store.GetScheduledStatus(ctx.Context, id)
+	existing, err := h.repos.ScheduledStatus().GetScheduledStatus(ctx.Context, id)
 	if err != nil || existing == nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "scheduled status not found"})
 	}
@@ -339,7 +339,7 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Update the scheduled status
-	if err := h.store.UpdateScheduledStatus(ctx.Context, existing); err != nil {
+	if err := h.repos.ScheduledStatus().UpdateScheduledStatus(ctx.Context, existing); err != nil {
 		h.logger.Error("failed to update scheduled status",
 			zap.String("id", id),
 			zap.Error(err))
@@ -423,7 +423,7 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get scheduled status to verify ownership
-	scheduled, err := h.store.GetScheduledStatus(ctx.Context, id)
+	scheduled, err := h.repos.ScheduledStatus().GetScheduledStatus(ctx.Context, id)
 	if err != nil || scheduled == nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "scheduled status not found"})
 	}
@@ -434,7 +434,7 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Delete the scheduled status
-	if err := h.store.DeleteScheduledStatus(ctx.Context, id); err != nil {
+	if err := h.repos.ScheduledStatus().DeleteScheduledStatus(ctx.Context, id); err != nil {
 		h.logger.Error("failed to delete scheduled status",
 			zap.String("id", id),
 			zap.Error(err))
@@ -493,7 +493,7 @@ func (h *Handler) HandleScheduleStatusLift(ctx *lift.Context, claims *auth.Claim
 	}
 
 	// Create the scheduled status
-	if err := h.store.CreateScheduledStatus(ctx.Context, scheduled); err != nil {
+	if err := h.repos.ScheduledStatus().CreateScheduledStatus(ctx.Context, scheduled); err != nil {
 		h.logger.Error("failed to create scheduled status",
 			zap.String("username", claims.Username),
 			zap.Error(err))
@@ -580,7 +580,7 @@ func (h *Handler) convertScheduledPoll(pollData map[string]any) *models.Poll {
 }
 
 func (h *Handler) loadScheduledMediaAttachments(ctx *lift.Context, scheduledStatusID string) []any {
-	attachments, err := h.store.GetScheduledStatusMedia(ctx, scheduledStatusID)
+	attachments, err := h.repos.ScheduledStatus().GetScheduledStatusMedia(ctx, scheduledStatusID)
 	if err != nil {
 		h.logger.Warn("failed to load scheduled media attachments", zap.Error(err))
 		return []any{}

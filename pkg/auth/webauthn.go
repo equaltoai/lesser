@@ -132,7 +132,16 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 
 	// Deserialize session data
 	var sessionData webauthn.SessionData
-	if err := json.Unmarshal(challengeData.SessionData, &sessionData); err != nil {
+	sessionBytes, ok := challengeData.SessionData.([]byte)
+	if !ok {
+		// Try to handle it as a string (base64 encoded)
+		if sessionStr, ok := challengeData.SessionData.(string); ok {
+			sessionBytes = []byte(sessionStr)
+		} else {
+			return fmt.Errorf("invalid session data type")
+		}
+	}
+	if err := json.Unmarshal(sessionBytes, &sessionData); err != nil {
 		return fmt.Errorf("failed to deserialize session data: %w", err)
 	}
 
@@ -269,7 +278,16 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 
 	// Deserialize session data
 	var sessionData webauthn.SessionData
-	if err := json.Unmarshal(challengeData.SessionData, &sessionData); err != nil {
+	sessionBytes, ok := challengeData.SessionData.([]byte)
+	if !ok {
+		// Try to handle it as a string (base64 encoded)
+		if sessionStr, ok := challengeData.SessionData.(string); ok {
+			sessionBytes = []byte(sessionStr)
+		} else {
+			return nil, fmt.Errorf("invalid session data type")
+		}
+	}
+	if err := json.Unmarshal(sessionBytes, &sessionData); err != nil {
 		return nil, fmt.Errorf("failed to deserialize session data: %w", err)
 	}
 

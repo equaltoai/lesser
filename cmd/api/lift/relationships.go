@@ -22,7 +22,7 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 	
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
-		actor, err := h.store.GetActor(ctx.Context, testUsername)
+		actor, err := h.repos.Actor().GetActor(ctx, testUsername)
 		if err != nil {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -64,7 +64,7 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -91,7 +91,7 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, actor *activitypub
 		}
 
 		// Get the target actor
-		targetActor, err := h.store.GetActor(ctx.Context, accountID)
+		targetActor, err := h.repos.Actor().GetActor(ctx, accountID)
 		if err != nil {
 			// Skip accounts that don't exist
 			h.logger.Warn("account not found for relationship",
@@ -101,7 +101,7 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, actor *activitypub
 		}
 
 		// Build the relationship
-		relationship := h.buildRelationshipLift(ctx.Context, actor, targetActor, username, accountID)
+		relationship := h.buildRelationshipLift(ctx, actor, targetActor, username, accountID)
 		relationships = append(relationships, relationship)
 	}
 
@@ -127,11 +127,11 @@ func (h *Handler) buildRelationshipLift(ctx context.Context, actor, targetActor 
 	}
 
 	// Check if following
-	isFollowing, err := h.store.IsFollowing(ctx, currentUsername, targetUsername)
-	if err == nil && isFollowing {
+	followingRel, err := h.repos.Relationship().GetRelationship(ctx, currentUsername, targetUsername)
+	if err == nil && followingRel != nil {
 		relationship.Following = true
 		// Check if this is a pending follow request
-		isRequested, err := h.store.HasFollowRequest(ctx, currentUsername, targetUsername)
+		isRequested, err := h.repos.Relationship().HasFollowRequest(ctx, currentUsername, targetUsername)
 		relationship.Requested = (err == nil && isRequested)
 		// If following, it's not requested anymore
 		if relationship.Following {
@@ -140,13 +140,13 @@ func (h *Handler) buildRelationshipLift(ctx context.Context, actor, targetActor 
 	}
 
 	// Check if followed by
-	isFollowedBy, err := h.store.IsFollowing(ctx, targetUsername, currentUsername)
-	if err == nil && isFollowedBy {
+	followedByRel, err := h.repos.Relationship().GetRelationship(ctx, targetUsername, currentUsername)
+	if err == nil && followedByRel != nil {
 		relationship.FollowedBy = true
 	}
 
 	// Check if blocking
-	_, err = h.store.GetBlock(ctx, actor.ID, targetActor.ID)
+	_, err = h.repos.Social().GetBlock(ctx, actor.ID, targetActor.ID)
 	if err == nil {
 		// Block exists
 		relationship.Blocking = true
@@ -157,14 +157,14 @@ func (h *Handler) buildRelationshipLift(ctx context.Context, actor, targetActor 
 	}
 
 	// Check if blocked by
-	_, err = h.store.GetBlock(ctx, targetActor.ID, actor.ID)
+	_, err = h.repos.Social().GetBlock(ctx, targetActor.ID, actor.ID)
 	if err == nil {
 		// Blocked by the target
 		relationship.BlockedBy = true
 	}
 
 	// Check if muting
-	mute, err := h.store.GetMute(ctx, actor.PreferredUsername, targetActor.PreferredUsername)
+	mute, err := h.repos.Social().GetMute(ctx, actor.PreferredUsername, targetActor.PreferredUsername)
 	if err == nil && mute != nil {
 		relationship.Muting = true
 		relationship.MutingNotifications = mute.HideNotifications
@@ -224,13 +224,13 @@ func (h *Handler) extractAccountIDsLift(ctx *lift.Context) []string {
 
 // isEndorsedLift checks if the target user is endorsed by the current user
 func (h *Handler) isEndorsedLift(ctx context.Context, currentUsername, targetUsername string) bool {
-	endorsed, err := h.store.IsEndorsed(ctx, currentUsername, targetUsername)
+	endorsed, err := h.repos.Relationship().IsEndorsed(ctx, currentUsername, targetUsername)
 	return err == nil && endorsed
 }
 
 // getRelationshipNoteLift gets the private note about the target user
 func (h *Handler) getRelationshipNoteLift(ctx context.Context, currentUsername, targetUsername string) string {
-	note, err := h.store.GetAccountNote(ctx, currentUsername, targetUsername)
+	note, err := h.repos.User().GetAccountNote(ctx, currentUsername, targetUsername)
 	if err != nil {
 		return ""
 	}

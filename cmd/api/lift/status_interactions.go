@@ -26,7 +26,7 @@ func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
 	}
 
 	// Check if the status exists
-	_, err := h.store.GetObject(ctx.Context, objectID)
+	_, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
@@ -49,7 +49,7 @@ func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
 	}
 
 	// Get likes for the object
-	likes, nextCursor, err := h.store.GetObjectLikes(ctx.Context, objectID, limit, cursor)
+	likes, nextCursor, err := h.repos.Like().GetObjectLikes(ctx.Context, objectID, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get object likes",
 			zap.String("object_id", objectID),
@@ -70,7 +70,7 @@ func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
 		}
 
 		// Get the actor
-		actor, err := h.store.GetActor(ctx.Context, username)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 		if err != nil {
 			h.logger.Warn("failed to get actor for like",
 				zap.String("actor_id", like.Actor),
@@ -108,7 +108,7 @@ func (h *Handler) HandleGetStatusRebloggedByLift(ctx *lift.Context) error {
 	}
 
 	// Check if the status exists
-	_, err := h.store.GetObject(ctx.Context, objectID)
+	_, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
@@ -131,7 +131,7 @@ func (h *Handler) HandleGetStatusRebloggedByLift(ctx *lift.Context) error {
 	}
 
 	// Get announces for the object
-	announces, nextCursor, err := h.store.GetObjectAnnounces(ctx.Context, objectID, limit, cursor)
+	announces, nextCursor, err := h.repos.Social().GetStatusAnnounces(ctx.Context, objectID, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get object announces",
 			zap.String("object_id", objectID),
@@ -152,7 +152,7 @@ func (h *Handler) HandleGetStatusRebloggedByLift(ctx *lift.Context) error {
 		}
 
 		// Get the actor
-		actor, err := h.store.GetActor(ctx.Context, username)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 		if err != nil {
 			h.logger.Warn("failed to get actor for announce",
 				zap.String("actor_id", announce.Actor),

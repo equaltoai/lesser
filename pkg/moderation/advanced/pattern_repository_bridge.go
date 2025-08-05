@@ -5,16 +5,17 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // PatternRepositoryBridge adapts the storage.Storage interface to the PatternRepository interface
 // This allows the PatternMatcher to work with the existing DynamORM-based storage layer
 type PatternRepositoryBridge struct {
-	storage storage.Storage
+	storage core.RepositoryStorage
 }
 
 // NewPatternRepositoryBridge creates a new bridge to adapt storage.Storage to PatternRepository
-func NewPatternRepositoryBridge(storage storage.Storage) PatternRepository {
+func NewPatternRepositoryBridge(storage core.RepositoryStorage) PatternRepository {
 	return &PatternRepositoryBridge{
 		storage: storage,
 	}
@@ -35,13 +36,13 @@ func (b *PatternRepositoryBridge) CreatePattern(ctx context.Context, pattern *Mo
 		UpdatedAt:   pattern.UpdatedAt,
 	}
 
-	return b.storage.CreateModerationPattern(ctx, storagePattern)
+	return b.storage.Moderation().CreateModerationPattern(ctx, storagePattern)
 }
 
 // UpdatePattern updates an existing moderation pattern
 func (b *PatternRepositoryBridge) UpdatePattern(ctx context.Context, patternID string, pattern *ModerationPattern) error {
 	// Get existing pattern first
-	existing, err := b.storage.GetModerationPattern(ctx, patternID)
+	existing, err := b.storage.Moderation().GetModerationPattern(ctx, patternID)
 	if err != nil {
 		return err
 	}
@@ -65,13 +66,13 @@ func (b *PatternRepositoryBridge) UpdatePattern(ctx context.Context, patternID s
 
 	existing.UpdatedAt = time.Now()
 
-	return b.storage.UpdateModerationPattern(ctx, existing)
+	return b.storage.Moderation().UpdateModerationPattern(ctx, existing)
 }
 
 // DeletePattern deletes a moderation pattern (soft delete by marking inactive)
 func (b *PatternRepositoryBridge) DeletePattern(ctx context.Context, patternID string) error {
 	// Get existing pattern
-	existing, err := b.storage.GetModerationPattern(ctx, patternID)
+	existing, err := b.storage.Moderation().GetModerationPattern(ctx, patternID)
 	if err != nil {
 		return err
 	}
@@ -80,12 +81,12 @@ func (b *PatternRepositoryBridge) DeletePattern(ctx context.Context, patternID s
 	existing.Active = false
 	existing.UpdatedAt = time.Now()
 
-	return b.storage.UpdateModerationPattern(ctx, existing)
+	return b.storage.Moderation().UpdateModerationPattern(ctx, existing)
 }
 
 // GetPattern retrieves a moderation pattern by ID
 func (b *PatternRepositoryBridge) GetPattern(ctx context.Context, patternID string) (*ModerationPattern, error) {
-	storagePattern, err := b.storage.GetModerationPattern(ctx, patternID)
+	storagePattern, err := b.storage.Moderation().GetModerationPattern(ctx, patternID)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +111,7 @@ func (b *PatternRepositoryBridge) GetPattern(ctx context.Context, patternID stri
 // GetPatterns retrieves patterns based on filter criteria
 func (b *PatternRepositoryBridge) GetPatterns(ctx context.Context, filter PatternFilter) ([]*ModerationPattern, error) {
 	// Use the storage layer to get patterns
-	storagePatterns, err := b.storage.GetModerationPatterns(ctx, 
+	storagePatterns, err := b.storage.Moderation().GetModerationPatterns(ctx, 
 		filter.Active != nil && *filter.Active, 
 		string(filter.Severity), 
 		100) // Default limit
@@ -147,7 +148,7 @@ func (b *PatternRepositoryBridge) GetPatterns(ctx context.Context, filter Patter
 func (b *PatternRepositoryBridge) IncrementHitCount(ctx context.Context, patternID string) error {
 	// For now, just record the match in analytics
 	// In the future, this could be implemented with the RecordPatternMatch method
-	return b.storage.RecordPatternMatch(ctx, patternID, true, time.Now())
+	return b.storage.Moderation().RecordPatternMatch(ctx, patternID, true, time.Now())
 }
 
 // LoadActivePatterns loads all active patterns for caching

@@ -31,7 +31,7 @@ func TestPollRepository_CreatePoll(t *testing.T) {
 		Options:    []string{"Option A", "Option B"},
 		Multiple:   false,
 		HideTotals: false,
-		ExpiresAt:  time.Now().Add(24 * time.Hour),
+		ExpiresAt:  &[]time.Time{time.Now().Add(24 * time.Hour)}[0],
 	}
 
 	// Test validation
@@ -65,10 +65,10 @@ func TestPollRepository_VoteValidation(t *testing.T) {
 		Options:     []string{"A", "B", "C"},
 		Multiple:    false,
 		HideTotals:  false,
-		ExpiresAt:   time.Now().Add(24 * time.Hour),
-		VotesCount:  0,
+		ExpiresAt:   &[]time.Time{time.Now().Add(24 * time.Hour)}[0],
+		VotesCount:  []int{0, 0, 0},
 		VotersCount: 0,
-		Votes:       make(map[string][]int),
+		Votes:       []int{0, 0, 0},
 	}
 
 	// Note: We can't test the full VoteOnPoll without a real DB connection,

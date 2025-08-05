@@ -21,6 +21,7 @@ type RepositoryStorage interface {
 	List() *repositories.ListRepository
 	Media() *repositories.MediaRepository
 	Poll() *repositories.PollRepository
+	PushSubscription() *repositories.PushSubscriptionRepository
 	Hashtag() *repositories.HashtagRepository
 	ScheduledStatus() *repositories.ScheduledStatusRepository
 	Announcement() *repositories.AnnouncementRepository
@@ -36,6 +37,13 @@ type RepositoryStorage interface {
 	Cost() *repositories.CostTrackingRepository
 	Trust() *repositories.TrustRepository
 	Search() *repositories.SearchRepository
+	Relay() *repositories.RelayRepository
+	CommunityNote() *repositories.CommunityNoteRepository
+	Emoji() *repositories.EmojiRepository
+	RateLimit() *repositories.RateLimitRepository
+	Conversation() *repositories.ConversationRepository
+	Marker() *repositories.MarkerRepository
+	FeaturedTag() *repositories.FeaturedTagRepository
 	
 	// Utility methods
 	GetDB() dynamormCore.DB

@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -24,13 +24,13 @@ type SearchRepositoryDeps interface {
 
 // SearchRepository implements search functionality using DynamORM
 type SearchRepository struct {
-	db     dynamorm.DB
+	db     core.DB
 	logger *zap.Logger
 	deps   SearchRepositoryDeps
 }
 
 // NewSearchRepository creates a new search repository
-func NewSearchRepository(db dynamorm.DB, logger *zap.Logger) *SearchRepository {
+func NewSearchRepository(db core.DB, logger *zap.Logger) *SearchRepository {
 	return &SearchRepository{
 		db:     db,
 		logger: logger,
@@ -381,25 +381,38 @@ func (r *SearchRepository) SearchStatusesAdvanced(ctx context.Context, query str
 // SearchAll performs a comprehensive search across accounts, statuses, and hashtags
 func (r *SearchRepository) SearchAll(ctx context.Context, query string, limit int, accountID string) (*storage.SearchResults, error) {
 	results := &storage.SearchResults{
-		Accounts: make([]*activitypub.Actor, 0),
-		Statuses: make([]*storage.StatusSearchResult, 0),
-		Hashtags: make([]*storage.HashtagSearchResult, 0),
+		Accounts: make([]storage.Account, 0),
+		Statuses: make([]storage.StatusSearchResult, 0),
+		Hashtags: make([]storage.HashtagSearchResult, 0),
 	}
 
 	// Search accounts
-	accounts, err := r.SearchAccounts(ctx, query, limit, false, 0)
+	actors, err := r.SearchAccounts(ctx, query, limit, false, 0)
 	if err != nil {
 		r.logger.Warn("account search failed in SearchAll", zap.Error(err))
 	} else {
-		results.Accounts = accounts
+		// Convert actors to accounts
+		for _, actor := range actors {
+			if actor != nil {
+				account := storage.Account{
+					Actor: actor,
+				}
+				results.Accounts = append(results.Accounts, account)
+			}
+		}
 	}
 
 	// Search statuses
-	statuses, err := r.SearchStatuses(ctx, query, limit)
+	statusResults, err := r.SearchStatuses(ctx, query, limit)
 	if err != nil {
 		r.logger.Warn("status search failed in SearchAll", zap.Error(err))
 	} else {
-		results.Statuses = statuses
+		// Convert pointer slice to value slice
+		for _, status := range statusResults {
+			if status != nil {
+				results.Statuses = append(results.Statuses, *status)
+			}
+		}
 	}
 
 	// Search hashtags
@@ -409,7 +422,7 @@ func (r *SearchRepository) SearchAll(ctx context.Context, query string, limit in
 	} else {
 		// Convert to HashtagSearchResult
 		for _, ht := range hashtags {
-			results.Hashtags = append(results.Hashtags, &storage.HashtagSearchResult{
+			results.Hashtags = append(results.Hashtags, storage.HashtagSearchResult{
 				Name: ht.Name,
 				URL:  ht.URL,
 			})
@@ -447,7 +460,7 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 		results = append(results, &storage.Hashtag{
 			Name:       ht.Name,
 			URL:        "/tags/" + ht.Name,
-			UsageCount: ht.UsageCount,
+			UsageCount: int(ht.UsageCount),
 			FirstSeen:  ht.FirstSeen,
 			LastUsed:   ht.LastUsed,
 		})
@@ -495,7 +508,7 @@ func (r *SearchRepository) objectToSearchResult(obj *models.Object, score float6
 		AuthorUsername: authorUsername,
 		Published:      obj.Published,
 		Score:          score,
-		Highlights:     map[string]string{"strategy": strategy},
+		Highlights:     []string{strategy},
 	}
 }
 

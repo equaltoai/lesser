@@ -87,7 +87,7 @@ func (h *Handler) HandleTranslateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the status
-	obj, err := h.store.GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		h.logger.Error("failed to get status for translation",
 			zap.String("status_id", statusID),
@@ -125,14 +125,14 @@ func (h *Handler) HandleTranslateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get user's preferred language
-	userPrefs, err := h.store.GetUserPreferences(ctx.Context, username)
+	userPrefs, err := h.repos.User().GetUserPreferences(ctx.Context, username)
 	targetLang := "en" // Default to English
 	if err == nil && userPrefs != nil && userPrefs.Language != "" {
 		targetLang = userPrefs.Language
 	}
 
 	// Initialize translation service
-	translationSvc, err := translation.NewService(ctx.Context, h.store, h.logger, true)
+	translationSvc, err := translation.NewService(ctx.Context, h.repos, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "translation service initialization failed"})
@@ -177,7 +177,7 @@ func (h *Handler) HandleGetTranslationLanguagesLift(ctx *lift.Context) error {
 	}
 
 	// Initialize translation service
-	translationSvc, err := translation.NewService(ctx.Context, h.store, h.logger, true)
+	translationSvc, err := translation.NewService(ctx.Context, h.repos, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "translation service initialization failed"})

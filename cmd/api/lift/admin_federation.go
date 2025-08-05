@@ -83,7 +83,7 @@ func (h *Handler) requireAdminLift(ctx *lift.Context) (*auth.Claims, error) {
 	}
 
 	// Check admin role
-	user, err := h.store.GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
 	if err != nil || user.Role != "admin" {
 		return nil, errors.New("admin access required")
 	}
@@ -111,7 +111,7 @@ func (h *Handler) HandleGetAdminDomainBlocksLift(ctx *lift.Context) error {
 	cursor := ctx.Query("max_id")
 
 	// Get domain blocks from storage
-	blocks, nextCursor, err := h.store.GetDomainBlocks(ctx.Context, limit, cursor)
+	blocks, nextCursor, err := h.repos.DomainBlock().GetDomainBlocks(ctx.Context, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get domain blocks", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -164,7 +164,7 @@ func (h *Handler) HandleGetAdminDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Get domain block from storage
-	block, err := h.store.GetDomainBlock(ctx.Context, blockID)
+	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -246,7 +246,7 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 		CreatedBy:      adminClaims.Username,
 	}
 
-	if err := h.store.CreateDomainBlock(ctx.Context, block); err != nil {
+	if err := h.repos.DomainBlock().CreateDomainBlock(ctx.Context, block); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			ctx.Status(http.StatusUnprocessableEntity)
 			return ctx.JSON(map[string]string{"error": "domain block already exists"})
@@ -323,7 +323,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 	updates["obfuscate"] = req.Obfuscate
 
 	// Update domain block
-	if err := h.store.UpdateDomainBlock(ctx.Context, blockID, updates); err != nil {
+	if err := h.repos.DomainBlock().UpdateDomainBlock(ctx.Context, blockID, updates); err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "domain block not found"})
@@ -337,7 +337,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Get updated block
-	block, err := h.store.GetDomainBlock(ctx.Context, blockID)
+	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
 	if err != nil {
 		h.logger.Error("failed to get updated domain block", zap.String("id", blockID), zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -384,7 +384,7 @@ func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Get block before deletion for logging
-	block, err := h.store.GetDomainBlock(ctx.Context, blockID)
+	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -396,7 +396,7 @@ func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Delete domain block
-	if err := h.store.DeleteDomainBlock(ctx.Context, blockID); err != nil {
+	if err := h.repos.DomainBlock().DeleteDomainBlock(ctx.Context, blockID); err != nil {
 		h.logger.Error("failed to delete domain block",
 			zap.String("id", blockID),
 			zap.String("admin", adminClaims.Username),
@@ -435,7 +435,7 @@ func (h *Handler) HandleGetAdminDomainAllowsLift(ctx *lift.Context) error {
 	cursor := ctx.Query("max_id")
 
 	// Get domain allows from storage
-	allows, nextCursor, err := h.store.GetDomainAllows(ctx.Context, limit, cursor)
+	allows, nextCursor, err := h.repos.DomainBlock().GetDomainAllows(ctx.Context, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get domain allows", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -504,7 +504,7 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 		CreatedBy: adminClaims.Username,
 	}
 
-	if err := h.store.CreateDomainAllow(ctx.Context, allow); err != nil {
+	if err := h.repos.DomainBlock().CreateDomainAllow(ctx.Context, allow); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			ctx.Status(http.StatusUnprocessableEntity)
 			return ctx.JSON(map[string]string{"error": "domain allow already exists"})
@@ -550,7 +550,7 @@ func (h *Handler) HandleDeleteAdminDomainAllowLift(ctx *lift.Context) error {
 	}
 
 	// Delete domain allow
-	if err := h.store.DeleteDomainAllow(ctx.Context, allowID); err != nil {
+	if err := h.repos.DomainBlock().DeleteDomainAllow(ctx.Context, allowID); err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "domain allow not found"})
@@ -593,7 +593,7 @@ func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
 	cursor := ctx.Query("cursor")
 
 	// Get known instances from storage
-	instances, nextCursor, err := h.store.GetKnownInstances(ctx.Context, limit, cursor)
+	instances, nextCursor, err := h.repos.Federation().GetKnownInstances(ctx.Context, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get known instances", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -604,7 +604,7 @@ func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
 	responses := make([]InstanceInfoResponse, 0, len(instances))
 	for _, instance := range instances {
 		// Check if domain is blocked
-		isBlocked, block, err := h.store.IsDomainBlocked(ctx.Context, instance.Domain)
+		isBlocked, block, err := h.repos.DomainBlock().IsDomainBlocked(ctx.Context, instance.Domain)
 		if err != nil {
 			h.logger.Warn("failed to check domain block status",
 				zap.String("domain", instance.Domain),
@@ -615,7 +615,7 @@ func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
 			Domain:        instance.Domain,
 			Software:      instance.Software,
 			Version:       instance.Version,
-			ActiveUsers:   instance.ActiveUsers,
+			ActiveUsers:   int(instance.ActiveUsers),
 			TotalMessages: instance.TotalMessages,
 			TrustScore:    instance.TrustScore,
 			FirstSeen:     instance.FirstSeen,
@@ -662,7 +662,7 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 	domain = cleanDomain(domain)
 
 	// Get instance info from storage
-	instance, err := h.store.GetInstanceInfo(ctx.Context, domain)
+	instance, err := h.repos.Federation().GetInstanceInfo(ctx.Context, domain)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -674,7 +674,7 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 	}
 
 	// Check if domain is blocked
-	isBlocked, block, err := h.store.IsDomainBlocked(ctx.Context, instance.Domain)
+	isBlocked, block, err := h.repos.DomainBlock().IsDomainBlocked(ctx.Context, instance.Domain)
 	if err != nil {
 		h.logger.Warn("failed to check domain block status",
 			zap.String("domain", instance.Domain),
@@ -685,7 +685,7 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 		Domain:        instance.Domain,
 		Software:      instance.Software,
 		Version:       instance.Version,
-		ActiveUsers:   instance.ActiveUsers,
+		ActiveUsers:   int(instance.ActiveUsers),
 		TotalMessages: instance.TotalMessages,
 		TrustScore:    instance.TrustScore,
 		FirstSeen:     instance.FirstSeen,
@@ -735,7 +735,7 @@ func (h *Handler) HandleGetFederationStatisticsLift(ctx *lift.Context) error {
 	}
 
 	// Get federation statistics from storage
-	stats, err := h.store.GetFederationStatistics(ctx.Context, startTime, endTime)
+	stats, err := h.repos.Federation().GetFederationStatistics(ctx.Context, startTime, endTime)
 	if err != nil {
 		h.logger.Error("failed to get federation statistics", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -777,7 +777,7 @@ func (h *Handler) HandleGetEmailDomainBlocksLift(ctx *lift.Context) error {
 	cursor := ctx.Query("cursor")
 
 	// Get email domain blocks from storage
-	blocks, nextCursor, err := h.store.GetEmailDomainBlocks(ctx.Context, limit, cursor)
+	blocks, nextCursor, err := h.repos.DomainBlock().GetEmailDomainBlocks(ctx.Context, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get email domain blocks", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -842,7 +842,7 @@ func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *lift.Context) error {
 		CreatedBy: adminClaims.Username,
 	}
 
-	if err := h.store.CreateEmailDomainBlock(ctx.Context, block); err != nil {
+	if err := h.repos.DomainBlock().CreateEmailDomainBlock(ctx.Context, block); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			ctx.Status(http.StatusUnprocessableEntity)
 			return ctx.JSON(map[string]string{"error": "email domain block already exists"})
@@ -888,7 +888,7 @@ func (h *Handler) HandleDeleteEmailDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Delete email domain block
-	if err := h.store.DeleteEmailDomainBlock(ctx.Context, blockID); err != nil {
+	if err := h.repos.DomainBlock().DeleteEmailDomainBlock(ctx.Context, blockID); err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "email domain block not found"})
@@ -934,7 +934,7 @@ func cleanDomain(domain string) string {
 
 // Helper methods for federation details
 func (h *Handler) getFederationDetails(ctx context.Context, domain string) map[string]any {
-	stats, err := h.store.GetDomainStats(ctx, domain)
+	stats, err := h.repos.Instance().GetDomainStats(ctx, domain)
 	if err != nil {
 		h.logger.Warn("failed to get domain stats", zap.Error(err))
 		return map[string]any{}

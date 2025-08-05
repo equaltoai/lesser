@@ -19,7 +19,7 @@ func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 	h.logger.Info("HandleGetInstanceMetricsLift called")
 
 	// Get current metrics from DynamoDB
-	activeUsers, err := h.store.GetActiveUserCount(ctx.Context, 30) // Active in last 30 days
+	activeUsers, err := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30) // Active in last 30 days
 	if err != nil {
 		h.logger.Warn("failed to get active user count", zap.Error(err))
 		activeUsers = 0
@@ -297,7 +297,7 @@ func (h *Handler) calculateRequestRateLift(ctx context.Context) float64 {
 	}
 
 	// Fallback: estimate from active users
-	activeUsers, err := h.store.GetActiveUserCount(ctx, 1) // Active in last day
+	activeUsers, err := h.repos.Analytics().GetActiveUserCount(ctx, 1) // Active in last day
 	if err != nil {
 		return 0.0
 	}
@@ -310,12 +310,12 @@ func (h *Handler) calculateRequestRateLift(ctx context.Context) float64 {
 // calculateStorageProjectionLift projects storage usage for the given number of days
 func (h *Handler) calculateStorageProjectionLift(ctx context.Context, days int) float64 {
 	// Get current storage usage
-	storageResult, err := h.store.GetStorageUsage(ctx)
+	storageResult, err := h.repos.Instance().GetStorageUsage(ctx)
 	var currentStorageGB float64
 	if err != nil {
 		h.logger.Warn("failed to get storage usage", zap.Error(err))
 		// Fallback estimate based on user count
-		activeUsers, _ := h.store.GetActiveUserCount(ctx, 30)
+		activeUsers, _ := h.repos.Analytics().GetActiveUserCount(ctx, 30)
 		currentStorageGB = float64(activeUsers) * 0.5 // 500MB per active user estimate
 	} else {
 		// Convert any to float64
@@ -325,7 +325,7 @@ func (h *Handler) calculateStorageProjectionLift(ctx context.Context, days int) 
 			currentStorageGB = float64(storageInt)
 		} else {
 			// Fallback if type assertion fails
-			activeUsers, _ := h.store.GetActiveUserCount(ctx, 30)
+			activeUsers, _ := h.repos.Analytics().GetActiveUserCount(ctx, 30)
 			currentStorageGB = float64(activeUsers) * 0.5
 		}
 	}
@@ -346,7 +346,7 @@ func (h *Handler) calculateStorageGrowthRateLift(ctx context.Context) float64 {
 	days := 60
 
 	// Try to get historical storage data
-	storageHistory, err := h.store.GetStorageHistory(ctx, days)
+	storageHistory, err := h.repos.Instance().GetStorageHistory(ctx, days)
 	if err != nil || len(storageHistory) < 2 {
 		// Default growth rate if no historical data
 		return 15.0 // 15% monthly growth estimate
@@ -391,7 +391,7 @@ func (h *Handler) calculateStorageGrowthRateLift(ctx context.Context) float64 {
 // calculateUserProjectionLift projects user count for the given number of days
 func (h *Handler) calculateUserProjectionLift(ctx context.Context, days int) int {
 	// Get current active user count
-	currentMAU, err := h.store.GetActiveUserCount(ctx, 30)
+	currentMAU, err := h.repos.Analytics().GetActiveUserCount(ctx, 30)
 	if err != nil {
 		h.logger.Warn("failed to get current MAU", zap.Error(err))
 		return 100 // Fallback estimate
@@ -412,7 +412,7 @@ func (h *Handler) calculateUserGrowthRateLift(ctx context.Context) float64 {
 	// Get user registration history for the last 60 days
 	days := 60
 
-	userHistory, err := h.store.GetUserGrowthHistory(ctx, days)
+	userHistory, err := h.repos.Instance().GetUserGrowthHistory(ctx, days)
 	if err != nil || len(userHistory) < 2 {
 		// Default growth rate if no historical data
 		return 20.0 // 20% monthly growth estimate
@@ -440,7 +440,7 @@ func (h *Handler) calculateUserGrowthRateLift(ctx context.Context) float64 {
 	monthlyNewUsers := dailyNewUsers * 30.0
 
 	// Get current total users for growth rate calculation
-	currentUsers, err := h.store.GetTotalUserCount(ctx)
+	currentUsers, err := h.repos.Analytics().GetTotalUserCount(ctx)
 	if err != nil || currentUsers <= 0 {
 		return 20.0 // Default rate
 	}

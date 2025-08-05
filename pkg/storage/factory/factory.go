@@ -32,6 +32,7 @@ type RepositoryFactory struct {
 	listRepo                  *repositories.ListRepository
 	mediaRepo                 *repositories.MediaRepository
 	pollRepo                  *repositories.PollRepository
+	pushSubscriptionRepo      *repositories.PushSubscriptionRepository
 	instanceRepo              *repositories.InstanceRepository
 	hashtagRepo               *repositories.HashtagRepository
 	scheduledStatusRepo       *repositories.ScheduledStatusRepository
@@ -44,6 +45,12 @@ type RepositoryFactory struct {
 	statusRepo                *repositories.StatusRepository
 	costRepo                  *repositories.CostTrackingRepository
 	searchRepo                *repositories.SearchRepository
+	relayRepo                 *repositories.RelayRepository
+	communityNoteRepo         *repositories.CommunityNoteRepository
+	emojiRepo                 *repositories.EmojiRepository
+	rateLimitRepo             *repositories.RateLimitRepository
+	markerRepo                *repositories.MarkerRepository
+	featuredTagRepo           *repositories.FeaturedTagRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -84,6 +91,7 @@ func (f *RepositoryFactory) initializeRepositories() error {
 	f.listRepo = repositories.NewListRepository(f.db, f.tableName, f.logger)
 	f.mediaRepo = repositories.NewMediaRepository(f.db, f.tableName, f.logger)
 	f.pollRepo = repositories.NewPollRepository(f.db, f.tableName, f.logger)
+	f.pushSubscriptionRepo = repositories.NewPushSubscriptionRepository(f.db, f.tableName, f.logger)
 	f.hashtagRepo = repositories.NewHashtagRepository(f.db, f.tableName, f.logger, f.cfg.Domain)
 	f.scheduledStatusRepo = repositories.NewScheduledStatusRepository(f.db, f.tableName, f.logger)
 	f.announcementRepo = repositories.NewAnnouncementRepository(f.db, f.tableName, f.logger)
@@ -98,6 +106,12 @@ func (f *RepositoryFactory) initializeRepositories() error {
 	f.costRepo = repositories.NewCostTrackingRepository(f.db, f.tableName, f.logger)
 	f.trustRepo = repositories.NewTrustRepository(f.db, f.logger)
 	f.searchRepo = repositories.NewSearchRepository(f.db, f.logger)
+	f.relayRepo = repositories.NewRelayRepository(f.db, f.tableName, f.logger)
+	f.communityNoteRepo = repositories.NewCommunityNoteRepository(f.db, f.tableName, f.logger)
+	f.emojiRepo = repositories.NewEmojiRepository(f.db, f.logger)
+	f.rateLimitRepo = repositories.NewRateLimitRepository(f.db, f.tableName, f.logger)
+	f.markerRepo = repositories.NewMarkerRepository(f.db, f.tableName, f.logger)
+	f.featuredTagRepo = repositories.NewFeaturedTagRepository(f.db, f.tableName, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -173,6 +187,10 @@ func (f *RepositoryFactory) Poll() *repositories.PollRepository {
 	return f.pollRepo
 }
 
+func (f *RepositoryFactory) PushSubscription() *repositories.PushSubscriptionRepository {
+	return f.pushSubscriptionRepo
+}
+
 func (f *RepositoryFactory) Instance() *repositories.InstanceRepository {
 	return f.instanceRepo
 }
@@ -219,6 +237,28 @@ func (f *RepositoryFactory) Cost() *repositories.CostTrackingRepository {
 
 func (f *RepositoryFactory) Search() *repositories.SearchRepository {
 	return f.searchRepo
+}
+
+func (f *RepositoryFactory) Relay() *repositories.RelayRepository {
+	return f.relayRepo
+}
+
+func (f *RepositoryFactory) CommunityNote() *repositories.CommunityNoteRepository {
+	return f.communityNoteRepo
+}
+
+func (f *RepositoryFactory) Emoji() *repositories.EmojiRepository {
+	return f.emojiRepo
+}
+
+func (f *RepositoryFactory) RateLimit() *repositories.RateLimitRepository {
+	return f.rateLimitRepo
+}
+func (f *RepositoryFactory) Marker() *repositories.MarkerRepository {
+	return f.markerRepo
+}
+func (f *RepositoryFactory) FeaturedTag() *repositories.FeaturedTagRepository {
+	return f.featuredTagRepo
 }
 
 // Additional repositories can be added here as needed

@@ -47,14 +47,12 @@ func TestHandleCreateChallengeLift_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -99,14 +97,12 @@ func TestHandleCreateChallengeLift_WithUsername(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -159,14 +155,12 @@ func TestHandleVerifySignatureLift_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -220,14 +214,12 @@ func TestHandleLinkWalletLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -283,14 +275,12 @@ func TestHandleUnlinkWalletLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -335,14 +325,12 @@ func TestHandleGetWalletsLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -458,14 +446,12 @@ func TestWalletHandlers_JSONParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -511,14 +497,12 @@ func TestWalletHandlers_JSONParsing(t *testing.T) {
 
 // Test that device headers are properly available (structure test only)
 func TestHandleVerifySignatureLift_HeaderAccess(t *testing.T) {
-	mockStore := new(MockStorageAdapter)
-
 	handler := &Handler{
 		cfg: &config.Config{
 			JWTSecret: "test-secret",
 			Domain:    "test.example.com",
 		},
-		store:          mockStore,
+		repos: &MockRepositoryStorage{},
 		logger:         zap.NewNop(),
 		authMiddleware: &auth.Middleware{},
 	}

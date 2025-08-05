@@ -117,7 +117,8 @@ func (s *SocialRecoveryService) InitiateRecovery(ctx context.Context, username s
 		InitiatedAt:   time.Now(),
 		ExpiresAt:     time.Now().Add(48 * time.Hour), // 48 hour window
 		RequiredVotes: requiredVotes,
-		ReceivedVotes: make(map[string]bool),
+		ReceivedVotes: 0,
+		TrusteeVotes:  []string{},
 		RecoveryToken: recoveryToken,
 		Status:        "pending",
 	}
@@ -169,15 +170,19 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 		return fmt.Errorf("recovery request expired")
 	}
 
-	// Record vote
-	if request.ReceivedVotes[trusteeActorID] {
-		return fmt.Errorf("trustee already voted")
+	// Check if trustee already voted
+	for _, voter := range request.TrusteeVotes {
+		if voter == trusteeActorID {
+			return fmt.Errorf("trustee already voted")
+		}
 	}
 
-	request.ReceivedVotes[trusteeActorID] = true
+	// Record vote
+	request.TrusteeVotes = append(request.TrusteeVotes, trusteeActorID)
+	request.ReceivedVotes++
 
 	// Check if we have enough votes
-	if len(request.ReceivedVotes) >= request.RequiredVotes {
+	if request.ReceivedVotes >= request.RequiredVotes {
 		request.Status = "approved"
 
 		// Enable recovery token for password reset
@@ -197,7 +202,7 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 	s.logger.Info("recovery vote recorded",
 		zap.String("request_id", requestID),
 		zap.String("trustee", trusteeActorID),
-		zap.Int("votes", len(request.ReceivedVotes)),
+		zap.Int("votes", request.ReceivedVotes),
 		zap.Int("required", request.RequiredVotes))
 
 	return nil

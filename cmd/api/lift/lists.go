@@ -58,7 +58,7 @@ func (h *Handler) HandleGetListsLift(ctx *lift.Context) error {
 	}
 
 	// Get user's lists
-	lists, err := h.store.GetListsForUser(ctx.Context, username)
+	lists, err := h.repos.List().GetUserLists(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get user lists",
 			zap.String("username", username),
@@ -150,7 +150,7 @@ func (h *Handler) HandleCreateListLift(ctx *lift.Context) error {
 	}
 
 	// Create the list
-	list, err := h.store.CreateList(ctx.Context, username, req.Title, req.RepliesPolicy)
+	list, err := h.repos.List().CreateList(ctx.Context, username, req.Title, req.RepliesPolicy)
 	if err != nil {
 		h.logger.Error("failed to create list",
 			zap.String("username", username),
@@ -222,7 +222,7 @@ func (h *Handler) HandleGetListLift(ctx *lift.Context) error {
 	}
 
 	// Get the list
-	list, err := h.store.GetList(ctx.Context, listID)
+	list, err := h.repos.List().GetList(ctx.Context, listID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
 	}
@@ -295,7 +295,7 @@ func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 	}
 
 	// Get the list to verify ownership
-	list, err := h.store.GetList(ctx.Context, listID)
+	list, err := h.repos.List().GetList(ctx.Context, listID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
 	}
@@ -328,7 +328,7 @@ func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 	}
 
 	// Update the list
-	if err := h.store.UpdateList(ctx.Context, listID, updates); err != nil {
+	if err := h.repos.List().UpdateList(ctx.Context, listID, updates); err != nil {
 		h.logger.Error("failed to update list",
 			zap.String("list_id", listID),
 			zap.Error(err))
@@ -336,7 +336,7 @@ func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 	}
 
 	// Get updated list
-	updatedList, err := h.store.GetList(ctx.Context, listID)
+	updatedList, err := h.repos.List().GetList(ctx.Context, listID)
 	if err != nil {
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get updated list"})
 	}
@@ -404,7 +404,7 @@ func (h *Handler) HandleDeleteListLift(ctx *lift.Context) error {
 	}
 
 	// Get the list to verify ownership
-	list, err := h.store.GetList(ctx.Context, listID)
+	list, err := h.repos.List().GetList(ctx.Context, listID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
 	}
@@ -415,7 +415,7 @@ func (h *Handler) HandleDeleteListLift(ctx *lift.Context) error {
 	}
 
 	// Delete the list
-	if err := h.store.DeleteList(ctx.Context, listID); err != nil {
+	if err := h.repos.List().DeleteList(ctx.Context, listID); err != nil {
 		h.logger.Error("failed to delete list",
 			zap.String("list_id", listID),
 			zap.Error(err))
@@ -478,7 +478,7 @@ func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 	}
 
 	// Get the list to verify ownership
-	list, err := h.store.GetList(ctx.Context, listID)
+	list, err := h.repos.List().GetList(ctx.Context, listID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
 	}
@@ -489,7 +489,7 @@ func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 	}
 
 	// Get accounts in the list
-	accountIDs, err := h.store.GetListAccounts(ctx.Context, listID)
+	members, _, err := h.repos.List().GetListMembers(ctx.Context, listID, 100, "")
 	if err != nil {
 		h.logger.Error("failed to get list accounts",
 			zap.String("list_id", listID),
@@ -497,14 +497,14 @@ func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get list accounts"})
 	}
 
-	// Convert account IDs to Account objects
-	accounts := make([]*models.Account, 0, len(accountIDs))
-	for _, accountID := range accountIDs {
+	// Convert members to Account objects
+	accounts := make([]*models.Account, 0, len(members))
+	for _, member := range members {
 		// Get actor
-		actor, err := h.store.GetActor(ctx.Context, accountID)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, member.AccountID)
 		if err != nil {
 			h.logger.Warn("failed to get actor for list account",
-				zap.String("account_id", accountID),
+				zap.String("account_id", member.AccountID),
 				zap.Error(err))
 			continue
 		}
@@ -570,7 +570,7 @@ func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
 	}
 
 	// Get the list to verify ownership
-	list, err := h.store.GetList(ctx.Context, listID)
+	list, err := h.repos.List().GetList(ctx.Context, listID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
 	}
@@ -599,7 +599,7 @@ func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
 	}
 
 	// Add accounts to list
-	if err := h.store.AddAccountsToList(ctx.Context, listID, req.AccountIDs); err != nil {
+	if err := h.repos.List().AddAccountsToList(ctx.Context, listID, req.AccountIDs); err != nil {
 		h.logger.Error("failed to add accounts to list",
 			zap.String("list_id", listID),
 			zap.Any("account_ids", req.AccountIDs),
@@ -663,7 +663,7 @@ func (h *Handler) HandleRemoveAccountsFromListLift(ctx *lift.Context) error {
 	}
 
 	// Get the list to verify ownership
-	list, err := h.store.GetList(ctx.Context, listID)
+	list, err := h.repos.List().GetList(ctx.Context, listID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
 	}
@@ -692,7 +692,7 @@ func (h *Handler) HandleRemoveAccountsFromListLift(ctx *lift.Context) error {
 	}
 
 	// Remove accounts from list
-	if err := h.store.RemoveAccountsFromList(ctx.Context, listID, req.AccountIDs); err != nil {
+	if err := h.repos.List().RemoveAccountsFromList(ctx.Context, listID, req.AccountIDs); err != nil {
 		h.logger.Error("failed to remove accounts from list",
 			zap.String("list_id", listID),
 			zap.Any("account_ids", req.AccountIDs),

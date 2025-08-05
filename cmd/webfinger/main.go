@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/reputation"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -37,22 +38,16 @@ func NewWebFingerHandler() (*WebFingerHandler, error) {
 		return nil, fmt.Errorf("failed to initialize DynamORM database: %w", err)
 	}
 
-	// Initialize repositories
+	// Initialize repositories through factory
 	tableName := "lesser-main"
-	actorRepo := repositories.NewActorRepository(db, tableName, logger)
-	userRepo := repositories.NewUserRepository(db, tableName, logger)
-
-	// Initialize storage adapter for reputation service
-	// TODO: Migrate reputation service to use repositories directly
-	storageAdapter := dynamorm.NewStorageAdapter(db, tableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create repository factory: %w", err)
+	}
 	
-	// Initialize repositories on the adapter
-	storageAdapter.SetActorRepository(actorRepo)
-	storageAdapter.SetUserRepository(userRepo)
-
-	// Initialize reputation service with storage adapter
+	// Initialize reputation service with repository storage
 	repService, err := reputation.NewService(&reputation.Config{
-		Storage:     storageAdapter,
+		Storage:     repos,
 		Logger:      logger,
 		InstanceURL: cfg.BaseURL(),
 		PrivateKey:  cfg.ReputationPrivateKey,
@@ -64,8 +59,8 @@ func NewWebFingerHandler() (*WebFingerHandler, error) {
 	}
 
 	return &WebFingerHandler{
-		actorRepo:  actorRepo,
-		userRepo:   userRepo,
+		actorRepo:  repos.Actor(),
+		userRepo:   repos.User(),
 		logger:     logger,
 		cfg:        cfg,
 		repService: repService,

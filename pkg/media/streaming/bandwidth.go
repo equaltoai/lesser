@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
@@ -18,7 +18,7 @@ type CostTracker interface {
 
 // BandwidthTracker tracks bandwidth usage for users
 type BandwidthTracker struct {
-	storage     storage.Storage
+	storage     core.RepositoryStorage
 	logger      *zap.Logger
 	costTracker CostTracker
 
@@ -28,7 +28,7 @@ type BandwidthTracker struct {
 }
 
 // NewBandwidthTracker creates a new bandwidth tracker
-func NewBandwidthTracker(storage storage.Storage, logger *zap.Logger, costTracker CostTracker) *BandwidthTracker {
+func NewBandwidthTracker(storage core.RepositoryStorage, logger *zap.Logger, costTracker CostTracker) *BandwidthTracker {
 	return &BandwidthTracker{
 		storage:     storage,
 		logger:      logger,
@@ -45,7 +45,7 @@ func (bt *BandwidthTracker) TrackBandwidth(ctx context.Context, userID string, b
 	bt.updateCache(userID, bytesTransferred, now)
 
 	// Record bandwidth event using analytics storage
-	err := bt.storage.RecordMediaEvent(ctx, "bandwidth_usage", userID, userID)
+	err := bt.storage.Analytics().RecordMediaEvent(ctx, "bandwidth_usage", userID, userID)
 	if err != nil {
 		bt.logger.Error("failed to track bandwidth event",
 			zap.String("user", userID),

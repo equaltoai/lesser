@@ -8,13 +8,14 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
 
 // EnhancedReportService provides advanced report handling with trust integration
 type EnhancedReportService struct {
-	store  storage.Storage
+	store  core.RepositoryStorage
 	logger *zap.Logger
 }
 
@@ -35,7 +36,7 @@ func getSeverityString(severity moderation.Severity) string {
 }
 
 // NewEnhancedReportService creates a new enhanced report service
-func NewEnhancedReportService(store storage.Storage, logger *zap.Logger) *EnhancedReportService {
+func NewEnhancedReportService(store core.RepositoryStorage, logger *zap.Logger) *EnhancedReportService {
 	return &EnhancedReportService{
 		store:  store,
 		logger: logger,
@@ -57,7 +58,7 @@ type ReporterReliability struct {
 // CalculateReporterReliability calculates the reliability score for a reporter
 func (s *EnhancedReportService) CalculateReporterReliability(ctx context.Context, username string) (*ReporterReliability, error) {
 	// Get report stats
-	stats, err := s.store.GetReportStats(ctx, username)
+	stats, err := s.store.Moderation().GetReportStats(ctx, username)
 	if err != nil {
 		s.logger.Error("failed to get report stats", zap.String("username", username), zap.Error(err))
 		stats = &storage.ReportStats{} // Use empty stats if error
@@ -122,7 +123,7 @@ func (s *EnhancedReportService) CreateEnhancedModerationEvent(ctx context.Contex
 	}
 
 	// Get reporter's trust score in content moderation
-	trustScore, err := s.store.GetTrustScore(ctx, reporterActorID, string(trust.TrustCategoryContent))
+	trustScore, err := s.store.Trust().GetTrustScore(ctx, reporterActorID, string(trust.TrustCategoryContent))
 	if err != nil {
 		s.logger.Warn("failed to get reporter trust score", zap.Error(err))
 	}
@@ -193,7 +194,7 @@ func (s *EnhancedReportService) CreateEnhancedModerationEvent(ctx context.Contex
 	}
 
 	// Create the moderation event
-	if err := s.store.CreateModerationEvent(ctx, event); err != nil {
+	if err := s.store.Moderation().CreateModerationEvent(ctx, event); err != nil {
 		return nil, fmt.Errorf("failed to create moderation event: %w", err)
 	}
 
@@ -226,7 +227,7 @@ func (s *EnhancedReportService) CreateEnhancedModerationEvent(ctx context.Contex
 // UpdateReporterTrustOnDecision updates reporter's trust score based on moderation decision
 func (s *EnhancedReportService) UpdateReporterTrustOnDecision(ctx context.Context, reportID string, decision *moderation.ModerationDecision, reporterActorID string) error {
 	// Get the report
-	report, err := s.store.GetReport(ctx, reportID)
+	report, err := s.store.Moderation().GetReport(ctx, reportID)
 	if err != nil {
 		return fmt.Errorf("failed to get report: %w", err)
 	}
@@ -276,7 +277,7 @@ func (s *EnhancedReportService) UpdateReporterTrustOnDecision(ctx context.Contex
 	}
 
 	// Get current trust score
-	currentScore, err := s.store.GetTrustScore(ctx, reporterActorID, string(trust.TrustCategoryContent))
+	currentScore, err := s.store.Trust().GetTrustScore(ctx, reporterActorID, string(trust.TrustCategoryContent))
 	if err == nil && currentScore != nil {
 		trustRel.Score = currentScore.Score
 	}
@@ -286,7 +287,7 @@ func (s *EnhancedReportService) UpdateReporterTrustOnDecision(ctx context.Contex
 	trustRel.Score = math.Max(0.0, math.Min(1.0, trustRel.Score)) // Clamp to 0-1
 
 	// Update trust
-	if err := s.store.CreateTrustRelationship(ctx, trustRel); err != nil {
+	if err := s.store.Trust().CreateTrustRelationship(ctx, trustRel); err != nil {
 		s.logger.Error("failed to update reporter trust", zap.Error(err))
 		return err
 	}
@@ -304,7 +305,7 @@ func (s *EnhancedReportService) UpdateReporterTrustOnDecision(ctx context.Contex
 	updates["moderation_decision_id"] = decision.ID
 
 	// Update report with decision
-	if err := s.store.UpdateReportStatus(ctx, reportID, storage.ReportStatusResolved, string(decision.Action), "system"); err != nil {
+	if err := s.store.Moderation().UpdateReportStatus(ctx, reportID, storage.ReportStatusResolved, string(decision.Action), "system"); err != nil {
 		s.logger.Error("failed to update report status", zap.Error(err))
 	}
 
@@ -319,12 +320,12 @@ func (s *EnhancedReportService) UpdateReporterTrustOnDecision(ctx context.Contex
 
 // incrementFalseReports increments the false report count for a user
 func (s *EnhancedReportService) incrementFalseReports(ctx context.Context, username string) error {
-	return s.store.IncrementFalseReports(ctx, username)
+	return s.store.Moderation().IncrementFalseReports(ctx, username)
 }
 
 // GetReportModerationStatus gets the moderation status of a report
 func (s *EnhancedReportService) GetReportModerationStatus(ctx context.Context, reportID string) (*ReportModerationStatus, error) {
-	report, err := s.store.GetReport(ctx, reportID)
+	report, err := s.store.Moderation().GetReport(ctx, reportID)
 	if err != nil {
 		return nil, err
 	}
@@ -337,13 +338,13 @@ func (s *EnhancedReportService) GetReportModerationStatus(ctx context.Context, r
 
 	if report.ModerationEventID != "" {
 		// Get moderation event details
-		event, err := s.store.GetModerationEvent(ctx, report.ModerationEventID)
+		event, err := s.store.Moderation().GetModerationEvent(ctx, report.ModerationEventID)
 		if err == nil {
 			status.ModerationStatus = string(event.EventType)
 			status.ConsensusReached = false
 
 			// Check for decision
-			decision, err := s.store.GetModerationDecision(ctx, event.ObjectID)
+			decision, err := s.store.Moderation().GetModerationDecision(ctx, event.ObjectID)
 			if err == nil && decision != nil {
 				status.ConsensusReached = true
 				status.ConsensusScore = decision.ConsensusScore

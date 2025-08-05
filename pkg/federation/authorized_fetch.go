@@ -11,20 +11,20 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/httpclient"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // AuthorizedFetchService handles authorized fetch for ActivityPub objects
 type AuthorizedFetchService struct {
-	store      storage.Storage
+	store      core.RepositoryStorage
 	logger     *zap.Logger
 	httpClient *httpclient.SecureClient
 	domain     string
 }
 
 // NewAuthorizedFetchService creates a new authorized fetch service
-func NewAuthorizedFetchService(store storage.Storage, domain string, logger *zap.Logger) *AuthorizedFetchService {
+func NewAuthorizedFetchService(store core.RepositoryStorage, domain string, logger *zap.Logger) *AuthorizedFetchService {
 	return &AuthorizedFetchService{
 		store:  store,
 		logger: logger,
@@ -53,7 +53,7 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	req.Header.Set("User-Agent", "Lesser/1.0")
 
 	// Get the actor's private key
-	privateKeyPEM, err := f.store.GetActorPrivateKey(ctx, signingActor.PreferredUsername)
+	privateKeyPEM, err := f.store.Actor().GetActorPrivateKey(ctx, signingActor.PreferredUsername)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get private key: %w", err)
 	}
@@ -191,7 +191,7 @@ func (f *AuthorizedFetchService) IsAuthorizedFetchEnabled(ctx context.Context) b
 	}
 
 	// Check instance configuration from storage
-	rules, err := f.store.GetInstanceRules(ctx)
+	rules, err := f.store.Instance().GetInstanceRules(ctx)
 	if err != nil {
 		f.logger.Debug("failed to get instance rules, defaulting authorized fetch to disabled",
 			zap.Error(err))

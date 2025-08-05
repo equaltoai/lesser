@@ -105,18 +105,18 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 		StatusIDs:       req.StatusIDs,
 		Comment:         req.Comment,
 		Category:        req.Category,
-		RuleIDs:         req.RuleIDs,
+		RuleIDs:         convertIntArrayToStringArray(req.RuleIDs),
 		Forwarded:       req.Forward,
 	}
 
 	// Save the report
-	if err := h.store.CreateReport(ctx.Context, report); err != nil {
+	if err := h.repos.Moderation().CreateReport(ctx.Context, report); err != nil {
 		h.logger.Error("failed to create report", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to create report"})
 	}
 
 	// Get reporter's actor ID for trust integration
-	reporterActor, err := h.store.GetActor(ctx.Context, username)
+	reporterActor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Warn("failed to get reporter actor", zap.Error(err))
 		// Continue with report creation even if actor lookup fails
@@ -128,7 +128,7 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	}
 
 	// Create enhanced moderation event with trust weighting
-	enhancedService := reports.NewEnhancedReportService(h.store, h.logger)
+	enhancedService := reports.NewEnhancedReportService(h.repos, h.logger)
 	moderationEvent, err := enhancedService.CreateEnhancedModerationEvent(ctx.Context, report, reporterActorID)
 	if err != nil {
 		h.logger.Error("failed to create enhanced moderation event", zap.Error(err))
@@ -137,7 +137,7 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	} else {
 		// Update the report with the moderation event ID
 		report.ModerationEventID = moderationEvent.ID
-		_ = h.store.UpdateReportStatus(ctx.Context, report.ID, report.Status, "", "")
+		_ = h.repos.Moderation().UpdateReportStatus(ctx.Context, report.ID, storage.ReportStatus(report.Status), "", "")
 
 		h.logger.Info("created report with enhanced moderation",
 			zap.String("report_id", report.ID),
@@ -155,7 +155,7 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 		Forwarded:     report.Forwarded,
 		CreatedAt:     report.CreatedAt.Format(time.RFC3339),
 		StatusIDs:     report.StatusIDs,
-		RuleIDs:       report.RuleIDs,
+		RuleIDs:       convertStringArrayToIntArray(report.RuleIDs),
 		TargetAccount: h.loadTargetAccountLift(ctx.Context, report.TargetAccountID),
 	}
 
@@ -209,12 +209,12 @@ func (h *Handler) createBasicModerationEventLift(ctx context.Context, report *st
 		Updated:         moderationEvent.Updated,
 		TTL:             moderationEvent.TTL,
 	}
-	if err := h.store.CreateModerationEvent(ctx, storageEvent); err != nil {
+	if err := h.repos.Moderation().CreateModerationEvent(ctx, storageEvent); err != nil {
 		h.logger.Error("failed to create basic moderation event", zap.Error(err))
 	} else {
 		// Update the report with the moderation event ID
 		report.ModerationEventID = moderationEvent.ID
-		_ = h.store.UpdateReportStatus(ctx, report.ID, report.Status, "", "")
+		_ = h.repos.Moderation().UpdateReportStatus(ctx, report.ID, storage.ReportStatus(report.Status), "", "")
 	}
 }
 
@@ -224,7 +224,7 @@ func (h *Handler) loadTargetAccountLift(ctx context.Context, targetAccountID str
 		return nil
 	}
 
-	account, err := h.store.GetUser(ctx, targetAccountID)
+	account, err := h.repos.Account().GetUser(ctx, targetAccountID)
 	if err != nil {
 		h.logger.Warn("failed to load target account", zap.Error(err))
 		return nil
@@ -237,4 +237,25 @@ func (h *Handler) loadTargetAccountLift(ctx context.Context, targetAccountID str
 		DisplayName: account.DisplayName,
 		// Add other fields as needed
 	}
+}
+
+// convertIntArrayToStringArray converts []int to []string
+func convertIntArrayToStringArray(ints []int) []string {
+	strings := make([]string, len(ints))
+	for i, v := range ints {
+		strings[i] = fmt.Sprintf("%d", v)
+	}
+	return strings
+}
+
+// convertStringArrayToIntArray converts []string to []int
+func convertStringArrayToIntArray(strings []string) []int {
+	ints := make([]int, 0, len(strings))
+	for _, s := range strings {
+		var i int
+		if _, err := fmt.Sscanf(s, "%d", &i); err == nil {
+			ints = append(ints, i)
+		}
+	}
+	return ints
 }

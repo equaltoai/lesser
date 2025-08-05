@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 )
 
@@ -130,3 +132,45 @@ const (
 
 // Global error utils instance
 var ErrorHandler = NewErrorUtils()
+
+// MapDynamoDBError maps DynamoDB/DynamORM errors to storage errors
+func MapDynamoDBError(err error) error {
+	if err == nil {
+		return nil
+	}
+	
+	// Check for DynamORM error types first
+	if errors.IsNotFound(err) {
+		return storage.ErrNotFound
+	}
+	
+	if errors.IsConditionFailed(err) {
+		return storage.ErrAlreadyExists
+	}
+	
+	// Fall back to string matching for other errors
+	errStr := err.Error()
+	
+	// Validation errors
+	if strings.Contains(errStr, "validation failed") || strings.Contains(errStr, "invalid") {
+		return storage.ErrInvalidInput
+	}
+	
+	// Authorization errors
+	if strings.Contains(errStr, "unauthorized") || strings.Contains(errStr, "forbidden") {
+		return storage.ErrUnauthorized
+	}
+	
+	// Default to original error wrapped with context
+	return fmt.Errorf("database error: %w", err)
+}
+
+// MapErrorWithContext wraps an error with additional context
+func MapErrorWithContext(err error, context string) error {
+	if err == nil {
+		return nil
+	}
+	
+	mappedErr := MapDynamoDBError(err)
+	return fmt.Errorf("%s: %w", context, mappedErr)
+}

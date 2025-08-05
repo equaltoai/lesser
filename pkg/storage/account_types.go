@@ -8,8 +8,8 @@ import (
 
 // Account represents the combined User and Actor data
 type Account struct {
-	User  *User            `json:"user"`
-	Actor *activitypub.Actor `json:"actor"`
+	User  *User              `json:"user"`
+	Actor *activitypub.Actor `json:"actor,omitempty"`
 }
 
 // LoginAttempt represents a login attempt

@@ -69,13 +69,13 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 	}
 
 	// Get the account to mute
-	targetActor, err := h.store.GetActor(ctx.Context, accountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil || targetActor == nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "account not found"})
 	}
 
 	// Check if already muted
-	existingMute, err := h.store.GetMute(ctx.Context, username, accountID)
+	existingMute, err := h.repos.Social().GetMute(ctx.Context, username, accountID)
 	if err != nil {
 		h.logger.Error("failed to check existing mute", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -124,7 +124,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 		CreatedAt:         time.Now(),
 	}
 
-	if err := h.store.CreateMute(ctx.Context, mute); err != nil {
+	if err := h.repos.Social().CreateMute(ctx.Context, mute); err != nil {
 		h.logger.Error("failed to create mute", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -187,7 +187,7 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 	}
 
 	// Delete the mute
-	if err := h.store.DeleteMute(ctx.Context, username, accountID); err != nil {
+	if err := h.repos.Social().DeleteMute(ctx.Context, username, accountID); err != nil {
 		h.logger.Error("failed to delete mute", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -255,7 +255,7 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 	cursor := ctx.Query("max_id")
 
 	// Get muted accounts
-	mutes, nextCursor, err := h.store.GetMutedActors(ctx.Context, username, limit, cursor)
+	mutes, nextCursor, err := h.repos.Social().GetMutedUsers(ctx.Context, username, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get muted actors", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -264,16 +264,16 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 	// Convert to account models
 	accounts := make([]models.Account, 0, len(mutes))
 	for _, mute := range mutes {
-		actor, err := h.store.GetActor(ctx.Context, mute.Object)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, mute.Object)
 		if err != nil || actor == nil {
 			h.logger.Warn("muted actor not found", zap.String("actor", mute.Object))
 			continue
 		}
 
 		// Get follower/following counts
-		followers, _, _ := h.store.GetFollowers(ctx.Context, actor.PreferredUsername, 0, "")
-		following, _, _ := h.store.GetFollowing(ctx.Context, actor.PreferredUsername, 0, "")
-		statuses, _, _ := h.store.GetObjectsByActor(ctx.Context, fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), actor.PreferredUsername), "", 0)
+		followers, _, _ := h.repos.Relationship().GetFollowers(ctx.Context, actor.PreferredUsername, 0, "")
+		following, _, _ := h.repos.Relationship().GetFollowing(ctx.Context, actor.PreferredUsername, 0, "")
+		statuses, _, _ := h.repos.Object().GetObjectsByActor(ctx.Context, fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), actor.PreferredUsername), "", 0)
 
 		converter := mastodon.NewConverter(h.cfg.BaseURL())
 		account := converter.ActorToAccountWithCounts(actor, len(followers), len(following), len(statuses))
@@ -291,13 +291,15 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 // getRelationshipLift is a helper to get the relationship between two users
 func (h *Handler) getRelationshipLift(ctx context.Context, sourceUsername, targetUsername string) *models.Relationship {
 	// Check various relationship states
-	following, _ := h.store.IsFollowing(ctx, sourceUsername, targetUsername)
-	followedBy, _ := h.store.IsFollowing(ctx, targetUsername, sourceUsername)
-	blocked, _ := h.store.IsBlocked(ctx, sourceUsername, targetUsername)
-	blockedBy, _ := h.store.IsBlocked(ctx, targetUsername, sourceUsername)
+	followRel, _ := h.repos.Relationship().GetRelationship(ctx, sourceUsername, targetUsername)
+	following := followRel != nil
+	followedByRel, _ := h.repos.Relationship().GetRelationship(ctx, targetUsername, sourceUsername)
+	followedBy := followedByRel != nil
+	blocked, _ := h.repos.Social().IsBlocked(ctx, sourceUsername, targetUsername)
+	blockedBy, _ := h.repos.Social().IsBlocked(ctx, targetUsername, sourceUsername)
 
 	// Check mute status
-	mute, _ := h.store.GetMute(ctx, sourceUsername, targetUsername)
+	mute, _ := h.repos.Social().GetMute(ctx, sourceUsername, targetUsername)
 
 	relationship := &models.Relationship{
 		ID:                  targetUsername,

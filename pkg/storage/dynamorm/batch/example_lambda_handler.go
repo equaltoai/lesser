@@ -6,7 +6,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -30,10 +29,10 @@ func init() {
 	}
 	
 	// Initialize DynamoDB connection using Lambda-optimized client
-	db, err = dynamorm.GetLambdaClient(context.Background())
-	if err != nil {
-		logger.Fatal("failed to initialize database", zap.Error(err))
-	}
+	// NOTE: In actual usage, import dynamorm from your main package and call:
+	// db, err = dynamorm.GetLambdaClient(context.Background())
+	// For this example, you need to initialize db using the DynamORM package directly
+	// panic("Example file - please initialize 'db' using DynamORM in your actual implementation")
 	
 	// Initialize SQS batch processor
 	processor = NewSQSBatchProcessor(db, SQSBatchProcessorConfig{

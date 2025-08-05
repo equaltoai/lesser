@@ -79,7 +79,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -96,7 +96,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the object to verify ownership
-	object, err := h.store.GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{
@@ -130,7 +130,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Store the pin
-	if err := h.store.CreateStatusPin(ctx.Context, pin); err != nil {
+	if err := h.repos.Social().CreateStatusPin(ctx.Context, pin); err != nil {
 		if strings.Contains(err.Error(), "already pinned") {
 			ctx.Status(http.StatusUnprocessableEntity)
 			return ctx.JSON(map[string]string{
@@ -230,7 +230,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Delete the pin
-	if err := h.store.DeleteStatusPin(ctx.Context, claims.Username, objectID); err != nil {
+	if err := h.repos.Social().DeleteStatusPin(ctx.Context, claims.Username, objectID); err != nil {
 		h.logger.Error("failed to unpin status", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -239,7 +239,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the object to return status information
-	object, err := h.store.GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{
@@ -248,7 +248,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get actor
-	actor, _ := h.store.GetActor(ctx.Context, claims.Username)
+	actor, _ := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 
 	// Return the status with pinned flag set to false
 	status := h.converter.ObjectToStatus(object, actor)
@@ -360,13 +360,13 @@ func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
 	}
 
 	// Store the mute
-	if err := h.store.CreateConversationMute(ctx.Context, mute); err != nil {
+	if err := h.repos.Conversation().CreateConversationMute(ctx.Context, mute); err != nil {
 		if strings.Contains(err.Error(), "already muted") {
 			// Update existing mute (idempotent)
-			if err := h.store.DeleteConversationMute(ctx.Context, claims.Username, conversationID); err != nil {
+			if err := h.repos.Conversation().DeleteConversationMute(ctx.Context, claims.Username, conversationID); err != nil {
 				h.logger.Warn("failed to delete existing conversation mute", zap.Error(err))
 			}
-			if err := h.store.CreateConversationMute(ctx.Context, mute); err != nil {
+			if err := h.repos.Conversation().CreateConversationMute(ctx.Context, mute); err != nil {
 				h.logger.Error("failed to recreate conversation mute", zap.Error(err))
 				ctx.Status(http.StatusInternalServerError)
 				return ctx.JSON(map[string]string{
@@ -383,7 +383,7 @@ func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
 	}
 
 	// Get the object to return status information
-	object, err := h.store.GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{
@@ -392,7 +392,7 @@ func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
 	}
 
 	// Get actor
-	actor, _ := h.store.GetActor(ctx.Context, claims.Username)
+	actor, _ := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 
 	// Return the status with muted flag set to true
 	status := h.converter.ObjectToStatus(object, actor)
@@ -477,7 +477,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	conversationID := objectID
 
 	// Delete the mute
-	if err := h.store.DeleteConversationMute(ctx.Context, claims.Username, conversationID); err != nil {
+	if err := h.repos.Conversation().DeleteConversationMute(ctx.Context, claims.Username, conversationID); err != nil {
 		h.logger.Error("failed to unmute conversation", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -486,7 +486,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	}
 
 	// Get the object to return status information
-	object, err := h.store.GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{
@@ -495,7 +495,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	}
 
 	// Get actor
-	actor, _ := h.store.GetActor(ctx.Context, claims.Username)
+	actor, _ := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 
 	// Return the status with muted flag set to false
 	status := h.converter.ObjectToStatus(object, actor)

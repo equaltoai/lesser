@@ -7,13 +7,13 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // ThreadSyncer handles synchronization of conversation threads across instances
 type ThreadSyncer struct {
-	storage    storage.Storage
+	storage    core.RepositoryStorage
 	federation FederationClient
 	cache      ThreadCache
 	logger     *zap.Logger
@@ -63,7 +63,7 @@ type ThreadContext struct {
 }
 
 // NewThreadSyncer creates a new thread synchronization service
-func NewThreadSyncer(storage storage.Storage, federation FederationClient, cache ThreadCache) *ThreadSyncer {
+func NewThreadSyncer(storage core.RepositoryStorage, federation FederationClient, cache ThreadCache) *ThreadSyncer {
 	return &ThreadSyncer{
 		storage:    storage,
 		federation: federation,
@@ -198,7 +198,7 @@ func (t *ThreadSyncer) fetchRepliesRecursive(ctx context.Context, noteURL string
 // storeNote stores a note in the local storage
 func (t *ThreadSyncer) storeNote(ctx context.Context, note *activitypub.Note) error {
 	// The storage layer accepts any, so we can pass the note directly
-	return t.storage.CreateObject(ctx, note)
+	return t.storage.Object().CreateObject(ctx, note)
 }
 
 // updateConversationMetadata updates the conversation metadata in storage
@@ -211,7 +211,7 @@ func (t *ThreadSyncer) updateConversationMetadata(ctx context.Context, thread *T
 // SyncMissingContext fetches missing context for existing notes
 func (t *ThreadSyncer) SyncMissingContext(ctx context.Context, noteID string) error {
 	// Fetch the note from storage
-	obj, err := t.storage.GetObject(ctx, noteID)
+	obj, err := t.storage.Object().GetObject(ctx, noteID)
 	if err != nil {
 		return fmt.Errorf("failed to get note: %w", err)
 	}

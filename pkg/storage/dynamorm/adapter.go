@@ -2334,7 +2334,7 @@ func (a *StorageAdapter) WriteToTimeline(ctx context.Context, timeline *storage.
 		SpoilerText:  timeline.SpoilerText,
 		CreatedAt:    timeline.CreatedAt,
 		TimelineAt:   timeline.TimelineAt,
-		ExpiresAt:    timeline.ExpiresAt,
+		ExpiresAt:    func() time.Time { if timeline.ExpiresAt == nil { return time.Time{} }; return *timeline.ExpiresAt }(),
 	}
 
 	// Call the DynamORM repository
@@ -2376,7 +2376,7 @@ func (a *StorageAdapter) WriteToTimelines(ctx context.Context, entries []*storag
 			SpoilerText:  timeline.SpoilerText,
 			CreatedAt:    timeline.CreatedAt,
 			TimelineAt:   timeline.TimelineAt,
-			ExpiresAt:    timeline.ExpiresAt,
+			ExpiresAt:    func() time.Time { if timeline.ExpiresAt == nil { return time.Time{} }; return *timeline.ExpiresAt }(),
 		}
 	}
 
@@ -2425,7 +2425,7 @@ func (a *StorageAdapter) GetHomeTimeline(ctx context.Context, username string, l
 			SpoilerText:  model.SpoilerText,
 			CreatedAt:    model.CreatedAt,
 			TimelineAt:   model.TimelineAt,
-			ExpiresAt:    model.ExpiresAt,
+			ExpiresAt:    func() *time.Time { if model.ExpiresAt.IsZero() { return nil }; t := model.ExpiresAt; return &t }(),
 		}
 	}
 
@@ -2468,7 +2468,7 @@ func (a *StorageAdapter) GetPublicTimeline(ctx context.Context, local bool, limi
 			SpoilerText:  model.SpoilerText,
 			CreatedAt:    model.CreatedAt,
 			TimelineAt:   model.TimelineAt,
-			ExpiresAt:    model.ExpiresAt,
+			ExpiresAt:    func() *time.Time { if model.ExpiresAt.IsZero() { return nil }; t := model.ExpiresAt; return &t }(),
 		}
 	}
 
@@ -6552,7 +6552,7 @@ func (a *StorageAdapter) GetListTimeline(ctx context.Context, listID string, lim
 			SpoilerText:  model.SpoilerText,
 			CreatedAt:    model.CreatedAt,
 			TimelineAt:   model.TimelineAt,
-			ExpiresAt:    model.ExpiresAt,
+			ExpiresAt:    func() *time.Time { if model.ExpiresAt.IsZero() { return nil }; t := model.ExpiresAt; return &t }(),
 		}
 	}
 
@@ -6592,7 +6592,7 @@ func (a *StorageAdapter) GetDirectTimeline(ctx context.Context, username string,
 			SpoilerText:  model.SpoilerText,
 			CreatedAt:    model.CreatedAt,
 			TimelineAt:   model.TimelineAt,
-			ExpiresAt:    model.ExpiresAt,
+			ExpiresAt:    func() *time.Time { if model.ExpiresAt.IsZero() { return nil }; t := model.ExpiresAt; return &t }(),
 		}
 	}
 
@@ -6632,7 +6632,7 @@ func (a *StorageAdapter) GetHashtagTimeline(ctx context.Context, hashtag string,
 			SpoilerText:  model.SpoilerText,
 			CreatedAt:    model.CreatedAt,
 			TimelineAt:   model.TimelineAt,
-			ExpiresAt:    model.ExpiresAt,
+			ExpiresAt:    func() *time.Time { if model.ExpiresAt.IsZero() { return nil }; t := model.ExpiresAt; return &t }(),
 		}
 	}
 
@@ -6851,7 +6851,7 @@ func (a *StorageAdapter) CreateFeaturedTag(ctx context.Context, userID string, t
 		ID:           fmt.Sprintf("%s-%s", userID, tagName),
 		Username:     userID,
 		Name:         tagName,
-		LastStatusAt: time.Now().Format(time.RFC3339),
+		LastStatusAt: func() *time.Time { t := time.Now(); return &t }(),
 		CreatedAt:    time.Now(),
 	}
 
@@ -9001,7 +9001,7 @@ func (a *StorageAdapter) SearchStatusesByURL(ctx context.Context, url string) (*
 	if objMap, ok := obj.(map[string]any); ok {
 		result := &storage.StatusSearchResult{
 			Score:      1.0,
-			Highlights: make(map[string]string),
+			Highlights: []string{},
 			Published:  time.Now(), // Default
 		}
 
@@ -9667,7 +9667,7 @@ func (a *StorageAdapter) GetSeveredRelationships(ctx context.Context, localInsta
 			ID:              rel.ID,
 			LocalInstance:   rel.LocalInstance,
 			RemoteInstance:  rel.RemoteInstance,
-			Reason:          storage.SeveranceReason(rel.Reason),
+			Reason:          string(rel.Reason),
 			Timestamp:       rel.Timestamp,
 			Reversible:      rel.Reversible,
 			Details:         rel.Details,
@@ -9695,7 +9695,7 @@ func (a *StorageAdapter) GetSeveredRelationship(ctx context.Context, localInstan
 		ID:              modelRel.ID,
 		LocalInstance:   modelRel.LocalInstance,
 		RemoteInstance:  modelRel.RemoteInstance,
-		Reason:          storage.SeveranceReason(modelRel.Reason),
+		Reason:          string(modelRel.Reason),
 		Timestamp:       modelRel.Timestamp,
 		Reversible:      modelRel.Reversible,
 		Details:         modelRel.Details,
@@ -9799,7 +9799,7 @@ func (a *StorageAdapter) GetSeveranceHistory(ctx context.Context, localInstance,
 			ID:              rel.ID,
 			LocalInstance:   rel.LocalInstance,
 			RemoteInstance:  rel.RemoteInstance,
-			Reason:          storage.SeveranceReason(rel.Reason),
+			Reason:          string(rel.Reason),
 			Timestamp:       rel.Timestamp,
 			Reversible:      rel.Reversible,
 			Details:         rel.Details,

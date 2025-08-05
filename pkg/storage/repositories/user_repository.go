@@ -459,7 +459,7 @@ func (r *UserRepository) GetDNSCache(ctx context.Context, hostname string) (*sto
 		Hostname:   dnsCache.Hostname,
 		IPs:        dnsCache.IPs,
 		ResolvedAt: dnsCache.ResolvedAt,
-		TTL:        dnsCache.TTL,
+		TTL:        int64(dnsCache.TTL),
 	}
 	
 	return entry, nil
@@ -479,7 +479,7 @@ func (r *UserRepository) SetDNSCache(ctx context.Context, entry *storage.DNSCach
 		Hostname:   entry.Hostname,
 		IPs:        entry.IPs,
 		ResolvedAt: entry.ResolvedAt,
-		TTL:        entry.TTL,
+		TTL:        int(entry.TTL),
 		ExpiresAt:  expiresAt,
 	}
 	dnsCache.UpdateKeys()
@@ -495,7 +495,7 @@ func (r *UserRepository) SetDNSCache(ctx context.Context, entry *storage.DNSCach
 	r.logger.Debug("DNS cache entry stored",
 		zap.String("hostname", entry.Hostname),
 		zap.Int("ip_count", len(entry.IPs)),
-		zap.Int("ttl_seconds", entry.TTL))
+		zap.Int64("ttl_seconds", entry.TTL))
 	
 	return nil
 }
@@ -891,7 +891,11 @@ func (r *UserRepository) CreateVouch(ctx context.Context, vouch *storage.Vouch) 
 	vouchModel := &models.Vouch{
 		VouchData: string(vouchJSON),
 	}
-	vouchModel.UpdateKeys(vouch.ID, vouch.From, vouch.To, vouch.Active, vouch.CreatedAt, vouch.ExpiresAt)
+	expiresAt := time.Time{}
+	if vouch.ExpiresAt != nil {
+		expiresAt = *vouch.ExpiresAt
+	}
+	vouchModel.UpdateKeys(vouch.ID, vouch.From, vouch.To, vouch.Active, vouch.CreatedAt, expiresAt)
 
 	// Create in DynamoDB
 	if err := r.db.Model(vouchModel).Create(); err != nil {
@@ -1035,7 +1039,11 @@ func (r *UserRepository) UpdateVouchStatus(ctx context.Context, vouchID string, 
 		VouchData: string(vouchJSON),
 		Active:    active,
 	}
-	vouchModel.UpdateKeys(vouch.ID, vouch.From, vouch.To, vouch.Active, vouch.CreatedAt, vouch.ExpiresAt)
+	expiresAt := time.Time{}
+	if vouch.ExpiresAt != nil {
+		expiresAt = *vouch.ExpiresAt
+	}
+	vouchModel.UpdateKeys(vouch.ID, vouch.From, vouch.To, vouch.Active, vouch.CreatedAt, expiresAt)
 
 	// Update in DynamoDB
 	if err := r.db.Model(vouchModel).Update(); err != nil {
@@ -1621,19 +1629,11 @@ func (r *UserRepository) SetUserLanguagePreference(ctx context.Context, username
 	prefs, err := r.GetUserPreferences(ctx, username)
 	if err != nil {
 		// If preferences don't exist, create new ones with defaults
-		defaultModelStorage := models.GetDefaultPreferences()
 		prefs = &storage.UserPreferences{
-			Language:                  defaultModelStorage.Language,
-			DefaultPostingVisibility:  defaultModelStorage.DefaultPostingVisibility,
-			DefaultMediaSensitive:     defaultModelStorage.DefaultMediaSensitive,
-			ExpandSpoilers:            defaultModelStorage.ExpandSpoilers,
-			ExpandMedia:               defaultModelStorage.ExpandMedia,
-			AutoplayGifs:              defaultModelStorage.AutoplayGifs,
-			ShowFollowCounts:          defaultModelStorage.ShowFollowCounts,
-			PreferredTimelineOrder:    defaultModelStorage.PreferredTimelineOrder,
-			SearchSuggestionsEnabled:  defaultModelStorage.SearchSuggestionsEnabled,
-			PersonalizedSearchEnabled: defaultModelStorage.PersonalizedSearchEnabled,
-			ReblogFilters:             defaultModelStorage.ReblogFilters,
+			Username:    username,
+			Language:    language,
+			Preferences: make(map[string]string),
+			UpdatedAt:   time.Now(),
 		}
 	}
 	
@@ -2669,7 +2669,7 @@ func (r *UserRepository) GetDirectTimeline(ctx context.Context, username string,
 			Language:      e.Language,
 			Visibility:    e.Visibility,
 			TimelineAt:    e.TimelineAt,
-			ExpiresAt:     e.ExpiresAt,
+			ExpiresAt:     func() *time.Time { if e.ExpiresAt.IsZero() { return nil }; t := e.ExpiresAt; return &t }(),
 			CreatedAt:     e.CreatedAt,
 		}
 	}
@@ -2759,7 +2759,7 @@ func (r *UserRepository) GetHashtagTimeline(ctx context.Context, hashtag string,
 			Language:      e.Language,
 			Visibility:    e.Visibility,
 			TimelineAt:    e.TimelineAt,
-			ExpiresAt:     e.ExpiresAt,
+			ExpiresAt:     func() *time.Time { if e.ExpiresAt.IsZero() { return nil }; t := e.ExpiresAt; return &t }(),
 			CreatedAt:     e.CreatedAt,
 		}
 	}
@@ -2817,7 +2817,7 @@ func (r *UserRepository) GetListTimeline(ctx context.Context, listID string, lim
 			Language:      e.Language,
 			Visibility:    e.Visibility,
 			TimelineAt:    e.TimelineAt,
-			ExpiresAt:     e.ExpiresAt,
+			ExpiresAt:     func() *time.Time { if e.ExpiresAt.IsZero() { return nil }; t := e.ExpiresAt; return &t }(),
 			CreatedAt:     e.CreatedAt,
 		}
 	}

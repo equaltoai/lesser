@@ -130,13 +130,19 @@ func (r *RecoveryRepository) UpdateTrusteeConfirmed(ctx context.Context, usernam
 // StoreRecoveryRequest stores a social recovery request
 func (r *RecoveryRepository) StoreRecoveryRequest(ctx context.Context, request *storage.SocialRecoveryRequest) error {
 	// Convert storage.SocialRecoveryRequest to models.RecoveryRequest
+	// Initialize ReceivedVotes map based on TrusteeVotes
+	receivedVotes := make(map[string]bool)
+	for _, trusteeID := range request.TrusteeVotes {
+		receivedVotes[trusteeID] = true
+	}
+	
 	model := &models.RecoveryRequest{
 		ID:            request.ID,
 		Username:      request.Username,
 		InitiatedAt:   request.InitiatedAt,
 		ExpiresAt:     request.ExpiresAt,
 		RequiredVotes: request.RequiredVotes,
-		ReceivedVotes: request.ReceivedVotes,
+		ReceivedVotes: receivedVotes,
 		RecoveryToken: request.RecoveryToken,
 		Status:        request.Status,
 	}
@@ -170,15 +176,26 @@ func (r *RecoveryRepository) GetRecoveryRequest(ctx context.Context, requestID s
 	}
 	
 	// Convert model to storage type
+	// Convert ReceivedVotes map to TrusteeVotes slice and count
+	trusteeVotes := make([]string, 0, len(model.ReceivedVotes))
+	for trusteeID, voted := range model.ReceivedVotes {
+		if voted {
+			trusteeVotes = append(trusteeVotes, trusteeID)
+		}
+	}
+	
 	result := &storage.SocialRecoveryRequest{
 		ID:            model.ID,
 		Username:      model.Username,
+		RequestorID:   model.Username, // Assuming requestor is the username
 		InitiatedAt:   model.InitiatedAt,
 		ExpiresAt:     model.ExpiresAt,
 		RequiredVotes: model.RequiredVotes,
-		ReceivedVotes: model.ReceivedVotes,
+		ReceivedVotes: len(trusteeVotes),
+		TrusteeVotes:  trusteeVotes,
 		RecoveryToken: model.RecoveryToken,
 		Status:        model.Status,
+		CreatedAt:     model.InitiatedAt, // Use InitiatedAt as CreatedAt
 	}
 	
 	return result, nil
@@ -229,15 +246,26 @@ func (r *RecoveryRepository) GetActiveRecoveryRequests(ctx context.Context, user
 	result := make([]*storage.SocialRecoveryRequest, 0)
 	for _, req := range requests {
 		if req.Status == "pending" && now.Before(req.ExpiresAt) {
+			// Convert ReceivedVotes map to TrusteeVotes slice and count
+			trusteeVotes := make([]string, 0, len(req.ReceivedVotes))
+			for trusteeID, voted := range req.ReceivedVotes {
+				if voted {
+					trusteeVotes = append(trusteeVotes, trusteeID)
+				}
+			}
+			
 			result = append(result, &storage.SocialRecoveryRequest{
 				ID:            req.ID,
 				Username:      req.Username,
+				RequestorID:   req.Username,
 				InitiatedAt:   req.InitiatedAt,
 				ExpiresAt:     req.ExpiresAt,
 				RequiredVotes: req.RequiredVotes,
-				ReceivedVotes: req.ReceivedVotes,
+				ReceivedVotes: len(trusteeVotes),
+				TrusteeVotes:  trusteeVotes,
 				RecoveryToken: req.RecoveryToken,
 				Status:        req.Status,
+				CreatedAt:     req.InitiatedAt,
 			})
 		}
 	}

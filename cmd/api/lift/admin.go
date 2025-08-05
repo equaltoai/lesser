@@ -39,7 +39,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 	cursor := ctx.Query("cursor")
 
 	// Get users from storage
-	users, nextCursor, err := h.store.ListUsers(ctx.Context, int32(limit), cursor)
+	users, nextCursor, err := h.repos.User().ListUsers(ctx.Context, int32(limit), cursor)
 	if err != nil {
 		h.logger.Error("failed to list users", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -50,7 +50,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 	accounts := make([]models.AdminAccount, 0, len(users))
 	for _, user := range users {
 		// Get actor info
-		actor, err := h.store.GetActor(ctx.Context, user.Username)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, user.Username)
 		if err != nil {
 			h.logger.Warn("failed to get actor for user",
 				zap.String("username", user.Username),
@@ -62,7 +62,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 		var lastIP *string
 		var ipHistory []models.AdminIP
 
-		sessions, err := h.store.GetUserSessions(ctx.Context, user.Username)
+		sessions, err := h.repos.Account().GetUserSessions(ctx.Context, user.Username)
 		if err == nil && len(sessions) > 0 {
 			// Sort sessions by last activity (most recent first)
 			sort.Slice(sessions, func(i, j int) bool {
@@ -160,7 +160,7 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 	username := strings.TrimPrefix(accountID, "user-")
 
 	// Get user from storage
-	user, err := h.store.GetUser(ctx.Context, username)
+	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -172,7 +172,7 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 	}
 
 	// Get actor info
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -180,7 +180,7 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 	}
 
 	// Get report stats
-	reportStats, err := h.store.GetReportStats(ctx.Context, username)
+	reportStats, err := h.repos.Moderation().GetReportStats(ctx.Context, username)
 	if err != nil {
 		h.logger.Warn("failed to get report stats", zap.Error(err))
 		reportStats = &storage.ReportStats{} // Use empty stats
@@ -190,7 +190,7 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 	var lastIP *string
 	var ipHistory []models.AdminIP
 
-	sessions, err := h.store.GetUserSessions(ctx.Context, username)
+	sessions, err := h.repos.Account().GetUserSessions(ctx.Context, username)
 	if err == nil && len(sessions) > 0 {
 		// Sort sessions by last activity (most recent first)
 		sort.Slice(sessions, func(i, j int) bool {
@@ -334,7 +334,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 		updates["sensitive_media"] = true
 	case "unsensitive":
 		// Unmark media as sensitive
-		if err := h.store.UnmarkAllMediaAsSensitive(ctx.Context, username); err != nil {
+		if err := h.repos.Media().UnmarkAllMediaAsSensitive(ctx.Context, username); err != nil {
 			h.logger.Error("failed to unmark media as sensitive", zap.Error(err))
 		}
 		updates["sensitive_media"] = false
@@ -343,7 +343,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 	// Update user in storage
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
-		if err := h.store.UpdateUser(ctx.Context, username, updates); err != nil {
+		if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
 			h.logger.Error("failed to update user", zap.Error(err))
 			ctx.Status(http.StatusInternalServerError)
 			return ctx.JSON(map[string]string{"error": err.Error()})
@@ -382,7 +382,7 @@ func (h *Handler) HandleAdminApproveAccountLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.store.UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
 		h.logger.Error("failed to approve user", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -414,7 +414,7 @@ func (h *Handler) HandleAdminRejectAccountLift(ctx *lift.Context) error {
 		zap.String("target", username))
 
 	// Delete the user and associated data
-	if err := h.store.DeleteUser(ctx.Context, username); err != nil {
+	if err := h.repos.Account().DeleteAccount(ctx.Context, username); err != nil {
 		h.logger.Error("failed to delete user", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -452,7 +452,7 @@ func (h *Handler) HandleAdminEnableAccountLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.store.UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
 		h.logger.Error("failed to enable user", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -487,7 +487,7 @@ func (h *Handler) HandleAdminUnsilenceAccountLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.store.UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
 		h.logger.Error("failed to unsilence user", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -522,7 +522,7 @@ func (h *Handler) HandleAdminUnsuspendAccountLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.store.UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
 		h.logger.Error("failed to unsuspend user", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -552,7 +552,7 @@ func (h *Handler) HandleAdminUnsensitiveAccountLift(ctx *lift.Context) error {
 		zap.String("target", username))
 
 	// Remove sensitive flag from all media
-	if err := h.store.UnmarkAllMediaAsSensitive(ctx.Context, username); err != nil {
+	if err := h.repos.Media().UnmarkAllMediaAsSensitive(ctx.Context, username); err != nil {
 		h.logger.Error("failed to unmark media as sensitive", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -592,7 +592,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 	}
 
 	// Get reports from storage
-	reports, nextCursor, err := h.store.GetReportsByStatus(ctx.Context, status, limit, cursor)
+	reports, nextCursor, err := h.repos.Moderation().GetReportsByStatus(ctx.Context, status, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get reports", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -603,7 +603,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 	apiReports := make([]models.AdminReport, 0, len(reports))
 	for _, report := range reports {
 		// Get reporter account info
-		reporterActor, err := h.store.GetActor(ctx.Context, report.ReporterID)
+		reporterActor, err := h.repos.Actor().GetActor(ctx.Context, report.ReporterID)
 		if err != nil {
 			h.logger.Warn("failed to get reporter actor",
 				zap.String("reporter", report.ReporterID),
@@ -612,7 +612,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 		}
 
 		// Get target account info
-		targetActor, err := h.store.GetActor(ctx.Context, report.TargetAccountID)
+		targetActor, err := h.repos.Actor().GetActor(ctx.Context, report.TargetAccountID)
 		if err != nil {
 			h.logger.Warn("failed to get target actor",
 				zap.String("target", report.TargetAccountID),
@@ -623,7 +623,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 		// Get assigned account if any
 		var assignedAccount *models.Account
 		if report.AssignedTo != "" {
-			assignedActor, err := h.store.GetActor(ctx.Context, report.AssignedTo)
+			assignedActor, err := h.repos.Actor().GetActor(ctx.Context, report.AssignedTo)
 			if err == nil {
 				acc := h.convertActorToAccountWithCounts(ctx.Context, assignedActor)
 				assignedAccount = &acc
@@ -633,7 +633,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 		// Get moderator account if action was taken
 		var actionTakenByAccount *models.Account
 		if report.ModeratorID != "" {
-			moderatorActor, err := h.store.GetActor(ctx.Context, report.ModeratorID)
+			moderatorActor, err := h.repos.Actor().GetActor(ctx.Context, report.ModeratorID)
 			if err == nil {
 				acc := h.convertActorToAccountWithCounts(ctx.Context, moderatorActor)
 				actionTakenByAccount = &acc
@@ -690,7 +690,7 @@ func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
 	reportID := ctx.Param("id")
 
 	// Get report from storage
-	report, err := h.store.GetReport(ctx.Context, reportID)
+	report, err := h.repos.Moderation().GetReport(ctx.Context, reportID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -702,7 +702,7 @@ func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
 	}
 
 	// Get reporter account info
-	reporterActor, err := h.store.GetActor(ctx.Context, report.ReporterID)
+	reporterActor, err := h.repos.Actor().GetActor(ctx.Context, report.ReporterID)
 	if err != nil {
 		h.logger.Error("failed to get reporter actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -710,7 +710,7 @@ func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
 	}
 
 	// Get target account info
-	targetActor, err := h.store.GetActor(ctx.Context, report.TargetAccountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, report.TargetAccountID)
 	if err != nil {
 		h.logger.Error("failed to get target actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -720,7 +720,7 @@ func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
 	// Get assigned account if any
 	var assignedAccount *models.Account
 	if report.AssignedTo != "" {
-		assignedActor, err := h.store.GetActor(ctx.Context, report.AssignedTo)
+		assignedActor, err := h.repos.Actor().GetActor(ctx.Context, report.AssignedTo)
 		if err == nil {
 			acc := h.convertActorToAccountWithCounts(ctx.Context, assignedActor)
 			assignedAccount = &acc
@@ -734,7 +734,7 @@ func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
 	// Get moderator account if action was taken
 	var actionTakenByAccount *models.Account
 	if report.ModeratorID != "" {
-		moderatorActor, err := h.store.GetActor(ctx.Context, report.ModeratorID)
+		moderatorActor, err := h.repos.Actor().GetActor(ctx.Context, report.ModeratorID)
 		if err == nil {
 			acc := h.convertActorToAccountWithCounts(ctx.Context, moderatorActor)
 			actionTakenByAccount = &acc
@@ -778,7 +778,7 @@ func (h *Handler) HandleAdminResolveReportLift(ctx *lift.Context) error {
 	reportID := ctx.Param("id")
 
 	// Update report status
-	err = h.store.UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusResolved, "Resolved by admin", adminClaims.Username)
+	err = h.repos.Moderation().UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusResolved, "Resolved by admin", adminClaims.Username)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -790,7 +790,7 @@ func (h *Handler) HandleAdminResolveReportLift(ctx *lift.Context) error {
 	}
 
 	// Get updated report
-	report, err := h.store.GetReport(ctx.Context, reportID)
+	report, err := h.repos.Moderation().GetReport(ctx.Context, reportID)
 	if err != nil {
 		h.logger.Error("failed to get updated report", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -821,7 +821,7 @@ func (h *Handler) HandleAdminReopenReportLift(ctx *lift.Context) error {
 	reportID := ctx.Param("id")
 
 	// Update report status
-	err = h.store.UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusOpen, "Reopened by admin", adminClaims.Username)
+	err = h.repos.Moderation().UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusOpen, "Reopened by admin", adminClaims.Username)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -853,7 +853,7 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
 	reportID := ctx.Param("id")
 
 	// Verify report exists
-	_, err = h.store.GetReport(ctx.Context, reportID)
+	_, err = h.repos.Moderation().GetReport(ctx.Context, reportID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -865,7 +865,7 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
 	}
 
 	// Assign report to the admin
-	if err := h.store.AssignReport(ctx.Context, reportID, adminClaims.Username); err != nil {
+	if err := h.repos.Moderation().AssignReport(ctx.Context, reportID, adminClaims.Username); err != nil {
 		h.logger.Error("failed to assign report", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -892,7 +892,7 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
 	reportID := ctx.Param("id")
 
 	// Verify report exists
-	_, err = h.store.GetReport(ctx.Context, reportID)
+	_, err = h.repos.Moderation().GetReport(ctx.Context, reportID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -904,7 +904,7 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
 	}
 
 	// Unassign the report
-	if err := h.store.UnassignReport(ctx.Context, reportID); err != nil {
+	if err := h.repos.Moderation().UnassignReport(ctx.Context, reportID); err != nil {
 		h.logger.Error("failed to unassign report", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -929,11 +929,11 @@ func (h *Handler) HandleAdminModerationOverviewLift(ctx *lift.Context) error {
 	}
 
 	// Get moderation queue count
-	queueItems, err := h.store.GetModerationQueue(ctx.Context, &storage.ModerationFilter{Limit: 1})
+	queueItems, err := h.repos.Moderation().GetModerationQueue(ctx.Context, &storage.ModerationFilter{Limit: 1})
 	queueCount := 0
 	if err == nil && len(queueItems) > 0 {
 		// Get actual total count from moderation queue
-		queueCount, err = h.store.GetModerationQueueCount(ctx.Context)
+		queueCount, err = h.repos.Moderation().GetModerationQueueCount(ctx.Context)
 		if err != nil {
 			h.logger.Warn("failed to get queue count", zap.Error(err))
 			queueCount = 0
@@ -941,11 +941,11 @@ func (h *Handler) HandleAdminModerationOverviewLift(ctx *lift.Context) error {
 	}
 
 	// Count open reports
-	openReports, _, err := h.store.GetReportsByStatus(ctx.Context, storage.ReportStatusOpen, 1, "")
+	openReports, _, err := h.repos.Moderation().GetReportsByStatus(ctx.Context, storage.ReportStatusOpen, 1, "")
 	openReportCount := 0
 	if err == nil && len(openReports) > 0 {
 		// Get actual total count of open reports
-		openReportCount, err = h.store.GetOpenReportsCount(ctx.Context)
+		openReportCount, err = h.repos.Moderation().GetOpenReportsCount(ctx.Context)
 		if err != nil {
 			h.logger.Warn("failed to get open reports count", zap.Error(err))
 			openReportCount = 0
@@ -987,19 +987,16 @@ func (h *Handler) HandleAdminGetModerationEventsLift(ctx *lift.Context) error {
 	filter := &storage.ModerationEventFilter{}
 
 	if eventType := ctx.Query("event_type"); eventType != "" {
-		et := storage.EventType(eventType)
-		filter.EventType = &et
+		filter.EventType = eventType
 	}
 
 	if category := ctx.Query("category"); category != "" {
-		cat := storage.Category(category)
-		filter.Category = &cat
+		filter.Category = category
 	}
 
 	if severity := ctx.Query("min_severity"); severity != "" {
 		if sev, err := strconv.Atoi(severity); err == nil {
-			s := storage.Severity(sev)
-			filter.MinSeverity = &s
+			filter.MinSeverity = &sev
 		}
 	}
 
@@ -1007,7 +1004,7 @@ func (h *Handler) HandleAdminGetModerationEventsLift(ctx *lift.Context) error {
 	filter.ObjectID = ctx.Query("object_id")
 
 	// Get moderation events
-	events, nextCursor, err := h.store.GetModerationEvents(ctx.Context, filter, limit, cursor)
+	events, nextCursor, err := h.repos.Moderation().GetModerationEvents(ctx.Context, filter, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get moderation events", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -1070,7 +1067,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	}
 
 	// Get the moderation event
-	event, err := h.store.GetModerationEvent(ctx.Context, eventID)
+	event, err := h.repos.Moderation().GetModerationEvent(ctx.Context, eventID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -1099,7 +1096,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	}
 
 	// Create admin review with override
-	err = h.store.CreateAdminReview(ctx.Context, eventID, adminClaims.Username, action, req.Reason)
+	err = h.repos.Moderation().CreateAdminReview(ctx.Context, eventID, adminClaims.Username, action, req.Reason)
 	if err != nil {
 		h.logger.Error("failed to create admin review", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -1144,7 +1141,7 @@ func (h *Handler) HandleAdminGetTrustGraphLift(ctx *lift.Context) error {
 	}
 
 	// Get all trust relationships
-	trustRelationships, err := h.store.GetAllTrustRelationships(ctx.Context, limit)
+	trustRelationships, err := h.repos.Trust().GetAllTrustRelationships(ctx.Context, limit)
 	if err != nil {
 		h.logger.Error("failed to get trust relationships", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -1243,7 +1240,7 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 		Updated:    time.Now(),
 	}
 
-	if err := h.store.UpdateTrustRelationship(ctx.Context, trustRel); err != nil {
+	if err := h.repos.Trust().UpdateTrustRelationship(ctx.Context, trustRel); err != nil {
 		h.logger.Error("failed to update trust relationship", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -1281,7 +1278,7 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 	}
 
 	// Get users with moderator role
-	moderatorUsers, err := h.store.ListUsersByRole(ctx.Context, "moderator")
+	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx.Context, "moderator")
 	if err != nil {
 		h.logger.Error("failed to list moderator users", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -1289,7 +1286,7 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 	}
 
 	// Get users with admin role
-	adminUsers, err := h.store.ListUsersByRole(ctx.Context, "admin")
+	adminUsers, err := h.repos.User().ListUsersByRole(ctx.Context, "admin")
 	if err != nil {
 		h.logger.Error("failed to list admin users", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -1303,7 +1300,7 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 	for _, user := range users {
 		if user.Role == "moderator" || user.Role == "admin" {
 			// Get review stats for this user
-			stats, err := h.store.GetReviewerStats(ctx.Context, user.Username)
+			stats, err := h.repos.Moderation().GetReviewerStats(ctx.Context, user.Username)
 			if err != nil {
 				h.logger.Warn("failed to get reviewer stats",
 					zap.String("username", user.Username),
@@ -1350,7 +1347,7 @@ func (h *Handler) HandleAdminPromoteModeratorLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.store.UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
 		h.logger.Error("failed to promote user to moderator", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -1385,7 +1382,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 	username := strings.TrimPrefix(userID, "user-")
 
 	// Don't allow demoting admins
-	user, err := h.store.GetUser(ctx.Context, username)
+	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
@@ -1407,7 +1404,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.store.UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
 		h.logger.Error("failed to demote moderator", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -1447,7 +1444,7 @@ func (h *Handler) convertActorToAccountWithCounts(ctx context.Context, actor *ac
 	lastStatusAt := ""
 
 	// Get actor with metadata
-	_, metadata, err := h.store.GetActorWithMetadata(ctx, actor.PreferredUsername)
+	_, metadata, err := h.repos.Actor().GetActorWithMetadata(ctx, actor.PreferredUsername)
 	if err == nil && metadata != nil {
 		createdAt = metadata.CreatedAt
 		if metadata.LastStatusAt != nil {
@@ -1456,11 +1453,11 @@ func (h *Handler) convertActorToAccountWithCounts(ctx context.Context, actor *ac
 	}
 
 	// Get counts
-	statusesCount, _ := h.store.GetStatusCount(ctx, actor.ID)
-	followersCount, _ := h.store.GetFollowersCount(ctx, actor.ID)
+	statusesCount, _ := h.repos.Status().CountStatusesByAuthor(ctx, actor.ID)
+	followersCount, _ := h.repos.Relationship().CountFollowers(ctx, actor.ID)
 
 	// Get following count by checking first page
-	following, _, _ := h.store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
+	following, _, _ := h.repos.Relationship().GetFollowing(ctx, actor.PreferredUsername, 1, "")
 	followingCount := len(following)
 
 	return models.Account{
@@ -1511,13 +1508,13 @@ func getAdminRolePermissions(role string) int {
 
 // getActiveModeratorsCount returns the number of active moderators
 func (h *Handler) getActiveModeratorsCount(ctx context.Context) int {
-	moderatorUsers, err := h.store.ListUsersByRole(ctx, "moderator")
+	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx, "moderator")
 	if err != nil {
 		h.logger.Warn("failed to get moderator users", zap.Error(err))
 		return 0
 	}
 
-	adminUsers, err := h.store.ListUsersByRole(ctx, "admin")
+	adminUsers, err := h.repos.User().ListUsersByRole(ctx, "admin")
 	if err != nil {
 		h.logger.Warn("failed to get admin users", zap.Error(err))
 		return 0
@@ -1531,7 +1528,7 @@ func (h *Handler) getActiveModeratorsCount(ctx context.Context) int {
 
 	for _, user := range users {
 		// Check if user has any recent activity
-		sessions, err := h.store.GetUserSessions(ctx, user.Username)
+		sessions, err := h.repos.Account().GetUserSessions(ctx, user.Username)
 		if err != nil {
 			continue
 		}
@@ -1550,8 +1547,8 @@ func (h *Handler) getActiveModeratorsCount(ctx context.Context) int {
 // getRecentConsensusDecisions returns recent consensus-based moderation decisions
 func (h *Handler) getRecentConsensusDecisions(ctx context.Context) []any {
 	// Get recent moderation events that were resolved through consensus
-	events, _, err := h.store.GetModerationEvents(ctx, &storage.ModerationEventFilter{
-		MinSeverity: func() *storage.Severity { s := storage.SeverityMedium; return &s }(),
+	events, _, err := h.repos.Moderation().GetModerationEvents(ctx, &storage.ModerationEventFilter{
+		MinSeverity: func() *int { s := 2; return &s }(), // 2 = medium severity
 	}, 10, "")
 	if err != nil {
 		h.logger.Warn("failed to get recent consensus decisions", zap.Error(err))
@@ -1576,7 +1573,7 @@ func (h *Handler) getRecentConsensusDecisions(ctx context.Context) []any {
 // getTrustGraphHealth returns trust graph health metrics
 func (h *Handler) getTrustGraphHealth(ctx context.Context) map[string]any {
 	// Get all trust relationships
-	relationships, err := h.store.GetAllTrustRelationships(ctx, 10000)
+	relationships, err := h.repos.Trust().GetAllTrustRelationships(ctx, 10000)
 	if err != nil {
 		h.logger.Warn("failed to get trust relationships", zap.Error(err))
 		return map[string]any{
@@ -1604,7 +1601,7 @@ func (h *Handler) getTrustGraphHealth(ctx context.Context) map[string]any {
 
 	// Count isolated users (users with no trust relationships)
 	isolatedUsers := 0
-	users, _, err := h.store.ListUsers(ctx, 10000, "")
+	users, _, err := h.repos.User().ListUsers(ctx, 10000, "")
 	if err == nil {
 		for _, user := range users {
 			if userConnections[user.Username] == 0 {
@@ -1622,7 +1619,7 @@ func (h *Handler) getTrustGraphHealth(ctx context.Context) map[string]any {
 
 // loadReportedStatuses loads the statuses that were reported
 func (h *Handler) loadReportedStatuses(ctx context.Context, reportID string) []models.Status {
-	statuses, err := h.store.GetReportedStatuses(ctx, reportID)
+	statuses, err := h.repos.Moderation().GetReportedStatuses(ctx, reportID)
 	if err != nil {
 		h.logger.Warn("failed to load reported statuses", zap.String("report_id", reportID), zap.Error(err))
 		return []models.Status{}
@@ -1652,7 +1649,7 @@ func (h *Handler) loadReportedStatuses(ctx context.Context, reportID string) []m
 
 // loadViolatedRules loads the rules that were violated in a report
 func (h *Handler) loadViolatedRules(ctx context.Context, category string) []models.Rule {
-	rules, err := h.store.GetRulesByCategory(ctx, category)
+	rules, err := h.repos.Instance().GetRulesByCategory(ctx, category)
 	if err != nil {
 		h.logger.Warn("failed to load violated rules", zap.String("category", category), zap.Error(err))
 		return []models.Rule{}
@@ -1674,19 +1671,19 @@ func (h *Handler) loadViolatedRules(ctx context.Context, category string) []mode
 // cancelUserFollowRelationships cancels all follow relationships for a user
 func (h *Handler) cancelUserFollowRelationships(ctx context.Context, username string) error {
 	// Get user's actor
-	actor, err := h.store.GetActor(ctx, username)
+	actor, err := h.repos.Actor().GetActor(ctx, username)
 	if err != nil {
 		return err
 	}
 
 	// Get all users this user is following
-	following, _, err := h.store.GetFollowing(ctx, username, 1000, "")
+	following, _, err := h.repos.Relationship().GetFollowing(ctx, username, 1000, "")
 	if err != nil {
 		h.logger.Warn("failed to get following list for user", zap.String("username", username), zap.Error(err))
 	} else {
 		// Remove each follow relationship
 		for _, followedActor := range following {
-			if err := h.store.RemoveFollow(ctx, actor.ID, followedActor); err != nil {
+			if err := h.repos.Relationship().DeleteRelationship(ctx, actor.ID, followedActor); err != nil {
 				h.logger.Warn("failed to remove follow relationship",
 					zap.String("follower", username),
 					zap.String("followed", followedActor),
@@ -1696,13 +1693,13 @@ func (h *Handler) cancelUserFollowRelationships(ctx context.Context, username st
 	}
 
 	// Get all users following this user
-	followers, _, err := h.store.GetFollowers(ctx, username, 1000, "")
+	followers, _, err := h.repos.Relationship().GetFollowers(ctx, username, 1000, "")
 	if err != nil {
 		h.logger.Warn("failed to get followers list for user", zap.String("username", username), zap.Error(err))
 	} else {
 		// Remove each follower relationship
 		for _, followerActor := range followers {
-			if err := h.store.RemoveFollow(ctx, followerActor, actor.ID); err != nil {
+			if err := h.repos.Relationship().DeleteRelationship(ctx, followerActor, actor.ID); err != nil {
 				h.logger.Warn("failed to remove follower relationship",
 					zap.String("follower", followerActor),
 					zap.String("followed", username),
@@ -1717,11 +1714,12 @@ func (h *Handler) cancelUserFollowRelationships(ctx context.Context, username st
 // markAllUserMediaAsSensitive marks all media uploaded by a user as sensitive
 func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username string) error {
 	// Get all media attachments for this user
-	media, err := h.store.GetUserMedia(ctx, username)
+	mediaList, err := h.repos.Media().GetUserMedia(ctx, username)
 	if err != nil {
-		h.logger.Warn("failed to get user media", zap.String("username", username), zap.Error(err))
 		return err
 	}
+	// mediaList is already []any, no conversion needed
+	media := mediaList
 
 	// Mark each media item as sensitive
 	for _, mediaInterface := range media {
@@ -1739,7 +1737,7 @@ func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username stri
 		updates := map[string]any{
 			"sensitive": true,
 		}
-		if err := h.store.UpdateMediaAttachment(ctx, mediaID, updates); err != nil {
+		if err := h.repos.Media().UpdateMediaAttachment(ctx, mediaID, updates); err != nil {
 			h.logger.Warn("failed to mark media as sensitive",
 				zap.String("media_id", mediaID),
 				zap.Error(err))

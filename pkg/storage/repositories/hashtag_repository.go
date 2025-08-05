@@ -125,7 +125,7 @@ func (r *HashtagRepository) GetHashtagInfo(ctx context.Context, hashtag string) 
 	return &storage.Hashtag{
 		Name:       hashtagModel.Name,
 		URL:        hashtagModel.URL,
-		UsageCount: hashtagModel.UsageCount,
+		UsageCount: int(hashtagModel.UsageCount),
 		FirstSeen:  hashtagModel.FirstSeen,
 		LastUsed:   hashtagModel.LastUsed,
 	}, nil
@@ -247,20 +247,20 @@ func (r *HashtagRepository) GetHashtagStats(ctx context.Context, hashtag string)
 	for i, count := range history {
 		date := time.Now().AddDate(0, 0, -i)
 		historyEntries[i] = storage.HashtagHistoryEntry{
-			Date:       date,
-			UsageCount: count,
-			UserCount:  int64(uniqueUsers / 7), // Approximate distribution
+			Date:       date.Format("2006-01-02"),
+			UsageCount: fmt.Sprintf("%d", count),
+			UserCount:  fmt.Sprintf("%d", uniqueUsers/7), // Approximate distribution
 		}
 	}
 
 	stats := &storage.HashtagStats{
 		Name:          hashtagInfo.Name,
 		UsageCount:    hashtagInfo.UsageCount,
-		UniqueUsers:   int64(uniqueUsers),
+		UniqueUsers:   int(uniqueUsers),
 		FirstSeen:     hashtagInfo.FirstSeen,
 		LastUsed:      hashtagInfo.LastUsed,
 		TrendingScore: float64(hashtagInfo.UsageCount) / time.Since(hashtagInfo.FirstSeen).Hours(),
-		TotalUses:     hashtagInfo.UsageCount,
+		TotalUses:     int64(hashtagInfo.UsageCount),
 		TotalAccounts: int64(uniqueUsers),
 		History:       historyEntries,
 	}
@@ -380,13 +380,13 @@ func (r *HashtagRepository) GetSuggestedHashtags(ctx context.Context, userID str
 		results[i] = &storage.HashtagSearchResult{
 			Name: hashtag.Name,
 			URL:  hashtag.URL,
-			History: []*storage.TrendingHashtag{
+			History: []storage.HashtagHistoryEntry{
 				{
-					Name:       hashtag.Name,
-					URL:        hashtag.URL,
-					UsageCount: hashtag.UsageCount,
-					LastUsed:   hashtag.LastUsed,
-					FirstSeen:  hashtag.FirstSeen,
+					Day:        time.Now().Format("2006-01-02"),
+					Date:       time.Now().Format("2006-01-02"),
+					Uses:       fmt.Sprintf("%d", hashtag.UsageCount),
+					UsageCount: fmt.Sprintf("%d", hashtag.UsageCount),
+					Accounts:   "1",
 				},
 			},
 		}

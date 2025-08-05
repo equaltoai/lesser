@@ -50,14 +50,14 @@ func TestHandleGetAIAnalysisLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
+			// mockStore := new(MockStorageAdapter) // Unused in current implementation
 
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:  mockStore,
+				repos:  &MockRepositoryStorage{},
 				logger: zap.NewNop(),
 			}
 
@@ -131,14 +131,14 @@ func TestHandleRequestAIAnalysisLift_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
+			// mockStore := new(MockStorageAdapter) // Unused in current implementation
 
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:  mockStore,
+				repos:  &MockRepositoryStorage{},
 				logger: zap.NewNop(),
 			}
 
@@ -185,14 +185,14 @@ func TestHandleGetAIStatsLift(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
+			// mockStore := new(MockStorageAdapter) // Unused in current implementation
 
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:  mockStore,
+				repos:  &MockRepositoryStorage{},
 				logger: zap.NewNop(),
 			}
 
@@ -222,14 +222,14 @@ func TestHandleGetAIStatsLift(t *testing.T) {
 }
 
 func TestHandleGetAISummaryLift(t *testing.T) {
-	mockStore := new(MockStorageAdapter)
+	// mockStore := new(MockStorageAdapter) // Unused in current implementation
 
 	handler := &Handler{
 		cfg: &config.Config{
 			JWTSecret: "test-secret",
 			Domain:    "test.example.com",
 		},
-		store:  mockStore,
+		repos:  &MockRepositoryStorage{},
 		logger: zap.NewNop(),
 	}
 
@@ -350,14 +350,14 @@ func TestAIHandlers_JSONParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
+			// mockStore := new(MockStorageAdapter) // Unused in current implementation
 
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:  mockStore,
+				repos:  &MockRepositoryStorage{},
 				logger: zap.NewNop(),
 			}
 

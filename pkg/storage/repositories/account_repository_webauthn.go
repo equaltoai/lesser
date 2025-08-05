@@ -177,7 +177,7 @@ func (r *AccountRepository) CreateWebAuthnChallenge(ctx context.Context, challen
 	model := &models.WebAuthnChallenge{
 		Challenge:   challenge.Challenge,
 		UserID:      challenge.UserID,
-		SessionData: challenge.SessionData,
+		SessionData: func() []byte { if data, ok := challenge.SessionData.([]byte); ok { return data } else { return nil } }(),
 		Type:        challenge.Type,
 		ExpiresAt:   challenge.ExpiresAt,
 	}

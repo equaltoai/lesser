@@ -15,7 +15,7 @@ import (
 // This endpoint is public and doesn't require authentication
 func (h *Handler) HandleGetCustomEmojisLift(ctx *lift.Context) error {
 	// Get all custom emojis
-	emojis, err := h.store.GetCustomEmojis(ctx.Context)
+	emojis, err := h.repos.Emoji().GetCustomEmojis(ctx.Context)
 	if err != nil {
 		h.logger.Error("failed to get custom emojis", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
@@ -89,7 +89,7 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Check admin role
-	user, err := h.store.GetUser(ctx.Context, username)
+	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
@@ -135,7 +135,7 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Create the emoji
-	if err := h.store.CreateCustomEmoji(ctx.Context, emoji); err != nil {
+	if err := h.repos.Emoji().CreateCustomEmoji(ctx.Context, emoji); err != nil {
 		if err == storage.ErrAlreadyExists {
 			return ctx.Status(422).JSON(map[string]string{"error": fmt.Sprintf("emoji with shortcode %s already exists", req.Shortcode)})
 		}
@@ -209,7 +209,7 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Check admin role
-	user, err := h.store.GetUser(ctx.Context, username)
+	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
@@ -219,7 +219,7 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Get existing emoji
-	emoji, err := h.store.GetCustomEmoji(ctx.Context, shortcode)
+	emoji, err := h.repos.Emoji().GetCustomEmoji(ctx.Context, shortcode)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			return ctx.Status(404).JSON(map[string]string{"error": "custom emoji not found"})
@@ -258,7 +258,7 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Update the emoji
-	if err := h.store.UpdateCustomEmoji(ctx.Context, emoji); err != nil {
+	if err := h.repos.Emoji().UpdateCustomEmoji(ctx.Context, emoji); err != nil {
 		h.logger.Error("failed to update custom emoji",
 			zap.String("shortcode", shortcode),
 			zap.Error(err))
@@ -329,7 +329,7 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Check admin role
-	user, err := h.store.GetUser(ctx.Context, username)
+	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
@@ -339,7 +339,7 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Delete the emoji
-	if err := h.store.DeleteCustomEmoji(ctx.Context, shortcode); err != nil {
+	if err := h.repos.Emoji().DeleteCustomEmoji(ctx.Context, shortcode); err != nil {
 		if err == storage.ErrNotFound {
 			return ctx.Status(404).JSON(map[string]string{"error": "custom emoji not found"})
 		}

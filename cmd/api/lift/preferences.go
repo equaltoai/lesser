@@ -54,7 +54,7 @@ func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
 	}
 
 	// Get user preferences from storage
-	prefs, err := h.store.GetUserPreferences(ctx.Context, username)
+	prefs, err := h.repos.User().GetUserPreferences(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get user preferences", zap.Error(err))
 		// Return defaults if preferences don't exist
@@ -141,7 +141,7 @@ func (h *Handler) HandleUpdatePreferencesLift(ctx *lift.Context) error {
 	}
 
 	// Get existing preferences
-	prefs, err := h.store.GetUserPreferences(ctx.Context, username)
+	prefs, err := h.repos.User().GetUserPreferences(ctx.Context, username)
 	if err != nil {
 		h.logger.Warn("failed to get existing preferences, using defaults", zap.Error(err))
 		// Start with defaults if preferences don't exist
@@ -192,7 +192,7 @@ func (h *Handler) HandleUpdatePreferencesLift(ctx *lift.Context) error {
 	}
 
 	// Save updated preferences
-	if err := h.store.UpdateUserPreferences(ctx.Context, username, prefs); err != nil {
+	if err := h.repos.User().UpdateUserPreferences(ctx.Context, username, prefs); err != nil {
 		h.logger.Error("failed to update user preferences", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
 	}

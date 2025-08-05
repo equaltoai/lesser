@@ -28,6 +28,12 @@ func configureLiftRoutes(app *lift.App) {
 		app.GET("/exports/{id}", lift.HandlerFunc(liftHandler.HandleGetExportStatusLift))
 		app.GET("/exports", lift.HandlerFunc(liftHandler.HandleListExportsLift))
 		
+		// Community Notes endpoints with native Lift implementation
+		app.POST("/notes", lift.HandlerFunc(liftHandler.HandleCreateNoteLift))
+		app.GET("/notes/{object_id}", lift.HandlerFunc(liftHandler.HandleGetNotesLift))
+		app.POST("/notes/{id}/vote", lift.HandlerFunc(liftHandler.HandleVoteNoteLift))
+		app.GET("/accounts/{id}/notes", lift.HandlerFunc(liftHandler.HandleGetUserNotesLift))
+		
 		// Add more Lift handlers here as they are implemented
 		// app.POST("/oauth/token", lift.HandlerFunc(liftHandler.HandleOAuthTokenLift))
 		// app.POST("/accounts", lift.HandlerFunc(liftHandler.HandleRegistrationLift))

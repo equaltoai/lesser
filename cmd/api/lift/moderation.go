@@ -102,7 +102,7 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 	}
 
 	// Get actor ID for the flagger
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -148,7 +148,7 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 		Updated:         event.Updated,
 		TTL:             event.TTL,
 	}
-	if err := h.store.CreateModerationEvent(ctx.Context, storageEvent); err != nil {
+	if err := h.repos.Moderation().CreateModerationEvent(ctx.Context, storageEvent); err != nil {
 		h.logger.Error("failed to create moderation event", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -195,7 +195,7 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.store.GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
 	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
@@ -215,7 +215,7 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 	cursor := ctx.Query("cursor")
 
 	// Get queue items from storage
-	queueItems, nextCursor, err := h.store.GetModerationQueuePaginated(ctx.Context, limit, cursor)
+	queueItems, nextCursor, err := h.repos.Moderation().GetModerationQueuePaginated(ctx.Context, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get moderation queue", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -236,7 +236,7 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 			Category:        string(item.Event.Category),
 			Severity:        parseSeverity(item.Event.Severity),
 			ConfidenceScore: item.Event.ConfidenceScore,
-			PriorityScore:   item.Priority,
+			PriorityScore:   float64(item.Priority),
 			ReportCount:     len(item.Event.Evidence),
 			Status:          "pending", // Default status
 			CreatedAt:       item.Event.Created.Format(time.RFC3339),
@@ -274,7 +274,7 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.store.GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
 	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
@@ -306,7 +306,7 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 	}
 
 	// Get reviewer's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -342,7 +342,7 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 		Confidence:  review.Confidence,
 		Created:     review.Created,
 	}
-	if err := h.store.AddModerationReview(ctx.Context, storageReview); err != nil {
+	if err := h.repos.Moderation().AddModerationReview(ctx.Context, storageReview); err != nil {
 		h.logger.Error("failed to add moderation review", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -384,7 +384,7 @@ func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.store.GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
 	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
@@ -402,7 +402,7 @@ func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
 	}
 
 	// Get moderation history
-	history, err := h.store.GetModerationHistory(ctx.Context, objectID)
+	history, err := h.repos.Moderation().GetModerationHistory(ctx.Context, objectID)
 	if err != nil {
 		h.logger.Error("failed to get moderation history", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -462,7 +462,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.store.GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
 	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
@@ -480,7 +480,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 	}
 
 	// Get event
-	event, err := h.store.GetModerationEvent(ctx.Context, eventID)
+	event, err := h.repos.Moderation().GetModerationEvent(ctx.Context, eventID)
 	if err != nil {
 		h.logger.Error("failed to get moderation event", zap.Error(err))
 		ctx.Status(http.StatusNotFound)
@@ -490,7 +490,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 	}
 
 	// Get reviews
-	reviews, err := h.store.GetModerationReviews(ctx.Context, eventID)
+	reviews, err := h.repos.Moderation().GetModerationReviews(ctx.Context, eventID)
 	if err != nil {
 		h.logger.Error("failed to get moderation reviews", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -500,14 +500,14 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 	}
 
 	// Get decision if exists
-	decision, _ := h.store.GetModerationDecision(ctx.Context, event.ObjectID)
+	decision, _ := h.repos.Moderation().GetModerationDecision(ctx.Context, event.ObjectID)
 
 	// Convert reviews to response format
 	reviewResponses := make([]*models.ConsensusReview, len(reviews))
 	for i, review := range reviews {
 		// Get reviewer trust score
 		trustScore := 0.5 // Default
-		score, err := h.store.GetTrustScore(ctx.Context, review.ReviewerID, string(trust.TrustCategoryContent))
+		score, err := h.repos.Trust().GetTrustScore(ctx.Context, review.ReviewerID, string(trust.TrustCategoryContent))
 		if err == nil && score != nil {
 			trustScore = score.Score
 		}
@@ -565,7 +565,7 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 	}
 
 	// Get actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -586,9 +586,9 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 
 	switch direction {
 	case "outgoing":
-		relationships, nextCursor, err = h.store.GetTrustRelationships(ctx.Context, actor.ID, 100, "")
+		relationships, nextCursor, err = h.repos.Trust().GetTrustRelationships(ctx.Context, actor.ID, 100, "")
 	case "incoming":
-		relationships, nextCursor, err = h.store.GetTrustedByRelationships(ctx.Context, actor.ID, 100, "")
+		relationships, nextCursor, err = h.repos.Trust().GetTrustedByRelationships(ctx.Context, actor.ID, 100, "")
 	default:
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
@@ -681,7 +681,7 @@ func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 	}
 
 	// Get truster's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -709,11 +709,11 @@ func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 	}
 
 	// Check if relationship exists
-	existing, err := h.store.GetTrustRelationship(ctx.Context, actor.ID, req.TrusteeID, req.Category)
+	existing, err := h.repos.Trust().GetTrustRelationship(ctx.Context, actor.ID, req.TrusteeID, req.Category)
 	if err == nil && existing != nil {
 		// Update existing
 		relationship.Created = existing.Created
-		if err := h.store.UpdateTrustRelationship(ctx.Context, relationship); err != nil {
+		if err := h.repos.Trust().UpdateTrustRelationship(ctx.Context, relationship); err != nil {
 			h.logger.Error("failed to update trust relationship", zap.Error(err))
 			ctx.Status(http.StatusInternalServerError)
 			return ctx.JSON(map[string]string{
@@ -723,7 +723,7 @@ func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 	} else {
 		// Create new
 		relationship.Created = time.Now()
-		if err := h.store.CreateTrustRelationship(ctx.Context, relationship); err != nil {
+		if err := h.repos.Trust().CreateTrustRelationship(ctx.Context, relationship); err != nil {
 			h.logger.Error("failed to create trust relationship", zap.Error(err))
 			ctx.Status(http.StatusInternalServerError)
 			return ctx.JSON(map[string]string{
@@ -761,7 +761,7 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.store.GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
 	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
@@ -794,7 +794,7 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 	validScores := 0
 
 	for _, category := range categories {
-		score, err := h.store.GetTrustScore(ctx.Context, actorID, string(category))
+		score, err := h.repos.Trust().GetTrustScore(ctx.Context, actorID, string(category))
 		if err == nil && score != nil {
 			scores[string(category)] = score.Score
 			overallScore += score.Score
@@ -811,7 +811,7 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 	}
 
 	// Get number of trusters
-	trusters, _, err := h.store.GetTrustedByRelationships(ctx.Context, actorID, 100, "")
+	trusters, _, err := h.repos.Trust().GetTrustedByRelationships(ctx.Context, actorID, 100, "")
 	trusterCount := 0
 	if err == nil {
 		trusterCount = len(trusters)
@@ -842,23 +842,21 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 func (h *Handler) getObjectPreview(ctx context.Context, objectID, objectType string) string {
 	switch objectType {
 	case "status":
-		statusInterface, err := h.store.GetStatus(ctx, objectID)
+		status, err := h.repos.Status().GetStatus(ctx, objectID)
 		if err != nil {
 			return ""
 		}
 
-		// Handle any type with safe type assertion
-		if statusMap, ok := statusInterface.(map[string]any); ok {
-			if content, ok := statusMap["Content"].(string); ok {
-				if len(content) > 100 {
-					return content[:100] + "..."
-				}
-				return content
+		// status is *models.Status, so we can access fields directly
+		if status != nil && status.Content != "" {
+			if len(status.Content) > 100 {
+				return status.Content[:100] + "..."
 			}
+			return status.Content
 		}
 		return ""
 	case "account":
-		user, err := h.store.GetUser(ctx, objectID)
+		user, err := h.repos.Account().GetUser(ctx, objectID)
 		if err != nil {
 			return ""
 		}

@@ -10,7 +10,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -30,7 +29,7 @@ type AccountRepository struct {
 	domain    string
 	
 	// Dependencies for cross-repository operations
-	storage   storage.Storage // For operations not yet migrated
+	// Note: storage.Storage dependency removed in Phase 5.6
 }
 
 // NewAccountRepository creates a new unified account repository
@@ -44,9 +43,9 @@ func NewAccountRepository(db core.DB, tableName string, domain string, logger *z
 	}
 }
 
-// SetStorage sets the storage dependency for operations not yet migrated
-func (r *AccountRepository) SetStorage(storage storage.Storage) {
-	r.storage = storage
+// SetStorage is deprecated - storage dependency removed in Phase 5.6
+func (r *AccountRepository) SetStorage(storage interface{}) {
+	// No-op: storage dependency removed
 }
 
 // ===== Core Account Operations =====
@@ -232,7 +231,7 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 	}
 	
 	username := actor.PreferredUsername
-	numericID := mastodon.GenerateNumericID(username)
+	numericID := common.GenerateNumericID(username)
 	
 	// Encrypt private key if available
 	encryptedKey := privateKey
@@ -404,6 +403,226 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 // isAccountNotFound checks if an error is a not found error
 func isAccountNotFound(err error) bool {
 	return errors.IsNotFound(err) || strings.Contains(err.Error(), "not found")
+}
+
+// ===== Account Pin Operations =====
+
+// CreateAccountPin creates a new account pin
+func (r *AccountRepository) CreateAccountPin(ctx context.Context, pin *storage.AccountPin) error {
+	// Create model
+	pinModel := &models.AccountPin{
+		Username:       pin.Username,
+		PinnedActorID:  pin.PinnedActorID,
+		PinnedUsername: pin.PinnedUsername,
+		CreatedAt:      pin.CreatedAt,
+	}
+	
+	// Set timestamp if not provided
+	if pinModel.CreatedAt.IsZero() {
+		pinModel.CreatedAt = time.Now()
+	}
+
+	// Create using DynamORM
+	if err := r.db.WithContext(ctx).Model(pinModel).Create(); err != nil {
+		if errors.IsConditionFailed(err) {
+			// Already pinned, not an error
+			return nil
+		}
+		return fmt.Errorf("failed to create account pin: %w", err)
+	}
+
+	r.logger.Info("created account pin",
+		zap.String("username", pin.Username),
+		zap.String("pinned_actor_id", pin.PinnedActorID))
+
+	return nil
+}
+
+// DeleteAccountPin removes an account pin
+func (r *AccountRepository) DeleteAccountPin(ctx context.Context, username, targetActorID string) error {
+	pin := &models.AccountPin{
+		Username:      username,
+		PinnedActorID: targetActorID,
+	}
+	pin.UpdateKeys()
+
+	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
+		Where("PK", "=", pin.PK).
+		Where("SK", "=", pin.SK).
+		Delete()
+
+	if err != nil {
+		return fmt.Errorf("failed to delete account pin: %w", err)
+	}
+
+	r.logger.Info("deleted account pin",
+		zap.String("username", username),
+		zap.String("target_actor_id", targetActorID))
+
+	return nil
+}
+
+// IsAccountPinned checks if an account is pinned by a user
+func (r *AccountRepository) IsAccountPinned(ctx context.Context, username, targetActorID string) (bool, error) {
+	var pin models.AccountPin
+	err := r.db.WithContext(ctx).Model(&pin).
+		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
+		Where("SK", "=", fmt.Sprintf("PIN#%s", targetActorID)).
+		First(&pin)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check if account is pinned: %w", err)
+	}
+
+	return true, nil
+}
+
+// ===== Account Note Operations =====
+
+// CreateAccountNote creates or updates a private note on an account
+func (r *AccountRepository) CreateAccountNote(ctx context.Context, note *storage.AccountNote) error {
+	// Create model
+	noteModel := &models.AccountNote{
+		Username:      note.Username,
+		TargetActorID: note.TargetActorID,
+		Note:          note.Note,
+		CreatedAt:     note.CreatedAt,
+		UpdatedAt:     note.UpdatedAt,
+	}
+	
+	// Set timestamps if not provided
+	now := time.Now()
+	if noteModel.CreatedAt.IsZero() {
+		noteModel.CreatedAt = now
+	}
+	if noteModel.UpdatedAt.IsZero() {
+		noteModel.UpdatedAt = now
+	}
+
+	// Use upsert pattern - try to get existing first
+	var existing models.AccountNote
+	noteModel.UpdateKeys()
+	err := r.db.WithContext(ctx).Model(&existing).
+		Where("PK", "=", noteModel.PK).
+		Where("SK", "=", noteModel.SK).
+		First(&existing)
+
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to check existing note: %w", err)
+	}
+
+	if errors.IsNotFound(err) {
+		// Create new note
+		if err := r.db.WithContext(ctx).Model(noteModel).Create(); err != nil {
+			return fmt.Errorf("failed to create account note: %w", err)
+		}
+	} else {
+		// Update existing note
+		existing.Note = noteModel.Note
+		existing.UpdatedAt = now
+		if err := r.db.WithContext(ctx).Model(&existing).Update(); err != nil {
+			return fmt.Errorf("failed to update account note: %w", err)
+		}
+	}
+
+	r.logger.Info("created/updated account note",
+		zap.String("username", note.Username),
+		zap.String("target_actor_id", note.TargetActorID))
+
+	return nil
+}
+
+// ===== Preference Operations =====
+
+// GetPreference retrieves a specific user preference
+func (r *AccountRepository) GetPreference(ctx context.Context, username, key string) (string, error) {
+	var pref models.UserPreference
+	err := r.db.WithContext(ctx).Model(&pref).
+		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", "=", fmt.Sprintf("PREFERENCE#%s", key)).
+		First(&pref)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return "", nil // Return empty string for not found, not an error
+		}
+		return "", fmt.Errorf("failed to get preference: %w", err)
+	}
+
+	return pref.Value, nil
+}
+
+// ===== Follow Request Operations =====
+
+// GetFollowRequestState retrieves the state of a follow request
+func (r *AccountRepository) GetFollowRequestState(ctx context.Context, requesterID, targetID string) (string, error) {
+	var request models.FollowRequestState
+	err := r.db.WithContext(ctx).Model(&request).
+		Where("PK", "=", fmt.Sprintf("FOLLOW_REQUEST#%s", requesterID)).
+		Where("SK", "=", fmt.Sprintf("TARGET#%s", targetID)).
+		First(&request)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return "", nil // Return empty string for not found, not an error
+		}
+		return "", fmt.Errorf("failed to get follow request state: %w", err)
+	}
+
+	return request.State, nil
+}
+
+// ===== Domain Block Operations =====
+
+// IsBlockedDomain checks if a domain is blocked by a user
+func (r *AccountRepository) IsBlockedDomain(ctx context.Context, userID, domain string) (bool, error) {
+	var block models.UserDomainBlock
+	err := r.db.WithContext(ctx).Model(&block).
+		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("SK", "=", fmt.Sprintf("DOMAIN_BLOCK#%s", domain)).
+		First(&block)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check if domain is blocked: %w", err)
+	}
+
+	return true, nil
+}
+
+// ===== Field Verification Operations =====
+
+// GetFieldVerification retrieves field verification info for a user
+func (r *AccountRepository) GetFieldVerification(ctx context.Context, username, fieldName string) (*storage.ActorField, error) {
+	var verification models.FieldVerification
+	err := r.db.WithContext(ctx).Model(&verification).
+		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", "=", fmt.Sprintf("FIELD_VERIFICATION#%s", fieldName)).
+		First(&verification)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil // Return nil for not found, not an error
+		}
+		return nil, fmt.Errorf("failed to get field verification: %w", err)
+	}
+
+	// Check if verification has expired
+	if verification.IsExpired() {
+		return nil, nil
+	}
+
+	// Convert to storage.ActorField
+	return &storage.ActorField{
+		Name:       verification.FieldName,
+		Value:      verification.FieldValue,
+		VerifiedAt: verification.VerifiedAt,
+	}, nil
 }
 
 // Note: This is the core file. Additional methods will be organized into:

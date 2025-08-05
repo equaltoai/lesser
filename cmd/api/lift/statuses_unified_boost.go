@@ -69,7 +69,7 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -131,19 +131,23 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 		Published: *announceActivity.Published,
 	}
 
-	if err := h.store.CreateAnnounce(ctx.Context, announce); err != nil {
+	if err := h.repos.Social().CreateAnnounce(ctx.Context, announce); err != nil {
 		h.logger.Error("failed to create announce", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, announceActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, announceActivity); err != nil {
 		h.logger.Error("failed to create announce activity", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Record engagement for trending
-	if err := h.store.RecordStatusEngagement(ctx.Context, objectID, "boost", actor.ID); err != nil {
+	engagementData := &storage.EngagementData{
+		Shares:      1,
+		UniqueUsers: 1,
+	}
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "boost", objectID, time.Now().Format("2006-01-02"), engagementData); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
@@ -151,14 +155,14 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 	}
 
 	// Get announce count for the object
-	announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
 
 	// Return a simplified status response
 	resp := models.FavouriteResponse{
 		ID:           statusID,
 		CreatedAt:    announceActivity.Published.Format("2006-01-02T15:04:05.000Z"),
 		Reblogged:    true,
-		ReblogsCount: announceCount,
+		ReblogsCount: int(announceCount),
 		URI:          objectID,
 		URL:          objectID,
 		Content:      "", // Would be populated from object
@@ -239,7 +243,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 	}
 
 	// Create the Note object
-	if err := h.store.CreateObject(ctx.Context, note); err != nil {
+	if err := h.repos.Object().CreateObject(ctx.Context, note); err != nil {
 		h.logger.Error("failed to create quote note object", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -253,13 +257,13 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 		Timestamp:    now,
 	}
 
-	if err := h.store.CreateQuoteRelationship(ctx.Context, quoteRelationship); err != nil {
+	if err := h.repos.Object().CreateQuoteRelationship(ctx.Context, quoteRelationship); err != nil {
 		h.logger.Error("failed to create quote relationship", zap.Error(err))
 		// Don't fail the request - the note is already created
 	}
 
 	// Increment reblog count on the quoted status (unified counting)
-	if err := h.store.IncrementReblogCount(ctx.Context, objectID); err != nil {
+	if err := h.repos.Like().IncrementReblogCount(ctx.Context, objectID); err != nil {
 		h.logger.Warn("failed to increment reblog count for quote",
 			zap.String("quoted_status_id", objectID),
 			zap.Error(err))
@@ -280,18 +284,22 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, createActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, createActivity); err != nil {
 		h.logger.Error("failed to create activity", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Fan out the post to timelines
-	if err := h.store.FanOutPost(ctx.Context, createActivity); err != nil {
+	if err := h.repos.User().FanOutPost(ctx.Context, createActivity); err != nil {
 		h.logger.Error("failed to fan out quote boost to timelines", zap.Error(err))
 	}
 
 	// Record engagement for trending
-	if err := h.store.RecordStatusEngagement(ctx.Context, objectID, "quote", actor.ID); err != nil {
+	engagementData := &storage.EngagementData{
+		Shares:      1,
+		UniqueUsers: 1,
+	}
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "quote", objectID, time.Now().Format("2006-01-02"), engagementData); err != nil {
 		h.logger.Warn("failed to record quote engagement",
 			zap.String("quoted_status_id", objectID),
 			zap.Error(err))
@@ -299,9 +307,9 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 
 	// Get the quoted status to include in response
 	var quotedStatus *models.Status
-	if quotedObj, getErr := h.store.GetObject(ctx.Context, objectID); getErr == nil {
+	if quotedObj, getErr := h.repos.Object().GetObject(ctx.Context, objectID); getErr == nil {
 		// Properly convert quotedObj to models.Status
-		quotedActor, err := h.store.GetActor(ctx.Context, h.extractActorIDFromObject(quotedObj))
+		quotedActor, err := h.repos.Actor().GetActor(ctx.Context, h.extractActorIDFromObject(quotedObj))
 		if err == nil {
 			status := h.converter.ObjectToStatus(quotedObj, quotedActor)
 			quotedStatus = &status
@@ -430,7 +438,7 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -445,7 +453,7 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 
 	// First, try to find and undo a traditional announce/boost
 	foundAnnounce := false
-	if announce, err := h.store.GetAnnounce(ctx.Context, actor.ID, objectID); err == nil {
+	if announce, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, objectID); err == nil {
 		foundAnnounce = true
 		
 		// Create an Undo Announce activity
@@ -467,13 +475,13 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 		undoActivity.Published = &now
 
 		// Delete the Announce record from dedicated storage
-		if err := h.store.DeleteAnnounce(ctx.Context, actor.ID, objectID); err != nil {
+		if err := h.repos.Social().DeleteAnnounce(ctx.Context, actor.ID, objectID); err != nil {
 			h.logger.Error("failed to delete announce", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
 
 		// Store the activity in the outbox (this will trigger delivery)
-		if err := h.store.CreateActivity(ctx.Context, undoActivity); err != nil {
+		if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
 			h.logger.Error("failed to create undo announce activity", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
@@ -486,13 +494,13 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 
 	// Next, try to find and delete quote boosts for this status
 	foundQuoteBoost := false
-	if quoteRelationships, _, err := h.store.GetQuotesForNote(ctx.Context, objectID, 100, ""); err == nil {
+	if quoteRelationships, _, err := h.repos.Object().GetQuotesForNote(ctx.Context, objectID, 100, ""); err == nil {
 		for _, quote := range quoteRelationships {
 			if quote.QuoterID == actor.ID && quote.TargetNoteID == objectID {
 				foundQuoteBoost = true
 				
 				// Withdraw the quote (marks as withdrawn rather than deleting)
-				if err := h.store.WithdrawQuote(ctx.Context, quote.QuoterNoteID); err != nil {
+				if err := h.repos.Object().WithdrawQuote(ctx.Context, quote.QuoterNoteID); err != nil {
 					h.logger.Error("failed to withdraw quote", zap.Error(err))
 					// Continue with other operations
 				}
@@ -516,13 +524,13 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 				undoActivity.Published = &now
 
 				// Store the undo activity
-				if err := h.store.CreateActivity(ctx.Context, undoActivity); err != nil {
+				if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
 					h.logger.Error("failed to create undo quote activity", zap.Error(err))
 					// Continue with response
 				}
 
 				// Delete the quote note object
-				if err := h.store.DeleteObject(ctx.Context, fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), quote.QuoterNoteID)); err != nil {
+				if err := h.repos.Object().DeleteObject(ctx.Context, fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), quote.QuoterNoteID)); err != nil {
 					h.logger.Warn("failed to delete quote note object",
 						zap.String("note_id", quote.QuoterNoteID),
 						zap.Error(err))
@@ -545,14 +553,14 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 	}
 
 	// Get announce count for the object
-	announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
 
 	// Return a simplified status response
 	resp := models.FavouriteResponse{
 		ID:           statusID,
 		CreatedAt:    time.Now().Format("2006-01-02T15:04:05.000Z"),
 		Reblogged:    false,
-		ReblogsCount: announceCount,
+		ReblogsCount: int(announceCount),
 		URI:          objectID,
 		URL:          objectID,
 		Content:      "", // Would be populated from object

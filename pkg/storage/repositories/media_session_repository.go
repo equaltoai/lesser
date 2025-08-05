@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/media/streaming"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -42,7 +42,7 @@ func (r *MediaSessionRepository) SetSessionTTL(ttl time.Duration) {
 }
 
 // CreateSession creates a new streaming session
-func (r *MediaSessionRepository) CreateSession(ctx context.Context, session *streaming.StreamingSession) error {
+func (r *MediaSessionRepository) CreateSession(ctx context.Context, session *types.StreamingSession) error {
 	model := &models.MediaSession{
 		SessionID:        session.SessionID,
 		UserID:           session.UserID,
@@ -79,7 +79,7 @@ func (r *MediaSessionRepository) CreateSession(ctx context.Context, session *str
 }
 
 // GetSession retrieves a streaming session
-func (r *MediaSessionRepository) GetSession(ctx context.Context, sessionID string) (*streaming.StreamingSession, error) {
+func (r *MediaSessionRepository) GetSession(ctx context.Context, sessionID string) (*types.StreamingSession, error) {
 	var model models.MediaSession
 
 	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
@@ -106,7 +106,7 @@ func (r *MediaSessionRepository) GetSession(ctx context.Context, sessionID strin
 }
 
 // UpdateSession updates a streaming session
-func (r *MediaSessionRepository) UpdateSession(ctx context.Context, session *streaming.StreamingSession) error {
+func (r *MediaSessionRepository) UpdateSession(ctx context.Context, session *types.StreamingSession) error {
 	now := time.Now()
 	
 	// Get the existing session first
@@ -196,7 +196,7 @@ func (r *MediaSessionRepository) EndSession(ctx context.Context, sessionID strin
 }
 
 // GetUserSessions retrieves active sessions for a user
-func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID string) ([]*streaming.StreamingSession, error) {
+func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID string) ([]*types.StreamingSession, error) {
 	var sessionModels []models.MediaSession
 
 	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
@@ -207,7 +207,7 @@ func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID str
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return []*streaming.StreamingSession{}, nil
+			return []*types.StreamingSession{}, nil
 		}
 		r.logger.Error("failed to query user sessions",
 			zap.String("userID", userID),
@@ -220,7 +220,7 @@ func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID str
 		r.costTracker.TrackDynamoRead(len(sessionModels))
 	}
 
-	sessions := make([]*streaming.StreamingSession, 0, len(sessionModels))
+	sessions := make([]*types.StreamingSession, 0, len(sessionModels))
 	for _, model := range sessionModels {
 		sessions = append(sessions, r.modelToStreamingSession(&model))
 	}
@@ -229,7 +229,7 @@ func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID str
 }
 
 // GetMediaSessions retrieves sessions for a specific media item
-func (r *MediaSessionRepository) GetMediaSessions(ctx context.Context, mediaID string, limit int32) ([]*streaming.StreamingSession, error) {
+func (r *MediaSessionRepository) GetMediaSessions(ctx context.Context, mediaID string, limit int32) ([]*types.StreamingSession, error) {
 	var sessionModels []models.MediaSession
 
 	query := r.db.WithContext(ctx).Model(&models.MediaSession{}).
@@ -246,7 +246,7 @@ func (r *MediaSessionRepository) GetMediaSessions(ctx context.Context, mediaID s
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return []*streaming.StreamingSession{}, nil
+			return []*types.StreamingSession{}, nil
 		}
 		r.logger.Error("failed to scan media sessions",
 			zap.String("mediaID", mediaID),
@@ -259,7 +259,7 @@ func (r *MediaSessionRepository) GetMediaSessions(ctx context.Context, mediaID s
 		r.costTracker.TrackDynamoRead(len(sessionModels))
 	}
 
-	sessions := make([]*streaming.StreamingSession, 0, len(sessionModels))
+	sessions := make([]*types.StreamingSession, 0, len(sessionModels))
 	for _, model := range sessionModels {
 		sessions = append(sessions, r.modelToStreamingSession(&model))
 	}
@@ -306,7 +306,7 @@ func (r *MediaSessionRepository) CleanupExpiredSessions(ctx context.Context, max
 }
 
 // trackQualityChange creates a quality change record for analytics
-func (r *MediaSessionRepository) trackQualityChange(ctx context.Context, session *streaming.StreamingSession) {
+func (r *MediaSessionRepository) trackQualityChange(ctx context.Context, session *types.StreamingSession) {
 	qualityChange := &models.QualityChange{
 		SessionID: session.SessionID,
 		Quality:   string(session.CurrentQuality),
@@ -323,14 +323,14 @@ func (r *MediaSessionRepository) trackQualityChange(ctx context.Context, session
 	}
 }
 
-// modelToStreamingSession converts a DynamORM model to streaming.StreamingSession
-func (r *MediaSessionRepository) modelToStreamingSession(model *models.MediaSession) *streaming.StreamingSession {
-	return &streaming.StreamingSession{
+// modelToStreamingSession converts a DynamORM model to types.StreamingSession
+func (r *MediaSessionRepository) modelToStreamingSession(model *models.MediaSession) *types.StreamingSession {
+	return &types.StreamingSession{
 		SessionID:        model.SessionID,
 		UserID:           model.UserID,
 		MediaID:          model.MediaID,
-		Format:           streaming.MediaFormat(model.Format),
-		CurrentQuality:   streaming.Quality(model.CurrentQuality),
+		Format:           types.MediaFormat(model.Format),
+		CurrentQuality:   types.Quality(model.CurrentQuality),
 		StartTime:        model.StartTime,
 		LastSegmentIndex: model.LastSegmentIndex,
 		BytesTransferred: model.BytesTransferred,

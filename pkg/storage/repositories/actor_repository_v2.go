@@ -11,7 +11,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -49,7 +48,7 @@ func (r *ActorRepositoryV2) CreateActor(ctx context.Context, actor *activitypub.
 	}
 
 	username := actor.PreferredUsername
-	numericID := mastodon.GenerateNumericID(username)
+	numericID := common.GenerateNumericID(username)
 
 	// Encrypt private key if encryption is available
 	encryptedKey := privateKey

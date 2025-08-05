@@ -16,16 +16,16 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // AuthHandler handles authentication requests using Lift
 type AuthHandler struct {
-	store       storage.Storage
+	repos       core.RepositoryStorage
 	logger      *zap.Logger
 	cfg         *config.Config
 	authSvc     *auth.AuthService
@@ -73,32 +73,11 @@ func NewAuthHandler() (*AuthHandler, error) {
 		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
 	}
 
-	// Create storage adapter and repository factory
-	store := dynamorm.NewStorageAdapter(db, tableName, logger)
+	// Create repository factory
 	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
 	}
-	
-	// Initialize repositories
-	store.SetActorRepository(repositories.NewActorRepository(db, tableName, logger))
-	store.SetObjectRepository(repositories.NewObjectRepository(db, tableName, cfg.Domain, logger))
-	store.SetActivityRepository(repositories.NewActivityRepository(db, tableName, logger))
-	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
-	store.SetTimelineRepository(repositories.NewTimelineRepository(db, tableName, logger))
-	store.SetNotificationRepository(repositories.NewNotificationRepository(db, tableName, logger))
-	store.SetLikeRepository(repositories.NewLikeRepository(db, tableName, logger))
-	store.SetModerationRepository(repositories.NewModerationRepository(db, tableName, logger))
-	store.SetListRepository(repositories.NewListRepository(db, tableName, logger))
-	store.SetMediaRepository(repositories.NewMediaRepository(db, tableName, logger))
-	store.SetPollRepository(repositories.NewPollRepository(db, tableName, logger))
-	store.SetHashtagRepository(repositories.NewHashtagRepository(db, tableName, logger, cfg.Domain))
-	store.SetTrendingRepository(repositories.NewTrendingRepository(db, logger))
-	store.SetScheduledStatusRepository(repositories.NewScheduledStatusRepository(db, tableName, logger))
-	store.SetAnnouncementRepository(repositories.NewAnnouncementRepository(db, tableName, logger))
-	store.SetDomainBlockRepository(repositories.NewDomainBlockRepository(db, tableName, logger))
-	store.SetAccountRepository(repositories.NewAccountRepository(db, tableName, cfg.Domain, logger))
-	store.SetRelationshipRepository(repositories.NewRelationshipRepository(db, tableName, logger))
 
 	// Initialize comprehensive auth service using repositories
 	authSvc, err := auth.NewAuthService(repos)
@@ -126,7 +105,7 @@ func NewAuthHandler() (*AuthHandler, error) {
 	}
 
 	return &AuthHandler{
-		store:       store,
+		repos:       repos,
 		logger:      logger,
 		cfg:         cfg,
 		authSvc:     authSvc,
@@ -359,7 +338,7 @@ func (ah *AuthHandler) handleRevoke(ctx *lift.Context) error {
 	}
 
 	// Record the token revocation activity
-	if err := ah.store.RecordActivity(ctx.Context, "token_revocation", token[:16], time.Now()); err != nil {
+	if err := ah.repos.Activity().RecordActivity(ctx.Context, "token_revocation", token[:16], time.Now()); err != nil {
 		ah.logger.Error("failed to record token revocation activity",
 			zap.String("token_prefix", token[:8]+"..."),
 			zap.Error(err),
@@ -491,12 +470,12 @@ func (ah *AuthHandler) saveAuthCode(ctx context.Context, authCode *AuthCode) err
 		Scopes:        strings.Split(authCode.Scope, " "),
 	}
 
-	return ah.store.CreateAuthorizationCode(ctx, storageAuthCode)
+	return ah.repos.Account().CreateAuthorizationCode(ctx, storageAuthCode)
 }
 
 // getAuthCode retrieves and validates an authorization code
 func (ah *AuthHandler) getAuthCode(ctx context.Context, code string) (*AuthCode, error) {
-	storageAuthCode, err := ah.store.GetAuthorizationCode(ctx, code)
+	storageAuthCode, err := ah.repos.Account().GetAuthorizationCode(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("auth code not found: %w", err)
 	}
@@ -518,7 +497,7 @@ func (ah *AuthHandler) getAuthCode(ctx context.Context, code string) (*AuthCode,
 
 // deleteAuthCode removes an authorization code
 func (ah *AuthHandler) deleteAuthCode(ctx context.Context, code string) error {
-	return ah.store.DeleteAuthorizationCode(ctx, code)
+	return ah.repos.Account().DeleteAuthorizationCode(ctx, code)
 }
 
 // getUserFromContext extracts user ID from the current session/context
@@ -530,7 +509,7 @@ func (ah *AuthHandler) getUserFromContext(ctx *lift.Context) string {
 	}
 
 	// Get session from storage directly
-	session, err := ah.store.GetSession(ctx.Context, sessionID)
+	session, err := ah.repos.Account().GetSession(ctx.Context, sessionID)
 	if err != nil {
 		ah.logger.Debug("failed to get session", zap.Error(err))
 		return ""

@@ -8,7 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
@@ -19,12 +19,12 @@ type RateLimitStorage interface {
 }
 
 type RateLimiter struct {
-	storage storage.Storage
+	storage core.RepositoryStorage
 	logger  *zap.Logger
 }
 
 
-func NewRateLimiter(storage storage.Storage) *RateLimiter {
+func NewRateLimiter(storage core.RepositoryStorage) *RateLimiter {
 	return &RateLimiter{
 		storage: storage,
 		logger:  common.Logger(),
@@ -32,13 +32,13 @@ func NewRateLimiter(storage storage.Storage) *RateLimiter {
 }
 
 func (rl *RateLimiter) Check(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error {
-	return rl.storage.CheckAPIRateLimit(ctx, userID, endpoint, limit, window)
+	return rl.storage.RateLimit().CheckAPIRateLimit(ctx, userID, endpoint, limit, window)
 }
 
 
 // GetLimitInfo returns current limit info for headers
 func (rl *RateLimiter) GetLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
-	return rl.storage.GetAPIRateLimitInfo(ctx, userID, endpoint, limit, window)
+	return rl.storage.RateLimit().GetAPIRateLimitInfo(ctx, userID, endpoint, limit, window)
 }
 
 // RateLimitMiddleware creates a middleware for rate limiting
