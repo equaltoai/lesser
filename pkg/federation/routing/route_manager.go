@@ -9,9 +9,8 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/federation/types"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	// "github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
@@ -24,8 +23,8 @@ type Manager struct {
 	instanceRepo        FederationInstanceRepository
 	instanceHealthRepo  interface{} // repositories.InstanceHealthRepository
 	circuitBreakerRepo  interface{} // repositories.CircuitBreakerRepository
-	routeOptimRepo      dynamorm.RouteOptimizationRepository
-	routingMetricsRepo  dynamorm.RoutingMetricsRepository
+	routeOptimRepo      interface{} // RouteOptimizationRepository - not yet implemented
+	routingMetricsRepo  *repositories.RoutingMetricsRepository
 
 	// Components
 	registry       *InstanceRegistry
@@ -55,8 +54,8 @@ func NewManager(
 	instanceRepo FederationInstanceRepository,
 	instanceHealthRepo interface{}, // repositories.InstanceHealthRepository,
 	circuitBreakerRepo interface{}, // repositories.CircuitBreakerRepository,
-	routeOptimRepo dynamorm.RouteOptimizationRepository,
-	routingMetricsRepo dynamorm.RoutingMetricsRepository,
+	routeOptimRepo interface{}, // RouteOptimizationRepository - not yet implemented
+	routingMetricsRepo *repositories.RoutingMetricsRepository,
 	logger *zap.Logger,
 	config *ManagerConfig,
 ) *Manager {
@@ -97,10 +96,13 @@ func NewManager(
 	// Create components with injected repositories
 	registry := NewInstanceRegistry(instanceRepo, logger)
 	
-	// Create SmartRouteOptimizer using the adapter pattern
-	// Since we need to bridge the interface to the concrete repository, 
-	// we create an adapter that implements the required methods
-	optimizer := NewSmartRouteOptimizerFromInterface(routeOptimRepo, logger, config.OptimizerConfig)
+	// Create SmartRouteOptimizer
+	// TODO: Implement RouteOptimizationRepository and use it here
+	var optimizer *SmartRouteOptimizer
+	if routeOptimRepo != nil {
+		// For now, we can't use the interface until it's properly implemented
+		// optimizer = NewSmartRouteOptimizerFromInterface(routeOptimRepo, logger, config.OptimizerConfig)
+	}
 	// TODO: Update constructors to accept repositories
 	circuitBreaker := &DistributedCircuitBreaker{} // NewDistributedCircuitBreaker(circuitBreakerRepo, logger, config.CircuitBreakerConfig)
 	healthChecker := &InstanceHealthChecker{}      // NewHealthChecker(instanceHealthRepo, logger, config.RoutingConfig)
