@@ -84,12 +84,25 @@ func (r *DomainBlockRepository) GetUserDomainBlocks(ctx context.Context, usernam
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination with DynamORM
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
 
 	var blocks []models.UserDomainBlock
 	err := query.All(&blocks)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to query domain blocks: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(blocks) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = blocks[limit-1].SK
+		blocks = blocks[:limit] // Trim to requested limit
 	}
 
 	// Extract domains from the blocks
@@ -98,8 +111,7 @@ func (r *DomainBlockRepository) GetUserDomainBlocks(ctx context.Context, usernam
 		domains = append(domains, block.Domain)
 	}
 
-	// For now, return empty cursor - pagination would need custom implementation
-	return domains, "", nil
+	return domains, nextCursor, nil
 }
 
 // IsBlockedDomain checks if a domain is blocked by a user
@@ -257,12 +269,25 @@ func (r *DomainBlockRepository) ListInstanceDomainBlocks(ctx context.Context, li
 		OrderBy("GSI1SK", "DESC"). // Newest first
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination with DynamORM
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
 
 	var modelBlocks []models.InstanceDomainBlock
 	err := query.All(&modelBlocks)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to list domain blocks: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(modelBlocks) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = modelBlocks[limit-1].GSI1SK
+		modelBlocks = modelBlocks[:limit] // Trim to requested limit
 	}
 
 	// Convert to storage type
@@ -284,8 +309,7 @@ func (r *DomainBlockRepository) ListInstanceDomainBlocks(ctx context.Context, li
 		})
 	}
 
-	// For now, return empty cursor - pagination would need custom implementation
-	return blocks, "", nil
+	return blocks, nextCursor, nil
 }
 
 // UpdateInstanceDomainBlock updates an existing domain block
@@ -472,12 +496,25 @@ func (r *DomainBlockRepository) GetEmailDomainBlocks(ctx context.Context, limit 
 		OrderBy("GSI1SK", "DESC"). // Newest first
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination with DynamORM
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
 
 	var modelBlocks []models.EmailDomainBlock
 	err := query.All(&modelBlocks)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to query email domain blocks: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(modelBlocks) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = modelBlocks[limit-1].GSI1SK
+		modelBlocks = modelBlocks[:limit] // Trim to requested limit
 	}
 
 	// Convert to storage type
@@ -491,8 +528,7 @@ func (r *DomainBlockRepository) GetEmailDomainBlocks(ctx context.Context, limit 
 		})
 	}
 
-	// For now, return empty cursor - pagination would need custom implementation
-	return blocks, "", nil
+	return blocks, nextCursor, nil
 }
 
 // DeleteEmailDomainBlock deletes an email domain block
@@ -549,12 +585,25 @@ func (r *DomainBlockRepository) GetDomainAllows(ctx context.Context, limit int, 
 		OrderBy("GSI1SK", "DESC"). // Newest first
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination with DynamORM
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
 
 	var modelAllows []models.DomainAllow
 	err := query.All(&modelAllows)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to query domain allows: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(modelAllows) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = modelAllows[limit-1].GSI1SK
+		modelAllows = modelAllows[:limit] // Trim to requested limit
 	}
 
 	// Convert to storage type
@@ -568,8 +617,7 @@ func (r *DomainBlockRepository) GetDomainAllows(ctx context.Context, limit int, 
 		})
 	}
 
-	// For now, return empty cursor - pagination would need custom implementation
-	return allows, "", nil
+	return allows, nextCursor, nil
 }
 
 // CreateDomainAllow adds a domain to the allowlist

@@ -151,7 +151,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 	}
 
 	// Update in storage
-	if err := sm.repos.Account().UpdateSession(ctx, session); err != nil {
+	if err := sm.repos.Account().UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt); err != nil {
 		return "", fmt.Errorf("failed to update session: %w", err)
 	}
 
@@ -173,7 +173,7 @@ func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID, 
 		session.ExpiresAt = time.Now().Add(SessionDuration)
 	}
 
-	return sm.repos.Account().UpdateSession(ctx, session)
+	return sm.repos.Account().UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt)
 }
 
 // RevokeSession revokes a specific session

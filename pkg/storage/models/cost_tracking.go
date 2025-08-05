@@ -119,6 +119,7 @@ type DynamoDBTableCostStats struct {
 	WriteCapacityUnits float64 `json:"write_capacity_units"`
 	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
 	TotalCostDollars    float64 `json:"total_cost_dollars"`
+	UniqueUsers      int64   `json:"unique_users"`      // Number of unique users for this table
 }
 
 // DynamoDBServiceCostStats represents cost statistics for a specific service
@@ -128,6 +129,7 @@ type DynamoDBServiceCostStats struct {
 	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
 	TotalCostDollars    float64 `json:"total_cost_dollars"`
 	AverageCostPerOp    float64 `json:"average_cost_per_op"`
+	DataTransferBytes   int64   `json:"data_transfer_bytes"` // Data transfer for this service
 }
 
 // TableName returns the DynamoDB table name

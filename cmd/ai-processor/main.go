@@ -126,10 +126,15 @@ func (ap *AIProcessor) isAnalyzableRecord(record events.DynamoDBEventRecord) boo
 func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Content, error) {
 	// Unmarshal the stream record into a content model
 	var item struct {
-		PK      string `dynamorm:"pk"`
-		Type    string `json:"type"`
-		Content string `json:"content"`
-		ActorID string `json:"actor_id"`
+		PK         string `dynamorm:"pk"`
+		Type       string `json:"type"`
+		Content    string `json:"content"`
+		ActorID    string `json:"actor_id"`
+		Attachment []struct {
+			Type      string `json:"type"`
+			MediaType string `json:"mediaType"`
+			URL       string `json:"url"`
+		} `json:"attachment"`
 	}
 
 	if err := stream.UnmarshalItem(record, &item); err != nil {
@@ -149,11 +154,19 @@ func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Co
 		return nil, fmt.Errorf("not an analyzable type: %s", item.Type)
 	}
 
+	// Extract media URLs from attachments
+	var mediaURLs []string
+	for _, att := range item.Attachment {
+		if att.URL != "" && (att.Type == "Image" || att.Type == "Video" || att.Type == "Document") {
+			mediaURLs = append(mediaURLs, att.URL)
+		}
+	}
+
 	return &ai.Content{
 		ID:        objectID,
 		Type:      item.Type,
 		Text:      item.Content,
-		MediaURLs: []string{}, // TODO: Extract media URLs if present
+		MediaURLs: mediaURLs,
 		AuthorID:  item.ActorID,
 		CreatedAt: time.Now(),
 	}, nil

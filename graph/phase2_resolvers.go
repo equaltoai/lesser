@@ -256,23 +256,14 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 	// Track the query
 	r.CostTracker.TrackDynamoRead(1)
 
-	// TODO: Implement GetCostProjections method in CostTrackingRepository
-	// For now, create mock data
 	periodStr := string(period)
-	r.Logger.Debug("GetCostProjections not yet implemented, using mock data",
+	r.Logger.Debug("getting cost projections from repository",
 		zap.String("period", periodStr))
 	
-	// Create mock projections data
-	projections := &storage.CostProjection{
-		CurrentCost:   0.0,
-		ProjectedCost: 0.0,
-		Variance:      0.0,
-		TopDrivers:    []storage.CostDriver{},
-		Recommendations: []string{"Cost tracking implementation needed"},
-	}
-	var err error
+	// Get cost projections from the repository
+	projections, err := r.Storage.Cost().GetCostProjections(ctx, periodStr)
 	if err != nil {
-		r.Logger.Error("Failed to get cost projections",
+		r.Logger.Error("failed to get cost projections",
 			zap.String("period", periodStr),
 			zap.Error(err))
 
@@ -814,9 +805,8 @@ func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id strin
 		existingPattern.Active = *input.Active
 	}
 
-	// TODO: Save updated pattern - implement UpdatePattern in ModerationRepository
-	// For now, just log the update
-	r.Logger.Info("Mock pattern update", zap.String("id", id))
+	// Save the updated pattern
+	err = r.Storage.Moderation().UpdateModerationPattern(ctx, existingPattern)
 	if err != nil {
 		r.Logger.Error("Failed to update moderation pattern",
 			zap.String("id", id),
@@ -845,10 +835,8 @@ func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id strin
 	// Track the mutation
 	r.CostTracker.TrackDynamoWrite(1)
 
-	// TODO: Implement DeletePattern in ModerationRepository
-	// For now, just log the deletion
-	r.Logger.Info("Mock pattern deletion", zap.String("id", id))
-	var err error
+	// Delete the pattern
+	err := r.Storage.Moderation().DeleteModerationPattern(ctx, id)
 	if err != nil {
 		r.Logger.Error("Failed to delete moderation pattern",
 			zap.String("id", id),

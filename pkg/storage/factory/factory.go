@@ -54,6 +54,7 @@ type RepositoryFactory struct {
 	aiRepo                    *repositories.AIRepository
 	exportRepo                *repositories.ExportRepository
 	importRepo                *repositories.ImportRepository
+	dlqRepo                   *repositories.DLQRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -118,6 +119,7 @@ func (f *RepositoryFactory) initializeRepositories() error {
 	f.aiRepo = repositories.NewAIRepository(f.db, f.tableName, f.logger)
 	f.exportRepo = repositories.NewExportRepository(f.db, f.tableName, f.logger)
 	f.importRepo = repositories.NewImportRepository(f.db, f.tableName, f.logger)
+	f.dlqRepo = repositories.NewDLQRepository(f.db, f.tableName, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -277,6 +279,10 @@ func (f *RepositoryFactory) Export() *repositories.ExportRepository {
 
 func (f *RepositoryFactory) Import() *repositories.ImportRepository {
 	return f.importRepo
+}
+
+func (f *RepositoryFactory) DLQ() *repositories.DLQRepository {
+	return f.dlqRepo
 }
 
 // Additional repositories can be added here as needed

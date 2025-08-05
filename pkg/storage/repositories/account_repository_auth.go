@@ -466,113 +466,811 @@ func extractUsernameFromUserID(userID string) string {
 
 // IsRateLimited checks if a key is currently rate limited
 func (r *AccountRepository) IsRateLimited(ctx context.Context, key string) (bool, time.Time, error) {
-	return false, time.Time{}, fmt.Errorf("IsRateLimited not implemented")
+	// Check if there's an active lockout
+	var lockout models.RateLimitLockout
+	err := r.db.WithContext(ctx).Model(&models.RateLimitLockout{}).
+		Where("PK", "=", fmt.Sprintf("RATELIMIT#%s", key)).
+		Where("SK", "=", "LOCKOUT").
+		First(&lockout)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, time.Time{}, nil
+		}
+		return false, time.Time{}, fmt.Errorf("failed to check rate limit: %w", err)
+	}
+
+	// Check if lockout is still active
+	if time.Now().Before(lockout.UnlockTime) {
+		return true, lockout.UnlockTime, nil
+	}
+
+	return false, time.Time{}, nil
 }
 
 // RecordLoginAttempt records a login attempt for rate limiting
 func (r *AccountRepository) RecordLoginAttempt(ctx context.Context, key string, success bool) error {
-	return fmt.Errorf("RecordLoginAttempt not implemented")
+	// Create a new login attempt record
+	attempt := models.NewLoginAttempt(key, success)
+
+	err := r.db.WithContext(ctx).Model(attempt).Create()
+	if err != nil {
+		r.logger.Error("failed to record login attempt",
+			zap.String("key", key),
+			zap.Bool("success", success),
+			zap.Error(err))
+		return fmt.Errorf("failed to record login attempt: %w", err)
+	}
+
+	r.logger.Debug("recorded login attempt",
+		zap.String("key", key),
+		zap.Bool("success", success))
+
+	return nil
 }
 
 // ClearLoginAttempts clears all login attempts for a key
 func (r *AccountRepository) ClearLoginAttempts(ctx context.Context, key string) error {
-	return fmt.Errorf("ClearLoginAttempts not implemented")
+	// Query all attempts for this key
+	var attempts []models.LoginAttempt
+	query := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
+		Where("PK", "=", fmt.Sprintf("RATELIMIT#%s", key))
+	err := query.Scan(&attempts)
+
+	if err != nil {
+		return fmt.Errorf("failed to query login attempts: %w", err)
+	}
+
+	// Delete all items
+	for _, attempt := range attempts {
+		err := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
+			Where("PK", "=", attempt.PK).
+			Where("SK", "=", attempt.SK).
+			Delete()
+		if err != nil {
+			r.logger.Error("failed to delete login attempt",
+				zap.String("pk", attempt.PK),
+				zap.String("sk", attempt.SK),
+				zap.Error(err))
+		}
+	}
+
+	// Also clear any lockout record
+	err = r.db.WithContext(ctx).Model(&models.RateLimitLockout{}).
+		Where("PK", "=", fmt.Sprintf("RATELIMIT#%s", key)).
+		Where("SK", "=", "LOCKOUT").
+		Delete()
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("failed to delete lockout record",
+			zap.String("key", key),
+			zap.Error(err))
+	}
+
+	r.logger.Debug("cleared login attempts", zap.String("key", key))
+	return nil
 }
 
 // GetLoginAttemptCount gets the number of login attempts since a given time
 func (r *AccountRepository) GetLoginAttemptCount(ctx context.Context, key string, since time.Time) (int, error) {
-	return 0, fmt.Errorf("GetLoginAttemptCount not implemented")
+	// Query attempts since the given time
+	var attempts []models.LoginAttempt
+	query := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
+		Where("PK", "=", fmt.Sprintf("RATELIMIT#%s", key)).
+		Where("SK", ">", since.Format(time.RFC3339Nano))
+	err := query.Scan(&attempts)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count login attempts: %w", err)
+	}
+
+	return len(attempts), nil
 }
 
 // ===== Additional Session Methods =====
 
 // GetSession retrieves a session by ID
 func (r *AccountRepository) GetSession(ctx context.Context, sessionID string) (*storage.Session, error) {
-	return nil, fmt.Errorf("GetSession not implemented")
+	var session models.Session
+	
+	err := r.db.WithContext(ctx).Model(&session).
+		Where("PK", "=", fmt.Sprintf("session#%s", sessionID)).
+		Where("SK", "=", fmt.Sprintf("session#%s", sessionID)).
+		First(&session)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, common.SessionNotFoundError{SessionID: sessionID}
+		}
+		r.logger.Error("failed to get session",
+			zap.String("sessionID", sessionID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+	
+	// Convert to storage type
+	expiresAt := time.Unix(session.ExpiresAt, 0)
+	storageSession := &storage.Session{
+		ID:           session.SessionID,
+		SessionID:    session.SessionID,
+		Username:     extractUsernameFromUserID(session.UserID),
+		CreatedAt:    session.CreatedAt,
+		ExpiresAt:    expiresAt,
+		RefreshToken: session.RefreshToken,
+		LastActivity: session.LastUsedAt,
+		UserAgent:    session.UserAgent,
+		IPAddress:    session.IPAddress,
+		DeviceID:     session.DeviceID,
+		AuthMethod:   "", // Not stored in new model
+		// Handle previous refresh token if needed
+		PreviousRefreshToken: "", // Would need to be added to model if required
+		TokenRotatedAt:       time.Time{},
+	}
+	
+	return storageSession, nil
 }
 
-// UpdateSession updates an existing session
-func (r *AccountRepository) UpdateSession(ctx context.Context, session *storage.Session) error {
-	return fmt.Errorf("UpdateSession not implemented")
+// UpdateSession updates an existing session with specific fields
+func (r *AccountRepository) UpdateSession(ctx context.Context, sessionID, refreshToken, ipAddress string, lastActivity, expiresAt time.Time) error {
+	// Get the existing session first to find which record to update
+	var session models.Session
+	err := r.db.WithContext(ctx).Model(&session).
+		Where("PK", "=", fmt.Sprintf("session#%s", sessionID)).
+		Where("SK", "=", fmt.Sprintf("session#%s", sessionID)).
+		First(&session)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return common.SessionNotFoundError{SessionID: sessionID}
+		}
+		r.logger.Error("failed to get session for update",
+			zap.String("sessionID", sessionID),
+			zap.Error(err))
+		return fmt.Errorf("failed to get session for update: %w", err)
+	}
+	
+	// Update the session fields
+	session.RefreshToken = refreshToken
+	session.IPAddress = ipAddress
+	session.LastUsedAt = lastActivity
+	session.UpdatedAt = time.Now()
+	session.ExpiresAt = expiresAt.Unix()
+	
+	// Update GSI keys since refresh token changed
+	session.GSI2PK = "TOKEN#" + hashTokenForGSI(session.AccessToken) // Keep access token GSI the same
+	// Note: Legacy used REFRESHTOKEN# prefix in GSI1, but our model uses TOKEN# for access tokens
+	// We may need to adapt this if refresh token lookup is needed via GSI
+	
+	err = r.db.WithContext(ctx).Model(&session).Update()
+	if err != nil {
+		r.logger.Error("failed to update session",
+			zap.String("sessionID", sessionID),
+			zap.Error(err))
+		return fmt.Errorf("failed to update session: %w", err)
+	}
+	
+	r.logger.Debug("session updated successfully",
+		zap.String("sessionID", sessionID))
+	
+	return nil
 }
 
 // DeleteSession deletes a session
 func (r *AccountRepository) DeleteSession(ctx context.Context, sessionID string) error {
-	return fmt.Errorf("DeleteSession not implemented")
+	err := r.db.WithContext(ctx).Model(&models.Session{}).
+		Where("PK", "=", fmt.Sprintf("session#%s", sessionID)).
+		Where("SK", "=", fmt.Sprintf("session#%s", sessionID)).
+		Delete()
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return common.SessionNotFoundError{SessionID: sessionID}
+		}
+		r.logger.Error("failed to delete session",
+			zap.String("sessionID", sessionID),
+			zap.Error(err))
+		return fmt.Errorf("failed to delete session: %w", err)
+	}
+	
+	r.logger.Debug("session deleted successfully",
+		zap.String("sessionID", sessionID))
+	
+	return nil
 }
 
 // GetSessionByRefreshToken finds a session by refresh token
 func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refreshToken string) (*storage.Session, error) {
-	return nil, fmt.Errorf("GetSessionByRefreshToken not implemented")
+	// The current model doesn't have a GSI for refresh tokens like the legacy did
+	// We need to scan for sessions with matching refresh token
+	// In production, you might want to add a GSI for refresh token lookup
+	var sessions []models.Session
+	
+	err := r.db.WithContext(ctx).Model(&models.Session{}).
+		Where("RefreshToken", "=", refreshToken).
+		Limit(1).
+		All(&sessions)
+	
+	if err != nil {
+		r.logger.Error("failed to query session by refresh token",
+			zap.String("refreshToken", refreshToken[:minInt(len(refreshToken), 10)]+"..."), // Log only first 10 chars for security
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query session by refresh token: %w", err)
+	}
+	
+	if len(sessions) == 0 {
+		// Check if this might be a previous refresh token (for grace period)
+		// This would require scanning all sessions, which is expensive
+		// For now, just return not found
+		return nil, common.SessionNotFoundError{SessionID: "refresh:" + refreshToken[:minInt(len(refreshToken), 10)]}
+	}
+	
+	session := sessions[0]
+	
+	// Convert to storage type
+	expiresAt := time.Unix(session.ExpiresAt, 0)
+	storageSession := &storage.Session{
+		ID:           session.SessionID,
+		SessionID:    session.SessionID,
+		Username:     extractUsernameFromUserID(session.UserID),
+		CreatedAt:    session.CreatedAt,
+		ExpiresAt:    expiresAt,
+		RefreshToken: session.RefreshToken,
+		LastActivity: session.LastUsedAt,
+		UserAgent:    session.UserAgent,
+		IPAddress:    session.IPAddress,
+		DeviceID:     session.DeviceID,
+		AuthMethod:   "", // Not stored in new model
+		PreviousRefreshToken: "", // Would need to be added to model if required
+		TokenRotatedAt:       time.Time{},
+	}
+	
+	return storageSession, nil
+}
+
+// minInt returns the minimum of two integers
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// hashTokenForGSI creates a hash of the token for GSI indexing
+func hashTokenForGSI(token string) string {
+	// In a real implementation, you'd use a proper hash function
+	// For now, just take the first 16 characters
+	if len(token) > 16 {
+		return token[:16]
+	}
+	return token
 }
 
 // ===== Device Management Methods =====
 
 // CreateDevice creates a new device record
 func (r *AccountRepository) CreateDevice(ctx context.Context, device *storage.Device) error {
-	return fmt.Errorf("CreateDevice not implemented")
+	if device == nil {
+		return fmt.Errorf("device cannot be nil")
+	}
+
+	// Convert storage.Device to models.Device
+	modelDevice := &models.Device{
+		DeviceID:      device.DeviceID,
+		Username:      device.Username,
+		DeviceName:    device.DeviceName,
+		DeviceType:    device.DeviceType,
+		LastIPAddress: device.LastIPAddress,
+		LastUserAgent: device.LastUserAgent,
+		CreatedAt:     device.CreatedAt,
+		LastSeenAt:    device.LastSeenAt,
+		TrustLevel:    device.TrustLevel,
+		Platform:      "", // Not in storage.Device
+		AppVersion:    "", // Not in storage.Device
+		Location:      "", // Not in storage.Device
+		Active:        true, // Default to active
+	}
+
+	// Ensure we have the required fields
+	if modelDevice.TrustLevel == "" {
+		modelDevice.TrustLevel = "untrusted" // Default trust level
+	}
+
+	// Update the keys using the model's method
+	modelDevice.UpdateKeys()
+
+	err := r.db.WithContext(ctx).Model(modelDevice).Create()
+	if err != nil {
+		r.logger.Error("failed to create device",
+			zap.String("username", device.Username),
+			zap.String("deviceID", device.DeviceID),
+			zap.Error(err))
+		return fmt.Errorf("failed to create device: %w", err)
+	}
+
+	r.logger.Debug("device created successfully",
+		zap.String("username", device.Username),
+		zap.String("deviceID", device.DeviceID))
+
+	return nil
 }
 
 // GetDevice retrieves a device by ID
 func (r *AccountRepository) GetDevice(ctx context.Context, deviceID string) (*storage.Device, error) {
-	return nil, fmt.Errorf("GetDevice not implemented")
+	// Legacy implementation used inefficient scan, but we need to find by deviceID
+	// Since we don't have the username, we need to scan or use a GSI
+	// Using scan to match legacy behavior exactly
+	var devices []models.Device
+
+	err := r.db.WithContext(ctx).Model(&models.Device{}).
+		Where("DeviceID", "=", deviceID).
+		Where("SK", "BEGINS_WITH", "DEVICE#").
+		Limit(1).
+		All(&devices)
+
+	if err != nil {
+		r.logger.Error("failed to scan for device",
+			zap.String("deviceID", deviceID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to scan for device: %w", err)
+	}
+
+	if len(devices) == 0 {
+		return nil, fmt.Errorf("device not found")
+	}
+
+	device := devices[0]
+
+	// Convert models.Device to storage.Device
+	storageDevice := &storage.Device{
+		ID:                device.DeviceID, // Map DeviceID to ID
+		DeviceID:          device.DeviceID,
+		Username:          device.Username,
+		Endpoint:          "", // Not in models.Device
+		PublicKey:         "", // Not in models.Device
+		AuthKey:           "", // Not in models.Device
+		ServerKey:         "", // Not in models.Device
+		CreatedAt:         device.CreatedAt,
+		UpdatedAt:         device.CreatedAt, // Use CreatedAt since we don't have UpdatedAt
+		LastSeenAt:        device.LastSeenAt,
+		UserAgent:         device.LastUserAgent,
+		NotificationTypes: []string{}, // Not in models.Device
+		DeviceName:        device.DeviceName,
+		DeviceType:        device.DeviceType,
+		LastIPAddress:     device.LastIPAddress,
+		LastUserAgent:     device.LastUserAgent,
+		TrustLevel:        device.TrustLevel,
+	}
+
+	return storageDevice, nil
 }
 
 // UpdateDevice updates an existing device
 func (r *AccountRepository) UpdateDevice(ctx context.Context, device *storage.Device) error {
-	return fmt.Errorf("UpdateDevice not implemented")
+	if device == nil {
+		return fmt.Errorf("device cannot be nil")
+	}
+
+	// Get the existing device first
+	var existingDevice models.Device
+	err := r.db.WithContext(ctx).Model(&existingDevice).
+		Where("PK", "=", fmt.Sprintf("USER#%s", device.Username)).
+		Where("SK", "=", fmt.Sprintf("DEVICE#%s", device.DeviceID)).
+		First(&existingDevice)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("device not found")
+		}
+		r.logger.Error("failed to get device for update",
+			zap.String("username", device.Username),
+			zap.String("deviceID", device.DeviceID),
+			zap.Error(err))
+		return fmt.Errorf("failed to get device for update: %w", err)
+	}
+
+	// Update fields that legacy UpdateDevice modified
+	existingDevice.TrustLevel = device.TrustLevel
+	existingDevice.LastSeenAt = device.LastSeenAt
+	existingDevice.LastIPAddress = device.LastIPAddress
+	existingDevice.LastUserAgent = device.LastUserAgent
+
+	// Update GSI keys since LastSeenAt changed
+	existingDevice.UpdateKeys()
+
+	err = r.db.WithContext(ctx).Model(&existingDevice).Update()
+	if err != nil {
+		r.logger.Error("failed to update device",
+			zap.String("username", device.Username),
+			zap.String("deviceID", device.DeviceID),
+			zap.Error(err))
+		return fmt.Errorf("failed to update device: %w", err)
+	}
+
+	r.logger.Debug("device updated successfully",
+		zap.String("username", device.Username),
+		zap.String("deviceID", device.DeviceID))
+
+	return nil
 }
 
 // GetUserDevices gets all devices for a user
 func (r *AccountRepository) GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error) {
-	return nil, fmt.Errorf("GetUserDevices not implemented")
+	var devices []models.Device
+
+	err := r.db.WithContext(ctx).Model(&models.Device{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", "BEGINS_WITH", "DEVICE#").
+		All(&devices)
+
+	if err != nil {
+		r.logger.Error("failed to query user devices",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query user devices: %w", err)
+	}
+
+	// Convert models.Device slice to storage.Device slice
+	result := make([]*storage.Device, len(devices))
+	for i, device := range devices {
+		result[i] = &storage.Device{
+			ID:                device.DeviceID, // Map DeviceID to ID
+			DeviceID:          device.DeviceID,
+			Username:          device.Username,
+			Endpoint:          "", // Not in models.Device
+			PublicKey:         "", // Not in models.Device
+			AuthKey:           "", // Not in models.Device
+			ServerKey:         "", // Not in models.Device
+			CreatedAt:         device.CreatedAt,
+			UpdatedAt:         device.CreatedAt, // Use CreatedAt since we don't have UpdatedAt
+			LastSeenAt:        device.LastSeenAt,
+			UserAgent:         device.LastUserAgent,
+			NotificationTypes: []string{}, // Not in models.Device
+			DeviceName:        device.DeviceName,
+			DeviceType:        device.DeviceType,
+			LastIPAddress:     device.LastIPAddress,
+			LastUserAgent:     device.LastUserAgent,
+			TrustLevel:        device.TrustLevel,
+		}
+	}
+
+	r.logger.Debug("retrieved user devices",
+		zap.String("username", username),
+		zap.Int("count", len(devices)))
+
+	return result, nil
 }
 
 // CreateSessionFromStruct creates a new user session from storage.Session struct
 func (r *AccountRepository) CreateSessionFromStruct(ctx context.Context, session *storage.Session) error {
-	return fmt.Errorf("CreateSessionFromStruct not implemented - use existing CreateSession with parameters")
+	if session == nil {
+		return fmt.Errorf("session cannot be nil")
+	}
+	
+	// Create a models.Session from the storage.Session
+	modelSession := &models.Session{
+		SessionID:    session.SessionID,
+		UserID:       fmt.Sprintf("USER#%s", session.Username),
+		AccessToken:  session.RefreshToken, // Using RefreshToken as AccessToken for now
+		RefreshToken: session.RefreshToken,
+		CreatedAt:    session.CreatedAt,
+		UpdatedAt:    time.Now(),
+		LastUsedAt:   session.LastActivity,
+		ExpiresAt:    session.ExpiresAt.Unix(),
+		IPAddress:    session.IPAddress,
+		UserAgent:    session.UserAgent,
+		DeviceID:     session.DeviceID,
+		IsRevoked:    false,
+	}
+	
+	// Set scopes if needed (empty for now since not in storage.Session)
+	modelSession.Scopes = []string{}
+	
+	err := r.db.WithContext(ctx).Model(modelSession).Create()
+	if err != nil {
+		r.logger.Error("failed to create session from struct",
+			zap.String("sessionID", session.SessionID),
+			zap.String("username", session.Username),
+			zap.Error(err))
+		return fmt.Errorf("failed to create session from struct: %w", err)
+	}
+	
+	r.logger.Debug("session created from struct successfully",
+		zap.String("sessionID", session.SessionID),
+		zap.String("username", session.Username))
+	
+	return nil
 }
 
 // ===== Recovery Token Methods =====
 
 // StoreRecoveryToken stores a recovery token
 func (r *AccountRepository) StoreRecoveryToken(ctx context.Context, key string, data map[string]interface{}) error {
-	return fmt.Errorf("StoreRecoveryToken not implemented")
+	// Create recovery token model
+	recoveryToken := &models.RecoveryToken{
+		PK:        key, // Use key directly as PK
+		Data:      data,
+		CreatedAt: time.Now(),
+	}
+	
+	// Update keys to set SK and TTL
+	recoveryToken.UpdateKeys()
+	
+	// Store in DynamoDB
+	err := r.db.WithContext(ctx).Model(recoveryToken).Create()
+	if err != nil {
+		r.logger.Error("failed to store recovery token",
+			zap.String("key", key),
+			zap.Error(err))
+		return err
+	}
+	
+	r.logger.Debug("stored recovery token", zap.String("key", key))
+	return nil
 }
 
 // GetRecoveryToken retrieves a recovery token
 func (r *AccountRepository) GetRecoveryToken(ctx context.Context, key string) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("GetRecoveryToken not implemented")
+	var recoveryToken models.RecoveryToken
+	
+	// Query by PK and SK
+	err := r.db.WithContext(ctx).Model(&models.RecoveryToken{}).
+		Where("PK", "=", key).
+		Where("SK", "=", "TOKEN").
+		First(&recoveryToken)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Return nil for not found (matching legacy behavior)
+			r.logger.Debug("recovery token not found", zap.String("key", key))
+			return nil, nil
+		}
+		r.logger.Error("failed to get recovery token",
+			zap.String("key", key),
+			zap.Error(err))
+		return nil, err
+	}
+	
+	r.logger.Debug("retrieved recovery token", zap.String("key", key))
+	return recoveryToken.Data, nil
 }
 
 // DeleteRecoveryToken deletes a recovery token
 func (r *AccountRepository) DeleteRecoveryToken(ctx context.Context, key string) error {
-	return fmt.Errorf("DeleteRecoveryToken not implemented")
+	// Delete by PK and SK
+	err := r.db.WithContext(ctx).Model(&models.RecoveryToken{}).
+		Where("PK", "=", key).
+		Where("SK", "=", "TOKEN").
+		Delete()
+	
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("failed to delete recovery token",
+			zap.String("key", key),
+			zap.Error(err))
+		return err
+	}
+	
+	r.logger.Debug("deleted recovery token", zap.String("key", key))
+	return nil
 }
 
 // ===== WebAuthn Methods =====
 
 // StoreWebAuthnChallenge stores a WebAuthn challenge
 func (r *AccountRepository) StoreWebAuthnChallenge(ctx context.Context, challenge *storage.WebAuthnChallenge) error {
-	return fmt.Errorf("StoreWebAuthnChallenge not implemented")
+	if challenge == nil {
+		return fmt.Errorf("challenge cannot be nil")
+	}
+
+	// Convert storage.WebAuthnChallenge to models.WebAuthnChallenge
+	modelChallenge := &models.WebAuthnChallenge{
+		Challenge:   challenge.Challenge,
+		UserID:      challenge.UserID,
+		ExpiresAt:   challenge.ExpiresAt,
+		Type:        challenge.Type,
+	}
+
+	// Convert SessionData to bytes if needed
+	if challenge.SessionData != nil {
+		// In real implementation, you'd properly serialize this
+		// For now, assuming it's already serialized or can be converted
+		if sessionBytes, ok := challenge.SessionData.([]byte); ok {
+			modelChallenge.SessionData = sessionBytes
+		}
+	}
+
+	// Call BeforeCreate to set keys and TTL
+	err := modelChallenge.BeforeCreate()
+	if err != nil {
+		return fmt.Errorf("failed to prepare challenge: %w", err)
+	}
+
+	// Store in DynamoDB
+	err = r.db.WithContext(ctx).Model(modelChallenge).Create()
+	if err != nil {
+		r.logger.Error("failed to store WebAuthn challenge",
+			zap.String("challenge", challenge.Challenge),
+			zap.String("userID", challenge.UserID),
+			zap.Error(err))
+		return fmt.Errorf("failed to store WebAuthn challenge: %w", err)
+	}
+
+	r.logger.Debug("WebAuthn challenge stored successfully",
+		zap.String("challenge", challenge.Challenge),
+		zap.String("userID", challenge.UserID))
+
+	return nil
 }
 
 // StoreWebAuthnCredential stores a WebAuthn credential
 func (r *AccountRepository) StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
-	return fmt.Errorf("StoreWebAuthnCredential not implemented")
+	if credential == nil {
+		return fmt.Errorf("credential cannot be nil")
+	}
+
+	// Convert storage.WebAuthnCredential to models.WebAuthnCredential
+	modelCredential := &models.WebAuthnCredential{
+		ID:              credential.ID,
+		UserID:          credential.UserID,
+		PublicKey:       credential.PublicKey,
+		AttestationType: credential.AttestationType,
+		AAGUID:          credential.AAGUID,
+		SignCount:       credential.SignCount,
+		CloneWarning:    credential.CloneWarning,
+		BackupEligible:  credential.BackupEligible,
+		BackupState:     credential.BackupState,
+		CreatedAt:       credential.CreatedAt,
+		LastUsedAt:      credential.LastUsedAt,
+		Name:            credential.Name,
+	}
+
+	// Use LastUsed if LastUsedAt is zero
+	if modelCredential.LastUsedAt.IsZero() && !credential.LastUsed.IsZero() {
+		modelCredential.LastUsedAt = credential.LastUsed
+	}
+
+	// Call BeforeCreate to set keys
+	err := modelCredential.BeforeCreate()
+	if err != nil {
+		return fmt.Errorf("failed to prepare credential: %w", err)
+	}
+
+	// Store in DynamoDB
+	err = r.db.WithContext(ctx).Model(modelCredential).Create()
+	if err != nil {
+		r.logger.Error("failed to store WebAuthn credential",
+			zap.String("credentialID", credential.ID),
+			zap.String("userID", credential.UserID),
+			zap.Error(err))
+		return fmt.Errorf("failed to store WebAuthn credential: %w", err)
+	}
+
+	r.logger.Debug("WebAuthn credential stored successfully",
+		zap.String("credentialID", credential.ID),
+		zap.String("userID", credential.UserID))
+
+	return nil
 }
 
 // UpdateWebAuthnCredential updates a WebAuthn credential
-func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
-	return fmt.Errorf("UpdateWebAuthnCredential not implemented")
+func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, credentialID string, signCount uint32) error {
+	if credentialID == "" {
+		return fmt.Errorf("credentialID cannot be empty")
+	}
+
+	// We need to find the credential first since we don't have the username
+	// This requires scanning, which matches the legacy inefficient approach
+	var credentials []models.WebAuthnCredential
+
+	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).Where("ID", "=", credentialID).All(&credentials)
+	if err != nil {
+		r.logger.Error("failed to find WebAuthn credential for update",
+			zap.String("credentialID", credentialID),
+			zap.Error(err))
+		return fmt.Errorf("failed to find WebAuthn credential: %w", err)
+	}
+
+	if len(credentials) == 0 {
+		return fmt.Errorf("WebAuthn credential not found")
+	}
+
+	// Update the credential
+	credential := credentials[0]
+	credential.SignCount = signCount
+	credential.LastUsedAt = time.Now()
+
+	err = r.db.WithContext(ctx).Model(&credential).Update()
+	if err != nil {
+		r.logger.Error("failed to update WebAuthn credential",
+			zap.String("credentialID", credentialID),
+			zap.Uint32("signCount", signCount),
+			zap.Error(err))
+		return fmt.Errorf("failed to update WebAuthn credential: %w", err)
+	}
+
+	r.logger.Debug("WebAuthn credential updated successfully",
+		zap.String("credentialID", credentialID),
+		zap.Uint32("signCount", signCount))
+
+	return nil
 }
 
 // UpdateWalletLastUsed updates when a wallet was last used
 func (r *AccountRepository) UpdateWalletLastUsed(ctx context.Context, username, address string) error {
-	return fmt.Errorf("UpdateWalletLastUsed not implemented")
+	if username == "" || address == "" {
+		return fmt.Errorf("username and address cannot be empty")
+	}
+
+	// Get the existing wallet credential
+	var wallet models.WalletCredential
+	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).Where("PK", "=", fmt.Sprintf("USER#%s", username)).Where("SK", "=", fmt.Sprintf("WALLET#%s", strings.ToLower(address))).First(&wallet)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("wallet credential not found")
+		}
+		r.logger.Error("failed to get wallet credential for update",
+			zap.String("username", username),
+			zap.String("address", address),
+			zap.Error(err))
+		return fmt.Errorf("failed to get wallet credential: %w", err)
+	}
+
+	// Update the last used timestamp
+	wallet.LastUsed = time.Now()
+
+	err = r.db.WithContext(ctx).Model(&wallet).Update()
+	if err != nil {
+		r.logger.Error("failed to update wallet last used",
+			zap.String("username", username),
+			zap.String("address", address),
+			zap.Error(err))
+		return fmt.Errorf("failed to update wallet last used: %w", err)
+	}
+
+	r.logger.Debug("wallet last used updated successfully",
+		zap.String("username", username),
+		zap.String("address", address))
+
+	return nil
 }
 
 // GetLinkedProviders gets all linked OAuth providers for a user
 func (r *AccountRepository) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
-	return []string{}, fmt.Errorf("GetLinkedProviders not implemented")
+	var providerAccounts []models.ProviderAccount
+	
+	// Query GSI2 to get all provider accounts for the user
+	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
+		Index("user-providers-index").
+		Where("GSI2PK", "=", fmt.Sprintf("USER_PROVIDERS#%s", username)).
+		All(&providerAccounts)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// User has no linked providers
+			return []string{}, nil
+		}
+		r.logger.Error("failed to get linked providers",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get linked providers: %w", err)
+	}
+	
+	// Extract unique provider names from active accounts
+	providerSet := make(map[string]bool)
+	for _, account := range providerAccounts {
+		if account.IsActive {
+			providerSet[account.Provider] = true
+		}
+	}
+	
+	// Convert set to slice
+	providers := make([]string, 0, len(providerSet))
+	for provider := range providerSet {
+		providers = append(providers, provider)
+	}
+	
+	r.logger.Debug("retrieved linked providers",
+		zap.String("username", username),
+		zap.Strings("providers", providers))
+	
+	return providers, nil
 }

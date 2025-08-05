@@ -32,6 +32,7 @@ import (
 type ImportProcessor struct {
 	db               core.DB
 	importRepo       *repositories.ImportRepository
+	costTrackingRepo *repositories.CostTrackingRepository
 	s3Client         *s3.Client
 	repos            storageCore.RepositoryStorage
 	cfg              *config.Config
@@ -77,6 +78,7 @@ func init() {
 
 	// Initialize repositories
 	importRepo := repositories.NewImportRepository(db, cfg.DynamoTableName, logger)
+	costTrackingRepo := repositories.NewCostTrackingRepository(db, cfg.DynamoTableName, logger)
 
 	// Get configuration from environment
 	bucketName := os.Getenv("S3_BUCKET_NAME")
@@ -91,13 +93,14 @@ func init() {
 
 	// Create processor instance
 	processor = &ImportProcessor{
-		db:         db,
-		importRepo: importRepo,
-		repos:      repos,
-		cfg:        cfg,
-		logger:     logger,
-		bucketName: bucketName,
-		baseURL:    baseURL,
+		db:               db,
+		importRepo:       importRepo,
+		costTrackingRepo: costTrackingRepo,
+		repos:            repos,
+		cfg:              cfg,
+		logger:           logger,
+		bucketName:       bucketName,
+		baseURL:          baseURL,
 	}
 }
 
@@ -164,6 +167,58 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 		zap.String("username", event.Username),
 		zap.String("type", event.Type))
 
+	// Initialize cost tracking
+	startTime := time.Now()
+	importCostTracking := &models.ImportCostTracking{
+		ImportID:  event.ImportID,
+		Username:  event.Username,
+		Type:      event.Type,
+		Mode:      event.Mode,
+		Status:    "processing",
+		StartedAt: startTime,
+	}
+
+	// Track the import job completion
+	defer func() {
+		if importCostTracking.CompletedAt == nil {
+			completedAt := time.Now()
+			importCostTracking.CompletedAt = &completedAt
+		}
+		
+		// Calculate Lambda execution cost
+		importCostTracking.LambdaDurationMs = time.Since(startTime).Milliseconds()
+		importCostTracking.LambdaExecutionCost = p.calculateLambdaCost(importCostTracking.LambdaDurationMs)
+		
+		// Calculate total cost
+		importCostTracking.CalculateTotalCost()
+		
+		// Save cost tracking record
+		if err := p.costTrackingRepo.Create(ctx, &models.DynamoDBCostRecord{
+			Table:               p.cfg.DynamoTableName,
+			OperationType:       "ImportProcessing",
+			EstimatedCostDollars: importCostTracking.GetTotalCostDollars(),
+			TotalCostMicroCents: importCostTracking.TotalCostMicroCents,
+			ServiceName:         "import-processor",
+			RequestDuration:     time.Since(startTime).Milliseconds(),
+			Properties: map[string]interface{}{
+				"username":   event.Username,
+				"import_id":  event.ImportID,
+			},
+		}); err != nil {
+			p.logger.Error("failed to save import cost tracking",
+				zap.String("import_id", event.ImportID),
+				zap.Error(err))
+		}
+		
+		// Update budget usage with actual import costs
+		if err := p.importRepo.UpdateBudgetUsage(ctx, event.Username, "daily", importCostTracking.TotalCostMicroCents, 0); err != nil {
+			p.logger.Warn("failed to update budget usage",
+				zap.String("import_id", event.ImportID),
+				zap.String("username", event.Username),
+				zap.Error(err))
+		}
+	}()
+
 	// Update job status to processing
 	if err := p.importRepo.UpdateImportStatus(ctx, event.ImportID, "processing", nil, ""); err != nil {
 		p.logger.Warn("failed to update import status", zap.Error(err))
@@ -174,6 +229,13 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 	if err != nil {
 		return fmt.Errorf("failed to download import file: %w", err)
 	}
+	
+	// Track S3 download costs
+	importCostTracking.FileSize = int64(len(fileData))
+	importCostTracking.S3GetRequests = 1
+	importCostTracking.S3GetRequestCost = p.calculateS3GetCost(1)
+	importCostTracking.DataTransferBytes = int64(len(fileData))
+	importCostTracking.S3DataTransferCost = p.calculateS3DataTransferCost(int64(len(fileData)))
 
 	// Detect format
 	format := detectFormat(fileData)
@@ -184,11 +246,11 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 
 	switch format {
 	case "csv":
-		result, err = p.processCSVImport(ctx, event, fileData)
+		result, err = p.processCSVImport(ctx, event, fileData, importCostTracking)
 	case "json":
-		result, err = p.processJSONImport(ctx, event, fileData)
+		result, err = p.processJSONImport(ctx, event, fileData, importCostTracking)
 	case "activitypub":
-		result, err = p.processActivityPubImport(ctx, event, fileData)
+		result, err = p.processActivityPubImport(ctx, event, fileData, importCostTracking)
 	default:
 		return fmt.Errorf("unsupported import format: %s", format)
 	}
@@ -196,6 +258,14 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 	if err != nil {
 		return fmt.Errorf("failed to process import: %w", err)
 	}
+	
+	// Update cost tracking with final metrics
+	importCostTracking.RecordCount = int64(result.Success + result.Skipped + result.Failed)
+	importCostTracking.ProcessedCount = int64(result.Success + result.Failed)
+	importCostTracking.SuccessCount = int64(result.Success)
+	importCostTracking.SkipCount = int64(result.Skipped)
+	importCostTracking.ErrorCount = int64(result.Failed)
+	importCostTracking.Status = "completed"
 
 	// Update import job as completed
 	completionData := map[string]any{
@@ -241,7 +311,7 @@ func detectFormat(data []byte) string {
 	return "unknown"
 }
 
-func (p *ImportProcessor) processCSVImport(ctx context.Context, event ImportProcessorEvent, data []byte) (ImportResult, error) {
+func (p *ImportProcessor) processCSVImport(ctx context.Context, event ImportProcessorEvent, data []byte, costTracking *models.ImportCostTracking) (ImportResult, error) {
 	result := ImportResult{
 		Errors: make([]string, 0),
 	}
@@ -309,6 +379,15 @@ func (p *ImportProcessor) processCSVImport(ctx context.Context, event ImportProc
 				result.Errors = append(result.Errors, fmt.Sprintf("Failed to follow %s: %v", accountAddress, err))
 			} else {
 				result.Success++
+				
+				// Track DynamoDB write costs for follow operation
+				if costTracking != nil {
+					costTracking.DynamoDBOperations += 2 // Follow creation + activity storage
+					costTracking.DynamoDBWriteUnits += 2.0 // Estimated write capacity
+					costTracking.DynamoDBWriteCost += p.calculateDynamoDBWriteCost(2.0)
+					costTracking.ExternalAPICalls += 1 // WebFinger lookup
+					costTracking.ExternalAPICallCost += p.calculateExternalAPICallCost(1)
+				}
 			}
 		}
 
@@ -346,6 +425,15 @@ func (p *ImportProcessor) processCSVImport(ctx context.Context, event ImportProc
 				result.Errors = append(result.Errors, fmt.Sprintf("Failed to block %s: %v", accountAddress, err))
 			} else {
 				result.Success++
+				
+				// Track DynamoDB write costs for block operation
+				if costTracking != nil {
+					costTracking.DynamoDBOperations += 1
+					costTracking.DynamoDBWriteUnits += 1.0
+					costTracking.DynamoDBWriteCost += p.calculateDynamoDBWriteCost(1.0)
+					costTracking.ExternalAPICalls += 1 // WebFinger lookup
+					costTracking.ExternalAPICallCost += p.calculateExternalAPICallCost(1)
+				}
 			}
 		}
 
@@ -443,7 +531,7 @@ func (p *ImportProcessor) processCSVImport(ctx context.Context, event ImportProc
 	return result, nil
 }
 
-func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportProcessorEvent, data []byte) (ImportResult, error) {
+func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportProcessorEvent, data []byte, costTracking *models.ImportCostTracking) (ImportResult, error) {
 	result := ImportResult{
 		Errors: make([]string, 0),
 	}
@@ -490,7 +578,7 @@ func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportPro
 	return result, nil
 }
 
-func (p *ImportProcessor) processActivityPubImport(ctx context.Context, event ImportProcessorEvent, data []byte) (ImportResult, error) {
+func (p *ImportProcessor) processActivityPubImport(ctx context.Context, event ImportProcessorEvent, data []byte, costTracking *models.ImportCostTracking) (ImportResult, error) {
 	result := ImportResult{
 		Errors: make([]string, 0),
 	}
@@ -736,3 +824,74 @@ func (p *ImportProcessor) downloadFromS3(ctx context.Context, key string) ([]byt
 // - updateImportStatus is now handled by importRepo.UpdateImportStatus
 // - updateImportProgress is now handled by importRepo.UpdateImportProgress
 // This eliminates direct DynamoDB SDK usage in favor of DynamORM patterns.
+
+// Cost calculation helper functions
+
+// calculateLambdaCost calculates the cost of Lambda execution
+// Lambda pricing: $0.0000166667 per GB-second (assumes 512MB memory)
+func (p *ImportProcessor) calculateLambdaCost(durationMs int64) int64 {
+	const memoryGB = 0.5 // 512MB = 0.5GB
+	const costPerGBSecond = 0.0000166667 // USD per GB-second
+	
+	durationSeconds := float64(durationMs) / 1000.0
+	costDollars := memoryGB * durationSeconds * costPerGBSecond
+	
+	// Convert to microcents (1 dollar = 1,000,000 microcents)
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3GetCost calculates the cost of S3 GET requests
+// S3 GET pricing: $0.0004 per 1,000 requests
+func (p *ImportProcessor) calculateS3GetCost(requestCount int64) int64 {
+	const costPer1000Requests = 0.0004 // USD per 1,000 requests
+	
+	costDollars := float64(requestCount) * costPer1000Requests / 1000.0
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3DataTransferCost calculates the cost of S3 data transfer
+// S3 data transfer pricing: $0.09 per GB (outbound)
+func (p *ImportProcessor) calculateS3DataTransferCost(transferBytes int64) int64 {
+	const costPerGB = 0.09 // USD per GB
+	
+	transferGB := float64(transferBytes) / (1024 * 1024 * 1024) // Convert bytes to GB
+	costDollars := transferGB * costPerGB
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateDynamoDBWriteCost calculates the cost of DynamoDB write operations
+// DynamoDB pricing: $1.25 per million write requests
+func (p *ImportProcessor) calculateDynamoDBWriteCost(writeUnits float64) int64 {
+	const costPerMillionWrites = 1.25 // USD per million write requests
+	
+	costDollars := (writeUnits / 1_000_000) * costPerMillionWrites
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateDynamoDBReadCost calculates the cost of DynamoDB read operations
+// DynamoDB pricing: $0.25 per million read requests
+func (p *ImportProcessor) calculateDynamoDBReadCost(readUnits float64) int64 {
+	const costPerMillionReads = 0.25 // USD per million read requests
+	
+	costDollars := (readUnits / 1_000_000) * costPerMillionReads
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateExternalAPICallCost calculates the cost of external API calls
+// Estimated cost: $0.001 per call (WebFinger, ActivityPub lookups)
+func (p *ImportProcessor) calculateExternalAPICallCost(callCount int64) int64 {
+	const costPerCall = 0.001 // USD per call
+	
+	costDollars := float64(callCount) * costPerCall
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}

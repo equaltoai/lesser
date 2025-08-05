@@ -56,6 +56,7 @@ type EventBus struct {
 	metrics        *EventBusMetrics
 	running        bool
 	runningMux     sync.RWMutex
+	config         *EventBusConfig
 }
 
 // EventBusConfig contains configuration for the event bus
@@ -122,6 +123,7 @@ func NewEventBus(config *EventBusConfig, logger *zap.Logger) *EventBus {
 		logger:      logger,
 		metrics:     metrics,
 		running:     false,
+		config:      config,
 	}
 }
 
@@ -251,8 +253,12 @@ func (eb *EventBus) Subscribe(subscriberID string, filter *EventFilter, bufferSi
 	}
 	
 	// Check max subscribers limit
-	if len(eb.subscribers) >= 1000 { // TODO: make configurable
-		return nil, fmt.Errorf("maximum number of subscribers reached")
+	maxSubscribers := eb.config.MaxSubscribers
+	if maxSubscribers <= 0 {
+		maxSubscribers = 1000 // Default if not configured
+	}
+	if len(eb.subscribers) >= maxSubscribers {
+		return nil, fmt.Errorf("maximum number of subscribers reached (limit: %d)", maxSubscribers)
 	}
 	
 	subscriber := NewSubscriber(subscriberID, filter, bufferSize)
@@ -464,7 +470,12 @@ func (eb *EventBus) cleanupInactiveSubscribers() {
 	eb.subscribersMux.Lock()
 	defer eb.subscribersMux.Unlock()
 	
-	cutoff := time.Now().Add(-5 * time.Minute) // TODO: make configurable
+	// Use cleanup interval from config, default to 5 minutes
+	cleanupInterval := eb.config.CleanupInterval
+	if cleanupInterval <= 0 {
+		cleanupInterval = 5 * time.Minute
+	}
+	cutoff := time.Now().Add(-cleanupInterval)
 	toRemove := make([]string, 0)
 	
 	for id, subscriber := range eb.subscribers {

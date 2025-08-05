@@ -244,6 +244,26 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 	return int64(len(userModels)), nil
 }
 
+// GetTotalUserCount returns the total number of users in the system
+func (r *UserRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
+	r.logger.Debug("getting total user count")
+	
+	// Use GSI1 (user-list-index) where all users have GSI1PK = "USERS"
+	// This is much more efficient than scanning the main table
+	count, err := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("user-list-index").
+		Where("GSI1PK", "=", "USERS").
+		Count()
+	
+	if err != nil {
+		r.logger.Error("failed to count total users", zap.Error(err))
+		return 0, fmt.Errorf("failed to count total users: %w", err)
+	}
+	
+	r.logger.Debug("retrieved total user count", zap.Int64("count", count))
+	return count, nil
+}
+
 // GetUserByProviderID gets a user by their OAuth provider ID
 func (r *UserRepository) GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error) {
 	// Query the ProviderAccount by provider and providerID using GSI1

@@ -169,11 +169,11 @@ func (s *LesserStack) createMediaInfrastructure(domain string) {
 		MaxAge:         jsii.Number(3000),
 	})
 
-	// Add lifecycle rules for cleanup
-	s.MediaBucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:                                  jsii.String("delete-incomplete-uploads"),
-		AbortIncompleteMultipartUploadAfter: awscdk.Duration_Days(jsii.Number(7)),
-		Enabled:                             jsii.Bool(true),
+	// Apply comprehensive lifecycle policies
+	localconstructs.ApplyS3LifecyclePolicies(&localconstructs.S3LifecycleConfig{
+		Environment: s.Environment,
+		Bucket:      s.MediaBucket,
+		BucketType:  "media",
 	})
 
 	// Create CloudFront distribution for media.{domain}

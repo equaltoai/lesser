@@ -65,7 +65,7 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *types.Instance) (*types.H
 	}
 
 	// Perform HTTP health check
-	req, err := http.NewRequest("GET", instance.InboxURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", instance.InboxURL, nil)
 	if err != nil {
 		health.ErrorMessage = fmt.Sprintf("invalid URL: %v", err)
 		// Store the failed health check

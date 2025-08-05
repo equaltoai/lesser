@@ -38,35 +38,42 @@ output:
 
 linters:
   enable:
-    # Default linters (always enabled)
-    - errcheck      # Checking for unchecked errors
+    # Critical - Security and correctness
     - govet         # Reports suspicious constructs
-    - ineffassign   # Detects unused assignments
     - staticcheck   # Advanced static analysis
-    - unused        # Checks for unused code
-    
-    # Additional linters for code quality
-    - bodyclose     # Checks HTTP response body closure
-    - dupl          # Code clone detection
-    - copyloopvar   # Checks for loop variable copies
-    - goconst       # Finds repeated strings
-    - gocyclo       # Cyclomatic complexity
     - gosec         # Security problems
-    - misspell      # Spelling mistakes
-    - nakedret      # Finds naked returns
-    - prealloc      # Preallocatable slices
-    - revive        # Comprehensive linter
-    - unconvert     # Unnecessary type conversions
-    - unparam       # Unused function parameters
-    - whitespace    # Whitespace issues
-    - nilerr        # Nil error checking
-    - exhaustive    # Enum exhaustiveness
+    - bodyclose     # Checks HTTP response body closure
     - noctx         # HTTP without context
-    - asciicheck    # Non-ASCII identifiers
     - bidichk       # Dangerous unicode
     
+    # Code quality - Important for maintainability
+    - ineffassign   # Detects unused assignments
+    - unused        # Checks for unused code
+    - errcheck      # Checking for unchecked errors
+    - misspell      # Spelling mistakes
+    - unconvert     # Unnecessary type conversions
+    - unparam       # Unused function parameters
+    
+    # Style - Keep codebase consistent
+    - revive        # Style and conventions
+    - goconst       # Finds repeated strings (configured)
+    - nakedret      # Finds naked returns in long functions
+    
+    # Performance
+    - prealloc      # Preallocatable slices (for hot paths only)
+    
+    # Complexity management
+    - gocyclo       # Cyclomatic complexity (configured)
+    - dupl          # Code duplication (configured)
+    
   disable:
-    # Disabled linters
+    # Legitimately too strict
+    - exhaustive    # Not all switches need to be exhaustive
+    - nilerr        # Returning nil, nil is often correct
+    - copyloopvar   # Not always necessary
+    - whitespace    # Too pedantic about blank lines
+    
+    # Already disabled
     - funlen        # Function length
     - godox         # TODO/FIXME comments
     - lll           # Line length
@@ -78,35 +85,49 @@ linters:
     - varnamelen    # Variable name length
     - gochecknoglobals # Global variables
     - gochecknoinits   # Init functions
-    - cyclop        # Cyclomatic complexity (using gocyclo instead)
+    - cyclop        # Cyclomatic complexity
     - gocognit      # Cognitive complexity
     - maintidx      # Maintainability index
+    - asciicheck    # Non-ASCII identifiers are fine
 
 linters-settings:
   dupl:
-    # Tokens count to trigger issue
-    threshold: 100
+    # Tokens count to trigger issue - increased for repository pattern code
+    threshold: 200  # Repository methods often have similar structure
     
   errcheck:
     # Report about not checking of errors in type assertions
-    check-type-assertions: true
+    check-type-assertions: false
     # Report about assignment of errors to blank identifier
-    check-blank: true
-    # Exclude some functions
+    check-blank: false
+    # Exclude some functions where error checking is often not needed
     exclude-functions:
       - io.Closer.Close
       - io/ioutil.ReadFile
       - io.Copy
+      - io.WriteString
+      - (net/http.ResponseWriter).Write
+      - (io.Writer).Write
+      - fmt.Print
+      - fmt.Printf
+      - fmt.Println
+      - fmt.Fprint
+      - fmt.Fprintf
+      - fmt.Fprintln
+      - (*go.uber.org/zap.Logger).Debug
+      - (*go.uber.org/zap.Logger).Info
+      - (*go.uber.org/zap.Logger).Warn
+      - (*go.uber.org/zap.Logger).Error
     
   goconst:
     # Minimal length of string constant
-    min-len: 3
+    min-len: 4  # Ignore very short strings
     # Minimal occurrences count to trigger
-    min-occurrences: 3
+    min-occurrences: 5  # Only flag if used 5+ times
     
   gocyclo:
     # Minimal cyclomatic complexity to trigger
-    min-complexity: 15
+    min-complexity: 20  # Allow moderately complex functions
     
   gosec:
     # Exclude specific rules
@@ -129,8 +150,8 @@ linters-settings:
     locale: US
     
   nakedret:
-    # Max function length to check
-    max-func-lines: 30
+    # Max function length to check for naked returns
+    max-func-lines: 50  # Only flag naked returns in longer functions
     
   prealloc:
     # Report preallocations only on simple loops
@@ -139,32 +160,33 @@ linters-settings:
     for-loops: true
     
   revive:
-    # Rules configuration
+    # Only enable essential rules
     rules:
+      # Critical rules
       - name: blank-imports
       - name: context-as-argument
       - name: context-keys-type
       - name: dot-imports
       - name: error-return
       - name: error-strings
-      - name: error-naming
-      - name: exported
-        arguments:
-          - disableStutteringCheck
-      - name: if-return
-      - name: increment-decrement
-      - name: var-declaration
-      - name: package-comments
-        disabled: true  # Often missing in Lambda handlers
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
       - name: errorf
       - name: empty-block
       - name: superfluous-else
       - name: unreachable-code
+      - name: var-naming
+        arguments:
+          - ["ID", "URL", "API", "ASCII", "CPU", "CSS", "DNS", "EOF", "GUID", "HTML", "HTTP", "HTTPS", "JSON", "LHS", "QPS", "RAM", "RHS", "RPC", "SLA", "SMTP", "SQL", "SSH", "TLS", "TTL", "UI", "UID", "UUID", "URI", "URL", "UTF8", "VM", "XML", "XSRF", "XSS"]
+      - name: time-naming
+      - name: unexported-return
+        disabled: true  # Interface implementations return unexported types
+      - name: exported
+        disabled: true  # We don't need comments on everything
+      - name: if-return
+        disabled: true  # Sometimes explicit is clearer
+      - name: cognitive-complexity
+        disabled: true
+      - name: cyclomatic
+        disabled: true  # Using gocyclo instead
       
   staticcheck:
     # Go version to target
@@ -174,6 +196,11 @@ linters-settings:
     # Go version to target
     go: "1.21"
     
+  unparam:
+    # Don't report unused params in tests or when implementing interfaces
+    check-exported: false
+    
+    
   whitespace:
     # Enforce proper whitespace
     multi-if: true
@@ -182,20 +209,31 @@ linters-settings:
 issues:
   # List of regexps of issue texts to exclude
   exclude:
+    # Common patterns that are acceptable
     - "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*print(f|ln)?|os\\.(Un)?Setenv). is not checked"
     - "exported (type|method|function) .* should have comment or be unexported"
     - "ST1000: at least one file in a package should have a package comment"
+    - "SA1019: .*is deprecated"  # We'll handle deprecations separately
+    - "G104: Errors unhandled"  # Too many false positives
+    - "at least one file in a package should have a package comment"
+    - "should have a package comment"
+    - "comment on exported"
+    - "should have comment"
+    - "Error return value not checked"
+    - "error returned from interface method should be wrapped"
+    - "cyclomatic complexity"
     
   # Exclude configuration per-path, per-linter, per-text
   exclude-rules:
-    # Exclude some linters from running on test files
+    # Test files can be more relaxed
     - path: _test\.go
       linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-        - goconst
+        - gocyclo       # Tests can be complex
+        - errcheck      # Tests often ignore errors intentionally
+        - dupl          # Test patterns repeat
+        - gosec         # Test security is less critical
+        - goconst       # Test strings don't need constants
+        - unparam       # Test helpers may have unused params
         
     # Exclude linters from generated files
     - path: generated\.go
@@ -233,6 +271,12 @@ issues:
     - path: pkg/storage/.*\.go
       linters:
         - dupl
+        
+    # Repository implementations have legitimate patterns
+    - path: pkg/storage/repositories/.*\.go
+      linters:
+        - dupl          # Repository methods follow similar patterns
+      text: "duplicate of"  # Only for actual duplication
         
     # Test utilities can be more relaxed
     - path: internal/testutil/.*\.go

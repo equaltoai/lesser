@@ -47,6 +47,7 @@ type RepositoryStorage interface {
 	AI() *repositories.AIRepository
 	Export() *repositories.ExportRepository
 	Import() *repositories.ImportRepository
+	DLQ() *repositories.DLQRepository
 	
 	// Utility methods
 	GetDB() dynamormCore.DB

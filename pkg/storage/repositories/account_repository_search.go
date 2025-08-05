@@ -70,7 +70,6 @@ func (r *AccountRepository) searchAllActors(ctx context.Context, query string, l
 		// Check if username or display name contains query
 		if strings.Contains(strings.ToLower(model.Username), query) ||
 			(model.Actor != nil && strings.Contains(strings.ToLower(model.Actor.Name), query)) {
-
 			if skipped < offset {
 				skipped++
 				continue
@@ -124,7 +123,6 @@ func (r *AccountRepository) searchFollowedActors(ctx context.Context, username, 
 		// Check if matches query
 		if strings.Contains(strings.ToLower(actor.PreferredUsername), query) ||
 			strings.Contains(strings.ToLower(actor.Name), query) {
-
 			if skipped < offset {
 				skipped++
 				continue

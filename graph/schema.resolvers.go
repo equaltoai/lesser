@@ -211,11 +211,16 @@ func (r *actorResolver) Following(ctx context.Context, obj *activitypub.Actor) (
 		username = r.MastodonConv.ExtractUsernameFromActorID(obj.ID)
 	}
 
-	// TODO: Implement GetFollowing method in repository
-	// For now, return 0 until the method is implemented
-	r.Logger.Debug("GetFollowing not yet implemented, returning 0",
-		zap.String("username", username))
-	return 0, nil
+	// Get following to count them - this could be optimized with a dedicated count method
+	following, _, err := r.Storage.Relationship().GetFollowing(ctx, username, 1000, "")
+	if err != nil {
+		r.Logger.Warn("Failed to get following count",
+			zap.String("username", username),
+			zap.Error(err))
+		return 0, nil // Return 0 instead of error for better UX
+	}
+
+	return len(following), nil
 }
 
 // StatusesCount is the resolver for the statusesCount field.
@@ -229,11 +234,16 @@ func (r *actorResolver) StatusesCount(ctx context.Context, obj *activitypub.Acto
 		username = r.MastodonConv.ExtractUsernameFromActorID(obj.ID)
 	}
 
-	// TODO: Implement GetOutboxActivities method in Activity repository
-	// For now, return 0 until the method is implemented
-	r.Logger.Debug("GetOutboxActivities not yet implemented, returning 0",
-		zap.String("username", username))
-	return 0, nil
+	// Get outbox activities to count them - this could be optimized with a dedicated count method
+	activities, _, err := r.Storage.Activity().GetOutboxActivities(ctx, username, 1000, "")
+	if err != nil {
+		r.Logger.Warn("Failed to get status count",
+			zap.String("username", username),
+			zap.Error(err))
+		return 0, nil // Return 0 instead of error for better UX
+	}
+
+	return len(activities), nil
 }
 
 // Bot is the resolver for the bot field.

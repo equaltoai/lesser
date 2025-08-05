@@ -203,27 +203,57 @@ func (r *AnnouncementRepository) GetAnnouncement(ctx context.Context, id string)
 	return announcement, nil
 }
 
-// GetAnnouncements retrieves all announcements (active or all)
+// GetAnnouncements retrieves all announcements (for backward compatibility)
 func (r *AnnouncementRepository) GetAnnouncements(ctx context.Context, active bool) ([]*storage.Announcement, error) {
+	// Use paginated version with reasonable default limit
+	announcements, _, err := r.GetAnnouncementsPaginated(ctx, active, 100, "")
+	return announcements, err
+}
+
+// GetAnnouncementsPaginated retrieves announcements with pagination
+func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, active bool, limit int, cursor string) ([]*storage.Announcement, string, error) {
+	if limit <= 0 {
+		limit = 20 // Default limit
+	}
+	if limit > 100 {
+		limit = 100 // Max limit
+	}
+
 	// Note: In a real implementation, we might want to use a GSI for efficient querying
 	// For now, we'll scan with a filter expression matching the legacy behavior
+	query := r.db.WithContext(ctx).Model(&models.Announcement{})
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		// Parse cursor to get the last announcement ID
+		query = query.Where("PK", ">", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
 	var modelAnnouncements []*models.Announcement
-	
-	// Note: DynamORM doesn't support Scan with filter expressions like the legacy implementation
-	// This is a limitation - in production, you'd want to use a GSI for this query
-	// For now, we'll query all items and filter in memory
-	err := r.db.WithContext(ctx).Model(&models.Announcement{}).
-		All(&modelAnnouncements)
+	err := query.All(&modelAnnouncements)
 	
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Return empty slice when no announcements found
-			return []*storage.Announcement{}, nil
+			return []*storage.Announcement{}, "", nil
 		}
-		return nil, fmt.Errorf("failed to scan announcements: %w", err)
+		return nil, "", fmt.Errorf("failed to scan announcements: %w", err)
 	}
 
-	announcements := make([]*storage.Announcement, 0)
+	// Generate next cursor
+	var nextCursor string
+	hasMore := len(modelAnnouncements) > limit
+	if hasMore {
+		// We got more results than requested, so there are more pages
+		nextCursor = modelAnnouncements[limit-1].PK
+		// Trim results to requested limit
+		modelAnnouncements = modelAnnouncements[:limit]
+	}
+
+	announcements := make([]*storage.Announcement, 0, len(modelAnnouncements))
 	now := time.Now()
 
 	for _, model := range modelAnnouncements {
@@ -258,7 +288,7 @@ func (r *AnnouncementRepository) GetAnnouncements(ctx context.Context, active bo
 		announcements = append(announcements, announcement)
 	}
 
-	return announcements, nil
+	return announcements, nextCursor, nil
 }
 
 // UpdateAnnouncement updates an existing announcement

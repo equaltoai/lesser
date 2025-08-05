@@ -102,7 +102,7 @@ func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
 		return ctx.Status(401).JSON(map[string]string{"error": "authentication required for following filter"})
 	}
 
-	// Perform the search
+	// Perform the search with cost tracking
 	actors, err := h.repos.Search().SearchAccounts(ctx.Context, query, limit, followingOnly, offset)
 	if err != nil {
 		h.logger.Error("account search failed",

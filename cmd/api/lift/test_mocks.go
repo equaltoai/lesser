@@ -317,6 +317,14 @@ func (m *MockRepositoryStorage) Import() *repositories.ImportRepository {
 	return args.Get(0).(*repositories.ImportRepository)
 }
 
+func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.DLQRepository)
+}
+
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
 	args := m.Called()
 	if args.Get(0) == nil {

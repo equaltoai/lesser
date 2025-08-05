@@ -434,7 +434,6 @@ func (r *ConversationRepository) MarkStatusRead(ctx context.Context, conversatio
 
 // GetUnreadStatusCount gets the count of unread statuses in a conversation for a user
 func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conversationID, username string) (int, error) {
-	
 	// Check if the conversation is marked as read
 	var status models.ConversationStatus
 	err := r.db.Model(&models.ConversationStatus{}).WithContext(ctx).
@@ -497,7 +496,6 @@ func (r *ConversationRepository) GetConversationParticipants(ctx context.Context
 
 // UpdateConversationLastStatus updates the last status in a conversation
 func (r *ConversationRepository) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
-	
 	// Get current conversation
 	conv, err := r.GetConversation(ctx, id)
 	if err != nil {

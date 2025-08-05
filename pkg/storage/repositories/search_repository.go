@@ -1126,9 +1126,10 @@ func (r *SearchRepository) GetPopularSearches(ctx context.Context, limit int, ti
 	stats := make([]*models.SearchQueryStats, 0, len(queryCount))
 	for query, count := range queryCount {
 		stat := &models.SearchQueryStats{
-			Query:       query,
-			QueryCount:  count,
-			LastQueried: lastQueried[query],
+			QueryHash:    query, // Note: this is storing the actual query, not a hash
+			QueryCount:   count,
+			LastQueried:  lastQueried[query],
+			QueryType:    "search_suggestion",
 		}
 		stat.UpdateKeys()
 		stats = append(stats, stat)

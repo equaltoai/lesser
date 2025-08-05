@@ -13,22 +13,33 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
 type SearchIndexer struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
+	costRepo  *repositories.SearchCostRepository
+	costTracker *cost.Tracker
 }
 
 func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
+	logger := common.Logger()
+	costRepo := repositories.NewSearchCostRepository(db, logger)
+	costTracker := cost.NewWithRequest("search-indexer", "search_indexing")
+	
 	return &SearchIndexer{
-		db:        db,
-		tableName: tableName,
-		logger:    common.Logger(),
+		db:          db,
+		tableName:   tableName,
+		logger:      logger,
+		costRepo:    costRepo,
+		costTracker: costTracker,
 	}
 }
 
@@ -121,21 +132,50 @@ func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bo
 }
 
 func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+	startTime := time.Now()
+
 	// Extract indexable content from the record
 	content, err := si.extractIndexableContent(record)
 	if err != nil {
 		return fmt.Errorf("failed to extract indexable content: %w", err)
 	}
 
+	// Initialize cost tracking for indexing operation
+	costData := &models.SearchCostTracking{
+		UserID:        content.ActorID,
+		RequestID:     ctx.GetRequestID(),
+		OperationType: "search_indexing",
+		SearchType:    "indexing",
+		Query:         content.Text,
+		QueryLength:   len(content.Text),
+		Timestamp:     startTime,
+	}
+
+	// Track database writes for indexing
+	var writeCount int64
+
 	// Create search index entry
 	if err := si.createSearchIndex(ctx, content); err != nil {
+		// Record failed indexing cost
+		si.recordIndexingCost(ctx, costData, startTime, 0, writeCount, err)
 		return fmt.Errorf("failed to create search index: %w", err)
 	}
+
+	// Estimate write operations (main index + additional indexes)
+	writeCount = 1 // Main search index
+	if content.ActorID != "" {
+		writeCount++ // Actor-specific index
+	}
+	writeCount += int64(len(content.Tags)) // Tag indexes
+
+	// Track successful indexing
+	si.recordIndexingCost(ctx, costData, startTime, 1, writeCount, nil)
 
 	si.logger.Debug("indexed content for search",
 		zap.String("content_id", content.ID),
 		zap.String("content_type", content.Type),
 		zap.Int("content_length", len(content.Text)),
+		zap.Int64("write_operations", writeCount),
 	)
 
 	return nil
@@ -336,6 +376,58 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *Ind
 	}
 
 	return nil
+}
+
+// recordIndexingCost records the cost of indexing operations
+func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, writeCount int64, err error) {
+	// Complete cost tracking
+	responseTime := time.Since(startTime)
+	costData.ResponseTimeMs = responseTime.Milliseconds()
+	costData.ResultCount = resultCount
+	costData.DynamoWrites = writeCount
+	costData.DynamoQueries = 1 // Indexing typically involves create operations
+
+	// Track costs in cost tracker
+	if si.costTracker != nil {
+		si.costTracker.TrackDynamoWrite(int(writeCount))
+	}
+
+	// Calculate costs
+	costData.DynamoCostMicros = si.calculateIndexingCost(writeCount)
+	costData.TotalCostMicros = costData.DynamoCostMicros
+
+	costData.UpdateKeys()
+
+	// Record cost asynchronously to not impact indexing performance
+	go func() {
+		bgCtx := context.Background()
+		if err := si.costRepo.RecordSearchCost(bgCtx, costData); err != nil {
+			si.logger.Error("failed to record indexing cost",
+				zap.String("user_id", costData.UserID),
+				zap.String("content_id", costData.Query),
+				zap.Error(err))
+		}
+	}()
+
+	si.logger.Debug("indexing_cost_tracked",
+		zap.String("user_id", costData.UserID),
+		zap.Int("result_count", resultCount),
+		zap.Int64("write_count", writeCount),
+		zap.Int64("cost_micros", costData.TotalCostMicros),
+		zap.Int64("response_time_ms", costData.ResponseTimeMs),
+		zap.Bool("success", err == nil))
+}
+
+// calculateIndexingCost calculates the cost of indexing operations in microcents
+func (si *SearchIndexer) calculateIndexingCost(writeCount int64) int64 {
+	// DynamoDB write cost: $1.25 per million write request units
+	const writeCostPer1M = 125000 // 125000 microcents per million writes
+	
+	if writeCount == 0 {
+		return 0
+	}
+	
+	return (writeCount * writeCostPer1M) / 1000000
 }
 
 var (

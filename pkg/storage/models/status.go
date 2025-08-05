@@ -42,6 +42,7 @@ type Status struct {
 	Content        string            `json:"content"`                   // Cached content for search
 	ConversationID string            `json:"conversation_id,omitempty"` // Thread/conversation ID
 	InReplyToID    string            `json:"in_reply_to_id,omitempty"`  // Parent status ID
+	ReblogOfID     string            `json:"reblog_of_id,omitempty"`    // If this is a reblog, the original status ID
 	Visibility     string            `json:"visibility"`                // public, unlisted, private, direct
 	Sensitive      bool              `json:"sensitive"`                 // Content warning flag
 	Language       string            `json:"language,omitempty"`        // Content language

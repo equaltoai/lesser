@@ -31,17 +31,19 @@ import (
 
 // NotificationProcessor handles notification delivery across multiple channels
 type NotificationProcessor struct {
-	db                  core.DB
-	tableName           string
-	logger              *zap.Logger
-	notificationRepo    *repositories.NotificationRepository
-	userRepo            *repositories.UserRepository
-	sesClient           *ses.Client
-	snsClient           *sns.Client
-	apiGatewayClient    *apigatewaymanagementapi.Client
-	domain              string
-	fromEmail           string
-	webSocketEndpoint   string
+	db                       core.DB
+	tableName                string
+	logger                   *zap.Logger
+	notificationRepo         *repositories.NotificationRepository
+	userRepo                 *repositories.UserRepository
+	costTrackingRepo         *repositories.CostTrackingRepository
+	notificationCostRepo     *repositories.NotificationCostRepository
+	sesClient                *ses.Client
+	snsClient                *sns.Client
+	apiGatewayClient         *apigatewaymanagementapi.Client
+	domain                   string
+	fromEmail                string
+	webSocketEndpoint        string
 }
 
 // NotificationDeliveryRequest represents a request to deliver a notification
@@ -84,6 +86,8 @@ func NewNotificationProcessor(db core.DB, tableName string, domain string) *Noti
 	logger := common.Logger()
 	notificationRepo := repositories.NewNotificationRepository(db, tableName, logger)
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
+	costTrackingRepo := repositories.NewCostTrackingRepository(db, tableName, logger)
+	notificationCostRepo := repositories.NewNotificationCostRepository(db, tableName, logger)
 
 	// Get configuration from environment
 	fromEmail := os.Getenv("FROM_EMAIL")
@@ -94,14 +98,16 @@ func NewNotificationProcessor(db core.DB, tableName string, domain string) *Noti
 	webSocketEndpoint := os.Getenv("WEBSOCKET_ENDPOINT")
 
 	return &NotificationProcessor{
-		db:                db,
-		tableName:         tableName,
-		logger:            common.Logger(),
-		notificationRepo:  notificationRepo,
-		userRepo:          userRepo,
-		domain:            domain,
-		fromEmail:         fromEmail,
-		webSocketEndpoint: webSocketEndpoint,
+		db:                   db,
+		tableName:            tableName,
+		logger:               common.Logger(),
+		notificationRepo:     notificationRepo,
+		userRepo:             userRepo,
+		costTrackingRepo:     costTrackingRepo,
+		notificationCostRepo: notificationCostRepo,
+		domain:               domain,
+		fromEmail:            fromEmail,
+		webSocketEndpoint:    webSocketEndpoint,
 	}
 }
 
@@ -223,6 +229,37 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 		}
 	}
 
+	// Estimate total cost for budget checking
+	var estimatedCostMicroCents int64
+	for _, channel := range request.Channels {
+		switch channel {
+		case "email":
+			estimatedCostMicroCents += models.CalculateEmailCost(1)
+		case "push":
+			estimatedCostMicroCents += models.CalculatePushCost(1)
+		case "websocket":
+			estimatedCostMicroCents += models.CalculateWebSocketCost(1)
+		case "sms":
+			estimatedCostMicroCents += models.CalculateSMSCost(1)
+		}
+	}
+	estimatedCostMicroCents += 20 // Add Lambda base cost
+
+	// Check notification budget before proceeding
+	canSend, err := np.checkNotificationBudget(ctx, request.UserID, estimatedCostMicroCents)
+	if err != nil {
+		np.logger.Error("failed to check notification budget",
+			zap.String("user_id", request.UserID),
+			zap.Error(err))
+		// Continue anyway - budget errors shouldn't block notifications
+	} else if !canSend {
+		np.logger.Warn("notification blocked due to budget limits",
+			zap.String("notification_id", request.NotificationID),
+			zap.String("user_id", request.UserID),
+			zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents))
+		return fmt.Errorf("notification delivery blocked: user budget exceeded")
+	}
+
 	// Attempt delivery on each requested channel
 	var deliveryResults []DeliveryResult
 	var lastError error
@@ -266,53 +303,136 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 		Timestamp: start,
 	}
 
+	// Initialize cost tracking builder
+	costBuilder := models.NewNotificationCostTrackingBuilder().
+		WithNotification(notification.ID, notification.UserID, notification.UserID, notification.Type).
+		WithDelivery(channel, channel, false, 0).
+		WithContext("", "notification-processor", os.Getenv("AWS_LAMBDA_FUNCTION_NAME"), os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME")).
+		WithTimestamp(start)
+
+	var deliveryStart time.Time
+	var lambdaCostMicroCents int64 = 20 // Base Lambda invocation cost
+
 	switch channel {
 	case "email":
 		if !userPrefs.EmailNotifications || userPrefs.EmailAddress == "" {
 			result.Error = "email notifications disabled or no email address"
+			costBuilder.WithError(result.Error)
 		} else {
+			deliveryStart = time.Now()
 			if err := np.deliverEmail(ctx, notification, userPrefs.EmailAddress); err != nil {
 				result.Error = err.Error()
+				costBuilder.WithError(result.Error)
 			} else {
 				result.Success = true
-				result.Cost = 1000 // $0.001 for email delivery
+				costBuilder.WithDelivery(channel, channel, true, 0)
+				
+				// Calculate email cost
+				emailCost := models.CalculateEmailCost(1)
+				result.Cost = emailCost
+				costBuilder.WithCosts(emailCost, 0, 0, 0, lambdaCostMicroCents, 0)
 			}
 		}
 
 	case "push":
 		if !userPrefs.PushNotifications {
 			result.Error = "push notifications disabled"
+			costBuilder.WithError(result.Error)
 		} else {
+			deliveryStart = time.Now()
 			if err := np.deliverPush(ctx, notification, userPrefs); err != nil {
 				result.Error = err.Error()
+				costBuilder.WithError(result.Error)
 			} else {
 				result.Success = true
-				result.Cost = 500 // $0.0005 for push notification
+				costBuilder.WithDelivery(channel, channel, true, 0)
+				
+				// Calculate push cost
+				pushCost := models.CalculatePushCost(1)
+				result.Cost = pushCost
+				costBuilder.WithCosts(0, pushCost, 0, 0, lambdaCostMicroCents, 0)
 			}
 		}
 
 	case "websocket":
 		if !userPrefs.WebSocketNotifications {
 			result.Error = "websocket notifications disabled"
+			costBuilder.WithError(result.Error)
 		} else {
+			deliveryStart = time.Now()
 			if err := np.deliverWebSocket(ctx, notification); err != nil {
 				result.Error = err.Error()
+				costBuilder.WithError(result.Error)
 			} else {
 				result.Success = true
-				result.Cost = 100 // $0.0001 for websocket message
+				costBuilder.WithDelivery(channel, channel, true, 0)
+				
+				// Calculate websocket cost
+				websocketCost := models.CalculateWebSocketCost(1)
+				result.Cost = websocketCost
+				costBuilder.WithCosts(0, 0, 0, websocketCost, lambdaCostMicroCents, 0)
 			}
 		}
 
+	case "sms":
+		// SMS delivery would go here if implemented
+		deliveryStart = time.Now()
+		result.Error = "SMS delivery not implemented"
+		costBuilder.WithError(result.Error)
+
 	default:
 		result.Error = fmt.Sprintf("unknown delivery channel: %s", channel)
+		costBuilder.WithError(result.Error)
 	}
+
+	// Calculate performance metrics
+	totalDuration := time.Since(start)
+	var deliveryDuration time.Duration
+	if !deliveryStart.IsZero() {
+		deliveryDuration = time.Since(deliveryStart)
+	}
+	
+	processingDuration := totalDuration - deliveryDuration
+	
+	costBuilder.WithPerformance(
+		processingDuration.Milliseconds(),
+		deliveryDuration.Milliseconds(),
+		0, // Response code would be set by specific delivery methods
+		0, // Response size would be set by specific delivery methods
+	)
+
+	// Add additional context
+	costBuilder.WithProperty("notification_type", notification.Type)
+	costBuilder.WithProperty("delivery_channel", channel)
+	costBuilder.WithProperty("user_preferences_enabled", userPrefs != nil)
+	costBuilder.WithTag("domain", np.domain)
+	costBuilder.WithTag("delivery_method", channel)
+
+	// Create cost tracking record
+	costTracking := costBuilder.Build()
+	
+	// Store cost tracking record asynchronously to avoid impacting delivery performance
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		if err := np.storeCostTracking(ctx, costTracking); err != nil {
+			np.logger.Warn("failed to store notification cost tracking",
+				zap.String("notification_id", notification.ID),
+				zap.String("channel", channel),
+				zap.Error(err))
+		}
+	}()
 
 	np.logger.Info("delivery attempt completed",
 		zap.String("notification_id", notification.ID),
 		zap.String("channel", channel),
 		zap.Bool("success", result.Success),
 		zap.String("error", result.Error),
-		zap.Duration("duration", time.Since(start)),
+		zap.Duration("total_duration", totalDuration),
+		zap.Duration("delivery_duration", deliveryDuration),
+		zap.Int64("cost_micro_cents", result.Cost),
+		zap.Float64("cost_dollars", float64(result.Cost)/1_000_000.0),
 	)
 
 	return result
@@ -835,4 +955,185 @@ func main() {
 	})
 
 	lambda.Start(app.HandleRequest)
+}
+
+// storeCostTracking stores the notification cost tracking record
+func (np *NotificationProcessor) storeCostTracking(ctx context.Context, costTracking *models.NotificationCostTracking) error {
+	// Store the detailed notification cost tracking record
+	if err := np.notificationCostRepo.CreateCostTracking(ctx, costTracking); err != nil {
+		np.logger.Error("failed to create notification cost tracking record",
+			zap.String("notification_id", costTracking.NotificationID),
+			zap.Error(err))
+		// Continue anyway - this shouldn't block notification delivery
+	}
+
+	// Create a cost record for the main cost tracking system for aggregation
+	costRecord := &models.DynamoDBCostRecord{
+		Table:                np.tableName,
+		OperationType:        "NotificationDelivery",
+		ServiceName:          "notification-processor",
+		Timestamp:            costTracking.Timestamp,
+		TotalCostMicroCents:  costTracking.TotalCostMicroCents,
+		EstimatedCostDollars: float64(costTracking.TotalCostMicroCents) / 1_000_000.0,
+		Properties: map[string]interface{}{
+			"notification_id":   costTracking.NotificationID,
+			"user_id":          costTracking.UserID,
+			"username":         costTracking.Username,
+			"delivery_method":  costTracking.DeliveryMethod,
+			"notification_type": costTracking.NotificationType,
+			"success":          costTracking.Success,
+			"retry_count":      costTracking.RetryCount,
+		},
+		Tags: costTracking.Tags,
+	}
+
+	// Store the general cost record
+	if err := np.costTrackingRepo.Create(ctx, costRecord); err != nil {
+		np.logger.Error("failed to create general cost record",
+			zap.String("notification_id", costTracking.NotificationID),
+			zap.Error(err))
+		// Continue anyway - this shouldn't block notification delivery
+	}
+
+	return nil
+}
+
+// checkNotificationBudget checks if the user has exceeded their notification budget
+func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, username string, estimatedCostMicroCents int64) (bool, error) {
+	// Get the user's daily budget
+	budget, err := np.notificationCostRepo.GetBudget(ctx, username, "daily")
+	if err != nil {
+		np.logger.Error("failed to get user budget", 
+			zap.String("username", username),
+			zap.Error(err))
+		// On error, allow the notification (fail open)
+		return true, nil
+	}
+	
+	// If no budget is set, use default limits
+	if budget == nil {
+		// Default budget: $0.01 per user per day (1000 micro-cents)
+		dailyBudgetMicroCents := int64(1000)
+		
+		np.logger.Debug("no budget set, using default",
+			zap.String("username", username),
+			zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents),
+			zap.Int64("daily_budget_micro_cents", dailyBudgetMicroCents))
+		
+		// For now, always allow (budget checking can be enabled by setting budgets)
+		return true, nil
+	}
+	
+	// Check if budget enforcement is enabled
+	if !budget.Enabled {
+		np.logger.Debug("budget disabled for user",
+			zap.String("username", username))
+		return true, nil
+	}
+	
+	// Check if adding this cost would exceed the budget
+	projectedSpending := budget.SpentMicroCents + estimatedCostMicroCents
+	
+	np.logger.Debug("checking notification budget",
+		zap.String("username", username),
+		zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents),
+		zap.Int64("current_spent_micro_cents", budget.SpentMicroCents),
+		zap.Int64("projected_spending_micro_cents", projectedSpending),
+		zap.Int64("budget_limit_micro_cents", budget.LimitMicroCents),
+		zap.Bool("budget_exceeded", budget.BudgetExceeded))
+	
+	// Check if delivery should be blocked
+	if budget.ShouldBlockDelivery() {
+		np.logger.Warn("notification blocked due to budget limits",
+			zap.String("username", username),
+			zap.Int64("spent_micro_cents", budget.SpentMicroCents),
+			zap.Int64("limit_micro_cents", budget.LimitMicroCents),
+			zap.Bool("budget_exceeded", budget.BudgetExceeded))
+		return false, nil
+	}
+	
+	// Check if this would exceed the budget
+	if projectedSpending > budget.LimitMicroCents {
+		np.logger.Warn("notification would exceed budget",
+			zap.String("username", username),
+			zap.Int64("projected_spending_micro_cents", projectedSpending),
+			zap.Int64("limit_micro_cents", budget.LimitMicroCents))
+		return false, nil
+	}
+	
+	return true, nil
+}
+
+// aggregateNotificationCosts aggregates costs by period for reporting
+func (np *NotificationProcessor) aggregateNotificationCosts(ctx context.Context, period string, startTime, endTime time.Time) error {
+	// This would implement cost aggregation similar to relay cost aggregation
+	// It would:
+	// 1. Query all notification cost records in the time window
+	// 2. Group by delivery method, user, notification type
+	// 3. Calculate aggregate statistics
+	// 4. Store in NotificationCostAggregation records
+	
+	np.logger.Info("aggregating notification costs",
+		zap.String("period", period),
+		zap.Time("start_time", startTime),
+		zap.Time("end_time", endTime))
+	
+	// Implementation would go here
+	return nil
+}
+
+// getNotificationCostStats returns cost statistics for the notification system
+func (np *NotificationProcessor) getNotificationCostStats(ctx context.Context, startTime, endTime time.Time) (*NotificationCostStats, error) {
+	// This would calculate comprehensive notification cost statistics
+	stats := &NotificationCostStats{
+		StartTime: startTime,
+		EndTime:   endTime,
+		DeliveryMethodBreakdown: make(map[string]*DeliveryMethodStats),
+		NotificationTypeBreakdown: make(map[string]*NotificationTypeStats),
+	}
+	
+	// Implementation would query cost tracking records and calculate statistics
+	return stats, nil
+}
+
+// NotificationCostStats represents comprehensive notification cost statistics
+type NotificationCostStats struct {
+	StartTime                   time.Time
+	EndTime                     time.Time
+	TotalNotifications          int64
+	SuccessfulDeliveries        int64
+	FailedDeliveries            int64
+	TotalCostMicroCents         int64
+	TotalCostDollars            float64
+	AverageCostPerNotification  float64
+	SuccessRate                 float64
+	DeliveryMethodBreakdown     map[string]*DeliveryMethodStats
+	NotificationTypeBreakdown   map[string]*NotificationTypeStats
+}
+
+// DeliveryMethodStats represents statistics for a specific delivery method
+type DeliveryMethodStats struct {
+	Method                  string
+	Count                   int64
+	SuccessfulDeliveries    int64
+	FailedDeliveries        int64
+	TotalCostMicroCents     int64
+	TotalCostDollars        float64
+	AverageCostMicroCents   int64
+	AverageCostDollars      float64
+	SuccessRate             float64
+	AverageDeliveryTimeMs   float64
+}
+
+// NotificationTypeStats represents statistics for a specific notification type
+type NotificationTypeStats struct {
+	Type                    string
+	Count                   int64
+	SuccessfulDeliveries    int64
+	FailedDeliveries        int64
+	TotalCostMicroCents     int64
+	TotalCostDollars        float64
+	AverageCostMicroCents   int64
+	AverageCostDollars      float64
+	SuccessRate             float64
 }
