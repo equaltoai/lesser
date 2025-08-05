@@ -286,6 +286,30 @@ func (m *MockRepoStorage) FeaturedTag() *repositories.FeaturedTagRepository {
 	return args.Get(0).(*repositories.FeaturedTagRepository)
 }
 
+func (m *MockRepoStorage) AI() *repositories.AIRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.AIRepository)
+}
+
+func (m *MockRepoStorage) Export() *repositories.ExportRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.ExportRepository)
+}
+
+func (m *MockRepoStorage) Import() *repositories.ImportRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.ImportRepository)
+}
+
 // Utility methods
 func (m *MockRepoStorage) GetDB() dynamormCore.DB {
 	args := m.Called()

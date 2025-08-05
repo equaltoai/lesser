@@ -52,6 +52,8 @@ type RepositoryFactory struct {
 	markerRepo                *repositories.MarkerRepository
 	featuredTagRepo           *repositories.FeaturedTagRepository
 	aiRepo                    *repositories.AIRepository
+	exportRepo                *repositories.ExportRepository
+	importRepo                *repositories.ImportRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -114,6 +116,8 @@ func (f *RepositoryFactory) initializeRepositories() error {
 	f.markerRepo = repositories.NewMarkerRepository(f.db, f.tableName, f.logger)
 	f.featuredTagRepo = repositories.NewFeaturedTagRepository(f.db, f.tableName, f.logger)
 	f.aiRepo = repositories.NewAIRepository(f.db, f.tableName, f.logger)
+	f.exportRepo = repositories.NewExportRepository(f.db, f.tableName, f.logger)
+	f.importRepo = repositories.NewImportRepository(f.db, f.tableName, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -265,6 +269,14 @@ func (f *RepositoryFactory) FeaturedTag() *repositories.FeaturedTagRepository {
 
 func (f *RepositoryFactory) AI() *repositories.AIRepository {
 	return f.aiRepo
+}
+
+func (f *RepositoryFactory) Export() *repositories.ExportRepository {
+	return f.exportRepo
+}
+
+func (f *RepositoryFactory) Import() *repositories.ImportRepository {
+	return f.importRepo
 }
 
 // Additional repositories can be added here as needed

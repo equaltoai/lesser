@@ -3,8 +3,6 @@ package lift
 import (
 	"context"
 
-	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/mock"
@@ -303,6 +301,22 @@ func (m *MockRepositoryStorage) AI() *repositories.AIRepository {
 	return args.Get(0).(*repositories.AIRepository)
 }
 
+func (m *MockRepositoryStorage) Export() *repositories.ExportRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.ExportRepository)
+}
+
+func (m *MockRepositoryStorage) Import() *repositories.ImportRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.ImportRepository)
+}
+
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -324,121 +338,6 @@ func (m *MockRepositoryStorage) GetLogger() *zap.Logger {
 	return args.Get(0).(*zap.Logger)
 }
 
-// MockStorageAdapter provides backward compatibility for tests that haven't been migrated yet
-// This allows old-style tests to keep working while we gradually migrate them
-type MockStorageAdapter struct {
-	mock.Mock
-}
-
-// Common methods that tests expect
-func (m *MockStorageAdapter) GetActorByNumericID(ctx context.Context, id string) (*activitypub.Actor, error) {
-	args := m.Called(ctx, id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.Actor), args.Error(1)
-}
-
-func (m *MockStorageAdapter) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	args := m.Called(ctx, username)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.Actor), args.Error(1)
-}
-
-func (m *MockStorageAdapter) GetFollowersCount(ctx context.Context, actorID string) (int, error) {
-	args := m.Called(ctx, actorID)
-	return args.Int(0), args.Error(1)
-}
-
-func (m *MockStorageAdapter) GetFollowingCount(ctx context.Context, actorID string) (int, error) {
-	args := m.Called(ctx, actorID)
-	return args.Int(0), args.Error(1)
-}
-
-func (m *MockStorageAdapter) GetStatusCount(ctx context.Context, actorID string) (int, error) {
-	args := m.Called(ctx, actorID)
-	return args.Int(0), args.Error(1)
-}
-
-func (m *MockStorageAdapter) GetObject(ctx context.Context, id string) (interface{}, error) {
-	args := m.Called(ctx, id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0), args.Error(1)
-}
-
-func (m *MockStorageAdapter) CreateObject(ctx context.Context, obj interface{}) error {
-	args := m.Called(ctx, obj)
-	return args.Error(0)
-}
-
-func (m *MockStorageAdapter) UpdateObject(ctx context.Context, obj interface{}) error {
-	args := m.Called(ctx, obj)
-	return args.Error(0)
-}
-
-func (m *MockStorageAdapter) DeleteObject(ctx context.Context, id string) error {
-	args := m.Called(ctx, id)
-	return args.Error(0)
-}
-
-func (m *MockStorageAdapter) GetUser(ctx context.Context, username string) (*storage.User, error) {
-	args := m.Called(ctx, username)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*storage.User), args.Error(1)
-}
-
-func (m *MockStorageAdapter) CreateUser(ctx context.Context, user *storage.User) error {
-	args := m.Called(ctx, user)
-	return args.Error(0)
-}
-
-func (m *MockStorageAdapter) UpdateUser(ctx context.Context, user *storage.User) error {
-	args := m.Called(ctx, user)
-	return args.Error(0)
-}
-
-func (m *MockStorageAdapter) DeleteUser(ctx context.Context, username string) error {
-	args := m.Called(ctx, username)
-	return args.Error(0)
-}
-
-// Add more method stubs as needed for different tests
-func (m *MockStorageAdapter) SaveActor(ctx context.Context, actor *activitypub.Actor) error {
-	args := m.Called(ctx, actor)
-	return args.Error(0)
-}
-
-func (m *MockStorageAdapter) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
-	args := m.Called(ctx, actor)
-	return args.Error(0)
-}
-
-func (m *MockStorageAdapter) DeleteActor(ctx context.Context, username string) error {
-	args := m.Called(ctx, username)
-	return args.Error(0)
-}
-
-func (m *MockStorageAdapter) GetActorByURL(ctx context.Context, url string) (*activitypub.Actor, error) {
-	args := m.Called(ctx, url)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*activitypub.Actor), args.Error(1)
-}
-
-func (m *MockStorageAdapter) GetLocalActors(ctx context.Context) ([]*activitypub.Actor, error) {
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*activitypub.Actor), args.Error(1)
-}
 
 // Helper function to create test context - extracted from statuses_unified_boost_test.go
 func createTestContext(method, path, body string, headers map[string]string) *lift.Context {

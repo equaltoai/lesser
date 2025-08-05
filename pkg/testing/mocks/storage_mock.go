@@ -3594,6 +3594,9 @@ type MockRepositoryStorage struct {
 	rateLimitRepo       *repositories.RateLimitRepository
 	markerRepo          *repositories.MarkerRepository
 	featuredTagRepo     *repositories.FeaturedTagRepository
+	aiRepo              *repositories.AIRepository
+	exportRepo          *repositories.ExportRepository
+	importRepo          *repositories.ImportRepository
 }
 
 // NewMockRepositoryStorage creates a new mock repository storage with mock repositories
@@ -3635,6 +3638,9 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	relayRepo := repositories.NewRelayRepository(nil, "test-table", logger)
 	markerRepo := repositories.NewMarkerRepository(nil, "test-table", logger)
 	featuredTagRepo := repositories.NewFeaturedTagRepository(nil, "test-table", logger)
+	aiRepo := repositories.NewAIRepository(nil, "test-table", logger)
+	exportRepo := repositories.NewExportRepository(nil, "test-table", logger)
+	importRepo := repositories.NewImportRepository(nil, "test-table", logger)
 	
 	return &MockRepositoryStorage{
 		accountRepo:         accountRepo,
@@ -3669,6 +3675,9 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		communityNoteRepo:   repositories.NewCommunityNoteRepository(&dynamorm.DB{}, "test-table", logger),
 		markerRepo:          markerRepo,
 		featuredTagRepo:     featuredTagRepo,
+		aiRepo:              aiRepo,
+		exportRepo:          exportRepo,
+		importRepo:          importRepo,
 	}
 }
 
@@ -3807,6 +3816,18 @@ func (m *MockRepositoryStorage) Marker() *repositories.MarkerRepository {
 
 func (m *MockRepositoryStorage) FeaturedTag() *repositories.FeaturedTagRepository {
 	return m.featuredTagRepo
+}
+
+func (m *MockRepositoryStorage) AI() *repositories.AIRepository {
+	return m.aiRepo
+}
+
+func (m *MockRepositoryStorage) Export() *repositories.ExportRepository {
+	return m.exportRepo
+}
+
+func (m *MockRepositoryStorage) Import() *repositories.ImportRepository {
+	return m.importRepo
 }
 
 // Utility methods
