@@ -75,13 +75,24 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	// Check if poll has expired
 	expired := poll.ExpiresAt != nil && !poll.ExpiresAt.IsZero() && time.Now().After(*poll.ExpiresAt)
 
-	// Check if user has voted - would need to get this from a separate votes table
+	// Check if user has voted
 	var voted bool
 	var ownVotes []int
 	if userID != "" {
-		// TODO: Get user's votes from PollVote repository
-		voted = false
-		ownVotes = []int{}
+		// Get user's votes from PollVote repository
+		hasVoted, userVotes, err := h.repos.Poll().HasUserVoted(ctx, poll.ID, userID)
+		if err != nil {
+			// Log error but don't fail - just assume no votes
+			h.logger.Warn("failed to get user poll votes",
+				zap.String("poll_id", poll.ID),
+				zap.String("user_id", userID),
+				zap.Error(err))
+			voted = false
+			ownVotes = []int{}
+		} else {
+			voted = hasVoted
+			ownVotes = userVotes
+		}
 	}
 
 	// Build options data for response

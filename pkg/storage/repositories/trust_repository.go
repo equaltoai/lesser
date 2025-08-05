@@ -157,11 +157,23 @@ func (r *TrustRepository) DeleteTrustRelationship(ctx context.Context, trusterID
 func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
 	// Query by truster using the primary key pattern
 	var trustModels []models.TrustRelationship
-	err := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
-		Where("PK", "begins_with", fmt.Sprintf("TRUST#%s#", trusterID)).
-		Limit(limit).
-		Scan(&trustModels)
-	nextCursor := "" // TODO: Implement proper pagination with cursor
+	query := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
+		Where("PK", "begins_with", fmt.Sprintf("TRUST#%s#", trusterID))
+	
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+	
+	// Get one more item than requested to determine if there are more results
+	err := query.Limit(limit + 1).Scan(&trustModels)
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(trustModels) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = trustModels[limit-1].SK
+		trustModels = trustModels[:limit] // Trim to requested limit
+	}
 
 	if err != nil {
 		return nil, "", err
@@ -179,12 +191,24 @@ func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID s
 func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
 	// Query using GSI1 for reverse lookup
 	var trustModels []models.TrustRelationship
-	err := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
+	query := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
 		Index("gsi1-index").
-		Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID)).
-		Limit(limit).
-		Scan(&trustModels)
-	nextCursor := "" // TODO: Implement proper pagination with cursor
+		Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
+	
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+	
+	// Get one more item than requested to determine if there are more results
+	err := query.Limit(limit + 1).Scan(&trustModels)
+	
+	// Generate next cursor
+	var nextCursor string
+	if len(trustModels) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = trustModels[limit-1].GSI1SK
+		trustModels = trustModels[:limit] // Trim to requested limit
+	}
 
 	if err != nil {
 		return nil, "", err

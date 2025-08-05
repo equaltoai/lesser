@@ -166,19 +166,52 @@ func (r *ListRepository) DeleteList(ctx context.Context, listID string) error {
 	return nil
 }
 
-// GetListsForUser retrieves all lists owned by a user
+// GetListsForUser retrieves all lists owned by a user (for backward compatibility)
 func (r *ListRepository) GetListsForUser(ctx context.Context, username string) ([]*storage.List, error) {
-	var listModels []models.List
-	err := r.db.WithContext(ctx).Model(&models.List{}).
+	// Use paginated version with reasonable default limit
+	lists, _, err := r.GetListsForUserPaginated(ctx, username, 100, "")
+	return lists, err
+}
+
+// GetListsForUserPaginated retrieves lists owned by a user with pagination
+func (r *ListRepository) GetListsForUserPaginated(ctx context.Context, username string, limit int, cursor string) ([]*storage.List, string, error) {
+	if limit <= 0 {
+		limit = 20 // Default limit
+	}
+	if limit > 100 {
+		limit = 100 // Max limit
+	}
+
+	query := r.db.WithContext(ctx).Model(&models.List{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
-		Scan(&listModels)
+		OrderBy("GSI1SK", "ASC")
 
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("GSI1SK", ">", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var listModels []models.List
+	err := query.Scan(&listModels)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
-			return []*storage.List{}, nil
+			return []*storage.List{}, "", nil
 		}
-		return nil, fmt.Errorf("failed to query user lists: %w", err)
+		return nil, "", fmt.Errorf("failed to query user lists: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	hasMore := len(listModels) > limit
+	if hasMore {
+		// We got more results than requested, so there are more pages
+		nextCursor = listModels[limit-1].GSI1SK
+		// Trim results to requested limit
+		listModels = listModels[:limit]
 	}
 
 	// Convert to storage.List
@@ -194,7 +227,7 @@ func (r *ListRepository) GetListsForUser(ctx context.Context, username string) (
 		}
 	}
 
-	return lists, nil
+	return lists, nextCursor, nil
 }
 
 // GetUserLists is an alias for GetListsForUser
@@ -333,20 +366,53 @@ func (r *ListRepository) IsAccountInList(ctx context.Context, listID, accountID 
 	return true, nil
 }
 
-// GetAccountLists retrieves all lists that contain an account
+// GetAccountLists retrieves all lists that contain an account (for backward compatibility)
 func (r *ListRepository) GetAccountLists(ctx context.Context, accountID string) ([]*storage.List, error) {
+	// Use paginated version with reasonable default limit
+	lists, _, err := r.GetAccountListsPaginated(ctx, accountID, 100, "")
+	return lists, err
+}
+
+// GetAccountListsPaginated retrieves lists that contain an account with pagination
+func (r *ListRepository) GetAccountListsPaginated(ctx context.Context, accountID string, limit int, cursor string) ([]*storage.List, string, error) {
+	if limit <= 0 {
+		limit = 20 // Default limit
+	}
+	if limit > 100 {
+		limit = 100 // Max limit
+	}
+
 	// Query the reverse index
-	var members []models.ListMember
-	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
+	query := r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
-		Scan(&members)
+		OrderBy("GSI1SK", "ASC")
 
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("GSI1SK", ">", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var members []models.ListMember
+	err := query.Scan(&members)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
-			return []*storage.List{}, nil
+			return []*storage.List{}, "", nil
 		}
-		return nil, fmt.Errorf("failed to query account lists: %w", err)
+		return nil, "", fmt.Errorf("failed to query account lists: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	hasMore := len(members) > limit
+	if hasMore {
+		// We got more results than requested, so there are more pages
+		nextCursor = members[limit-1].GSI1SK
+		// Trim results to requested limit
+		members = members[:limit]
 	}
 
 	// Get full list details for each membership
@@ -362,7 +428,7 @@ func (r *ListRepository) GetAccountLists(ctx context.Context, accountID string) 
 		lists = append(lists, list)
 	}
 
-	return lists, nil
+	return lists, nextCursor, nil
 }
 
 // GetAccountListsForUser retrieves all lists (for a specific user) that contain an account

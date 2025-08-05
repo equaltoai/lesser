@@ -283,7 +283,7 @@ func (ma *MetricsAggregator) processRealtimeMetrics(ctx *lift.Context, metrics [
 		}
 
 		// Store or update the aggregation
-		if err := ma.metricsRepository.CreateAggregated(context.TODO(), aggregated); err != nil {
+		if err := ma.metricsRepository.CreateAggregated(ctx.Request.Context(), aggregated); err != nil {
 			ma.logger.Error("failed to create real-time aggregation",
 				zap.String("request_id", ctx.GetRequestID()),
 				zap.String("service", service),

@@ -266,7 +266,7 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 	}
 
 	// Get issuer's public key
-	publicKey, err := v.getInstancePublicKey(pr.Issuer)
+	publicKey, err := v.getInstancePublicKey(context.Background(), pr.Issuer)
 	if err != nil {
 		result.Error = fmt.Sprintf("failed to get issuer public key: %v", err)
 		return result, nil
@@ -309,14 +309,20 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 }
 
 // getInstancePublicKey fetches the public key for an instance
-func (v *Verifier) getInstancePublicKey(instanceURL string) (ed25519.PublicKey, error) {
+func (v *Verifier) getInstancePublicKey(ctx context.Context, instanceURL string) (ed25519.PublicKey, error) {
 	// Check cache
 	if key, ok := v.keyCache[instanceURL]; ok {
 		return key, nil
 	}
 
+	// Create request with context
+	req, err := http.NewRequestWithContext(ctx, "GET", instanceURL+"/.well-known/reputation-keys", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
 	// Fetch from .well-known endpoint
-	resp, err := v.httpClient.Get(instanceURL + "/.well-known/reputation-keys")
+	resp, err := v.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch public keys: %w", err)
 	}
@@ -451,7 +457,7 @@ func canonicalizeJSON(v any) ([]byte, error) {
 // VerifyVouchSignature verifies a vouch's signature using the issuer's public key
 func (v *Verifier) VerifyVouchSignature(vouch *Vouch) (bool, error) {
 	// Get the issuer's public key from the instance
-	publicKey, err := v.getInstancePublicKey(vouch.InstanceURL)
+	publicKey, err := v.getInstancePublicKey(context.Background(), vouch.InstanceURL)
 	if err != nil {
 		// If we can't get the public key from the instance, check if we have it embedded in the vouch
 		// This would need to be added to the Vouch struct if not already there

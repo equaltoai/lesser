@@ -520,27 +520,136 @@ func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, l
 }
 
 // PinAccount pins an account for a user
-// Note: This is a placeholder implementation since AccountPin model is not yet implemented
 func (r *AccountRepository) PinAccount(ctx context.Context, username, pinnedUsername string) error {
-	// TODO: Implement when AccountPin model is available
-	// For now, return nil to satisfy interface
-	return nil
+	// Get the pinned actor to get their ID
+	pinnedActor, err := r.GetActor(ctx, pinnedUsername)
+	if err != nil {
+		return ErrorHandler.HandleNotFound(err, EntityActor, pinnedUsername)
+	}
+
+	// Create account pin using existing method
+	pin := &storage.AccountPin{
+		Username:       username,
+		PinnedActorID:  pinnedActor.ID,
+		PinnedUsername: pinnedUsername,
+		CreatedAt:      time.Now(),
+	}
+
+	return r.CreateAccountPin(ctx, pin)
 }
 
 // UnpinAccount unpins an account for a user
-// Note: This is a placeholder implementation since AccountPin model is not yet implemented
 func (r *AccountRepository) UnpinAccount(ctx context.Context, username, pinnedUsername string) error {
-	// TODO: Implement when AccountPin model is available
-	// For now, return nil to satisfy interface
+	// Get the pinned actor to get their ID
+	pinnedActor, err := r.GetActor(ctx, pinnedUsername)
+	if err != nil {
+		return ErrorHandler.HandleNotFound(err, EntityActor, pinnedUsername)
+	}
+
+	// Delete the account pin
+	err = r.db.WithContext(ctx).Model(&models.AccountPin{}).
+		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
+		Where("SK", "=", fmt.Sprintf("PIN#%s", pinnedActor.ID)).
+		Delete()
+
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("failed to remove account pin",
+			zap.String("username", username),
+			zap.String("pinnedUsername", pinnedUsername),
+			zap.Error(err))
+		return fmt.Errorf("failed to unpin account: %w", err)
+	}
+
 	return nil
 }
 
 // GetPinnedAccounts retrieves pinned accounts for a user
-// Note: This is a placeholder implementation since AccountPin model is not yet implemented
 func (r *AccountRepository) GetPinnedAccounts(ctx context.Context, username string) ([]*activitypub.Actor, error) {
-	// TODO: Implement when AccountPin model is available
-	// For now, return empty slice to satisfy interface
-	return []*activitypub.Actor{}, nil
+	// Get account pins
+	pins, err := r.GetAccountPins(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to actors
+	actors := make([]*activitypub.Actor, 0, len(pins))
+	for _, pin := range pins {
+		// Get actor by username if available
+		if pin.PinnedUsername != "" {
+			actor, err := r.GetActor(ctx, pin.PinnedUsername)
+			if err != nil {
+				r.logger.Warn("failed to get pinned actor",
+					zap.String("username", username),
+					zap.String("pinnedUsername", pin.PinnedUsername),
+					zap.Error(err))
+				continue
+			}
+			actors = append(actors, actor)
+		}
+		// If no username, we can't retrieve the actor easily
+		// This should not happen in normal operation since we store both
+	}
+
+	return actors, nil
+}
+
+// GetAccountPins retrieves all account pins for a user
+func (r *AccountRepository) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
+	var pins []models.AccountPin
+
+	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
+		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
+		Where("SK", "BEGINS_WITH", "PIN#").
+		All(&pins)
+
+	if err != nil {
+		r.logger.Error("failed to get account pins",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get account pins: %w", err)
+	}
+
+	// Convert to storage type
+	result := make([]*storage.AccountPin, len(pins))
+	for i, pin := range pins {
+		result[i] = &storage.AccountPin{
+			Username:       pin.Username,
+			PinnedActorID:  pin.PinnedActorID,
+			PinnedUsername: pin.PinnedUsername,
+			CreatedAt:      pin.CreatedAt,
+		}
+	}
+
+	return result, nil
+}
+
+
+// GetAccountPin retrieves a specific account pin by actor ID
+func (r *AccountRepository) GetAccountPin(ctx context.Context, username, targetActorID string) (*storage.AccountPin, error) {
+	var pin models.AccountPin
+
+	err := r.db.WithContext(ctx).Model(&pin).
+		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
+		Where("SK", "=", fmt.Sprintf("PIN#%s", targetActorID)).
+		First(&pin)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		r.logger.Error("failed to get account pin",
+			zap.String("username", username),
+			zap.String("targetActorID", targetActorID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get account pin: %w", err)
+	}
+
+	return &storage.AccountPin{
+		Username:       pin.Username,
+		PinnedActorID:  pin.PinnedActorID,
+		PinnedUsername: pin.PinnedUsername,
+		CreatedAt:      pin.CreatedAt,
+	}, nil
 }
 
 // Helper methods

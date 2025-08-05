@@ -22,6 +22,7 @@ import (
 type WebFingerHandler struct {
 	actorRepo   *repositories.ActorRepository
 	userRepo    *repositories.UserRepository
+	statusRepo  *repositories.StatusRepository
 	logger      *zap.Logger
 	cfg         *config.Config
 	repService  *reputation.Service
@@ -61,6 +62,7 @@ func NewWebFingerHandler() (*WebFingerHandler, error) {
 	return &WebFingerHandler{
 		actorRepo:  repos.Actor(),
 		userRepo:   repos.User(),
+		statusRepo: repos.Status(),
 		logger:     logger,
 		cfg:        cfg,
 		repService: repService,
@@ -262,7 +264,7 @@ func (wh *WebFingerHandler) handleNodeInfo21(ctx *lift.Context) error {
 		userCount = 1
 	}
 
-	// Get active user counts (TODO: implement these methods in UserRepository)
+	// Get active user counts
 	activeMonth := wh.getActiveUserCount(ctx, 30)
 	if activeMonth == -1 {
 		activeMonth = userCount // fallback
@@ -352,10 +354,12 @@ func (wh *WebFingerHandler) handleReputationKeys(ctx *lift.Context) error {
 
 // getUserCount gets the total user count using UserRepository
 func (wh *WebFingerHandler) getUserCount(ctx *lift.Context) (int, error) {
-	// TODO: Implement GetTotalUserCount in UserRepository
-	// For now, return a placeholder count
-	wh.logger.Debug("getUserCount not fully implemented, returning placeholder")
-	return 1, nil
+	count, err := wh.userRepo.GetTotalUserCount(ctx)
+	if err != nil {
+		wh.logger.Error("failed to get total user count", zap.Error(err))
+		return 0, err
+	}
+	return int(count), nil
 }
 
 // getActiveUserCount gets active user count for a given number of days
@@ -370,10 +374,12 @@ func (wh *WebFingerHandler) getActiveUserCount(ctx *lift.Context, days int) int 
 
 // getPostCount gets the total post count using StatusRepository
 func (wh *WebFingerHandler) getPostCount(ctx *lift.Context) (int, error) {
-	// TODO: Implement GetTotalStatusCount in StatusRepository
-	// For now, return a placeholder count
-	wh.logger.Debug("getPostCount not fully implemented, returning placeholder")
-	return 0, nil
+	count, err := wh.statusRepo.GetTotalStatusCount(ctx)
+	if err != nil {
+		wh.logger.Error("failed to get total status count", zap.Error(err))
+		return 0, err
+	}
+	return int(count), nil
 }
 
 func main() {

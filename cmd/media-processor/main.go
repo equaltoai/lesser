@@ -53,6 +53,17 @@ type MediaProcessor struct {
 var (
 	processor *MediaProcessor
 	cfg       *config.Config
+	// Global transcoding cost tracker with current AWS pricing
+	transcodingCosts = TranscodingCostTracker{
+		SDCostPerMinute:    15000,  // $0.015 per minute
+		HDCostPerMinute:    30000,  // $0.030 per minute  
+		UHDCostPerMinute:   45000,  // $0.045 per minute
+		LambdaGBSecondCost: 17,     // $0.0000166667 per GB-second
+		S3StorageCost:      23000,  // $0.023 per GB/month
+		CloudFrontCost:     85000,  // $0.085 per GB
+		RekognitionCost:    1000,   // $0.001 per image
+		ThumbnailCost:      100,    // $0.0001 per thumbnail
+	}
 )
 
 // MediaProcessingEvent represents the event triggered for media processing
@@ -81,6 +92,48 @@ type MediaConfig struct {
 	ContentModerationEnabled bool  `json:"content_moderation_enabled"`
 	MaxVideoDuration         int   `json:"max_video_duration"` // seconds
 	UserBudgetMicros         int64 `json:"user_budget_micros"`
+}
+
+// TranscodingCostTracker tracks detailed transcoding costs
+type TranscodingCostTracker struct {
+	// MediaConvert costs by quality tier (in microdollars per minute)
+	SDCostPerMinute  int64 // $0.015 per minute = 15,000 microdollars
+	HDCostPerMinute  int64 // $0.030 per minute = 30,000 microdollars
+	UHDCostPerMinute int64 // $0.045 per minute = 45,000 microdollars
+
+	// Lambda audio processing costs (in microdollars per GB-second)
+	LambdaGBSecondCost int64 // $0.0000166667 per GB-second = 16.6667 microdollars
+
+	// S3 storage costs (in microdollars per GB per month)
+	S3StorageCost int64 // $0.023 per GB/month = 23,000 microdollars
+
+	// CloudFront delivery costs (in microdollars per GB)
+	CloudFrontCost int64 // $0.085 per GB = 85,000 microdollars
+
+	// Rekognition costs (in microdollars per image)
+	RekognitionCost int64 // $0.001 per image = 1,000 microdollars
+
+	// Thumbnail generation costs (in microdollars per thumbnail)
+	ThumbnailCost int64 // $0.0001 per thumbnail = 100 microdollars
+}
+
+// TranscodingJobMetrics holds metrics for a specific transcoding job
+type TranscodingJobMetrics struct {
+	JobID            string            `json:"job_id"`
+	MediaID          string            `json:"media_id"`
+	Username         string            `json:"username"`
+	InputFormat      string            `json:"input_format"`
+	InputSize        int64             `json:"input_size"`
+	InputDuration    int64             `json:"input_duration"` // milliseconds
+	OutputVariants   map[string]string `json:"output_variants"`   // quality -> format
+	OutputSizes      map[string]int64  `json:"output_sizes"`      // quality -> size in bytes
+	ProcessingTimeMs int64             `json:"processing_time_ms"`
+	TotalCostMicros  int64             `json:"total_cost_micros"`
+	CostBreakdown    map[string]int64  `json:"cost_breakdown"`    // service -> cost
+	StartedAt        time.Time         `json:"started_at"`
+	CompletedAt      *time.Time        `json:"completed_at,omitempty"`
+	Status           string            `json:"status"`
+	ErrorMessage     string            `json:"error_message,omitempty"`
 }
 
 // SizeInfo contains information about a processed size variant
@@ -319,7 +372,8 @@ func (mp *MediaProcessor) initializeAWSClients(ctx context.Context) error {
 func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProcessingEvent) error {
 	mp.logger.Info("processing media job",
 		zap.String("job_id", event.JobID),
-		zap.String("media_id", event.MediaID))
+		zap.String("media_id", event.MediaID),
+		zap.String("username", event.Username))
 
 	// Get job details using DynamORM
 	job, err := mp.mediaRepo.GetMediaJob(ctx, event.JobID)
@@ -333,15 +387,65 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 		mp.logger.Warn("failed to update job status", zap.Error(err))
 	}
 
+	// Get user's media configuration and validate quotas
+	userConfig, err := mp.getUserMediaConfig(ctx, event.Username)
+	if err != nil {
+		mp.logger.Error("failed to get user media config", zap.Error(err))
+		return fmt.Errorf("failed to get user media config: %w", err)
+	}
+
 	// Download original file from S3
 	originalData, err := mp.downloadFromS3(ctx, job.S3Key)
 	if err != nil {
 		return fmt.Errorf("failed to download original: %w", err)
 	}
 
-	// Validate file type
-	if err := validateFileType(originalData, job.MimeType); err != nil {
-		return fmt.Errorf("file type validation failed: %w", err)
+	// Validate file type and size against user's configuration
+	if err := mp.validateFileForUser(originalData, job.MimeType, userConfig, event.Username); err != nil {
+		return fmt.Errorf("file validation failed: %w", err)
+	}
+
+	// Check user's remaining budget before processing
+	remainingBudget, err := mp.getUserRemainingBudget(ctx, event.Username)
+	if err != nil {
+		mp.logger.Error("failed to get user budget", zap.Error(err))
+		// Continue with processing but log the error
+	}
+
+	// Estimate cost for processing
+	estimatedCost := mp.estimateProcessingCost(originalData, job.MimeType)
+	if remainingBudget > 0 && estimatedCost > remainingBudget {
+		mp.logger.Warn("user has insufficient budget for processing",
+			zap.String("username", event.Username),
+			zap.Int64("estimated_cost", estimatedCost),
+			zap.Int64("remaining_budget", remainingBudget))
+		
+		// Fall back to basic upload only
+		result, err := mp.uploadOriginalOnly(ctx, originalData, event, job.MimeType)
+		if err != nil {
+			return fmt.Errorf("failed to upload original file: %w", err)
+		}
+		
+		// Update media record and job
+		if err := mp.updateMediaRecord(ctx, event.MediaID, result); err != nil {
+			return fmt.Errorf("failed to update media record: %w", err)
+		}
+		
+		resultsMap := map[string]any{
+			"width":        result.Width,
+			"height":       result.Height,
+			"duration":     result.Duration,
+			"blurhash":     result.Blurhash,
+			"preview_url":  result.PreviewURL,
+			"sizes":        result.Sizes,
+			"note":         "Processing skipped due to budget limits",
+		}
+		job.SetCompleted(resultsMap)
+		if err := mp.mediaRepo.UpdateMediaJob(ctx, job); err != nil {
+			return fmt.Errorf("failed to update job status: %w", err)
+		}
+		
+		return nil
 	}
 
 	// Process based on media type
@@ -393,7 +497,8 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 
 	mp.logger.Info("media processing completed",
 		zap.String("job_id", event.JobID),
-		zap.String("media_id", event.MediaID))
+		zap.String("media_id", event.MediaID),
+		zap.String("username", event.Username))
 
 	return nil
 }
@@ -478,12 +583,81 @@ func (mp *MediaProcessor) processImage(ctx context.Context, data []byte, event M
 		}
 	}
 
+	// Track comprehensive image processing costs
+	imageMetrics := &TranscodingJobMetrics{
+		JobID:         event.JobID,
+		MediaID:       event.MediaID,
+		Username:      event.Username,
+		InputFormat:   mimeType,
+		InputSize:     int64(len(data)),
+		OutputVariants: make(map[string]string),
+		OutputSizes:   make(map[string]int64),
+		CostBreakdown: make(map[string]int64),
+		StartedAt:     time.Now(),
+		Status:        "completed",
+	}
+
+	// Calculate processing costs by operation
+	imageProcessingCost := int64(200) // $0.0002 for image processing
+	imageMetrics.CostBreakdown["lambda_processing"] = imageProcessingCost
+
+	// Calculate storage costs for all variants
+	totalStorageBytes := int64(len(data)) // Original data
+	for sizeName, processed := range processedImages {
+		variantSize := int64(len(processed.Data))
+		totalStorageBytes += variantSize
+		imageMetrics.OutputVariants[sizeName] = processed.Format
+		imageMetrics.OutputSizes[sizeName] = variantSize
+	}
+
+	// S3 costs
+	uploadCost := mp.calculateS3PutCost(totalStorageBytes) * int64(len(processedImages))
+	storageCost := mp.calculateS3StorageCost(totalStorageBytes)
+	imageMetrics.CostBreakdown["s3_upload"] = uploadCost
+	imageMetrics.CostBreakdown["s3_storage"] = storageCost
+
+	// Calculate total costs
+	imageMetrics.TotalCostMicros = 0
+	for _, cost := range imageMetrics.CostBreakdown {
+		imageMetrics.TotalCostMicros += cost
+	}
+
+	// Track detailed image processing costs
+	if err := mp.trackTranscodingCosts(ctx, imageMetrics); err != nil {
+		mp.logger.Warn("failed to track image processing costs", zap.Error(err))
+	}
+
+	// Update user's storage usage
+	if err := mp.updateStorageUsageForUser(ctx, event.Username, totalStorageBytes); err != nil {
+		mp.logger.Warn("failed to update storage usage", zap.Error(err))
+	}
+
+	mp.logger.Info("image processing completed with cost tracking",
+		zap.String("media_id", event.MediaID),
+		zap.String("username", event.Username),
+		zap.Int64("total_cost_micros", imageMetrics.TotalCostMicros),
+		zap.Int("variants_generated", len(processedImages)))
+
 	return result, nil
 }
 
 func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []string) (ProcessingResult, error) {
 	result := ProcessingResult{
 		Sizes: make(map[string]SizeInfo),
+	}
+
+	// Initialize transcoding job metrics
+	jobMetrics := &TranscodingJobMetrics{
+		JobID:         event.JobID,
+		MediaID:       event.MediaID,
+		Username:      event.Username,
+		InputFormat:   "video/mp4",
+		InputSize:     int64(len(data)),
+		OutputVariants: make(map[string]string),
+		OutputSizes:   make(map[string]int64),
+		CostBreakdown: make(map[string]int64),
+		StartedAt:     time.Now(),
+		Status:        "processing",
 	}
 
 	// 1. Get user's media processing config
@@ -507,44 +681,78 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 		return mp.uploadOriginalOnly(ctx, data, event, "video/mp4")
 	}
 
-	// 4. Estimate cost for this operation
-	estimatedCost := estimateVideoCost(len(data))
-	if estimatedCost > remainingBudget {
-		mp.logger.Warn("user exceeded media budget",
+	// 4. Extract video metadata for cost estimation
+	width, height, duration := extractVideoMetadata(data)
+	jobMetrics.InputDuration = int64(duration)
+	result.Width = width
+	result.Height = height
+	result.Duration = duration
+
+	// 5. Estimate comprehensive transcoding costs
+	transcodingPlan, totalEstimatedCost := mp.estimateTranscodingCosts(jobMetrics, config)
+	if totalEstimatedCost > remainingBudget {
+		mp.logger.Warn("user exceeded media budget for transcoding",
 			zap.String("username", event.Username),
-			zap.Int64("estimated_cost", estimatedCost),
-			zap.Int64("remaining_budget", remainingBudget))
+			zap.Int64("estimated_cost", totalEstimatedCost),
+			zap.Int64("remaining_budget", remainingBudget),
+			zap.Any("transcoding_plan", transcodingPlan))
 
 		// Fallback to basic upload only
 		return mp.uploadOriginalOnly(ctx, data, event, "video/mp4")
 	}
 
-	// 5. Upload to S3 first
+	// 6. Upload original to S3 first
 	s3Key, err := sanitizeS3Key(event.Username, event.MediaID, "original.mp4")
 	if err != nil {
 		return result, fmt.Errorf("failed to sanitize S3 key: %w", err)
 	}
+
+	// Track S3 upload cost
+	s3UploadCost := mp.calculateS3PutCost(int64(len(data)))
+	jobMetrics.CostBreakdown["s3_upload"] = s3UploadCost
+
 	if err := mp.uploadToS3(ctx, s3Key, data, "video/mp4"); err != nil {
 		return result, fmt.Errorf("failed to upload video: %w", err)
 	}
 
-	// 6. Create MediaConvert job for thumbnails and metadata if enabled
+	// Track S3 storage cost (monthly, prorated)
+	s3StorageCost := mp.calculateS3StorageCost(int64(len(data)))
+	jobMetrics.CostBreakdown["s3_storage"] = s3StorageCost
+
+	// 7. Create MediaConvert job for transcoding if enabled
+	var mediaConvertJobID string
 	if config.VideoThumbnailsEnabled && mp.mediaConvertRole != "" {
-		jobID, err := mp.createMediaConvertJob(ctx, s3Key, event)
+		mediaConvertJobID, err = mp.createEnhancedMediaConvertJob(ctx, s3Key, event, transcodingPlan)
 		if err != nil {
 			mp.logger.Error("failed to create MediaConvert job", zap.Error(err))
+			jobMetrics.Status = "failed"
+			jobMetrics.ErrorMessage = err.Error()
 			// Continue anyway - video is uploaded
 		} else {
-			result.ProcessingJobID = jobID
-			mp.logger.Info("created MediaConvert job",
-				zap.String("job_id", jobID),
-				zap.String("media_id", event.MediaID))
+			result.ProcessingJobID = mediaConvertJobID
+			jobMetrics.CostBreakdown["mediaconvert"] = transcodingPlan.MediaConvertCost
+			mp.logger.Info("created enhanced MediaConvert job",
+				zap.String("job_id", mediaConvertJobID),
+				zap.String("media_id", event.MediaID),
+				zap.Int64("estimated_cost", transcodingPlan.MediaConvertCost))
 		}
 	}
 
-	// 7. Track the cost
-	if err := mp.trackUserSpend(ctx, event.Username, estimatedCost, "video_processing"); err != nil {
-		mp.logger.Warn("failed to track video processing cost", zap.Error(err))
+	// 8. Generate thumbnails if requested
+	if sliceContains(tasks, "thumbnails") {
+		thumbnailCost := mp.generateVideoThumbnails(ctx, event, transcodingPlan)
+		jobMetrics.CostBreakdown["thumbnails"] = thumbnailCost
+	}
+
+	// 9. Calculate total actual costs
+	jobMetrics.TotalCostMicros = 0
+	for _, cost := range jobMetrics.CostBreakdown {
+		jobMetrics.TotalCostMicros += cost
+	}
+
+	// 10. Track detailed transcoding costs
+	if err := mp.trackTranscodingCosts(ctx, jobMetrics); err != nil {
+		mp.logger.Warn("failed to track transcoding costs", zap.Error(err))
 	}
 
 	result.Sizes["original"] = SizeInfo{
@@ -552,79 +760,33 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 		S3Key: s3Key,
 	}
 
-	// Extract video metadata before MediaConvert processing
-	width, height, duration := extractVideoMetadata(data)
-	result.Width = width
-	result.Height = height
-	result.Duration = duration
+	// 11. Update user's storage usage (original + estimated transcoded variants)
+	estimatedVariantSize := mp.estimateVariantStorageSize(int64(len(data)), transcodingPlan)
+	if err := mp.updateStorageUsageForUser(ctx, event.Username, int64(len(data))+estimatedVariantSize); err != nil {
+		mp.logger.Warn("failed to update storage usage", zap.Error(err))
+	}
+
+	// Mark job as completed
+	now := time.Now()
+	jobMetrics.CompletedAt = &now
+	jobMetrics.ProcessingTimeMs = now.Sub(jobMetrics.StartedAt).Milliseconds()
+	if jobMetrics.Status == "processing" {
+		jobMetrics.Status = "completed"
+	}
+
+	mp.logger.Info("video transcoding completed",
+		zap.String("job_id", event.JobID),
+		zap.String("media_id", event.MediaID),
+		zap.String("username", event.Username),
+		zap.Int64("total_cost_micros", jobMetrics.TotalCostMicros),
+		zap.Int64("processing_time_ms", jobMetrics.ProcessingTimeMs))
 
 	return result, nil
 }
 
 func (mp *MediaProcessor) processAudio(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []string) (ProcessingResult, error) {
-	result := ProcessingResult{}
-
-	// 1. Get user's media processing config
-	config, err := mp.getUserMediaConfig(ctx, event.Username)
-	if err != nil {
-		mp.logger.Error("failed to get user media config", zap.Error(err))
-		return mp.uploadOriginalOnly(ctx, data, event, "audio/mpeg")
-	}
-
-	// 2. Check if audio processing is enabled
-	if !config.AudioProcessingEnabled {
-		mp.logger.Info("audio processing disabled for user", zap.String("username", event.Username))
-		return mp.uploadOriginalOnly(ctx, data, event, "audio/mpeg")
-	}
-
-	// 3. Check user's remaining budget
-	remainingBudget, err := mp.getUserRemainingBudget(ctx, event.Username)
-	if err != nil {
-		mp.logger.Error("failed to get user budget", zap.Error(err))
-		return mp.uploadOriginalOnly(ctx, data, event, "audio/mpeg")
-	}
-
-	// 4. Upload original audio
-	audioKey, err := sanitizeS3Key(event.Username, event.MediaID, "audio.mp3")
-	if err != nil {
-		return result, fmt.Errorf("failed to sanitize S3 key: %w", err)
-	}
-	if err := mp.uploadToS3(ctx, audioKey, data, "audio/mpeg"); err != nil {
-		return result, fmt.Errorf("failed to upload audio: %w", err)
-	}
-
-	result.Sizes = map[string]SizeInfo{
-		"original": {
-			URL:   mp.buildMediaURL(audioKey),
-			S3Key: audioKey,
-		},
-	}
-
-	// 5. Extract audio duration using dhowden/tag
-	duration, err := extractAudioDuration(data)
-	if err != nil {
-		mp.logger.Warn("failed to extract audio duration", zap.Error(err))
-		duration = 0 // fallback to 0 on error
-	}
-	result.Duration = duration
-
-	// 6. Track the cost (minimal for audio)
-	audioCost := int64(100) // $0.0001 for basic audio processing
-	if audioCost <= remainingBudget {
-		if err := mp.trackUserSpend(ctx, event.Username, audioCost, "audio_processing"); err != nil {
-			mp.logger.Warn("failed to track audio processing cost", zap.Error(err))
-		}
-	}
-
-	// Track S3 operations
-	mp.costTracker.TrackS3Put(1)
-	mp.costTracker.TrackS3Storage(int64(len(data)))
-
-	mp.logger.Info("audio processing completed",
-		zap.String("media_id", event.MediaID),
-		zap.String("username", event.Username))
-
-	return result, nil
+	// Use the enhanced audio processing with detailed cost tracking
+	return mp.processAudioWithCostTracking(ctx, data, event, tasks)
 }
 
 func (mp *MediaProcessor) downloadFromS3(ctx context.Context, key string) ([]byte, error) {
@@ -796,8 +958,48 @@ func getMimeTypeFromFormat(format string) string {
 // Helper functions for cost-aware processing
 
 func (mp *MediaProcessor) getUserMediaConfig(ctx context.Context, username string) (*MediaConfig, error) {
-	// For now, return default config
-	// TODO: Implement proper user media config storage with DynamORM models
+	// First, try to get the user ID from username
+	// In a real implementation, you'd want to resolve username to userID
+	// For now, we'll use username as userID for simplicity
+	userID := username
+	
+	// Get user media configuration from repository
+	userConfig, err := mp.mediaRepo.GetUserMediaConfig(ctx, userID)
+	if err != nil {
+		// If config doesn't exist, create default config
+		if strings.Contains(err.Error(), "not found") {
+			defaultConfig := &models.UserMediaConfig{
+				UserID:   userID,
+				Username: username,
+				PlanTier: "free",
+			}
+			
+			if createErr := mp.mediaRepo.CreateUserMediaConfig(ctx, defaultConfig); createErr != nil {
+				mp.logger.Error("failed to create default user media config", 
+					zap.String("username", username),
+					zap.Error(createErr))
+				// Fall back to in-memory default
+				return mp.getDefaultMediaConfig(), nil
+			}
+			userConfig = defaultConfig
+		} else {
+			mp.logger.Error("failed to get user media config", zap.Error(err))
+			return mp.getDefaultMediaConfig(), nil
+		}
+	}
+	
+	// Convert to MediaConfig struct
+	return &MediaConfig{
+		VideoProcessingEnabled:   userConfig.VideoProcessingEnabled,
+		AudioProcessingEnabled:   userConfig.AudioProcessingEnabled,
+		VideoThumbnailsEnabled:   userConfig.VideoThumbnailsEnabled,
+		ContentModerationEnabled: userConfig.ContentModerationEnabled,
+		MaxVideoDuration:         userConfig.MaxVideoDuration,
+		UserBudgetMicros:         userConfig.MonthlyBudgetMicros,
+	}, nil
+}
+
+func (mp *MediaProcessor) getDefaultMediaConfig() *MediaConfig {
 	return &MediaConfig{
 		VideoProcessingEnabled:   true,
 		AudioProcessingEnabled:   true,
@@ -805,17 +1007,41 @@ func (mp *MediaProcessor) getUserMediaConfig(ctx context.Context, username strin
 		ContentModerationEnabled: false,
 		MaxVideoDuration:         300,
 		UserBudgetMicros:         5_000_000, // $5 default
-	}, nil
+	}
 }
 
 func (mp *MediaProcessor) getUserRemainingBudget(ctx context.Context, username string) (int64, error) {
-	// For now, return default budget
-	// TODO: Implement proper user spending tracking with DynamORM models
+	// Get user's media configuration to get budget limits
 	config, err := mp.getUserMediaConfig(ctx, username)
 	if err != nil {
 		return 0, err
 	}
-	return config.UserBudgetMicros, nil
+	
+	// Get current month's spending
+	now := time.Now()
+	currentPeriod := now.Format("2006-01") // YYYY-MM format
+	userID := username // Simplification - in reality you'd resolve username to userID
+	
+	spending, err := mp.mediaRepo.GetMediaSpending(ctx, userID, currentPeriod)
+	if err != nil {
+		// If no spending record exists, user has full budget available
+		if strings.Contains(err.Error(), "not found") {
+			return config.UserBudgetMicros, nil
+		}
+		mp.logger.Error("failed to get user spending", 
+			zap.String("username", username),
+			zap.Error(err))
+		// Return full budget on error to avoid blocking users
+		return config.UserBudgetMicros, nil
+	}
+	
+	// Calculate remaining budget
+	remaining := config.UserBudgetMicros - spending.TotalSpendMicros
+	if remaining < 0 {
+		return 0, nil
+	}
+	
+	return remaining, nil
 }
 
 func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, event MediaProcessingEvent, mimeType string) (ProcessingResult, error) {
@@ -859,13 +1085,70 @@ func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, e
 }
 
 func (mp *MediaProcessor) trackUserSpend(ctx context.Context, username string, amountMicros int64, category string) error {
-	// For now, just log the spend
-	// TODO: Implement proper user spending tracking with DynamORM models
-	mp.logger.Info("tracking user spend",
+	userID := username // Simplification - in reality you'd resolve username to userID
+	
+	// Create spending transaction
+	transaction := &models.MediaSpendingTransaction{
+		UserID:      userID,
+		Username:    username,
+		CostMicros:  amountMicros,
+		Category:    category,
+		Service:     mp.getServiceFromCategory(category),
+		Operation:   mp.getOperationFromCategory(category),
+		Description: fmt.Sprintf("%s processing for user %s", category, username),
+	}
+	
+	// Add the spending transaction (this will also update the spending record)
+	err := mp.mediaRepo.AddSpendingTransaction(ctx, transaction)
+	if err != nil {
+		mp.logger.Error("failed to track user spending",
+			zap.String("username", username),
+			zap.Int64("amount_micros", amountMicros),
+			zap.String("category", category),
+			zap.Error(err))
+		return err
+	}
+	
+	mp.logger.Info("successfully tracked user spend",
 		zap.String("username", username),
 		zap.Int64("amount_micros", amountMicros),
 		zap.String("category", category))
+	
 	return nil
+}
+
+func (mp *MediaProcessor) getServiceFromCategory(category string) string {
+	switch category {
+	case "video_processing":
+		return "mediaconvert"
+	case "image_processing":
+		return "lambda"
+	case "audio_processing":
+		return "lambda"
+	case "storage":
+		return "s3"
+	case "bandwidth":
+		return "cloudfront"
+	default:
+		return "lambda"
+	}
+}
+
+func (mp *MediaProcessor) getOperationFromCategory(category string) string {
+	switch category {
+	case "video_processing":
+		return "video_transcode"
+	case "image_processing":
+		return "image_resize"
+	case "audio_processing":
+		return "audio_process"
+	case "storage":
+		return "storage_put"
+	case "bandwidth":
+		return "cdn_transfer"
+	default:
+		return "media_process"
+	}
 }
 
 func estimateVideoCost(sizeBytes int) int64 {
@@ -874,6 +1157,114 @@ func estimateVideoCost(sizeBytes int) int64 {
 	estimatedMinutes := float64(sizeBytes) / (5 * 1024 * 1024) // 5MB per minute estimate
 	costDollars := estimatedMinutes * 0.024
 	return int64(costDollars * 1_000_000) // Convert to microdollars
+}
+
+// TranscodingPlan represents a detailed plan for transcoding operations
+type TranscodingPlan struct {
+	QualityLevels     []string          `json:"quality_levels"`      // ["480p", "720p", "1080p"]
+	ExpectedOutputs   map[string]int64  `json:"expected_outputs"`    // quality -> expected file size
+	MediaConvertCost  int64             `json:"mediaconvert_cost"`   // Total MediaConvert cost
+	ThumbnailCount    int               `json:"thumbnail_count"`     // Number of thumbnails to generate
+	ThumbnailCost     int64             `json:"thumbnail_cost"`      // Total thumbnail generation cost
+	StorageCost       int64             `json:"storage_cost"`        // S3 storage cost for variants
+	AnalysisEnabled   bool              `json:"analysis_enabled"`    // Whether to run Rekognition analysis
+	AnalysisCost      int64             `json:"analysis_cost"`       // Rekognition analysis cost
+	TotalEstimatedCost int64            `json:"total_estimated_cost"`// Sum of all costs
+}
+
+// estimateTranscodingCosts creates a detailed transcoding plan and cost estimate
+func (mp *MediaProcessor) estimateTranscodingCosts(metrics *TranscodingJobMetrics, config *MediaConfig) (*TranscodingPlan, int64) {
+	plan := &TranscodingPlan{
+		QualityLevels:   []string{},
+		ExpectedOutputs: make(map[string]int64),
+	}
+
+	// Determine quality levels based on input resolution and user config
+	_, height := getResolutionFromMetrics(metrics)
+	durationMinutes := float64(metrics.InputDuration) / (1000 * 60) // Convert ms to minutes
+
+	// Always include original quality, then add transcoded qualities
+	if height >= 2160 { // 4K input
+		plan.QualityLevels = []string{"2160p", "1080p", "720p", "480p"}
+	} else if height >= 1080 { // 1080p input
+		plan.QualityLevels = []string{"1080p", "720p", "480p"}
+	} else if height >= 720 { // 720p input
+		plan.QualityLevels = []string{"720p", "480p"}
+	} else { // Lower resolution input
+		plan.QualityLevels = []string{"480p"}
+	}
+
+	// Calculate MediaConvert costs by quality level
+	for _, quality := range plan.QualityLevels {
+		var costPerMinute int64
+		var expectedSizeRatio float64
+
+		switch quality {
+		case "2160p": // 4K/UHD
+			costPerMinute = transcodingCosts.UHDCostPerMinute
+			expectedSizeRatio = 1.0 // Keep same size
+		case "1080p": // HD
+			costPerMinute = transcodingCosts.HDCostPerMinute
+			expectedSizeRatio = 0.6 // 60% of original
+		case "720p": // HD
+			costPerMinute = transcodingCosts.HDCostPerMinute
+			expectedSizeRatio = 0.4 // 40% of original
+		case "480p": // SD
+			costPerMinute = transcodingCosts.SDCostPerMinute
+			expectedSizeRatio = 0.25 // 25% of original
+		default:
+			costPerMinute = transcodingCosts.HDCostPerMinute
+			expectedSizeRatio = 0.5
+		}
+
+		// Calculate cost for this quality level
+		qualityCost := int64(float64(costPerMinute) * durationMinutes)
+		plan.MediaConvertCost += qualityCost
+
+		// Estimate output file size
+		expectedSize := int64(float64(metrics.InputSize) * expectedSizeRatio)
+		plan.ExpectedOutputs[quality] = expectedSize
+	}
+
+	// Calculate thumbnail costs
+	if config.VideoThumbnailsEnabled {
+		// Generate thumbnails at different time intervals
+		plan.ThumbnailCount = int(durationMinutes) + 1 // One thumbnail per minute + preview
+		if plan.ThumbnailCount > 10 {
+			plan.ThumbnailCount = 10 // Cap at 10 thumbnails
+		}
+		plan.ThumbnailCost = int64(plan.ThumbnailCount) * transcodingCosts.ThumbnailCost
+	}
+
+	// Calculate storage costs for all variants
+	totalVariantSize := int64(0)
+	for _, size := range plan.ExpectedOutputs {
+		totalVariantSize += size
+	}
+	plan.StorageCost = mp.calculateS3StorageCost(totalVariantSize)
+
+	// Calculate analysis costs if enabled
+	if config.ContentModerationEnabled {
+		plan.AnalysisEnabled = true
+		// Analyze preview thumbnail + sample frames
+		analysisImages := int64(plan.ThumbnailCount + 3) // Thumbnails + 3 sample frames
+		plan.AnalysisCost = analysisImages * transcodingCosts.RekognitionCost
+	}
+
+	// Sum up total estimated cost
+	plan.TotalEstimatedCost = plan.MediaConvertCost + plan.ThumbnailCost + plan.StorageCost + plan.AnalysisCost
+
+	mp.logger.Debug("estimated transcoding costs",
+		zap.String("media_id", metrics.MediaID),
+		zap.Float64("duration_minutes", durationMinutes),
+		zap.Strings("quality_levels", plan.QualityLevels),
+		zap.Int64("mediaconvert_cost", plan.MediaConvertCost),
+		zap.Int64("thumbnail_cost", plan.ThumbnailCost),
+		zap.Int64("storage_cost", plan.StorageCost),
+		zap.Int64("analysis_cost", plan.AnalysisCost),
+		zap.Int64("total_estimated_cost", plan.TotalEstimatedCost))
+
+	return plan, plan.TotalEstimatedCost
 }
 
 func (mp *MediaProcessor) createMediaConvertJob(ctx context.Context, s3InputKey string, event MediaProcessingEvent) (string, error) {
@@ -1174,4 +1565,102 @@ func sanitizeS3Key(username, mediaID, filename string) (string, error) {
 
 	// Construct safe S3 key
 	return fmt.Sprintf("media/%s/%s/%s", username, mediaID, filename), nil
+}
+
+// validateFileForUser validates a file against user's media configuration
+func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, config *MediaConfig, username string) error {
+	// First do basic file type validation
+	if err := validateFileType(data, mimeType); err != nil {
+		return err
+	}
+
+	// Check file size against user's limits
+	fileSize := int64(len(data))
+	var userMaxSize int64
+
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		userMaxSize = maxImageSize // Use global defaults for now
+	case strings.HasPrefix(mimeType, "video/"):
+		userMaxSize = maxVideoSize
+		// Check video duration limit if this is a video
+		if config.MaxVideoDuration > 0 {
+			// For now, we'll do a rough size-based check
+			// Real implementation would parse video metadata
+			estimatedDuration := estimateVideoDurationFromSize(fileSize)
+			if estimatedDuration > config.MaxVideoDuration {
+				return fmt.Errorf("video duration exceeds user limit of %d seconds", config.MaxVideoDuration)
+			}
+		}
+	case strings.HasPrefix(mimeType, "audio/"):
+		userMaxSize = maxAudioSize
+	default:
+		return fmt.Errorf("unsupported media type: %s", mimeType)
+	}
+
+	if fileSize > userMaxSize {
+		return fmt.Errorf("file size %d bytes exceeds user limit of %d bytes", fileSize, userMaxSize)
+	}
+
+	mp.logger.Debug("file validation passed",
+		zap.String("username", username),
+		zap.String("mime_type", mimeType),
+		zap.Int64("file_size", fileSize),
+		zap.Int64("user_max_size", userMaxSize))
+
+	return nil
+}
+
+// estimateProcessingCost estimates the cost of processing a media file
+func (mp *MediaProcessor) estimateProcessingCost(data []byte, mimeType string) int64 {
+	fileSize := int64(len(data))
+	
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		// Image processing: ~$0.0001 per image
+		return 100 // 100 microdollars = $0.0001
+	case strings.HasPrefix(mimeType, "video/"):
+		// Video processing: estimate based on size and MediaConvert pricing
+		return estimateVideoCost(int(fileSize))
+	case strings.HasPrefix(mimeType, "audio/"):
+		// Audio processing: minimal cost
+		return 50 // 50 microdollars = $0.00005
+	default:
+		return 100 // Default minimal cost
+	}
+}
+
+// estimateVideoDurationFromSize provides a rough estimate of video duration from file size
+func estimateVideoDurationFromSize(sizeBytes int64) int {
+	// Very rough estimation: assume average bitrate of 1 Mbps
+	// This is just for quota checking - real implementation would parse video metadata
+	const avgBitrateBytesPerSecond = 125000 // 1 Mbps in bytes/second
+	
+	estimatedSeconds := int(sizeBytes / avgBitrateBytesPerSecond)
+	if estimatedSeconds < 1 {
+		estimatedSeconds = 1
+	}
+	
+	return estimatedSeconds
+}
+
+// updateStorageUsageForUser updates a user's storage usage statistics
+func (mp *MediaProcessor) updateStorageUsageForUser(ctx context.Context, username string, additionalBytes int64) error {
+	userID := username // Simplification
+	
+	// Get user's media config
+	config, err := mp.mediaRepo.GetUserMediaConfig(ctx, userID)
+	if err != nil {
+		// If config doesn't exist, skip storage tracking
+		if strings.Contains(err.Error(), "not found") {
+			return nil
+		}
+		return err
+	}
+	
+	// Update storage usage
+	config.UpdateStorageUsage(additionalBytes)
+	
+	// Save updated config
+	return mp.mediaRepo.UpdateUserMediaConfig(ctx, config)
 }

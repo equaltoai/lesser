@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -32,12 +34,19 @@ func NewModerationRepository(db core.DB, tableName string, logger *zap.Logger) *
 	}
 }
 
-// generateRandomString generates a random string of the specified length
+// generateRandomString generates a cryptographically secure random string of the specified length
 func generateRandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	result := make([]byte, length)
 	for i := range result {
-		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		// Use crypto/rand for secure random generation
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			// Fall back to timestamp-based generation if crypto/rand fails
+			result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		} else {
+			result[i] = charset[n.Int64()]
+		}
 	}
 	return string(result)
 }
@@ -218,8 +227,12 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 		Where("GSI2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination with DynamORM
-	// For now, just return all results without cursor support
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query moderation queue: %w", err)
@@ -255,8 +268,44 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 		items = append(items, queueItem)
 	}
 
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].GSI2SK
+		models = models[:limit] // Trim to requested limit
+		
+		// Re-process the trimmed models to create items
+		items = make([]*storage.ModerationQueueItem, 0, len(models))
+		for _, model := range models {
+			// Convert model to storage.ModerationEvent
+			event := &storage.ModerationEvent{
+				ID:              model.ID,
+				EventType:       model.EventType,
+				ObjectID:        model.ObjectID,
+				ObjectType:      model.ObjectType,
+				ActorID:         model.ActorID,
+				Category:        model.Category,
+				Severity:        model.Severity,
+				ConfidenceScore: model.ConfidenceScore,
+				Evidence:        model.Evidence,
+				Reason:          model.Reason,
+				Created:         model.Created,
+				Updated:         model.Updated,
+				TTL:             model.TTL,
+			}
+
+			// Get review count for this event
+			reviewCount, _ := r.countReviews(ctx, event.ID)
+
+			queueItem := &storage.ModerationQueueItem{
+				Event:       event,
+				Priority:    int(r.getSeverityValue(event.Severity) * event.ConfidenceScore),
+				ReviewCount: reviewCount,
+			}
+			items = append(items, queueItem)
+		}
+	}
 
 	return items, nextCursor, nil
 }
@@ -269,9 +318,23 @@ func (r *ModerationRepository) GetModerationEventsByObject(ctx context.Context, 
 		Where("PK", "=", fmt.Sprintf("EVENT#%s", objectID)).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query moderation events: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].SK
+		models = models[:limit] // Trim to requested limit
 	}
 
 	events := make([]*storage.ModerationEvent, 0, len(models))
@@ -295,9 +358,6 @@ func (r *ModerationRepository) GetModerationEventsByObject(ctx context.Context, 
 			events = append(events, event)
 		}
 	}
-
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
 
 	return events, nextCursor, nil
 }
@@ -311,9 +371,23 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 		Where("GSI1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query moderation events by actor: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].GSI1SK
+		models = models[:limit] // Trim to requested limit
 	}
 
 	events := make([]*storage.ModerationEvent, 0, len(models))
@@ -337,9 +411,6 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 			events = append(events, event)
 		}
 	}
-
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
 
 	return events, nextCursor, nil
 }
@@ -904,7 +975,13 @@ func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *
 			Where("GSI2PK", "=", gsi2pk).
 			Limit(limit)
 
-		// TODO: Implement cursor-based pagination
+		if cursor != "" {
+			query = query.Cursor(cursor)
+		}
+
+		// Get one more item than requested to check if more pages exist
+		query = query.Limit(limit + 1)
+
 		if err := query.All(&models); err != nil {
 			return nil, "", fmt.Errorf("failed to query moderation events: %w", err)
 		}
@@ -933,8 +1010,38 @@ func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *
 			}
 		}
 
-		// TODO: Implement proper cursor generation
-		nextCursor := ""
+		// Generate next cursor
+		var nextCursor string
+		if len(models) > limit {
+			// We got more results than requested, so there are more pages
+			nextCursor = models[limit-1].GSI2SK
+			models = models[:limit] // Trim to requested limit
+			
+			// Re-process the trimmed models to create events
+			events = make([]*storage.ModerationEvent, 0, len(models))
+			for _, model := range models {
+				if model.Type == "EVENT" {
+					event := &storage.ModerationEvent{
+						ID:              model.ID,
+						EventType:       model.EventType,
+						ObjectID:        model.ObjectID,
+						ObjectType:      model.ObjectType,
+						ActorID:         model.ActorID,
+						Category:        model.Category,
+						Severity:        model.Severity,
+						ConfidenceScore: model.ConfidenceScore,
+						Evidence:        model.Evidence,
+						Reason:          model.Reason,
+						Created:         model.Created,
+						Updated:         model.Updated,
+						TTL:             model.TTL,
+					}
+					if r.matchesEventFilter(event, filter) {
+						events = append(events, event)
+					}
+				}
+			}
+		}
 		
 		return events, nextCursor, nil
 	}
@@ -952,7 +1059,13 @@ func (r *ModerationRepository) scanAllModerationEvents(ctx context.Context, filt
 	query := r.db.WithContext(ctx).Model(&models).
 		Limit(limit * 2) // Get extra to account for filtering
 	
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit((limit * 2) + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to scan moderation events: %w", err)
 	}
@@ -984,8 +1097,12 @@ func (r *ModerationRepository) scanAllModerationEvents(ctx context.Context, filt
 		}
 	}
 
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
+	// Generate next cursor - since we filtered, we need to check original models
+	var nextCursor string
+	if len(models) > (limit * 2) {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[(limit*2)-1].SK
+	}
 	
 	return events, nextCursor, nil
 }
@@ -1898,9 +2015,23 @@ func (r *ModerationRepository) GetFlagsByObject(ctx context.Context, objectID st
 		Where("PK", "=", fmt.Sprintf("FLAG#%s", objectID)).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query flags by object: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].SK
+		models = models[:limit] // Trim to requested limit
 	}
 
 	flags := make([]*storage.Flag, len(models))
@@ -1918,9 +2049,6 @@ func (r *ModerationRepository) GetFlagsByObject(ctx context.Context, objectID st
 			CreatedAt:  model.CreatedAt,
 		}
 	}
-
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
 
 	return flags, nextCursor, nil
 }
@@ -1934,9 +2062,23 @@ func (r *ModerationRepository) GetFlagsByActor(ctx context.Context, actorID stri
 		Where("GSI1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query flags by actor: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].GSI1SK
+		models = models[:limit] // Trim to requested limit
 	}
 
 	flags := make([]*storage.Flag, len(models))
@@ -1954,9 +2096,6 @@ func (r *ModerationRepository) GetFlagsByActor(ctx context.Context, actorID stri
 			CreatedAt:  model.CreatedAt,
 		}
 	}
-
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
 
 	return flags, nextCursor, nil
 }
@@ -1970,9 +2109,23 @@ func (r *ModerationRepository) GetPendingFlags(ctx context.Context, limit int, c
 		Where("GSI2PK", "=", "FLAG_STATUS#pending").
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query pending flags: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].GSI2SK
+		models = models[:limit] // Trim to requested limit
 	}
 
 	flags := make([]*storage.Flag, len(models))
@@ -1990,9 +2143,6 @@ func (r *ModerationRepository) GetPendingFlags(ctx context.Context, limit int, c
 			CreatedAt:  model.CreatedAt,
 		}
 	}
-
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
 
 	return flags, nextCursor, nil
 }
@@ -2178,9 +2328,23 @@ func (r *ModerationRepository) GetUserReports(ctx context.Context, username stri
 		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username)).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query user reports: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].GSI1SK
+		models = models[:limit] // Trim to requested limit
 	}
 
 	reports := make([]*storage.Report, len(models))
@@ -2210,9 +2374,6 @@ func (r *ModerationRepository) GetUserReports(ctx context.Context, username stri
 			AssignedTo:        model.AssignedTo,
 		}
 	}
-
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
 
 	return reports, nextCursor, nil
 }
@@ -2293,7 +2454,13 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 		Where("GSI2PK", "=", fmt.Sprintf("REPORTED#%s", targetAccountID)).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query reports by target: %w", err)
 	}
@@ -2326,8 +2493,42 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 		}
 	}
 
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].GSI2SK
+		models = models[:limit] // Trim to requested limit
+		
+		// Re-process the trimmed models to create reports
+		reports = make([]*storage.Report, len(models))
+		for i, model := range models {
+			reports[i] = &storage.Report{
+				ID:                model.ID,
+				ReporterID:        model.ReporterID,
+				TargetAccountID:   model.TargetAccountID,
+				StatusIDs:         model.StatusIDs,
+				Comment:           model.Comment,
+				Category:          model.Category,
+				RuleIDs:           func() []string {
+			var result []string
+			for _, ruleID := range model.RuleIDs {
+				result = append(result, strconv.Itoa(ruleID))
+			}
+			return result
+		}(),
+				Forwarded:         model.Forwarded,
+				Status:            model.Status,
+				ActionTaken:       model.ActionTaken,
+				ActionTakenAt:     model.ActionTakenAt,
+				ModeratorID:       model.ModeratorID,
+				ModerationEventID: model.ModerationEventID,
+				CreatedAt:         model.CreatedAt,
+				UpdatedAt:         model.UpdatedAt,
+				AssignedTo:        model.AssignedTo,
+			}
+		}
+	}
 
 	return reports, nextCursor, nil
 }
@@ -2341,7 +2542,13 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 		Where("GSI3PK", "=", fmt.Sprintf("STATUS#%s", string(status))).
 		Limit(limit)
 
-	// TODO: Implement cursor-based pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one more item than requested to check if more pages exist
+	query = query.Limit(limit + 1)
+
 	if err := query.All(&models); err != nil {
 		return nil, "", fmt.Errorf("failed to query reports by status: %w", err)
 	}
@@ -2374,8 +2581,42 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 		}
 	}
 
-	// TODO: Implement proper cursor generation
-	nextCursor := ""
+	// Generate next cursor
+	var nextCursor string
+	if len(models) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = models[limit-1].GSI3SK
+		models = models[:limit] // Trim to requested limit
+		
+		// Re-process the trimmed models to create reports
+		reports = make([]*storage.Report, len(models))
+		for i, model := range models {
+			reports[i] = &storage.Report{
+				ID:                model.ID,
+				ReporterID:        model.ReporterID,
+				TargetAccountID:   model.TargetAccountID,
+				StatusIDs:         model.StatusIDs,
+				Comment:           model.Comment,
+				Category:          model.Category,
+				RuleIDs:           func() []string {
+			var result []string
+			for _, ruleID := range model.RuleIDs {
+				result = append(result, strconv.Itoa(ruleID))
+			}
+			return result
+		}(),
+				Forwarded:         model.Forwarded,
+				Status:            model.Status,
+				ActionTaken:       model.ActionTaken,
+				ActionTakenAt:     model.ActionTakenAt,
+				ModeratorID:       model.ModeratorID,
+				ModerationEventID: model.ModerationEventID,
+				CreatedAt:         model.CreatedAt,
+				UpdatedAt:         model.UpdatedAt,
+				AssignedTo:        model.AssignedTo,
+			}
+		}
+	}
 
 	return reports, nextCursor, nil
 }

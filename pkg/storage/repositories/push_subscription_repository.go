@@ -2,8 +2,6 @@ package repositories
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -280,13 +278,6 @@ func (r *PushSubscriptionRepository) SetVAPIDKeys(ctx context.Context, keys *sto
 	r.logger.Debug("stored VAPID keys for instance")
 
 	return nil
-}
-
-// hashString creates a SHA256 hash of a string (same as legacy implementation)
-func hashString(s string) string {
-	h := sha256.New()
-	h.Write([]byte(s))
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 // convertStorageAlerts converts storage.PushSubscriptionAlerts to models.PushSubscriptionAlerts

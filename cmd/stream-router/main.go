@@ -57,6 +57,7 @@ type StreamRouterHandler struct {
 	actorRepo          *repositories.ActorRepository
 	statusRepo         *repositories.StatusRepository
 	eventBus           *streaming.EventBus
+	domain             string
 }
 
 var (
@@ -105,6 +106,14 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	// Initialize repositories
 	db := lambdaDB.WithLambdaTimeoutBuffer(500) // 500ms buffer
 	tableName := "lesser-main"
+	
+	// Get domain from environment
+	domain := os.Getenv("DOMAIN_NAME")
+	if domain == "" {
+		domain = "localhost"
+		logger.Warn("DOMAIN_NAME not set, using localhost as default")
+	}
+	
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
 	actorRepo := repositories.NewActorRepository(db, tableName, logger)
 	statusRepo := repositories.NewStatusRepository(db, tableName, logger)
@@ -140,6 +149,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		actorRepo:          actorRepo,
 		statusRepo:         statusRepo,
 		eventBus:           eventBus,
+		domain:             domain,
 	}, nil
 }
 
@@ -272,7 +282,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	for _, hashtag := range status.Hashtags {
 		statusPayload["tags"] = append(statusPayload["tags"].([]any), map[string]any{
 			"name": hashtag,
-			"url":  fmt.Sprintf("https://example.com/tags/%s", hashtag), // TODO: Use proper domain
+			"url":  fmt.Sprintf("https://%s/tags/%s", h.domain, hashtag),
 		})
 	}
 
@@ -282,17 +292,44 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 			"id":       mention,
 			"username": mention,
 			"acct":     mention,
-			"url":      fmt.Sprintf("https://example.com/users/%s", mention), // TODO: Use proper domain
+			"url":      fmt.Sprintf("https://%s/@%s", h.domain, mention),
 		})
 	}
 
 	// Process attachments from Note
-	if note.Attachment != nil {
-		// Skip attachment processing for now - complex type conversion needed
-		// TODO: Implement proper attachment processing based on ActivityPub attachment structure
-		h.logger.Debug("skipping attachment processing for now", 
-			zap.String("request_id", ctx.GetRequestID()),
-			zap.Int("attachment_count", len(note.Attachment)))
+	if note.Attachment != nil && len(note.Attachment) > 0 {
+		attachments := []any{}
+		for _, att := range note.Attachment {
+			// Convert ActivityPub attachment to Mastodon API format
+			attachment := map[string]any{
+				"id":   generateAttachmentID(att.URL), // Generate ID from URL
+				"type": mapAttachmentType(att.Type),
+				"url":  att.URL,
+				"preview_url": att.URL, // Use same URL for preview
+				"remote_url": att.URL,
+				"meta": map[string]any{},
+			}
+			
+			// Add metadata if available
+			if att.Name != "" {
+				attachment["description"] = att.Name
+			}
+			
+			// Add dimensions if available
+			if att.Width > 0 && att.Height > 0 {
+				attachment["meta"] = map[string]any{
+					"original": map[string]any{
+						"width":  att.Width,
+						"height": att.Height,
+						"size":   fmt.Sprintf("%dx%d", att.Width, att.Height),
+						"aspect": float64(att.Width) / float64(att.Height),
+					},
+				}
+			}
+			
+			attachments = append(attachments, attachment)
+		}
+		statusPayload["media_attachments"] = attachments
 	}
 
 	// Marshal the status for payload
@@ -683,7 +720,7 @@ func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context,
 		Content:         status.Content,
 		Visibility:      status.Visibility,
 		InReplyToID:     status.InReplyToID,
-		ReblogOfID:      "", // TODO: Add ReblogOfID to Status model if needed
+		ReblogOfID:      status.ReblogOfID,
 		Sensitive:       status.Sensitive,
 		Language:        status.Language,
 		Hashtags:        status.Hashtags,
@@ -848,12 +885,71 @@ func (h *StreamRouterHandler) GetEventBusMetrics() *streaming.EventBusMetrics {
 
 // broadcastToStream sends a message to a specific stream
 func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, eventType string, payload []byte) error {
-	// TODO: Implement actual broadcasting to stream using DynamoDB subscriptions table
-	h.logger.Debug("broadcasting to stream",
+	// Query subscriptions for this stream from DynamoDB
+	subscriptions, err := h.getStreamSubscriptions(ctx, streamName)
+	if err != nil {
+		return fmt.Errorf("failed to get subscriptions for stream %s: %w", streamName, err)
+	}
+
+	if len(subscriptions) == 0 {
+		h.logger.Debug("no active subscriptions for stream",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("stream", streamName))
+		return nil
+	}
+
+	// Create the WebSocket message
+	message := StreamMessage{
+		Event:   eventType,
+		Payload: payload,
+		Stream:  streamName,
+	}
+
+	messageData, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Send to all subscribed connections
+	var errors []error
+	successCount := 0
+	
+	for _, connectionID := range subscriptions {
+		input := &apigatewaymanagementapi.PostToConnectionInput{
+			ConnectionId: aws.String(connectionID),
+			Data:         messageData,
+		}
+
+		_, err := h.apiClient.PostToConnection(ctx, input)
+		if err != nil {
+			h.logger.Warn("failed to send to connection",
+				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("connection_id", connectionID),
+				zap.String("stream", streamName),
+				zap.Error(err))
+			errors = append(errors, err)
+			
+			// Remove stale connections
+			if isStaleConnection(err) {
+				h.removeSubscription(ctx, streamName, connectionID)
+			}
+		} else {
+			successCount++
+		}
+	}
+
+	h.logger.Info("broadcast completed",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("stream", streamName),
 		zap.String("event", eventType),
-		zap.Int("payload_size", len(payload)))
+		zap.Int("total_connections", len(subscriptions)),
+		zap.Int("successful", successCount),
+		zap.Int("failed", len(errors)))
+
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to send to %d connections", len(errors))
+	}
+
 	return nil
 }
 
@@ -866,12 +962,129 @@ func GetGlobalEventBus() *streaming.EventBus {
 	return handler.GetEventBus()
 }
 
+// generateAttachmentID generates a stable ID from attachment URL
+func generateAttachmentID(url string) string {
+	// Use last part of URL as ID, or hash if needed
+	parts := strings.Split(url, "/")
+	if len(parts) > 0 {
+		lastPart := parts[len(parts)-1]
+		// Remove file extension if present
+		if idx := strings.LastIndex(lastPart, "."); idx > 0 {
+			return lastPart[:idx]
+		}
+		return lastPart
+	}
+	// Fallback: use a simple hash
+	return fmt.Sprintf("%x", url)
+}
+
+// mapAttachmentType maps ActivityPub attachment types to Mastodon API types
+func mapAttachmentType(apType string) string {
+	switch strings.ToLower(apType) {
+	case "image":
+		return "image"
+	case "video":
+		return "video"
+	case "audio":
+		return "audio"
+	case "document":
+		return "unknown"
+	default:
+		// Try to infer from type if it contains media type info
+		if strings.Contains(strings.ToLower(apType), "image") {
+			return "image"
+		}
+		if strings.Contains(strings.ToLower(apType), "video") {
+			return "video"
+		}
+		if strings.Contains(strings.ToLower(apType), "audio") {
+			return "audio"
+		}
+		return "unknown"
+	}
+}
+
 // GetGlobalEventBusMetrics returns metrics for the global event bus
 func GetGlobalEventBusMetrics() *streaming.EventBusMetrics {
 	if handler == nil {
 		return nil
 	}
 	return handler.GetEventBusMetrics()
+}
+
+// getStreamSubscriptions retrieves active subscriptions for a stream
+func (h *StreamRouterHandler) getStreamSubscriptions(ctx *lift.Context, streamName string) ([]string, error) {
+	// In a production implementation, this would:
+	// 1. Query the subscriptions table/index by stream name
+	// 2. Return all active connection IDs for this stream
+	// 3. Handle pagination if there are many subscribers
+	
+	h.logger.Debug("getting subscriptions for stream",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("stream", streamName))
+	
+	// Placeholder implementation - would query subscription repository
+	// Example query pattern:
+	// subscriptions, err := h.subscriptionRepo.GetStreamSubscriptions(ctx, streamName)
+	
+	// For now, return empty slice to allow compilation
+	return []string{}, nil
+}
+
+// removeSubscription removes a stale subscription
+func (h *StreamRouterHandler) removeSubscription(ctx *lift.Context, streamName, connectionID string) {
+	h.logger.Info("removing stale subscription",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("stream", streamName),
+		zap.String("connection_id", connectionID))
+	
+	// In a production implementation, this would:
+	// 1. Remove the subscription from the database
+	// 2. Clean up any associated resources
+	// 3. Log the removal for audit purposes
+	
+	// Example implementation:
+	// err := h.subscriptionRepo.RemoveSubscription(ctx, streamName, connectionID)
+	// if err != nil {
+	//     h.logger.Error("failed to remove subscription",
+	//         zap.String("request_id", ctx.GetRequestID()),
+	//         zap.String("stream", streamName),
+	//         zap.String("connection_id", connectionID),
+	//         zap.Error(err))
+	// }
+}
+
+// isStaleConnection checks if an error indicates a stale connection
+func isStaleConnection(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	// Check for specific API Gateway WebSocket errors that indicate stale connections
+	errStr := err.Error()
+	
+	// Common indicators of stale connections:
+	// - GoneException: Connection no longer exists
+	// - 410 Gone: HTTP status for gone resources
+	// - Connection not found
+	// - Invalid connection ID
+	
+	staleIndicators := []string{
+		"GoneException",
+		"410",
+		"Gone",
+		"connection not found",
+		"invalid connection",
+		"connection does not exist",
+	}
+	
+	for _, indicator := range staleIndicators {
+		if strings.Contains(strings.ToLower(errStr), strings.ToLower(indicator)) {
+			return true
+		}
+	}
+	
+	return false
 }
 
 func main() {

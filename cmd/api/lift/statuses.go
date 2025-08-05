@@ -860,9 +860,20 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 				}
 				// Check if user has voted on the poll
 				if status.Poll != nil && poll != nil {
-					// TODO: Get user's votes from PollVote repository
-					status.Poll.Voted = false
-					status.Poll.OwnVotes = []int{}
+					// Get user's votes from PollVote repository
+					hasVoted, userVotes, err := h.repos.Poll().HasUserVoted(ctx.Context, poll.ID, userActor.ID)
+					if err != nil {
+						// Log error but don't fail - just assume no votes
+						h.logger.Warn("failed to get user poll votes",
+							zap.String("poll_id", poll.ID),
+							zap.String("user_id", userActor.ID),
+							zap.Error(err))
+						status.Poll.Voted = false
+						status.Poll.OwnVotes = []int{}
+					} else {
+						status.Poll.Voted = hasVoted
+						status.Poll.OwnVotes = userVotes
+					}
 				}
 			}
 		}

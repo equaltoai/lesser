@@ -53,6 +53,7 @@ type StreamEvent struct {
 type StreamingHandler struct {
 	userRepo        *repositories.UserRepository
 	connectionRepo  *repositories.StreamingConnectionRepository
+	costTracker     *repositories.WebSocketCostTracker
 	logger          *zap.Logger
 	cfg             *config.Config
 	apiClient       *apigatewaymanagementapi.Client
@@ -104,10 +105,15 @@ func init() {
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
 	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger)
 
+	// Initialize WebSocket cost tracking
+	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger)
+	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
+
 	// Create handler instance
 	handler = &StreamingHandler{
 		userRepo:       userRepo,
 		connectionRepo: connectionRepo,
+		costTracker:    costTracker,
 		logger:         logger,
 		cfg:            cfg,
 	}
@@ -173,6 +179,7 @@ func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 
 // handleConnect handles WebSocket connection events
 func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) error {
+	startTime := time.Now()
 	// Extract token from query parameters or headers
 	token := ""
 	if event.QueryStringParameters != nil {
@@ -230,6 +237,34 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 		zap.Bool("authSuccess", authSuccess),
 	)
 
+	// Track connection establishment cost
+	go func() {
+		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		opCtx := &repositories.WebSocketOperationContext{
+			ConnectionID:     event.RequestContext.ConnectionID,
+			UserID:           userID,
+			Username:         username,
+			OperationType:    "connect",
+			StartTime:        startTime,
+			RequestID:        fmt.Sprintf("connect-%s", event.RequestContext.ConnectionID),
+			ConnectionSource: "web", // Default, could be enhanced
+			AuthMethod:       getAuthMethodFromEvent(event, token),
+		}
+
+		result := &repositories.WebSocketOperationResult{
+			Success:          true,
+			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
+		}
+
+		if err := sh.costTracker.TrackWebSocketOperation(trackCtx, opCtx, result); err != nil {
+			sh.logger.Error("failed to track connection cost",
+				zap.String("connection_id", event.RequestContext.ConnectionID),
+				zap.Error(err))
+		}
+	}()
+
 	return nil
 }
 
@@ -256,8 +291,9 @@ func (sh *StreamingHandler) handleDisconnect(ctx context.Context, event events.A
 	return nil
 }
 
-// handleMessage handles WebSocket messages
+// handleMessage handles WebSocket messages  
 func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) error {
+	startTime := time.Now()
 	logger := sh.logger.With(
 		zap.String("connectionID", event.RequestContext.ConnectionID),
 		zap.String("operation", "message"),
@@ -286,15 +322,47 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 	// Handle different message types
 	switch message.Type {
 	case "subscribe":
-		return sh.handleSubscribe(ctx, connection, message)
+		err = sh.handleSubscribe(ctx, connection, message)
 	case "unsubscribe":
-		return sh.handleUnsubscribe(ctx, connection, message)
+		err = sh.handleUnsubscribe(ctx, connection, message)
 	case "ping":
-		return sh.handlePing(event.RequestContext.ConnectionID)
+		err = sh.handlePing(event.RequestContext.ConnectionID)
 	default:
 		logger.Warn("unknown message type", zap.String("type", message.Type))
-		return sh.sendError(event.RequestContext.ConnectionID, "Unknown message type")
+		err = sh.sendError(event.RequestContext.ConnectionID, "Unknown message type")
 	}
+
+	// Track message processing cost
+	go func() {
+		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		opCtx := &repositories.WebSocketOperationContext{
+			ConnectionID:  event.RequestContext.ConnectionID,
+			UserID:        connection.UserID,
+			Username:      connection.Username,
+			OperationType: "message_in",
+			StartTime:     startTime,
+			RequestID:     fmt.Sprintf("message-%s-%d", event.RequestContext.ConnectionID, time.Now().UnixNano()),
+			ActiveStreams: connection.Streams,
+		}
+
+		result := &repositories.WebSocketOperationResult{
+			Success:          err == nil,
+			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
+			MessageCount:     1,
+			MessageSizeBytes: int64(len(event.Body)),
+			Error:            err,
+		}
+
+		if trackErr := sh.costTracker.TrackWebSocketOperation(trackCtx, opCtx, result); trackErr != nil {
+			sh.logger.Error("failed to track message cost",
+				zap.String("connection_id", event.RequestContext.ConnectionID),
+				zap.Error(trackErr))
+		}
+	}()
+
+	return err
 }
 
 func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *models.WebSocketConnection, message StreamMessage) error {
@@ -469,6 +537,39 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
+// getAuthMethodFromEvent determines the authentication method used
+func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token string) string {
+	if token == "" {
+		return "anonymous"
+	}
+
+	// Check query parameters
+	if event.QueryStringParameters != nil {
+		if event.QueryStringParameters["access_token"] != "" {
+			return "oauth"
+		}
+	}
+
+	// Check headers
+	if event.Headers != nil {
+		if auth := event.Headers["Authorization"]; auth != "" {
+			if strings.HasPrefix(auth, "Bearer ") {
+				return "bearer"
+			}
+			if strings.HasPrefix(auth, "Basic ") {
+				return "basic"
+			}
+		}
+		if auth := event.Headers["authorization"]; auth != "" {
+			if strings.HasPrefix(auth, "Bearer ") {
+				return "bearer"
+			}
+		}
+	}
+
+	return "oauth" // Default if token exists but method is unclear
+}
+
 func main() {
 	// Create a new Lift application
 	app := lift.New()
@@ -529,6 +630,9 @@ func main() {
 			return next.Handle(ctx)
 		})
 	})
+
+	// Add WebSocket cost tracking middleware (fourth - tracks costs)
+	app.Use(repositories.WebSocketCostMiddleware(handler.costTracker))
 
 	// Set up WebSocket event handler
 	app.Use(func(next lift.Handler) lift.Handler {

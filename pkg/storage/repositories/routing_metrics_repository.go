@@ -180,7 +180,6 @@ func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 	routeWindows []*models.RouteMetricsWindow,
 	instanceWindows []*models.InstanceMetricsWindow,
 	globalWindow *models.GlobalMetricsWindow) error {
-	
 	// Update keys for all items
 	for _, window := range routeWindows {
 		window.UpdateKeys()

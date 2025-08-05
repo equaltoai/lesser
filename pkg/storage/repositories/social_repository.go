@@ -650,17 +650,50 @@ func (r *SocialRepository) DeleteAccountPin(ctx context.Context, username, pinne
 	return nil
 }
 
-// GetAccountPins retrieves all pinned accounts for a user
+// GetAccountPins retrieves all pinned accounts for a user (for backward compatibility)
 func (r *SocialRepository) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
-	var pins []models.AccountPin
-	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
+	// Use paginated version with reasonable default limit (typically 5 for pinned accounts)
+	pins, _, err := r.GetAccountPinsPaginated(ctx, username, 10, "")
+	return pins, err
+}
+
+// GetAccountPinsPaginated retrieves pinned accounts for a user with pagination
+func (r *SocialRepository) GetAccountPinsPaginated(ctx context.Context, username string, limit int, cursor string) ([]*storage.AccountPin, string, error) {
+	if limit <= 0 {
+		limit = 5 // Default limit for pins
+	}
+	if limit > 10 {
+		limit = 10 // Max limit for pins (Mastodon typically allows 5)
+	}
+
+	query := r.db.WithContext(ctx).Model(&models.AccountPin{}).
 		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
 		Filter("SK", "BEGINS_WITH", "PIN#").
-		Scan(&pins)
+		OrderBy("SK", "ASC")
 
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("SK", ">", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var pins []models.AccountPin
+	err := query.Scan(&pins)
 	if err != nil {
 		r.logger.Error("failed to query account pins", zap.Error(err))
-		return nil, err
+		return nil, "", err
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	hasMore := len(pins) > limit
+	if hasMore {
+		// We got more results than requested, so there are more pages
+		nextCursor = pins[limit-1].SK
+		// Trim results to requested limit
+		pins = pins[:limit]
 	}
 
 	// Convert to storage pins
@@ -674,7 +707,7 @@ func (r *SocialRepository) GetAccountPins(ctx context.Context, username string) 
 		}
 	}
 
-	return result, nil
+	return result, nextCursor, nil
 }
 
 // IsAccountPinned checks if an account is pinned
@@ -846,15 +879,48 @@ func (r *SocialRepository) DeleteStatusPin(ctx context.Context, username, status
 	return nil
 }
 
-// GetStatusPins retrieves all pinned statuses for a user
+// GetStatusPins retrieves all pinned statuses for a user (for backward compatibility)
 func (r *SocialRepository) GetStatusPins(ctx context.Context, username string) ([]*storage.StatusPin, error) {
-	var pins []models.StatusPin
-	err := r.db.WithContext(ctx).Model(&models.StatusPin{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#PINS", username)).
-		Scan(&pins)
+	// Use paginated version with reasonable default limit (typically 5 for pinned statuses)
+	pins, _, err := r.GetStatusPinsPaginated(ctx, username, 10, "")
+	return pins, err
+}
 
+// GetStatusPinsPaginated retrieves pinned statuses for a user with pagination
+func (r *SocialRepository) GetStatusPinsPaginated(ctx context.Context, username string, limit int, cursor string) ([]*storage.StatusPin, string, error) {
+	if limit <= 0 {
+		limit = 5 // Default limit for pins
+	}
+	if limit > 10 {
+		limit = 10 // Max limit for pins (Mastodon typically allows 5)
+	}
+
+	query := r.db.WithContext(ctx).Model(&models.StatusPin{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s#PINS", username)).
+		OrderBy("SK", "ASC")
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("SK", ">", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var pins []models.StatusPin
+	err := query.Scan(&pins)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query status pins: %w", err)
+		return nil, "", fmt.Errorf("failed to query status pins: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	hasMore := len(pins) > limit
+	if hasMore {
+		// We got more results than requested, so there are more pages
+		nextCursor = pins[limit-1].SK
+		// Trim results to requested limit
+		pins = pins[:limit]
 	}
 
 	// Convert to storage pins
@@ -867,7 +933,7 @@ func (r *SocialRepository) GetStatusPins(ctx context.Context, username string) (
 		}
 	}
 
-	return result, nil
+	return result, nextCursor, nil
 }
 
 // IsStatusPinned checks if a status is pinned by a user

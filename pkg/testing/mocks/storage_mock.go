@@ -3597,6 +3597,7 @@ type MockRepositoryStorage struct {
 	aiRepo              *repositories.AIRepository
 	exportRepo          *repositories.ExportRepository
 	importRepo          *repositories.ImportRepository
+	dlqRepo             *repositories.DLQRepository
 }
 
 // NewMockRepositoryStorage creates a new mock repository storage with mock repositories
@@ -3641,6 +3642,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	aiRepo := repositories.NewAIRepository(nil, "test-table", logger)
 	exportRepo := repositories.NewExportRepository(nil, "test-table", logger)
 	importRepo := repositories.NewImportRepository(nil, "test-table", logger)
+	dlqRepo := repositories.NewDLQRepository(nil, "test-table", logger)
 	
 	return &MockRepositoryStorage{
 		accountRepo:         accountRepo,
@@ -3678,6 +3680,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		aiRepo:              aiRepo,
 		exportRepo:          exportRepo,
 		importRepo:          importRepo,
+		dlqRepo:             dlqRepo,
 	}
 }
 
@@ -3828,6 +3831,10 @@ func (m *MockRepositoryStorage) Export() *repositories.ExportRepository {
 
 func (m *MockRepositoryStorage) Import() *repositories.ImportRepository {
 	return m.importRepo
+}
+
+func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository {
+	return m.dlqRepo
 }
 
 // Utility methods

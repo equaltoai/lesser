@@ -351,14 +351,3 @@ func (r *ThreatIntelRepository) GetIndicatorThreat(ctx context.Context, indicato
 
 	return model.ThreatID, nil
 }
-
-// Helper function to safely convert int to int32
-func safeIntToInt32(i int) int32 {
-	if i > 2147483647 {
-		return 2147483647
-	}
-	if i < -2147483648 {
-		return -2147483648
-	}
-	return int32(i)
-}

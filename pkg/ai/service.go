@@ -886,3 +886,50 @@ func maxFloat64(a, b float64) float64 {
 	}
 	return b
 }
+
+// GenerateEmbedding generates vector embeddings for text content using AWS Bedrock
+func (s *AIService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	// Use Titan embeddings model for generating embeddings
+	embedModelID := "amazon.titan-embed-text-v1"
+	
+	// Prepare request body for Titan embeddings
+	requestBody := map[string]any{
+		"inputText": text,
+	}
+
+	requestJSON, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal embedding request: %w", err)
+	}
+
+	// Call Bedrock for embeddings
+	response, err := s.bedrock.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
+		Body:        requestJSON,
+		ModelId:     aws.String(embedModelID),
+		ContentType: aws.String("application/json"),
+		Accept:      aws.String("application/json"),
+	})
+	if err != nil {
+		s.logger.Error("Bedrock embedding generation failed", zap.Error(err))
+		return nil, fmt.Errorf("bedrock embedding invocation failed: %w", err)
+	}
+
+	// Parse response
+	var result map[string]any
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal embedding response: %w", err)
+	}
+
+	// Extract embedding vector from Titan response
+	if embedding, ok := result["embedding"].([]interface{}); ok {
+		vector := make([]float32, len(embedding))
+		for i, val := range embedding {
+			if floatVal, ok := val.(float64); ok {
+				vector[i] = float32(floatVal)
+			}
+		}
+		return vector, nil
+	}
+
+	return nil, fmt.Errorf("invalid embedding response format")
+}

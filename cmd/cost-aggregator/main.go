@@ -448,7 +448,7 @@ func (ca *CostAggregator) processRealtimeCosts(ctx *lift.Context, costs []*model
 		}
 
 		// Store or update the aggregation
-		if err := ca.costTrackingRepository.CreateAggregated(context.TODO(), aggregated); err != nil {
+		if err := ca.costTrackingRepository.CreateAggregated(ctx.Request.Context(), aggregated); err != nil {
 			ca.logger.Error("failed to create real-time aggregation",
 				zap.String("request_id", ctx.GetRequestID()),
 				zap.String("operation_type", opType),
@@ -458,7 +458,7 @@ func (ca *CostAggregator) processRealtimeCosts(ctx *lift.Context, costs []*model
 
 	// Store the raw cost tracking records individually
 	for _, cost := range costs {
-		if err := ca.costTrackingRepository.Create(context.TODO(), cost); err != nil {
+		if err := ca.costTrackingRepository.Create(ctx.Request.Context(), cost); err != nil {
 			ca.logger.Error("failed to create cost tracking record",
 				zap.String("request_id", ctx.GetRequestID()),
 				zap.Error(err))

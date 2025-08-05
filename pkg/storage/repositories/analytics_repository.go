@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -19,13 +20,21 @@ import (
 type TrendingRepository struct {
 	db     core.DB
 	logger *zap.Logger
+	domain string
 }
 
 // NewTrendingRepository creates a new trending repository
 func NewTrendingRepository(db core.DB, logger *zap.Logger) *TrendingRepository {
+	// Get domain from environment, default to localhost for development
+	domain := os.Getenv("DOMAIN")
+	if domain == "" {
+		domain = "localhost"
+	}
+	
 	return &TrendingRepository{
 		db:     db,
 		logger: logger,
+		domain: domain,
 	}
 }
 
@@ -262,7 +271,7 @@ func (r *TrendingRepository) updateHashtagTrendScore(ctx context.Context, hashta
 		PK:          fmt.Sprintf("TREND_TYPE#HASHTAG#%s", timeBucket),
 		SK:          fmt.Sprintf("SCORE#%s#%s", paddedScore, hashtag),
 		Name:        hashtag,
-		URL:         fmt.Sprintf("https://example.com/tags/%s", hashtag), // TODO: use actual domain
+		URL:         fmt.Sprintf("https://%s/tags/%s", r.domain, hashtag),
 		UsageCount:  usageCount,
 		UniqueUsers: int64(len(uniqueUsers)),
 		LastUsed:    now,
@@ -330,7 +339,7 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 		PK:           fmt.Sprintf("TREND_TYPE#STATUS#%s", timeBucket),
 		SK:           fmt.Sprintf("SCORE#%s#%s", paddedScore, statusID),
 		ID:           statusID,
-		URL:          fmt.Sprintf("https://example.com/statuses/%s", statusID), // TODO: use actual domain
+		URL:          fmt.Sprintf("https://%s/statuses/%s", r.domain, statusID),
 		AuthorID:     "", // Would be filled from actual status
 		Content:      "", // Would be filled from actual status
 		Engagements:  totalEngagements,
@@ -524,7 +533,7 @@ func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context
 
 		status := &storage.TrendingStatus{
 			ID:          statusID,
-			URL:         fmt.Sprintf("https://example.com/statuses/%s", statusID), // TODO: use actual domain
+			URL:         fmt.Sprintf("https://%s/statuses/%s", r.domain, statusID),
 			AuthorID:    "", // Would need to query status to get this
 			Content:     "", // Would need to query status to get this
 			Engagements: score,

@@ -26,19 +26,21 @@ import (
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
 // ExportProcessor handles data export generation from SQS messages
 type ExportProcessor struct {
-	db           core.DB
-	repos        storageCore.RepositoryStorage
-	exportRepo   *repositories.ExportRepository
-	s3Client     *s3.Client
-	logger       *zap.Logger
-	tableName    string
-	bucketName   string
-	baseURL      string
+	db                core.DB
+	repos             storageCore.RepositoryStorage
+	exportRepo        *repositories.ExportRepository
+	costTrackingRepo  *repositories.CostTrackingRepository
+	s3Client          *s3.Client
+	logger            *zap.Logger
+	tableName         string
+	bucketName        string
+	baseURL           string
 }
 
 var (
@@ -81,16 +83,20 @@ func init() {
 
 	// Initialize export repository
 	exportRepo := repositories.NewExportRepository(db, cfg.DynamoTableName, logger)
+	
+	// Initialize cost tracking repository
+	costTrackingRepo := repositories.NewCostTrackingRepository(db, cfg.DynamoTableName, logger)
 
 	// Create processor instance
 	processor = &ExportProcessor{
-		db:           db,
-		repos:        repos,
-		exportRepo:   exportRepo,
-		logger:       logger,
-		tableName:    cfg.DynamoTableName,
-		bucketName:   cfg.S3BucketName,
-		baseURL:      cfg.BaseURL(),
+		db:                db,
+		repos:             repos,
+		exportRepo:        exportRepo,
+		costTrackingRepo:  costTrackingRepo,
+		logger:            logger,
+		tableName:         cfg.DynamoTableName,
+		bucketName:        cfg.S3BucketName,
+		baseURL:           cfg.BaseURL(),
 	}
 
 	if processor.bucketName == "" {
@@ -163,6 +169,64 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 		zap.String("type", event.Type),
 		zap.String("format", event.Format))
 
+	// Initialize cost tracking
+	startTime := time.Now()
+	exportCostTracking := &models.ExportCostTracking{
+		ExportID:     event.ExportID,
+		Username:     event.Username,
+		Type:         event.Type,
+		Format:       event.Format,
+		IncludeMedia: event.IncludeMedia,
+		Status:       "processing",
+		StartedAt:    startTime,
+	}
+	
+	// Note: Budget enforcement should be implemented at the API level before jobs are queued
+	// This ensures users cannot exceed limits even if multiple exports are processed simultaneously
+
+	// Track the export job completion
+	defer func() {
+		if exportCostTracking.CompletedAt == nil {
+			completedAt := time.Now()
+			exportCostTracking.CompletedAt = &completedAt
+		}
+		
+		// Calculate Lambda execution cost
+		exportCostTracking.LambdaDurationMs = time.Since(startTime).Milliseconds()
+		exportCostTracking.LambdaExecutionCost = ep.calculateLambdaCost(exportCostTracking.LambdaDurationMs)
+		
+		// Calculate total cost
+		exportCostTracking.CalculateTotalCost()
+		
+		// Save cost tracking record
+		if err := ep.costTrackingRepo.Create(ctx, &models.DynamoDBCostRecord{
+			Table:           ep.tableName,
+			OperationType:   "ExportGeneration",
+			EstimatedCostDollars: exportCostTracking.GetTotalCostDollars(),
+			TotalCostMicroCents:  exportCostTracking.TotalCostMicroCents,
+			ServiceName:     "export-generator",
+			RequestDuration: time.Since(startTime).Milliseconds(),
+			Properties: map[string]interface{}{
+				"username":   event.Username,
+				"export_id":  event.ExportID,
+			},
+		}); err != nil {
+			ep.logger.Error("failed to save export cost tracking",
+				zap.String("export_id", event.ExportID),
+				zap.Error(err))
+		}
+		
+		// Create a dedicated ImportRepository instance to update budget usage
+		// This tracks actual costs against user budgets
+		importRepo := repositories.NewImportRepository(ep.db, ep.tableName, ep.logger)
+		if err := importRepo.UpdateBudgetUsage(ctx, event.Username, "daily", 0, exportCostTracking.TotalCostMicroCents); err != nil {
+			ep.logger.Warn("failed to update budget usage",
+				zap.String("export_id", event.ExportID),
+				zap.String("username", event.Username),
+				zap.Error(err))
+		}
+	}()
+
 	// Update job status to processing
 	if err := ep.exportRepo.UpdateExportStatus(ctx, event.ExportID, "processing", nil, ""); err != nil {
 		ep.logger.Warn("failed to update export status", zap.Error(err))
@@ -177,17 +241,17 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 
 	switch event.Format {
 	case "csv":
-		exportData, recordCount, err = ep.generateCSVExport(ctx, event)
+		exportData, recordCount, err = ep.generateCSVExport(ctx, event, exportCostTracking)
 		filename = fmt.Sprintf("%s_%s.csv", event.Username, event.Type)
 		contentType = "text/csv"
 
 	case "activitypub":
-		exportData, recordCount, err = ep.generateActivityPubExport(ctx, event)
+		exportData, recordCount, err = ep.generateActivityPubExport(ctx, event, exportCostTracking)
 		filename = fmt.Sprintf("%s_activitypub_archive.zip", event.Username)
 		contentType = "application/zip"
 
 	case "mastodon":
-		exportData, recordCount, err = ep.generateMastodonExport(ctx, event)
+		exportData, recordCount, err = ep.generateMastodonExport(ctx, event, exportCostTracking)
 		filename = fmt.Sprintf("%s_mastodon_archive.zip", event.Username)
 		contentType = "application/zip"
 
@@ -199,11 +263,16 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 		return fmt.Errorf("failed to generate export: %w", err)
 	}
 
-	// Upload to S3
+	// Upload to S3 and track costs
 	s3Key := fmt.Sprintf("exports/%s/%s/%s", event.Username, event.ExportID, filename)
-	if err := ep.uploadToS3(ctx, s3Key, exportData, contentType); err != nil {
+	if err := ep.uploadToS3(ctx, s3Key, exportData, contentType, exportCostTracking); err != nil {
 		return fmt.Errorf("failed to upload export: %w", err)
 	}
+	
+	// Update export cost tracking with file metrics
+	exportCostTracking.FileSize = int64(len(exportData))
+	exportCostTracking.RecordCount = int64(recordCount)
+	exportCostTracking.Status = "completed"
 
 	// Generate pre-signed URL (24 hour expiry)
 	presignClient := s3.NewPresignClient(ep.s3Client)
@@ -237,7 +306,7 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 	return nil
 }
 
-func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGeneratorEvent) ([]byte, int, error) {
+func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
 	recordCount := 0
@@ -251,6 +320,18 @@ func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGe
 		followers, err := ep.getFollowers(ctx, event.Username)
 		if err != nil {
 			return nil, 0, err
+		}
+		
+		// Track DynamoDB read costs
+		if costTracking != nil {
+			// Estimate read capacity units (1 RCU per item, pagination queries)
+			estimatedRCU := float64(len(followers)) / 1000 * 5 // 5 RCU per 1000 items (pagination overhead)
+			if estimatedRCU < 1 {
+				estimatedRCU = 1
+			}
+			costTracking.DynamoDBReadUnits += estimatedRCU
+			costTracking.DynamoDBOperations += 1
+			costTracking.DynamoDBReadCost += ep.calculateDynamoDBReadCost(estimatedRCU)
 		}
 
 		for _, follower := range followers {
@@ -271,6 +352,17 @@ func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGe
 		following, err := ep.getFollowing(ctx, event.Username)
 		if err != nil {
 			return nil, 0, err
+		}
+		
+		// Track DynamoDB read costs
+		if costTracking != nil {
+			estimatedRCU := float64(len(following)) / 1000 * 5
+			if estimatedRCU < 1 {
+				estimatedRCU = 1
+			}
+			costTracking.DynamoDBReadUnits += estimatedRCU
+			costTracking.DynamoDBOperations += 1
+			costTracking.DynamoDBReadCost += ep.calculateDynamoDBReadCost(estimatedRCU)
 		}
 
 		for _, follow := range following {
@@ -374,7 +466,7 @@ func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGe
 	return buf.Bytes(), recordCount, nil
 }
 
-func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) ([]byte, int, error) {
+func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
 	// Create ZIP archive
 	var buf bytes.Buffer
 	zipWriter := zip.NewWriter(&buf)
@@ -473,6 +565,18 @@ func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event 
 				// Don't fail the export, just log the error
 			} else {
 				ep.logger.Info("included media files in export", zap.Int("count", mediaCount))
+				
+				// Track media file costs (estimate based on media count)
+				if costTracking != nil {
+					costTracking.MediaFilesIncluded = int64(mediaCount)
+					costTracking.S3GetRequests += int64(mediaCount)
+					costTracking.S3GetRequestCost += ep.calculateS3GetCost(int64(mediaCount))
+					
+					// Estimate media size (approximate 2MB per file)
+					estimatedMediaSize := int64(mediaCount) * 2 * 1024 * 1024 // 2MB per file
+					costTracking.MediaSizeBytes = estimatedMediaSize
+					costTracking.S3DataTransferCost += ep.calculateS3DataTransferCost(estimatedMediaSize)
+				}
 			}
 		}
 	}
@@ -481,7 +585,7 @@ func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event 
 	return buf.Bytes(), recordCount, nil
 }
 
-func (ep *ExportProcessor) generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]byte, int, error) {
+func (ep *ExportProcessor) generateMastodonExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
 	// Create ZIP archive
 	var buf bytes.Buffer
 	zipWriter := zip.NewWriter(&buf)
@@ -586,6 +690,18 @@ func (ep *ExportProcessor) generateMastodonExport(ctx context.Context, event Exp
 				// Don't fail the export, just log the error
 			} else {
 				ep.logger.Info("included media files in export", zap.Int("count", mediaCount))
+				
+				// Track media file costs (estimate based on media count)
+				if costTracking != nil {
+					costTracking.MediaFilesIncluded = int64(mediaCount)
+					costTracking.S3GetRequests += int64(mediaCount)
+					costTracking.S3GetRequestCost += ep.calculateS3GetCost(int64(mediaCount))
+					
+					// Estimate media size (approximate 2MB per file)
+					estimatedMediaSize := int64(mediaCount) * 2 * 1024 * 1024 // 2MB per file
+					costTracking.MediaSizeBytes = estimatedMediaSize
+					costTracking.S3DataTransferCost += ep.calculateS3DataTransferCost(estimatedMediaSize)
+				}
 			}
 		}
 	}
@@ -1074,7 +1190,7 @@ func (ep *ExportProcessor) convertActorIDToHandle(actorID string) string {
 	return actorID // Fallback to original
 }
 
-func (ep *ExportProcessor) uploadToS3(ctx context.Context, key string, data []byte, contentType string) error {
+func (ep *ExportProcessor) uploadToS3(ctx context.Context, key string, data []byte, contentType string, costTracking *models.ExportCostTracking) error {
 	input := &s3.PutObjectInput{
 		Bucket:      aws.String(ep.bucketName),
 		Key:         aws.String(key),
@@ -1083,6 +1199,16 @@ func (ep *ExportProcessor) uploadToS3(ctx context.Context, key string, data []by
 	}
 
 	_, err := ep.s3Client.PutObject(ctx, input)
+	
+	// Track S3 costs
+	if costTracking != nil {
+		costTracking.S3PutRequests = 1
+		costTracking.S3PutRequestCost = ep.calculateS3PutCost(1)
+		costTracking.S3StorageCost = ep.calculateS3StorageCost(int64(len(data)))
+		costTracking.DataTransferBytes = int64(len(data))
+		costTracking.S3DataTransferCost = ep.calculateS3DataTransferCost(int64(len(data)))
+	}
+	
 	return err
 }
 
@@ -1113,6 +1239,8 @@ func (ep *ExportProcessor) getDomainBlocks(ctx context.Context, username string)
 
 // includeMediaFiles downloads and includes user's media files in the export ZIP
 func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip.Writer, username string, dateRange *DateRange) (int, error) {
+	// Note: This function now tracks S3 GET costs for media file downloads
+	// The costs will be accumulated in the calling function's cost tracking
 	ep.logger.Info("including media files in export", 
 		zap.String("username", username),
 		zap.Bool("has_date_range", dateRange != nil))
@@ -1236,4 +1364,78 @@ func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip
 		zap.Int("files_requested", len(allMediaKeys)))
 
 	return totalDownloaded, nil
+}
+
+// Cost calculation helper functions
+
+// calculateLambdaCost calculates the cost of Lambda execution
+// Lambda pricing: $0.0000166667 per GB-second (assumes 512MB memory)
+func (ep *ExportProcessor) calculateLambdaCost(durationMs int64) int64 {
+	const memoryGB = 0.5 // 512MB = 0.5GB
+	const costPerGBSecond = 0.0000166667 // USD per GB-second
+	
+	durationSeconds := float64(durationMs) / 1000.0
+	costDollars := memoryGB * durationSeconds * costPerGBSecond
+	
+	// Convert to microcents (1 dollar = 1,000,000 microcents)
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3PutCost calculates the cost of S3 PUT requests
+// S3 PUT pricing: $0.005 per 1,000 requests
+func (ep *ExportProcessor) calculateS3PutCost(requestCount int64) int64 {
+	const costPer1000Requests = 0.005 // USD per 1,000 requests
+	
+	costDollars := float64(requestCount) * costPer1000Requests / 1000.0
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3GetCost calculates the cost of S3 GET requests
+// S3 GET pricing: $0.0004 per 1,000 requests
+func (ep *ExportProcessor) calculateS3GetCost(requestCount int64) int64 {
+	const costPer1000Requests = 0.0004 // USD per 1,000 requests
+	
+	costDollars := float64(requestCount) * costPer1000Requests / 1000.0
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3StorageCost calculates the cost of S3 storage
+// S3 storage pricing: $0.023 per GB per month (prorated)
+func (ep *ExportProcessor) calculateS3StorageCost(sizeBytes int64) int64 {
+	const costPerGBMonth = 0.023 // USD per GB per month
+	
+	sizeGB := float64(sizeBytes) / (1024 * 1024 * 1024) // Convert bytes to GB
+	
+	// Assume storage for 30 days (1 month)
+	costDollars := sizeGB * costPerGBMonth
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3DataTransferCost calculates the cost of S3 data transfer
+// S3 data transfer pricing: $0.09 per GB (outbound)
+func (ep *ExportProcessor) calculateS3DataTransferCost(transferBytes int64) int64 {
+	const costPerGB = 0.09 // USD per GB
+	
+	transferGB := float64(transferBytes) / (1024 * 1024 * 1024) // Convert bytes to GB
+	costDollars := transferGB * costPerGB
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateDynamoDBReadCost calculates the cost of DynamoDB read operations
+// DynamoDB pricing: $0.25 per million read requests
+func (ep *ExportProcessor) calculateDynamoDBReadCost(readUnits float64) int64 {
+	const costPerMillionReads = 0.25 // USD per million read requests
+	
+	costDollars := (readUnits / 1_000_000) * costPerMillionReads
+	
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
 }

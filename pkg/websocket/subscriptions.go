@@ -127,7 +127,8 @@ type subscriptionManager struct {
 
 // NewSubscriptionManager creates a new subscription manager
 func NewSubscriptionManager(repo *repositories.WebSocketSubscriptionManagerRepository, apiGWEndpoint string, logger *zap.Logger) (SubscriptionManager, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+	// Use background context for AWS config initialization
+	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -163,7 +164,8 @@ func (sm *subscriptionManager) HandleConnect(connectionID, userID string) error 
 	sm.connections[connectionID] = connection
 
 	// Store in DynamoDB using repository
-	err := sm.repo.HandleConnect(context.TODO(), connectionID, userID)
+	// Use background context for async repository operation
+	err := sm.repo.HandleConnect(context.Background(), connectionID, userID)
 	if err != nil {
 		return fmt.Errorf("failed to store connection: %w", err)
 	}
@@ -185,7 +187,8 @@ func (sm *subscriptionManager) HandleDisconnect(connectionID string) error {
 	delete(sm.subscriptions, connectionID)
 
 	// Remove from DynamoDB using repository
-	err := sm.repo.HandleDisconnect(context.TODO(), connectionID)
+	// Use background context for async repository operation
+	err := sm.repo.HandleDisconnect(context.Background(), connectionID)
 	if err != nil {
 		sm.logger.Warn("Failed to delete connection from DynamoDB",
 			zap.String("connection_id", connectionID),
@@ -256,7 +259,8 @@ func (sm *subscriptionManager) createSubscription(connectionID string, subscript
 	sm.subscriptions[connectionID][subscriptionType] = subscription
 
 	// Store in DynamoDB using repository
-	err := sm.repo.CreateSubscription(context.TODO(), connectionID, subscriptionType, filterMap)
+	// Use background context for async repository operation
+	err := sm.repo.CreateSubscription(context.Background(), connectionID, subscriptionType, filterMap)
 	if err != nil {
 		return fmt.Errorf("failed to store subscription: %w", err)
 	}
@@ -279,7 +283,8 @@ func (sm *subscriptionManager) Unsubscribe(connectionID string, subscriptionType
 	}
 
 	// Remove from DynamoDB using repository
-	err := sm.repo.DeleteSubscription(context.TODO(), connectionID, subscriptionType)
+	// Use background context for async repository operation
+	err := sm.repo.DeleteSubscription(context.Background(), connectionID, subscriptionType)
 	if err != nil {
 		return fmt.Errorf("failed to delete subscription: %w", err)
 	}
@@ -347,7 +352,8 @@ func (sm *subscriptionManager) publishToSubscribers(subscriptionType string, mes
 	}
 
 	// Get subscriptions from repository instead of memory
-	subscriptions, err := sm.repo.GetSubscriptionsForType(context.TODO(), subscriptionType)
+	// Use background context for async repository operation
+	subscriptions, err := sm.repo.GetSubscriptionsForType(context.Background(), subscriptionType)
 	if err != nil {
 		return fmt.Errorf("failed to get subscriptions for type %s: %w", subscriptionType, err)
 	}
@@ -390,7 +396,8 @@ func (sm *subscriptionManager) sendMessage(connectionID string, data []byte) err
 		Data:         data,
 	}
 
-	_, err := sm.apiGW.PostToConnection(context.TODO(), input)
+	// Use background context for async API Gateway operation
+	_, err := sm.apiGW.PostToConnection(context.Background(), input)
 	return err
 }
 
