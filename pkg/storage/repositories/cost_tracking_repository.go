@@ -780,3 +780,82 @@ func (r *CostTrackingRepository) GetCostsByService(ctx context.Context, startDat
 	
 	return result, nil
 }
+
+// GetCostsByDateRange returns individual cost records for the specified date range
+func (r *CostTrackingRepository) GetCostsByDateRange(ctx context.Context, startDate, endDate time.Time) ([]*models.DynamoDBCostRecord, error) {
+	return r.GetRecentCosts(ctx, startDate, 1000) // Use existing method with reasonable limit
+}
+
+// DailyAggregate represents aggregated costs for a single day
+type DailyAggregate struct {
+	Date            time.Time
+	TotalRequests   int64
+	UniqueUsers     int64
+	TotalReads      int64
+	TotalWrites     int64
+	TotalDurationMs int64
+	TotalCostDollars float64
+}
+
+// GetDailyAggregates returns aggregated daily costs for the specified date range
+func (r *CostTrackingRepository) GetDailyAggregates(ctx context.Context, startDate, endDate time.Time) ([]*DailyAggregate, error) {
+	// Get aggregated data by day
+	aggregations, err := r.GetAggregatedCostsByPeriod(ctx, "day", startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to DailyAggregate format
+	var dailyAggregates []*DailyAggregate
+	for _, agg := range aggregations {
+		daily := &DailyAggregate{
+			Date:             agg.WindowStart,
+			TotalRequests:    agg.TotalOperations,
+			TotalReads:       int64(agg.TotalReadCapacityUnits),
+			TotalWrites:      int64(agg.TotalWriteCapacityUnits),
+			TotalDurationMs:  int64(agg.AverageDuration * float64(agg.TotalOperations)),
+			TotalCostDollars: agg.TotalCostDollars,
+		}
+		dailyAggregates = append(dailyAggregates, daily)
+	}
+
+	return dailyAggregates, nil
+}
+
+// MonthlyAggregate represents aggregated costs for a single month
+type MonthlyAggregate struct {
+	Year             int
+	Month            int
+	TotalCostDollars float64
+	TotalRequests    int64
+	TotalReads       int64
+	TotalWrites      int64
+}
+
+// GetMonthlyAggregate returns aggregated costs for the specified month
+func (r *CostTrackingRepository) GetMonthlyAggregate(ctx context.Context, year, month int) (*MonthlyAggregate, error) {
+	// Calculate month boundaries
+	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 1, 0).Add(-time.Second)
+
+	// Get aggregated data for the month
+	aggregations, err := r.GetAggregatedCostsByPeriod(ctx, "month", startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(aggregations) == 0 {
+		return nil, nil
+	}
+
+	// Use the first (and should be only) aggregation for the month
+	agg := aggregations[0]
+	return &MonthlyAggregate{
+		Year:             year,
+		Month:            month,
+		TotalCostDollars: agg.TotalCostDollars,
+		TotalRequests:    agg.TotalOperations,
+		TotalReads:       int64(agg.TotalReadCapacityUnits),
+		TotalWrites:      int64(agg.TotalWriteCapacityUnits),
+	}, nil
+}

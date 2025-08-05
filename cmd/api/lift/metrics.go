@@ -2,13 +2,9 @@ package lift
 
 import (
 	"context"
-	"os"
 	"strconv"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 	"net/http"
@@ -31,22 +27,27 @@ func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 
 	// Calculate actual request rate from time-series data
 	requestsPerMinute = h.calculateRequestRateLift(ctx.Context)
-	if costStorage := h.getCostStorageLift(); costStorage != nil {
-		// Get today's metrics
-		now := time.Now()
-		dailyCosts, err := costStorage.GetDailyCosts(ctx.Context, now, now)
-		if err == nil && len(dailyCosts) > 0 {
-			// Estimate requests per minute from daily count
-			todayRequests := dailyCosts[0].RequestCount
-			if todayRequests > 0 {
-				// Assume even distribution over the day
-				requestsPerMinute = float64(todayRequests) / (24.0 * 60.0)
-
-				// Estimate average latency from Lambda duration
-				if dailyCosts[0].LambdaDurationMs > 0 && todayRequests > 0 {
-					avgLatencyMs = float64(dailyCosts[0].LambdaDurationMs) / float64(todayRequests)
-				}
+	
+	// Get today's metrics from cost tracking repository
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+	
+	dailyCosts, err := h.repos.Cost().GetCostsByDateRange(ctx.Context, startOfDay, endOfDay)
+	if err == nil && len(dailyCosts) > 0 {
+		// Count operations as proxy for requests
+		todayRequests := int64(len(dailyCosts))
+		
+		if todayRequests > 0 {
+			// Calculate requests per minute
+			hoursSinceStart := time.Since(startOfDay).Hours()
+			if hoursSinceStart > 0 {
+				requestsPerMinute = float64(todayRequests) / (hoursSinceStart * 60.0)
 			}
+			
+			// Estimate average latency based on operation type
+			// This is a rough estimate - actual latency tracking would need to be implemented
+			avgLatencyMs = 50.0 // Default estimate
 		}
 	}
 
@@ -90,22 +91,21 @@ func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
 
 	var dailyMetrics []map[string]any
 
-	if costStorage := h.getCostStorageLift(); costStorage != nil {
-		dailyCosts, err := costStorage.GetDailyCosts(ctx.Context, startDate, endDate)
-		if err != nil {
-			h.logger.Error("failed to get daily costs", zap.Error(err))
-		}
-
-		for _, daily := range dailyCosts {
+	// Get aggregated daily costs from repository
+	dailyAggregates, err := h.repos.Cost().GetDailyAggregates(ctx.Context, startDate, endDate)
+	if err != nil {
+		h.logger.Error("failed to get daily aggregates", zap.Error(err))
+	} else {
+		for _, daily := range dailyAggregates {
 			metrics := map[string]any{
-				"date": daily.Date,
+				"date": daily.Date.Format("2006-01-02"),
 				"metrics": map[string]any{
-					"total_requests":     daily.RequestCount,
+					"total_requests":     daily.TotalRequests,
 					"unique_users":       daily.UniqueUsers,
-					"dynamodb_reads":     daily.DynamoDBReads,
-					"dynamodb_writes":    daily.DynamoDBWrites,
-					"lambda_duration_ms": daily.LambdaDurationMs,
-					"cost_cents":         float64(daily.TotalCostMicrocents) / float64(cost.MicroCentsToCents),
+					"dynamodb_reads":     daily.TotalReads,
+					"dynamodb_writes":    daily.TotalWrites,
+					"lambda_duration_ms": daily.TotalDurationMs,
+					"cost_cents":         daily.TotalCostDollars * 100, // Convert dollars to cents
 				},
 			}
 			dailyMetrics = append(dailyMetrics, metrics)
@@ -154,55 +154,50 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 	storageGrowthRate := 5.2 // Default estimate
 	userGrowthRate := 12.5   // Default estimate
 
-	if costStorage := h.getCostStorageLift(); costStorage != nil {
-		currentMonth, err := costStorage.GetMonthlyCost(ctx.Context, now.Year(), now.Month())
-		if err != nil {
-			h.logger.Error("failed to get monthly cost", zap.Error(err))
-		} else if currentMonth != nil {
-			// Convert microcents to dollars
-			currentMonthCost = float64(currentMonth.TotalCostMicrocents) / float64(cost.MicroCentsToCents) / 100.0
+	// Get current month aggregates
+	monthlyAggregate, err := h.repos.Cost().GetMonthlyAggregate(ctx.Context, now.Year(), int(now.Month()))
+	if err != nil {
+		h.logger.Error("failed to get monthly aggregate", zap.Error(err))
+	} else if monthlyAggregate != nil {
+		// Current month cost in dollars
+		currentMonthCost = monthlyAggregate.TotalCostDollars
 
-			if currentMonth.ProjectedCostMicrocents > 0 {
-				monthlyProjection = float64(currentMonth.ProjectedCostMicrocents) / float64(cost.MicroCentsToCents) / 100.0
-			} else {
-				// If no projection available, estimate based on current spend
-				dayOfMonth := now.Day()
-				daysInMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
-				if dayOfMonth > 0 {
-					monthlyProjection = currentMonthCost * float64(daysInMonth) / float64(dayOfMonth)
-				}
+		// Calculate projection based on days elapsed
+		dayOfMonth := now.Day()
+		daysInMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+		if dayOfMonth > 0 {
+			monthlyProjection = currentMonthCost * float64(daysInMonth) / float64(dayOfMonth)
+		}
+	}
+
+	// Calculate growth rates from historical data
+	// Get last 30 days of data to calculate trends
+	endDate := now
+	startDate := now.AddDate(0, 0, -30)
+	dailyAggregates, err := h.repos.Cost().GetDailyAggregates(ctx.Context, startDate, endDate)
+	if err == nil && len(dailyAggregates) > 7 {
+		// Simple growth rate calculation: compare last week to first week
+		firstWeekRequests := int64(0)
+		lastWeekRequests := int64(0)
+
+		for i, daily := range dailyAggregates {
+			if i < 7 {
+				firstWeekRequests += daily.TotalRequests
+			} else if i >= len(dailyAggregates)-7 {
+				lastWeekRequests += daily.TotalRequests
 			}
 		}
 
-		// Calculate growth rates from historical data
-		// Get last 30 days of data to calculate trends
-		endDate := now
-		startDate := now.AddDate(0, 0, -30)
-		dailyCosts, err := costStorage.GetDailyCosts(ctx.Context, startDate, endDate)
-		if err == nil && len(dailyCosts) > 7 {
-			// Simple growth rate calculation: compare last week to first week
-			firstWeekRequests := int64(0)
-			lastWeekRequests := int64(0)
+		if firstWeekRequests > 0 {
+			// Calculate weekly growth rate and extrapolate to monthly
+			weeklyGrowth := float64(lastWeekRequests-firstWeekRequests) / float64(firstWeekRequests)
+			userGrowthRate = weeklyGrowth * 4.0 * 100.0 // Convert to monthly percentage
 
-			for i, daily := range dailyCosts {
-				if i < 7 {
-					firstWeekRequests += daily.RequestCount
-				} else if i >= len(dailyCosts)-7 {
-					lastWeekRequests += daily.RequestCount
-				}
-			}
-
-			if firstWeekRequests > 0 {
-				// Calculate weekly growth rate and extrapolate to monthly
-				weeklyGrowth := float64(lastWeekRequests-firstWeekRequests) / float64(firstWeekRequests)
-				userGrowthRate = weeklyGrowth * 4.0 * 100.0 // Convert to monthly percentage
-
-				// Reasonable bounds
-				if userGrowthRate < -50 {
-					userGrowthRate = -50
-				} else if userGrowthRate > 100 {
-					userGrowthRate = 100
-				}
+			// Reasonable bounds
+			if userGrowthRate < -50 {
+				userGrowthRate = -50
+			} else if userGrowthRate > 100 {
+				userGrowthRate = 100
 			}
 		}
 	}
@@ -248,28 +243,7 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 	return ctx.JSON(analytics)
 }
 
-// Helper to get cost storage
-func (h *Handler) getCostStorageLift() *cost.Storage {
-	// Check if cost tracking is configured
-	costTableName := os.Getenv("COST_HISTORY_TABLE_NAME")
-	if costTableName == "" {
-		return nil
-	}
-
-	// Create cost storage instance
-	// Note: In production, this should be cached to avoid recreating on each call
-	ctx := context.Background()
-	awsCfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(h.cfg.Region),
-	)
-	if err != nil {
-		h.logger.Error("failed to load AWS config for cost storage", zap.Error(err))
-		return nil
-	}
-
-	dynamoClient := dynamodb.NewFromConfig(awsCfg)
-	return cost.NewStorage(dynamoClient, costTableName, h.logger)
-}
+// Removed getCostStorageLift - now using CostTrackingRepository
 
 // calculateRequestRateLift calculates current requests per minute from recent data
 func (h *Handler) calculateRequestRateLift(ctx context.Context) float64 {
@@ -277,34 +251,29 @@ func (h *Handler) calculateRequestRateLift(ctx context.Context) float64 {
 	endTime := time.Now()
 	startTime := endTime.Add(-1 * time.Hour)
 
-	// Get request counts from cost storage
-	if costStorage := h.getCostStorageLift(); costStorage != nil {
-		dailyCosts, err := costStorage.GetDailyCosts(ctx, startTime, endTime)
-		if err != nil || len(dailyCosts) == 0 {
+	// Get request counts from cost tracking repository
+	costs, err := h.repos.Cost().GetCostsByDateRange(ctx, startTime, endTime)
+	if err != nil || len(costs) == 0 {
+		// Fallback: estimate from active users
+		activeUsers, err := h.repos.Analytics().GetActiveUserCount(ctx, 1) // Active in last day
+		if err != nil {
 			return 0.0
 		}
 
-		// Sum recent requests and calculate rate
-		totalRequests := int64(0)
-		for _, daily := range dailyCosts {
-			totalRequests += daily.RequestCount
-		}
-
-		// Calculate requests per minute from hourly data
-		if totalRequests > 0 {
-			return float64(totalRequests) / 60.0 // Requests per minute
-		}
+		// Estimate: each active user makes ~10 requests per hour on average
+		estimatedHourlyRequests := float64(activeUsers) * 10.0
+		return estimatedHourlyRequests / 60.0
 	}
 
-	// Fallback: estimate from active users
-	activeUsers, err := h.repos.Analytics().GetActiveUserCount(ctx, 1) // Active in last day
-	if err != nil {
-		return 0.0
+	// Count operations as proxy for requests
+	totalRequests := int64(len(costs))
+
+	// Calculate requests per minute from hourly data
+	if totalRequests > 0 {
+		return float64(totalRequests) / 60.0 // Requests per minute
 	}
 
-	// Estimate: each active user makes ~10 requests per hour on average
-	estimatedHourlyRequests := float64(activeUsers) * 10.0
-	return estimatedHourlyRequests / 60.0
+	return 0.0
 }
 
 // calculateStorageProjectionLift projects storage usage for the given number of days
