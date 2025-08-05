@@ -11,6 +11,10 @@ type Export struct {
 	PK string `dynamorm:"pk" json:"pk"`
 	SK string `dynamorm:"sk" json:"sk"`
 	
+	// GSI1 for user queries - USER#{username}, CREATED#{timestamp}
+	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
+	
 	// Export metadata
 	ID           string            `json:"id"`
 	Username     string            `json:"username"`
@@ -29,6 +33,9 @@ type Export struct {
 	S3Key        string     `json:"s3_key,omitempty"`
 	Error        string     `json:"error,omitempty"`
 	
+	// TTL for automatic cleanup
+	TTL int64 `json:"ttl,omitempty"`
+	
 	// Timestamps
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
@@ -41,10 +48,34 @@ type ExportDateRange struct {
 	End   time.Time `json:"end"`
 }
 
+// NewExportDateRangeFromStrings creates a date range from ISO date strings
+func NewExportDateRangeFromStrings(start, end string) (*ExportDateRange, error) {
+	if start == "" || end == "" {
+		return nil, nil
+	}
+	
+	startTime, err := time.Parse("2006-01-02", start)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start date: %w", err)
+	}
+	
+	endTime, err := time.Parse("2006-01-02", end)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end date: %w", err)
+	}
+	
+	return &ExportDateRange{
+		Start: startTime,
+		End:   endTime,
+	}, nil
+}
+
 // UpdateKeys sets the primary keys for the Export model
 func (e *Export) UpdateKeys() {
 	e.PK = fmt.Sprintf("EXPORT#%s", e.ID)
 	e.SK = fmt.Sprintf("EXPORT#%s", e.ID)
+	e.GSI1PK = fmt.Sprintf("USER#%s", e.Username)
+	e.GSI1SK = fmt.Sprintf("CREATED#%s", e.CreatedAt.Format(time.RFC3339))
 }
 
 // TableName returns the DynamoDB table name

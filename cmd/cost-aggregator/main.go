@@ -11,7 +11,6 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdaTypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -841,37 +840,3 @@ func getNumberFromMap(m map[string]events.DynamoDBAttributeValue, key string) (f
 	return 0, false
 }
 
-// ExtractConsumedCapacity extracts consumed capacity from DynamoDB response metadata
-// This would be called by the DynamORM wrapper to capture costs
-func ExtractConsumedCapacity(consumed *types.ConsumedCapacity) *models.DynamoDBCostRecord {
-	if consumed == nil {
-		return nil
-	}
-
-	tracking := models.NewDynamoDBCostRecordBuilder()
-
-	// Set table name
-	if consumed.TableName != nil {
-		tracking.OnTable(*consumed.TableName)
-	}
-
-	// Set capacity units
-	var readUnits, writeUnits float64
-	if consumed.ReadCapacityUnits != nil {
-		readUnits = *consumed.ReadCapacityUnits
-	}
-	if consumed.WriteCapacityUnits != nil {
-		writeUnits = *consumed.WriteCapacityUnits
-	}
-
-	tracking.WithCapacityUnits(readUnits, writeUnits)
-
-	// Calculate costs
-	readCost, writeCost, _ := models.CalculateCost(readUnits, writeUnits)
-	tracking.WithCostMicroCents(readCost, writeCost)
-
-	// Add timestamp
-	tracking.WithTag("source", "consumed_capacity")
-
-	return tracking.Build()
-}

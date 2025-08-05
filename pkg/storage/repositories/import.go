@@ -193,3 +193,51 @@ func (r *ImportRepository) GetImportsForUser(ctx context.Context, username strin
 	
 	return imports, nextCursor, nil
 }
+
+// GetUserImportsByStatus retrieves imports for a user filtered by status
+func (r *ImportRepository) GetUserImportsByStatus(ctx context.Context, username string, statuses []string) ([]*models.Import, error) {
+	var imports []*models.Import
+	
+	// Query using GSI1
+	query := r.db.Model(&models.Import{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username))
+	
+	// Get all imports for the user, then filter by status in memory
+	// This is because DynamORM doesn't support complex OR filters on non-key attributes
+	err := query.All(&imports)
+	if err != nil {
+		r.logger.Error("failed to query imports by GSI1",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get imports for user: %w", err)
+	}
+	
+	// Filter by status if specified
+	if len(statuses) > 0 {
+		statusMap := make(map[string]bool)
+		for _, status := range statuses {
+			statusMap[status] = true
+		}
+		
+		filtered := make([]*models.Import, 0)
+		for _, imp := range imports {
+			if statusMap[imp.Status] {
+				filtered = append(filtered, imp)
+			}
+		}
+		imports = filtered
+	}
+	
+	// Sort by creation date descending (most recent first)
+	for i, j := 0, len(imports)-1; i < j; i, j = i+1, j-1 {
+		imports[i], imports[j] = imports[j], imports[i]
+	}
+	
+	r.logger.Debug("retrieved imports by status",
+		zap.String("username", username),
+		zap.Strings("statuses", statuses),
+		zap.Int("count", len(imports)))
+	
+	return imports, nil
+}

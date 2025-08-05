@@ -45,6 +45,8 @@ type RepositoryStorage interface {
 	Marker() *repositories.MarkerRepository
 	FeaturedTag() *repositories.FeaturedTagRepository
 	AI() *repositories.AIRepository
+	Export() *repositories.ExportRepository
+	Import() *repositories.ImportRepository
 	
 	// Utility methods
 	GetDB() dynamormCore.DB

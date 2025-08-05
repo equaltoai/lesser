@@ -11,6 +11,10 @@ type Import struct {
 	PK string `dynamorm:"pk" json:"pk"`
 	SK string `dynamorm:"sk" json:"sk"`
 	
+	// GSI1 for user queries - USER#{username}, CREATED#{timestamp}
+	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
+	
 	// Import metadata
 	ID       string         `json:"id"`
 	Username string         `json:"username"`
@@ -27,6 +31,9 @@ type Import struct {
 	ErrorCount   int      `json:"error_count"`
 	Errors       []string `json:"errors,omitempty"`
 	
+	// TTL for automatic cleanup
+	TTL int64 `json:"ttl,omitempty"`
+	
 	// Timestamps
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
@@ -40,6 +47,8 @@ type Import struct {
 func (i *Import) UpdateKeys() {
 	i.PK = fmt.Sprintf("IMPORT#%s", i.ID)
 	i.SK = fmt.Sprintf("IMPORT#%s", i.ID)
+	i.GSI1PK = fmt.Sprintf("USER#%s", i.Username)
+	i.GSI1SK = fmt.Sprintf("CREATED#%s", i.CreatedAt.Format(time.RFC3339))
 }
 
 // TableName returns the DynamoDB table name
