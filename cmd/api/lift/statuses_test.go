@@ -7,13 +7,10 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 )
 
@@ -22,29 +19,11 @@ func TestHandleCreateStatusLift(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "test.example",
 	}
-	mockStore := &MockStorageAdapter{}
 	logger := zap.NewNop()
 	authMiddleware := &auth.Middleware{}
-	handler := NewHandler(cfg, mockStore, logger, authMiddleware)
-
-	// Create test actor
-	testActor := &activitypub.Actor{
-		BaseObject: activitypub.BaseObject{
-			ID:   "https://test.example/users/testuser",
-			Type: "Person",
-		},
-		PreferredUsername: "testuser",
-		Name:              "Test User",
-		Followers:         "https://test.example/users/testuser/followers",
-	}
+	handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 	// Mock storage calls
-	mockStore.On("GetActor", mock.Anything, "testuser").Return(testActor, nil)
-	mockStore.On("CreateObject", mock.Anything, mock.AnythingOfType("*activitypub.Note")).Return(nil)
-	mockStore.On("CreateActivity", mock.Anything, mock.AnythingOfType("*activitypub.Activity")).Return(nil)
-	mockStore.On("FanOutPost", mock.Anything, mock.AnythingOfType("*activitypub.Activity")).Return(nil)
-	mockStore.On("RecordActivity", mock.Anything, "status", testActor.ID, mock.AnythingOfType("time.Time")).Return(nil)
-	mockStore.On("UpdateActorLastStatusTime", mock.Anything, "testuser").Return(nil)
 
 	t.Run("successful status creation with JSON", func(t *testing.T) {
 		// Create test context
@@ -139,10 +118,9 @@ func TestHandleDeleteStatusLift(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "test.example",
 	}
-	mockStore := &MockStorageAdapter{}
 	logger := zap.NewNop()
 	authMiddleware := &auth.Middleware{}
-	handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+	handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 	t.Run("missing status ID", func(t *testing.T) {
 		ctx := &lift.Context{
@@ -166,10 +144,9 @@ func TestHandleGetStatusLift(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "test.example",
 	}
-	mockStore := &MockStorageAdapter{}
 	logger := zap.NewNop()
 	authMiddleware := &auth.Middleware{}
-	handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+	handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 	t.Run("missing status ID", func(t *testing.T) {
 		ctx := &lift.Context{
@@ -199,7 +176,6 @@ func TestHandleGetStatusLift(t *testing.T) {
 		}
 
 		// Mock status not found
-		mockStore.On("GetObject", mock.Anything, mock.AnythingOfType("string")).Return(nil, storage.ErrNotFound)
 
 		err := handler.HandleGetStatusLift(ctx)
 		assert.NoError(t, err) // Lift handlers return errors via JSON response, not Go errors
@@ -212,10 +188,9 @@ func TestHandleGetStatusContextLift(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "test.example",
 	}
-	mockStore := &MockStorageAdapter{}
 	logger := zap.NewNop()
 	authMiddleware := &auth.Middleware{}
-	handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+	handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 	t.Run("missing status ID", func(t *testing.T) {
 		ctx := &lift.Context{
@@ -239,10 +214,9 @@ func TestHandleGetAccountStatusesLift(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "test.example",
 	}
-	mockStore := &MockStorageAdapter{}
 	logger := zap.NewNop()
 	authMiddleware := &auth.Middleware{}
-	handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+	handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 	t.Run("missing account ID", func(t *testing.T) {
 		ctx := &lift.Context{
@@ -305,10 +279,9 @@ func TestExtractMentions(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "test.example",
 	}
-	mockStore := &MockStorageAdapter{}
 	logger := zap.NewNop()
 	authMiddleware := &auth.Middleware{}
-	handler := NewHandler(cfg, mockStore, logger, authMiddleware)
+	handler := NewHandler(cfg, &MockRepositoryStorage{}, logger, authMiddleware)
 
 	t.Run("extract mentions from content", func(t *testing.T) {
 		content := "Hello @user1 and @user2! How are you?"

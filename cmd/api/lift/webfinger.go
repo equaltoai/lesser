@@ -64,7 +64,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 	}
 
 	// Look up the user
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Warn("actor not found for webfinger",
 			zap.String("username", username),

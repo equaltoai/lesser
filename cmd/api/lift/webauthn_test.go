@@ -31,14 +31,12 @@ func TestHandleBeginWebAuthnRegistrationLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-			
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -80,14 +78,12 @@ func TestHandleFinishWebAuthnRegistrationLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-			
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -129,14 +125,12 @@ func TestHandleBeginWebAuthnLoginLift_BadRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-			
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),  
 				authMiddleware: &auth.Middleware{},
 			}
@@ -178,14 +172,12 @@ func TestHandleFinishWebAuthnLoginLift_BadRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-			
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -225,14 +217,12 @@ func TestHandleListWebAuthnCredentialsLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-			
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -272,14 +262,12 @@ func TestHandleDeleteWebAuthnCredentialLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-			
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}
@@ -321,14 +309,12 @@ func TestHandleUpdateWebAuthnCredentialNameLift_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := new(MockStorageAdapter)
-			
 			handler := &Handler{
 				cfg: &config.Config{
 					JWTSecret: "test-secret",
 					Domain:    "test.example.com",
 				},
-				store:          mockStore,
+				repos: &MockRepositoryStorage{},
 				logger:         zap.NewNop(),
 				authMiddleware: &auth.Middleware{},
 			}

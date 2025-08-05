@@ -82,7 +82,7 @@ func TestConvertStorageActorFields(t *testing.T) {
 		{
 			Name:       "Website",
 			Value:      "https://example.com",
-			VerifiedAt: &now,
+			VerifiedAt: now,
 		},
 	}
 

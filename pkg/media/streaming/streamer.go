@@ -25,9 +25,9 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -40,7 +40,7 @@ type Streamer struct {
 	bandwidthTracker *BandwidthTracker
 	qualitySelector  QualitySelector
 	sessionManager   *SessionManager
-	analytics        storage.Storage  // DynamORM storage for analytics
+	analytics        core.RepositoryStorage  // DynamORM storage for analytics
 	s3Client         *s3.Client
 	logger           *zap.Logger
 	costTracker      CostTracker
@@ -53,9 +53,9 @@ type Streamer struct {
 // NewStreamer creates a new media streamer
 func NewStreamer(
 	config *StreamingConfig,
-	analytics storage.Storage,
+	analytics core.RepositoryStorage,
 	s3Client *s3.Client,
-	db core.DB,
+	db dynamormCore.DB,
 	logger *zap.Logger,
 	costTracker CostTracker,
 ) *Streamer {
@@ -458,7 +458,7 @@ func (s *Streamer) recordManifestGeneration(mediaID string, format string, durat
 
 	// Track using the analytics storage interface
 	ctx := context.Background()
-	return s.analytics.RecordManifestGeneration(ctx, mediaID, format, duration)
+	return s.analytics.Analytics().RecordManifestGeneration(ctx, mediaID, format, duration)
 }
 
 // Note: Manifest cache cleanup is handled automatically by Go's garbage collector

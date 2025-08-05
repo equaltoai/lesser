@@ -123,5 +123,5 @@ type AccountRepository interface {
 	DeleteWalletCredential(ctx context.Context, username, address string) error
 
 	// Set storage for operations not yet migrated
-	SetStorage(storage storage.Storage)
+	SetStorage(storage interface{})
 }

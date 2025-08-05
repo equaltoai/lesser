@@ -370,10 +370,10 @@ func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 	}
 	
 	return &storage.WeeklyActivity{
-		Week:          weekTimestamp,
-		Statuses:      statuses,
-		Logins:        logins,
-		Registrations: registrations,
+		Week:          fmt.Sprintf("%d", weekTimestamp),
+		Statuses:      int(statuses),
+		Logins:        int(logins),
+		Registrations: int(registrations),
 	}, nil
 }
 

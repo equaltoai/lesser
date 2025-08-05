@@ -486,16 +486,16 @@ func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *sto
 	// Check if we have ancestors/descendants that reference missing posts
 	// StatusSearchResult doesn't have Object field, so we check if we can retrieve the actual object
 	for _, ancestor := range threadContext.Ancestors {
-		if ancestor.StatusID != "" {
-			if _, err := r.Storage.Object().GetObject(ctx, ancestor.StatusID); err != nil {
+		if ancestor != "" {
+			if _, err := r.Storage.Object().GetObject(ctx, ancestor); err != nil {
 				missingCount++
 			}
 		}
 	}
 
 	for _, descendant := range threadContext.Descendants {
-		if descendant.StatusID != "" {
-			if _, err := r.Storage.Object().GetObject(ctx, descendant.StatusID); err != nil {
+		if descendant != "" {
+			if _, err := r.Storage.Object().GetObject(ctx, descendant); err != nil {
 				missingCount++
 			}
 		}
@@ -528,11 +528,11 @@ func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext
 	// Sum engagement from all posts in the thread
 	allPosts := append(threadContext.Ancestors, threadContext.Descendants...)
 	for _, post := range allPosts {
-		if post.StatusID != "" {
+		if post != "" {
 			// Get engagement metrics for this post using StatusID
-			likes, _ := r.Storage.Like().GetLikeCount(ctx, post.StatusID)
-			shares, _ := r.Storage.Like().GetBoostCount(ctx, post.StatusID)
-			replies, _ := r.Storage.Object().CountObjectReplies(ctx, post.StatusID)
+			likes, _ := r.Storage.Like().GetLikeCount(ctx, post)
+			shares, _ := r.Storage.Like().GetBoostCount(ctx, post)
+			replies, _ := r.Storage.Object().CountObjectReplies(ctx, post)
 
 			totalEngagement += int(likes) + int(shares) + replies
 			postCount++

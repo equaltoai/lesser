@@ -22,7 +22,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 	
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
-		actor, err := h.store.GetActor(ctx.Context, testUsername)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
 		if err != nil {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -64,7 +64,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -81,7 +81,7 @@ func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activit
 	}
 
 	// Get pending follow requests
-	pendingRequests, _, err := h.store.GetPendingFollowRequests(ctx.Context, username, 100, "")
+	pendingRequests, _, err := h.repos.Relationship().GetPendingFollowRequests(ctx.Context, username, 100, "")
 	if err != nil {
 		h.logger.Error("failed to get pending follow requests", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -91,7 +91,7 @@ func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activit
 	accounts := make([]map[string]any, 0, len(pendingRequests))
 	for _, followerID := range pendingRequests {
 		// Get follower actor
-		followerActor, err := h.store.GetActor(ctx.Context, followerID)
+		followerActor, err := h.repos.Actor().GetActor(ctx.Context, followerID)
 		if err != nil {
 			h.logger.Warn("failed to get follower actor",
 				zap.String("follower_id", followerID),
@@ -127,7 +127,7 @@ func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
 	
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
-		actor, err := h.store.GetActor(ctx.Context, testUsername)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
 		if err != nil {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -169,7 +169,7 @@ func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -186,13 +186,13 @@ func (h *Handler) handleAuthorizeFollowRequestLogic(ctx *lift.Context, actor *ac
 	}
 
 	// Find the pending follow request
-	_, err := h.store.GetFollowRequest(ctx.Context, accountID, username)
+	_, err := h.repos.Relationship().GetFollowRequest(ctx.Context, accountID, username)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "follow request not found"})
 	}
 
 	// Update the relationship state to accepted
-	if err := h.store.AcceptFollowRequest(ctx.Context, accountID, username); err != nil {
+	if err := h.repos.Relationship().AcceptFollowRequest(ctx.Context, accountID, username); err != nil {
 		h.logger.Error("failed to accept follow request", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -244,7 +244,7 @@ func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
 	
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
-		actor, err := h.store.GetActor(ctx.Context, testUsername)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
 		if err != nil {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -286,7 +286,7 @@ func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -303,13 +303,13 @@ func (h *Handler) handleRejectFollowRequestLogic(ctx *lift.Context, actor *activ
 	}
 
 	// Find the pending follow request
-	_, err := h.store.GetFollowRequest(ctx.Context, accountID, username)
+	_, err := h.repos.Relationship().GetFollowRequest(ctx.Context, accountID, username)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "follow request not found"})
 	}
 
 	// Delete/reject the follow request
-	if err := h.store.RejectFollowRequest(ctx.Context, accountID, username); err != nil {
+	if err := h.repos.Relationship().RejectFollowRequest(ctx.Context, accountID, username); err != nil {
 		h.logger.Error("failed to reject follow request", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -363,7 +363,7 @@ func (h *Handler) convertActorToAccountLift(ctx context.Context, actor *activity
 	lastStatusAt := ""
 
 	// Get actor with metadata
-	_, metadata, err := h.store.GetActorWithMetadata(ctx, actor.PreferredUsername)
+	_, metadata, err := h.repos.Actor().GetActorWithMetadata(ctx, actor.PreferredUsername)
 	if err == nil && metadata != nil {
 		createdAt = metadata.CreatedAt
 		if metadata.LastStatusAt != nil {
@@ -372,11 +372,11 @@ func (h *Handler) convertActorToAccountLift(ctx context.Context, actor *activity
 	}
 
 	// Get counts
-	statusesCount, _ := h.store.GetStatusCount(ctx, actor.ID)
-	followersCount, _ := h.store.GetFollowersCount(ctx, actor.ID)
+	statusesCount, _ := h.repos.Status().CountStatusesByAuthor(ctx, actor.ID)
+	followersCount, _ := h.repos.Relationship().CountFollowers(ctx, actor.ID)
 
 	// Get following count by checking first page
-	following, _, _ := h.store.GetFollowing(ctx, actor.PreferredUsername, 1, "")
+	following, _, _ := h.repos.Relationship().GetFollowing(ctx, actor.PreferredUsername, 1, "")
 	followingCount := len(following)
 
 	return map[string]any{
@@ -406,13 +406,13 @@ func (h *Handler) convertActorToAccountLift(ctx context.Context, actor *activity
 // sendAcceptActivityLift sends an Accept activity to the follower
 func (h *Handler) sendAcceptActivityLift(ctx context.Context, followerID, followedID string) error {
 	// Get follower actor to determine inbox
-	followerActor, err := h.store.GetActor(ctx, followerID)
+	followerActor, err := h.repos.Actor().GetActor(ctx, followerID)
 	if err != nil {
 		return fmt.Errorf("failed to get follower actor: %w", err)
 	}
 
 	// Get followed actor
-	followedActor, err := h.store.GetActor(ctx, followedID)
+	followedActor, err := h.repos.Actor().GetActor(ctx, followedID)
 	if err != nil {
 		return fmt.Errorf("failed to get followed actor: %w", err)
 	}
@@ -453,13 +453,13 @@ func (h *Handler) sendAcceptActivityLift(ctx context.Context, followerID, follow
 // sendRejectActivityLift sends a Reject activity to the follower
 func (h *Handler) sendRejectActivityLift(ctx context.Context, followerID, followedID string) error {
 	// Get follower actor to determine inbox
-	followerActor, err := h.store.GetActor(ctx, followerID)
+	followerActor, err := h.repos.Actor().GetActor(ctx, followerID)
 	if err != nil {
 		return fmt.Errorf("failed to get follower actor: %w", err)
 	}
 
 	// Get followed actor
-	followedActor, err := h.store.GetActor(ctx, followedID)
+	followedActor, err := h.repos.Actor().GetActor(ctx, followedID)
 	if err != nil {
 		return fmt.Errorf("failed to get followed actor: %w", err)
 	}

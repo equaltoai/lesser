@@ -62,7 +62,7 @@ func (r *FeaturedTagRepository) CreateFeaturedTag(ctx context.Context, tag *stor
 		Name:          tagName,
 		URL:           fmt.Sprintf("https://localhost/tags/%s", tagName), // Placeholder domain
 		StatusesCount: statusesCount,
-		LastStatusAt:  lastStatusAt,
+		LastStatusAt:  func() string { if lastStatusAt != nil { return lastStatusAt.Format(time.RFC3339) }; return "" }(),
 		CreatedAt:     time.Now(),
 	}
 
@@ -150,7 +150,7 @@ func (r *FeaturedTagRepository) GetFeaturedTags(ctx context.Context, username st
 			Name:          model.Name,
 			URL:           model.URL,
 			StatusesCount: model.StatusesCount,
-			LastStatusAt:  model.LastStatusAt,
+			LastStatusAt:  func() *time.Time { if model.LastStatusAt != "" { if t, err := time.Parse(time.RFC3339, model.LastStatusAt); err == nil { return &t } }; return nil }(),
 			CreatedAt:     model.CreatedAt,
 		})
 	}
@@ -227,7 +227,7 @@ func (r *FeaturedTagRepository) GetTagSuggestions(ctx context.Context, username 
 }
 
 // calculateTagStatistics calculates the count and last usage time for a tag
-func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, userID string, tagName string) (int, string) {
+func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, userID string, tagName string) (int, *time.Time) {
 	// Query user's statuses using GSI3 to find those with the tag
 	var statusModels []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
@@ -240,11 +240,11 @@ func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, user
 			zap.String("user_id", userID),
 			zap.String("tag", tagName),
 			zap.Error(err))
-		return 0, ""
+		return 0, nil
 	}
 
 	count := 0
-	var lastStatusAt string
+	var lastStatusAt *time.Time
 	tagPattern := fmt.Sprintf("#%s", tagName)
 
 	for _, statusModel := range statusModels {
@@ -255,8 +255,8 @@ func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, user
 				count++
 
 				// Get the timestamp of the first (most recent) match
-				if lastStatusAt == "" && statusModel.Note != nil && statusModel.Note.Published != nil {
-					lastStatusAt = statusModel.Note.Published.Format(time.RFC3339)
+				if lastStatusAt == nil && statusModel.Note != nil && statusModel.Note.Published != nil {
+					lastStatusAt = statusModel.Note.Published
 				}
 			}
 		}

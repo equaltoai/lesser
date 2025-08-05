@@ -7,7 +7,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -15,15 +14,17 @@ import (
 
 // CostTrackingRepository handles cost tracking persistence
 type CostTrackingRepository struct {
-	dynamorm.BaseRepository
-	logger *zap.Logger
+	db        core.DB
+	tableName string
+	logger    *zap.Logger
 }
 
 // NewCostTrackingRepository creates a new cost tracking repository
 func NewCostTrackingRepository(db core.DB, tableName string, logger *zap.Logger) *CostTrackingRepository {
 	return &CostTrackingRepository{
-		BaseRepository: *dynamorm.NewBaseRepository(db, tableName),
-		logger:         logger,
+		db:        db,
+		tableName: tableName,
+		logger:    logger,
 	}
 }
 
@@ -35,9 +36,9 @@ func (r *CostTrackingRepository) Create(ctx context.Context, tracking *models.Dy
 	}
 
 	// Create the cost tracking record
-	err := r.GetDB().Model(tracking).Create()
+	err := r.db.Model(tracking).Create()
 	if err != nil {
-		return dynamorm.MapErrorWithContext(err, "failed to create cost tracking")
+		return MapErrorWithContext(err, "failed to create cost tracking")
 	}
 
 	r.logger.Debug("created cost tracking",
@@ -65,7 +66,7 @@ func (r *CostTrackingRepository) BatchCreate(ctx context.Context, trackingList [
 	// Use batch writer for efficiency
 	// Note: This is a simplified version - real implementation would use DynamORM's batch capabilities
 	for _, ct := range trackingList {
-		if err := r.GetDB().Model(ct).Create(); err != nil {
+		if err := r.db.Model(ct).Create(); err != nil {
 			r.logger.Error("failed to create cost tracking in batch",
 				zap.String("id", ct.ID),
 				zap.Error(err))
@@ -84,13 +85,13 @@ func (r *CostTrackingRepository) Get(ctx context.Context, operationType, id stri
 	pk := fmt.Sprintf("cost#%s", operationType)
 	sk := fmt.Sprintf("ts#%s#%s", timestamp.Format("20060102150405"), id)
 
-	err := r.GetDB().Model(tracking).
+	err := r.db.Model(tracking).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(tracking)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to get cost tracking")
+		return nil, MapErrorWithContext(err, "failed to get cost tracking")
 	}
 
 	return tracking, nil
@@ -105,7 +106,7 @@ func (r *CostTrackingRepository) ListByOperationType(ctx context.Context, operat
 	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
 
-	query := r.GetDB().Model(&models.DynamoDBCostRecord{}).
+	query := r.db.Model(&models.DynamoDBCostRecord{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -114,7 +115,7 @@ func (r *CostTrackingRepository) ListByOperationType(ctx context.Context, operat
 
 	err := query.All(&trackingList)
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list cost tracking by operation type")
+		return nil, MapErrorWithContext(err, "failed to list cost tracking by operation type")
 	}
 
 	return trackingList, nil
@@ -128,7 +129,7 @@ func (r *CostTrackingRepository) ListByTable(ctx context.Context, tableName stri
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.GetDB().Model(&models.DynamoDBCostRecord{}).
+	query := r.db.Model(&models.DynamoDBCostRecord{}).
 		Index("table-index").
 		Where("GSI1PK", "=", fmt.Sprintf("COST_TABLE#%s", tableName)).
 		Where("GSI1SK", ">=", startSK).
@@ -138,7 +139,7 @@ func (r *CostTrackingRepository) ListByTable(ctx context.Context, tableName stri
 
 	err := query.All(&trackingList)
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list cost tracking by table")
+		return nil, MapErrorWithContext(err, "failed to list cost tracking by table")
 	}
 
 	return trackingList, nil
@@ -179,13 +180,13 @@ func (r *CostTrackingRepository) GetAggregated(ctx context.Context, period, oper
 	pk := fmt.Sprintf("cost_agg#%s#%s", period, operationType)
 	sk := fmt.Sprintf("window#%s", windowStart.Format(time.RFC3339))
 
-	err := r.GetDB().Model(aggregated).
+	err := r.db.Model(aggregated).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(aggregated)
 
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to get aggregated cost tracking")
+		return nil, MapErrorWithContext(err, "failed to get aggregated cost tracking")
 	}
 
 	return aggregated, nil
@@ -199,9 +200,9 @@ func (r *CostTrackingRepository) CreateAggregated(ctx context.Context, aggregate
 	}
 
 	// Create the aggregated cost tracking
-	err := r.GetDB().Model(aggregated).Create()
+	err := r.db.Model(aggregated).Create()
 	if err != nil {
-		return dynamorm.MapErrorWithContext(err, "failed to create aggregated cost tracking")
+		return MapErrorWithContext(err, "failed to create aggregated cost tracking")
 	}
 
 	r.logger.Debug("created aggregated cost tracking",
@@ -221,9 +222,9 @@ func (r *CostTrackingRepository) UpdateAggregated(ctx context.Context, aggregate
 	}
 
 	// Update the aggregated cost tracking
-	err := r.GetDB().Model(aggregated).Update()
+	err := r.db.Model(aggregated).Update()
 	if err != nil {
-		return dynamorm.MapErrorWithContext(err, "failed to update aggregated cost tracking")
+		return MapErrorWithContext(err, "failed to update aggregated cost tracking")
 	}
 
 	return nil
@@ -237,7 +238,7 @@ func (r *CostTrackingRepository) ListAggregatedByPeriod(ctx context.Context, per
 	startSK := fmt.Sprintf("window#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
 
-	query := r.GetDB().Model(&models.DynamoDBCostAggregation{}).
+	query := r.db.Model(&models.DynamoDBCostAggregation{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -246,7 +247,7 @@ func (r *CostTrackingRepository) ListAggregatedByPeriod(ctx context.Context, per
 
 	err := query.All(&aggregatedList)
 	if err != nil {
-		return nil, dynamorm.MapErrorWithContext(err, "failed to list aggregated cost tracking")
+		return nil, MapErrorWithContext(err, "failed to list aggregated cost tracking")
 	}
 
 	return aggregatedList, nil

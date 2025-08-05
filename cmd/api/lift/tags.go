@@ -50,7 +50,7 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	}
 
 	// Get actual tag statistics from storage
-	tagStatsRaw, err := h.store.GetHashtagStats(ctx.Context, tagName)
+	tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName)
 	var tagStats *storage.HashtagStats
 	if err != nil || tagStatsRaw == nil {
 		h.logger.Error("failed to get hashtag stats", zap.Error(err))
@@ -89,9 +89,9 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 			Uses     string `json:"uses"`
 			Accounts string `json:"accounts"`
 		}{
-			Day:      strconv.FormatInt(entry.Date.Unix(), 10),
-			Uses:     strconv.FormatInt(entry.UsageCount, 10),
-			Accounts: strconv.FormatInt(entry.UserCount, 10),
+			Day:      entry.Date, // Already a string timestamp
+			Uses:     entry.UsageCount, // Already a string
+			Accounts: entry.UserCount, // Already a string
 		}
 	}
 
@@ -114,7 +114,7 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Check if following
-				following, _ := h.store.IsFollowingHashtag(ctx.Context, claims.Username, tagName)
+				following, _ := h.repos.Hashtag().IsFollowingHashtag(ctx.Context, claims.Username, tagName)
 				// Return tag with following info in a wrapper
 				response := map[string]any{
 					"name":      tag.Name,
@@ -180,7 +180,7 @@ func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
 	tagName = strings.ToLower(tagName)
 
 	// Create the follow relationship
-	err := h.store.FollowHashtag(ctx.Context, username, tagName)
+	err := h.repos.Hashtag().FollowHashtag(ctx.Context, username, tagName)
 	if err != nil {
 		h.logger.Error("failed to follow hashtag",
 			zap.String("user_id", username),
@@ -260,7 +260,7 @@ func (h *Handler) HandleUnfollowTagLift(ctx *lift.Context) error {
 	tagName = strings.ToLower(tagName)
 
 	// Remove the follow relationship
-	err := h.store.UnfollowHashtag(ctx.Context, username, tagName)
+	err := h.repos.Hashtag().UnfollowHashtag(ctx.Context, username, tagName)
 	if err != nil {
 		h.logger.Error("failed to unfollow hashtag",
 			zap.String("user_id", username),
@@ -348,7 +348,7 @@ func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
 	}
 
 	// Get followed hashtags
-	hashtags, nextCursor, err := h.store.GetFollowedHashtags(ctx.Context, username, limit, cursor)
+	hashtags, nextCursor, err := h.repos.Hashtag().GetFollowedHashtags(ctx.Context, username, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get followed hashtags", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -424,7 +424,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 	}
 
 	// Get featured tags
-	featuredTags, err := h.store.GetFeaturedTags(ctx.Context, username)
+	featuredTags, err := h.repos.FeaturedTag().GetFeaturedTags(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get featured tags", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -438,7 +438,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 			Name:          ft.Name,
 			URL:           ft.URL,
 			StatusesCount: ft.StatusesCount,
-			LastStatusAt:  ft.LastStatusAt,
+			LastStatusAt:  func() string { if ft.LastStatusAt == nil { return "" }; return ft.LastStatusAt.Format(time.RFC3339) }(),
 		}
 	}
 
@@ -507,7 +507,14 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 	}
 
 	// Create featured tag
-	featuredTag, err := h.store.CreateFeaturedTag(ctx.Context, username, req.Name)
+	tagName := strings.TrimPrefix(req.Name, "#")
+	featuredTag := &storage.FeaturedTag{
+		ID:       fmt.Sprintf("%s-%s", username, tagName),
+		Username: username,
+		Name:     tagName,
+		URL:      fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
+	}
+	err := h.repos.FeaturedTag().CreateFeaturedTag(ctx.Context, featuredTag)
 	if err != nil {
 		// Check if it's a duplicate
 		if err.Error() == "item already exists" {
@@ -527,7 +534,7 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		Name:          featuredTag.Name,
 		URL:           featuredTag.URL,
 		StatusesCount: featuredTag.StatusesCount,
-		LastStatusAt:  featuredTag.LastStatusAt,
+		LastStatusAt:  func() string { if featuredTag.LastStatusAt == nil { return "" }; return featuredTag.LastStatusAt.Format(time.RFC3339) }(),
 	}
 
 	return ctx.JSON(tag)
@@ -579,7 +586,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 	}
 
 	// Delete the featured tag
-	err := h.store.DeleteFeaturedTag(ctx.Context, username, tagID)
+	err := h.repos.FeaturedTag().DeleteFeaturedTag(ctx.Context, username, tagID)
 	if err != nil {
 		if err.Error() == "item not found" {
 			return ctx.Status(404).JSON(map[string]string{"error": "featured tag not found"})
@@ -633,7 +640,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 	}
 
 	// Get tag suggestions based on user's posting history
-	suggestions, err := h.store.GetTagSuggestions(ctx.Context, username, 10)
+	suggestions, err := h.repos.FeaturedTag().GetTagSuggestions(ctx.Context, username, 10)
 	if err != nil {
 		h.logger.Error("failed to get tag suggestions", zap.Error(err))
 		// Return empty array on error
@@ -671,7 +678,7 @@ func (h *Handler) HandleGetAccountFeaturedTagsLift(ctx *lift.Context) error {
 	}
 
 	// Get featured tags for the account
-	featuredTags, err := h.store.GetFeaturedTags(ctx.Context, accountID)
+	featuredTags, err := h.repos.FeaturedTag().GetFeaturedTags(ctx.Context, accountID)
 	if err != nil {
 		h.logger.Error("failed to get account featured tags", zap.Error(err))
 		// Return empty array on error
@@ -686,7 +693,7 @@ func (h *Handler) HandleGetAccountFeaturedTagsLift(ctx *lift.Context) error {
 			Name:          ft.Name,
 			URL:           ft.URL,
 			StatusesCount: ft.StatusesCount,
-			LastStatusAt:  ft.LastStatusAt,
+			LastStatusAt:  func() string { if ft.LastStatusAt == nil { return "" }; return ft.LastStatusAt.Format(time.RFC3339) }(),
 		}
 	}
 

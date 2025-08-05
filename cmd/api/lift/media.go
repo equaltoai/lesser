@@ -298,7 +298,7 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 		"CreatedAt":   time.Now(),
 	}
 
-	if err := h.store.CreateObject(ctx.Context, mediaRecord); err != nil {
+	if err := h.repos.Object().CreateObject(ctx.Context, mediaRecord); err != nil {
 		h.logger.Warn("failed to store media metadata", zap.Error(err))
 		// Don't fail the request, media is already uploaded
 	}
@@ -319,7 +319,7 @@ func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 	}
 
 	// Get media metadata from DynamoDB
-	obj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
+	obj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).JSON(map[string]string{
 			"error": fmt.Sprintf("media not found: %s", mediaID),
@@ -479,7 +479,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 	}
 
 	// Get existing media
-	obj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
+	obj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("MEDIA#%s", mediaID))
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).JSON(map[string]string{
 			"error": fmt.Sprintf("media not found: %s", mediaID),
@@ -505,7 +505,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 	mediaData["Focus"] = updateReq.Focus
 	mediaData["UpdatedAt"] = time.Now()
 
-	if err := h.store.UpdateObject(ctx.Context, mediaData); err != nil {
+	if err := h.repos.Object().UpdateObject(ctx.Context, mediaData); err != nil {
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
 			"error": "failed to update media",
 		})
@@ -635,7 +635,7 @@ func calculateAspectRatio(width, height int) float64 {
 // GetMediaProcessingStatus checks if a media item is still processing
 func (h *Handler) GetMediaProcessingStatus(ctx context.Context, mediaID string) (bool, int, error) {
 	// Get media record
-	obj, err := h.store.GetObject(ctx, fmt.Sprintf("MEDIA#%s", mediaID))
+	obj, err := h.repos.Object().GetObject(ctx, fmt.Sprintf("MEDIA#%s", mediaID))
 	if err != nil {
 		return false, 0, err
 	}
@@ -658,7 +658,7 @@ func (h *Handler) GetMediaProcessingStatus(ctx context.Context, mediaID string) 
 	}
 
 	// Get job record
-	jobObj, err := h.store.GetObject(ctx, fmt.Sprintf("JOB#%s", jobID))
+	jobObj, err := h.repos.Object().GetObject(ctx, fmt.Sprintf("JOB#%s", jobID))
 	if err != nil {
 		// Job not found, assume still processing
 		return true, 0, nil

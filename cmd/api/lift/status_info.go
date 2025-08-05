@@ -1,7 +1,6 @@
 package lift
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -39,7 +38,7 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 	}
 
 	// Get the object
-	object, err := h.store.GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
@@ -141,7 +140,7 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 	}
 
 	// Get the current object
-	currentObject, err := h.store.GetObject(ctx.Context, objectID)
+	currentObject, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
@@ -163,12 +162,12 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 		parts := strings.Split(attributedTo, "/")
 		if len(parts) > 0 {
 			username := parts[len(parts)-1]
-			actor, _ = h.store.GetActor(ctx.Context, username)
+			actor, _ = h.repos.Actor().GetActor(ctx.Context, username)
 		}
 	}
 
 	// Get edit history
-	histories, err := h.store.GetUpdateHistory(ctx.Context, objectID, 100) // Get up to 100 edits
+	histories, err := h.repos.Object().GetUpdateHistory(ctx.Context, objectID, 100) // Get up to 100 edits
 	if err != nil {
 		h.logger.Error("failed to get update history",
 			zap.String("object_id", objectID),
@@ -246,18 +245,16 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 		}
 
 		// Parse previous state
-		if history.PreviousState != "" {
-			var previousObj map[string]any
-			if err := json.Unmarshal([]byte(history.PreviousState), &previousObj); err == nil {
+		if history.PreviousState != nil && len(history.PreviousState) > 0 {
+			previousObj := history.PreviousState
 				if content, ok := previousObj["content"].(string); ok {
 					edit.Content = content
 				}
 				if summary, ok := previousObj["summary"].(string); ok {
 					edit.SpoilerText = summary
 				}
-				if sensitive, ok := previousObj["sensitive"].(bool); ok {
-					edit.Sensitive = sensitive
-				}
+			if sensitive, ok := previousObj["sensitive"].(bool); ok {
+				edit.Sensitive = sensitive
 			}
 		}
 

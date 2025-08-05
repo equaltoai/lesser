@@ -67,7 +67,7 @@ func (h *Handler) HandleGetMarkersLift(ctx *lift.Context) error {
 	}
 
 	// Get markers from storage
-	markers, err := h.store.GetMarkers(ctx.Context, username, timelines)
+	markers, err := h.repos.Marker().GetMarkers(ctx.Context, username, timelines)
 	if err != nil {
 		h.logger.Error("failed to get markers", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
@@ -169,7 +169,7 @@ func (h *Handler) HandleSaveMarkersLift(ctx *lift.Context) error {
 	}
 
 	// Get current markers to determine versions
-	currentMarkers, _ := h.store.GetMarkers(ctx.Context, username, nil)
+	currentMarkers, _ := h.repos.Marker().GetMarkers(ctx.Context, username, nil)
 
 	// Save each marker
 	for timeline, markerData := range req {
@@ -184,7 +184,7 @@ func (h *Handler) HandleSaveMarkersLift(ctx *lift.Context) error {
 		}
 
 		// Save marker
-		if err := h.store.SaveMarker(ctx.Context, username, timeline, markerData.LastReadID, version); err != nil {
+		if err := h.repos.Marker().SaveMarker(ctx.Context, username, timeline, markerData.LastReadID, version); err != nil {
 			h.logger.Error("failed to save marker",
 				zap.String("timeline", timeline),
 				zap.Error(err))
@@ -193,7 +193,7 @@ func (h *Handler) HandleSaveMarkersLift(ctx *lift.Context) error {
 	}
 
 	// Get updated markers to return
-	updatedMarkers, err := h.store.GetMarkers(ctx.Context, username, nil)
+	updatedMarkers, err := h.repos.Marker().GetMarkers(ctx.Context, username, nil)
 	if err != nil {
 		h.logger.Error("failed to get updated markers", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})

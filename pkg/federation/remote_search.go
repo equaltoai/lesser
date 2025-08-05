@@ -11,19 +11,19 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/httpclient"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // RemoteSearchService handles remote actor discovery via WebFinger and ActivityPub
 type RemoteSearchService struct {
-	store      storage.Storage
+	store      core.RepositoryStorage
 	httpClient *httpclient.SecureClient
 	logger     *zap.Logger
 }
 
 // NewRemoteSearchService creates a new remote search service
-func NewRemoteSearchService(store storage.Storage) *RemoteSearchService {
+func NewRemoteSearchService(store core.RepositoryStorage) *RemoteSearchService {
 	return &RemoteSearchService{
 		store:      store,
 		httpClient: httpclient.NewSecureClient(httpclient.WithTimeout(30 * time.Second)),
@@ -53,7 +53,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 	// Check if it's a local actor (no domain or our domain)
 	if domain == "" {
 		// Local actor lookup
-		actor, err := s.store.GetActor(ctx, username)
+		actor, err := s.store.Actor().GetActorByUsername(ctx, username)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +65,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 
 	// For remote actors, check cache first
 	cacheKey := fmt.Sprintf("%s@%s", username, domain)
-	cachedActor, err := s.store.GetCachedRemoteActor(ctx, cacheKey)
+	cachedActor, err := s.store.Actor().GetCachedRemoteActor(ctx, cacheKey)
 	if err == nil && cachedActor != nil {
 		s.logger.Debug("found actor in cache",
 			zap.String("handle", cacheKey))
@@ -89,7 +89,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 	}
 
 	// Cache the remote actor with 24 hour TTL
-	if err := s.store.CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
+	if err := s.store.User().CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
 		s.logger.Error("failed to cache remote actor",
 			zap.String("handle", cacheKey),
 			zap.Error(err))

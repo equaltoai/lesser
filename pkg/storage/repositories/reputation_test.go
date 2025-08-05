@@ -30,7 +30,7 @@ func TestStoreReputation(t *testing.T) {
 		CommunityScore:  800,
 		TotalScore:      825,
 		CalculatedAt:    time.Now(),
-		Version:         "1.0",
+		Version:         1,
 		TotalPosts:      100,
 		TotalFollowers:  50,
 		AccountAge:      365,

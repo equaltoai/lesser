@@ -22,7 +22,7 @@ func (h *Handler) HandleGetFavouritesLift(ctx *lift.Context) error {
 	
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
-		actor, err := h.store.GetActor(ctx.Context, testUsername)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
 		if err != nil {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -64,7 +64,7 @@ func (h *Handler) HandleGetFavouritesLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -93,7 +93,7 @@ func (h *Handler) handleFavoritesLogic(ctx *lift.Context, actor *activitypub.Act
 	}
 
 	// Get liked objects
-	likes, nextCursor, err := h.store.GetActorLikes(ctx.Context, actor.ID, limit, cursor)
+	likes, nextCursor, err := h.repos.Like().GetActorLikes(ctx.Context, actor.ID, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get likes",
 			zap.String("actor_id", actor.ID),
@@ -107,7 +107,7 @@ func (h *Handler) handleFavoritesLogic(ctx *lift.Context, actor *activitypub.Act
 	// Retrieve the actual objects
 	statuses := make([]*models.Status, 0, len(likes))
 	for _, like := range likes {
-		obj, err := h.store.GetObject(ctx.Context, like.Object)
+		obj, err := h.repos.Object().GetObject(ctx.Context, like.Object)
 		if err != nil {
 			h.logger.Warn("failed to get liked object",
 				zap.String("object_id", like.Object),
@@ -132,29 +132,29 @@ func (h *Handler) handleFavoritesLogic(ctx *lift.Context, actor *activitypub.Act
 			// Extract username from actor ID
 			objUsername := converter.ExtractUsernameFromActorID(attributedTo)
 			if objUsername != "" {
-				objActor, _ = h.store.GetActor(ctx.Context, objUsername)
+				objActor, _ = h.repos.Actor().GetActor(ctx.Context, objUsername)
 			}
 		}
 
 		// Convert to status with context
-		likeCount, _ := h.store.CountObjectLikes(ctx.Context, like.Object)
-		announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, like.Object)
+		likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context, like.Object)
+		announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, like.Object)
 
 		// Check if reblogged
 		reblogged := false
-		if _, err := h.store.GetAnnounce(ctx.Context, actor.ID, like.Object); err == nil {
+		if _, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, like.Object); err == nil {
 			reblogged = true
 		}
 
 		// Check if bookmarked
-		bookmarked, _ := h.store.IsBookmarked(ctx.Context, username, like.Object)
+		bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, username, like.Object)
 
 		status := converter.ObjectToStatusWithContext(
 			ctx.Context,
 			obj,
 			objActor,
-			likeCount,
-			announceCount,
+			int(likeCount),
+			int(announceCount),
 			true, // favorited (always true in favorites timeline)
 			reblogged,
 			bookmarked,

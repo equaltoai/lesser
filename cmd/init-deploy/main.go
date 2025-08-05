@@ -20,7 +20,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"go.uber.org/zap"
 )
 
@@ -123,13 +123,11 @@ func main() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Create storage adapter
-	store := dynamorm.NewStorageAdapter(db, tableName, logger)
-	
-	// Initialize required repositories
-	store.SetUserRepository(repositories.NewUserRepository(db, tableName, logger))
-	store.SetActorRepository(repositories.NewActorRepository(db, tableName, logger))
-	store.SetInstanceRepository(repositories.NewInstanceRepository(db, tableName, logger))
+	// Create repository factory
+	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
 
 	// Create admin user
 	hashedPassword, err := auth.HashPassword(adminPassword)
@@ -147,7 +145,7 @@ func main() {
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := store.CreateUser(ctx, adminUser); err != nil {
+	if err := repos.User().CreateUser(ctx, adminUser); err != nil {
 		logger.Fatal("Failed to create admin user", zap.Error(err))
 	}
 

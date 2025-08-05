@@ -268,10 +268,10 @@ func (r *InstanceRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 	}
 
 	return &storage.WeeklyActivity{
-		Week:          activity.Week,
-		Statuses:      activity.Statuses,
-		Logins:        activity.Logins,
-		Registrations: activity.Registrations,
+		Week:          fmt.Sprintf("%d", activity.Week),
+		Statuses:      int(activity.Statuses),
+		Logins:        int(activity.Logins),
+		Registrations: int(activity.Registrations),
 	}, nil
 }
 
@@ -359,7 +359,6 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 	actorRecord := &storage.ActorRecord{
 		PK:       actor.PK,
 		SK:       actor.SK,
-		Actor:    actor.Actor,
 		Username: actor.Username,
 		// PrivateKey is not included for security reasons when returning contact info
 	}

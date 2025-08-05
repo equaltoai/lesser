@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // RelationshipTracker tracks and analyzes federation relationships
 type RelationshipTracker struct {
-	storage storage.Storage
+	storage core.RepositoryStorage
 }
 
 // NewRelationshipTracker creates a new relationship tracker
-func NewRelationshipTracker(store storage.Storage) *RelationshipTracker {
+func NewRelationshipTracker(store core.RepositoryStorage) *RelationshipTracker {
 	return &RelationshipTracker{
 		storage: store,
 	}
@@ -35,7 +36,7 @@ func (rt *RelationshipTracker) TrackDeliveryAttempt(ctx context.Context, attempt
 	}
 
 	// Update or create the edge
-	if err := rt.storage.UpdateFederationEdge(ctx, edge); err != nil {
+	if err := rt.storage.Federation().UpdateFederationEdge(ctx, edge); err != nil {
 		return fmt.Errorf("failed to update federation edge: %w", err)
 	}
 
@@ -66,7 +67,7 @@ func (rt *RelationshipTracker) TrackInboundActivity(ctx context.Context, activit
 	}
 
 	// Update or create the edge
-	if err := rt.storage.UpdateFederationEdge(ctx, edge); err != nil {
+	if err := rt.storage.Federation().UpdateFederationEdge(ctx, edge); err != nil {
 		return fmt.Errorf("failed to update federation edge: %w", err)
 	}
 
@@ -87,7 +88,7 @@ func (rt *RelationshipTracker) TrackInboundActivity(ctx context.Context, activit
 // AnalyzeRelationshipStrength calculates the strength of relationships between instances
 func (rt *RelationshipTracker) AnalyzeRelationshipStrength(ctx context.Context, sourceDomain, targetDomain string) (*RelationshipAnalysis, error) {
 	// Get edge data
-	edges, err := rt.storage.GetFederationEdges(ctx, []string{sourceDomain, targetDomain})
+	edges, err := rt.storage.Federation().GetFederationEdges(ctx, []string{sourceDomain, targetDomain})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get federation edges: %w", err)
 	}
@@ -134,7 +135,7 @@ func (rt *RelationshipTracker) GenerateRecommendations(ctx context.Context, doma
 	var recommendations []*FederationRecommendation
 
 	// Get connections for this domain
-	connections, err := rt.storage.GetInstanceConnections(ctx, domain, "")
+	connections, err := rt.storage.Federation().GetInstanceConnections(ctx, domain, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connections: %w", err)
 	}
@@ -158,7 +159,7 @@ func (rt *RelationshipTracker) GenerateRecommendations(ctx context.Context, doma
 	}
 
 	// Find underutilized connections
-	strongEdges, err := rt.storage.GetStrongestConnectionsByType(ctx, "all", 50)
+	strongEdges, err := rt.storage.Federation().GetStrongestConnectionsByType(ctx, "all", 50)
 	if err == nil {
 		underutilized := rt.findUnderutilizedConnections(domain, connections, strongEdges)
 		for _, target := range underutilized {

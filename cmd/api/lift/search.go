@@ -103,7 +103,7 @@ func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
 	}
 
 	// Perform the search
-	actors, err := h.store.SearchAccounts(ctx.Context, query, limit, followingOnly, offset)
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context, query, limit, followingOnly, offset)
 	if err != nil {
 		h.logger.Error("account search failed",
 			zap.String("query", query),
@@ -117,7 +117,7 @@ func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
 	// If resolve is true, try WebFinger lookup for federated handles
 	if resolve && isValidHandle(query) {
 		// Create remote search service
-		remoteSearchSvc := federation.NewRemoteSearchService(h.store)
+		remoteSearchSvc := federation.NewRemoteSearchService(h.repos)
 
 		// Search for remote actors
 		remoteResults, err := remoteSearchSvc.SearchRemoteActors(ctx.Context, query, limit)
@@ -171,7 +171,7 @@ func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 	}
 
 	// Get suggestions from storage
-	suggestions, err := h.store.GetSearchSuggestions(ctx.Context, prefix)
+	suggestions, err := h.repos.Search().GetSearchSuggestions(ctx.Context, prefix, 10)
 	if err != nil {
 		h.logger.Error("failed to get search suggestions",
 			zap.String("prefix", prefix),
@@ -184,7 +184,7 @@ func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 	for _, sugg := range suggestions {
 		response = append(response, map[string]any{
 			"type":  sugg.Type,
-			"value": sugg.Value,
+			"value": sugg.Term,
 			"score": sugg.Score,
 		})
 	}

@@ -87,7 +87,7 @@ func (h *Handler) HandleGetDirectoryLift(ctx *lift.Context) error {
 	order := ctx.Query("order") // active, new
 
 	// Get discoverable accounts using SearchAccounts with empty query
-	actors, err := h.store.SearchAccounts(ctx.Context, "", limit*2, false, offset)
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context, "", limit*2, false, offset)
 	if err != nil {
 		h.logger.Error("failed to get directory", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -198,7 +198,7 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 	}
 
 	// Get suggestions using the implemented algorithm
-	suggestions, err := h.store.GetAccountSuggestions(ctx.Context, claims.Username, limit)
+	suggestions, err := h.repos.Actor().GetAccountSuggestions(ctx.Context, claims.Username, limit)
 	if err != nil {
 		h.logger.Error("failed to get suggestions", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -287,7 +287,7 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 	}
 
 	// Get suggestions with sources based on mutual follows, interests, etc.
-	actors, err := h.store.SearchAccounts(ctx.Context, "", limit*2, false, 0)
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context, "", limit*2, false, 0)
 	if err != nil {
 		h.logger.Error("failed to get suggestions", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -304,7 +304,8 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 		}
 
 		// Check if user follows this account
-		isFollowing, _ := h.store.IsFollowing(ctx.Context, claims.Username, actor.PreferredUsername)
+		followRel, _ := h.repos.Relationship().GetRelationship(ctx.Context, claims.Username, actor.PreferredUsername)
+		isFollowing := followRel != nil
 		if isFollowing || actor.PreferredUsername == claims.Username {
 			continue
 		}
@@ -397,7 +398,7 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 	}
 
 	// Remove suggestion from user's suggestion list
-	if err := h.store.RemoveAccountSuggestion(ctx.Context, claims.Username, accountID); err != nil {
+	if err := h.repos.Actor().RemoveAccountSuggestion(ctx.Context, claims.Username, accountID); err != nil {
 		h.logger.Error("failed to remove suggestion", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -439,19 +440,19 @@ func (h *Handler) getAccountAcctLift(actor *activitypub.Actor) string {
 
 // getFollowerCountLift gets follower count with error handling
 func (h *Handler) getFollowerCountLift(ctx context.Context, actorID string) int {
-	count, _ := h.store.GetFollowersCount(ctx, actorID)
+	count, _ := h.repos.Relationship().CountFollowers(ctx, actorID)
 	return count
 }
 
 // getFollowingCountLift gets following count with error handling
 func (h *Handler) getFollowingCountLift(ctx context.Context, actorID string) int {
-	count, _ := h.store.GetFollowingCount(ctx, actorID)
+	count, _ := h.repos.Relationship().CountFollowing(ctx, actorID)
 	return count
 }
 
 // getStatusCountLift gets status count with error handling
 func (h *Handler) getStatusCountLift(ctx context.Context, actorID string) int {
-	count, _ := h.store.GetStatusCount(ctx, actorID)
+	count, _ := h.repos.Status().CountStatusesByAuthor(ctx, actorID)
 	return count
 }
 

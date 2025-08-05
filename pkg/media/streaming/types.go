@@ -2,19 +2,36 @@ package streaming
 
 import (
 	"time"
+	
+	"github.com/equaltoai/lesser/pkg/storage/types"
 )
 
-// Quality represents video quality levels
-type Quality string
+// Re-export types from storage/types to maintain backward compatibility
+type Quality = types.Quality
+type MediaFormat = types.MediaFormat
+type StreamingSession = types.StreamingSession
 
+// Re-export constants
 const (
-	QualityAuto  Quality = "auto"
+	QualityAuto   = types.QualityAuto
+	QualityLow    = types.QualityLow
+	QualityMedium = types.QualityMedium
+	QualityHigh   = types.QualityHigh
+	QualitySource = types.QualitySource
+	
+	// Additional quality levels specific to streaming
 	Quality4K    Quality = "4k"
 	Quality1080p Quality = "1080p"
 	Quality720p  Quality = "720p"
 	Quality480p  Quality = "480p"
 	Quality360p  Quality = "360p"
 	Quality240p  Quality = "240p"
+)
+
+const (
+	FormatHLS    = types.FormatHLS
+	FormatDASH   = types.FormatDASH
+	FormatSource = types.FormatSource
 )
 
 // QualityInfo contains information about a quality level
@@ -26,14 +43,6 @@ type QualityInfo struct {
 	Bandwidth  int    // required bandwidth in kbps
 	Resolution string // e.g., "1920x1080"
 }
-
-// MediaFormat represents the streaming format
-type MediaFormat string
-
-const (
-	FormatHLS  MediaFormat = "hls"
-	FormatDASH MediaFormat = "dash"
-)
 
 // Segment represents a media segment
 type Segment struct {
@@ -103,18 +112,6 @@ type BandwidthMeasurement struct {
 	Timestamp time.Time
 }
 
-// StreamingSession represents an active streaming session
-type StreamingSession struct {
-	SessionID        string
-	UserID           string
-	MediaID          string
-	Format           MediaFormat
-	CurrentQuality   Quality
-	StartTime        time.Time
-	LastSegmentIndex int
-	BytesTransferred int64
-	BufferHealth     float64 // 0.0 to 1.0
-}
 
 // MediaStreamer is the main interface for media streaming functionality
 type MediaStreamer interface {

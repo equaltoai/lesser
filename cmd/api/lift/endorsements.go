@@ -58,7 +58,7 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 	}
 
 	// Get pinned accounts (which are the endorsed accounts)
-	pins, err := h.store.GetAccountPins(ctx.Context, username)
+	pins, err := h.repos.Social().GetAccountPins(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get account pins", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -77,7 +77,7 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 		}
 
 		// Get the actor
-		actor, err := h.store.GetActor(ctx.Context, username)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 		if err != nil {
 			h.logger.Warn("failed to get pinned actor",
 				zap.String("actor_id", pin.PinnedActorID),

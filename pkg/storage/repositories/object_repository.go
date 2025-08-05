@@ -413,12 +413,23 @@ func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (an
 // CreateUpdateHistory creates a new update history entry for an object
 func (r *ObjectRepository) CreateUpdateHistory(ctx context.Context, history *storage.UpdateHistory) error {
 	// Convert storage.UpdateHistory to models.UpdateHistory
+	// Convert PreviousState map to JSON string
+	previousStateJSON := ""
+	if history.PreviousState != nil {
+		jsonBytes, err := json.Marshal(history.PreviousState)
+		if err != nil {
+			r.logger.Error("failed to marshal previous state", zap.Error(err))
+			return fmt.Errorf("failed to marshal previous state: %w", err)
+		}
+		previousStateJSON = string(jsonBytes)
+	}
+	
 	updateHistory := &models.UpdateHistory{
 		ObjectID:      history.ObjectID,
 		Version:       history.Version,
 		UpdatedAt:     history.UpdatedAt,
 		UpdatedBy:     history.UpdatedBy,
-		PreviousState: history.PreviousState,
+		PreviousState: previousStateJSON,
 		Summary:       history.Summary,
 		CreatedAt:     time.Now(),
 	}
@@ -469,12 +480,24 @@ func (r *ObjectRepository) GetUpdateHistory(ctx context.Context, objectID string
 	// Convert to storage.UpdateHistory
 	result := make([]*storage.UpdateHistory, len(histories))
 	for i, h := range histories {
+		// Convert PreviousState JSON string back to map
+		var previousState map[string]interface{}
+		if h.PreviousState != "" {
+			if err := json.Unmarshal([]byte(h.PreviousState), &previousState); err != nil {
+				r.logger.Warn("failed to unmarshal previous state", 
+					zap.String("object_id", h.ObjectID),
+					zap.Int("version", h.Version),
+					zap.Error(err))
+				// Continue without previous state rather than failing
+			}
+		}
+		
 		result[i] = &storage.UpdateHistory{
 			ObjectID:      h.ObjectID,
 			Version:       h.Version,
 			UpdatedAt:     h.UpdatedAt,
 			UpdatedBy:     h.UpdatedBy,
-			PreviousState: h.PreviousState,
+			PreviousState: previousState,
 			Summary:       h.Summary,
 		}
 	}
@@ -579,12 +602,12 @@ func (r *ObjectRepository) GetCollectionItems(ctx context.Context, collection st
 	result := make([]*storage.CollectionItem, len(items))
 	for i, item := range items {
 		result[i] = &storage.CollectionItem{
-			Collection: item.Collection,
-			ItemID:     item.ItemID,
-			ItemType:   item.ItemType,
-			AddedBy:    item.AddedBy,
-			AddedAt:    item.AddedAt,
-			Position:   item.Position,
+			CollectionID: item.Collection,
+			ItemID:       item.ItemID,
+			ItemType:     item.ItemType,
+			AddedBy:      item.AddedBy,
+			AddedAt:      item.AddedAt,
+			Position:     item.Position,
 		}
 	}
 
@@ -1078,8 +1101,9 @@ func (r *ObjectRepository) GetThreadContext(ctx context.Context, statusID string
 	// Convert to storage.ThreadContext - note that this has a different structure
 	// For now, return an empty context since the interface has changed
 	result := &storage.ThreadContext{
-		Ancestors:   []*storage.StatusSearchResult{},
-		Descendants: []*storage.StatusSearchResult{},
+		StatusID:    statusID,
+		Ancestors:   []string{},
+		Descendants: []string{},
 	}
 
 	r.logger.Debug("retrieved thread context",

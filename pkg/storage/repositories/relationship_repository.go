@@ -803,12 +803,12 @@ func (r *RelationshipRepository) GetCollectionItems(ctx context.Context, collect
 	result := make([]*storage.CollectionItem, len(items))
 	for i, item := range items {
 		result[i] = &storage.CollectionItem{
-			Collection: item.Collection,
-			ItemID:     item.ItemID,
-			ItemType:   item.ItemType,
-			AddedBy:    item.AddedBy,
-			AddedAt:    item.AddedAt,
-			Position:   item.Position,
+			CollectionID: item.Collection,
+			ItemID:       item.ItemID,
+			ItemType:     item.ItemType,
+			AddedBy:      item.AddedBy,
+			AddedAt:      item.AddedAt,
+			Position:     item.Position,
 		}
 	}
 

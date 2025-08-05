@@ -109,7 +109,7 @@ func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, met
 				"value":       field.Value,
 				"verified_at": nil,
 			}
-			if field.VerifiedAt != nil {
+			if !field.VerifiedAt.IsZero() {
 				fieldMap["verified_at"] = field.VerifiedAt.Format(time.RFC3339)
 			}
 			fields = append(fields, fieldMap)

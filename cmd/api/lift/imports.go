@@ -210,7 +210,7 @@ func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
 		"TTL":       now.Add(7 * 24 * time.Hour).Unix(), // 7 days TTL
 	}
 
-	if err := h.store.CreateObject(ctx.Context, jobRecord); err != nil {
+	if err := h.repos.Object().CreateObject(ctx.Context, jobRecord); err != nil {
 		h.logger.Error("failed to create import job", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]any{"error": "failed to create import job"})
 	}
@@ -283,7 +283,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get import job
-	obj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("IMPORT#%s", importID))
+	obj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("IMPORT#%s", importID))
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).JSON(map[string]any{"error": fmt.Sprintf("import not found: %s", importID)})
 	}

@@ -3579,6 +3579,8 @@ type MockRepositoryStorage struct {
 	instanceRepo        *repositories.InstanceRepository
 	federationRepo      *repositories.FederationRepository
 	recoveryRepo        *repositories.RecoveryRepository
+	conversationRepo    *repositories.ConversationRepository
+	pushSubscriptionRepo *repositories.PushSubscriptionRepository
 	analyticsRepo       *repositories.TrendingRepository
 	socialRepo          *repositories.SocialRepository
 	userRepo            *repositories.UserRepository
@@ -3586,6 +3588,12 @@ type MockRepositoryStorage struct {
 	costRepo            *repositories.CostTrackingRepository
 	trustRepo           *repositories.TrustRepository
 	searchRepo          *repositories.SearchRepository
+	relayRepo           *repositories.RelayRepository
+	communityNoteRepo   *repositories.CommunityNoteRepository
+	emojiRepo           *repositories.EmojiRepository
+	rateLimitRepo       *repositories.RateLimitRepository
+	markerRepo          *repositories.MarkerRepository
+	featuredTagRepo     *repositories.FeaturedTagRepository
 }
 
 // NewMockRepositoryStorage creates a new mock repository storage with mock repositories
@@ -3615,13 +3623,18 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	instanceRepo := repositories.NewInstanceRepository(nil, "test-table", logger)
 	federationRepo := repositories.NewFederationRepository(nil, logger)
 	recoveryRepo := repositories.NewRecoveryRepository(nil, "test-table", logger)
+	conversationRepo := repositories.NewConversationRepository(nil, logger)
+	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(nil, "test-table", logger)
 	analyticsRepo := repositories.NewTrendingRepository(nil, logger)
 	socialRepo := repositories.NewSocialRepository(nil, logger)
 	userRepo := repositories.NewUserRepository(nil, "test-table", logger)
 	statusRepo := repositories.NewStatusRepository(nil, "test-table", logger)
 	costRepo := repositories.NewCostTrackingRepository(nil, "test-table", logger)
 	trustRepo := repositories.NewTrustRepository(nil, logger)
-	searchRepo := repositories.NewSearchRepository(dynamorm.DB{}, logger)
+	searchRepo := repositories.NewSearchRepository(&dynamorm.DB{}, logger)
+	relayRepo := repositories.NewRelayRepository(nil, "test-table", logger)
+	markerRepo := repositories.NewMarkerRepository(nil, "test-table", logger)
+	featuredTagRepo := repositories.NewFeaturedTagRepository(nil, "test-table", logger)
 	
 	return &MockRepositoryStorage{
 		accountRepo:         accountRepo,
@@ -3643,6 +3656,8 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		instanceRepo:        instanceRepo,
 		federationRepo:      federationRepo,
 		recoveryRepo:        recoveryRepo,
+		conversationRepo:    conversationRepo,
+		pushSubscriptionRepo: pushSubscriptionRepo,
 		analyticsRepo:       analyticsRepo,
 		socialRepo:          socialRepo,
 		userRepo:            userRepo,
@@ -3650,6 +3665,10 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		costRepo:            costRepo,
 		trustRepo:           trustRepo,
 		searchRepo:          searchRepo,
+		relayRepo:           relayRepo,
+		communityNoteRepo:   repositories.NewCommunityNoteRepository(&dynamorm.DB{}, "test-table", logger),
+		markerRepo:          markerRepo,
+		featuredTagRepo:     featuredTagRepo,
 	}
 }
 
@@ -3730,6 +3749,14 @@ func (m *MockRepositoryStorage) Recovery() *repositories.RecoveryRepository {
 	return m.recoveryRepo
 }
 
+func (m *MockRepositoryStorage) Conversation() *repositories.ConversationRepository {
+	return m.conversationRepo
+}
+
+func (m *MockRepositoryStorage) PushSubscription() *repositories.PushSubscriptionRepository {
+	return m.pushSubscriptionRepo
+}
+
 func (m *MockRepositoryStorage) Analytics() *repositories.TrendingRepository {
 	return m.analyticsRepo
 }
@@ -3756,6 +3783,30 @@ func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository {
 
 func (m *MockRepositoryStorage) Search() *repositories.SearchRepository {
 	return m.searchRepo
+}
+
+func (m *MockRepositoryStorage) Relay() *repositories.RelayRepository {
+	return m.relayRepo
+}
+
+func (m *MockRepositoryStorage) CommunityNote() *repositories.CommunityNoteRepository {
+	return m.communityNoteRepo
+}
+
+func (m *MockRepositoryStorage) Emoji() *repositories.EmojiRepository {
+	return m.emojiRepo
+}
+
+func (m *MockRepositoryStorage) RateLimit() *repositories.RateLimitRepository {
+	return m.rateLimitRepo
+}
+
+func (m *MockRepositoryStorage) Marker() *repositories.MarkerRepository {
+	return m.markerRepo
+}
+
+func (m *MockRepositoryStorage) FeaturedTag() *repositories.FeaturedTagRepository {
+	return m.featuredTagRepo
 }
 
 // Utility methods

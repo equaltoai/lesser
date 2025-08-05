@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // FederationHooks provides hooks into federation activities for tracking
@@ -15,7 +16,7 @@ type FederationHooks struct {
 }
 
 // NewFederationHooks creates a new federation hooks instance
-func NewFederationHooks(store storage.Storage, monitor *monitoring.PerformanceMonitor) *FederationHooks {
+func NewFederationHooks(store core.RepositoryStorage, monitor *monitoring.PerformanceMonitor) *FederationHooks {
 	return &FederationHooks{
 		tracker: NewRelationshipTracker(store),
 		monitor: monitor,
@@ -99,7 +100,7 @@ func (fh *FederationHooks) OnInstanceDiscovery(ctx context.Context, instance *In
 	}
 
 	// Store or update the instance metadata
-	return fh.tracker.storage.UpdateInstanceMetadata(ctx, metadata)
+	return fh.tracker.storage.Federation().UpdateInstanceMetadata(ctx, metadata)
 }
 
 // OnConnectionError is called when there's an error connecting to an instance

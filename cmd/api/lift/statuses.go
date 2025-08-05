@@ -221,7 +221,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 			Options:    req.Poll.Options,
 			Multiple:   req.Poll.Multiple,
 			HideTotals: req.Poll.HideTotals,
-			ExpiresAt:  expiresAt,
+			ExpiresAt:  &expiresAt,
 		}
 
 		if err := h.repos.Poll().CreatePoll(ctx.Context, poll); err != nil {
@@ -253,7 +253,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Parse and process custom emojis in content
-	emojiParser := mastodon.NewEmojiParser(h.store)
+	emojiParser := mastodon.NewEmojiParser(h.repos)
 	processedContent, parsedEmojis, err := emojiParser.ProcessContent(ctx.Context, note.Content)
 	if err != nil {
 		// Log error but don't fail the request
@@ -768,7 +768,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	status := h.converter.ObjectToStatus(object, actor)
 
 	// Parse emojis from content
-	emojiParser := mastodon.NewEmojiParser(h.store)
+	emojiParser := mastodon.NewEmojiParser(h.repos)
 	parsedEmojis, err := emojiParser.ParseEmojis(ctx.Context, status.Content)
 	if err != nil {
 		// Log error but don't fail the request
@@ -800,18 +800,14 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	// Check if status has a poll
 	poll, err := h.repos.Poll().GetPollByStatusID(ctx.Context, objectID)
 	if err == nil && poll != nil {
-		// Calculate vote counts per option
-		optionVotes := make([]int, len(poll.Options))
-		for _, choices := range poll.Votes {
-			for _, choice := range choices {
-				if choice < len(optionVotes) {
-					optionVotes[choice]++
-				}
-			}
+		// Use the pre-calculated vote counts from the poll
+		optionVotes := poll.VotesCount
+		if optionVotes == nil {
+			optionVotes = make([]int, len(poll.Options))
 		}
 
 		// Check if poll has expired
-		expired := !poll.ExpiresAt.IsZero() && time.Now().After(poll.ExpiresAt)
+		expired := poll.ExpiresAt != nil && !poll.ExpiresAt.IsZero() && time.Now().After(*poll.ExpiresAt)
 
 		// Build options data
 		optionsData := make([]models.PollOption, len(poll.Options))
@@ -828,7 +824,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 			ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
 			Expired:     expired,
 			Multiple:    poll.Multiple,
-			VotesCount:  poll.VotesCount,
+			VotesCount:  poll.VotersCount, // Total votes, not per-option
 			VotersCount: poll.VotersCount,
 			Voted:       false,
 			OwnVotes:    nil,
@@ -864,10 +860,9 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 				}
 				// Check if user has voted on the poll
 				if status.Poll != nil && poll != nil {
-					if userVotes, ok := poll.Votes[userActor.ID]; ok {
-						status.Poll.Voted = true
-						status.Poll.OwnVotes = userVotes
-					}
+					// TODO: Get user's votes from PollVote repository
+					status.Poll.Voted = false
+					status.Poll.OwnVotes = []int{}
 				}
 			}
 		}
@@ -986,7 +981,7 @@ func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 	descendants := []models.Status{}
 
 	// Fetch replies to this status
-	replies, _, err := h.store.GetReplies(ctx.Context, objectID, 100, "") // Get up to 100 replies
+	replies, _, err := h.repos.Object().GetReplies(ctx.Context, objectID, 100, "") // Get up to 100 replies
 	if err != nil {
 		h.logger.Warn("failed to get replies for context",
 			zap.String("object_id", objectID),
@@ -1059,7 +1054,7 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 	tagged := ctx.Query("tagged")
 
 	// Get objects by this actor
-	objects, cursor, err := h.store.GetObjectsByActor(ctx.Context, actor.ID, maxID, limit)
+	objects, cursor, err := h.repos.Object().GetObjectsByActor(ctx.Context, actor.ID, maxID, limit)
 	if err != nil {
 		h.logger.Error("failed to get objects by actor", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
@@ -1198,7 +1193,7 @@ func (h *Handler) getReplyToAccountID(ctx context.Context, statusID string) stri
 		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
 	}
 
-	obj, err := h.store.GetObject(ctx, objectID)
+	obj, err := h.repos.Object().GetObject(ctx, objectID)
 	if err != nil {
 		return ""
 	}
@@ -1235,7 +1230,7 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 			parts := strings.Split(accountID, "/users/")
 			if len(parts) == 2 {
 				username := parts[1]
-				return h.store.GetActor(ctx, username)
+				return h.repos.Actor().GetActor(ctx, username)
 			}
 			return nil, fmt.Errorf("invalid account URL")
 		}
@@ -1246,9 +1241,9 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 	// Check if it's a numeric ID (Mastodon compatibility)
 	if _, err := strconv.ParseInt(accountID, 10, 64); err == nil && len(accountID) >= 10 {
 		// It's a numeric ID - use the dedicated lookup method
-		return h.store.GetActorByNumericID(ctx, accountID)
+		return h.repos.Actor().GetActorByNumericID(ctx, accountID)
 	}
 
 	// Assume it's a username for local accounts
-	return h.store.GetActor(ctx, accountID)
+	return h.repos.Actor().GetActor(ctx, accountID)
 }

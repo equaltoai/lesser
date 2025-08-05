@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -186,10 +187,10 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 			}
 
 			// Apply time filters
-			if !filter.StartTime.IsZero() && event.Created.Before(filter.StartTime) {
+			if filter.StartTime != nil && event.Created.Before(*filter.StartTime) {
 				continue
 			}
-			if !filter.EndTime.IsZero() && event.Created.After(filter.EndTime) {
+			if filter.EndTime != nil && event.Created.After(*filter.EndTime) {
 				continue
 			}
 		}
@@ -199,7 +200,7 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 
 		queueItem := &storage.ModerationQueueItem{
 			Event:       event,
-			Priority:    r.getSeverityValue(event.Severity) * event.ConfidenceScore,
+			Priority:    int(r.getSeverityValue(event.Severity) * event.ConfidenceScore),
 			ReviewCount: reviewCount,
 		}
 		items = append(items, queueItem)
@@ -248,7 +249,7 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 
 		queueItem := &storage.ModerationQueueItem{
 			Event:       event,
-			Priority:    r.getSeverityValue(event.Severity) * event.ConfidenceScore,
+			Priority:    int(r.getSeverityValue(event.Severity) * event.ConfidenceScore),
 			ReviewCount: reviewCount,
 		}
 		items = append(items, queueItem)
@@ -437,12 +438,18 @@ func (r *ModerationRepository) CreateModerationDecision(ctx context.Context, dec
 		ConsensusScore:   decision.ConsensusScore,
 		ReviewerCount:    decision.ReviewerCount,
 		TrustWeightTotal: decision.TrustWeightTotal,
-		Reviews:          decision.Reviews,
+		Reviews:          func() []interface{} { 
+			var result []interface{}
+			for _, r := range decision.Reviews {
+				result = append(result, r)
+			}
+			return result
+		}(),
 		Metadata:         decision.Metadata,
 		Decided:          decision.Decided,
 		Expires:          decision.Expires,
 		Type:             "DECISION",
-		CreatedAt:        decision.Decided,
+		CreatedAt:        time.Now(),
 		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
 	model.UpdateKeys()
@@ -526,18 +533,7 @@ func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, con
 		ReviewerCount:    1,
 		TrustWeightTotal: review.Confidence, // Using Confidence as Weight substitute
 		Reviews: []interface{}{
-			map[string]interface{}{
-				"id":          fmt.Sprintf("rev_%s", generateRandomString(12)),
-				"event_id":    currentDecision.EventID,
-				"reviewer_id": review.ReviewerID,
-				"action":      review.Action,
-				"category":    "other", // Default category since ModerationReview doesn't have Category field
-				"severity":    review.Severity,
-				"confidence":  review.Confidence,
-				"notes":       review.Note,
-				"weight":      review.Confidence,
-				"created":     time.Now(),
-			},
+			fmt.Sprintf("rev_%s", generateRandomString(12)),
 		},
 		Decided: time.Now(),
 	}
@@ -630,7 +626,7 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 			UpdatedAt:   model.UpdatedAt,
 		}
 		if !model.LastMatch.IsZero() {
-			result[i].LastMatch = model.LastMatch
+			result[i].LastMatch = &model.LastMatch
 		}
 	}
 
@@ -654,8 +650,8 @@ func (r *ModerationRepository) UpdateModerationPattern(ctx context.Context, patt
 		UpdatedAt:   pattern.UpdatedAt,
 		TTL:         time.Now().Add(90 * 24 * time.Hour).Unix(),
 	}
-	if !pattern.LastMatch.IsZero() {
-		model.LastMatch = pattern.LastMatch
+	if pattern.LastMatch != nil && !pattern.LastMatch.IsZero() {
+		model.LastMatch = *pattern.LastMatch
 	}
 	model.UpdateKeys()
 
@@ -778,7 +774,7 @@ func (r *ModerationRepository) GetModerationPattern(ctx context.Context, pattern
 		UpdatedAt:   model.UpdatedAt,
 	}
 	if !model.LastMatch.IsZero() {
-		pattern.LastMatch = model.LastMatch
+		pattern.LastMatch = &model.LastMatch
 	}
 
 	return pattern, nil
@@ -847,7 +843,7 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 
 	for _, decision := range history.Decisions {
 		history.Timeline = append(history.Timeline, storage.ModerationTimelineEntry{
-			Timestamp:   decision.Decided,
+			Timestamp:   time.Now(),
 			Type:        "decision",
 			ActorID:     "system",
 			Description: fmt.Sprintf("Decision: %s (consensus: %.2f)", decision.Action, decision.ConsensusScore),
@@ -872,7 +868,7 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 // GetModerationEvents retrieves all moderation events with optional filters
 func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *storage.ModerationEventFilter, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
 	// If no filter or all filter fields are empty, scan all events
-	if filter == nil || (filter.EventType == nil && filter.Category == nil && filter.ActorID == "" && filter.ObjectID == "") {
+	if filter == nil || (filter.EventType == "" && filter.Category == "" && filter.ActorID == "" && filter.ObjectID == "") {
 		return r.scanAllModerationEvents(ctx, filter, limit, cursor)
 	}
 
@@ -886,15 +882,15 @@ func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *
 	}
 
 	// Query by event type and category using GSI2
-	if filter.EventType != nil || filter.Category != nil {
+	if filter.EventType != "" || filter.Category != "" {
 		eventType := storage.EventTypeFlagged
-		if filter.EventType != nil {
-			eventType = *filter.EventType
+		if filter.EventType != "" {
+			eventType = filter.EventType
 		}
 
 		category := ""
-		if filter.Category != nil {
-			category = string(*filter.Category)
+		if filter.Category != "" {
+			category = filter.Category
 		}
 
 		gsi2pk := fmt.Sprintf("TYPE#%s", eventType)
@@ -1000,11 +996,11 @@ func (r *ModerationRepository) matchesEventFilter(event *storage.ModerationEvent
 		return true
 	}
 
-	if filter.EventType != nil && event.EventType != string(*filter.EventType) {
+	if filter.EventType != "" && event.EventType != filter.EventType {
 		return false
 	}
 
-	if filter.Category != nil && event.Category != string(*filter.Category) {
+	if filter.Category != "" && event.Category != filter.Category {
 		return false
 	}
 
@@ -1012,11 +1008,11 @@ func (r *ModerationRepository) matchesEventFilter(event *storage.ModerationEvent
 		return false
 	}
 
-	if filter.StartTime != nil && event.Created.Before(*filter.StartTime) {
+	if filter.StartDate != nil && event.Created.Before(*filter.StartDate) {
 		return false
 	}
 
-	if filter.EndTime != nil && event.Created.After(*filter.EndTime) {
+	if filter.EndDate != nil && event.Created.After(*filter.EndDate) {
 		return false
 	}
 
@@ -1672,7 +1668,15 @@ func (r *ModerationRepository) AssignReport(ctx context.Context, reportID string
 		StatusIDs:         report.StatusIDs,
 		Comment:           report.Comment,
 		Category:          report.Category,
-		RuleIDs:           report.RuleIDs,
+		RuleIDs:           func() []int {
+			var result []int
+			for _, ruleID := range report.RuleIDs {
+				if id, err := strconv.Atoi(ruleID); err == nil {
+					result = append(result, id)
+				}
+			}
+			return result
+		}(),
 		Forwarded:         report.Forwarded,
 		Status:            string(report.Status),
 		ActionTaken:       report.ActionTaken,
@@ -1723,7 +1727,15 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 		StatusIDs:         report.StatusIDs,
 		Comment:           report.Comment,
 		Category:          report.Category,
-		RuleIDs:           report.RuleIDs,
+		RuleIDs:           func() []int {
+			var result []int
+			for _, ruleID := range report.RuleIDs {
+				if id, err := strconv.Atoi(ruleID); err == nil {
+					result = append(result, id)
+				}
+			}
+			return result
+		}(),
 		Forwarded:         report.Forwarded,
 		Status:            string(report.Status),
 		ActionTaken:       report.ActionTaken,
@@ -1866,7 +1878,7 @@ func (r *ModerationRepository) GetFlag(ctx context.Context, id string) (*storage
 				Object:     model.Object,
 				Content:    model.Content,
 				Published:  model.Published,
-				Status:     storage.FlagStatus(model.Status),
+				Status:     model.Status,
 				ReviewedBy: model.ReviewedBy,
 				ReviewedAt: model.ReviewedAt,
 				ReviewNote: model.ReviewNote,
@@ -1899,7 +1911,7 @@ func (r *ModerationRepository) GetFlagsByObject(ctx context.Context, objectID st
 			Object:     model.Object,
 			Content:    model.Content,
 			Published:  model.Published,
-			Status:     storage.FlagStatus(model.Status),
+			Status:     model.Status,
 			ReviewedBy: model.ReviewedBy,
 			ReviewedAt: model.ReviewedAt,
 			ReviewNote: model.ReviewNote,
@@ -1935,7 +1947,7 @@ func (r *ModerationRepository) GetFlagsByActor(ctx context.Context, actorID stri
 			Object:     model.Object,
 			Content:    model.Content,
 			Published:  model.Published,
-			Status:     storage.FlagStatus(model.Status),
+			Status:     model.Status,
 			ReviewedBy: model.ReviewedBy,
 			ReviewedAt: model.ReviewedAt,
 			ReviewNote: model.ReviewNote,
@@ -1971,7 +1983,7 @@ func (r *ModerationRepository) GetPendingFlags(ctx context.Context, limit int, c
 			Object:     model.Object,
 			Content:    model.Content,
 			Published:  model.Published,
-			Status:     storage.FlagStatus(model.Status),
+			Status:     model.Status,
 			ReviewedBy: model.ReviewedBy,
 			ReviewedAt: model.ReviewedAt,
 			ReviewNote: model.ReviewNote,
@@ -1995,7 +2007,7 @@ func (r *ModerationRepository) UpdateFlagStatus(ctx context.Context, id string, 
 
 	// Update the fields
 	now := time.Now()
-	flag.Status = status
+	flag.Status = string(status)
 	flag.ReviewedBy = reviewedBy
 	flag.ReviewedAt = &now
 	flag.ReviewNote = reviewNote
@@ -2077,7 +2089,15 @@ func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage
 		StatusIDs:         report.StatusIDs,
 		Comment:           report.Comment,
 		Category:          report.Category,
-		RuleIDs:           report.RuleIDs,
+		RuleIDs:           func() []int {
+			var result []int
+			for _, ruleID := range report.RuleIDs {
+				if id, err := strconv.Atoi(ruleID); err == nil {
+					result = append(result, id)
+				}
+			}
+			return result
+		}(),
 		Forwarded:         report.Forwarded,
 		Status:            string(report.Status),
 		ActionTaken:       report.ActionTaken,
@@ -2130,9 +2150,15 @@ func (r *ModerationRepository) GetReport(ctx context.Context, id string) (*stora
 		StatusIDs:         model.StatusIDs,
 		Comment:           model.Comment,
 		Category:          model.Category,
-		RuleIDs:           model.RuleIDs,
+		RuleIDs:           func() []string {
+			var result []string
+			for _, ruleID := range model.RuleIDs {
+				result = append(result, strconv.Itoa(ruleID))
+			}
+			return result
+		}(),
 		Forwarded:         model.Forwarded,
-		Status:            storage.ReportStatus(model.Status),
+		Status:            model.Status,
 		ActionTaken:       model.ActionTaken,
 		ActionTakenAt:     model.ActionTakenAt,
 		ModeratorID:       model.ModeratorID,
@@ -2166,9 +2192,15 @@ func (r *ModerationRepository) GetUserReports(ctx context.Context, username stri
 			StatusIDs:         model.StatusIDs,
 			Comment:           model.Comment,
 			Category:          model.Category,
-			RuleIDs:           model.RuleIDs,
+			RuleIDs:           func() []string {
+			var result []string
+			for _, ruleID := range model.RuleIDs {
+				result = append(result, strconv.Itoa(ruleID))
+			}
+			return result
+		}(),
 			Forwarded:         model.Forwarded,
-			Status:            storage.ReportStatus(model.Status),
+			Status:            model.Status,
 			ActionTaken:       model.ActionTaken,
 			ActionTakenAt:     model.ActionTakenAt,
 			ModeratorID:       model.ModeratorID,
@@ -2195,7 +2227,7 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 
 	// Update the fields
 	now := time.Now()
-	report.Status = status
+	report.Status = string(status)
 	report.ActionTaken = actionTaken
 	report.ModeratorID = moderatorID
 	report.UpdatedAt = now
@@ -2213,7 +2245,15 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 		StatusIDs:         report.StatusIDs,
 		Comment:           report.Comment,
 		Category:          report.Category,
-		RuleIDs:           report.RuleIDs,
+		RuleIDs:           func() []int {
+			var result []int
+			for _, ruleID := range report.RuleIDs {
+				if id, err := strconv.Atoi(ruleID); err == nil {
+					result = append(result, id)
+				}
+			}
+			return result
+		}(),
 		Forwarded:         report.Forwarded,
 		Status:            string(report.Status),
 		ActionTaken:       report.ActionTaken,
@@ -2267,9 +2307,15 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 			StatusIDs:         model.StatusIDs,
 			Comment:           model.Comment,
 			Category:          model.Category,
-			RuleIDs:           model.RuleIDs,
+			RuleIDs:           func() []string {
+			var result []string
+			for _, ruleID := range model.RuleIDs {
+				result = append(result, strconv.Itoa(ruleID))
+			}
+			return result
+		}(),
 			Forwarded:         model.Forwarded,
-			Status:            storage.ReportStatus(model.Status),
+			Status:            model.Status,
 			ActionTaken:       model.ActionTaken,
 			ActionTakenAt:     model.ActionTakenAt,
 			ModeratorID:       model.ModeratorID,
@@ -2309,9 +2355,15 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 			StatusIDs:         model.StatusIDs,
 			Comment:           model.Comment,
 			Category:          model.Category,
-			RuleIDs:           model.RuleIDs,
+			RuleIDs:           func() []string {
+			var result []string
+			for _, ruleID := range model.RuleIDs {
+				result = append(result, strconv.Itoa(ruleID))
+			}
+			return result
+		}(),
 			Forwarded:         model.Forwarded,
-			Status:            storage.ReportStatus(model.Status),
+			Status:            model.Status,
 			ActionTaken:       model.ActionTaken,
 			ActionTakenAt:     model.ActionTakenAt,
 			ModeratorID:       model.ModeratorID,
@@ -2344,23 +2396,17 @@ func (r *ModerationRepository) GetReportStats(ctx context.Context, username stri
 				TotalReports:    0,
 				ResolvedReports: 0,
 				FalseReports:    0,
-				LastReportAt:    time.Time{},
+				LastReportAt:    nil,
 			}, nil
 		}
 		return nil, fmt.Errorf("failed to get report stats: %w", err)
-	}
-
-	// Convert pointer to value
-	lastReportAt := time.Time{}
-	if model.LastReportAt != nil {
-		lastReportAt = *model.LastReportAt
 	}
 
 	return &storage.ReportStats{
 		TotalReports:    model.TotalReports,
 		ResolvedReports: model.ResolvedReports,
 		FalseReports:    model.FalseReports,
-		LastReportAt:    lastReportAt,
+		LastReportAt:    model.LastReportAt,
 	}, nil
 }
 
@@ -2374,11 +2420,8 @@ func (r *ModerationRepository) IncrementFalseReports(ctx context.Context, userna
 		return fmt.Errorf("failed to get existing report stats: %w", err)
 	}
 
-	// Convert time.Time to *time.Time for the model
-	var lastReportAt *time.Time
-	if !existingStats.LastReportAt.IsZero() {
-		lastReportAt = &existingStats.LastReportAt
-	}
+	// Use the existing LastReportAt pointer
+	lastReportAt := existingStats.LastReportAt
 
 	// Create/update the stats model
 	model := &models.ReportStats{

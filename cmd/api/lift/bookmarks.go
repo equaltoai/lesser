@@ -75,13 +75,13 @@ func (h *Handler) HandleBookmarkLift(ctx *lift.Context) error {
 	}
 
 	// Check if the status exists
-	obj, err := h.store.GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
 
 	// Add bookmark
-	if err := h.store.CreateBookmark(ctx.Context, username, objectID); err != nil {
+	if err := h.repos.Account().AddBookmark(ctx.Context, username, objectID); err != nil {
 		h.logger.Error("failed to create bookmark",
 			zap.String("username", username),
 			zap.String("status_id", statusID),
@@ -162,13 +162,13 @@ func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 	}
 
 	// Check if the status exists
-	obj, err := h.store.GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
 
 	// Remove bookmark
-	if err := h.store.RemoveBookmark(ctx.Context, username, objectID); err != nil {
+	if err := h.repos.Account().RemoveBookmark(ctx.Context, username, objectID); err != nil {
 		h.logger.Error("failed to remove bookmark",
 			zap.String("username", username),
 			zap.String("status_id", statusID),
@@ -254,7 +254,7 @@ func (h *Handler) HandleGetBookmarksLift(ctx *lift.Context) error {
 	}
 
 	// Get bookmarked object IDs
-	objectIDs, nextCursor, err := h.store.GetBookmarks(ctx.Context, username, limit, cursor)
+	bookmarks, nextCursor, err := h.repos.Account().GetBookmarks(ctx.Context, username, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get bookmarks",
 			zap.String("username", username),
@@ -263,20 +263,20 @@ func (h *Handler) HandleGetBookmarksLift(ctx *lift.Context) error {
 	}
 
 	// Retrieve the actual objects
-	statuses := make([]*models.Status, 0, len(objectIDs))
-	for _, objectID := range objectIDs {
-		obj, err := h.store.GetObject(ctx.Context, objectID)
+	statuses := make([]*models.Status, 0, len(bookmarks))
+	for _, bookmark := range bookmarks {
+		obj, err := h.repos.Object().GetObject(ctx.Context, bookmark.ObjectID)
 		if err != nil {
 			h.logger.Warn("failed to get bookmarked object",
-				zap.String("object_id", objectID),
+				zap.String("object_id", bookmark.ObjectID),
 				zap.Error(err))
 			continue
 		}
 
-		status, err := h.convertBookmarkedObjectToStatus(ctx.Context, obj, objectID, username, true)
+		status, err := h.convertBookmarkedObjectToStatus(ctx.Context, obj, bookmark.ObjectID, username, true)
 		if err != nil {
 			h.logger.Warn("failed to convert bookmarked object to status",
-				zap.String("object_id", objectID),
+				zap.String("object_id", bookmark.ObjectID),
 				zap.Error(err))
 			continue
 		}
@@ -328,7 +328,7 @@ func (h *Handler) convertBookmarkedObjectToStatus(ctx context.Context, obj any, 
 	}
 
 	// Get the actor
-	actor, err := h.store.GetActor(ctx, actorUsername)
+	actor, err := h.repos.Actor().GetActor(ctx, actorUsername)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
@@ -337,22 +337,22 @@ func (h *Handler) convertBookmarkedObjectToStatus(ctx context.Context, obj any, 
 	currentUserActorID := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), currentUsername)
 
 	// Get counts
-	likeCount, _ := h.store.CountObjectLikes(ctx, objectID)
-	reblogCount, _ := h.store.CountObjectAnnounces(ctx, objectID)
+	likeCount, _ := h.repos.Like().GetLikeCount(ctx, objectID)
+	reblogCount, _ := h.repos.Like().GetBoostCount(ctx, objectID)
 
 	// Check if user favorited or reblogged
 	favorited := false
-	if _, err := h.store.GetLike(ctx, currentUserActorID, objectID); err == nil {
+	if _, err := h.repos.Like().GetLike(ctx, currentUserActorID, objectID); err == nil {
 		favorited = true
 	}
 
 	reblogged := false
-	if _, err := h.store.GetAnnounce(ctx, currentUserActorID, objectID); err == nil {
+	if _, err := h.repos.Social().GetAnnounce(ctx, currentUserActorID, objectID); err == nil {
 		reblogged = true
 	}
 
 	// Convert to status using the proper converter with all context
-	status := converter.ObjectToStatusWithContext(ctx, obj, actor, likeCount, reblogCount, favorited, reblogged, isBookmarked)
+	status := converter.ObjectToStatusWithContext(ctx, obj, actor, int(likeCount), int(reblogCount), favorited, reblogged, isBookmarked)
 
 	return &status, nil
 }

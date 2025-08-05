@@ -68,14 +68,14 @@ func (h *Handler) HandleFollowLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Get the target actor
-	targetActor, err := h.store.GetActor(ctx.Context, accountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "account not found"})
 	}
@@ -95,21 +95,21 @@ func (h *Handler) HandleFollowLift(ctx *lift.Context) error {
 	followActivity.Published = &now
 
 	// Create the follow relationship record
-	if err := h.store.CreateFollow(ctx.Context, username, accountID, followActivity.ID); err != nil {
+	if err := h.repos.Relationship().CreateRelationship(ctx.Context, username, accountID, followActivity.ID); err != nil {
 		h.logger.Error("failed to create follow relationship", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Auto-accept if target doesn't require manual approval
 	if !targetActor.ManuallyApprovesFollowers {
-		if err := h.store.AcceptFollow(ctx.Context, username, accountID); err != nil {
+		if err := h.repos.Relationship().AcceptFollowRequest(ctx.Context, username, accountID); err != nil {
 			h.logger.Error("failed to auto-accept follow", zap.Error(err))
 			// Don't return error - the follow was created, just not auto-accepted
 		}
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, followActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, followActivity); err != nil {
 		h.logger.Error("failed to create follow activity", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -132,7 +132,8 @@ func (h *Handler) HandleFollowLift(ctx *lift.Context) error {
 	}
 
 	// Check the final relationship status after creating the follow
-	isFollowing, err := h.store.IsFollowing(ctx.Context, username, accountID)
+	followRel, err := h.repos.Relationship().GetRelationship(ctx.Context, username, accountID)
+	isFollowing := followRel != nil
 	if err == nil && isFollowing {
 		// Follow was accepted (either manually approved accounts or auto-accepted)
 		relationship.Following = true
@@ -199,20 +200,21 @@ func (h *Handler) HandleUnfollowLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Get the target actor
-	targetActor, err := h.store.GetActor(ctx.Context, accountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "account not found"})
 	}
 
 	// Check if following
-	isFollowing, err := h.store.IsFollowing(ctx.Context, username, accountID)
+	followRel, err := h.repos.Relationship().GetRelationship(ctx.Context, username, accountID)
+	isFollowing := followRel != nil
 	if err != nil || !isFollowing {
 		// Not following, but return success anyway for idempotency
 		h.logger.Info("follow not found",
@@ -238,13 +240,13 @@ func (h *Handler) HandleUnfollowLift(ctx *lift.Context) error {
 		undoActivity.Published = &now
 
 		// Remove the follow relationship record
-		if err := h.store.RemoveFollow(ctx.Context, username, accountID); err != nil {
+		if err := h.repos.Relationship().DeleteRelationship(ctx.Context, username, accountID); err != nil {
 			h.logger.Error("failed to remove follow relationship", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
 
 		// Store the activity in the outbox (this will trigger delivery)
-		if err := h.store.CreateActivity(ctx.Context, undoActivity); err != nil {
+		if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
 			h.logger.Error("failed to create undo follow activity", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
@@ -268,8 +270,9 @@ func (h *Handler) HandleUnfollowLift(ctx *lift.Context) error {
 	}
 
 	// Check if following now
-	isFollowing, err = h.store.IsFollowing(ctx.Context, username, accountID)
-	if err == nil && isFollowing {
+	followRel2, err2 := h.repos.Relationship().GetRelationship(ctx.Context, username, accountID)
+	isFollowing = followRel2 != nil
+	if err2 == nil && isFollowing {
 		relationship.Following = true
 	}
 
@@ -329,14 +332,14 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Get the target actor
-	targetActor, err := h.store.GetActor(ctx.Context, accountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "account not found"})
 	}
@@ -363,19 +366,20 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 		Published: now,
 		CreatedAt: now,
 	}
-	if err := h.store.CreateBlock(ctx.Context, block); err != nil {
+	if err := h.repos.Social().CreateBlock(ctx.Context, block); err != nil {
 		h.logger.Error("failed to create block", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, blockActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, blockActivity); err != nil {
 		h.logger.Error("failed to create block activity", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Unfollow if following
-	isFollowing, err := h.store.IsFollowing(ctx.Context, username, accountID)
+	followRel, err := h.repos.Relationship().GetRelationship(ctx.Context, username, accountID)
+	isFollowing := followRel != nil
 	if err == nil && isFollowing {
 		// Create an Undo Follow activity
 		undoFollowActivity := &activitypub.Activity{
@@ -393,7 +397,7 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 			},
 		}
 		undoFollowActivity.Published = &now
-		if err := h.store.CreateActivity(ctx.Context, undoFollowActivity); err != nil {
+		if err := h.repos.Activity().CreateActivity(ctx.Context, undoFollowActivity); err != nil {
 			// Log error but continue with the response
 		}
 	}
@@ -416,8 +420,9 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 	}
 
 	// Check if following now
-	isFollowing, err = h.store.IsFollowing(ctx.Context, username, accountID)
-	if err == nil && isFollowing {
+	followRel3, err3 := h.repos.Relationship().GetRelationship(ctx.Context, username, accountID)
+	isFollowing = followRel3 != nil
+	if err3 == nil && isFollowing {
 		relationship.Following = true
 	}
 
@@ -477,20 +482,20 @@ func (h *Handler) HandleUnblockLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Get the target actor
-	targetActor, err := h.store.GetActor(ctx.Context, accountID)
+	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "account not found"})
 	}
 
 	// Check if blocked
-	_, err = h.store.GetBlock(ctx.Context, actor.ID, targetActor.ID)
+	_, err = h.repos.Social().GetBlock(ctx.Context, actor.ID, targetActor.ID)
 	if err != nil {
 		// Not blocked, but return success anyway for idempotency
 		h.logger.Info("block not found",
@@ -498,7 +503,7 @@ func (h *Handler) HandleUnblockLift(ctx *lift.Context) error {
 			zap.String("target", targetActor.ID))
 	} else {
 		// Delete the block
-		if err := h.store.DeleteBlock(ctx.Context, actor.ID, targetActor.ID); err != nil {
+		if err := h.repos.Social().DeleteBlock(ctx.Context, actor.ID, targetActor.ID); err != nil {
 			h.logger.Error("failed to delete block", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
@@ -522,7 +527,7 @@ func (h *Handler) HandleUnblockLift(ctx *lift.Context) error {
 		undoActivity.Published = &now
 
 		// Store the activity in the outbox (this will trigger delivery)
-		if err := h.store.CreateActivity(ctx.Context, undoActivity); err != nil {
+		if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
 			h.logger.Error("failed to create undo block activity", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
@@ -546,7 +551,8 @@ func (h *Handler) HandleUnblockLift(ctx *lift.Context) error {
 	}
 
 	// Check if following now
-	isFollowing, err := h.store.IsFollowing(ctx.Context, username, accountID)
+	followRel, err := h.repos.Relationship().GetRelationship(ctx.Context, username, accountID)
+	isFollowing := followRel != nil
 	if err == nil && isFollowing {
 		relationship.Following = true
 	}
@@ -602,7 +608,7 @@ func (h *Handler) HandleGetBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -615,7 +621,7 @@ func (h *Handler) HandleGetBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Get blocks
-	blocks, cursor, err := h.store.GetBlockedActors(ctx.Context, actor.ID, 40, maxID)
+	blocks, cursor, err := h.repos.Social().GetBlockedUsers(ctx.Context, actor.ID, 40, maxID)
 	if err != nil {
 		h.logger.Error("failed to get blocks", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get blocks"})
@@ -629,7 +635,7 @@ func (h *Handler) HandleGetBlocksLift(ctx *lift.Context) error {
 		parts := strings.Split(blockedID, "/")
 		if len(parts) > 0 {
 			username := parts[len(parts)-1]
-			blockedActor, err := h.store.GetActor(ctx.Context, username)
+			blockedActor, err := h.repos.Actor().GetActor(ctx.Context, username)
 			if err != nil {
 				h.logger.Warn("failed to get blocked actor", zap.String("actor_id", blockedID), zap.Error(err))
 				continue
@@ -734,7 +740,7 @@ func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -762,25 +768,19 @@ func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 	likeActivity.Published = &now
 
 	// Create the Like record in dedicated storage
-	like := &storage.Like{
-		Actor:     actor.ID,
-		Object:    objectID,
-		ID:        likeActivity.ID,
-		Published: *likeActivity.Published,
-	}
-	if err := h.store.CreateLike(ctx.Context, like); err != nil {
+	if _, err := h.repos.Like().CreateLike(ctx.Context, actor.ID, objectID); err != nil {
 		h.logger.Error("failed to create like", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, likeActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, likeActivity); err != nil {
 		h.logger.Error("failed to create like activity", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Record engagement for trending
-	if err := h.store.RecordStatusEngagement(ctx.Context, objectID, "like", actor.ID); err != nil {
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "status", objectID, time.Now().Format("2006-01-02"), &storage.EngagementData{Likes: 1}); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
@@ -788,21 +788,21 @@ func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 	}
 
 	// Get object to return status information
-	_, err = h.store.GetObject(ctx.Context, objectID)
+	_, err = h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		// If object not found locally, still return success but with minimal info
 		h.logger.Warn("object not found locally", zap.String("object_id", objectID), zap.Error(err))
 	}
 
 	// Get like count for the object
-	likeCount, _ := h.store.CountObjectLikes(ctx.Context, objectID)
+	likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
 
 	// Return a simplified status response
 	resp := models.FavouriteResponse{
 		ID:              statusID,
 		CreatedAt:       likeActivity.Published.Format("2006-01-02T15:04:05.000Z"),
 		Favourited:      true,
-		FavouritesCount: likeCount,
+		FavouritesCount: int(likeCount),
 		URI:             objectID,
 		URL:             objectID,
 		Content:         "", // Would be populated from object
@@ -866,7 +866,7 @@ func (h *Handler) HandleUnfavoriteLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -880,7 +880,7 @@ func (h *Handler) HandleUnfavoriteLift(ctx *lift.Context) error {
 	}
 
 	// Check if the like exists
-	_, err = h.store.GetLike(ctx.Context, actor.ID, objectID)
+	_, err = h.repos.Like().GetLike(ctx.Context, actor.ID, objectID)
 	if err != nil {
 		// Like doesn't exist, return success anyway for idempotency
 		h.logger.Info("like not found",
@@ -906,27 +906,27 @@ func (h *Handler) HandleUnfavoriteLift(ctx *lift.Context) error {
 		undoActivity.Published = &now
 
 		// Delete the Like record from dedicated storage
-		if err := h.store.DeleteLike(ctx.Context, actor.ID, objectID); err != nil {
+		if err := h.repos.Like().DeleteLike(ctx.Context, actor.ID, objectID); err != nil {
 			h.logger.Error("failed to delete like", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
 
 		// Store the activity in the outbox (this will trigger delivery)
-		if err := h.store.CreateActivity(ctx.Context, undoActivity); err != nil {
+		if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
 			h.logger.Error("failed to create undo like activity", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
 	}
 
 	// Get like count for the object
-	likeCount, _ := h.store.CountObjectLikes(ctx.Context, objectID)
+	likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
 
 	// Return a simplified status response
 	resp := models.FavouriteResponse{
 		ID:              statusID,
 		CreatedAt:       time.Now().Format("2006-01-02T15:04:05.000Z"),
 		Favourited:      false,
-		FavouritesCount: likeCount,
+		FavouritesCount: int(likeCount),
 		URI:             objectID,
 		URL:             objectID,
 		Content:         "", // Would be populated from object
@@ -990,7 +990,7 @@ func (h *Handler) HandleReblogLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -1021,13 +1021,13 @@ func (h *Handler) HandleReblogLift(ctx *lift.Context) error {
 	announceActivity.Published = &now
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.store.CreateActivity(ctx.Context, announceActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context, announceActivity); err != nil {
 		h.logger.Error("failed to create announce activity", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	// Record engagement for trending
-	if err := h.store.RecordStatusEngagement(ctx.Context, objectID, "boost", actor.ID); err != nil {
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "status", objectID, time.Now().Format("2006-01-02"), &storage.EngagementData{Shares: 1}); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
@@ -1035,21 +1035,21 @@ func (h *Handler) HandleReblogLift(ctx *lift.Context) error {
 	}
 
 	// Get object to return status information
-	_, err = h.store.GetObject(ctx.Context, objectID)
+	_, err = h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		// If object not found locally, still return success but with minimal info
 		h.logger.Warn("object not found locally", zap.String("object_id", objectID), zap.Error(err))
 	}
 
 	// Get announce count for the object
-	announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
 
 	// Return a simplified status response
 	resp := models.FavouriteResponse{
 		ID:           statusID,
 		CreatedAt:    announceActivity.Published.Format("2006-01-02T15:04:05.000Z"),
 		Reblogged:    true,
-		ReblogsCount: announceCount,
+		ReblogsCount: int(announceCount),
 		URI:          objectID,
 		URL:          objectID,
 		Content:      "", // Would be populated from object
@@ -1113,7 +1113,7 @@ func (h *Handler) HandleUnreblogLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	actor, err := h.store.GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -1127,7 +1127,7 @@ func (h *Handler) HandleUnreblogLift(ctx *lift.Context) error {
 	}
 
 	// Check if the announce exists
-	_, err = h.store.GetAnnounce(ctx.Context, actor.ID, objectID)
+	_, err = h.repos.Social().GetAnnounce(ctx.Context, actor.ID, objectID)
 	if err != nil {
 		// Announce doesn't exist, return success anyway for idempotency
 		h.logger.Info("announce not found",
@@ -1153,27 +1153,27 @@ func (h *Handler) HandleUnreblogLift(ctx *lift.Context) error {
 		undoActivity.Published = &now
 
 		// Delete the Announce record from dedicated storage
-		if err := h.store.DeleteAnnounce(ctx.Context, actor.ID, objectID); err != nil {
+		if err := h.repos.Social().DeleteAnnounce(ctx.Context, actor.ID, objectID); err != nil {
 			h.logger.Error("failed to delete announce", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
 
 		// Store the activity in the outbox (this will trigger delivery)
-		if err := h.store.CreateActivity(ctx.Context, undoActivity); err != nil {
+		if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
 			h.logger.Error("failed to create undo announce activity", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
 	}
 
 	// Get announce count for the object
-	announceCount, _ := h.store.CountObjectAnnounces(ctx.Context, objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
 
 	// Return a simplified status response
 	resp := models.FavouriteResponse{
 		ID:           statusID,
 		CreatedAt:    time.Now().Format("2006-01-02T15:04:05.000Z"),
 		Reblogged:    false,
-		ReblogsCount: announceCount,
+		ReblogsCount: int(announceCount),
 		URI:          objectID,
 		URL:          objectID,
 		Content:      "", // Would be populated from object

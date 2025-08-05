@@ -110,7 +110,7 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 	}
 
 	// Fetch the status
-	obj, err := h.store.GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		h.logger.Error("failed to get object", zap.String("object_id", objectID), zap.Error(err))
 		return ctx.Status(404).JSON(map[string]string{
@@ -171,7 +171,7 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 		parts := strings.Split(note.AttributedTo, "/")
 		if len(parts) > 0 {
 			username := parts[len(parts)-1]
-			authorActor, err = h.store.GetActor(ctx.Context, username)
+			authorActor, err = h.repos.Actor().GetActor(ctx.Context, username)
 			if err != nil {
 				h.logger.Warn("failed to get author actor", zap.String("actor_id", note.AttributedTo), zap.Error(err))
 				// Create a minimal actor
@@ -392,7 +392,7 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
 	}
 
 	// Fetch the status
-	obj, err := h.store.GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		h.logger.Error("failed to get object for embed", zap.String("object_id", objectID), zap.Error(err))
 		return ctx.Status(404).JSON(map[string]string{
@@ -456,7 +456,7 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
 		if len(parts) > 0 {
 			username := parts[len(parts)-1]
 			authorUsername = username
-			authorActor, err = h.store.GetActor(ctx.Context, username)
+			authorActor, err = h.repos.Actor().GetActor(ctx.Context, username)
 			if err == nil {
 				authorName = authorActor.Name
 				if authorName == "" {

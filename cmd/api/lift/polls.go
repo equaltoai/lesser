@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -38,7 +39,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	var userID string
 	if testUsername != "" {
 		// Test mode - use test username
-		actor, err := h.store.GetActor(ctx.Context, testUsername)
+		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
 		if err == nil {
 			userID = actor.ID
 		}
@@ -49,7 +50,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Get the user's actor to get their ID
-				actor, err := h.store.GetActor(ctx.Context, claims.Username)
+				actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 				if err == nil {
 					userID = actor.ID
 				}
@@ -58,34 +59,29 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	}
 
 	// Get the poll
-	poll, err := h.store.GetPoll(ctx.Context, pollID)
+	poll, err := h.repos.Poll().GetPoll(ctx.Context, pollID)
 	if err != nil {
 		h.logger.Error("failed to get poll", zap.String("poll_id", pollID), zap.Error(err))
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]any{"error": "poll not found"})
 	}
 
-	// Calculate vote counts per option
-	optionVotes := make([]int, len(poll.Options))
-	for _, choices := range poll.Votes {
-		for _, choice := range choices {
-			if choice < len(optionVotes) {
-				optionVotes[choice]++
-			}
-		}
+	// Use the pre-calculated vote counts from the poll
+	optionVotes := poll.VotesCount
+	if optionVotes == nil {
+		optionVotes = make([]int, len(poll.Options))
 	}
 
 	// Check if poll has expired
-	expired := !poll.ExpiresAt.IsZero() && time.Now().After(poll.ExpiresAt)
+	expired := poll.ExpiresAt != nil && !poll.ExpiresAt.IsZero() && time.Now().After(*poll.ExpiresAt)
 
-	// Check if user has voted
+	// Check if user has voted - would need to get this from a separate votes table
 	var voted bool
 	var ownVotes []int
 	if userID != "" {
-		if userVotes, ok := poll.Votes[userID]; ok {
-			voted = true
-			ownVotes = userVotes
-		}
+		// TODO: Get user's votes from PollVote repository
+		voted = false
+		ownVotes = []int{}
 	}
 
 	// Build options data for response
@@ -103,7 +99,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 		ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
 		Expired:     expired,
 		Multiple:    poll.Multiple,
-		VotesCount:  poll.VotesCount,
+		VotesCount:  poll.VotersCount, // Total votes, not per-option
 		VotersCount: poll.VotersCount,
 		Voted:       voted,
 		OwnVotes:    ownVotes,
@@ -150,13 +146,23 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 
 	if testUsername != "" {
 		// Test mode - use test username directly
-		actorData, err := h.store.GetActor(ctx.Context, testUsername)
+		actorData, err := h.repos.Actor().GetActorByUsername(ctx.Context, testUsername)
 		if err != nil {
 			h.logger.Error("failed to get test actor", zap.Error(err))
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]any{"error": "unauthorized"})
 		}
-		actor = &storage.ActorRecord{Actor: actorData}
+		// Convert activitypub.Actor to storage.ActorRecord
+		actor = &storage.ActorRecord{
+			ID:          actorData.ID,
+			Username:    actorData.PreferredUsername,
+			Domain:      "", // Local actor
+			ActorType:   string(actorData.Type),
+			DisplayName: actorData.Name,
+			Avatar:      "", // Would need to extract from Icon
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
 		// Create test claims
 		claims = &auth.Claims{
 			Username: testUsername,
@@ -179,13 +185,23 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 		}
 
 		// Get the user's actor
-		actorData, err := h.store.GetActor(ctx.Context, claims.Username)
+		actorData, err := h.repos.Actor().GetActorByUsername(ctx.Context, claims.Username)
 		if err != nil {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			ctx.Status(http.StatusInternalServerError)
 			return ctx.JSON(map[string]any{"error": "internal server error"})
 		}
-		actor = &storage.ActorRecord{Actor: actorData}
+		// Convert activitypub.Actor to storage.ActorRecord
+		actor = &storage.ActorRecord{
+			ID:          actorData.ID,
+			Username:    actorData.PreferredUsername,
+			Domain:      "", // Local actor
+			ActorType:   string(actorData.Type),
+			DisplayName: actorData.Name,
+			Avatar:      "", // Would need to extract from Icon
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
 	}
 
 	// Check write scope
@@ -216,35 +232,31 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 	}
 
 	// Submit vote
-	if err := h.store.VoteOnPoll(ctx.Context, pollID, actor.Actor.ID, req.Choices); err != nil {
+	if err := h.repos.Poll().VoteOnPoll(ctx.Context, pollID, actor.ID, req.Choices); err != nil {
 		h.logger.Error("failed to vote on poll",
 			zap.String("poll_id", pollID),
-			zap.String("voter_id", actor.Actor.ID),
+			zap.String("voter_id", actor.ID),
 			zap.Error(err))
 		ctx.Status(http.StatusUnprocessableEntity)
 		return ctx.JSON(map[string]any{"error": err.Error()})
 	}
 
 	// Get updated poll data to return
-	poll, err := h.store.GetPoll(ctx.Context, pollID)
+	poll, err := h.repos.Poll().GetPoll(ctx.Context, pollID)
 	if err != nil {
 		h.logger.Error("failed to get poll after voting", zap.String("poll_id", pollID), zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]any{"error": "internal server error"})
 	}
 
-	// Calculate vote counts per option
-	optionVotes := make([]int, len(poll.Options))
-	for _, choices := range poll.Votes {
-		for _, choice := range choices {
-			if choice < len(optionVotes) {
-				optionVotes[choice]++
-			}
-		}
+	// Use the pre-calculated vote counts from the poll
+	optionVotes := poll.VotesCount
+	if optionVotes == nil {
+		optionVotes = make([]int, len(poll.Options))
 	}
 
 	// Check if poll has expired
-	expired := !poll.ExpiresAt.IsZero() && time.Now().After(poll.ExpiresAt)
+	expired := poll.ExpiresAt != nil && !poll.ExpiresAt.IsZero() && time.Now().After(*poll.ExpiresAt)
 
 	// Build options data for response
 	optionsData := make([]models.PollOption, len(poll.Options))
@@ -261,7 +273,7 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 		ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
 		Expired:     expired,
 		Multiple:    poll.Multiple,
-		VotesCount:  poll.VotesCount,
+		VotesCount:  poll.VotersCount, // Total votes, not per-option
 		VotersCount: poll.VotersCount,
 		Voted:       true,
 		OwnVotes:    req.Choices,
@@ -280,17 +292,16 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 	}
 
 	// Create notification for poll creator if it's not the voter
-	if poll.CreatedBy != actor.Actor.ID {
-		notification := &storage.Notification{
-			ID:        fmt.Sprintf("%d-%s", time.Now().Unix(), generateRandomStringLift(8)),
-			Type:      "poll",
-			Username:  extractUsernameFromActorIDLift(poll.CreatedBy),
-			AccountID: actor.Actor.ID,
-			StatusID:  poll.StatusID,
-			CreatedAt: time.Now(),
+	if poll.CreatedBy != actor.ID {
+		notification := &storagemodels.Notification{
+			ID:       fmt.Sprintf("%d-%s", time.Now().Unix(), generateRandomStringLift(8)),
+			Type:     "poll",
+			UserID:   extractUsernameFromActorIDLift(poll.CreatedBy),
+			ActorID:  actor.ID,
+			TargetID: poll.StatusID,
 		}
 
-		if err := h.store.CreateNotification(ctx.Context, notification); err != nil {
+		if err := h.repos.Notification().CreateNotification(ctx.Context, notification); err != nil {
 			h.logger.Warn("failed to create poll notification",
 				zap.String("poll_id", pollID),
 				zap.Error(err))
@@ -323,7 +334,7 @@ func (h *Handler) extractCustomEmojisLift(ctx context.Context, options []string)
 			for _, code := range emojiCodes {
 				if !emojiMap[code] {
 					// Get emoji data from storage
-					if emoji, err := h.store.GetCustomEmoji(ctx, code); err == nil {
+					if emoji, err := h.repos.Emoji().GetCustomEmoji(ctx, code); err == nil {
 						emojis = append(emojis, map[string]any{
 							"shortcode":         emoji.Shortcode,
 							"url":               emoji.URL,

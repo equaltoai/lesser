@@ -186,7 +186,7 @@ func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
 		jobRecord["DateRangeEnd"] = req.DateRange.End
 	}
 
-	if err := h.store.CreateObject(ctx.Context, jobRecord); err != nil {
+	if err := h.repos.Object().CreateObject(ctx.Context, jobRecord); err != nil {
 		h.logger.Error("failed to create export job", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]any{"error": "failed to create export job"})
 	}
@@ -258,7 +258,7 @@ func (h *Handler) HandleGetExportStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get export job
-	obj, err := h.store.GetObject(ctx.Context, fmt.Sprintf("EXPORT#%s", exportID))
+	obj, err := h.repos.Object().GetObject(ctx.Context, fmt.Sprintf("EXPORT#%s", exportID))
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).JSON(map[string]any{"error": fmt.Sprintf("export not found: %s", exportID)})
 	}

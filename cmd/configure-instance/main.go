@@ -14,7 +14,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"go.uber.org/zap"
 )
 
@@ -43,17 +43,17 @@ func main() {
 		tableName = "lesser-main"
 	}
 
-	// Create storage adapter
-	store := dynamorm.NewStorageAdapter(db, tableName, logger)
-	
-	// Initialize required repositories
-	store.SetInstanceRepository(repositories.NewInstanceRepository(db, tableName, logger))
+	// Create repository factory
+	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	if err != nil {
+		log.Fatalf("Failed to create repository factory: %v", err)
+	}
 
 	ctx := context.Background()
 
 	// Show current configuration
 	if *showConfig {
-		rules, err := store.GetInstanceRules(ctx)
+		rules, err := repos.Instance().GetInstanceRules(ctx)
 		if err != nil {
 			log.Printf("Failed to get rules: %v", err)
 		} else {
@@ -66,7 +66,7 @@ func main() {
 			}
 		}
 
-		desc, updatedAt, err := store.GetExtendedDescription(ctx)
+		desc, updatedAt, err := repos.Instance().GetExtendedDescription(ctx)
 		if err != nil {
 			log.Printf("Failed to get extended description: %v", err)
 		} else {
@@ -74,7 +74,7 @@ func main() {
 		}
 
 		// Show VAPID public key if it exists
-		vapidKeys, err := store.GetVAPIDKeys(ctx)
+		vapidKeys, err := repos.PushSubscription().GetVAPIDKeys(ctx)
 		if err != nil {
 			fmt.Println("\nVAPID Keys: Not configured")
 		} else {
@@ -125,7 +125,7 @@ func main() {
 		}
 
 		// Save to storage
-		if err := store.SetVAPIDKeys(ctx, vapidKeys); err != nil {
+		if err := repos.PushSubscription().SetVAPIDKeys(ctx, vapidKeys); err != nil {
 			log.Fatalf("Failed to save VAPID keys: %v", err)
 		}
 
@@ -146,7 +146,7 @@ func main() {
 			}
 		}
 
-		if err := store.SetInstanceRules(ctx, rules); err != nil {
+		if err := repos.Instance().SetInstanceRules(ctx, rules); err != nil {
 			log.Fatalf("Failed to set rules: %v", err)
 		}
 		fmt.Printf("✓ Set %d rules\n", len(rules))
@@ -154,7 +154,7 @@ func main() {
 
 	// Set extended description
 	if *setDescription != "" {
-		if err := store.SetExtendedDescription(ctx, *setDescription); err != nil {
+		if err := repos.Instance().SetExtendedDescription(ctx, *setDescription); err != nil {
 			log.Fatalf("Failed to set extended description: %v", err)
 		}
 		fmt.Println("✓ Set extended description")

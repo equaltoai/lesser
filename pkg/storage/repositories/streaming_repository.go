@@ -334,12 +334,12 @@ func (r *StreamingRepository) modelToStorageType(model *models.StreamingPreferen
 		BufferSizeSeconds:         model.BufferSizeSeconds,
 		Version:                   model.Version,
 		SchemaVersion:             model.SchemaVersion,
-		HDREnabled:                model.HDREnabled,
+		HDREnabled:                func() bool { if model.HDREnabled != nil { return *model.HDREnabled }; return false }(),
 		ColorSpace:                model.ColorSpace,
-		SubtitleEnabled:           model.SubtitleEnabled,
+		SubtitleEnabled:           func() bool { if model.SubtitleEnabled != nil { return *model.SubtitleEnabled }; return false }(),
 		SubtitleLanguage:          model.SubtitleLanguage,
-		AudioDescriptionEnabled:   model.AudioDescriptionEnabled,
-		ClosedCaptionsEnabled:     model.ClosedCaptionsEnabled,
+		AudioDescriptionEnabled:   func() bool { if model.AudioDescriptionEnabled != nil { return *model.AudioDescriptionEnabled }; return false }(),
+		ClosedCaptionsEnabled:     func() bool { if model.ClosedCaptionsEnabled != nil { return *model.ClosedCaptionsEnabled }; return false }(),
 		UpdatedAt:                 model.UpdatedAt,
 	}
 }
@@ -358,12 +358,12 @@ func (r *StreamingRepository) storageTypeToModel(prefs *storage.StreamingPrefere
 		BufferSizeSeconds:         prefs.BufferSizeSeconds,
 		Version:                   prefs.Version,
 		SchemaVersion:             prefs.SchemaVersion,
-		HDREnabled:                prefs.HDREnabled,
+		HDREnabled:                &prefs.HDREnabled,
 		ColorSpace:                prefs.ColorSpace,
-		SubtitleEnabled:           prefs.SubtitleEnabled,
+		SubtitleEnabled:           &prefs.SubtitleEnabled,
 		SubtitleLanguage:          prefs.SubtitleLanguage,
-		AudioDescriptionEnabled:   prefs.AudioDescriptionEnabled,
-		ClosedCaptionsEnabled:     prefs.ClosedCaptionsEnabled,
+		AudioDescriptionEnabled:   &prefs.AudioDescriptionEnabled,
+		ClosedCaptionsEnabled:     &prefs.ClosedCaptionsEnabled,
 		UpdatedAt:                 prefs.UpdatedAt,
 	}
 	

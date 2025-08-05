@@ -229,7 +229,7 @@ func (r *AuthRepository) CreateWebAuthnChallenge(ctx context.Context, challenge 
 	model := &models.WebAuthnChallenge{
 		Challenge:   challenge.Challenge,
 		UserID:      challenge.UserID,
-		SessionData: challenge.SessionData,
+		SessionData: func() []byte { if data, ok := challenge.SessionData.([]byte); ok { return data } else { return nil } }(),
 		ExpiresAt:   challenge.ExpiresAt,
 		Type:        challenge.Type,
 	}

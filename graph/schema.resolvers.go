@@ -293,7 +293,10 @@ func (r *actorResolver) TrustScore(ctx context.Context, obj *activitypub.Actor) 
 	}
 
 	if score != nil {
-		return score.Score, nil
+		trustScore, ok := score.(*storage.TrustScore)
+		if ok && trustScore != nil {
+			return trustScore.Score, nil
+		}
 	}
 
 	return 0.5, nil // Default neutral score
@@ -319,12 +322,12 @@ func (r *actorResolver) Reputation(ctx context.Context, obj *activitypub.Actor) 
 		TotalScore:   0,
 		TrustScore:   0,
 		CalculatedAt: now,
-		Version:      "1.0",
+		Version:      1,
 	}
 	
 	// If we have trust score data, use it
 	if err == nil && generalTrustScore != nil {
-		storageReputation.TrustScore = int(generalTrustScore.Score * 100) // Convert to int score
+		storageReputation.TrustScore = generalTrustScore.Score
 		storageReputation.TotalScore = storageReputation.TrustScore
 	}
 	if err != nil {
@@ -382,13 +385,13 @@ func (r *actorResolver) Reputation(ctx context.Context, obj *activitypub.Actor) 
 	reputation := &model.Reputation{
 		ActorID:         storageReputation.ActorID,
 		Instance:        domain,
-		TotalScore:      storageReputation.TotalScore,
-		TrustScore:      storageReputation.TrustScore,
-		ActivityScore:   storageReputation.ActivityScore,
-		ModerationScore: storageReputation.ModerationScore,
-		CommunityScore:  storageReputation.CommunityScore,
+		TotalScore:      int(storageReputation.TotalScore),
+		TrustScore:      int(storageReputation.TrustScore),
+		ActivityScore:   int(storageReputation.ActivityScore),
+		ModerationScore: int(storageReputation.ModerationScore),
+		CommunityScore:  int(storageReputation.CommunityScore),
 		CalculatedAt:    model.Time(storageReputation.CalculatedAt),
-		Version:         storageReputation.Version,
+		Version:         fmt.Sprintf("%d", storageReputation.Version),
 		Evidence: &model.ReputationEvidence{
 			TotalPosts:        r.getActorStatusCount(ctx, obj.ID),
 			TotalFollowers:    r.getActorFollowerCount(ctx, obj.ID),
@@ -442,9 +445,9 @@ func (r *actorResolver) Vouches(ctx context.Context, obj *activitypub.Actor) ([]
 			To:                toActor,
 			Confidence:        storageVouch.Confidence,
 			Context:           storageVouch.Context,
-			VoucherReputation: storageVouch.VoucherReputation,
+			VoucherReputation: int(storageVouch.VoucherReputation),
 			CreatedAt:         model.Time(storageVouch.CreatedAt),
-			ExpiresAt:         model.Time(storageVouch.ExpiresAt),
+			ExpiresAt:         func() model.Time { if storageVouch.ExpiresAt == nil { return model.Time(time.Time{}) }; return model.Time(*storageVouch.ExpiresAt) }(),
 			Active:            storageVouch.Active,
 			Revoked:           storageVouch.Revoked,
 		}
@@ -2886,7 +2889,6 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 		AllowPublic:    quoteable,
 		AllowFollowers: false,
 		AllowMentioned: false,
-		BlockList:      []string{},
 	}
 
 	switch permission {

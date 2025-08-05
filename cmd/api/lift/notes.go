@@ -87,15 +87,22 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": fmt.Sprintf("maximum %d sources allowed", notes.MaxSources)})
 	}
 
-	// Check rate limit
+	// Check rate limit based on reputation
 	limit := notes.CalculateNoteLimit(float64(rep.TotalScore))
-	canCreate, remaining, err := h.store.CheckCommunityNoteRateLimit(ctx.Context, userID, limit)
-	if err != nil {
-		h.logger.Error("Failed to check rate limit", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
+	
+	// Use the notes service to check rate limiting
+	notesService := notes.NewService(h.repos, h.logger)
+	canCreate, remaining := notesService.CheckRateLimit(ctx.Context, userID, float64(rep.TotalScore))
+	
 	if !canCreate {
-		return ctx.Status(422).JSON(map[string]string{"error": fmt.Sprintf("note limit reached. %d notes allowed per day based on reputation", limit)})
+		return ctx.Status(429).JSON(map[string]any{
+			"error": "Rate limit exceeded",
+			"rate_limit": map[string]any{
+				"limit":     limit,
+				"remaining": remaining,
+				"reset":     "24h",
+			},
+		})
 	}
 
 	// Convert Source structs to string URLs
@@ -122,7 +129,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 	}
 
 	// Store note
-	if err := h.store.CreateCommunityNote(ctx.Context, note); err != nil {
+	if err := h.repos.CommunityNote().CreateCommunityNote(ctx.Context, note); err != nil {
 		h.logger.Error("Failed to store note", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -192,7 +199,7 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 	}
 
 	// Get visible notes for the object
-	visibleNotes, err := h.store.GetVisibleCommunityNotes(ctx.Context, objectID)
+	visibleNotes, err := h.repos.CommunityNote().GetVisibleCommunityNotes(ctx.Context, objectID)
 	if err != nil {
 		h.logger.Error("Failed to get visible notes", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -373,7 +380,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	}
 
 	// Check if note exists
-	note, err := h.store.GetCommunityNote(ctx.Context, noteID)
+	note, err := h.repos.CommunityNote().GetCommunityNote(ctx.Context, noteID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "note not found"})
 	}
@@ -395,7 +402,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	}
 
 	// Store vote
-	if err := h.store.CreateCommunityNoteVote(ctx.Context, vote); err != nil {
+	if err := h.repos.CommunityNote().CreateCommunityNoteVote(ctx.Context, vote); err != nil {
 		h.logger.Error("Failed to store vote", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -436,7 +443,7 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	}
 
 	// Get notes from storage
-	userNotes, _, err := h.store.GetCommunityNotesByAuthor(ctx.Context, authorID, limit, "")
+	userNotes, _, err := h.repos.CommunityNote().GetCommunityNotesByAuthor(ctx.Context, authorID, limit, "")
 	if err != nil {
 		h.logger.Error("Failed to get user notes", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -492,7 +499,7 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
 	// Create service config using existing store
 	cfg := &reputation.Config{
-		Storage:     h.store,
+		Storage:     h.repos,
 		Logger:      h.logger,
 		InstanceURL: h.cfg.BaseURL(),
 		PrivateKey:  h.cfg.ReputationPrivateKey, // Load from config

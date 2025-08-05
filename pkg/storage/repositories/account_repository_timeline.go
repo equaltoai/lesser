@@ -232,7 +232,7 @@ func (r *AccountRepository) AddToTimeline(ctx context.Context, username string, 
 		SpoilerText:  entry.SpoilerText,
 		CreatedAt:    entry.CreatedAt,
 		TimelineAt:   entry.TimelineAt,
-		ExpiresAt:    entry.ExpiresAt,
+		ExpiresAt:    func() time.Time { if entry.ExpiresAt != nil { return *entry.ExpiresAt } else { return time.Time{} } }(),
 	}
 
 	// Create timeline entry
@@ -462,7 +462,7 @@ func (r *AccountRepository) modelToTimelineEntry(model *models.TimelineEntry) *s
 		SpoilerText:    model.SpoilerText,
 		CreatedAt:      model.CreatedAt,
 		TimelineAt:     model.TimelineAt,
-		ExpiresAt:      model.ExpiresAt,
+		ExpiresAt:      func() *time.Time { if !model.ExpiresAt.IsZero() { return &model.ExpiresAt } else { return nil } }(),
 	}
 }
 
