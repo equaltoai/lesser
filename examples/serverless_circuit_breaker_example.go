@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/federation/circuit"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -27,12 +26,8 @@ func main() {
 
 	// Create the circuit breaker repository
 	circuitRepo := repositories.NewCircuitBreakerRepository(db, tableName, logger)
-	
-	// Create the storage adapter and set the repository
-	adapter := dynamorm.NewStorageAdapter(db, tableName, logger)
-	adapter.SetCircuitBreakerRepository(circuitRepo)
 
-	// Create the serverless circuit breaker
+	// Create the serverless circuit breaker directly with the repository
 	config := models.DefaultCircuitBreakerConfig()
 	serverlessBreaker := circuit.NewServerlessCircuitBreaker(circuitRepo, config, logger)
 

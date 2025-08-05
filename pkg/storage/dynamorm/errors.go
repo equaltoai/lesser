@@ -203,3 +203,16 @@ func IsTransactionCanceled(err error) bool {
 func IsValidation(err error) bool {
 	return errors.Is(err, ErrValidation) || errors.Is(err, storage.ErrInvalidInput)
 }
+
+// MapRepositoryError maps repository errors with context
+func MapRepositoryError(err error, operation, entityType, entityID string) error {
+	if err == nil {
+		return nil
+	}
+	
+	// Map the error first
+	mappedErr := MapError(err)
+	
+	// Create detailed error
+	return NewDetailedError(mappedErr, operation, entityType, entityID, "")
+}
