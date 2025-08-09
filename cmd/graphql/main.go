@@ -129,7 +129,7 @@ func init() {
 			BedrockModelID:      "anthropic.claude-v2",
 			S3Bucket:           cfg.S3BucketName,
 		}
-		aiService = ai.NewAIService(awsCfg, aiConfig)
+		aiService = ai.NewAIService(awsCfg, aiConfig, tableName)
 		logger.Info("AI service initialized")
 	} else {
 		logger.Info("AI service disabled")
