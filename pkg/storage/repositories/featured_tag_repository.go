@@ -62,8 +62,13 @@ func (r *FeaturedTagRepository) CreateFeaturedTag(ctx context.Context, tag *stor
 		Name:          tagName,
 		URL:           fmt.Sprintf("https://localhost/tags/%s", tagName), // Placeholder domain
 		StatusesCount: statusesCount,
-		LastStatusAt:  func() string { if lastStatusAt != nil { return lastStatusAt.Format(time.RFC3339) }; return "" }(),
-		CreatedAt:     time.Now(),
+		LastStatusAt: func() string {
+			if lastStatusAt != nil {
+				return lastStatusAt.Format(time.RFC3339)
+			}
+			return ""
+		}(),
+		CreatedAt: time.Now(),
 	}
 
 	// Update keys
@@ -96,7 +101,7 @@ func (r *FeaturedTagRepository) DeleteFeaturedTag(ctx context.Context, username,
 
 	var targetID string
 	for _, tag := range featuredTags {
-		if strings.ToLower(tag.Name) == strings.ToLower(name) {
+		if strings.EqualFold(tag.Name, name) {
 			targetID = tag.ID
 			break
 		}
@@ -150,8 +155,15 @@ func (r *FeaturedTagRepository) GetFeaturedTags(ctx context.Context, username st
 			Name:          model.Name,
 			URL:           model.URL,
 			StatusesCount: model.StatusesCount,
-			LastStatusAt:  func() *time.Time { if model.LastStatusAt != "" { if t, err := time.Parse(time.RFC3339, model.LastStatusAt); err == nil { return &t } }; return nil }(),
-			CreatedAt:     model.CreatedAt,
+			LastStatusAt: func() *time.Time {
+				if model.LastStatusAt != "" {
+					if t, err := time.Parse(time.RFC3339, model.LastStatusAt); err == nil {
+						return &t
+					}
+				}
+				return nil
+			}(),
+			CreatedAt: model.CreatedAt,
 		})
 	}
 

@@ -1,3 +1,4 @@
+// Package main provides a mock generation utility for storage interface implementations using Go AST parsing.
 package main
 
 import (
@@ -36,7 +37,7 @@ func main() {
 	generated := generateMockMethods(missing)
 
 	// Write to file
-	err = os.WriteFile("generated_mocks.go", []byte(generated), 0o644)
+	err = os.WriteFile("generated_mocks.go", []byte(generated), 0o600)
 	if err != nil {
 		log.Fatalf("Failed to write file: %v", err)
 	}
@@ -44,6 +45,7 @@ func main() {
 	fmt.Println("Generated mock methods written to generated_mocks.go")
 }
 
+// Method represents a Go interface method
 type Method struct {
 	Name     string
 	Params   []Param
@@ -51,17 +53,19 @@ type Method struct {
 	Receiver string
 }
 
+// Param represents a method parameter
 type Param struct {
 	Name string
 	Type string
 }
 
+// Result represents a method return value
 type Result struct {
 	Type string
 }
 
 func parseInterface(filename string) ([]Method, error) {
-	src, err := os.ReadFile(filename)
+	src, err := os.ReadFile(filename) //nolint:gosec // Controlled input in development tool
 	if err != nil {
 		return nil, err
 	}
@@ -75,73 +79,112 @@ func parseInterface(filename string) ([]Method, error) {
 	var methods []Method
 
 	ast.Inspect(file, func(n ast.Node) bool {
-		// Look for the Storage interface
-		typeSpec, ok := n.(*ast.TypeSpec)
-		if !ok {
-			return true
+		if m := extractStorageInterfaceMethods(n); m != nil {
+			methods = append(methods, m...)
+			return false
 		}
-
-		if typeSpec.Name.Name != "Storage" {
-			return true
-		}
-
-		iface, ok := typeSpec.Type.(*ast.InterfaceType)
-		if !ok {
-			return true
-		}
-
-		// Extract methods from interface
-		for _, method := range iface.Methods.List {
-			if len(method.Names) == 0 {
-				continue // embedded interface
-			}
-
-			funcType, ok := method.Type.(*ast.FuncType)
-			if !ok {
-				continue
-			}
-
-			m := Method{
-				Name: method.Names[0].Name,
-			}
-
-			// Parse parameters
-			if funcType.Params != nil {
-				for _, param := range funcType.Params.List {
-					paramType := exprToString(param.Type)
-					if len(param.Names) == 0 {
-						// Unnamed parameter
-						m.Params = append(m.Params, Param{Type: paramType})
-					} else {
-						for _, name := range param.Names {
-							m.Params = append(m.Params, Param{
-								Name: name.Name,
-								Type: paramType,
-							})
-						}
-					}
-				}
-			}
-
-			// Parse results
-			if funcType.Results != nil {
-				for _, result := range funcType.Results.List {
-					resultType := exprToString(result.Type)
-					m.Results = append(m.Results, Result{Type: resultType})
-				}
-			}
-
-			methods = append(methods, m)
-		}
-
-		return false
+		return true
 	})
 
 	return methods, nil
 }
 
+// extractStorageInterfaceMethods extracts methods from Storage interface if found
+func extractStorageInterfaceMethods(n ast.Node) []Method {
+	typeSpec, ok := n.(*ast.TypeSpec)
+	if !ok || typeSpec.Name.Name != "Storage" {
+		return nil
+	}
+
+	iface, ok := typeSpec.Type.(*ast.InterfaceType)
+	if !ok {
+		return nil
+	}
+
+	return extractMethodsFromInterface(iface)
+}
+
+// extractMethodsFromInterface extracts all methods from an interface
+func extractMethodsFromInterface(iface *ast.InterfaceType) []Method {
+	var methods []Method
+
+	for _, method := range iface.Methods.List {
+		if m := parseInterfaceMethod(method); m != nil {
+			methods = append(methods, *m)
+		}
+	}
+
+	return methods
+}
+
+// parseInterfaceMethod parses a single interface method
+func parseInterfaceMethod(method *ast.Field) *Method {
+	if len(method.Names) == 0 {
+		return nil // embedded interface
+	}
+
+	funcType, ok := method.Type.(*ast.FuncType)
+	if !ok {
+		return nil
+	}
+
+	m := &Method{
+		Name: method.Names[0].Name,
+	}
+
+	parseMethodParams(funcType, m)
+	parseMethodResults(funcType, m)
+
+	return m
+}
+
+// parseMethodParams parses method parameters
+func parseMethodParams(funcType *ast.FuncType, m *Method) {
+	if funcType.Params == nil {
+		return
+	}
+
+	for _, param := range funcType.Params.List {
+		params := extractParamsFromField(param)
+		m.Params = append(m.Params, params...)
+	}
+}
+
+// extractParamsFromField extracts parameters from an AST field
+func extractParamsFromField(param *ast.Field) []Param {
+	var params []Param
+	paramType := exprToString(param.Type)
+	
+	if len(param.Names) == 0 {
+		// Unnamed parameter
+		params = append(params, Param{Type: paramType})
+	} else {
+		// Named parameters
+		for _, name := range param.Names {
+			params = append(params, Param{
+				Name: name.Name,
+				Type: paramType,
+			})
+		}
+	}
+	
+	return params
+}
+
+// parseMethodResults parses method return values
+func parseMethodResults(funcType *ast.FuncType, m *Method) {
+	if funcType.Results == nil {
+		return
+	}
+
+	for _, result := range funcType.Results.List {
+		resultType := exprToString(result.Type)
+		m.Results = append(m.Results, Result{Type: resultType})
+	}
+}
+
 func parseMockMethods(filename string) (map[string]bool, error) {
-	src, err := os.ReadFile(filename)
+	src, err := os.ReadFile(filename) //nolint:gosec // Controlled input in development tool
 	if err != nil {
 		return nil, err
 	}

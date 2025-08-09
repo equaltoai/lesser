@@ -99,7 +99,7 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 }
 
 // GetStatusesByAuthor retrieves statuses by author with pagination
-func (r *StatusRepository) GetStatusesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*models.Status, string, error) {
+func (r *StatusRepository) GetStatusesByAuthor(ctx context.Context, authorID string, limit int, _ string) ([]*models.Status, string, error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("author-timeline-index").
@@ -122,7 +122,7 @@ func (r *StatusRepository) GetStatusesByAuthor(ctx context.Context, authorID str
 }
 
 // GetPublicTimeline retrieves public statuses with pagination
-func (r *StatusRepository) GetPublicTimeline(ctx context.Context, limit int, cursor string) ([]*models.Status, string, error) {
+func (r *StatusRepository) GetPublicTimeline(ctx context.Context, limit int, _ string) ([]*models.Status, string, error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("public-timeline-index").
@@ -167,7 +167,7 @@ func (r *StatusRepository) GetConversationStatuses(ctx context.Context, conversa
 }
 
 // GetReplies retrieves replies to a specific status
-func (r *StatusRepository) GetReplies(ctx context.Context, statusID string, limit int, cursor string) ([]*models.Status, string, error) {
+func (r *StatusRepository) GetReplies(ctx context.Context, statusID string, limit int, _ string) ([]*models.Status, string, error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("replies-index").
@@ -190,7 +190,7 @@ func (r *StatusRepository) GetReplies(ctx context.Context, statusID string, limi
 }
 
 // GetHashtagTimeline retrieves statuses for a specific hashtag
-func (r *StatusRepository) GetHashtagTimeline(ctx context.Context, hashtag string, limit int, cursor string) ([]*models.Status, string, error) {
+func (r *StatusRepository) GetHashtagTimeline(ctx context.Context, hashtag string, limit int, _ string) ([]*models.Status, string, error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("hashtag-index").
@@ -295,25 +295,25 @@ func (r *StatusRepository) FlagStatus(ctx context.Context, statusID string) erro
 // GetTotalStatusCount returns the total number of statuses in the system
 func (r *StatusRepository) GetTotalStatusCount(ctx context.Context) (int64, error) {
 	r.logger.Debug("getting total status count")
-	
+
 	// For total status count, we need to scan the table with a filter for all statuses
 	// Since statuses use PK = "status#{status_id}", we can filter by PK prefix
 	// Note: This is less efficient than a GSI but necessary for total count across all statuses
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Filter("PK", "BEGINS_WITH", "status#").
 		Count()
-	
+
 	if err != nil {
 		r.logger.Error("failed to count total statuses", zap.Error(err))
 		return 0, fmt.Errorf("failed to count total statuses: %w", err)
 	}
-	
+
 	r.logger.Debug("retrieved total status count", zap.Int64("count", count))
 	return count, nil
 }
 
 // GetFlaggedStatuses retrieves flagged statuses for moderation
-func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, limit int, cursor string) ([]*models.Status, string, error) {
+func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, limit int, _ string) ([]*models.Status, string, error) {
 	// This would require a GSI for flagged statuses in a real implementation
 	// For now, we'll scan the table (not efficient for production)
 	var statuses []models.Status
@@ -344,4 +344,3 @@ func extractStatusIDFromURL(url string) string {
 	}
 	return ""
 }
-

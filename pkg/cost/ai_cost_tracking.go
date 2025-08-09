@@ -32,14 +32,14 @@ func (s *AIServiceWithCostTracking) GenerateEmbeddingWithCostTracking(ctx contex
 
 	// Initialize cost tracking
 	costData := &models.SearchCostTracking{
-		UserID:             userID,
-		OperationType:      "semantic_search",
-		SearchType:         "embedding_generation",
-		Query:              text,
-		QueryLength:        len(text),
-		Timestamp:          startTime,
-		EmbeddingTokens:    s.estimateTokenCount(text),
-		BedrockRequests:    1,
+		UserID:          userID,
+		OperationType:   "semantic_search",
+		SearchType:      "embedding_generation",
+		Query:           text,
+		QueryLength:     len(text),
+		Timestamp:       startTime,
+		EmbeddingTokens: s.estimateTokenCount(text),
+		BedrockRequests: 1,
 	}
 
 	// Estimate cost before operation
@@ -53,7 +53,7 @@ func (s *AIServiceWithCostTracking) GenerateEmbeddingWithCostTracking(ctx contex
 	}
 
 	// Generate embedding
-	embedding, err := s.AIService.GenerateEmbedding(ctx, text)
+	embedding, err := s.GenerateEmbedding(ctx, text)
 
 	// Complete cost tracking
 	responseTime := time.Since(startTime)
@@ -83,7 +83,7 @@ func (s *AIServiceWithCostTracking) GenerateEmbeddingWithCostTracking(ctx contex
 }
 
 // SemanticSearchWithCostTracking performs semantic search with comprehensive cost tracking
-func (s *AIServiceWithCostTracking) SemanticSearchWithCostTracking(ctx context.Context, query string, userID string, limit int, threshold float64) ([]float32, []*models.SearchEmbedding, *models.SearchCostTracking, error) {
+func (s *AIServiceWithCostTracking) SemanticSearchWithCostTracking(ctx context.Context, query string, userID string, limit int, _ float64) ([]float32, []*models.SearchEmbedding, *models.SearchCostTracking, error) {
 	startTime := time.Now()
 
 	// Initialize cost tracking for the complete semantic search operation
@@ -110,14 +110,14 @@ func (s *AIServiceWithCostTracking) SemanticSearchWithCostTracking(ctx context.C
 
 	// Step 2: Search similar embeddings (this would be done via search repository)
 	// For this example, we'll simulate the search operation costs
-	
+
 	// Estimate vector search costs
 	searchStartTime := time.Now()
-	
+
 	// Simulate vector similarity search costs
 	estimatedComparisons := limit * 500 // Estimate comparing against 500 stored embeddings
 	costData.VectorComparisons = estimatedComparisons
-	
+
 	// DynamoDB scan costs for embedding search
 	estimatedReads := int64(500) // Scanning stored embeddings
 	costData.DynamoReads = estimatedReads
@@ -126,16 +126,16 @@ func (s *AIServiceWithCostTracking) SemanticSearchWithCostTracking(ctx context.C
 
 	// Track DynamoDB costs
 	if s.costTracker != nil {
-		s.costTracker.TrackDynamoRead(int(estimatedReads))
+		_ = s.costTracker.TrackDynamoRead(int(estimatedReads))
 	}
 
 	// Simulate the actual search (would be done by search repository)
 	var results []*models.SearchEmbedding // Would be populated by actual search
-	
+
 	// Complete timing
 	searchTime := time.Since(searchStartTime)
 	totalTime := time.Since(startTime)
-	
+
 	costData.ResponseTimeMs = totalTime.Milliseconds()
 	costData.IndexLookupTimeMs = searchTime.Milliseconds()
 	costData.ResultCount = len(results)
@@ -207,7 +207,7 @@ func (s *AIServiceWithCostTracking) AnalyzeContentWithCostTracking(ctx context.C
 	}
 
 	// Perform the actual analysis
-	analysis, err := s.AIService.AnalyzeContent(ctx, content)
+	analysis, err := s.AnalyzeContent(ctx, content)
 
 	// Complete cost tracking
 	responseTime := time.Since(startTime)
@@ -249,13 +249,13 @@ func (s *AIServiceWithCostTracking) calculateBedrockCost(tokens int) int64 {
 	if tokens == 0 {
 		return 0
 	}
-	
+
 	// Base cost for API call
 	baseCost := int64(50) // 50 microcents per API call
-	
+
 	// Token-based cost
 	tokenCost := (int64(tokens) * 100) / 1000 // 100 microcents per 1K tokens
-	
+
 	return baseCost + tokenCost
 }
 
@@ -265,10 +265,10 @@ func (s *AIServiceWithCostTracking) calculateDynamoCost(reads, writes int64) int
 		readCostPer1M  = 25000  // 25000 microcents per million read units
 		writeCostPer1M = 125000 // 125000 microcents per million write units
 	)
-	
+
 	readCost := (reads * readCostPer1M) / 1000000
 	writeCost := (writes * writeCostPer1M) / 1000000
-	
+
 	return readCost + writeCost
 }
 
@@ -278,11 +278,8 @@ func (s *AIServiceWithCostTracking) trackBedrockCost(costMicros int64) {
 		// Convert microcents to a count for tracking
 		// This is a simplification - in practice, you might want to extend
 		// the cost tracker to support custom service costs
-		equivalentOperations := int(costMicros / 1000) // Rough equivalent
-		if equivalentOperations < 1 {
-			equivalentOperations = 1
-		}
-		
+		_ = int(costMicros / 1000) // Rough equivalent - not currently used
+
 		// Track as Lambda invocations for now (could be extended)
 		s.costTracker.TrackLambdaInvocation(100, 512) // 100ms, 512MB equivalent
 	}
@@ -316,7 +313,7 @@ func (s *AIServiceWithCostTracking) BulkEmbeddingGenerationWithCostTracking(ctx 
 
 		batch := texts[i:end]
 		for _, text := range batch {
-			embedding, err := s.AIService.GenerateEmbedding(ctx, text)
+			embedding, err := s.GenerateEmbedding(ctx, text)
 			if err != nil {
 				s.logger.Warn("failed to generate embedding in bulk",
 					zap.String("user_id", userID),

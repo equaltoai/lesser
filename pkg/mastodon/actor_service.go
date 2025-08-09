@@ -1,3 +1,4 @@
+// Package mastodon provides Mastodon API compatibility services for actor and account management.
 package mastodon
 
 import (

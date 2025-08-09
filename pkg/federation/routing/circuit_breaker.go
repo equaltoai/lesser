@@ -1,3 +1,4 @@
+// Package routing provides distributed circuit breaker implementation for federation request routing.
 package routing
 
 import (
@@ -13,28 +14,30 @@ import (
 
 // DistributedCircuitBreaker implements circuit breaker pattern with DynamORM persistence
 type DistributedCircuitBreaker struct {
-	repo   *repositories.CircuitBreakerRepository
-	logger *zap.Logger
-	config *models.CircuitBreakerConfig
+	repo              *repositories.CircuitBreakerRepository
+	thresholdManager  *RouteThresholdManager
+	logger            *zap.Logger
+	config            *models.CircuitBreakerConfig
 }
 
 // NewDistributedCircuitBreaker creates a new circuit breaker
-func NewDistributedCircuitBreaker(repo *repositories.CircuitBreakerRepository, logger *zap.Logger, config *models.CircuitBreakerConfig) *DistributedCircuitBreaker {
+func NewDistributedCircuitBreaker(repo *repositories.CircuitBreakerRepository, thresholdManager *RouteThresholdManager, logger *zap.Logger, config *models.CircuitBreakerConfig) *DistributedCircuitBreaker {
 	if config == nil {
 		config = models.DefaultCircuitBreakerConfig()
 	}
 
 	return &DistributedCircuitBreaker{
-		repo:   repo,
-		logger: logger,
-		config: config,
+		repo:             repo,
+		thresholdManager: thresholdManager,
+		logger:           logger,
+		config:           config,
 	}
 }
 
 // Open opens the circuit for an instance
 func (dcb *DistributedCircuitBreaker) Open(instanceID string, reason string) error {
 	ctx := context.Background()
-	
+
 	// Get current state
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
@@ -64,7 +67,7 @@ func (dcb *DistributedCircuitBreaker) Open(instanceID string, reason string) err
 	}
 
 	// Record state change event
-	dcb.repo.RecordStateChange(ctx, instanceID, previousStatus, state.Status, reason)
+	_ = dcb.repo.RecordStateChange(ctx, instanceID, previousStatus, state.Status, reason)
 
 	dcb.logger.Warn("circuit opened",
 		zap.String("instanceID", instanceID),
@@ -78,7 +81,7 @@ func (dcb *DistributedCircuitBreaker) Open(instanceID string, reason string) err
 // Close closes the circuit for an instance
 func (dcb *DistributedCircuitBreaker) Close(instanceID string) error {
 	ctx := context.Background()
-	
+
 	// Get current state
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
@@ -104,7 +107,7 @@ func (dcb *DistributedCircuitBreaker) Close(instanceID string) error {
 	}
 
 	// Record state change event
-	dcb.repo.RecordStateChange(ctx, instanceID, previousStatus, state.Status, "circuit closed")
+	_ = dcb.repo.RecordStateChange(ctx, instanceID, previousStatus, state.Status, "circuit closed")
 
 	dcb.logger.Info("circuit closed",
 		zap.String("instanceID", instanceID))
@@ -115,7 +118,7 @@ func (dcb *DistributedCircuitBreaker) Close(instanceID string) error {
 // HalfOpen puts the circuit in half-open state for testing
 func (dcb *DistributedCircuitBreaker) HalfOpen(instanceID string) error {
 	ctx := context.Background()
-	
+
 	// Get current state
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
@@ -138,7 +141,7 @@ func (dcb *DistributedCircuitBreaker) HalfOpen(instanceID string) error {
 	}
 
 	// Record state change event
-	dcb.repo.RecordStateChange(ctx, instanceID, previousStatus, state.Status, "testing recovery")
+	_ = dcb.repo.RecordStateChange(ctx, instanceID, previousStatus, state.Status, "testing recovery")
 
 	dcb.logger.Info("circuit half-open",
 		zap.String("instanceID", instanceID))
@@ -149,11 +152,11 @@ func (dcb *DistributedCircuitBreaker) HalfOpen(instanceID string) error {
 // IsOpen checks if the circuit is open
 func (dcb *DistributedCircuitBreaker) IsOpen(instanceID string) bool {
 	ctx := context.Background()
-	
+
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		dcb.logger.Debug("failed to get circuit state", 
-			zap.String("instanceID", instanceID), 
+		dcb.logger.Debug("failed to get circuit state",
+			zap.String("instanceID", instanceID),
 			zap.Error(err))
 		return false // Default to closed on error
 	}
@@ -164,11 +167,11 @@ func (dcb *DistributedCircuitBreaker) IsOpen(instanceID string) bool {
 // CanAttempt checks if a request can be attempted
 func (dcb *DistributedCircuitBreaker) CanAttempt(instanceID string) bool {
 	ctx := context.Background()
-	
+
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		dcb.logger.Debug("failed to get circuit state", 
-			zap.String("instanceID", instanceID), 
+		dcb.logger.Debug("failed to get circuit state",
+			zap.String("instanceID", instanceID),
 			zap.Error(err))
 		return true // Default to allow on error
 	}
@@ -203,7 +206,7 @@ func (dcb *DistributedCircuitBreaker) CanAttempt(instanceID string) bool {
 // RecordSuccess records a successful request
 func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 	ctx := context.Background()
-	
+
 	// Update state atomically
 	_, err := dcb.repo.UpdateCircuitState(ctx, instanceID, func(state *models.CircuitBreakerState) error {
 		state.SuccessCount++
@@ -229,7 +232,7 @@ func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 					zap.String("instanceID", instanceID))
 
 				// Record state change (non-blocking)
-				go dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, "circuit recovered")
+				go func() { _ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, "circuit recovered") }()
 			}
 
 		case types.CircuitOpen:
@@ -240,7 +243,7 @@ func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 			state.Reason = "unexpected success during open state"
 
 			// Record state change (non-blocking)
-			go dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, "unexpected success during open state")
+			go func() { _ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, "unexpected success during open state") }()
 		}
 
 		return nil
@@ -251,7 +254,13 @@ func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 	}
 
 	// Record metric (non-blocking)
-	go dcb.repo.RecordMetric(context.Background(), instanceID, true, nil, "")
+	go func() {
+		if err := dcb.repo.RecordMetric(context.Background(), instanceID, true, nil, ""); err != nil {
+			dcb.logger.Warn("failed to record success metric", 
+				zap.String("instance_id", instanceID), 
+				zap.Error(err))
+		}
+	}()
 
 	return nil
 }
@@ -259,7 +268,7 @@ func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 // RecordFailure records a failed request
 func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error) error {
 	ctx := context.Background()
-	
+
 	// Determine error type for better decision making
 	errorType := dcb.classifyError(err)
 
@@ -288,7 +297,7 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 					zap.String("errorType", errorType))
 
 				// Record state change (non-blocking)
-				go dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, state.Reason)
+				go func() { _ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, state.Reason) }()
 			}
 
 		case types.CircuitHalfOpen:
@@ -305,7 +314,7 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 				zap.String("errorType", errorType))
 
 			// Record state change (non-blocking)
-			go dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, state.Reason)
+			go func() { _ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, state.Reason) }()
 		}
 
 		return nil
@@ -316,7 +325,14 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 	}
 
 	// Record metric (non-blocking)
-	go dcb.repo.RecordMetric(context.Background(), instanceID, false, err, errorType)
+	go func() {
+		if metricErr := dcb.repo.RecordMetric(context.Background(), instanceID, false, err, errorType); metricErr != nil {
+			dcb.logger.Warn("failed to record failure metric", 
+				zap.String("instance_id", instanceID),
+				zap.String("error_type", errorType),
+				zap.Error(metricErr))
+		}
+	}()
 
 	return nil
 }
@@ -324,11 +340,11 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 // GetStatus returns the current circuit status
 func (dcb *DistributedCircuitBreaker) GetStatus(instanceID string) types.CircuitStatus {
 	ctx := context.Background()
-	
+
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		dcb.logger.Debug("failed to get circuit state", 
-			zap.String("instanceID", instanceID), 
+		dcb.logger.Debug("failed to get circuit state",
+			zap.String("instanceID", instanceID),
 			zap.Error(err))
 		return types.CircuitClosed // Default to closed on error
 	}
@@ -339,11 +355,11 @@ func (dcb *DistributedCircuitBreaker) GetStatus(instanceID string) types.Circuit
 // GetMetrics returns circuit breaker metrics
 func (dcb *DistributedCircuitBreaker) GetMetrics(instanceID string) map[string]any {
 	ctx := context.Background()
-	
+
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		dcb.logger.Debug("failed to get circuit state", 
-			zap.String("instanceID", instanceID), 
+		dcb.logger.Debug("failed to get circuit state",
+			zap.String("instanceID", instanceID),
 			zap.Error(err))
 		// Return empty metrics on error
 		return map[string]any{
@@ -405,4 +421,64 @@ func (dcb *DistributedCircuitBreaker) classifyError(err error) string {
 
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && s[0:len(substr)] == substr || len(s) > len(substr) && contains(s[1:], substr)
+}
+
+// AssessRouteHealthAndAdjustCircuit uses threshold manager to assess route health and adjust circuit state
+func (dcb *DistributedCircuitBreaker) AssessRouteHealthAndAdjustCircuit(ctx context.Context, routeID string, metrics *types.RouteMetrics) error {
+	if dcb.thresholdManager == nil {
+		return nil // Skip if no threshold manager configured
+	}
+
+	// Assess route health using threshold manager
+	assessment := dcb.thresholdManager.AssessRouteHealth(ctx, routeID, metrics)
+
+	dcb.logger.Debug("Route health assessment",
+		zap.String("routeID", routeID),
+		zap.String("status", assessment.Status.String()),
+		zap.Float64("successRate", assessment.SuccessRate),
+		zap.String("action", assessment.RecommendedAction))
+
+	// Take action based on assessment
+	switch assessment.Status {
+	case RouteHealthCritical:
+		// Open circuit immediately for critical health status
+		if dcb.GetStatus(routeID) != types.CircuitOpen {
+			return dcb.Open(routeID, fmt.Sprintf("critical health: %s", assessment.DegradationReason))
+		}
+
+	case RouteHealthDegraded:
+		// For degraded routes, consider opening circuit if it's not already managed
+		currentStatus := dcb.GetStatus(routeID)
+		if currentStatus == types.CircuitClosed && assessment.SuccessRate < dcb.thresholdManager.config.DegradedSuccessRate {
+			dcb.logger.Warn("Route degraded, consider traffic reduction",
+				zap.String("routeID", routeID),
+				zap.String("reason", assessment.DegradationReason))
+		}
+
+	case RouteHealthPreferred, RouteHealthHealthy:
+		// Close circuit if it's currently open and the route is healthy
+		if dcb.GetStatus(routeID) == types.CircuitOpen {
+			dcb.logger.Info("Route recovered, closing circuit",
+				zap.String("routeID", routeID))
+			return dcb.Close(routeID)
+		}
+	}
+
+	return nil
+}
+
+// ShouldEnterEmergencyMode checks if the system should enter emergency mode
+func (dcb *DistributedCircuitBreaker) ShouldEnterEmergencyMode(healthyRoutes, totalRoutes int) bool {
+	if dcb.thresholdManager == nil {
+		return false
+	}
+	return dcb.thresholdManager.ShouldEnterEmergencyMode(healthyRoutes, totalRoutes)
+}
+
+// GetBackpressureRules returns backpressure rules for emergency mode
+func (dcb *DistributedCircuitBreaker) GetBackpressureRules() map[MessagePriority]BackpressureRule {
+	if dcb.thresholdManager == nil {
+		return make(map[MessagePriority]BackpressureRule)
+	}
+	return dcb.thresholdManager.GetEmergencyBackpressureRules()
 }

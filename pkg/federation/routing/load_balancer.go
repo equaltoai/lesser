@@ -23,8 +23,10 @@ type AdaptiveLoadBalancer struct {
 	algorithm LoadBalancingAlgorithm
 }
 
+// LoadBalancingAlgorithm represents the type of load balancing algorithm
 type LoadBalancingAlgorithm string
 
+// Load balancing algorithm constants
 const (
 	AlgorithmRoundRobin       LoadBalancingAlgorithm = "round_robin"
 	AlgorithmWeightedRandom   LoadBalancingAlgorithm = "weighted_random"
@@ -121,7 +123,7 @@ func (alb *AdaptiveLoadBalancer) UpdateWeights(metrics map[string]*types.RouteMe
 func (alb *AdaptiveLoadBalancer) GetCurrentWeights() map[string]float64 {
 	weights := make(map[string]float64)
 
-	alb.weights.Range(func(key, value any) bool {
+	alb.weights.Range(func(_, value any) bool {
 		rw := value.(*routeWeight)
 		rw.mu.RLock()
 		weights[rw.RouteID] = rw.CurrentWeight

@@ -10,25 +10,25 @@ type Move struct {
 	// Primary keys - MUST match legacy exactly
 	PK string `dynamorm:"pk" json:"PK"` // MOVE#ACTOR#{actor}
 	SK string `dynamorm:"sk" json:"SK"` // TARGET#{target}
-	
+
 	// GSI1 for reverse lookups (moves to a target)
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // MOVE#TARGET#{target}
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // ACTOR#{actor}
-	
+
 	// Move data (nested in legacy)
 	ID        string    `json:"ID"`        // The move activity ID
 	Actor     string    `json:"Actor"`     // The old account moving
 	Target    string    `json:"Target"`    // The new account location
 	Published time.Time `json:"Published"` // When the move was announced
 	CreatedAt time.Time `json:"CreatedAt"` // Database timestamp
-	
+
 	// Optional TTL for cleanup
 	TTL *int64 `dynamorm:"ttl" json:"TTL,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
 func (Move) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the record before creation
@@ -43,7 +43,7 @@ func (m *Move) UpdateKeys() {
 	m.PK = fmt.Sprintf("MOVE#ACTOR#%s", m.Actor)
 	m.SK = fmt.Sprintf("TARGET#%s", m.Target)
 	m.GSI1PK = fmt.Sprintf("MOVE#TARGET#%s", m.Target)
-	m.GSI1SK = fmt.Sprintf("ACTOR#%s", m.Actor)
+	m.GSI1SK = fmt.Sprintf(KeyPatternActor, m.Actor)
 }
 
 // NewMove creates a new move record

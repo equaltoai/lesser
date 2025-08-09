@@ -62,7 +62,7 @@ func (r *Reputation) UpdateKeys(actorID string, reputation interface{}) error {
 	}
 
 	// Set keys - preserve EXACT case from legacy
-	r.PK = fmt.Sprintf("ACTOR#%s", username)
+	r.PK = fmt.Sprintf(KeyPatternActor, username)
 	r.SK = fmt.Sprintf("REP#%s", calculatedAt.Format(time.RFC3339))
 
 	// Set fields
@@ -84,4 +84,3 @@ func (r *Reputation) ToStorageReputation() (interface{}, error) {
 	}
 	return reputation, nil
 }
-

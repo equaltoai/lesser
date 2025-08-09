@@ -34,7 +34,7 @@ type NotificationPreferences struct {
 
 // UpdateKeys updates the primary and GSI keys based on the model's fields
 func (n *NotificationPreferences) UpdateKeys() {
-	n.PK = fmt.Sprintf("USER#%s", n.Username)
+	n.PK = fmt.Sprintf(KeyPatternUser, n.Username)
 	n.SK = "NOTIFICATION_PREFS"
 }
 

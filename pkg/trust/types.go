@@ -1,3 +1,4 @@
+// Package trust provides trust network types and configuration for federated trust systems.
 package trust
 
 import (
@@ -6,7 +7,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
-// Type aliases to storage types - this breaks the import cycle
+// TrustCategory and other type aliases to storage types - this breaks the import cycle
+//
+//nolint:revive // These are type aliases, not new types - stuttering is intentional for clarity
 type (
 	TrustCategory     = storage.TrustCategory
 	TrustEvidence     = storage.TrustEvidence
@@ -24,6 +27,8 @@ const (
 )
 
 // TrustNetwork represents a view of the trust network for analysis
+//
+//nolint:revive // Trust prefix clarifies this is trust-specific network
 type TrustNetwork struct {
 	RootActorID   string                 `json:"root_actor_id"`
 	Relationships []TrustRelationship    `json:"relationships"`
@@ -34,6 +39,8 @@ type TrustNetwork struct {
 }
 
 // TrustPropagationConfig configures how trust propagates through the network
+//
+//nolint:revive // Trust prefix clarifies this is trust-specific propagation config
 type TrustPropagationConfig struct {
 	MaxDepth           int     `json:"max_depth"`            // Maximum hops for propagation
 	DecayFactor        float64 `json:"decay_factor"`         // How much trust decays per hop (0.0-1.0)
@@ -54,6 +61,8 @@ func DefaultPropagationConfig() *TrustPropagationConfig {
 }
 
 // TrustSummary provides a summary view of an actor's trust status
+//
+//nolint:revive // Trust prefix clarifies this is trust-specific summary
 type TrustSummary struct {
 	ActorID         string                    `json:"actor_id"`
 	OverallScore    float64                   `json:"overall_score"`
@@ -65,6 +74,8 @@ type TrustSummary struct {
 }
 
 // TrustEdge represents a single edge in the trust graph (for visualization)
+//
+//nolint:revive // Trust prefix clarifies this is trust-specific edge
 type TrustEdge struct {
 	From       string        `json:"from"`
 	To         string        `json:"to"`

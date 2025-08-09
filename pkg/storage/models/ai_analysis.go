@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AIAnalysis represents an AI analysis result stored in DynamoDB
@@ -24,10 +25,10 @@ type AIAnalysis struct {
 	Version    string    `json:"version"`
 
 	// Analysis results
-	TextAnalysis     *ai.TextAnalysis  `json:"text_analysis,omitempty"`
-	ImageAnalysis    *ai.ImageAnalysis `json:"image_analysis,omitempty"`
-	AIDetection      *ai.AIDetection   `json:"ai_detection,omitempty"`
-	SpamAnalysis     *ai.SpamAnalysis  `json:"spam_analysis,omitempty"`
+	TextAnalysis  *ai.TextAnalysis  `json:"text_analysis,omitempty"`
+	ImageAnalysis *ai.ImageAnalysis `json:"image_analysis,omitempty"`
+	AIDetection   *ai.AIDetection   `json:"ai_detection,omitempty"`
+	SpamAnalysis  *ai.SpamAnalysis  `json:"spam_analysis,omitempty"`
 
 	// Composite scores
 	OverallRisk      float64 `json:"overall_risk"`
@@ -44,7 +45,7 @@ type AIAnalysis struct {
 func (a *AIAnalysis) UpdateKeys() {
 	a.PK = "AI#" + a.ObjectID
 	a.SK = "ANALYSIS#" + a.ID
-	a.GSI4PK = "AI#ANALYSIS#" + a.AnalyzedAt.Format("2006-01-02")
+	a.GSI4PK = "AI#ANALYSIS#" + a.AnalyzedAt.Format(common.DateFormat)
 	a.GSI4SK = a.AnalyzedAt.Format(time.RFC3339Nano)
 	a.Type = "AIAnalysis"
 }

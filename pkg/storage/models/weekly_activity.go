@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // WeeklyActivity represents activity metrics for a specific week
@@ -12,25 +13,25 @@ import (
 type WeeklyActivity struct {
 	PK            string `dynamorm:"pk" json:"-"`
 	SK            string `dynamorm:"sk" json:"-"`
-	UserID        string `json:"user_id,omitempty"`   // Optional: for user-specific activity
-	Week          int64  `json:"week"`                // Unix timestamp of week start
-	Statuses      int64  `json:"statuses"`            // Number of statuses created
-	Logins        int64  `json:"logins"`              // Number of unique logins
-	Registrations int64  `json:"registrations"`       // Number of new registrations
+	UserID        string `json:"user_id,omitempty"` // Optional: for user-specific activity
+	Week          int64  `json:"week"`              // Unix timestamp of week start
+	Statuses      int64  `json:"statuses"`          // Number of statuses created
+	Logins        int64  `json:"logins"`            // Number of unique logins
+	Registrations int64  `json:"registrations"`     // Number of new registrations
 }
 
 // UpdateKeys updates the DynamoDB keys based on the activity data
 func (w *WeeklyActivity) UpdateKeys() {
 	if w.UserID != "" {
 		// User-specific weekly activity
-		w.PK = fmt.Sprintf("USER#%s", w.UserID)
+		w.PK = fmt.Sprintf(KeyPatternUser, w.UserID)
 	} else {
 		// Instance-wide weekly activity
 		w.PK = "INSTANCE#ACTIVITY"
 	}
-	
+
 	if w.Week > 0 {
-		weekStart := time.Unix(w.Week, 0).Format("2006-01-02")
+		weekStart := time.Unix(w.Week, 0).Format(common.DateFormat)
 		w.SK = fmt.Sprintf("ACTIVITY#WEEK#%s", weekStart)
 	}
 }
@@ -39,7 +40,7 @@ func (w *WeeklyActivity) UpdateKeys() {
 func NewWeeklyActivity(week time.Time) *WeeklyActivity {
 	// Normalize to start of week (Monday)
 	weekStart := normalizeToWeekStart(week)
-	
+
 	activity := &WeeklyActivity{
 		Week:          weekStart.Unix(),
 		Statuses:      0,
@@ -62,7 +63,7 @@ func NewUserWeeklyActivity(userID string, week time.Time) *WeeklyActivity {
 func normalizeToWeekStart(t time.Time) time.Time {
 	// Get the weekday (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
 	weekday := int(t.Weekday())
-	
+
 	// Calculate days to subtract to get to Monday
 	// If Sunday (0), subtract 6 days to get to previous Monday
 	// Otherwise, subtract (weekday - 1) days
@@ -70,7 +71,7 @@ func normalizeToWeekStart(t time.Time) time.Time {
 	if weekday == 0 {
 		daysToSubtract = 6
 	}
-	
+
 	// Get start of day for the calculated date
 	return t.AddDate(0, 0, -daysToSubtract).Truncate(24 * time.Hour)
 }

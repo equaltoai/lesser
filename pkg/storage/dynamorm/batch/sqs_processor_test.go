@@ -471,7 +471,7 @@ func BenchmarkSQSBatchProcessor_ProcessBatch(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		processor.ProcessBatch(context.Background(), event)
+		_, _ = processor.ProcessBatch(context.Background(), event)
 	}
 }
 

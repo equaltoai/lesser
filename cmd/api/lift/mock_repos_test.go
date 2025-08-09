@@ -3,8 +3,8 @@ package lift
 import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/stretchr/testify/mock"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 )
 
@@ -338,6 +338,22 @@ func (m *MockRepoStorage) GetLogger() *zap.Logger {
 		return nil
 	}
 	return args.Get(0).(*zap.Logger)
+}
+
+func (m *MockRepoStorage) MetricRecord() *repositories.MetricRecordRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.MetricRecordRepository)
+}
+
+func (m *MockRepoStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.CloudWatchMetricsRepository)
 }
 
 // Ensure MockRepoStorage implements RepositoryStorage interface

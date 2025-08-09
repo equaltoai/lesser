@@ -36,7 +36,7 @@ type Object struct {
 	Updated      time.Time `json:"updated"`
 	InReplyTo    *string   `json:"in_reply_to,omitempty"`
 	Sensitive    bool      `json:"sensitive,omitempty"`
-	
+
 	// Addressing
 	To  []string `json:"to,omitempty"`
 	CC  []string `json:"cc,omitempty"`
@@ -47,11 +47,11 @@ type Object struct {
 	AttachmentJSON string `json:"attachment_json,omitempty"` // JSON array of attachments
 	TagJSON        string `json:"tag_json,omitempty"`        // JSON array of tags
 	ContextJSON    string `json:"context_json,omitempty"`    // JSON for @context
-	
+
 	// Metadata
-	ConversationID string `json:"conversation_id,omitempty"`
-	Visibility     string `json:"visibility,omitempty"`
-	IsRemote       bool   `json:"is_remote"`
+	ConversationID string    `json:"conversation_id,omitempty"`
+	Visibility     string    `json:"visibility,omitempty"`
+	IsRemote       bool      `json:"is_remote"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

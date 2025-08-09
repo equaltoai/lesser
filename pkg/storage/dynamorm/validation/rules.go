@@ -1,3 +1,4 @@
+// Package validation provides validation rules and utilities for DynamORM model data integrity.
 package validation
 
 import (
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Rule represents a validation rule
@@ -19,6 +21,8 @@ type Rule interface {
 }
 
 // ValidationError represents a validation error
+//
+//nolint:revive // Validation prefix clarifies this is validation-specific error
 type ValidationError struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`
@@ -30,6 +34,8 @@ func (e ValidationError) Error() string {
 }
 
 // ValidationErrors represents multiple validation errors
+//
+//nolint:revive // Validation prefix clarifies this is validation-specific errors collection
 type ValidationErrors struct {
 	Errors []ValidationError `json:"errors"`
 }
@@ -225,6 +231,7 @@ func validateFieldWithTag(fieldName string, value any, tag string) error {
 // RequiredRule validates that a value is not empty/zero
 type RequiredRule struct{}
 
+// Validate checks that the value is not empty or zero
 func (r RequiredRule) Validate(value any) error {
 	if isZero(value) {
 		return errors.New(r.Message())
@@ -232,6 +239,7 @@ func (r RequiredRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for RequiredRule
 func (r RequiredRule) Message() string {
 	return "field is required"
 }
@@ -241,6 +249,7 @@ type MinLengthRule struct {
 	MinLength int
 }
 
+// Validate checks that the string value meets the minimum length requirement
 func (r MinLengthRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -253,6 +262,7 @@ func (r MinLengthRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for MinLengthRule
 func (r MinLengthRule) Message() string {
 	return fmt.Sprintf("must be at least %d characters long", r.MinLength)
 }
@@ -262,6 +272,7 @@ type MaxLengthRule struct {
 	MaxLength int
 }
 
+// Validate checks that the string or slice value does not exceed the maximum length
 func (r MaxLengthRule) Validate(value any) error {
 	switch v := value.(type) {
 	case string:
@@ -278,6 +289,7 @@ func (r MaxLengthRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for MaxLengthRule
 func (r MaxLengthRule) Message() string {
 	return fmt.Sprintf("must be at most %d characters long", r.MaxLength)
 }
@@ -287,6 +299,7 @@ type LengthRule struct {
 	Length int
 }
 
+// Validate checks that the string value has exactly the required length
 func (r LengthRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -299,6 +312,7 @@ func (r LengthRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for LengthRule
 func (r LengthRule) Message() string {
 	return fmt.Sprintf("must be exactly %d characters long", r.Length)
 }
@@ -309,6 +323,7 @@ type PatternRule struct {
 	message string
 }
 
+// Validate checks that the string value matches the regular expression pattern
 func (r PatternRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -321,6 +336,7 @@ func (r PatternRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for PatternRule
 func (r PatternRule) Message() string {
 	if r.message != "" {
 		return r.message
@@ -331,6 +347,7 @@ func (r PatternRule) Message() string {
 // EmailRule validates email format
 type EmailRule struct{}
 
+// Validate checks that the string value is a valid email address format
 func (r EmailRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -344,6 +361,7 @@ func (r EmailRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for EmailRule
 func (r EmailRule) Message() string {
 	return "must be a valid email address"
 }
@@ -351,6 +369,7 @@ func (r EmailRule) Message() string {
 // URLRule validates URL format
 type URLRule struct{}
 
+// Validate checks that the string value is a valid URL format
 func (r URLRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -364,6 +383,7 @@ func (r URLRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for URLRule
 func (r URLRule) Message() string {
 	return "must be a valid URL"
 }
@@ -373,6 +393,7 @@ type MinRule struct {
 	Min float64
 }
 
+// Validate checks that the numeric value meets the minimum requirement
 func (r MinRule) Validate(value any) error {
 	num, err := toFloat64(value)
 	if err != nil {
@@ -385,6 +406,7 @@ func (r MinRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for MinRule
 func (r MinRule) Message() string {
 	return fmt.Sprintf("must be at least %g", r.Min)
 }
@@ -394,6 +416,7 @@ type MaxRule struct {
 	Max float64
 }
 
+// Validate checks that the numeric value does not exceed the maximum requirement
 func (r MaxRule) Validate(value any) error {
 	num, err := toFloat64(value)
 	if err != nil {
@@ -406,6 +429,7 @@ func (r MaxRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for MaxRule
 func (r MaxRule) Message() string {
 	return fmt.Sprintf("must be at most %g", r.Max)
 }
@@ -415,6 +439,7 @@ type InRule struct {
 	AllowedValues []string
 }
 
+// Validate checks that the value is in the list of allowed values
 func (r InRule) Validate(value any) error {
 	str := fmt.Sprintf("%v", value)
 
@@ -427,6 +452,7 @@ func (r InRule) Validate(value any) error {
 	return errors.New(r.Message())
 }
 
+// Message returns the validation error message for InRule
 func (r InRule) Message() string {
 	return fmt.Sprintf("must be one of: %s", strings.Join(r.AllowedValues, ", "))
 }
@@ -436,6 +462,7 @@ type NotInRule struct {
 	DisallowedValues []string
 }
 
+// Validate checks that the value is not in the list of disallowed values
 func (r NotInRule) Validate(value any) error {
 	str := fmt.Sprintf("%v", value)
 
@@ -448,6 +475,7 @@ func (r NotInRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for NotInRule
 func (r NotInRule) Message() string {
 	return fmt.Sprintf("must not be one of: %s", strings.Join(r.DisallowedValues, ", "))
 }
@@ -455,6 +483,7 @@ func (r NotInRule) Message() string {
 // AlphaRule validates that string contains only alphabetic characters
 type AlphaRule struct{}
 
+// Validate checks that the string contains only alphabetic characters
 func (r AlphaRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -468,6 +497,7 @@ func (r AlphaRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for AlphaRule
 func (r AlphaRule) Message() string {
 	return "must contain only alphabetic characters"
 }
@@ -475,6 +505,7 @@ func (r AlphaRule) Message() string {
 // AlphaNumRule validates that string contains only alphanumeric characters
 type AlphaNumRule struct{}
 
+// Validate checks that the string contains only alphanumeric characters
 func (r AlphaNumRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -488,6 +519,7 @@ func (r AlphaNumRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for AlphaNumRule
 func (r AlphaNumRule) Message() string {
 	return "must contain only alphanumeric characters"
 }
@@ -495,6 +527,7 @@ func (r AlphaNumRule) Message() string {
 // NumericRule validates that value is numeric
 type NumericRule struct{}
 
+// Validate checks that the value is numeric
 func (r NumericRule) Validate(value any) error {
 	_, err := toFloat64(value)
 	if err != nil {
@@ -503,6 +536,7 @@ func (r NumericRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for NumericRule
 func (r NumericRule) Message() string {
 	return "must be numeric"
 }
@@ -510,8 +544,9 @@ func (r NumericRule) Message() string {
 // IntegerRule validates that value is an integer
 type IntegerRule struct{}
 
+// Validate checks that the value is an integer
 func (r IntegerRule) Validate(value any) error {
-	switch value.(type) {
+	switch v := value.(type) {
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return nil
 	case float32, float64:
@@ -520,8 +555,7 @@ func (r IntegerRule) Validate(value any) error {
 			return nil
 		}
 	case string:
-		str := value.(string)
-		if _, err := strconv.ParseInt(str, 10, 64); err == nil {
+		if _, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return nil
 		}
 	}
@@ -529,6 +563,7 @@ func (r IntegerRule) Validate(value any) error {
 	return errors.New(r.Message())
 }
 
+// Message returns the validation error message for IntegerRule
 func (r IntegerRule) Message() string {
 	return "must be an integer"
 }
@@ -536,13 +571,14 @@ func (r IntegerRule) Message() string {
 // DateRule validates that value is a valid date
 type DateRule struct{}
 
+// Validate checks that the value is a valid date
 func (r DateRule) Validate(value any) error {
 	switch v := value.(type) {
 	case time.Time:
 		return nil
 	case string:
 		layouts := []string{
-			"2006-01-02",
+			common.DateFormat,
 			"2006-01-02T15:04:05Z",
 			"2006-01-02T15:04:05.000Z",
 			"2006-01-02T15:04:05-07:00",
@@ -559,6 +595,7 @@ func (r DateRule) Validate(value any) error {
 	return errors.New(r.Message())
 }
 
+// Message returns the validation error message for DateRule
 func (r DateRule) Message() string {
 	return "must be a valid date"
 }
@@ -593,18 +630,18 @@ func createRule(ruleName string) (Rule, error) {
 func createRuleWithParam(ruleName, param string) (Rule, error) {
 	switch ruleName {
 	case "min":
-		min, err := strconv.ParseFloat(param, 64)
+		minVal, err := strconv.ParseFloat(param, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid min parameter: %s", param)
 		}
-		return MinRule{Min: min}, nil
+		return MinRule{Min: minVal}, nil
 
 	case "max":
-		max, err := strconv.ParseFloat(param, 64)
+		maxVal, err := strconv.ParseFloat(param, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid max parameter: %s", param)
 		}
-		return MaxRule{Max: max}, nil
+		return MaxRule{Max: maxVal}, nil
 
 	case "minlen":
 		minLen, err := strconv.Atoi(param)
@@ -716,6 +753,8 @@ func toFloat64(value any) (float64, error) {
 }
 
 // ValidationConstraints provides predefined validation constraints for common model fields
+//
+//nolint:revive // Validation prefix clarifies this is validation-specific constraints
 type ValidationConstraints struct {
 	Username struct {
 		MinLength int
@@ -782,6 +821,7 @@ type UsernameRule struct {
 	Constraints ValidationConstraints
 }
 
+// Validate checks that the username meets Lesser's requirements
 func (r UsernameRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -803,6 +843,7 @@ func (r UsernameRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for UsernameRule
 func (r UsernameRule) Message() string {
 	return "invalid username format"
 }
@@ -812,6 +853,7 @@ type PasswordRule struct {
 	Constraints ValidationConstraints
 }
 
+// Validate checks that the password meets Lesser's security requirements
 func (r PasswordRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -841,6 +883,7 @@ func (r PasswordRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for PasswordRule
 func (r PasswordRule) Message() string {
 	return "password does not meet security requirements"
 }
@@ -850,6 +893,7 @@ type ContentRule struct {
 	Constraints ValidationConstraints
 }
 
+// Validate checks that the content meets Lesser's requirements
 func (r ContentRule) Validate(value any) error {
 	str, ok := value.(string)
 	if !ok {
@@ -864,6 +908,7 @@ func (r ContentRule) Validate(value any) error {
 	return nil
 }
 
+// Message returns the validation error message for ContentRule
 func (r ContentRule) Message() string {
 	return "content exceeds maximum length"
 }

@@ -108,28 +108,28 @@ func (r *MediaSessionRepository) GetSession(ctx context.Context, sessionID strin
 // UpdateSession updates a streaming session
 func (r *MediaSessionRepository) UpdateSession(ctx context.Context, session *types.StreamingSession) error {
 	now := time.Now()
-	
+
 	// Get the existing session first
 	var existingModel models.MediaSession
 	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
 		Where("PK", "=", fmt.Sprintf("SESSION#%s", session.SessionID)).
 		Where("SK", "=", "METADATA").
 		First(&existingModel)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("session not found: %s", session.SessionID)
 		}
 		return fmt.Errorf("failed to get existing session: %w", err)
 	}
-	
+
 	// Update the fields
 	existingModel.CurrentQuality = string(session.CurrentQuality)
 	existingModel.LastSegmentIndex = session.LastSegmentIndex
 	existingModel.BytesTransferred = session.BytesTransferred
 	existingModel.BufferHealth = session.BufferHealth
 	existingModel.LastUpdate = &now
-	
+
 	// Update the session
 	err = r.db.WithContext(ctx).Model(&existingModel).Update()
 
@@ -161,7 +161,7 @@ func (r *MediaSessionRepository) EndSession(ctx context.Context, sessionID strin
 		Where("PK", "=", fmt.Sprintf("SESSION#%s", sessionID)).
 		Where("SK", "=", "METADATA").
 		First(&existingModel)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("session not found: %s", sessionID)
@@ -176,7 +176,7 @@ func (r *MediaSessionRepository) EndSession(ctx context.Context, sessionID strin
 	existingModel.Active = false
 	existingModel.EndTime = &now
 	existingModel.Duration = duration
-	
+
 	// Update session as ended
 	err = r.db.WithContext(ctx).Model(&existingModel).Update()
 

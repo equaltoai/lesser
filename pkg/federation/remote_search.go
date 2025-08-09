@@ -124,7 +124,7 @@ func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, dom
 	if err != nil {
 		return "", fmt.Errorf("webfinger request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("webfinger returned status %d", resp.StatusCode)
@@ -159,7 +159,7 @@ func (s *RemoteSearchService) fetchRemoteActor(ctx context.Context, actorURL str
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch actor: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch actor: status %d", resp.StatusCode)
@@ -180,7 +180,7 @@ func (s *RemoteSearchService) fetchRemoteActor(ctx context.Context, actorURL str
 
 // SearchRemoteActors searches for actors on remote instances
 // This can be extended to query remote instance search endpoints
-func (s *RemoteSearchService) SearchRemoteActors(ctx context.Context, query string, limit int) ([]*SearchResult, error) {
+func (s *RemoteSearchService) SearchRemoteActors(ctx context.Context, query string, _ int) ([]*SearchResult, error) {
 	// For now, only handle exact @user@domain matches
 	if !isValidHandle(query) {
 		return nil, nil

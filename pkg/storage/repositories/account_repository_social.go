@@ -52,7 +52,7 @@ func (r *AccountRepository) Follow(ctx context.Context, followerUsername, follow
 	// Create follow relationship using NewFollow constructor
 	activityID := fmt.Sprintf("%s/activities/follow-%d", follower.ID, time.Now().Unix())
 	follow := models.NewFollow(followerUsername, followedUsername, activityID)
-	
+
 	// Auto-approve if account is not locked (check ManuallyApprovesFollowers)
 	if !followed.ManuallyApprovesFollowers {
 		follow.Accept()
@@ -246,8 +246,18 @@ func (r *AccountRepository) Block(ctx context.Context, blockerUsername, blockedU
 	}
 
 	// Remove any existing follow relationships in both directions
-	r.Unfollow(ctx, blockerUsername, blockedUsername)
-	r.Unfollow(ctx, blockedUsername, blockerUsername)
+	if err := r.Unfollow(ctx, blockerUsername, blockedUsername); err != nil {
+		r.logger.Warn("failed to unfollow after block", 
+			zap.String("blocker", blockerUsername),
+			zap.String("blocked", blockedUsername),
+			zap.Error(err))
+	}
+	if err := r.Unfollow(ctx, blockedUsername, blockerUsername); err != nil {
+		r.logger.Warn("failed to unfollow reverse after block",
+			zap.String("blocked", blockedUsername), 
+			zap.String("blocker", blockerUsername),
+			zap.Error(err))
+	}
 
 	return nil
 }
@@ -255,7 +265,7 @@ func (r *AccountRepository) Block(ctx context.Context, blockerUsername, blockedU
 // Unblock removes a block relationship
 func (r *AccountRepository) Unblock(ctx context.Context, blockerUsername, blockedUsername string) error {
 	err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
+		Where("PK", "=", fmt.Sprintf(storage.ActorBlocksKey, blockerUsername)).
 		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
 		Delete()
 
@@ -275,7 +285,7 @@ func (r *AccountRepository) IsBlocked(ctx context.Context, blockerUsername, bloc
 	var block models.Block
 
 	err := r.db.WithContext(ctx).Model(&block).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
+		Where("PK", "=", fmt.Sprintf(storage.ActorBlocksKey, blockerUsername)).
 		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
 		First(&block)
 
@@ -294,6 +304,7 @@ func (r *AccountRepository) IsBlocked(ctx context.Context, blockerUsername, bloc
 }
 
 // GetBlocks retrieves all users blocked by a user
+//nolint:dupl // Social relationship query patterns are shared between repositories
 func (r *AccountRepository) GetBlocks(ctx context.Context, username string) ([]*storage.Block, error) {
 	var blocks []models.Block
 
@@ -325,7 +336,7 @@ func (r *AccountRepository) GetBlocks(ctx context.Context, username string) ([]*
 }
 
 // Mute creates a mute relationship
-func (r *AccountRepository) Mute(ctx context.Context, muterUsername, mutedUsername string, notifications bool, duration time.Duration) error {
+func (r *AccountRepository) Mute(ctx context.Context, muterUsername, mutedUsername string, notifications bool, _ time.Duration) error {
 	// Get actor IDs
 	muter, err := r.GetActor(ctx, muterUsername)
 	if err != nil {
@@ -440,7 +451,7 @@ func (r *AccountRepository) AddBookmark(ctx context.Context, username, objectID 
 		ObjectID:  objectID,
 		CreatedAt: time.Now(),
 	}
-	
+
 	// Update keys using the model's UpdateKeys method
 	bookmark.UpdateKeys()
 
@@ -623,7 +634,6 @@ func (r *AccountRepository) GetAccountPins(ctx context.Context, username string)
 	return result, nil
 }
 
-
 // GetAccountPin retrieves a specific account pin by actor ID
 func (r *AccountRepository) GetAccountPin(ctx context.Context, username, targetActorID string) (*storage.AccountPin, error) {
 	var pin models.AccountPin
@@ -662,14 +672,14 @@ func (r *AccountRepository) updateMute(ctx context.Context, muterUsername, muted
 		Where("PK", "=", fmt.Sprintf("MUTE#%s", muterUsername)).
 		Where("SK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
 		First(&mute)
-		
+
 	if err != nil {
 		return fmt.Errorf("failed to get existing mute: %w", err)
 	}
 
 	// Update fields
 	mute.HideNotifications = notifications
-	
+
 	err = r.db.WithContext(ctx).Model(&mute).Update()
 	if err != nil {
 		r.logger.Error("failed to update mute",
@@ -686,7 +696,7 @@ func (r *AccountRepository) updateMute(ctx context.Context, muterUsername, muted
 func (r *AccountRepository) updateFollowCounts(ctx context.Context, followerUsername, followedUsername string, delta int) {
 	// Update follower's following count
 	r.updateActorCount(ctx, followerUsername, "FollowingCount", delta)
-	
+
 	// Update followed user's follower count
 	r.updateActorCount(ctx, followedUsername, "FollowerCount", delta)
 }
@@ -700,7 +710,7 @@ func (r *AccountRepository) updateActorCount(ctx context.Context, username, fiel
 		Where("PK", "=", fmt.Sprintf("ACTOR#%s", username)).
 		Where("SK", "=", "PROFILE").
 		First(&actor)
-		
+
 	if err != nil {
 		r.logger.Warn("failed to get actor for count update",
 			zap.String("username", username),

@@ -19,12 +19,12 @@ type TimelineMarker struct {
 
 // TableName returns the DynamoDB table name
 func (TimelineMarker) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the model before creation
 func (m *TimelineMarker) BeforeCreate() error {
-	m.PK = fmt.Sprintf("USER#%s", m.Username)
+	m.PK = fmt.Sprintf(KeyPatternUser, m.Username)
 	m.SK = fmt.Sprintf("MARKER#%s", m.Timeline)
 
 	if m.UpdatedAt.IsZero() {

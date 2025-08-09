@@ -18,11 +18,11 @@ type Reaction struct {
 
 // CustomEmoji represents a custom emoji used in announcements
 type CustomEmoji struct {
-	Shortcode           string    `json:"shortcode"`
-	URL                 string    `json:"url"`
-	StaticURL           string    `json:"static_url"`
-	VisibleInPicker     bool      `json:"visible_in_picker"`
-	Category            string    `json:"category,omitempty"`
+	Shortcode       string `json:"shortcode"`
+	URL             string `json:"url"`
+	StaticURL       string `json:"static_url"`
+	VisibleInPicker bool   `json:"visible_in_picker"`
+	Category        string `json:"category,omitempty"`
 }
 
 // Mention represents a mention in an announcement
@@ -40,20 +40,20 @@ type Announcement struct {
 	SK string `dynamorm:"sk" json:"-"`
 
 	// Announcement fields
-	ID          string `json:"id"`
-	Content     string `json:"content"`             // HTML content
-	Text        string `json:"text"`                // Plain text version
-	PublishedAt time.Time `json:"published_at"`     // When it was published
-	UpdatedAt   time.Time `json:"updated_at"`       // When it was last updated
-	AllDay      bool `json:"all_day"`              // Whether it's an all-day announcement
-	StartsAt    *time.Time `json:"starts_at,omitempty"` // When the announcement starts
-	EndsAt      *time.Time `json:"ends_at,omitempty"`   // When the announcement ends
-	Reactions   []Reaction `json:"reactions,omitempty"` // Available reactions
-	Tags        []string `json:"tags,omitempty"`         // Hashtags
-	Emojis      []CustomEmoji `json:"emojis,omitempty"` // Custom emojis
-	Mentions    []Mention `json:"mentions,omitempty"`   // Mentions
-	CreatedBy   string `json:"created_by"`                      // Admin who created it
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string        `json:"id"`
+	Content     string        `json:"content"`             // HTML content
+	Text        string        `json:"text"`                // Plain text version
+	PublishedAt time.Time     `json:"published_at"`        // When it was published
+	UpdatedAt   time.Time     `json:"updated_at"`          // When it was last updated
+	AllDay      bool          `json:"all_day"`             // Whether it's an all-day announcement
+	StartsAt    *time.Time    `json:"starts_at,omitempty"` // When the announcement starts
+	EndsAt      *time.Time    `json:"ends_at,omitempty"`   // When the announcement ends
+	Reactions   []Reaction    `json:"reactions,omitempty"` // Available reactions
+	Tags        []string      `json:"tags,omitempty"`      // Hashtags
+	Emojis      []CustomEmoji `json:"emojis,omitempty"`    // Custom emojis
+	Mentions    []Mention     `json:"mentions,omitempty"`  // Mentions
+	CreatedBy   string        `json:"created_by"`          // Admin who created it
+	CreatedAt   time.Time     `json:"created_at"`
 }
 
 // UpdateKeys updates the PK and SK based on the announcement data
@@ -89,7 +89,7 @@ type AnnouncementDismissal struct {
 
 // UpdateKeys updates the PK and SK based on the dismissal data
 func (d *AnnouncementDismissal) UpdateKeys() error {
-	d.PK = fmt.Sprintf("USER#%s", d.Username)
+	d.PK = fmt.Sprintf(KeyPatternUser, d.Username)
 	d.SK = fmt.Sprintf("ANNOUNCEMENT_DISMISSED#%s", d.AnnouncementID)
 	return nil
 }
@@ -123,7 +123,9 @@ func (r *AnnouncementReaction) UpdateKeys() error {
 // BeforeCreate prepares the reaction for creation
 func (r *AnnouncementReaction) BeforeCreate() error {
 	r.ReactedAt = time.Now()
-	r.UpdateKeys()
+	if err := r.UpdateKeys(); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Metrics represents system metrics data
@@ -24,10 +25,10 @@ type Metrics struct {
 
 	// Core metrics data
 	ID        string    `json:"id"`
-	Type      string    `json:"type"`      // request, error, latency, throughput, etc.
-	Service   string    `json:"service"`   // api, auth, federation, etc.
+	Type      string    `json:"type"`    // request, error, latency, throughput, etc.
+	Service   string    `json:"service"` // api, auth, federation, etc.
 	Timestamp time.Time `json:"timestamp"`
-	Period    string    `json:"period"`    // minute, hour, day
+	Period    string    `json:"period"` // minute, hour, day
 
 	// Metric values
 	Value       float64            `json:"value"`
@@ -46,7 +47,7 @@ type Metrics struct {
 	ResourceType string `json:"resource_type,omitempty"` // lambda, dynamodb, etc.
 
 	// Additional metadata
-	Unit       string                 `json:"unit,omitempty"`       // ms, count, bytes, etc.
+	Unit       string                 `json:"unit,omitempty"` // ms, count, bytes, etc.
 	Tags       map[string]string      `json:"tags,omitempty"`
 	Properties map[string]interface{} `json:"properties,omitempty"`
 
@@ -106,12 +107,12 @@ type DimensionStats struct {
 
 // TableName returns the DynamoDB table name
 func (Metrics) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name
 func (AggregatedMetrics) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the model before creation
@@ -187,10 +188,10 @@ func (m *Metrics) Validate() error {
 		return fmt.Errorf("ID is required")
 	}
 	if strings.TrimSpace(m.Type) == "" {
-		return fmt.Errorf("Type is required")
+		return fmt.Errorf("type is required")
 	}
 	if strings.TrimSpace(m.Service) == "" {
-		return fmt.Errorf("Service is required")
+		return fmt.Errorf("service is required")
 	}
 	if !isValidMetricType(m.Type) {
 		return fmt.Errorf("invalid metric type: %s", m.Type)
@@ -231,10 +232,10 @@ func (am *AggregatedMetrics) BeforeUpdate() error {
 // Validate for AggregatedMetrics
 func (am *AggregatedMetrics) Validate() error {
 	if strings.TrimSpace(am.Type) == "" {
-		return fmt.Errorf("Type is required")
+		return fmt.Errorf("type is required")
 	}
 	if strings.TrimSpace(am.Period) == "" {
-		return fmt.Errorf("Period is required")
+		return fmt.Errorf("period is required")
 	}
 	if am.WindowStart.IsZero() {
 		return fmt.Errorf("WindowStart is required")
@@ -365,11 +366,11 @@ func (mb *MetricsBuilder) WithValue(value float64) *MetricsBuilder {
 }
 
 // WithStats sets statistical values
-func (mb *MetricsBuilder) WithStats(count int64, sum, min, max float64) *MetricsBuilder {
+func (mb *MetricsBuilder) WithStats(count int64, sum, minVal, maxVal float64) *MetricsBuilder {
 	mb.metrics.Count = count
 	mb.metrics.Sum = sum
-	mb.metrics.Min = min
-	mb.metrics.Max = max
+	mb.metrics.Min = minVal
+	mb.metrics.Max = maxVal
 	if count > 0 {
 		mb.metrics.Average = sum / float64(count)
 	}
@@ -410,4 +411,293 @@ func (mb *MetricsBuilder) WithTag(key, value string) *MetricsBuilder {
 // Build creates the metrics
 func (mb *MetricsBuilder) Build() *Metrics {
 	return mb.metrics
+}
+
+// MetricRecord represents the new reporting table schema with extensive indexing
+// Following Architecture Decisions pattern: METRICS#<type>#<timestamp>
+type MetricRecord struct {
+	// Primary key pattern: METRICS#<type>#<bucket>
+	PK string `dynamorm:"pk" json:"pk"`
+	SK string `dynamorm:"sk" json:"sk"` // timestamp ISO format
+
+	// GSI1: Service-based queries - SERVICE#<name> / TIMESTAMP#<iso>
+	GSI1PK string `dynamorm:"index:service-index,pk" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:service-index,sk" json:"gsi1_sk"`
+
+	// GSI2: Metric type queries - METRIC_TYPE#<type> / TIMESTAMP#<iso>
+	GSI2PK string `dynamorm:"index:metric-type-index,pk" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:metric-type-index,sk" json:"gsi2_sk"`
+
+	// GSI3: Date-based queries - DATE#<yyyy-mm-dd> / SERVICE#<name>#<timestamp>
+	GSI3PK string `dynamorm:"index:date-index,pk" json:"gsi3_pk"`
+	GSI3SK string `dynamorm:"index:date-index,sk" json:"gsi3_sk"`
+
+	// GSI4: Aggregation queries - AGGREGATION#<level> / TIMESTAMP#<iso>
+	GSI4PK string `dynamorm:"index:aggregation-index,pk" json:"gsi4_pk"`
+	GSI4SK string `dynamorm:"index:aggregation-index,sk" json:"gsi4_sk"`
+
+	// Core fields
+	MetricType  string    `json:"metric_type"`
+	ServiceName string    `json:"service_name"`
+	Timestamp   time.Time `json:"timestamp"`
+	MetricID    string    `json:"metric_id"` // UUID for uniqueness
+
+	// Metric Values (statistical aggregates)
+	Count int64   `json:"count,omitempty"`
+	Sum   float64 `json:"sum,omitempty"`
+	Min   float64 `json:"min,omitempty"`
+	Max   float64 `json:"max,omitempty"`
+	P50   float64 `json:"p50,omitempty"`
+	P95   float64 `json:"p95,omitempty"`
+	P99   float64 `json:"p99,omitempty"`
+
+	// Dimensions for filtering/grouping
+	Dimensions map[string]string `json:"dimensions,omitempty"`
+
+	// Metadata
+	AggregationLevel string `json:"aggregation_level"` // raw, 5min, hourly, daily
+	Unit             string `json:"unit,omitempty"`    // ms, count, bytes, etc.
+
+	// Timestamps
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// TTL for automatic cleanup (data retention per aggregation level)
+	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"` // Unix timestamp
+}
+
+// TableName returns the DynamoDB table name
+func (MetricRecord) TableName() string {
+	return MainTableName
+}
+
+// UpdateKeys implements BaseModel interface and populates ALL GSI keys based on record data
+func (m *MetricRecord) UpdateKeys() error {
+	// Validation
+	if strings.TrimSpace(m.MetricType) == "" {
+		return fmt.Errorf("MetricType is required")
+	}
+	if strings.TrimSpace(m.ServiceName) == "" {
+		return fmt.Errorf("ServiceName is required")
+	}
+	if m.Timestamp.IsZero() {
+		return fmt.Errorf("timestamp is required")
+	}
+	if strings.TrimSpace(m.AggregationLevel) == "" {
+		return fmt.Errorf("AggregationLevel is required")
+	}
+
+	// Generate ID if not provided
+	if m.MetricID == "" {
+		m.MetricID = uuid.New().String()
+	}
+
+	// PK format: METRICS#<type>#<bucket>
+	bucket := m.getBucketString()
+	m.PK = fmt.Sprintf("METRICS#%s#%s", m.MetricType, bucket)
+
+	// SK: timestamp ISO format
+	m.SK = m.Timestamp.Format(time.RFC3339)
+
+	// GSI1: Service queries
+	m.GSI1PK = fmt.Sprintf("SERVICE#%s", m.ServiceName)
+	m.GSI1SK = fmt.Sprintf("TIMESTAMP#%s", m.Timestamp.Format(time.RFC3339))
+
+	// GSI2: Metric type queries
+	m.GSI2PK = fmt.Sprintf("METRIC_TYPE#%s", m.MetricType)
+	m.GSI2SK = fmt.Sprintf("TIMESTAMP#%s", m.Timestamp.Format(time.RFC3339))
+
+	// GSI3: Date queries
+	m.GSI3PK = fmt.Sprintf("DATE#%s", m.Timestamp.Format(common.DateFormat))
+	m.GSI3SK = fmt.Sprintf("SERVICE#%s#%s", m.ServiceName, m.Timestamp.Format(time.RFC3339))
+
+	// GSI4: Aggregation queries
+	m.GSI4PK = fmt.Sprintf("AGGREGATION#%s", m.AggregationLevel)
+	m.GSI4SK = fmt.Sprintf("TIMESTAMP#%s", m.Timestamp.Format(time.RFC3339))
+
+	// Set TTL based on aggregation level
+	m.setTTL()
+
+	return nil
+}
+
+// GetPK implements BaseModel interface
+func (m *MetricRecord) GetPK() string {
+	return m.PK
+}
+
+// GetSK implements BaseModel interface
+func (m *MetricRecord) GetSK() string {
+	return m.SK
+}
+
+// getBucketString returns the bucket string based on aggregation level for PK construction
+func (m *MetricRecord) getBucketString() string {
+	switch m.AggregationLevel {
+	case "raw":
+		return m.Timestamp.Format("2006-01-02T15:04") // Minute buckets
+	case "5min":
+		return m.Timestamp.Truncate(5 * time.Minute).Format("2006-01-02T15:04") // 5-min buckets
+	case PeriodHourly:
+		return m.Timestamp.Format("2006-01-02T15") // Hour buckets
+	case PeriodDaily:
+		return m.Timestamp.Format(common.DateFormat) // Day buckets
+	default:
+		return m.Timestamp.Format("2006-01-02T15:04")
+	}
+}
+
+// setTTL sets TTL based on aggregation level for data retention
+func (m *MetricRecord) setTTL() {
+	var ttlDuration time.Duration
+
+	switch m.AggregationLevel {
+	case "raw":
+		ttlDuration = 30 * 24 * time.Hour // 30 days
+	case "5min":
+		ttlDuration = 90 * 24 * time.Hour // 90 days
+	case PeriodHourly:
+		ttlDuration = 365 * 24 * time.Hour // 1 year
+	case PeriodDaily:
+		ttlDuration = 365 * 24 * time.Hour // 1 year
+	default:
+		ttlDuration = 30 * 24 * time.Hour
+	}
+
+	m.TTL = time.Now().Add(ttlDuration).Unix()
+}
+
+// BeforeCreate sets up the model before creation
+func (m *MetricRecord) BeforeCreate() error {
+	now := time.Now()
+	m.CreatedAt = now
+	m.UpdatedAt = now
+
+	// Set timestamp if not provided
+	if m.Timestamp.IsZero() {
+		m.Timestamp = now
+	}
+
+	// Update all keys
+	if err := m.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
+
+	return m.Validate()
+}
+
+// BeforeUpdate sets up the model before update
+func (m *MetricRecord) BeforeUpdate() error {
+	m.UpdatedAt = time.Now()
+
+	// Update GSI keys in case indexed fields changed
+	if err := m.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
+
+	return m.Validate()
+}
+
+// Validate performs validation on the MetricRecord
+func (m *MetricRecord) Validate() error {
+	if strings.TrimSpace(m.MetricType) == "" {
+		return fmt.Errorf("MetricType is required")
+	}
+	if strings.TrimSpace(m.ServiceName) == "" {
+		return fmt.Errorf("ServiceName is required")
+	}
+	if m.Timestamp.IsZero() {
+		return fmt.Errorf("timestamp is required")
+	}
+	if !isValidAggregationLevel(m.AggregationLevel) {
+		return fmt.Errorf("invalid aggregation level: %s", m.AggregationLevel)
+	}
+
+	return nil
+}
+
+// isValidAggregationLevel checks if the aggregation level is valid
+func isValidAggregationLevel(level string) bool {
+	validLevels := map[string]bool{
+		"raw":    true,
+		"5min":   true,
+		"hourly": true,
+		PeriodDaily:  true,
+	}
+	return validLevels[strings.ToLower(level)]
+}
+
+// AddDimension adds a dimension to the metric record
+func (m *MetricRecord) AddDimension(key, value string) {
+	if m.Dimensions == nil {
+		m.Dimensions = make(map[string]string)
+	}
+	m.Dimensions[key] = value
+}
+
+// MetricRecordBuilder helps create metric records
+type MetricRecordBuilder struct {
+	record *MetricRecord
+}
+
+// NewMetricRecordBuilder creates a new metric record builder
+func NewMetricRecordBuilder() *MetricRecordBuilder {
+	return &MetricRecordBuilder{
+		record: &MetricRecord{
+			Dimensions: make(map[string]string),
+		},
+	}
+}
+
+// ForService sets the service name
+func (mb *MetricRecordBuilder) ForService(serviceName string) *MetricRecordBuilder {
+	mb.record.ServiceName = serviceName
+	return mb
+}
+
+// OfType sets the metric type
+func (mb *MetricRecordBuilder) OfType(metricType string) *MetricRecordBuilder {
+	mb.record.MetricType = metricType
+	return mb
+}
+
+// WithAggregationLevel sets the aggregation level
+func (mb *MetricRecordBuilder) WithAggregationLevel(level string) *MetricRecordBuilder {
+	mb.record.AggregationLevel = level
+	return mb
+}
+
+// WithTimestamp sets the timestamp
+func (mb *MetricRecordBuilder) WithTimestamp(timestamp time.Time) *MetricRecordBuilder {
+	mb.record.Timestamp = timestamp
+	return mb
+}
+
+// WithStats sets statistical values
+func (mb *MetricRecordBuilder) WithStats(count int64, sum, minVal, maxVal, p50, p95, p99 float64) *MetricRecordBuilder {
+	mb.record.Count = count
+	mb.record.Sum = sum
+	mb.record.Min = minVal
+	mb.record.Max = maxVal
+	mb.record.P50 = p50
+	mb.record.P95 = p95
+	mb.record.P99 = p99
+	return mb
+}
+
+// WithUnit sets the unit
+func (mb *MetricRecordBuilder) WithUnit(unit string) *MetricRecordBuilder {
+	mb.record.Unit = unit
+	return mb
+}
+
+// WithDimension adds a dimension
+func (mb *MetricRecordBuilder) WithDimension(key, value string) *MetricRecordBuilder {
+	mb.record.AddDimension(key, value)
+	return mb
+}
+
+// Build creates the metric record
+func (mb *MetricRecordBuilder) Build() *MetricRecord {
+	return mb.record
 }

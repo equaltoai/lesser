@@ -3,22 +3,31 @@ package testing
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+)
+
+// HTTP method constants
+const (
+	methodGET    = "GET"
+	methodPOST   = "POST"
+	methodPUT    = "PUT"
+	methodDELETE = "DELETE"
 )
 
 // Context Builders
 
 // NewTestContext creates a basic test context
 // Note: Use TestApp for HTTP testing, this is for lower-level context testing
-func NewTestContext(method, path string) *lift.Context {
+func NewTestContext(_, _ string) *lift.Context {
 	// For now, return a basic context
-	// In practice, you'd use TestApp.GET(), TestApp.POST(), etc.
+	// In practice, you'd use _ = TestApp.GET(), TestApp.POST(), etc.
 	ctx := context.Background()
 	liftCtx := &lift.Context{Context: ctx}
 	return liftCtx
@@ -26,13 +35,13 @@ func NewTestContext(method, path string) *lift.Context {
 
 // NewTestContextWithBody creates a test context with a request body
 // Note: Use TestApp for HTTP testing, this is for lower-level context testing
-func NewTestContextWithBody(method, path string, body interface{}) *lift.Context {
+func NewTestContextWithBody(method, path string, _ interface{}) *lift.Context {
 	return NewTestContext(method, path)
 }
 
 // NewTestContextWithHeaders creates a test context with headers
 // Note: Use TestApp for HTTP testing, this is for lower-level context testing
-func NewTestContextWithHeaders(method, path string, headers map[string]string) *lift.Context {
+func NewTestContextWithHeaders(method, path string, _ map[string]string) *lift.Context {
 	return NewTestContext(method, path)
 }
 
@@ -139,7 +148,7 @@ func AssertErrorResponse(t *testing.T, response *TestResponse, expectedStatus in
 }
 
 // AssertJSONResponse verifies a JSON response structure
-func AssertJSONResponse(t *testing.T, response *TestResponse, expected interface{}) {
+func AssertJSONResponse(t *testing.T, response *TestResponse, _ interface{}) {
 	t.Helper()
 	assert.True(t, response.IsSuccess(), "Response should be successful")
 
@@ -154,13 +163,13 @@ func AssertAuthenticationRequired(t *testing.T, app *TestApp, method, path strin
 
 	var response *TestResponse
 	switch method {
-	case "GET":
+	case methodGET:
 		response = app.GET(path)
-	case "POST":
+	case methodPOST:
 		response = app.POST(path, nil)
-	case "PUT":
+	case methodPUT:
 		response = app.PUT(path, nil)
-	case "DELETE":
+	case methodDELETE:
 		response = app.DELETE(path)
 	default:
 		t.Fatalf("Unsupported method: %s", method)
@@ -170,7 +179,7 @@ func AssertAuthenticationRequired(t *testing.T, app *TestApp, method, path strin
 }
 
 // AssertScopeRequired verifies that a handler requires specific scope
-func AssertScopeRequired(t *testing.T, app *TestApp, method, path, requiredScope string) {
+func AssertScopeRequired(t *testing.T, app *TestApp, method, path, _ string) {
 	t.Helper()
 
 	// Test with user that doesn't have the required scope
@@ -178,13 +187,13 @@ func AssertScopeRequired(t *testing.T, app *TestApp, method, path, requiredScope
 
 	var response *TestResponse
 	switch method {
-	case "GET":
+	case methodGET:
 		response = userWithoutScope.GET(path)
-	case "POST":
+	case methodPOST:
 		response = userWithoutScope.POST(path, nil)
-	case "PUT":
+	case methodPUT:
 		response = userWithoutScope.PUT(path, nil)
-	case "DELETE":
+	case methodDELETE:
 		response = userWithoutScope.DELETE(path)
 	default:
 		t.Fatalf("Unsupported method: %s", method)
@@ -279,7 +288,7 @@ func NewTestUser(username string) *TestUser {
 		ID:       fmt.Sprintf("user-%s", username),
 		Username: username,
 		Email:    fmt.Sprintf("%s@example.com", username),
-		Name:     fmt.Sprintf("Test %s", strings.Title(username)),
+		Name:     fmt.Sprintf("Test %s", cases.Title(language.English).String(username)),
 	}
 }
 
@@ -295,7 +304,7 @@ func NewCreateUserRequest(username string) *CreateUserRequest {
 	return &CreateUserRequest{
 		Username: username,
 		Email:    fmt.Sprintf("%s@example.com", username),
-		Name:     fmt.Sprintf("Test %s", strings.Title(username)),
+		Name:     fmt.Sprintf("Test %s", cases.Title(language.English).String(username)),
 	}
 }
 

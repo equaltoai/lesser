@@ -136,6 +136,11 @@ func (sm *SubscriptionManager) SubscribeToHashtagActivity(ctx context.Context, u
 	return sm.manager.SubscribeToHashtagActivity(ctx, username, hashtags)
 }
 
+// SubscribeToMetricsUpdates creates a channel for real-time metrics updates using event bus
+func (sm *SubscriptionManager) SubscribeToMetricsUpdates(ctx context.Context, username string, categories []string, services []string, threshold *float64) (<-chan *model.MetricsUpdate, error) {
+	return sm.manager.SubscribeToMetricsUpdates(ctx, username, categories, services, threshold)
+}
+
 // SubscribeToQuoteActivity creates a channel for quote activity updates using event bus
 func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj any) (<-chan *model.QuoteActivityUpdate, error) {
 	return sm.manager.SubscribeToQuoteActivity(ctx, username, noteID, noteObj)
@@ -155,51 +160,3 @@ func getGlobalStreamRouterEventBus() *streaming.EventBus {
 	return streaming.GetGlobalEventBus(zap.NewNop())
 }
 
-// Legacy helper functions (kept for compatibility, but now unused)
-
-func (sm *SubscriptionManager) unregisterActivityChannel(streamName string, ch chan<- *activitypub.Activity) {
-	// This method is no longer used as the GraphQLSubscriptionManager handles cleanup
-}
-
-func (sm *SubscriptionManager) unregisterQuoteChannel(streamName string, ch chan<- *model.QuoteActivityUpdate) {
-	// This method is no longer used as the GraphQLSubscriptionManager handles cleanup
-}
-
-// Helper methods that are no longer used (all functionality moved to GraphQLSubscriptionManager)
-
-func (sm *SubscriptionManager) checkForActivityUpdates(ctx context.Context, streamName string, ch chan<- *activitypub.Activity, filterTypes []model.ActivityType) {
-	// No longer used - handled by event bus subscriptions
-}
-
-func (sm *SubscriptionManager) checkForTimelineUpdates(ctx context.Context, streamName string, ch chan<- *model.Object) {
-	// No longer used - handled by event bus subscriptions
-}
-
-func (sm *SubscriptionManager) checkForModerationEvents(ctx context.Context, actorID *string, ch chan<- *moderation.ModerationDecision) {
-	// No longer used - handled by event bus subscriptions
-}
-
-func (sm *SubscriptionManager) checkForTrustUpdates(ctx context.Context, actorID string, ch chan<- *trust.TrustEdge) {
-	// No longer used - handled by event bus subscriptions
-}
-
-func (sm *SubscriptionManager) checkForAIUpdates(ctx context.Context, objectID *string, ch chan<- *model.AIAnalysis) {
-	// No longer used - handled by event bus subscriptions
-}
-
-func (sm *SubscriptionManager) checkForHashtagUpdates(ctx context.Context, username string, hashtags []string, ch chan<- *model.HashtagActivityUpdate) {
-	// No longer used - handled by event bus subscriptions
-}
-
-func (sm *SubscriptionManager) checkForQuoteUpdates(ctx context.Context, username string, noteID string, noteObj any, ch chan<- *model.QuoteActivityUpdate) {
-	// No longer used - handled by event bus subscriptions
-}
-
-func (sm *SubscriptionManager) subscribeToEventBus(ctx context.Context, filter *streaming.EventFilter, ch chan<- *model.Object) {
-	// No longer used - handled by GraphQLSubscriptionManager
-}
-
-func (sm *SubscriptionManager) convertEventToObject(event *streaming.InternalEvent) *model.Object {
-	// No longer used - handled by EventConverter
-	return nil
-}

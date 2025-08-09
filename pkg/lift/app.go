@@ -1,3 +1,4 @@
+// Package lift provides application configuration and initialization utilities for the Lift serverless framework.
 package lift
 
 import (

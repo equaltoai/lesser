@@ -5,6 +5,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TrendingLink represents a trending link
@@ -26,11 +30,11 @@ type TrendingLink struct {
 	CreatedAt   time.Time `json:"created_at"` // When this share was recorded
 
 	// Additional fields for trending
-	Date          string  `json:"date"`           // Date for trending (YYYY-MM-DD)
-	LinkID        string  `json:"link_id"`        // Unique ID for this trending entry
-	TrendingScore float64 `json:"trending_score"` // Calculated trending score
-	Domain        string  `json:"domain"`         // Extracted domain from URL
-	Rank          int     `json:"rank"`           // Position in trending list
+	Date          string  `json:"date"`                         // Date for trending (YYYY-MM-DD)
+	LinkID        string  `json:"link_id"`                      // Unique ID for this trending entry
+	TrendingScore float64 `json:"trending_score"`               // Calculated trending score
+	Domain        string  `json:"domain"`                       // Extracted domain from URL
+	Rank          int     `json:"rank"`                         // Position in trending list
 	TTL           int64   `json:"ttl,omitempty" dynamorm:"ttl"` // 7 days retention
 }
 
@@ -39,15 +43,15 @@ func (t *TrendingLink) UpdateKeys() {
 	t.PK = fmt.Sprintf("TRENDING#%s", t.Date)
 	// Format score with leading zeros for proper sorting (higher scores first)
 	t.SK = fmt.Sprintf("LINK#%010.0f#%s", 10000000000-t.TrendingScore, t.LinkID)
-	
+
 	// Extract domain from URL
 	if u, err := url.Parse(t.URL); err == nil {
 		t.Domain = strings.ToLower(u.Hostname())
 	}
-	
+
 	// Set TTL to 7 days from the trending date
 	if t.Date != "" {
-		if date, err := time.Parse("2006-01-02", t.Date); err == nil {
+		if date, err := time.Parse(common.DateFormat, t.Date); err == nil {
 			t.TTL = date.AddDate(0, 0, 7).Unix()
 		}
 	}
@@ -69,12 +73,12 @@ func NewTrendingLink(date string, link *TrendingLink) *TrendingLink {
 		Date:        date,
 		LinkID:      generateLinkID(link.URL),
 	}
-	
+
 	// Default type if not specified
 	if trending.Type == "" {
 		trending.Type = "link"
 	}
-	
+
 	trending.CalculateTrendingScore()
 	trending.UpdateKeys()
 	return trending
@@ -106,7 +110,7 @@ func GetTrendingLinksKeys(date string) (pk, skPrefix string) {
 }
 
 // GetTrendingLinksByDomainKeys returns keys for querying trending links from a specific domain
-func GetTrendingLinksByDomainKeys(date, domain string) (pk, skPrefix string) {
+func GetTrendingLinksByDomainKeys(date, _ string) (pk, skPrefix string) {
 	// Note: This would require a GSI to efficiently query by domain
 	// For now, return standard trending links keys
 	return GetTrendingLinksKeys(date)
@@ -116,7 +120,7 @@ func GetTrendingLinksByDomainKeys(date, domain string) (pk, skPrefix string) {
 func (t *TrendingLink) CalculateTrendingScore() {
 	// Base score is share count
 	baseScore := float64(t.ShareCount)
-	
+
 	// Apply time decay - links lose 50% of their score every 12 hours
 	hoursSinceCreated := time.Since(t.CreatedAt).Hours()
 	decay := 1.0
@@ -124,7 +128,7 @@ func (t *TrendingLink) CalculateTrendingScore() {
 		halfLife := 12.0 // hours (links decay faster than statuses)
 		decay = pow(0.5, hoursSinceCreated/halfLife)
 	}
-	
+
 	// Boost certain types of content
 	typeMultiplier := 1.0
 	switch t.Type {
@@ -133,7 +137,7 @@ func (t *TrendingLink) CalculateTrendingScore() {
 	case "photo":
 		typeMultiplier = 1.2 // Photos get a small boost
 	}
-	
+
 	t.TrendingScore = baseScore * decay * typeMultiplier
 }
 
@@ -153,7 +157,7 @@ func (t *TrendingLink) GetDisplayTitle() string {
 	if t.Title != "" {
 		return t.Title
 	}
-	
+
 	// Try to extract a meaningful title from URL
 	if u, err := url.Parse(t.URL); err == nil {
 		path := strings.TrimPrefix(u.Path, "/")
@@ -169,11 +173,12 @@ func (t *TrendingLink) GetDisplayTitle() string {
 				// Replace hyphens/underscores with spaces
 				lastPart = strings.ReplaceAll(lastPart, "-", " ")
 				lastPart = strings.ReplaceAll(lastPart, "_", " ")
-				return strings.Title(lastPart)
+				caser := cases.Title(language.English)
+				return caser.String(lastPart)
 			}
 		}
 		return u.Hostname()
 	}
-	
+
 	return t.URL
 }

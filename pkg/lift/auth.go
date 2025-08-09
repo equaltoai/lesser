@@ -9,7 +9,14 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
+// Constants for common values
+const (
+	UnknownIP = "unknown"
+)
+
 // LiftAuthService provides Lift-native authentication middleware
+//
+//nolint:revive // Lift prefix clarifies this is Lift framework specific
 type LiftAuthService struct {
 	authService *auth.AuthService
 }
@@ -302,5 +309,5 @@ func getClientIP(ctx *lift.Context) string {
 		return xri
 	}
 
-	return "unknown"
+	return UnknownIP
 }

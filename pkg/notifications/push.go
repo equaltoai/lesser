@@ -1,3 +1,4 @@
+// Package notifications provides push notification services using SQS for message queuing and delivery.
 package notifications
 
 import (

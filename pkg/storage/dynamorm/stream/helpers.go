@@ -71,9 +71,9 @@ func GetStringAttribute(record events.DynamoDBEventRecord, key string) (string, 
 	var ok bool
 
 	switch record.EventName {
-	case "INSERT", "MODIFY":
+	case eventNameInsert, eventNameModify:
 		attr, ok = record.Change.NewImage[key]
-	case "REMOVE":
+	case eventNameRemove:
 		attr, ok = record.Change.OldImage[key]
 	default:
 		return "", fmt.Errorf("unknown event type: %s", record.EventName)
@@ -92,9 +92,9 @@ func GetNumberAttribute(record events.DynamoDBEventRecord, key string) (string, 
 	var ok bool
 
 	switch record.EventName {
-	case "INSERT", "MODIFY":
+	case eventNameInsert, eventNameModify:
 		attr, ok = record.Change.NewImage[key]
-	case "REMOVE":
+	case eventNameRemove:
 		attr, ok = record.Change.OldImage[key]
 	default:
 		return "", fmt.Errorf("unknown event type: %s", record.EventName)
@@ -113,9 +113,9 @@ func GetBooleanAttribute(record events.DynamoDBEventRecord, key string) (bool, e
 	var ok bool
 
 	switch record.EventName {
-	case "INSERT", "MODIFY":
+	case eventNameInsert, eventNameModify:
 		attr, ok = record.Change.NewImage[key]
-	case "REMOVE":
+	case eventNameRemove:
 		attr, ok = record.Change.OldImage[key]
 	default:
 		return false, fmt.Errorf("unknown event type: %s", record.EventName)
@@ -138,7 +138,7 @@ func ExtractEntityIDFromPK(pk string) (string, error) {
 }
 
 // CreateStreamHandler creates a new Lambda handler function for DynamoDB streams
-func CreateStreamHandler(db *dynamorm.LambdaDB, processor EventProcessor) func(ctx context.Context, event events.DynamoDBEvent) error {
+func CreateStreamHandler(_ *dynamorm.LambdaDB, processor EventProcessor) func(ctx context.Context, event events.DynamoDBEvent) error {
 	return func(ctx context.Context, event events.DynamoDBEvent) error {
 		return ProcessStreamEvent(ctx, event, processor)
 	}

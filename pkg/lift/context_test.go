@@ -52,25 +52,6 @@ func createTestContextWithHeaders(headers map[string]string) *lift.Context {
 	return ctx
 }
 
-func createTestContextWithPathParams(pathParams map[string]string) *lift.Context {
-	ctx := &lift.Context{
-		Context: context.Background(),
-		Request: &lift.Request{
-			Method:  "GET",
-			Path:    "/test",
-			Headers: make(map[string]string),
-		},
-		Response: &lift.Response{
-			StatusCode: 200,
-			Headers:    make(map[string]string),
-		},
-	}
-	// Initialize internal maps that Lift uses
-	ctx.Set("__test", "init") // This initializes the internal storage
-	ctx.Get("__test")         // Clean up the test key
-
-	return ctx
-}
 
 func TestGetPaginationParams(t *testing.T) {
 	tests := []struct {

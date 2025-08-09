@@ -12,7 +12,7 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	// Test without DEBUG env var
-	os.Unsetenv("DEBUG")
+	_ = os.Unsetenv("DEBUG")
 	config := DefaultConfig()
 
 	assert.False(t, config.Debug)
@@ -24,8 +24,8 @@ func TestDefaultConfig(t *testing.T) {
 	assert.False(t, config.TenantRequired)
 
 	// Test with DEBUG env var
-	os.Setenv("DEBUG", "true")
-	defer os.Unsetenv("DEBUG")
+	_ = os.Setenv("DEBUG", "true")
+	defer func() { _ = os.Unsetenv("DEBUG") }()
 
 	config = DefaultConfig()
 	assert.True(t, config.Debug)
@@ -53,7 +53,7 @@ func TestAppBuilderWithStandardMiddleware(t *testing.T) {
 	assert.NotNil(t, app)
 
 	// Test that the app can handle a basic request
-	app.GET("/test", func(ctx *lift.Context) error {
+	_ = app.GET("/test", func(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"status": "ok"})
 	})
 
@@ -217,7 +217,7 @@ func TestMiddlewareIntegration(t *testing.T) {
 	app := NewHTTPApp(config, logger)
 
 	// Add a test route
-	app.GET("/health", func(ctx *lift.Context) error {
+	_ = app.GET("/health", func(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"status": "healthy"})
 	})
 

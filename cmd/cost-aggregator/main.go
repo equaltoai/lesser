@@ -1,3 +1,4 @@
+// Package main implements the cost-aggregator Lambda function for aggregating and analyzing AWS costs.
 package main
 
 import (
@@ -74,7 +75,7 @@ var (
 
 // AggregationEvent represents the input for cost aggregation
 type AggregationEvent struct {
-	Type           string    `json:"type"`           // "hourly", "daily", "monthly"
+	Type           string    `json:"type"` // "hourly", "daily", "monthly"
 	StartTime      time.Time `json:"startTime"`
 	EndTime        time.Time `json:"endTime"`
 	OperationTypes []string  `json:"operationTypes,omitempty"` // Optional: specific operations to aggregate
@@ -95,15 +96,15 @@ type CostStreamRecord struct {
 
 // CostAlert represents a cost threshold alert
 type CostAlert struct {
-	Type          string    `json:"type"`          // "threshold_exceeded", "high_operation"
-	OperationType string    `json:"operationType"`
-	Period        string    `json:"period"`
-	Cost          float64   `json:"cost"`
-	Threshold     float64   `json:"threshold"`
-	Operations    int64     `json:"operations"`
-	Timestamp     time.Time `json:"timestamp"`
-	Severity      string    `json:"severity"`     // "warning", "critical", "emergency"
-	Message       string    `json:"message"`
+	Type          string                 `json:"type"` // "threshold_exceeded", "high_operation"
+	OperationType string                 `json:"operationType"`
+	Period        string                 `json:"period"`
+	Cost          float64                `json:"cost"`
+	Threshold     float64                `json:"threshold"`
+	Operations    int64                  `json:"operations"`
+	Timestamp     time.Time              `json:"timestamp"`
+	Severity      string                 `json:"severity"` // "warning", "critical", "emergency"
+	Message       string                 `json:"message"`
 	Details       map[string]interface{} `json:"details,omitempty"`
 }
 
@@ -224,7 +225,8 @@ func (ca *CostAggregator) handleAggregationEvent(ctx context.Context, event Aggr
 	}
 
 	// Trigger next level aggregation if applicable
-	if event.Type == "hourly" {
+	switch event.Type {
+	case "hourly":
 		// Check if we should trigger daily aggregation
 		if event.EndTime.Hour() == 0 {
 			dailyEvent := AggregationEvent{
@@ -237,7 +239,7 @@ func (ca *CostAggregator) handleAggregationEvent(ctx context.Context, event Aggr
 				ca.logger.Warn("failed to trigger daily aggregation", zap.Error(err))
 			}
 		}
-	} else if event.Type == "daily" {
+	case "daily":
 		// Check if we should trigger monthly aggregation
 		if event.EndTime.Day() == 1 {
 			monthlyEvent := AggregationEvent{
@@ -253,9 +255,7 @@ func (ca *CostAggregator) handleAggregationEvent(ctx context.Context, event Aggr
 	}
 
 	// Generate cost alerts if thresholds are exceeded
-	if err := ca.checkCostAlerts(ctx, event.Type, event.StartTime, event.EndTime); err != nil {
-		ca.logger.Warn("failed to check cost alerts", zap.Error(err))
-	}
+	ca.checkCostAlerts(ctx, event.Type, event.StartTime, event.EndTime)
 
 	return nil
 }
@@ -357,7 +357,7 @@ func (ca *CostAggregator) extractEmbeddedCostInfo(image map[string]events.Dynamo
 	// For now, we'll handle simple cases
 	if consumedCapacity.DataType() == events.DataTypeMap && consumedCapacity.Map() != nil {
 		capacityMap := consumedCapacity.Map()
-		
+
 		var readUnits, writeUnits float64
 		if rcu, ok := getNumberFromMap(capacityMap, "ReadCapacityUnits"); ok {
 			readUnits = rcu
@@ -367,7 +367,7 @@ func (ca *CostAggregator) extractEmbeddedCostInfo(image map[string]events.Dynamo
 		}
 
 		tracking.WithCapacityUnits(readUnits, writeUnits)
-		
+
 		// Calculate costs
 		readCost, writeCost, _ := models.CalculateCost(readUnits, writeUnits)
 		tracking.WithCostMicroCents(readCost, writeCost)
@@ -391,11 +391,11 @@ func (ca *CostAggregator) processRealtimeCosts(ctx *lift.Context, costs []*model
 	// Create minute-level aggregations
 	for opType, opCosts := range grouped {
 		aggregated := &models.DynamoDBCostAggregation{
-			Period:        "minute",
-			OperationType: opType,
-			Table:         "all",
-			WindowStart:   windowStart,
-			WindowEnd:     windowEnd,
+			Period:           "minute",
+			OperationType:    opType,
+			Table:            "all",
+			WindowStart:      windowStart,
+			WindowEnd:        windowEnd,
 			TableBreakdown:   make(map[string]*models.DynamoDBTableCostStats),
 			ServiceBreakdown: make(map[string]*models.DynamoDBServiceCostStats),
 		}
@@ -492,7 +492,7 @@ func (ca *CostAggregator) aggregateCosts(ctx context.Context, operationType, per
 	return nil
 }
 
-func (ca *CostAggregator) checkCostAlerts(ctx context.Context, period string, startTime, endTime time.Time) error {
+func (ca *CostAggregator) checkCostAlerts(ctx context.Context, period string, startTime, endTime time.Time) {
 	// Check for operations or periods that exceed cost thresholds
 	// This is a simplified version - you would want configurable thresholds
 
@@ -504,7 +504,7 @@ func (ca *CostAggregator) checkCostAlerts(ctx context.Context, period string, st
 
 	threshold, exists := thresholds[period]
 	if !exists {
-		return nil
+		return
 	}
 
 	// Get all operation types
@@ -529,18 +529,16 @@ func (ca *CostAggregator) checkCostAlerts(ctx context.Context, period string, st
 				zap.Int64("operations", aggregated.TotalOperations))
 
 			// Send alert via multiple channels
-			if err := ca.sendCostAlert(ctx, CostAlert{
-				Type:           "threshold_exceeded",
-				OperationType:  opType,
-				Period:         period,
-				Cost:           aggregated.TotalCostDollars,
-				Threshold:      threshold,
-				Operations:     aggregated.TotalOperations,
-				Timestamp:      time.Now(),
-				Severity:       ca.determineSeverity(aggregated.TotalCostDollars, threshold),
-			}); err != nil {
-				ca.logger.Error("failed to send cost alert", zap.Error(err))
-			}
+			ca.sendCostAlert(ctx, CostAlert{
+				Type:          "threshold_exceeded",
+				OperationType: opType,
+				Period:        period,
+				Cost:          aggregated.TotalCostDollars,
+				Threshold:     threshold,
+				Operations:    aggregated.TotalOperations,
+				Timestamp:     time.Now(),
+				Severity:      ca.determineSeverity(aggregated.TotalCostDollars, threshold),
+			})
 		}
 	}
 
@@ -556,22 +554,20 @@ func (ca *CostAggregator) checkCostAlerts(ctx context.Context, period string, st
 				zap.String("service", op.ServiceName))
 		}
 	}
-
-	return nil
 }
 
-func (ca *CostAggregator) sendCostAlert(ctx context.Context, alert CostAlert) error {
+func (ca *CostAggregator) sendCostAlert(ctx context.Context, alert CostAlert) {
 	// Create alert message
 	alert.Message = fmt.Sprintf("DynamoDB cost threshold exceeded: %s operation costs $%.4f in %s period (threshold: $%.2f)",
 		alert.OperationType, alert.Cost, alert.Period, alert.Threshold)
-	
+
 	// Add additional details
 	alert.Details = map[string]interface{}{
-		"region":          ca.cfg.Region,
-		"table":           ca.cfg.DynamoTableName,
-		"cost_per_op":     alert.Cost / float64(alert.Operations),
+		"region":           ca.cfg.Region,
+		"table":            ca.cfg.DynamoTableName,
+		"cost_per_op":      alert.Cost / float64(alert.Operations),
 		"operations_count": alert.Operations,
-		"alert_id":        fmt.Sprintf("%s-%s-%d", alert.OperationType, alert.Period, alert.Timestamp.Unix()),
+		"alert_id":         fmt.Sprintf("%s-%s-%d", alert.OperationType, alert.Period, alert.Timestamp.Unix()),
 	}
 
 	ca.logger.Info("Sending cost alert",
@@ -601,8 +597,6 @@ func (ca *CostAggregator) sendCostAlert(ctx context.Context, alert CostAlert) er
 		zap.String("severity", alert.Severity),
 		zap.String("alert_id", alert.Details["alert_id"].(string)),
 		zap.Time("timestamp", alert.Timestamp))
-
-	return nil
 }
 
 func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) error {
@@ -611,9 +605,9 @@ func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) err
 
 	// Create message with structured data
 	message := map[string]interface{}{
-		"alert":      alert,
-		"timestamp":  alert.Timestamp.Format(time.RFC3339),
-		"service":    "lesser-cost-aggregator",
+		"alert":     alert,
+		"timestamp": alert.Timestamp.Format(time.RFC3339),
+		"service":   "lesser-cost-aggregator",
 	}
 
 	messageJSON, err := json.Marshal(message)
@@ -624,9 +618,9 @@ func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) err
 	// Send SNS message
 	input := &sns.PublishInput{
 		TopicArn: &topicARN,
-		Subject:  aws.String(fmt.Sprintf("%s Cost Alert - %s", 
+		Subject: aws.String(fmt.Sprintf("%s Cost Alert - %s",
 			alert.Severity, alert.OperationType)),
-		Message:  aws.String(string(messageJSON)),
+		Message: aws.String(string(messageJSON)),
 		MessageAttributes: map[string]snstypes.MessageAttributeValue{
 			"severity": {
 				DataType:    aws.String("String"),
@@ -709,14 +703,14 @@ func (ca *CostAggregator) putCloudWatchMetric(ctx context.Context, alert CostAle
 
 func (ca *CostAggregator) determineSeverity(cost, threshold float64) string {
 	ratio := cost / threshold
-	
+
 	if ratio >= 5.0 {
 		return "emergency" // 5x threshold
-	} else if ratio >= 2.0 {
-		return "critical"  // 2x threshold
-	} else {
-		return "warning"   // Above threshold but not critical
 	}
+	if ratio >= 2.0 {
+		return "critical" // 2x threshold
+	}
+	return "warning" // Above threshold but not critical
 }
 
 func (ca *CostAggregator) triggerAggregation(ctx context.Context, event AggregationEvent) error {
@@ -724,17 +718,17 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 		zap.String("type", event.Type),
 		zap.Time("start", event.StartTime),
 		zap.Time("end", event.EndTime))
-	
+
 	// Prepare the event payload
 	eventPayload, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal aggregation event: %w", err)
 	}
-	
+
 	// Option 1: Use SQS for async processing (preferred for resilience)
-	queueURL := fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/cost-aggregator-queue", 
+	queueURL := fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/cost-aggregator-queue",
 		ca.cfg.Region, ca.cfg.AWSAccountID)
-	
+
 	sqsInput := &sqs.SendMessageInput{
 		QueueUrl:    aws.String(queueURL),
 		MessageBody: aws.String(string(eventPayload)),
@@ -750,7 +744,7 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 		},
 		DelaySeconds: 0, // Process immediately
 	}
-	
+
 	sqsResult, sqsErr := ca.sqsClient.SendMessage(ctx, sqsInput)
 	if sqsErr == nil {
 		ca.logger.Info("Successfully queued cost aggregation via SQS",
@@ -758,35 +752,35 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 			zap.String("type", event.Type))
 		return nil
 	}
-	
+
 	// If SQS fails, fallback to direct Lambda invocation
 	ca.logger.Warn("SQS send failed, falling back to direct Lambda invocation",
 		zap.Error(sqsErr))
-	
+
 	// Option 2: Direct Lambda invocation (fallback)
 	functionName := "cost-aggregator" // This Lambda function name
-	
+
 	lambdaInput := &awslambda.InvokeInput{
 		FunctionName:   &functionName,
 		InvocationType: lambdaTypes.InvocationTypeEvent, // Async invocation
 		Payload:        eventPayload,
 		Qualifier:      stringPtr("$LATEST"), // Use latest version
 	}
-	
+
 	lambdaResult, err := ca.lambdaClient.Invoke(ctx, lambdaInput)
 	if err != nil {
 		return fmt.Errorf("failed to invoke lambda and send SQS message: lambda_err=%w, sqs_err=%v", err, sqsErr)
 	}
-	
+
 	if lambdaResult.FunctionError != nil {
 		return fmt.Errorf("lambda function returned error: %s", *lambdaResult.FunctionError)
 	}
-	
+
 	ca.logger.Info("Successfully triggered cost aggregation via direct Lambda invocation",
 		zap.String("function_name", functionName),
 		zap.String("type", event.Type),
 		zap.Int32("status_code", lambdaResult.StatusCode))
-	
+
 	return nil
 }
 
@@ -794,10 +788,6 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 
 func stringPtr(s string) *string {
 	return &s
-}
-
-func int32Ptr(i int32) *int32 {
-	return &i
 }
 
 func float64Ptr(f float64) *float64 {
@@ -839,4 +829,3 @@ func getNumberFromMap(m map[string]events.DynamoDBAttributeValue, key string) (f
 	}
 	return 0, false
 }
-

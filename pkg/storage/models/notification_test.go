@@ -438,11 +438,11 @@ func TestNewFollowRequestNotification(t *testing.T) {
 func TestNotification_setupGSIKeys(t *testing.T) {
 	createTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 	notification := &Notification{
-		ID:       "notif123",
-		UserID:   "user123",
-		Type:     "mention",
-		ActorID:  "actor456",
-		GroupKey: "group123",
+		ID:        "notif123",
+		UserID:    "user123",
+		Type:      "mention",
+		ActorID:   "actor456",
+		GroupKey:  "group123",
 		CreatedAt: createTime,
 	}
 

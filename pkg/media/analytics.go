@@ -1,3 +1,4 @@
+// Package media provides media processing analytics and bandwidth monitoring for S3 and CloudFront usage.
 package media
 
 import (
@@ -41,6 +42,8 @@ type BandwidthReport struct {
 }
 
 // MediaUsage represents bandwidth usage for a specific media item
+//
+//nolint:revive // Media prefix clarifies this is media-specific usage
 type MediaUsage struct {
 	MediaID     string  `json:"media_id"`
 	Bytes       int64   `json:"bytes"`
@@ -144,11 +147,11 @@ type bandwidthAnalytics struct {
 }
 
 // NewBandwidthAnalytics creates a new bandwidth analytics service
-func NewBandwidthAnalytics(storageService interface {
+func NewBandwidthAnalytics(ctx context.Context, storageService interface {
 	StoreBandwidthUsage(ctx context.Context, usage *BandwidthUsage) error
 	GetBandwidthUsage(ctx context.Context, start, end time.Time) ([]*BandwidthUsage, error)
 }) (BandwidthAnalytics, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -353,7 +356,7 @@ func (b *bandwidthAnalytics) sendMetrics(ctx context.Context, usageRecords []*Ba
 	}
 
 	// Prepare metric data
-	var metricData []types.MetricDatum
+	metricData := make([]types.MetricDatum, 0, 1+len(qualityBreakdown)+len(regionBreakdown))
 
 	// Total bandwidth metric
 	metricData = append(metricData, types.MetricDatum{
@@ -472,7 +475,7 @@ func (b *bandwidthAnalytics) GetBandwidthReport(ctx context.Context, period stri
 	}
 
 	// Get top media by usage
-	var topMedia []MediaUsage
+	topMedia := make([]MediaUsage, 0, len(byMedia))
 	for _, media := range byMedia {
 		topMedia = append(topMedia, media)
 	}

@@ -131,12 +131,12 @@ func (ti *ThreatIntelligence) GetSharedThreats(ctx context.Context, since time.T
 }
 
 // CheckContent checks content against known threats
-func (ti *ThreatIntelligence) CheckContent(ctx context.Context, content string, metadata ContentMetadata) ([]ThreatMatch, error) {
+func (ti *ThreatIntelligence) CheckContent(_ context.Context, content string, metadata ContentMetadata) ([]ThreatMatch, error) {
 	matches := []ThreatMatch{}
 	lowerContent := strings.ToLower(content)
 
 	// Check against cached threats
-	ti.threatCache.Range(func(key, value any) bool {
+	ti.threatCache.Range(func(_, value any) bool {
 		threat, ok := value.(*ThreatIntel)
 		if !ok {
 			return true
@@ -257,7 +257,7 @@ func (ti *ThreatIntelligence) generateThreatID(threat *ThreatIntel) string {
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
 
-func (ti *ThreatIntelligence) matchesIndicator(indicator, content, lowerContent string, metadata ContentMetadata) bool {
+func (ti *ThreatIntelligence) matchesIndicator(indicator, _, lowerContent string, metadata ContentMetadata) bool {
 	// Simple string matching - in production, use more sophisticated matching
 	indicatorLower := strings.ToLower(indicator)
 
@@ -320,7 +320,6 @@ func (ti *ThreatIntelligence) hashContent(content string) string {
 	return fmt.Sprintf("%x", h)
 }
 
-
 func (ti *ThreatIntelligence) incrementHitCount(threatID string) {
 	ctx := context.Background()
 
@@ -336,7 +335,7 @@ func (ti *ThreatIntelligence) loadThreats(ctx context.Context) error {
 	defer ti.updateMutex.Unlock()
 
 	// Clear existing threats
-	ti.threatCache.Range(func(key, value any) bool {
+	ti.threatCache.Range(func(key, _ any) bool {
 		ti.threatCache.Delete(key)
 		return true
 	})
@@ -376,9 +375,10 @@ func (ti *ThreatIntelligence) loadThreats(ctx context.Context) error {
 // scheduled events in a serverless environment.
 //
 // Example usage in a Lambda function:
-//   func handler(ctx context.Context, event events.CloudWatchEvent) error {
-//       return threatIntel.RefreshThreats(ctx)
-//   }
+//
+//	func handler(ctx context.Context, event events.CloudWatchEvent) error {
+//	    return threatIntel.RefreshThreats(ctx)
+//	}
 func (ti *ThreatIntelligence) RefreshThreats(ctx context.Context) error {
 	if err := ti.loadThreats(ctx); err != nil {
 		ti.logger.Error("failed to refresh threats", zap.Error(err))
@@ -388,4 +388,3 @@ func (ti *ThreatIntelligence) RefreshThreats(ctx context.Context) error {
 	ti.logger.Info("successfully refreshed threat intelligence cache")
 	return nil
 }
-

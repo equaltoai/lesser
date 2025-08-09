@@ -62,7 +62,7 @@ type RelayInfo struct {
 func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, actorUsername string) error {
 	start := time.Now()
 	operationID := fmt.Sprintf("subscribe-%d", start.UnixNano())
-	
+
 	r.logger.Info("subscribing to relay",
 		zap.String("relay_url", relayURL),
 		zap.String("actor", actorUsername),
@@ -70,14 +70,14 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 
 	// Track cost for this operation
 	defer func() {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "", 
+		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
 			start, operationID, true, "") // Will be updated if error occurs
 	}()
 
 	// Parse relay URL
 	_, err := url.Parse(relayURL)
 	if err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "", 
+		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
 			start, operationID, false, fmt.Sprintf("invalid URL: %v", err))
 		return fmt.Errorf("invalid relay URL: %w", err)
 	}
@@ -85,7 +85,7 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	// Get relay actor information
 	relayActor, err := r.fetchRelayActor(ctx, relayURL)
 	if err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "", 
+		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
 			start, operationID, false, fmt.Sprintf("fetch actor failed: %v", err))
 		return fmt.Errorf("failed to fetch relay actor: %w", err)
 	}
@@ -93,7 +93,7 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	// Get subscribing actor
 	actor, err := r.store.Actor().GetActorByUsername(ctx, actorUsername)
 	if err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "", 
+		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
 			start, operationID, false, fmt.Sprintf("get actor failed: %v", err))
 		return fmt.Errorf("failed to get actor: %w", err)
 	}
@@ -121,7 +121,7 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	}
 
 	if err := r.storeRelayInfo(ctx, relayInfo); err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", followActivity.Type, 
+		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", followActivity.Type,
 			start, operationID, false, fmt.Sprintf("store relay info failed: %v", err))
 		return fmt.Errorf("failed to store relay info: %w", err)
 	}
@@ -129,7 +129,7 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	// Send follow activity to relay
 	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store))
 	if err := deliverySvc.DeliverActivity(ctx, followActivity, relayActor.Inbox, actor); err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", followActivity.Type, 
+		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", followActivity.Type,
 			start, operationID, false, fmt.Sprintf("delivery failed: %v", err))
 		return fmt.Errorf("failed to deliver follow activity: %w", err)
 	}
@@ -200,7 +200,7 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 func (r *RelayService) HandleRelayActivity(ctx context.Context, activity *activitypub.Activity, relayURL string) error {
 	start := time.Now()
 	operationID := fmt.Sprintf("handle-%d", start.UnixNano())
-	
+
 	r.logger.Debug("handling relay activity",
 		zap.String("activity_type", activity.Type),
 		zap.String("relay_url", relayURL),
@@ -218,7 +218,7 @@ func (r *RelayService) HandleRelayActivity(ctx context.Context, activity *activi
 		errMsg := fmt.Sprintf("activity from unknown or inactive relay: %s", relayURL)
 		r.trackRelayCost(ctx, relayURL, "processing", "inbound", activity.Type,
 			start, operationID, false, errMsg)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Update last seen timestamp
@@ -252,13 +252,13 @@ func (r *RelayService) HandleRelayActivity(ctx context.Context, activity *activi
 			zap.String("relay_url", relayURL))
 		processErr = nil
 	}
-	
+
 	// Update cost tracking with final result
 	if processErr != nil {
 		r.trackRelayCost(ctx, relayURL, "processing", "inbound", activity.Type,
 			start, operationID, false, fmt.Sprintf("processing failed: %v", processErr))
 	}
-	
+
 	return processErr
 }
 
@@ -266,7 +266,7 @@ func (r *RelayService) HandleRelayActivity(ctx context.Context, activity *activi
 func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	start := time.Now()
 	operationID := fmt.Sprintf("forward-%d", start.UnixNano())
-	
+
 	// Get all active relays
 	relays, err := r.getActiveRelays(ctx)
 	if err != nil {
@@ -307,19 +307,19 @@ func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypu
 	for _, relay := range relays {
 		relayStart := time.Now()
 		relayOpID := fmt.Sprintf("%s-relay-%s", operationID, extractDomainFromRelayURL(relay.URL))
-		
+
 		r.logger.Debug("forwarding to relay",
 			zap.String("relay_url", relay.URL),
 			zap.String("activity_type", activity.Type),
 			zap.String("relay_operation_id", relayOpID))
-		
+
 		// Check budget before attempting delivery
 		estimatedCost := int64(140) // Base cost estimate in microdollars
 		if budgetErr := r.checkRelayBudget(ctx, relay.URL, estimatedCost); budgetErr != nil {
 			r.logger.Warn("skipping relay due to budget limit",
 				zap.String("relay_url", relay.URL),
 				zap.Error(budgetErr))
-			
+
 			// Track the skipped operation
 			r.trackRelayCost(ctx, relay.URL, "delivery", "outbound", activity.Type,
 				relayStart, relayOpID, false, fmt.Sprintf("budget exceeded: %v", budgetErr))
@@ -333,17 +333,17 @@ func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypu
 				zap.String("operation_id", relayOpID),
 				zap.Error(err))
 			errors = append(errors, err)
-			
+
 			// Track failed delivery
 			r.trackRelayCost(ctx, relay.URL, "delivery", "outbound", activity.Type,
 				relayStart, relayOpID, false, fmt.Sprintf("delivery failed: %v", err))
 		} else {
 			successCount++
-			
+
 			// Track successful delivery
 			r.trackRelayCost(ctx, relay.URL, "delivery", "outbound", activity.Type,
 				relayStart, relayOpID, true, "")
-			
+
 			r.logger.Debug("successfully forwarded to relay",
 				zap.String("relay_url", relay.URL),
 				zap.String("operation_id", relayOpID))
@@ -382,7 +382,7 @@ func (r *RelayService) fetchRelayActor(ctx context.Context, relayURL string) (*a
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch relay actor: status %d", resp.StatusCode)
@@ -524,87 +524,88 @@ func (r *RelayService) trackRelayCost(ctx context.Context, relayURL, operationTy
 func (r *RelayService) doTrackRelayCost(ctx context.Context, relayURL, operationType, direction, activityType string, startTime time.Time, requestID string, success bool, errorMessage string) error {
 	duration := time.Since(startTime)
 	domain := extractDomainFromRelayURL(relayURL)
-	
+
 	// Calculate costs based on operation type
 	relayCost := &models.RelayCost{
-		RelayURL:      relayURL,
-		Domain:        domain,
-		OperationType: operationType,
-		Direction:     direction,
-		ActivityType:  activityType,
-		RequestID:     requestID,
-		Timestamp:     startTime,
-		Success:       success,
-		ErrorMessage:  errorMessage,
+		RelayURL:       relayURL,
+		Domain:         domain,
+		OperationType:  operationType,
+		Direction:      direction,
+		ActivityType:   activityType,
+		RequestID:      requestID,
+		Timestamp:      startTime,
+		Success:        success,
+		ErrorMessage:   errorMessage,
 		ResponseTimeMs: duration.Milliseconds(),
 	}
-	
+
 	// Calculate operation-specific costs
 	switch operationType {
 	case "subscription":
 		// HTTP request to relay
 		relayCost.HTTPRequestCount = 1
 		relayCost.HTTPRequestCost = 100 // $0.0001 per request in microdollars
-		
+
 		// Data transfer (estimated 2KB for follow activity)
 		relayCost.DataTransferBytes = 2048
 		relayCost.DataTransferCost = calculateDataTransferCost(relayCost.DataTransferBytes, direction)
-		
+
 		// Lambda processing time (estimated 200ms)
 		relayCost.LambdaDurationMs = 200
 		relayCost.LambdaCost = calculateLambdaCost(relayCost.LambdaDurationMs)
-		
+
 		// DynamoDB operations (store relay info)
 		relayCost.DynamoDBOperations = 2 // GetItem + PutItem
 		relayCost.DynamoDBCost = calculateDynamoDBCost(relayCost.DynamoDBOperations)
-		
+
 	case "delivery":
 		// HTTP request to relay
 		relayCost.HTTPRequestCount = 1
 		relayCost.HTTPRequestCost = 100 // $0.0001 per request
-		
+
 		// Data transfer (estimated based on activity size)
 		var estimatedSize int64 = 1024 // Default 1KB
-		if activityType == "Create" {
+		switch activityType {
+		case "Create":
 			estimatedSize = 4096 // 4KB for Create activities
-		} else if activityType == "Announce" {
+		case "Announce":
 			estimatedSize = 2048 // 2KB for Announce activities
 		}
-		
+
 		relayCost.DataTransferBytes = estimatedSize
 		relayCost.DataTransferCost = calculateDataTransferCost(estimatedSize, direction)
-		
+
 		// Lambda processing time (estimated based on activity type)
 		var estimatedDuration int64 = 100
 		if activityType == "Create" {
 			estimatedDuration = 300 // Create activities take longer
 		}
-		
+
 		relayCost.LambdaDurationMs = estimatedDuration
 		relayCost.LambdaCost = calculateLambdaCost(estimatedDuration)
-		
+
 		// DynamoDB operations (update relay status)
 		relayCost.DynamoDBOperations = 1
 		relayCost.DynamoDBCost = calculateDynamoDBCost(1)
-		
+
 		// SQS message if using async delivery
 		relayCost.SQSMessages = 1
 		relayCost.SQSCost = 40 // $0.0000004 per message in microdollars
-		
+
 	case "processing":
 		// Inbound processing costs
 		// Lambda processing time
 		relayCost.LambdaDurationMs = duration.Milliseconds()
 		relayCost.LambdaCost = calculateLambdaCost(duration.Milliseconds())
-		
+
 		// DynamoDB operations for storing activity
 		relayCost.DynamoDBOperations = 3 // Read relay info, store activity, update metrics
 		relayCost.DynamoDBCost = calculateDynamoDBCost(3)
-		
+
 		// Data transfer (inbound is free, but track for metrics)
 		relayCost.DataTransferBytes = 2048 // Estimated
-		relayCost.DataTransferCost = 0    // Inbound is free
-		
+		relayCost.DataTransferCost = 0     // Inbound is free
+
 	default:
 		// Generic operation costs
 		relayCost.LambdaDurationMs = duration.Milliseconds()
@@ -612,7 +613,7 @@ func (r *RelayService) doTrackRelayCost(ctx context.Context, relayURL, operation
 		relayCost.DynamoDBOperations = 1
 		relayCost.DynamoDBCost = calculateDynamoDBCost(1)
 	}
-	
+
 	// Add retry costs if this was a retry
 	if strings.Contains(errorMessage, "retry") {
 		relayCost.RetryCount = 1
@@ -620,7 +621,7 @@ func (r *RelayService) doTrackRelayCost(ctx context.Context, relayURL, operation
 		relayCost.HTTPRequestCost *= 2
 		relayCost.LambdaCost *= 2
 	}
-	
+
 	// Store the cost record
 	return r.store.Cost().CreateRelayCost(ctx, relayCost)
 }
@@ -630,7 +631,7 @@ func extractDomainFromRelayURL(relayURL string) string {
 	if relayURL == "" {
 		return "unknown"
 	}
-	
+
 	// Parse URL to extract domain
 	parsedURL, err := url.Parse(relayURL)
 	if err != nil {
@@ -650,7 +651,7 @@ func extractDomainFromRelayURL(relayURL string) string {
 		}
 		return relayURL
 	}
-	
+
 	return parsedURL.Hostname()
 }
 
@@ -661,7 +662,7 @@ func calculateDataTransferCost(bytes int64, direction string) int64 {
 	if direction == "inbound" {
 		return 0 // Inbound data transfer is free
 	}
-	
+
 	// Outbound data transfer: $0.09 per GB
 	// Convert to microdollars: $0.09 * 1,000,000 = 90,000 microdollars per GB
 	gb := float64(bytes) / (1024 * 1024 * 1024)
@@ -673,10 +674,10 @@ func calculateLambdaCost(durationMs int64) int64 {
 	// Lambda pricing: $0.0000166667 per GB-second
 	// Assume 512MB (0.5GB) memory allocation
 	// Convert to microdollars and calculate for duration
-	
+
 	memoryGB := 0.5
 	durationSeconds := float64(durationMs) / 1000.0
-	
+
 	// Cost = $0.0000166667 * GB * seconds
 	// In microdollars = 16.6667 * GB * seconds
 	return int64(16.6667 * memoryGB * durationSeconds)
@@ -688,7 +689,7 @@ func calculateDynamoDBCost(operations int64) int64 {
 	// Write: $1.25 per million requests = 1.25 microdollars per request
 	// Read: $0.25 per million requests = 0.25 microdollars per request
 	// Assume 50/50 read/write mix
-	
+
 	avgCostPerOp := (1.25 + 0.25) / 2 // 0.75 microdollars per operation
 	return int64(float64(operations) * avgCostPerOp)
 }
@@ -701,27 +702,27 @@ func (r *RelayService) checkRelayBudget(ctx context.Context, relayURL string, es
 		// No budget configured - allow operation
 		return nil
 	}
-	
+
 	// Check if adding this cost would exceed budget
-	if budget.CurrentUsageMicroCents + estimatedCostMicroCents > budget.LimitMicroCents {
-		return fmt.Errorf("relay operation would exceed daily budget: current %d + estimated %d > limit %d microcents", 
+	if budget.CurrentUsageMicroCents+estimatedCostMicroCents > budget.LimitMicroCents {
+		return fmt.Errorf("relay operation would exceed daily budget: current %d + estimated %d > limit %d microcents",
 			budget.CurrentUsageMicroCents, estimatedCostMicroCents, budget.LimitMicroCents)
 	}
-	
+
 	// Check for warning threshold
-	newUsagePercent := float64(budget.CurrentUsageMicroCents + estimatedCostMicroCents) / float64(budget.LimitMicroCents) * 100.0
+	newUsagePercent := float64(budget.CurrentUsageMicroCents+estimatedCostMicroCents) / float64(budget.LimitMicroCents) * 100.0
 	if newUsagePercent >= budget.WarningThresholdPercent && !budget.WarningAlertSent {
 		r.logger.Warn("relay budget warning threshold reached",
 			zap.String("relay_url", relayURL),
 			zap.Float64("usage_percent", newUsagePercent),
 			zap.Float64("threshold", budget.WarningThresholdPercent))
-		
+
 		// Mark warning as sent
 		budget.WarningAlertSent = true
 		if updateErr := r.store.Cost().UpdateRelayBudget(ctx, budget); updateErr != nil {
 			r.logger.Error("failed to update relay budget warning flag", zap.Error(updateErr))
 		}
 	}
-	
+
 	return nil
 }

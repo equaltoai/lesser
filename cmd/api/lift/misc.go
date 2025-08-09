@@ -14,289 +14,349 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
+
+const (
+	// Search type constants
+	searchTypeStatuses = "statuses"
+	
+	// Boolean string constants for parameter parsing
+	boolTrue = "true"
+	
+	// Common status constants
+	statusCompleted = "completed"
+	
+	// Moderation category constants
+	moderationCategoryOther   = "other"
+	moderationCategoryGeneral = "general"
+	
+	// API path components
+	pathComponentStatuses = "statuses"
+)
+
+// SearchParams holds search request parameters
+type SearchParams struct {
+	Query     string
+	Type      string
+	AccountID string
+	Limit     int
+}
 
 // HandleSearchLift performs a search across accounts, statuses, and hashtags
 func (h *Handler) HandleSearchLift(ctx *lift.Context) error {
-	// Search can be authenticated or not - authentication is optional for search
-	// Try test mode first
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
-	} else {
-		// Try JWT authentication
-		token := h.getBearerTokenLift(ctx)
-		if token != "" {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-				h.logger.Debug("Authenticated search", zap.String("username", claims.Username))
-			}
-		}
+	// Optional authentication for search
+	h.logSearchAuthentication(ctx)
+
+	// Parse and validate parameters
+	params, err := h.parseSearchParams(ctx)
+	if err != nil {
+		return err
 	}
 
-	// Get search query
-	query := ctx.Query("q")
-	if query == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "q parameter is required"})
-	}
-
-	// Parse search parameters
-	searchType := ctx.Query("type") // accounts, hashtags, statuses
-	_ = ctx.Query("resolve") == "true"
-	_ = ctx.Query("following") == "true" // followingOnly not supported in StatusSearchOptions
-	accountID := ctx.Query("account_id")
-	_ = ctx.Query("exclude_unreviewed") == "true"
-	_ = ctx.Query("min_id")
-	_ = ctx.Query("max_id")
-
-	// Initialize results
+	// Initialize results structure
 	result := models.SearchResult{
 		Accounts: []models.Account{},
 		Statuses: []models.Status{},
 		Hashtags: []models.Tag{},
 	}
 
-	// Search accounts
-	if searchType == "" || searchType == "accounts" {
-		// Parse limit from query parameters
-		searchLimit := 20
-		if limitStr := ctx.Query("limit"); limitStr != "" {
-			if l, err := fmt.Sscanf(limitStr, "%d", &searchLimit); err == nil && l == 1 {
-				if searchLimit > 40 {
-					searchLimit = 40
-				}
-			}
-		}
-
-		// Use the new SearchAccounts method
-		actors, err := h.repos.Search().SearchAccounts(ctx.Context, query, searchLimit, false, 0)
-		if err != nil {
-			h.logger.Error("account search failed",
-				zap.String("query", query),
-				zap.Error(err))
-		} else {
-			// Convert actors to accounts
-			for _, actor := range actors {
-				account := models.Account{
-					ID:             actor.PreferredUsername,
-					Username:       actor.PreferredUsername,
-					Acct:           actor.PreferredUsername,
-					DisplayName:    actor.Name,
-					URL:            actor.URL,
-					Note:           actor.Summary,
-					Avatar:         "",
-					AvatarStatic:   "",
-					Header:         "",
-					HeaderStatic:   "",
-					FollowersCount: 0,
-					FollowingCount: 0,
-					StatusesCount:  0,
-					Emojis:         []any{},
-					Fields:         []any{},
-				}
-
-				if actor.Icon != nil {
-					account.Avatar = actor.Icon.URL
-					account.AvatarStatic = actor.Icon.URL
-				}
-
-				result.Accounts = append(result.Accounts, account)
-			}
-		}
-	}
-
-	// Search statuses
-	if searchType == "" || searchType == "statuses" {
-		// Check if it's a direct URL search
-		if strings.HasPrefix(query, "http") {
-			// Try to get the object directly by URL
-			obj, err := h.repos.Object().GetObject(ctx.Context, query)
-			if err == nil && obj != nil {
-				// Convert object to search result format
-				// Since GetObject returns any, we need to extract the fields
-				var statusResult *storage.StatusSearchResult
-				
-				// Handle the object based on its type
-				switch v := obj.(type) {
-				case *storagemodels.Object:
-					statusResult = &storage.StatusSearchResult{
-						StatusID:  v.ID,
-						URL:       v.URL,
-						Content:   v.Content,
-						AuthorID:  v.AttributedTo,
-						Published: v.Published,
-					}
-				case map[string]any:
-					// Handle map response
-					statusResult = &storage.StatusSearchResult{}
-					if id, ok := v["id"].(string); ok {
-						statusResult.StatusID = id
-					}
-					if url, ok := v["url"].(string); ok {
-						statusResult.URL = url
-					}
-					if content, ok := v["content"].(string); ok {
-						statusResult.Content = content
-					}
-					if authorID, ok := v["attributedTo"].(string); ok {
-						statusResult.AuthorID = authorID
-					}
-					if published, ok := v["published"].(time.Time); ok {
-						statusResult.Published = published
-					}
-				}
-				// Convert to API format
-				var statusActor *activitypub.Actor
-				if statusResult.AuthorID != "" {
-					parts := strings.Split(statusResult.AuthorID, "/")
-					if len(parts) > 0 {
-						username := parts[len(parts)-1]
-						statusActor, _ = h.repos.Actor().GetActor(ctx.Context, username)
-					}
-				}
-
-				status := models.Status{
-					ID:        statusResult.StatusID,
-					Content:   statusResult.Content,
-					URL:       statusResult.URL,
-					CreatedAt: statusResult.Published.Format(time.RFC3339),
-				}
-
-				if statusActor != nil {
-					account := h.converter.ActorToAccount(statusActor)
-					status.Account = account
-				}
-
-				result.Statuses = append(result.Statuses, status)
-			}
-		} else {
-			// Perform content search
-			statusLimit := 20
-			if limitStr := ctx.Query("limit"); limitStr != "" {
-				if l, err := fmt.Sscanf(limitStr, "%d", &statusLimit); err == nil && l == 1 {
-					if statusLimit > 40 {
-						statusLimit = 40
-					}
-				}
-			}
-
-			// Use the new search method with options
-			searchOptions := storage.StatusSearchOptions{
-				Limit:     statusLimit,
-				AccountID: accountID,
-				// Note: followingOnly functionality would need to be handled in search implementation
-			}
-
-			statusResults, err := h.repos.Search().SearchStatusesWithOptions(ctx.Context, query, searchOptions)
-			if err != nil {
-				h.logger.Warn("status search failed", zap.Error(err))
-			} else {
-				// Convert search results to API format
-				for _, sr := range statusResults {
-					// Get the actor for each status
-					var statusActor *activitypub.Actor
-					if sr.AuthorID != "" {
-						parts := strings.Split(sr.AuthorID, "/")
-						if len(parts) > 0 {
-							username := parts[len(parts)-1]
-							statusActor, _ = h.repos.Actor().GetActor(ctx.Context, username)
-						}
-					}
-
-					// Create API status
-					status := models.Status{
-						ID:        sr.StatusID,
-						Content:   sr.Content,
-						URL:       sr.URL,
-						CreatedAt: sr.Published.Format(time.RFC3339),
-					}
-
-					// Add account info if we found the actor
-					if statusActor != nil {
-						account := h.converter.ActorToAccount(statusActor)
-						status.Account = account
-					}
-
-					result.Statuses = append(result.Statuses, status)
-				}
-			}
-		}
-	}
-
-	// Search hashtags
-	if searchType == "" || searchType == "hashtags" {
-		// Parse limit for hashtag search
-		hashtagLimit := 20
-		if limitStr := ctx.Query("limit"); limitStr != "" {
-			if l, err := fmt.Sscanf(limitStr, "%d", &hashtagLimit); err == nil && l == 1 {
-				if hashtagLimit > 40 {
-					hashtagLimit = 40
-				}
-			}
-		}
-
-		// Search for hashtags in the database
-		hashtags, err := h.repos.Search().SearchHashtags(ctx.Context, query, hashtagLimit)
-		if err != nil {
-			h.logger.Warn("hashtag search failed", zap.Error(err))
-		} else {
-			// Convert storage hashtags to API format
-			for _, hashtag := range hashtags {
-				// Get usage history for the last 7 days
-				history, _ := h.repos.Hashtag().GetHashtagUsageHistory(ctx.Context, hashtag.Name, 7)
-
-				// Convert history to API format
-				apiHistory := make([]struct {
-					Day      string `json:"day"`
-					Uses     string `json:"uses"`
-					Accounts string `json:"accounts"`
-				}, 0)
-
-				// Create history entries (most recent first)
-				for i := 0; i < len(history) && i < 7; i++ {
-					day := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
-					apiHistory = append(apiHistory, struct {
-						Day      string `json:"day"`
-						Uses     string `json:"uses"`
-						Accounts string `json:"accounts"`
-					}{
-						Day:      day,
-						Uses:     fmt.Sprintf("%d", history[i]),
-						Accounts: h.getUniqueAccountsForDay(ctx, day),
-					})
-				}
-
-				tag := models.Tag{
-					Name:    hashtag.Name,
-					URL:     hashtag.URL,
-					History: apiHistory,
-				}
-				result.Hashtags = append(result.Hashtags, tag)
-			}
-		}
-
-		// If no results and query starts with #, create a placeholder
-		if len(result.Hashtags) == 0 && strings.HasPrefix(query, "#") {
-			tagName := strings.ToLower(strings.TrimPrefix(query, "#"))
-			tag := models.Tag{
-				Name: tagName,
-				URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
-				History: []struct {
-					Day      string `json:"day"`
-					Uses     string `json:"uses"`
-					Accounts string `json:"accounts"`
-				}{
-					{
-						Day:      time.Now().Format("2006-01-02"),
-						Uses:     "0",
-						Accounts: "0",
-					},
-				},
-			}
-			result.Hashtags = append(result.Hashtags, tag)
-		}
-	}
+	// Execute searches based on type
+	h.executeAccountSearch(ctx, params, &result)
+	h.executeStatusSearch(ctx, params, &result)
+	h.executeHashtagSearch(ctx, params, &result)
 
 	return ctx.JSON(result)
+}
+
+// logSearchAuthentication handles optional authentication logging
+func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
+	if testUsername := h.getTestUsername(ctx); testUsername != "" {
+		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
+		return
+	}
+
+	token := h.getBearerTokenLift(ctx)
+	if token == "" {
+		return
+	}
+
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
+		h.logger.Debug("Authenticated search", zap.String("username", claims.Username))
+	}
+}
+
+// parseSearchParams extracts and validates search parameters
+func (h *Handler) parseSearchParams(ctx *lift.Context) (*SearchParams, error) {
+	query := ctx.Query("q")
+	if query == "" {
+		if err := ctx.Status(400).JSON(map[string]string{"error": "q parameter is required"}); err != nil {
+			h.logger.Error("failed to send error response", zap.Error(err))
+		}
+		return nil, fmt.Errorf("missing query parameter")
+	}
+
+	// Parse limit
+	limit := 20
+	if limitStr := ctx.Query("limit"); limitStr != "" {
+		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && l == 1 {
+			if limit > 40 {
+				limit = 40
+			}
+		}
+	}
+
+	return &SearchParams{
+		Query:     query,
+		Type:      ctx.Query("type"),
+		AccountID: ctx.Query("account_id"),
+		Limit:     limit,
+	}, nil
+}
+
+// executeAccountSearch performs account search if requested
+func (h *Handler) executeAccountSearch(ctx *lift.Context, params *SearchParams, result *models.SearchResult) {
+	if params.Type != "" && params.Type != "accounts" {
+		return
+	}
+
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context, params.Query, params.Limit, false, 0)
+	if err != nil {
+		h.logger.Error("account search failed",
+			zap.String("query", params.Query),
+			zap.Error(err))
+		return
+	}
+
+	// Convert actors to accounts
+	for _, actor := range actors {
+		account := h.convertActorToAccount(actor)
+		result.Accounts = append(result.Accounts, account)
+	}
+}
+
+// executeStatusSearch performs status search if requested
+func (h *Handler) executeStatusSearch(ctx *lift.Context, params *SearchParams, result *models.SearchResult) {
+	if params.Type != "" && params.Type != searchTypeStatuses {
+		return
+	}
+
+	if strings.HasPrefix(params.Query, "http") {
+		h.searchStatusByURL(ctx, params.Query, result)
+	} else {
+		h.searchStatusByContent(ctx, params, result)
+	}
+}
+
+// executeHashtagSearch performs hashtag search if requested
+func (h *Handler) executeHashtagSearch(ctx *lift.Context, params *SearchParams, result *models.SearchResult) {
+	if params.Type != "" && params.Type != "hashtags" {
+		return
+	}
+
+	hashtags, err := h.repos.Search().SearchHashtags(ctx.Context, params.Query, params.Limit)
+	if err != nil {
+		h.logger.Warn("hashtag search failed", zap.Error(err))
+		return
+	}
+
+	// Convert hashtags to API format
+	for _, hashtag := range hashtags {
+		tag := h.convertHashtagToTag(ctx, *hashtag)
+		result.Hashtags = append(result.Hashtags, tag)
+	}
+
+	// Add placeholder hashtag if no results and query starts with #
+	h.addPlaceholderHashtag(params.Query, result)
+}
+
+// convertActorToAccount converts an ActivityPub actor to API account
+func (h *Handler) convertActorToAccount(actor *activitypub.Actor) models.Account {
+	account := models.Account{
+		ID:             actor.PreferredUsername,
+		Username:       actor.PreferredUsername,
+		Acct:           actor.PreferredUsername,
+		DisplayName:    actor.Name,
+		URL:            actor.URL,
+		Note:           actor.Summary,
+		Avatar:         "",
+		AvatarStatic:   "",
+		Header:         "",
+		HeaderStatic:   "",
+		FollowersCount: 0,
+		FollowingCount: 0,
+		StatusesCount:  0,
+		Emojis:         []any{},
+		Fields:         []any{},
+	}
+
+	if actor.Icon != nil {
+		account.Avatar = actor.Icon.URL
+		account.AvatarStatic = actor.Icon.URL
+	}
+
+	return account
+}
+
+// searchStatusByURL searches for a status by direct URL
+func (h *Handler) searchStatusByURL(ctx *lift.Context, url string, result *models.SearchResult) {
+	obj, err := h.repos.Object().GetObject(ctx.Context, url)
+	if err != nil || obj == nil {
+		return
+	}
+
+	statusResult := h.convertObjectToStatusResult(obj)
+	if statusResult == nil {
+		return
+	}
+
+	status := h.convertStatusResultToAPI(ctx, statusResult)
+	result.Statuses = append(result.Statuses, status)
+}
+
+// searchStatusByContent searches for statuses by content
+func (h *Handler) searchStatusByContent(ctx *lift.Context, params *SearchParams, result *models.SearchResult) {
+	searchOptions := storage.StatusSearchOptions{
+		Limit:     params.Limit,
+		AccountID: params.AccountID,
+	}
+
+	statusResults, err := h.repos.Search().SearchStatusesWithOptions(ctx.Context, params.Query, searchOptions)
+	if err != nil {
+		h.logger.Warn("status search failed", zap.Error(err))
+		return
+	}
+
+	// Convert search results to API format
+	for _, sr := range statusResults {
+		status := h.convertStatusResultToAPI(ctx, sr)
+		result.Statuses = append(result.Statuses, status)
+	}
+}
+
+// convertObjectToStatusResult converts object to status search result
+func (h *Handler) convertObjectToStatusResult(obj interface{}) *storage.StatusSearchResult {
+	switch v := obj.(type) {
+	case *storagemodels.Object:
+		return &storage.StatusSearchResult{
+			StatusID:  v.ID,
+			URL:       v.URL,
+			Content:   v.Content,
+			AuthorID:  v.AttributedTo,
+			Published: v.Published,
+		}
+	case map[string]any:
+		result := &storage.StatusSearchResult{}
+		if id, ok := v["id"].(string); ok {
+			result.StatusID = id
+		}
+		if url, ok := v["url"].(string); ok {
+			result.URL = url
+		}
+		if content, ok := v["content"].(string); ok {
+			result.Content = content
+		}
+		if authorID, ok := v["attributedTo"].(string); ok {
+			result.AuthorID = authorID
+		}
+		if published, ok := v["published"].(time.Time); ok {
+			result.Published = published
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+// convertStatusResultToAPI converts status result to API format
+func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.StatusSearchResult) models.Status {
+	status := models.Status{
+		ID:        sr.StatusID,
+		Content:   sr.Content,
+		URL:       sr.URL,
+		CreatedAt: sr.Published.Format(time.RFC3339),
+	}
+
+	// Add account info if we can get the actor
+	if sr.AuthorID != "" {
+		if statusActor := h.getActorFromAuthorID(ctx, sr.AuthorID); statusActor != nil {
+			account := h.converter.ActorToAccount(statusActor)
+			status.Account = account
+		}
+	}
+
+	return status
+}
+
+// getActorFromAuthorID extracts actor from author ID
+func (h *Handler) getActorFromAuthorID(ctx *lift.Context, authorID string) *activitypub.Actor {
+	parts := strings.Split(authorID, "/")
+	if len(parts) == 0 {
+		return nil
+	}
+	
+	username := parts[len(parts)-1]
+	actor, _ := h.repos.Actor().GetActor(ctx.Context, username)
+	return actor
+}
+
+// convertHashtagToTag converts hashtag with history to API tag
+func (h *Handler) convertHashtagToTag(ctx *lift.Context, hashtag storage.Hashtag) models.Tag {
+	// Get usage history for the last 7 days
+	history, _ := h.repos.Hashtag().GetHashtagUsageHistory(ctx.Context, hashtag.Name, 7)
+
+	// Convert history to API format
+	apiHistory := make([]struct {
+		Day      string `json:"day"`
+		Uses     string `json:"uses"`
+		Accounts string `json:"accounts"`
+	}, 0)
+
+	// Create history entries (most recent first)
+	for i := 0; i < len(history) && i < 7; i++ {
+		day := time.Now().AddDate(0, 0, -i).Format(common.DateFormat)
+		apiHistory = append(apiHistory, struct {
+			Day      string `json:"day"`
+			Uses     string `json:"uses"`
+			Accounts string `json:"accounts"`
+		}{
+			Day:      day,
+			Uses:     fmt.Sprintf("%d", history[i]),
+			Accounts: h.getUniqueAccountsForDay(ctx, day),
+		})
+	}
+
+	return models.Tag{
+		Name:    hashtag.Name,
+		URL:     hashtag.URL,
+		History: apiHistory,
+	}
+}
+
+// addPlaceholderHashtag adds a placeholder hashtag if query starts with # and no results
+func (h *Handler) addPlaceholderHashtag(query string, result *models.SearchResult) {
+	if len(result.Hashtags) > 0 || !strings.HasPrefix(query, "#") {
+		return
+	}
+
+	tagName := strings.ToLower(strings.TrimPrefix(query, "#"))
+	tag := models.Tag{
+		Name: tagName,
+		URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
+		History: []struct {
+			Day      string `json:"day"`
+			Uses     string `json:"uses"`
+			Accounts string `json:"accounts"`
+		}{
+			{
+				Day:      time.Now().Format(common.DateFormat),
+				Uses:     "0",
+				Accounts: "0",
+			},
+		},
+	}
+	result.Hashtags = append(result.Hashtags, tag)
 }
 
 // HandleSearchV2Lift handles GET /api/v2/search requests - returns same format as v1
@@ -309,61 +369,82 @@ func (h *Handler) HandleSearchV2Lift(ctx *lift.Context) error {
 
 // HandleGetNotificationsLift retrieves notifications for the authenticated user
 func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
-	var claims *auth.Claims
-	var err error
-
-	// Try test mode first
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
-		claims = &auth.Claims{Username: testUsername, Scopes: []string{auth.ScopeRead}}
-	} else {
-		// Extract and validate token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
-		}
-
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
-		}
+	// Authenticate request
+	claims, err := h.authenticateNotificationRequest(ctx)
+	if err != nil {
+		return err
 	}
 
-	// Check read:notifications scope
-	if !claims.HasScope("read:notifications") && !claims.HasScope(auth.ScopeRead) {
+	// Check required scope
+	if !h.hasNotificationScope(claims) {
 		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 	}
 
-	// Handle filtering parameters
+	// Build notification filter from query parameters
+	filter := h.buildNotificationFilter(ctx)
+
+	// Get notifications from repository
+	notifications, cursor, err := h.repos.Notification().GetNotificationsFiltered(ctx.Context, claims.Username, filter)
+	if err != nil {
+		h.logger.Error("failed to get notifications",
+			zap.String("username", claims.Username),
+			zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notifications"})
+	}
+
+	// Convert notifications to API format
+	apiNotifications := h.convertNotificationsToAPI(ctx, notifications)
+
+	// Set pagination header if needed
+	if cursor != "" {
+		h.setNotificationPaginationHeader(ctx, cursor, filter.Limit)
+	}
+
+	return ctx.JSON(apiNotifications)
+}
+
+// authenticateNotificationRequest handles authentication for notification requests
+func (h *Handler) authenticateNotificationRequest(ctx *lift.Context) (*auth.Claims, error) {
+	// Try test mode first
+	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
+		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
+		return &auth.Claims{Username: testUsername, Scopes: []string{auth.ScopeRead}}, nil
+	}
+
+	// Extract and validate token
+	token := h.getBearerTokenLift(ctx)
+	if token == "" {
+		return nil, ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+	}
+
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return nil, ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
+	}
+
+	return claims, nil
+}
+
+// hasNotificationScope checks if claims have the required notification scope
+func (h *Handler) hasNotificationScope(claims *auth.Claims) bool {
+	return claims.HasScope("read:notifications") || claims.HasScope(auth.ScopeRead)
+}
+
+// buildNotificationFilter builds a notification filter from query parameters
+func (h *Handler) buildNotificationFilter(ctx *lift.Context) *storage.NotificationFilter {
 	filter := &storage.NotificationFilter{
 		Limit: 20, // Default limit
 	}
 
 	// Parse limit
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		var limit int
-		if _, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && limit > 0 {
-			if limit > 40 {
-				limit = 40
-			}
-			filter.Limit = limit
-		}
-	}
+	h.parseNotificationLimit(ctx, filter)
 
 	// Parse types filter
-	if types := ctx.Query("types[]"); types != "" {
-		filter.Types = []string{types}
-	} else if typesStr := ctx.Query("types"); typesStr != "" {
-		filter.Types = strings.Split(typesStr, ",")
-	}
+	h.parseNotificationTypes(ctx, filter)
 
 	// Parse exclude_types filter
-	if excludeTypes := ctx.Query("exclude_types[]"); excludeTypes != "" {
-		filter.ExcludeTypes = []string{excludeTypes}
-	} else if excludeTypesStr := ctx.Query("exclude_types"); excludeTypesStr != "" {
-		filter.ExcludeTypes = strings.Split(excludeTypesStr, ",")
-	}
+	h.parseNotificationExcludeTypes(ctx, filter)
 
 	// Parse account_id filter
 	if accountID := ctx.Query("account_id"); accountID != "" {
@@ -375,82 +456,141 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	filter.MinID = ctx.Query("min_id")
 	filter.SinceID = ctx.Query("since_id")
 
-	// Get notifications
-	notifications, cursor, err := h.repos.Notification().GetNotificationsFiltered(ctx.Context, claims.Username, filter)
-	if err != nil {
-		h.logger.Error("failed to get notifications",
-			zap.String("username", claims.Username),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notifications"})
-	}
+	return filter
+}
 
-	// Convert to API format
+// parseNotificationLimit parses and validates the limit parameter
+func (h *Handler) parseNotificationLimit(ctx *lift.Context, filter *storage.NotificationFilter) {
+	if limitStr := ctx.Query("limit"); limitStr != "" {
+		var limit int
+		if _, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && limit > 0 {
+			if limit > 40 {
+				limit = 40
+			}
+			filter.Limit = limit
+		}
+	}
+}
+
+// parseNotificationTypes parses the types filter parameter
+func (h *Handler) parseNotificationTypes(ctx *lift.Context, filter *storage.NotificationFilter) {
+	if types := ctx.Query("types[]"); types != "" {
+		filter.Types = []string{types}
+	} else if typesStr := ctx.Query("types"); typesStr != "" {
+		filter.Types = strings.Split(typesStr, ",")
+	}
+}
+
+// parseNotificationExcludeTypes parses the exclude_types filter parameter
+func (h *Handler) parseNotificationExcludeTypes(ctx *lift.Context, filter *storage.NotificationFilter) {
+	if excludeTypes := ctx.Query("exclude_types[]"); excludeTypes != "" {
+		filter.ExcludeTypes = []string{excludeTypes}
+	} else if excludeTypesStr := ctx.Query("exclude_types"); excludeTypesStr != "" {
+		filter.ExcludeTypes = strings.Split(excludeTypesStr, ",")
+	}
+}
+
+// convertNotificationsToAPI converts storage notifications to API format
+func (h *Handler) convertNotificationsToAPI(ctx *lift.Context, notifications []*storage.Notification) []*models.Notification {
 	apiNotifications := make([]*models.Notification, 0, len(notifications))
+	
 	for _, notif := range notifications {
-		// Get the account that triggered the notification
-		actor, err := h.repos.Actor().GetActor(ctx.Context, notif.AccountID)
-		if err != nil {
-			h.logger.Warn("failed to get actor for notification",
-				zap.String("notification_id", notif.ID),
-				zap.String("account_id", notif.AccountID),
-				zap.Error(err))
-			continue
+		apiNotif := h.convertSingleNotification(ctx, notif)
+		if apiNotif != nil {
+			apiNotifications = append(apiNotifications, apiNotif)
 		}
+	}
+	
+	return apiNotifications
+}
 
-		account := h.converter.ActorToAccount(actor)
-		apiNotif := &models.Notification{
-			ID:        notif.ID,
-			Type:      notif.Type,
-			CreatedAt: notif.CreatedAt,
-			Account:   account,
-		}
-
-		// Add status if applicable for certain notification types
-		if notif.StatusID != "" && (notif.Type == models.NotificationTypeMention ||
-			notif.Type == models.NotificationTypeFavourite ||
-			notif.Type == models.NotificationTypeReblog) {
-			// Get the status
-			obj, err := h.repos.Object().GetObject(ctx.Context, notif.StatusID)
-			if err != nil {
-				h.logger.Warn("failed to get status for notification",
-					zap.String("notification_id", notif.ID),
-					zap.String("status_id", notif.StatusID),
-					zap.Error(err))
-				continue
-			}
-
-			// Get status author (for converting to Status model)
-			var statusActor *activitypub.Actor
-			if note, ok := obj.(*activitypub.Note); ok && note.AttributedTo != "" {
-				parts := strings.Split(note.AttributedTo, "/")
-				if len(parts) > 0 {
-					username := parts[len(parts)-1]
-					statusActor, _ = h.repos.Actor().GetActor(ctx.Context, username)
-				}
-			}
-
-			status := h.converter.ObjectToStatus(obj, statusActor)
-			apiNotif.Status = &status
-		}
-
-		apiNotifications = append(apiNotifications, apiNotif)
+// convertSingleNotification converts a single notification to API format
+func (h *Handler) convertSingleNotification(ctx *lift.Context, notif *storage.Notification) *models.Notification {
+	// Get the account that triggered the notification
+	actor, err := h.repos.Actor().GetActor(ctx.Context, notif.AccountID)
+	if err != nil {
+		h.logger.Warn("failed to get actor for notification",
+			zap.String("notification_id", notif.ID),
+			zap.String("account_id", notif.AccountID),
+			zap.Error(err))
+		return nil
 	}
 
-	// Set pagination header if needed
-	if cursor != "" {
-		host := ctx.Header("host")
-		if host == "" {
-			host = ctx.Header("Host")
-		}
-		baseURL := fmt.Sprintf("https://%s%s", host, "/api/v1/notifications")
-		nextURL := fmt.Sprintf("%s?max_id=%s", baseURL, cursor)
-		if filter.Limit > 0 {
-			nextURL += fmt.Sprintf("&limit=%d", filter.Limit)
-		}
-		ctx.Set("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+	account := h.converter.ActorToAccount(actor)
+	apiNotif := &models.Notification{
+		ID:        notif.ID,
+		Type:      notif.Type,
+		CreatedAt: notif.CreatedAt,
+		Account:   account,
 	}
 
-	return ctx.JSON(apiNotifications)
+	// Add status if applicable
+	if h.shouldIncludeStatus(notif) {
+		h.attachStatusToNotification(ctx, notif, apiNotif)
+	}
+
+	return apiNotif
+}
+
+// shouldIncludeStatus checks if a status should be included in the notification
+func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
+	if notif.StatusID == "" {
+		return false
+	}
+	return notif.Type == models.NotificationTypeMention ||
+		notif.Type == models.NotificationTypeFavourite ||
+		notif.Type == models.NotificationTypeReblog
+}
+
+// attachStatusToNotification attaches status information to a notification
+func (h *Handler) attachStatusToNotification(ctx *lift.Context, notif *storage.Notification, apiNotif *models.Notification) {
+	// Get the status
+	obj, err := h.repos.Object().GetObject(ctx.Context, notif.StatusID)
+	if err != nil {
+		h.logger.Warn("failed to get status for notification",
+			zap.String("notification_id", notif.ID),
+			zap.String("status_id", notif.StatusID),
+			zap.Error(err))
+		return
+	}
+
+	// Get status author
+	statusActor := h.extractStatusAuthor(ctx, obj)
+
+	status := h.converter.ObjectToStatus(obj, statusActor)
+	apiNotif.Status = &status
+}
+
+// extractStatusAuthor extracts the author actor from a status object
+func (h *Handler) extractStatusAuthor(ctx *lift.Context, obj any) *activitypub.Actor {
+	note, ok := obj.(*activitypub.Note)
+	if !ok || note.AttributedTo == "" {
+		return nil
+	}
+
+	parts := strings.Split(note.AttributedTo, "/")
+	if len(parts) == 0 {
+		return nil
+	}
+
+	username := parts[len(parts)-1]
+	statusActor, _ := h.repos.Actor().GetActor(ctx.Context, username)
+	return statusActor
+}
+
+// setNotificationPaginationHeader sets the pagination Link header for notifications
+func (h *Handler) setNotificationPaginationHeader(ctx *lift.Context, cursor string, limit int) {
+	host := ctx.Header("host")
+	if host == "" {
+		host = ctx.Header("Host")
+	}
+	
+	baseURL := fmt.Sprintf("https://%s%s", host, "/api/v1/notifications")
+	nextURL := fmt.Sprintf("%s?max_id=%s", baseURL, cursor)
+	if limit > 0 {
+		nextURL += fmt.Sprintf("&limit=%d", limit)
+	}
+	ctx.Set("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
 }
 
 // HandleGetInstanceV2Lift returns instance information in v2 format
@@ -523,7 +663,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 				"max_featured_tags":   10,
 				"max_pinned_statuses": 4,
 			},
-			"statuses": map[string]any{
+			searchTypeStatuses: map[string]any{
 				"max_characters":              instanceConfig.MaxStatusChars,
 				"max_media_attachments":       4,
 				"characters_reserved_per_url": 23,
@@ -808,8 +948,8 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 	var dynamoPercent, lambdaPercent, transferPercent, storagePercent float64
 	if currentMonth != nil && currentMonth.TotalCostDollars > 0 {
 		// Simplified breakdown - actual breakdown would need more detailed tracking
-		dynamoPercent = 60.0  // Estimate: DynamoDB typically 60%
-		lambdaPercent = 25.0  // Estimate: Lambda typically 25%
+		dynamoPercent = 60.0   // Estimate: DynamoDB typically 60%
+		lambdaPercent = 25.0   // Estimate: Lambda typically 25%
 		transferPercent = 10.0 // Estimate: Data transfer typically 10%
 		storagePercent = 5.0   // Estimate: Storage typically 5%
 	}
@@ -826,7 +966,7 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 		}
 		if totalUniqueUsers > 0 {
 			avgCostPerUser = currentMonth.TotalCostDollars * 100 / float64(totalUniqueUsers) // Convert to cents
-			medianCostPerUser = avgCostPerUser // Simplified
+			medianCostPerUser = avgCostPerUser                                               // Simplified
 		}
 	}
 
@@ -838,7 +978,7 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 			"dynamodb_reads":       currentMonth.TotalReads,
 			"dynamodb_writes":      currentMonth.TotalWrites,
 			"lambda_invocations":   currentMonth.TotalRequests,
-			"data_transfer_gb":     0, // Not tracked in the new structure
+			"data_transfer_gb":     0,                                                             // Not tracked in the new structure
 			"projected_cost_cents": currentMonth.TotalCostDollars * 100 * 30 / float64(now.Day()), // Project to full month
 		}
 	} else {
@@ -854,7 +994,7 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 
 	response := map[string]any{
 		"current_month": monthData,
-		"daily_costs": formattedDailyCosts,
+		"daily_costs":   formattedDailyCosts,
 		"cost_per_user": map[string]any{
 			"average_cents": avgCostPerUser,
 			"median_cents":  medianCostPerUser,
@@ -948,7 +1088,7 @@ func (h *Handler) HandleGetInstanceConfigurationLift(ctx *lift.Context) error {
 // getUniqueAccountsForDay returns unique account count for a specific day
 func (h *Handler) getUniqueAccountsForDay(ctx *lift.Context, day string) string {
 	// Parse the day string to get the date (validation only)
-	_, err := time.Parse("2006-01-02", day)
+	_, err := time.Parse(common.DateFormat, day)
 	if err != nil {
 		h.logger.Warn("invalid day format", zap.String("day", day), zap.Error(err))
 		return "0"
@@ -973,7 +1113,7 @@ func (h *Handler) getActiveMonthlyUsers(ctx *lift.Context) int {
 		h.logger.Error("failed to get active monthly users", zap.Error(err))
 		return 1 // Default fallback
 	}
-	return int(count)
+	return count
 }
 
 // getAdminAccount returns the admin account for the instance
@@ -1003,7 +1143,7 @@ func (h *Handler) getAdminAccount(ctx *lift.Context) any {
 		"acct":            actor.PreferredUsername,
 		"display_name":    actor.Name,
 		"locked":          actor.ManuallyApprovesFollowers,
-		"bot":             actor.Type == "Service",
+		"bot":             actor.Type == actorTypeService,
 		"discoverable":    actor.Discoverable,
 		"created_at":      h.formatActorCreatedTime(actor.CreatedAt),
 		"note":            actor.Summary,
@@ -1027,13 +1167,12 @@ func (h *Handler) getAvatarURL(actor *activitypub.Actor) string {
 	return fmt.Sprintf("%s/avatars/default.png", h.cfg.BaseURL())
 }
 
-
 // formatLastStatusTime formats last status time
 func (h *Handler) formatLastStatusTime(lastStatusAt *time.Time) *string {
 	if lastStatusAt == nil {
 		return nil
 	}
-	formatted := lastStatusAt.Format("2006-01-02")
+	formatted := lastStatusAt.Format(common.DateFormat)
 	return &formatted
 }
 

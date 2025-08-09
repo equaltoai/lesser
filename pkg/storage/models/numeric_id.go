@@ -20,13 +20,13 @@ type NumericIDMapping struct {
 
 // TableName returns the DynamoDB table name for the NumericIDMapping model
 func (NumericIDMapping) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
 func (n *NumericIDMapping) BeforeCreate() error {
 	n.PK = "NUMERIC_ID#" + n.NumericID
-	n.SK = "METADATA"
+	n.SK = SKMetadata
 	n.Type = "NumericIDMapping"
 	n.CreatedAt = time.Now()
 	return nil

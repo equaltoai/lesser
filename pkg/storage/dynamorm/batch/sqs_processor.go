@@ -50,10 +50,12 @@ func NewSQSBatchProcessor(db core.DB, config SQSBatchProcessorConfig) *SQSBatchP
 }
 
 // BatchMessage represents a message payload containing items to batch process
+//
+//nolint:revive // Batch prefix clarifies this is batch-specific message
 type BatchMessage struct {
-	Operation string `json:"operation"` // "create", "update", "delete"
-	Items     []any  `json:"items"`
-	TableName string `json:"table_name,omitempty"`
+	Operation string         `json:"operation"` // "create", "update", "delete"
+	Items     []any          `json:"items"`
+	TableName string         `json:"table_name,omitempty"`
 	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
@@ -65,7 +67,7 @@ func (p *SQSBatchProcessor) ProcessBatch(ctx context.Context, event events.SQSEv
 
 	startTime := time.Now()
 	totalMessages := len(event.Records)
-	
+
 	if p.logger != nil {
 		p.logger.Info("sqs_batch_processing_started",
 			zap.Int("message_count", totalMessages),
@@ -74,7 +76,7 @@ func (p *SQSBatchProcessor) ProcessBatch(ctx context.Context, event events.SQSEv
 
 	var batchItemFailures []events.SQSBatchItemFailure
 	processedCount := 0
-	
+
 	// Process each SQS message in the batch
 	for _, record := range event.Records {
 		if err := p.processMessage(ctx, record); err != nil {
@@ -82,7 +84,7 @@ func (p *SQSBatchProcessor) ProcessBatch(ctx context.Context, event events.SQSEv
 			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})
-			
+
 			if p.logger != nil {
 				p.logger.Error("sqs_message_processing_failed",
 					zap.String("message_id", record.MessageId),
@@ -146,23 +148,23 @@ func (p *SQSBatchProcessor) processMessage(ctx context.Context, record events.SQ
 // processBatchWrite handles batch write operations
 func (p *SQSBatchProcessor) processBatchWrite(ctx context.Context, items []any, messageID string) error {
 	startTime := time.Now()
-	
+
 	// Split into sub-batches if needed to respect DynamoDB limits
 	totalItems := len(items)
 	processed := 0
-	
+
 	for i := 0; i < totalItems; i += p.maxBatchSize {
 		end := i + p.maxBatchSize
 		if end > totalItems {
 			end = totalItems
 		}
-		
+
 		batch := items[i:end]
 		result, err := p.batchWriter.WriteItems(ctx, batch)
 		if err != nil {
 			return fmt.Errorf("batch write failed at index %d: %w", i, err)
 		}
-		
+
 		if result.FailedItems > 0 {
 			// If any items failed, we should retry the entire message
 			if p.logger != nil {
@@ -174,12 +176,12 @@ func (p *SQSBatchProcessor) processBatchWrite(ctx context.Context, items []any, 
 			}
 			return fmt.Errorf("batch write had %d failed items", result.FailedItems)
 		}
-		
+
 		processed += result.ProcessedItems
 	}
 
 	duration := time.Since(startTime)
-	
+
 	if p.logger != nil {
 		p.logger.Info("batch_write_completed",
 			zap.String("message_id", messageID),
@@ -193,31 +195,31 @@ func (p *SQSBatchProcessor) processBatchWrite(ctx context.Context, items []any, 
 }
 
 // processBatchDelete handles batch delete operations
-func (p *SQSBatchProcessor) processBatchDelete(ctx context.Context, items []any, messageID string) error {
+func (p *SQSBatchProcessor) processBatchDelete(_ context.Context, items []any, messageID string) error {
 	startTime := time.Now()
-	
+
 	// For delete operations, items should be key objects
 	// Process in batches respecting DynamoDB limits
 	totalItems := len(items)
 	processed := 0
-	
+
 	for i := 0; i < totalItems; i += p.maxBatchSize {
 		end := i + p.maxBatchSize
 		if end > totalItems {
 			end = totalItems
 		}
-		
+
 		batch := items[i:end]
-		
+
 		// Use DynamORM's batch delete functionality
 		// Note: This assumes the items are properly formatted key objects
 		query := p.db.Model(batch[0])
 		if err := query.BatchDelete(batch); err != nil {
 			return fmt.Errorf("batch delete failed at index %d: %w", i, err)
 		}
-		
+
 		processed += len(batch)
-		
+
 		// Track cost if tracker is available
 		if p.tracker != nil {
 			p.tracker.TrackDynamoWrite(len(batch))
@@ -225,7 +227,7 @@ func (p *SQSBatchProcessor) processBatchDelete(ctx context.Context, items []any,
 	}
 
 	duration := time.Since(startTime)
-	
+
 	if p.logger != nil {
 		p.logger.Info("batch_delete_completed",
 			zap.String("message_id", messageID),
@@ -245,7 +247,7 @@ func (p *SQSBatchProcessor) ProcessTimelineEntries(ctx context.Context, event ev
 	}
 
 	var batchItemFailures []events.SQSBatchItemFailure
-	
+
 	for _, record := range event.Records {
 		var timelineMsg struct {
 			FollowerIDs []string  `json:"follower_ids"`
@@ -253,14 +255,14 @@ func (p *SQSBatchProcessor) ProcessTimelineEntries(ctx context.Context, event ev
 			AuthorID    string    `json:"author_id"`
 			CreatedAt   time.Time `json:"created_at"`
 		}
-		
+
 		if err := json.Unmarshal([]byte(record.Body), &timelineMsg); err != nil {
 			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})
 			continue
 		}
-		
+
 		// Create timeline entries
 		entries := make([]any, 0, len(timelineMsg.FollowerIDs))
 		for _, followerID := range timelineMsg.FollowerIDs {
@@ -274,13 +276,13 @@ func (p *SQSBatchProcessor) ProcessTimelineEntries(ctx context.Context, event ev
 			}
 			entries = append(entries, entry)
 		}
-		
+
 		if len(entries) > 0 {
 			if _, err := p.batchWriter.WriteItems(ctx, entries); err != nil {
 				batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
 					ItemIdentifier: record.MessageId,
 				})
-				
+
 				if p.logger != nil {
 					p.logger.Error("timeline_entries_write_failed",
 						zap.String("message_id", record.MessageId),
@@ -303,26 +305,26 @@ func (p *SQSBatchProcessor) ProcessNotifications(ctx context.Context, event even
 	}
 
 	var batchItemFailures []events.SQSBatchItemFailure
-	
+
 	for _, record := range event.Records {
 		var notifMsg struct {
-			UserIDs      []string `json:"user_ids"`
-			StatusID     string   `json:"status_id"`
-			AuthorID     string   `json:"author_id"`
-			Type         string   `json:"type"` // "mention", "like", "repost", etc.
-			TargetType   string   `json:"target_type"`
+			UserIDs    []string `json:"user_ids"`
+			StatusID   string   `json:"status_id"`
+			AuthorID   string   `json:"author_id"`
+			Type       string   `json:"type"` // "mention", "like", "repost", etc.
+			TargetType string   `json:"target_type"`
 		}
-		
+
 		if err := json.Unmarshal([]byte(record.Body), &notifMsg); err != nil {
 			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})
 			continue
 		}
-		
+
 		now := time.Now()
 		notifications := make([]any, 0, len(notifMsg.UserIDs))
-		
+
 		for _, userID := range notifMsg.UserIDs {
 			notification := map[string]any{
 				"PK":         fmt.Sprintf("USER#%s", userID),
@@ -338,13 +340,13 @@ func (p *SQSBatchProcessor) ProcessNotifications(ctx context.Context, event even
 			}
 			notifications = append(notifications, notification)
 		}
-		
+
 		if len(notifications) > 0 {
 			if _, err := p.batchWriter.WriteItems(ctx, notifications); err != nil {
 				batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
 					ItemIdentifier: record.MessageId,
 				})
-				
+
 				if p.logger != nil {
 					p.logger.Error("notifications_write_failed",
 						zap.String("message_id", record.MessageId),
@@ -376,7 +378,7 @@ func CreateTimelineMessage(followerIDs []string, statusID, authorID string, crea
 		}
 		entries = append(entries, entry)
 	}
-	
+
 	return &BatchMessage{
 		Operation: "create",
 		Items:     entries,
@@ -392,7 +394,7 @@ func CreateTimelineMessage(followerIDs []string, statusID, authorID string, crea
 func CreateNotificationMessage(userIDs []string, statusID, authorID, notifType, targetType string) *BatchMessage {
 	now := time.Now()
 	notifications := make([]any, 0, len(userIDs))
-	
+
 	for _, userID := range userIDs {
 		notification := map[string]any{
 			"PK":         fmt.Sprintf("USER#%s", userID),
@@ -408,7 +410,7 @@ func CreateNotificationMessage(userIDs []string, statusID, authorID, notifType, 
 		}
 		notifications = append(notifications, notification)
 	}
-	
+
 	return &BatchMessage{
 		Operation: "create",
 		Items:     notifications,

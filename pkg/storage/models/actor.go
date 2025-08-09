@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Actor represents an ActivityPub actor stored in DynamoDB using DynamORM
@@ -72,7 +73,7 @@ type ActorMetadata struct {
 
 // TableName returns the DynamoDB table name for the Actor model
 func (Actor) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -83,7 +84,7 @@ func (a *Actor) BeforeCreate() error {
 
 	// Set up primary key - matches legacy pattern exactly
 	a.PK = "ACTOR#" + a.Username
-	a.SK = "PROFILE"
+	a.SK = SKProfile
 
 	// Set up GSI keys
 	a.setupGSIKeys()
@@ -132,7 +133,7 @@ func (a *Actor) setupGSIKeys() {
 
 	// GSI5 - Recent activity
 	now := time.Now()
-	a.GSI5PK = "ACTIVE#" + now.Format("2006-01-02")
+	a.GSI5PK = "ACTIVE#" + now.Format(common.DateFormat)
 	a.GSI5SK = fmt.Sprintf("%d#%s", now.Unix(), username)
 }
 

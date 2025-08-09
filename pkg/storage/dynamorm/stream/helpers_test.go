@@ -204,7 +204,7 @@ func TestProcessStreamEvent(t *testing.T) {
 	processed := make(map[string]bool)
 
 	// Create processor function
-	processor := func(ctx context.Context, record events.DynamoDBEventRecord) error {
+	processor := func(_ context.Context, record events.DynamoDBEventRecord) error {
 		processed[record.EventID] = true
 		return nil
 	}
@@ -234,7 +234,7 @@ func TestCreateStreamHandler(t *testing.T) {
 	processed := make(map[string]bool)
 
 	// Create processor function
-	processor := func(ctx context.Context, record events.DynamoDBEventRecord) error {
+	processor := func(_ context.Context, record events.DynamoDBEventRecord) error {
 		processed[record.EventID] = true
 		return nil
 	}

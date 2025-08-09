@@ -92,7 +92,7 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 		})
 	}
 	if req.Category == "" {
-		req.Category = "other"
+		req.Category = moderationCategoryOther
 	}
 	if req.Severity < 1 || req.Severity > 4 {
 		req.Severity = 2 // Default to medium
@@ -196,7 +196,7 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 
 	// Check if user is moderator or admin
 	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
-	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
+	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
 			"error": "requires admin or moderator role",
@@ -206,7 +206,10 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 	// Parse query parameters
 	limit := 20
 	if limitStr := ctx.Query("limit"); limitStr != "" {
-		fmt.Sscanf(limitStr, "%d", &limit)
+		if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil {
+			// Invalid limit format, use default
+			limit = 20
+		}
 		if limit > 100 {
 			limit = 100
 		}
@@ -233,7 +236,7 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 			ObjectType:      item.Event.ObjectType,
 			ObjectPreview:   h.getObjectPreview(ctx.Context, item.Event.ObjectID, item.Event.ObjectType),
 			AuthorID:        item.Event.ActorID,
-			Category:        string(item.Event.Category),
+			Category:        item.Event.Category,
 			Severity:        parseSeverity(item.Event.Severity),
 			ConfidenceScore: item.Event.ConfidenceScore,
 			PriorityScore:   float64(item.Priority),
@@ -275,7 +278,7 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 
 	// Check if user is moderator or admin
 	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
-	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
+	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
 			"error": "requires admin or moderator role",
@@ -385,7 +388,7 @@ func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
 
 	// Check if user is moderator or admin
 	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
-	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
+	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
 			"error": "requires admin or moderator role",
@@ -463,7 +466,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 
 	// Check if user is moderator or admin
 	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
-	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
+	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
 			"error": "requires admin or moderator role",
@@ -515,7 +518,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 		reviewResponses[i] = &models.ConsensusReview{
 			ReviewerID:     review.ReviewerID,
 			ReviewerDomain: h.extractDomainFromActor(review.ReviewerID),
-			Action:         string(review.Action),
+			Action:         review.Action,
 			Confidence:     review.Confidence,
 			TrustWeight:    trustScore,
 			ReviewedAt:     review.Created.Format(time.RFC3339),
@@ -526,7 +529,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 	resp := models.ConsensusVisualization{
 		EventID:         event.ID,
 		ObjectID:        event.ObjectID,
-		Category:        string(event.Category),
+		Category:        event.Category,
 		Severity:        parseSeverity(event.Severity),
 		ConfidenceScore: event.ConfidenceScore,
 		Reviews:         reviewResponses,
@@ -535,7 +538,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 
 	if decision != nil {
 		resp.ConsensusScore = decision.ConsensusScore
-		resp.Decision = string(decision.Action)
+		resp.Decision = decision.Action
 		resp.DecidedAt = decision.Decided.Format(time.RFC3339)
 	}
 
@@ -677,7 +680,7 @@ func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 		})
 	}
 	if req.Category == "" {
-		req.Category = "general"
+		req.Category = moderationCategoryGeneral
 	}
 
 	// Get truster's actor
@@ -762,7 +765,7 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 
 	// Check if user is moderator or admin
 	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
-	if err != nil || (user.Role != "moderator" && user.Role != "admin") {
+	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
 		ctx.Status(http.StatusForbidden)
 		return ctx.JSON(map[string]string{
 			"error": "requires admin or moderator role",

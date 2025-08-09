@@ -44,10 +44,10 @@ func (r *WalletRepository) StoreWalletChallenge(ctx context.Context, challenge *
 		IssuedAt:  challenge.IssuedAt,
 		ExpiresAt: challenge.ExpiresAt,
 	}
-	
+
 	// Update keys
 	model.UpdateKeys()
-	
+
 	// Create the challenge
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
@@ -56,20 +56,20 @@ func (r *WalletRepository) StoreWalletChallenge(ctx context.Context, challenge *
 			zap.Error(err))
 		return fmt.Errorf("failed to store wallet challenge: %w", err)
 	}
-	
+
 	return nil
 }
 
 // GetWalletChallenge retrieves a wallet challenge by ID
 func (r *WalletRepository) GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error) {
 	var model models.WalletChallenge
-	
+
 	// Query by primary key
 	err := r.db.WithContext(ctx).Model(&models.WalletChallenge{}).
 		Where("PK", "=", fmt.Sprintf("WALLET_CHALLENGE#%s", challengeID)).
 		Where("SK", "=", "CHALLENGE").
 		First(&model)
-		
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Legacy implementation returns error for not found
@@ -80,7 +80,7 @@ func (r *WalletRepository) GetWalletChallenge(ctx context.Context, challengeID s
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get wallet challenge: %w", err)
 	}
-	
+
 	// Convert back to storage.WalletChallenge
 	challenge := &storage.WalletChallenge{
 		ID:        model.ID,
@@ -92,7 +92,7 @@ func (r *WalletRepository) GetWalletChallenge(ctx context.Context, challengeID s
 		IssuedAt:  model.IssuedAt,
 		ExpiresAt: model.ExpiresAt,
 	}
-	
+
 	return challenge, nil
 }
 
@@ -102,7 +102,7 @@ func (r *WalletRepository) GetWalletChallenge(ctx context.Context, challengeID s
 func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential *storage.WalletCredential) error {
 	// Normalize address
 	address := strings.ToLower(credential.Address)
-	
+
 	// Convert storage.WalletCredential to models.WalletCredential
 	model := &models.WalletCredential{
 		Username: credential.Username,
@@ -113,10 +113,10 @@ func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential
 		LinkedAt: credential.LinkedAt,
 		LastUsed: credential.LastUsed,
 	}
-	
+
 	// Update keys
 	model.UpdateKeys()
-	
+
 	// Create the wallet credential
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
@@ -126,11 +126,11 @@ func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential
 			zap.Error(err))
 		return fmt.Errorf("failed to store wallet credential: %w", err)
 	}
-	
+
 	// Also create a reverse index for wallet->user lookup
 	index := &models.WalletIndex{}
 	index.UpdateKeys(credential.Type, address, credential.Username)
-	
+
 	err = r.db.WithContext(ctx).Model(index).Create()
 	if err != nil {
 		// Try to clean up the first item
@@ -138,21 +138,21 @@ func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential
 			Where("PK", "=", fmt.Sprintf("USER#%s", credential.Username)).
 			Where("SK", "=", fmt.Sprintf("WALLET#%s", address)).
 			Delete()
-			
+
 		if cleanupErr != nil {
 			r.logger.Warn("failed to cleanup wallet credential after index failure",
 				zap.String("username", credential.Username),
 				zap.String("address", address),
 				zap.Error(cleanupErr))
 		}
-		
+
 		r.logger.Error("failed to store wallet index",
 			zap.String("username", credential.Username),
 			zap.String("address", address),
 			zap.Error(err))
 		return fmt.Errorf("failed to store wallet index: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -160,7 +160,7 @@ func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential
 func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, address string) (*storage.WalletCredential, error) {
 	// Normalize address
 	address = strings.ToLower(address)
-	
+
 	// First, query the index to find the username
 	var indexes []models.WalletIndex
 	err := r.db.WithContext(ctx).Model(&models.WalletIndex{}).
@@ -168,7 +168,7 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 		Where("SK", "begins_with", "USER#").
 		Limit(1).
 		All(&indexes)
-		
+
 	if err != nil {
 		r.logger.Error("failed to query wallet index",
 			zap.String("walletType", walletType),
@@ -176,25 +176,25 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query wallet index: %w", err)
 	}
-	
+
 	if len(indexes) == 0 {
 		// Legacy implementation returns nil for not found
 		return nil, nil
 	}
-	
+
 	// Extract username from the index
 	username := indexes[0].Username
 	if username == "" {
 		return nil, fmt.Errorf("username not found in wallet index")
 	}
-	
+
 	// Now get the actual wallet credential
 	var model models.WalletCredential
 	err = r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("WALLET#%s", address)).
 		First(&model)
-		
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Legacy implementation returns nil for not found
@@ -206,7 +206,7 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get wallet credential: %w", err)
 	}
-	
+
 	// Convert back to storage.WalletCredential
 	credential := &storage.WalletCredential{
 		Username: model.Username,
@@ -217,7 +217,7 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 		LinkedAt: model.LinkedAt,
 		LastUsed: model.LastUsed,
 	}
-	
+
 	return credential, nil
 }
 
@@ -228,34 +228,34 @@ func (r *WalletRepository) DeleteWalletChallenge(ctx context.Context, challengeI
 		Where("PK", "=", fmt.Sprintf("WALLET_CHALLENGE#%s", challengeID)).
 		Where("SK", "=", "CHALLENGE").
 		Delete()
-		
+
 	if err != nil {
 		r.logger.Error("failed to delete wallet challenge",
 			zap.String("challengeID", challengeID),
 			zap.Error(err))
 		return fmt.Errorf("failed to delete wallet challenge: %w", err)
 	}
-	
+
 	return nil
 }
 
 // GetUserWalletCredentials retrieves all wallet credentials for a user
 func (r *WalletRepository) GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error) {
 	var walletModels []models.WalletCredential
-	
+
 	// Query all wallets for a user
 	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "begins_with", "WALLET#").
 		All(&walletModels)
-		
+
 	if err != nil {
 		r.logger.Error("failed to query user wallet credentials",
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query user wallet credentials: %w", err)
 	}
-	
+
 	// Convert to storage.WalletCredential slice
 	credentials := make([]*storage.WalletCredential, 0, len(walletModels))
 	for _, model := range walletModels {
@@ -270,7 +270,7 @@ func (r *WalletRepository) GetUserWalletCredentials(ctx context.Context, usernam
 		}
 		credentials = append(credentials, credential)
 	}
-	
+
 	return credentials, nil
 }
 
@@ -278,25 +278,25 @@ func (r *WalletRepository) GetUserWalletCredentials(ctx context.Context, usernam
 func (r *WalletRepository) DeleteWalletCredential(ctx context.Context, username, address string) error {
 	// Normalize address
 	address = strings.ToLower(address)
-	
+
 	// First get the wallet to determine type for index deletion
 	var model models.WalletCredential
 	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("WALLET#%s", address)).
 		First(&model)
-		
+
 	walletType := "ethereum" // default
 	if err == nil {
 		walletType = model.Type
 	}
-	
+
 	// Delete the wallet credential
 	err = r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("WALLET#%s", address)).
 		Delete()
-		
+
 	if err != nil {
 		r.logger.Error("failed to delete wallet credential",
 			zap.String("username", username),
@@ -304,13 +304,13 @@ func (r *WalletRepository) DeleteWalletCredential(ctx context.Context, username,
 			zap.Error(err))
 		return fmt.Errorf("failed to delete wallet credential: %w", err)
 	}
-	
+
 	// Also delete the reverse index
 	err = r.db.WithContext(ctx).Model(&models.WalletIndex{}).
 		Where("PK", "=", fmt.Sprintf("WALLET#%s#%s", walletType, address)).
 		Where("SK", "=", fmt.Sprintf("USER#%s", username)).
 		Delete()
-		
+
 	if err != nil {
 		// Log but don't fail - index might already be gone
 		r.logger.Warn("failed to delete wallet index",
@@ -319,7 +319,7 @@ func (r *WalletRepository) DeleteWalletCredential(ctx context.Context, username,
 			zap.String("walletType", walletType),
 			zap.Error(err))
 	}
-	
+
 	return nil
 }
 
@@ -327,14 +327,14 @@ func (r *WalletRepository) DeleteWalletCredential(ctx context.Context, username,
 func (r *WalletRepository) UpdateWalletLastUsed(ctx context.Context, username, address string) error {
 	// Normalize address
 	address = strings.ToLower(address)
-	
+
 	// First, get the existing wallet credential
 	var model models.WalletCredential
 	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("WALLET#%s", address)).
 		First(&model)
-		
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("wallet credential not found")
@@ -345,10 +345,10 @@ func (r *WalletRepository) UpdateWalletLastUsed(ctx context.Context, username, a
 			zap.Error(err))
 		return fmt.Errorf("failed to get wallet credential: %w", err)
 	}
-	
+
 	// Update the last_used field
 	model.LastUsed = time.Now()
-	
+
 	// Save the updated model
 	err = r.db.WithContext(ctx).Model(&model).Update()
 	if err != nil {
@@ -358,6 +358,6 @@ func (r *WalletRepository) UpdateWalletLastUsed(ctx context.Context, username, a
 			zap.Error(err))
 		return fmt.Errorf("failed to update wallet last used: %w", err)
 	}
-	
+
 	return nil
 }

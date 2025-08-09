@@ -71,7 +71,7 @@ func TestBaseMigration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewBaseMigration(tt.id, tt.version, tt.description, tt.dependencies...)
-			
+
 			assert.Equal(t, tt.id, m.ID())
 			assert.Equal(t, tt.version, m.Version())
 			assert.Equal(t, tt.description, m.Description())
@@ -84,7 +84,7 @@ func TestMigrationHistory_GetTableKeys(t *testing.T) {
 	h := &MigrationHistory{
 		ID: "test_migration",
 	}
-	
+
 	pk, sk := h.GetTableKeys()
 	assert.Equal(t, "MIGRATION#HISTORY", pk)
 	assert.Equal(t, "test_migration", sk)
@@ -92,7 +92,7 @@ func TestMigrationHistory_GetTableKeys(t *testing.T) {
 
 func TestMigrationStatus_GetTableKeys(t *testing.T) {
 	s := &MigrationStatus{}
-	
+
 	pk, sk := s.GetTableKeys()
 	assert.Equal(t, "MIGRATION#STATUS", pk)
 	assert.Equal(t, "CURRENT", sk)

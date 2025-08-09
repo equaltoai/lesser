@@ -500,6 +500,9 @@ type Subscription {
   
   # Hashtag Following subscription
   hashtagActivity(hashtags: [String!]!): HashtagActivityUpdate!
+  
+  # Real-time Metrics Updates subscription
+  metricsUpdates(categories: [String!], services: [String!], threshold: Float): MetricsUpdate!
 }
 
 # Quote activity update type
@@ -614,6 +617,37 @@ type HashtagActivityUpdate {
   post: Object!
   author: Actor!
   timestamp: Time!
+}
+
+# Real-time metrics update type for GraphQL subscriptions
+type MetricsUpdate {
+  metricId: String!
+  serviceName: String!
+  metricType: String!
+  subscriptionCategory: String! # moderation, security, performance, federation, cost, etc.
+  aggregationLevel: String!     # raw, 5min, hourly, daily
+  timestamp: Time!
+  count: Int!
+  sum: Float!
+  min: Float!
+  max: Float!
+  average: Float!
+  p50: Float
+  p95: Float
+  p99: Float
+  unit: String
+  userCostMicrocents: Int
+  totalCostMicrocents: Int
+  dimensions: [MetricsDimension!]!
+  userId: String
+  tenantId: String
+  instanceDomain: String
+}
+
+# Key-value pair for metrics dimensions
+type MetricsDimension {
+  key: String!
+  value: String!
 }
 
 input HashtagNotificationSettingsInput {

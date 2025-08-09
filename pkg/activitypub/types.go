@@ -109,6 +109,7 @@ type QuoteNote struct {
 
 // QuoteContext provides metadata about a quoted note
 type QuoteContext struct {
+	OriginalNoteID  string `json:"originalNoteId,omitempty"`
 	OriginalAuthor  string `json:"originalAuthor"`
 	QuoteCount      int    `json:"quoteCount"`
 	AllowWithdrawal bool   `json:"allowWithdrawal"`

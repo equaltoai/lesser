@@ -23,7 +23,7 @@ type SearchHistoryEntry struct {
 // UpdateKeys updates the DynamoDB keys based on the entry data
 func (s *SearchHistoryEntry) UpdateKeys() {
 	if s.UserID != "" {
-		s.PK = fmt.Sprintf("USER#%s", s.UserID)
+		s.PK = fmt.Sprintf(KeyPatternUser, s.UserID)
 	}
 	if !s.SearchedAt.IsZero() && s.Query != "" {
 		queryHash := hashQuery(s.Query)

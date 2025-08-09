@@ -410,7 +410,7 @@ var (
 
 func init() {
 	// Initialize core DB with models
-	db, _ = dynamorm.LambdaInit(&User{}, &Post{})
+	db, dynamorm.LambdaInit(&User{}, &Post{})
 
 	// Defer AI service initialization until first use
 	aiServiceLazy = dynamorm.NewLazyLoader(func() (any, error) {

@@ -79,7 +79,7 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 	testUsername := ctx.Header("X-Test-Username")
 	var token string
 	var claims *auth.Claims
-	
+
 	if testUsername != "" {
 		// Test mode - skip JWT validation
 		h.logger.Info("debug federation trace request in test mode", zap.String("test_username", testUsername))
@@ -197,7 +197,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 	testUsername := ctx.Header("X-Test-Username")
 	var token string
 	var claims *auth.Claims
-	
+
 	if testUsername != "" {
 		// Test mode - skip JWT validation
 		h.logger.Info("debug object request in test mode", zap.String("test_username", testUsername))
@@ -296,7 +296,7 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 	testUsername := ctx.Header("X-Test-Username")
 	var token string
 	var claims *auth.Claims
-	
+
 	if testUsername != "" {
 		// Test mode - skip JWT validation
 		h.logger.Info("debug replay request in test mode", zap.String("test_username", testUsername))
@@ -379,7 +379,7 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
 	testUsername := ctx.Header("X-Test-Username")
 	var token string
 	var claims *auth.Claims
-	
+
 	if testUsername != "" {
 		// Test mode - skip JWT validation
 		h.logger.Info("debug federation domain request in test mode", zap.String("test_username", testUsername))
@@ -452,7 +452,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 	testUsername := ctx.Header("X-Test-Username")
 	var token string
 	var claims *auth.Claims
-	
+
 	if testUsername != "" {
 		// Test mode - skip JWT validation
 		h.logger.Info("debug object explain request in test mode", zap.String("test_username", testUsername))
@@ -588,13 +588,13 @@ func (h *Handler) HandleDebugFeatureToggleLift(ctx *lift.Context) error {
 
 	response := map[string]any{
 		"feature_toggles": map[string]any{
-			"federation_enabled":    true,
-			"ai_analysis_enabled":   true,
-			"media_upload_enabled":  true,
+			"federation_enabled":     true,
+			"ai_analysis_enabled":    true,
+			"media_upload_enabled":   true,
 			"realtime_notifications": true,
 		},
 		"debug_mode": true,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
 	}
 
 	ctx.Status(http.StatusOK)
@@ -788,7 +788,7 @@ func (h *Handler) HandleDebugQueueLift(ctx *lift.Context) error {
 				"error_rate":       "0.1%",
 			},
 		},
-		"health": "healthy",
+		"health":    "healthy",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 

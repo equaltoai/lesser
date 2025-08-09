@@ -38,7 +38,7 @@ func (r *GenericRepository) WithTransaction(tx *Transaction) *GenericRepository 
 }
 
 // Create creates a new entity
-func (r *GenericRepository) Create(ctx context.Context, entity any) error {
+func (r *GenericRepository) Create(_ context.Context, entity any) error {
 	// Set primary keys if the entity implements KeySetter
 	if keySetter, ok := entity.(KeySetter); ok {
 		keySetter.SetKeys()
@@ -63,7 +63,7 @@ func (r *GenericRepository) Create(ctx context.Context, entity any) error {
 }
 
 // Get retrieves an entity by ID
-func (r *GenericRepository) Get(ctx context.Context, id string, entity any) error {
+func (r *GenericRepository) Get(_ context.Context, id string, entity any) error {
 	// Generate keys for the entity type
 	pk, sk := GenerateSimpleKeys(r.EntityType, id)
 
@@ -80,7 +80,7 @@ func (r *GenericRepository) Get(ctx context.Context, id string, entity any) erro
 }
 
 // Update updates an entity
-func (r *GenericRepository) Update(ctx context.Context, entity any) error {
+func (r *GenericRepository) Update(_ context.Context, entity any) error {
 	// Set primary keys if the entity implements KeySetter
 	if keySetter, ok := entity.(KeySetter); ok {
 		keySetter.SetKeys()
@@ -105,7 +105,7 @@ func (r *GenericRepository) Update(ctx context.Context, entity any) error {
 }
 
 // Delete deletes an entity by ID
-func (r *GenericRepository) Delete(ctx context.Context, id string, entityPtr any) error {
+func (r *GenericRepository) Delete(_ context.Context, id string, entityPtr any) error {
 	// Generate keys for the entity type
 	pk, sk := GenerateSimpleKeys(r.EntityType, id)
 
@@ -149,7 +149,7 @@ func (r *GenericRepository) Delete(ctx context.Context, id string, entityPtr any
 }
 
 // List lists entities with optional filtering
-func (r *GenericRepository) List(ctx context.Context, filter map[string]any, entities any) error {
+func (r *GenericRepository) List(_ context.Context, filter map[string]any, entities any) error {
 	// Start building the query
 	query := r.DB.Model(reflect.New(reflect.TypeOf(entities).Elem().Elem().Elem()).Interface())
 

@@ -24,7 +24,6 @@ var (
 // This is an alias to the models.AuthRefreshToken for backward compatibility
 type RefreshToken = models.AuthRefreshToken
 
-
 // RefreshTokenStore manages refresh tokens using DynamORM
 type RefreshTokenStore struct {
 	repo   *repositories.AuthRefreshTokenRepository

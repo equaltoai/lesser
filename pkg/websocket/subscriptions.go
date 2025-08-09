@@ -1,3 +1,4 @@
+// Package websocket provides WebSocket subscription management with API Gateway integration for real-time notifications.
 package websocket
 
 import (
@@ -21,6 +22,9 @@ type SubscriptionManager interface {
 	SubscribeThreatIntel(connectionID string) error
 	SubscribePerformanceAlerts(connectionID string, severity string) error
 	SubscribeInfrastructureEvents(connectionID string) error
+	SubscribeCommunityNotes(connectionID string) error
+	SubscribeTimeline(connectionID string) error
+	SubscribeNotifications(connectionID string) error
 	Unsubscribe(connectionID string, subscriptionType string) error
 	PublishModerationEvent(event *ModerationEvent) error
 	PublishThreatAlert(alert *ThreatAlert) error
@@ -108,6 +112,8 @@ type InfrastructureEvent struct {
 }
 
 // WebSocketMessage represents a message sent over WebSocket
+//
+//nolint:revive // WebSocket prefix clarifies this is WebSocket-specific message
 type WebSocketMessage struct {
 	Type      string    `json:"type"`
 	Data      any       `json:"data"`
@@ -223,6 +229,21 @@ func (sm *subscriptionManager) SubscribePerformanceAlerts(connectionID string, s
 // SubscribeInfrastructureEvents subscribes to infrastructure events
 func (sm *subscriptionManager) SubscribeInfrastructureEvents(connectionID string) error {
 	return sm.createSubscription(connectionID, "infrastructure", nil)
+}
+
+// SubscribeCommunityNotes subscribes to community note events
+func (sm *subscriptionManager) SubscribeCommunityNotes(connectionID string) error {
+	return sm.createSubscription(connectionID, "community_notes", nil)
+}
+
+// SubscribeTimeline subscribes to timeline events
+func (sm *subscriptionManager) SubscribeTimeline(connectionID string) error {
+	return sm.createSubscription(connectionID, "timeline", nil)
+}
+
+// SubscribeNotifications subscribes to notification events
+func (sm *subscriptionManager) SubscribeNotifications(connectionID string) error {
+	return sm.createSubscription(connectionID, "notifications", nil)
 }
 
 // createSubscription creates a new subscription
@@ -474,11 +495,6 @@ func (sm *subscriptionManager) matchesPerformanceFilter(alert *PerformanceAlert,
 	return true
 }
 
-// cleanupSubscriptions is now handled by the repository HandleDisconnect method
-// This method is kept for backward compatibility but does nothing
-func (sm *subscriptionManager) cleanupSubscriptions(connectionID string) {
-	// No-op: cleanup is now handled by repository
-}
 
 // convertToMap converts an any to map[string]any
 func convertToMap(v any) (map[string]any, error) {
@@ -496,6 +512,8 @@ func convertToMap(v any) (map[string]any, error) {
 }
 
 // WebSocketHandler handles API Gateway WebSocket events
+//
+//nolint:revive // WebSocket prefix clarifies this is WebSocket-specific handler
 type WebSocketHandler struct {
 	subscriptionManager SubscriptionManager
 	logger              *zap.Logger
@@ -510,99 +528,148 @@ func NewWebSocketHandler(sm SubscriptionManager, logger *zap.Logger) *WebSocketH
 }
 
 // HandleAPIGatewayWebSocketEvent handles WebSocket events from API Gateway
-func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
+func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(_ context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
 	connectionID := event.RequestContext.ConnectionID
 	route := event.RequestContext.RouteKey
 
 	switch route {
 	case "$connect":
-		// Extract user ID from query parameters or headers
-		userID := event.QueryStringParameters["user_id"]
-		if userID == "" {
-			userID = "anonymous"
-		}
-
-		if err := h.subscriptionManager.HandleConnect(connectionID, userID); err != nil {
-			h.logger.Error("Failed to handle connect",
-				zap.String("connection_id", connectionID),
-				zap.String("user_id", userID),
-				zap.Error(err),
-			)
-			return events.APIGatewayProxyResponse{StatusCode: 500}, err
-		}
-
-		return events.APIGatewayProxyResponse{StatusCode: 200}, nil
-
+		return h.handleConnect(connectionID, event)
 	case "$disconnect":
-		if err := h.subscriptionManager.HandleDisconnect(connectionID); err != nil {
-			h.logger.Error("Failed to handle disconnect",
-				zap.String("connection_id", connectionID),
-				zap.Error(err),
-			)
-		}
-
-		return events.APIGatewayProxyResponse{StatusCode: 200}, nil
-
+		return h.handleDisconnect(connectionID)
 	case "subscribe":
-		var request struct {
-			Type   string `json:"type"`
-			Filter any    `json:"filter,omitempty"`
-		}
-
-		if err := json.Unmarshal([]byte(event.Body), &request); err != nil {
-			return events.APIGatewayProxyResponse{StatusCode: 400}, fmt.Errorf("invalid request body: %w", err)
-		}
-
-		var err error
-		switch request.Type {
-		case "moderation":
-			if filter, ok := request.Filter.(map[string]any); ok {
-				var modFilter ModerationFilter
-				if data, marshalErr := json.Marshal(filter); marshalErr == nil {
-					json.Unmarshal(data, &modFilter)
-				}
-				err = h.subscriptionManager.SubscribeModerationQueue(connectionID, modFilter)
-			} else {
-				err = h.subscriptionManager.SubscribeModerationQueue(connectionID, ModerationFilter{})
-			}
-		case "threat_intel":
-			err = h.subscriptionManager.SubscribeThreatIntel(connectionID)
-		case "performance":
-			severity := "medium" // default
-			if filter, ok := request.Filter.(map[string]any); ok {
-				if sev, ok := filter["severity"].(string); ok {
-					severity = sev
-				}
-			}
-			err = h.subscriptionManager.SubscribePerformanceAlerts(connectionID, severity)
-		case "infrastructure":
-			err = h.subscriptionManager.SubscribeInfrastructureEvents(connectionID)
-		default:
-			return events.APIGatewayProxyResponse{StatusCode: 400}, fmt.Errorf("unknown subscription type: %s", request.Type)
-		}
-
-		if err != nil {
-			return events.APIGatewayProxyResponse{StatusCode: 500}, err
-		}
-
-		return events.APIGatewayProxyResponse{StatusCode: 200}, nil
-
+		return h.handleSubscribe(connectionID, event.Body)
 	case "unsubscribe":
-		var request struct {
-			Type string `json:"type"`
-		}
-
-		if err := json.Unmarshal([]byte(event.Body), &request); err != nil {
-			return events.APIGatewayProxyResponse{StatusCode: 400}, fmt.Errorf("invalid request body: %w", err)
-		}
-
-		if err := h.subscriptionManager.Unsubscribe(connectionID, request.Type); err != nil {
-			return events.APIGatewayProxyResponse{StatusCode: 500}, err
-		}
-
-		return events.APIGatewayProxyResponse{StatusCode: 200}, nil
-
+		return h.handleUnsubscribe(connectionID, event.Body)
 	default:
 		return events.APIGatewayProxyResponse{StatusCode: 404}, fmt.Errorf("unknown route: %s", route)
 	}
+}
+
+// handleConnect handles WebSocket connection events
+func (h *WebSocketHandler) handleConnect(connectionID string, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
+	userID := h.extractUserID(event)
+	
+	if err := h.subscriptionManager.HandleConnect(connectionID, userID); err != nil {
+		h.logger.Error("Failed to handle connect",
+			zap.String("connection_id", connectionID),
+			zap.String("user_id", userID),
+			zap.Error(err),
+		)
+		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	}
+
+	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+
+// extractUserID extracts user ID from query parameters or returns anonymous
+func (h *WebSocketHandler) extractUserID(event events.APIGatewayWebsocketProxyRequest) string {
+	userID := event.QueryStringParameters["user_id"]
+	if userID == "" {
+		userID = "anonymous"
+	}
+	return userID
+}
+
+// handleDisconnect handles WebSocket disconnection events
+func (h *WebSocketHandler) handleDisconnect(connectionID string) (events.APIGatewayProxyResponse, error) {
+	if err := h.subscriptionManager.HandleDisconnect(connectionID); err != nil {
+		h.logger.Error("Failed to handle disconnect",
+			zap.String("connection_id", connectionID),
+			zap.Error(err),
+		)
+	}
+	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+
+// handleSubscribe handles subscription requests
+func (h *WebSocketHandler) handleSubscribe(connectionID string, body string) (events.APIGatewayProxyResponse, error) {
+	var request struct {
+		Type   string `json:"type"`
+		Filter any    `json:"filter,omitempty"`
+	}
+
+	if err := json.Unmarshal([]byte(body), &request); err != nil {
+		return events.APIGatewayProxyResponse{StatusCode: 400}, fmt.Errorf("invalid request body: %w", err)
+	}
+
+	err := h.processSubscriptionType(connectionID, request.Type, request.Filter)
+	if err != nil {
+		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	}
+
+	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+
+// processSubscriptionType processes different subscription types
+func (h *WebSocketHandler) processSubscriptionType(connectionID string, subType string, filter any) error {
+	switch subType {
+	case "moderation":
+		return h.subscribeModerationQueue(connectionID, filter)
+	case "threat_intel":
+		return h.subscriptionManager.SubscribeThreatIntel(connectionID)
+	case "performance":
+		return h.subscribePerformanceAlerts(connectionID, filter)
+	case "infrastructure":
+		return h.subscriptionManager.SubscribeInfrastructureEvents(connectionID)
+	case "community_notes":
+		return h.subscriptionManager.SubscribeCommunityNotes(connectionID)
+	case "timeline":
+		return h.subscriptionManager.SubscribeTimeline(connectionID)
+	case "notifications":
+		return h.subscriptionManager.SubscribeNotifications(connectionID)
+	default:
+		return fmt.Errorf("unknown subscription type: %s", subType)
+	}
+}
+
+// subscribeModerationQueue handles moderation queue subscriptions
+func (h *WebSocketHandler) subscribeModerationQueue(connectionID string, filter any) error {
+	modFilter := h.parseModerationFilter(filter)
+	return h.subscriptionManager.SubscribeModerationQueue(connectionID, modFilter)
+}
+
+// parseModerationFilter parses the moderation filter from request
+func (h *WebSocketHandler) parseModerationFilter(filter any) ModerationFilter {
+	if filterMap, ok := filter.(map[string]any); ok {
+		var modFilter ModerationFilter
+		if data, err := json.Marshal(filterMap); err == nil {
+			_ = json.Unmarshal(data, &modFilter)
+		}
+		return modFilter
+	}
+	return ModerationFilter{}
+}
+
+// subscribePerformanceAlerts handles performance alert subscriptions
+func (h *WebSocketHandler) subscribePerformanceAlerts(connectionID string, filter any) error {
+	severity := h.extractSeverity(filter)
+	return h.subscriptionManager.SubscribePerformanceAlerts(connectionID, severity)
+}
+
+// extractSeverity extracts severity from filter or returns default
+func (h *WebSocketHandler) extractSeverity(filter any) string {
+	if filterMap, ok := filter.(map[string]any); ok {
+		if sev, ok := filterMap["severity"].(string); ok {
+			return sev
+		}
+	}
+	return "medium" // default
+}
+
+// handleUnsubscribe handles unsubscribe requests
+func (h *WebSocketHandler) handleUnsubscribe(connectionID string, body string) (events.APIGatewayProxyResponse, error) {
+	var request struct {
+		Type string `json:"type"`
+	}
+
+	if err := json.Unmarshal([]byte(body), &request); err != nil {
+		return events.APIGatewayProxyResponse{StatusCode: 400}, fmt.Errorf("invalid request body: %w", err)
+	}
+
+	if err := h.subscriptionManager.Unsubscribe(connectionID, request.Type); err != nil {
+		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	}
+
+	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
 }

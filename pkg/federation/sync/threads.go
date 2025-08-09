@@ -1,3 +1,4 @@
+// Package sync provides thread synchronization utilities for ActivityPub conversation management.
 package sync
 
 import (
@@ -202,7 +203,7 @@ func (t *ThreadSyncer) storeNote(ctx context.Context, note *activitypub.Note) er
 }
 
 // updateConversationMetadata updates the conversation metadata in storage
-func (t *ThreadSyncer) updateConversationMetadata(ctx context.Context, thread *Thread) error {
+func (t *ThreadSyncer) updateConversationMetadata(_ context.Context, _ *Thread) error {
 	// This would update conversation stats, participant list, etc.
 	// Implementation depends on your storage schema
 	return nil

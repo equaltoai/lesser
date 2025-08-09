@@ -31,7 +31,7 @@ func (r *AnnouncementRepositoryV2) CreateAnnouncement(ctx context.Context, annou
 	// Convert to model
 	model := &models.Announcement{
 		PK:          fmt.Sprintf("ANNOUNCEMENT#%s", announcement.ID),
-		SK:          "METADATA",
+		SK:          models.SKMetadata,
 		ID:          announcement.ID,
 		Content:     announcement.Content,
 		Text:        announcement.Text,
@@ -44,7 +44,7 @@ func (r *AnnouncementRepositoryV2) CreateAnnouncement(ctx context.Context, annou
 		CreatedBy:   announcement.CreatedBy,
 		CreatedAt:   time.Now(),
 	}
-	
+
 	// Convert emojis and reactions
 	if len(announcement.Emojis) > 0 {
 		model.Emojis = make([]models.CustomEmoji, len(announcement.Emojis))
@@ -58,7 +58,7 @@ func (r *AnnouncementRepositoryV2) CreateAnnouncement(ctx context.Context, annou
 			}
 		}
 	}
-	
+
 	if len(announcement.Reactions) > 0 {
 		model.Reactions = make([]models.Reaction, len(announcement.Reactions))
 		for i, r := range announcement.Reactions {
@@ -79,16 +79,16 @@ func (r *AnnouncementRepositoryV2) CreateAnnouncement(ctx context.Context, annou
 // GetAnnouncement retrieves an announcement by ID
 func (r *AnnouncementRepositoryV2) GetAnnouncement(ctx context.Context, id string) (*storage.Announcement, error) {
 	pk := fmt.Sprintf("ANNOUNCEMENT#%s", id)
-	sk := "METADATA"
-	
+	sk := models.SKMetadata
+
 	model := &models.Announcement{}
-	
+
 	// Use BaseRepository Get - saves ~15 lines of boilerplate
 	err := r.Get(ctx, pk, sk, model)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert model back to storage type
 	return r.modelToAnnouncement(model), nil
 }
@@ -97,15 +97,15 @@ func (r *AnnouncementRepositoryV2) GetAnnouncement(ctx context.Context, id strin
 func (r *AnnouncementRepositoryV2) UpdateAnnouncement(ctx context.Context, announcement *storage.Announcement) error {
 	// Get existing announcement model to preserve creation time
 	existingModel := &models.Announcement{}
-	err := r.Get(ctx, fmt.Sprintf("ANNOUNCEMENT#%s", announcement.ID), "METADATA", existingModel)
+	err := r.Get(ctx, fmt.Sprintf("ANNOUNCEMENT#%s", announcement.ID), models.SKMetadata, existingModel)
 	if err != nil {
 		return err
 	}
-	
+
 	// Convert to model with updates
 	model := &models.Announcement{
 		PK:          fmt.Sprintf("ANNOUNCEMENT#%s", announcement.ID),
-		SK:          "METADATA",
+		SK:          models.SKMetadata,
 		ID:          announcement.ID,
 		Content:     announcement.Content,
 		Text:        announcement.Text,
@@ -118,7 +118,7 @@ func (r *AnnouncementRepositoryV2) UpdateAnnouncement(ctx context.Context, annou
 		CreatedBy:   announcement.CreatedBy,
 		CreatedAt:   existingModel.CreatedAt, // Preserve original creation time
 	}
-	
+
 	// Convert emojis and reactions
 	if len(announcement.Emojis) > 0 {
 		model.Emojis = make([]models.CustomEmoji, len(announcement.Emojis))
@@ -132,7 +132,7 @@ func (r *AnnouncementRepositoryV2) UpdateAnnouncement(ctx context.Context, annou
 			}
 		}
 	}
-	
+
 	if len(announcement.Reactions) > 0 {
 		model.Reactions = make([]models.Reaction, len(announcement.Reactions))
 		for i, r := range announcement.Reactions {
@@ -145,7 +145,7 @@ func (r *AnnouncementRepositoryV2) UpdateAnnouncement(ctx context.Context, annou
 			}
 		}
 	}
-	
+
 	// Use BaseRepository Update - saves ~15 lines of boilerplate
 	return r.Update(ctx, model)
 }
@@ -153,8 +153,8 @@ func (r *AnnouncementRepositoryV2) UpdateAnnouncement(ctx context.Context, annou
 // DeleteAnnouncement removes an announcement
 func (r *AnnouncementRepositoryV2) DeleteAnnouncement(ctx context.Context, id string) error {
 	pk := fmt.Sprintf("ANNOUNCEMENT#%s", id)
-	sk := "METADATA"
-	
+	sk := models.SKMetadata
+
 	// Use BaseRepository Delete - saves ~15 lines of boilerplate
 	return r.Delete(ctx, pk, sk)
 }
@@ -162,26 +162,26 @@ func (r *AnnouncementRepositoryV2) DeleteAnnouncement(ctx context.Context, id st
 // GetActiveAnnouncements retrieves all active announcements
 func (r *AnnouncementRepositoryV2) GetActiveAnnouncements(ctx context.Context) ([]*storage.Announcement, error) {
 	now := time.Now()
-	
+
 	// Use BaseRepository Query - saves ~20 lines of boilerplate
 	models, err := r.Query(ctx, "ANNOUNCEMENT#", 100)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Filter active announcements
 	active := make([]*storage.Announcement, 0)
 	for _, model := range models {
 		ann := r.modelToAnnouncement(model)
-		
+
 		// Check if announcement is active based on time range
 		// An announcement is active if current time is between start and end times
 		if (ann.StartsAt == nil || now.After(*ann.StartsAt)) &&
-		   (ann.EndsAt == nil || now.Before(*ann.EndsAt)) {
+			(ann.EndsAt == nil || now.Before(*ann.EndsAt)) {
 			active = append(active, ann)
 		}
 	}
-	
+
 	return active, nil
 }
 
@@ -205,7 +205,7 @@ func (r *AnnouncementRepositoryV2) modelToAnnouncement(model *models.Announcemen
 		UpdatedAt:   model.UpdatedAt,
 		CreatedBy:   model.CreatedBy,
 	}
-	
+
 	// Convert emojis
 	if len(model.Emojis) > 0 {
 		ann.Emojis = make([]storage.CustomEmoji, len(model.Emojis))
@@ -219,7 +219,7 @@ func (r *AnnouncementRepositoryV2) modelToAnnouncement(model *models.Announcemen
 			}
 		}
 	}
-	
+
 	// Convert reactions
 	if len(model.Reactions) > 0 {
 		ann.Reactions = make([]storage.Reaction, len(model.Reactions))
@@ -233,7 +233,7 @@ func (r *AnnouncementRepositoryV2) modelToAnnouncement(model *models.Announcemen
 			}
 		}
 	}
-	
+
 	return ann
 }
 

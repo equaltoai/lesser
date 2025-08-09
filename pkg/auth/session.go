@@ -27,11 +27,11 @@ const (
 	RefreshTokenRotationWindow = 24 * time.Hour      // Allow old refresh token for 24h after rotation
 )
 
-// Type aliases for convenience
-type (
-	Session = storage.Session
-	Device  = storage.Device
-)
+// Session is a type alias for storage.Session
+type Session = storage.Session
+
+// Device is a type alias for storage.Device
+type Device = storage.Device
 
 // SessionManager handles session operations
 type SessionManager struct {

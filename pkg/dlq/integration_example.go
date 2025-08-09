@@ -111,7 +111,7 @@ func (p *ProcessorWithDLQ) ProcessSQSBatchWithDLQ(ctx context.Context, event eve
 /*
 func (np *NotificationProcessor) HandleSQSWithDLQ(ctx *lift.Context, event events.SQSEvent) error {
 	processor := dlq.NewProcessorWithDLQ("notification-processor", np.logger)
-	
+
 	return processor.ProcessSQSBatchWithDLQ(ctx.Request.Context(), event, np.processMessage)
 }
 */
@@ -120,7 +120,7 @@ func (np *NotificationProcessor) HandleSQSWithDLQ(ctx *lift.Context, event event
 /*
 func (ap *ActivityProcessor) HandleSQSWithDLQ(ctx *lift.Context, event events.SQSEvent) error {
 	processor := dlq.NewProcessorWithDLQ("activity-processor", ap.logger)
-	
+
 	return processor.ProcessSQSBatchWithDLQ(ctx.Request.Context(), event, ap.processActivity)
 }
 */
@@ -195,7 +195,7 @@ func WithDLQSupport(service string, handler func(*lift.Context, events.SQSEvent)
 
 		// Process normally
 		err := handler(ctx, event)
-		
+
 		// If processing failed, send all messages to DLQ
 		if err != nil {
 			var failures []ProcessingFailure
@@ -213,15 +213,19 @@ func WithDLQSupport(service string, handler func(*lift.Context, events.SQSEvent)
 	}
 }
 
-// Configuration for DLQ integration
+// DLQConfig represents configuration for DLQ integration
+//
+// DLQConfig represents configuration for DLQ integration
+//
+//nolint:revive // DLQ prefix clarifies this is Dead Letter Queue config
 type DLQConfig struct {
-	Enabled           bool   `json:"enabled"`
-	Service           string `json:"service"`
-	MaxRetries        int    `json:"max_retries"`
-	RetryDelay        int    `json:"retry_delay_seconds"`
-	FailFast          bool   `json:"fail_fast"`           // Send to DLQ immediately on certain errors
-	PermanentErrors   []string `json:"permanent_errors"`  // Error patterns that should go straight to DLQ
-	TransientErrors   []string `json:"transient_errors"`  // Error patterns that should be retried
+	Enabled         bool     `json:"enabled"`
+	Service         string   `json:"service"`
+	MaxRetries      int      `json:"max_retries"`
+	RetryDelay      int      `json:"retry_delay_seconds"`
+	FailFast        bool     `json:"fail_fast"`        // Send to DLQ immediately on certain errors
+	PermanentErrors []string `json:"permanent_errors"` // Error patterns that should go straight to DLQ
+	TransientErrors []string `json:"transient_errors"` // Error patterns that should be retried
 }
 
 // NewDLQConfigFromEnv creates DLQ config from environment variables

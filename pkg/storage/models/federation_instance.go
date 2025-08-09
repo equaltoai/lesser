@@ -59,10 +59,10 @@ type FederationInstanceRegistry struct {
 func (f *FederationInstanceRegistry) UpdateKeys() {
 	// Set primary keys
 	f.PK = fmt.Sprintf("INSTANCE#%s", f.Domain)
-	f.SK = "METADATA"
+	f.SK = SKMetadata
 
 	// Set GSI1 keys for status-based queries
-	f.GSI1PK = fmt.Sprintf("STATUS#%s", f.Status)
+	f.GSI1PK = fmt.Sprintf(KeyPatternStatus, f.Status)
 	f.GSI1SK = fmt.Sprintf("DOMAIN#%s", f.Domain)
 
 	// Set GSI2 keys for tier-based queries
@@ -72,7 +72,6 @@ func (f *FederationInstanceRegistry) UpdateKeys() {
 	// Set TTL (1 year from now)
 	f.TTL = time.Now().Add(365 * 24 * time.Hour).Unix()
 }
-
 
 // FederationInstanceRegistryHealthHistory represents health history records
 type FederationInstanceRegistryHealthHistory struct {
@@ -116,21 +115,21 @@ func (h *FederationInstanceRegistryHealthHistory) extractInstanceIDFromPK() stri
 // ToInstance converts the model to a federation types Instance
 func (f *FederationInstanceRegistry) ToInstance() *types.Instance {
 	instance := &types.Instance{
-		ID:             f.ID,
-		Domain:         f.Domain,
-		InboxURL:       f.InboxURL,
-		SharedInboxURL: f.SharedInboxURL,
-		PublicKeyPEM:   f.PublicKeyPEM,
-		Status:         types.InstanceStatus(f.Status),
-		LastSeen:       f.LastSeen,
-		RegisteredAt:   f.RegisteredAt,
+		ID:              f.ID,
+		Domain:          f.Domain,
+		InboxURL:        f.InboxURL,
+		SharedInboxURL:  f.SharedInboxURL,
+		PublicKeyPEM:    f.PublicKeyPEM,
+		Status:          types.InstanceStatus(f.Status),
+		LastSeen:        f.LastSeen,
+		RegisteredAt:    f.RegisteredAt,
 		AvgResponseTime: time.Duration(f.AvgResponseTime) * time.Millisecond,
-		SuccessRate:    f.SuccessRate,
-		ErrorRate:      f.ErrorRate,
-		TierLevel:      types.TierLevel(f.TierLevel),
-		MonthlyQuota:   f.MonthlyQuota,
-		CurrentUsage:   f.CurrentUsage,
-		MaxMessageSize: f.MaxMessageSize,
+		SuccessRate:     f.SuccessRate,
+		ErrorRate:       f.ErrorRate,
+		TierLevel:       types.TierLevel(f.TierLevel),
+		MonthlyQuota:    f.MonthlyQuota,
+		CurrentUsage:    f.CurrentUsage,
+		MaxMessageSize:  f.MaxMessageSize,
 	}
 
 	// Convert supported types
@@ -174,4 +173,3 @@ func (f *FederationInstanceRegistry) ToInstance() *types.Instance {
 
 	return instance
 }
-

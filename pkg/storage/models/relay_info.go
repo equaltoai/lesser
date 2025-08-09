@@ -26,7 +26,7 @@ type RelayInfo struct {
 	CreatedAt  time.Time `json:"created_at"`
 	LastSeenAt time.Time `json:"last_seen_at"`
 	Domain     string    `json:"domain"`
-	Status     string    `json:"status,omitempty"`      // pending/active/rejected/error
+	Status     string    `json:"status,omitempty"` // pending/active/rejected/error
 	ErrorCount int       `json:"error_count,omitempty"`
 	TTL        int64     `json:"ttl,omitempty" dynamorm:"ttl"` // For automatic cleanup
 }
@@ -35,7 +35,7 @@ type RelayInfo struct {
 func (r *RelayInfo) UpdateKeys() {
 	// Primary key: RELAY#domain
 	r.PK = fmt.Sprintf("RELAY#%s", r.Domain)
-	r.SK = "INFO"
+	r.SK = SKInfo
 
 	// GSI1: For querying active relays
 	if r.Active {
@@ -68,18 +68,18 @@ func (r *RelayInfo) ShouldRetry() bool {
 	if r.ErrorCount == 0 {
 		return true
 	}
-	
+
 	// Don't retry if status is rejected
 	if r.Status == "rejected" {
 		return false
 	}
-	
+
 	// Check if enough time has passed since last attempt
 	backoffMinutes := 1 << r.ErrorCount // 2^errorCount minutes
-	if backoffMinutes > 1440 { // Cap at 24 hours
+	if backoffMinutes > 1440 {          // Cap at 24 hours
 		backoffMinutes = 1440
 	}
-	
+
 	nextRetry := r.LastSeenAt.Add(time.Duration(backoffMinutes) * time.Minute)
 	return time.Now().After(nextRetry)
 }
@@ -88,7 +88,7 @@ func (r *RelayInfo) ShouldRetry() bool {
 func (r *RelayInfo) SetError() {
 	r.ErrorCount++
 	r.LastSeenAt = time.Now()
-	
+
 	if r.ErrorCount > 10 {
 		r.Status = "error"
 		r.Active = false
@@ -99,6 +99,6 @@ func (r *RelayInfo) SetError() {
 func (r *RelayInfo) SetSuccess() {
 	r.ErrorCount = 0
 	r.LastSeenAt = time.Now()
-	r.Status = "active"
+	r.Status = StatusActive
 	r.Active = true
 }

@@ -40,11 +40,6 @@ func GetMiddleware() (*Middleware, error) {
 		return globalMiddleware, nil
 	}
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "development-secret-change-me"
-	}
-
 	// TEMPORARY: Storage initialization needs to be passed in
 	// This is part of the migration to Lift
 	return nil, errors.New("GetMiddleware needs storage - use handler's auth middleware instead")
@@ -54,11 +49,17 @@ func GetMiddleware() (*Middleware, error) {
 func NewMiddleware() *Middleware {
 	m, err := GetMiddleware()
 	if err != nil {
+		// Get the JWT secret for fallback
+		jwtSecret := os.Getenv("JWT_SECRET")
+		if jwtSecret == "" {
+			jwtSecret = "development-secret-change-me"
+		}
+
 		// Fallback for backward compatibility, but this won't work properly
 		// without storage
 		return &Middleware{
 			oauthService: &OAuthService{
-				jwtSecret: []byte("development-secret-change-me"),
+				jwtSecret: []byte(jwtSecret),
 			},
 		}
 	}
@@ -66,7 +67,7 @@ func NewMiddleware() *Middleware {
 }
 
 // RequireAuth validates the Bearer token from the request and returns the claims
-func (m *Middleware) RequireAuth(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*Claims, error) {
+func (m *Middleware) RequireAuth(_ context.Context, request events.APIGatewayV2HTTPRequest) (*Claims, error) {
 	// Extract token from Authorization header
 	authHeader := request.Headers["Authorization"]
 	if authHeader == "" {

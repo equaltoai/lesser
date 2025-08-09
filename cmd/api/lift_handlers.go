@@ -1,3 +1,6 @@
+// Package main provides handler wrappers and utilities for bridging between
+// AWS Lambda event formats and the Lift framework, enabling seamless migration
+// from traditional Lambda handlers to Lift's more ergonomic request/response model.
 package main
 
 import (
@@ -8,14 +11,16 @@ import (
 )
 
 // wrapHandler wraps a legacy handler function to work with Lift
+//
+//nolint:unused // Used in tests (infrastructure_test.go, performance_test.go)
 func wrapHandler(fn func(context.Context, events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error)) lift.Handler {
 	return lift.HandlerFunc(func(ctx *lift.Context) error {
 		// Convert Lift request to Lambda event
 		lambdaReq := events.APIGatewayV2HTTPRequest{
-			Headers:         ctx.Request.Headers,
+			Headers:               ctx.Request.Headers,
 			QueryStringParameters: ctx.Request.QueryParams,
-			PathParameters:  make(map[string]string),
-			Body:           string(ctx.Request.Body),
+			PathParameters:        make(map[string]string),
+			Body:                  string(ctx.Request.Body),
 			RequestContext: events.APIGatewayV2HTTPRequestContext{
 				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
 					Method: ctx.Request.Method,
@@ -50,6 +55,8 @@ func wrapHandler(fn func(context.Context, events.APIGatewayV2HTTPRequest) (*even
 }
 
 // wrapHandlerWithParam wraps a legacy handler that expects a path parameter
+//
+//nolint:unused // Used in tests (infrastructure_test.go)
 func wrapHandlerWithParam(fn func(context.Context, events.APIGatewayV2HTTPRequest, string) (*events.APIGatewayV2HTTPResponse, error), param string) lift.Handler {
 	return lift.HandlerFunc(func(ctx *lift.Context) error {
 		// Get the parameter value
@@ -58,12 +65,12 @@ func wrapHandlerWithParam(fn func(context.Context, events.APIGatewayV2HTTPReques
 		// Convert Lift request to Lambda event
 		pathParams := make(map[string]string)
 		pathParams[param] = paramValue
-		
+
 		lambdaReq := events.APIGatewayV2HTTPRequest{
-			Headers:         ctx.Request.Headers,
+			Headers:               ctx.Request.Headers,
 			QueryStringParameters: ctx.Request.QueryParams,
-			PathParameters:  pathParams,
-			Body:           string(ctx.Request.Body),
+			PathParameters:        pathParams,
+			Body:                  string(ctx.Request.Body),
 			RequestContext: events.APIGatewayV2HTTPRequestContext{
 				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
 					Method: ctx.Request.Method,
@@ -95,17 +102,4 @@ func wrapHandlerWithParam(fn func(context.Context, events.APIGatewayV2HTTPReques
 		// Return the body as text
 		return ctx.Text(resp.Body)
 	})
-}
-
-// wrapAuthHandler wraps a handler with authentication middleware
-func wrapAuthHandler(handler lift.Handler) lift.Handler {
-	authMiddleware := createAuthMiddleware()
-	return authMiddleware(handler)
-}
-
-// wrapAdminHandler wraps a handler with both auth and admin middleware
-func wrapAdminHandler(handler lift.Handler) lift.Handler {
-	authMiddleware := createAuthMiddleware()
-	adminMiddleware := createAdminMiddleware()
-	return authMiddleware(adminMiddleware(handler))
 }

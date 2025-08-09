@@ -23,15 +23,15 @@ type MediaJob struct {
 	GSI2SK string `dynamorm:"index:status-index,sk" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
 
 	// Core job data
-	JobID           string            `json:"job_id"`
-	MediaID         string            `json:"media_id"`
-	Username        string            `json:"username"`
-	Status          string            `json:"status"` // pending, processing, completed, failed
-	ProcessingTasks []string          `json:"processing_tasks"`
-	S3Key           string            `json:"s3_key"`
-	MimeType        string            `json:"mime_type"`
-	Results         map[string]any    `json:"results,omitempty"`
-	Error           string            `json:"error,omitempty"`
+	JobID           string         `json:"job_id"`
+	MediaID         string         `json:"media_id"`
+	Username        string         `json:"username"`
+	Status          string         `json:"status"` // pending, processing, completed, failed
+	ProcessingTasks []string       `json:"processing_tasks"`
+	S3Key           string         `json:"s3_key"`
+	MimeType        string         `json:"mime_type"`
+	Results         map[string]any `json:"results,omitempty"`
+	Error           string         `json:"error,omitempty"`
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at"`
@@ -43,7 +43,7 @@ type MediaJob struct {
 
 // TableName returns the DynamoDB table name for the MediaJob model
 func (MediaJob) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // UpdateKeys sets up all the composite keys
@@ -59,7 +59,7 @@ func (mj *MediaJob) UpdateKeys() {
 	}
 
 	// GSI2 - Status-based queries
-	mj.GSI2PK = fmt.Sprintf("STATUS#%s", mj.Status)
+	mj.GSI2PK = fmt.Sprintf(KeyPatternStatus, mj.Status)
 	mj.GSI2SK = fmt.Sprintf("UPDATED#%s", mj.UpdatedAt.Format(time.RFC3339))
 }
 
@@ -76,7 +76,7 @@ func (mj *MediaJob) BeforeCreate() error {
 
 	// Set default status
 	if mj.Status == "" {
-		mj.Status = "pending"
+		mj.Status = StatusPending
 	}
 
 	// Initialize empty results if nil
@@ -111,7 +111,7 @@ func (mj *MediaJob) Validate() error {
 		return fmt.Errorf("MediaID is required")
 	}
 	if strings.TrimSpace(mj.Username) == "" {
-		return fmt.Errorf("Username is required")
+		return fmt.Errorf("username is required")
 	}
 	if strings.TrimSpace(mj.S3Key) == "" {
 		return fmt.Errorf("S3Key is required")
@@ -130,7 +130,7 @@ func (mj *MediaJob) Validate() error {
 
 // SetProcessing marks the job as processing
 func (mj *MediaJob) SetProcessing() {
-	mj.Status = "processing"
+	mj.Status = StatusProcessing
 	mj.Error = ""
 	mj.UpdatedAt = time.Now()
 	mj.UpdateKeys()
@@ -138,7 +138,7 @@ func (mj *MediaJob) SetProcessing() {
 
 // SetCompleted marks the job as completed with results
 func (mj *MediaJob) SetCompleted(results map[string]any) {
-	mj.Status = "completed"
+	mj.Status = StatusCompleted
 	mj.Results = results
 	mj.Error = ""
 	mj.UpdatedAt = time.Now()
@@ -147,7 +147,7 @@ func (mj *MediaJob) SetCompleted(results map[string]any) {
 
 // SetFailed marks the job as failed with an error message
 func (mj *MediaJob) SetFailed(errorMsg string) {
-	mj.Status = "failed"
+	mj.Status = StatusFailed
 	mj.Error = errorMsg
 	mj.UpdatedAt = time.Now()
 	mj.UpdateKeys()
@@ -155,22 +155,22 @@ func (mj *MediaJob) SetFailed(errorMsg string) {
 
 // IsCompleted returns true if the job is completed
 func (mj *MediaJob) IsCompleted() bool {
-	return mj.Status == "completed"
+	return mj.Status == StatusCompleted
 }
 
 // IsFailed returns true if the job failed
 func (mj *MediaJob) IsFailed() bool {
-	return mj.Status == "failed"
+	return mj.Status == StatusFailed
 }
 
 // IsProcessing returns true if the job is processing
 func (mj *MediaJob) IsProcessing() bool {
-	return mj.Status == "processing"
+	return mj.Status == StatusProcessing
 }
 
 // IsPending returns true if the job is pending
 func (mj *MediaJob) IsPending() bool {
-	return mj.Status == "pending"
+	return mj.Status == StatusPending
 }
 
 // AddProcessingTask adds a task to the processing tasks list
@@ -194,10 +194,10 @@ func (mj *MediaJob) HasProcessingTask(task string) bool {
 // isValidJobStatus checks if the status is valid
 func isValidJobStatus(status string) bool {
 	validStatuses := map[string]bool{
-		"pending":    true,
-		"processing": true,
-		"completed":  true,
-		"failed":     true,
+		StatusPending:    true,
+		StatusProcessing: true,
+		StatusCompleted:  true,
+		StatusFailed:     true,
 	}
 
 	return validStatuses[strings.ToLower(status)]

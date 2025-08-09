@@ -12,10 +12,10 @@ import (
 type MigrateOptions struct {
 	// DryRun if true, will only log what would be done without executing
 	DryRun bool
-	
+
 	// Target specific migration ID to migrate up to (inclusive)
 	Target string
-	
+
 	// Force allows running migrations even if there are validation warnings
 	Force bool
 }
@@ -33,20 +33,20 @@ func (m *Migrator) Migrate(ctx context.Context, opts MigrateOptions) error {
 			}
 		}()
 	}
-	
+
 	// Get applied migrations
 	applied, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return err
 	}
-	
+
 	// Get pending migrations
 	pending := m.registry.GetPending(applied)
 	if len(pending) == 0 {
 		m.logger.Info("No pending migrations")
 		return nil
 	}
-	
+
 	// Filter up to target if specified
 	if opts.Target != "" {
 		var filtered []Migration
@@ -58,17 +58,17 @@ func (m *Migrator) Migrate(ctx context.Context, opts MigrateOptions) error {
 		}
 		pending = filtered
 	}
-	
+
 	// Sort migrations in dependency order
 	ordered, err := m.registry.GetInOrder(pending)
 	if err != nil {
 		return fmt.Errorf("failed to order migrations: %w", err)
 	}
-	
+
 	m.logger.Info("Found pending migrations",
 		zap.Int("count", len(ordered)),
 		zap.Bool("dry_run", opts.DryRun))
-	
+
 	if opts.DryRun {
 		// Just log what would be done
 		for _, migration := range ordered {
@@ -79,17 +79,17 @@ func (m *Migrator) Migrate(ctx context.Context, opts MigrateOptions) error {
 		}
 		return nil
 	}
-	
+
 	// Execute migrations
 	for _, migration := range ordered {
 		if err := m.executeMigration(ctx, migration); err != nil {
 			return fmt.Errorf("migration %s failed: %w", migration.ID(), err)
 		}
-		
+
 		// Mark as applied for dependency tracking
 		applied[migration.ID()] = true
 	}
-	
+
 	// Update overall status
 	status, _ := m.GetMigrationStatus(ctx)
 	// TotalMigrations field doesn't exist
@@ -99,7 +99,7 @@ func (m *Migrator) Migrate(ctx context.Context, opts MigrateOptions) error {
 	}
 	status.UpdatedAt = time.Now()
 	// LastExecutedBy field doesn't exist
-	
+
 	return m.UpdateMigrationStatus(ctx, status)
 }
 
@@ -109,48 +109,52 @@ func (m *Migrator) MigrateDown(ctx context.Context, target string) error {
 	if err := m.acquireLock(ctx); err != nil {
 		return fmt.Errorf("failed to acquire migration lock: %w", err)
 	}
-	defer m.releaseLock(ctx)
-	
+	defer func() {
+		if err := m.releaseLock(ctx); err != nil {
+			m.logger.Error("failed to release migration lock", zap.Error(err))
+		}
+	}()
+
 	// Get migration history in reverse order
 	history, err := m.GetMigrationHistory(ctx)
 	if err != nil {
 		return err
 	}
-	
+
 	if len(history) == 0 {
 		return fmt.Errorf("no migrations to rollback")
 	}
-	
+
 	// Find migrations to rollback
-	var toRollback []*MigrationHistory
+	toRollback := make([]*MigrationHistory, 0, len(history))
 	for _, h := range history {
 		if h.Status != "applied" {
 			continue
 		}
-		
+
 		toRollback = append(toRollback, h)
-		
+
 		if h.ID == target {
 			break
 		}
 	}
-	
+
 	if len(toRollback) == 0 {
 		return fmt.Errorf("no migrations found to rollback to %s", target)
 	}
-	
+
 	// Execute rollbacks
 	for _, h := range toRollback {
 		migration, found := m.registry.Get(h.ID)
 		if !found {
 			return fmt.Errorf("migration %s not found in registry", h.ID)
 		}
-		
+
 		if err := m.rollbackMigration(ctx, migration); err != nil {
 			return fmt.Errorf("rollback of %s failed: %w", h.ID, err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -160,10 +164,10 @@ func (m *Migrator) rollbackMigration(ctx context.Context, migration Migration) e
 		zap.String("id", migration.ID()),
 		zap.Int64("version", migration.Version()),
 		zap.String("description", migration.Description()))
-	
+
 	// Execute rollback
 	err := migration.Down(ctx, m.db)
-	
+
 	// Record result
 	status := "rolled_back"
 	if err != nil {
@@ -175,7 +179,7 @@ func (m *Migrator) rollbackMigration(ctx context.Context, migration Migration) e
 		m.logger.Info("Rollback completed",
 			zap.String("id", migration.ID()))
 	}
-	
+
 	// Record in history
 	return m.recordMigrationHistory(ctx, migration, status, 0, err)
 }
@@ -186,6 +190,6 @@ func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]Migration, error
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return m.registry.GetPending(applied), nil
 }

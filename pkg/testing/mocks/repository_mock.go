@@ -161,7 +161,7 @@ func NewMockRepositoryFactory() *MockRepositoryFactory {
 	}
 }
 
-// Helper to create a mock DB with common expectations
+// NewMockDBWithExpectations creates a mock DB with common expectations
 func NewMockDBWithExpectations() *mocks.MockDB {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
@@ -199,7 +199,7 @@ func NewRepositoryTestHelper() *RepositoryTestHelper {
 }
 
 // ExpectCreate sets up expectations for a create operation
-func (h *RepositoryTestHelper) ExpectCreate(item interface{}, err error) {
+func (h *RepositoryTestHelper) ExpectCreate(_ interface{}, err error) {
 	h.MockQuery.On("Create").Return(err).Once()
 }
 

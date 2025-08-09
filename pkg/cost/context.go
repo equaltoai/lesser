@@ -36,14 +36,14 @@ func Track(ctx context.Context, fn func(*Tracker)) {
 // TrackDynamoReadContext tracks DynamoDB reads from context
 func TrackDynamoReadContext(ctx context.Context, items int) {
 	Track(ctx, func(t *Tracker) {
-		t.TrackDynamoRead(items)
+		_ = t.TrackDynamoRead(items)
 	})
 }
 
 // TrackDynamoWriteContext tracks DynamoDB writes from context
 func TrackDynamoWriteContext(ctx context.Context, items int) {
 	Track(ctx, func(t *Tracker) {
-		t.TrackDynamoWrite(items)
+		_ = t.TrackDynamoWrite(items)
 	})
 }
 

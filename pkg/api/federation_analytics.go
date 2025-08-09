@@ -1,3 +1,4 @@
+// Package api provides federation analytics API endpoints and handlers.
 package api
 
 import (
@@ -158,7 +159,7 @@ func (fah *FederationAnalyticsHandler) GetRelationshipAnalysis(w http.ResponseWr
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(analysis)
+	_ = json.NewEncoder(w).Encode(analysis)
 }
 
 // GetRecommendations returns federation recommendations for a domain
@@ -178,7 +179,7 @@ func (fah *FederationAnalyticsHandler) GetRecommendations(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"recommendations": recommendations,
 		"count":           len(recommendations),
 		"domain":          domain,
@@ -214,7 +215,7 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"metadata":     metadata,
 		"connections":  connections,
 		"retrieved_at": time.Now(),
@@ -264,15 +265,96 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 		endTime = time.Now()
 	}
 
-	// This would require implementing GetFederationTimeSeries in storage
-	// For now, return a placeholder response
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	// Get detailed time series data from federation repository  
+	timeSeries, err := fah.storage.Federation().GetDetailedFederationMetrics(r.Context(), domain, period, startTime, endTime)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get time series data: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate summary statistics
+	var totalActivities, totalErrors int64
+	var avgHealthScore, avgLatency float64
+	var recentHealthScore float64
+	healthScores := make([]float64, 0, len(timeSeries))
+
+	for _, metric := range timeSeries {
+		totalActivities += metric.ActivityCount
+		totalErrors += metric.FailedActivities
+		healthScores = append(healthScores, metric.HealthScore)
+		avgLatency += float64(metric.InboxDeliveryP95)
+		
+		// Track most recent health score
+		if metric.Timestamp.After(time.Now().Add(-10*time.Minute)) {
+			recentHealthScore = metric.HealthScore
+		}
+	}
+
+	if len(timeSeries) > 0 {
+		for _, score := range healthScores {
+			avgHealthScore += score
+		}
+		avgHealthScore /= float64(len(healthScores))
+		avgLatency /= float64(len(timeSeries))
+	}
+
+	// Calculate error rate
+	var errorRate float64
+	if totalActivities > 0 {
+		errorRate = float64(totalErrors) / float64(totalActivities)
+	}
+
+	// Determine health status based on recent health score
+	healthStatus := "HEALTHY"
+	if recentHealthScore < 40 {
+		healthStatus = "CRITICAL"
+	} else if recentHealthScore < 60 {
+		healthStatus = "UNHEALTHY"
+	} else if recentHealthScore < 80 {
+		healthStatus = "DEGRADED"
+	}
+
+	// Format response following federation analytics guidance
+	response := map[string]any{
 		"domain":     domain,
 		"period":     period,
 		"start_time": startTime,
 		"end_time":   endTime,
-		"data":       []any{}, // Placeholder
-		"message":    "Time series data not yet implemented",
-	})
+		"data":       timeSeries,
+		"summary": map[string]any{
+			"total_data_points":    len(timeSeries),
+			"total_activities":     totalActivities,
+			"total_errors":         totalErrors,
+			"error_rate":           errorRate,
+			"avg_health_score":     avgHealthScore,
+			"recent_health_score":  recentHealthScore,
+			"health_status":        healthStatus,
+			"avg_p95_latency_ms":   avgLatency,
+			"aggregation_level":    period,
+		},
+		"health_thresholds": map[string]any{
+			"healthy":   80.0,
+			"degraded":  60.0,
+			"unhealthy": 40.0,
+			"critical":  0.0,
+		},
+		"alert_conditions": map[string]any{
+			"reachability_critical": "< 50%",
+			"latency_warning":       "> 5s P95",
+			"queue_depth_warning":   "> 10,000",
+		},
+		"data_retention": map[string]any{
+			"5min":    "24 hours",
+			"hourly":  "7 days", 
+			"daily":   "90 days",
+			"monthly": "2 years",
+		},
+		"generated_at": time.Now(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }

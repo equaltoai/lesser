@@ -1,3 +1,4 @@
+// Package notes provides community note scoring algorithms and visibility calculations for content annotation.
 package notes
 
 import (
@@ -129,7 +130,7 @@ func CalculateNoteLimit(reputation float64) int {
 }
 
 // RankNotesByTrust adjusts note ordering based on viewer's trust relationships
-func RankNotesByTrust(notes []CommunityNote, viewerID string, trustScores map[string]float64) []CommunityNote {
+func RankNotesByTrust(notes []CommunityNote, _ string, trustScores map[string]float64) []CommunityNote {
 	// Create a copy to avoid modifying original
 	rankedNotes := make([]CommunityNote, len(notes))
 	copy(rankedNotes, notes)

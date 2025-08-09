@@ -261,20 +261,20 @@ func AssertPerformanceThresholds(t *testing.T, duration time.Duration, config *I
 // Database Integration Helpers
 
 // WaitForDatabase waits for database to be ready
-func WaitForDatabase(endpoint string, timeout time.Duration) error {
+func WaitForDatabase(_ string, _ time.Duration) error {
 	// Implementation would ping DynamoDB Local
 	// For now, return success
 	return nil
 }
 
 // CreateTestTables creates all necessary test tables
-func CreateTestTables(storage *MockStorage) error {
+func CreateTestTables(_ context.Context) error {
 	// Implementation would create actual DynamoDB tables
 	return nil
 }
 
 // DropTestTables removes all test tables
-func DropTestTables(storage *MockStorage) error {
+func DropTestTables(_ context.Context) error {
 	// Implementation would drop actual DynamoDB tables
 	return nil
 }
@@ -315,7 +315,7 @@ func (tem *TestEnvironmentManager) GetServiceEndpoint(service string) string {
 }
 
 // IsServiceReady checks if a service is ready to accept connections
-func (tem *TestEnvironmentManager) IsServiceReady(service string) bool {
+func (tem *TestEnvironmentManager) IsServiceReady(_ string) bool {
 	// Implementation would check service health
 	return true
 }
@@ -369,7 +369,7 @@ func (suite *IntegrationTestSuite) RunWorkflow(workflow *TestWorkflow) error {
 func CreateUserWorkflow(username string) *TestWorkflow {
 	return &TestWorkflow{
 		Name: fmt.Sprintf("CreateUser-%s", username),
-		Setup: func(suite *IntegrationTestSuite) error {
+		Setup: func(_ *IntegrationTestSuite) error {
 			// Setup test data if needed
 			return nil
 		},

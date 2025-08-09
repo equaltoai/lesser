@@ -100,7 +100,7 @@ func ValidationFailed(ctx *lift.Context, errors map[string]string) error {
 	}
 
 	liftErr := ValidationErrorWithField(firstField, firstError)
-	
+
 	// Add all validation errors as details
 	for field, err := range errors {
 		liftErr = liftErr.WithDetail(fmt.Sprintf("validation.%s", field), err)

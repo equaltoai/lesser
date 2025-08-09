@@ -208,7 +208,10 @@ func (t *HTTPTransportWrapper) RoundTrip(req *http.Request) (*http.Response, err
 
 	if err != nil {
 		// Record failure
-		t.controller.RecordFailure(ctx, domain, err)
+		if recordErr := t.controller.RecordFailure(ctx, domain, err); recordErr != nil {
+			// Log but don't fail the original request
+			zap.L().Warn("failed to record federation failure", zap.Error(recordErr))
+		}
 		return nil, err
 	}
 

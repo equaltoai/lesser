@@ -8,6 +8,7 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 	"net/http"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HandleGetInstanceMetricsLift returns current instance metrics
@@ -27,24 +28,24 @@ func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 
 	// Calculate actual request rate from time-series data
 	requestsPerMinute = h.calculateRequestRateLift(ctx.Context)
-	
+
 	// Get today's metrics from cost tracking repository
 	now := time.Now()
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
-	
+
 	dailyCosts, err := h.repos.Cost().GetCostsByDateRange(ctx.Context, startOfDay, endOfDay)
 	if err == nil && len(dailyCosts) > 0 {
 		// Count operations as proxy for requests
 		todayRequests := int64(len(dailyCosts))
-		
+
 		if todayRequests > 0 {
 			// Calculate requests per minute
 			hoursSinceStart := time.Since(startOfDay).Hours()
 			if hoursSinceStart > 0 {
 				requestsPerMinute = float64(todayRequests) / (hoursSinceStart * 60.0)
 			}
-			
+
 			// Estimate average latency based on operation type
 			// This is a rough estimate - actual latency tracking would need to be implemented
 			avgLatencyMs = 50.0 // Default estimate
@@ -98,7 +99,7 @@ func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
 	} else {
 		for _, daily := range dailyAggregates {
 			metrics := map[string]any{
-				"date": daily.Date.Format("2006-01-02"),
+				"date": daily.Date.Format(common.DateFormat),
 				"metrics": map[string]any{
 					"total_requests":     daily.TotalRequests,
 					"unique_users":       daily.UniqueUsers,
@@ -115,7 +116,7 @@ func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
 	// Add placeholder data if no real data
 	if len(dailyMetrics) == 0 {
 		for i := 0; i < days; i++ {
-			date := endDate.AddDate(0, 0, -i).Format("2006-01-02")
+			date := endDate.AddDate(0, 0, -i).Format(common.DateFormat)
 			dailyMetrics = append(dailyMetrics, map[string]any{
 				"date": date,
 				"metrics": map[string]any{
@@ -132,8 +133,8 @@ func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
 
 	response := map[string]any{
 		"period": map[string]any{
-			"start": startDate.Format("2006-01-02"),
-			"end":   endDate.Format("2006-01-02"),
+			"start": startDate.Format(common.DateFormat),
+			"end":   endDate.Format(common.DateFormat),
 			"days":  days,
 		},
 		"daily_aggregates": dailyMetrics,

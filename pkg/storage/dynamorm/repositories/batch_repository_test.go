@@ -9,7 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
-	. "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
+	repoTesting "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -17,7 +17,7 @@ import (
 )
 
 func TestNewBatchRepository(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 	tableName := "test-table"
@@ -33,7 +33,7 @@ func TestNewBatchRepository(t *testing.T) {
 }
 
 func TestNewTimelineBatchOperations(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -45,7 +45,7 @@ func TestNewTimelineBatchOperations(t *testing.T) {
 }
 
 func TestTimelineBatchOperations_BatchInsertTimelineEntries_EmptyFollowers(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewTimelineBatchOperations(mockDB, zap.NewNop(), cost.New())
 
 	err := ops.BatchInsertTimelineEntries(context.Background(), []string{}, "status1", "author1", time.Now())
@@ -58,7 +58,7 @@ func TestTimelineBatchOperations_BatchInsertTimelineEntries_SmallList(t *testing
 	// For full integration testing, use a real database or complete mock implementation
 
 	// Test with empty followers to avoid complex mocking
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewTimelineBatchOperations(mockDB, zap.NewNop(), cost.New())
 
 	// Test empty case (no batch operations needed)
@@ -81,7 +81,7 @@ func TestTimelineBatchOperations_BatchInsertTimelineEntries_SmallList(t *testing
 }
 
 func TestTimelineBatchOperations_BatchRemoveTimelineEntries_EmptyFollowers(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewTimelineBatchOperations(mockDB, zap.NewNop(), cost.New())
 
 	err := ops.BatchRemoveTimelineEntries(context.Background(), []string{}, "author1")
@@ -90,7 +90,7 @@ func TestTimelineBatchOperations_BatchRemoveTimelineEntries_EmptyFollowers(t *te
 }
 
 func TestNewNotificationBatchOperations(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -102,7 +102,7 @@ func TestNewNotificationBatchOperations(t *testing.T) {
 }
 
 func TestNotificationBatchOperations_BatchCreateMentionNotifications_EmptyUsers(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewNotificationBatchOperations(mockDB, zap.NewNop(), cost.New())
 
 	err := ops.BatchCreateMentionNotifications(context.Background(), []string{}, "status1", "author1")
@@ -111,7 +111,7 @@ func TestNotificationBatchOperations_BatchCreateMentionNotifications_EmptyUsers(
 }
 
 func TestNotificationBatchOperations_BatchMarkNotificationsRead_EmptyNotifications(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewNotificationBatchOperations(mockDB, zap.NewNop(), cost.New())
 
 	err := ops.BatchMarkNotificationsRead(context.Background(), "user1", []string{})
@@ -120,7 +120,7 @@ func TestNotificationBatchOperations_BatchMarkNotificationsRead_EmptyNotificatio
 }
 
 func TestNewMediaBatchOperations(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -132,7 +132,7 @@ func TestNewMediaBatchOperations(t *testing.T) {
 }
 
 func TestMediaBatchOperations_BatchUpdateMediaStatus_EmptyMedia(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewMediaBatchOperations(mockDB, zap.NewNop(), cost.New())
 	processedAt := time.Now()
 
@@ -142,7 +142,7 @@ func TestMediaBatchOperations_BatchUpdateMediaStatus_EmptyMedia(t *testing.T) {
 }
 
 func TestMediaBatchOperations_BatchCleanupExpiredMedia_EmptyMedia(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewMediaBatchOperations(mockDB, zap.NewNop(), cost.New())
 
 	err := ops.BatchCleanupExpiredMedia(context.Background(), []map[string]any{})
@@ -151,7 +151,7 @@ func TestMediaBatchOperations_BatchCleanupExpiredMedia_EmptyMedia(t *testing.T) 
 }
 
 func TestNewAdvancedBatchOperations(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 	tableName := "advanced-table"
@@ -165,7 +165,7 @@ func TestNewAdvancedBatchOperations(t *testing.T) {
 }
 
 func TestAdvancedBatchOperations_BatchUpsertWithConflictResolution_EmptyItems(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewAdvancedBatchOperations(mockDB, "test", zap.NewNop(), cost.New())
 
 	conflictResolver := func(existing, new any) any {
@@ -178,7 +178,7 @@ func TestAdvancedBatchOperations_BatchUpsertWithConflictResolution_EmptyItems(t 
 }
 
 func TestAdvancedBatchOperations_BatchProcessWithRetry_EmptyItems(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewAdvancedBatchOperations(mockDB, "test", zap.NewNop(), cost.New())
 
 	processor := func(items []any) error {
@@ -191,7 +191,7 @@ func TestAdvancedBatchOperations_BatchProcessWithRetry_EmptyItems(t *testing.T) 
 }
 
 func TestAdvancedBatchOperations_BatchProcessWithRetry_Success(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewAdvancedBatchOperations(mockDB, "test", zap.NewNop(), cost.New())
 
 	items := []any{"item1", "item2", "item3"}
@@ -209,7 +209,7 @@ func TestAdvancedBatchOperations_BatchProcessWithRetry_Success(t *testing.T) {
 }
 
 func TestAdvancedBatchOperations_BatchProcessWithRetry_SuccessAfterRetry(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewAdvancedBatchOperations(mockDB, "test", zap.NewNop(), cost.New())
 
 	items := []any{"item1", "item2"}
@@ -230,7 +230,7 @@ func TestAdvancedBatchOperations_BatchProcessWithRetry_SuccessAfterRetry(t *test
 }
 
 func TestAdvancedBatchOperations_BatchProcessWithRetry_MaxRetriesExceeded(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewAdvancedBatchOperations(mockDB, "test", zap.NewNop(), cost.New())
 
 	items := []any{"item1"}
@@ -247,7 +247,7 @@ func TestAdvancedBatchOperations_BatchProcessWithRetry_MaxRetriesExceeded(t *tes
 }
 
 func TestNewParallelBatchProcessor(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
 	logger := zap.NewNop()
 
@@ -263,12 +263,12 @@ func TestNewParallelBatchProcessor(t *testing.T) {
 }
 
 func TestParallelBatchProcessor_ProcessWithProgress_EmptyItems(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
 	processor := NewParallelBatchProcessor(repo, 2, 10, zap.NewNop())
 
 	progressCalled := false
-	progressCallback := func(processed, total int) {
+	progressCallback := func(_, _ int) {
 		progressCalled = true
 	}
 
@@ -282,11 +282,11 @@ func TestParallelBatchProcessor_ProcessWithProgress_EmptyItems(t *testing.T) {
 // Use SQS-based batch processor tests instead
 
 func TestNewBatchValidationProcessor(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
 	logger := zap.NewNop()
 
-	validator := func(item any) error {
+	validator := func(_ any) error {
 		return nil
 	}
 
@@ -299,10 +299,10 @@ func TestNewBatchValidationProcessor(t *testing.T) {
 }
 
 func TestBatchValidationProcessor_ProcessWithValidation_EmptyItems(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
 
-	validator := func(item any) error {
+	validator := func(_ any) error {
 		return nil
 	}
 
@@ -328,7 +328,7 @@ func TestBatchValidationProcessor_ProcessWithValidation_AllValid(t *testing.T) {
 
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
 
-	validator := func(item any) error {
+	validator := func(_ any) error {
 		return nil // All items are valid
 	}
 
@@ -420,7 +420,7 @@ func TestValidationResult_GetValidationSummary(t *testing.T) {
 // Benchmark tests
 
 func BenchmarkTimelineBatchOperations_CreateEntries(b *testing.B) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	ops := NewTimelineBatchOperations(mockDB, zap.NewNop(), cost.New())
 
 	followerIDs := make([]string, 1000)
@@ -436,12 +436,12 @@ func BenchmarkTimelineBatchOperations_CreateEntries(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// This will fail but measures the overhead of entry creation
-		ops.BatchInsertTimelineEntries(ctx, followerIDs, statusID, authorID, createdAt)
+		_ = ops.BatchInsertTimelineEntries(ctx, followerIDs, statusID, authorID, createdAt)
 	}
 }
 
 func BenchmarkBatchValidationProcessor_Validation(b *testing.B) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewBatchRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	validator := func(item any) error {
@@ -464,6 +464,6 @@ func BenchmarkBatchValidationProcessor_Validation(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// This will fail at processing but measures validation overhead
-		processor.ProcessWithValidation(ctx, items)
+		_, _ = processor.ProcessWithValidation(ctx, items)
 	}
 }

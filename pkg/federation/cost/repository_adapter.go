@@ -41,7 +41,7 @@ func (r *repositoryAdapter) RecordCost(ctx context.Context, cost *FederationCost
 		BillingPeriod:  cost.BillingPeriod,
 	}
 	model.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
 		r.logger.Error("failed to record federation cost",
@@ -50,7 +50,9 @@ func (r *repositoryAdapter) RecordCost(ctx context.Context, cost *FederationCost
 		return err
 	}
 
-	r.costTracker.TrackDynamoWrite(1)
+	if err := r.costTracker.TrackDynamoWrite(1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 	return nil
 }
 
@@ -62,7 +64,9 @@ func (r *repositoryAdapter) GetInstanceCost(ctx context.Context, domain string, 
 		Where("SK", "=", "PERIOD#"+period).
 		First(&model)
 
-	r.costTracker.TrackDynamoRead(1)
+	if err := r.costTracker.TrackDynamoRead(1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 
 	if errors.IsNotFound(err) {
 		return nil, nil
@@ -103,7 +107,9 @@ func (r *repositoryAdapter) GetCostMetrics(ctx context.Context, period string) (
 	}
 
 	readUnits := len(costs)/100 + 1 // Estimate read units
-	r.costTracker.TrackDynamoRead(readUnits)
+	if err := r.costTracker.TrackDynamoRead(readUnits); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 
 	// Aggregate metrics
 	for _, cost := range costs {
@@ -135,7 +141,9 @@ func (r *repositoryAdapter) UpdateInstanceHealth(ctx context.Context, health *In
 		return err
 	}
 
-	r.costTracker.TrackDynamoWrite(1)
+	if err := r.costTracker.TrackDynamoWrite(1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 	return nil
 }
 
@@ -147,7 +155,9 @@ func (r *repositoryAdapter) GetInstanceHealth(ctx context.Context, domain string
 		Where("SK", "=", "HEALTH").
 		First(&model)
 
-	r.costTracker.TrackDynamoRead(1)
+	if err := r.costTracker.TrackDynamoRead(1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 
 	if errors.IsNotFound(err) {
 		return nil, nil
@@ -182,7 +192,9 @@ func (r *repositoryAdapter) ListUnhealthyInstances(ctx context.Context) ([]*Inst
 	}
 
 	readUnits := len(healthModels)/100 + 1 // Estimate read units
-	r.costTracker.TrackDynamoRead(readUnits)
+	if err := r.costTracker.TrackDynamoRead(readUnits); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 
 	instances := make([]*InstanceHealth, len(healthModels))
 	for i, model := range healthModels {
@@ -210,7 +222,7 @@ func (r *repositoryAdapter) SaveInstanceConfig(ctx context.Context, config *Inst
 		Created:           config.Created,
 		LastModified:      config.LastModified,
 	}
-	
+
 	// Convert retry policy if present
 	if config.RetryPolicy != nil {
 		model.RetryPolicy = &models.RetryPolicy{
@@ -220,15 +232,17 @@ func (r *repositoryAdapter) SaveInstanceConfig(ctx context.Context, config *Inst
 			BackoffFactor:  config.RetryPolicy.BackoffFactor,
 		}
 	}
-	
+
 	model.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
 		return err
 	}
 
-	r.costTracker.TrackDynamoWrite(1)
+	if err := r.costTracker.TrackDynamoWrite(1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 	return nil
 }
 
@@ -240,7 +254,9 @@ func (r *repositoryAdapter) GetInstanceConfig(ctx context.Context, domain string
 		Where("SK", "=", "CONFIG").
 		First(&model)
 
-	r.costTracker.TrackDynamoRead(1)
+	if err := r.costTracker.TrackDynamoRead(1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 
 	if errors.IsNotFound(err) {
 		return nil, nil
@@ -257,7 +273,7 @@ func (r *repositoryAdapter) GetInstanceConfig(ctx context.Context, domain string
 		Created:           model.Created,
 		LastModified:      model.LastModified,
 	}
-	
+
 	// Convert retry policy if present
 	if model.RetryPolicy != nil {
 		config.RetryPolicy = &RetryPolicy{
@@ -267,7 +283,7 @@ func (r *repositoryAdapter) GetInstanceConfig(ctx context.Context, domain string
 			BackoffFactor:  model.RetryPolicy.BackoffFactor,
 		}
 	}
-	
+
 	return config, nil
 }
 
@@ -283,7 +299,9 @@ func (r *repositoryAdapter) ListInstanceConfigs(ctx context.Context) ([]*Instanc
 	}
 
 	readUnits := len(configModels)/100 + 1 // Estimate read units
-	r.costTracker.TrackDynamoRead(readUnits)
+	if err := r.costTracker.TrackDynamoRead(readUnits); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
+	}
 
 	configs := make([]*InstanceConfig, len(configModels))
 	for i, model := range configModels {
@@ -295,7 +313,7 @@ func (r *repositoryAdapter) ListInstanceConfigs(ctx context.Context) ([]*Instanc
 			Created:           model.Created,
 			LastModified:      model.LastModified,
 		}
-		
+
 		// Convert retry policy if present
 		if model.RetryPolicy != nil {
 			config.RetryPolicy = &RetryPolicy{
@@ -305,7 +323,7 @@ func (r *repositoryAdapter) ListInstanceConfigs(ctx context.Context) ([]*Instanc
 				BackoffFactor:  model.RetryPolicy.BackoffFactor,
 			}
 		}
-		
+
 		configs[i] = config
 	}
 

@@ -27,7 +27,7 @@ type Like struct {
 func NewLike(actor, object string) *Like {
 	now := time.Now()
 	id := fmt.Sprintf("%s/activities/like-%d", actor, now.UnixNano())
-	
+
 	like := &Like{
 		PK:        fmt.Sprintf("object#%s#likes", object),
 		SK:        fmt.Sprintf("actor#%s", actor),
@@ -39,6 +39,6 @@ func NewLike(actor, object string) *Like {
 		Published: now,
 		CreatedAt: now,
 	}
-	
+
 	return like
 }

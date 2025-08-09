@@ -19,7 +19,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
 		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
@@ -27,7 +27,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
-		
+
 		// Skip to the main logic with test username
 		return h.handleGetFollowRequestsLogic(ctx, actor, testUsername)
 	}
@@ -37,7 +37,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 	if authHeader == "" {
 		authHeader = ctx.Header("authorization")
 	}
-	
+
 	// Try direct access to headers if ctx.Header doesn't work
 	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
@@ -45,7 +45,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
-	
+
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -124,7 +124,7 @@ func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
 		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
@@ -132,7 +132,7 @@ func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
-		
+
 		// Skip to the main logic with test username
 		return h.handleAuthorizeFollowRequestLogic(ctx, actor, testUsername, accountID)
 	}
@@ -142,7 +142,7 @@ func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
 	if authHeader == "" {
 		authHeader = ctx.Header("authorization")
 	}
-	
+
 	// Try direct access to headers if ctx.Header doesn't work
 	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
@@ -150,7 +150,7 @@ func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
-	
+
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -164,7 +164,7 @@ func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
 	}
 
 	// Check write:follows scope
-	if !claims.HasScope("write:follows") && !claims.HasScope(auth.ScopeWrite) {
+	if !claims.HasScope(auth.WriteFollows) && !claims.HasScope(auth.ScopeWrite) {
 		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 	}
 
@@ -241,7 +241,7 @@ func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
 		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
@@ -249,7 +249,7 @@ func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
-		
+
 		// Skip to the main logic with test username
 		return h.handleRejectFollowRequestLogic(ctx, actor, testUsername, accountID)
 	}
@@ -259,7 +259,7 @@ func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
 	if authHeader == "" {
 		authHeader = ctx.Header("authorization")
 	}
-	
+
 	// Try direct access to headers if ctx.Header doesn't work
 	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
@@ -267,7 +267,7 @@ func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
-	
+
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -281,7 +281,7 @@ func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
 	}
 
 	// Check write:follows scope
-	if !claims.HasScope("write:follows") && !claims.HasScope(auth.ScopeWrite) {
+	if !claims.HasScope(auth.WriteFollows) && !claims.HasScope(auth.ScopeWrite) {
 		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 	}
 
@@ -391,7 +391,7 @@ func (h *Handler) convertActorToAccountLift(ctx context.Context, actor *activity
 		"header":          header,
 		"header_static":   header,
 		"locked":          actor.ManuallyApprovesFollowers,
-		"bot":             actor.Type == "Service",
+		"bot":             actor.Type == actorTypeService,
 		"discoverable":    actor.Discoverable,
 		"created_at":      createdAt.Format(time.RFC3339),
 		"last_status_at":  lastStatusAt,
@@ -437,9 +437,7 @@ func (h *Handler) sendAcceptActivityLift(ctx context.Context, followerID, follow
 
 	// Send to follower's inbox
 	if followerActor.Inbox != "" {
-		if err := h.deliverActivityLift(ctx, acceptActivity, followerActor.Inbox); err != nil {
-			return fmt.Errorf("failed to deliver accept activity: %w", err)
-		}
+		h.deliverActivityLift(ctx, acceptActivity, followerActor.Inbox)
 	}
 
 	h.logger.Info("accept activity sent",
@@ -484,9 +482,7 @@ func (h *Handler) sendRejectActivityLift(ctx context.Context, followerID, follow
 
 	// Send to follower's inbox
 	if followerActor.Inbox != "" {
-		if err := h.deliverActivityLift(ctx, rejectActivity, followerActor.Inbox); err != nil {
-			return fmt.Errorf("failed to deliver reject activity: %w", err)
-		}
+		h.deliverActivityLift(ctx, rejectActivity, followerActor.Inbox)
 	}
 
 	h.logger.Info("reject activity sent",
@@ -498,7 +494,7 @@ func (h *Handler) sendRejectActivityLift(ctx context.Context, followerID, follow
 }
 
 // deliverActivityLift delivers an ActivityPub activity to a remote inbox
-func (h *Handler) deliverActivityLift(ctx context.Context, activity *activitypub.Activity, inboxURL string) error {
+func (h *Handler) deliverActivityLift(_ context.Context, activity *activitypub.Activity, inboxURL string) {
 	// This would implement HTTP signature authentication and delivery
 	// For now, just log the delivery attempt
 	h.logger.Info("delivering activity",
@@ -508,9 +504,7 @@ func (h *Handler) deliverActivityLift(ctx context.Context, activity *activitypub
 
 	// In production, this would involve:
 	// 1. Serializing the activity to JSON
-	// 2. Signing the request with the server's private key  
+	// 2. Signing the request with the server's private key
 	// 3. Making an HTTP POST to the inbox URL
 	// 4. Handling delivery failures and retries
-
-	return nil
 }

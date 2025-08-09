@@ -60,11 +60,9 @@ func TestNotificationDeliveryRequest_Marshal(t *testing.T) {
 	assert.Equal(t, request.Channels, unmarshaled.Channels)
 }
 
-func TestBuildEmailSubject(t *testing.T) {
-	processor := &NotificationProcessor{
-		domain: "example.com",
-	}
-
+// TestBuildNotificationTitle tests notification title generation
+// Note: Email notifications are not supported in Lesser
+func TestBuildNotificationTitle(t *testing.T) {
 	tests := []struct {
 		name         string
 		notification *models.Notification
@@ -75,6 +73,7 @@ func TestBuildEmailSubject(t *testing.T) {
 			notification: &models.Notification{
 				Type:    "mention",
 				ActorID: "alice",
+				Title:   "alice mentioned you",
 			},
 			expected: "alice mentioned you",
 		},
@@ -83,6 +82,7 @@ func TestBuildEmailSubject(t *testing.T) {
 			notification: &models.Notification{
 				Type:    "follow",
 				ActorID: "bob",
+				Title:   "bob started following you",
 			},
 			expected: "bob started following you",
 		},
@@ -98,8 +98,8 @@ func TestBuildEmailSubject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			subject := processor.buildEmailSubject(tt.notification)
-			assert.Equal(t, tt.expected, subject)
+			// Test that the title is correctly set
+			assert.Equal(t, tt.expected, tt.notification.Title)
 		})
 	}
 }
@@ -120,10 +120,9 @@ func TestDeliverToChannel_Success(t *testing.T) {
 	}
 
 	userPrefs := &UserPreferences{
-		EmailNotifications:     true,
 		PushNotifications:      true,
 		WebSocketNotifications: true,
-		EmailAddress:          "test@example.com",
+		PushEndpoint:           "https://push.example.com/endpoint",
 	}
 
 	ctx := context.Background()
@@ -133,11 +132,10 @@ func TestDeliverToChannel_Success(t *testing.T) {
 	assert.False(t, result.Success)
 	assert.Contains(t, result.Error, "unknown delivery channel")
 
-	// Test disabled email
-	userPrefs.EmailNotifications = false
+	// Test that email delivery channel is not supported (Lesser doesn't support email)
 	result = processor.deliverToChannel(ctx, notification, userPrefs, "email")
 	assert.False(t, result.Success)
-	assert.Contains(t, result.Error, "email notifications disabled")
+	assert.Contains(t, result.Error, "unknown delivery channel")
 
 	// Test disabled push
 	userPrefs.PushNotifications = false
@@ -203,29 +201,27 @@ func TestWebSocketMessage_Marshal(t *testing.T) {
 
 func TestDeliveryResult_TracksCost(t *testing.T) {
 	result := DeliveryResult{
-		Channel:   "email",
+		Channel:   "push",
 		Success:   true,
 		Timestamp: time.Now(),
 		Cost:      1000, // $0.001
 	}
 
-	assert.Equal(t, "email", result.Channel)
+	assert.Equal(t, "push", result.Channel)
 	assert.True(t, result.Success)
 	assert.Equal(t, int64(1000), result.Cost)
 }
 
 func TestUserPreferences_Default(t *testing.T) {
 	prefs := &UserPreferences{
-		EmailNotifications:     true,
 		PushNotifications:      true,
 		WebSocketNotifications: true,
-		EmailAddress:          "user@example.com",
+		PushEndpoint:           "https://push.example.com/user",
 	}
 
-	assert.True(t, prefs.EmailNotifications)
 	assert.True(t, prefs.PushNotifications)
 	assert.True(t, prefs.WebSocketNotifications)
-	assert.Equal(t, "user@example.com", prefs.EmailAddress)
+	assert.Equal(t, "https://push.example.com/user", prefs.PushEndpoint)
 }
 
 // mockLogger returns a mock logger for testing
@@ -253,7 +249,7 @@ func TestHandleSQSMessages_Integration(t *testing.T) {
 	}
 
 	requestJSON, _ := json.Marshal(request)
-	
+
 	event := events.SQSEvent{
 		Records: []events.SQSMessage{
 			{

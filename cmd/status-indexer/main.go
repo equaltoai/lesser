@@ -1,3 +1,4 @@
+// Package main implements the status-indexer Lambda function for indexing status updates for search and discovery.
 package main
 
 import (
@@ -20,6 +21,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
+
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
 
 // StatusIndexer handles DynamoDB stream events for search indexing
 type StatusIndexer struct {
@@ -80,15 +86,15 @@ func init() {
 
 	// Initialize AI service
 	aiConfig := &ai.AIConfig{
-		NSFWThreshold:      0.8,
-		ToxicityThreshold:  0.7,
-		SpamThreshold:      0.6,
-		AIContentThreshold: 0.8,
+		NSFWThreshold:       0.8,
+		ToxicityThreshold:   0.7,
+		SpamThreshold:       0.6,
+		AIContentThreshold:  0.8,
 		EnablePIIDetection:  true,
 		EnableAIDetection:   true,
 		EnableImageAnalysis: true,
 		BedrockModelID:      "anthropic.claude-3-haiku-20240307-v1:0",
-		S3Bucket:           cfg.S3BucketName,
+		S3Bucket:            cfg.S3BucketName,
 	}
 	aiService = ai.NewAIService(awsCfg, aiConfig)
 
@@ -102,7 +108,7 @@ func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDB
 	requestID := uuid.New().String()
 
 	// Add request ID to context for downstream use
-	ctx = context.WithValue(ctx, "request_id", requestID)
+	ctx = context.WithValue(ctx, requestIDKey, requestID)
 
 	si.logger.Info("processing status indexer stream batch",
 		zap.String("request_id", requestID),
@@ -130,89 +136,33 @@ func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDB
 
 // processRecord processes a single DynamoDB stream record
 func (si *StatusIndexer) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
-	// Only process INSERT and MODIFY events
-	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+	// Check if we should process this event
+	if !si.shouldProcessEvent(record) {
 		return nil
 	}
 
-	// Check if this is an object record
-	pk, pkExists := record.Change.Keys["PK"]
-	sk, skExists := record.Change.Keys["SK"]
-
-	if !pkExists || !skExists {
+	// Check if this is an object metadata record
+	if !si.isObjectMetadataRecord(record) {
 		return nil
 	}
 
-	// Extract PK string value
-	pkStr := ""
-	if pk.DataType() == events.DataTypeString {
-		pkStr = pk.String()
-	}
-	if pkStr == "" || !strings.HasPrefix(pkStr, "OBJECT#") {
+	// Extract object from the new image
+	objectMap, err := si.extractObjectFromRecord(record)
+	if err != nil {
 		return nil
 	}
 
-	// Extract SK string value
-	skStr := ""
-	if sk.DataType() == events.DataTypeString {
-		skStr = sk.String()
-	}
-	if skStr != "METADATA" {
-		return nil
-	}
-
-	// Extract the object from the new image
-	newImage := record.Change.NewImage
-	if newImage == nil {
-		return nil
-	}
-
-	// Get object type
-	objectData, ok := newImage["Object"]
-	if !ok || objectData.DataType() != events.DataTypeMap {
-		return nil
-	}
-
-	objectMap := objectData.Map()
-	typeAttr, ok := objectMap["type"]
-	if !ok || typeAttr.DataType() != events.DataTypeString {
-		return nil
-	}
-
-	// Only process Note and Article types
-	objectType := typeAttr.String()
-	if objectType != "Note" && objectType != "Article" {
+	// Check if object type is indexable
+	if !si.isIndexableObjectType(objectMap) {
 		return nil
 	}
 
 	// Extract object details
-	var objectID, content, authorID, authorUsername string
-	var published time.Time
+	details := si.extractObjectDetails(objectMap)
 
-	if id, ok := objectMap["id"]; ok && id.DataType() == events.DataTypeString {
-		objectID = id.String()
-	}
-	if cont, ok := objectMap["content"]; ok && cont.DataType() == events.DataTypeString {
-		content = cont.String()
-	}
-	if author, ok := objectMap["attributedTo"]; ok && author.DataType() == events.DataTypeString {
-		authorID = author.String()
-	}
-	if pub, ok := objectMap["published"]; ok && pub.DataType() == events.DataTypeString {
-		published, _ = time.Parse(time.RFC3339, pub.String())
-	}
-
-	// Extract author username from authorID (format: https://domain.com/users/username)
-	if authorID != "" {
-		parts := strings.Split(authorID, "/")
-		if len(parts) > 0 {
-			authorUsername = parts[len(parts)-1]
-		}
-	}
-
-	// Process the status for search indexing with engagement and embeddings
-	if objectID != "" && content != "" {
-		if err := si.processStatusEvent(ctx, objectID, content, authorID, authorUsername, published); err != nil {
+	// Process the status if valid
+	if details.objectID != "" && details.content != "" {
+		if err := si.processStatusEvent(ctx, details.objectID, details.content, details.authorID, details.authorUsername, details.published); err != nil {
 			return fmt.Errorf("failed to process status event: %w", err)
 		}
 	}
@@ -220,10 +170,124 @@ func (si *StatusIndexer) processRecord(ctx context.Context, record events.Dynamo
 	return nil
 }
 
+// statusDetails holds extracted status information
+type statusDetails struct {
+	objectID       string
+	content        string
+	authorID       string
+	authorUsername string
+	published      time.Time
+}
+
+// shouldProcessEvent checks if the event should be processed
+func (si *StatusIndexer) shouldProcessEvent(record events.DynamoDBEventRecord) bool {
+	return record.EventName == "INSERT" || record.EventName == "MODIFY"
+}
+
+// isObjectMetadataRecord checks if this is an object metadata record
+func (si *StatusIndexer) isObjectMetadataRecord(record events.DynamoDBEventRecord) bool {
+	// Check PK
+	pk, pkExists := record.Change.Keys["PK"]
+	if !pkExists {
+		return false
+	}
+
+	pkStr := ""
+	if pk.DataType() == events.DataTypeString {
+		pkStr = pk.String()
+	}
+	if pkStr == "" || !strings.HasPrefix(pkStr, "OBJECT#") {
+		return false
+	}
+
+	// Check SK
+	sk, skExists := record.Change.Keys["SK"]
+	if !skExists {
+		return false
+	}
+
+	skStr := ""
+	if sk.DataType() == events.DataTypeString {
+		skStr = sk.String()
+	}
+
+	return skStr == "METADATA"
+}
+
+// extractObjectFromRecord extracts the object map from the record
+func (si *StatusIndexer) extractObjectFromRecord(record events.DynamoDBEventRecord) (map[string]events.DynamoDBAttributeValue, error) {
+	newImage := record.Change.NewImage
+	if newImage == nil {
+		return nil, fmt.Errorf("no new image")
+	}
+
+	objectData, ok := newImage["Object"]
+	if !ok || objectData.DataType() != events.DataTypeMap {
+		return nil, fmt.Errorf("no object data")
+	}
+
+	return objectData.Map(), nil
+}
+
+// isIndexableObjectType checks if the object type should be indexed
+func (si *StatusIndexer) isIndexableObjectType(objectMap map[string]events.DynamoDBAttributeValue) bool {
+	typeAttr, ok := objectMap["type"]
+	if !ok || typeAttr.DataType() != events.DataTypeString {
+		return false
+	}
+
+	objectType := typeAttr.String()
+	return objectType == "Note" || objectType == "Article"
+}
+
+// extractObjectDetails extracts all relevant details from the object
+func (si *StatusIndexer) extractObjectDetails(objectMap map[string]events.DynamoDBAttributeValue) statusDetails {
+	details := statusDetails{}
+
+	// Extract object ID
+	if id, ok := objectMap["id"]; ok && id.DataType() == events.DataTypeString {
+		details.objectID = id.String()
+	}
+
+	// Extract content
+	if cont, ok := objectMap["content"]; ok && cont.DataType() == events.DataTypeString {
+		details.content = cont.String()
+	}
+
+	// Extract author ID
+	if author, ok := objectMap["attributedTo"]; ok && author.DataType() == events.DataTypeString {
+		details.authorID = author.String()
+	}
+
+	// Extract published time
+	if pub, ok := objectMap["published"]; ok && pub.DataType() == events.DataTypeString {
+		details.published, _ = time.Parse(time.RFC3339, pub.String())
+	}
+
+	// Extract username from author ID
+	details.authorUsername = si.extractUsernameFromAuthorID(details.authorID)
+
+	return details
+}
+
+// extractUsernameFromAuthorID extracts username from author ID URL
+func (si *StatusIndexer) extractUsernameFromAuthorID(authorID string) string {
+	if authorID == "" {
+		return ""
+	}
+
+	parts := strings.Split(authorID, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+
+	return ""
+}
+
 // processStatusEvent processes a status event with full engagement calculation and embeddings
-func (si *StatusIndexer) processStatusEvent(ctx context.Context, statusID, content, authorID, authorUsername string, published time.Time) error {
+func (si *StatusIndexer) processStatusEvent(ctx context.Context, statusID, content, authorID, _ string, published time.Time) error {
 	requestID := getRequestID(ctx)
-	
+
 	// 1. Calculate engagement metrics
 	engagementScore, likes, boosts, replies, err := si.calculateEngagement(ctx, statusID)
 	if err != nil {
@@ -397,7 +461,7 @@ func (si *StatusIndexer) indexByAuthor(ctx context.Context, authorID, statusID s
 func (si *StatusIndexer) extractSignificantWords(content string) []string {
 	content = strings.ToLower(content)
 	words := strings.FieldsFunc(content, func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+		return r < 'a' || r > 'z' && (r < '0' || r > '9')
 	})
 
 	significant := make([]string, 0)
@@ -425,7 +489,7 @@ func (si *StatusIndexer) extractHashtags(content string) []string {
 			tag := strings.ToLower(strings.TrimPrefix(word, "#"))
 			// Remove any trailing punctuation
 			tag = strings.TrimFunc(tag, func(r rune) bool {
-				return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_')
+				return r < 'a' || r > 'z' && (r < '0' || r > '9') && r != '_'
 			})
 			if tag != "" {
 				hashtags = append(hashtags, tag)
@@ -455,7 +519,7 @@ func (si *StatusIndexer) calculateEngagement(ctx context.Context, statusID strin
 		likes = 0
 	}
 
-	// Get boost count  
+	// Get boost count
 	boosts, err := si.likeRepo.GetBoostCount(ctx, statusID)
 	if err != nil {
 		si.logger.Debug("failed to get boost count", zap.String("status_id", statusID), zap.Error(err))
@@ -486,7 +550,7 @@ func (si *StatusIndexer) getReplyCount(ctx context.Context, statusID string) (in
 		Where("GSI3PK", "=", fmt.Sprintf("IN_REPLY_TO#%s", statusID)).
 		Limit(1000). // Reasonable limit to avoid timeout
 		All(&objects)
-	
+
 	if err != nil {
 		return 0, fmt.Errorf("failed to count replies: %w", err)
 	}
@@ -515,8 +579,8 @@ func (si *StatusIndexer) storeEmbedding(ctx context.Context, statusID string, em
 
 // updateTrendingStatus updates or creates a trending status record
 func (si *StatusIndexer) updateTrendingStatus(ctx context.Context, statusID, content, authorID string, published time.Time, engagementScore float64, likes, boosts, replies int) error {
-	date := time.Now().Format("2006-01-02")
-	
+	date := time.Now().Format(common.DateFormat)
+
 	trendingStatus := &models.TrendingStatus{
 		ID:            statusID,
 		URL:           fmt.Sprintf("https://%s/statuses/%s", si.getDomain(), statusID),
@@ -561,48 +625,48 @@ func (si *StatusIndexer) indexHashtagWithTrending(ctx context.Context, tag, stat
 func (si *StatusIndexer) updateTrendingHashtag(ctx context.Context, tag string, engagementScore float64) error {
 	// Create or update a trending hashtag record
 	// This uses daily buckets for trending calculation
-	date := time.Now().Format("2006-01-02")
+	date := time.Now().Format(common.DateFormat)
 	hour := time.Now().Format("2006-01-02-15") // Hour-level granularity
 
 	trendingHashtag := struct {
-		PK             string    `dynamorm:"pk"`
-		SK             string    `dynamorm:"sk"`
-		GSI6PK         string    `dynamorm:"index:gsi6,pk"`
-		GSI6SK         string    `dynamorm:"index:gsi6,sk"`
-		Tag            string    `json:"tag"`
-		Date           string    `json:"date"`
-		Hour           string    `json:"hour"`
-		EngagementSum  float64   `json:"engagement_sum"`
-		PostCount      int       `json:"post_count"`
-		LastUpdated    time.Time `json:"last_updated"`
-		TTL            int64     `dynamorm:"ttl"`
+		PK            string    `dynamorm:"pk"`
+		SK            string    `dynamorm:"sk"`
+		GSI6PK        string    `dynamorm:"index:gsi6,pk"`
+		GSI6SK        string    `dynamorm:"index:gsi6,sk"`
+		Tag           string    `json:"tag"`
+		Date          string    `json:"date"`
+		Hour          string    `json:"hour"`
+		EngagementSum float64   `json:"engagement_sum"`
+		PostCount     int       `json:"post_count"`
+		LastUpdated   time.Time `json:"last_updated"`
+		TTL           int64     `dynamorm:"ttl"`
 	}{
-		PK:             fmt.Sprintf("TRENDING_TAG#%s#%s", tag, hour),
-		SK:             "METRICS",
-		GSI6PK:         fmt.Sprintf("TRENDING_TAGS#%s", date),
-		GSI6SK:         fmt.Sprintf("TAG#%010.0f#%s", 10000000000-engagementScore, tag),
-		Tag:            tag,
-		Date:           date,
-		Hour:           hour,
-		EngagementSum:  engagementScore,
-		PostCount:      1,
-		LastUpdated:    time.Now(),
-		TTL:            time.Now().Add(7 * 24 * time.Hour).Unix(), // 7 days retention
+		PK:            fmt.Sprintf("TRENDING_TAG#%s#%s", tag, hour),
+		SK:            "METRICS",
+		GSI6PK:        fmt.Sprintf("TRENDING_TAGS#%s", date),
+		GSI6SK:        fmt.Sprintf("TAG#%010.0f#%s", 10000000000-engagementScore, tag),
+		Tag:           tag,
+		Date:          date,
+		Hour:          hour,
+		EngagementSum: engagementScore,
+		PostCount:     1,
+		LastUpdated:   time.Now(),
+		TTL:           time.Now().Add(7 * 24 * time.Hour).Unix(), // 7 days retention
 	}
 
 	// Try to get existing record first and update it
 	var existing struct {
-		PK             string    `dynamorm:"pk"`
-		SK             string    `dynamorm:"sk"`
-		GSI6PK         string    `dynamorm:"index:gsi6,pk"`
-		GSI6SK         string    `dynamorm:"index:gsi6,sk"`
-		Tag            string    `json:"tag"`
-		Date           string    `json:"date"`
-		Hour           string    `json:"hour"`
-		EngagementSum  float64   `json:"engagement_sum"`
-		PostCount      int       `json:"post_count"`
-		LastUpdated    time.Time `json:"last_updated"`
-		TTL            int64     `dynamorm:"ttl"`
+		PK            string    `dynamorm:"pk"`
+		SK            string    `dynamorm:"sk"`
+		GSI6PK        string    `dynamorm:"index:gsi6,pk"`
+		GSI6SK        string    `dynamorm:"index:gsi6,sk"`
+		Tag           string    `json:"tag"`
+		Date          string    `json:"date"`
+		Hour          string    `json:"hour"`
+		EngagementSum float64   `json:"engagement_sum"`
+		PostCount     int       `json:"post_count"`
+		LastUpdated   time.Time `json:"last_updated"`
+		TTL           int64     `dynamorm:"ttl"`
 	}
 
 	err := si.db.WithContext(ctx).Model(&existing).
@@ -617,12 +681,11 @@ func (si *StatusIndexer) updateTrendingHashtag(ctx context.Context, tag string, 
 		existing.LastUpdated = time.Now()
 		// Recalculate GSI6SK with new score
 		existing.GSI6SK = fmt.Sprintf("TAG#%010.0f#%s", 10000000000-existing.EngagementSum, tag)
-		
+
 		return si.db.WithContext(ctx).Model(&existing).Update()
-	} else {
-		// Create new record
-		return si.db.WithContext(ctx).Model(&trendingHashtag).Create()
 	}
+	// Create new record
+	return si.db.WithContext(ctx).Model(&trendingHashtag).Create()
 }
 
 // getDomain returns the domain name for URL generation
@@ -649,7 +712,7 @@ func main() {
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()
 		requestID := uuid.New().String()
-		
+
 		// Recovery handling (Lift pattern)
 		defer func() {
 			if r := recover(); r != nil {
@@ -662,7 +725,7 @@ func main() {
 		}()
 
 		// Add request ID to context
-		ctx = context.WithValue(ctx, "request_id", requestID)
+		ctx = context.WithValue(ctx, requestIDKey, requestID)
 
 		logger.Info("processing status indexer stream batch",
 			zap.String("request_id", requestID),

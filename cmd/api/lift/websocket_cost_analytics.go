@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 package lift
@@ -13,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // WebSocketCostAnalyticsRequest represents requests for WebSocket cost analytics
@@ -26,34 +28,34 @@ type WebSocketCostAnalyticsRequest struct {
 
 // WebSocketCostSummaryResponse represents WebSocket cost summary response
 type WebSocketCostSummaryResponse struct {
-	Summary              *WebSocketOverallSummary                             `json:"summary"`
-	TopUsers             []*repositories.WebSocketUserCostRanking             `json:"top_users"`
-	HighCostOperations   []*WebSocketCostOperationSummary                     `json:"high_cost_operations"`
-	CostTrends           *WebSocketCostTrends                                 `json:"cost_trends"`
-	UserDetails          *repositories.WebSocketUserCostSummary               `json:"user_details,omitempty"`
-	BudgetStatus         *repositories.BudgetStatus                           `json:"budget_status,omitempty"`
+	Summary            *WebSocketOverallSummary                 `json:"summary"`
+	TopUsers           []*repositories.WebSocketUserCostRanking `json:"top_users"`
+	HighCostOperations []*WebSocketCostOperationSummary         `json:"high_cost_operations"`
+	CostTrends         *WebSocketCostTrends                     `json:"cost_trends"`
+	UserDetails        *repositories.WebSocketUserCostSummary   `json:"user_details,omitempty"`
+	BudgetStatus       *repositories.BudgetStatus               `json:"budget_status,omitempty"`
 }
 
 // WebSocketOverallSummary represents overall WebSocket cost summary
 type WebSocketOverallSummary struct {
-	DateRange            string  `json:"date_range"`
-	TotalCostDollars     float64 `json:"total_cost_dollars"`
-	TotalConnections     int64   `json:"total_connections"`
-	TotalMessages        int64   `json:"total_messages"`
-	TotalConnectionHours float64 `json:"total_connection_hours"`
-	UniqueUsers          int64   `json:"unique_users"`
-	AverageCostPerUser   float64 `json:"average_cost_per_user"`
+	DateRange                string  `json:"date_range"`
+	TotalCostDollars         float64 `json:"total_cost_dollars"`
+	TotalConnections         int64   `json:"total_connections"`
+	TotalMessages            int64   `json:"total_messages"`
+	TotalConnectionHours     float64 `json:"total_connection_hours"`
+	UniqueUsers              int64   `json:"unique_users"`
+	AverageCostPerUser       float64 `json:"average_cost_per_user"`
 	AverageCostPerConnection float64 `json:"average_cost_per_connection"`
-	AverageCostPerMessage float64    `json:"average_cost_per_message"`
-	
+	AverageCostPerMessage    float64 `json:"average_cost_per_message"`
+
 	// Cost breakdown
 	ConnectionCostPercent float64 `json:"connection_cost_percent"`
 	MessageCostPercent    float64 `json:"message_cost_percent"`
 	LambdaCostPercent     float64 `json:"lambda_cost_percent"`
 	DynamoDBCostPercent   float64 `json:"dynamodb_cost_percent"`
-	
+
 	// Efficiency metrics
-	MessagesPerConnection float64 `json:"messages_per_connection"`
+	MessagesPerConnection     float64 `json:"messages_per_connection"`
 	AverageConnectionDuration float64 `json:"average_connection_duration"`
 }
 
@@ -71,9 +73,9 @@ type WebSocketCostOperationSummary struct {
 
 // WebSocketCostTrends represents cost trends over time
 type WebSocketCostTrends struct {
-	Period     string                    `json:"period"`
-	DataPoints []WebSocketCostDataPoint  `json:"data_points"`
-	TrendAnalysis *WebSocketTrendAnalysis `json:"trend_analysis"`
+	Period        string                   `json:"period"`
+	DataPoints    []WebSocketCostDataPoint `json:"data_points"`
+	TrendAnalysis *WebSocketTrendAnalysis  `json:"trend_analysis"`
 }
 
 // WebSocketCostDataPoint represents a single data point in cost trends
@@ -88,23 +90,23 @@ type WebSocketCostDataPoint struct {
 
 // WebSocketTrendAnalysis represents analysis of cost trends
 type WebSocketTrendAnalysis struct {
-	TrendDirection   string  `json:"trend_direction"` // increasing, decreasing, stable
-	TrendPercentage  float64 `json:"trend_percentage"`
-	PeakHour         string  `json:"peak_hour,omitempty"`
-	LowHour          string  `json:"low_hour,omitempty"`
-	WeeklyPattern    string  `json:"weekly_pattern,omitempty"`
-	GrowthRate       float64 `json:"growth_rate"`
-	SeasonalFactors  []string `json:"seasonal_factors,omitempty"`
+	TrendDirection  string   `json:"trend_direction"` // increasing, decreasing, stable
+	TrendPercentage float64  `json:"trend_percentage"`
+	PeakHour        string   `json:"peak_hour,omitempty"`
+	LowHour         string   `json:"low_hour,omitempty"`
+	WeeklyPattern   string   `json:"weekly_pattern,omitempty"`
+	GrowthRate      float64  `json:"growth_rate"`
+	SeasonalFactors []string `json:"seasonal_factors,omitempty"`
 }
 
 // GetWebSocketCostAnalytics retrieves comprehensive WebSocket cost analytics
 func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCostAnalyticsRequest) (WebSocketCostSummaryResponse, error) {
-	startTime, err := time.Parse("2006-01-02", req.StartDate)
+	startTime, err := time.Parse(common.DateFormat, req.StartDate)
 	if err != nil {
 		return WebSocketCostSummaryResponse{}, lift.ValidationError("invalid start_date format, use YYYY-MM-DD")
 	}
 
-	endTime, err := time.Parse("2006-01-02", req.EndDate)
+	endTime, err := time.Parse(common.DateFormat, req.EndDate)
 	if err != nil {
 		return WebSocketCostSummaryResponse{}, lift.ValidationError("invalid end_date format, use YYYY-MM-DD")
 	}
@@ -149,7 +151,7 @@ func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCost
 		h.logger.Error("failed to get high cost operations", zap.Error(err))
 		return WebSocketCostSummaryResponse{}, lift.NewLiftError("OPERATIONS_ERROR", "failed to get high cost operations", 500)
 	}
-	
+
 	// Convert to response format
 	response.HighCostOperations = make([]*WebSocketCostOperationSummary, len(highCostOps))
 	for i, op := range highCostOps {
@@ -217,24 +219,24 @@ func (h *Handler) buildWebSocketOverallSummary(costRepo *repositories.WebSocketC
 
 	if len(filteredCosts) == 0 {
 		return &WebSocketOverallSummary{
-			DateRange: fmt.Sprintf("%s to %s", startTime.Format("2006-01-02"), endTime.Format("2006-01-02")),
+			DateRange: fmt.Sprintf("%s to %s", startTime.Format(common.DateFormat), endTime.Format(common.DateFormat)),
 		}, nil
 	}
 
 	summary := &WebSocketOverallSummary{
-		DateRange: fmt.Sprintf("%s to %s", startTime.Format("2006-01-02"), endTime.Format("2006-01-02")),
+		DateRange: fmt.Sprintf("%s to %s", startTime.Format(common.DateFormat), endTime.Format(common.DateFormat)),
 	}
 
 	// Track unique users and connections
 	uniqueUsers := make(map[string]bool)
 	uniqueConnections := make(map[string]bool)
-	
+
 	var totalConnectionCost, totalMessageCost, totalLambdaCost, totalDynamoDBCost int64
 	var totalConnectionMinutes int64
 
 	for _, cost := range filteredCosts {
 		summary.TotalCostDollars += cost.EstimatedCostDollars
-		
+
 		if cost.UserID != "" {
 			uniqueUsers[cost.UserID] = true
 		}
@@ -258,7 +260,7 @@ func (h *Handler) buildWebSocketOverallSummary(costRepo *repositories.WebSocketC
 
 	summary.UniqueUsers = int64(len(uniqueUsers))
 	summary.TotalConnectionHours = float64(totalConnectionMinutes) / 60.0
-	
+
 	// Calculate averages
 	if summary.UniqueUsers > 0 {
 		summary.AverageCostPerUser = summary.TotalCostDollars / float64(summary.UniqueUsers)
@@ -291,8 +293,8 @@ func (h *Handler) buildWebSocketCostTrends(costRepo *repositories.WebSocketCostR
 	}
 
 	trends := &WebSocketCostTrends{
-		Period:     period,
-		DataPoints: []WebSocketCostDataPoint{},
+		Period:        period,
+		DataPoints:    []WebSocketCostDataPoint{},
 		TrendAnalysis: &WebSocketTrendAnalysis{},
 	}
 
@@ -327,7 +329,7 @@ func (h *Handler) buildWebSocketCostTrends(costRepo *repositories.WebSocketCostR
 			UniqueUsers:      0,   // Would be calculated from actual data
 			AverageLatencyMs: 0.0, // Would be calculated from actual data
 		}
-		
+
 		trends.DataPoints = append(trends.DataPoints, dataPoint)
 		current = current.Add(interval)
 	}
@@ -367,7 +369,7 @@ func (h *Handler) analyzeWebSocketTrends(dataPoints []WebSocketCostDataPoint) *W
 	// Find peak and low points
 	var maxCost, minCost float64
 	var maxTime, minTime time.Time
-	
+
 	for i, dp := range dataPoints {
 		if i == 0 || dp.CostDollars > maxCost {
 			maxCost = dp.CostDollars
@@ -438,12 +440,12 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 	}
 
 	var budgetReq struct {
-		Period           string  `json:"period" validate:"required,oneof=daily weekly monthly"`
-		BudgetDollars    float64 `json:"budget_dollars" validate:"required,gt=0"`
-		AlertThresholds  []int   `json:"alert_thresholds,omitempty"`
-		SuspendAt        int     `json:"suspend_at,omitempty"`
-		MaxConnections   int     `json:"max_connections,omitempty"`
-		MessagesPerMinute int    `json:"messages_per_minute,omitempty"`
+		Period            string  `json:"period" validate:"required,oneof=daily weekly monthly"`
+		BudgetDollars     float64 `json:"budget_dollars" validate:"required,gt=0"`
+		AlertThresholds   []int   `json:"alert_thresholds,omitempty"`
+		SuspendAt         int     `json:"suspend_at,omitempty"`
+		MaxConnections    int     `json:"max_connections,omitempty"`
+		MessagesPerMinute int     `json:"messages_per_minute,omitempty"`
 	}
 
 	if ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -477,16 +479,16 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 
 	// Create budget
 	budget := &models.WebSocketCostBudget{
-		UserID:               userID,
-		Period:               budgetReq.Period,
-		BudgetMicroCents:     budgetMicroCents,
-		WindowStart:          windowStart,
-		WindowEnd:            windowEnd,
-		AlertThresholds:      budgetReq.AlertThresholds,
-		SuspendAt:            budgetReq.SuspendAt,
+		UserID:                   userID,
+		Period:                   budgetReq.Period,
+		BudgetMicroCents:         budgetMicroCents,
+		WindowStart:              windowStart,
+		WindowEnd:                windowEnd,
+		AlertThresholds:          budgetReq.AlertThresholds,
+		SuspendAt:                budgetReq.SuspendAt,
 		MaxConcurrentConnections: budgetReq.MaxConnections,
-		MessagesPerMinute:    budgetReq.MessagesPerMinute,
-		BillingTier:          "basic", // Default tier
+		MessagesPerMinute:        budgetReq.MessagesPerMinute,
+		BillingTier:              "basic", // Default tier
 	}
 
 	// Get username from user repository

@@ -10,7 +10,7 @@ type Tombstone struct {
 	// Primary keys - MUST match legacy exactly
 	PK string `dynamorm:"pk" json:"PK"` // OBJECT#{object_id}
 	SK string `dynamorm:"sk" json:"SK"` // TOMBSTONE
-	
+
 	// Core fields from legacy
 	ID         string    `json:"id"`                // Original object ID
 	Type       string    `json:"type"`              // Always "Tombstone"
@@ -23,14 +23,14 @@ type Tombstone struct {
 
 // TableName returns the DynamoDB table name
 func (Tombstone) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate prepares the Tombstone for creation
 func (t *Tombstone) BeforeCreate() error {
 	// Set type
 	t.Type = "Tombstone"
-	
+
 	// Set timestamps if not already set
 	if t.Deleted.IsZero() {
 		t.Deleted = time.Now()
@@ -38,10 +38,10 @@ func (t *Tombstone) BeforeCreate() error {
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = time.Now()
 	}
-	
+
 	// Set keys
-	t.PK = fmt.Sprintf("OBJECT#%s", t.ID)
+	t.PK = fmt.Sprintf(KeyPatternObject, t.ID)
 	t.SK = "TOMBSTONE"
-	
+
 	return nil
 }

@@ -50,7 +50,7 @@ func (r *DomainBlockRepositoryV2) AddDomainBlock(ctx context.Context, username, 
 			// Already blocked, not an error
 			return nil
 		}
-		r.logger.Error("failed to add domain block", 
+		r.logger.Error("failed to add domain block",
 			zap.String("username", username),
 			zap.String("domain", domain),
 			zap.Error(err))
@@ -159,12 +159,12 @@ func (r *DomainBlockRepositoryV2) CreateInstanceDomainBlock(ctx context.Context,
 // GetInstanceDomainBlock retrieves an instance-level domain block
 func (r *DomainBlockRepositoryV2) GetInstanceDomainBlock(ctx context.Context, domain string) (*storage.InstanceDomainBlock, error) {
 	var block models.InstanceDomainBlock
-	
+
 	err := r.db.WithContext(ctx).Model(&block).
 		Where("PK", "=", fmt.Sprintf("DOMAIN_BLOCK#%s", domain)).
 		Where("SK", "=", fmt.Sprintf("DOMAIN_BLOCK#%s", domain)).
 		First(&block)
-	
+
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, nil
@@ -181,12 +181,12 @@ func (r *DomainBlockRepositoryV2) GetInstanceDomainBlock(ctx context.Context, do
 // GetAllInstanceDomainBlocks retrieves all instance-level domain blocks
 func (r *DomainBlockRepositoryV2) GetAllInstanceDomainBlocks(ctx context.Context) ([]*storage.InstanceDomainBlock, error) {
 	var blocks []models.InstanceDomainBlock
-	
+
 	err := r.db.WithContext(ctx).Model(&models.InstanceDomainBlock{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "DOMAIN_BLOCKS").
 		All(&blocks)
-	
+
 	if err != nil {
 		r.logger.Error("failed to get all instance domain blocks", zap.Error(err))
 		return nil, fmt.Errorf("failed to get all instance domain blocks: %w", err)

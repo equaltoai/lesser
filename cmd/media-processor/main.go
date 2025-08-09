@@ -1,3 +1,4 @@
+// Package main implements the media-processor Lambda function for processing media attachments.
 package main
 
 import (
@@ -15,7 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
-	mctypes "github.com/aws/aws-sdk-go-v2/service/mediaconvert/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dhowden/tag"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -31,6 +31,36 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+)
+
+// Media type constants
+const (
+	mediaTypeImage = "image"
+	mediaTypeVideo = "video"
+	mediaTypeAudio = "audio"
+	mediaTypeGifv  = "gifv"
+)
+
+// Media processing status constants
+const (
+	MediaStatusProcessing = "processing"
+	MediaStatusCompleted  = "completed"
+	MediaStatusFailed     = "failed"
+)
+
+// Media file extensions
+const (
+	extJPG  = ".jpg"
+	extPNG  = ".png"
+	extGIF  = ".gif"
+	extWebP = ".webp"
+)
+
+// Media MIME types
+const (
+	mimeJPEG = "image/jpeg"
+	mimePNG  = "image/png"
+	mimeWebP = "image/webp"
 )
 
 // MediaProcessor handles media processing from SQS messages using Lift and DynamORM
@@ -55,14 +85,14 @@ var (
 	cfg       *config.Config
 	// Global transcoding cost tracker with current AWS pricing
 	transcodingCosts = TranscodingCostTracker{
-		SDCostPerMinute:    15000,  // $0.015 per minute
-		HDCostPerMinute:    30000,  // $0.030 per minute  
-		UHDCostPerMinute:   45000,  // $0.045 per minute
-		LambdaGBSecondCost: 17,     // $0.0000166667 per GB-second
-		S3StorageCost:      23000,  // $0.023 per GB/month
-		CloudFrontCost:     85000,  // $0.085 per GB
-		RekognitionCost:    1000,   // $0.001 per image
-		ThumbnailCost:      100,    // $0.0001 per thumbnail
+		SDCostPerMinute:    15000, // $0.015 per minute
+		HDCostPerMinute:    30000, // $0.030 per minute
+		UHDCostPerMinute:   45000, // $0.045 per minute
+		LambdaGBSecondCost: 17,    // $0.0000166667 per GB-second
+		S3StorageCost:      23000, // $0.023 per GB/month
+		CloudFrontCost:     85000, // $0.085 per GB
+		RekognitionCost:    1000,  // $0.001 per image
+		ThumbnailCost:      100,   // $0.0001 per thumbnail
 	}
 )
 
@@ -124,12 +154,12 @@ type TranscodingJobMetrics struct {
 	Username         string            `json:"username"`
 	InputFormat      string            `json:"input_format"`
 	InputSize        int64             `json:"input_size"`
-	InputDuration    int64             `json:"input_duration"` // milliseconds
-	OutputVariants   map[string]string `json:"output_variants"`   // quality -> format
-	OutputSizes      map[string]int64  `json:"output_sizes"`      // quality -> size in bytes
+	InputDuration    int64             `json:"input_duration"`  // milliseconds
+	OutputVariants   map[string]string `json:"output_variants"` // quality -> format
+	OutputSizes      map[string]int64  `json:"output_sizes"`    // quality -> size in bytes
 	ProcessingTimeMs int64             `json:"processing_time_ms"`
 	TotalCostMicros  int64             `json:"total_cost_micros"`
-	CostBreakdown    map[string]int64  `json:"cost_breakdown"`    // service -> cost
+	CostBreakdown    map[string]int64  `json:"cost_breakdown"` // service -> cost
 	StartedAt        time.Time         `json:"started_at"`
 	CompletedAt      *time.Time        `json:"completed_at,omitempty"`
 	Status           string            `json:"status"`
@@ -146,14 +176,14 @@ type SizeInfo struct {
 
 // Allowed MIME types for processing
 var allowedMimeTypes = map[string]bool{
-	"image/jpeg":      true,
-	"image/jpg":       true,
-	"image/png":       true,
-	"image/gif":       true,
-	"image/webp":      true,
-	"video/mp4":       true,
-	"video/webm":      true,
-	"video/quicktime": true,
+	common.ImageJPEG:      true,
+	common.ImageJPG:       true,
+	common.ImagePNG:       true,
+	common.ImageGIF:       true,
+	common.ImageWEBP:      true,
+	common.VideoMP4:       true,
+	common.VideoWEBM:      true,
+	common.VideoQuickTime: true,
 	"audio/mpeg":      true,
 	"audio/mp3":       true,
 	"audio/ogg":       true,
@@ -180,8 +210,16 @@ func init() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
+	// Load AWS config for CloudWatch
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
+
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -281,7 +319,7 @@ func main() {
 	})
 
 	// Set SQS handler for media processing
-	app.SQS("media-processing", func(ctx *lift.Context) error {
+	_ = app.SQS("media-processing", func(ctx *lift.Context) error {
 		// Extract SQS event from Lift context
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
@@ -338,7 +376,7 @@ func (mp *MediaProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) er
 				zap.Error(err))
 			// Don't return error to avoid reprocessing
 			// Update job status as failed
-			if updateErr := mp.updateJobStatus(ctx.Request.Context(), processingEvent.JobID, "failed", nil, err.Error()); updateErr != nil {
+			if updateErr := mp.updateJobStatus(ctx.Request.Context(), processingEvent.JobID, MediaStatusFailed, nil, err.Error()); updateErr != nil {
 				mp.logger.Error("Failed to update job status",
 					zap.String("jobID", processingEvent.JobID),
 					zap.Error(updateErr))
@@ -388,11 +426,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	}
 
 	// Get user's media configuration and validate quotas
-	userConfig, err := mp.getUserMediaConfig(ctx, event.Username)
-	if err != nil {
-		mp.logger.Error("failed to get user media config", zap.Error(err))
-		return fmt.Errorf("failed to get user media config: %w", err)
-	}
+	userConfig := mp.getUserMediaConfig(ctx, event.Username)
 
 	// Download original file from S3
 	originalData, err := mp.downloadFromS3(ctx, job.S3Key)
@@ -406,11 +440,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	}
 
 	// Check user's remaining budget before processing
-	remainingBudget, err := mp.getUserRemainingBudget(ctx, event.Username)
-	if err != nil {
-		mp.logger.Error("failed to get user budget", zap.Error(err))
-		// Continue with processing but log the error
-	}
+	remainingBudget := mp.getUserRemainingBudget(ctx, event.Username)
 
 	// Estimate cost for processing
 	estimatedCost := mp.estimateProcessingCost(originalData, job.MimeType)
@@ -419,32 +449,32 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 			zap.String("username", event.Username),
 			zap.Int64("estimated_cost", estimatedCost),
 			zap.Int64("remaining_budget", remainingBudget))
-		
+
 		// Fall back to basic upload only
 		result, err := mp.uploadOriginalOnly(ctx, originalData, event, job.MimeType)
 		if err != nil {
 			return fmt.Errorf("failed to upload original file: %w", err)
 		}
-		
+
 		// Update media record and job
 		if err := mp.updateMediaRecord(ctx, event.MediaID, result); err != nil {
 			return fmt.Errorf("failed to update media record: %w", err)
 		}
-		
+
 		resultsMap := map[string]any{
-			"width":        result.Width,
-			"height":       result.Height,
-			"duration":     result.Duration,
-			"blurhash":     result.Blurhash,
-			"preview_url":  result.PreviewURL,
-			"sizes":        result.Sizes,
-			"note":         "Processing skipped due to budget limits",
+			"width":       result.Width,
+			"height":      result.Height,
+			"duration":    result.Duration,
+			"blurhash":    result.Blurhash,
+			"preview_url": result.PreviewURL,
+			"sizes":       result.Sizes,
+			"note":        "Processing skipped due to budget limits",
 		}
 		job.SetCompleted(resultsMap)
 		if err := mp.mediaRepo.UpdateMediaJob(ctx, job); err != nil {
 			return fmt.Errorf("failed to update job status: %w", err)
 		}
-		
+
 		return nil
 	}
 
@@ -453,19 +483,19 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	mediaType := getMediaTypeFromMime(job.MimeType)
 
 	switch mediaType {
-	case "image", "gifv":
+	case mediaTypeImage, mediaTypeGifv:
 		result, err = mp.processImage(ctx, originalData, event, job.ProcessingTasks, job.MimeType)
 		if err != nil {
 			return fmt.Errorf("failed to process image: %w", err)
 		}
 
-	case "video":
+	case mediaTypeVideo:
 		result, err = mp.processVideo(ctx, originalData, event, job.ProcessingTasks)
 		if err != nil {
 			return fmt.Errorf("failed to process video: %w", err)
 		}
 
-	case "audio":
+	case mediaTypeAudio:
 		result, err = mp.processAudio(ctx, originalData, event, job.ProcessingTasks)
 		if err != nil {
 			return fmt.Errorf("failed to process audio: %w", err)
@@ -482,12 +512,12 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 
 	// Update job as completed
 	resultsMap := map[string]any{
-		"width":        result.Width,
-		"height":       result.Height,
-		"duration":     result.Duration,
-		"blurhash":     result.Blurhash,
-		"preview_url":  result.PreviewURL,
-		"sizes":        result.Sizes,
+		"width":             result.Width,
+		"height":            result.Height,
+		"duration":          result.Duration,
+		"blurhash":          result.Blurhash,
+		"preview_url":       result.PreviewURL,
+		"sizes":             result.Sizes,
 		"processing_job_id": result.ProcessingJobID,
 	}
 	job.SetCompleted(resultsMap)
@@ -585,16 +615,16 @@ func (mp *MediaProcessor) processImage(ctx context.Context, data []byte, event M
 
 	// Track comprehensive image processing costs
 	imageMetrics := &TranscodingJobMetrics{
-		JobID:         event.JobID,
-		MediaID:       event.MediaID,
-		Username:      event.Username,
-		InputFormat:   mimeType,
-		InputSize:     int64(len(data)),
+		JobID:          event.JobID,
+		MediaID:        event.MediaID,
+		Username:       event.Username,
+		InputFormat:    mimeType,
+		InputSize:      int64(len(data)),
 		OutputVariants: make(map[string]string),
-		OutputSizes:   make(map[string]int64),
-		CostBreakdown: make(map[string]int64),
-		StartedAt:     time.Now(),
-		Status:        "completed",
+		OutputSizes:    make(map[string]int64),
+		CostBreakdown:  make(map[string]int64),
+		StartedAt:      time.Now(),
+		Status:         MediaStatusCompleted,
 	}
 
 	// Calculate processing costs by operation
@@ -623,9 +653,7 @@ func (mp *MediaProcessor) processImage(ctx context.Context, data []byte, event M
 	}
 
 	// Track detailed image processing costs
-	if err := mp.trackTranscodingCosts(ctx, imageMetrics); err != nil {
-		mp.logger.Warn("failed to track image processing costs", zap.Error(err))
-	}
+	mp.trackTranscodingCosts(ctx, imageMetrics)
 
 	// Update user's storage usage
 	if err := mp.updateStorageUsageForUser(ctx, event.Username, totalStorageBytes); err != nil {
@@ -648,25 +676,20 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 
 	// Initialize transcoding job metrics
 	jobMetrics := &TranscodingJobMetrics{
-		JobID:         event.JobID,
-		MediaID:       event.MediaID,
-		Username:      event.Username,
-		InputFormat:   "video/mp4",
-		InputSize:     int64(len(data)),
+		JobID:          event.JobID,
+		MediaID:        event.MediaID,
+		Username:       event.Username,
+		InputFormat:    "video/mp4",
+		InputSize:      int64(len(data)),
 		OutputVariants: make(map[string]string),
-		OutputSizes:   make(map[string]int64),
-		CostBreakdown: make(map[string]int64),
-		StartedAt:     time.Now(),
-		Status:        "processing",
+		OutputSizes:    make(map[string]int64),
+		CostBreakdown:  make(map[string]int64),
+		StartedAt:      time.Now(),
+		Status:         MediaStatusProcessing,
 	}
 
 	// 1. Get user's media processing config
-	config, err := mp.getUserMediaConfig(ctx, event.Username)
-	if err != nil {
-		mp.logger.Error("failed to get user media config", zap.Error(err))
-		// Fall back to basic upload
-		return mp.uploadOriginalOnly(ctx, data, event, "video/mp4")
-	}
+	config := mp.getUserMediaConfig(ctx, event.Username)
 
 	// 2. Check if video processing is enabled
 	if !config.VideoProcessingEnabled {
@@ -675,14 +698,10 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 	}
 
 	// 3. Check user's remaining budget
-	remainingBudget, err := mp.getUserRemainingBudget(ctx, event.Username)
-	if err != nil {
-		mp.logger.Error("failed to get user budget", zap.Error(err))
-		return mp.uploadOriginalOnly(ctx, data, event, "video/mp4")
-	}
+	remainingBudget := mp.getUserRemainingBudget(ctx, event.Username)
 
 	// 4. Extract video metadata for cost estimation
-	width, height, duration := extractVideoMetadata(data)
+	width, height, duration := mp.extractVideoMetadata(data)
 	jobMetrics.InputDuration = int64(duration)
 	result.Width = width
 	result.Height = height
@@ -725,7 +744,7 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 		mediaConvertJobID, err = mp.createEnhancedMediaConvertJob(ctx, s3Key, event, transcodingPlan)
 		if err != nil {
 			mp.logger.Error("failed to create MediaConvert job", zap.Error(err))
-			jobMetrics.Status = "failed"
+			jobMetrics.Status = MediaStatusFailed
 			jobMetrics.ErrorMessage = err.Error()
 			// Continue anyway - video is uploaded
 		} else {
@@ -751,9 +770,7 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 	}
 
 	// 10. Track detailed transcoding costs
-	if err := mp.trackTranscodingCosts(ctx, jobMetrics); err != nil {
-		mp.logger.Warn("failed to track transcoding costs", zap.Error(err))
-	}
+	mp.trackTranscodingCosts(ctx, jobMetrics)
 
 	result.Sizes["original"] = SizeInfo{
 		URL:   mp.buildMediaURL(s3Key),
@@ -770,8 +787,8 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 	now := time.Now()
 	jobMetrics.CompletedAt = &now
 	jobMetrics.ProcessingTimeMs = now.Sub(jobMetrics.StartedAt).Milliseconds()
-	if jobMetrics.Status == "processing" {
-		jobMetrics.Status = "completed"
+	if jobMetrics.Status == MediaStatusProcessing {
+		jobMetrics.Status = MediaStatusCompleted
 	}
 
 	mp.logger.Info("video transcoding completed",
@@ -838,9 +855,9 @@ func (mp *MediaProcessor) updateJobStatus(ctx context.Context, jobID, status str
 	}
 
 	switch status {
-	case "processing":
+	case MediaStatusProcessing:
 		job.SetProcessing()
-	case "completed":
+	case MediaStatusCompleted:
 		if result != nil {
 			if resultMap, ok := result.(map[string]any); ok {
 				job.SetCompleted(resultMap)
@@ -850,7 +867,7 @@ func (mp *MediaProcessor) updateJobStatus(ctx context.Context, jobID, status str
 		} else {
 			job.SetCompleted(map[string]any{})
 		}
-	case "failed":
+	case MediaStatusFailed:
 		job.SetFailed(errorMsg)
 	default:
 		return fmt.Errorf("unknown status: %s", status)
@@ -859,7 +876,6 @@ func (mp *MediaProcessor) updateJobStatus(ctx context.Context, jobID, status str
 	return mp.mediaRepo.UpdateMediaJob(ctx, job)
 }
 
-
 func (mp *MediaProcessor) updateMediaRecord(ctx context.Context, mediaID string, result ProcessingResult) error {
 	// Get the existing media record
 	media, err := mp.mediaRepo.GetMedia(ctx, mediaID)
@@ -867,7 +883,7 @@ func (mp *MediaProcessor) updateMediaRecord(ctx context.Context, mediaID string,
 		// Create new media record if it doesn't exist
 		media = &models.Media{
 			MediaID: mediaID,
-			Status:  "processing",
+			Status:  MediaStatusProcessing,
 		}
 	}
 
@@ -889,7 +905,7 @@ func (mp *MediaProcessor) updateMediaRecord(ctx context.Context, mediaID string,
 			CDNUrl:      sizeInfo.URL,
 			Width:       sizeInfo.Width,
 			Height:      sizeInfo.Height,
-			FileSize:    0, // Would need to be calculated or stored
+			FileSize:    0,  // Would need to be calculated or stored
 			ContentType: "", // Would need to be determined from the variant
 		}
 		media.AddVariant(sizeName, variant)
@@ -913,14 +929,14 @@ func (mp *MediaProcessor) buildMediaURL(s3Key string) string {
 
 func getMediaTypeFromMime(mimeType string) string {
 	if strings.HasPrefix(mimeType, "image/") {
-		if mimeType == "image/gif" {
-			return "gifv"
+		if mimeType == common.ImageGIF {
+			return mediaTypeGifv
 		}
-		return "image"
+		return mediaTypeImage
 	} else if strings.HasPrefix(mimeType, "video/") {
-		return "video"
+		return mediaTypeVideo
 	} else if strings.HasPrefix(mimeType, "audio/") {
-		return "audio"
+		return mediaTypeAudio
 	}
 	return "unknown"
 }
@@ -928,41 +944,41 @@ func getMediaTypeFromMime(mimeType string) string {
 func getExtensionFromProcessedFormat(format string) string {
 	switch format {
 	case "jpeg":
-		return ".jpg"
+		return extJPG
 	case "png":
-		return ".png"
+		return extPNG
 	case "gif":
-		return ".gif"
+		return extGIF
 	case "webp":
-		return ".webp"
+		return extWebP
 	default:
-		return ".jpg"
+		return extJPG
 	}
 }
 
 func getMimeTypeFromFormat(format string) string {
 	switch format {
 	case "jpeg":
-		return "image/jpeg"
+		return mimeJPEG
 	case "png":
-		return "image/png"
+		return mimePNG
 	case "gif":
-		return "image/gif"
+		return common.ImageGIF
 	case "webp":
-		return "image/webp"
+		return mimeWebP
 	default:
-		return "image/jpeg"
+		return mimeJPEG
 	}
 }
 
 // Helper functions for cost-aware processing
 
-func (mp *MediaProcessor) getUserMediaConfig(ctx context.Context, username string) (*MediaConfig, error) {
+func (mp *MediaProcessor) getUserMediaConfig(ctx context.Context, username string) *MediaConfig {
 	// First, try to get the user ID from username
 	// In a real implementation, you'd want to resolve username to userID
 	// For now, we'll use username as userID for simplicity
 	userID := username
-	
+
 	// Get user media configuration from repository
 	userConfig, err := mp.mediaRepo.GetUserMediaConfig(ctx, userID)
 	if err != nil {
@@ -973,21 +989,21 @@ func (mp *MediaProcessor) getUserMediaConfig(ctx context.Context, username strin
 				Username: username,
 				PlanTier: "free",
 			}
-			
+
 			if createErr := mp.mediaRepo.CreateUserMediaConfig(ctx, defaultConfig); createErr != nil {
-				mp.logger.Error("failed to create default user media config", 
+				mp.logger.Error("failed to create default user media config",
 					zap.String("username", username),
 					zap.Error(createErr))
 				// Fall back to in-memory default
-				return mp.getDefaultMediaConfig(), nil
+				return mp.getDefaultMediaConfig()
 			}
 			userConfig = defaultConfig
 		} else {
 			mp.logger.Error("failed to get user media config", zap.Error(err))
-			return mp.getDefaultMediaConfig(), nil
+			return mp.getDefaultMediaConfig()
 		}
 	}
-	
+
 	// Convert to MediaConfig struct
 	return &MediaConfig{
 		VideoProcessingEnabled:   userConfig.VideoProcessingEnabled,
@@ -996,7 +1012,7 @@ func (mp *MediaProcessor) getUserMediaConfig(ctx context.Context, username strin
 		ContentModerationEnabled: userConfig.ContentModerationEnabled,
 		MaxVideoDuration:         userConfig.MaxVideoDuration,
 		UserBudgetMicros:         userConfig.MonthlyBudgetMicros,
-	}, nil
+	}
 }
 
 func (mp *MediaProcessor) getDefaultMediaConfig() *MediaConfig {
@@ -1010,38 +1026,35 @@ func (mp *MediaProcessor) getDefaultMediaConfig() *MediaConfig {
 	}
 }
 
-func (mp *MediaProcessor) getUserRemainingBudget(ctx context.Context, username string) (int64, error) {
+func (mp *MediaProcessor) getUserRemainingBudget(ctx context.Context, username string) int64 {
 	// Get user's media configuration to get budget limits
-	config, err := mp.getUserMediaConfig(ctx, username)
-	if err != nil {
-		return 0, err
-	}
-	
+	config := mp.getUserMediaConfig(ctx, username)
+
 	// Get current month's spending
 	now := time.Now()
-	currentPeriod := now.Format("2006-01") // YYYY-MM format
-	userID := username // Simplification - in reality you'd resolve username to userID
-	
+	currentPeriod := now.Format(common.MonthFormat) // YYYY-MM format
+	userID := username                     // Simplification - in reality you'd resolve username to userID
+
 	spending, err := mp.mediaRepo.GetMediaSpending(ctx, userID, currentPeriod)
 	if err != nil {
 		// If no spending record exists, user has full budget available
 		if strings.Contains(err.Error(), "not found") {
-			return config.UserBudgetMicros, nil
+			return config.UserBudgetMicros
 		}
-		mp.logger.Error("failed to get user spending", 
+		mp.logger.Error("failed to get user spending",
 			zap.String("username", username),
 			zap.Error(err))
 		// Return full budget on error to avoid blocking users
-		return config.UserBudgetMicros, nil
+		return config.UserBudgetMicros
 	}
-	
+
 	// Calculate remaining budget
 	remaining := config.UserBudgetMicros - spending.TotalSpendMicros
 	if remaining < 0 {
-		return 0, nil
+		return 0
 	}
-	
-	return remaining, nil
+
+	return remaining
 }
 
 func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, event MediaProcessingEvent, mimeType string) (ProcessingResult, error) {
@@ -1056,10 +1069,10 @@ func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, e
 		ext = ".mp4"
 	case "audio/mpeg":
 		ext = ".mp3"
-	case "image/jpeg":
-		ext = ".jpg"
-	case "image/png":
-		ext = ".png"
+	case mimeJPEG:
+		ext = extJPG
+	case mimePNG:
+		ext = extPNG
 	}
 
 	// Upload original file
@@ -1084,73 +1097,6 @@ func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, e
 	return result, nil
 }
 
-func (mp *MediaProcessor) trackUserSpend(ctx context.Context, username string, amountMicros int64, category string) error {
-	userID := username // Simplification - in reality you'd resolve username to userID
-	
-	// Create spending transaction
-	transaction := &models.MediaSpendingTransaction{
-		UserID:      userID,
-		Username:    username,
-		CostMicros:  amountMicros,
-		Category:    category,
-		Service:     mp.getServiceFromCategory(category),
-		Operation:   mp.getOperationFromCategory(category),
-		Description: fmt.Sprintf("%s processing for user %s", category, username),
-	}
-	
-	// Add the spending transaction (this will also update the spending record)
-	err := mp.mediaRepo.AddSpendingTransaction(ctx, transaction)
-	if err != nil {
-		mp.logger.Error("failed to track user spending",
-			zap.String("username", username),
-			zap.Int64("amount_micros", amountMicros),
-			zap.String("category", category),
-			zap.Error(err))
-		return err
-	}
-	
-	mp.logger.Info("successfully tracked user spend",
-		zap.String("username", username),
-		zap.Int64("amount_micros", amountMicros),
-		zap.String("category", category))
-	
-	return nil
-}
-
-func (mp *MediaProcessor) getServiceFromCategory(category string) string {
-	switch category {
-	case "video_processing":
-		return "mediaconvert"
-	case "image_processing":
-		return "lambda"
-	case "audio_processing":
-		return "lambda"
-	case "storage":
-		return "s3"
-	case "bandwidth":
-		return "cloudfront"
-	default:
-		return "lambda"
-	}
-}
-
-func (mp *MediaProcessor) getOperationFromCategory(category string) string {
-	switch category {
-	case "video_processing":
-		return "video_transcode"
-	case "image_processing":
-		return "image_resize"
-	case "audio_processing":
-		return "audio_process"
-	case "storage":
-		return "storage_put"
-	case "bandwidth":
-		return "cdn_transfer"
-	default:
-		return "media_process"
-	}
-}
-
 func estimateVideoCost(sizeBytes int) int64 {
 	// MediaConvert: ~$0.024 per minute HD
 	// Estimate based on file size (rough approximation)
@@ -1161,15 +1107,15 @@ func estimateVideoCost(sizeBytes int) int64 {
 
 // TranscodingPlan represents a detailed plan for transcoding operations
 type TranscodingPlan struct {
-	QualityLevels     []string          `json:"quality_levels"`      // ["480p", "720p", "1080p"]
-	ExpectedOutputs   map[string]int64  `json:"expected_outputs"`    // quality -> expected file size
-	MediaConvertCost  int64             `json:"mediaconvert_cost"`   // Total MediaConvert cost
-	ThumbnailCount    int               `json:"thumbnail_count"`     // Number of thumbnails to generate
-	ThumbnailCost     int64             `json:"thumbnail_cost"`      // Total thumbnail generation cost
-	StorageCost       int64             `json:"storage_cost"`        // S3 storage cost for variants
-	AnalysisEnabled   bool              `json:"analysis_enabled"`    // Whether to run Rekognition analysis
-	AnalysisCost      int64             `json:"analysis_cost"`       // Rekognition analysis cost
-	TotalEstimatedCost int64            `json:"total_estimated_cost"`// Sum of all costs
+	QualityLevels      []string         `json:"quality_levels"`       // ["480p", "720p", "1080p"]
+	ExpectedOutputs    map[string]int64 `json:"expected_outputs"`     // quality -> expected file size
+	MediaConvertCost   int64            `json:"mediaconvert_cost"`    // Total MediaConvert cost
+	ThumbnailCount     int              `json:"thumbnail_count"`      // Number of thumbnails to generate
+	ThumbnailCost      int64            `json:"thumbnail_cost"`       // Total thumbnail generation cost
+	StorageCost        int64            `json:"storage_cost"`         // S3 storage cost for variants
+	AnalysisEnabled    bool             `json:"analysis_enabled"`     // Whether to run Rekognition analysis
+	AnalysisCost       int64            `json:"analysis_cost"`        // Rekognition analysis cost
+	TotalEstimatedCost int64            `json:"total_estimated_cost"` // Sum of all costs
 }
 
 // estimateTranscodingCosts creates a detailed transcoding plan and cost estimate
@@ -1267,154 +1213,6 @@ func (mp *MediaProcessor) estimateTranscodingCosts(metrics *TranscodingJobMetric
 	return plan, plan.TotalEstimatedCost
 }
 
-func (mp *MediaProcessor) createMediaConvertJob(ctx context.Context, s3InputKey string, event MediaProcessingEvent) (string, error) {
-	if mp.mediaConvertRole == "" {
-		return "", fmt.Errorf("MediaConvert role not configured")
-	}
-
-	// Define input and output locations
-	inputURI := fmt.Sprintf("s3://%s/%s", mp.bucketName, s3InputKey)
-	baseOutputKey := fmt.Sprintf("media/%s/%s", event.Username, event.MediaID)
-	outputURI := fmt.Sprintf("s3://%s/%s/", mp.bucketName, baseOutputKey)
-
-	// Create job settings for thumbnail extraction and multiple quality variants
-	jobSettings := &mctypes.JobSettings{
-		Inputs: []mctypes.Input{
-			{
-				FileInput:     aws.String(inputURI),
-				VideoSelector: &mctypes.VideoSelector{},
-				AudioSelectors: map[string]mctypes.AudioSelector{
-					"Audio Selector 1": {
-						DefaultSelection: mctypes.AudioDefaultSelectionDefault,
-					},
-				},
-			},
-		},
-		OutputGroups: []mctypes.OutputGroup{
-			// MP4 output group with multiple qualities
-			{
-				Name: aws.String("MP4 Group"),
-				OutputGroupSettings: &mctypes.OutputGroupSettings{
-					Type: mctypes.OutputGroupTypeFileGroupSettings,
-					FileGroupSettings: &mctypes.FileGroupSettings{
-						Destination: aws.String(outputURI),
-					},
-				},
-				Outputs: []mctypes.Output{
-					// 480p output
-					{
-						NameModifier: aws.String("_480p"),
-						VideoDescription: &mctypes.VideoDescription{
-							CodecSettings: &mctypes.VideoCodecSettings{
-								Codec: mctypes.VideoCodecH264,
-								H264Settings: &mctypes.H264Settings{
-									Bitrate: int32(1000000), // 1 Mbps
-								},
-							},
-							Width:  int32(854),
-							Height: int32(480),
-						},
-						AudioDescriptions: []mctypes.AudioDescription{
-							{
-								AudioSourceName: aws.String("Audio Selector 1"),
-								CodecSettings: &mctypes.AudioCodecSettings{
-									Codec: mctypes.AudioCodecAac,
-									AacSettings: &mctypes.AacSettings{
-										Bitrate:    int32(128000),
-										SampleRate: int32(48000),
-									},
-								},
-							},
-						},
-						ContainerSettings: &mctypes.ContainerSettings{
-							Container: mctypes.ContainerTypeMp4,
-						},
-					},
-					// 720p output
-					{
-						NameModifier: aws.String("_720p"),
-						VideoDescription: &mctypes.VideoDescription{
-							CodecSettings: &mctypes.VideoCodecSettings{
-								Codec: mctypes.VideoCodecH264,
-								H264Settings: &mctypes.H264Settings{
-									Bitrate: int32(2500000), // 2.5 Mbps
-								},
-							},
-							Width:  int32(1280),
-							Height: int32(720),
-						},
-						AudioDescriptions: []mctypes.AudioDescription{
-							{
-								AudioSourceName: aws.String("Audio Selector 1"),
-								CodecSettings: &mctypes.AudioCodecSettings{
-									Codec: mctypes.AudioCodecAac,
-									AacSettings: &mctypes.AacSettings{
-										Bitrate:    int32(128000),
-										SampleRate: int32(48000),
-									},
-								},
-							},
-						},
-						ContainerSettings: &mctypes.ContainerSettings{
-							Container: mctypes.ContainerTypeMp4,
-						},
-					},
-				},
-			},
-			// Thumbnail output group
-			{
-				Name: aws.String("Thumbnail Group"),
-				OutputGroupSettings: &mctypes.OutputGroupSettings{
-					Type: mctypes.OutputGroupTypeFileGroupSettings,
-					FileGroupSettings: &mctypes.FileGroupSettings{
-						Destination: aws.String(outputURI),
-					},
-				},
-				Outputs: []mctypes.Output{
-					{
-						NameModifier: aws.String("_thumb"),
-						VideoDescription: &mctypes.VideoDescription{
-							CodecSettings: &mctypes.VideoCodecSettings{
-								Codec: mctypes.VideoCodecFrameCapture,
-								FrameCaptureSettings: &mctypes.FrameCaptureSettings{
-									FramerateNumerator:   int32(1),
-									FramerateDenominator: int32(10), // 1 frame every 10 seconds
-									MaxCaptures:          int32(1),  // Just one thumbnail
-									Quality:              int32(80),
-								},
-							},
-							Width:  int32(320),
-							Height: int32(240),
-						},
-						ContainerSettings: &mctypes.ContainerSettings{
-							Container: mctypes.ContainerTypeRaw,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Create the job
-	createJobInput := &mediaconvert.CreateJobInput{
-		Queue:    aws.String(mp.mediaConvertQueue),
-		Role:     aws.String(mp.mediaConvertRole),
-		Settings: jobSettings,
-		UserMetadata: map[string]string{
-			"username": event.Username,
-			"media_id": event.MediaID,
-			"job_id":   event.JobID,
-		},
-	}
-
-	result, err := mp.mediaConvertClient.CreateJob(ctx, createJobInput)
-	if err != nil {
-		return "", fmt.Errorf("failed to create MediaConvert job: %w", err)
-	}
-
-	return aws.ToString(result.Job.Id), nil
-}
-
 // validateFileType checks if the file type is allowed and matches content
 func validateFileType(data []byte, claimedMimeType string) error {
 	// Check size first to avoid processing huge files
@@ -1435,10 +1233,9 @@ func validateFileType(data []byte, claimedMimeType string) error {
 		return fmt.Errorf("file type not allowed: %s", detectedType)
 	}
 
-	// Warn if claimed type doesn't match detected type
+	// Check if claimed type matches detected type
 	if claimedMimeType != "" && claimedMimeType != detectedType {
-		// MIME type mismatch - detected vs claimed
-		// Log would be: claimed=%s detected=%s, claimedMimeType, detectedType
+		return fmt.Errorf("claimed MIME type %s does not match detected type %s", claimedMimeType, detectedType)
 	}
 
 	// Check file size limits based on type
@@ -1457,7 +1254,7 @@ func checkFileSizeLimit(data []byte, mimeType string) error {
 
 	switch {
 	case strings.HasPrefix(mimeType, "image/"):
-		if mimeType == "image/gif" {
+		if mimeType == common.ImageGIF {
 			maxSize = maxGifSize
 			fileType = "GIF"
 		} else {
@@ -1492,7 +1289,8 @@ func extractAudioDuration(data []byte) (int, error) {
 	// Get track and disc information from metadata
 	track, _ := metadata.Track()
 	if track != 0 {
-		// This is track number, not duration - fallback to format-specific parsing
+		// Found track number in metadata, using format-specific parsing
+		_ = track // Use track number for future processing
 	}
 
 	// For MP3 files, calculate duration from file size and bitrate if available
@@ -1509,41 +1307,39 @@ func extractAudioDuration(data []byte) (int, error) {
 	return 0, fmt.Errorf("unable to determine audio duration")
 }
 
-// extractVideoMetadata extracts basic video metadata from video data
-func extractVideoMetadata(data []byte) (width, height, duration int) {
-	// This is a simplified implementation
-	// For production, use ffprobe or a video parsing library
-
-	// Check for MP4 format markers
-	if len(data) > 100 && bytes.Contains(data[:100], []byte("ftyp")) {
-		// Look for moov atom which contains metadata
-		if moovIndex := bytes.Index(data, []byte("moov")); moovIndex > 0 {
-			// This is a very simplified approach
-			// Real implementation would parse MP4 atoms properly
-
-			// Set some reasonable defaults based on common video sizes
-			// In production, parse the actual video stream headers
-			width = 1920 // assume HD by default
-			height = 1080
-			duration = 30000 // 30 seconds default
-
-			// Try to find tkhd atom for track header with dimensions
-			if tkhdIndex := bytes.Index(data[moovIndex:], []byte("tkhd")); tkhdIndex > 0 {
-				// Parse track header for actual dimensions
-				// This is placeholder - real parsing would extract from binary data
-				// For now, return HD defaults
-			}
+// extractVideoMetadata extracts real video metadata from video data using MP4 atom parsing
+func (mp *MediaProcessor) extractVideoMetadata(data []byte) (width, height, duration int) {
+	// Use the new comprehensive video metadata parser
+	metadata, err := media.ParseVideoMetadata(data)
+	if err != nil {
+		// If parsing fails, provide reasonable defaults based on file size
+		mp.logger.Warn("failed to parse video metadata, using defaults", zap.Error(err))
+		
+		sizeMB := len(data) / (1024 * 1024)
+		switch {
+		case sizeMB > 100: // Large file, likely HD or higher
+			return 1920, 1080, 60000 // 1 minute default
+		case sizeMB > 50: // Medium file, likely 720p
+			return 1280, 720, 45000 // 45 seconds default
+		default: // Small file, likely SD
+			return 854, 480, 30000 // 30 seconds default
 		}
 	}
 
-	// For other formats or if parsing fails, return reasonable defaults
-	if width == 0 {
-		width = 854  // 480p width
-		height = 480 // 480p height
-		duration = 0 // unknown duration
-	}
+	mp.logger.Debug("extracted video metadata",
+		zap.Int("width", metadata.Width),
+		zap.Int("height", metadata.Height),
+		zap.Int("duration_ms", metadata.Duration),
+		zap.Float64("duration_seconds", metadata.DurationSeconds),
+		zap.String("video_codec", metadata.VideoCodec),
+		zap.String("audio_codec", metadata.AudioCodec),
+		zap.Bool("has_video", metadata.HasVideo),
+		zap.Bool("has_audio", metadata.HasAudio),
+		zap.Int64("bitrate", metadata.Bitrate),
+		zap.Float64("frame_rate", metadata.FrameRate))
 
-	return width, height, duration
+	// Return the parsed metadata
+	return metadata.Width, metadata.Height, metadata.Duration
 }
 
 // sanitizeS3Key ensures the S3 key doesn't contain path traversal attempts
@@ -1614,7 +1410,7 @@ func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, conf
 // estimateProcessingCost estimates the cost of processing a media file
 func (mp *MediaProcessor) estimateProcessingCost(data []byte, mimeType string) int64 {
 	fileSize := int64(len(data))
-	
+
 	switch {
 	case strings.HasPrefix(mimeType, "image/"):
 		// Image processing: ~$0.0001 per image
@@ -1635,19 +1431,19 @@ func estimateVideoDurationFromSize(sizeBytes int64) int {
 	// Very rough estimation: assume average bitrate of 1 Mbps
 	// This is just for quota checking - real implementation would parse video metadata
 	const avgBitrateBytesPerSecond = 125000 // 1 Mbps in bytes/second
-	
+
 	estimatedSeconds := int(sizeBytes / avgBitrateBytesPerSecond)
 	if estimatedSeconds < 1 {
 		estimatedSeconds = 1
 	}
-	
+
 	return estimatedSeconds
 }
 
 // updateStorageUsageForUser updates a user's storage usage statistics
 func (mp *MediaProcessor) updateStorageUsageForUser(ctx context.Context, username string, additionalBytes int64) error {
 	userID := username // Simplification
-	
+
 	// Get user's media config
 	config, err := mp.mediaRepo.GetUserMediaConfig(ctx, userID)
 	if err != nil {
@@ -1657,10 +1453,10 @@ func (mp *MediaProcessor) updateStorageUsageForUser(ctx context.Context, usernam
 		}
 		return err
 	}
-	
+
 	// Update storage usage
 	config.UpdateStorageUsage(additionalBytes)
-	
+
 	// Save updated config
 	return mp.mediaRepo.UpdateUserMediaConfig(ctx, config)
 }

@@ -1,3 +1,4 @@
+// Package translation provides AWS Translate integration with caching for multilingual content support.
 package translation
 
 import (
@@ -178,12 +179,16 @@ func (s *Service) TranslateHTML(ctx context.Context, html, sourceLang, targetLan
 
 // Helper types and functions
 
+// TranslationCache provides caching for translations
+//
+//nolint:revive // Translation prefix clarifies this is translation-specific cache
 type TranslationCache struct {
 	TranslatedText   string
 	DetectedLanguage string
 	CachedAt         time.Time
 }
 
+// LanguageInfo contains information about a language
 type LanguageInfo struct {
 	Code string
 	Name string
@@ -285,30 +290,71 @@ func (s *Service) getCachedLanguages(ctx context.Context) ([]LanguageInfo, error
 		return nil, nil // Cache miss
 	}
 
-	// Parse the cached language list
+	return s.parseLanguagesFromCache(result.Item)
+}
+
+// parseLanguagesFromCache parses the language list from DynamoDB cache item
+func (s *Service) parseLanguagesFromCache(item map[string]types.AttributeValue) ([]LanguageInfo, error) {
+	languageList, ok := item["Languages"]
+	if !ok {
+		return nil, nil
+	}
+
+	listVal, ok := languageList.(*types.AttributeValueMemberL)
+	if !ok {
+		return nil, nil
+	}
+
 	var languages []LanguageInfo
-	if languageList, ok := result.Item["Languages"]; ok {
-		if listVal, ok := languageList.(*types.AttributeValueMemberL); ok {
-			for _, langItem := range listVal.Value {
-				if langMap, ok := langItem.(*types.AttributeValueMemberM); ok {
-					var lang LanguageInfo
-					if code, ok := langMap.Value["Code"]; ok {
-						if codeVal, ok := code.(*types.AttributeValueMemberS); ok {
-							lang.Code = codeVal.Value
-						}
-					}
-					if name, ok := langMap.Value["Name"]; ok {
-						if nameVal, ok := name.(*types.AttributeValueMemberS); ok {
-							lang.Name = nameVal.Value
-						}
-					}
-					languages = append(languages, lang)
-				}
-			}
+	for _, langItem := range listVal.Value {
+		if lang := s.parseLanguageItem(langItem); lang != nil {
+			languages = append(languages, *lang)
 		}
 	}
 
 	return languages, nil
+}
+
+// parseLanguageItem parses a single language item from DynamoDB attribute value
+func (s *Service) parseLanguageItem(langItem types.AttributeValue) *LanguageInfo {
+	langMap, ok := langItem.(*types.AttributeValueMemberM)
+	if !ok {
+		return nil
+	}
+
+	lang := &LanguageInfo{}
+	
+	// Extract language code
+	if code := s.extractStringValue(langMap.Value, "Code"); code != "" {
+		lang.Code = code
+	}
+	
+	// Extract language name
+	if name := s.extractStringValue(langMap.Value, "Name"); name != "" {
+		lang.Name = name
+	}
+
+	// Return nil if both code and name are empty
+	if lang.Code == "" && lang.Name == "" {
+		return nil
+	}
+
+	return lang
+}
+
+// extractStringValue extracts a string value from a DynamoDB attribute map
+func (s *Service) extractStringValue(attrMap map[string]types.AttributeValue, key string) string {
+	attr, ok := attrMap[key]
+	if !ok {
+		return ""
+	}
+
+	strVal, ok := attr.(*types.AttributeValueMemberS)
+	if !ok {
+		return ""
+	}
+
+	return strVal.Value
 }
 
 // cacheLanguages stores the language list in DynamoDB
@@ -316,7 +362,7 @@ func (s *Service) cacheLanguages(ctx context.Context, languages []LanguageInfo) 
 	ttl := time.Now().Add(24 * time.Hour).Unix() // 24 hour TTL for language list
 
 	// Convert languages to DynamoDB format
-	var languageList []types.AttributeValue
+	languageList := make([]types.AttributeValue, 0, len(languages))
 	for _, lang := range languages {
 		langMap := map[string]types.AttributeValue{
 			"Code": &types.AttributeValueMemberS{Value: lang.Code},

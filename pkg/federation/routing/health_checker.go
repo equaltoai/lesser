@@ -20,7 +20,6 @@ type InstanceHealthChecker struct {
 	httpClient *http.Client
 }
 
-
 // NewHealthChecker creates a new health checker using DynamORM
 func NewHealthChecker(healthRepo *repositories.InstanceHealthRepository, logger *zap.Logger, config *types.RoutingConfig) *InstanceHealthChecker {
 	return &InstanceHealthChecker{
@@ -40,14 +39,14 @@ func NewHealthChecker(healthRepo *repositories.InstanceHealthRepository, logger 
 
 // StartMonitoring is deprecated - use serverless health checking instead
 // This method is kept for compatibility but does nothing
-func (hc *InstanceHealthChecker) StartMonitoring(instance *types.Instance) error {
+func (hc *InstanceHealthChecker) StartMonitoring(_ *types.Instance) error {
 	hc.logger.Warn("StartMonitoring called on DynamORM health checker - use serverless health checking instead")
 	return nil
 }
 
-// StopMonitoring is deprecated - use serverless health checking instead  
+// StopMonitoring is deprecated - use serverless health checking instead
 // This method is kept for compatibility but does nothing
-func (hc *InstanceHealthChecker) StopMonitoring(instanceID string) error {
+func (hc *InstanceHealthChecker) StopMonitoring(_ string) error {
 	hc.logger.Warn("StopMonitoring called on DynamORM health checker - use serverless health checking instead")
 	return nil
 }
@@ -135,7 +134,7 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *types.Instance) (*types.H
 func (hc *InstanceHealthChecker) GetHealthHistory(instanceID string, duration time.Duration) ([]*types.HealthStatus, error) {
 	ctx := context.Background()
 	since := time.Now().Add(-duration)
-	
+
 	// Use the repository to get health history
 	healthRecords, err := hc.healthRepo.GetHealthHistory(ctx, instanceID, since, 100)
 	if err != nil {
@@ -164,7 +163,7 @@ func (hc *InstanceHealthChecker) GetHealthHistory(instanceID string, duration ti
 // GetAggregatedHealth returns aggregated health metrics using DynamORM
 func (hc *InstanceHealthChecker) GetAggregatedHealth(instanceID string, window time.Duration) (*AggregatedHealth, error) {
 	ctx := context.Background()
-	
+
 	// Try to get cached summary first
 	summary, err := hc.healthRepo.GetHealthSummary(ctx, instanceID, window)
 	if err == nil && summary != nil {
@@ -183,7 +182,7 @@ func (hc *InstanceHealthChecker) GetAggregatedHealth(instanceID string, window t
 			StatusCodes:     convertStatusCodes(summary.StatusCodeCounts),
 		}, nil
 	}
-	
+
 	// Fallback to calculating from raw history
 	history, err := hc.GetHealthHistory(instanceID, window)
 	if err != nil {
@@ -284,7 +283,7 @@ func convertStatusCodes(statusCodes map[string]int) map[int]int {
 	if statusCodes == nil {
 		return nil
 	}
-	
+
 	result := make(map[int]int)
 	for codeStr, count := range statusCodes {
 		var code int
@@ -304,7 +303,7 @@ func (hc *InstanceHealthChecker) calculateHealthScore(agg *AggregatedHealth) flo
 	// Response time (30% weight)
 	if agg.AvgResponseTime > 1*time.Second {
 		penalty := float64(agg.AvgResponseTime.Milliseconds()-1000) / 100.0 // -1 point per 100ms over 1s
-		score -= min(penalty, 30.0)
+		score -= mathMin(penalty, 30.0)
 	}
 
 	// Error rate (20% weight)
@@ -313,10 +312,10 @@ func (hc *InstanceHealthChecker) calculateHealthScore(agg *AggregatedHealth) flo
 	// Backlog (10% weight)
 	if agg.MaxBacklog > 1000 {
 		penalty := float64(agg.MaxBacklog-1000) / 1000.0 // -1 point per 1000 messages
-		score -= min(penalty, 10.0)
+		score -= mathMin(penalty, 10.0)
 	}
 
-	return max(score, 0.0)
+	return mathMax(score, 0.0)
 }
 
 // AggregatedHealth represents aggregated health metrics
@@ -336,14 +335,14 @@ type AggregatedHealth struct {
 	HealthScore float64 // 0-100
 }
 
-func min(a, b float64) float64 {
+func mathMin(a, b float64) float64 {
 	if a < b {
 		return a
 	}
 	return b
 }
 
-func max(a, b float64) float64 {
+func mathMax(a, b float64) float64 {
 	if a > b {
 		return a
 	}

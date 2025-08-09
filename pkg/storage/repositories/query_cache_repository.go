@@ -35,12 +35,12 @@ func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, i
 func (r *QueryCacheRepository) GetCachedValue(ctx context.Context, cacheKey string) (interface{}, error) {
 	var entry models.QueryCacheEntry
 	pk := fmt.Sprintf("CACHE#%s", cacheKey)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.QueryCacheEntry{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", "ENTRY").
 		First(&entry)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil // Cache miss
@@ -94,7 +94,7 @@ func (r *QueryCacheRepository) SetCachedValue(ctx context.Context, cacheKey stri
 		return fmt.Errorf("set cached value: %w", err)
 	}
 
-	r.logger.Debug("Cached value", 
+	r.logger.Debug("Cached value",
 		zap.String("cacheKey", cacheKey),
 		zap.Int("size", size))
 	return nil
@@ -114,7 +114,7 @@ func (r *QueryCacheRepository) InvalidateCachePattern(ctx context.Context, patte
 		Where("PK", "=", pk).
 		Where("SK", "=", "ENTRY").
 		Delete()
-	
+
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("Failed to invalidate cache entry",
 			zap.String("pattern", pattern),
@@ -129,14 +129,14 @@ func (r *QueryCacheRepository) InvalidateCachePattern(ctx context.Context, patte
 // invalidateCachePrefix removes all cache entries with keys starting with prefix
 func (r *QueryCacheRepository) invalidateCachePrefix(ctx context.Context, prefix string) error {
 	var entries []models.QueryCacheEntry
-	
+
 	pk := fmt.Sprintf("CACHE#%s", prefix)
-	
+
 	// Scan for entries with keys starting with prefix
 	query := r.db.WithContext(ctx).Model(&models.QueryCacheEntry{}).
 		Where("PK", "begins_with", pk).
 		Where("SK", "=", "ENTRY")
-	
+
 	err := query.All(&entries)
 	if err != nil {
 		r.logger.Error("Failed to scan cache entries for prefix",
@@ -302,17 +302,17 @@ func (r *QueryCacheRepository) BatchGetInstances(ctx context.Context, instanceID
 }
 
 // GetMetricsInRange retrieves delivery results for metrics queries
-func (r *QueryCacheRepository) GetMetricsInRange(ctx context.Context, routeID string, start, end time.Time, limit int) ([]*types.DeliveryResult, error) {
+func (r *QueryCacheRepository) GetMetricsInRange(_ context.Context, routeID string, start, end time.Time, limit int) ([]*types.DeliveryResult, error) {
 	// For metrics queries, we don't cache these as they're frequently updated
 	// Use the route optimizer repository to get the data
 	// This method would need to be implemented or we could integrate with route optimizer repository
-	
+
 	r.logger.Debug("Getting metrics in range (no caching for metrics)",
 		zap.String("routeID", routeID),
 		zap.Time("start", start),
 		zap.Time("end", end),
 		zap.Int("limit", limit))
-	
+
 	// For now, return empty slice - this would need actual implementation
 	// or delegation to route optimizer repository
 	return []*types.DeliveryResult{}, nil
@@ -321,21 +321,21 @@ func (r *QueryCacheRepository) GetMetricsInRange(ctx context.Context, routeID st
 // PrewarmActiveInstances preloads active instances into cache
 func (r *QueryCacheRepository) PrewarmActiveInstances(ctx context.Context) error {
 	r.logger.Info("Prewarming active instances cache")
-	
+
 	// Get active instances and cache them
 	_, err := r.GetInstancesByStatus(ctx, types.InstanceStatusActive)
 	if err != nil {
 		return fmt.Errorf("prewarm active instances: %w", err)
 	}
-	
+
 	return nil
 }
 
 // CleanupExpiredEntries removes expired cache entries (handled by TTL, but can be called manually)
-func (r *QueryCacheRepository) CleanupExpiredEntries(ctx context.Context) error {
+func (r *QueryCacheRepository) CleanupExpiredEntries(_ context.Context) error {
 	// Since we use TTL, this is mainly for manual cleanup if needed
 	// In practice, DynamoDB will automatically remove expired items
-	
+
 	r.logger.Info("Cache cleanup requested - using TTL for automatic cleanup")
 	return nil
 }

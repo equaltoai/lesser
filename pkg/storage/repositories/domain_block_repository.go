@@ -37,11 +37,13 @@ func (r *DomainBlockRepository) AddDomainBlock(ctx context.Context, username, do
 		Domain:    domain,
 		CreatedAt: time.Now(),
 	}
-	block.UpdateKeys()
+	if err := block.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update domain block keys: %w", err)
+	}
 
 	// Use Create with condition to prevent duplicates
 	err := r.db.WithContext(ctx).Model(block).Create()
-	
+
 	if err != nil {
 		// Check if it's a duplicate (already exists)
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
@@ -60,7 +62,9 @@ func (r *DomainBlockRepository) RemoveDomainBlock(ctx context.Context, username,
 		Username: username,
 		Domain:   domain,
 	}
-	block.UpdateKeys()
+	if err := block.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update domain block keys for removal: %w", err)
+	}
 
 	err := r.db.WithContext(ctx).Model(&models.UserDomainBlock{}).
 		Where("PK", "=", block.PK).
@@ -322,7 +326,7 @@ func (r *DomainBlockRepository) UpdateInstanceDomainBlock(ctx context.Context, d
 		Where("PK", "=", fmt.Sprintf("DOMAIN_BLOCK#%s", domain)).
 		Where("SK", "=", fmt.Sprintf("DOMAIN_BLOCK#%s", domain)).
 		First(&modelBlock)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
@@ -332,7 +336,7 @@ func (r *DomainBlockRepository) UpdateInstanceDomainBlock(ctx context.Context, d
 
 	// Apply updates to the model
 	modelBlock.UpdatedAt = time.Now()
-	
+
 	if severity, ok := updates["severity"].(string); ok {
 		modelBlock.Severity = severity
 	}

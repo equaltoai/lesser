@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TrendingStatus represents a trending status/post
@@ -24,9 +25,9 @@ type TrendingStatus struct {
 	Replies     int       `json:"replies"`    // Number of replies
 
 	// Additional fields for trending
-	Date          string  `json:"date"`           // Date for trending (YYYY-MM-DD)
-	TrendingScore float64 `json:"trending_score"` // Calculated trending score
-	Rank          int     `json:"rank"`           // Position in trending list
+	Date          string  `json:"date"`                         // Date for trending (YYYY-MM-DD)
+	TrendingScore float64 `json:"trending_score"`               // Calculated trending score
+	Rank          int     `json:"rank"`                         // Position in trending list
 	TTL           int64   `json:"ttl,omitempty" dynamorm:"ttl"` // 7 days retention
 }
 
@@ -35,10 +36,10 @@ func (t *TrendingStatus) UpdateKeys() {
 	t.PK = fmt.Sprintf("TRENDING#%s", t.Date)
 	// Format score with leading zeros for proper sorting (higher scores first)
 	t.SK = fmt.Sprintf("STATUS#%010.0f#%s", 10000000000-t.TrendingScore, t.ID)
-	
+
 	// Set TTL to 7 days from the trending date
 	if t.Date != "" {
-		if date, err := time.Parse("2006-01-02", t.Date); err == nil {
+		if date, err := time.Parse(common.DateFormat, t.Date); err == nil {
 			t.TTL = date.AddDate(0, 0, 7).Unix()
 		}
 	}
@@ -90,12 +91,12 @@ func (t *TrendingStatus) CalculateTrendingScore() {
 	likeWeight := 1.0
 	boostWeight := 2.0
 	replyWeight := 3.0
-	
+
 	// Calculate base score
-	baseScore := float64(t.Likes)*likeWeight + 
-	            float64(t.Boosts)*boostWeight + 
-	            float64(t.Replies)*replyWeight
-	
+	baseScore := float64(t.Likes)*likeWeight +
+		float64(t.Boosts)*boostWeight +
+		float64(t.Replies)*replyWeight
+
 	// Apply time decay - content loses 50% of its score every 24 hours
 	hoursSincePublished := time.Since(t.PublishedAt).Hours()
 	decay := 1.0
@@ -103,7 +104,7 @@ func (t *TrendingStatus) CalculateTrendingScore() {
 		halfLife := 24.0 // hours
 		decay = pow(0.5, hoursSincePublished/halfLife)
 	}
-	
+
 	t.TrendingScore = baseScore * decay
 	t.Engagements = int64(t.Likes + t.Boosts + t.Replies)
 }

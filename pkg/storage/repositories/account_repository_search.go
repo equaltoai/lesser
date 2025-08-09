@@ -202,9 +202,9 @@ func (r *AccountRepository) getPopularAccountSuggestions(ctx context.Context, us
 		}
 
 		suggestions = append(suggestions, &storage.AccountSuggestion{
-			Actor:      actor.Actor,
-			Reason:     "popular",
-			Score:      float64(actor.FollowerCount),
+			Actor:         actor.Actor,
+			Reason:        "popular",
+			Score:         float64(actor.FollowerCount),
 			FollowerCount: actor.FollowerCount,
 		})
 	}
@@ -251,9 +251,9 @@ func (r *AccountRepository) getFriendOfFriendSuggestions(ctx context.Context, us
 		}
 
 		suggestions = append(suggestions, &storage.AccountSuggestion{
-			Actor:          actor,
-			Reason:         "friend_of_friend",
-			Score:          float64(count),
+			Actor:           actor,
+			Reason:          "friend_of_friend",
+			Score:           float64(count),
 			MutualFollowers: count,
 		})
 	}

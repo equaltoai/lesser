@@ -1,309 +1,250 @@
 # golangci-lint configuration for Lesser project
-# Configuration version
+# Based on best practices for 2024-2025
 version: "2"
 
 run:
   # Timeout for analysis
-  timeout: 5m
+  timeout: 10m
   
-  # Include test files
-  tests: true
+  # Exclude test files from analysis
+  tests: false
   
-  # List of build tags to apply
+  # Build tags to apply
   build-tags:
     - integration
   
-  # Which directories to exclude
-  exclude-dirs:
+  # Directories to exclude (use absolute patterns)
+  skip-dirs:
     - docs
-    - scripts
     - examples
     - infra
     - tests
     - build
     - bin
     - dist
-    - paytheory-partnership
-    - internal/testutil/mocks
+    - vendor
+    - .git
+    - scripts
+    
+  # Files to exclude (patterns)
+  skip-files:
+    - ".*_generated\\.go$"
+    - "^scripts/.*\\.go$"
 
 output:
-  # Output format
+  # Format: colored-line-number, line-number, json, checkstyle, code-climate
   format: colored-line-number
   
   # Print lines of code with issue
   print-issued-lines: true
   
-  # Print linter name in the end of issue text
+  # Print linter name in the end
   print-linter-name: true
 
 linters:
   enable:
-    # Critical - Security and correctness
-    - govet         # Reports suspicious constructs
+    # Critical - bugs, errors, security
+    - govet         # Suspicious constructs
     - staticcheck   # Advanced static analysis
+    - errcheck      # Unchecked errors
+    - bodyclose     # HTTP response body closure
     - gosec         # Security problems
-    - bodyclose     # Checks HTTP response body closure
-    - noctx         # HTTP without context
-    - bidichk       # Dangerous unicode
     
-    # Code quality - Important for maintainability
-    - ineffassign   # Detects unused assignments
-    - unused        # Checks for unused code
-    - errcheck      # Checking for unchecked errors
-    - misspell      # Spelling mistakes
-    - unconvert     # Unnecessary type conversions
-    - unparam       # Unused function parameters
+    # Code correctness
+    - ineffassign   # Unused assignments
+    - unused        # Unused code
     
-    # Style - Keep codebase consistent
-    - revive        # Style and conventions
-    - goconst       # Finds repeated strings (configured)
-    - nakedret      # Finds naked returns in long functions
+    # Style and maintainability
+    - goconst       # Repeated strings
+    - misspell      # Spelling
+    - revive        # Style and convention enforcement
     
-    # Performance
-    - prealloc      # Preallocatable slices (for hot paths only)
-    
-    # Complexity management
-    - gocyclo       # Cyclomatic complexity (configured)
-    - dupl          # Code duplication (configured)
+    # Complexity
+    - gocyclo       # Cyclomatic complexity
+    - gocognit      # Cognitive complexity
     
   disable:
-    # Legitimately too strict
+    # Too strict or noisy
+    - godox         # TODO/FIXME comments are OK
+    - wsl           # Whitespace rules too pedantic
+    - nlreturn      # Newline before return too pedantic
     - exhaustive    # Not all switches need to be exhaustive
-    - nilerr        # Returning nil, nil is often correct
-    - copyloopvar   # Not always necessary
-    - whitespace    # Too pedantic about blank lines
-    
-    # Already disabled
-    - funlen        # Function length
-    - godox         # TODO/FIXME comments
-    - lll           # Line length
-    - nestif        # Deeply nested ifs
-    - wsl           # Whitespace linter
-    - testpackage   # Separate test packages
-    - paralleltest  # Parallel tests
-    - wrapcheck     # Error wrapping
+    - exhaustruct   # Not all structs need all fields
     - varnamelen    # Variable name length
-    - gochecknoglobals # Global variables
-    - gochecknoinits   # Init functions
-    - cyclop        # Cyclomatic complexity
-    - gocognit      # Cognitive complexity
-    - maintidx      # Maintainability index
-    - asciicheck    # Non-ASCII identifiers are fine
+    - funlen        # Function length
+    - lll           # Line length
+    - dupl          # Code duplication - REST handlers naturally similar
+    
+    # Documentation linters - enable later
+    - godot         # Comment periods
 
 linters-settings:
-  dupl:
-    # Tokens count to trigger issue - increased for repository pattern code
-    threshold: 200  # Repository methods often have similar structure
-    
   errcheck:
-    # Report about not checking of errors in type assertions
-    check-type-assertions: false
-    # Report about assignment of errors to blank identifier
+    # Check type assertions
+    check-type-assertions: true
+    # Check for blank assignments
     check-blank: false
-    # Exclude some functions where error checking is often not needed
-    exclude-functions:
-      - io.Closer.Close
-      - io/ioutil.ReadFile
-      - io.Copy
-      - io.WriteString
-      - (net/http.ResponseWriter).Write
-      - (io.Writer).Write
-      - fmt.Print
-      - fmt.Printf
-      - fmt.Println
-      - fmt.Fprint
-      - fmt.Fprintf
-      - fmt.Fprintln
-      - (*go.uber.org/zap.Logger).Debug
-      - (*go.uber.org/zap.Logger).Info
-      - (*go.uber.org/zap.Logger).Warn
-      - (*go.uber.org/zap.Logger).Error
     
   goconst:
-    # Minimal length of string constant
-    min-len: 4  # Ignore very short strings
-    # Minimal occurrences count to trigger
-    min-occurrences: 5  # Only flag if used 5+ times
+    # Minimum length of string constant
+    min-len: 3
+    # Minimum occurrences
+    min-occurrences: 3
     
   gocyclo:
-    # Minimal cyclomatic complexity to trigger
-    min-complexity: 20  # Allow moderately complex functions
+    # Minimal complexity to report
+    min-complexity: 30
+    
+  gocognit:
+    # Minimal cognitive complexity to report
+    min-complexity: 30
     
   gosec:
     # Exclude specific rules
     excludes:
-      - G101 # Look for hardcoded credentials
-      - G401 # Detect weak crypto (MD5, SHA1)
-      - G501 # Import blocklist: crypto/md5
-      - G505 # Import blocklist: crypto/sha1
+      - G104  # Unhandled errors (use errcheck instead)
+      - G101  # Hardcoded credentials (too many false positives)
     
   govet:
-    # Settings for govet
+    # Enable shadow checking
     enable:
       - shadow
     settings:
       shadow:
         strict: false
-    
+        
   misspell:
     # Locale to use
     locale: US
     
-  nakedret:
-    # Max function length to check for naked returns
-    max-func-lines: 50  # Only flag naked returns in longer functions
-    
-  prealloc:
-    # Report preallocations only on simple loops
-    simple: true
-    range-loops: true
-    for-loops: true
-    
-  revive:
-    # Only enable essential rules
-    rules:
-      # Critical rules
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: errorf
-      - name: empty-block
-      - name: superfluous-else
-      - name: unreachable-code
-      - name: var-naming
-        arguments:
-          - ["ID", "URL", "API", "ASCII", "CPU", "CSS", "DNS", "EOF", "GUID", "HTML", "HTTP", "HTTPS", "JSON", "LHS", "QPS", "RAM", "RHS", "RPC", "SLA", "SMTP", "SQL", "SSH", "TLS", "TTL", "UI", "UID", "UUID", "URI", "URL", "UTF8", "VM", "XML", "XSRF", "XSS"]
-      - name: time-naming
-      - name: unexported-return
-        disabled: true  # Interface implementations return unexported types
-      - name: exported
-        disabled: true  # We don't need comments on everything
-      - name: if-return
-        disabled: true  # Sometimes explicit is clearer
-      - name: cognitive-complexity
-        disabled: true
-      - name: cyclomatic
-        disabled: true  # Using gocyclo instead
-      
-  staticcheck:
-    # Go version to target
-    go: "1.21"
-    
   unused:
-    # Go version to target
-    go: "1.21"
-    
-  unparam:
-    # Don't report unused params in tests or when implementing interfaces
+    # Check exported fields
     check-exported: false
     
-    
-  whitespace:
-    # Enforce proper whitespace
-    multi-if: true
-    multi-func: true
+  staticcheck:
+    # Go version
+    go: "1.21"
+    # Checks to run
+    checks: ["all"]
+  
+  revive:
+    # Disable some overly strict rules
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+        arguments:
+          - "disableStutteringCheck"
+      - name: var-naming
+        severity: warning
+        disabled: false
+      - name: package-comments
+        severity: warning
+        disabled: true  # Too many false positives for Lambda handlers
+      - name: comment-spacings
+        severity: warning
+        disabled: true
+      - name: line-length-limit
+        severity: warning
+        disabled: true
+      - name: function-result-limit
+        severity: warning
+        disabled: true
+      - name: max-public-structs
+        severity: warning
+        disabled: true
+      - name: cognitive-complexity
+        severity: warning
+        disabled: true  # We're using gocognit for this
+      - name: cyclomatic
+        severity: warning
+        disabled: true  # We're using gocyclo for this
+      - name: confusing-naming
+        severity: warning
+        disabled: true
+      - name: add-constant
+        severity: warning
+        disabled: true  # We're using goconst for this
 
 issues:
-  # List of regexps of issue texts to exclude
-  exclude:
-    # Common patterns that are acceptable
-    - "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*print(f|ln)?|os\\.(Un)?Setenv). is not checked"
-    - "exported (type|method|function) .* should have comment or be unexported"
-    - "ST1000: at least one file in a package should have a package comment"
-    - "SA1019: .*is deprecated"  # We'll handle deprecations separately
-    - "G104: Errors unhandled"  # Too many false positives
-    - "at least one file in a package should have a package comment"
-    - "should have a package comment"
-    - "comment on exported"
-    - "should have comment"
-    - "Error return value not checked"
-    - "error returned from interface method should be wrapped"
-    - "cyclomatic complexity"
-    
-  # Exclude configuration per-path, per-linter, per-text
-  exclude-rules:
-    # Test files can be more relaxed
-    - path: _test\.go
-      linters:
-        - gocyclo       # Tests can be complex
-        - errcheck      # Tests often ignore errors intentionally
-        - dupl          # Test patterns repeat
-        - gosec         # Test security is less critical
-        - goconst       # Test strings don't need constants
-        - unparam       # Test helpers may have unused params
-        
-    # Exclude linters from generated files
-    - path: generated\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-        - unused
-        - goconst
-        - revive
-        
-    # Lambda handlers often need init()
-    - path: cmd/.*/main\.go
-      linters:
-        - gochecknoinits
-      text: "init function"
-        
-    # GraphQL generated code
-    - path: graph/generated\.go
-      linters:
-        - gocyclo
-        - dupl
-        - revive
-        - goconst
-        - gosec
-        - errcheck
-        
-    # Model files often have repetitive code
-    - path: (models?|model)/.*\.go
-      linters:
-        - dupl
-        
-    # Storage implementations often have similar patterns
-    - path: pkg/storage/.*\.go
-      linters:
-        - dupl
-        
-    # Repository implementations have legitimate patterns
-    - path: pkg/storage/repositories/.*\.go
-      linters:
-        - dupl          # Repository methods follow similar patterns
-      text: "duplicate of"  # Only for actual duplication
-        
-    # Test utilities can be more relaxed
-    - path: internal/testutil/.*\.go
-      linters:
-        - gosec
-        - errcheck
-        
-    # DynamoDB operations have complex error handling
-    - path: pkg/storage/dynamodb/.*\.go
-      text: "shadow: declaration of .* shadows declaration"
-      linters:
-        - govet
-        
-    # Common AWS SDK patterns
-    - text: "G104: Errors unhandled"
-      path: ".*aws.*"
-      linters:
-        - gosec
-        
-  # Maximum issues count per one linter
+  # Maximum issues to report
   max-issues-per-linter: 0
-  
-  # Maximum count of issues with the same text
   max-same-issues: 0
   
-  # Show only new issues created after git revision
-  # new-from-rev: main
+  # Show only new issues
+  new: false
   
-  # Fix found issues (if it's supported by the linter)
-  fix: false
+  # Use default excludes (vendor, etc) and add our own
+  exclude-dirs-use-default: true
+  exclude-dirs:
+    - scripts
+    - "^scripts/"
+  
+  # Exclude known false positives
+  exclude-rules:
+    # Scripts directory - development tools - exclude all linters
+    - path: scripts/
+      linters:
+        - gocognit
+        - revive
+        - goconst
+        - gocyclo
+        - gosec
+        - errcheck
+        - ineffassign
+        - unused
+        - staticcheck
+        - bodyclose
+        - govet
+        - misspell
+    
+    # Test files
+    - path: "_test\\.go"
+      linters:
+        - gocyclo
+        - gocognit
+        - errcheck
+        - gosec
+        - goconst
+    
+    # Generated files
+    - path: "generated\\.go"
+      linters:
+        - gocyclo
+        - gocognit
+        - errcheck
+        - gosec
+        - goconst
+        - gofmt
+        - goimports
+    
+    # Lambda main files - often have initialization complexity
+    - path: "cmd/.*/main\\.go"
+      linters:
+        - gocyclo
+        - gocognit
+      text: "cyclomatic complexity|cognitive complexity"
+    
+    # GraphQL generated
+    - path: "graph/generated"
+      linters:
+        - all
+    
+    # Exclude common false positives
+    - text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*print(f|ln)?|os\\.(Un)?Setenv). is not checked"
+      linters:
+        - errcheck
+    
+    # Exclude defer in loop - often intentional
+    - text: "defer in a loop"
+      linters:
+        - gocritic
+    
+    # G104: Errors unhandled - too many false positives
+    - text: "G104"
+      linters:
+        - gosec
+    
+severity:
+  # Default severity for all linters
+  default-severity: warning

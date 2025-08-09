@@ -17,10 +17,10 @@ func TestStoreReputation(t *testing.T) {
 	logger := zap.NewNop()
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	
+
 	repo := NewUserRepository(mockDB, "test-table", logger)
 	ctx := context.Background()
-	
+
 	reputation := &storage.Reputation{
 		ActorID:         "https://example.com/users/alice",
 		InstanceURL:     "https://example.com",
@@ -36,15 +36,15 @@ func TestStoreReputation(t *testing.T) {
 		AccountAge:      365,
 		VouchCount:      5,
 	}
-	
+
 	// Set up expectations
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery)
 	mockQuery.On("Create").Return(nil)
-	
+
 	// Test
 	err := repo.StoreReputation(ctx, reputation.ActorID, reputation)
-	
+
 	// Assert
 	assert.NoError(t, err)
 	mockDB.AssertExpectations(t)
@@ -55,10 +55,10 @@ func TestGetReputation(t *testing.T) {
 	logger := zap.NewNop()
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	
+
 	repo := NewUserRepository(mockDB, "test-table", logger)
 	ctx := context.Background()
-	
+
 	// Test data
 	calculatedAt := time.Now()
 	reputationData := `{
@@ -76,7 +76,7 @@ func TestGetReputation(t *testing.T) {
 		"accountAgeDays": 365,
 		"vouchCount": 5
 	}`
-	
+
 	mockRep := models.Reputation{
 		PK:             "ACTOR#alice",
 		SK:             "REP#" + calculatedAt.Format(time.RFC3339),
@@ -84,7 +84,7 @@ func TestGetReputation(t *testing.T) {
 		TotalScore:     825,
 		CalculatedAt:   calculatedAt.Format(time.RFC3339),
 	}
-	
+
 	// Set up expectations
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", &models.Reputation{}).Return(mockQuery)
@@ -96,10 +96,10 @@ func TestGetReputation(t *testing.T) {
 		reps := args.Get(0).(*[]models.Reputation)
 		*reps = []models.Reputation{mockRep}
 	}).Return(nil)
-	
+
 	// Test
 	reputation, err := repo.GetReputation(ctx, "https://example.com/users/alice")
-	
+
 	// Assert
 	assert.NoError(t, err)
 	assert.NotNil(t, reputation)
@@ -113,10 +113,10 @@ func TestGetReputationHistory(t *testing.T) {
 	logger := zap.NewNop()
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	
+
 	repo := NewUserRepository(mockDB, "test-table", logger)
 	ctx := context.Background()
-	
+
 	// Set up expectations
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", &models.Reputation{}).Return(mockQuery)
@@ -128,10 +128,10 @@ func TestGetReputationHistory(t *testing.T) {
 		reps := args.Get(0).(*[]models.Reputation)
 		*reps = []models.Reputation{} // Empty history
 	}).Return(nil)
-	
+
 	// Test
 	history, err := repo.GetReputationHistory(ctx, "https://example.com/users/alice", 10)
-	
+
 	// Assert
 	assert.NoError(t, err)
 	assert.NotNil(t, history)
@@ -144,19 +144,19 @@ func TestGetUserTrustScore(t *testing.T) {
 	logger := zap.NewNop()
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	
+
 	repo := NewUserRepository(mockDB, "test-table", logger)
 	ctx := context.Background()
-	
+
 	// Test data
 	calculatedAt := time.Now()
 	reputationData := `{"totalScore": 825, "calculatedAt": "` + calculatedAt.Format(time.RFC3339) + `"}`
-	
+
 	mockRep := models.Reputation{
 		ReputationData: reputationData,
 		TotalScore:     825,
 	}
-	
+
 	// Set up expectations
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", &models.Reputation{}).Return(mockQuery)
@@ -168,10 +168,10 @@ func TestGetUserTrustScore(t *testing.T) {
 		reps := args.Get(0).(*[]models.Reputation)
 		*reps = []models.Reputation{mockRep}
 	}).Return(nil)
-	
+
 	// Test
 	score, err := repo.GetUserTrustScore(ctx, "https://example.com/users/alice")
-	
+
 	// Assert
 	assert.NoError(t, err)
 	assert.Equal(t, float64(825), score)
@@ -183,10 +183,10 @@ func TestGetUserTrustScoreNoReputation(t *testing.T) {
 	logger := zap.NewNop()
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	
+
 	repo := NewUserRepository(mockDB, "test-table", logger)
 	ctx := context.Background()
-	
+
 	// Set up expectations - no reputation found
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", &models.Reputation{}).Return(mockQuery)
@@ -198,10 +198,10 @@ func TestGetUserTrustScoreNoReputation(t *testing.T) {
 		reps := args.Get(0).(*[]models.Reputation)
 		*reps = []models.Reputation{} // Empty
 	}).Return(nil)
-	
+
 	// Test
 	score, err := repo.GetUserTrustScore(ctx, "https://example.com/users/alice")
-	
+
 	// Assert
 	assert.NoError(t, err)
 	assert.Equal(t, float64(0), score)

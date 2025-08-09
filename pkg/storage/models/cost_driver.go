@@ -19,20 +19,20 @@ type CostDriver struct {
 	Trend          string  `json:"trend"` // increasing/stable/decreasing
 
 	// Additional attributes
-	Category      string    `json:"category"`      // storage/compute/network/api
-	Resource      string    `json:"resource"`      // specific resource identifier
-	Period        string    `json:"period"`        // daily/weekly/monthly
-	MeasuredAt    time.Time `json:"measured_at"`
-	PreviousCost  float64   `json:"previous_cost"` // For trend calculation
-	VolumeMetrics map[string]int64 `json:"volume_metrics,omitempty"` // requests, bytes, etc
-	TTL           int64    `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
+	Category      string           `json:"category"` // storage/compute/network/api
+	Resource      string           `json:"resource"` // specific resource identifier
+	Period        string           `json:"period"`   // daily/weekly/monthly
+	MeasuredAt    time.Time        `json:"measured_at"`
+	PreviousCost  float64          `json:"previous_cost"`                // For trend calculation
+	VolumeMetrics map[string]int64 `json:"volume_metrics,omitempty"`     // requests, bytes, etc
+	TTL           int64            `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys
 func (c *CostDriver) UpdateKeys() {
-	c.PK = "COST#DRIVER"
+	c.PK = CostDriverPK
 	c.SK = fmt.Sprintf("%s#%s", c.Category, c.Resource)
-	
+
 	// Set TTL to 90 days from measurement
 	c.TTL = c.MeasuredAt.AddDate(0, 3, 0).Unix()
 }
@@ -66,11 +66,11 @@ func (c *CostDriver) CalculateTrend() {
 		c.Trend = "stable"
 		return
 	}
-	
+
 	changePercent := ((c.Cost - c.PreviousCost) / c.PreviousCost) * 100
-	
+
 	if changePercent > 10 {
-		c.Trend = "increasing"
+		c.Trend = TrendIncreasing
 	} else if changePercent < -10 {
 		c.Trend = "decreasing"
 	} else {
@@ -97,9 +97,9 @@ func (c *CostDriver) GetCostPerUnit(metric string) float64 {
 // DetermineCostType sets the Type field based on category and resource
 func (c *CostDriver) DetermineCostType() {
 	switch c.Category {
-	case "storage":
+	case ResourceStorage:
 		c.Type = fmt.Sprintf("Storage - %s", c.Resource)
-	case "compute":
+	case ResourceCompute:
 		c.Type = fmt.Sprintf("Compute - %s", c.Resource)
 	case "network":
 		if c.Domain != "" {
@@ -122,12 +122,13 @@ func (c *CostDriver) IsSignificant() bool {
 // FormatCostSummary returns a human-readable cost summary
 func (c *CostDriver) FormatCostSummary() string {
 	summary := fmt.Sprintf("%s: $%.2f (%.1f%%)", c.Type, c.Cost, c.PercentOfTotal)
-	
-	if c.Trend == "increasing" {
+
+	switch c.Trend {
+	case "increasing":
 		summary += " ↑"
-	} else if c.Trend == "decreasing" {
+	case "decreasing":
 		summary += " ↓"
 	}
-	
+
 	return summary
 }

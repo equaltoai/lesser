@@ -1,3 +1,4 @@
+// Package main implements the metrics-aggregator Lambda function for aggregating application metrics.
 package main
 
 import (
@@ -48,7 +49,7 @@ func (ma *MetricsAggregator) HandleStream(ctx *lift.Context, event events.Dynamo
 	)
 
 	// Process records for real-time metrics aggregation
-	var metrics []*models.Metrics
+	metrics := make([]*models.Metrics, 0, len(event.Records))
 
 	for _, record := range event.Records {
 		// Only process INSERT events that represent new metrics
@@ -97,11 +98,11 @@ var (
 
 // AggregationEvent represents the input for the aggregation job
 type AggregationEvent struct {
-	Type      string    `json:"type"`      // "realtime", "minute", "hour", "day"
+	Type      string    `json:"type"` // "realtime", "minute", "hour", "day"
 	StartTime time.Time `json:"startTime"`
 	EndTime   time.Time `json:"endTime"`
-	Services  []string  `json:"services,omitempty"`  // Optional: specific services to aggregate
-	Metrics   []string  `json:"metrics,omitempty"`   // Optional: specific metrics to aggregate
+	Services  []string  `json:"services,omitempty"` // Optional: specific services to aggregate
+	Metrics   []string  `json:"metrics,omitempty"`  // Optional: specific metrics to aggregate
 }
 
 func init() {
@@ -130,6 +131,7 @@ func main() {
 // Additional methods for handling scheduled aggregation events
 // These would be called by separate Lambda functions for scheduled tasks
 
+// HandleCloudWatchEvent processes CloudWatch scheduled events for metrics aggregation
 func (ma *MetricsAggregator) HandleCloudWatchEvent(ctx context.Context, event events.CloudWatchEvent) error {
 	ma.logger.Info("Processing CloudWatch scheduled event",
 		zap.String("detail_type", event.DetailType),
@@ -269,7 +271,7 @@ func (ma *MetricsAggregator) processRealtimeMetrics(ctx *lift.Context, metrics [
 		for _, m := range groupMetrics {
 			aggregated.TotalCount += m.Count
 			aggregated.TotalSum += m.Sum
-			
+
 			if m.Min < aggregated.Min {
 				aggregated.Min = m.Min
 			}
@@ -303,7 +305,7 @@ func (ma *MetricsAggregator) isMetricsRecord(pk string) bool {
 func (ma *MetricsAggregator) extractMetricFromRecord(record events.DynamoDBEventRecord) (*models.Metrics, error) {
 	// Use DynamORM stream utilities for proper unmarshaling
 	var metric models.Metrics
-	
+
 	if err := stream.UnmarshalItem(record, &metric); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal metric from stream record: %w", err)
 	}
@@ -319,21 +321,21 @@ func (ma *MetricsAggregator) extractMetricFromRecord(record events.DynamoDBEvent
 func (ma *MetricsAggregator) cleanupOldMetrics(ctx context.Context, beforeTime time.Time) error {
 	ma.logger.Info("Starting cleanup of old metrics",
 		zap.Time("before", beforeTime))
-	
+
 	// Define retention periods (how long to keep raw data)
 	retentionPeriods := map[string]time.Duration{
-		"minute": 24 * time.Hour,       // Keep minute data for 1 day
-		"hour":   7 * 24 * time.Hour,   // Keep hour data for 1 week
-		"day":    30 * 24 * time.Hour,  // Keep day data for 1 month
+		"minute": 24 * time.Hour,      // Keep minute data for 1 day
+		"hour":   7 * 24 * time.Hour,  // Keep hour data for 1 week
+		"day":    30 * 24 * time.Hour, // Keep day data for 1 month
 	}
-	
+
 	totalDeleted := 0
 	for granularity, retention := range retentionPeriods {
 		cutoffTime := time.Now().Add(-retention)
 		if cutoffTime.After(beforeTime) {
 			continue // Don't clean up data that's too new
 		}
-		
+
 		deleted, err := ma.cleanupMetricsByGranularity(ctx, granularity, cutoffTime)
 		if err != nil {
 			ma.logger.Error("Failed to cleanup metrics for granularity",
@@ -341,21 +343,21 @@ func (ma *MetricsAggregator) cleanupOldMetrics(ctx context.Context, beforeTime t
 				zap.Error(err))
 			continue
 		}
-		
+
 		totalDeleted += deleted
 		ma.logger.Info("Cleaned up metrics",
 			zap.String("granularity", granularity),
 			zap.Int("deleted_count", deleted),
 			zap.Time("cutoff_time", cutoffTime))
 	}
-	
+
 	ma.logger.Info("Cleanup completed",
 		zap.Int("total_deleted", totalDeleted))
-	
+
 	return nil
 }
 
-func (ma *MetricsAggregator) cleanupMetricsByGranularity(ctx context.Context, granularity string, cutoffTime time.Time) (int, error) {
+func (ma *MetricsAggregator) cleanupMetricsByGranularity(_ context.Context, granularity string, cutoffTime time.Time) (int, error) {
 	// For now, we'll delegate cleanup to the repository layer since it has more
 	// advanced query capabilities. This maintains DynamORM usage without AWS SDK.
 	ma.logger.Info("Delegating cleanup to metrics repository",
@@ -365,7 +367,7 @@ func (ma *MetricsAggregator) cleanupMetricsByGranularity(ctx context.Context, gr
 	// Use the repository's cleanup method if available, or implement a simple approach
 	// This is a placeholder - in production, you'd implement cleanup in the repository
 	deletedCount := 0
-	
+
 	// Note: For now we're logging the cleanup request but not performing actual deletion
 	// This prevents AWS SDK usage while maintaining the interface
 	ma.logger.Info("Cleanup operation skipped - needs repository implementation",

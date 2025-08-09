@@ -25,7 +25,7 @@ type Session struct {
 	// Core session data
 	SessionID    string   `json:"session_id"`
 	UserID       string   `json:"user_id"`
-	AccessToken  string   `json:"access_token"`  // Stored encrypted
+	AccessToken  string   `json:"access_token"`            // Stored encrypted
 	RefreshToken string   `json:"refresh_token,omitempty"` // Stored encrypted
 	Scopes       []string `json:"scopes,omitempty"`
 
@@ -56,7 +56,7 @@ type Session struct {
 
 // TableName returns the DynamoDB table name for the Session model
 func (Session) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -150,7 +150,7 @@ func (s *Session) Validate() error {
 // Touch updates the last used timestamp and extends expiry if needed
 func (s *Session) Touch() {
 	s.LastUsedAt = time.Now()
-	
+
 	// Extend expiry if less than 12 hours remaining
 	currentExpiry := time.Unix(s.ExpiresAt, 0)
 	if time.Until(currentExpiry) < 12*time.Hour {
@@ -171,7 +171,7 @@ func (s *Session) IsValid() bool {
 	if s.IsRevoked {
 		return false
 	}
-	
+
 	return time.Unix(s.ExpiresAt, 0).After(time.Now())
 }
 
@@ -191,7 +191,7 @@ func (s *Session) HasScope(scope string) bool {
 }
 
 // ValidateRequest validates the session against request metadata for security
-func (s *Session) ValidateRequest(ipAddress, userAgent string) bool {
+func (s *Session) ValidateRequest(_, _ string) bool {
 	// For now, just log differences - in production you might want stricter validation
 	// This helps detect session hijacking attempts
 	return true // Allow for now, but log differences

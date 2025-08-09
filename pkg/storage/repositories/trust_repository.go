@@ -30,28 +30,14 @@ func NewTrustRepository(db core.DB, logger *zap.Logger) *TrustRepository {
 // convertToModelEvidence converts storage.TrustEvidence to models.TrustEvidence
 func convertToModelEvidence(evidence []storage.TrustEvidence) []models.TrustEvidence {
 	result := make([]models.TrustEvidence, len(evidence))
-	for i, e := range evidence {
-		result[i] = models.TrustEvidence{
-			Type:        e.Type,
-			Score:       e.Score,
-			Description: e.Description,
-			Timestamp:   e.Timestamp,
-		}
-	}
+	copy(result, evidence)
 	return result
 }
 
 // convertFromModelEvidence converts models.TrustEvidence to storage.TrustEvidence
 func convertFromModelEvidence(evidence []models.TrustEvidence) []storage.TrustEvidence {
 	result := make([]storage.TrustEvidence, len(evidence))
-	for i, e := range evidence {
-		result[i] = storage.TrustEvidence{
-			Type:        e.Type,
-			Score:       e.Score,
-			Description: e.Description,
-			Timestamp:   e.Timestamp,
-		}
-	}
+	copy(result, evidence)
 	return result
 }
 
@@ -78,7 +64,7 @@ func (r *TrustRepository) CreateTrustRelationship(ctx context.Context, relations
 		ID:         relationship.ID,
 		TrusterID:  relationship.TrusterID,
 		TrusteeID:  relationship.TrusteeID,
-		Category:   models.TrustCategory(relationship.Category),
+		Category:   relationship.Category,
 		Score:      relationship.Score,
 		Confidence: relationship.Confidence,
 		Evidence:   convertToModelEvidence(relationship.Evidence),
@@ -159,14 +145,14 @@ func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID s
 	var trustModels []models.TrustRelationship
 	query := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
 		Where("PK", "begins_with", fmt.Sprintf("TRUST#%s#", trusterID))
-	
+
 	if cursor != "" {
 		query = query.Cursor(cursor)
 	}
-	
+
 	// Get one more item than requested to determine if there are more results
 	err := query.Limit(limit + 1).Scan(&trustModels)
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(trustModels) > limit {
@@ -194,14 +180,14 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 	query := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
 		Index("gsi1-index").
 		Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
-	
+
 	if cursor != "" {
 		query = query.Cursor(cursor)
 	}
-	
+
 	// Get one more item than requested to determine if there are more results
 	err := query.Limit(limit + 1).Scan(&trustModels)
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(trustModels) > limit {
@@ -262,7 +248,7 @@ func (r *TrustRepository) UpdateTrustScore(ctx context.Context, score *storage.T
 
 	model := &models.TrustScore{
 		ActorID:         score.ActorID,
-		Category:        models.TrustCategory(score.Category),
+		Category:        score.Category,
 		Score:           score.Score,
 		DirectScore:     score.DirectScore,
 		PropagatedScore: score.PropagatedScore,
@@ -287,7 +273,7 @@ func (r *TrustRepository) RecordTrustUpdate(ctx context.Context, update *storage
 	model := &models.TrustUpdate{
 		ActorID:   update.ActorID,
 		EventID:   update.EventID,
-		Category:  models.TrustCategory(update.Category),
+		Category:  update.Category,
 		Delta:     update.Delta,
 		Reason:    update.Reason,
 		Timestamp: update.Timestamp,
@@ -349,7 +335,29 @@ func (r *TrustRepository) invalidateTrustScoreCache(ctx context.Context, actorID
 
 // calculateTrustScore calculates the trust score for an actor using PageRank-inspired algorithm
 func (r *TrustRepository) calculateTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error) {
-	score := &storage.TrustScore{
+	score := r.initializeTrustScore(actorID, category)
+
+	// Get direct trust relationships (who trusts this actor)
+	relationships, _, err := r.GetTrustedByRelationships(ctx, actorID, 100, "")
+	if err != nil {
+		return score, err
+	}
+
+	// Calculate direct trust score
+	trusterScores := r.calculateDirectTrust(score, relationships, category)
+
+	// Calculate network propagation
+	r.calculatePropagatedTrust(ctx, score, actorID, category, trusterScores)
+
+	// Combine scores and normalize
+	r.finalizeTrustScore(score)
+
+	return score, nil
+}
+
+// initializeTrustScore creates a new trust score with default values
+func (r *TrustRepository) initializeTrustScore(actorID, category string) *storage.TrustScore {
+	return &storage.TrustScore{
 		ActorID:         actorID,
 		Category:        storage.TrustCategory(category),
 		Score:           0.5, // Start with neutral
@@ -361,27 +369,16 @@ func (r *TrustRepository) calculateTrustScore(ctx context.Context, actorID, cate
 		LastCalculated:  time.Now(),
 		CacheTTL:        time.Now().Add(2 * time.Hour), // Cache for 2 hours
 	}
+}
 
-	// Get direct trust relationships (who trusts this actor)
-	relationships, _, err := r.GetTrustedByRelationships(ctx, actorID, 100, "")
-	if err != nil {
-		return score, err
-	}
-
-	// Calculate direct trust score
+// calculateDirectTrust calculates the direct trust score from immediate relationships
+func (r *TrustRepository) calculateDirectTrust(score *storage.TrustScore, relationships []*storage.TrustRelationship, category string) map[string]float64 {
 	totalDirectScore := 0.0
 	totalWeight := 0.0
 	trusterScores := make(map[string]float64)
 
 	for _, rel := range relationships {
-		// Weight by category relevance and confidence
-		weight := rel.Confidence
-		if string(rel.Category) == category || rel.Category == trust.TrustCategoryGeneral {
-			weight *= 1.0 // Full weight for matching/general category
-		} else {
-			weight *= 0.5 // Reduced weight for other categories
-		}
-
+		weight := r.calculateRelationshipWeight(rel, category)
 		if weight > 0 {
 			score.TrusterCount++
 			trusterScores[rel.TrusterID] = rel.Score * weight
@@ -395,83 +392,134 @@ func (r *TrustRepository) calculateTrustScore(ctx context.Context, actorID, cate
 		score.Confidence = totalWeight / float64(score.TrusterCount)
 	}
 
-	// Calculate network propagation (simplified PageRank)
-	const (
-		maxHops         = 2   // Maximum propagation depth
-		propagationRate = 0.5 // Trust diminishes by 50% per hop
-		minTrustScore   = 0.1 // Minimum trust score to propagate
-	)
+	return trusterScores
+}
 
-	// Queue for BFS traversal
-	type node struct {
-		actorID   string
-		hopCount  int
-		pathTrust float64
+// calculateRelationshipWeight calculates the weight of a trust relationship
+func (r *TrustRepository) calculateRelationshipWeight(rel *storage.TrustRelationship, category string) float64 {
+	weight := rel.Confidence
+	if string(rel.Category) == category || rel.Category == trust.TrustCategoryGeneral {
+		weight *= 1.0 // Full weight for matching/general category
+	} else {
+		weight *= 0.5 // Reduced weight for other categories
+	}
+	return weight
+}
+
+// trustNode represents a node in the trust propagation graph
+type trustNode struct {
+	actorID   string
+	hopCount  int
+	pathTrust float64
+}
+
+// trustPropagationConfig contains configuration for trust propagation
+type trustPropagationConfig struct {
+	maxHops         int
+	propagationRate float64
+	minTrustScore   float64
+}
+
+// calculatePropagatedTrust calculates trust propagated through the network
+func (r *TrustRepository) calculatePropagatedTrust(ctx context.Context, score *storage.TrustScore, actorID, category string, trusterScores map[string]float64) {
+	config := trustPropagationConfig{
+		maxHops:         2,   // Maximum propagation depth
+		propagationRate: 0.5, // Trust diminishes by 50% per hop
+		minTrustScore:   0.1, // Minimum trust score to propagate
 	}
 
+	propagatedTrust, propagatedWeight := r.performTrustPropagation(ctx, actorID, category, trusterScores, config)
+
+	if propagatedWeight > 0 {
+		score.PropagatedScore = propagatedTrust / propagatedWeight
+	}
+}
+
+// performTrustPropagation performs BFS traversal for trust propagation
+func (r *TrustRepository) performTrustPropagation(ctx context.Context, actorID, category string, trusterScores map[string]float64, config trustPropagationConfig) (float64, float64) {
 	visited := make(map[string]bool)
-	queue := []node{{actorID: actorID, hopCount: 0, pathTrust: 1.0}}
+	queue := []trustNode{{actorID: actorID, hopCount: 0, pathTrust: 1.0}}
 	visited[actorID] = true
 
 	propagatedTrust := 0.0
 	propagatedWeight := 0.0
 
-	for len(queue) > 0 && queue[0].hopCount < maxHops {
+	for len(queue) > 0 && queue[0].hopCount < config.maxHops {
 		current := queue[0]
 		queue = queue[1:]
 
-		// Get trust from this node
-		if trustValue, exists := trusterScores[current.actorID]; exists && trustValue >= minTrustScore {
-			// This node contributes to propagated trust
-			propagatedWeight += current.pathTrust
-		}
+		// Process current node
+		propagatedWeight = r.processNodeTrust(current, trusterScores, config.minTrustScore, propagatedWeight)
 
-		// Add neighbors for next hop
-		if current.hopCount+1 < maxHops {
-			// Get the trust score for this node to determine if it's trustworthy enough to propagate
-			nodeScore, err := r.GetTrustScore(ctx, current.actorID, category)
-			if err != nil {
-				// If we can't get the score, skip this node
-				continue
-			}
-
-			// Only propagate trust through nodes with reasonable trust scores
-			if nodeScore.Score < minTrustScore {
-				continue
-			}
-
-			// Trust diminishes with each hop (propagationRate) and is weighted by the path trust
-			nextPathTrust := current.pathTrust * propagationRate * nodeScore.Score
-
-			if nextPathTrust >= 0.01 { // Only continue if meaningful trust remains
-				propagatedTrust += nextPathTrust
-
-				// Get this node's trust relationships to continue propagation
-				nodeRelationships, _, err := r.GetTrustedByRelationships(ctx, current.actorID, 50, "")
-				if err == nil {
-					for _, rel := range nodeRelationships {
-						if !visited[rel.TrusterID] && (string(rel.Category) == category || rel.Category == trust.TrustCategoryGeneral) {
-							queue = append(queue, node{
-								actorID:   rel.TrusterID,
-								hopCount:  current.hopCount + 1,
-								pathTrust: nextPathTrust,
-							})
-							visited[rel.TrusterID] = true
-						}
-					}
-				}
-			}
+		// Add neighbors for next hop if applicable
+		if current.hopCount+1 < config.maxHops {
+			newNodes, trust := r.expandTrustNetwork(ctx, current, category, visited, config)
+			queue = append(queue, newNodes...)
+			propagatedTrust += trust
 		}
 	}
 
-	// Combine propagated trust
-	if propagatedWeight > 0 {
-		score.PropagatedScore = propagatedTrust / propagatedWeight
+	return propagatedTrust, propagatedWeight
+}
+
+// processNodeTrust processes trust contribution from a single node
+func (r *TrustRepository) processNodeTrust(node trustNode, trusterScores map[string]float64, minTrustScore float64, currentWeight float64) float64 {
+	if trustValue, exists := trusterScores[node.actorID]; exists && trustValue >= minTrustScore {
+		return currentWeight + node.pathTrust
+	}
+	return currentWeight
+}
+
+// expandTrustNetwork expands the trust network for propagation
+func (r *TrustRepository) expandTrustNetwork(ctx context.Context, current trustNode, category string, visited map[string]bool, config trustPropagationConfig) ([]trustNode, float64) {
+	var newNodes []trustNode
+	propagatedTrust := 0.0
+
+	// Get the trust score for this node
+	nodeScore, err := r.GetTrustScore(ctx, current.actorID, category)
+	if err != nil || nodeScore.Score < config.minTrustScore {
+		return newNodes, propagatedTrust
 	}
 
-	// Final score combines direct and propagated trust
+	// Calculate trust for next hop
+	nextPathTrust := current.pathTrust * config.propagationRate * nodeScore.Score
+	if nextPathTrust < 0.01 { // Only continue if meaningful trust remains
+		return newNodes, propagatedTrust
+	}
+
+	propagatedTrust = nextPathTrust
+
+	// Get this node's trust relationships
+	nodeRelationships, _, err := r.GetTrustedByRelationships(ctx, current.actorID, 50, "")
+	if err != nil {
+		return newNodes, propagatedTrust
+	}
+
+	// Add unvisited nodes to queue
+	for _, rel := range nodeRelationships {
+		if r.shouldAddToQueue(rel, category, visited) {
+			newNodes = append(newNodes, trustNode{
+				actorID:   rel.TrusterID,
+				hopCount:  current.hopCount + 1,
+				pathTrust: nextPathTrust,
+			})
+			visited[rel.TrusterID] = true
+		}
+	}
+
+	return newNodes, propagatedTrust
+}
+
+// shouldAddToQueue determines if a relationship should be added to propagation queue
+func (r *TrustRepository) shouldAddToQueue(rel *storage.TrustRelationship, category string, visited map[string]bool) bool {
+	return !visited[rel.TrusterID] && 
+		(string(rel.Category) == category || rel.Category == trust.TrustCategoryGeneral)
+}
+
+// finalizeTrustScore combines direct and propagated scores and normalizes
+func (r *TrustRepository) finalizeTrustScore(score *storage.TrustScore) {
 	directWeight := 0.7
-	propagatedWeight = 0.3
+	propagatedWeight := 0.3
 
 	if score.TrusterCount == 0 {
 		// No direct trust, rely more on propagation
@@ -488,8 +536,6 @@ func (r *TrustRepository) calculateTrustScore(ctx context.Context, actorID, cate
 	if score.Score < 0.0 {
 		score.Score = 0.0
 	}
-
-	return score, nil
 }
 
 // modelToTrustRelationship converts a model to storage type
@@ -498,7 +544,7 @@ func (r *TrustRepository) modelToTrustRelationship(model *models.TrustRelationsh
 		ID:         model.ID,
 		TrusterID:  model.TrusterID,
 		TrusteeID:  model.TrusteeID,
-		Category:   storage.TrustCategory(model.Category),
+		Category:   model.Category,
 		Score:      model.Score,
 		Confidence: model.Confidence,
 		Evidence:   convertFromModelEvidence(model.Evidence),
@@ -512,7 +558,7 @@ func (r *TrustRepository) modelToTrustRelationship(model *models.TrustRelationsh
 func (r *TrustRepository) modelToTrustScore(model *models.TrustScore) *storage.TrustScore {
 	return &storage.TrustScore{
 		ActorID:         model.ActorID,
-		Category:        storage.TrustCategory(model.Category),
+		Category:        model.Category,
 		Score:           model.Score,
 		DirectScore:     model.DirectScore,
 		PropagatedScore: model.PropagatedScore,

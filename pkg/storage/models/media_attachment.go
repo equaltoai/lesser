@@ -22,12 +22,12 @@ type MediaAttachment struct {
 	MediaType   string `json:"media_type"`   // "image", "video", "audio"
 	ContentType string `json:"content_type"` // Full MIME type
 	FileSize    int64  `json:"file_size"`    // Size in bytes
-	
+
 	// Display metadata
 	Description string `json:"description,omitempty"` // Alt text or description
 	FocalPoint  string `json:"focal_point,omitempty"` // Focal point for cropping (x,y format)
 	Order       int    `json:"order"`                 // Display order when multiple attachments
-	
+
 	// Timestamps
 	AttachedAt time.Time `json:"attached_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -35,20 +35,20 @@ type MediaAttachment struct {
 
 // TableName returns the DynamoDB table name
 func (MediaAttachment) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the primary key based on entity type and ID
 func (m *MediaAttachment) UpdateKeys(entityType, entityID string) {
 	m.EntityType = entityType
 	m.EntityID = entityID
-	
+
 	switch strings.ToLower(entityType) {
-	case "user":
+	case EntityTypeUser:
 		// Match legacy pattern: PK=USER#username, SK=MEDIA#mediaID
-		m.PK = fmt.Sprintf("USER#%s", entityID)
+		m.PK = fmt.Sprintf(KeyPatternUser, entityID)
 		m.SK = fmt.Sprintf("MEDIA#%s", m.MediaID)
-	case "scheduled_status":
+	case EntityTypeScheduledStatus:
 		// Match legacy pattern: PK=SCHEDULED_STATUS#statusID, SK=MEDIA#mediaID
 		m.PK = fmt.Sprintf("SCHEDULED_STATUS#%s", entityID)
 		m.SK = fmt.Sprintf("MEDIA#%s", m.MediaID)
@@ -64,24 +64,24 @@ func (m *MediaAttachment) BeforeCreate() error {
 	now := time.Now()
 	m.AttachedAt = now
 	m.UpdatedAt = now
-	
+
 	// Ensure keys are set up correctly
 	if m.EntityType != "" && m.EntityID != "" {
 		m.UpdateKeys(m.EntityType, m.EntityID)
 	}
-	
+
 	return m.Validate()
 }
 
 // BeforeUpdate sets up the model before update
 func (m *MediaAttachment) BeforeUpdate() error {
 	m.UpdatedAt = time.Now()
-	
+
 	// Ensure keys remain consistent
 	if m.EntityType != "" && m.EntityID != "" {
 		m.UpdateKeys(m.EntityType, m.EntityID)
 	}
-	
+
 	return m.Validate()
 }
 
@@ -97,11 +97,11 @@ func (m *MediaAttachment) Validate() error {
 		return fmt.Errorf("EntityID is required")
 	}
 	if m.Order < 0 {
-		return fmt.Errorf("Order must be non-negative")
+		return fmt.Errorf("order must be non-negative")
 	}
-	
+
 	// Validate entity type
-	validTypes := []string{"user", "scheduled_status", "status", "account"}
+	validTypes := []string{EntityTypeUser, EntityTypeScheduledStatus, EntityTypeStatus, EntityTypeAccount}
 	isValid := false
 	for _, vt := range validTypes {
 		if strings.ToLower(m.EntityType) == vt {
@@ -112,7 +112,7 @@ func (m *MediaAttachment) Validate() error {
 	if !isValid {
 		return fmt.Errorf("invalid entity type: %s", m.EntityType)
 	}
-	
+
 	// Validate focal point format if provided
 	if m.FocalPoint != "" {
 		parts := strings.Split(m.FocalPoint, ",")
@@ -120,13 +120,13 @@ func (m *MediaAttachment) Validate() error {
 			return fmt.Errorf("focal point must be in x,y format")
 		}
 	}
-	
+
 	return nil
 }
 
 // IsForUser returns true if this attachment is for a user
 func (m *MediaAttachment) IsForUser() bool {
-	return strings.ToLower(m.EntityType) == "user"
+	return strings.ToLower(m.EntityType) == EntityTypeUser
 }
 
 // IsForScheduledStatus returns true if this attachment is for a scheduled status
@@ -144,12 +144,12 @@ func (m *MediaAttachment) GetFocalPoint() (x, y float64, ok bool) {
 	if m.FocalPoint == "" {
 		return 0, 0, false
 	}
-	
+
 	parts := strings.Split(m.FocalPoint, ",")
 	if len(parts) != 2 {
 		return 0, 0, false
 	}
-	
+
 	var err error
 	if x, err = parseFloat(parts[0]); err != nil {
 		return 0, 0, false
@@ -157,7 +157,7 @@ func (m *MediaAttachment) GetFocalPoint() (x, y float64, ok bool) {
 	if y, err = parseFloat(parts[1]); err != nil {
 		return 0, 0, false
 	}
-	
+
 	return x, y, true
 }
 

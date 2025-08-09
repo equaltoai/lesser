@@ -34,9 +34,10 @@ func NewModerationRepository(db core.DB, tableName string, logger *zap.Logger) *
 	}
 }
 
-// generateRandomString generates a cryptographically secure random string of the specified length
-func generateRandomString(length int) string {
+// generateRandomString generates a cryptographically secure random string of 12 characters
+func generateRandomString() string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	const length = 12
 	result := make([]byte, length)
 	for i := range result {
 		// Use crypto/rand for secure random generation
@@ -54,7 +55,7 @@ func generateRandomString(length int) string {
 // CreateModerationEvent creates a new moderation event
 func (r *ModerationRepository) CreateModerationEvent(ctx context.Context, event *storage.ModerationEvent) error {
 	if event.ID == "" {
-		event.ID = fmt.Sprintf("evt_%s", generateRandomString(12))
+		event.ID = fmt.Sprintf("evt_%s", generateRandomString())
 	}
 	event.Created = time.Now()
 	event.Updated = event.Created
@@ -78,7 +79,7 @@ func (r *ModerationRepository) CreateModerationEvent(ctx context.Context, event 
 		Reason:          event.Reason,
 		Created:         event.Created,
 		Updated:         event.Updated,
-		Type:            "EVENT",
+		Type:            models.ModerationTypeEvent,
 		TTL:             event.TTL,
 		CreatedAt:       event.Created,
 	}
@@ -96,7 +97,7 @@ func (r *ModerationRepository) CreateModerationEvent(ctx context.Context, event 
 	r.logger.Debug("Created moderation event",
 		zap.String("event_id", event.ID),
 		zap.String("object_id", event.ObjectID),
-		zap.String("type", string(event.EventType)))
+		zap.String("type", event.EventType))
 
 	return nil
 }
@@ -191,7 +192,7 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 			}
 
 			// Apply action filter
-			if filter.Action != "" && string(event.EventType) != filter.Action {
+			if filter.Action != "" && event.EventType != filter.Action {
 				continue
 			}
 
@@ -274,7 +275,7 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 		// We got more results than requested, so there are more pages
 		nextCursor = models[limit-1].GSI2SK
 		models = models[:limit] // Trim to requested limit
-		
+
 		// Re-process the trimmed models to create items
 		items = make([]*storage.ModerationQueueItem, 0, len(models))
 		for _, model := range models {
@@ -339,7 +340,7 @@ func (r *ModerationRepository) GetModerationEventsByObject(ctx context.Context, 
 
 	events := make([]*storage.ModerationEvent, 0, len(models))
 	for _, model := range models {
-		if model.Type == "EVENT" {
+		if model.Type == ModerationTypeEvent {
 			event := &storage.ModerationEvent{
 				ID:              model.ID,
 				EventType:       model.EventType,
@@ -392,7 +393,7 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 
 	events := make([]*storage.ModerationEvent, 0, len(models))
 	for _, model := range models {
-		if model.Type == "EVENT" {
+		if model.Type == ModerationTypeEvent {
 			event := &storage.ModerationEvent{
 				ID:              model.ID,
 				EventType:       model.EventType,
@@ -418,7 +419,7 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 // AddModerationReview adds a review to a moderation event
 func (r *ModerationRepository) AddModerationReview(ctx context.Context, review *storage.ModerationReview) error {
 	if review.ID == "" {
-		review.ID = fmt.Sprintf("rev_%s", generateRandomString(12))
+		review.ID = fmt.Sprintf("rev_%s", generateRandomString())
 	}
 	review.Created = time.Now()
 
@@ -496,7 +497,7 @@ func (r *ModerationRepository) GetModerationReviews(ctx context.Context, eventID
 // CreateModerationDecision creates a consensus decision
 func (r *ModerationRepository) CreateModerationDecision(ctx context.Context, decision *storage.ModerationDecision) error {
 	if decision.ID == "" {
-		decision.ID = fmt.Sprintf("dec_%s", generateRandomString(12))
+		decision.ID = fmt.Sprintf("dec_%s", generateRandomString())
 	}
 	decision.Decided = time.Now()
 
@@ -509,13 +510,7 @@ func (r *ModerationRepository) CreateModerationDecision(ctx context.Context, dec
 		ConsensusScore:   decision.ConsensusScore,
 		ReviewerCount:    decision.ReviewerCount,
 		TrustWeightTotal: decision.TrustWeightTotal,
-		Reviews:          func() []interface{} { 
-			var result []interface{}
-			for _, r := range decision.Reviews {
-				result = append(result, r)
-			}
-			return result
-		}(),
+		Reviews:          append([]interface{}(nil), decision.Reviews...),
 		Metadata:         decision.Metadata,
 		Decided:          decision.Decided,
 		Expires:          decision.Expires,
@@ -537,7 +532,7 @@ func (r *ModerationRepository) CreateModerationDecision(ctx context.Context, dec
 	r.logger.Info("Created moderation decision",
 		zap.String("decision_id", decision.ID),
 		zap.String("object_id", decision.ObjectID),
-		zap.String("action", string(decision.Action)),
+		zap.String("action", decision.Action),
 		zap.Float64("consensus", decision.ConsensusScore))
 
 	return nil
@@ -596,7 +591,7 @@ func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, con
 
 	// Create a new moderation decision based on the review
 	newDecision := &storage.ModerationDecision{
-		ID:               fmt.Sprintf("dec_%s", generateRandomString(12)),
+		ID:               fmt.Sprintf("dec_%s", generateRandomString()),
 		EventID:          currentDecision.EventID,
 		ObjectID:         contentID,
 		Action:           review.Action,
@@ -604,7 +599,7 @@ func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, con
 		ReviewerCount:    1,
 		TrustWeightTotal: review.Confidence, // Using Confidence as Weight substitute
 		Reviews: []interface{}{
-			fmt.Sprintf("rev_%s", generateRandomString(12)),
+			fmt.Sprintf("rev_%s", generateRandomString()),
 		},
 		Decided: time.Now(),
 	}
@@ -617,7 +612,7 @@ func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, con
 	r.logger.Info("Updated moderation decision",
 		zap.String("content_id", contentID),
 		zap.String("reviewer", review.ReviewerID),
-		zap.String("action", string(review.Action)),
+		zap.String("action", review.Action),
 		zap.Float64("confidence", review.Confidence))
 
 	return nil
@@ -657,7 +652,7 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan moderation patterns: %w", err)
 		}
-		
+
 		// Filter to only moderation patterns
 		var filtered []models.ModerationPattern
 		for i := range patternModels {
@@ -785,7 +780,7 @@ func (r *ModerationRepository) countReviews(ctx context.Context, eventID string)
 // CreateModerationPattern creates a new moderation pattern
 func (r *ModerationRepository) CreateModerationPattern(ctx context.Context, pattern *storage.ModerationPattern) error {
 	if pattern.ID == "" {
-		pattern.ID = fmt.Sprintf("pat_%s", generateRandomString(12))
+		pattern.ID = fmt.Sprintf("pat_%s", generateRandomString())
 	}
 
 	// Set timestamps
@@ -876,7 +871,7 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 	err = r.db.WithContext(ctx).Model(&decisionModels).
 		Where("PK", "=", fmt.Sprintf("DECISION#%s", objectID)).
 		All(&decisionModels)
-	
+
 	if err == nil {
 		for _, model := range decisionModels {
 			if model.Type == "DECISION" {
@@ -928,9 +923,9 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 	// Determine current status
 	if len(history.Decisions) > 0 {
 		lastDecision := history.Decisions[len(history.Decisions)-1]
-		history.CurrentStatus = string(lastDecision.Action)
+		history.CurrentStatus = lastDecision.Action
 	} else {
-		history.CurrentStatus = "pending"
+		history.CurrentStatus = StatusPending
 	}
 
 	return history, nil
@@ -938,12 +933,12 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 
 // GetModerationEvents retrieves all moderation events with optional filters
 func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *storage.ModerationEventFilter, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
-	// If no filter or all filter fields are empty, scan all events
-	if filter == nil || (filter.EventType == "" && filter.Category == "" && filter.ActorID == "" && filter.ObjectID == "") {
+	// Check if we should scan all events
+	if r.shouldScanAllEvents(filter) {
 		return r.scanAllModerationEvents(ctx, filter, limit, cursor)
 	}
 
-	// Use query based on the most selective filter
+	// Route to specific query based on filter
 	if filter.ObjectID != "" {
 		return r.GetModerationEventsByObject(ctx, filter.ObjectID, limit, cursor)
 	}
@@ -952,113 +947,149 @@ func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *
 		return r.GetModerationEventsByActor(ctx, filter.ActorID, limit, cursor)
 	}
 
-	// Query by event type and category using GSI2
+	// Query by event type and category
 	if filter.EventType != "" || filter.Category != "" {
-		eventType := storage.EventTypeFlagged
-		if filter.EventType != "" {
-			eventType = filter.EventType
-		}
-
-		category := ""
-		if filter.Category != "" {
-			category = filter.Category
-		}
-
-		gsi2pk := fmt.Sprintf("TYPE#%s", eventType)
-		if category != "" {
-			gsi2pk = fmt.Sprintf("TYPE#%s#%s", eventType, category)
-		}
-
-		var models []models.ModerationEvent
-		query := r.db.WithContext(ctx).Model(&models).
-			Index("gsi2").
-			Where("GSI2PK", "=", gsi2pk).
-			Limit(limit)
-
-		if cursor != "" {
-			query = query.Cursor(cursor)
-		}
-
-		// Get one more item than requested to check if more pages exist
-		query = query.Limit(limit + 1)
-
-		if err := query.All(&models); err != nil {
-			return nil, "", fmt.Errorf("failed to query moderation events: %w", err)
-		}
-
-		events := make([]*storage.ModerationEvent, 0, len(models))
-		for _, model := range models {
-			if model.Type == "EVENT" {
-				event := &storage.ModerationEvent{
-					ID:              model.ID,
-					EventType:       model.EventType,
-					ObjectID:        model.ObjectID,
-					ObjectType:      model.ObjectType,
-					ActorID:         model.ActorID,
-					Category:        model.Category,
-					Severity:        model.Severity,
-					ConfidenceScore: model.ConfidenceScore,
-					Evidence:        model.Evidence,
-					Reason:          model.Reason,
-					Created:         model.Created,
-					Updated:         model.Updated,
-					TTL:             model.TTL,
-				}
-				if r.matchesEventFilter(event, filter) {
-					events = append(events, event)
-				}
-			}
-		}
-
-		// Generate next cursor
-		var nextCursor string
-		if len(models) > limit {
-			// We got more results than requested, so there are more pages
-			nextCursor = models[limit-1].GSI2SK
-			models = models[:limit] // Trim to requested limit
-			
-			// Re-process the trimmed models to create events
-			events = make([]*storage.ModerationEvent, 0, len(models))
-			for _, model := range models {
-				if model.Type == "EVENT" {
-					event := &storage.ModerationEvent{
-						ID:              model.ID,
-						EventType:       model.EventType,
-						ObjectID:        model.ObjectID,
-						ObjectType:      model.ObjectType,
-						ActorID:         model.ActorID,
-						Category:        model.Category,
-						Severity:        model.Severity,
-						ConfidenceScore: model.ConfidenceScore,
-						Evidence:        model.Evidence,
-						Reason:          model.Reason,
-						Created:         model.Created,
-						Updated:         model.Updated,
-						TTL:             model.TTL,
-					}
-					if r.matchesEventFilter(event, filter) {
-						events = append(events, event)
-					}
-				}
-			}
-		}
-		
-		return events, nextCursor, nil
+		return r.queryByTypeAndCategory(ctx, filter, limit, cursor)
 	}
 
 	// Fallback to scan
 	return r.scanAllModerationEvents(ctx, filter, limit, cursor)
 }
 
+// shouldScanAllEvents checks if we should scan all events instead of using an index
+func (r *ModerationRepository) shouldScanAllEvents(filter *storage.ModerationEventFilter) bool {
+	return filter == nil || (filter.EventType == "" && filter.Category == "" && filter.ActorID == "" && filter.ObjectID == "")
+}
+
+// queryByTypeAndCategory queries events by type and category using GSI2
+func (r *ModerationRepository) queryByTypeAndCategory(ctx context.Context, filter *storage.ModerationEventFilter, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
+	// Build GSI2 key
+	gsi2pk := r.buildGSI2Key(filter)
+
+	// Execute query
+	models, err := r.executeGSI2Query(ctx, gsi2pk, limit, cursor)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Process results
+	events := r.processModelsToEvents(models, filter, limit)
+	nextCursor := r.determineNextCursor(models, limit)
+
+	// If we have a next cursor, reprocess with exact limit
+	if nextCursor != "" {
+		models = models[:limit]
+		events = r.processModelsToEvents(models, filter, limit)
+	}
+
+	return events, nextCursor, nil
+}
+
+// buildGSI2Key builds the GSI2 partition key based on filter
+func (r *ModerationRepository) buildGSI2Key(filter *storage.ModerationEventFilter) string {
+	eventType := r.getEventType(filter)
+	category := r.getCategory(filter)
+
+	gsi2pk := fmt.Sprintf("TYPE#%s", eventType)
+	if category != "" {
+		gsi2pk = fmt.Sprintf("TYPE#%s#%s", eventType, category)
+	}
+	return gsi2pk
+}
+
+// getEventType extracts event type from filter or returns default
+func (r *ModerationRepository) getEventType(filter *storage.ModerationEventFilter) storage.EventType {
+	if filter.EventType != "" {
+		return storage.EventType(filter.EventType)
+	}
+	return storage.EventTypeFlagged
+}
+
+// getCategory extracts category from filter
+func (r *ModerationRepository) getCategory(filter *storage.ModerationEventFilter) string {
+	if filter.Category != "" {
+		return filter.Category
+	}
+	return ""
+}
+
+// executeGSI2Query executes the GSI2 query
+func (r *ModerationRepository) executeGSI2Query(ctx context.Context, gsi2pk string, limit int, cursor string) ([]models.ModerationEvent, error) {
+	var models []models.ModerationEvent
+	query := r.db.WithContext(ctx).Model(&models).
+		Index("gsi2").
+		Where("GSI2PK", "=", gsi2pk).
+		Limit(limit + 1) // Get one more to check for pagination
+
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	if err := query.All(&models); err != nil {
+		return nil, fmt.Errorf("failed to query moderation events: %w", err)
+	}
+
+	return models, nil
+}
+
+// processModelsToEvents converts models to events with filtering
+func (r *ModerationRepository) processModelsToEvents(models []models.ModerationEvent, filter *storage.ModerationEventFilter, limit int) []*storage.ModerationEvent {
+	events := make([]*storage.ModerationEvent, 0, len(models))
+	
+	for _, model := range models {
+		if model.Type != ModerationTypeEvent {
+			continue
+		}
+		
+		event := r.modelToEvent(&model)
+		if r.matchesEventFilter(event, filter) {
+			events = append(events, event)
+		}
+		
+		if len(events) >= limit {
+			break
+		}
+	}
+	
+	return events
+}
+
+// modelToEvent converts a model to an event
+func (r *ModerationRepository) modelToEvent(model *models.ModerationEvent) *storage.ModerationEvent {
+	return &storage.ModerationEvent{
+		ID:              model.ID,
+		EventType:       model.EventType,
+		ObjectID:        model.ObjectID,
+		ObjectType:      model.ObjectType,
+		ActorID:         model.ActorID,
+		Category:        model.Category,
+		Severity:        model.Severity,
+		ConfidenceScore: model.ConfidenceScore,
+		Evidence:        model.Evidence,
+		Reason:          model.Reason,
+		Created:         model.Created,
+		Updated:         model.Updated,
+		TTL:             model.TTL,
+	}
+}
+
+// determineNextCursor determines if there are more pages
+func (r *ModerationRepository) determineNextCursor(models []models.ModerationEvent, limit int) string {
+	if len(models) > limit {
+		return models[limit-1].GSI2SK
+	}
+	return ""
+}
+
 // scanAllModerationEvents performs a scan operation to get all events
 func (r *ModerationRepository) scanAllModerationEvents(ctx context.Context, filter *storage.ModerationEventFilter, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
 	var models []models.ModerationEvent
-	
+
 	// DynamORM doesn't have a direct scan with filter, so we'll query and filter in memory
 	// This is less efficient but matches the legacy behavior
 	query := r.db.WithContext(ctx).Model(&models).
 		Limit(limit * 2) // Get extra to account for filtering
-	
+
 	if cursor != "" {
 		query = query.Cursor(cursor)
 	}
@@ -1072,7 +1103,7 @@ func (r *ModerationRepository) scanAllModerationEvents(ctx context.Context, filt
 
 	events := make([]*storage.ModerationEvent, 0, limit)
 	for _, model := range models {
-		if model.Type == "EVENT" {
+		if model.Type == ModerationTypeEvent {
 			event := &storage.ModerationEvent{
 				ID:              model.ID,
 				EventType:       model.EventType,
@@ -1103,7 +1134,7 @@ func (r *ModerationRepository) scanAllModerationEvents(ctx context.Context, filt
 		// We got more results than requested, so there are more pages
 		nextCursor = models[(limit*2)-1].SK
 	}
-	
+
 	return events, nextCursor, nil
 }
 
@@ -1140,7 +1171,7 @@ func (r *ModerationRepository) matchesEventFilter(event *storage.ModerationEvent
 func (r *ModerationRepository) CreateAdminReview(ctx context.Context, eventID string, adminID string, action storage.ActionType, reason string) error {
 	// Create a special review with maximum weight
 	review := &storage.ModerationReview{
-		ID:          fmt.Sprintf("admin_rev_%s", generateRandomString(12)),
+		ID:          fmt.Sprintf("admin_rev_%s", generateRandomString()),
 		EventID:     eventID,
 		ReviewerID:  adminID,
 		Action:      string(action), // Convert ActionType to string
@@ -1164,14 +1195,14 @@ func (r *ModerationRepository) CreateAdminReview(ctx context.Context, eventID st
 
 	// Immediately create a decision based on the admin action
 	decision := &storage.ModerationDecision{
-		ID:               fmt.Sprintf("admin_dec_%s", generateRandomString(12)),
+		ID:               fmt.Sprintf("admin_dec_%s", generateRandomString()),
 		EventID:          eventID,
 		ObjectID:         event.ObjectID,
 		Action:           string(action), // Convert ActionType to string
-		ConsensusScore:   1.0, // Admin override has full consensus
+		ConsensusScore:   1.0,            // Admin override has full consensus
 		ReviewerCount:    1,
 		TrustWeightTotal: 1000.0,
-		Reviews:          []interface{}{
+		Reviews: []interface{}{
 			map[string]interface{}{
 				"id":          review.ID,
 				"event_id":    review.EventID,
@@ -1184,7 +1215,7 @@ func (r *ModerationRepository) CreateAdminReview(ctx context.Context, eventID st
 				"created":     review.Created,
 			},
 		},
-		Decided:          time.Now(),
+		Decided: time.Now(),
 	}
 
 	// Create the decision
@@ -1238,7 +1269,7 @@ func (r *ModerationRepository) GetReviewerStats(ctx context.Context, reviewerID 
 	err = r.db.WithContext(ctx).Model(&reviews).
 		Limit(1000). // Reasonable limit
 		All(&reviews)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan reviews: %w", err)
 	}
@@ -1247,16 +1278,16 @@ func (r *ModerationRepository) GetReviewerStats(ctx context.Context, reviewerID 
 	for _, review := range reviews {
 		if review.Type == "REVIEW" && review.ReviewerID == reviewerID {
 			stats.TotalReviews++
-			
+
 			// Track by category - use severity as category since Category field doesn't exist
 			category := review.Severity
 			stats.ReviewsByCategory[category]++
-			
+
 			// Update last review time
 			if review.Created.After(lastReviewTime) {
 				lastReviewTime = review.Created
 			}
-			
+
 			// Simplified accuracy check - use ReviewerRep instead of Weight
 			if review.ReviewerRep > 0.5 {
 				stats.AccurateReviews++
@@ -1281,7 +1312,7 @@ func (r *ModerationRepository) GetModerationQueueCount(ctx context.Context) (int
 		Index("gsi2").
 		Where("GSI2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
 		Count()
-	
+
 	if err != nil {
 		// If error, return 0 instead of failing (matches legacy behavior)
 		return 0, nil
@@ -1291,7 +1322,7 @@ func (r *ModerationRepository) GetModerationQueueCount(ctx context.Context) (int
 }
 
 // RecordPatternMatch records a moderation pattern match for analytics
-func (r *ModerationRepository) RecordPatternMatch(ctx context.Context, patternID string, matched bool, timestamp time.Time) error {
+func (r *ModerationRepository) RecordPatternMatch(_ context.Context, patternID string, matched bool, timestamp time.Time) error {
 	// Create analytics record
 	analytics := &models.ModerationAnalytics{
 		PatternID: patternID,
@@ -1300,7 +1331,7 @@ func (r *ModerationRepository) RecordPatternMatch(ctx context.Context, patternID
 		CreatedAt: time.Now(),
 	}
 	analytics.UpdateKeys()
-	
+
 	err := r.db.Model(analytics).Create()
 	if err != nil {
 		r.logger.Error("failed to record pattern match",
@@ -1309,7 +1340,7 @@ func (r *ModerationRepository) RecordPatternMatch(ctx context.Context, patternID
 			zap.Error(err))
 		return fmt.Errorf("failed to record pattern match: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -1361,7 +1392,7 @@ func (r *ModerationRepository) CreateFilter(ctx context.Context, filter *storage
 func (r *ModerationRepository) GetFilter(ctx context.Context, filterID string) (*storage.Filter, error) {
 	// We need to scan for the filter since we don't know the username
 	var models []models.Filter
-	
+
 	err := r.db.WithContext(ctx).Model(&models).
 		Where("SK", "=", fmt.Sprintf("FILTER#%s", filterID)).
 		Limit(10). // Reasonable limit
@@ -1602,7 +1633,7 @@ func (r *ModerationRepository) GetFilterKeywords(ctx context.Context, filterID s
 func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error {
 	// First get the existing keyword to find its FilterID
 	var existingModels []models.FilterKeyword
-	
+
 	// We need to scan for the keyword since we don't have the FilterID
 	err := r.db.WithContext(ctx).Model(&existingModels).
 		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
@@ -1637,7 +1668,7 @@ func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordI
 func (r *ModerationRepository) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
 	// First find the keyword to get its FilterID
 	var existingModels []models.FilterKeyword
-	
+
 	err := r.db.WithContext(ctx).Model(&existingModels).
 		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
 		All(&existingModels)
@@ -1734,7 +1765,7 @@ func (r *ModerationRepository) GetFilterStatuses(ctx context.Context, filterID s
 func (r *ModerationRepository) DeleteFilterStatus(ctx context.Context, statusID string) error {
 	// First find the status to get its FilterID
 	var existingModels []models.FilterStatus
-	
+
 	// Look for the filter status entry that filters this statusID
 	err := r.db.WithContext(ctx).Model(&existingModels).
 		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
@@ -1779,13 +1810,13 @@ func (r *ModerationRepository) AssignReport(ctx context.Context, reportID string
 
 	// Convert to model and update
 	model := &models.Report{
-		ID:                report.ID,
-		ReporterID:        report.ReporterID,
-		TargetAccountID:   report.TargetAccountID,
-		StatusIDs:         report.StatusIDs,
-		Comment:           report.Comment,
-		Category:          report.Category,
-		RuleIDs:           func() []int {
+		ID:              report.ID,
+		ReporterID:      report.ReporterID,
+		TargetAccountID: report.TargetAccountID,
+		StatusIDs:       report.StatusIDs,
+		Comment:         report.Comment,
+		Category:        report.Category,
+		RuleIDs: func() []int {
 			var result []int
 			for _, ruleID := range report.RuleIDs {
 				if id, err := strconv.Atoi(ruleID); err == nil {
@@ -1795,7 +1826,7 @@ func (r *ModerationRepository) AssignReport(ctx context.Context, reportID string
 			return result
 		}(),
 		Forwarded:         report.Forwarded,
-		Status:            string(report.Status),
+		Status:            report.Status,
 		ActionTaken:       report.ActionTaken,
 		ActionTakenAt:     report.ActionTakenAt,
 		ModeratorID:       report.ModeratorID,
@@ -1838,13 +1869,13 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 
 	// Convert to model and update
 	model := &models.Report{
-		ID:                report.ID,
-		ReporterID:        report.ReporterID,
-		TargetAccountID:   report.TargetAccountID,
-		StatusIDs:         report.StatusIDs,
-		Comment:           report.Comment,
-		Category:          report.Category,
-		RuleIDs:           func() []int {
+		ID:              report.ID,
+		ReporterID:      report.ReporterID,
+		TargetAccountID: report.TargetAccountID,
+		StatusIDs:       report.StatusIDs,
+		Comment:         report.Comment,
+		Category:        report.Category,
+		RuleIDs: func() []int {
 			var result []int
 			for _, ruleID := range report.RuleIDs {
 				if id, err := strconv.Atoi(ruleID); err == nil {
@@ -1854,7 +1885,7 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 			return result
 		}(),
 		Forwarded:         report.Forwarded,
-		Status:            string(report.Status),
+		Status:            report.Status,
 		ActionTaken:       report.ActionTaken,
 		ActionTakenAt:     report.ActionTakenAt,
 		ModeratorID:       report.ModeratorID,
@@ -1928,7 +1959,7 @@ func (r *ModerationRepository) GetReportedStatuses(ctx context.Context, reportID
 func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Flag) error {
 	// Generate ID if not provided
 	if flag.ID == "" {
-		flag.ID = fmt.Sprintf("flag_%s", generateRandomString(12))
+		flag.ID = fmt.Sprintf("flag_%s", generateRandomString())
 	}
 
 	// Set timestamps and defaults
@@ -1938,7 +1969,7 @@ func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Fla
 		flag.Published = now
 	}
 	if flag.Status == "" {
-		flag.Status = "pending"
+		flag.Status = StatusPending
 	}
 
 	// Create model and update keys
@@ -1948,7 +1979,7 @@ func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Fla
 		Object:     flag.Object,
 		Content:    flag.Content,
 		Published:  flag.Published,
-		Status:     string(flag.Status),
+		Status:     flag.Status,
 		ReviewedBy: flag.ReviewedBy,
 		ReviewedAt: flag.ReviewedAt,
 		ReviewNote: flag.ReviewNote,
@@ -1979,7 +2010,7 @@ func (r *ModerationRepository) GetFlag(ctx context.Context, id string) (*storage
 	var models []models.Flag
 	err := r.db.WithContext(ctx).Model(&models).
 		Where("SK", "LIKE", fmt.Sprintf("%%#%s", id)). // SK ends with the flag ID
-		Limit(10). // Reasonable limit
+		Limit(10).                                     // Reasonable limit
 		All(&models)
 
 	if err != nil {
@@ -2169,7 +2200,7 @@ func (r *ModerationRepository) UpdateFlagStatus(ctx context.Context, id string, 
 		Object:     flag.Object,
 		Content:    flag.Content,
 		Published:  flag.Published,
-		Status:     string(flag.Status),
+		Status:     flag.Status,
 		ReviewedBy: flag.ReviewedBy,
 		ReviewedAt: flag.ReviewedAt,
 		ReviewNote: flag.ReviewNote,
@@ -2218,7 +2249,7 @@ func (r *ModerationRepository) CountPendingFlags(ctx context.Context) (int, erro
 func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage.Report) error {
 	// Generate ID if not provided
 	if report.ID == "" {
-		report.ID = fmt.Sprintf("report_%s", generateRandomString(12))
+		report.ID = fmt.Sprintf("report_%s", generateRandomString())
 	}
 
 	// Set timestamps
@@ -2233,13 +2264,13 @@ func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage
 
 	// Create model and update keys
 	model := &models.Report{
-		ID:                report.ID,
-		ReporterID:        report.ReporterID,
-		TargetAccountID:   report.TargetAccountID,
-		StatusIDs:         report.StatusIDs,
-		Comment:           report.Comment,
-		Category:          report.Category,
-		RuleIDs:           func() []int {
+		ID:              report.ID,
+		ReporterID:      report.ReporterID,
+		TargetAccountID: report.TargetAccountID,
+		StatusIDs:       report.StatusIDs,
+		Comment:         report.Comment,
+		Category:        report.Category,
+		RuleIDs: func() []int {
 			var result []int
 			for _, ruleID := range report.RuleIDs {
 				if id, err := strconv.Atoi(ruleID); err == nil {
@@ -2249,7 +2280,7 @@ func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage
 			return result
 		}(),
 		Forwarded:         report.Forwarded,
-		Status:            string(report.Status),
+		Status:            report.Status,
 		ActionTaken:       report.ActionTaken,
 		ActionTakenAt:     report.ActionTakenAt,
 		ModeratorID:       report.ModeratorID,
@@ -2294,13 +2325,13 @@ func (r *ModerationRepository) GetReport(ctx context.Context, id string) (*stora
 	}
 
 	return &storage.Report{
-		ID:                model.ID,
-		ReporterID:        model.ReporterID,
-		TargetAccountID:   model.TargetAccountID,
-		StatusIDs:         model.StatusIDs,
-		Comment:           model.Comment,
-		Category:          model.Category,
-		RuleIDs:           func() []string {
+		ID:              model.ID,
+		ReporterID:      model.ReporterID,
+		TargetAccountID: model.TargetAccountID,
+		StatusIDs:       model.StatusIDs,
+		Comment:         model.Comment,
+		Category:        model.Category,
+		RuleIDs: func() []string {
 			var result []string
 			for _, ruleID := range model.RuleIDs {
 				result = append(result, strconv.Itoa(ruleID))
@@ -2350,19 +2381,19 @@ func (r *ModerationRepository) GetUserReports(ctx context.Context, username stri
 	reports := make([]*storage.Report, len(models))
 	for i, model := range models {
 		reports[i] = &storage.Report{
-			ID:                model.ID,
-			ReporterID:        model.ReporterID,
-			TargetAccountID:   model.TargetAccountID,
-			StatusIDs:         model.StatusIDs,
-			Comment:           model.Comment,
-			Category:          model.Category,
-			RuleIDs:           func() []string {
-			var result []string
-			for _, ruleID := range model.RuleIDs {
-				result = append(result, strconv.Itoa(ruleID))
-			}
-			return result
-		}(),
+			ID:              model.ID,
+			ReporterID:      model.ReporterID,
+			TargetAccountID: model.TargetAccountID,
+			StatusIDs:       model.StatusIDs,
+			Comment:         model.Comment,
+			Category:        model.Category,
+			RuleIDs: func() []string {
+				var result []string
+				for _, ruleID := range model.RuleIDs {
+					result = append(result, strconv.Itoa(ruleID))
+				}
+				return result
+			}(),
 			Forwarded:         model.Forwarded,
 			Status:            model.Status,
 			ActionTaken:       model.ActionTaken,
@@ -2400,13 +2431,13 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 
 	// Convert to model and update
 	model := &models.Report{
-		ID:                report.ID,
-		ReporterID:        report.ReporterID,
-		TargetAccountID:   report.TargetAccountID,
-		StatusIDs:         report.StatusIDs,
-		Comment:           report.Comment,
-		Category:          report.Category,
-		RuleIDs:           func() []int {
+		ID:              report.ID,
+		ReporterID:      report.ReporterID,
+		TargetAccountID: report.TargetAccountID,
+		StatusIDs:       report.StatusIDs,
+		Comment:         report.Comment,
+		Category:        report.Category,
+		RuleIDs: func() []int {
 			var result []int
 			for _, ruleID := range report.RuleIDs {
 				if id, err := strconv.Atoi(ruleID); err == nil {
@@ -2416,7 +2447,7 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 			return result
 		}(),
 		Forwarded:         report.Forwarded,
-		Status:            string(report.Status),
+		Status:            report.Status,
 		ActionTaken:       report.ActionTaken,
 		ActionTakenAt:     report.ActionTakenAt,
 		ModeratorID:       report.ModeratorID,
@@ -2468,19 +2499,19 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 	reports := make([]*storage.Report, len(models))
 	for i, model := range models {
 		reports[i] = &storage.Report{
-			ID:                model.ID,
-			ReporterID:        model.ReporterID,
-			TargetAccountID:   model.TargetAccountID,
-			StatusIDs:         model.StatusIDs,
-			Comment:           model.Comment,
-			Category:          model.Category,
-			RuleIDs:           func() []string {
-			var result []string
-			for _, ruleID := range model.RuleIDs {
-				result = append(result, strconv.Itoa(ruleID))
-			}
-			return result
-		}(),
+			ID:              model.ID,
+			ReporterID:      model.ReporterID,
+			TargetAccountID: model.TargetAccountID,
+			StatusIDs:       model.StatusIDs,
+			Comment:         model.Comment,
+			Category:        model.Category,
+			RuleIDs: func() []string {
+				var result []string
+				for _, ruleID := range model.RuleIDs {
+					result = append(result, strconv.Itoa(ruleID))
+				}
+				return result
+			}(),
 			Forwarded:         model.Forwarded,
 			Status:            model.Status,
 			ActionTaken:       model.ActionTaken,
@@ -2499,24 +2530,24 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 		// We got more results than requested, so there are more pages
 		nextCursor = models[limit-1].GSI2SK
 		models = models[:limit] // Trim to requested limit
-		
+
 		// Re-process the trimmed models to create reports
 		reports = make([]*storage.Report, len(models))
 		for i, model := range models {
 			reports[i] = &storage.Report{
-				ID:                model.ID,
-				ReporterID:        model.ReporterID,
-				TargetAccountID:   model.TargetAccountID,
-				StatusIDs:         model.StatusIDs,
-				Comment:           model.Comment,
-				Category:          model.Category,
-				RuleIDs:           func() []string {
-			var result []string
-			for _, ruleID := range model.RuleIDs {
-				result = append(result, strconv.Itoa(ruleID))
-			}
-			return result
-		}(),
+				ID:              model.ID,
+				ReporterID:      model.ReporterID,
+				TargetAccountID: model.TargetAccountID,
+				StatusIDs:       model.StatusIDs,
+				Comment:         model.Comment,
+				Category:        model.Category,
+				RuleIDs: func() []string {
+					var result []string
+					for _, ruleID := range model.RuleIDs {
+						result = append(result, strconv.Itoa(ruleID))
+					}
+					return result
+				}(),
 				Forwarded:         model.Forwarded,
 				Status:            model.Status,
 				ActionTaken:       model.ActionTaken,
@@ -2556,19 +2587,19 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 	reports := make([]*storage.Report, len(models))
 	for i, model := range models {
 		reports[i] = &storage.Report{
-			ID:                model.ID,
-			ReporterID:        model.ReporterID,
-			TargetAccountID:   model.TargetAccountID,
-			StatusIDs:         model.StatusIDs,
-			Comment:           model.Comment,
-			Category:          model.Category,
-			RuleIDs:           func() []string {
-			var result []string
-			for _, ruleID := range model.RuleIDs {
-				result = append(result, strconv.Itoa(ruleID))
-			}
-			return result
-		}(),
+			ID:              model.ID,
+			ReporterID:      model.ReporterID,
+			TargetAccountID: model.TargetAccountID,
+			StatusIDs:       model.StatusIDs,
+			Comment:         model.Comment,
+			Category:        model.Category,
+			RuleIDs: func() []string {
+				var result []string
+				for _, ruleID := range model.RuleIDs {
+					result = append(result, strconv.Itoa(ruleID))
+				}
+				return result
+			}(),
 			Forwarded:         model.Forwarded,
 			Status:            model.Status,
 			ActionTaken:       model.ActionTaken,
@@ -2587,24 +2618,24 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 		// We got more results than requested, so there are more pages
 		nextCursor = models[limit-1].GSI3SK
 		models = models[:limit] // Trim to requested limit
-		
+
 		// Re-process the trimmed models to create reports
 		reports = make([]*storage.Report, len(models))
 		for i, model := range models {
 			reports[i] = &storage.Report{
-				ID:                model.ID,
-				ReporterID:        model.ReporterID,
-				TargetAccountID:   model.TargetAccountID,
-				StatusIDs:         model.StatusIDs,
-				Comment:           model.Comment,
-				Category:          model.Category,
-				RuleIDs:           func() []string {
-			var result []string
-			for _, ruleID := range model.RuleIDs {
-				result = append(result, strconv.Itoa(ruleID))
-			}
-			return result
-		}(),
+				ID:              model.ID,
+				ReporterID:      model.ReporterID,
+				TargetAccountID: model.TargetAccountID,
+				StatusIDs:       model.StatusIDs,
+				Comment:         model.Comment,
+				Category:        model.Category,
+				RuleIDs: func() []string {
+					var result []string
+					for _, ruleID := range model.RuleIDs {
+						result = append(result, strconv.Itoa(ruleID))
+					}
+					return result
+				}(),
 				Forwarded:         model.Forwarded,
 				Status:            model.Status,
 				ActionTaken:       model.ActionTaken,
@@ -2696,3 +2727,63 @@ func (r *ModerationRepository) IncrementFalseReports(ctx context.Context, userna
 	return nil
 }
 
+// GetPendingModerationCount returns the count of pending moderation tasks for a specific moderator
+func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, moderatorID string) (int, error) {
+	r.logger.Debug("Getting pending moderation count for moderator",
+		zap.String("moderator_id", moderatorID))
+
+	// Count assigned reports that are still pending (open or in progress)
+	var reportCount int
+	
+	// Get open reports
+	openReportModels := []models.Report{}
+	err := r.db.WithContext(ctx).Model(&models.Report{}).
+		Where("AssignedTo", "=", moderatorID).
+		Where("Status", "=", string(storage.ReportStatusOpen)).
+		All(&openReportModels)
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Warn("failed to query open assigned reports", 
+			zap.String("moderator_id", moderatorID),
+			zap.Error(err))
+	}
+
+	// Get in-progress reports
+	inProgressReportModels := []models.Report{}
+	err = r.db.WithContext(ctx).Model(&models.Report{}).
+		Where("AssignedTo", "=", moderatorID).
+		Where("Status", "=", string(storage.ReportStatusInProgress)).
+		All(&inProgressReportModels)
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Warn("failed to query in-progress assigned reports", 
+			zap.String("moderator_id", moderatorID),
+			zap.Error(err))
+	}
+
+	reportCount = len(openReportModels) + len(inProgressReportModels)
+
+	// Count assigned flags that are still pending
+	var flagCount int
+	flagModels := []models.Flag{}
+	err = r.db.WithContext(ctx).Model(&models.Flag{}).
+		Where("AssignedTo", "=", moderatorID).
+		Where("Status", "=", string(storage.FlagStatusPending)).
+		All(&flagModels)
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Warn("failed to query assigned flags", 
+			zap.String("moderator_id", moderatorID),
+			zap.Error(err))
+	} else {
+		flagCount = len(flagModels)
+	}
+
+	// Total pending tasks = pending reports + pending flags
+	totalPending := reportCount + flagCount
+
+	r.logger.Debug("Retrieved pending moderation count",
+		zap.String("moderator_id", moderatorID),
+		zap.Int("pending_reports", reportCount),
+		zap.Int("pending_flags", flagCount),
+		zap.Int("total_pending", totalPending))
+
+	return totalPending, nil
+}

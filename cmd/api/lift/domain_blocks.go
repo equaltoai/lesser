@@ -23,9 +23,9 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	var username string
-	
+
 	if testUsername != "" {
 		// Use test username directly (test mode)
 		username = testUsername
@@ -35,7 +35,7 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 		if authHeader == "" {
 			authHeader = ctx.Header("authorization")
 		}
-		
+
 		// Try direct access to headers if ctx.Header doesn't work
 		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
@@ -60,7 +60,7 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 		if !claims.HasScope(auth.ScopeRead) && !claims.HasScope("read:blocks") {
 			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 		}
-		
+
 		username = claims.Username
 	}
 
@@ -107,9 +107,9 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	var username string
-	
+
 	if testUsername != "" {
 		// Use test username directly (test mode)
 		username = testUsername
@@ -119,7 +119,7 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 		if authHeader == "" {
 			authHeader = ctx.Header("authorization")
 		}
-		
+
 		// Try direct access to headers if ctx.Header doesn't work
 		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
@@ -144,7 +144,7 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 		if !claims.HasScope(auth.ScopeWrite) && !claims.HasScope("write:blocks") {
 			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 		}
-		
+
 		username = claims.Username
 	}
 
@@ -154,13 +154,13 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 		// Fallback for test environment - try parsing directly from request body
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				h.logger.Debug("invalid domain block request", 
-					zap.Error(err), 
+				h.logger.Debug("invalid domain block request",
+					zap.Error(err),
 					zap.Error(jsonErr),
 					zap.String("body", string(ctx.Request.Body)))
 				return ctx.Status(400).JSON(map[string]string{"error": "invalid request"})
 			}
-			h.logger.Debug("parsed request from body fallback", 
+			h.logger.Debug("parsed request from body fallback",
 				zap.String("domain", req.Domain))
 		} else {
 			h.logger.Debug("invalid domain block request - no body", zap.Error(err))
@@ -174,8 +174,8 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Validate domain format - basic check
-	if strings.Contains(req.Domain, " ") || req.Domain == "" || 
-		strings.Contains(req.Domain, "..") || strings.HasPrefix(req.Domain, ".") || 
+	if strings.Contains(req.Domain, " ") || req.Domain == "" ||
+		strings.Contains(req.Domain, "..") || strings.HasPrefix(req.Domain, ".") ||
 		strings.HasSuffix(req.Domain, ".") {
 		return ctx.Status(400).JSON(map[string]string{"error": "invalid domain format"})
 	}
@@ -200,9 +200,9 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	var username string
-	
+
 	if testUsername != "" {
 		// Use test username directly (test mode)
 		username = testUsername
@@ -212,7 +212,7 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 		if authHeader == "" {
 			authHeader = ctx.Header("authorization")
 		}
-		
+
 		// Try direct access to headers if ctx.Header doesn't work
 		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
@@ -237,7 +237,7 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 		if !claims.HasScope(auth.ScopeWrite) && !claims.HasScope("write:blocks") {
 			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 		}
-		
+
 		username = claims.Username
 	}
 
@@ -246,7 +246,7 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	if domain == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		domain = ctx.Request.Request.QueryParams["domain"]
 	}
-	
+
 	if domain == "" {
 		return ctx.Status(400).JSON(map[string]string{"error": "domain parameter is required"})
 	}

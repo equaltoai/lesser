@@ -1,3 +1,4 @@
+// Package main implements the federation-timeseries Lambda function for processing federation time-series data.
 package main
 
 import (
@@ -18,12 +19,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
 
+// TimeseriesProcessor handles time series data for federation metrics
 type TimeseriesProcessor struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
 }
 
+// NewTimeseriesProcessor creates a new timeseries processor
 func NewTimeseriesProcessor(db core.DB, tableName string) *TimeseriesProcessor {
 	return &TimeseriesProcessor{
 		db:        db,
@@ -35,7 +38,7 @@ func NewTimeseriesProcessor(db core.DB, tableName string) *TimeseriesProcessor {
 // HandleStream implements the DynamoDBStreamHandler interface for Lift framework
 func (tp *TimeseriesProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
 	requestID := ctx.GetRequestID()
-	
+
 	tp.logger.Info("processing federation timeseries stream event",
 		zap.String("request_id", requestID),
 		zap.Int("record_count", len(event.Records)),
@@ -142,6 +145,7 @@ func (tp *TimeseriesProcessor) processWindow(ctx *lift.Context, window time.Time
 	return tp.storeMetrics(ctx, window, metrics)
 }
 
+// FederationMetrics contains aggregated federation metrics
 type FederationMetrics struct {
 	FollowCount     int
 	LikeCount       int
@@ -230,7 +234,7 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx *lift.Context, window time.Time,
 		CreatedAt           string `json:"created_at"`
 		TTL                 int64  `dynamorm:"ttl"`
 	}{
-		PK:                  fmt.Sprintf("TIMESERIES#FEDERATION"),
+		PK:                  "TIMESERIES#FEDERATION",
 		SK:                  fmt.Sprintf("WINDOW#%s", windowStr),
 		Type:                "FederationTimeseries",
 		Window:              windowStr,

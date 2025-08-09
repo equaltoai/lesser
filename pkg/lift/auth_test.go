@@ -760,7 +760,7 @@ func TestContextHelperFunctions(t *testing.T) {
 
 		// Test with no claims - should set 401 status and return error
 		ctx2 := createTestContext()
-		_, err = GetClaims(ctx2)
+		_, _ = GetClaims(ctx2) // Error ignored - testing status code instead
 		// The helper function calls ctx.Unauthorized which sets status but may not return an error
 		assert.Equal(t, 401, ctx2.Response.StatusCode, "Should set 401 status when no claims")
 	})
@@ -775,7 +775,7 @@ func TestContextHelperFunctions(t *testing.T) {
 
 		// Test with no username - should set 401 status
 		ctx2 := createTestContext()
-		_, err = GetUsername(ctx2)
+		_, _ = GetUsername(ctx2) // Error ignored - testing status code instead
 		assert.Equal(t, 401, ctx2.Response.StatusCode, "Should set 401 status when no username")
 	})
 

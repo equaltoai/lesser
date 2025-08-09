@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -59,7 +60,7 @@ func NewFeatureRepository(db core.DB, tableName string, logger *zap.Logger) *Fea
 func (r *FeatureRepository) CreateFeature(ctx context.Context, name, description, createdBy string) (*Feature, error) {
 	feature := &Feature{
 		PK:          fmt.Sprintf("FEATURE#%s", name),
-		SK:          "CONFIG",
+		SK:          models.SKConfig,
 		ID:          fmt.Sprintf("feat_%d", time.Now().Unix()),
 		Name:        name,
 		Description: description,
@@ -82,13 +83,13 @@ func (r *FeatureRepository) CreateFeature(ctx context.Context, name, description
 // GetFeature retrieves a feature by name
 func (r *FeatureRepository) GetFeature(ctx context.Context, name string) (*Feature, error) {
 	pk := fmt.Sprintf("FEATURE#%s", name)
-	sk := "CONFIG"
-	
+	sk := models.SKConfig
+
 	feature := &Feature{}
 	if err := r.Get(ctx, pk, sk, feature); err != nil {
 		return nil, fmt.Errorf("feature not found: %s", name)
 	}
-	
+
 	return feature, nil
 }
 
@@ -98,12 +99,12 @@ func (r *FeatureRepository) EnableFeature(ctx context.Context, name string, perc
 	if err != nil {
 		return err
 	}
-	
+
 	// Update fields
 	feature.Enabled = true
 	feature.Percentage = percentage
 	feature.UpdatedAt = time.Now()
-	
+
 	// Use BaseRepository Update
 	return r.Update(ctx, feature)
 }
@@ -114,12 +115,12 @@ func (r *FeatureRepository) DisableFeature(ctx context.Context, name string) err
 	if err != nil {
 		return err
 	}
-	
+
 	// Update fields
 	feature.Enabled = false
 	feature.Percentage = 0
 	feature.UpdatedAt = time.Now()
-	
+
 	// Use BaseRepository Update
 	return r.Update(ctx, feature)
 }
@@ -130,18 +131,18 @@ func (r *FeatureRepository) AddUserGroup(ctx context.Context, name, group string
 	if err != nil {
 		return err
 	}
-	
+
 	// Check if group already exists
 	for _, g := range feature.UserGroups {
 		if g == group {
 			return nil // Already exists
 		}
 	}
-	
+
 	// Add group
 	feature.UserGroups = append(feature.UserGroups, group)
 	feature.UpdatedAt = time.Now()
-	
+
 	// Use BaseRepository Update
 	return r.Update(ctx, feature)
 }
@@ -153,7 +154,7 @@ func (r *FeatureRepository) ListFeatures(ctx context.Context) ([]*Feature, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list features: %w", err)
 	}
-	
+
 	return features, nil
 }
 
@@ -163,22 +164,22 @@ func (r *FeatureRepository) ListEnabledFeatures(ctx context.Context) ([]*Feature
 	if err != nil {
 		return nil, err
 	}
-	
+
 	enabled := make([]*Feature, 0)
 	for _, f := range allFeatures {
 		if f.Enabled {
 			enabled = append(enabled, f)
 		}
 	}
-	
+
 	return enabled, nil
 }
 
 // DeleteFeature removes a feature flag
 func (r *FeatureRepository) DeleteFeature(ctx context.Context, name string) error {
 	pk := fmt.Sprintf("FEATURE#%s", name)
-	sk := "CONFIG"
-	
+	sk := models.SKConfig
+
 	// Use BaseRepository Delete
 	return r.Delete(ctx, pk, sk)
 }
@@ -189,11 +190,11 @@ func (r *FeatureRepository) IsFeatureEnabled(ctx context.Context, name, userGrou
 	if err != nil {
 		return false, err
 	}
-	
+
 	if !feature.Enabled {
 		return false, nil
 	}
-	
+
 	// Check percentage rollout (simplified - in production you'd hash user ID)
 	if feature.Percentage < 100 {
 		// For demo, just use simple percentage check
@@ -201,7 +202,7 @@ func (r *FeatureRepository) IsFeatureEnabled(ctx context.Context, name, userGrou
 			return false, nil
 		}
 	}
-	
+
 	// Check user groups if specified
 	if len(feature.UserGroups) > 0 {
 		for _, g := range feature.UserGroups {
@@ -211,7 +212,7 @@ func (r *FeatureRepository) IsFeatureEnabled(ctx context.Context, name, userGrou
 		}
 		return false, nil
 	}
-	
+
 	return true, nil
 }
 
@@ -223,7 +224,7 @@ func (r *FeatureRepository) GetFeatureCount(ctx context.Context) (int, error) {
 
 // COMPARISON: Without BaseRepository, this repository would be ~400+ lines
 // With BaseRepository: 198 lines (50% reduction)
-// 
+//
 // Benefits:
 // - No boilerplate for CRUD operations
 // - Consistent error handling

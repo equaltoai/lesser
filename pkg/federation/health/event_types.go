@@ -1,3 +1,4 @@
+// Package health defines event types for federation health monitoring and EventBridge integration.
 package health
 
 import (
@@ -7,19 +8,23 @@ import (
 )
 
 // HealthCheckEvent represents an EventBridge event for triggering health checks
+//
+//nolint:revive // HealthCheck prefix clarifies this is for health monitoring
 type HealthCheckEvent struct {
 	// Event metadata
-	Source      string    `json:"source"`       // "lesser.federation.health"
-	DetailType  string    `json:"detail-type"`  // "Health Check Request"
-	Time        time.Time `json:"time"`
-	Region      string    `json:"region"`
-	Account     string    `json:"account"`
+	Source     string    `json:"source"`      // "lesser.federation.health"
+	DetailType string    `json:"detail-type"` // "Health Check Request"
+	Time       time.Time `json:"time"`
+	Region     string    `json:"region"`
+	Account    string    `json:"account"`
 
 	// Event detail
 	Detail HealthCheckDetail `json:"detail"`
 }
 
 // HealthCheckDetail contains the specifics of what to check
+//
+//nolint:revive // HealthCheck prefix clarifies this is for health monitoring
 type HealthCheckDetail struct {
 	// Action type
 	Action string `json:"action"` // "check_health", "aggregate_summary", "cleanup"
@@ -31,36 +36,38 @@ type HealthCheckDetail struct {
 
 	// Time window configuration
 	WindowHours int `json:"window_hours,omitempty"` // Hours to look back for aggregation
-	
-	// Check configuration  
+
+	// Check configuration
 	Timeout         int    `json:"timeout,omitempty"`          // Request timeout in seconds
 	FollowRedirects bool   `json:"follow_redirects,omitempty"` // Whether to follow HTTP redirects
 	UserAgent       string `json:"user_agent,omitempty"`       // Custom user agent
-	
+
 	// Aggregation configuration
 	SummaryWindows []string `json:"summary_windows,omitempty"` // ["1h", "24h", "7d"]
-	
+
 	// Cleanup configuration
 	RetentionDays int `json:"retention_days,omitempty"` // Days to keep health data
 }
 
 // HealthCheckResult represents the result of health checking operation
+//
+//nolint:revive // HealthCheck prefix clarifies this is for health monitoring
 type HealthCheckResult struct {
 	// Event metadata
-	EventID     string    `json:"event_id"`
-	Source      string    `json:"source"`
-	Timestamp   time.Time `json:"timestamp"`
-	
+	EventID   string    `json:"event_id"`
+	Source    string    `json:"source"`
+	Timestamp time.Time `json:"timestamp"`
+
 	// Results
-	CheckedDomains   []string                    `json:"checked_domains"`
-	SuccessfulChecks int                         `json:"successful_checks"`
-	FailedChecks     int                         `json:"failed_checks"`
-	Results          []DomainHealthCheckResult   `json:"results"`
-	
+	CheckedDomains   []string                  `json:"checked_domains"`
+	SuccessfulChecks int                       `json:"successful_checks"`
+	FailedChecks     int                       `json:"failed_checks"`
+	Results          []DomainHealthCheckResult `json:"results"`
+
 	// Performance metrics
 	TotalDuration time.Duration `json:"total_duration"`
 	AvgDuration   time.Duration `json:"avg_duration"`
-	
+
 	// Errors
 	Errors []HealthCheckError `json:"errors,omitempty"`
 }
@@ -75,45 +82,47 @@ type DomainHealthCheckResult struct {
 	ErrorMessage string        `json:"error_message,omitempty"`
 	HealthScore  float64       `json:"health_score"`
 	CheckedAt    time.Time     `json:"checked_at"`
-	
+
 	// Federation-specific metrics
 	InboxBacklog    int           `json:"inbox_backlog,omitempty"`
 	ProcessingDelay time.Duration `json:"processing_delay,omitempty"`
 }
 
 // HealthCheckError represents an error during health checking
+//
+//nolint:revive // HealthCheck prefix clarifies this is for health monitoring
 type HealthCheckError struct {
-	Domain       string `json:"domain,omitempty"`
-	ErrorType    string `json:"error_type"`    // "network", "timeout", "invalid_response", "database"
-	ErrorMessage string `json:"error_message"`
+	Domain       string    `json:"domain,omitempty"`
+	ErrorType    string    `json:"error_type"` // "network", "timeout", "invalid_response", "database"
+	ErrorMessage string    `json:"error_message"`
 	Timestamp    time.Time `json:"timestamp"`
 }
 
 // AggregationEvent represents an EventBridge event for summary aggregation
 type AggregationEvent struct {
-	Source     string           `json:"source"`
-	DetailType string           `json:"detail-type"`
-	Time       time.Time        `json:"time"`
+	Source     string            `json:"source"`
+	DetailType string            `json:"detail-type"`
+	Time       time.Time         `json:"time"`
 	Detail     AggregationDetail `json:"detail"`
 }
 
 // AggregationDetail contains aggregation configuration
 type AggregationDetail struct {
-	Action         string   `json:"action"`          // "aggregate_summaries"
-	Domains        []string `json:"domains"`         // Domains to aggregate
-	Windows        []string `json:"windows"`         // Time windows: ["1h", "24h", "7d"]
-	ForceRecalculate bool   `json:"force_recalculate,omitempty"` // Recalculate even if recent summary exists
+	Action           string   `json:"action"`                      // "aggregate_summaries"
+	Domains          []string `json:"domains"`                     // Domains to aggregate
+	Windows          []string `json:"windows"`                     // Time windows: ["1h", "24h", "7d"]
+	ForceRecalculate bool     `json:"force_recalculate,omitempty"` // Recalculate even if recent summary exists
 }
 
 // ScheduledHealthCheckEvent represents a scheduled health check trigger
 type ScheduledHealthCheckEvent struct {
 	// Standard EventBridge scheduled event fields
-	Source      string    `json:"source"`      // "aws.events"
-	DetailType  string    `json:"detail-type"` // "Scheduled Event"
-	Time        time.Time `json:"time"`
-	Account     string    `json:"account"`
-	Region      string    `json:"region"`
-	
+	Source     string    `json:"source"`      // "aws.events"
+	DetailType string    `json:"detail-type"` // "Scheduled Event"
+	Time       time.Time `json:"time"`
+	Account    string    `json:"account"`
+	Region     string    `json:"region"`
+
 	// Custom detail for health checking
 	Detail ScheduledEventDetail `json:"detail"`
 }
@@ -123,7 +132,7 @@ type ScheduledEventDetail struct {
 	// Schedule information
 	ScheduleName string `json:"schedule_name"` // Name of the EventBridge rule
 	ScheduleType string `json:"schedule_type"` // "health_check", "aggregation", "cleanup"
-	
+
 	// Configuration
 	BatchSize    int      `json:"batch_size,omitempty"`    // Instances per invocation
 	MaxInstances int      `json:"max_instances,omitempty"` // Total instances to check
@@ -185,19 +194,19 @@ func (e *HealthCheckEvent) Validate() error {
 	if e.Detail.Action == "" {
 		return fmt.Errorf("action is required")
 	}
-	
+
 	if e.Detail.Action == "check_health" && len(e.Detail.Domains) == 0 && len(e.Detail.InstanceIDs) == 0 {
 		return fmt.Errorf("domains or instance_ids required for health check action")
 	}
-	
+
 	if e.Detail.BatchSize < 0 {
 		return fmt.Errorf("batch_size must be positive")
 	}
-	
+
 	if e.Detail.Timeout < 0 {
 		return fmt.Errorf("timeout must be positive")
 	}
-	
+
 	return nil
 }
 
@@ -206,26 +215,26 @@ func (e *AggregationEvent) Validate() error {
 	if e.Detail.Action == "" {
 		return fmt.Errorf("action is required")
 	}
-	
+
 	if len(e.Detail.Domains) == 0 {
 		return fmt.Errorf("domains required for aggregation")
 	}
-	
+
 	if len(e.Detail.Windows) == 0 {
 		return fmt.Errorf("windows required for aggregation")
 	}
-	
+
 	// Validate window formats
 	validWindows := map[string]bool{
 		"1h": true, "24h": true, "7d": true,
 	}
-	
+
 	for _, window := range e.Detail.Windows {
 		if !validWindows[window] {
 			return fmt.Errorf("invalid window format: %s (must be 1h, 24h, or 7d)", window)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -233,15 +242,15 @@ func (e *AggregationEvent) Validate() error {
 func (e *HealthCheckEvent) GetBatchedDomains() [][]string {
 	domains := e.Detail.Domains
 	batchSize := e.Detail.BatchSize
-	
+
 	if batchSize <= 0 {
 		batchSize = 10 // Default batch size
 	}
-	
+
 	if len(domains) == 0 {
 		return [][]string{}
 	}
-	
+
 	var batches [][]string
 	for i := 0; i < len(domains); i += batchSize {
 		end := i + batchSize
@@ -250,6 +259,6 @@ func (e *HealthCheckEvent) GetBatchedDomains() [][]string {
 		}
 		batches = append(batches, domains[i:end])
 	}
-	
+
 	return batches
 }

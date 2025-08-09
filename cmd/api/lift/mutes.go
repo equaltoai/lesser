@@ -106,8 +106,11 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 	if existingMute != nil {
 		// Update notification setting if different
 		if existingMute.HideNotifications != hideNotifications {
-			// For now, we'll just return the existing mute
-			// In a full implementation, you'd update the mute here
+			h.logger.Debug("mute notification setting differs but not updating",
+				zap.String("username", username),
+				zap.String("target", accountID),
+				zap.Bool("existing_hide", existingMute.HideNotifications),
+				zap.Bool("requested_hide", hideNotifications))
 		}
 
 		relationship := h.getRelationshipLift(ctx.Context, username, accountID)

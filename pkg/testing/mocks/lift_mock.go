@@ -1,9 +1,10 @@
+// Package mocks provides mock implementations for Lift framework components and handlers for testing.
 package mocks
 
 import (
 	"context"
 	"testing"
-	
+
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/mock"
 )
@@ -25,12 +26,12 @@ func MockMiddleware(name string, mockObj *mock.Mock) lift.Middleware {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Call the mock to record the invocation
 			args := mockObj.Called(name, ctx)
-			
+
 			// If mock returns an error, return it
 			if args.Error(0) != nil {
 				return args.Error(0)
 			}
-			
+
 			// Otherwise, call the next handler
 			return next.Handle(ctx)
 		})
@@ -170,36 +171,36 @@ func (m *MockMetricsCollector) Flush() error {
 
 // LiftTestContext provides a test context with all mocks
 type LiftTestContext struct {
-	Ctx       *lift.Context
-	Logger    *MockLogger
-	Metrics   *MockMetricsCollector
-	Mocks     *mock.Mock
+	Ctx     *lift.Context
+	Logger  *MockLogger
+	Metrics *MockMetricsCollector
+	Mocks   *mock.Mock
 }
 
 // NewLiftTestContext creates a new test context
-func NewLiftTestContext(t *testing.T) *LiftTestContext {
+func NewLiftTestContext(_ *testing.T) *LiftTestContext {
 	logger := new(MockLogger)
 	metrics := new(MockMetricsCollector)
 	mocks := new(mock.Mock)
-	
+
 	// Set up default expectations
 	logger.On("Debug", mock.Anything, mock.Anything).Maybe()
 	logger.On("Info", mock.Anything, mock.Anything).Maybe()
 	logger.On("WithField", mock.Anything, mock.Anything).Return(logger).Maybe()
 	logger.On("WithFields", mock.Anything).Return(logger).Maybe()
-	
+
 	metrics.On("Counter", mock.Anything, mock.Anything).Return(&MockCounter{}).Maybe()
 	metrics.On("Histogram", mock.Anything, mock.Anything).Return(&MockHistogram{}).Maybe()
 	metrics.On("Gauge", mock.Anything, mock.Anything).Return(&MockGauge{}).Maybe()
 	metrics.On("Flush").Return(nil).Maybe()
-	
+
 	// Create context
 	ctx := &lift.Context{
 		Context: context.Background(),
 		Logger:  logger,
 		Metrics: metrics,
 	}
-	
+
 	return &LiftTestContext{
 		Ctx:     ctx,
 		Logger:  logger,

@@ -16,18 +16,18 @@ type MediaSession struct {
 	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1sk"` // SESSION#{startTime}
 
 	// Business fields
-	SessionID        string    `json:"session_id"`
-	UserID           string    `json:"user_id"`
-	MediaID          string    `json:"media_id"`
-	Format           string    `json:"format"`           // hls, dash
-	CurrentQuality   string    `json:"current_quality"`  // 4k, 1080p, 720p, etc.
-	StartTime        time.Time `json:"start_time"`
+	SessionID        string     `json:"session_id"`
+	UserID           string     `json:"user_id"`
+	MediaID          string     `json:"media_id"`
+	Format           string     `json:"format"`          // hls, dash
+	CurrentQuality   string     `json:"current_quality"` // 4k, 1080p, 720p, etc.
+	StartTime        time.Time  `json:"start_time"`
 	EndTime          *time.Time `json:"end_time,omitempty"`
-	LastSegmentIndex int       `json:"last_segment_index"`
-	BytesTransferred int64     `json:"bytes_transferred"`
-	BufferHealth     float64   `json:"buffer_health"` // 0.0 to 1.0
-	Active           bool      `json:"active"`
-	Duration         float64   `json:"duration,omitempty"` // in seconds
+	LastSegmentIndex int        `json:"last_segment_index"`
+	BytesTransferred int64      `json:"bytes_transferred"`
+	BufferHealth     float64    `json:"buffer_health"` // 0.0 to 1.0
+	Active           bool       `json:"active"`
+	Duration         float64    `json:"duration,omitempty"` // in seconds
 	LastUpdate       *time.Time `json:"last_update,omitempty"`
 
 	// TTL for automatic cleanup (24 hours default)
@@ -37,12 +37,12 @@ type MediaSession struct {
 // UpdateKeys sets the GSI keys based on the current values
 func (m *MediaSession) UpdateKeys() {
 	// Set primary keys
-	m.PK = fmt.Sprintf("SESSION#%s", m.SessionID)
-	m.SK = "METADATA"
+	m.PK = fmt.Sprintf(KeyPatternSession, m.SessionID)
+	m.SK = SKMetadata
 
 	// Set GSI1 keys for user-based queries (most recent first)
-	m.GSI1PK = fmt.Sprintf("USER#%s", m.UserID)
-	m.GSI1SK = fmt.Sprintf("SESSION#%s", m.StartTime.Format(time.RFC3339))
+	m.GSI1PK = fmt.Sprintf(KeyPatternUser, m.UserID)
+	m.GSI1SK = fmt.Sprintf(KeyPatternSession, m.StartTime.Format(time.RFC3339))
 }
 
 // SetTTL sets the TTL for automatic session cleanup

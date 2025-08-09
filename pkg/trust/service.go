@@ -1,3 +1,4 @@
+// Package trust provides trust relationship management and vouching services for actor reputation systems.
 package trust
 
 import (
@@ -11,6 +12,8 @@ import (
 )
 
 // TrustRepositoryInterface defines the interface for trust operations
+//
+//nolint:revive // Trust prefix clarifies this is trust-specific repository interface
 type TrustRepositoryInterface interface {
 	CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
 	GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error)
@@ -85,7 +88,7 @@ func (s *Service) GetTrustScore(ctx context.Context, fromActor, toActor string) 
 	// Convert storage.TrustScore to trust.TrustScore
 	return &TrustScore{
 		ActorID:         calculatedScore.ActorID,
-		Category:        TrustCategory(calculatedScore.Category),
+		Category:        calculatedScore.Category,
 		Score:           calculatedScore.Score,
 		DirectScore:     calculatedScore.DirectScore,
 		PropagatedScore: calculatedScore.PropagatedScore,
@@ -107,7 +110,7 @@ func (s *Service) CreateTrustRelationship(ctx context.Context, relationship *Tru
 		ID:         relationship.ID,
 		TrusterID:  relationship.TrusterID,
 		TrusteeID:  relationship.TrusteeID,
-		Category:   storage.TrustCategory(relationship.Category),
+		Category:   relationship.Category,
 		Score:      relationship.Score,
 		Confidence: relationship.Confidence,
 		Evidence:   convertTrustEvidence(relationship.Evidence),
@@ -129,7 +132,7 @@ func (s *Service) UpdateTrustRelationship(ctx context.Context, relationship *Tru
 		ID:         relationship.ID,
 		TrusterID:  relationship.TrusterID,
 		TrusteeID:  relationship.TrusteeID,
-		Category:   storage.TrustCategory(relationship.Category),
+		Category:   relationship.Category,
 		Score:      relationship.Score,
 		Confidence: relationship.Confidence,
 		Evidence:   convertTrustEvidence(relationship.Evidence),
@@ -184,7 +187,7 @@ func (s *Service) RecordTrustUpdate(ctx context.Context, update *TrustUpdate) er
 
 	storageUpdate := &storage.TrustUpdate{
 		ActorID:   update.ActorID,
-		Category:  storage.TrustCategory(update.Category),
+		Category:  update.Category,
 		Delta:     update.Delta,
 		Reason:    update.Reason,
 		EventID:   update.EventID,
@@ -275,33 +278,19 @@ func (s *Service) GetTrustSummary(ctx context.Context, actorID string) (*TrustSu
 
 func convertTrustEvidence(evidence []TrustEvidence) []storage.TrustEvidence {
 	storageEvidence := make([]storage.TrustEvidence, len(evidence))
-	for i, e := range evidence {
-		storageEvidence[i] = storage.TrustEvidence{
-			Type:        e.Type,
-			Score:       e.Score,
-			Description: e.Description,
-			Timestamp:   e.Timestamp,
-		}
-	}
+	copy(storageEvidence, evidence)
 	return storageEvidence
 }
 
 func convertFromStorageTrustRelationship(rel *storage.TrustRelationship) *TrustRelationship {
 	evidence := make([]TrustEvidence, len(rel.Evidence))
-	for i, e := range rel.Evidence {
-		evidence[i] = TrustEvidence{
-			Type:        e.Type,
-			Score:       e.Score,
-			Description: e.Description,
-			Timestamp:   e.Timestamp,
-		}
-	}
+	copy(evidence, rel.Evidence)
 
 	return &TrustRelationship{
 		ID:         rel.ID,
 		TrusterID:  rel.TrusterID,
 		TrusteeID:  rel.TrusteeID,
-		Category:   TrustCategory(rel.Category),
+		Category:   rel.Category,
 		Score:      rel.Score,
 		Confidence: rel.Confidence,
 		Evidence:   evidence,

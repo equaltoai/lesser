@@ -1,3 +1,4 @@
+// Package main implements the streaming Lambda function for handling WebSocket connections and real-time streaming.
 package main
 
 /*
@@ -33,7 +34,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
-
 // StreamMessage represents a message sent over WebSocket
 type StreamMessage struct {
 	Type    string         `json:"type"`
@@ -51,12 +51,12 @@ type StreamEvent struct {
 
 // StreamingHandler handles WebSocket streaming connections using DynamORM and Lift
 type StreamingHandler struct {
-	userRepo        *repositories.UserRepository
-	connectionRepo  *repositories.StreamingConnectionRepository
-	costTracker     *repositories.WebSocketCostTracker
-	logger          *zap.Logger
-	cfg             *config.Config
-	apiClient       *apigatewaymanagementapi.Client
+	userRepo       *repositories.UserRepository
+	connectionRepo *repositories.StreamingConnectionRepository
+	costTracker    *repositories.WebSocketCostTracker
+	logger         *zap.Logger
+	cfg            *config.Config
+	apiClient      *apigatewaymanagementapi.Client
 }
 
 var (
@@ -119,7 +119,6 @@ func init() {
 	}
 }
 
-
 // HandleWebSocketEvent handles WebSocket events using Lift patterns (connect, disconnect, message)
 func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 	// Extract WebSocket event from Lift context
@@ -150,19 +149,19 @@ func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 	)
 
 	// Construct the API Gateway Management Endpoint
-	managementApiEndpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
+	managementAPIEndpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
 		event.RequestContext.APIID,
 		globalCfg.Region,
 		event.RequestContext.Stage,
 	)
 
 	// Initialize API Gateway Management API client for this connection
-	currentApiClient := apigatewaymanagementapi.NewFromConfig(globalCfg, func(o *apigatewaymanagementapi.Options) {
-		o.BaseEndpoint = aws.String(managementApiEndpoint)
+	currentAPIClient := apigatewaymanagementapi.NewFromConfig(globalCfg, func(o *apigatewaymanagementapi.Options) {
+		o.BaseEndpoint = aws.String(managementAPIEndpoint)
 	})
 
 	// Store the API client for this request
-	sh.apiClient = currentApiClient
+	sh.apiClient = currentAPIClient
 
 	switch event.RequestContext.RouteKey {
 	case "$connect":
@@ -241,7 +240,7 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 	go func() {
 		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		opCtx := &repositories.WebSocketOperationContext{
 			ConnectionID:     event.RequestContext.ConnectionID,
 			UserID:           userID,
@@ -291,7 +290,7 @@ func (sh *StreamingHandler) handleDisconnect(ctx context.Context, event events.A
 	return nil
 }
 
-// handleMessage handles WebSocket messages  
+// handleMessage handles WebSocket messages
 func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) error {
 	startTime := time.Now()
 	logger := sh.logger.With(
@@ -336,7 +335,7 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 	go func() {
 		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		opCtx := &repositories.WebSocketOperationContext{
 			ConnectionID:  event.RequestContext.ConnectionID,
 			UserID:        connection.UserID,
@@ -489,7 +488,6 @@ func (sh *StreamingHandler) handlePing(connectionID string) error {
 	return nil
 }
 
-
 // Messaging functions
 
 func (sh *StreamingHandler) sendMessageToConnection(connectionID string, message StreamMessage) error {
@@ -588,7 +586,7 @@ func main() {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			requestID := ctx.Get("requestID")
-			
+
 			logger.Info("processing WebSocket event",
 				zap.Any("request_id", requestID),
 			)
@@ -635,7 +633,7 @@ func main() {
 	app.Use(repositories.WebSocketCostMiddleware(handler.costTracker))
 
 	// Set up WebSocket event handler
-	app.Use(func(next lift.Handler) lift.Handler {
+	app.Use(func(_ lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// This is our main WebSocket handler
 			return handler.HandleWebSocketEvent(ctx)

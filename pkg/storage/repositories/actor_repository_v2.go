@@ -100,7 +100,7 @@ func (r *ActorRepositoryV2) CreateActor(ctx context.Context, actor *activitypub.
 // AFTER: Single line using BaseRepository
 func (r *ActorRepositoryV2) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
 	actorModel := &models.Actor{}
-	
+
 	// Use BaseRepository Get - saves ~15 lines of boilerplate
 	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
@@ -116,7 +116,7 @@ func (r *ActorRepositoryV2) GetActor(ctx context.Context, username string) (*act
 // GetActorWithMetadata retrieves an actor with metadata
 func (r *ActorRepositoryV2) GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *storage.ActorMetadata, error) {
 	actorModel := &models.Actor{}
-	
+
 	// Use BaseRepository Get
 	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
@@ -185,7 +185,7 @@ func (r *ActorRepositoryV2) DeleteActor(ctx context.Context, username string) er
 
 // SearchAccounts searches for actors by username or display name
 // Uses BaseRepository QueryGSI for efficient searches
-func (r *ActorRepositoryV2) SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error) {
+func (r *ActorRepositoryV2) SearchAccounts(ctx context.Context, query string, limit int, _ bool, _ int) ([]*activitypub.Actor, error) {
 	if query == "" {
 		return []*activitypub.Actor{}, nil
 	}
@@ -201,7 +201,7 @@ func (r *ActorRepositoryV2) SearchAccounts(ctx context.Context, query string, li
 		if err != nil {
 			return nil, fmt.Errorf("failed to search actors by username: %w", err)
 		}
-		
+
 		// Filter by prefix match
 		for _, actor := range gsiActors {
 			if strings.HasPrefix(actor.GSI1SK, normalizedQuery) {
@@ -218,7 +218,7 @@ func (r *ActorRepositoryV2) SearchAccounts(ctx context.Context, query string, li
 		if err != nil {
 			return nil, fmt.Errorf("failed to search actors by name: %w", err)
 		}
-		
+
 		// Filter by prefix match
 		for _, actor := range gsiActors {
 			if strings.HasPrefix(actor.GSI2SK, normalizedQuery) {
@@ -247,70 +247,128 @@ func (r *ActorRepositoryV2) GetAccountSuggestions(ctx context.Context, userID st
 		return []*activitypub.Actor{}, nil
 	}
 
-	// Step 1: Get users that the current user follows
-	following, _, err := r.deps.GetFollowing(ctx, userID, 100, "")
+	// Get user's following list
+	following, err := r.getUserFollowingV2(ctx, userID, log)
 	if err != nil {
-		log.Error("failed to get user following for suggestions", zap.Error(err))
-		// Fall back to discoverable users if we can't get following
 		return r.getDiscoverableActors(ctx, limit)
 	}
 
-	suggestionCandidates := make(map[string]int) // actorID -> score
-	processedActors := make(map[string]bool)
+	// Build exclusion set
+	userFollows := r.buildExclusionSetV2(following, userID)
 
-	// Get who the user already follows to exclude them
+	// Collect suggestion candidates from mutual connections
+	candidates := r.collectSuggestionCandidatesV2(ctx, userID, following, userFollows)
+
+	// Score and sort candidates
+	scored := r.scoreCandidatesV2(candidates)
+
+	// Get actor details for top suggestions
+	suggestions := r.buildSuggestionsV2(ctx, scored, limit)
+
+	// Fill remaining slots if needed
+	suggestions = r.fillRemainingSuggestionsV2(ctx, suggestions, userFollows, limit)
+
+	log.Info("generated account suggestions",
+		zap.Int("requested_limit", limit),
+		zap.Int("returned_count", len(suggestions)))
+
+	return suggestions, nil
+}
+
+// getUserFollowingV2 gets the list of users that the current user follows
+func (r *ActorRepositoryV2) getUserFollowingV2(ctx context.Context, userID string, log *zap.Logger) ([]string, error) {
+	following, _, err := r.deps.GetFollowing(ctx, userID, 100, "")
+	if err != nil {
+		log.Error("failed to get user following for suggestions", zap.Error(err))
+		return nil, err
+	}
+	return following, nil
+}
+
+// buildExclusionSetV2 creates a set of actor IDs to exclude from suggestions
+func (r *ActorRepositoryV2) buildExclusionSetV2(following []string, userID string) map[string]bool {
 	userFollows := make(map[string]bool)
 	for _, followedID := range following {
 		userFollows[followedID] = true
 	}
 	userFollows[userID] = true // Exclude self
+	return userFollows
+}
 
-	// For each user the current user follows, get who they follow
+// suggestionCandidateV2 holds information about a potential suggestion
+type suggestionCandidateV2 struct {
+	actorID string
+	score   int
+}
+
+// collectSuggestionCandidatesV2 collects candidates from users that the current user follows
+func (r *ActorRepositoryV2) collectSuggestionCandidatesV2(ctx context.Context, userID string, following []string, userFollows map[string]bool) map[string]int {
+	candidates := make(map[string]int) // actorID -> score
+	processedActors := make(map[string]bool)
+
 	for i, followedUserID := range following {
 		if i >= 20 { // Limit to prevent excessive API calls
 			break
 		}
 
-		followedUsername := r.extractUsernameFromActorID(followedUserID)
-		if followedUsername == "" {
+		r.processMutualConnectionsV2(ctx, userID, followedUserID, userFollows, processedActors, candidates)
+	}
+
+	return candidates
+}
+
+// processMutualConnectionsV2 processes mutual connections for a single followed user
+func (r *ActorRepositoryV2) processMutualConnectionsV2(ctx context.Context, userID, followedUserID string, userFollows, processedActors map[string]bool, candidates map[string]int) {
+	followedUsername := r.extractUsernameFromActorID(followedUserID)
+	if followedUsername == "" {
+		return
+	}
+
+	// Get who this followed user follows
+	theirFollowing, _, err := r.deps.GetFollowing(ctx, followedUsername, 50, "")
+	if err != nil {
+		return // Skip if we can't get their following
+	}
+
+	// Score each of their follows
+	for _, candidate := range theirFollowing {
+		if r.shouldSkipCandidateV2(ctx, userID, candidate, userFollows, processedActors) {
 			continue
 		}
 
-		// Get who this followed user follows
-		theirFollowing, _, err := r.deps.GetFollowing(ctx, followedUsername, 50, "")
-		if err != nil {
-			continue // Skip if we can't get their following
-		}
+		candidates[candidate]++
+		processedActors[candidate] = true
+	}
+}
 
-		// Score each of their follows
-		for _, candidate := range theirFollowing {
-			if userFollows[candidate] || processedActors[candidate] {
-				continue // Skip if user already follows or we've processed
-			}
-
-			// Check if user has dismissed this suggestion
-			dismissedKey := fmt.Sprintf("dismissed_suggestion:%s", candidate)
-			dismissed, _ := r.deps.GetPreference(ctx, userID, dismissedKey)
-			if dismissed != nil {
-				if isDismissed, ok := dismissed.(bool); ok && isDismissed {
-					continue // Skip dismissed suggestions
-				}
-			}
-
-			suggestionCandidates[candidate]++
-			processedActors[candidate] = true
-		}
+// shouldSkipCandidateV2 checks if a candidate should be skipped
+func (r *ActorRepositoryV2) shouldSkipCandidateV2(ctx context.Context, userID, candidate string, userFollows, processedActors map[string]bool) bool {
+	// Skip if user already follows or we've processed
+	if userFollows[candidate] || processedActors[candidate] {
+		return true
 	}
 
-	// Step 2: Get actors with high scores (multiple mutual connections)
-	type scoredActor struct {
-		actorID string
-		score   int
-	}
+	// Check if user has dismissed this suggestion
+	return r.isSuggestionDismissedV2(ctx, userID, candidate)
+}
 
-	var scored []scoredActor
-	for actorID, score := range suggestionCandidates {
-		scored = append(scored, scoredActor{actorID: actorID, score: score})
+// isSuggestionDismissedV2 checks if a suggestion has been dismissed by the user
+func (r *ActorRepositoryV2) isSuggestionDismissedV2(ctx context.Context, userID, candidate string) bool {
+	dismissedKey := fmt.Sprintf("dismissed_suggestion:%s", candidate)
+	dismissed, _ := r.deps.GetPreference(ctx, userID, dismissedKey)
+	if dismissed != nil {
+		if isDismissed, ok := dismissed.(bool); ok && isDismissed {
+			return true
+		}
+	}
+	return false
+}
+
+// scoreCandidatesV2 converts candidates map to sorted slice
+func (r *ActorRepositoryV2) scoreCandidatesV2(candidates map[string]int) []suggestionCandidateV2 {
+	scored := make([]suggestionCandidateV2, 0, len(candidates))
+	for actorID, score := range candidates {
+		scored = append(scored, suggestionCandidateV2{actorID: actorID, score: score})
 	}
 
 	// Sort by score (highest first)
@@ -318,61 +376,89 @@ func (r *ActorRepositoryV2) GetAccountSuggestions(ctx context.Context, userID st
 		return scored[i].score > scored[j].score
 	})
 
-	// Step 3: Get actor details for top suggestions
+	return scored
+}
+
+// buildSuggestionsV2 builds actor suggestions from scored candidates
+func (r *ActorRepositoryV2) buildSuggestionsV2(ctx context.Context, scored []suggestionCandidateV2, limit int) []*activitypub.Actor {
 	var suggestions []*activitypub.Actor
-	for _, scoredActor := range scored {
+
+	for _, candidate := range scored {
 		if len(suggestions) >= limit {
 			break
 		}
 
-		username := r.extractUsernameFromActorID(scoredActor.actorID)
-		if username == "" {
-			continue
-		}
-
-		actor, err := r.GetActor(ctx, username)
-		if err != nil {
-			continue // Skip if we can't get actor details
-		}
-
-		// Only suggest discoverable accounts
-		if actor.Discoverable {
+		actor := r.loadActorIfDiscoverableV2(ctx, candidate.actorID)
+		if actor != nil {
 			suggestions = append(suggestions, actor)
 		}
 	}
 
-	// Step 4: Fill remaining slots with discoverable users if needed
-	if len(suggestions) < limit {
-		remaining := limit - len(suggestions)
-		discoverable, err := r.getDiscoverableActors(ctx, remaining*2) // Get more to filter
-		if err == nil {
-			for _, actor := range discoverable {
-				if len(suggestions) >= limit {
-					break
-				}
+	return suggestions
+}
 
-				// Skip if already in suggestions or user follows them
-				skip := false
-				for _, existing := range suggestions {
-					if existing.ID == actor.ID {
-						skip = true
-						break
-					}
-				}
-				if skip || userFollows[actor.ID] {
-					continue
-				}
+// loadActorIfDiscoverableV2 loads an actor if it's discoverable
+func (r *ActorRepositoryV2) loadActorIfDiscoverableV2(ctx context.Context, actorID string) *activitypub.Actor {
+	username := r.extractUsernameFromActorID(actorID)
+	if username == "" {
+		return nil
+	}
 
-				suggestions = append(suggestions, actor)
-			}
+	actor, err := r.GetActor(ctx, username)
+	if err != nil {
+		return nil
+	}
+
+	// Only suggest discoverable accounts
+	if !actor.Discoverable {
+		return nil
+	}
+
+	return actor
+}
+
+// fillRemainingSuggestionsV2 fills remaining slots with discoverable users
+func (r *ActorRepositoryV2) fillRemainingSuggestionsV2(ctx context.Context, suggestions []*activitypub.Actor, userFollows map[string]bool, limit int) []*activitypub.Actor {
+	if len(suggestions) >= limit {
+		return suggestions
+	}
+
+	remaining := limit - len(suggestions)
+	discoverable, err := r.getDiscoverableActors(ctx, remaining*2) // Get more to filter
+	if err != nil {
+		return suggestions
+	}
+
+	for _, actor := range discoverable {
+		if len(suggestions) >= limit {
+			break
+		}
+
+		if !r.shouldIncludeDiscoverableV2(actor, suggestions, userFollows) {
+			continue
+		}
+
+		suggestions = append(suggestions, actor)
+	}
+
+	return suggestions
+}
+
+// shouldIncludeDiscoverableV2 checks if a discoverable actor should be included
+func (r *ActorRepositoryV2) shouldIncludeDiscoverableV2(actor *activitypub.Actor, suggestions []*activitypub.Actor, userFollows map[string]bool) bool {
+	// Skip if user already follows
+	if userFollows[actor.ID] {
+		return false
+	}
+
+	// Skip if already in suggestions
+	for _, existing := range suggestions {
+		if existing.ID == actor.ID {
+			return false
 		}
 	}
 
-	log.Info("generated account suggestions",
-		zap.Int("requested_limit", limit),
-		zap.Int("returned_count", len(suggestions)))
-
-	return suggestions, nil
+	return true
 }
 
 // GetCachedRemoteActor retrieves a cached remote actor by handle
@@ -442,7 +528,7 @@ func (r *ActorRepositoryV2) extractUsernameFromActorID(actorID string) string {
 		username = strings.TrimPrefix(username, "@")
 		return username
 	}
-	
+
 	// Handle direct username format
 	return strings.TrimPrefix(actorID, "@")
 }

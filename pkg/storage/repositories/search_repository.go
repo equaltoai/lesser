@@ -15,6 +15,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SearchRepositoryDeps interface for dependencies - implemented by the storage adapter
@@ -49,140 +50,191 @@ func (r *SearchRepository) SearchAccounts(ctx context.Context, query string, lim
 }
 
 // SearchAccountsAdvanced searches for accounts with advanced filtering
-func (r *SearchRepository) SearchAccountsAdvanced(ctx context.Context, query string, resolve bool, limit int, offset int, following bool, accountID string) ([]*activitypub.Actor, error) {
-	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
-	normalizedQuery = strings.TrimPrefix(normalizedQuery, "@")
-	
+func (r *SearchRepository) SearchAccountsAdvanced(ctx context.Context, query string, _ bool, limit int, offset int, following bool, accountID string) ([]*activitypub.Actor, error) {
+	normalizedQuery := r.normalizeSearchQuery(query)
 	if len(normalizedQuery) < 2 {
 		return []*activitypub.Actor{}, nil
 	}
 
+	// Collect results from different search strategies
+	results, _ := r.executeSearchStrategies(ctx, normalizedQuery, limit, offset)
+
+	// Apply following filter if requested
+	if following && accountID != "" {
+		results = r.applyFollowingFilter(ctx, results, accountID)
+	}
+
+	// Sort and paginate results
+	r.sortAccountResults(results, normalizedQuery)
+	return r.paginateResults(results, offset, limit), nil
+}
+
+// normalizeSearchQuery normalizes a search query for account searching
+func (r *SearchRepository) normalizeSearchQuery(query string) string {
+	normalized := strings.ToLower(strings.TrimSpace(query))
+	return strings.TrimPrefix(normalized, "@")
+}
+
+// executeSearchStrategies runs all search strategies and collects unique results
+func (r *SearchRepository) executeSearchStrategies(ctx context.Context, query string, limit, offset int) ([]*activitypub.Actor, map[string]bool) {
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
 	// Strategy 1: Exact username match
-	if len(normalizedQuery) >= 3 {
-		var exactMatch models.Actor
-		err := r.db.WithContext(ctx).Model(&models.Actor{}).
-			Where("PK", "=", fmt.Sprintf("ACTOR#%s", normalizedQuery)).
-			Where("SK", "=", "PROFILE").
-			First(&exactMatch)
-		
-		if err == nil && exactMatch.Actor != nil {
-			results = append(results, exactMatch.Actor)
-			seen[exactMatch.Actor.ID] = true
-		}
+	r.searchExactUsername(ctx, query, &results, seen)
+	
+	// Strategy 2: Username prefix search
+	r.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	
+	// Strategy 3: Display name search
+	r.searchDisplayName(ctx, query, limit, &results, seen)
+
+	return results, seen
+}
+
+// searchExactUsername searches for exact username matches
+func (r *SearchRepository) searchExactUsername(ctx context.Context, query string, results *[]*activitypub.Actor, seen map[string]bool) {
+	if len(query) < 3 {
+		return
 	}
 
-	// Strategy 2: Username prefix search using GSI1
-	prefixKey := normalizedQuery[:2]
+	var exactMatch models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", fmt.Sprintf("ACTOR#%s", query)).
+		Where("SK", "=", "PROFILE").
+		First(&exactMatch)
+
+	if err == nil && exactMatch.Actor != nil && !seen[exactMatch.Actor.ID] {
+		*results = append(*results, exactMatch.Actor)
+		seen[exactMatch.Actor.ID] = true
+	}
+}
+
+// searchUsernamePrefix searches for usernames starting with the query
+func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query string, limit, offset int, results *[]*activitypub.Actor, seen map[string]bool) {
+	prefixKey := query[:2]
 	var prefixMatches []models.Actor
-	
+
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("username-search-index").
 		Where("GSI1PK", "=", fmt.Sprintf("USERNAME_SEARCH#%s", prefixKey)).
-		Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
+		Filter("GSI1SK", "BEGINS_WITH", query).
 		Limit(limit + offset).
 		All(&prefixMatches)
-	
+
 	if err != nil {
 		r.logger.Warn("username prefix search failed", zap.Error(err))
-	} else {
-		for _, match := range prefixMatches {
-			if match.Actor != nil && !seen[match.Actor.ID] {
-				results = append(results, match.Actor)
-				seen[match.Actor.ID] = true
-			}
-		}
+		return
 	}
 
-	// Strategy 3: Display name search using GSI2
-	if len(normalizedQuery) >= 2 {
-		displayNameKey := normalizedQuery[:2]
-		var displayNameMatches []models.Actor
-		
-		err := r.db.WithContext(ctx).Model(&models.Actor{}).
-			Index("display-name-index").
-			Where("GSI2PK", "=", fmt.Sprintf("NAME_SEARCH#%s", displayNameKey)).
-			Filter("GSI2SK", "BEGINS_WITH", normalizedQuery).
-			Limit(limit).
-			All(&displayNameMatches)
-		
-		if err != nil {
-			r.logger.Warn("display name search failed", zap.Error(err))
-		} else {
-			for _, match := range displayNameMatches {
-				if match.Actor != nil && !seen[match.Actor.ID] {
-					results = append(results, match.Actor)
-					seen[match.Actor.ID] = true
-				}
-			}
+	for _, match := range prefixMatches {
+		if match.Actor != nil && !seen[match.Actor.ID] {
+			*results = append(*results, match.Actor)
+			seen[match.Actor.ID] = true
 		}
 	}
+}
 
-	// Apply following filter if requested
-	if following && accountID != "" {
-		if r.deps != nil {
-			// Get list of accounts this user is following
-			followingList, _, err := r.deps.GetFollowing(ctx, accountID, 1000, "")
-			if err != nil {
-				r.logger.Warn("failed to get following list for filter",
-					zap.String("account_id", accountID),
-					zap.Error(err))
-			} else {
-				// Create a set for fast lookups
-				followingSet := make(map[string]bool)
-				for _, username := range followingList {
-					followingSet[username] = true
-				}
-				
-				// Filter results to only include followed accounts
-				filteredResults := make([]*activitypub.Actor, 0)
-				for _, actor := range results {
-					if followingSet[actor.PreferredUsername] {
-						filteredResults = append(filteredResults, actor)
-					}
-				}
-				results = filteredResults
-			}
-		} else {
-			r.logger.Debug("following filter requested but dependencies not set", 
-				zap.String("account_id", accountID))
-		}
+// searchDisplayName searches for display names containing the query
+func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, limit int, results *[]*activitypub.Actor, seen map[string]bool) {
+	if len(query) < 2 {
+		return
 	}
 
-	// Sort results by relevance
+	displayNameKey := query[:2]
+	var displayNameMatches []models.Actor
+
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Index("display-name-index").
+		Where("GSI2PK", "=", fmt.Sprintf("NAME_SEARCH#%s", displayNameKey)).
+		Filter("GSI2SK", "BEGINS_WITH", query).
+		Limit(limit).
+		All(&displayNameMatches)
+
+	if err != nil {
+		r.logger.Warn("display name search failed", zap.Error(err))
+		return
+	}
+
+	for _, match := range displayNameMatches {
+		if match.Actor != nil && !seen[match.Actor.ID] {
+			*results = append(*results, match.Actor)
+			seen[match.Actor.ID] = true
+		}
+	}
+}
+
+// applyFollowingFilter filters results to only include followed accounts
+func (r *SearchRepository) applyFollowingFilter(ctx context.Context, results []*activitypub.Actor, accountID string) []*activitypub.Actor {
+	if r.deps == nil {
+		r.logger.Debug("following filter requested but dependencies not set",
+			zap.String("account_id", accountID))
+		return results
+	}
+
+	followingList, _, err := r.deps.GetFollowing(ctx, accountID, 1000, "")
+	if err != nil {
+		r.logger.Warn("failed to get following list for filter",
+			zap.String("account_id", accountID),
+			zap.Error(err))
+		return results
+	}
+
+	// Create a set for fast lookups
+	followingSet := make(map[string]bool)
+	for _, username := range followingList {
+		followingSet[username] = true
+	}
+
+	// Filter results to only include followed accounts
+	filteredResults := make([]*activitypub.Actor, 0)
+	for _, actor := range results {
+		if followingSet[actor.PreferredUsername] {
+			filteredResults = append(filteredResults, actor)
+		}
+	}
+	return filteredResults
+}
+
+// sortAccountResults sorts search results by relevance
+func (r *SearchRepository) sortAccountResults(results []*activitypub.Actor, query string) {
 	sort.Slice(results, func(i, j int) bool {
-		// Exact matches first
-		iExact := strings.ToLower(results[i].PreferredUsername) == normalizedQuery
-		jExact := strings.ToLower(results[j].PreferredUsername) == normalizedQuery
-		if iExact != jExact {
-			return iExact
-		}
-		
-		// Then prefix matches
-		iPrefix := strings.HasPrefix(strings.ToLower(results[i].PreferredUsername), normalizedQuery)
-		jPrefix := strings.HasPrefix(strings.ToLower(results[j].PreferredUsername), normalizedQuery)
-		if iPrefix != jPrefix {
-			return iPrefix
-		}
-		
-		// Then by username length (shorter is better)
-		return len(results[i].PreferredUsername) < len(results[j].PreferredUsername)
+		return r.compareRelevance(results[i], results[j], query)
 	})
+}
 
-	// Apply offset and limit
-	if offset < len(results) {
-		results = results[offset:]
-	} else {
-		results = []*activitypub.Actor{}
+// compareRelevance compares two actors for search relevance
+func (r *SearchRepository) compareRelevance(a, b *activitypub.Actor, query string) bool {
+	// Exact matches first
+	aExact := strings.ToLower(a.PreferredUsername) == query
+	bExact := strings.ToLower(b.PreferredUsername) == query
+	if aExact != bExact {
+		return aExact
+	}
+
+	// Then prefix matches
+	aPrefix := strings.HasPrefix(strings.ToLower(a.PreferredUsername), query)
+	bPrefix := strings.HasPrefix(strings.ToLower(b.PreferredUsername), query)
+	if aPrefix != bPrefix {
+		return aPrefix
+	}
+
+	// Then by username length (shorter is better)
+	return len(a.PreferredUsername) < len(b.PreferredUsername)
+}
+
+// paginateResults applies offset and limit to results
+func (r *SearchRepository) paginateResults(results []*activitypub.Actor, offset, limit int) []*activitypub.Actor {
+	if offset >= len(results) {
+		return []*activitypub.Actor{}
 	}
 	
+	results = results[offset:]
 	if len(results) > limit {
 		results = results[:limit]
 	}
-
-	return results, nil
+	
+	return results
 }
 
 // SearchStatuses searches for statuses matching the given query
@@ -196,146 +248,273 @@ func (r *SearchRepository) SearchStatuses(ctx context.Context, query string, lim
 
 // SearchStatusesWithOptions searches for statuses with advanced options
 func (r *SearchRepository) SearchStatusesWithOptions(ctx context.Context, query string, options storage.StatusSearchOptions) ([]*storage.StatusSearchResult, error) {
+	// Use new paginated method
+	results, _, err := r.SearchStatusesWithOptionsPaginated(ctx, query, options)
+	return results, err
+}
+
+// SearchStatusesWithOptionsPaginated searches for statuses with advanced options and pagination support
+func (r *SearchRepository) SearchStatusesWithOptionsPaginated(ctx context.Context, query string, options storage.StatusSearchOptions) ([]*storage.StatusSearchResult, *PaginationResult, error) {
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 	if normalizedQuery == "" {
-		return []*storage.StatusSearchResult{}, nil
+		return []*storage.StatusSearchResult{}, CreatePaginationResult(false, "", 0), nil
 	}
 
-	// Apply default limit if not specified
-	if options.Limit <= 0 {
-		options.Limit = 20
+	// Convert storage options to pagination options
+	paginationOpts := &PaginationOptions{
+		Cursor: options.Cursor,
+		Limit:  options.Limit,
 	}
-
-	results := make([]*storage.StatusSearchResult, 0)
-	resultMap := make(map[string]*storage.StatusSearchResult)
 	
+	// Map sort order
+	switch options.SortOrder {
+	case "time_asc":
+		paginationOpts.SortOrder = SearchSortTimeAsc
+	case "time_desc":
+		paginationOpts.SortOrder = SearchSortTimeDesc
+	case "relevance", "":
+		paginationOpts.SortOrder = SearchSortRelevance
+	default:
+		paginationOpts.SortOrder = SearchSortRelevance
+	}
+
+	// Apply default options and validate
+	if err := paginationOpts.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid pagination options: %w", err)
+	}
+
+	// Execute search strategies concurrently
+	resultMap := r.executeStatusSearchStrategies(ctx, normalizedQuery)
+
+	// Convert to slice and apply filters
+	results := r.processSearchResults(resultMap, options)
+
+	r.logger.Debug("status search results before sorting",
+		zap.Int("result_count", len(results)),
+		zap.String("sort_order", string(paginationOpts.SortOrder)))
+
+	// Sort results based on specified sort order
+	SortResults(results, paginationOpts.SortOrder,
+		func(s *storage.StatusSearchResult) float64 { return s.Score },
+		func(s *storage.StatusSearchResult) time.Time { return s.Published },
+		func(s *storage.StatusSearchResult) string { return s.StatusID })
+
+	// Apply pagination limits and determine if there are more results
+	finalResults, hasNextPage := ApplyPaginationLimits(results, paginationOpts.Limit)
+
+	// Create next cursor if there are more results
+	var nextCursor string
+	if hasNextPage && len(finalResults) > 0 {
+		lastResult := finalResults[len(finalResults)-1]
+		nextCursor = CreateNextCursor(
+			nil, // No DynamoDB LastEvaluatedKey for in-memory sorting
+			lastResult.Score,
+			lastResult.Published,
+			lastResult.StatusID,
+			paginationOpts.SortOrder,
+		)
+	}
+
+	paginationResult := CreatePaginationResult(hasNextPage, nextCursor, len(results))
+
+	r.logger.Info("status search completed",
+		zap.Int("results", len(finalResults)),
+		zap.Bool("has_next_page", hasNextPage),
+		zap.Int("total_processed", len(results)))
+
+	return finalResults, paginationResult, nil
+}
+
+// statusSearchResult wraps search result with sync protection
+type statusSearchResult struct {
+	mu        sync.Mutex
+	resultMap map[string]*storage.StatusSearchResult
+}
+
+// executeStatusSearchStrategies runs all search strategies concurrently
+func (r *SearchRepository) executeStatusSearchStrategies(ctx context.Context, query string) map[string]*storage.StatusSearchResult {
+	result := &statusSearchResult{
+		resultMap: make(map[string]*storage.StatusSearchResult),
+	}
+
 	var wg sync.WaitGroup
-	var mu sync.Mutex
-	
-	// Strategy 1: URL search - exact URL match
-	if strings.HasPrefix(normalizedQuery, "http://") || strings.HasPrefix(normalizedQuery, "https://") {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			
-			var object models.Object
-			err := r.db.WithContext(ctx).Model(&models.Object{}).
-				Where("URL", "=", normalizedQuery).
-				First(&object)
-			
-			if err == nil && object.Type == "Note" {
-				result := r.objectToSearchResult(&object, 1.0, "url_match")
-				mu.Lock()
-				resultMap[object.ID] = result
-				mu.Unlock()
-			}
-		}()
+
+	// Execute different search strategies
+	r.executeURLSearch(ctx, query, result, &wg)
+	r.executeHashtagSearch(ctx, query, result, &wg)
+	r.executeContentSearch(ctx, query, result, &wg)
+
+	wg.Wait()
+	return result.resultMap
+}
+
+// executeURLSearch searches for statuses by URL
+func (r *SearchRepository) executeURLSearch(ctx context.Context, query string, result *statusSearchResult, wg *sync.WaitGroup) {
+	if !r.isURL(query) {
+		return
 	}
 
-	// Strategy 2: Hashtag search
-	hashtags := r.extractHashtags(normalizedQuery)
-	if len(hashtags) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			
-			for _, hashtag := range hashtags {
-				// Search for statuses with this hashtag
-				// This would require a hashtag index or scanning status content
-				// For now, we'll skip this strategy
-				r.logger.Debug("hashtag search not fully implemented", 
-					zap.String("hashtag", hashtag))
-			}
-		}()
-	}
-
-	// Strategy 3: Content search - scan recent statuses
-	// In the legacy system, this uses GSI7 (content-word-index)
-	// Without full-text search, we need to scan and filter
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		
-		// Get recent statuses and filter by content
-		var recentStatuses []models.Object
-		err := r.db.WithContext(ctx).Model(&models.Object{}).
-			Index("gsi2-index").
-			Where("GSI2PK", "=", "object#type#Note").
-			Limit(100). // Scan last 100 statuses
-			All(&recentStatuses)
-		
-		if err != nil {
-			r.logger.Warn("content search failed", zap.Error(err))
-			return
-		}
-		
-		for _, status := range recentStatuses {
-			if status.Content == "" {
-				continue
-			}
-			
-			// Simple content matching
-			contentLower := strings.ToLower(status.Content)
-			if strings.Contains(contentLower, normalizedQuery) {
-				score := r.calculateContentScore(contentLower, normalizedQuery)
-				result := r.objectToSearchResult(&status, score, "content_match")
-				
-				mu.Lock()
-				if existing, ok := resultMap[status.ID]; !ok || result.Score > existing.Score {
-					resultMap[status.ID] = result
-				}
-				mu.Unlock()
-			}
-		}
+		r.searchByURL(ctx, query, result)
 	}()
+}
 
-	// Wait for all strategies to complete
-	wg.Wait()
+// isURL checks if a query string is a URL
+func (r *SearchRepository) isURL(query string) bool {
+	return strings.HasPrefix(query, "http://") || strings.HasPrefix(query, "https://")
+}
 
+// searchByURL searches for a status by its URL
+func (r *SearchRepository) searchByURL(ctx context.Context, url string, result *statusSearchResult) {
+	var object models.Object
+	err := r.db.WithContext(ctx).Model(&models.Object{}).
+		Where("URL", "=", url).
+		First(&object)
+
+	if err == nil && object.Type == ActivityTypeNote {
+		searchResult := r.objectToSearchResult(&object, 1.0, "url_match")
+		result.mu.Lock()
+		result.resultMap[object.ID] = searchResult
+		result.mu.Unlock()
+	}
+}
+
+// executeHashtagSearch searches for statuses by hashtags
+func (r *SearchRepository) executeHashtagSearch(_ context.Context, query string, _ *statusSearchResult, wg *sync.WaitGroup) {
+	hashtags := r.extractHashtags(query)
+	if len(hashtags) == 0 {
+		return
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.searchByHashtags(hashtags)
+	}()
+}
+
+// searchByHashtags searches for statuses containing hashtags
+func (r *SearchRepository) searchByHashtags(hashtags []string) {
+	for _, hashtag := range hashtags {
+		// Search for statuses with this hashtag
+		// This would require a hashtag index or scanning status content
+		// For now, we'll skip this strategy
+		r.logger.Debug("hashtag search not fully implemented",
+			zap.String("hashtag", hashtag))
+	}
+}
+
+// executeContentSearch searches for statuses by content
+func (r *SearchRepository) executeContentSearch(ctx context.Context, query string, result *statusSearchResult, wg *sync.WaitGroup) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.searchByContent(ctx, query, result)
+	}()
+}
+
+// searchByContent searches for statuses containing the query in their content
+func (r *SearchRepository) searchByContent(ctx context.Context, query string, result *statusSearchResult) {
+	recentStatuses := r.getRecentStatuses(ctx)
+	
+	for _, status := range recentStatuses {
+		if r.statusMatchesQuery(status, query) {
+			r.addStatusToResults(status, query, result)
+		}
+	}
+}
+
+// getRecentStatuses fetches recent status objects
+func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Object {
+	var recentStatuses []models.Object
+	err := r.db.WithContext(ctx).Model(&models.Object{}).
+		Index("gsi2-index").
+		Where("GSI2PK", "=", "object#type#Note").
+		Limit(100). // Scan last 100 statuses
+		All(&recentStatuses)
+
+	if err != nil {
+		r.logger.Warn("content search failed", zap.Error(err))
+		return []models.Object{}
+	}
+
+	return recentStatuses
+}
+
+// statusMatchesQuery checks if a status matches the search query
+func (r *SearchRepository) statusMatchesQuery(status models.Object, query string) bool {
+	if status.Content == "" {
+		return false
+	}
+	contentLower := strings.ToLower(status.Content)
+	return strings.Contains(contentLower, query)
+}
+
+// addStatusToResults adds a status to the search results
+func (r *SearchRepository) addStatusToResults(status models.Object, query string, result *statusSearchResult) {
+	contentLower := strings.ToLower(status.Content)
+	score := r.calculateContentScore(contentLower, query)
+	searchResult := r.objectToSearchResult(&status, score, "content_match")
+
+	result.mu.Lock()
+	defer result.mu.Unlock()
+	
+	if existing, ok := result.resultMap[status.ID]; !ok || searchResult.Score > existing.Score {
+		result.resultMap[status.ID] = searchResult
+	}
+}
+
+// processSearchResults converts results map to slice and applies filters
+func (r *SearchRepository) processSearchResults(resultMap map[string]*storage.StatusSearchResult, options storage.StatusSearchOptions) []*storage.StatusSearchResult {
 	// Convert map to slice
+	results := r.mapToSlice(resultMap)
+	
+	// Apply filters
+	results = r.filterByAccount(results, options.AccountID)
+	results = r.filterByLocality(results, options.LocalOnly)
+	
+	return results
+}
+
+// mapToSlice converts a map of results to a slice
+func (r *SearchRepository) mapToSlice(resultMap map[string]*storage.StatusSearchResult) []*storage.StatusSearchResult {
+	results := make([]*storage.StatusSearchResult, 0, len(resultMap))
 	for _, result := range resultMap {
 		results = append(results, result)
 	}
+	return results
+}
 
-	// Apply filters
-	if options.AccountID != "" {
-		filtered := make([]*storage.StatusSearchResult, 0)
-		for _, result := range results {
-			if result.AuthorID == options.AccountID {
-				filtered = append(filtered, result)
-			}
-		}
-		results = filtered
+// filterByAccount filters results by account ID
+func (r *SearchRepository) filterByAccount(results []*storage.StatusSearchResult, accountID string) []*storage.StatusSearchResult {
+	if accountID == "" {
+		return results
 	}
 
-	if options.LocalOnly {
-		filtered := make([]*storage.StatusSearchResult, 0)
-		for _, result := range results {
-			if r.isLocalStatus(result.StatusID) {
-				filtered = append(filtered, result)
-			}
+	filtered := make([]*storage.StatusSearchResult, 0)
+	for _, result := range results {
+		if result.AuthorID == accountID {
+			filtered = append(filtered, result)
 		}
-		results = filtered
+	}
+	return filtered
+}
+
+// filterByLocality filters results to only local statuses
+func (r *SearchRepository) filterByLocality(results []*storage.StatusSearchResult, localOnly bool) []*storage.StatusSearchResult {
+	if !localOnly {
+		return results
 	}
 
-	// Skip MinEngagement filter as StatusSearchResult doesn't have engagement fields
-
-	// Sort by score and recency
-	sort.Slice(results, func(i, j int) bool {
-		// Higher score wins
-		if results[i].Score != results[j].Score {
-			return results[i].Score > results[j].Score
+	filtered := make([]*storage.StatusSearchResult, 0)
+	for _, result := range results {
+		if r.isLocalStatus(result.StatusID) {
+			filtered = append(filtered, result)
 		}
-		// More recent wins
-		return results[i].Published.After(results[j].Published)
-	})
-
-	// Apply limit
-	if len(results) > options.Limit {
-		results = results[:options.Limit]
 	}
-
-	return results, nil
+	return filtered
 }
 
 // SearchStatusesAdvanced searches for statuses with advanced filtering
@@ -344,7 +523,7 @@ func (r *SearchRepository) SearchStatusesAdvanced(ctx context.Context, query str
 		Limit:     limit,
 		AccountID: accountID,
 	}
-	
+
 	// Apply maxID/minID pagination filters
 	if maxID != nil || minID != nil {
 		// Get the search results first, then apply pagination
@@ -352,7 +531,7 @@ func (r *SearchRepository) SearchStatusesAdvanced(ctx context.Context, query str
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// Apply pagination filtering
 		filteredResults := make([]*storage.StatusSearchResult, 0)
 		for _, result := range allResults {
@@ -360,34 +539,72 @@ func (r *SearchRepository) SearchStatusesAdvanced(ctx context.Context, query str
 			if maxID != nil && result.StatusID >= *maxID {
 				continue
 			}
-			// minID filters to results newer than the specified ID  
+			// minID filters to results newer than the specified ID
 			if minID != nil && result.StatusID <= *minID {
 				continue
 			}
 			filteredResults = append(filteredResults, result)
 		}
-		
+
 		// Apply limit after filtering
 		if len(filteredResults) > limit {
 			filteredResults = filteredResults[:limit]
 		}
-		
+
 		return filteredResults, nil
 	}
-	
+
 	return r.SearchStatusesWithOptions(ctx, query, options)
 }
 
 // SearchAll performs a comprehensive search across accounts, statuses, and hashtags
-func (r *SearchRepository) SearchAll(ctx context.Context, query string, limit int, accountID string) (*storage.SearchResults, error) {
+func (r *SearchRepository) SearchAll(ctx context.Context, query string, limit int, _ string) (*storage.SearchResults, error) {
+	// Use new paginated method with default options
+	options := &PaginationOptions{
+		Limit:     limit,
+		SortOrder: SearchSortRelevance,
+	}
+	
+	result, _, err := r.SearchAllPaginated(ctx, query, options)
+	return result, err
+}
+
+// SearchAllPaginated performs a comprehensive search across accounts, statuses, and hashtags with pagination
+func (r *SearchRepository) SearchAllPaginated(ctx context.Context, query string, options *PaginationOptions) (*storage.SearchResults, *PaginationResult, error) {
+	if options == nil {
+		options = NewPaginationOptions()
+	}
+	if err := options.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid pagination options: %w", err)
+	}
+
 	results := &storage.SearchResults{
 		Accounts: make([]storage.Account, 0),
 		Statuses: make([]storage.StatusSearchResult, 0),
 		Hashtags: make([]storage.HashtagSearchResult, 0),
 	}
 
+	// Divide limit across different search types
+	// Give most results to statuses as they're typically most requested
+	statusLimit := options.Limit / 2
+	accountLimit := options.Limit / 4
+	hashtagLimit := options.Limit / 4
+	
+	// Ensure minimum limits
+	if statusLimit < 5 {
+		statusLimit = 5
+	}
+	if accountLimit < 2 {
+		accountLimit = 2
+	}
+	if hashtagLimit < 2 {
+		hashtagLimit = 2
+	}
+
+	var totalScanned int
+
 	// Search accounts
-	actors, err := r.SearchAccounts(ctx, query, limit, false, 0)
+	actors, err := r.SearchAccountsAdvanced(ctx, query, false, accountLimit, 0, false, "")
 	if err != nil {
 		r.logger.Warn("account search failed in SearchAll", zap.Error(err))
 	} else {
@@ -400,10 +617,17 @@ func (r *SearchRepository) SearchAll(ctx context.Context, query string, limit in
 				results.Accounts = append(results.Accounts, account)
 			}
 		}
+		totalScanned += len(actors)
 	}
 
-	// Search statuses
-	statusResults, err := r.SearchStatuses(ctx, query, limit)
+	// Search statuses with pagination support
+	searchOptions := storage.StatusSearchOptions{
+		Limit:     statusLimit,
+		Cursor:    options.Cursor,
+		SortOrder: string(options.SortOrder),
+	}
+	
+	statusResults, statusPagination, err := r.SearchStatusesWithOptionsPaginated(ctx, query, searchOptions)
 	if err != nil {
 		r.logger.Warn("status search failed in SearchAll", zap.Error(err))
 	} else {
@@ -413,30 +637,54 @@ func (r *SearchRepository) SearchAll(ctx context.Context, query string, limit in
 				results.Statuses = append(results.Statuses, *status)
 			}
 		}
+		totalScanned += statusPagination.TotalScanned
 	}
 
 	// Search hashtags
-	hashtags, err := r.SearchHashtags(ctx, query, limit)
+	hashtagResults, err := r.SearchHashtagsAdvanced(ctx, query, hashtagLimit, "")
 	if err != nil {
 		r.logger.Warn("hashtag search failed in SearchAll", zap.Error(err))
 	} else {
-		// Convert to HashtagSearchResult
-		for _, ht := range hashtags {
+		// Convert to HashtagSearchResult format
+		for _, ht := range hashtagResults {
 			results.Hashtags = append(results.Hashtags, storage.HashtagSearchResult{
 				Name: ht.Name,
 				URL:  ht.URL,
 			})
 		}
+		totalScanned += len(hashtagResults)
 	}
 
-	return results, nil
+	// Determine if there are more results based on status search (primary content type)
+	var hasNextPage bool
+	var nextCursor string
+	if statusPagination != nil {
+		hasNextPage = statusPagination.HasNextPage
+		nextCursor = statusPagination.NextCursor
+	}
+
+	// Update results with pagination metadata
+	results.NextCursor = nextCursor
+	results.HasNextPage = hasNextPage
+	results.TotalScanned = totalScanned
+
+	paginationResult := CreatePaginationResult(hasNextPage, nextCursor, totalScanned)
+
+	r.logger.Info("comprehensive search completed",
+		zap.Int("accounts", len(results.Accounts)),
+		zap.Int("statuses", len(results.Statuses)),
+		zap.Int("hashtags", len(results.Hashtags)),
+		zap.Bool("has_next_page", hasNextPage),
+		zap.Int("total_scanned", totalScanned))
+
+	return results, paginationResult, nil
 }
 
 // SearchHashtags searches for hashtags matching the given query
 func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, limit int) ([]*storage.Hashtag, error) {
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 	normalizedQuery = strings.TrimPrefix(normalizedQuery, "#")
-	
+
 	if normalizedQuery == "" {
 		return []*storage.Hashtag{}, nil
 	}
@@ -449,7 +697,7 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 		Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
 		Limit(limit).
 		All(&hashtags)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to search hashtags: %w", err)
 	}
@@ -470,30 +718,129 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 }
 
 // SearchHashtagsAdvanced searches for hashtags with advanced filtering
-func (r *SearchRepository) SearchHashtagsAdvanced(ctx context.Context, query string, limit int, accountID string) ([]*storage.HashtagSearchResult, error) {
-	hashtags, err := r.SearchHashtags(ctx, query, limit)
-	if err != nil {
-		return nil, err
+func (r *SearchRepository) SearchHashtagsAdvanced(ctx context.Context, query string, limit int, _ string) ([]*storage.HashtagSearchResult, error) {
+	// Use new paginated method with default options
+	options := &PaginationOptions{
+		Limit:     limit,
+		SortOrder: SearchSortRelevance,
 	}
+	
+	results, _, err := r.SearchHashtagsAdvancedPaginated(ctx, query, options)
+	return results, err
+}
+
+// SearchHashtagsAdvancedPaginated searches for hashtags with advanced filtering and pagination support
+func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, query string, options *PaginationOptions) ([]*storage.HashtagSearchResult, *PaginationResult, error) {
+	if options == nil {
+		options = NewPaginationOptions()
+	}
+	if err := options.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid pagination options: %w", err)
+	}
+
+	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
+	normalizedQuery = strings.TrimPrefix(normalizedQuery, "#")
+
+	if normalizedQuery == "" {
+		return []*storage.HashtagSearchResult{}, CreatePaginationResult(false, "", 0), nil
+	}
+
+	// Parse cursor for continuation
+	cursorData, err := DecodeCursor(options.Cursor)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+
+	// Search hashtags using GSI - simplified pagination for now
+	var hashtags []models.Hashtag
+
+	// For now, use a larger limit and implement cursor-based pagination in memory
+	// This will be improved once DynamORM supports proper pagination methods
+	searchLimit := options.Limit * 3 // Get more results to enable pagination
+	
+	err = r.db.WithContext(ctx).Model(&models.Hashtag{}).
+		Index("name-index").
+		Where("GSI1PK", "=", "HASHTAG").
+		Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
+		Limit(searchLimit).
+		All(&hashtags)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to search hashtags: %w", err)
+	}
+
+	r.logger.Debug("hashtag search results",
+		zap.Int("result_count", len(hashtags)),
+		zap.String("query", normalizedQuery),
+		zap.Bool("has_cursor", options.Cursor != ""))
 
 	// Convert to HashtagSearchResult format
 	results := make([]*storage.HashtagSearchResult, 0, len(hashtags))
 	for _, ht := range hashtags {
 		result := &storage.HashtagSearchResult{
 			Name: ht.Name,
-			URL:  ht.URL,
+			URL:  "/tags/" + ht.Name,
+			Uses: int(ht.UsageCount),
 			// History would need to be populated from trending data
 		}
 		results = append(results, result)
 	}
 
-	return results, nil
+	// Sort results based on specified sort order
+	SortResults(results, options.SortOrder,
+		func(h *storage.HashtagSearchResult) float64 { return float64(h.Uses) }, // Use usage count as score
+		func(_ *storage.HashtagSearchResult) time.Time { return time.Now() },    // No timestamp field, use current time
+		func(h *storage.HashtagSearchResult) string { return h.Name })
+
+	// Apply in-memory cursor-based pagination for now
+	startIndex := 0
+	
+	// If we have a cursor, find the starting position
+	if cursorData.LastID != "" {
+		for i, result := range results {
+			if result.Name == cursorData.LastID {
+				startIndex = i + 1
+				break
+			}
+		}
+	}
+	
+	// Get the slice starting from cursor position
+	if startIndex >= len(results) {
+		return []*storage.HashtagSearchResult{}, CreatePaginationResult(false, "", len(hashtags)), nil
+	}
+	
+	paginatedResults := results[startIndex:]
+	
+	// Apply pagination limits and determine if there are more results
+	finalResults, hasNextPage := ApplyPaginationLimits(paginatedResults, options.Limit)
+
+	// Create next cursor if there are more results
+	var nextCursor string
+	if hasNextPage && len(finalResults) > 0 {
+		lastResult := finalResults[len(finalResults)-1]
+		nextCursor = CreateNextCursor(
+			nil, // No DynamoDB LastEvaluatedKey for in-memory pagination
+			float64(lastResult.Uses),
+			time.Now(), // No timestamp field
+			lastResult.Name,
+			options.SortOrder,
+		)
+	}
+
+	paginationResult := CreatePaginationResult(hasNextPage, nextCursor, len(hashtags))
+
+	r.logger.Info("hashtag search completed",
+		zap.Int("results", len(finalResults)),
+		zap.Bool("has_next_page", hasNextPage),
+		zap.Int("total_processed", len(hashtags)))
+
+	return finalResults, paginationResult, nil
 }
 
 // Helper methods
 
 func (r *SearchRepository) objectToSearchResult(obj *models.Object, score float64, strategy string) *storage.StatusSearchResult {
-	if obj == nil || obj.Type != "Note" {
+	if obj == nil || obj.Type != ActivityTypeNote {
 		return nil
 	}
 
@@ -516,29 +863,29 @@ func (r *SearchRepository) calculateContentScore(content, query string) float64 
 	// Simple scoring based on match position and frequency
 	contentLower := strings.ToLower(content)
 	queryLower := strings.ToLower(query)
-	
+
 	score := 0.0
-	
+
 	// Exact match bonus
 	if contentLower == queryLower {
 		return 1.0
 	}
-	
+
 	// Count occurrences
 	count := strings.Count(contentLower, queryLower)
 	score += float64(count) * 0.1
-	
+
 	// Position bonus (earlier is better)
 	pos := strings.Index(contentLower, queryLower)
 	if pos >= 0 {
 		positionScore := 1.0 - (float64(pos) / float64(len(content)))
 		score += positionScore * 0.3
 	}
-	
+
 	// Length ratio (prefer shorter content for same match)
 	lengthRatio := float64(len(query)) / float64(len(content))
 	score += lengthRatio * 0.2
-	
+
 	// Cap at 0.9 (reserve 1.0 for exact matches)
 	return math.Min(score, 0.9)
 }
@@ -546,7 +893,7 @@ func (r *SearchRepository) calculateContentScore(content, query string) float64 
 func (r *SearchRepository) extractHashtags(text string) []string {
 	hashtags := make([]string, 0)
 	words := strings.Fields(text)
-	
+
 	for _, word := range words {
 		if strings.HasPrefix(word, "#") && len(word) > 1 {
 			hashtag := strings.TrimPrefix(word, "#")
@@ -554,7 +901,7 @@ func (r *SearchRepository) extractHashtags(text string) []string {
 			hashtags = append(hashtags, hashtag)
 		}
 	}
-	
+
 	return hashtags
 }
 
@@ -567,12 +914,12 @@ func (r *SearchRepository) extractUsername(actorID string) string {
 			return parts[1]
 		}
 	}
-	
+
 	// For simple usernames
 	if !strings.Contains(actorID, "://") {
 		return actorID
 	}
-	
+
 	return ""
 }
 
@@ -614,7 +961,7 @@ func (r *SearchRepository) CreateSearchSuggestion(ctx context.Context, suggestio
 
 // UpdateSearchSuggestion updates an existing search suggestion
 func (r *SearchRepository) UpdateSearchSuggestion(ctx context.Context, suggestionType, term string, updates map[string]interface{}) error {
-	if updates == nil || len(updates) == 0 {
+	if len(updates) == 0 {
 		return nil
 	}
 
@@ -855,8 +1202,8 @@ func (r *SearchRepository) PruneOldSuggestions(ctx context.Context, olderThan ti
 // Status Search Methods
 
 // IndexStatus indexes a status for search
-func (r *SearchRepository) IndexStatus(ctx context.Context, status *models.Object) error {
-	if status == nil || status.Type != "Note" {
+func (r *SearchRepository) IndexStatus(_ context.Context, status *models.Object) error {
+	if status == nil || status.Type != ActivityTypeNote {
 		return nil
 	}
 
@@ -1018,7 +1365,7 @@ func (r *SearchRepository) SearchStatusesByAuthor(ctx context.Context, authorID 
 	err := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi4-index").
 		Where("GSI4PK", "=", fmt.Sprintf("author#%s", authorID)).
-		Filter("Type", "=", "Note").
+		Filter("Type", "=", ActivityTypeNote).
 		Limit(limit).
 		All(&statuses)
 
@@ -1072,7 +1419,7 @@ func (r *SearchRepository) GetSearchAnalytics(ctx context.Context, startDate, en
 	// Query each day in the range
 	current := startDate
 	for !current.After(endDate) {
-		dateStr := current.Format("2006-01-02")
+		dateStr := current.Format(common.DateFormat)
 		var dayAnalytics []models.SearchAnalytics
 
 		err := r.db.WithContext(ctx).Model(&models.SearchAnalytics{}).
@@ -1126,10 +1473,10 @@ func (r *SearchRepository) GetPopularSearches(ctx context.Context, limit int, ti
 	stats := make([]*models.SearchQueryStats, 0, len(queryCount))
 	for query, count := range queryCount {
 		stat := &models.SearchQueryStats{
-			QueryHash:    query, // Note: this is storing the actual query, not a hash
-			QueryCount:   count,
-			LastQueried:  lastQueried[query],
-			QueryType:    "search_suggestion",
+			QueryHash:   query, // Note: this is storing the actual query, not a hash
+			QueryCount:  count,
+			LastQueried: lastQueried[query],
+			QueryType:   "search_suggestion",
 		}
 		stat.UpdateKeys()
 		stats = append(stats, stat)
@@ -1163,7 +1510,7 @@ func (r *SearchRepository) GetSearchTrends(ctx context.Context, days int) (map[s
 
 	// Count searches by day
 	for _, event := range analytics {
-		day := event.Timestamp.Format("2006-01-02")
+		day := event.Timestamp.Format(common.DateFormat)
 		trends[day]++
 	}
 
@@ -1200,62 +1547,82 @@ func (r *SearchRepository) IndexContentEmbedding(ctx context.Context, embedding 
 
 // SearchByEmbedding searches for similar content using vector similarity
 func (r *SearchRepository) SearchByEmbedding(ctx context.Context, queryEmbedding []float32, limit int, threshold float64) ([]*models.SearchEmbedding, error) {
+	// Use new paginated method with default options
+	options := NewPaginationOptions()
+	options.Limit = limit
+	
+	result, _, err := r.SearchByEmbeddingPaginated(ctx, queryEmbedding, threshold, options)
+	return result, err
+}
+
+// SearchByEmbeddingPaginated searches for similar content using vector similarity with pagination support
+func (r *SearchRepository) SearchByEmbeddingPaginated(ctx context.Context, queryEmbedding []float32, threshold float64, options *PaginationOptions) ([]*models.SearchEmbedding, *PaginationResult, error) {
 	if len(queryEmbedding) == 0 {
-		return nil, fmt.Errorf("query embedding cannot be empty")
+		return nil, nil, fmt.Errorf("query embedding cannot be empty")
 	}
 
 	if threshold < 0 || threshold > 1 {
 		threshold = 0.7 // Default threshold for semantic similarity
 	}
 
-	if limit <= 0 || limit > 100 {
-		limit = 20 // Default limit
+	// Validate and normalize options
+	if options == nil {
+		options = NewPaginationOptions()
+	}
+	if err := options.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid pagination options: %w", err)
 	}
 
-	r.logger.Debug("searching by embedding",
+	r.logger.Debug("searching by embedding with pagination",
 		zap.Int("embedding_dim", len(queryEmbedding)),
 		zap.Float64("threshold", threshold),
-		zap.Int("limit", limit))
+		zap.Int("limit", options.Limit),
+		zap.String("cursor", options.Cursor),
+		zap.String("sort_order", string(options.SortOrder)))
+
+	// Parse cursor for continuation
+	cursorData, err := DecodeCursor(options.Cursor)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid cursor: %w", err)
+	}
 
 	// For optimal vector search, we'd use a dedicated vector database like Pinecone or Weaviate
-	// However, for this implementation, we'll use DynamoDB with optimizations:
-	// 1. Scan in batches to avoid loading all embeddings into memory
-	// 2. Use early termination when we have enough high-quality results
-	// 3. Implement approximate nearest neighbor with bucketing
+	// However, for this implementation, we'll use DynamoDB with proper pagination:
+	// 1. Use DynamORM's AllWithLastEvaluatedKey for proper pagination
+	// 2. Scan in batches to avoid loading all embeddings into memory
+	// 3. Use early termination when we have enough high-quality results
 
 	var allResults []*models.SearchEmbedding
-	batchSize := 50
-	processed := 0
 	maxScan := 500 // Limit total embeddings scanned
 
-	// Use pagination to process embeddings in batches
-	var lastKey map[string]interface{}
+	// For now, scan a reasonable number of embeddings (until DynamORM pagination is available)
+	var allEmbeddings []models.SearchEmbedding
 	
-	for processed < maxScan {
-		var embeddings []models.SearchEmbedding
-		
-		query := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
-			Limit(batchSize)
-		
-		if lastKey != nil {
-			// TODO: Add exclusive start key support when available in DynamORM
-			// For now, we'll do a basic scan
-		}
-		
-		err := query.All(&embeddings)
-		if err != nil {
-			return nil, fmt.Errorf("failed to search embeddings: %w", err)
-		}
+	err = r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
+		Limit(maxScan).
+		All(&allEmbeddings)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to search embeddings: %w", err)
+	}
 
-		if len(embeddings) == 0 {
-			break // No more results
+	processed := len(allEmbeddings)
+	
+	// Apply cursor-based filtering if we have a cursor
+	startIndex := 0
+	if cursorData.LastID != "" {
+		for i, embedding := range allEmbeddings {
+			if embedding.ContentID == cursorData.LastID {
+				startIndex = i + 1
+				break
+			}
 		}
+	}
+	
+	// Process embeddings starting from cursor position
+	if startIndex < len(allEmbeddings) {
+		for i := startIndex; i < len(allEmbeddings) && len(allResults) < options.Limit*2; i++ {
+			embedding := &allEmbeddings[i]
 
-		// Process this batch
-		batchResults := make([]*models.SearchEmbedding, 0)
-		for i := range embeddings {
-			embedding := &embeddings[i]
-			
 			// Skip if embedding dimensions don't match
 			if len(embedding.Embedding) != len(queryEmbedding) {
 				r.logger.Warn("embedding dimension mismatch",
@@ -1269,22 +1636,8 @@ func (r *SearchRepository) SearchByEmbedding(ctx context.Context, queryEmbedding
 
 			if similarity >= threshold {
 				embedding.Score = similarity
-				batchResults = append(batchResults, embedding)
+				allResults = append(allResults, embedding)
 			}
-		}
-
-		// Add batch results to overall results
-		allResults = append(allResults, batchResults...)
-		processed += len(embeddings)
-
-		// Early termination if we have enough high-quality results
-		if len(allResults) >= limit*2 && len(batchResults) == 0 {
-			break
-		}
-
-		// Break if we got fewer results than batch size (end of data)
-		if len(embeddings) < batchSize {
-			break
 		}
 	}
 
@@ -1292,26 +1645,42 @@ func (r *SearchRepository) SearchByEmbedding(ctx context.Context, queryEmbedding
 		zap.Int("processed", processed),
 		zap.Int("candidates", len(allResults)))
 
-	// Sort all results by similarity (descending)
-	sort.Slice(allResults, func(i, j int) bool {
-		return allResults[i].Score > allResults[j].Score
-	})
+	// Sort results based on specified sort order
+	SortResults(allResults, options.SortOrder,
+		func(e *models.SearchEmbedding) float64 { return e.Score },
+		func(e *models.SearchEmbedding) time.Time { return e.CreatedAt },
+		func(e *models.SearchEmbedding) string { return e.ContentID })
 
-	// Apply final limit
-	if len(allResults) > limit {
-		allResults = allResults[:limit]
+	// Apply pagination limits and determine if there are more results
+	finalResults, hasNextPage := ApplyPaginationLimits(allResults, options.Limit)
+
+	// Create next cursor if there are more results
+	var nextCursor string
+	if hasNextPage && len(finalResults) > 0 {
+		lastResult := finalResults[len(finalResults)-1]
+		nextCursor = CreateNextCursor(
+			nil, // No DynamoDB LastEvaluatedKey for in-memory pagination
+			lastResult.Score,
+			lastResult.CreatedAt,
+			lastResult.ContentID,
+			options.SortOrder,
+		)
 	}
 
+	paginationResult := CreatePaginationResult(hasNextPage, nextCursor, processed)
+
 	r.logger.Info("embedding search completed",
-		zap.Int("results", len(allResults)),
+		zap.Int("results", len(finalResults)),
+		zap.Bool("has_next_page", hasNextPage),
+		zap.Int("total_scanned", processed),
 		zap.Float64("top_score", func() float64 {
-			if len(allResults) > 0 {
-				return allResults[0].Score
+			if len(finalResults) > 0 {
+				return finalResults[0].Score
 			}
 			return 0.0
 		}()))
 
-	return allResults, nil
+	return finalResults, paginationResult, nil
 }
 
 // UpdateEmbedding updates an existing embedding

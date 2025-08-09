@@ -261,9 +261,9 @@ func TestMedia_SetProcessing(t *testing.T) {
 
 func TestMedia_StatusCheckers(t *testing.T) {
 	tests := []struct {
-		status      string
-		isReady     bool
-		isFailed    bool
+		status       string
+		isReady      bool
+		isFailed     bool
 		isProcessing bool
 	}{
 		{"ready", true, false, false},
@@ -345,23 +345,23 @@ func TestMedia_GetBestVariant(t *testing.T) {
 
 	// Add variants
 	media.AddVariant("small", MediaVariant{
-		S3Key:  "small/key",
-		Width:  200,
-		Height: 200,
+		S3Key:    "small/key",
+		Width:    200,
+		Height:   200,
 		FileSize: 5000,
 	})
 
 	media.AddVariant("medium", MediaVariant{
-		S3Key:  "medium/key",
-		Width:  500,
-		Height: 500,
+		S3Key:    "medium/key",
+		Width:    500,
+		Height:   500,
 		FileSize: 25000,
 	})
 
 	media.AddVariant("large", MediaVariant{
-		S3Key:  "large/key",
-		Width:  1000,
-		Height: 1000,
+		S3Key:    "large/key",
+		Width:    1000,
+		Height:   1000,
 		FileSize: 75000,
 	})
 
@@ -454,23 +454,23 @@ func TestIsValidMediaType(t *testing.T) {
 		{"image/png", true},
 		{"image/gif", true},
 		{"image/webp", true},
-		
+
 		// Valid video types
 		{"video/mp4", true},
 		{"video/webm", true},
 		{"video/ogg", true},
-		
+
 		// Valid audio types
 		{"audio/mpeg", true},
 		{"audio/wav", true},
 		{"audio/ogg", true},
-		
+
 		// Invalid types
 		{"application/pdf", false},
 		{"text/plain", false},
 		{"application/exe", false},
 		{"", false},
-		
+
 		// Case sensitivity
 		{"IMAGE/JPEG", true}, // Should handle case insensitive
 	}

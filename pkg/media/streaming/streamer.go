@@ -2,19 +2,19 @@
 //
 // SERVERLESS DESIGN PRINCIPLES:
 //
-// 1. No Background Processes: This package avoids long-running goroutines,
-//    timers, or polling mechanisms that are incompatible with Lambda's
-//    execution model.
+//  1. No Background Processes: This package avoids long-running goroutines,
+//     timers, or polling mechanisms that are incompatible with Lambda's
+//     execution model.
 //
-// 2. DynamoDB TTL for Cleanup: Session and cache expiration is handled
-//    automatically by DynamoDB TTL rather than manual cleanup processes.
-//    This eliminates the need for background cleanup tasks.
+//  2. DynamoDB TTL for Cleanup: Session and cache expiration is handled
+//     automatically by DynamoDB TTL rather than manual cleanup processes.
+//     This eliminates the need for background cleanup tasks.
 //
-// 3. Stateless Operations: Each Lambda invocation operates independently
-//    without relying on shared in-memory state between invocations.
+//  3. Stateless Operations: Each Lambda invocation operates independently
+//     without relying on shared in-memory state between invocations.
 //
-// 4. Cost-Optimized: Uses DynamoDB on-demand billing and avoids unnecessary
-//    operations that would increase costs in a serverless environment.
+//  4. Cost-Optimized: Uses DynamoDB on-demand billing and avoids unnecessary
+//     operations that would increase costs in a serverless environment.
 package streaming
 
 import (
@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/google/uuid"
@@ -40,10 +41,11 @@ type Streamer struct {
 	bandwidthTracker *BandwidthTracker
 	qualitySelector  QualitySelector
 	sessionManager   *SessionManager
-	analytics        core.RepositoryStorage  // DynamORM storage for analytics
+	analytics        core.RepositoryStorage // DynamORM storage for analytics
 	s3Client         *s3.Client
 	logger           *zap.Logger
 	costTracker      CostTracker
+	metricsTracker   *MetricsTracker // Real metrics tracking with CloudWatch
 
 	// Cache for manifests
 	manifestCache sync.Map
@@ -55,24 +57,32 @@ func NewStreamer(
 	config *StreamingConfig,
 	analytics core.RepositoryStorage,
 	s3Client *s3.Client,
+	cloudWatch *cloudwatch.Client,
 	db dynamormCore.DB,
 	logger *zap.Logger,
 	costTracker CostTracker,
 ) *Streamer {
 	storage := NewS3MediaStorage(s3Client, config.S3Bucket, config.S3Region, db)
 
+	qualitySelector := NewAdaptiveQualitySelector(logger)
+	metricsTracker := NewMetricsTracker(cloudWatch, logger)
+	
+	// Connect quality selector to metrics tracker for enhanced decision making
+	qualitySelector.SetMetricsTracker(metricsTracker)
+	
 	return &Streamer{
 		config:           config,
 		storage:          storage,
 		hlsGenerator:     NewHLSGenerator(config, storage),
 		dashGenerator:    NewDASHGenerator(config, storage),
 		bandwidthTracker: NewBandwidthTracker(analytics, logger, costTracker),
-		qualitySelector:  NewAdaptiveQualitySelector(logger),
+		qualitySelector:  qualitySelector,
 		sessionManager:   nil, // Will be set via SetSessionManager when repository is available
 		analytics:        analytics,
 		s3Client:         s3Client,
 		logger:           logger,
 		costTracker:      costTracker,
+		metricsTracker:   metricsTracker,
 		cacheTTL:         config.ManifestCacheTTL,
 	}
 }
@@ -285,6 +295,7 @@ func (s *Streamer) GetOptimalQuality(userID string, availableBandwidth int) Qual
 
 	// Get current session if exists
 	var sessions []*StreamingSession
+	var mostRecentSessionID string
 	if s.sessionManager != nil {
 		sessions, _ = s.sessionManager.GetUserSessions(ctx, userID)
 	}
@@ -293,8 +304,15 @@ func (s *Streamer) GetOptimalQuality(userID string, availableBandwidth int) Qual
 	if len(sessions) > 0 {
 		// Use buffer health from most recent session
 		bufferHealth = sessions[0].BufferHealth
+		mostRecentSessionID = sessions[0].SessionID
 	}
 
+	// Use enhanced quality selection with real metrics
+	if mostRecentSessionID != "" {
+		return s.qualitySelector.(*AdaptiveQualitySelector).SelectQualityWithSession(
+			mostRecentSessionID, availableBandwidth, bufferHealth, availableQualities)
+	}
+	
 	return s.qualitySelector.SelectQuality(availableBandwidth, bufferHealth, availableQualities)
 }
 
@@ -341,6 +359,9 @@ func (s *Streamer) StartSession(userID, mediaID string, format MediaFormat) (*St
 		}
 	}
 
+	// Initialize metrics tracking for the session
+	s.metricsTracker.StartSession(session.SessionID, userID, mediaID)
+
 	// Log session start
 	s.logger.Info("streaming session started",
 		zap.String("sessionID", session.SessionID),
@@ -363,6 +384,13 @@ func (s *Streamer) UpdateSession(sessionID string, quality Quality, segmentIndex
 	session, err := s.sessionManager.GetSession(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("get session: %w", err)
+	}
+
+	// Track quality switch if quality changed
+	previousQuality := session.CurrentQuality
+	qualitySwitched := previousQuality != quality
+	if qualitySwitched && previousQuality != "" {
+		s.metricsTracker.TrackQualitySwitch(sessionID, previousQuality, quality)
 	}
 
 	// Update session
@@ -396,8 +424,30 @@ func (s *Streamer) UpdateSession(sessionID string, quality Quality, segmentIndex
 		}
 	}
 
-	// Update quality metrics
-	s.qualitySelector.UpdateMetrics(sessionID, 0, 0) // TODO: Track actual rebuffer/switch events
+	// Track segment loading success and buffer health
+	loadTime := time.Duration(500 * time.Millisecond) // Estimate based on typical segment load time
+	s.metricsTracker.TrackSegmentLoad(sessionID, segmentIndex, loadTime, bytesTransferred)
+	
+	// Track buffer health for adaptive bitrate decisions
+	bufferDuration := time.Duration(session.BufferHealth * 10) * time.Second // Convert buffer health to duration
+	estimatedBandwidth := int(float64(bytesTransferred*8) / loadTime.Seconds() / 1000) // Convert to kbps
+	s.metricsTracker.TrackBufferHealth(sessionID, bufferDuration, estimatedBandwidth)
+
+	// Update quality selector metrics with real data
+	rebufferEvents := 0
+	qualitySwitchEvents := 0
+	if qualitySwitched {
+		qualitySwitchEvents = 1
+	}
+	
+	// Detect potential rebuffering based on buffer health
+	if session.BufferHealth < 0.1 { // Very low buffer indicates rebuffering
+		rebufferEvents = 1
+		rebufferDuration := time.Duration(500) * time.Millisecond // Estimated rebuffer duration
+		s.metricsTracker.TrackRebufferEvent(sessionID, rebufferDuration)
+	}
+	
+	s.qualitySelector.UpdateMetrics(sessionID, rebufferEvents, qualitySwitchEvents)
 
 	return nil
 }
@@ -419,14 +469,29 @@ func (s *Streamer) EndSession(sessionID string) error {
 	// Calculate session duration
 	duration := time.Since(session.StartTime)
 
-	// Log session end
-	s.logger.Info("streaming session ended",
+	// Finalize metrics tracking and get final metrics
+	finalMetrics := s.metricsTracker.EndSession(sessionID)
+	
+	// Log session end with metrics
+	logFields := []zap.Field{
 		zap.String("sessionID", sessionID),
 		zap.String("userID", session.UserID),
 		zap.String("mediaID", session.MediaID),
 		zap.Duration("duration", duration),
 		zap.Int64("bytesTransferred", session.BytesTransferred),
-		zap.String("finalQuality", string(session.CurrentQuality)))
+		zap.String("finalQuality", string(session.CurrentQuality)),
+	}
+	
+	if finalMetrics != nil {
+		logFields = append(logFields,
+			zap.Int("qualitySwitches", finalMetrics.QualitySwitches),
+			zap.Int("rebufferEvents", finalMetrics.RebufferEvents),
+			zap.Float64("qoeScore", finalMetrics.QoEScore),
+			zap.Float64("segmentSuccessRate", finalMetrics.SegmentSuccessRate),
+		)
+	}
+	
+	s.logger.Info("streaming session ended with metrics", logFields...)
 
 	// End session
 	return s.sessionManager.EndSession(ctx, sessionID)

@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -104,18 +105,45 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 
 // HandleGetStatusHistoryLift handles GET /api/v1/statuses/:id/history
 func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
-	// Extract status ID from URL parameter
+	// Extract and validate status ID
+	statusID, err := h.extractStatusIDForHistory(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Perform optional authentication
+	h.performOptionalHistoryAuth(ctx, statusID)
+
+	// Normalize and fetch the current object
+	objectID := h.normalizeStatusIDForHistory(statusID)
+	currentObject, err := h.fetchObjectForHistory(ctx, objectID)
+	if err != nil {
+		return err
+	}
+
+	// Get the author actor
+	actor := h.getHistoryAuthorActor(ctx, currentObject)
+
+	// Get edit history
+	histories := h.fetchEditHistory(ctx, objectID)
+
+	// Build history response
+	edits := h.buildHistoryResponse(currentObject, actor, histories)
+
+	return ctx.JSON(edits)
+}
+
+// extractStatusIDForHistory extracts and validates the status ID parameter
+func (h *Handler) extractStatusIDForHistory(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
 	if statusID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "status ID is required"})
+		return "", ctx.Status(400).JSON(map[string]string{"error": "status ID is required"})
 	}
+	return statusID, nil
+}
 
-	// Optional authentication for private status history
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		authHeader = ctx.Header("authorization")
-	}
-
+// performOptionalHistoryAuth performs optional authentication for private status history
+func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, statusID string) {
 	// Support test mode with X-Test-Username header
 	testUsername := ctx.Header("X-Test-Username")
 	if testUsername != "" {
@@ -124,6 +152,8 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 			zap.String("status_id", statusID))
 	}
 
+	// Optional authentication
+	authHeader := h.extractHistoryAuthHeader(ctx)
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
@@ -131,72 +161,115 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 			_, _ = oauthSvc.ValidateAccessToken(token)
 		}
 	}
+}
 
-	// Normalize the status ID to a full URL if it's not already
-	objectID := statusID
+// extractHistoryAuthHeader extracts the authorization header
+func (h *Handler) extractHistoryAuthHeader(ctx *lift.Context) string {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+	return authHeader
+}
+
+// normalizeStatusIDForHistory normalizes the status ID to a full URL
+func (h *Handler) normalizeStatusIDForHistory(statusID string) string {
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
 		// Assume it's a local object ID
-		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+		return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
 	}
+	return statusID
+}
 
-	// Get the current object
+// fetchObjectForHistory fetches the current object
+func (h *Handler) fetchObjectForHistory(ctx *lift.Context, objectID string) (any, error) {
 	currentObject, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+		return nil, ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
+	return currentObject, nil
+}
 
-	// Check if user has permission to view history
-	var attributedTo string
-	switch obj := currentObject.(type) {
-	case *activitypub.Note:
-		attributedTo = obj.AttributedTo
-	case map[string]any:
-		if attr, ok := obj["attributedTo"].(string); ok {
-			attributedTo = attr
-		}
+// getHistoryAuthorActor gets the author actor for the status
+func (h *Handler) getHistoryAuthorActor(ctx *lift.Context, currentObject any) *activitypub.Actor {
+	attributedTo := h.extractAttributedTo(currentObject)
+	if attributedTo == "" {
+		return nil
 	}
 
 	// Extract username from actor ID
-	var actor *activitypub.Actor
-	if attributedTo != "" {
-		parts := strings.Split(attributedTo, "/")
-		if len(parts) > 0 {
-			username := parts[len(parts)-1]
-			actor, _ = h.repos.Actor().GetActor(ctx.Context, username)
+	parts := strings.Split(attributedTo, "/")
+	if len(parts) > 0 {
+		username := parts[len(parts)-1]
+		actor, _ := h.repos.Actor().GetActor(ctx.Context, username)
+		return actor
+	}
+	return nil
+}
+
+// extractAttributedTo extracts the attributedTo field from an object
+func (h *Handler) extractAttributedTo(obj any) string {
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		return o.AttributedTo
+	case map[string]any:
+		if attr, ok := o["attributedTo"].(string); ok {
+			return attr
 		}
 	}
+	return ""
+}
 
-	// Get edit history
+// fetchEditHistory fetches the edit history for an object
+func (h *Handler) fetchEditHistory(ctx *lift.Context, objectID string) []*storage.UpdateHistory {
 	histories, err := h.repos.Object().GetUpdateHistory(ctx.Context, objectID, 100) // Get up to 100 edits
 	if err != nil {
 		h.logger.Error("failed to get update history",
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		// Return empty history if there's an error
-		return ctx.JSON([]models.StatusEdit{})
+		return []*storage.UpdateHistory{}
 	}
+	return histories
+}
 
-	// Build history response
+// buildHistoryResponse builds the history response
+func (h *Handler) buildHistoryResponse(currentObject any, actor *activitypub.Actor, histories []*storage.UpdateHistory) []models.StatusEdit {
 	edits := make([]models.StatusEdit, 0, len(histories)+1)
 
-	// Initialize converter
-	converter := mastodon.NewConverter(h.cfg.BaseURL())
-
 	// Prepare account for edits
-	var editAccount models.Account
-	if actor != nil {
-		editAccount = converter.ActorToAccount(actor)
-	} else {
-		// Create a minimal account for unknown actors
-		editAccount = models.Account{
-			ID:       "unknown",
-			Username: "unknown",
-			Acct:     "unknown",
-			URL:      "",
-		}
-	}
+	editAccount := h.prepareEditAccount(actor)
 
 	// Add current version as the latest edit
+	currentEdit := h.buildCurrentEdit(currentObject, editAccount)
+	edits = append(edits, currentEdit)
+
+	// Add historical versions
+	for _, history := range histories {
+		edit := h.buildHistoricalEdit(history, editAccount)
+		edits = append(edits, edit)
+	}
+
+	return edits
+}
+
+// prepareEditAccount prepares the account object for edits
+func (h *Handler) prepareEditAccount(actor *activitypub.Actor) models.Account {
+	if actor != nil {
+		converter := mastodon.NewConverter(h.cfg.BaseURL())
+		return converter.ActorToAccount(actor)
+	}
+	
+	// Create a minimal account for unknown actors
+	return models.Account{
+		ID:       "unknown",
+		Username: "unknown",
+		Acct:     "unknown",
+		URL:      "",
+	}
+}
+
+// buildCurrentEdit builds the edit object for the current version
+func (h *Handler) buildCurrentEdit(currentObject any, editAccount models.Account) models.StatusEdit {
 	currentEdit := models.StatusEdit{
 		CreatedAt:        time.Now().Format(time.RFC3339),
 		Account:          editAccount,
@@ -206,60 +279,77 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 	}
 
 	// Extract current content
-	switch obj := currentObject.(type) {
+	h.extractEditContent(currentObject, &currentEdit)
+
+	return currentEdit
+}
+
+// extractEditContent extracts content from an object into an edit
+func (h *Handler) extractEditContent(obj any, edit *models.StatusEdit) {
+	switch o := obj.(type) {
 	case *activitypub.Note:
-		currentEdit.Content = obj.Content
-		currentEdit.SpoilerText = obj.Summary
-		currentEdit.Sensitive = obj.Sensitive
-		if obj.Updated != nil {
-			currentEdit.CreatedAt = obj.Updated.Format(time.RFC3339)
-		} else if obj.Published != nil {
-			currentEdit.CreatedAt = obj.Published.Format(time.RFC3339)
-		}
+		h.extractNoteContent(o, edit)
 	case map[string]any:
-		if content, ok := obj["content"].(string); ok {
-			currentEdit.Content = content
-		}
-		if summary, ok := obj["summary"].(string); ok {
-			currentEdit.SpoilerText = summary
-		}
-		if sensitive, ok := obj["sensitive"].(bool); ok {
-			currentEdit.Sensitive = sensitive
-		}
-		if updated, ok := obj["updated"].(string); ok {
-			currentEdit.CreatedAt = updated
-		} else if published, ok := obj["published"].(string); ok {
-			currentEdit.CreatedAt = published
-		}
+		h.extractMapContent(o, edit)
+	}
+}
+
+// extractNoteContent extracts content from a Note object
+func (h *Handler) extractNoteContent(note *activitypub.Note, edit *models.StatusEdit) {
+	edit.Content = note.Content
+	edit.SpoilerText = note.Summary
+	edit.Sensitive = note.Sensitive
+	if note.Updated != nil {
+		edit.CreatedAt = note.Updated.Format(time.RFC3339)
+	} else if note.Published != nil {
+		edit.CreatedAt = note.Published.Format(time.RFC3339)
+	}
+}
+
+// extractMapContent extracts content from a map object
+func (h *Handler) extractMapContent(obj map[string]any, edit *models.StatusEdit) {
+	if content, ok := obj["content"].(string); ok {
+		edit.Content = content
+	}
+	if summary, ok := obj["summary"].(string); ok {
+		edit.SpoilerText = summary
+	}
+	if sensitive, ok := obj["sensitive"].(bool); ok {
+		edit.Sensitive = sensitive
+	}
+	if updated, ok := obj["updated"].(string); ok {
+		edit.CreatedAt = updated
+	} else if published, ok := obj["published"].(string); ok {
+		edit.CreatedAt = published
+	}
+}
+
+// buildHistoricalEdit builds an edit object from history
+func (h *Handler) buildHistoricalEdit(history *storage.UpdateHistory, editAccount models.Account) models.StatusEdit {
+	edit := models.StatusEdit{
+		CreatedAt:        history.UpdatedAt.Format(time.RFC3339),
+		Account:          editAccount,
+		MediaAttachments: []any{},
+		Emojis:           []any{},
 	}
 
-	edits = append(edits, currentEdit)
-
-	// Add historical versions
-	for _, history := range histories {
-		edit := models.StatusEdit{
-			CreatedAt:        history.UpdatedAt.Format(time.RFC3339),
-			Account:          editAccount,
-			MediaAttachments: []any{},
-			Emojis:           []any{},
-		}
-
-		// Parse previous state
-		if history.PreviousState != nil && len(history.PreviousState) > 0 {
-			previousObj := history.PreviousState
-				if content, ok := previousObj["content"].(string); ok {
-					edit.Content = content
-				}
-				if summary, ok := previousObj["summary"].(string); ok {
-					edit.SpoilerText = summary
-				}
-			if sensitive, ok := previousObj["sensitive"].(bool); ok {
-				edit.Sensitive = sensitive
-			}
-		}
-
-		edits = append(edits, edit)
+	// Parse previous state
+	if len(history.PreviousState) > 0 {
+		h.extractPreviousState(history.PreviousState, &edit)
 	}
 
-	return ctx.JSON(edits)
+	return edit
+}
+
+// extractPreviousState extracts content from previous state
+func (h *Handler) extractPreviousState(previousObj map[string]any, edit *models.StatusEdit) {
+	if content, ok := previousObj["content"].(string); ok {
+		edit.Content = content
+	}
+	if summary, ok := previousObj["summary"].(string); ok {
+		edit.SpoilerText = summary
+	}
+	if sensitive, ok := previousObj["sensitive"].(bool); ok {
+		edit.Sensitive = sensitive
+	}
 }

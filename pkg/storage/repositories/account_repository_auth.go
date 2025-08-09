@@ -127,7 +127,7 @@ func (r *AccountRepository) CreatePasswordResetToken(ctx context.Context, userna
 
 	// Generate token
 	token := generateSecureToken()
-	
+
 	// Create reset token record
 	reset := &models.PasswordReset{
 		Username:  username,
@@ -211,7 +211,7 @@ func (r *AccountRepository) ResetPassword(ctx context.Context, token, newPasswor
 		Where("PK", "=", fmt.Sprintf("USER#%s", reset.Username)).
 		Where("SK", "=", fmt.Sprintf("RESET#%s", token)).
 		First(&resetModel)
-	
+
 	if err == nil {
 		resetModel.Used = true
 		resetModel.UsedAt = time.Now()
@@ -267,21 +267,21 @@ func (r *AccountRepository) GetUserSessions(ctx context.Context, username string
 func (r *AccountRepository) CreateSession(ctx context.Context, username, ipAddress, userAgent string) (*storage.Session, error) {
 	sessionID := generateSessionID()
 	token := generateSecureToken()
-	
+
 	now := time.Now()
 	expiresAt := now.Add(30 * 24 * time.Hour) // 30 days
 
 	session := &models.Session{
-		SessionID:    sessionID,
-		UserID:       fmt.Sprintf("USER#%s", username),
-		AccessToken:  token,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		LastUsedAt:   now,
-		ExpiresAt:    expiresAt.Unix(),
-		IPAddress:    ipAddress,
-		UserAgent:    userAgent,
-		IsRevoked:    false,
+		SessionID:   sessionID,
+		UserID:      fmt.Sprintf("USER#%s", username),
+		AccessToken: token,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		LastUsedAt:  now,
+		ExpiresAt:   expiresAt.Unix(),
+		IPAddress:   ipAddress,
+		UserAgent:   userAgent,
+		IsRevoked:   false,
 	}
 
 	err := r.db.WithContext(ctx).Model(session).Create()
@@ -330,7 +330,7 @@ func (r *AccountRepository) InvalidateSession(ctx context.Context, username, ses
 	session.RevokedAt = &now
 	session.RevokeReason = "manual_invalidation"
 	session.UpdatedAt = now
-	
+
 	err = r.db.WithContext(ctx).Model(&session).Update()
 	if err != nil {
 		r.logger.Error("failed to invalidate session",
@@ -377,27 +377,27 @@ func (r *AccountRepository) UpdateLastLogin(ctx context.Context, username string
 func (r *AccountRepository) GetUserByRecoveryCode(ctx context.Context, recoveryCode string) (*storage.User, error) {
 	// Recovery codes are hashed using bcrypt, stored per user
 	// We need to query all users with recovery codes and check each one
-	
+
 	// Get all recovery codes from all users
 	var recoveryCodes []models.RecoveryCode
-	
+
 	err := r.db.WithContext(ctx).Model(&models.RecoveryCode{}).
 		Where("SK", "BEGINS_WITH", "RECOVERY_CODE#").
 		All(&recoveryCodes)
-		
+
 	if err != nil {
 		r.logger.Error("failed to query recovery codes",
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query recovery codes: %w", err)
 	}
-	
+
 	// Check each recovery code hash against the provided code
 	for _, code := range recoveryCodes {
 		// Skip already used codes
 		if code.UsedAt != nil {
 			continue
 		}
-		
+
 		// Verify the recovery code hash
 		if r.verifyRecoveryCodeHash(recoveryCode, code.CodeHash) {
 			// Found matching code, return the user
@@ -407,7 +407,7 @@ func (r *AccountRepository) GetUserByRecoveryCode(ctx context.Context, recoveryC
 					zap.String("pk", code.PK))
 				continue
 			}
-			
+
 			// Mark code as used (best effort)
 			now := time.Now()
 			code.UsedAt = &now
@@ -416,12 +416,12 @@ func (r *AccountRepository) GetUserByRecoveryCode(ctx context.Context, recoveryC
 					zap.String("username", username),
 					zap.Error(updateErr))
 			}
-			
+
 			// Return the user
 			return r.GetUser(ctx, username)
 		}
 	}
-	
+
 	return nil, common.UserNotFoundError{Username: "recovery:" + recoveryCode}
 }
 
@@ -571,12 +571,12 @@ func (r *AccountRepository) GetLoginAttemptCount(ctx context.Context, key string
 // GetSession retrieves a session by ID
 func (r *AccountRepository) GetSession(ctx context.Context, sessionID string) (*storage.Session, error) {
 	var session models.Session
-	
+
 	err := r.db.WithContext(ctx).Model(&session).
 		Where("PK", "=", fmt.Sprintf("session#%s", sessionID)).
 		Where("SK", "=", fmt.Sprintf("session#%s", sessionID)).
 		First(&session)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, common.SessionNotFoundError{SessionID: sessionID}
@@ -586,7 +586,7 @@ func (r *AccountRepository) GetSession(ctx context.Context, sessionID string) (*
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
-	
+
 	// Convert to storage type
 	expiresAt := time.Unix(session.ExpiresAt, 0)
 	storageSession := &storage.Session{
@@ -605,7 +605,7 @@ func (r *AccountRepository) GetSession(ctx context.Context, sessionID string) (*
 		PreviousRefreshToken: "", // Would need to be added to model if required
 		TokenRotatedAt:       time.Time{},
 	}
-	
+
 	return storageSession, nil
 }
 
@@ -617,7 +617,7 @@ func (r *AccountRepository) UpdateSession(ctx context.Context, sessionID, refres
 		Where("PK", "=", fmt.Sprintf("session#%s", sessionID)).
 		Where("SK", "=", fmt.Sprintf("session#%s", sessionID)).
 		First(&session)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return common.SessionNotFoundError{SessionID: sessionID}
@@ -627,19 +627,19 @@ func (r *AccountRepository) UpdateSession(ctx context.Context, sessionID, refres
 			zap.Error(err))
 		return fmt.Errorf("failed to get session for update: %w", err)
 	}
-	
+
 	// Update the session fields
 	session.RefreshToken = refreshToken
 	session.IPAddress = ipAddress
 	session.LastUsedAt = lastActivity
 	session.UpdatedAt = time.Now()
 	session.ExpiresAt = expiresAt.Unix()
-	
+
 	// Update GSI keys since refresh token changed
 	session.GSI2PK = "TOKEN#" + hashTokenForGSI(session.AccessToken) // Keep access token GSI the same
 	// Note: Legacy used REFRESHTOKEN# prefix in GSI1, but our model uses TOKEN# for access tokens
 	// We may need to adapt this if refresh token lookup is needed via GSI
-	
+
 	err = r.db.WithContext(ctx).Model(&session).Update()
 	if err != nil {
 		r.logger.Error("failed to update session",
@@ -647,10 +647,10 @@ func (r *AccountRepository) UpdateSession(ctx context.Context, sessionID, refres
 			zap.Error(err))
 		return fmt.Errorf("failed to update session: %w", err)
 	}
-	
+
 	r.logger.Debug("session updated successfully",
 		zap.String("sessionID", sessionID))
-	
+
 	return nil
 }
 
@@ -660,7 +660,7 @@ func (r *AccountRepository) DeleteSession(ctx context.Context, sessionID string)
 		Where("PK", "=", fmt.Sprintf("session#%s", sessionID)).
 		Where("SK", "=", fmt.Sprintf("session#%s", sessionID)).
 		Delete()
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return common.SessionNotFoundError{SessionID: sessionID}
@@ -670,10 +670,10 @@ func (r *AccountRepository) DeleteSession(ctx context.Context, sessionID string)
 			zap.Error(err))
 		return fmt.Errorf("failed to delete session: %w", err)
 	}
-	
+
 	r.logger.Debug("session deleted successfully",
 		zap.String("sessionID", sessionID))
-	
+
 	return nil
 }
 
@@ -683,46 +683,46 @@ func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refres
 	// We need to scan for sessions with matching refresh token
 	// In production, you might want to add a GSI for refresh token lookup
 	var sessions []models.Session
-	
+
 	err := r.db.WithContext(ctx).Model(&models.Session{}).
 		Where("RefreshToken", "=", refreshToken).
 		Limit(1).
 		All(&sessions)
-	
+
 	if err != nil {
 		r.logger.Error("failed to query session by refresh token",
 			zap.String("refreshToken", refreshToken[:minInt(len(refreshToken), 10)]+"..."), // Log only first 10 chars for security
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query session by refresh token: %w", err)
 	}
-	
+
 	if len(sessions) == 0 {
 		// Check if this might be a previous refresh token (for grace period)
 		// This would require scanning all sessions, which is expensive
 		// For now, just return not found
 		return nil, common.SessionNotFoundError{SessionID: "refresh:" + refreshToken[:minInt(len(refreshToken), 10)]}
 	}
-	
+
 	session := sessions[0]
-	
+
 	// Convert to storage type
 	expiresAt := time.Unix(session.ExpiresAt, 0)
 	storageSession := &storage.Session{
-		ID:           session.SessionID,
-		SessionID:    session.SessionID,
-		Username:     extractUsernameFromUserID(session.UserID),
-		CreatedAt:    session.CreatedAt,
-		ExpiresAt:    expiresAt,
-		RefreshToken: session.RefreshToken,
-		LastActivity: session.LastUsedAt,
-		UserAgent:    session.UserAgent,
-		IPAddress:    session.IPAddress,
-		DeviceID:     session.DeviceID,
-		AuthMethod:   "", // Not stored in new model
+		ID:                   session.SessionID,
+		SessionID:            session.SessionID,
+		Username:             extractUsernameFromUserID(session.UserID),
+		CreatedAt:            session.CreatedAt,
+		ExpiresAt:            expiresAt,
+		RefreshToken:         session.RefreshToken,
+		LastActivity:         session.LastUsedAt,
+		UserAgent:            session.UserAgent,
+		IPAddress:            session.IPAddress,
+		DeviceID:             session.DeviceID,
+		AuthMethod:           "", // Not stored in new model
 		PreviousRefreshToken: "", // Would need to be added to model if required
 		TokenRotatedAt:       time.Time{},
 	}
-	
+
 	return storageSession, nil
 }
 
@@ -763,9 +763,9 @@ func (r *AccountRepository) CreateDevice(ctx context.Context, device *storage.De
 		CreatedAt:     device.CreatedAt,
 		LastSeenAt:    device.LastSeenAt,
 		TrustLevel:    device.TrustLevel,
-		Platform:      "", // Not in storage.Device
-		AppVersion:    "", // Not in storage.Device
-		Location:      "", // Not in storage.Device
+		Platform:      "",   // Not in storage.Device
+		AppVersion:    "",   // Not in storage.Device
+		Location:      "",   // Not in storage.Device
 		Active:        true, // Default to active
 	}
 
@@ -944,7 +944,7 @@ func (r *AccountRepository) CreateSessionFromStruct(ctx context.Context, session
 	if session == nil {
 		return fmt.Errorf("session cannot be nil")
 	}
-	
+
 	// Create a models.Session from the storage.Session
 	modelSession := &models.Session{
 		SessionID:    session.SessionID,
@@ -960,10 +960,10 @@ func (r *AccountRepository) CreateSessionFromStruct(ctx context.Context, session
 		DeviceID:     session.DeviceID,
 		IsRevoked:    false,
 	}
-	
+
 	// Set scopes if needed (empty for now since not in storage.Session)
 	modelSession.Scopes = []string{}
-	
+
 	err := r.db.WithContext(ctx).Model(modelSession).Create()
 	if err != nil {
 		r.logger.Error("failed to create session from struct",
@@ -972,11 +972,11 @@ func (r *AccountRepository) CreateSessionFromStruct(ctx context.Context, session
 			zap.Error(err))
 		return fmt.Errorf("failed to create session from struct: %w", err)
 	}
-	
+
 	r.logger.Debug("session created from struct successfully",
 		zap.String("sessionID", session.SessionID),
 		zap.String("username", session.Username))
-	
+
 	return nil
 }
 
@@ -990,10 +990,10 @@ func (r *AccountRepository) StoreRecoveryToken(ctx context.Context, key string, 
 		Data:      data,
 		CreatedAt: time.Now(),
 	}
-	
+
 	// Update keys to set SK and TTL
 	recoveryToken.UpdateKeys()
-	
+
 	// Store in DynamoDB
 	err := r.db.WithContext(ctx).Model(recoveryToken).Create()
 	if err != nil {
@@ -1002,7 +1002,7 @@ func (r *AccountRepository) StoreRecoveryToken(ctx context.Context, key string, 
 			zap.Error(err))
 		return err
 	}
-	
+
 	r.logger.Debug("stored recovery token", zap.String("key", key))
 	return nil
 }
@@ -1010,13 +1010,13 @@ func (r *AccountRepository) StoreRecoveryToken(ctx context.Context, key string, 
 // GetRecoveryToken retrieves a recovery token
 func (r *AccountRepository) GetRecoveryToken(ctx context.Context, key string) (map[string]interface{}, error) {
 	var recoveryToken models.RecoveryToken
-	
+
 	// Query by PK and SK
 	err := r.db.WithContext(ctx).Model(&models.RecoveryToken{}).
 		Where("PK", "=", key).
 		Where("SK", "=", "TOKEN").
 		First(&recoveryToken)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Return nil for not found (matching legacy behavior)
@@ -1028,7 +1028,7 @@ func (r *AccountRepository) GetRecoveryToken(ctx context.Context, key string) (m
 			zap.Error(err))
 		return nil, err
 	}
-	
+
 	r.logger.Debug("retrieved recovery token", zap.String("key", key))
 	return recoveryToken.Data, nil
 }
@@ -1040,14 +1040,14 @@ func (r *AccountRepository) DeleteRecoveryToken(ctx context.Context, key string)
 		Where("PK", "=", key).
 		Where("SK", "=", "TOKEN").
 		Delete()
-	
+
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("failed to delete recovery token",
 			zap.String("key", key),
 			zap.Error(err))
 		return err
 	}
-	
+
 	r.logger.Debug("deleted recovery token", zap.String("key", key))
 	return nil
 }
@@ -1062,10 +1062,10 @@ func (r *AccountRepository) StoreWebAuthnChallenge(ctx context.Context, challeng
 
 	// Convert storage.WebAuthnChallenge to models.WebAuthnChallenge
 	modelChallenge := &models.WebAuthnChallenge{
-		Challenge:   challenge.Challenge,
-		UserID:      challenge.UserID,
-		ExpiresAt:   challenge.ExpiresAt,
-		Type:        challenge.Type,
+		Challenge: challenge.Challenge,
+		UserID:    challenge.UserID,
+		ExpiresAt: challenge.ExpiresAt,
+		Type:      challenge.Type,
 	}
 
 	// Convert SessionData to bytes if needed
@@ -1236,13 +1236,13 @@ func (r *AccountRepository) UpdateWalletLastUsed(ctx context.Context, username, 
 // GetLinkedProviders gets all linked OAuth providers for a user
 func (r *AccountRepository) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
 	var providerAccounts []models.ProviderAccount
-	
+
 	// Query GSI2 to get all provider accounts for the user
 	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
 		Index("user-providers-index").
 		Where("GSI2PK", "=", fmt.Sprintf("USER_PROVIDERS#%s", username)).
 		All(&providerAccounts)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// User has no linked providers
@@ -1253,7 +1253,7 @@ func (r *AccountRepository) GetLinkedProviders(ctx context.Context, username str
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get linked providers: %w", err)
 	}
-	
+
 	// Extract unique provider names from active accounts
 	providerSet := make(map[string]bool)
 	for _, account := range providerAccounts {
@@ -1261,16 +1261,16 @@ func (r *AccountRepository) GetLinkedProviders(ctx context.Context, username str
 			providerSet[account.Provider] = true
 		}
 	}
-	
+
 	// Convert set to slice
 	providers := make([]string, 0, len(providerSet))
 	for provider := range providerSet {
 		providers = append(providers, provider)
 	}
-	
+
 	r.logger.Debug("retrieved linked providers",
 		zap.String("username", username),
 		zap.Strings("providers", providers))
-	
+
 	return providers, nil
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ModerationMetricsRepository interface defines methods for moderation metrics operations
@@ -15,20 +16,20 @@ type ModerationMetricsRepository interface {
 	// Metrics recording
 	RecordMetricsEntry(ctx context.Context, entry *models.ModerationMetricsEntry) error
 	RecordMetricsEntries(ctx context.Context, entries []*models.ModerationMetricsEntry) error
-	
+
 	// False positive tracking
 	RecordFalsePositive(ctx context.Context, fp *models.ModerationFalsePositive) error
 	GetFalsePositives(ctx context.Context, timeRange models.ModerationMetricsTimeRange) ([]*models.ModerationFalsePositive, error)
-	
+
 	// Decision sampling
 	RecordDecisionSample(ctx context.Context, sample *models.ModerationDecisionSample) error
 	GetDecisionSamples(ctx context.Context, timeRange models.ModerationMetricsTimeRange, decision string) ([]*models.ModerationDecisionSample, error)
-	
+
 	// Pattern statistics
 	UpdatePatternStats(ctx context.Context, stats *models.ModerationPatternStats) error
 	GetTopPatterns(ctx context.Context, limit int) ([]*models.ModerationPatternStats, error)
 	IncrementPatternHit(ctx context.Context, patternID, patternName string) error
-	
+
 	// Statistics retrieval
 	GetMetricsEntries(ctx context.Context, timeRange models.ModerationMetricsTimeRange, metricTypes []string) ([]*models.ModerationMetricsEntry, error)
 	GetAggregatedStats(ctx context.Context, timeRange models.ModerationMetricsTimeRange) (*models.ModerationMetricsStats, error)
@@ -52,22 +53,22 @@ func NewModerationMetricsRepository(db core.DB, logger *zap.Logger) ModerationMe
 func (r *moderationMetricsRepository) RecordMetricsEntry(ctx context.Context, entry *models.ModerationMetricsEntry) error {
 	entry.UpdateKeys()
 	entry.CreatedAt = time.Now()
-	
+
 	err := r.db.WithContext(ctx).Model(entry).Create()
 	if err != nil {
-		r.logger.Error("failed to record metrics entry", 
+		r.logger.Error("failed to record metrics entry",
 			zap.String("metric_type", entry.MetricType),
 			zap.Int64("count", entry.Count),
 			zap.Error(err))
 		return fmt.Errorf("record metrics entry: %w", err)
 	}
-	
+
 	r.logger.Debug("recorded metrics entry",
 		zap.String("metric_type", entry.MetricType),
 		zap.Int64("count", entry.Count),
 		zap.String("date", entry.Date),
 		zap.String("hour", entry.Hour))
-	
+
 	return nil
 }
 
@@ -130,8 +131,8 @@ func (r *moderationMetricsRepository) GetFalsePositives(ctx context.Context, tim
 	// Query by GSI1 for efficient time range queries
 	err := r.db.WithContext(ctx).Model(&models.ModerationFalsePositive{}).
 		Where("GSI1PK", "=", "FALSE_POSITIVES").
-		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format("2006-01-02"))).
-		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format("2006-01-02"))).
+		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
+		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 		All(&results)
 
 	if err != nil {
@@ -180,8 +181,8 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 		// Query by specific decision type using GSI1
 		err := r.db.WithContext(ctx).Model(&models.ModerationDecisionSample{}).
 			Where("GSI1PK", "=", fmt.Sprintf("DECISION#%s", decision)).
-			Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format("2006-01-02"))).
-			Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format("2006-01-02"))).
+			Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
+			Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 			All(&results)
 
 		if err != nil {
@@ -197,7 +198,7 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 		// We need to iterate through each date since we can't query ranges across different partition keys
 		current := timeRange.Start
 		for current.Before(timeRange.End) || current.Equal(timeRange.End) {
-			dateStr := current.Format("2006-01-02")
+			dateStr := current.Format(common.DateFormat)
 			var dayResults []*models.ModerationDecisionSample
 
 			err := r.db.WithContext(ctx).Model(&models.ModerationDecisionSample{}).
@@ -341,8 +342,8 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 			var results []*models.ModerationMetricsEntry
 			err := r.db.WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
 				Where("GSI1PK", "=", fmt.Sprintf("METRIC_TYPE#%s", metricType)).
-				Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format("2006-01-02"))).
-				Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format("2006-01-02"))).
+				Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
+				Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 				All(&results)
 
 			if err != nil {
@@ -358,7 +359,7 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 		// Query all metrics by date range using primary key
 		current := timeRange.Start
 		for current.Before(timeRange.End) || current.Equal(timeRange.End) {
-			dateStr := current.Format("2006-01-02")
+			dateStr := current.Format(common.DateFormat)
 			var dayResults []*models.ModerationMetricsEntry
 
 			err := r.db.WithContext(ctx).Model(&models.ModerationMetricsEntry{}).

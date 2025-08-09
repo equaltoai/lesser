@@ -20,12 +20,12 @@ type Follow struct {
 	GSI2SK string `dynamorm:"index:gsi2-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{follower}#{followed}"
 
 	// Relationship data
-	FollowerUsername string    `json:"follower_username"`
-	FollowedUsername string    `json:"followed_username"`
-	ActivityID       string    `json:"activity_id"`       // The Follow activity ID
-	State            string    `json:"state"`             // "pending", "accepted", "rejected"
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	FollowerUsername string     `json:"follower_username"`
+	FollowedUsername string     `json:"followed_username"`
+	ActivityID       string     `json:"activity_id"` // The Follow activity ID
+	State            string     `json:"state"`       // "pending", "accepted", "rejected"
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 	AcceptedAt       *time.Time `json:"accepted_at,omitempty"`
 }
 
@@ -74,7 +74,7 @@ func (f *Follow) Reject() {
 // updateGSI2 updates the GSI2 keys based on current state
 func (f *Follow) updateGSI2() {
 	f.GSI2PK = fmt.Sprintf("follow#state#%s", f.State)
-	f.GSI2SK = fmt.Sprintf("%s#%s#%s", 
+	f.GSI2SK = fmt.Sprintf("%s#%s#%s",
 		f.CreatedAt.Format(time.RFC3339),
 		f.FollowerUsername,
 		f.FollowedUsername,

@@ -1,3 +1,4 @@
+// Package ai provides configuration and threshold management for AI-based content moderation.
 package ai
 
 // ThresholdSet defines action thresholds for different confidence levels
@@ -60,7 +61,8 @@ func DefaultAIConfig() *AIConfig {
 		EnableImageAnalysis: true,
 		BedrockModelID:      "anthropic.claude-v2",
 		ToxicityModelARN:    "", // Custom model if available
-		S3Bucket:            "lesser-media-analysis",
+		S3Bucket:   "lesser-media-analysis",
+		AIQueueURL: "", // Set from environment
 	}
 }
 

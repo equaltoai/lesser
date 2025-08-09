@@ -18,20 +18,20 @@ type TrusteeConfig struct {
 	Confirmed bool      `json:"confirmed"`
 
 	// Additional attributes
-	Category         string    `json:"category"`          // recovery, moderation, emergency
-	TrustLevel       string    `json:"trust_level"`       // full, limited, emergency_only
+	Category         string     `json:"category"`    // recovery, moderation, emergency
+	TrustLevel       string     `json:"trust_level"` // full, limited, emergency_only
 	ConfirmedAt      *time.Time `json:"confirmed_at,omitempty"`
 	LastUsed         *time.Time `json:"last_used,omitempty"`
-	UsageCount       int       `json:"usage_count"`
-	RecoveryPriority int       `json:"recovery_priority"` // Order in recovery process (1 = first)
-	Permissions      []string  `json:"permissions,omitempty"` // Specific permissions granted
-	Notes            string    `json:"notes,omitempty"`   // User notes about this trustee
-	UpdatedAt        time.Time `json:"updated_at"`
+	UsageCount       int        `json:"usage_count"`
+	RecoveryPriority int        `json:"recovery_priority"`     // Order in recovery process (1 = first)
+	Permissions      []string   `json:"permissions,omitempty"` // Specific permissions granted
+	Notes            string     `json:"notes,omitempty"`       // User notes about this trustee
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // UpdateKeys updates the partition and sort keys
 func (t *TrusteeConfig) UpdateKeys() {
-	t.PK = "TRUSTEE#CONFIG"
+	t.PK = TrusteeConfigPK
 	t.SK = fmt.Sprintf("%s#%s", t.Category, t.Username)
 }
 
@@ -55,19 +55,19 @@ func NewTrusteeConfig(username, actorID, category string) *TrusteeConfig {
 
 // GetTrusteeConfigKey returns the key for retrieving a specific trustee config
 func GetTrusteeConfigKey(category, username string) (pk, sk string) {
-	return "TRUSTEE#CONFIG", fmt.Sprintf("%s#%s", category, username)
+	return TrusteeConfigPK, fmt.Sprintf("%s#%s", category, username)
 }
 
 // GetTrusteeConfigsByUserKeys returns keys for querying all trustees for a user
-func GetTrusteeConfigsByUserKeys(username string) (pk, skStart, skEnd string) {
+func GetTrusteeConfigsByUserKeys(_ string) (pk, skStart, skEnd string) {
 	// This would require a GSI to efficiently query by username
 	// For now, return pattern that would need scanning
-	return "TRUSTEE#CONFIG", "", ""
+	return TrusteeConfigPK, "", ""
 }
 
 // GetTrusteeConfigsByCategoryKeys returns keys for querying all trustees in a category
 func GetTrusteeConfigsByCategoryKeys(category string) (pk, skPrefix string) {
-	return "TRUSTEE#CONFIG", fmt.Sprintf("%s#", category)
+	return TrusteeConfigPK, fmt.Sprintf("%s#", category)
 }
 
 // Confirm marks the trustee relationship as confirmed
@@ -103,14 +103,14 @@ func (t *TrusteeConfig) CanPerformAction(action string) bool {
 			return false
 		}
 	}
-	
+
 	// Check specific permissions
 	for _, perm := range t.Permissions {
 		if perm == action || perm == "*" {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

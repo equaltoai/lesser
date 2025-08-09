@@ -12,12 +12,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// HandleGetAnnouncementsLift handles GET /api/v1/announcements
-func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
-	// Extract token (optional for public announcements)
+// extractUsernameFromContext extracts the username from auth header or test header
+func (h *Handler) extractUsernameFromContext(ctx *lift.Context) string {
 	var username string
 	authHeader := ctx.Header("Authorization")
-	
+
 	// Check for test mode support
 	testUsername := ctx.Header("X-Test-Username")
 	if testUsername == "" {
@@ -38,6 +37,13 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 		// Use test username for testing
 		username = testUsername
 	}
+	return username
+}
+
+// HandleGetAnnouncementsLift handles GET /api/v1/announcements
+func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
+	// Extract token (optional for public announcements)
+	username := h.extractUsernameFromContext(ctx)
 
 	// Get active announcements
 	announcements, err := h.repos.Announcement().GetAnnouncements(ctx.Context, true) // Only active announcements
@@ -70,75 +76,10 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 		}
 
 		// Get reactions for this announcement
-		reactions, err := h.repos.Announcement().GetAnnouncementReactions(ctx.Context, announcement.ID)
-		if err != nil {
-			h.logger.Warn("failed to get announcement reactions",
-				zap.String("announcement_id", announcement.ID),
-				zap.Error(err))
-			reactions = make(map[string][]string)
-		}
+		apiReactions := h.buildAnnouncementReactions(ctx, announcement.ID, username)
 
-		// Convert reactions to API format
-		apiReactions := make([]models.AnnouncementReaction, 0)
-		for emojiName, users := range reactions {
-			// Check if current user reacted
-			me := false
-			if username != "" {
-				for _, user := range users {
-					if user == username {
-						me = true
-						break
-					}
-				}
-			}
-
-			reaction := models.AnnouncementReaction{
-				Name:  emojiName,
-				Count: len(users),
-				Me:    me,
-			}
-
-			// Check if it's a custom emoji (starts with :)
-			if strings.HasPrefix(emojiName, ":") && strings.HasSuffix(emojiName, ":") {
-				// Extract shortcode without colons
-				shortcode := strings.TrimPrefix(strings.TrimSuffix(emojiName, ":"), ":")
-
-				// Look up custom emoji
-				emoji, err := h.repos.Emoji().GetCustomEmoji(ctx.Context, shortcode)
-				if err == nil && emoji != nil && !emoji.Disabled {
-					reaction.URL = emoji.URL
-					reaction.StaticURL = emoji.StaticURL
-				}
-			}
-
-			apiReactions = append(apiReactions, reaction)
-		}
-
-		// Set up available reactions if none are specified
-		if len(announcement.Reactions) == 0 {
-			// Default reactions
-			announcement.Reactions = []storage.Reaction{
-				{Name: "👍", Count: 0, Me: false},
-				{Name: "👎", Count: 0, Me: false},
-				{Name: "😄", Count: 0, Me: false},
-				{Name: "🎉", Count: 0, Me: false},
-				{Name: "😕", Count: 0, Me: false},
-				{Name: "❤️", Count: 0, Me: false},
-				{Name: "🚀", Count: 0, Me: false},
-				{Name: "👀", Count: 0, Me: false},
-			}
-		}
-
-		// Merge actual reactions with available reactions
-		for i, availableReaction := range announcement.Reactions {
-			for _, actualReaction := range apiReactions {
-				if availableReaction.Name == actualReaction.Name {
-					announcement.Reactions[i].Count = actualReaction.Count
-					announcement.Reactions[i].Me = actualReaction.Me
-					break
-				}
-			}
-		}
+		// Merge reactions
+		announcement.Reactions = h.mergeReactions(announcement.Reactions, apiReactions)
 
 		apiAnnouncement := models.Announcement{
 			ID:          announcement.ID,
@@ -171,6 +112,84 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 	return ctx.JSON(apiAnnouncements)
 }
 
+// buildAnnouncementReactions builds the reactions for an announcement
+func (h *Handler) buildAnnouncementReactions(ctx *lift.Context, announcementID string, username string) []models.AnnouncementReaction {
+	reactions, err := h.repos.Announcement().GetAnnouncementReactions(ctx.Context, announcementID)
+	if err != nil {
+		h.logger.Warn("failed to get announcement reactions",
+			zap.String("announcement_id", announcementID),
+			zap.Error(err))
+		reactions = make(map[string][]string)
+	}
+
+	// Convert reactions to API format
+	apiReactions := make([]models.AnnouncementReaction, 0)
+	for emojiName, users := range reactions {
+		// Check if current user reacted
+		me := false
+		if username != "" {
+			for _, user := range users {
+				if user == username {
+					me = true
+					break
+				}
+			}
+		}
+
+		reaction := models.AnnouncementReaction{
+			Name:  emojiName,
+			Count: len(users),
+			Me:    me,
+		}
+
+		// Check if it's a custom emoji (starts with :)
+		if strings.HasPrefix(emojiName, ":") && strings.HasSuffix(emojiName, ":") {
+			// Extract shortcode without colons
+			shortcode := strings.TrimPrefix(strings.TrimSuffix(emojiName, ":"), ":")
+
+			// Look up custom emoji
+			emoji, err := h.repos.Emoji().GetCustomEmoji(ctx.Context, shortcode)
+			if err == nil && emoji != nil && !emoji.Disabled {
+				reaction.URL = emoji.URL
+				reaction.StaticURL = emoji.StaticURL
+			}
+		}
+
+		apiReactions = append(apiReactions, reaction)
+	}
+	return apiReactions
+}
+
+// mergeReactions merges actual reactions with available reactions
+func (h *Handler) mergeReactions(availableReactions []storage.Reaction, actualReactions []models.AnnouncementReaction) []storage.Reaction {
+	// Set up default reactions if none are specified
+	if len(availableReactions) == 0 {
+		availableReactions = []storage.Reaction{
+			{Name: "👍", Count: 0, Me: false},
+			{Name: "👎", Count: 0, Me: false},
+			{Name: "😄", Count: 0, Me: false},
+			{Name: "🎉", Count: 0, Me: false},
+			{Name: "😕", Count: 0, Me: false},
+			{Name: "❤️", Count: 0, Me: false},
+			{Name: "🚀", Count: 0, Me: false},
+			{Name: "👀", Count: 0, Me: false},
+		}
+	}
+
+	// Merge actual reactions with available reactions
+	for i, availableReaction := range availableReactions {
+		for _, actualReaction := range actualReactions {
+			if availableReaction.Name == actualReaction.Name {
+				availableReactions[i].Count = actualReaction.Count
+				availableReactions[i].Me = actualReaction.Me
+				break
+			}
+		}
+	}
+
+	return availableReactions
+}
+
 // HandleDismissAnnouncementLift handles POST /api/v1/announcements/:id/dismiss
 func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	announcementID := ctx.Param("id")
@@ -193,41 +212,31 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Check if announcement exists
-	_, err = h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
-	if err != nil {
-		if err == storage.ErrNotFound {
-			return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
-		}
-		h.logger.Error("failed to get announcement",
-			zap.String("announcement_id", announcementID),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
+	if err != nil || announcement == nil {
+		return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
 	}
 
 	// Dismiss the announcement
-	err = h.repos.Announcement().DismissAnnouncement(ctx.Context, claims.Username, announcementID)
+	err = h.repos.Announcement().DismissAnnouncement(ctx.Context, announcementID, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to dismiss announcement",
-			zap.String("username", claims.Username),
 			zap.String("announcement_id", announcementID),
+			zap.String("username", claims.Username),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Return empty object
-	return ctx.JSON(map[string]any{})
+	return ctx.JSON(map[string]interface{}{})
 }
 
 // HandleAddAnnouncementReactionLift handles PUT /api/v1/announcements/:id/reactions/:name
 func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
 	announcementID := ctx.Param("id")
 	reactionName := ctx.Param("name")
-	
-	if announcementID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID is required"})
-	}
-	if reactionName == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Reaction name is required"})
+
+	if announcementID == "" || reactionName == "" {
+		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID and reaction name are required"})
 	}
 
 	// Extract and validate token
@@ -246,66 +255,32 @@ func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
 
 	// Check if announcement exists
 	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
-	if err != nil {
-		if err == storage.ErrNotFound {
-			return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
-		}
-		h.logger.Error("failed to get announcement",
-			zap.String("announcement_id", announcementID),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	if err != nil || announcement == nil {
+		return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
 	}
 
-	// Check if reaction is allowed
-	reactionAllowed := false
-	if len(announcement.Reactions) == 0 {
-		// If no reactions specified, allow common emojis
-		commonReactions := []string{"👍", "👎", "😄", "🎉", "😕", "❤️", "🚀", "👀"}
-		for _, r := range commonReactions {
-			if r == reactionName {
-				reactionAllowed = true
-				break
-			}
-		}
-	} else {
-		// Check if reaction is in allowed list
-		for _, r := range announcement.Reactions {
-			if r.Name == reactionName {
-				reactionAllowed = true
-				break
-			}
-		}
-	}
-
-	if !reactionAllowed {
-		return ctx.Status(422).JSON(map[string]string{"error": "Reaction not allowed"})
-	}
-
-	// Add the reaction
-	err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
+	// Add reaction
+	err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context, announcementID, claims.Username, reactionName)
 	if err != nil {
 		h.logger.Error("failed to add announcement reaction",
-			zap.String("username", claims.Username),
 			zap.String("announcement_id", announcementID),
+			zap.String("username", claims.Username),
 			zap.String("reaction", reactionName),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Return empty object
-	return ctx.JSON(map[string]any{})
+	// Return the announcement with updated reactions
+	return h.HandleGetAnnouncementsLift(ctx)
 }
 
 // HandleRemoveAnnouncementReactionLift handles DELETE /api/v1/announcements/:id/reactions/:name
 func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error {
 	announcementID := ctx.Param("id")
 	reactionName := ctx.Param("name")
-	
-	if announcementID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID is required"})
-	}
-	if reactionName == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Reaction name is required"})
+
+	if announcementID == "" || reactionName == "" {
+		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID and reaction name are required"})
 	}
 
 	// Extract and validate token
@@ -323,78 +298,53 @@ func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error 
 	}
 
 	// Check if announcement exists
-	_, err = h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
-	if err != nil {
-		if err == storage.ErrNotFound {
-			return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
-		}
-		h.logger.Error("failed to get announcement",
-			zap.String("announcement_id", announcementID),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
+	if err != nil || announcement == nil {
+		return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
 	}
 
-	// Remove the reaction
-	err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
+	// Remove reaction
+	err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context, announcementID, claims.Username, reactionName)
 	if err != nil {
 		h.logger.Error("failed to remove announcement reaction",
-			zap.String("username", claims.Username),
 			zap.String("announcement_id", announcementID),
+			zap.String("username", claims.Username),
 			zap.String("reaction", reactionName),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Return empty object
-	return ctx.JSON(map[string]any{})
+	// Return the announcement with updated reactions
+	return h.HandleGetAnnouncementsLift(ctx)
 }
 
-// HandleCreateAnnouncementLift handles POST /api/v1/admin/announcements (admin only)
+// HandleCreateAnnouncementLift handles POST /api/v1/admin/announcements
 func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
-	// Extract and validate token
-	authHeader := ctx.Header("Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check admin role
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
-	if err != nil || user.Role != "admin" {
-		return ctx.Status(403).JSON(map[string]string{"error": "Admin access required"})
-	}
-
-	// Parse request with fallback for testing
+	// Parse request
 	var req models.CreateAnnouncementRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments - try parsing raw body as JSON
-		if len(ctx.Request.Body) > 0 {
-			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
-			}
-		} else {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
-		}
+	body := ctx.Request.Body
+	if err := json.Unmarshal(body, &req); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "Invalid request body"})
 	}
 
 	// Validate required fields
-	if req.Content == "" {
-		return ctx.Status(422).JSON(map[string]string{"error": "Content is required"})
+	if req.Text == "" {
+		return ctx.Status(422).JSON(map[string]string{"error": "Text is required"})
+	}
+
+	// Require admin authentication
+	if _, err := h.requireAdminLift(ctx); err != nil {
+		return ctx.Status(403).JSON(map[string]string{"error": "Admin access required"})
 	}
 
 	// Create announcement
 	announcement := &storage.Announcement{
-		Content:   req.Content,
-		Text:      req.Text,
-		AllDay:    req.AllDay,
-		CreatedBy: claims.Username,
+		ID:          time.Now().Format("20060102150405"),
+		Content:     req.Text, // HTML content
+		Text:        req.Text, // Plain text
+		AllDay:      req.AllDay,
+		PublishedAt: time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	// Parse optional dates
@@ -414,43 +364,17 @@ func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
 		announcement.EndsAt = &endsAt
 	}
 
-	// Create the announcement
+	// Store announcement
 	if err := h.repos.Announcement().CreateAnnouncement(ctx.Context, announcement); err != nil {
-		h.logger.Error("failed to create announcement",
-			zap.String("admin", claims.Username),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		h.logger.Error("failed to create announcement", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "Failed to create announcement"})
 	}
 
-	// Return the created announcement
-	apiAnnouncement := models.Announcement{
-		ID:          announcement.ID,
-		Content:     announcement.Content,
-		Text:        announcement.Text,
-		PublishedAt: announcement.PublishedAt.Format(time.RFC3339),
-		UpdatedAt:   announcement.UpdatedAt.Format(time.RFC3339),
-		AllDay:      announcement.AllDay,
-		Read:        false,
-		Reactions:   []models.AnnouncementReaction{},
-		Mentions:    []models.AnnouncementAccount{},
-		Statuses:    []models.AnnouncementStatus{},
-		Tags:        []models.AnnouncementTag{},
-		Emojis:      []models.CustomEmoji{},
-	}
-
-	if announcement.StartsAt != nil {
-		startsAt := announcement.StartsAt.Format(time.RFC3339)
-		apiAnnouncement.StartsAt = &startsAt
-	}
-	if announcement.EndsAt != nil {
-		endsAt := announcement.EndsAt.Format(time.RFC3339)
-		apiAnnouncement.EndsAt = &endsAt
-	}
-
-	return ctx.JSON(apiAnnouncement)
+	// Return created announcement
+	return ctx.Status(201).JSON(announcement)
 }
 
-// Helper function to convert storage reactions to API format for Lift
+// convertReactionsToAPILift converts storage reactions to API format
 func convertReactionsToAPILift(reactions []storage.Reaction) []models.AnnouncementReaction {
 	apiReactions := make([]models.AnnouncementReaction, len(reactions))
 	for i, r := range reactions {

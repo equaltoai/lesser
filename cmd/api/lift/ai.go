@@ -37,7 +37,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 
 	// Get object ID from path parameters
 	objectID := ctx.Param("object_id")
-	
+
 	// Test mode fallback - extract from path
 	if objectID == "" && ctx.Request != nil && ctx.Request.Path != "" {
 		// Extract object_id from path like /api/v1/ai/analysis/test-object-123
@@ -46,7 +46,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 			objectID = parts[5]
 		}
 	}
-	
+
 	if objectID == "" {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
@@ -163,7 +163,7 @@ func (h *Handler) HandleGetAIStatsLift(ctx *lift.Context) error {
 
 	// Get time range
 	period := ctx.Query("period")
-	
+
 	// Test mode fallback - extract from path query string
 	if period == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
 		parts := strings.Split(ctx.Request.Path, "?")
@@ -178,7 +178,7 @@ func (h *Handler) HandleGetAIStatsLift(ctx *lift.Context) error {
 			}
 		}
 	}
-	
+
 	if period == "" {
 		period = "day"
 	}
@@ -236,4 +236,3 @@ func (h *Handler) HandleGetAISummaryLift(ctx *lift.Context) error {
 }
 
 // Helper methods removed - now handled by AIRepository
-

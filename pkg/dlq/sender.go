@@ -15,10 +15,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"go.uber.org/zap"
-
 )
 
 // DLQSender handles sending failed messages to dead letter queues
+//
+//nolint:revive // DLQ prefix clarifies this is Dead Letter Queue sender
 type DLQSender struct {
 	sqsClient *sqs.Client
 	logger    *zap.Logger
@@ -91,7 +92,7 @@ func (s *DLQSender) SendBatchFailedMessages(ctx context.Context, service string,
 	}
 
 	dlqQueueName := s.getDLQQueueName(service)
-	queueURL, err := s.getQueueURL(ctx, dlqQueueName) 
+	queueURL, err := s.getQueueURL(ctx, dlqQueueName)
 	if err != nil {
 		s.logger.Error("failed to get DLQ queue URL for batch",
 			zap.String("service", service),
@@ -131,7 +132,7 @@ func (s *DLQSender) SendBatchFailedMessages(ctx context.Context, service string,
 func (s *DLQSender) createDLQMessage(service string, originalMessage events.SQSMessage, processingError error) *DLQFailureMessage {
 	// Extract function context
 	functionName := os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
-	logGroup := os.Getenv("AWS_LAMBDA_LOG_GROUP_NAME") 
+	logGroup := os.Getenv("AWS_LAMBDA_LOG_GROUP_NAME")
 	logStream := os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME")
 
 	// Classify error
@@ -219,22 +220,22 @@ func (s *DLQSender) sendToDLQ(ctx context.Context, queueURL string, dlqMessage *
 
 	// Create message attributes
 	messageAttributes := make(map[string]types.MessageAttributeValue)
-	
+
 	messageAttributes["Service"] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(dlqMessage.Service),
 	}
-	
+
 	messageAttributes["ErrorType"] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(dlqMessage.ErrorInfo.ErrorType),
 	}
-	
+
 	messageAttributes["IsPermanent"] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(fmt.Sprintf("%t", dlqMessage.ErrorInfo.IsPermanent)),
 	}
-	
+
 	messageAttributes["Priority"] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(dlqMessage.ErrorInfo.Priority),
@@ -260,7 +261,7 @@ func (s *DLQSender) sendBatchToDLQ(ctx context.Context, queueURL string, service
 
 	for i, failure := range failures {
 		dlqMessage := s.createDLQMessage(service, failure.OriginalMessage, failure.Error)
-		
+
 		messageBody, err := json.Marshal(dlqMessage)
 		if err != nil {
 			s.logger.Error("failed to serialize DLQ message in batch",
@@ -336,16 +337,18 @@ func parseIntSafe(s string) int {
 // Data structures
 
 // DLQFailureMessage represents a message being sent to DLQ
+//
+//nolint:revive // DLQ prefix clarifies this is Dead Letter Queue message
 type DLQFailureMessage struct {
-	OriginalMessageID string                 `json:"original_message_id"`
-	Service           string                 `json:"service"`
-	QueueName         string                 `json:"queue_name"`
-	MessageBody       string                 `json:"message_body"`
-	MessageAttributes map[string]string      `json:"message_attributes"`
-	ErrorInfo         *ErrorInfo             `json:"error_info"`
-	ProcessingContext ProcessingContext      `json:"processing_context"`
-	RetryCount        int                    `json:"retry_count"`
-	Timestamp         time.Time              `json:"timestamp"`
+	OriginalMessageID string            `json:"original_message_id"`
+	Service           string            `json:"service"`
+	QueueName         string            `json:"queue_name"`
+	MessageBody       string            `json:"message_body"`
+	MessageAttributes map[string]string `json:"message_attributes"`
+	ErrorInfo         *ErrorInfo        `json:"error_info"`
+	ProcessingContext ProcessingContext `json:"processing_context"`
+	RetryCount        int               `json:"retry_count"`
+	Timestamp         time.Time         `json:"timestamp"`
 }
 
 // ProcessingContext contains context about the failed processing
@@ -369,7 +372,7 @@ type ProcessingFailure struct {
 // WrapSQSHandler wraps an existing SQS handler to automatically send failures to DLQ
 func WrapSQSHandler(service string, handler func(context.Context, events.SQSEvent) error, logger *zap.Logger) func(context.Context, events.SQSEvent) error {
 	sender := NewDLQSender(logger)
-	
+
 	return func(ctx context.Context, event events.SQSEvent) error {
 		// Initialize DLQ sender
 		if err := sender.InitializeAWSClients(ctx); err != nil {

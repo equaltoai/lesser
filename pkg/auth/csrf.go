@@ -154,7 +154,7 @@ func (m *CSRFManager) ValidateToken(token string, userID string) error {
 	}
 
 	// Single use - delete after validation
-	m.store.Delete(token)
+	_ = m.store.Delete(token)
 
 	return nil
 }
@@ -232,12 +232,12 @@ func GenerateCSRFTokenHandler(manager *CSRFManager) http.HandlerFunc {
 		if err != nil {
 			statusCode, message := common.HandleError(nil, common.ErrInternal(err))
 			w.WriteHeader(statusCode)
-			w.Write([]byte(message))
+			_, _ = w.Write([]byte(message))
 			return
 		}
 
 		// Return token
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"csrf_token": "` + token + `"}`))
+		_, _ = w.Write([]byte(`{"csrf_token": "` + token + `"}`))
 	}
 }

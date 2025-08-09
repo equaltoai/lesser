@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// Mock Auth Service
 
 // MockAuthService provides a mock implementation of the auth service
 type MockAuthService struct {
@@ -47,19 +46,19 @@ func (m *MockAuthService) RevokeToken(token string) error {
 	return args.Error(0)
 }
 
-// Mock Storage Interface
 
 // MockStorage provides a mock implementation of the storage interface
 type MockStorage struct {
 	mock.Mock
 }
 
-// Actor methods
+// CreateActor mocks the CreateActor method
 func (m *MockStorage) CreateActor(ctx context.Context, actor *models.Actor) error {
 	args := m.Called(ctx, actor)
 	return args.Error(0)
 }
 
+// GetActor mocks the GetActor method
 func (m *MockStorage) GetActor(ctx context.Context, id string) (*models.Actor, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
@@ -68,22 +67,25 @@ func (m *MockStorage) GetActor(ctx context.Context, id string) (*models.Actor, e
 	return args.Get(0).(*models.Actor), args.Error(1)
 }
 
+// UpdateActor mocks the UpdateActor method
 func (m *MockStorage) UpdateActor(ctx context.Context, actor *models.Actor) error {
 	args := m.Called(ctx, actor)
 	return args.Error(0)
 }
 
+// DeleteActor mocks the DeleteActor method
 func (m *MockStorage) DeleteActor(ctx context.Context, id string) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
 
-// Status methods
+// CreateStatus mocks the CreateStatus method
 func (m *MockStorage) CreateStatus(ctx context.Context, status *models.Status) error {
 	args := m.Called(ctx, status)
 	return args.Error(0)
 }
 
+// GetStatus mocks the GetStatus method
 func (m *MockStorage) GetStatus(ctx context.Context, id string) (*models.Status, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
@@ -92,22 +94,25 @@ func (m *MockStorage) GetStatus(ctx context.Context, id string) (*models.Status,
 	return args.Get(0).(*models.Status), args.Error(1)
 }
 
+// UpdateStatus mocks the UpdateStatus method
 func (m *MockStorage) UpdateStatus(ctx context.Context, status *models.Status) error {
 	args := m.Called(ctx, status)
 	return args.Error(0)
 }
 
+// DeleteStatus mocks the DeleteStatus method
 func (m *MockStorage) DeleteStatus(ctx context.Context, id string) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
 
-// Activity methods - simplified since Activity may not exist as a model
+// CreateActivity mocks the CreateActivity method
 func (m *MockStorage) CreateActivity(ctx context.Context, actorID, activityType string) error {
 	args := m.Called(ctx, actorID, activityType)
 	return args.Error(0)
 }
 
+// GetActivity mocks the GetActivity method
 func (m *MockStorage) GetActivity(ctx context.Context, id string) (map[string]interface{}, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
@@ -116,7 +121,7 @@ func (m *MockStorage) GetActivity(ctx context.Context, id string) (map[string]in
 	return args.Get(0).(map[string]interface{}), args.Error(1)
 }
 
-// Timeline methods
+// GetTimeline mocks the GetTimeline method
 func (m *MockStorage) GetTimeline(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Timeline, string, error) {
 	args := m.Called(ctx, actorID, limit, cursor)
 	if args.Get(0) == nil {
@@ -125,22 +130,25 @@ func (m *MockStorage) GetTimeline(ctx context.Context, actorID string, limit int
 	return args.Get(0).([]*models.Timeline), args.String(1), args.Error(2)
 }
 
+// AddToTimeline mocks the AddToTimeline method
 func (m *MockStorage) AddToTimeline(ctx context.Context, actorID string, item *models.Timeline) error {
 	args := m.Called(ctx, actorID, item)
 	return args.Error(0)
 }
 
-// Relationship methods
+// Follow mocks the Follow method
 func (m *MockStorage) Follow(ctx context.Context, followerID, followingID string) error {
 	args := m.Called(ctx, followerID, followingID)
 	return args.Error(0)
 }
 
+// Unfollow mocks the Unfollow method
 func (m *MockStorage) Unfollow(ctx context.Context, followerID, followingID string) error {
 	args := m.Called(ctx, followerID, followingID)
 	return args.Error(0)
 }
 
+// GetFollowers mocks the GetFollowers method
 func (m *MockStorage) GetFollowers(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Actor, string, error) {
 	args := m.Called(ctx, actorID, limit, cursor)
 	if args.Get(0) == nil {
@@ -149,6 +157,7 @@ func (m *MockStorage) GetFollowers(ctx context.Context, actorID string, limit in
 	return args.Get(0).([]*models.Actor), args.String(1), args.Error(2)
 }
 
+// GetFollowing mocks the GetFollowing method
 func (m *MockStorage) GetFollowing(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Actor, string, error) {
 	args := m.Called(ctx, actorID, limit, cursor)
 	if args.Get(0) == nil {
@@ -157,18 +166,19 @@ func (m *MockStorage) GetFollowing(ctx context.Context, actorID string, limit in
 	return args.Get(0).([]*models.Actor), args.String(1), args.Error(2)
 }
 
-// Mock Repository Pattern
 
 // MockActorRepository provides a mock actor repository
 type MockActorRepository struct {
 	mock.Mock
 }
 
+// Create mocks the MockActorRepository.Create method
 func (m *MockActorRepository) Create(ctx context.Context, actor *models.Actor) error {
 	args := m.Called(ctx, actor)
 	return args.Error(0)
 }
 
+// GetByID mocks the MockActorRepository.GetByID method
 func (m *MockActorRepository) GetByID(ctx context.Context, id string) (*models.Actor, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
@@ -177,6 +187,7 @@ func (m *MockActorRepository) GetByID(ctx context.Context, id string) (*models.A
 	return args.Get(0).(*models.Actor), args.Error(1)
 }
 
+// GetByUsername mocks the MockActorRepository.GetByUsername method
 func (m *MockActorRepository) GetByUsername(ctx context.Context, username string) (*models.Actor, error) {
 	args := m.Called(ctx, username)
 	if args.Get(0) == nil {
@@ -185,16 +196,19 @@ func (m *MockActorRepository) GetByUsername(ctx context.Context, username string
 	return args.Get(0).(*models.Actor), args.Error(1)
 }
 
+// Update mocks the MockActorRepository.Update method
 func (m *MockActorRepository) Update(ctx context.Context, actor *models.Actor) error {
 	args := m.Called(ctx, actor)
 	return args.Error(0)
 }
 
+// Delete mocks the MockActorRepository.Delete method
 func (m *MockActorRepository) Delete(ctx context.Context, id string) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
 
+// List mocks the MockActorRepository.List method
 func (m *MockActorRepository) List(ctx context.Context, limit int, cursor string) ([]*models.Actor, string, error) {
 	args := m.Called(ctx, limit, cursor)
 	if args.Get(0) == nil {
@@ -208,11 +222,13 @@ type MockStatusRepository struct {
 	mock.Mock
 }
 
+// Create mocks the MockStatusRepository.Create method
 func (m *MockStatusRepository) Create(ctx context.Context, status *models.Status) error {
 	args := m.Called(ctx, status)
 	return args.Error(0)
 }
 
+// GetByID mocks the MockStatusRepository.GetByID method
 func (m *MockStatusRepository) GetByID(ctx context.Context, id string) (*models.Status, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
@@ -221,16 +237,19 @@ func (m *MockStatusRepository) GetByID(ctx context.Context, id string) (*models.
 	return args.Get(0).(*models.Status), args.Error(1)
 }
 
+// Update mocks the MockStatusRepository.Update method
 func (m *MockStatusRepository) Update(ctx context.Context, status *models.Status) error {
 	args := m.Called(ctx, status)
 	return args.Error(0)
 }
 
+// Delete mocks the MockStatusRepository.Delete method
 func (m *MockStatusRepository) Delete(ctx context.Context, id string) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
 
+// GetByActor mocks the MockStatusRepository.GetByActor method
 func (m *MockStatusRepository) GetByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Status, string, error) {
 	args := m.Called(ctx, actorID, limit, cursor)
 	if args.Get(0) == nil {
@@ -239,7 +258,6 @@ func (m *MockStatusRepository) GetByActor(ctx context.Context, actorID string, l
 	return args.Get(0).([]*models.Status), args.String(1), args.Error(2)
 }
 
-// Mock HTTP Client for external services
 
 // MockHTTPClient provides a mock HTTP client
 type MockHTTPClient struct {
@@ -253,7 +271,7 @@ type Response struct {
 	Headers    map[string]string
 }
 
-// Get mocks HTTP GET requests
+// Get mocks the MockHTTPClient.Get method
 func (m *MockHTTPClient) Get(url string, headers map[string]string) (*Response, error) {
 	args := m.Called(url, headers)
 	if args.Get(0) == nil {
@@ -262,7 +280,7 @@ func (m *MockHTTPClient) Get(url string, headers map[string]string) (*Response, 
 	return args.Get(0).(*Response), args.Error(1)
 }
 
-// Post mocks HTTP POST requests
+// Post mocks the MockHTTPClient.Post method
 func (m *MockHTTPClient) Post(url string, body []byte, headers map[string]string) (*Response, error) {
 	args := m.Called(url, body, headers)
 	if args.Get(0) == nil {
@@ -271,7 +289,7 @@ func (m *MockHTTPClient) Post(url string, body []byte, headers map[string]string
 	return args.Get(0).(*Response), args.Error(1)
 }
 
-// Put mocks HTTP PUT requests
+// Put mocks the MockHTTPClient.Put method
 func (m *MockHTTPClient) Put(url string, body []byte, headers map[string]string) (*Response, error) {
 	args := m.Called(url, body, headers)
 	if args.Get(0) == nil {
@@ -280,7 +298,7 @@ func (m *MockHTTPClient) Put(url string, body []byte, headers map[string]string)
 	return args.Get(0).(*Response), args.Error(1)
 }
 
-// Delete mocks HTTP DELETE requests
+// Delete mocks the MockHTTPClient.Delete method
 func (m *MockHTTPClient) Delete(url string, headers map[string]string) (*Response, error) {
 	args := m.Called(url, headers)
 	if args.Get(0) == nil {
@@ -289,7 +307,6 @@ func (m *MockHTTPClient) Delete(url string, headers map[string]string) (*Respons
 	return args.Get(0).(*Response), args.Error(1)
 }
 
-// Mock Setup Helpers
 
 // SetupMockAuthService creates a configured mock auth service
 func SetupMockAuthService() *MockAuthService {
@@ -306,7 +323,6 @@ func SetupMockRepositories() (*MockActorRepository, *MockStatusRepository) {
 	return &MockActorRepository{}, &MockStatusRepository{}
 }
 
-// Common Mock Expectations
 
 // ExpectValidToken sets up expectations for a valid token
 func ExpectValidToken(mockAuth *MockAuthService, token string, claims *auth.EnhancedClaims) {
@@ -338,7 +354,6 @@ func ExpectStatusNotFound(mockStorage *MockStorage, statusID string) {
 	mockStorage.On("GetStatus", mock.Anything, statusID).Return(nil, errors.New("not found"))
 }
 
-// Mock Error Types
 
 var (
 	// ErrMockDatabase represents a mock database error
@@ -354,7 +369,6 @@ var (
 	ErrMockTimeout = errors.New("mock timeout error")
 )
 
-// Mock Behavioral Patterns
 
 // MockWithDelay simulates network delays
 type MockWithDelay struct {
@@ -385,7 +399,6 @@ func (m *MockWithFailure) ShouldFail() bool {
 	return float64(m.CallCount%10) < (m.FailureRate * 10)
 }
 
-// Test Data Builders for Mocks
 
 // BuildTestActor creates a test actor for mocking
 func BuildTestActor(username string) *models.Actor {
@@ -420,8 +433,8 @@ func BuildTestStatus(actorID string, content string) *models.Status {
 // BuildTestActivity creates a test activity for mocking
 func BuildTestActivity(actorID string, activityType string) *models.Activity {
 	return &models.Activity{
-		PK:       fmt.Sprintf("ACTOR#%s", actorID),
-		SK:       fmt.Sprintf("ACTIVITY#%s#%s", time.Now().Format(time.RFC3339), fmt.Sprintf("activity-%s-%s", actorID, activityType)),
+		PK: fmt.Sprintf("ACTOR#%s", actorID),
+		SK: fmt.Sprintf("ACTIVITY#%s#%s", time.Now().Format(time.RFC3339), fmt.Sprintf("activity-%s-%s", actorID, activityType)),
 		Activity: &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{
 				ID:   fmt.Sprintf("https://example.com/activities/%s-%s", actorID, activityType),

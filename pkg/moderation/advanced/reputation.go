@@ -13,10 +13,34 @@ import (
 	"go.uber.org/zap"
 )
 
+// Reputation level constants
+const (
+	reputationLevelTrusted    = "trusted"
+	reputationLevelNormal     = "normal"
+	reputationLevelSuspicious = "suspicious"
+	reputationLevelBadActor   = "bad_actor"
+)
+
+// Event type constants
+const (
+	eventTypeViolation     = "violation"
+	eventTypeFalsePositive = "false_positive"
+	eventTypeGoodContent   = "good_content"
+	eventTypeUserReport    = "user_report"
+)
+
+// DynamoDB key constants
+const (
+	skReputation = "REPUTATION"
+)
+
 // safeIntToInt32 safely converts int to int32, capping at math.MaxInt32
 func safeIntToInt32(n int) int32 {
 	if n > math.MaxInt32 {
 		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
 	}
 	return int32(n)
 }
@@ -59,7 +83,7 @@ func (rs *ReputationScorer) GetReputationScore(ctx context.Context, actorID stri
 		TableName: aws.String(rs.tableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorID)},
-			"SK": &types.AttributeValueMemberS{Value: "REPUTATION"},
+			"SK": &types.AttributeValueMemberS{Value: skReputation},
 		},
 	}
 
@@ -118,12 +142,12 @@ func (rs *ReputationScorer) UpdateReputation(ctx context.Context, actorID string
 
 	// Update counts
 	switch event.EventType {
-	case "violation":
+	case eventTypeViolation:
 		score.ViolationCount++
 		score.LastViolation = event.Timestamp
-	case "false_positive":
+	case eventTypeFalsePositive:
 		score.FalsePositiveCount++
-	case "good_content":
+	case eventTypeGoodContent:
 		score.ContentCount++
 	}
 
@@ -207,7 +231,7 @@ func (rs *ReputationScorer) GetActorsByReputation(ctx context.Context, minScore,
 		TableName:        aws.String(rs.tableName),
 		FilterExpression: aws.String("SK = :sk AND Score BETWEEN :min AND :max"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":sk":  &types.AttributeValueMemberS{Value: "REPUTATION"},
+			":sk":  &types.AttributeValueMemberS{Value: skReputation},
 			":min": &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", minScore)},
 			":max": &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", maxScore)},
 		},
@@ -274,7 +298,7 @@ func (rs *ReputationScorer) createDefaultScore(actorID string) *ReputationScore 
 	return &ReputationScore{
 		ActorID:            actorID,
 		Score:              50.0, // Start at neutral
-		Level:              "normal",
+		Level:              reputationLevelNormal,
 		ViolationCount:     0,
 		FalsePositiveCount: 0,
 		ContentCount:       0,
@@ -287,7 +311,7 @@ func (rs *ReputationScorer) calculateEventImpact(event ReputationEvent, currentS
 	baseImpact := 0.0
 
 	switch event.EventType {
-	case "violation":
+	case eventTypeViolation:
 		baseImpact = -5.0
 		switch event.Severity {
 		case SeverityCritical:
@@ -300,21 +324,21 @@ func (rs *ReputationScorer) calculateEventImpact(event ReputationEvent, currentS
 			baseImpact = -2.0
 		}
 
-	case "false_positive":
+	case eventTypeFalsePositive:
 		// Restore some reputation for false positives
 		baseImpact = 3.0
 
-	case "good_content":
+	case eventTypeGoodContent:
 		// Small positive impact for good behavior
 		baseImpact = 1.0
 
-	case "user_report":
+	case eventTypeUserReport:
 		// Negative impact when reported by other users
 		baseImpact = -3.0
 	}
 
 	// Apply diminishing returns for repeated violations
-	if event.EventType == "violation" && currentScore.ViolationCount > 0 {
+	if event.EventType == eventTypeViolation && currentScore.ViolationCount > 0 {
 		multiplier := 1.0 + (float64(currentScore.ViolationCount) * 0.1)
 		baseImpact *= multiplier
 	}
@@ -345,13 +369,13 @@ func (rs *ReputationScorer) clampScore(score float64) float64 {
 func (rs *ReputationScorer) calculateLevel(score float64) string {
 	switch {
 	case score >= rs.config.TrustedActorThreshold:
-		return "trusted"
+		return reputationLevelTrusted
 	case score >= 40:
-		return "normal"
+		return reputationLevelNormal
 	case score >= rs.config.BadActorThreshold:
-		return "suspicious"
+		return reputationLevelSuspicious
 	default:
-		return "bad_actor"
+		return reputationLevelBadActor
 	}
 }
 
@@ -371,7 +395,7 @@ func (rs *ReputationScorer) applyDecay(score *ReputationScore) *ReputationScore 
 func (rs *ReputationScorer) saveScore(ctx context.Context, score *ReputationScore) error {
 	item := map[string]types.AttributeValue{
 		"PK":                 &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", score.ActorID)},
-		"SK":                 &types.AttributeValueMemberS{Value: "REPUTATION"},
+		"SK":                 &types.AttributeValueMemberS{Value: skReputation},
 		"Score":              &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", score.Score)},
 		"Level":              &types.AttributeValueMemberS{Value: score.Level},
 		"ViolationCount":     &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", score.ViolationCount)},
@@ -449,70 +473,114 @@ func (rs *ReputationScorer) parseReputationScore(item map[string]types.Attribute
 		Factors: []ReputationFactor{},
 	}
 
-	// Parse ActorID from PK
+	// Parse all fields
+	rs.parseActorID(item, score)
+	rs.parseNumericFields(item, score)
+	rs.parseStringFields(item, score)
+	rs.parseTimestamps(item, score)
+	rs.parseFactors(item, score)
+
+	return score, nil
+}
+
+// parseActorID extracts the ActorID from the PK field
+func (rs *ReputationScorer) parseActorID(item map[string]types.AttributeValue, score *ReputationScore) {
 	if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
 		score.ActorID = pk.Value[6:] // Remove "ACTOR#" prefix
 	}
+}
 
-	// Parse numeric fields
-	if v, ok := item["Score"].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%f", &score.Score); err != nil {
-			rs.logger.Warn("failed to parse Score", zap.String("value", v.Value), zap.Error(err))
-		}
-	}
-	if v, ok := item["ViolationCount"].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%d", &score.ViolationCount); err != nil {
-			rs.logger.Warn("failed to parse ViolationCount", zap.String("value", v.Value), zap.Error(err))
-		}
-	}
-	if v, ok := item["FalsePositiveCount"].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%d", &score.FalsePositiveCount); err != nil {
-			rs.logger.Warn("failed to parse FalsePositiveCount", zap.String("value", v.Value), zap.Error(err))
-		}
-	}
-	if v, ok := item["ContentCount"].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%d", &score.ContentCount); err != nil {
-			rs.logger.Warn("failed to parse ContentCount", zap.String("value", v.Value), zap.Error(err))
-		}
-	}
+// parseNumericFields parses all numeric fields from the item
+func (rs *ReputationScorer) parseNumericFields(item map[string]types.AttributeValue, score *ReputationScore) {
+	rs.parseFloatField(item, "Score", &score.Score)
+	rs.parseIntField(item, "ViolationCount", &score.ViolationCount)
+	rs.parseIntField(item, "FalsePositiveCount", &score.FalsePositiveCount)
+	rs.parseIntField(item, "ContentCount", &score.ContentCount)
+}
 
-	// Parse string fields
+// parseFloatField parses a single float field
+func (rs *ReputationScorer) parseFloatField(item map[string]types.AttributeValue, key string, target *float64) {
+	if v, ok := item[key].(*types.AttributeValueMemberN); ok {
+		if _, err := fmt.Sscanf(v.Value, "%f", target); err != nil {
+			rs.logger.Warn(fmt.Sprintf("failed to parse %s", key), zap.String("value", v.Value), zap.Error(err))
+		}
+	}
+}
+
+// parseIntField parses a single integer field
+func (rs *ReputationScorer) parseIntField(item map[string]types.AttributeValue, key string, target *int) {
+	if v, ok := item[key].(*types.AttributeValueMemberN); ok {
+		if _, err := fmt.Sscanf(v.Value, "%d", target); err != nil {
+			rs.logger.Warn(fmt.Sprintf("failed to parse %s", key), zap.String("value", v.Value), zap.Error(err))
+		}
+	}
+}
+
+// parseStringFields parses all string fields from the item
+func (rs *ReputationScorer) parseStringFields(item map[string]types.AttributeValue, score *ReputationScore) {
 	if v, ok := item["Level"].(*types.AttributeValueMemberS); ok {
 		score.Level = v.Value
 	}
+}
 
-	// Parse timestamps
-	if v, ok := item["UpdatedAt"].(*types.AttributeValueMemberS); ok {
-		score.UpdatedAt, _ = time.Parse(time.RFC3339, v.Value)
+// parseTimestamps parses timestamp fields from the item
+func (rs *ReputationScorer) parseTimestamps(item map[string]types.AttributeValue, score *ReputationScore) {
+	rs.parseTimestamp(item, "UpdatedAt", &score.UpdatedAt)
+	rs.parseTimestamp(item, "LastViolation", &score.LastViolation)
+}
+
+// parseTimestamp parses a single timestamp field
+func (rs *ReputationScorer) parseTimestamp(item map[string]types.AttributeValue, key string, target *time.Time) {
+	if v, ok := item[key].(*types.AttributeValueMemberS); ok {
+		*target, _ = time.Parse(time.RFC3339, v.Value)
 	}
-	if v, ok := item["LastViolation"].(*types.AttributeValueMemberS); ok {
-		score.LastViolation, _ = time.Parse(time.RFC3339, v.Value)
+}
+
+// parseFactors parses the reputation factors from the item
+func (rs *ReputationScorer) parseFactors(item map[string]types.AttributeValue, score *ReputationScore) {
+	v, ok := item["Factors"].(*types.AttributeValueMemberL)
+	if !ok {
+		return
 	}
 
-	// Parse factors
-	if v, ok := item["Factors"].(*types.AttributeValueMemberL); ok {
-		for _, factorItem := range v.Value {
-			if factorMap, ok := factorItem.(*types.AttributeValueMemberM); ok {
-				factor := ReputationFactor{}
-
-				if f, ok := factorMap.Value["Factor"].(*types.AttributeValueMemberS); ok {
-					factor.Factor = f.Value
-				}
-				if i, ok := factorMap.Value["Impact"].(*types.AttributeValueMemberN); ok {
-					if _, err := fmt.Sscanf(i.Value, "%f", &factor.Impact); err != nil {
-						rs.logger.Warn("failed to parse Impact", zap.String("value", i.Value), zap.Error(err))
-					}
-				}
-				if d, ok := factorMap.Value["Description"].(*types.AttributeValueMemberS); ok {
-					factor.Description = d.Value
-				}
-
-				score.Factors = append(score.Factors, factor)
-			}
+	for _, factorItem := range v.Value {
+		if factor := rs.parseSingleFactor(factorItem); factor != nil {
+			score.Factors = append(score.Factors, *factor)
 		}
 	}
+}
 
-	return score, nil
+// parseSingleFactor parses a single reputation factor
+func (rs *ReputationScorer) parseSingleFactor(factorItem types.AttributeValue) *ReputationFactor {
+	factorMap, ok := factorItem.(*types.AttributeValueMemberM)
+	if !ok {
+		return nil
+	}
+
+	factor := &ReputationFactor{}
+
+	// Parse factor fields
+	rs.parseFactorString(factorMap.Value, "Factor", &factor.Factor)
+	rs.parseFactorFloat(factorMap.Value, "Impact", &factor.Impact)
+	rs.parseFactorString(factorMap.Value, "Description", &factor.Description)
+
+	return factor
+}
+
+// parseFactorString parses a string field from a factor
+func (rs *ReputationScorer) parseFactorString(factorMap map[string]types.AttributeValue, key string, target *string) {
+	if v, ok := factorMap[key].(*types.AttributeValueMemberS); ok {
+		*target = v.Value
+	}
+}
+
+// parseFactorFloat parses a float field from a factor
+func (rs *ReputationScorer) parseFactorFloat(factorMap map[string]types.AttributeValue, key string, target *float64) {
+	if v, ok := factorMap[key].(*types.AttributeValueMemberN); ok {
+		if _, err := fmt.Sscanf(v.Value, "%f", target); err != nil {
+			rs.logger.Warn(fmt.Sprintf("failed to parse factor %s", key), zap.String("value", v.Value), zap.Error(err))
+		}
+	}
 }
 
 // ReputationHistoryItem represents a reputation event in history

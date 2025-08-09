@@ -1,3 +1,4 @@
+// Package dynamorm provides testing utilities and test cases for DynamORM repository validation.
 package dynamorm
 
 import (
@@ -333,7 +334,7 @@ func TestTransaction(t *testing.T, txFunc func(context.Context, func(core.Tx) er
 				db.On("Transaction", mock.Anything).Return(nil)
 			},
 			TestFunc: func(ctx context.Context) error {
-				return txFunc(ctx, func(tx core.Tx) error {
+				return txFunc(ctx, func(_ core.Tx) error {
 					return nil // Simplified for test
 				})
 			},
@@ -345,7 +346,7 @@ func TestTransaction(t *testing.T, txFunc func(context.Context, func(core.Tx) er
 				db.On("Transaction", mock.Anything).Return(fmt.Errorf("transaction failed"))
 			},
 			TestFunc: func(ctx context.Context) error {
-				return txFunc(ctx, func(tx core.Tx) error {
+				return txFunc(ctx, func(_ core.Tx) error {
 					return fmt.Errorf("put error")
 				})
 			},
@@ -370,7 +371,7 @@ func BenchmarkRepository(b *testing.B, operation func()) {
 }
 
 // TestConcurrentOperations tests concurrent repository operations
-func TestConcurrentOperations(t *testing.T, operations []func() error, expectedConcurrency int) {
+func TestConcurrentOperations(t *testing.T, operations []func() error, _ int) {
 	var wg sync.WaitGroup
 	errors := make(chan error, len(operations))
 

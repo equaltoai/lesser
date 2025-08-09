@@ -11,6 +11,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -243,6 +244,7 @@ type TestItem struct {
 	Data string `json:"data"`
 }
 
+//nolint:dupl // test pattern duplication is acceptable for different test scenarios
 func TestNewBatchWriter(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -563,6 +565,7 @@ func TestBatchWriter_WriteItemsParallel_WithLargeDataset(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+//nolint:dupl // test pattern duplication is acceptable for different test scenarios
 func TestNewBatchReader(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -1127,4 +1130,415 @@ func BenchmarkBatchWriter_WriteItemsParallel(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// BatchDeleter tests
+func TestNewBatchDeleter(t *testing.T) {
+	mockDB := &MockDB{}
+
+	t.Run("default config", func(t *testing.T) {
+		deleter := NewDefaultBatchDeleter(mockDB)
+		assert.NotNil(t, deleter)
+		assert.Equal(t, DefaultBatchSize, deleter.batchSize)
+		assert.Equal(t, mockDB, deleter.client)
+		assert.Nil(t, deleter.logger)
+		assert.Nil(t, deleter.tracker)
+	})
+
+	t.Run("custom batch size", func(t *testing.T) {
+		config := BatchDeleterConfig{BatchSize: 10}
+		deleter := NewBatchDeleter(mockDB, config)
+		assert.NotNil(t, deleter)
+		assert.Equal(t, 10, deleter.batchSize)
+	})
+
+	t.Run("batch size too large", func(t *testing.T) {
+		config := BatchDeleterConfig{BatchSize: 30} // Over MaxBatchWriteSize
+		deleter := NewBatchDeleter(mockDB, config)
+		assert.NotNil(t, deleter)
+		assert.Equal(t, DefaultBatchSize, deleter.batchSize)
+	})
+
+	t.Run("with logger and tracker", func(t *testing.T) {
+		logger := zaptest.NewLogger(t)
+		tracker := &MockCostTracker{}
+		config := BatchDeleterConfig{
+			BatchSize: 5,
+			Logger:    logger,
+			Tracker:   tracker,
+		}
+		deleter := NewBatchDeleter(mockDB, config)
+		assert.NotNil(t, deleter)
+		assert.Equal(t, 5, deleter.batchSize)
+		assert.Equal(t, logger, deleter.logger)
+		assert.Equal(t, tracker, deleter.tracker)
+	})
+}
+
+func TestBatchDeleter_DeleteItems_EmptyKeys(t *testing.T) {
+	mockDB := &MockDB{}
+	deleter := NewDefaultBatchDeleter(mockDB)
+
+	result, err := deleter.DeleteItems(context.Background(), []any{})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 0, result.TotalItems)
+	assert.Equal(t, 0, result.ProcessedItems)
+	assert.Equal(t, 0, result.FailedItems)
+	assert.Empty(t, result.Errors)
+}
+
+func TestBatchDeleter_DeleteItems_Success(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	keys := []any{"key1", "key2", "key3"}
+
+	// Setup mocks
+	mockDB.On("Model", "key1").Return(mockQuery)
+	mockQuery.On("BatchDelete", keys).Return(nil)
+
+	deleter := NewDefaultBatchDeleter(mockDB)
+	result, err := deleter.DeleteItems(context.Background(), keys)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 3, result.TotalItems)
+	assert.Equal(t, 3, result.ProcessedItems)
+	assert.Equal(t, 0, result.FailedItems)
+	assert.Empty(t, result.Errors)
+	assert.Greater(t, result.Duration, time.Duration(0))
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchDeleter_DeleteItems_WithBatching(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	// Create 30 keys to force batching (default batch size is 25)
+	keys := make([]any, 30)
+	for i := 0; i < 30; i++ {
+		keys[i] = fmt.Sprintf("key%d", i)
+	}
+
+	// Setup mocks - expect 2 calls to BatchDelete
+	mockDB.On("Model", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("BatchDelete", mock.MatchedBy(func(keys []any) bool {
+		return len(keys) == 25 // First batch
+	})).Return(nil).Once()
+	mockQuery.On("BatchDelete", mock.MatchedBy(func(keys []any) bool {
+		return len(keys) == 5 // Second batch
+	})).Return(nil).Once()
+
+	deleter := NewDefaultBatchDeleter(mockDB)
+	result, err := deleter.DeleteItems(context.Background(), keys)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 30, result.TotalItems)
+	assert.Equal(t, 30, result.ProcessedItems)
+	assert.Equal(t, 0, result.FailedItems)
+	assert.Empty(t, result.Errors)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchDeleter_DeleteItems_WithError(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	keys := []any{"key1", "key2"}
+	expectedError := errors.New("batch delete failed")
+
+	// Setup mocks
+	mockDB.On("Model", "key1").Return(mockQuery)
+	mockQuery.On("BatchDelete", keys).Return(expectedError)
+
+	deleter := NewDefaultBatchDeleter(mockDB)
+	result, err := deleter.DeleteItems(context.Background(), keys)
+
+	assert.NoError(t, err) // DeleteItems doesn't return error, it collects them in result
+	assert.NotNil(t, result)
+	assert.Equal(t, 2, result.TotalItems)
+	assert.Equal(t, 0, result.ProcessedItems)
+	assert.Equal(t, 2, result.FailedItems)
+	assert.Len(t, result.Errors, 2)
+
+	// Check that all keys are marked as failed
+	for i, batchErr := range result.Errors {
+		assert.Equal(t, i, batchErr.Index)
+		assert.Equal(t, keys[i], batchErr.Item)
+		assert.Contains(t, batchErr.Error.Error(), "batch delete failed")
+	}
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchDeleter_DeleteItems_WithCostTracking(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+	tracker := &MockCostTracker{}
+	logger := zaptest.NewLogger(t)
+
+	keys := []any{"key1", "key2"}
+
+	// Setup mocks
+	mockDB.On("Model", "key1").Return(mockQuery)
+	mockQuery.On("BatchDelete", keys).Return(nil)
+
+	deleter := NewBatchDeleter(mockDB, BatchDeleterConfig{
+		BatchSize: DefaultBatchSize,
+		Logger:    logger,
+		Tracker:   tracker,
+	})
+
+	result, err := deleter.DeleteItems(context.Background(), keys)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 2, result.TotalItems)
+	assert.Equal(t, 2, result.ProcessedItems)
+	assert.Equal(t, 0, result.FailedItems)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchDeleter_DeleteItemsParallel_Success(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	keys := []any{"key1", "key2", "key3"}
+
+	// Setup mocks
+	mockDB.On("Model", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("BatchDelete", mock.AnythingOfType("[]interface {}")).Return(nil)
+
+	deleter := NewDefaultBatchDeleter(mockDB)
+	result, err := deleter.DeleteItemsParallel(context.Background(), keys, 2)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 3, result.TotalItems)
+	assert.Equal(t, 3, result.ProcessedItems)
+	assert.Equal(t, 0, result.FailedItems)
+	assert.Empty(t, result.Errors)
+
+	mockDB.AssertExpectations(t)
+}
+
+func TestBatchDeleter_DeleteItemsParallel_EmptyKeys(t *testing.T) {
+	mockDB := &MockDB{}
+	deleter := NewDefaultBatchDeleter(mockDB)
+
+	result, err := deleter.DeleteItemsParallel(context.Background(), []any{}, 2)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 0, result.TotalItems)
+	assert.Equal(t, 0, result.ProcessedItems)
+	assert.Equal(t, 0, result.FailedItems)
+	assert.Empty(t, result.Errors)
+}
+
+func TestBatchDeleter_DeleteItemsParallel_DefaultWorkers(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	keys := []any{"key1"}
+
+	// Setup mocks
+	mockDB.On("Model", "key1").Return(mockQuery)
+	mockQuery.On("BatchDelete", mock.AnythingOfType("[]interface {}")).Return(nil)
+
+	deleter := NewDefaultBatchDeleter(mockDB)
+	result, err := deleter.DeleteItemsParallel(context.Background(), keys, 0) // Should use DefaultWorkers
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 1, result.TotalItems)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchDeleter_DeleteItemsWithRetry_Success(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	keys := []any{"key1", "key2"}
+
+	// Setup mocks
+	mockDB.On("Model", "key1").Return(mockQuery)
+	mockQuery.On("BatchDelete", keys).Return(nil)
+
+	deleter := NewDefaultBatchDeleter(mockDB)
+	result, err := deleter.DeleteItemsWithRetry(context.Background(), keys, 3)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 2, result.TotalItems)
+	assert.Equal(t, 2, result.ProcessedItems)
+	assert.Equal(t, 0, result.FailedItems)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchDeleter_DeleteItemsWithRetry_RetryableError(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	keys := []any{"key1"}
+	retryableError := errors.New("throttling error")
+
+	// Setup mocks - fail first time, succeed second time
+	mockDB.On("Model", "key1").Return(mockQuery)
+	mockQuery.On("BatchDelete", keys).Return(retryableError).Once()
+	mockQuery.On("BatchDelete", keys).Return(nil).Once()
+
+	deleter := NewDefaultBatchDeleter(mockDB)
+	result, err := deleter.DeleteItemsWithRetry(context.Background(), keys, 3)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 1, result.TotalItems)
+	assert.Equal(t, 1, result.ProcessedItems)
+	assert.Equal(t, 0, result.FailedItems)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchDeleter_DeleteItemsWithRetry_NonRetryableError(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	keys := []any{"key1"}
+	nonRetryableError := errors.New("validation error")
+
+	// Setup mocks
+	mockDB.On("Model", "key1").Return(mockQuery)
+	mockQuery.On("BatchDelete", keys).Return(nonRetryableError)
+
+	deleter := NewDefaultBatchDeleter(mockDB)
+	result, err := deleter.DeleteItemsWithRetry(context.Background(), keys, 3)
+
+	assert.Error(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 1, result.TotalItems)
+	assert.Equal(t, 0, result.ProcessedItems)
+	assert.Equal(t, 1, result.FailedItems)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchDeleter_isRetryableError(t *testing.T) {
+	deleter := NewDefaultBatchDeleter(&MockDB{})
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil error", nil, false},
+		{"throttling error", errors.New("provisioned throughput exceeded"), true},
+		{"timeout error", errors.New("request timeout"), true},
+		{"connection error", errors.New("connection failed"), true},
+		{"validation error", errors.New("invalid request"), false},
+		{"not found error", errors.New("item not found"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := deleter.isRetryableError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Add batch delete tests to convenience functions
+func TestBatchDeleteConvenienceFunctions(t *testing.T) {
+	mockDB := &MockDB{}
+	mockQuery := &MockQuery{}
+
+	t.Run("BatchDelete", func(t *testing.T) {
+		keys := []any{
+			map[string]any{"id": "1"},
+		}
+
+		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("BatchDelete", mock.AnythingOfType("[]interface {}")).Return(nil)
+
+		result, err := BatchDelete(context.Background(), mockDB, keys)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, result.TotalItems)
+		assert.Equal(t, 1, result.ProcessedItems)
+		assert.Equal(t, 0, result.FailedItems)
+
+		mockDB.AssertExpectations(t)
+		mockQuery.AssertExpectations(t)
+	})
+
+	t.Run("BatchDeleteParallel", func(t *testing.T) {
+		keys := []any{
+			map[string]any{"id": "1"},
+		}
+
+		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("BatchDelete", mock.AnythingOfType("[]interface {}")).Return(nil)
+
+		result, err := BatchDeleteParallel(context.Background(), mockDB, keys, 2)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, result.TotalItems)
+		assert.Equal(t, 1, result.ProcessedItems)
+		assert.Equal(t, 0, result.FailedItems)
+
+		mockDB.AssertExpectations(t)
+		mockQuery.AssertExpectations(t)
+	})
+
+	t.Run("BatchDeleteWithRetry", func(t *testing.T) {
+		keys := []any{
+			map[string]any{"id": "1"},
+		}
+
+		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("BatchDelete", mock.AnythingOfType("[]interface {}")).Return(nil)
+
+		result, err := BatchDeleteWithRetry(context.Background(), mockDB, keys, 3)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, result.TotalItems)
+		assert.Equal(t, 1, result.ProcessedItems)
+		assert.Equal(t, 0, result.FailedItems)
+
+		mockDB.AssertExpectations(t)
+		mockQuery.AssertExpectations(t)
+	})
+
+	t.Run("BatchDeleteWithCostTracking", func(t *testing.T) {
+		keys := []any{
+			map[string]any{"id": "1"},
+		}
+		tracker := &MockCostTracker{}
+		logger := zap.NewNop()
+
+		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("BatchDelete", mock.AnythingOfType("[]interface {}")).Return(nil)
+
+		result, err := BatchDeleteWithCostTracking(context.Background(), mockDB, keys, tracker, logger)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, result.TotalItems)
+		assert.Equal(t, 1, result.ProcessedItems)
+		assert.Equal(t, 0, result.FailedItems)
+
+		mockDB.AssertExpectations(t)
+		mockQuery.AssertExpectations(t)
+	})
 }

@@ -68,7 +68,7 @@ func RecoveryMiddleware(logger *zap.Logger) lift.Middleware {
 			defer func() {
 				if r := recover(); r != nil {
 					requestID := ctx.GetRequestID()
-					
+
 					logger.Error("panic in request handler",
 						zap.String("request_id", requestID),
 						zap.Any("panic", r),
@@ -76,10 +76,12 @@ func RecoveryMiddleware(logger *zap.Logger) lift.Middleware {
 					)
 
 					// Convert panic to error
-					ctx.Status(500).JSON(map[string]interface{}{
-						"error": "Internal server error",
+					if err := ctx.Status(500).JSON(map[string]interface{}{
+						"error":      "Internal server error",
 						"request_id": requestID,
-					})
+					}); err != nil {
+						logger.Error("failed to send panic error response", zap.Error(err))
+					}
 				}
 			}()
 
@@ -107,7 +109,7 @@ func MetricsMiddleware(serviceName string, metricsSender MetricsSender) lift.Mid
 					status = "error"
 				}
 
-				metricsSender.SendMetric(MetricData{
+				if err := metricsSender.SendMetric(MetricData{
 					Name:      fmt.Sprintf("%s.request", serviceName),
 					Value:     float64(duration.Milliseconds()),
 					Unit:      "milliseconds",
@@ -116,7 +118,10 @@ func MetricsMiddleware(serviceName string, metricsSender MetricsSender) lift.Mid
 						"service": serviceName,
 						"status":  status,
 					},
-				})
+				}); err != nil {
+					// Log metric send failure but don't affect request
+					zap.L().Warn("failed to send request metrics", zap.Error(err))
+				}
 			}
 
 			return err

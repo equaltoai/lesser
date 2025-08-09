@@ -29,7 +29,7 @@ func NewAuthRefreshTokenRepository(db core.DB) *AuthRefreshTokenRepository {
 }
 
 // CreateRefreshToken generates and stores a new refresh token
-func (r *AuthRefreshTokenRepository) CreateRefreshToken(ctx context.Context, userID string, deviceName string, ipAddress string) (*models.AuthRefreshToken, error) {
+func (r *AuthRefreshTokenRepository) CreateRefreshToken(_ context.Context, userID string, deviceName string, ipAddress string) (*models.AuthRefreshToken, error) {
 	tokenBytes := make([]byte, 32)
 	familyBytes := make([]byte, 16)
 
@@ -69,13 +69,13 @@ func (r *AuthRefreshTokenRepository) CreateRefreshToken(ctx context.Context, use
 }
 
 // GetRefreshToken retrieves a refresh token by token value
-func (r *AuthRefreshTokenRepository) GetRefreshToken(ctx context.Context, token string) (*models.AuthRefreshToken, error) {
+func (r *AuthRefreshTokenRepository) GetRefreshToken(_ context.Context, token string) (*models.AuthRefreshToken, error) {
 	var authToken models.AuthRefreshToken
 	err := r.db.Model(&models.AuthRefreshToken{}).
 		Where("PK", "=", token).
 		Where("SK", "=", "TOKEN").
 		First(&authToken)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("invalid refresh token")
@@ -139,24 +139,26 @@ func (r *AuthRefreshTokenRepository) RotateRefreshToken(ctx context.Context, old
 		IPAddress:  ipAddress,
 	}
 
-	// For now, do this in two steps (TODO: implement proper transactions)
-	// Step 1: Revoke old token
-	oldToken.Revoked = true
-	oldToken.RevokedReason = "Rotated"
-	oldToken.LastUsedAt = now.Unix()
-	err = r.db.Model(oldToken).Update()
-	if err != nil {
-		return nil, fmt.Errorf("failed to revoke old token: %w", err)
-	}
+	// Use DynamORM transaction to ensure atomicity
+	err = r.db.Transaction(func(tx *core.Tx) error {
+		// Step 1: Revoke old token
+		oldToken.Revoked = true
+		oldToken.RevokedReason = "Rotated"
+		oldToken.LastUsedAt = now.Unix()
+		
+		if err := tx.Model(oldToken).Update(); err != nil {
+			return fmt.Errorf("failed to revoke old token: %w", err)
+		}
 
-	// Step 2: Create new token
-	err = r.db.Model(newToken).Create()
+		// Step 2: Create new token
+		if err := tx.Model(newToken).Create(); err != nil {
+			return fmt.Errorf("failed to create new token: %w", err)
+		}
+
+		return nil
+	})
 	if err != nil {
-		// TODO: Handle rollback - for now just log error
-		r.logger.Error("Failed to create new token after revoking old one",
-			zap.String("old_token", oldTokenValue),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to create new token: %w", err)
+		return nil, fmt.Errorf("failed to rotate token transaction: %w", err)
 	}
 
 	r.logger.Info("Rotated auth refresh token",
@@ -170,48 +172,175 @@ func (r *AuthRefreshTokenRepository) RotateRefreshToken(ctx context.Context, old
 
 // RevokeTokenFamily revokes all tokens in a family (security breach response)
 func (r *AuthRefreshTokenRepository) RevokeTokenFamily(ctx context.Context, family string, reason string) error {
-	// For now, this is simplified - in production, we'd use a GSI to efficiently find tokens by family
-	// TODO: Implement proper GSI queries when DynamORM adds support
-	r.logger.Warn("Token family revocation requested - implementing simplified version",
+	r.logger.Warn("Revoking token family due to security event",
 		zap.String("family", family),
 		zap.String("reason", reason))
 
-	// This is a placeholder - in a real implementation, we'd:
-	// 1. Query the family-index GSI to find all tokens with this family
-	// 2. Revoke each token
-	// For now, we'll just log the request
+	// Get all tokens in the family
+	tokens, err := r.GetTokensByFamily(ctx, family)
+	if err != nil {
+		return fmt.Errorf("failed to get tokens by family: %w", err)
+	}
+
+	if len(tokens) == 0 {
+		r.logger.Debug("No tokens found for family", zap.String("family", family))
+		return nil
+	}
+
+	// Use transaction to revoke all tokens atomically
+	err = r.db.Transaction(func(tx *core.Tx) error {
+		now := time.Now().Unix()
+		
+		for _, token := range tokens {
+			if !token.Revoked {
+				token.Revoked = true
+				token.RevokedReason = reason
+				token.LastUsedAt = now
+				
+				if err := tx.Model(&token).Update(); err != nil {
+					return fmt.Errorf("failed to revoke token %s: %w", token.Token, err)
+				}
+			}
+		}
+		
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to revoke token family transaction: %w", err)
+	}
+
+	// Log security event
+	common.LogSecurityEvent(common.EventTokenFamilyRevoked,
+		zap.String("family", family),
+		zap.String("reason", reason),
+		zap.Int("tokens_revoked", len(tokens)))
+
+	r.logger.Info("Successfully revoked token family",
+		zap.String("family", family),
+		zap.String("reason", reason),
+		zap.Int("tokens_revoked", len(tokens)))
 
 	return nil
 }
 
 // RevokeUserTokens revokes all tokens for a user (logout all devices)
 func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userID string, reason string) error {
-	// For now, this is simplified - in production, we'd use a GSI to efficiently find tokens by user
-	// TODO: Implement proper GSI queries when DynamORM adds support
-	r.logger.Info("User token revocation requested - implementing simplified version",
+	r.logger.Info("Revoking all tokens for user",
 		zap.String("user_id", userID),
 		zap.String("reason", reason))
 
-	// This is a placeholder - in a real implementation, we'd:
-	// 1. Query the user-index GSI to find all tokens for this user
-	// 2. Revoke each token
-	// For now, we'll just log the request
+	// Get all tokens for the user (both active and inactive for complete revocation)
+	var tokens []models.AuthRefreshToken
+	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+		Where("UserID", "=", userID).
+		All(&tokens)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Debug("No tokens found for user", zap.String("user_id", userID))
+			return nil
+		}
+		return fmt.Errorf("failed to get tokens by user: %w", err)
+	}
+
+	if len(tokens) == 0 {
+		r.logger.Debug("No tokens found for user", zap.String("user_id", userID))
+		return nil
+	}
+
+	// Use transaction to revoke all tokens atomically
+	tokensToRevoke := 0
+	err = r.db.Transaction(func(tx *core.Tx) error {
+		now := time.Now().Unix()
+		
+		for _, token := range tokens {
+			if !token.Revoked {
+				tokensToRevoke++
+				token.Revoked = true
+				token.RevokedReason = reason
+				token.LastUsedAt = now
+				
+				if err := tx.Model(&token).Update(); err != nil {
+					return fmt.Errorf("failed to revoke token %s: %w", token.Token, err)
+				}
+			}
+		}
+		
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to revoke user tokens transaction: %w", err)
+	}
+
+	// Log security event
+	common.LogSecurityEvent(common.EventUserTokensRevoked,
+		zap.String("user_id", userID),
+		zap.String("reason", reason),
+		zap.Int("tokens_revoked", tokensToRevoke))
+
+	r.logger.Info("Successfully revoked user tokens",
+		zap.String("user_id", userID),
+		zap.String("reason", reason),
+		zap.Int("tokens_revoked", tokensToRevoke))
 
 	return nil
 }
 
 // GetTokensByUser retrieves all active tokens for a user
 func (r *AuthRefreshTokenRepository) GetTokensByUser(ctx context.Context, userID string) ([]models.AuthRefreshToken, error) {
-	// TODO: Implement when GSI support is available
-	r.logger.Debug("GetTokensByUser requested - not yet implemented",
+	r.logger.Debug("Getting tokens by user",
 		zap.String("user_id", userID))
-	return []models.AuthRefreshToken{}, nil
+
+	var tokens []models.AuthRefreshToken
+	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+		Where("UserID", "=", userID).
+		All(&tokens)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []models.AuthRefreshToken{}, nil
+		}
+		return nil, fmt.Errorf("failed to get tokens by user: %w", err)
+	}
+
+	// Filter to only active tokens
+	var activeTokens []models.AuthRefreshToken
+	for _, token := range tokens {
+		if token.IsActive() {
+			activeTokens = append(activeTokens, token)
+		}
+	}
+
+	r.logger.Debug("Retrieved active tokens for user",
+		zap.String("user_id", userID),
+		zap.Int("total_tokens", len(tokens)),
+		zap.Int("active_tokens", len(activeTokens)))
+
+	return activeTokens, nil
 }
 
 // GetTokensByFamily retrieves all tokens in a family
 func (r *AuthRefreshTokenRepository) GetTokensByFamily(ctx context.Context, family string) ([]models.AuthRefreshToken, error) {
-	// TODO: Implement when GSI support is available
-	r.logger.Debug("GetTokensByFamily requested - not yet implemented",
+	r.logger.Debug("Getting tokens by family",
 		zap.String("family", family))
-	return []models.AuthRefreshToken{}, nil
+
+	var tokens []models.AuthRefreshToken
+	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+		Where("Family", "=", family).
+		All(&tokens)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []models.AuthRefreshToken{}, nil
+		}
+		return nil, fmt.Errorf("failed to get tokens by family: %w", err)
+	}
+
+	r.logger.Debug("Retrieved tokens for family",
+		zap.String("family", family),
+		zap.Int("token_count", len(tokens)))
+
+	return tokens, nil
 }

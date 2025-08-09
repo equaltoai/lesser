@@ -1,3 +1,4 @@
+// Package dynamorm provides DynamORM repository interfaces for unified account and user management operations.
 package dynamorm
 
 import (

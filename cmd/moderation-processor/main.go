@@ -1,3 +1,4 @@
+// Package main implements the moderation-processor Lambda function for processing content moderation tasks.
 package main
 
 import (
@@ -18,6 +19,19 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+)
+
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
+// Severity string constants
+const (
+	severityLow      = "low"
+	severityMedium   = "medium"
+	severityHigh     = "high"
+	severityCritical = "critical"
 )
 
 var (
@@ -117,7 +131,7 @@ func (s *repositoryStorageAdapter) GetTrustScore(ctx context.Context, actorID, c
 	// Convert storage.TrustScore to models.TrustScore
 	return &models.TrustScore{
 		ActorID:         score.ActorID,
-		Category:        models.TrustCategory(score.Category),
+		Category:        score.Category,
 		Score:           score.Score,
 		DirectScore:     score.DirectScore,
 		PropagatedScore: score.PropagatedScore,
@@ -133,7 +147,7 @@ func (s *repositoryStorageAdapter) RecordTrustUpdate(ctx context.Context, update
 	// Convert models.TrustUpdate to storage.TrustUpdate
 	return s.userRepo.RecordTrustUpdate(ctx, &storage.TrustUpdate{
 		ActorID:   update.ActorID,
-		Category:  storage.TrustCategory(update.Category),
+		Category:  update.Category,
 		Delta:     update.Delta,
 		Reason:    update.Reason,
 		EventID:   update.EventID,
@@ -222,7 +236,7 @@ func convertModerationToStorageDecision(decision *moderation.ModerationDecision)
 	}
 
 	// Convert Reviews to interface{} slice
-	var reviews []interface{}
+	reviews := make([]interface{}, 0, len(decision.Reviews))
 	for _, review := range decision.Reviews {
 		reviews = append(reviews, convertModerationToStorageReview(review))
 	}
@@ -312,13 +326,13 @@ func getTimeFromMap(m map[string]interface{}, key string) time.Time {
 
 func parseSeverity(severityStr string) moderation.Severity {
 	switch strings.ToLower(severityStr) {
-	case "low", "1":
+	case severityLow, "1":
 		return moderation.SeverityLow
-	case "medium", "2":
+	case severityMedium, "2":
 		return moderation.SeverityMedium
-	case "high", "3":
+	case severityHigh, "3":
 		return moderation.SeverityHigh
-	case "critical", "4":
+	case severityCritical, "4":
 		return moderation.SeverityCritical
 	default:
 		return moderation.SeverityMedium
@@ -328,15 +342,15 @@ func parseSeverity(severityStr string) moderation.Severity {
 func severityToString(severity moderation.Severity) string {
 	switch severity {
 	case moderation.SeverityLow:
-		return "low"
+		return severityLow
 	case moderation.SeverityMedium:
-		return "medium"
+		return severityMedium
 	case moderation.SeverityHigh:
-		return "high"
+		return severityHigh
 	case moderation.SeverityCritical:
-		return "critical"
+		return severityCritical
 	default:
-		return "medium"
+		return severityMedium
 	}
 }
 
@@ -386,7 +400,6 @@ func init() {
 	}
 	consensusEngine = moderation.NewConsensusEngine(adapter, nil)
 }
-
 
 // processRecord processes a single DynamoDB stream record
 func (mp *ModerationProcessor) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
@@ -718,36 +731,471 @@ func getDecisionFromRecord(record events.DynamoDBEventRecord) (*moderation.Moder
 	return decision, nil
 }
 
-// sendModeratorNotification sends notifications to moderators about moderation events
-func (mp *ModerationProcessor) sendModeratorNotification(ctx context.Context, event *moderation.ModerationEvent) error {
-	// Get list of moderators - for now use a simple approach
-	// In a full implementation, you'd have a proper role-based user query
-	moderators := []string{"admin", "moderator1", "moderator2"}
+// ModerationAssignment represents a moderation task assignment
+type ModerationAssignment struct {
+	ID           string    `json:"id"`
+	EventID      string    `json:"event_id"`
+	ModeratorID  string    `json:"moderator_id"`
+	Priority     string    `json:"priority"`
+	AssignedAt   time.Time `json:"assigned_at"`
+	Deadline     time.Time `json:"deadline"`
+	AutoAssigned bool      `json:"auto_assigned"`
+	Strategy     string    `json:"strategy"`
+}
 
-	// Create notification for each moderator
-	for _, moderatorID := range moderators {
+// ModeratorSelectionStrategy defines how moderators are selected for assignments
+type ModeratorSelectionStrategy string
+
+// Moderator selection strategies
+const (
+	// StrategyRoundRobin assigns reports to moderators in round-robin fashion
+	StrategyRoundRobin     ModeratorSelectionStrategy = "round_robin"
+	// StrategyWorkloadBased assigns based on current moderator workload
+	StrategyWorkloadBased  ModeratorSelectionStrategy = "workload_based"
+	// StrategyExpertiseBased assigns based on moderator expertise areas
+	StrategyExpertiseBased ModeratorSelectionStrategy = "expertise_based"
+	// StrategyRandom assigns reports randomly to available moderators
+	StrategyRandom         ModeratorSelectionStrategy = "random"
+)
+
+// ModeratorSelector handles intelligent moderator selection and assignment
+type ModeratorSelector struct {
+	userRepo         *repositories.UserRepository
+	moderationRepo   *repositories.ModerationRepository
+	logger           *zap.Logger
+	lastAssignment   map[string]int // Track round-robin state
+	assignmentCounts map[string]int // Track workload
+}
+
+// NewModeratorSelector creates a new moderator selector
+func NewModeratorSelector(userRepo *repositories.UserRepository, moderationRepo *repositories.ModerationRepository, logger *zap.Logger) *ModeratorSelector {
+	return &ModeratorSelector{
+		userRepo:         userRepo,
+		moderationRepo:   moderationRepo,
+		logger:           logger,
+		lastAssignment:   make(map[string]int),
+		assignmentCounts: make(map[string]int),
+	}
+}
+
+// SelectModerators selects appropriate moderators for a moderation event
+func (ms *ModeratorSelector) SelectModerators(ctx context.Context, event *moderation.ModerationEvent, strategy ModeratorSelectionStrategy) ([]*storage.User, error) {
+	// Get all moderators and admins
+	moderators, err := ms.getAvailableModerators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get available moderators: %w", err)
+	}
+
+	if len(moderators) == 0 {
+		ms.logger.Warn("no moderators available for assignment", 
+			zap.String("event_id", event.ID))
+		return []*storage.User{}, nil
+	}
+
+	// Apply selection strategy
+	switch strategy {
+	case StrategyRoundRobin:
+		return ms.selectRoundRobin(moderators, event), nil
+	case StrategyWorkloadBased:
+		return ms.selectByWorkload(ctx, moderators, event)
+	case StrategyExpertiseBased:
+		return ms.selectByExpertise(moderators, event), nil
+	case StrategyRandom:
+		return ms.selectRandom(moderators, event), nil
+	default:
+		return ms.selectRoundRobin(moderators, event), nil
+	}
+}
+
+// getAvailableModerators retrieves all users with moderator or admin roles
+func (ms *ModeratorSelector) getAvailableModerators(ctx context.Context) ([]*storage.User, error) {
+	// Get moderators
+	moderators, err := ms.userRepo.ListUsersByRole(ctx, "moderator")
+	if err != nil {
+		ms.logger.Warn("failed to get moderators", zap.Error(err))
+		moderators = []*storage.User{}
+	}
+
+	// Get admins
+	admins, err := ms.userRepo.ListUsersByRole(ctx, "admin")
+	if err != nil {
+		ms.logger.Warn("failed to get admins", zap.Error(err))
+		admins = []*storage.User{}
+	}
+
+	// Combine and filter active users
+	allModerators := append(moderators, admins...)
+	activeModerators := make([]*storage.User, 0, len(allModerators))
+
+	for _, moderator := range allModerators {
+		if ms.isModeratorAvailable(moderator) {
+			activeModerators = append(activeModerators, moderator)
+		}
+	}
+
+	ms.logger.Info("found available moderators", 
+		zap.Int("total_moderators", len(moderators)),
+		zap.Int("total_admins", len(admins)),
+		zap.Int("available", len(activeModerators)))
+
+	return activeModerators, nil
+}
+
+// isModeratorAvailable checks if a moderator is available for assignments
+func (ms *ModeratorSelector) isModeratorAvailable(moderator *storage.User) bool {
+	// Filter out suspended or inactive accounts
+	if moderator.Suspended || !moderator.Approved {
+		return false
+	}
+
+	// Could add additional availability checks here:
+	// - Last seen timestamp
+	// - Current workload
+	// - Time zone considerations
+	// - Manual availability status
+
+	return true
+}
+
+// selectRoundRobin selects moderators using round-robin strategy
+func (ms *ModeratorSelector) selectRoundRobin(moderators []*storage.User, event *moderation.ModerationEvent) []*storage.User {
+	if len(moderators) == 0 {
+		return []*storage.User{}
+	}
+
+	// Determine number of moderators to assign based on severity
+	count := ms.getModeratorsCountBySeverity(event)
+	if count > len(moderators) {
+		count = len(moderators)
+	}
+
+	selected := make([]*storage.User, 0, count)
+	startIndex := ms.lastAssignment["global"] % len(moderators)
+
+	for i := 0; i < count; i++ {
+		index := (startIndex + i) % len(moderators)
+		selected = append(selected, moderators[index])
+	}
+
+	// Update round-robin state
+	ms.lastAssignment["global"] = (startIndex + count) % len(moderators)
+
+	return selected
+}
+
+// selectByWorkload selects moderators based on current workload
+func (ms *ModeratorSelector) selectByWorkload(ctx context.Context, moderators []*storage.User, event *moderation.ModerationEvent) ([]*storage.User, error) {
+	if len(moderators) == 0 {
+		return []*storage.User{}, nil
+	}
+
+	// Get current workloads for each moderator
+	workloads := make(map[string]int)
+	for _, moderator := range moderators {
+		// Count pending assignments for this moderator
+		count, err := ms.moderationRepo.GetPendingModerationCount(ctx, moderator.Username)
+		if err != nil {
+			ms.logger.Warn("failed to get workload for moderator", 
+				zap.String("moderator", moderator.Username), 
+				zap.Error(err))
+			count = 0
+		}
+		workloads[moderator.Username] = count
+	}
+
+	// Sort by workload (ascending)
+	type moderatorWorkload struct {
+		user     *storage.User
+		workload int
+	}
+
+	workloadList := make([]moderatorWorkload, 0, len(moderators))
+	for _, moderator := range moderators {
+		workloadList = append(workloadList, moderatorWorkload{
+			user:     moderator,
+			workload: workloads[moderator.Username],
+		})
+	}
+
+	// Sort by workload
+	for i := 0; i < len(workloadList); i++ {
+		for j := i + 1; j < len(workloadList); j++ {
+			if workloadList[i].workload > workloadList[j].workload {
+				workloadList[i], workloadList[j] = workloadList[j], workloadList[i]
+			}
+		}
+	}
+
+	// Select moderators with lowest workload
+	count := ms.getModeratorsCountBySeverity(event)
+	if count > len(workloadList) {
+		count = len(workloadList)
+	}
+
+	selected := make([]*storage.User, 0, count)
+	for i := 0; i < count; i++ {
+		selected = append(selected, workloadList[i].user)
+	}
+
+	return selected, nil
+}
+
+// selectByExpertise selects moderators based on category expertise
+func (ms *ModeratorSelector) selectByExpertise(moderators []*storage.User, event *moderation.ModerationEvent) []*storage.User {
+	if len(moderators) == 0 {
+		return []*storage.User{}
+	}
+
+	// For now, prioritize admins for high-severity events
+	// In a full implementation, you'd have expertise mappings
+	selected := make([]*storage.User, 0)
+
+	// Prioritize admins for critical events
+	if event.Severity >= 8 {
+		for _, moderator := range moderators {
+			if moderator.Role == "admin" {
+				selected = append(selected, moderator)
+			}
+		}
+	}
+
+	// If no admins or not critical, fall back to round-robin
+	if len(selected) == 0 {
+		return ms.selectRoundRobin(moderators, event)
+	}
+
+	// Limit based on severity
+	count := ms.getModeratorsCountBySeverity(event)
+	if count > len(selected) {
+		count = len(selected)
+	}
+
+	return selected[:count]
+}
+
+// selectRandom selects moderators randomly
+func (ms *ModeratorSelector) selectRandom(moderators []*storage.User, event *moderation.ModerationEvent) []*storage.User {
+	if len(moderators) == 0 {
+		return []*storage.User{}
+	}
+
+	count := ms.getModeratorsCountBySeverity(event)
+	if count > len(moderators) {
+		count = len(moderators)
+	}
+
+	// Simple pseudo-random selection based on event ID hash
+	selected := make([]*storage.User, 0, count)
+	hash := 0
+	for _, char := range event.ID {
+		hash = (hash*31 + int(char)) % len(moderators)
+	}
+
+	for i := 0; i < count; i++ {
+		index := (hash + i) % len(moderators)
+		selected = append(selected, moderators[index])
+	}
+
+	return selected
+}
+
+// getModeratorsCountBySeverity returns how many moderators to assign based on event severity
+func (ms *ModeratorSelector) getModeratorsCountBySeverity(event *moderation.ModerationEvent) int {
+	switch {
+	case event.Severity >= 9: // Critical
+		return 3
+	case event.Severity >= 7: // High
+		return 2
+	default: // Normal/Low
+		return 1
+	}
+}
+
+// getAssignmentStrategy determines the assignment strategy based on event properties
+func (mp *ModerationProcessor) getAssignmentStrategy(event *moderation.ModerationEvent) ModeratorSelectionStrategy {
+	// Use expertise-based for high severity events
+	if event.Severity >= 8 {
+		return StrategyExpertiseBased
+	}
+
+	// Use workload-based during high activity
+	// Could check queue size or time of day here
+	return StrategyWorkloadBased
+}
+
+// sendModeratorNotification sends notifications to selected moderators about moderation events
+func (mp *ModerationProcessor) sendModeratorNotification(ctx context.Context, event *moderation.ModerationEvent) error {
+	// Create moderator selector
+	selector := NewModeratorSelector(mp.userRepo, mp.moderationRepo, mp.logger)
+
+	// Determine assignment strategy
+	strategy := mp.getAssignmentStrategy(event)
+
+	// Select appropriate moderators
+	selectedModerators, err := selector.SelectModerators(ctx, event, strategy)
+	if err != nil {
+		mp.logger.Error("failed to select moderators", 
+			zap.String("event_id", event.ID),
+			zap.Error(err))
+		return err
+	}
+
+	if len(selectedModerators) == 0 {
+		mp.logger.Warn("no moderators available for assignment",
+			zap.String("event_id", event.ID),
+			zap.String("category", string(event.Category)),
+			zap.Int("severity", int(event.Severity)))
+
+		// Fallback: notify all admins if no moderators available
+		return mp.notifyFallbackAdmins(ctx, event)
+	}
+
+	// Create assignments and notifications
+	for i, moderator := range selectedModerators {
+		// Create assignment record
+		assignment := &ModerationAssignment{
+			ID:           fmt.Sprintf("assign_%s_%s_%d", event.ID, moderator.Username, time.Now().UnixNano()),
+			EventID:      event.ID,
+			ModeratorID:  moderator.Username,
+			Priority:     mp.getPriorityString(event.Severity),
+			AssignedAt:   time.Now(),
+			Deadline:     mp.calculateDeadline(event.Severity),
+			AutoAssigned: true,
+			Strategy:     string(strategy),
+		}
+
+		// Store assignment (would need assignment repository in full implementation)
+		mp.logger.Info("moderator assigned to event",
+			zap.String("event_id", event.ID),
+			zap.String("moderator_id", moderator.Username),
+			zap.String("strategy", string(strategy)),
+			zap.Int("position", i+1),
+			zap.Int("total_assigned", len(selectedModerators)))
+
+		// Create notification
 		notification := &models.Notification{
-			ID:         fmt.Sprintf("mod_%s_%d", event.ID, time.Now().UnixNano()),
-			UserID:     moderatorID,
+			ID:         fmt.Sprintf("mod_%s_%s_%d", event.ID, moderator.Username, time.Now().UnixNano()),
+			UserID:     moderator.Username,
 			Type:       "moderation",
 			ActorID:    event.ActorID,
 			TargetID:   event.ObjectID,
-			TargetType: "status",
-			Title:      "New Moderation Event",
-			Body:       fmt.Sprintf("New %s event for review", event.Category),
+			TargetType: "moderation_event",
+			Title:      mp.getNotificationTitle(event),
+			Body:       mp.getNotificationBody(event, assignment),
 			IsRead:     false,
 			CreatedAt:  time.Now(),
 		}
 
 		if err := mp.notificationRepo.CreateNotification(ctx, notification); err != nil {
-			mp.logger.Error("Failed to create notification",
-				zap.String("moderator_id", moderatorID),
-				zap.Error(err),
-			)
+			mp.logger.Error("failed to create moderator notification",
+				zap.String("moderator_id", moderator.Username),
+				zap.String("event_id", event.ID),
+				zap.Error(err))
 		}
 	}
 
 	return nil
+}
+
+// notifyFallbackAdmins notifies all admins when no moderators are available
+func (mp *ModerationProcessor) notifyFallbackAdmins(ctx context.Context, event *moderation.ModerationEvent) error {
+	admins, err := mp.userRepo.ListUsersByRole(ctx, "admin")
+	if err != nil {
+		return fmt.Errorf("failed to get admin list for fallback notification: %w", err)
+	}
+
+	if len(admins) == 0 {
+		mp.logger.Error("no admins available for fallback notification",
+			zap.String("event_id", event.ID))
+		return fmt.Errorf("no admins available for fallback")
+	}
+
+	for _, admin := range admins {
+		if !admin.Suspended && admin.Approved {
+			notification := &models.Notification{
+				ID:         fmt.Sprintf("fallback_%s_%s_%d", event.ID, admin.Username, time.Now().UnixNano()),
+				UserID:     admin.Username,
+				Type:       "moderation_urgent",
+				ActorID:    event.ActorID,
+				TargetID:   event.ObjectID,
+				TargetType: "moderation_event",
+				Title:      "URGENT: No Moderators Available",
+				Body:       fmt.Sprintf("Critical moderation event requires immediate attention - no moderators available. Category: %s, Severity: %d", event.Category, int(event.Severity)),
+				IsRead:     false,
+				CreatedAt:  time.Now(),
+			}
+
+			if err := mp.notificationRepo.CreateNotification(ctx, notification); err != nil {
+				mp.logger.Error("failed to create fallback admin notification",
+					zap.String("admin_id", admin.Username),
+					zap.Error(err))
+			}
+		}
+	}
+
+	mp.logger.Info("fallback admin notifications sent",
+		zap.String("event_id", event.ID),
+		zap.Int("admins_notified", len(admins)))
+
+	return nil
+}
+
+// Helper methods for notification content and timing
+
+func (mp *ModerationProcessor) getPriorityString(severity moderation.Severity) string {
+	switch {
+	case severity >= 9:
+		return "critical"
+	case severity >= 7:
+		return "high"
+	case severity >= 5:
+		return "normal"
+	default:
+		return "low"
+	}
+}
+
+func (mp *ModerationProcessor) calculateDeadline(severity moderation.Severity) time.Time {
+	now := time.Now()
+	switch {
+	case severity >= 9: // Critical - 15 minutes
+		return now.Add(15 * time.Minute)
+	case severity >= 7: // High - 2 hours
+		return now.Add(2 * time.Hour)
+	case severity >= 5: // Normal - 24 hours
+		return now.Add(24 * time.Hour)
+	default: // Low - 7 days
+		return now.Add(7 * 24 * time.Hour)
+	}
+}
+
+func (mp *ModerationProcessor) getNotificationTitle(event *moderation.ModerationEvent) string {
+	priority := mp.getPriorityString(event.Severity)
+	switch priority {
+	case "critical":
+		return "🚨 CRITICAL Moderation Required"
+	case "high":
+		return "⚠️ High Priority Moderation"
+	case "normal":
+		return "📋 Moderation Review Required"
+	default:
+		return "📝 Low Priority Review"
+	}
+}
+
+func (mp *ModerationProcessor) getNotificationBody(event *moderation.ModerationEvent, assignment *ModerationAssignment) string {
+	return fmt.Sprintf(
+		"New %s content flagged for review.\n"+
+			"Priority: %s\n"+
+			"Deadline: %s\n"+
+			"Assignment Strategy: %s\n"+
+			"Event ID: %s",
+		event.Category,
+		assignment.Priority,
+		assignment.Deadline.Format("15:04 Jan 02"),
+		assignment.Strategy,
+		event.ID,
+	)
 }
 
 // triggerAutomaticActions triggers automatic actions based on event severity
@@ -799,7 +1247,7 @@ func (mp *ModerationProcessor) silenceAccount(ctx context.Context, username stri
 		"silenced_at":     time.Now().Format(time.RFC3339),
 		"silenced_reason": reason,
 	}
-	
+
 	return mp.userRepo.UpdateUser(ctx, username, updates)
 }
 
@@ -810,7 +1258,7 @@ func (mp *ModerationProcessor) suspendAccount(ctx context.Context, username stri
 		"suspended_at":     time.Now().Format(time.RFC3339),
 		"suspended_reason": reason,
 	}
-	
+
 	return mp.userRepo.UpdateUser(ctx, username, updates)
 }
 
@@ -837,7 +1285,7 @@ func main() {
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()
 		requestID := fmt.Sprintf("moderation-processor-%d", time.Now().UnixNano())
-		
+
 		// Recovery handling (Lift pattern)
 		defer func() {
 			if r := recover(); r != nil {
@@ -850,7 +1298,7 @@ func main() {
 		}()
 
 		// Add request ID to context
-		ctx = context.WithValue(ctx, "request_id", requestID)
+		ctx = context.WithValue(ctx, requestIDKey, requestID)
 
 		logger.Info("processing moderation stream batch",
 			zap.String("request_id", requestID),
@@ -881,13 +1329,12 @@ func main() {
 				zap.Int("record_count", len(event.Records)),
 			)
 			return err
-		} else {
-			logger.Info("DynamoDB stream processing completed",
-				zap.String("request_id", requestID),
-				zap.Duration("duration", duration),
-				zap.Int("record_count", len(event.Records)),
-			)
 		}
+		logger.Info("DynamoDB stream processing completed",
+			zap.String("request_id", requestID),
+			zap.Duration("duration", duration),
+			zap.Int("record_count", len(event.Records)),
+		)
 
 		return nil
 	})

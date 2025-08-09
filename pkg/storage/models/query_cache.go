@@ -26,11 +26,11 @@ type QueryCacheEntry struct {
 // UpdateKeys ensures keys are properly set before saving
 func (q *QueryCacheEntry) UpdateKeys() {
 	q.PK = fmt.Sprintf("CACHE#%s", q.CacheKey)
-	q.SK = "ENTRY"
-	
+	q.SK = SKEntry
+
 	// Set TTL based on ExpiresAt
 	q.TTL = q.ExpiresAt.Unix()
-	
+
 	q.UpdatedAt = time.Now()
 	if q.CreatedAt.IsZero() {
 		q.CreatedAt = time.Now()
@@ -61,10 +61,10 @@ type BatchGetKeys struct {
 func (b *BatchGetKeys) UpdateKeys() {
 	b.PK = fmt.Sprintf("BATCH#%s", b.BatchType)
 	b.SK = fmt.Sprintf("KEY#%s", b.Key)
-	
+
 	// Set short TTL (1 minute for batching)
 	b.TTL = time.Now().Add(1 * time.Minute).Unix()
-	
+
 	if b.CreatedAt.IsZero() {
 		b.CreatedAt = time.Now()
 	}

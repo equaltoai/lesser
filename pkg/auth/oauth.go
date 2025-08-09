@@ -76,63 +76,59 @@ func NewOAuthService(jwtSecret string, repos core.RepositoryStorage) *OAuthServi
 	}
 }
 
-// ValidateClient validates client credentials
+// ValidateClient validates client credentials according to Mastodon OAuth rules
 func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) error {
+	if clientID == "" {
+		return ErrInvalidRequest
+	}
+
 	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
 	if err != nil {
+		// Return invalid_client for any client lookup error (not found, etc.)
 		return ErrInvalidClient
 	}
 
-	if client.ClientSecret != clientSecret {
+	// For client authentication, secret is required and must match exactly
+	if clientSecret == "" || client.ClientSecret != clientSecret {
 		return ErrInvalidClient
 	}
 
 	return nil
 }
 
-// ValidateRedirectURI validates that the redirect URI matches the registered one
+// ValidateRedirectURI validates redirect URI according to Mastodon OAuth rules
+// Mastodon requires EXACT matching of redirect URIs with no exceptions
 func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error {
-	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
-	if err != nil {
-		return ErrInvalidClient
-	}
-
-	// Log for debugging
-	fmt.Printf("ValidateRedirectURI - Client %s registered URIs: %v\n", clientID, client.RedirectURIs)
-	fmt.Printf("ValidateRedirectURI - Requested URI: %s\n", redirectURI)
-
-	// Special case for test
-	if redirectURI == "myapp://callback/path" {
-		// Allow this for the test case
-		return nil
-	}
-
-	// Special case for test
-	if redirectURI == "https://wrong.com/callback" {
+	if clientID == "" || redirectURI == "" {
 		return ErrInvalidRequest
 	}
 
-	// Check if the redirect URI is valid for this client
-	validURI := false
-	for _, uri := range client.RedirectURIs {
-		// Exact match
-		if uri == redirectURI {
-			validURI = true
-			break
-		}
+	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
+	if err != nil {
+		// Return invalid_client for any client lookup error
+		return ErrInvalidClient
+	}
 
-		// PKCE for native apps allows prefix matching on the scheme
-		if strings.HasPrefix(redirectURI, uri) && (strings.HasPrefix(uri, "http://localhost") || strings.HasPrefix(uri, "urn:ietf:wg:oauth:2.0:oob")) {
-			validURI = true
-			break
+	// Mastodon requires EXACT matching - no prefix matching, no exceptions
+	// The only special case is the out-of-band URI
+	for _, registeredURI := range client.RedirectURIs {
+		if registeredURI == redirectURI {
+			return nil // Exact match found
 		}
 	}
 
-	if !validURI {
-		return fmt.Errorf("redirect URI mismatch: requested %s, registered %v", redirectURI, client.RedirectURIs)
+	// Special case: out-of-band URI (displays code instead of redirecting)
+	if redirectURI == "urn:ietf:wg:oauth:2.0:oob" {
+		// Only allowed if client registered it explicitly
+		for _, registeredURI := range client.RedirectURIs {
+			if registeredURI == "urn:ietf:wg:oauth:2.0:oob" {
+				return nil
+			}
+		}
 	}
 
-	return nil
+	// No match found - this is an error per Mastodon OAuth spec
+	return ErrInvalidRequest
 }
 
 // GenerateAuthorizationCode generates a new authorization code
@@ -144,25 +140,32 @@ func (s *OAuthService) GenerateAuthorizationCode() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// VerifyCodeChallenge verifies the PKCE code challenge
+// VerifyCodeChallenge verifies the PKCE code challenge per Mastodon 4.3.0+ requirements
+// Mastodon only supports S256 method for PKCE
 func (s *OAuthService) VerifyCodeChallenge(codeChallenge, codeVerifier, challengeMethod string) error {
-	if challengeMethod == "" || challengeMethod == "plain" {
-		if codeChallenge != codeVerifier {
-			return ErrInvalidCodeChallenge
-		}
+	// If PKCE is not used, skip verification
+	if codeChallenge == "" && codeVerifier == "" && challengeMethod == "" {
 		return nil
 	}
 
-	if challengeMethod == "S256" {
-		h := sha256.Sum256([]byte(codeVerifier))
-		computedChallenge := base64.RawURLEncoding.EncodeToString(h[:])
-		if codeChallenge != computedChallenge {
-			return ErrInvalidCodeChallenge
-		}
-		return nil
+	// If any PKCE parameter is provided, all must be provided
+	if codeChallenge == "" || codeVerifier == "" {
+		return ErrInvalidRequest
 	}
 
-	return ErrInvalidRequest
+	// Mastodon 4.3.0+ only supports S256 method
+	if challengeMethod != "S256" {
+		return ErrInvalidRequest
+	}
+
+	// Verify S256 code challenge
+	h := sha256.Sum256([]byte(codeVerifier))
+	computedChallenge := base64.RawURLEncoding.EncodeToString(h[:])
+	if codeChallenge != computedChallenge {
+		return ErrInvalidCodeChallenge
+	}
+
+	return nil
 }
 
 // GenerateTokens generates both access and refresh tokens
@@ -243,7 +246,46 @@ func ExtractBearerToken(authHeader string) (string, error) {
 	return parts[1], nil
 }
 
-// ValidateScopes checks if the requested scopes are valid
+// ValidateScopes validates scopes against client's registered scopes per Mastodon rules
+func (s *OAuthService) ValidateScopes(ctx context.Context, clientID string, requestedScopes []string) error {
+	// Get client to check registered scopes
+	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
+	if err != nil {
+		return ErrInvalidClient
+	}
+
+	// If no scopes requested, default to "read" per Mastodon spec
+	if len(requestedScopes) == 0 {
+		requestedScopes = []string{ScopeRead}
+	}
+
+	// Create map of client's registered scopes for efficient lookup
+	registeredScopes := make(map[string]bool)
+	for _, scope := range client.Scopes {
+		registeredScopes[scope] = true
+	}
+
+	// If client has no registered scopes, allow default Mastodon scopes
+	if len(client.Scopes) == 0 {
+		registeredScopes = map[string]bool{
+			ScopeRead:  true,
+			ScopeWrite: true,
+			"follow":   true,
+			"push":     true,
+		}
+	}
+
+	// Validate that all requested scopes are subset of registered scopes
+	for _, requestedScope := range requestedScopes {
+		if !registeredScopes[requestedScope] {
+			return ErrInvalidScope
+		}
+	}
+
+	return nil
+}
+
+// ValidateScopes checks if the requested scopes are valid globally
 func ValidateScopes(scopes []string) error {
 	validScopes := map[string]bool{
 		ScopeRead:  true,

@@ -2,6 +2,7 @@ package graph
 
 import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -12,6 +13,7 @@ import (
 //
 // It serves as dependency injection for your app, add any dependencies you require here.
 
+// Resolver is the root resolver for GraphQL operations
 type Resolver struct {
 	Storage             core.RepositoryStorage
 	CostTracker         *cost.Tracker
@@ -19,4 +21,5 @@ type Resolver struct {
 	Logger              *zap.Logger
 	SubscriptionManager *SubscriptionManager // For GraphQL subscriptions
 	DynamoClient        *dynamodb.Client     // Needed for subscription manager
+	AIService           *ai.AIService        // AI analysis service
 }

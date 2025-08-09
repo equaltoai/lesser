@@ -111,7 +111,7 @@ type mockHandler struct {
 	called bool
 }
 
-func (m *mockHandler) Handle(ctx *lift.Context) error {
+func (m *mockHandler) Handle(_ *lift.Context) error {
 	m.called = true
 	return nil
 }

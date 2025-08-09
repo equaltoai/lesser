@@ -26,7 +26,7 @@ type Relay struct {
 	CreatedAt  time.Time `json:"created_at"`
 	LastSeenAt time.Time `json:"last_seen_at"`
 	Domain     string    `json:"domain,omitempty"`
-	Status     string    `json:"status,omitempty"`      // pending/active/rejected/error
+	Status     string    `json:"status,omitempty"` // pending/active/rejected/error
 	ErrorCount int       `json:"error_count,omitempty"`
 	TTL        int64     `json:"ttl,omitempty" dynamorm:"ttl"` // For automatic cleanup
 }
@@ -35,7 +35,7 @@ type Relay struct {
 func (r *Relay) UpdateKeys() {
 	// Primary key: RELAY#url
 	r.PK = fmt.Sprintf("RELAY#%s", r.URL)
-	r.SK = "INFO"
+	r.SK = SKInfo
 
 	// GSI1: For querying active relays
 	if r.Active {

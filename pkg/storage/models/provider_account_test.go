@@ -357,8 +357,8 @@ func TestProviderAccount_GetDisplayName(t *testing.T) {
 			expected: "john@example.com",
 		},
 		{
-			name: "no display data",
-			pa:   &ProviderAccount{},
+			name:     "no display data",
+			pa:       &ProviderAccount{},
 			expected: "",
 		},
 	}

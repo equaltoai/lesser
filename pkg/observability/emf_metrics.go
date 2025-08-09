@@ -14,18 +14,18 @@ import (
 // EMFMetricsCollector implements CloudWatch Embedded Metrics Format for serverless environments
 // It eliminates polling patterns and writes metrics directly to stdout for Lambda integration
 type EMFMetricsCollector struct {
-	namespace   string
-	dimensions  map[string]string
-	buffer      *EMFBuffer
-	logger      *zap.Logger
-	mu          sync.RWMutex
+	namespace  string
+	dimensions map[string]string
+	buffer     *EMFBuffer
+	logger     *zap.Logger
+	mu         sync.RWMutex
 }
 
 // EMFBuffer holds metrics before flushing - no background goroutines
 type EMFBuffer struct {
-	metrics   []EMFMetric
-	maxSize   int
-	mu        sync.Mutex
+	metrics []EMFMetric
+	maxSize int
+	mu      sync.Mutex
 }
 
 // EMFMetric represents a metric in EMF format
@@ -47,14 +47,14 @@ type EMFLog struct {
 
 // EMFMetadata contains CloudWatch-specific metadata
 type EMFMetadata struct {
-	Timestamp          int64                   `json:"Timestamp"`
-	CloudWatchMetrics  []EMFCloudWatchMetrics `json:"CloudWatchMetrics"`
+	Timestamp         int64                  `json:"Timestamp"`
+	CloudWatchMetrics []EMFCloudWatchMetrics `json:"CloudWatchMetrics"`
 }
 
 // EMFCloudWatchMetrics defines the metrics structure for CloudWatch
 type EMFCloudWatchMetrics struct {
-	Namespace  string     `json:"Namespace"`
-	Dimensions [][]string `json:"Dimensions"`
+	Namespace  string                `json:"Namespace"`
+	Dimensions [][]string            `json:"Dimensions"`
 	Metrics    []EMFMetricDefinition `json:"Metrics"`
 }
 
@@ -75,7 +75,7 @@ func NewEMFMetricsCollector(namespace string, logger *zap.Logger) *EMFMetricsCol
 		},
 		buffer: &EMFBuffer{
 			metrics: make([]EMFMetric, 0, 100), // Start with reasonable capacity
-			maxSize: 100, // CloudWatch EMF recommended batch size
+			maxSize: 100,                       // CloudWatch EMF recommended batch size
 		},
 		logger: logger,
 	}
@@ -131,7 +131,7 @@ func (emc *EMFMetricsCollector) RecordErrorRate(operation string, errorCount, to
 	if totalCount > 0 {
 		errorRate = float64(errorCount) / float64(totalCount) * 100.0
 	}
-	
+
 	emc.recordMetricWithDimensions(
 		"ErrorRate",
 		errorRate,
@@ -144,7 +144,7 @@ func (emc *EMFMetricsCollector) RecordErrorRate(operation string, errorCount, to
 func (emc *EMFMetricsCollector) RecordPerformanceMetrics(metrics *PerformanceMetrics) {
 	// Record all performance metrics with consistent dimensions
 	perfDims := map[string]string{"MetricType": "Performance"}
-	
+
 	emc.recordMetricWithDimensions("ColdStartDuration", float64(metrics.ColdStartDuration.Milliseconds()), "Milliseconds", perfDims)
 	emc.recordMetricWithDimensions("ExecutionDuration", float64(metrics.ExecutionDuration.Milliseconds()), "Milliseconds", perfDims)
 	emc.recordMetricWithDimensions("MemoryUsed", float64(metrics.MemoryUsed), "Bytes", perfDims)
@@ -158,13 +158,13 @@ func (emc *EMFMetricsCollector) RecordPerformanceMetrics(metrics *PerformanceMet
 func (emc *EMFMetricsCollector) recordMetricWithDimensions(name string, value float64, unit string, extraDims map[string]string) {
 	// Merge base dimensions with extra dimensions
 	allDims := make(map[string]string)
-	
+
 	emc.mu.RLock()
 	for k, v := range emc.dimensions {
 		allDims[k] = v
 	}
 	emc.mu.RUnlock()
-	
+
 	for k, v := range extraDims {
 		if v != "" { // Only add non-empty values
 			allDims[k] = v
@@ -216,7 +216,7 @@ func (emc *EMFMetricsCollector) Flush() error {
 // groupMetricsByDimensions groups metrics by their dimension combinations
 func (emc *EMFMetricsCollector) groupMetricsByDimensions(metrics []EMFMetric) [][]EMFMetric {
 	groups := make(map[string][]EMFMetric)
-	
+
 	for _, metric := range metrics {
 		// Create a key from dimensions
 		key := emc.dimensionsKey(metric.Dimensions)
@@ -228,7 +228,7 @@ func (emc *EMFMetricsCollector) groupMetricsByDimensions(metrics []EMFMetric) []
 	for _, group := range groups {
 		result = append(result, group)
 	}
-	
+
 	return result
 }
 
@@ -251,7 +251,7 @@ func (emc *EMFMetricsCollector) writeEMFLog(metrics []EMFMetric) error {
 	// Build metric definitions
 	metricDefs := make([]EMFMetricDefinition, len(metrics))
 	metricValues := make(map[string]interface{})
-	
+
 	for i, metric := range metrics {
 		metricDefs[i] = EMFMetricDefinition{
 			Name: metric.Name,
@@ -285,7 +285,7 @@ func (emc *EMFMetricsCollector) writeEMFLog(metrics []EMFMetric) error {
 
 	// Write to stdout - CloudWatch Lambda integration captures this automatically
 	fmt.Println(string(jsonData))
-	
+
 	return nil
 }
 
@@ -294,7 +294,7 @@ func (emc *EMFMetricsCollector) dimensionsKey(dims map[string]string) string {
 	if len(dims) == 0 {
 		return ""
 	}
-	
+
 	// Create a consistent key by sorting dimension names
 	var key string
 	for k, v := range dims {
@@ -351,18 +351,18 @@ func (eb *EMFBuffer) ShouldFlush() bool {
 func (eb *EMFBuffer) GetAndClear() []EMFMetric {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
-	
+
 	if len(eb.metrics) == 0 {
 		return nil
 	}
-	
+
 	// Copy metrics
 	result := make([]EMFMetric, len(eb.metrics))
 	copy(result, eb.metrics)
-	
+
 	// Clear buffer
 	eb.metrics = eb.metrics[:0]
-	
+
 	return result
 }
 

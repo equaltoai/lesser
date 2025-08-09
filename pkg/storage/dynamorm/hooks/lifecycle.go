@@ -1,3 +1,4 @@
+// Package hooks provides lifecycle hook management for DynamORM model operations with cost tracking integration.
 package hooks
 
 import (
@@ -15,14 +16,23 @@ import (
 type HookType string
 
 const (
+	// BeforeCreate represents a before create hook
 	BeforeCreate HookType = "before_create"
+	// AfterCreate represents an after create hook
 	AfterCreate  HookType = "after_create"
+	// BeforeUpdate represents a before update hook
 	BeforeUpdate HookType = "before_update"
+	// AfterUpdate represents an after update hook
 	AfterUpdate  HookType = "after_update"
+	// BeforeDelete represents a before delete hook
 	BeforeDelete HookType = "before_delete"
+	// AfterDelete represents an after delete hook
 	AfterDelete  HookType = "after_delete"
+	// AfterFind represents an after find hook
 	AfterFind    HookType = "after_find"
+	// BeforeSave represents a before save hook
 	BeforeSave   HookType = "before_save"
+	// AfterSave represents an after save hook
 	AfterSave    HookType = "after_save"
 )
 
@@ -171,9 +181,8 @@ func (hr *HookRegistry) executeSyncHooks(ctx context.Context, model any, modelTy
 				fields = append(fields, zap.Error(err))
 				hr.logger.Error("hook_execution_failed", fields...)
 				return fmt.Errorf("hook %s[%d] failed: %w", hookType, i, err)
-			} else {
-				hr.logger.Debug("hook_executed", fields...)
 			}
+			hr.logger.Debug("hook_executed", fields...)
 		}
 
 		// Track cost if tracker is available in context
@@ -211,9 +220,8 @@ func (hr *HookRegistry) executeConditionalHooks(ctx context.Context, model any, 
 					fields = append(fields, zap.Error(err))
 					hr.logger.Error("conditional_hook_execution_failed", fields...)
 					return fmt.Errorf("conditional hook %s[%d] failed: %w", hookType, i, err)
-				} else {
-					hr.logger.Debug("conditional_hook_executed", fields...)
 				}
+				hr.logger.Debug("conditional_hook_executed", fields...)
 			}
 		}
 	}
@@ -377,7 +385,7 @@ func AuditHook(ctx context.Context, model any) error {
 }
 
 // ValidationHook validates the model using its Validate method if available
-func ValidationHook(ctx context.Context, model any) error {
+func ValidationHook(_ context.Context, model any) error {
 	// Check if model implements Validator interface
 	if validator, ok := model.(Validator); ok {
 		return validator.Validate()
@@ -386,7 +394,7 @@ func ValidationHook(ctx context.Context, model any) error {
 }
 
 // TimestampHook updates timestamps on models
-func TimestampHook(ctx context.Context, model any) error {
+func TimestampHook(_ context.Context, model any) error {
 	now := time.Now()
 	modelValue := reflect.ValueOf(model)
 
@@ -411,16 +419,30 @@ func TimestampHook(ctx context.Context, model any) error {
 
 // NotificationHook creates notifications based on model changes
 func NotificationHook(ctx context.Context, model any) error {
-	// This would integrate with a notification system
-	// For now, we'll create placeholder notifications
+	// Extract notification repository from context if available
+	notificationRepo := getNotificationRepository(ctx)
+	if notificationRepo == nil {
+		// No notification repository available, skip notification creation
+		if logger := getLoggerFromContext(ctx); logger != nil {
+			logger.Debug("notification_repository_not_available", 
+				zap.String("model_type", reflect.TypeOf(model).String()))
+		}
+		return nil
+	}
 
 	switch m := model.(type) {
 	case FollowModel:
-		return createFollowNotification(ctx, m)
+		return createFollowNotification(ctx, m, notificationRepo)
 	case StatusModel:
-		return createStatusNotifications(ctx, m)
+		return createStatusNotifications(ctx, m, notificationRepo)
 	case MentionModel:
-		return createMentionNotification(ctx, m)
+		return createMentionNotification(ctx, m, notificationRepo)
+	case ReblogModel:
+		return createReblogNotification(ctx, m, notificationRepo)
+	case FavoriteModel:
+		return createFavoriteNotification(ctx, m, notificationRepo)
+	case PollModel:
+		return createPollNotification(ctx, m, notificationRepo)
 	}
 
 	return nil
@@ -481,6 +503,35 @@ type MentionModel interface {
 	GetStatusID() string
 }
 
+// ReblogModel interface for reblog-related models
+type ReblogModel interface {
+	GetUserID() string
+	GetStatusID() string
+	GetOriginalAuthorID() string
+}
+
+// FavoriteModel interface for favorite-related models
+type FavoriteModel interface {
+	GetUserID() string
+	GetStatusID() string
+	GetStatusAuthorID() string
+}
+
+// PollModel interface for poll-related models  
+type PollModel interface {
+	GetPollID() string
+	GetAuthorID() string
+	GetVoterID() string
+	HasEnded() bool
+}
+
+// NotificationRepository interface for notification operations
+type NotificationRepository interface {
+	CreateNotification(ctx context.Context, notification any) error
+	GetUserPushSubscriptions(ctx context.Context, username string) ([]any, error)
+	SendPushNotification(ctx context.Context, username string, notification any) error
+}
+
 // Helper functions to extract context values
 
 func getUserIDFromContext(ctx context.Context) string {
@@ -504,39 +555,237 @@ func getLoggerFromContext(ctx context.Context) *zap.Logger {
 	return nil
 }
 
-// Notification creation functions (placeholder implementations)
-
-func createFollowNotification(ctx context.Context, follow FollowModel) error {
-	// Create follow notification
-	if logger := getLoggerFromContext(ctx); logger != nil {
-		logger.Debug("follow_notification_created",
-			zap.String("follower_id", follow.GetFollowerID()),
-			zap.String("followee_id", follow.GetFolloweeID()),
-		)
+func getNotificationRepository(ctx context.Context) NotificationRepository {
+	if repo, ok := ctx.Value("notification_repository").(NotificationRepository); ok {
+		return repo
 	}
 	return nil
 }
 
-func createStatusNotifications(ctx context.Context, status StatusModel) error {
+// Notification creation functions
+
+func createFollowNotification(ctx context.Context, follow FollowModel, repo NotificationRepository) error {
+	notification := map[string]any{
+		"type":        "follow",
+		"user_id":     follow.GetFolloweeID(),
+		"from_user":   follow.GetFollowerID(),
+		"created_at":  time.Now(),
+	}
+	
+	// Create notification record
+	if err := repo.CreateNotification(ctx, notification); err != nil {
+		if logger := getLoggerFromContext(ctx); logger != nil {
+			logger.Error("failed_to_create_follow_notification",
+				zap.Error(err),
+				zap.String("follower_id", follow.GetFollowerID()),
+				zap.String("followee_id", follow.GetFolloweeID()),
+			)
+		}
+		return err
+	}
+	
+	// Send push notification asynchronously
+	go func() {
+		if err := repo.SendPushNotification(ctx, follow.GetFolloweeID(), notification); err != nil {
+			if logger := getLoggerFromContext(ctx); logger != nil {
+				logger.Warn("failed_to_send_push_notification",
+					zap.Error(err),
+					zap.String("type", "follow"),
+					zap.String("user_id", follow.GetFolloweeID()),
+				)
+			}
+		}
+	}()
+	
+	return nil
+}
+
+func createStatusNotifications(ctx context.Context, status StatusModel, repo NotificationRepository) error {
 	// Create notifications for mentions in status
 	mentions := status.GetMentions()
-	if len(mentions) > 0 && getLoggerFromContext(ctx) != nil {
-		getLoggerFromContext(ctx).Debug("mention_notifications_created",
-			zap.String("status_user_id", status.GetUserID()),
-			zap.Strings("mentioned_users", mentions),
-		)
+	for _, mentionedUser := range mentions {
+		notification := map[string]any{
+			"type":        "mention",
+			"user_id":     mentionedUser,
+			"from_user":   status.GetUserID(),
+			"status_id":   status.GetUserID(), // Assuming GetUserID returns status ID
+			"created_at":  time.Now(),
+		}
+		
+		if err := repo.CreateNotification(ctx, notification); err != nil {
+			if logger := getLoggerFromContext(ctx); logger != nil {
+				logger.Error("failed_to_create_mention_notification",
+					zap.Error(err),
+					zap.String("mentioned_user", mentionedUser),
+					zap.String("status_user_id", status.GetUserID()),
+				)
+			}
+			// Continue with other mentions even if one fails
+			continue
+		}
+		
+		// Send push notification asynchronously
+		go func(user string, notif map[string]any) {
+			if err := repo.SendPushNotification(ctx, user, notif); err != nil {
+				if logger := getLoggerFromContext(ctx); logger != nil {
+					logger.Warn("failed_to_send_push_notification",
+						zap.Error(err),
+						zap.String("type", "mention"),
+						zap.String("user_id", user),
+					)
+				}
+			}
+		}(mentionedUser, notification)
 	}
+	
 	return nil
 }
 
-func createMentionNotification(ctx context.Context, mention MentionModel) error {
-	// Create mention notification
-	if logger := getLoggerFromContext(ctx); logger != nil {
-		logger.Debug("mention_notification_created",
-			zap.String("mentioned_user_id", mention.GetMentionedUserID()),
-			zap.String("status_id", mention.GetStatusID()),
-		)
+func createMentionNotification(ctx context.Context, mention MentionModel, repo NotificationRepository) error {
+	notification := map[string]any{
+		"type":        "mention",
+		"user_id":     mention.GetMentionedUserID(),
+		"from_user":   mention.GetUserID(),
+		"status_id":   mention.GetStatusID(),
+		"created_at":  time.Now(),
 	}
+	
+	if err := repo.CreateNotification(ctx, notification); err != nil {
+		if logger := getLoggerFromContext(ctx); logger != nil {
+			logger.Error("failed_to_create_mention_notification",
+				zap.Error(err),
+				zap.String("mentioned_user_id", mention.GetMentionedUserID()),
+				zap.String("status_id", mention.GetStatusID()),
+			)
+		}
+		return err
+	}
+	
+	// Send push notification asynchronously
+	go func() {
+		if err := repo.SendPushNotification(ctx, mention.GetMentionedUserID(), notification); err != nil {
+			if logger := getLoggerFromContext(ctx); logger != nil {
+				logger.Warn("failed_to_send_push_notification",
+					zap.Error(err),
+					zap.String("type", "mention"),
+					zap.String("user_id", mention.GetMentionedUserID()),
+				)
+			}
+		}
+	}()
+	
+	return nil
+}
+
+func createReblogNotification(ctx context.Context, reblog ReblogModel, repo NotificationRepository) error {
+	notification := map[string]any{
+		"type":        "reblog",
+		"user_id":     reblog.GetOriginalAuthorID(),
+		"from_user":   reblog.GetUserID(),
+		"status_id":   reblog.GetStatusID(),
+		"created_at":  time.Now(),
+	}
+	
+	if err := repo.CreateNotification(ctx, notification); err != nil {
+		if logger := getLoggerFromContext(ctx); logger != nil {
+			logger.Error("failed_to_create_reblog_notification",
+				zap.Error(err),
+				zap.String("reblogger_id", reblog.GetUserID()),
+				zap.String("original_author_id", reblog.GetOriginalAuthorID()),
+			)
+		}
+		return err
+	}
+	
+	// Send push notification asynchronously
+	go func() {
+		if err := repo.SendPushNotification(ctx, reblog.GetOriginalAuthorID(), notification); err != nil {
+			if logger := getLoggerFromContext(ctx); logger != nil {
+				logger.Warn("failed_to_send_push_notification",
+					zap.Error(err),
+					zap.String("type", "reblog"),
+					zap.String("user_id", reblog.GetOriginalAuthorID()),
+				)
+			}
+		}
+	}()
+	
+	return nil
+}
+
+func createFavoriteNotification(ctx context.Context, favorite FavoriteModel, repo NotificationRepository) error {
+	notification := map[string]any{
+		"type":        "favourite",
+		"user_id":     favorite.GetStatusAuthorID(),
+		"from_user":   favorite.GetUserID(),
+		"status_id":   favorite.GetStatusID(),
+		"created_at":  time.Now(),
+	}
+	
+	if err := repo.CreateNotification(ctx, notification); err != nil {
+		if logger := getLoggerFromContext(ctx); logger != nil {
+			logger.Error("failed_to_create_favorite_notification",
+				zap.Error(err),
+				zap.String("favoriter_id", favorite.GetUserID()),
+				zap.String("status_author_id", favorite.GetStatusAuthorID()),
+			)
+		}
+		return err
+	}
+	
+	// Send push notification asynchronously
+	go func() {
+		if err := repo.SendPushNotification(ctx, favorite.GetStatusAuthorID(), notification); err != nil {
+			if logger := getLoggerFromContext(ctx); logger != nil {
+				logger.Warn("failed_to_send_push_notification",
+					zap.Error(err),
+					zap.String("type", "favourite"),
+					zap.String("user_id", favorite.GetStatusAuthorID()),
+				)
+			}
+		}
+	}()
+	
+	return nil
+}
+
+func createPollNotification(ctx context.Context, poll PollModel, repo NotificationRepository) error {
+	// Only send notification if poll has ended
+	if !poll.HasEnded() {
+		return nil
+	}
+	
+	notification := map[string]any{
+		"type":        "poll",
+		"user_id":     poll.GetAuthorID(),
+		"poll_id":     poll.GetPollID(),
+		"created_at":  time.Now(),
+	}
+	
+	if err := repo.CreateNotification(ctx, notification); err != nil {
+		if logger := getLoggerFromContext(ctx); logger != nil {
+			logger.Error("failed_to_create_poll_notification",
+				zap.Error(err),
+				zap.String("poll_id", poll.GetPollID()),
+				zap.String("author_id", poll.GetAuthorID()),
+			)
+		}
+		return err
+	}
+	
+	// Send push notification asynchronously
+	go func() {
+		if err := repo.SendPushNotification(ctx, poll.GetAuthorID(), notification); err != nil {
+			if logger := getLoggerFromContext(ctx); logger != nil {
+				logger.Warn("failed_to_send_push_notification",
+					zap.Error(err),
+					zap.String("type", "poll"),
+					zap.String("user_id", poll.GetAuthorID()),
+				)
+			}
+		}
+	}()
+	
 	return nil
 }
 

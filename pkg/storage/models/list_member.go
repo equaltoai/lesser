@@ -10,11 +10,11 @@ type ListMember struct {
 	// Primary keys for list membership
 	PK string `dynamorm:"pk" json:"PK"` // LIST_MEMBERS#listID
 	SK string `dynamorm:"sk" json:"SK"` // accountID
-	
+
 	// GSI1 for reverse lookup (what lists is an account in)
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK,omitempty"` // ACCOUNT_LISTS#accountID
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK,omitempty"` // listID#username
-	
+
 	// Core fields
 	ListID       string    `json:"list_id"`
 	AccountID    string    `json:"account_id"`
@@ -24,7 +24,7 @@ type ListMember struct {
 
 // TableName returns the DynamoDB table name
 func (ListMember) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the keys before creating

@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ImportRepository handles import-related database operations using DynamORM
@@ -30,11 +31,11 @@ func NewImportRepository(db core.DB, tableName string, logger *zap.Logger) *Impo
 }
 
 // CreateImport creates a new import record
-func (r *ImportRepository) CreateImport(ctx context.Context, importRecord *models.Import) error {
+func (r *ImportRepository) CreateImport(_ context.Context, importRecord *models.Import) error {
 	importRecord.UpdateKeys()
 	importRecord.CreatedAt = time.Now()
 	importRecord.UpdatedAt = time.Now()
-	
+
 	err := r.db.Model(importRecord).Create()
 	if err != nil {
 		r.logger.Error("failed to create import",
@@ -42,25 +43,25 @@ func (r *ImportRepository) CreateImport(ctx context.Context, importRecord *model
 			zap.Error(err))
 		return fmt.Errorf("failed to create import: %w", err)
 	}
-	
+
 	r.logger.Info("created import record",
 		zap.String("import_id", importRecord.ID),
 		zap.String("username", importRecord.Username),
 		zap.String("type", importRecord.Type),
 		zap.String("mode", importRecord.Mode))
-	
+
 	return nil
 }
 
 // GetImport retrieves an import by ID
-func (r *ImportRepository) GetImport(ctx context.Context, importID string) (*models.Import, error) {
+func (r *ImportRepository) GetImport(_ context.Context, importID string) (*models.Import, error) {
 	var importRecord models.Import
-	
+
 	err := r.db.Model(&models.Import{}).
 		Where("PK", "=", fmt.Sprintf("IMPORT#%s", importID)).
 		Where("SK", "=", fmt.Sprintf("IMPORT#%s", importID)).
 		First(&importRecord)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("import not found: %s", importID)
@@ -70,7 +71,7 @@ func (r *ImportRepository) GetImport(ctx context.Context, importID string) (*mod
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get import: %w", err)
 	}
-	
+
 	return &importRecord, nil
 }
 
@@ -80,11 +81,11 @@ func (r *ImportRepository) UpdateImportStatus(ctx context.Context, importID, sta
 	if err != nil {
 		return err
 	}
-	
+
 	// Update basic status
 	importRecord.Status = status
 	importRecord.UpdatedAt = time.Now()
-	
+
 	// Update completion data if provided
 	if completionData != nil {
 		if total, ok := completionData["total"].(int); ok {
@@ -102,19 +103,19 @@ func (r *ImportRepository) UpdateImportStatus(ctx context.Context, importID, sta
 		if errors, ok := completionData["errors"].([]string); ok {
 			importRecord.Errors = errors
 		}
-		
+
 		// Set completion timestamp for completed imports
 		if status == "completed" {
 			now := time.Now()
 			importRecord.CompletedAt = &now
 		}
 	}
-	
+
 	// Update error message if provided
 	if errorMsg != "" {
 		importRecord.Error = errorMsg
 	}
-	
+
 	// Save the updated import
 	importRecord.UpdateKeys()
 	err = r.db.Model(importRecord).Update()
@@ -125,12 +126,12 @@ func (r *ImportRepository) UpdateImportStatus(ctx context.Context, importID, sta
 			zap.Error(err))
 		return fmt.Errorf("failed to update import status: %w", err)
 	}
-	
+
 	r.logger.Info("updated import status",
 		zap.String("import_id", importID),
 		zap.String("status", status),
 		zap.String("error", errorMsg))
-	
+
 	return nil
 }
 
@@ -140,11 +141,11 @@ func (r *ImportRepository) UpdateImportProgress(ctx context.Context, importID st
 	if err != nil {
 		return err
 	}
-	
+
 	importRecord.Progress = progress
 	importRecord.UpdatedAt = time.Now()
 	importRecord.UpdateKeys()
-	
+
 	err = r.db.Model(importRecord).Update()
 	if err != nil {
 		r.logger.Error("failed to update import progress",
@@ -153,27 +154,27 @@ func (r *ImportRepository) UpdateImportProgress(ctx context.Context, importID st
 			zap.Error(err))
 		return fmt.Errorf("failed to update import progress: %w", err)
 	}
-	
+
 	r.logger.Debug("updated import progress",
 		zap.String("import_id", importID),
 		zap.Int("progress", progress))
-	
+
 	return nil
 }
 
 // GetImportsForUser retrieves all imports for a user
-func (r *ImportRepository) GetImportsForUser(ctx context.Context, username string, limit int, cursor string) ([]*models.Import, string, error) {
+func (r *ImportRepository) GetImportsForUser(_ context.Context, username string, limit int, cursor string) ([]*models.Import, string, error) {
 	var imports []*models.Import
-	
+
 	query := r.db.Model(&models.Import{}).
 		Where("Username", "=", username).
 		Limit(limit)
-	
+
 	if cursor != "" {
 		// Add cursor-based pagination
 		query = query.Where("CreatedAt", ">", cursor)
 	}
-	
+
 	err := query.Scan(&imports)
 	if err != nil {
 		r.logger.Error("failed to get imports for user",
@@ -181,29 +182,29 @@ func (r *ImportRepository) GetImportsForUser(ctx context.Context, username strin
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get imports for user: %w", err)
 	}
-	
+
 	// Calculate next cursor
 	var nextCursor string
 	if len(imports) == limit {
 		nextCursor = imports[len(imports)-1].CreatedAt.Format(time.RFC3339)
 	}
-	
+
 	r.logger.Debug("retrieved imports for user",
 		zap.String("username", username),
 		zap.Int("count", len(imports)))
-	
+
 	return imports, nextCursor, nil
 }
 
 // GetUserImportsByStatus retrieves imports for a user filtered by status
-func (r *ImportRepository) GetUserImportsByStatus(ctx context.Context, username string, statuses []string) ([]*models.Import, error) {
+func (r *ImportRepository) GetUserImportsByStatus(_ context.Context, username string, statuses []string) ([]*models.Import, error) {
 	var imports []*models.Import
-	
+
 	// Query using GSI1
 	query := r.db.Model(&models.Import{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username))
-	
+
 	// Get all imports for the user, then filter by status in memory
 	// This is because DynamORM doesn't support complex OR filters on non-key attributes
 	err := query.All(&imports)
@@ -213,14 +214,14 @@ func (r *ImportRepository) GetUserImportsByStatus(ctx context.Context, username 
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get imports for user: %w", err)
 	}
-	
+
 	// Filter by status if specified
 	if len(statuses) > 0 {
 		statusMap := make(map[string]bool)
 		for _, status := range statuses {
 			statusMap[status] = true
 		}
-		
+
 		filtered := make([]*models.Import, 0)
 		for _, imp := range imports {
 			if statusMap[imp.Status] {
@@ -229,24 +230,24 @@ func (r *ImportRepository) GetUserImportsByStatus(ctx context.Context, username 
 		}
 		imports = filtered
 	}
-	
+
 	// Sort by creation date descending (most recent first)
 	for i, j := 0, len(imports)-1; i < j; i, j = i+1, j-1 {
 		imports[i], imports[j] = imports[j], imports[i]
 	}
-	
+
 	r.logger.Debug("retrieved imports by status",
 		zap.String("username", username),
 		zap.Strings("statuses", statuses),
 		zap.Int("count", len(imports)))
-	
+
 	return imports, nil
 }
 
 // Import Cost Tracking Methods
 
 // CreateImportCostTracking creates a new import cost tracking record
-func (r *ImportRepository) CreateImportCostTracking(ctx context.Context, costTracking *models.ImportCostTracking) error {
+func (r *ImportRepository) CreateImportCostTracking(_ context.Context, costTracking *models.ImportCostTracking) error {
 	if err := costTracking.BeforeCreate(); err != nil {
 		return fmt.Errorf("before create validation failed: %w", err)
 	}
@@ -271,7 +272,7 @@ func (r *ImportRepository) CreateImportCostTracking(ctx context.Context, costTra
 }
 
 // GetImportCostTracking retrieves import cost tracking records for an import
-func (r *ImportRepository) GetImportCostTracking(ctx context.Context, importID string) ([]*models.ImportCostTracking, error) {
+func (r *ImportRepository) GetImportCostTracking(_ context.Context, importID string) ([]*models.ImportCostTracking, error) {
 	var costTrackingRecords []*models.ImportCostTracking
 
 	query := r.db.Model(&models.ImportCostTracking{}).
@@ -289,7 +290,7 @@ func (r *ImportRepository) GetImportCostTracking(ctx context.Context, importID s
 }
 
 // GetUserImportCosts retrieves import costs for a user within a date range
-func (r *ImportRepository) GetUserImportCosts(ctx context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
+func (r *ImportRepository) GetUserImportCosts(_ context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
 	var costTrackingRecords []*models.ImportCostTracking
 
 	startSK := fmt.Sprintf("COST#%s", startDate.Format(time.RFC3339))
@@ -315,14 +316,14 @@ func (r *ImportRepository) GetUserImportCosts(ctx context.Context, username stri
 }
 
 // GetImportCostsByDateRange retrieves import costs for all users within a date range
-func (r *ImportRepository) GetImportCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
+func (r *ImportRepository) GetImportCostsByDateRange(_ context.Context, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
 	var allCosts []*models.ImportCostTracking
 
 	// Query by daily partitions
 	currentDate := startDate
 	for currentDate.Before(endDate) || currentDate.Equal(endDate) {
-		dateStr := currentDate.Format("20060102")
-		
+		dateStr := currentDate.Format(common.CompactDateFormat)
+
 		var dailyCosts []*models.ImportCostTracking
 		query := r.db.Model(&models.ImportCostTracking{}).
 			Index("GSI2").
@@ -342,7 +343,7 @@ func (r *ImportRepository) GetImportCostsByDateRange(ctx context.Context, startD
 
 		// Move to next day
 		currentDate = currentDate.AddDate(0, 0, 1)
-		
+
 		// Break if we have enough results
 		if len(allCosts) >= limit {
 			break
@@ -353,7 +354,7 @@ func (r *ImportRepository) GetImportCostsByDateRange(ctx context.Context, startD
 	sort.Slice(allCosts, func(i, j int) bool {
 		return allCosts[i].Timestamp.After(allCosts[j].Timestamp)
 	})
-	
+
 	if len(allCosts) > limit {
 		allCosts = allCosts[:limit]
 	}
@@ -369,10 +370,10 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 	}
 
 	summary := &models.ImportCostSummary{
-		Username:    username,
-		Period:      "custom",
-		StartDate:   startDate,
-		EndDate:     endDate,
+		Username:      username,
+		Period:        "custom",
+		StartDate:     startDate,
+		EndDate:       endDate,
 		TypeBreakdown: make(map[string]*models.ImportTypeCostStats),
 	}
 
@@ -383,10 +384,11 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 	// Calculate statistics
 	for _, cost := range costs {
 		summary.TotalImports++
-		
-		if cost.Status == "completed" {
+
+		switch cost.Status {
+		case "completed":
 			summary.CompletedImports++
-		} else if cost.Status == "failed" {
+		case "failed":
 			summary.FailedImports++
 		}
 
@@ -407,13 +409,13 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 				Type: cost.Type,
 			}
 		}
-		
+
 		typeStats.Count++
 		typeStats.TotalCostMicroCents += cost.TotalCostMicroCents
 		typeStats.TotalRecords += cost.RecordCount
 		typeStats.SuccessfulRecords += cost.SuccessCount
 		typeStats.FailedRecords += cost.ErrorCount
-		
+
 		summary.TypeBreakdown[cost.Type] = typeStats
 	}
 
@@ -421,7 +423,7 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 	if summary.TotalImports > 0 {
 		summary.AverageCostPerImport = float64(summary.TotalCostMicroCents) / 1_000_000.0 / float64(summary.TotalImports)
 	}
-	
+
 	if summary.TotalRecordsProcessed > 0 {
 		summary.AverageCostPerRecord = float64(summary.TotalCostMicroCents) / 1_000_000.0 / float64(summary.TotalRecordsProcessed)
 		summary.OverallSuccessRate = float64(summary.TotalRecordsSucceeded) / float64(summary.TotalRecordsProcessed)
@@ -432,11 +434,11 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 		if typeStats.Count > 0 {
 			typeStats.AverageCostMicroCents = typeStats.TotalCostMicroCents / typeStats.Count
 			typeStats.TotalCostDollars = float64(typeStats.TotalCostMicroCents) / 1_000_000.0
-			
+
 			if typeStats.TotalRecords > 0 {
 				typeStats.SuccessRate = float64(typeStats.SuccessfulRecords) / float64(typeStats.TotalRecords)
 			}
-			
+
 			summary.TypeBreakdown[importType] = typeStats
 		}
 	}
@@ -469,7 +471,7 @@ func (r *ImportRepository) GetHighCostImports(ctx context.Context, thresholdMicr
 // Budget Management Methods
 
 // CreateImportBudget creates a new import budget configuration
-func (r *ImportRepository) CreateImportBudget(ctx context.Context, budget *models.ImportBudget) error {
+func (r *ImportRepository) CreateImportBudget(_ context.Context, budget *models.ImportBudget) error {
 	if err := budget.BeforeCreate(); err != nil {
 		return fmt.Errorf("before create validation failed: %w", err)
 	}
@@ -492,7 +494,7 @@ func (r *ImportRepository) CreateImportBudget(ctx context.Context, budget *model
 }
 
 // UpdateImportBudget updates an existing import budget
-func (r *ImportRepository) UpdateImportBudget(ctx context.Context, budget *models.ImportBudget) error {
+func (r *ImportRepository) UpdateImportBudget(_ context.Context, budget *models.ImportBudget) error {
 	if err := budget.BeforeUpdate(); err != nil {
 		return fmt.Errorf("before update validation failed: %w", err)
 	}
@@ -510,7 +512,7 @@ func (r *ImportRepository) UpdateImportBudget(ctx context.Context, budget *model
 }
 
 // GetImportBudget retrieves import budget configuration for a user
-func (r *ImportRepository) GetImportBudget(ctx context.Context, username, period string) (*models.ImportBudget, error) {
+func (r *ImportRepository) GetImportBudget(_ context.Context, username, period string) (*models.ImportBudget, error) {
 	var budget models.ImportBudget
 
 	pk := fmt.Sprintf("USER_BUDGET#%s#%s", username, period)
@@ -539,40 +541,40 @@ func (r *ImportRepository) GetImportBudget(ctx context.Context, username, period
 func (r *ImportRepository) CheckBudgetLimits(ctx context.Context, username string, importCostMicroCents, exportCostMicroCents int64) (*models.ImportBudget, bool, error) {
 	// Try to get daily budget first, then weekly, then monthly
 	periods := []string{"daily", "weekly", "monthly"}
-	
+
 	for _, period := range periods {
 		budget, err := r.GetImportBudget(ctx, username, period)
 		if err != nil {
 			// Budget doesn't exist for this period, try next
 			continue
 		}
-		
+
 		if !budget.IsActive {
 			continue
 		}
-		
+
 		// Check if we would exceed limits
 		newImportCost := budget.CurrentImportCost + importCostMicroCents
 		newExportCost := budget.CurrentExportCost + exportCostMicroCents
 		newCombinedCost := budget.CurrentCombinedCost + importCostMicroCents + exportCostMicroCents
-		
+
 		// Check individual limits
 		if budget.ImportLimitMicroCents > 0 && newImportCost > budget.ImportLimitMicroCents {
 			return budget, false, nil
 		}
-		
+
 		if budget.ExportLimitMicroCents > 0 && newExportCost > budget.ExportLimitMicroCents {
 			return budget, false, nil
 		}
-		
+
 		// Check combined limit
 		if budget.CombinedLimitMicroCents > 0 && newCombinedCost > budget.CombinedLimitMicroCents {
 			return budget, false, nil
 		}
-		
+
 		return budget, true, nil
 	}
-	
+
 	// No budget found, allow operation
 	return nil, true, nil
 }
@@ -586,38 +588,38 @@ func (r *ImportRepository) UpdateBudgetUsage(ctx context.Context, username, peri
 		budget = &models.ImportBudget{
 			Username:                username,
 			Period:                  period,
-			ImportLimitMicroCents:   10000000,  // $10 default
-			ExportLimitMicroCents:   10000000,  // $10 default
-			CombinedLimitMicroCents: 20000000,  // $20 default
+			ImportLimitMicroCents:   10000000, // $10 default
+			ExportLimitMicroCents:   10000000, // $10 default
+			CombinedLimitMicroCents: 20000000, // $20 default
 			AlertThresholdPercent:   80.0,
 			AlertSendingEnabled:     true,
 			IsActive:                true,
 			PeriodStart:             now,
 			PeriodEnd:               now.AddDate(0, 0, 1), // Default to daily
 		}
-		
+
 		if err := r.CreateImportBudget(ctx, budget); err != nil {
 			return fmt.Errorf("failed to create default budget: %w", err)
 		}
 	}
-	
+
 	// Update usage
 	budget.CurrentImportCost += importCostMicroCents
 	budget.CurrentExportCost += exportCostMicroCents
 	budget.CurrentCombinedCost += importCostMicroCents + exportCostMicroCents
-	
+
 	// Update counters
 	if importCostMicroCents > 0 {
 		budget.ImportCount++
 		now := time.Now()
 		budget.LastImportAt = &now
 	}
-	
+
 	if exportCostMicroCents > 0 {
 		budget.ExportCount++
 		now := time.Now()
 		budget.LastExportAt = &now
 	}
-	
+
 	return r.UpdateImportBudget(ctx, budget)
 }

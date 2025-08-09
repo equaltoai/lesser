@@ -85,16 +85,16 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 	if h.cfg.Domain == "example.com" {
 		// Test environment - use defaults
 		instanceConfig = &config.InstanceConfig{
-			Title:            "Test Instance",
-			ShortDescription: "A test instance",
-			Description:      "Test instance description",
-			Email:            "admin@example.com",
-			Version:          "4.0.0 (compatible; Lesser 0.1.0)",
-			Software:         "lesser",
-			Languages:        []string{"en"},
-			MaxStatusChars:   500,
-			MaxMediaSize:     10485760,  // 10MB
-			MaxVideoSize:     104857600, // 100MB
+			Title:             "Test Instance",
+			ShortDescription:  "A test instance",
+			Description:       "Test instance description",
+			Email:             "admin@example.com",
+			Version:           "4.0.0 (compatible; Lesser 0.1.0)",
+			Software:          "lesser",
+			Languages:         []string{"en"},
+			MaxStatusChars:    500,
+			MaxMediaSize:      10485760,  // 10MB
+			MaxVideoSize:      104857600, // 100MB
 			RegistrationsOpen: true,
 			FederationEnabled: true,
 		}
@@ -147,9 +147,9 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 		OpenRegistrations: instanceConfig.RegistrationsOpen,
 		Usage: NodeInfoUsage{
 			Users: NodeInfoUsers{
-				Total:          int(totalUsers),
-				ActiveHalfyear: int(activeHalfyear),
-				ActiveMonth:    int(activeMonth),
+				Total:          totalUsers,
+				ActiveHalfyear: activeHalfyear,
+				ActiveMonth:    activeMonth,
 			},
 			LocalPosts:    int(localPosts),
 			LocalComments: 0, // Lesser doesn't distinguish between posts and comments

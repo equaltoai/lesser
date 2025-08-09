@@ -14,8 +14,26 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+// Service name constants
+const (
+	serviceMediaConvert = "mediaconvert"
+	serviceRekognition  = "rekognition"
+	serviceThumbnails   = "thumbnails"
+	serviceS3Upload     = "s3_upload"
+	serviceS3Storage    = "s3_storage"
+	serviceCloudFront   = "cloudfront"
+)
+
+// Cost category constants
+const (
+	costCategoryProcessing = "processing"
+	costCategoryStorage    = "storage"
+	costCategoryBandwidth  = "bandwidth"
+	costCategoryCompute    = "compute"
+)
+
 // calculateS3PutCost calculates the cost of S3 PUT operations
-func (mp *MediaProcessor) calculateS3PutCost(sizeBytes int64) int64 {
+func (mp *MediaProcessor) calculateS3PutCost(_ int64) int64 {
 	// S3 PUT requests cost $0.0005 per 1,000 requests
 	// For transcoding, we typically do 1 PUT per variant + original
 	putCost := int64(500) // $0.0005 = 500 microdollars per 1,000 requests
@@ -27,28 +45,28 @@ func (mp *MediaProcessor) calculateS3StorageCost(sizeBytes int64) int64 {
 	// S3 Standard storage: $0.023 per GB per month
 	sizeGB := float64(sizeBytes) / (1024 * 1024 * 1024)
 	monthlyCostMicros := int64(sizeGB * float64(transcodingCosts.S3StorageCost))
-	
+
 	// Prorate for current month (daily rate)
 	daysInMonth := float64(30) // Average
 	dailyCost := float64(monthlyCostMicros) / daysInMonth
-	
+
 	return int64(dailyCost) // Return daily storage cost
 }
 
 // generateVideoThumbnails generates thumbnails and tracks costs
-func (mp *MediaProcessor) generateVideoThumbnails(ctx context.Context, event MediaProcessingEvent, plan *TranscodingPlan) int64 {
+func (mp *MediaProcessor) generateVideoThumbnails(_ context.Context, event MediaProcessingEvent, plan *TranscodingPlan) int64 {
 	// This would integrate with the actual thumbnail generation logic
 	// For now, return the estimated cost
 	mp.logger.Debug("generating video thumbnails",
 		zap.String("media_id", event.MediaID),
 		zap.Int("thumbnail_count", plan.ThumbnailCount),
 		zap.Int64("thumbnail_cost", plan.ThumbnailCost))
-	
+
 	return plan.ThumbnailCost
 }
 
 // trackTranscodingCosts records detailed transcoding costs and metrics
-func (mp *MediaProcessor) trackTranscodingCosts(ctx context.Context, metrics *TranscodingJobMetrics) error {
+func (mp *MediaProcessor) trackTranscodingCosts(ctx context.Context, metrics *TranscodingJobMetrics) {
 	// Track individual cost components
 	for service, cost := range metrics.CostBreakdown {
 		transaction := &models.MediaSpendingTransaction{
@@ -88,41 +106,40 @@ func (mp *MediaProcessor) trackTranscodingCosts(ctx context.Context, metrics *Tr
 		zap.Any("cost_breakdown", metrics.CostBreakdown),
 		zap.String("status", metrics.Status))
 
-	return nil
 }
 
 // getCategoryFromService maps service to cost category
 func (mp *MediaProcessor) getCategoryFromService(service string) string {
 	switch service {
-	case "mediaconvert":
-		return "processing"
-	case "s3_upload", "s3_storage":
-		return "storage"
-	case "cloudfront":
-		return "bandwidth"
-	case "rekognition":
-		return "processing"
-	case "thumbnails":
-		return "processing"
+	case serviceMediaConvert:
+		return costCategoryProcessing
+	case serviceS3Upload, serviceS3Storage:
+		return costCategoryStorage
+	case serviceCloudFront:
+		return costCategoryBandwidth
+	case serviceRekognition:
+		return costCategoryProcessing
+	case serviceThumbnails:
+		return costCategoryProcessing
 	default:
-		return "compute"
+		return costCategoryCompute
 	}
 }
 
 // getOperationFromService maps service to specific operation
 func (mp *MediaProcessor) getOperationFromService(service string) string {
 	switch service {
-	case "mediaconvert":
+	case serviceMediaConvert:
 		return "video_transcode"
-	case "s3_upload":
+	case serviceS3Upload:
 		return "storage_put"
-	case "s3_storage":
+	case serviceS3Storage:
 		return "storage_monthly"
-	case "cloudfront":
+	case serviceCloudFront:
 		return "cdn_transfer"
-	case "rekognition":
+	case serviceRekognition:
 		return "content_analysis"
-	case "thumbnails":
+	case serviceThumbnails:
 		return "thumbnail_generation"
 	default:
 		return "media_process"
@@ -132,13 +149,13 @@ func (mp *MediaProcessor) getOperationFromService(service string) string {
 // getUnitsFromService calculates service-specific units consumed
 func (mp *MediaProcessor) getUnitsFromService(service string, metrics *TranscodingJobMetrics) int64 {
 	switch service {
-	case "mediaconvert":
+	case serviceMediaConvert:
 		// Return minutes of video processed
 		return metrics.InputDuration / (1000 * 60) // Convert ms to minutes
-	case "rekognition":
+	case serviceRekognition:
 		// Return number of images analyzed
 		return int64(len(metrics.OutputVariants)) // Approximate
-	case "thumbnails":
+	case serviceThumbnails:
 		// Return number of thumbnails generated
 		durationMinutes := metrics.InputDuration / (1000 * 60)
 		thumbnails := durationMinutes + 1
@@ -158,15 +175,15 @@ func getResolutionFromMetrics(metrics *TranscodingJobMetrics) (int, int) {
 	sizeMB := metrics.InputSize / (1024 * 1024)
 	if sizeMB > 100 { // Large file, likely HD or higher
 		return 1920, 1080
-	} else if sizeMB > 50 { // Medium file, likely 720p
-		return 1280, 720
-	} else { // Small file, likely SD
-		return 854, 480
 	}
+	if sizeMB > 50 { // Medium file, likely 720p
+		return 1280, 720
+	}
+	return 854, 480 // Small file, likely SD
 }
 
 // estimateVariantStorageSize estimates total storage needed for all transcoded variants
-func (mp *MediaProcessor) estimateVariantStorageSize(originalSize int64, plan *TranscodingPlan) int64 {
+func (mp *MediaProcessor) estimateVariantStorageSize(_ int64, plan *TranscodingPlan) int64 {
 	total := int64(0)
 	for _, size := range plan.ExpectedOutputs {
 		total += size
@@ -205,6 +222,16 @@ func (mp *MediaProcessor) createEnhancedMediaConvertJob(ctx context.Context, s3I
 	// Add thumbnail output if enabled
 	thumbnailOutputs := []mctypes.Output{}
 	if plan.ThumbnailCount > 0 {
+		// Safe conversion to int32 with bounds checking
+		var maxCaptures int32
+		if plan.ThumbnailCount > int(^int32(0)) {
+			maxCaptures = ^int32(0) // Max int32
+		} else if plan.ThumbnailCount <= 0 {
+			maxCaptures = 1 // At least 1 thumbnail
+		} else {
+			maxCaptures = int32(plan.ThumbnailCount)
+		}
+
 		thumbnailOutput := mctypes.Output{
 			NameModifier: aws.String("_thumb"),
 			VideoDescription: &mctypes.VideoDescription{
@@ -213,7 +240,7 @@ func (mp *MediaProcessor) createEnhancedMediaConvertJob(ctx context.Context, s3I
 					FrameCaptureSettings: &mctypes.FrameCaptureSettings{
 						FramerateNumerator:   int32(1),
 						FramerateDenominator: int32(60), // 1 frame every 60 seconds
-						MaxCaptures:          int32(plan.ThumbnailCount),
+						MaxCaptures:          maxCaptures,
 						Quality:              int32(80),
 					},
 				},
@@ -276,14 +303,14 @@ func (mp *MediaProcessor) createEnhancedMediaConvertJob(ctx context.Context, s3I
 		Role:     aws.String(mp.mediaConvertRole),
 		Settings: jobSettings,
 		UserMetadata: map[string]string{
-			"username":          event.Username,
-			"media_id":          event.MediaID,
-			"job_id":            event.JobID,
-			"estimated_cost":    fmt.Sprintf("%d", plan.MediaConvertCost),
-			"quality_levels":    strings.Join(plan.QualityLevels, ","),
-			"thumbnail_count":   fmt.Sprintf("%d", plan.ThumbnailCount),
-			"analysis_enabled":  fmt.Sprintf("%t", plan.AnalysisEnabled),
-			"processing_tier":   "enhanced", // Mark as enhanced processing
+			"username":         event.Username,
+			"media_id":         event.MediaID,
+			"job_id":           event.JobID,
+			"estimated_cost":   fmt.Sprintf("%d", plan.MediaConvertCost),
+			"quality_levels":   strings.Join(plan.QualityLevels, ","),
+			"thumbnail_count":  fmt.Sprintf("%d", plan.ThumbnailCount),
+			"analysis_enabled": fmt.Sprintf("%t", plan.AnalysisEnabled),
+			"processing_tier":  "enhanced", // Mark as enhanced processing
 		},
 	}
 
@@ -302,15 +329,15 @@ func (mp *MediaProcessor) createQualityOutput(quality string) mctypes.Output {
 
 	switch quality {
 	case "2160p":
-		width, height, bitrate = 3840, 2160, 8000000  // 8 Mbps for 4K
+		width, height, bitrate = 3840, 2160, 8000000 // 8 Mbps for 4K
 	case "1080p":
-		width, height, bitrate = 1920, 1080, 5000000  // 5 Mbps for 1080p
+		width, height, bitrate = 1920, 1080, 5000000 // 5 Mbps for 1080p
 	case "720p":
-		width, height, bitrate = 1280, 720, 2500000   // 2.5 Mbps for 720p
+		width, height, bitrate = 1280, 720, 2500000 // 2.5 Mbps for 720p
 	case "480p":
-		width, height, bitrate = 854, 480, 1000000    // 1 Mbps for 480p
+		width, height, bitrate = 854, 480, 1000000 // 1 Mbps for 480p
 	default:
-		width, height, bitrate = 1280, 720, 2500000   // Default to 720p
+		width, height, bitrate = 1280, 720, 2500000 // Default to 720p
 	}
 
 	return mctypes.Output{
@@ -319,9 +346,9 @@ func (mp *MediaProcessor) createQualityOutput(quality string) mctypes.Output {
 			CodecSettings: &mctypes.VideoCodecSettings{
 				Codec: mctypes.VideoCodecH264,
 				H264Settings: &mctypes.H264Settings{
-					Bitrate: bitrate,
-					CodecProfile: mctypes.H264CodecProfileMain,
-					CodecLevel: mctypes.H264CodecLevelAuto,
+					Bitrate:         bitrate,
+					CodecProfile:    mctypes.H264CodecProfileMain,
+					CodecLevel:      mctypes.H264CodecLevelAuto,
 					RateControlMode: mctypes.H264RateControlModeVbr,
 				},
 			},
@@ -334,8 +361,8 @@ func (mp *MediaProcessor) createQualityOutput(quality string) mctypes.Output {
 				CodecSettings: &mctypes.AudioCodecSettings{
 					Codec: mctypes.AudioCodecAac,
 					AacSettings: &mctypes.AacSettings{
-						Bitrate:    int32(128000),
-						SampleRate: int32(48000),
+						Bitrate:      int32(128000),
+						SampleRate:   int32(48000),
 						CodecProfile: mctypes.AacCodecProfileLc,
 					},
 				},
@@ -348,29 +375,25 @@ func (mp *MediaProcessor) createQualityOutput(quality string) mctypes.Output {
 }
 
 // processAudioWithCostTracking enhances audio processing with detailed cost tracking
-func (mp *MediaProcessor) processAudioWithCostTracking(ctx context.Context, data []byte, event MediaProcessingEvent, tasks []string) (ProcessingResult, error) {
+func (mp *MediaProcessor) processAudioWithCostTracking(ctx context.Context, data []byte, event MediaProcessingEvent, _ []string) (ProcessingResult, error) {
 	result := ProcessingResult{}
 
 	// Initialize audio processing metrics
 	audioMetrics := &TranscodingJobMetrics{
-		JobID:         event.JobID,
-		MediaID:       event.MediaID,
-		Username:      event.Username,
-		InputFormat:   "audio/mpeg",
-		InputSize:     int64(len(data)),
+		JobID:          event.JobID,
+		MediaID:        event.MediaID,
+		Username:       event.Username,
+		InputFormat:    "audio/mpeg",
+		InputSize:      int64(len(data)),
 		OutputVariants: make(map[string]string),
-		OutputSizes:   make(map[string]int64),
-		CostBreakdown: make(map[string]int64),
-		StartedAt:     time.Now(),
-		Status:        "processing",
+		OutputSizes:    make(map[string]int64),
+		CostBreakdown:  make(map[string]int64),
+		StartedAt:      time.Now(),
+		Status:         "processing",
 	}
 
 	// Get user's media processing config
-	config, err := mp.getUserMediaConfig(ctx, event.Username)
-	if err != nil {
-		mp.logger.Error("failed to get user media config", zap.Error(err))
-		return mp.uploadOriginalOnly(ctx, data, event, "audio/mpeg")
-	}
+	config := mp.getUserMediaConfig(ctx, event.Username)
 
 	// Check if audio processing is enabled
 	if !config.AudioProcessingEnabled {
@@ -379,11 +402,7 @@ func (mp *MediaProcessor) processAudioWithCostTracking(ctx context.Context, data
 	}
 
 	// Check user's remaining budget
-	remainingBudget, err := mp.getUserRemainingBudget(ctx, event.Username)
-	if err != nil {
-		mp.logger.Error("failed to get user budget", zap.Error(err))
-		return mp.uploadOriginalOnly(ctx, data, event, "audio/mpeg")
-	}
+	remainingBudget := mp.getUserRemainingBudget(ctx, event.Username)
 
 	// Estimate audio processing costs
 	lambdaProcessingCost := mp.estimateAudioProcessingCost(int64(len(data)))
@@ -409,8 +428,8 @@ func (mp *MediaProcessor) processAudioWithCostTracking(ctx context.Context, data
 	}
 
 	// Track costs
-	audioMetrics.CostBreakdown["s3_upload"] = uploadCost
-	audioMetrics.CostBreakdown["s3_storage"] = storageCost
+	audioMetrics.CostBreakdown[serviceS3Upload] = uploadCost
+	audioMetrics.CostBreakdown[serviceS3Storage] = storageCost
 	audioMetrics.CostBreakdown["lambda_processing"] = lambdaProcessingCost
 
 	result.Sizes = map[string]SizeInfo{
@@ -436,9 +455,7 @@ func (mp *MediaProcessor) processAudioWithCostTracking(ctx context.Context, data
 	}
 
 	// Track detailed audio processing costs
-	if err := mp.trackTranscodingCosts(ctx, audioMetrics); err != nil {
-		mp.logger.Warn("failed to track audio processing costs", zap.Error(err))
-	}
+	mp.trackTranscodingCosts(ctx, audioMetrics)
 
 	// Update user's storage usage
 	if err := mp.updateStorageUsageForUser(ctx, event.Username, int64(len(data))); err != nil {

@@ -1,8 +1,10 @@
+// Package repositories provides repository implementations for data access layer
 package repositories
 
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -10,6 +12,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+)
+
+// MediaRepositoryInterface defines the interface for media operations
+type MediaRepositoryInterface interface {
+	GetMedia(ctx context.Context, mediaID string) (*models.Media, error)
+}
+
+// Constants for media types to avoid repetition
+const (
+	MediaTypeImage   = "image"
+	MediaTypeVideo   = "video"
+	MediaTypeAudio   = "audio"
+	MediaTypeGifv    = "gifv"
+	MediaTypeUnknown = "unknown"
 )
 
 // Helper function to convert from models.ScheduledStatus to storage.ScheduledStatus
@@ -63,6 +79,7 @@ type ScheduledStatusRepository struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
+	mediaRepo MediaRepositoryInterface // Add media repository dependency
 }
 
 // NewScheduledStatusRepository creates a new scheduled status repository
@@ -72,6 +89,11 @@ func NewScheduledStatusRepository(db core.DB, tableName string, logger *zap.Logg
 		tableName: tableName,
 		logger:    logger,
 	}
+}
+
+// SetMediaRepository sets the media repository dependency
+func (r *ScheduledStatusRepository) SetMediaRepository(mediaRepo MediaRepositoryInterface) {
+	r.mediaRepo = mediaRepo
 }
 
 // CreateScheduledStatus creates a new scheduled status
@@ -132,7 +154,7 @@ func (r *ScheduledStatusRepository) GetScheduledStatus(ctx context.Context, id s
 
 // GetScheduledStatuses retrieves scheduled statuses for a user
 func (r *ScheduledStatusRepository) GetScheduledStatuses(ctx context.Context, username string, limit int, cursor string) ([]*storage.ScheduledStatus, string, error) {
-	pk := fmt.Sprintf("USER#%s#SCHEDULED", username)
+	pk := fmt.Sprintf(storage.UserScheduledKey, username)
 	query := r.db.WithContext(ctx).Model(&models.ScheduledStatus{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "ASC") // Ordered by ID
@@ -286,13 +308,167 @@ func (r *ScheduledStatusRepository) GetScheduledStatusMedia(ctx context.Context,
 		return []any{}, nil
 	}
 
-	// Query for media attachments based on the media IDs
-	// This is a simplified implementation - in practice you'd query the media table
-	// For now, return empty slice as the legacy implementation seems to use a different pattern
-	r.logger.Info("getting scheduled status media",
+	r.logger.Debug("retrieving media attachments for scheduled status",
 		zap.String("scheduled_status_id", id),
-		zap.Strings("media_ids", scheduled.MediaIDs))
+		zap.Strings("media_ids", scheduled.MediaIDs),
+		zap.Int("media_count", len(scheduled.MediaIDs)))
 
-	// TODO: Implement proper media attachment queries when media repository is available
-	return []any{}, nil
+	// Check if media repository is available
+	if r.mediaRepo == nil {
+		r.logger.Warn("media repository not available, returning empty media list",
+			zap.String("scheduled_status_id", id))
+		return []any{}, nil
+	}
+
+	// Retrieve media attachments by querying each media ID
+	mediaAttachments := make([]any, 0, len(scheduled.MediaIDs))
+	retrievedCount := 0
+	errorCount := 0
+
+	for order, mediaID := range scheduled.MediaIDs {
+		// Attempt to get media by ID
+		media, err := r.mediaRepo.GetMedia(ctx, mediaID)
+		if err != nil {
+			r.logger.Warn("failed to retrieve media attachment",
+				zap.String("scheduled_status_id", id),
+				zap.String("media_id", mediaID),
+				zap.Int("order", order),
+				zap.Error(err))
+			errorCount++
+			continue // Continue with other media rather than failing entirely
+		}
+
+		// Convert media to Mastodon API compatible attachment
+		attachment := r.convertToMediaAttachment(media, order)
+		mediaAttachments = append(mediaAttachments, attachment)
+		retrievedCount++
+
+		r.logger.Debug("successfully retrieved media attachment",
+			zap.String("media_id", mediaID),
+			zap.String("content_type", media.ContentType),
+			zap.Int("order", order))
+	}
+
+	// Log summary of media retrieval
+	r.logger.Info("completed media retrieval for scheduled status",
+		zap.String("scheduled_status_id", id),
+		zap.Int("requested_count", len(scheduled.MediaIDs)),
+		zap.Int("retrieved_count", retrievedCount),
+		zap.Int("error_count", errorCount))
+
+	return mediaAttachments, nil
+}
+
+// convertToMediaAttachment converts a Media model to Mastodon API compatible attachment
+func (r *ScheduledStatusRepository) convertToMediaAttachment(media *models.Media, _ int) map[string]any {
+	// Determine media type based on content type
+	mediaType := MediaTypeUnknown
+	if media.IsImage() {
+		mediaType = MediaTypeImage
+	} else if media.IsVideo() {
+		mediaType = MediaTypeVideo
+	} else if media.IsAudio() {
+		mediaType = MediaTypeAudio
+	}
+
+	// Handle GIF images as gifv type
+	if media.ContentType == "image/gif" {
+		mediaType = MediaTypeGifv
+	}
+
+	// Build attachment object compatible with Mastodon API
+	attachment := map[string]any{
+		"id":          media.MediaID,
+		"type":        mediaType,
+		"url":         media.CDNUrl,
+		"preview_url": media.CDNUrl, // Use same URL for preview by default
+		"remote_url":  nil,          // For local media, this is nil
+		"description": media.Description,
+		"meta": map[string]any{
+			"original": map[string]any{
+				"width":  media.Width,
+				"height": media.Height,
+				"size":   fmt.Sprintf("%dx%d", media.Width, media.Height),
+				"aspect": r.calculateAspect(media.Width, media.Height),
+			},
+		},
+		"blurhash": media.Blurhash,
+		"focus":    r.parseFocus(media.Focus),
+	}
+
+	// Add duration for video/audio
+	if mediaType == MediaTypeVideo || mediaType == MediaTypeAudio {
+		if meta, ok := attachment["meta"].(map[string]any); ok {
+			if original, ok := meta["original"].(map[string]any); ok {
+				original["duration"] = media.Duration
+			}
+		}
+	}
+
+	// Add variants/thumbnails if available
+	if len(media.Variants) > 0 {
+		attachment["variants"] = r.convertVariants(media.Variants)
+	}
+
+	// Add preview variant for videos/images
+	if mediaType == MediaTypeVideo || mediaType == MediaTypeImage {
+		if thumbnail, exists := media.GetVariant("thumbnail"); exists {
+			attachment["preview_url"] = thumbnail.CDNUrl
+			if meta, ok := attachment["meta"].(map[string]any); ok {
+				meta["small"] = map[string]any{
+					"width":  thumbnail.Width,
+					"height": thumbnail.Height,
+					"size":   fmt.Sprintf("%dx%d", thumbnail.Width, thumbnail.Height),
+					"aspect": r.calculateAspect(thumbnail.Width, thumbnail.Height),
+				}
+			}
+		}
+	}
+
+	return attachment
+}
+
+// convertVariants converts media variants to API format
+func (r *ScheduledStatusRepository) convertVariants(variants map[string]models.MediaVariant) map[string]any {
+	apiVariants := make(map[string]any)
+	for name, variant := range variants {
+		apiVariants[name] = map[string]any{
+			"url":          variant.CDNUrl,
+			"content_type": variant.ContentType,
+			"width":        variant.Width,
+			"height":       variant.Height,
+			"file_size":    variant.FileSize,
+		}
+	}
+	return apiVariants
+}
+
+// calculateAspect calculates aspect ratio for media
+func (r *ScheduledStatusRepository) calculateAspect(width, height int) float64 {
+	if height == 0 {
+		return 1.0
+	}
+	return float64(width) / float64(height)
+}
+
+// parseFocus parses focus point string into API format
+func (r *ScheduledStatusRepository) parseFocus(focus string) map[string]float64 {
+	if focus == "" {
+		return map[string]float64{"x": 0.0, "y": 0.0}
+	}
+	
+	parts := strings.Split(focus, ",")
+	if len(parts) != 2 {
+		return map[string]float64{"x": 0.0, "y": 0.0}
+	}
+	
+	var x, y float64
+	if _, err := fmt.Sscanf(parts[0], "%f", &x); err != nil {
+		x = 0.0
+	}
+	if _, err := fmt.Sscanf(parts[1], "%f", &y); err != nil {
+		y = 0.0
+	}
+	
+	return map[string]float64{"x": x, "y": y}
 }

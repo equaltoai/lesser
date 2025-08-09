@@ -248,7 +248,7 @@ func generateInstanceID(domain string) string {
 
 // ClearCache clears the local cache (useful for testing)
 func (ir *InstanceRegistry) ClearCache() {
-	ir.cache.Range(func(key, value interface{}) bool {
+	ir.cache.Range(func(key, _ interface{}) bool {
 		ir.cache.Delete(key)
 		return true
 	})
@@ -262,7 +262,7 @@ func (ir *InstanceRegistry) GetCacheStats() map[string]interface{} {
 
 	// Count cache entries
 	count := 0
-	ir.cache.Range(func(key, value interface{}) bool {
+	ir.cache.Range(func(_, _ interface{}) bool {
 		count++
 		return true
 	})

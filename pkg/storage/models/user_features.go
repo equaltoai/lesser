@@ -16,14 +16,14 @@ type UserPreference struct {
 	Username string `json:"username"` // Who owns the preference
 	Key      string `json:"key"`      // Preference key (e.g., "language", "theme")
 	Value    string `json:"value"`    // Preference value (JSON encoded)
-	
+
 	// Metadata
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name
 func (UserPreference) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate prepares the UserPreference for creation
@@ -32,16 +32,16 @@ func (p *UserPreference) BeforeCreate() error {
 	if p.UpdatedAt.IsZero() {
 		p.UpdatedAt = time.Now()
 	}
-	
+
 	// Update keys
 	p.UpdateKeys()
-	
+
 	return nil
 }
 
 // UpdateKeys updates the primary key fields based on the current data
 func (p *UserPreference) UpdateKeys() {
-	p.PK = fmt.Sprintf("USER#%s", p.Username)
+	p.PK = fmt.Sprintf(KeyPatternUser, p.Username)
 	p.SK = fmt.Sprintf("PREFERENCE#%s", p.Key)
 }
 
@@ -56,7 +56,7 @@ type FollowRequestState struct {
 	RequesterID string `json:"requester_id"` // Who made the request
 	TargetID    string `json:"target_id"`    // Who the request is for
 	State       string `json:"state"`        // pending, accepted, rejected
-	
+
 	// Metadata
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -64,7 +64,7 @@ type FollowRequestState struct {
 
 // TableName returns the DynamoDB table name
 func (FollowRequestState) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate prepares the FollowRequestState for creation
@@ -76,10 +76,10 @@ func (f *FollowRequestState) BeforeCreate() error {
 	if f.UpdatedAt.IsZero() {
 		f.UpdatedAt = f.CreatedAt
 	}
-	
+
 	// Update keys
 	f.UpdateKeys()
-	
+
 	return nil
 }
 
@@ -89,7 +89,6 @@ func (f *FollowRequestState) UpdateKeys() {
 	f.SK = fmt.Sprintf("TARGET#%s", f.TargetID)
 }
 
-
 // FieldVerification represents a verified field on a user's profile
 // Key pattern: PK=USER#{username}, SK=FIELD_VERIFICATION#{field_name}
 type FieldVerification struct {
@@ -98,17 +97,17 @@ type FieldVerification struct {
 	SK string `dynamorm:"sk" json:"sk"` // Format: "FIELD_VERIFICATION#{field_name}"
 
 	// Field verification data
-	Username    string    `json:"username"`     // Who owns the field
-	FieldName   string    `json:"field_name"`   // Field name (e.g., "website", "github")
-	FieldValue  string    `json:"field_value"`  // Field value
-	VerifiedAt  time.Time `json:"verified_at"`  // When verified
-	VerifiedBy  string    `json:"verified_by"`  // How verified (e.g., "link", "dns", "manual")
-	ExpiresAt   time.Time `json:"expires_at"`   // When verification expires
+	Username   string    `json:"username"`    // Who owns the field
+	FieldName  string    `json:"field_name"`  // Field name (e.g., "website", "github")
+	FieldValue string    `json:"field_value"` // Field value
+	VerifiedAt time.Time `json:"verified_at"` // When verified
+	VerifiedBy string    `json:"verified_by"` // How verified (e.g., "link", "dns", "manual")
+	ExpiresAt  time.Time `json:"expires_at"`  // When verification expires
 }
 
 // TableName returns the DynamoDB table name
 func (FieldVerification) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate prepares the FieldVerification for creation
@@ -117,16 +116,16 @@ func (f *FieldVerification) BeforeCreate() error {
 	if f.VerifiedAt.IsZero() {
 		f.VerifiedAt = time.Now()
 	}
-	
+
 	// Update keys
 	f.UpdateKeys()
-	
+
 	return nil
 }
 
 // UpdateKeys updates the primary key fields based on the current data
 func (f *FieldVerification) UpdateKeys() {
-	f.PK = fmt.Sprintf("USER#%s", f.Username)
+	f.PK = fmt.Sprintf(KeyPatternUser, f.Username)
 	f.SK = fmt.Sprintf("FIELD_VERIFICATION#%s", f.FieldName)
 }
 

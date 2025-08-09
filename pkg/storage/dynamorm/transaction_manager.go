@@ -33,9 +33,13 @@ type TransactionOperation struct {
 type OperationType int
 
 const (
+	// OperationPut represents a put operation
 	OperationPut OperationType = iota
+	// OperationUpdate represents an update operation
 	OperationUpdate
+	// OperationDelete represents a delete operation
 	OperationDelete
+	// OperationConditionCheck represents a condition check operation
 	OperationConditionCheck
 )
 
@@ -118,7 +122,9 @@ func (tm *TransactionManager) ExecuteWriteWithConfig(ctx context.Context, config
 			defer func() {
 				// Transactions consume 2x write capacity units
 				writeUnits := len(operations) * 2
-				tm.tracker.TrackDynamoWrite(writeUnits)
+				if err := tm.tracker.TrackDynamoWrite(writeUnits); err != nil {
+					zap.L().Warn("failed to track transaction write cost", zap.Error(err))
+				}
 			}()
 		}
 
@@ -189,7 +195,7 @@ func (tm *TransactionManager) ExecuteWithRetry(ctx context.Context, operations .
 }
 
 // executeTransaction executes the actual transaction
-func (tm *TransactionManager) executeTransaction(ctx context.Context, operations []TransactionOperation) error {
+func (tm *TransactionManager) executeTransaction(_ context.Context, operations []TransactionOperation) error {
 	return tm.client.Transaction(func(tx *core.Tx) error {
 		for i, op := range operations {
 			if err := tm.executeOperation(tx, op); err != nil {

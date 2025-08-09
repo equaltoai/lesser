@@ -21,33 +21,33 @@ type TranscodingJob struct {
 	GSI2SK string `dynamorm:"index:media-jobs-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
 
 	// Core job data
-	JobID            string            `json:"job_id"`
-	MediaID          string            `json:"media_id"`
-	UserID           string            `json:"user_id"`
-	Username         string            `json:"username"`
-	JobType          string            `json:"job_type"`          // "video", "audio", "image"
-	Status           string            `json:"status"`            // "processing", "completed", "failed"
+	JobID    string `json:"job_id"`
+	MediaID  string `json:"media_id"`
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	JobType  string `json:"job_type"` // "video", "audio", "image"
+	Status   string `json:"status"`   // "processing", "completed", "failed"
 
 	// Input details
-	InputFormat      string            `json:"input_format"`      // "video/mp4", "audio/mpeg", etc.
-	InputSize        int64             `json:"input_size"`        // bytes
-	InputDuration    int64             `json:"input_duration"`    // milliseconds (for video/audio)
-	InputResolution  string            `json:"input_resolution"`  // "1920x1080" (for video)
+	InputFormat     string `json:"input_format"`     // "video/mp4", "audio/mpeg", etc.
+	InputSize       int64  `json:"input_size"`       // bytes
+	InputDuration   int64  `json:"input_duration"`   // milliseconds (for video/audio)
+	InputResolution string `json:"input_resolution"` // "1920x1080" (for video)
 
 	// Output details
-	OutputVariants   map[string]string `json:"output_variants"`   // quality -> format mapping
-	OutputSizes      map[string]int64  `json:"output_sizes"`      // quality -> size in bytes
-	TotalOutputSize  int64             `json:"total_output_size"` // sum of all output sizes
+	OutputVariants  map[string]string `json:"output_variants"`   // quality -> format mapping
+	OutputSizes     map[string]int64  `json:"output_sizes"`      // quality -> size in bytes
+	TotalOutputSize int64             `json:"total_output_size"` // sum of all output sizes
 
 	// Processing metrics
-	ProcessingTimeMs int64     `json:"processing_time_ms"`
-	StartedAt        time.Time `json:"started_at"`
+	ProcessingTimeMs int64      `json:"processing_time_ms"`
+	StartedAt        time.Time  `json:"started_at"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty"`
-	ErrorMessage     string    `json:"error_message,omitempty"`
+	ErrorMessage     string     `json:"error_message,omitempty"`
 
 	// Cost breakdown (in microdollars)
 	TotalCostMicros        int64            `json:"total_cost_micros"`
-	CostBreakdown          map[string]int64 `json:"cost_breakdown"`          // service -> cost
+	CostBreakdown          map[string]int64 `json:"cost_breakdown"` // service -> cost
 	MediaConvertCostMicros int64            `json:"mediaconvert_cost_micros"`
 	S3StorageCostMicros    int64            `json:"s3_storage_cost_micros"`
 	S3RequestCostMicros    int64            `json:"s3_request_cost_micros"`
@@ -55,16 +55,16 @@ type TranscodingJob struct {
 	RekognitionCostMicros  int64            `json:"rekognition_cost_micros"`
 
 	// Quality and transcoding settings
-	QualityLevels    []string `json:"quality_levels"`    // ["480p", "720p", "1080p"]
-	ThumbnailCount   int      `json:"thumbnail_count"`   // number of thumbnails generated
-	AnalysisEnabled  bool     `json:"analysis_enabled"`  // whether content analysis was performed
-	
+	QualityLevels   []string `json:"quality_levels"`   // ["480p", "720p", "1080p"]
+	ThumbnailCount  int      `json:"thumbnail_count"`  // number of thumbnails generated
+	AnalysisEnabled bool     `json:"analysis_enabled"` // whether content analysis was performed
+
 	// AWS service job IDs for tracking
-	MediaConvertJobID string `json:"mediaconvert_job_id,omitempty"`
-	S3Keys            []string `json:"s3_keys"`           // all S3 keys created by this job
-	
+	MediaConvertJobID string   `json:"mediaconvert_job_id,omitempty"`
+	S3Keys            []string `json:"s3_keys"` // all S3 keys created by this job
+
 	// Efficiency metrics
-	CompressionRatio     float64 `json:"compression_ratio"`     // output_size / input_size
+	CompressionRatio    float64 `json:"compression_ratio"`     // output_size / input_size
 	CostPerMB           float64 `json:"cost_per_mb"`           // cost per MB processed
 	ProcessingSpeedMBps float64 `json:"processing_speed_mbps"` // MB/second processing speed
 
@@ -79,13 +79,13 @@ type TranscodingJob struct {
 	// TTL for old transcoding jobs (keep for 1 year)
 	ExpiresAt *int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
 
-	// Version for optimistic locking  
+	// Version for optimistic locking
 	ModelVersion int `dynamorm:"version" json:"model_version"`
 }
 
 // TableName returns the DynamoDB table name for TranscodingJob
 func (TranscodingJob) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the TranscodingJob model before creation
@@ -133,7 +133,7 @@ func (tj *TranscodingJob) BeforeCreate() error {
 // BeforeUpdate sets up the model before update
 func (tj *TranscodingJob) BeforeUpdate() error {
 	tj.UpdatedAt = time.Now()
-	
+
 	// Update GSI keys
 	tj.setupGSIKeys()
 
@@ -341,10 +341,10 @@ func (tj *TranscodingJob) Duration() time.Duration {
 // GetServiceCostBreakdown returns costs broken down by AWS service
 func (tj *TranscodingJob) GetServiceCostBreakdown() map[string]int64 {
 	return map[string]int64{
-		"mediaconvert":  tj.MediaConvertCostMicros,
-		"s3_storage":    tj.S3StorageCostMicros,
-		"s3_requests":   tj.S3RequestCostMicros,
-		"lambda":        tj.LambdaCostMicros,
-		"rekognition":   tj.RekognitionCostMicros,
+		"mediaconvert": tj.MediaConvertCostMicros,
+		"s3_storage":   tj.S3StorageCostMicros,
+		"s3_requests":  tj.S3RequestCostMicros,
+		"lambda":       tj.LambdaCostMicros,
+		"rekognition":  tj.RekognitionCostMicros,
 	}
 }

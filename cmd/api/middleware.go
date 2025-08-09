@@ -17,7 +17,7 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			requestID := ctx.GetRequestID()
-			
+
 			// Extract user and tenant context for correlation
 			userID := ""
 			tenantID := ""
@@ -27,7 +27,7 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 			if tenant, ok := ctx.Get("tenantID").(string); ok {
 				tenantID = tenant
 			}
-			
+
 			// Create contextual logger with correlation fields
 			contextLogger := logger.With(
 				zap.String("request_id", requestID),
@@ -37,10 +37,10 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 				zap.String("function_version", os.Getenv("AWS_LAMBDA_FUNCTION_VERSION")),
 				zap.String("cold_start", os.Getenv("AWS_LAMBDA_INITIALIZATION_TYPE")),
 			)
-			
+
 			// Store contextual logger in context
 			ctx.Set("logger", contextLogger)
-			
+
 			// Log request start
 			contextLogger.Info("request_start",
 				zap.String("method", ctx.Request.Method),
@@ -51,11 +51,11 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 
 			// Process the request
 			err := next.Handle(ctx)
-			
+
 			// Calculate execution metrics
 			duration := time.Since(start)
 			statusCode := ctx.Response.StatusCode
-			
+
 			// Log request completion with metrics
 			logLevel := zap.InfoLevel
 			if err != nil {
@@ -63,7 +63,7 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 			} else if statusCode >= 400 {
 				logLevel = zap.WarnLevel
 			}
-			
+
 			contextLogger.Log(logLevel, "request_complete",
 				zap.String("method", ctx.Request.Method),
 				zap.String("path", ctx.Request.Path),
@@ -139,15 +139,6 @@ func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 	}
 }
 
-// createAuthMiddleware creates Lift-native authentication middleware
-func createAuthMiddleware() lift.Middleware {
-	return liftAuthSvc.RequireAuth()
-}
-
-// createAdminMiddleware creates Lift-native admin middleware that checks for admin scope
-func createAdminMiddleware() lift.Middleware {
-	return liftAuthSvc.RequireScope("admin")
-}
 
 // Helper functions for cost tracking
 
@@ -169,7 +160,9 @@ func TrackCost(ctx *lift.Context, fn func(*cost.Tracker)) {
 // createPerformanceMonitoringMiddleware is deprecated in favor of EMF-based metrics
 // Use observability.CreateEMFPerformanceMonitoringMiddleware instead
 // This function is kept for backwards compatibility but should not be used in new code
-func createPerformanceMonitoringMiddleware(metricsCollector *observability.MetricsCollector) lift.Middleware {
+//
+//nolint:unused // Used in tests (infrastructure_test.go)
+func createPerformanceMonitoringMiddleware(_ *observability.MetricsCollector) lift.Middleware {
 	// This is now a no-op since we've migrated to EMF
 	// The EMF middleware handles all performance monitoring without polling
 	return func(next lift.Handler) lift.Handler {
@@ -188,7 +181,3 @@ func GetLogger(ctx *lift.Context) *zap.Logger {
 	return zap.L() // fallback to global logger
 }
 
-// createEnhancedLoggingMiddleware is an alias for createLoggingMiddleware to maintain API compatibility
-func createEnhancedLoggingMiddleware(logger *zap.Logger) lift.Middleware {
-	return createLoggingMiddleware(logger)
-}

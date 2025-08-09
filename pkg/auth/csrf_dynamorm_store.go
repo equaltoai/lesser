@@ -34,11 +34,11 @@ func (s *DynamORMCSRFStore) Get(token string) (*CSRFToken, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if !valid {
 		return nil, ErrInvalidCSRF
 	}
-	
+
 	return &CSRFToken{
 		Token:     retrievedToken,
 		UserID:    userID,

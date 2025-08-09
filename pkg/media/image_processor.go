@@ -82,7 +82,7 @@ func decodeImage(r io.Reader, mimeType string) (image.Image, string, error) {
 	switch mimeType {
 	case "image/jpeg":
 		img, err := jpeg.Decode(r)
-		return img, "jpeg", err
+		return img, FormatJPEG, err
 	case "image/png":
 		img, err := png.Decode(r)
 		return img, "png", err

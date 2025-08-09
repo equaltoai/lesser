@@ -1,3 +1,4 @@
+// Package reports provides enhanced content reporting services with trust integration and moderation workflow.
 package reports
 
 import (
@@ -333,14 +334,14 @@ func (s *EnhancedReportService) GetReportModerationStatus(ctx context.Context, r
 	status := &ReportModerationStatus{
 		ReportID:          reportID,
 		ModerationEventID: report.ModerationEventID,
-		Status:            string(report.Status),
+		Status:            report.Status,
 	}
 
 	if report.ModerationEventID != "" {
 		// Get moderation event details
 		event, err := s.store.Moderation().GetModerationEvent(ctx, report.ModerationEventID)
 		if err == nil {
-			status.ModerationStatus = string(event.EventType)
+			status.ModerationStatus = event.EventType
 			status.ConsensusReached = false
 
 			// Check for decision
@@ -348,7 +349,7 @@ func (s *EnhancedReportService) GetReportModerationStatus(ctx context.Context, r
 			if err == nil && decision != nil {
 				status.ConsensusReached = true
 				status.ConsensusScore = decision.ConsensusScore
-				status.Decision = string(decision.Action)
+				status.Decision = decision.Action
 			}
 		}
 	}

@@ -28,7 +28,7 @@ type Device struct {
 	LastUserAgent string    `json:"last_user_agent"`
 	CreatedAt     time.Time `json:"created_at"`
 	LastSeenAt    time.Time `json:"last_seen_at"`
-	TrustLevel    string    `json:"trust_level"` // trusted, untrusted, suspicious
+	TrustLevel    string    `json:"trust_level"`        // trusted, untrusted, suspicious
 	Platform      string    `json:"platform,omitempty"` // iOS, Android, Windows, etc.
 	AppVersion    string    `json:"app_version,omitempty"`
 	Location      string    `json:"location,omitempty"` // Approximate location
@@ -41,8 +41,8 @@ type Device struct {
 // UpdateKeys updates the GSI keys based on the device data
 func (d *Device) UpdateKeys() {
 	// Primary key
-	d.PK = fmt.Sprintf("USER#%s", d.Username)
-	d.SK = fmt.Sprintf("DEVICE#%s", d.DeviceID)
+	d.PK = fmt.Sprintf(KeyPatternUser, d.Username)
+	d.SK = fmt.Sprintf(KeyPatternDevice, d.DeviceID)
 
 	// GSI1 for querying user's devices by last activity
 	d.GSI1PK = fmt.Sprintf("USER#%s#DEVICES", d.Username)

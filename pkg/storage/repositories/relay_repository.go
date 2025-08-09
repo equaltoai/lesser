@@ -267,7 +267,7 @@ func (r *RelayRepository) UpdateRelayStatus(ctx context.Context, relayURL string
 		logger.Error("failed to update relay status", zap.Error(err))
 		return fmt.Errorf("failed to update relay status: %w", err)
 	}
-	
+
 	// Now save with new values
 	err = r.db.WithContext(ctx).Model(&model).Create()
 

@@ -12,8 +12,8 @@ type SearchCache struct {
 	SK string `dynamorm:"sk" json:"-"`
 
 	// Fields
-	Query     string                 `json:"query"`      // original query
-	Results   map[string]interface{} `json:"results"`    // cached search results
+	Query     string                 `json:"query"`   // original query
+	Results   map[string]interface{} `json:"results"` // cached search results
 	CreatedAt time.Time              `json:"created_at"`
 	TTL       int64                  `json:"ttl,omitempty" dynamorm:"ttl"` // Unix timestamp
 }

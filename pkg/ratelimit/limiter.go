@@ -1,3 +1,4 @@
+// Package ratelimit provides rate limiting functionality with sliding window algorithms for API endpoint protection.
 package ratelimit
 
 import (
@@ -13,17 +14,20 @@ import (
 )
 
 // RateLimitStorage defines the interface for rate limiting storage operations
+//
+//nolint:revive // RateLimit prefix clarifies this is ratelimit-specific storage
 type RateLimitStorage interface {
 	CheckAPIRateLimit(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error
 	GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error)
 }
 
+// RateLimiter provides rate limiting functionality
 type RateLimiter struct {
 	storage core.RepositoryStorage
 	logger  *zap.Logger
 }
 
-
+// NewRateLimiter creates a new rate limiter instance
 func NewRateLimiter(storage core.RepositoryStorage) *RateLimiter {
 	return &RateLimiter{
 		storage: storage,
@@ -31,10 +35,10 @@ func NewRateLimiter(storage core.RepositoryStorage) *RateLimiter {
 	}
 }
 
+// Check verifies if the rate limit has been exceeded for the given key
 func (rl *RateLimiter) Check(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error {
 	return rl.storage.RateLimit().CheckAPIRateLimit(ctx, userID, endpoint, limit, window)
 }
-
 
 // GetLimitInfo returns current limit info for headers
 func (rl *RateLimiter) GetLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
@@ -42,6 +46,8 @@ func (rl *RateLimiter) GetLimitInfo(ctx context.Context, userID, endpoint string
 }
 
 // RateLimitMiddleware creates a middleware for rate limiting
+//
+//nolint:revive // RateLimit prefix clarifies this is ratelimit-specific middleware
 func RateLimitMiddleware(limiter *RateLimiter) func(http.HandlerFunc) http.HandlerFunc {
 	// Define limits per endpoint
 	limits := map[string]struct {

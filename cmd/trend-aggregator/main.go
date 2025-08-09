@@ -1,9 +1,9 @@
+// Package main implements the trend-aggregator Lambda function for aggregating trending content and hashtags.
 package main
 
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -391,7 +391,7 @@ type LinkTrendData struct {
 	LastShared    time.Time
 }
 
-// Storage interface compatible structures for trend data
+// HashtagTrendStorage represents trending hashtag data for storage
 type HashtagTrendStorage struct {
 	Name          string
 	UsageCount    int64
@@ -402,6 +402,7 @@ type HashtagTrendStorage struct {
 	Velocity      float64
 }
 
+// StatusTrendStorage represents trending status data for storage
 type StatusTrendStorage struct {
 	ID            string
 	AuthorID      string
@@ -415,6 +416,7 @@ type StatusTrendStorage struct {
 	Velocity      float64
 }
 
+// LinkTrendStorage represents trending link data for storage
 type LinkTrendStorage struct {
 	URL           string
 	Title         string
@@ -425,20 +427,6 @@ type LinkTrendStorage struct {
 	Velocity      float64
 }
 
-// extractDomainFromURL extracts domain from URL for basic metadata
-func extractDomainFromURL(url string) string {
-	if strings.HasPrefix(url, "http://") {
-		url = strings.TrimPrefix(url, "http://")
-	} else if strings.HasPrefix(url, "https://") {
-		url = strings.TrimPrefix(url, "https://")
-	}
-
-	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return url
-}
 
 var (
 	logger  *zap.Logger

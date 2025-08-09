@@ -20,7 +20,7 @@ type RouteDeliveryResult struct {
 	RouteID      string    `json:"route_id"`
 	Success      bool      `json:"success"`
 	StatusCode   int       `json:"status_code"`
-	Duration     int64     `json:"duration_ms"`     // Duration in milliseconds
+	Duration     int64     `json:"duration_ms"` // Duration in milliseconds
 	BytesSent    int64     `json:"bytes_sent"`
 	Cost         float64   `json:"cost"`
 	ErrorMessage string    `json:"error_message,omitempty"`
@@ -36,7 +36,7 @@ func (r *RouteDeliveryResult) UpdateKeys() {
 	r.SK = fmt.Sprintf("RESULT#%d", r.Timestamp.UnixNano())
 	r.GSI1PK = "RESULTS"
 	r.GSI1SK = fmt.Sprintf("%d#%s", r.Timestamp.Unix(), r.RouteID)
-	
+
 	// Set TTL for 30 days from now
 	r.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 }
@@ -61,7 +61,7 @@ type OptimizationDecision struct {
 func (o *OptimizationDecision) UpdateKeys() {
 	o.PK = "OPTIMIZATION"
 	o.SK = fmt.Sprintf("DECISION#%d", o.Timestamp.UnixNano())
-	
+
 	// Set TTL for 7 days from now
 	o.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
 }

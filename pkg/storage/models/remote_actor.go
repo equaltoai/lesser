@@ -40,7 +40,7 @@ type RemoteActor struct {
 // UpdateKeys updates the key fields for DynamORM
 func (r *RemoteActor) UpdateKeys() {
 	r.PK = fmt.Sprintf("REMOTE_ACTOR#%s", r.Handle)
-	r.SK = "PROFILE"
+	r.SK = SKProfile
 	r.Domain = extractDomainFromHandle(r.Handle)
 	if !r.ExpiresAt.IsZero() {
 		r.TTL = r.ExpiresAt.Unix()

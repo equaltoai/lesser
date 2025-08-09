@@ -21,5 +21,5 @@ type SearchClickRate struct {
 // UpdateKeys updates the partition and sort keys based on the model's attributes
 func (c *SearchClickRate) UpdateKeys() {
 	c.PK = fmt.Sprintf("CTR#%s", c.Query)
-	c.SK = fmt.Sprintf("ACTOR#%s", c.ActorID)
+	c.SK = fmt.Sprintf(KeyPatternActor, c.ActorID)
 }

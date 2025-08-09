@@ -92,7 +92,7 @@ func (r *MarkerRepository) GetMarkers(ctx context.Context, username string, time
 
 		var markerModel models.Marker
 		err := r.db.WithContext(ctx).Model(&models.Marker{}).Where("PK = ? AND SK = ?", queryModel.PK, queryModel.SK).First(&markerModel)
-		
+
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// Skip this timeline, continue to next (matches legacy behavior)

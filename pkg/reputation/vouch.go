@@ -154,12 +154,17 @@ func (vm *VouchManager) GetVouchByID(ctx context.Context, vouchID string) (*Vouc
 
 	// Convert storage.Vouch to reputation.Vouch
 	vouch := &Vouch{
-		ID:                storageVouch.ID,
-		From:              storageVouch.From,
-		To:                storageVouch.To,
-		InstanceURL:       vm.instanceURL, // Use service's instance URL
-		CreatedAt:         storageVouch.CreatedAt,
-		ExpiresAt:         func() time.Time { if storageVouch.ExpiresAt == nil { return time.Time{} }; return *storageVouch.ExpiresAt }(),
+		ID:          storageVouch.ID,
+		From:        storageVouch.From,
+		To:          storageVouch.To,
+		InstanceURL: vm.instanceURL, // Use service's instance URL
+		CreatedAt:   storageVouch.CreatedAt,
+		ExpiresAt: func() time.Time {
+			if storageVouch.ExpiresAt == nil {
+				return time.Time{}
+			}
+			return *storageVouch.ExpiresAt
+		}(),
 		Confidence:        storageVouch.Confidence,
 		Context:           storageVouch.Context,
 		VoucherReputation: int(storageVouch.VoucherReputation), // Convert float64 to int
@@ -183,12 +188,17 @@ func (vm *VouchManager) GetVouchesForActor(ctx context.Context, actorID string) 
 	vouches := make([]Vouch, 0, len(storageVouches))
 	for _, sv := range storageVouches {
 		vouch := Vouch{
-			ID:                sv.ID,
-			From:              sv.From,
-			To:                sv.To,
-			InstanceURL:       vm.instanceURL, // Use service's instance URL
-			CreatedAt:         sv.CreatedAt,
-			ExpiresAt:         func() time.Time { if sv.ExpiresAt == nil { return time.Time{} }; return *sv.ExpiresAt }(),
+			ID:          sv.ID,
+			From:        sv.From,
+			To:          sv.To,
+			InstanceURL: vm.instanceURL, // Use service's instance URL
+			CreatedAt:   sv.CreatedAt,
+			ExpiresAt: func() time.Time {
+				if sv.ExpiresAt == nil {
+					return time.Time{}
+				}
+				return *sv.ExpiresAt
+			}(),
 			Confidence:        sv.Confidence,
 			Context:           sv.Context,
 			VoucherReputation: int(sv.VoucherReputation), // Convert float64 to int
@@ -214,12 +224,17 @@ func (vm *VouchManager) GetVouchesFromActor(ctx context.Context, actorID string)
 	vouches := make([]Vouch, 0, len(storageVouches))
 	for _, sv := range storageVouches {
 		vouch := Vouch{
-			ID:                sv.ID,
-			From:              sv.From,
-			To:                sv.To,
-			InstanceURL:       vm.instanceURL, // Use service's instance URL
-			CreatedAt:         sv.CreatedAt,
-			ExpiresAt:         func() time.Time { if sv.ExpiresAt == nil { return time.Time{} }; return *sv.ExpiresAt }(),
+			ID:          sv.ID,
+			From:        sv.From,
+			To:          sv.To,
+			InstanceURL: vm.instanceURL, // Use service's instance URL
+			CreatedAt:   sv.CreatedAt,
+			ExpiresAt: func() time.Time {
+				if sv.ExpiresAt == nil {
+					return time.Time{}
+				}
+				return *sv.ExpiresAt
+			}(),
 			Confidence:        sv.Confidence,
 			Context:           sv.Context,
 			VoucherReputation: int(sv.VoucherReputation), // Convert float64 to int

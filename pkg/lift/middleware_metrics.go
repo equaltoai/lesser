@@ -77,49 +77,49 @@ func (mm *MetricsMiddleware) Middleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			startTime := time.Now()
-			
+
 			// Get Lambda context for additional metadata
 			lambdaCtx, _ := lambdacontext.FromContext(ctx.Context)
-			
+
 			// Detect cold start
 			isColdStart := mm.detectColdStart()
-			
+
 			// Set up tracing context
 			operationName := mm.getOperationName(ctx)
-			
+
 			// Record cold start metrics if enabled
 			if mm.config.EnableColdStart && isColdStart {
 				mm.recordColdStartMetrics(ctx.Context, operationName, startTime)
 			}
-			
+
 			// Process the request
 			err := next.Handle(ctx)
-			
+
 			// Calculate execution time
 			duration := time.Since(startTime)
-			
+
 			// Record performance metrics
 			mm.recordRequestMetrics(ctx.Context, RequestMetrics{
-				Operation:    operationName,
-				Duration:     duration,
-				StatusCode:   ctx.Response.StatusCode,
-				Method:       ctx.Request.Method,
-				Path:         ctx.Request.URL().Path,
-				RequestID:    ctx.RequestID,
-				TenantID:     ctx.TenantID(),
-				Error:        err,
-				IsColdStart:  isColdStart,
-				LambdaCtx:    lambdaCtx,
+				Operation:   operationName,
+				Duration:    duration,
+				StatusCode:  ctx.Response.StatusCode,
+				Method:      ctx.Request.Method,
+				Path:        ctx.Request.URL().Path,
+				RequestID:   ctx.RequestID,
+				TenantID:    ctx.TenantID(),
+				Error:       err,
+				IsColdStart: isColdStart,
+				LambdaCtx:   lambdaCtx,
 			})
-			
+
 			// Record runtime metrics
 			mm.recordRuntimeMetrics(ctx.Context, operationName)
-			
+
 			// Flush metrics if buffer is full
 			if len(mm.buffer.metrics) >= mm.buffer.maxSize {
 				mm.flushMetrics(ctx.Context)
 			}
-			
+
 			return err
 		})
 	}
@@ -140,28 +140,28 @@ type RequestMetrics struct {
 }
 
 // recordRequestMetrics records metrics for a single request
-func (mm *MetricsMiddleware) recordRequestMetrics(ctx context.Context, metrics RequestMetrics) {
+func (mm *MetricsMiddleware) recordRequestMetrics(_ context.Context, metrics RequestMetrics) {
 	baseDimensions := mm.getBaseDimensions(metrics.Operation)
-	
+
 	// Add request-specific dimensions
 	requestDimensions := append(baseDimensions,
 		types.Dimension{Name: aws.String("Method"), Value: aws.String(metrics.Method)},
 		types.Dimension{Name: aws.String("StatusCode"), Value: aws.String(strconv.Itoa(metrics.StatusCode))},
 	)
-	
+
 	// Add tenant dimension if available
 	if metrics.TenantID != "" {
-		requestDimensions = append(requestDimensions, 
+		requestDimensions = append(requestDimensions,
 			types.Dimension{Name: aws.String("TenantID"), Value: aws.String(metrics.TenantID)})
 	}
-	
+
 	// Record latency
-	mm.addMetric("OperationLatency", float64(metrics.Duration.Milliseconds()), 
+	mm.addMetric("OperationLatency", float64(metrics.Duration.Milliseconds()),
 		types.StandardUnitMilliseconds, requestDimensions)
-	
+
 	// Record throughput
 	mm.addMetric("RequestCount", 1, types.StandardUnitCount, requestDimensions)
-	
+
 	// Record errors
 	if metrics.Error != nil {
 		errorDimensions := append(baseDimensions,
@@ -169,36 +169,36 @@ func (mm *MetricsMiddleware) recordRequestMetrics(ctx context.Context, metrics R
 		)
 		mm.addMetric("ErrorCount", 1, types.StandardUnitCount, errorDimensions)
 	}
-	
+
 	// Record success rate
 	successValue := 1.0
 	if metrics.Error != nil {
 		successValue = 0.0
 	}
 	mm.addMetric("SuccessRate", successValue, types.StandardUnitCount, baseDimensions)
-	
+
 	// Record cold start
 	if metrics.IsColdStart {
 		mm.addMetric("ColdStartCount", 1, types.StandardUnitCount, baseDimensions)
 	}
-	
+
 	// Record Lambda-specific metrics
 	if metrics.LambdaCtx != nil {
 		lambdaDimensions := append(baseDimensions,
 			types.Dimension{Name: aws.String("RequestID"), Value: aws.String(metrics.LambdaCtx.AwsRequestID)},
 		)
-		
+
 		// Record Lambda invocation
-		mm.addMetric("LambdaInvocations", 1, 
+		mm.addMetric("LambdaInvocations", 1,
 			types.StandardUnitCount, lambdaDimensions)
-		
+
 		// Record memory utilization
 		if memorySize := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); memorySize != "" {
 			if size, err := strconv.Atoi(memorySize); err == nil {
 				var m runtime.MemStats
 				runtime.ReadMemStats(&m)
 				utilization := float64(m.Alloc) / float64(size*1024*1024) * 100
-				mm.addMetric("MemoryUtilization", utilization, 
+				mm.addMetric("MemoryUtilization", utilization,
 					types.StandardUnitPercent, lambdaDimensions)
 			}
 		}
@@ -206,13 +206,13 @@ func (mm *MetricsMiddleware) recordRequestMetrics(ctx context.Context, metrics R
 }
 
 // recordColdStartMetrics records cold start specific metrics
-func (mm *MetricsMiddleware) recordColdStartMetrics(ctx context.Context, operation string, startTime time.Time) {
+func (mm *MetricsMiddleware) recordColdStartMetrics(_ context.Context, operation string, startTime time.Time) {
 	initDuration := startTime.Sub(mm.initTime)
 	baseDimensions := mm.getBaseDimensions(operation)
-	
-	mm.addMetric("ColdStartDuration", float64(initDuration.Milliseconds()), 
+
+	mm.addMetric("ColdStartDuration", float64(initDuration.Milliseconds()),
 		types.StandardUnitMilliseconds, baseDimensions)
-	
+
 	mm.logger.Info("cold_start_detected",
 		zap.String("operation", operation),
 		zap.Duration("init_duration", initDuration),
@@ -221,24 +221,24 @@ func (mm *MetricsMiddleware) recordColdStartMetrics(ctx context.Context, operati
 }
 
 // recordRuntimeMetrics records Go runtime metrics
-func (mm *MetricsMiddleware) recordRuntimeMetrics(ctx context.Context, operation string) {
+func (mm *MetricsMiddleware) recordRuntimeMetrics(_ context.Context, operation string) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	baseDimensions := mm.getBaseDimensions(operation)
-	
+
 	// Memory metrics
 	mm.addMetric("MemoryAllocated", float64(m.Alloc), types.StandardUnitBytes, baseDimensions)
 	mm.addMetric("MemoryTotalAlloc", float64(m.TotalAlloc), types.StandardUnitBytes, baseDimensions)
 	mm.addMetric("MemorySystem", float64(m.Sys), types.StandardUnitBytes, baseDimensions)
-	
+
 	// GC metrics
 	mm.addMetric("GCCount", float64(m.NumGC), types.StandardUnitCount, baseDimensions)
 	mm.addMetric("GCPauseTime", float64(m.PauseTotalNs/1000000), types.StandardUnitMilliseconds, baseDimensions)
-	
+
 	// Goroutine metrics
 	mm.addMetric("GoroutineCount", float64(runtime.NumGoroutine()), types.StandardUnitCount, baseDimensions)
-	
+
 	// CPU metrics (simplified)
 	mm.addMetric("CPUCount", float64(runtime.NumCPU()), types.StandardUnitCount, baseDimensions)
 }
@@ -259,32 +259,32 @@ func (mm *MetricsMiddleware) flushMetrics(ctx context.Context) {
 	if len(mm.buffer.metrics) == 0 {
 		return
 	}
-	
+
 	// CloudWatch has a limit of 20 metrics per request
 	for i := 0; i < len(mm.buffer.metrics); i += 20 {
 		end := i + 20
 		if end > len(mm.buffer.metrics) {
 			end = len(mm.buffer.metrics)
 		}
-		
+
 		input := &cloudwatch.PutMetricDataInput{
 			Namespace:  aws.String(mm.config.Namespace),
 			MetricData: mm.buffer.metrics[i:end],
 		}
-		
+
 		if _, err := mm.cloudwatch.PutMetricData(ctx, input); err != nil {
-			mm.logger.Error("failed to flush metrics", 
+			mm.logger.Error("failed to flush metrics",
 				zap.Error(err),
 				zap.Int("metric_count", end-i),
 			)
 		} else {
-			mm.logger.Debug("flushed metrics", 
+			mm.logger.Debug("flushed metrics",
 				zap.Int("metric_count", end-i),
 				zap.String("namespace", mm.config.Namespace),
 			)
 		}
 	}
-	
+
 	// Clear buffer
 	mm.buffer.metrics = mm.buffer.metrics[:0]
 }
@@ -300,25 +300,25 @@ func (mm *MetricsMiddleware) getBaseDimensions(operation string) []types.Dimensi
 		{Name: aws.String("Environment"), Value: aws.String(mm.config.Environment)},
 		{Name: aws.String("Operation"), Value: aws.String(operation)},
 	}
-	
+
 	// Add function name if available
 	if functionName := os.Getenv("AWS_LAMBDA_FUNCTION_NAME"); functionName != "" {
-		dimensions = append(dimensions, 
+		dimensions = append(dimensions,
 			types.Dimension{Name: aws.String("FunctionName"), Value: aws.String(functionName)})
 	}
-	
+
 	// Add version if available
 	if version := os.Getenv("AWS_LAMBDA_FUNCTION_VERSION"); version != "" {
-		dimensions = append(dimensions, 
+		dimensions = append(dimensions,
 			types.Dimension{Name: aws.String("Version"), Value: aws.String(version)})
 	}
-	
+
 	// Add custom dimensions
 	for key, value := range mm.config.MetricDimensions {
-		dimensions = append(dimensions, 
+		dimensions = append(dimensions,
 			types.Dimension{Name: aws.String(key), Value: aws.String(value)})
 	}
-	
+
 	return dimensions
 }
 
@@ -331,17 +331,15 @@ func (mm *MetricsMiddleware) getOperationName(ctx *lift.Context) string {
 		path := strings.ReplaceAll(reqPath, "/", "_")
 		path = strings.ReplaceAll(path, "{", "")
 		path = strings.ReplaceAll(path, "}", "")
-		if strings.HasPrefix(path, "_") {
-			path = path[1:]
-		}
+		path = strings.TrimPrefix(path, "_")
 		return fmt.Sprintf("%s_%s", ctx.Request.Method, path)
 	}
-	
+
 	// Fallback to function name
 	if functionName := os.Getenv("AWS_LAMBDA_FUNCTION_NAME"); functionName != "" {
 		return functionName
 	}
-	
+
 	return "unknown_operation"
 }
 
@@ -359,9 +357,9 @@ func getErrorType(err error) string {
 	if err == nil {
 		return "none"
 	}
-	
+
 	errStr := err.Error()
-	
+
 	// Common error patterns
 	switch {
 	case strings.Contains(errStr, "timeout"):

@@ -1,3 +1,6 @@
+// Package main implements the activity processor Lambda function that handles
+// ActivityPub activities from DynamoDB streams and updates various timelines
+// and notifications accordingly.
 package main
 
 import (
@@ -11,6 +14,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -19,13 +24,38 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 )
 
+// Constants for common strings
+const (
+	// Timeline types
+	timelineHome      = "HOME"
+	timelinePublic    = "PUBLIC"
+	timelineFederated = "FEDERATED"
+	timelineLocal     = "LOCAL"
+	
+	// Activity types
+	activityInsert = "INSERT"
+	activityModify = "MODIFY"
+	activityRemove = "REMOVE"
+	UnknownValue    = "unknown"
+	UnknownEventMsg = "unknown event type"
+	UnknownTypeMsg  = "processing unknown object type"
+	UnknownErrorMsg = "Default to not retrying unknown errors"
+)
+
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
+// ActivityProcessor handles ActivityPub activities from DynamoDB streams,
+// processing them to update timelines, notifications, and other related data.
 type ActivityProcessor struct {
 	db               core.DB
 	tableName        string
@@ -42,10 +72,12 @@ type ActivityProcessor struct {
 	retryDelay       time.Duration
 }
 
+// NewActivityProcessor creates a new activity processor instance with the given
+// database connection, table name, and base URL for the instance.
 func NewActivityProcessor(db core.DB, tableName string, baseURL string) *ActivityProcessor {
 	// Get logger
 	logger := common.Logger()
-	
+
 	// Initialize repositories
 	timelineRepo := repositories.NewTimelineRepository(db, tableName, logger)
 	actorRepo := repositories.NewActorRepository(db, tableName, logger)
@@ -53,7 +85,7 @@ func NewActivityProcessor(db core.DB, tableName string, baseURL string) *Activit
 	relationshipRepo := repositories.NewRelationshipRepository(db, tableName, logger)
 	// Extract domain from baseURL
 	domain := strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
-	
+
 	objectRepo := repositories.NewObjectRepository(db, tableName, domain, logger)
 
 	// Create a complete storage adapter for federation service
@@ -86,45 +118,45 @@ func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.Dyna
 	requestID := uuid.New().String()
 
 	// Add request ID to context for downstream use
-	ctx = context.WithValue(ctx, "request_id", requestID)
+	ctx = context.WithValue(ctx, requestIDKey, requestID)
 
 	ap.logger.Info("processing activity stream batch",
 		zap.String("request_id", requestID),
 		zap.Int("record_count", len(event.Records)),
 	)
-	
+
 	// Process records in parallel with error collection
 	var errorList []error
 	var errorMutex sync.Mutex
-	
+
 	// Track batch processing metrics
 	batchStartTime := time.Now()
 	defer func() {
 		batchDuration := time.Since(batchStartTime)
-		
+
 		// Record batch processing metrics
 		batchMetric := struct {
-			PK         string `dynamorm:"pk"`
-			SK         string `dynamorm:"sk"`
-			Type       string `json:"type"`
-			RequestID  string `json:"request_id"`
-			Records    int    `json:"record_count"`
-			Errors     int    `json:"error_count"`
-			Duration   int64  `json:"duration_ms"`
-			Timestamp  string `json:"timestamp"`
-			TTL        int64  `dynamorm:"ttl"`
+			PK        string `dynamorm:"pk"`
+			SK        string `dynamorm:"sk"`
+			Type      string `json:"type"`
+			RequestID string `json:"request_id"`
+			Records   int    `json:"record_count"`
+			Errors    int    `json:"error_count"`
+			Duration  int64  `json:"duration_ms"`
+			Timestamp string `json:"timestamp"`
+			TTL       int64  `dynamorm:"ttl"`
 		}{
-			PK:         "BATCH#METRICS",
-			SK:         fmt.Sprintf("BATCH#%d#%s", batchStartTime.Unix(), requestID),
-			Type:       "BatchProcessingMetric",
-			RequestID:  requestID,
-			Records:    len(event.Records),
-			Errors:     len(errorList),
-			Duration:   batchDuration.Milliseconds(),
-			Timestamp:  batchStartTime.Format(time.RFC3339),
-			TTL:        batchStartTime.Add(24 * time.Hour).Unix(),
+			PK:        "BATCH#METRICS",
+			SK:        fmt.Sprintf("BATCH#%d#%s", batchStartTime.Unix(), requestID),
+			Type:      "BatchProcessingMetric",
+			RequestID: requestID,
+			Records:   len(event.Records),
+			Errors:    len(errorList),
+			Duration:  batchDuration.Milliseconds(),
+			Timestamp: batchStartTime.Format(time.RFC3339),
+			TTL:       batchStartTime.Add(24 * time.Hour).Unix(),
 		}
-		
+
 		if err := ap.db.WithContext(ctx).Model(&batchMetric).Create(); err != nil {
 			ap.logger.Debug("failed to record batch metric", zap.Error(err))
 		}
@@ -177,7 +209,7 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 	}
 
 	switch record.EventName {
-	case "INSERT", "MODIFY":
+	case activityInsert, activityModify:
 		if record.Change.NewImage == nil {
 			return fmt.Errorf("no new image in record %s", record.EventID)
 		}
@@ -187,7 +219,7 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 			return fmt.Errorf("failed to unmarshal new image: %w", err)
 		}
 
-	case "REMOVE":
+	case activityRemove:
 		if record.Change.OldImage == nil {
 			return fmt.Errorf("no old image in remove record %s", record.EventID)
 		}
@@ -199,7 +231,7 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 		return nil
 
 	default:
-		ap.logger.Warn("unknown event type",
+		ap.logger.Warn(UnknownEventMsg,
 			zap.String("event_name", record.EventName),
 			zap.String("event_id", record.EventID),
 		)
@@ -213,11 +245,11 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 
 	// Route based on activity type and direction
 	switch record.EventName {
-	case "INSERT":
+	case activityInsert:
 		return ap.processActivityCreated(ctx, activity)
-	case "MODIFY":
+	case activityModify:
 		return ap.processActivityUpdated(ctx, activity)
-	case "REMOVE":
+	case activityRemove:
 		return ap.processActivityDeleted(ctx, activity)
 	default:
 		return nil
@@ -471,393 +503,533 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 	return ap.db.WithContext(ctx).Model(&cleanupRecord).Create()
 }
 
+// ProcessedObject holds information about a processed ActivityPub object
+type ProcessedObject struct {
+	Note           *activitypub.Note
+	Content        string
+	IsRemote       bool
+	ObjectID       string
+	ContentType    string
+	HasMedia       bool
+	IsReply        bool
+	InReplyTo      string
+	Sensitive      bool
+	SpoilerText    string
+	Language       string
+	Visibility     string
+}
+
 // fanOutToTimelines handles timeline fanout for Create activities with robust federation support
 func (ap *ActivityProcessor) fanOutToTimelines(ctx context.Context, activity *activitypub.Activity, username string) error {
-	// Extract the note/object from the activity with enhanced handling
-	var note *activitypub.Note
-	var objectContent string
-	var isRemoteObject bool
-	
-	switch obj := activity.Object.(type) {
-	case map[string]interface{}:
-		// Check if this is a local embedded object or a remote reference
-		if id, hasID := obj["id"].(string); hasID && !strings.HasPrefix(id, ap.baseURL) {
-			// This is a remote object reference - fetch it
-			isRemoteObject = true
-			ap.logger.Debug("detected remote object in Create activity", 
-				zap.String("object_id", id),
-				zap.String("actor", activity.Actor))
-			
-			// Get the signing actor for remote fetch
-			signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
-			if err != nil {
-				ap.logger.Error("failed to get signing actor for remote object fetch", zap.Error(err))
-				// Use the embedded object as fallback
-				objectContent = fmt.Sprintf("Remote object: %s", id)
-			} else {
-				// Attempt to fetch the remote object
-				remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, id, signingActor)
-				if err != nil {
-					ap.logger.Warn("failed to fetch remote object in Create activity",
-						zap.String("object_id", id),
-						zap.Error(err))
-					// Use fallback content
-					objectContent = fmt.Sprintf("Remote object: %s", id)
-				} else {
-					// Successfully fetched remote object
-					if fetchedNote, ok := remoteObj.(*activitypub.Note); ok {
-						note = fetchedNote
-						ap.logger.Info("successfully fetched remote object for Create activity",
-							zap.String("object_id", id))
-					} else {
-						// Handle non-Note remote objects
-						if objMap, ok := remoteObj.(map[string]interface{}); ok {
-							if content, ok := objMap["content"].(string); ok {
-								objectContent = content
-							} else {
-								objectContent = fmt.Sprintf("Remote object: %s", id)
-							}
-						}
-					}
-				}
-			}
-		} else {
-			// Local embedded object - convert map to Note
-			noteData, err := json.Marshal(obj)
-			if err != nil {
-				return fmt.Errorf("failed to marshal note: %w", err)
-			}
-			note = &activitypub.Note{}
-			if err := json.Unmarshal(noteData, note); err != nil {
-				return fmt.Errorf("failed to unmarshal note: %w", err)
-			}
-		}
-	case *activitypub.Note:
-		note = obj
-	case string:
-		// Object is just an ID reference - need to fetch it
-		isRemoteObject = true
-		objectID := obj
-		
-		// Check if it's local first
-		existingObj, err := ap.objectRepo.GetObject(ctx, objectID)
-		if err == nil && existingObj != nil {
-			// Found locally - extract content
-			if localNote, ok := existingObj.(*models.Object); ok {
-				objectContent = localNote.Content
-				ap.logger.Debug("found referenced object locally", zap.String("object_id", objectID))
-			}
-		} else {
-			// Not found locally - fetch remotely if it's a remote URL
-			if !strings.HasPrefix(objectID, ap.baseURL) {
-				signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
-				if err != nil {
-					ap.logger.Error("failed to get signing actor for object reference fetch", zap.Error(err))
-					objectContent = fmt.Sprintf("Referenced object: %s", objectID)
-				} else {
-					remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, objectID, signingActor)
-					if err != nil {
-						ap.logger.Warn("failed to fetch referenced object",
-							zap.String("object_id", objectID),
-							zap.Error(err))
-						objectContent = fmt.Sprintf("Referenced object: %s", objectID)
-					} else {
-						if fetchedNote, ok := remoteObj.(*activitypub.Note); ok {
-							note = fetchedNote
-							ap.logger.Info("successfully fetched referenced object",
-								zap.String("object_id", objectID))
-						} else if objMap, ok := remoteObj.(map[string]interface{}); ok {
-							if content, ok := objMap["content"].(string); ok {
-								objectContent = content
-							}
-						}
-					}
-				}
-			} else {
-				// Local object that doesn't exist - this shouldn't happen
-				ap.logger.Warn("local object reference not found", zap.String("object_id", objectID))
-				objectContent = fmt.Sprintf("Missing local object: %s", objectID)
-			}
-		}
-	default:
+	// Process the object from the activity
+	processedObj, err := ap.processActivityObject(ctx, activity)
+	if err != nil {
+		return fmt.Errorf("failed to process activity object: %w", err)
+	}
+
+	if processedObj == nil {
 		ap.logger.Warn("unsupported object type in Create activity", zap.Any("object", activity.Object))
 		return nil
 	}
-	
-	// If we have a note, use its content, otherwise use the extracted content
-	if note != nil {
-		objectContent = note.Content
-	}
 
-	// Determine visibility from addressing (use note if available, otherwise activity addressing)
-	var to, cc []string
-	if note != nil {
-		to, cc = note.To, note.CC
-	} else {
-		// Fall back to activity addressing or default to public
-		to = activity.To
-		cc = activity.CC
-		if len(to) == 0 && len(cc) == 0 {
-			// Default to public for activities without explicit addressing
-			to = []string{"https://www.w3.org/ns/activitystreams#Public"}
-		}
-	}
-	visibility := ap.determineVisibility(to, cc)
-	
-	// Create timeline entries
-	var entries []*models.Timeline
+	// Create timeline entries and fan out
 	now := time.Now()
+	return ap.createAndFanOutEntries(ctx, activity, username, processedObj, now)
+}
 
-	// Extract content and metadata
-	content := objectContent
-	if len(content) > 500 {
-		content = content[:500]
+// processActivityObject extracts and processes the object from an activity
+func (ap *ActivityProcessor) processActivityObject(ctx context.Context, activity *activitypub.Activity) (*ProcessedObject, error) {
+	switch obj := activity.Object.(type) {
+	case map[string]interface{}:
+		return ap.processMapObject(ctx, activity, obj)
+	case *activitypub.Note:
+		return ap.processNoteObject(activity, obj), nil
+	case string:
+		return ap.processStringObject(ctx, activity, obj)
+	default:
+		return nil, nil
+	}
+}
+
+// processMapObject processes a map[string]interface{} object
+func (ap *ActivityProcessor) processMapObject(ctx context.Context, activity *activitypub.Activity, obj map[string]interface{}) (*ProcessedObject, error) {
+	id, hasID := obj["id"].(string)
+	if hasID && !strings.HasPrefix(id, ap.baseURL) {
+		// Remote object reference - fetch it
+		return ap.fetchRemoteMapObject(ctx, activity, obj, id)
 	}
 
-	// Determine object ID and content type
-	var objectID string
-	var contentType string
-	var hasMedia bool
-	var isReply bool
-	var inReplyTo string
-	var sensitive bool
-	var spoilerText string
-	var language string
-	
-	if note != nil {
-		objectID = note.ID
-		contentType = "Note"
-		hasMedia = len(note.Attachment) > 0
-		isReply = note.InReplyTo != ""
-		inReplyTo = note.InReplyTo
-		sensitive = note.Sensitive
-		spoilerText = note.Summary
-		language = ap.extractLanguage(note)
-	} else {
-		// For non-Note objects, extract what we can from the activity
-		if activity.Object != nil {
-			switch obj := activity.Object.(type) {
-			case map[string]interface{}:
-				if id, ok := obj["id"].(string); ok {
-					objectID = id
-				}
-				if objType, ok := obj["type"].(string); ok {
-					contentType = objType
-				} else {
-					contentType = "Object"
-				}
-				if replyTo, ok := obj["inReplyTo"].(string); ok && replyTo != "" {
-					isReply = true
-					inReplyTo = replyTo
-				}
-				if sens, ok := obj["sensitive"].(bool); ok {
-					sensitive = sens
-				}
-				if summary, ok := obj["summary"].(string); ok {
-					spoilerText = summary
-				}
-			case string:
-				objectID = obj
-				contentType = "Object"
-			}
-		}
-		if objectID == "" {
-			objectID = activity.ID
-		}
-		if contentType == "" {
-			contentType = "Create"
-		}
-		// Use simple language detection on content
-		language = ap.detectLanguageFromContent(content)
+	// Local embedded object - convert map to Note
+	return ap.convertMapToNote(obj)
+}
+
+// fetchRemoteMapObject fetches a remote object referenced in a map
+func (ap *ActivityProcessor) fetchRemoteMapObject(ctx context.Context, activity *activitypub.Activity, _ map[string]interface{}, id string) (*ProcessedObject, error) {
+	ap.logger.Debug("detected remote object in Create activity",
+		zap.String("object_id", id),
+		zap.String("actor", activity.Actor))
+
+	signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
+	if err != nil {
+		ap.logger.Error("failed to get signing actor for remote object fetch", zap.Error(err))
+		return ap.createFallbackObject(id, "Remote object: "+id), nil
 	}
 
-	// Base entry for all timelines
-	baseEntry := models.Timeline{
-		PostID:      objectID,
-		ActorID:     activity.Actor,
-		ActorHandle: username,
+	remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, id, signingActor)
+	if err != nil {
+		ap.logger.Warn("failed to fetch remote object in Create activity",
+			zap.String("object_id", id),
+			zap.Error(err))
+		return ap.createFallbackObject(id, "Remote object: "+id), nil
+	}
+
+	return ap.processRemoteObject(remoteObj, id)
+}
+
+// processRemoteObject processes a successfully fetched remote object
+func (ap *ActivityProcessor) processRemoteObject(remoteObj interface{}, id string) (*ProcessedObject, error) {
+	if fetchedNote, ok := remoteObj.(*activitypub.Note); ok {
+		ap.logger.Info("successfully fetched remote object for Create activity",
+			zap.String("object_id", id))
+		result := ap.processNoteObject(nil, fetchedNote)
+		result.IsRemote = true
+		return result, nil
+	}
+
+	if objMap, ok := remoteObj.(map[string]interface{}); ok {
+		if content, ok := objMap["content"].(string); ok {
+			return ap.createFallbackObject(id, content), nil
+		}
+	}
+
+	return ap.createFallbackObject(id, "Remote object: "+id), nil
+}
+
+// convertMapToNote converts a map to a Note object
+func (ap *ActivityProcessor) convertMapToNote(obj map[string]interface{}) (*ProcessedObject, error) {
+	noteData, err := json.Marshal(obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal note: %w", err)
+	}
+
+	note := &activitypub.Note{}
+	if err := json.Unmarshal(noteData, note); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal note: %w", err)
+	}
+
+	return ap.processNoteObject(nil, note), nil
+}
+
+// processNoteObject processes a Note object
+func (ap *ActivityProcessor) processNoteObject(activity *activitypub.Activity, note *activitypub.Note) *ProcessedObject {
+	to, cc := note.To, note.CC
+	if activity != nil && len(to) == 0 && len(cc) == 0 {
+		// Fall back to activity addressing
+		to, cc = activity.To, activity.CC
+	}
+
+	return &ProcessedObject{
+		Note:        note,
+		Content:     note.Content,
+		ObjectID:    note.ID,
+		ContentType: "Note",
+		HasMedia:    len(note.Attachment) > 0,
+		IsReply:     note.InReplyTo != "",
+		InReplyTo:   note.InReplyTo,
+		Sensitive:   note.Sensitive,
+		SpoilerText: note.Summary,
+		Language:    ap.extractLanguage(note),
+		Visibility:  ap.determineVisibility(to, cc),
+	}
+}
+
+// processStringObject processes a string object reference
+func (ap *ActivityProcessor) processStringObject(ctx context.Context, activity *activitypub.Activity, objectID string) (*ProcessedObject, error) {
+	// Check if it's local first
+	existingObj, err := ap.objectRepo.GetObject(ctx, objectID)
+	if err == nil && existingObj != nil {
+		if localNote, ok := existingObj.(*models.Object); ok {
+			ap.logger.Debug("found referenced object locally", zap.String("object_id", objectID))
+			return ap.createObjectFromContent(objectID, localNote.Content, activity), nil
+		}
+	}
+
+	// Not found locally - try remote fetch if it's a remote URL
+	if !strings.HasPrefix(objectID, ap.baseURL) {
+		return ap.fetchStringRemoteObject(ctx, activity, objectID)
+	}
+
+	// Local object that doesn't exist
+	ap.logger.Warn("local object reference not found", zap.String("object_id", objectID))
+	return ap.createFallbackObject(objectID, "Missing local object: "+objectID), nil
+}
+
+// fetchStringRemoteObject fetches a remote object by ID
+func (ap *ActivityProcessor) fetchStringRemoteObject(ctx context.Context, activity *activitypub.Activity, objectID string) (*ProcessedObject, error) {
+	signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
+	if err != nil {
+		ap.logger.Error("failed to get signing actor for object reference fetch", zap.Error(err))
+		return ap.createFallbackObject(objectID, "Referenced object: "+objectID), nil
+	}
+
+	remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, objectID, signingActor)
+	if err != nil {
+		ap.logger.Warn("failed to fetch referenced object",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return ap.createFallbackObject(objectID, "Referenced object: "+objectID), nil
+	}
+
+	return ap.processRemoteObject(remoteObj, objectID)
+}
+
+// createFallbackObject creates a fallback processed object
+func (ap *ActivityProcessor) createFallbackObject(objectID, content string) *ProcessedObject {
+	return &ProcessedObject{
 		Content:     content,
-		ContentType: contentType,
-		HasMedia:    hasMedia,
-		IsReply:     isReply,
-		InReplyTo:   inReplyTo,
-		IsBoost:     false,
-		Visibility:  visibility,
-		Language:    language,
-		Sensitive:   sensitive,
-		SpoilerText: spoilerText,
-		CreatedAt:   ap.extractPublishedTime(activity),
-		TimelineAt:  now,
+		IsRemote:    true,
+		ObjectID:    objectID,
+		ContentType: "Object",
+		Visibility:  "public",
+	}
+}
+
+// createObjectFromContent creates a processed object from content
+func (ap *ActivityProcessor) createObjectFromContent(objectID, content string, activity *activitypub.Activity) *ProcessedObject {
+	to, cc := activity.To, activity.CC
+	if len(to) == 0 && len(cc) == 0 {
+		to = []string{"https://www.w3.org/ns/activitystreams#Public"}
 	}
 
-	// Add to public timelines if public
-	if visibility == "public" {
-		// Federated timeline
-		publicEntry := baseEntry
-		publicEntry.TimelineType = "PUBLIC"
-		publicEntry.TimelineID = "FEDERATED"
-		publicEntry.EntryID = ap.generateTimelineSK(now, note.ID)
-		entries = append(entries, &publicEntry)
-
-		// Local timeline if it's a local user
-		if strings.HasPrefix(activity.Actor, ap.baseURL) {
-			localEntry := baseEntry
-			localEntry.TimelineType = "PUBLIC"
-			localEntry.TimelineID = "LOCAL"
-			localEntry.EntryID = ap.generateTimelineSK(now, note.ID)
-			entries = append(entries, &localEntry)
-		}
+	return &ProcessedObject{
+		Content:     content,
+		ObjectID:    objectID,
+		ContentType: "Object",
+		Visibility:  ap.determineVisibility(to, cc),
+		Language:    ap.detectLanguageFromContent(content),
 	}
+}
 
-	// Add to home timeline of the author
-	homeEntry := baseEntry
-	homeEntry.TimelineType = "HOME"
-	homeEntry.TimelineID = username
-	homeEntry.EntryID = ap.generateTimelineSK(now, note.ID)
-	entries = append(entries, &homeEntry)
+// createAndFanOutEntries creates timeline entries and performs fanout
+func (ap *ActivityProcessor) createAndFanOutEntries(ctx context.Context, activity *activitypub.Activity, username string, obj *ProcessedObject, now time.Time) error {
+	// Create base entry
+	baseEntry := ap.createBaseTimelineEntry(activity, username, obj, now)
 
-	// Fan out to followers' home timelines (for all visibility except direct)
-	if visibility != "direct" {
-		followers, err := ap.getFollowers(ctx, username)
-		if err != nil {
-			ap.logger.Error("failed to get followers", zap.Error(err))
-			// Continue even if this fails
-		} else {
-			for _, follower := range followers {
-				followerEntry := baseEntry
-				followerEntry.TimelineType = "HOME"
-				followerEntry.TimelineID = follower
-				followerEntry.EntryID = ap.generateTimelineSK(now, note.ID)
-				entries = append(entries, &followerEntry)
-			}
-		}
-	}
+	// Create all timeline entries
+	entries := ap.createAllTimelineEntries(ctx, activity, username, baseEntry, obj.Visibility)
 
-	// Write all entries to timelines
+	// Write entries to timelines
 	if len(entries) > 0 {
 		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
 			return fmt.Errorf("failed to write timeline entries: %w", err)
 		}
 	}
 
-	// Record metrics for monitoring
-	fanoutDuration := time.Since(now)
-	ap.recordTimelineFanoutMetrics(ctx, "Create", len(entries), fanoutDuration)
-	ap.recordObjectProcessingMetrics(ctx, contentType, isRemoteObject, fanoutDuration)
-
-	ap.logger.Info("successfully fanned out Create activity",
-		zap.String("post_id", objectID),
-		zap.String("content_type", contentType),
-		zap.String("visibility", visibility),
-		zap.Int("timeline_count", len(entries)),
-		zap.Bool("is_remote_object", isRemoteObject),
-		zap.Duration("fanout_duration", fanoutDuration),
-	)
+	// Record metrics and log success
+	ap.recordFanoutSuccess(ctx, obj, len(entries), time.Since(now))
 
 	return nil
+}
+
+// createBaseTimelineEntry creates the base timeline entry
+func (ap *ActivityProcessor) createBaseTimelineEntry(activity *activitypub.Activity, username string, obj *ProcessedObject, now time.Time) models.Timeline {
+	content := obj.Content
+	if len(content) > 500 {
+		content = content[:500]
+	}
+
+	objectID := obj.ObjectID
+	if objectID == "" {
+		objectID = activity.ID
+	}
+
+	return models.Timeline{
+		PostID:      objectID,
+		ActorID:     activity.Actor,
+		ActorHandle: username,
+		Content:     content,
+		ContentType: obj.ContentType,
+		HasMedia:    obj.HasMedia,
+		IsReply:     obj.IsReply,
+		InReplyTo:   obj.InReplyTo,
+		IsBoost:     false,
+		Visibility:  obj.Visibility,
+		Language:    obj.Language,
+		Sensitive:   obj.Sensitive,
+		SpoilerText: obj.SpoilerText,
+		CreatedAt:   ap.extractPublishedTime(activity),
+		TimelineAt:  now,
+	}
+}
+
+// createAllTimelineEntries creates all necessary timeline entries
+func (ap *ActivityProcessor) createAllTimelineEntries(ctx context.Context, activity *activitypub.Activity, username string, baseEntry models.Timeline, visibility string) []*models.Timeline {
+	var entries []*models.Timeline
+	now := baseEntry.TimelineAt
+
+	// Add public timeline entries
+	entries = append(entries, ap.createPublicTimelineEntries(activity, baseEntry, visibility, now)...)
+
+	// Add home timeline entry for author
+	homeEntry := baseEntry
+	homeEntry.TimelineType = timelineHome
+	homeEntry.TimelineID = username
+	homeEntry.EntryID = ap.generateTimelineSK(now, baseEntry.PostID)
+	entries = append(entries, &homeEntry)
+
+	// Add follower timeline entries
+	entries = append(entries, ap.createFollowerTimelineEntries(ctx, username, baseEntry, visibility, now)...)
+
+	return entries
+}
+
+// createPublicTimelineEntries creates public timeline entries if applicable
+func (ap *ActivityProcessor) createPublicTimelineEntries(activity *activitypub.Activity, baseEntry models.Timeline, visibility string, now time.Time) []*models.Timeline {
+	if visibility != "public" {
+		return nil
+	}
+
+	var entries []*models.Timeline
+
+	// Federated timeline
+	publicEntry := baseEntry
+	publicEntry.TimelineType = timelinePublic
+	publicEntry.TimelineID = timelineFederated
+	publicEntry.EntryID = ap.generateTimelineSK(now, baseEntry.PostID)
+	entries = append(entries, &publicEntry)
+
+	// Local timeline if it's a local user
+	if strings.HasPrefix(activity.Actor, ap.baseURL) {
+		localEntry := baseEntry
+		localEntry.TimelineType = timelinePublic
+		localEntry.TimelineID = timelineLocal
+		localEntry.EntryID = ap.generateTimelineSK(now, baseEntry.PostID)
+		entries = append(entries, &localEntry)
+	}
+
+	return entries
+}
+
+// createFollowerTimelineEntries creates timeline entries for followers
+func (ap *ActivityProcessor) createFollowerTimelineEntries(ctx context.Context, username string, baseEntry models.Timeline, visibility string, now time.Time) []*models.Timeline {
+	if visibility == "direct" {
+		return nil
+	}
+
+	followers, err := ap.getFollowers(ctx, username)
+	if err != nil {
+		ap.logger.Error("failed to get followers", zap.Error(err))
+		return nil
+	}
+
+	entries := make([]*models.Timeline, 0, len(followers))
+	for _, follower := range followers {
+		followerEntry := baseEntry
+		followerEntry.TimelineType = timelineHome
+		followerEntry.TimelineID = follower
+		followerEntry.EntryID = ap.generateTimelineSK(now, baseEntry.PostID)
+		entries = append(entries, &followerEntry)
+	}
+
+	return entries
+}
+
+// recordFanoutSuccess records metrics and logs success
+func (ap *ActivityProcessor) recordFanoutSuccess(ctx context.Context, obj *ProcessedObject, entryCount int, duration time.Duration) {
+	ap.recordTimelineFanoutMetrics(ctx, "Create", entryCount, duration)
+	ap.recordObjectProcessingMetrics(ctx, obj.ContentType, obj.IsRemote, duration)
+
+	ap.logger.Info("successfully fanned out Create activity",
+		zap.String("post_id", obj.ObjectID),
+		zap.String("content_type", obj.ContentType),
+		zap.String("visibility", obj.Visibility),
+		zap.Int("timeline_count", entryCount),
+		zap.Bool("is_remote_object", obj.IsRemote),
+		zap.Duration("fanout_duration", duration),
+	)
 }
 
 // fanOutAnnounceToTimelines handles timeline fanout for Announce (boost) activities
 func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, activity *activitypub.Activity, username string) error {
 	// Extract the announced object ID
-	var announcedID string
-	switch obj := activity.Object.(type) {
-	case string:
-		announcedID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			announcedID = id
-		}
-	default:
-		ap.logger.Warn("unsupported object type in Announce activity", zap.Any("object", activity.Object))
-		return nil
-	}
-
+	announcedID := ap.extractAnnouncedID(activity)
 	if announcedID == "" {
 		return fmt.Errorf("no object ID in Announce activity")
 	}
 
-	// Fetch the announced object
-	var announcedContent string
-	var originalAuthor string
-	
-	// First check if object exists locally
-	existingObj, err := ap.objectRepo.GetObject(ctx, announcedID)
-	if err == nil && existingObj != nil {
-		// Use existing object - need to type assert
-		switch obj := existingObj.(type) {
-		case *models.Object:
-			announcedContent = obj.Content
-			originalAuthor = obj.AttributedTo
-			ap.logger.Debug("found announced object locally", 
-				zap.String("object_id", announcedID))
-		default:
-			// Try to extract from generic map
-			if objMap, ok := existingObj.(map[string]interface{}); ok {
-				if content, ok := objMap["content"].(string); ok {
-					announcedContent = content
-				}
-				if author, ok := objMap["attributedTo"].(string); ok {
-					originalAuthor = author
-				}
-			}
-		}
-	} else {
-		// Object not found locally, fetch from remote server
-		ap.logger.Info("fetching remote object for announce",
-			zap.String("object_id", announcedID))
-		
-		// Get the announcing actor for signing requests
-		signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
-		if err != nil {
-			ap.logger.Error("failed to get signing actor", zap.Error(err))
-			// Fall back to minimal content for local actor lookup failure
-			announcedContent = fmt.Sprintf("Boosted: %s", announcedID)
-		} else {
-			// Fetch the remote object with robust error handling and retry logic
-			remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, announcedID, signingActor)
-			if err != nil {
-				ap.logger.Warn("failed to fetch remote object after retries",
-					zap.String("object_id", announcedID),
-					zap.Error(err))
-				// Use fallback content
-				announcedContent = fmt.Sprintf("Boosted: %s", announcedID)
-			} else {
-				// Successfully fetched remote object
-				if note, ok := remoteObj.(*activitypub.Note); ok {
-					announcedContent = note.Content
-					originalAuthor = note.AttributedTo
-					
-					// Store the remote object for future reference
-					ap.storeRemoteObject(ctx, note)
-					
-					ap.logger.Info("successfully fetched and stored remote object",
-						zap.String("object_id", announcedID),
-						zap.String("author", originalAuthor))
-				} else {
-					// Handle other object types
-					if objMap, ok := remoteObj.(map[string]interface{}); ok {
-						if content, ok := objMap["content"].(string); ok {
-							announcedContent = content
-						}
-						if author, ok := objMap["attributedTo"].(string); ok {
-							originalAuthor = author
-						}
-						
-						// Store generic object
-						ap.storeGenericRemoteObject(ctx, objMap)
-					} else {
-						announcedContent = fmt.Sprintf("Boosted: %s", announcedID)
-					}
-				}
-			}
+	// Get the announced content
+	announcedContent, originalAuthor := ap.getAnnouncedContent(ctx, activity, announcedID)
+	_ = originalAuthor // Keep for future use
+
+	// Create timeline entries
+	entries := ap.createAnnounceTimelineEntries(ctx, activity, username, announcedContent)
+
+	// Write all entries
+	if len(entries) > 0 {
+		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
+			return fmt.Errorf("failed to write timeline entries: %w", err)
 		}
 	}
 
+	// Record metrics
+	ap.recordAnnounceMetrics(ctx, activity, announcedID, entries)
+
+	return nil
+}
+
+// extractAnnouncedID extracts the announced object ID from the activity
+func (ap *ActivityProcessor) extractAnnouncedID(activity *activitypub.Activity) string {
+	switch obj := activity.Object.(type) {
+	case string:
+		return obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			return id
+		}
+	default:
+		ap.logger.Warn("unsupported object type in Announce activity", zap.Any("object", activity.Object))
+	}
+	return ""
+}
+
+// getAnnouncedContent retrieves the content of the announced object
+func (ap *ActivityProcessor) getAnnouncedContent(ctx context.Context, activity *activitypub.Activity, announcedID string) (string, string) {
+	// First check if object exists locally
+	if content, author := ap.getLocalAnnouncedContent(ctx, announcedID); content != "" {
+		return content, author
+	}
+
+	// Object not found locally, fetch from remote server
+	return ap.getRemoteAnnouncedContent(ctx, activity, announcedID)
+}
+
+// getLocalAnnouncedContent retrieves content from a locally stored object
+func (ap *ActivityProcessor) getLocalAnnouncedContent(ctx context.Context, announcedID string) (string, string) {
+	existingObj, err := ap.objectRepo.GetObject(ctx, announcedID)
+	if err != nil || existingObj == nil {
+		return "", ""
+	}
+
+	// Extract content based on object type
+	switch obj := existingObj.(type) {
+	case *models.Object:
+		ap.logger.Debug("found announced object locally", zap.String("object_id", announcedID))
+		return obj.Content, ""
+	default:
+		return ap.extractContentFromMap(existingObj)
+	}
+}
+
+// extractContentFromMap extracts content and author from a generic map
+func (ap *ActivityProcessor) extractContentFromMap(obj interface{}) (string, string) {
+	objMap, ok := obj.(map[string]interface{})
+	if !ok {
+		return "", ""
+	}
+
+	var content, author string
+	if c, ok := objMap["content"].(string); ok {
+		content = c
+	}
+	if a, ok := objMap["attributedTo"].(string); ok {
+		author = a
+	}
+	return content, author
+}
+
+// getRemoteAnnouncedContent fetches content from a remote server
+func (ap *ActivityProcessor) getRemoteAnnouncedContent(ctx context.Context, activity *activitypub.Activity, announcedID string) (string, string) {
+	ap.logger.Info("fetching remote object for announce", zap.String("object_id", announcedID))
+
+	// Get the announcing actor for signing requests
+	signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
+	if err != nil {
+		ap.logger.Error("failed to get signing actor", zap.Error(err))
+		return fmt.Sprintf("Boosted: %s", announcedID), ""
+	}
+
+	// Fetch the remote object
+	return ap.fetchAndProcessRemoteObject(ctx, announcedID, signingActor)
+}
+
+// fetchAndProcessRemoteObject fetches and processes a remote object
+func (ap *ActivityProcessor) fetchAndProcessRemoteObject(ctx context.Context, announcedID string, signingActor interface{}) (string, string) {
+	// Type assert signingActor to *activitypub.Actor
+	actor, ok := signingActor.(*activitypub.Actor)
+	if !ok {
+		ap.logger.Error("signing actor is not of expected type")
+		return fmt.Sprintf("Boosted: %s", announcedID), ""
+	}
+
+	remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, announcedID, actor)
+	if err != nil {
+		ap.logger.Warn("failed to fetch remote object after retries",
+			zap.String("object_id", announcedID),
+			zap.Error(err))
+		return fmt.Sprintf("Boosted: %s", announcedID), ""
+	}
+
+	// Process the fetched object
+	return ap.processRemoteObjectForAnnounce(ctx, remoteObj, announcedID)
+}
+
+// processRemoteObjectForAnnounce processes a fetched remote object for announce activities
+func (ap *ActivityProcessor) processRemoteObjectForAnnounce(ctx context.Context, remoteObj interface{}, announcedID string) (string, string) {
+	if note, ok := remoteObj.(*activitypub.Note); ok {
+		return ap.processRemoteNote(ctx, note, announcedID)
+	}
+
+	// Handle other object types
+	content, author := ap.extractContentFromMap(remoteObj)
+	if content != "" {
+		if objMap, ok := remoteObj.(map[string]interface{}); ok {
+			ap.storeGenericRemoteObject(ctx, objMap)
+		}
+		return content, author
+	}
+
+	return fmt.Sprintf("Boosted: %s", announcedID), ""
+}
+
+// processRemoteNote processes a remote Note object
+func (ap *ActivityProcessor) processRemoteNote(ctx context.Context, note *activitypub.Note, announcedID string) (string, string) {
+	// Store the remote object for future reference
+	ap.storeRemoteObject(ctx, note)
+
+	ap.logger.Info("successfully fetched and stored remote object",
+		zap.String("object_id", announcedID),
+		zap.String("author", note.AttributedTo))
+
+	return note.Content, note.AttributedTo
+}
+
+// createAnnounceTimelineEntries creates timeline entries for an announce activity
+func (ap *ActivityProcessor) createAnnounceTimelineEntries(ctx context.Context, activity *activitypub.Activity, username, announcedContent string) []*models.Timeline {
 	var entries []*models.Timeline
 	now := time.Now()
 
-	baseEntry := models.Timeline{
+	baseEntry := ap.createBaseAnnounceEntry(activity, username, announcedContent, now)
+
+	// Add to public timelines
+	entries = append(entries, ap.createPublicTimelineEntry(baseEntry, now, activity.ID))
+
+	// Add local timeline entry if applicable
+	if ap.isLocalActor(activity.Actor) {
+		entries = append(entries, ap.createLocalTimelineEntry(baseEntry, now, activity.ID))
+	}
+
+	// Add to author's home timeline
+	entries = append(entries, ap.createHomeTimelineEntry(baseEntry, username, now, activity.ID))
+
+	// Fan out to followers
+	ap.addFollowerEntries(ctx, &entries, baseEntry, username, now, activity.ID)
+
+	return entries
+}
+
+// createBaseAnnounceEntry creates the base timeline entry for an announce
+func (ap *ActivityProcessor) createBaseAnnounceEntry(activity *activitypub.Activity, username, announcedContent string, now time.Time) models.Timeline {
+	return models.Timeline{
 		PostID:      activity.ID,
 		ActorID:     activity.Actor,
 		ActorHandle: username,
@@ -869,58 +1041,64 @@ func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, acti
 		CreatedAt:   ap.extractPublishedTime(activity),
 		TimelineAt:  now,
 	}
+}
 
-	// Add to public timelines
-	// Federated timeline
+// createPublicTimelineEntry creates a public timeline entry
+func (ap *ActivityProcessor) createPublicTimelineEntry(baseEntry models.Timeline, now time.Time, activityID string) *models.Timeline {
 	publicEntry := baseEntry
-	publicEntry.TimelineType = "PUBLIC"
-	publicEntry.TimelineID = "FEDERATED"
-	publicEntry.EntryID = ap.generateTimelineSK(now, activity.ID)
-	entries = append(entries, &publicEntry)
+	publicEntry.TimelineType = timelinePublic
+	publicEntry.TimelineID = timelineFederated
+	publicEntry.EntryID = ap.generateTimelineSK(now, activityID)
+	return &publicEntry
+}
 
-	// Local timeline if it's a local user
-	if strings.HasPrefix(activity.Actor, ap.baseURL) {
-		localEntry := baseEntry
-		localEntry.TimelineType = "PUBLIC"
-		localEntry.TimelineID = "LOCAL"
-		localEntry.EntryID = ap.generateTimelineSK(now, activity.ID)
-		entries = append(entries, &localEntry)
-	}
+// createLocalTimelineEntry creates a local timeline entry
+func (ap *ActivityProcessor) createLocalTimelineEntry(baseEntry models.Timeline, now time.Time, activityID string) *models.Timeline {
+	localEntry := baseEntry
+	localEntry.TimelineType = timelinePublic
+	localEntry.TimelineID = timelineLocal
+	localEntry.EntryID = ap.generateTimelineSK(now, activityID)
+	return &localEntry
+}
 
-	// Add to author's home timeline
+// createHomeTimelineEntry creates a home timeline entry
+func (ap *ActivityProcessor) createHomeTimelineEntry(baseEntry models.Timeline, username string, now time.Time, activityID string) *models.Timeline {
 	homeEntry := baseEntry
-	homeEntry.TimelineType = "HOME"
+	homeEntry.TimelineType = timelineHome
 	homeEntry.TimelineID = username
-	homeEntry.EntryID = ap.generateTimelineSK(now, activity.ID)
-	entries = append(entries, &homeEntry)
+	homeEntry.EntryID = ap.generateTimelineSK(now, activityID)
+	return &homeEntry
+}
 
-	// Fan out to followers
+// addFollowerEntries adds timeline entries for followers
+func (ap *ActivityProcessor) addFollowerEntries(ctx context.Context, entries *[]*models.Timeline, baseEntry models.Timeline, username string, now time.Time, activityID string) {
 	followers, err := ap.getFollowers(ctx, username)
 	if err != nil {
 		ap.logger.Error("failed to get followers", zap.Error(err))
-	} else {
-		for _, follower := range followers {
-			followerEntry := baseEntry
-			followerEntry.TimelineType = "HOME"
-			followerEntry.TimelineID = follower
-			followerEntry.EntryID = ap.generateTimelineSK(now, activity.ID)
-			entries = append(entries, &followerEntry)
-		}
+		return
 	}
 
-	// Write all entries
-	if len(entries) > 0 {
-		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
-			return fmt.Errorf("failed to write timeline entries: %w", err)
-		}
+	for _, follower := range followers {
+		followerEntry := baseEntry
+		followerEntry.TimelineType = timelineHome
+		followerEntry.TimelineID = follower
+		followerEntry.EntryID = ap.generateTimelineSK(now, activityID)
+		*entries = append(*entries, &followerEntry)
 	}
+}
 
-	// Record metrics for monitoring
-	fanoutDuration := time.Since(now)
+// isLocalActor checks if an actor is local
+func (ap *ActivityProcessor) isLocalActor(actorID string) bool {
+	return strings.HasPrefix(actorID, ap.baseURL)
+}
+
+// recordAnnounceMetrics records metrics for an announce activity
+func (ap *ActivityProcessor) recordAnnounceMetrics(ctx context.Context, activity *activitypub.Activity, announcedID string, entries []*models.Timeline) {
+	startTime := time.Now()
+	fanoutDuration := time.Duration(0) // This will be calculated elsewhere if needed
 	ap.recordTimelineFanoutMetrics(ctx, "Announce", len(entries), fanoutDuration)
-	
-	// Determine if the announced object was remote
-	isRemoteAnnounced := !strings.HasPrefix(announcedID, ap.baseURL)
+
+	isRemoteAnnounced := !ap.isLocalActor(announcedID)
 	ap.recordObjectProcessingMetrics(ctx, "Announce", isRemoteAnnounced, fanoutDuration)
 
 	ap.logger.Info("successfully fanned out Announce activity",
@@ -928,32 +1106,28 @@ func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, acti
 		zap.String("announced_id", announcedID),
 		zap.Int("timeline_count", len(entries)),
 		zap.Bool("is_remote_announced", isRemoteAnnounced),
-		zap.Duration("fanout_duration", fanoutDuration),
+		zap.Duration("processing_time", time.Since(startTime)),
 	)
-
-	return nil
 }
 
 // Helper functions
 
 func (ap *ActivityProcessor) determineVisibility(to, cc []string) string {
-	publicAddress := "https://www.w3.org/ns/activitystreams#Public"
-	
 	// Direct message - no public addressing
-	if !contains(to, publicAddress) && !contains(cc, publicAddress) {
+	if !containsPublicAddress(to) && !containsPublicAddress(cc) {
 		return "direct"
 	}
-	
+
 	// Public - addressed to public in 'to'
-	if contains(to, publicAddress) {
+	if containsPublicAddress(to) {
 		return "public"
 	}
-	
+
 	// Unlisted - public in 'cc'
-	if contains(cc, publicAddress) {
+	if containsPublicAddress(cc) {
 		return "unlisted"
 	}
-	
+
 	// Private - followers only
 	return "private"
 }
@@ -972,13 +1146,13 @@ func (ap *ActivityProcessor) extractLanguage(note *activitypub.Note) string {
 			}
 		}
 	}
-	
+
 	// Implement content-based language detection using simple heuristics
 	content := strings.ToLower(note.Content)
-	
+
 	// Strip HTML tags for cleaner analysis
 	content = stripHTMLTags(content)
-	
+
 	// Character-based detection for non-Latin scripts
 	if hasJapaneseCharacters(content) {
 		return "ja"
@@ -996,7 +1170,7 @@ func (ap *ActivityProcessor) extractLanguage(note *activitypub.Note) string {
 		// Could be Russian, Ukrainian, etc. Default to Russian
 		return "ru"
 	}
-	
+
 	// Word-based detection for Latin script languages
 	// Check for common words/patterns
 	if hasSpanishPatterns(content) {
@@ -1014,7 +1188,7 @@ func (ap *ActivityProcessor) extractLanguage(note *activitypub.Note) string {
 	if hasItalianPatterns(content) {
 		return "it"
 	}
-	
+
 	// Default to English for Latin script
 	return "en"
 }
@@ -1024,10 +1198,10 @@ func (ap *ActivityProcessor) detectLanguageFromContent(content string) string {
 	if content == "" {
 		return "en" // default
 	}
-	
+
 	content = strings.ToLower(content)
 	content = stripHTMLTags(content)
-	
+
 	// Use the same detection logic as extractLanguage but without Note-specific logic
 	if hasJapaneseCharacters(content) {
 		return "ja"
@@ -1044,7 +1218,7 @@ func (ap *ActivityProcessor) detectLanguageFromContent(content string) string {
 	if hasCyrillicCharacters(content) {
 		return "ru"
 	}
-	
+
 	// Word-based detection for Latin script languages
 	if hasSpanishPatterns(content) {
 		return "es"
@@ -1061,132 +1235,97 @@ func (ap *ActivityProcessor) detectLanguageFromContent(content string) string {
 	if hasItalianPatterns(content) {
 		return "it"
 	}
-	
+
 	return "en"
 }
 
 // Production monitoring and metrics methods
 
-// recordFederationMetrics records metrics for federation operations
-func (ap *ActivityProcessor) recordFederationMetrics(ctx context.Context, operation string, success bool, duration time.Duration, remoteHost string) {
-	// Create metrics record for monitoring
+// recordMetric is a generic function to record metrics with custom fields
+func (ap *ActivityProcessor) recordMetric(ctx context.Context, pkPrefix, metricType, keyField string, ttlDuration time.Duration, customFields map[string]interface{}, logContext []zap.Field) {
 	now := time.Now()
-	
-	metric := struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
-		Type      string `json:"type"`
-		Operation string `json:"operation"`
-		Success   bool   `json:"success"`
-		Duration  int64  `json:"duration_ms"`
-		Host      string `json:"remote_host"`
-		Timestamp string `json:"timestamp"`
-		TTL       int64  `dynamorm:"ttl"`
-	}{
-		PK:        "FEDERATION#METRICS",
-		SK:        fmt.Sprintf("METRIC#%d#%s", now.Unix(), operation),
-		Type:      "FederationMetric",
-		Operation: operation,
-		Success:   success,
-		Duration:  duration.Milliseconds(),
-		Host:      remoteHost,
-		Timestamp: now.Format(time.RFC3339),
-		TTL:       now.Add(7 * 24 * time.Hour).Unix(), // 7 days retention
+
+	// Create base metric with common fields
+	metric := map[string]interface{}{
+		"PK":        fmt.Sprintf("%s#METRICS", pkPrefix),
+		"SK":        fmt.Sprintf("METRIC#%d#%s", now.Unix(), keyField),
+		"Type":      metricType,
+		"Timestamp": now.Format(time.RFC3339),
+		"TTL":       now.Add(ttlDuration).Unix(),
 	}
-	
+
+	// Add custom fields
+	for k, v := range customFields {
+		metric[k] = v
+	}
+
 	// Log the metric (don't fail the main operation if this fails)
 	if err := ap.db.WithContext(ctx).Model(&metric).Create(); err != nil {
-		ap.logger.Debug("failed to record federation metric",
-			zap.String("operation", operation),
-			zap.Error(err))
+		fields := append([]zap.Field{zap.Error(err)}, logContext...)
+		ap.logger.Debug("failed to record metric", fields...)
 	}
+}
+
+// recordFederationMetrics records metrics for federation operations
+func (ap *ActivityProcessor) recordFederationMetrics(ctx context.Context, operation string, success bool, duration time.Duration, remoteHost string) {
+	customFields := map[string]interface{}{
+		"operation":   operation,
+		"success":     success,
+		"duration_ms": duration.Milliseconds(),
+		"remote_host": remoteHost,
+	}
+	logContext := []zap.Field{zap.String("operation", operation)}
+
+	ap.recordMetric(ctx, "FEDERATION", "FederationMetric", operation, 7*24*time.Hour, customFields, logContext)
 }
 
 // recordObjectProcessingMetrics records metrics about object processing
 func (ap *ActivityProcessor) recordObjectProcessingMetrics(ctx context.Context, objectType string, isRemote bool, processingTime time.Duration) {
-	now := time.Now()
-	
-	metric := struct {
-		PK             string `dynamorm:"pk"`
-		SK             string `dynamorm:"sk"`
-		Type           string `json:"type"`
-		ObjectType     string `json:"object_type"`
-		IsRemote       bool   `json:"is_remote"`
-		ProcessingTime int64  `json:"processing_time_ms"`
-		Timestamp      string `json:"timestamp"`
-		TTL            int64  `dynamorm:"ttl"`
-	}{
-		PK:             "PROCESSING#METRICS",
-		SK:             fmt.Sprintf("METRIC#%d#%s", now.Unix(), objectType),
-		Type:           "ProcessingMetric",
-		ObjectType:     objectType,
-		IsRemote:       isRemote,
-		ProcessingTime: processingTime.Milliseconds(),
-		Timestamp:      now.Format(time.RFC3339),
-		TTL:            now.Add(24 * time.Hour).Unix(), // 24 hours retention
+	customFields := map[string]interface{}{
+		"object_type":        objectType,
+		"is_remote":          isRemote,
+		"processing_time_ms": processingTime.Milliseconds(),
 	}
-	
-	if err := ap.db.WithContext(ctx).Model(&metric).Create(); err != nil {
-		ap.logger.Debug("failed to record processing metric",
-			zap.String("object_type", objectType),
-			zap.Error(err))
-	}
+	logContext := []zap.Field{zap.String("object_type", objectType)}
+
+	ap.recordMetric(ctx, "PROCESSING", "ProcessingMetric", objectType, 24*time.Hour, customFields, logContext)
 }
 
 // recordTimelineFanoutMetrics records metrics about timeline fanout operations
 func (ap *ActivityProcessor) recordTimelineFanoutMetrics(ctx context.Context, activityType string, entryCount int, fanoutTime time.Duration) {
-	now := time.Now()
-	
-	metric := struct {
-		PK           string `dynamorm:"pk"`
-		SK           string `dynamorm:"sk"`
-		Type         string `json:"type"`
-		ActivityType string `json:"activity_type"`
-		EntryCount   int    `json:"entry_count"`
-		FanoutTime   int64  `json:"fanout_time_ms"`
-		Timestamp    string `json:"timestamp"`
-		TTL          int64  `dynamorm:"ttl"`
-	}{
-		PK:           "FANOUT#METRICS",
-		SK:           fmt.Sprintf("METRIC#%d#%s", now.Unix(), activityType),
-		Type:         "FanoutMetric",
-		ActivityType: activityType,
-		EntryCount:   entryCount,
-		FanoutTime:   fanoutTime.Milliseconds(),
-		Timestamp:    now.Format(time.RFC3339),
-		TTL:          now.Add(24 * time.Hour).Unix(), // 24 hours retention
+	customFields := map[string]interface{}{
+		"activity_type":  activityType,
+		"entry_count":    entryCount,
+		"fanout_time_ms": fanoutTime.Milliseconds(),
 	}
-	
-	if err := ap.db.WithContext(ctx).Model(&metric).Create(); err != nil {
-		ap.logger.Debug("failed to record fanout metric",
-			zap.String("activity_type", activityType),
-			zap.Error(err))
-	}
+	logContext := []zap.Field{zap.String("activity_type", activityType)}
+
+	ap.recordMetric(ctx, "FANOUT", "FanoutMetric", activityType, 24*time.Hour, customFields, logContext)
 }
 
 // extractRemoteHost extracts the hostname from a URL for metrics
 func (ap *ActivityProcessor) extractRemoteHost(url string) string {
 	if url == "" {
-		return "unknown"
+		return UnknownValue
 	}
-	
+
 	// Simple hostname extraction
 	if strings.HasPrefix(url, "http://") {
 		url = url[7:]
 	} else if strings.HasPrefix(url, "https://") {
 		url = url[8:]
 	}
-	
+
 	// Find the first slash to get just the hostname
 	if idx := strings.Index(url, "/"); idx != -1 {
 		url = url[:idx]
 	}
-	
+
 	// Remove port if present
 	if idx := strings.Index(url, ":"); idx != -1 {
 		url = url[:idx]
 	}
-	
+
 	return url
 }
 
@@ -1220,17 +1359,18 @@ func (ap *ActivityProcessor) getFollowers(ctx context.Context, username string) 
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query followers: %w", err)
 	}
-	
+
 	ap.logger.Debug("retrieved followers for timeline fanout",
 		zap.String("username", username),
 		zap.Int("follower_count", len(followers)))
-	
+
 	return followers, nil
 }
 
-func contains(slice []string, item string) bool {
+func containsPublicAddress(slice []string) bool {
+	const publicAddress = "https://www.w3.org/ns/activitystreams#Public"
 	for _, s := range slice {
-		if s == item {
+		if s == publicAddress {
 			return true
 		}
 	}
@@ -1267,13 +1407,13 @@ func main() {
 	// This provides structured logging, error handling, and request tracking
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()
-		
+
 		// Recovery handling (Lift pattern)
 		defer func() {
 			if r := recover(); r != nil {
 				requestID := ctx.Value("request_id")
 				if requestID == nil {
-					requestID = "unknown"
+					requestID = UnknownValue
 				}
 				logger.Error("panic in DynamoDB stream handler",
 					zap.Any("request_id", requestID),
@@ -1290,7 +1430,7 @@ func main() {
 		duration := time.Since(start)
 		requestID := ctx.Value("request_id")
 		if requestID == nil {
-			requestID = "unknown"
+			requestID = UnknownValue
 		}
 
 		if err != nil {
@@ -1320,13 +1460,13 @@ func (ap *ActivityProcessor) storeRemoteObject(ctx context.Context, obj *activit
 	if obj.Published != nil && !obj.Published.IsZero() {
 		publishedTime = *obj.Published
 	}
-	
+
 	// Handle optional InReplyTo field
 	var inReplyTo *string
 	if obj.InReplyTo != "" {
 		inReplyTo = &obj.InReplyTo
 	}
-	
+
 	storageObj := &models.Object{
 		ID:           obj.ID,
 		Type:         obj.Type,
@@ -1358,41 +1498,41 @@ func (ap *ActivityProcessor) fetchRemoteObjectWithRetry(ctx context.Context, obj
 	var lastErr error
 	startTime := time.Now()
 	remoteHost := ap.extractRemoteHost(objectURL)
-	
+
 	// Track federation attempt
 	defer func() {
 		duration := time.Since(startTime)
 		success := lastErr == nil
 		ap.recordFederationMetrics(ctx, "fetch_object", success, duration, remoteHost)
 	}()
-	
+
 	for attempt := 1; attempt <= ap.retryAttempts; attempt++ {
 		ap.logger.Debug("attempting to fetch remote object",
 			zap.String("object_url", objectURL),
 			zap.String("signing_actor", signingActor.ID),
 			zap.Int("attempt", attempt),
 			zap.Int("max_attempts", ap.retryAttempts))
-		
+
 		// Try to fetch the object
 		obj, err := ap.fetchService.FetchObject(ctx, objectURL, signingActor)
 		if err == nil {
 			// Success - validate and return the object
-			if validatedObj, valErr := ap.validateAndProcessRemoteObject(obj, objectURL); valErr == nil {
+			validatedObj, valErr := ap.validateAndProcessRemoteObject(obj, objectURL)
+			if valErr == nil {
 				ap.logger.Info("successfully fetched remote object",
 					zap.String("object_url", objectURL),
 					zap.Int("attempt", attempt))
 				return validatedObj, nil
-			} else {
-				ap.logger.Warn("fetched object failed validation",
-					zap.String("object_url", objectURL),
-					zap.Error(valErr))
-				lastErr = fmt.Errorf("validation failed: %w", valErr)
-				break // Don't retry validation failures
 			}
+			ap.logger.Warn("fetched object failed validation",
+				zap.String("object_url", objectURL),
+				zap.Error(valErr))
+			lastErr = fmt.Errorf("validation failed: %w", valErr)
+			break // Don't retry validation failures
 		}
-		
+
 		lastErr = err
-		
+
 		// Check if this is a retryable error
 		if !ap.isRetryableError(err) {
 			ap.logger.Debug("non-retryable error, stopping attempts",
@@ -1400,7 +1540,7 @@ func (ap *ActivityProcessor) fetchRemoteObjectWithRetry(ctx context.Context, obj
 				zap.Error(err))
 			break
 		}
-		
+
 		// Don't wait on the last attempt
 		if attempt < ap.retryAttempts {
 			backoffDelay := ap.calculateBackoffDelay(attempt)
@@ -1408,7 +1548,7 @@ func (ap *ActivityProcessor) fetchRemoteObjectWithRetry(ctx context.Context, obj
 				zap.String("object_url", objectURL),
 				zap.Duration("delay", backoffDelay),
 				zap.Int("attempt", attempt))
-			
+
 			// Create a timeout context for the delay
 			delayCtx, cancel := context.WithTimeout(ctx, backoffDelay)
 			select {
@@ -1420,12 +1560,12 @@ func (ap *ActivityProcessor) fetchRemoteObjectWithRetry(ctx context.Context, obj
 			}
 		}
 	}
-	
+
 	ap.logger.Error("failed to fetch remote object after all attempts",
 		zap.String("object_url", objectURL),
 		zap.Int("attempts", ap.retryAttempts),
 		zap.Error(lastErr))
-	
+
 	return nil, fmt.Errorf("failed after %d attempts: %w", ap.retryAttempts, lastErr)
 }
 
@@ -1435,22 +1575,22 @@ func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL
 	if !ok {
 		return nil, fmt.Errorf("object is not a map[string]any")
 	}
-	
+
 	// Validate basic ActivityPub object requirements
 	id, ok := objMap["id"].(string)
 	if !ok || id == "" {
 		return nil, fmt.Errorf("object missing or invalid 'id' field")
 	}
-	
+
 	if id != expectedURL {
 		return nil, fmt.Errorf("object ID mismatch: expected %s, got %s", expectedURL, id)
 	}
-	
+
 	objectType, ok := objMap["type"].(string)
 	if !ok || objectType == "" {
 		return nil, fmt.Errorf("object missing or invalid 'type' field")
 	}
-	
+
 	// Check for required ActivityPub fields based on type
 	switch objectType {
 	case "Note", "Article", "Page":
@@ -1460,37 +1600,37 @@ func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL
 				zap.String("object_id", id),
 				zap.String("type", objectType))
 		}
-		
+
 		// Should have attributedTo
 		if _, hasAttr := objMap["attributedTo"]; !hasAttr {
 			return nil, fmt.Errorf("object missing 'attributedTo' field")
 		}
-		
+
 		// Try to convert to a Note for easier handling
 		if objectType == "Note" {
 			return ap.convertToNote(objMap)
 		}
-		
+
 		// For other types, return the validated map
 		return objMap, nil
-		
+
 	case "Video", "Audio", "Image":
 		// Media objects should have a URL
 		if _, hasURL := objMap["url"]; !hasURL {
 			return nil, fmt.Errorf("media object missing 'url' field")
 		}
 		return objMap, nil
-		
+
 	case "Event":
 		// Events should have a startTime
 		if _, hasStart := objMap["startTime"]; !hasStart {
 			return nil, fmt.Errorf("event object missing 'startTime' field")
 		}
 		return objMap, nil
-		
+
 	default:
 		// For unknown types, just validate basic structure and return
-		ap.logger.Info("processing unknown object type",
+		ap.logger.Info(UnknownTypeMsg,
 			zap.String("object_id", id),
 			zap.String("type", objectType))
 		return objMap, nil
@@ -1504,12 +1644,12 @@ func (ap *ActivityProcessor) convertToNote(objMap map[string]any) (*activitypub.
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal object: %w", err)
 	}
-	
+
 	var note activitypub.Note
 	if err := common.ParseActivityPubObject(data, &note); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal to Note: %w", err)
 	}
-	
+
 	return &note, nil
 }
 
@@ -1518,9 +1658,9 @@ func (ap *ActivityProcessor) isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errStr := err.Error()
-	
+
 	// Network/connection errors are retryable
 	if strings.Contains(errStr, "connection") ||
 		strings.Contains(errStr, "timeout") ||
@@ -1528,7 +1668,7 @@ func (ap *ActivityProcessor) isRetryableError(err error) bool {
 		strings.Contains(errStr, "i/o timeout") {
 		return true
 	}
-	
+
 	// HTTP status code based retries
 	if strings.Contains(errStr, "status 5") || // 5xx errors
 		strings.Contains(errStr, "status 429") || // Rate limit
@@ -1537,125 +1677,147 @@ func (ap *ActivityProcessor) isRetryableError(err error) bool {
 		strings.Contains(errStr, "status 504") {
 		return true
 	}
-	
+
 	// DNS errors might be temporary
 	if strings.Contains(errStr, "no such host") ||
 		strings.Contains(errStr, "dns") {
 		return true
 	}
-	
+
 	// Don't retry client errors (4xx except 429), auth failures, etc.
 	if strings.Contains(errStr, "status 4") && !strings.Contains(errStr, "status 429") {
 		return false
 	}
-	
-	// Default to not retrying unknown errors
+
+	// UnknownErrorMsg
 	return false
 }
 
 // calculateBackoffDelay calculates exponential backoff delay with jitter
 func (ap *ActivityProcessor) calculateBackoffDelay(attempt int) time.Duration {
 	baseDelay := ap.retryDelay
-	
+
 	// Exponential backoff: baseDelay * 2^(attempt-1)
 	multiplier := 1 << (attempt - 1) // 2^(attempt-1)
 	delay := baseDelay * time.Duration(multiplier)
-	
+
 	// Cap the delay at 30 seconds to avoid excessively long waits
 	maxDelay := 30 * time.Second
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-	
+
 	// Add jitter (±25% of delay) to avoid thundering herd
-	jitter := delay / 4                    // 25% of delay
+	jitter := delay / 4                             // 25% of delay
 	jitterOffset := time.Duration(attempt) % jitter // Simple jitter based on attempt
 	if attempt%2 == 0 {
 		delay += jitterOffset
 	} else {
 		delay -= jitterOffset
 	}
-	
+
 	return delay
 }
 
 // storeGenericRemoteObject stores a generic remote object (non-Note types)
 func (ap *ActivityProcessor) storeGenericRemoteObject(ctx context.Context, objMap map[string]interface{}) {
-	id, ok := objMap["id"].(string)
-	if !ok {
+	id := ap.extractObjectID(objMap)
+	if id == "" {
 		ap.logger.Error("cannot store object without ID")
 		return
 	}
-	
-	objectType, ok := objMap["type"].(string)
-	if !ok {
-		objectType = "Object" // fallback
-	}
-	
-	// Extract common fields
+
+	objectType := ap.extractObjectType(objMap)
 	now := time.Now()
-	
-	// Handle published time
-	publishedTime := now
-	if pubStr, ok := objMap["published"].(string); ok {
-		if parsed, err := time.Parse(time.RFC3339, pubStr); err == nil {
-			publishedTime = parsed
-		}
-	}
-	
-	// Extract content (if any)
-	content := ""
-	if c, ok := objMap["content"].(string); ok {
-		content = c
-	} else if name, ok := objMap["name"].(string); ok {
-		content = name // Use name as content for objects without content
-	} else if summary, ok := objMap["summary"].(string); ok {
-		content = summary // Use summary as fallback
-	}
-	
-	// Extract author
-	attributedTo := ""
-	if attr, ok := objMap["attributedTo"].(string); ok {
-		attributedTo = attr
-	}
-	
-	// Extract addressing
-	var to, cc []string
-	if toField, ok := objMap["to"]; ok {
-		if toSlice, ok := toField.([]interface{}); ok {
-			for _, item := range toSlice {
-				if str, ok := item.(string); ok {
-					to = append(to, str)
-				}
-			}
-		}
-	}
-	
-	if ccField, ok := objMap["cc"]; ok {
-		if ccSlice, ok := ccField.([]interface{}); ok {
-			for _, item := range ccSlice {
-				if str, ok := item.(string); ok {
-					cc = append(cc, str)
-				}
-			}
-		}
-	}
-	
+
 	// Create storage object
-	storageObj := &models.Object{
+	storageObj := ap.buildStorageObject(objMap, id, objectType, now)
+
+	// Store object
+	ap.storeObjectWithLogging(ctx, storageObj, id, objectType)
+}
+
+// extractObjectID extracts the ID from an object map
+func (ap *ActivityProcessor) extractObjectID(objMap map[string]interface{}) string {
+	if id, ok := objMap["id"].(string); ok {
+		return id
+	}
+	return ""
+}
+
+// extractObjectType extracts the type from an object map
+func (ap *ActivityProcessor) extractObjectType(objMap map[string]interface{}) string {
+	if objectType, ok := objMap["type"].(string); ok {
+		return objectType
+	}
+	return "Object" // fallback
+}
+
+// buildStorageObject builds a storage object from a map
+func (ap *ActivityProcessor) buildStorageObject(objMap map[string]interface{}, id, objectType string, now time.Time) *models.Object {
+	return &models.Object{
 		ID:           id,
 		Type:         objectType,
-		Content:      content,
-		AttributedTo: attributedTo,
-		Published:    publishedTime,
+		Content:      ap.extractObjectContent(objMap),
+		AttributedTo: ap.extractObjectAuthor(objMap),
+		Published:    ap.extractObjectPublishedTime(objMap, now),
 		Updated:      now,
-		To:           to,
-		CC:           cc,
+		To:           ap.extractAddressingField(objMap, "to"),
+		CC:           ap.extractAddressingField(objMap, "cc"),
 		IsRemote:     true,
 		CreatedAt:    now,
 	}
-	
-	// Store object
+}
+
+// extractObjectContent extracts content from an object map
+func (ap *ActivityProcessor) extractObjectContent(objMap map[string]interface{}) string {
+	if c, ok := objMap["content"].(string); ok {
+		return c
+	}
+	if name, ok := objMap["name"].(string); ok {
+		return name // Use name as content for objects without content
+	}
+	if summary, ok := objMap["summary"].(string); ok {
+		return summary // Use summary as fallback
+	}
+	return ""
+}
+
+// extractObjectAuthor extracts the author from an object map
+func (ap *ActivityProcessor) extractObjectAuthor(objMap map[string]interface{}) string {
+	if attr, ok := objMap["attributedTo"].(string); ok {
+		return attr
+	}
+	return ""
+}
+
+// extractObjectPublishedTime extracts the published time from an object map
+func (ap *ActivityProcessor) extractObjectPublishedTime(objMap map[string]interface{}, fallback time.Time) time.Time {
+	if pubStr, ok := objMap["published"].(string); ok {
+		if parsed, err := time.Parse(time.RFC3339, pubStr); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// extractAddressingField extracts addressing fields (to/cc) from an object map
+func (ap *ActivityProcessor) extractAddressingField(objMap map[string]interface{}, field string) []string {
+	var result []string
+	if fieldData, ok := objMap[field]; ok {
+		if slice, ok := fieldData.([]interface{}); ok {
+			for _, item := range slice {
+				if str, ok := item.(string); ok {
+					result = append(result, str)
+				}
+			}
+		}
+	}
+	return result
+}
+
+// storeObjectWithLogging stores an object and logs the result
+func (ap *ActivityProcessor) storeObjectWithLogging(ctx context.Context, storageObj *models.Object, id, objectType string) {
 	if err := ap.objectRepo.CreateObject(ctx, storageObj); err != nil {
 		ap.logger.Error("failed to store generic remote object",
 			zap.String("object_id", id),
@@ -1798,46 +1960,48 @@ type StorageAdapter struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
-	
+
 	// Repository instances - initialized once and reused
-	accountRepo         *repositories.AccountRepository
-	actorRepo           *repositories.ActorRepository
-	objectRepo          *repositories.ObjectRepository
-	activityRepo        *repositories.ActivityRepository
-	timelineRepo        *repositories.TimelineRepository
-	notificationRepo    *repositories.NotificationRepository
-	likeRepo            *repositories.LikeRepository
-	moderationRepo      *repositories.ModerationRepository
-	listRepo            *repositories.ListRepository
-	mediaRepo           *repositories.MediaRepository
-	pollRepo            *repositories.PollRepository
+	accountRepo          *repositories.AccountRepository
+	actorRepo            *repositories.ActorRepository
+	objectRepo           *repositories.ObjectRepository
+	activityRepo         *repositories.ActivityRepository
+	timelineRepo         *repositories.TimelineRepository
+	notificationRepo     *repositories.NotificationRepository
+	likeRepo             *repositories.LikeRepository
+	moderationRepo       *repositories.ModerationRepository
+	listRepo             *repositories.ListRepository
+	mediaRepo            *repositories.MediaRepository
+	pollRepo             *repositories.PollRepository
 	pushSubscriptionRepo *repositories.PushSubscriptionRepository
-	hashtagRepo         *repositories.HashtagRepository
-	scheduledStatusRepo *repositories.ScheduledStatusRepository
-	announcementRepo    *repositories.AnnouncementRepository
-	domainBlockRepo     *repositories.DomainBlockRepository
-	relationshipRepo    *repositories.RelationshipRepository
-	instanceRepo        *repositories.InstanceRepository
-	federationRepo      *repositories.FederationRepository
-	recoveryRepo        *repositories.RecoveryRepository
-	analyticsRepo       *repositories.TrendingRepository
-	socialRepo          *repositories.SocialRepository
-	userRepo            *repositories.UserRepository
-	statusRepo          *repositories.StatusRepository
-	costRepo            *repositories.CostTrackingRepository
-	trustRepo           *repositories.TrustRepository
-	searchRepo          *repositories.SearchRepository
-	relayRepo           *repositories.RelayRepository
-	communityNoteRepo   *repositories.CommunityNoteRepository
-	emojiRepo           *repositories.EmojiRepository
-	rateLimitRepo       *repositories.RateLimitRepository
-	conversationRepo    *repositories.ConversationRepository
-	markerRepo          *repositories.MarkerRepository
-	featuredTagRepo     *repositories.FeaturedTagRepository
-	aiRepo              *repositories.AIRepository
-	exportRepo          *repositories.ExportRepository
-	importRepo          *repositories.ImportRepository
-	dlqRepo             *repositories.DLQRepository
+	hashtagRepo          *repositories.HashtagRepository
+	scheduledStatusRepo  *repositories.ScheduledStatusRepository
+	announcementRepo     *repositories.AnnouncementRepository
+	domainBlockRepo      *repositories.DomainBlockRepository
+	relationshipRepo     *repositories.RelationshipRepository
+	instanceRepo         *repositories.InstanceRepository
+	federationRepo       *repositories.FederationRepository
+	recoveryRepo         *repositories.RecoveryRepository
+	analyticsRepo        *repositories.TrendingRepository
+	socialRepo           *repositories.SocialRepository
+	userRepo             *repositories.UserRepository
+	statusRepo           *repositories.StatusRepository
+	costRepo             *repositories.CostTrackingRepository
+	trustRepo            *repositories.TrustRepository
+	searchRepo           *repositories.SearchRepository
+	relayRepo            *repositories.RelayRepository
+	communityNoteRepo    *repositories.CommunityNoteRepository
+	emojiRepo            *repositories.EmojiRepository
+	rateLimitRepo        *repositories.RateLimitRepository
+	conversationRepo     *repositories.ConversationRepository
+	markerRepo           *repositories.MarkerRepository
+	featuredTagRepo      *repositories.FeaturedTagRepository
+	aiRepo               *repositories.AIRepository
+	exportRepo           *repositories.ExportRepository
+	importRepo           *repositories.ImportRepository
+	dlqRepo              *repositories.DLQRepository
+	metricRecordRepo     *repositories.MetricRecordRepository
+	cloudWatchMetricsRepo *repositories.CloudWatchMetricsRepository
 }
 
 // NewStorageAdapter creates a new complete storage adapter with all repositories
@@ -1853,104 +2017,190 @@ func NewStorageAdapter(db core.DB, tableName string, logger *zap.Logger) *Storag
 	if domain == "" {
 		domain = "localhost" // fallback
 	}
-	
+
+	// Load AWS config for CloudWatch metrics
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		logger.Warn("failed to load AWS config for CloudWatch metrics", zap.Error(err))
+		// Use empty config as fallback
+		awsCfg = aws.Config{}
+	}
+
 	return &StorageAdapter{
 		db:        db,
 		tableName: tableName,
 		logger:    logger,
-		
+
 		// Initialize all repositories
-		accountRepo:         repositories.NewAccountRepository(db, tableName, domain, logger),
-		actorRepo:           repositories.NewActorRepository(db, tableName, logger),
-		objectRepo:          repositories.NewObjectRepository(db, tableName, domain, logger),
-		activityRepo:        repositories.NewActivityRepository(db, tableName, logger),
-		timelineRepo:        repositories.NewTimelineRepository(db, tableName, logger),
-		notificationRepo:    repositories.NewNotificationRepository(db, tableName, logger),
-		likeRepo:            repositories.NewLikeRepository(db, tableName, logger),
-		moderationRepo:      repositories.NewModerationRepository(db, tableName, logger),
-		listRepo:            repositories.NewListRepository(db, tableName, logger),
-		mediaRepo:           repositories.NewMediaRepository(db, tableName, logger),
-		pollRepo:            repositories.NewPollRepository(db, tableName, logger),
+		accountRepo:          repositories.NewAccountRepository(db, tableName, domain, logger),
+		actorRepo:            repositories.NewActorRepository(db, tableName, logger),
+		objectRepo:           repositories.NewObjectRepository(db, tableName, domain, logger),
+		activityRepo:         repositories.NewActivityRepository(db, tableName, logger),
+		timelineRepo:         repositories.NewTimelineRepository(db, tableName, logger),
+		notificationRepo:     repositories.NewNotificationRepository(db, tableName, logger),
+		likeRepo:             repositories.NewLikeRepository(db, tableName, logger),
+		moderationRepo:       repositories.NewModerationRepository(db, tableName, logger),
+		listRepo:             repositories.NewListRepository(db, tableName, logger),
+		mediaRepo:            repositories.NewMediaRepository(db, tableName, logger),
+		pollRepo:             repositories.NewPollRepository(db, tableName, logger),
 		pushSubscriptionRepo: repositories.NewPushSubscriptionRepository(db, tableName, logger),
-		hashtagRepo:         repositories.NewHashtagRepository(db, tableName, logger, domain),
-		scheduledStatusRepo: repositories.NewScheduledStatusRepository(db, tableName, logger),
-		announcementRepo:    repositories.NewAnnouncementRepository(db, tableName, logger),
-		domainBlockRepo:     repositories.NewDomainBlockRepository(db, tableName, logger),
-		relationshipRepo:    repositories.NewRelationshipRepository(db, tableName, logger),
-		instanceRepo:        repositories.NewInstanceRepository(db, tableName, logger),
-		federationRepo:      repositories.NewFederationRepository(db, logger),
-		recoveryRepo:        repositories.NewRecoveryRepository(db, tableName, logger),
-		analyticsRepo:       repositories.NewTrendingRepository(db, logger),
-		socialRepo:          repositories.NewSocialRepository(db, logger),
-		userRepo:            repositories.NewUserRepository(db, tableName, logger),
-		statusRepo:          repositories.NewStatusRepository(db, tableName, logger),
-		costRepo:            repositories.NewCostTrackingRepository(db, tableName, logger),
-		trustRepo:           repositories.NewTrustRepository(db, logger),
-		searchRepo:          repositories.NewSearchRepository(db, logger),
-		relayRepo:           repositories.NewRelayRepository(db, tableName, logger),
-		communityNoteRepo:   repositories.NewCommunityNoteRepository(db, tableName, logger),
-		emojiRepo:           repositories.NewEmojiRepository(db, logger),
-		rateLimitRepo:       repositories.NewRateLimitRepository(db, tableName, logger),
-		conversationRepo:    repositories.NewConversationRepository(db, logger),
-		markerRepo:          repositories.NewMarkerRepository(db, tableName, logger),
-		featuredTagRepo:     repositories.NewFeaturedTagRepository(db, tableName, logger),
-		aiRepo:              repositories.NewAIRepository(db, tableName, logger),
-		exportRepo:          repositories.NewExportRepository(db, tableName, logger),
-		importRepo:          repositories.NewImportRepository(db, tableName, logger),
-		dlqRepo:             repositories.NewDLQRepository(db, tableName, logger),
+		hashtagRepo:          repositories.NewHashtagRepository(db, tableName, logger, domain),
+		scheduledStatusRepo:  repositories.NewScheduledStatusRepository(db, tableName, logger),
+		announcementRepo:     repositories.NewAnnouncementRepository(db, tableName, logger),
+		domainBlockRepo:      repositories.NewDomainBlockRepository(db, tableName, logger),
+		relationshipRepo:     repositories.NewRelationshipRepository(db, tableName, logger),
+		instanceRepo:         repositories.NewInstanceRepository(db, tableName, logger),
+		federationRepo:       repositories.NewFederationRepository(db, logger),
+		recoveryRepo:         repositories.NewRecoveryRepository(db, tableName, logger),
+		analyticsRepo:        repositories.NewTrendingRepository(db, logger),
+		socialRepo:           repositories.NewSocialRepository(db, logger),
+		userRepo:             repositories.NewUserRepository(db, tableName, logger),
+		statusRepo:           repositories.NewStatusRepository(db, tableName, logger),
+		costRepo:             repositories.NewCostTrackingRepository(db, tableName, logger),
+		trustRepo:            repositories.NewTrustRepository(db, logger),
+		searchRepo:           repositories.NewSearchRepository(db, logger),
+		relayRepo:            repositories.NewRelayRepository(db, tableName, logger),
+		communityNoteRepo:    repositories.NewCommunityNoteRepository(db, tableName, logger),
+		emojiRepo:            repositories.NewEmojiRepository(db, logger),
+		rateLimitRepo:        repositories.NewRateLimitRepository(db, tableName, logger),
+		conversationRepo:     repositories.NewConversationRepository(db, logger),
+		markerRepo:           repositories.NewMarkerRepository(db, tableName, logger),
+		featuredTagRepo:      repositories.NewFeaturedTagRepository(db, tableName, logger),
+		aiRepo:               repositories.NewAIRepository(db, tableName, logger),
+		exportRepo:           repositories.NewExportRepository(db, tableName, logger),
+		importRepo:           repositories.NewImportRepository(db, tableName, logger),
+		dlqRepo:              repositories.NewDLQRepository(db, tableName, logger),
+		metricRecordRepo:     repositories.NewMetricRecordRepository(db, tableName, logger),
+		cloudWatchMetricsRepo: repositories.NewCloudWatchMetricsRepository(awsCfg, "Lesser/Production", "prod", logger),
 	}
 }
 
 // Implement all core.RepositoryStorage interface methods
 
-func (s *StorageAdapter) Account() *repositories.AccountRepository         { return s.accountRepo }
-func (s *StorageAdapter) Actor() *repositories.ActorRepository             { return s.actorRepo }
-func (s *StorageAdapter) Object() *repositories.ObjectRepository           { return s.objectRepo }
-func (s *StorageAdapter) Activity() *repositories.ActivityRepository       { return s.activityRepo }
-func (s *StorageAdapter) Timeline() *repositories.TimelineRepository       { return s.timelineRepo }
-func (s *StorageAdapter) Notification() *repositories.NotificationRepository { return s.notificationRepo }
-func (s *StorageAdapter) Like() *repositories.LikeRepository               { return s.likeRepo }
-func (s *StorageAdapter) Moderation() *repositories.ModerationRepository   { return s.moderationRepo }
-func (s *StorageAdapter) List() *repositories.ListRepository               { return s.listRepo }
-func (s *StorageAdapter) Media() *repositories.MediaRepository             { return s.mediaRepo }
-func (s *StorageAdapter) Poll() *repositories.PollRepository               { return s.pollRepo }
-func (s *StorageAdapter) PushSubscription() *repositories.PushSubscriptionRepository { return s.pushSubscriptionRepo }
-func (s *StorageAdapter) Hashtag() *repositories.HashtagRepository         { return s.hashtagRepo }
-func (s *StorageAdapter) ScheduledStatus() *repositories.ScheduledStatusRepository { return s.scheduledStatusRepo }
-func (s *StorageAdapter) Announcement() *repositories.AnnouncementRepository { return s.announcementRepo }
+// Account returns the account repository for user account operations
+func (s *StorageAdapter) Account() *repositories.AccountRepository { return s.accountRepo }
+
+// Actor returns the actor repository for ActivityPub actor operations  
+func (s *StorageAdapter) Actor() *repositories.ActorRepository { return s.actorRepo }
+
+// Object returns the object repository for ActivityPub object operations
+func (s *StorageAdapter) Object() *repositories.ObjectRepository { return s.objectRepo }
+
+// Activity returns the activity repository for ActivityPub activity operations
+func (s *StorageAdapter) Activity() *repositories.ActivityRepository { return s.activityRepo }
+
+// Timeline returns the timeline repository for timeline operations
+func (s *StorageAdapter) Timeline() *repositories.TimelineRepository { return s.timelineRepo }
+
+// Notification returns the notification repository for notification operations
+func (s *StorageAdapter) Notification() *repositories.NotificationRepository {
+	return s.notificationRepo
+}
+
+// Like returns the like repository for like/favorite operations
+func (s *StorageAdapter) Like() *repositories.LikeRepository { return s.likeRepo }
+
+// Moderation returns the moderation repository for moderation operations
+func (s *StorageAdapter) Moderation() *repositories.ModerationRepository { return s.moderationRepo }
+
+// List returns the list repository for list operations
+func (s *StorageAdapter) List() *repositories.ListRepository { return s.listRepo }
+// Media returns the media repository for media operations
+func (s *StorageAdapter) Media() *repositories.MediaRepository { return s.mediaRepo }
+
+// Poll returns the poll repository for poll operations
+func (s *StorageAdapter) Poll() *repositories.PollRepository { return s.pollRepo }
+
+// PushSubscription returns the push subscription repository for push notification operations
+func (s *StorageAdapter) PushSubscription() *repositories.PushSubscriptionRepository {
+	return s.pushSubscriptionRepo
+}
+// Hashtag returns the hashtag repository for hashtag operations
+func (s *StorageAdapter) Hashtag() *repositories.HashtagRepository { return s.hashtagRepo }
+// ScheduledStatus returns the scheduled status repository for scheduled post operations
+func (s *StorageAdapter) ScheduledStatus() *repositories.ScheduledStatusRepository {
+	return s.scheduledStatusRepo
+}
+// Announcement returns the announcement repository for announcement operations
+func (s *StorageAdapter) Announcement() *repositories.AnnouncementRepository {
+	return s.announcementRepo
+}
+// DomainBlock returns the domain block repository for domain blocking operations
 func (s *StorageAdapter) DomainBlock() *repositories.DomainBlockRepository { return s.domainBlockRepo }
-func (s *StorageAdapter) Relationship() *repositories.RelationshipRepository { return s.relationshipRepo }
-func (s *StorageAdapter) Instance() *repositories.InstanceRepository       { return s.instanceRepo }
-func (s *StorageAdapter) Federation() *repositories.FederationRepository   { return s.federationRepo }
-func (s *StorageAdapter) Recovery() *repositories.RecoveryRepository       { return s.recoveryRepo }
-func (s *StorageAdapter) Analytics() *repositories.TrendingRepository      { return s.analyticsRepo }
-func (s *StorageAdapter) Social() *repositories.SocialRepository           { return s.socialRepo }
-func (s *StorageAdapter) User() *repositories.UserRepository               { return s.userRepo }
-func (s *StorageAdapter) Status() *repositories.StatusRepository           { return s.statusRepo }
-func (s *StorageAdapter) Cost() *repositories.CostTrackingRepository       { return s.costRepo }
-func (s *StorageAdapter) Trust() *repositories.TrustRepository             { return s.trustRepo }
-func (s *StorageAdapter) Search() *repositories.SearchRepository           { return s.searchRepo }
-func (s *StorageAdapter) Relay() *repositories.RelayRepository             { return s.relayRepo }
-func (s *StorageAdapter) CommunityNote() *repositories.CommunityNoteRepository { return s.communityNoteRepo }
-func (s *StorageAdapter) Emoji() *repositories.EmojiRepository             { return s.emojiRepo }
-func (s *StorageAdapter) RateLimit() *repositories.RateLimitRepository     { return s.rateLimitRepo }
-func (s *StorageAdapter) Conversation() *repositories.ConversationRepository { return s.conversationRepo }
+// Relationship returns the relationship repository for relationship operations
+func (s *StorageAdapter) Relationship() *repositories.RelationshipRepository {
+	return s.relationshipRepo
+}
+// Instance returns the instance repository for instance operations
+func (s *StorageAdapter) Instance() *repositories.InstanceRepository     { return s.instanceRepo }
+// Federation returns the federation repository for federation operations
+func (s *StorageAdapter) Federation() *repositories.FederationRepository { return s.federationRepo }
+// Recovery returns the recovery repository for recovery operations
+func (s *StorageAdapter) Recovery() *repositories.RecoveryRepository     { return s.recoveryRepo }
+// Analytics returns the analytics repository for analytics operations
+func (s *StorageAdapter) Analytics() *repositories.TrendingRepository    { return s.analyticsRepo }
+// Social returns the social repository for social operations
+func (s *StorageAdapter) Social() *repositories.SocialRepository         { return s.socialRepo }
+// User returns the user repository for user operations
+func (s *StorageAdapter) User() *repositories.UserRepository             { return s.userRepo }
+// Status returns the status repository for status operations
+func (s *StorageAdapter) Status() *repositories.StatusRepository         { return s.statusRepo }
+// Cost returns the cost tracking repository for cost operations
+func (s *StorageAdapter) Cost() *repositories.CostTrackingRepository     { return s.costRepo }
+// Trust returns the trust repository for trust operations
+func (s *StorageAdapter) Trust() *repositories.TrustRepository           { return s.trustRepo }
+// Search returns the search repository for search operations
+func (s *StorageAdapter) Search() *repositories.SearchRepository         { return s.searchRepo }
+// Relay returns the relay repository for relay operations
+func (s *StorageAdapter) Relay() *repositories.RelayRepository           { return s.relayRepo }
+// CommunityNote returns the community note repository for community note operations
+func (s *StorageAdapter) CommunityNote() *repositories.CommunityNoteRepository {
+	return s.communityNoteRepo
+}
+// Emoji returns the emoji repository for emoji operations
+func (s *StorageAdapter) Emoji() *repositories.EmojiRepository         { return s.emojiRepo }
+// RateLimit returns the rate limit repository for rate limiting operations
+func (s *StorageAdapter) RateLimit() *repositories.RateLimitRepository { return s.rateLimitRepo }
+// Conversation returns the conversation repository for conversation operations
+func (s *StorageAdapter) Conversation() *repositories.ConversationRepository {
+	return s.conversationRepo
+}
+// Marker returns the marker repository for marker operations
 func (s *StorageAdapter) Marker() *repositories.MarkerRepository           { return s.markerRepo }
+// FeaturedTag returns the featured tag repository for featured tag operations
 func (s *StorageAdapter) FeaturedTag() *repositories.FeaturedTagRepository { return s.featuredTagRepo }
+// AI returns the AI repository for AI operations
 func (s *StorageAdapter) AI() *repositories.AIRepository                   { return s.aiRepo }
+// Export returns the export repository for export operations
 func (s *StorageAdapter) Export() *repositories.ExportRepository           { return s.exportRepo }
+// Import returns the import repository for import operations
 func (s *StorageAdapter) Import() *repositories.ImportRepository           { return s.importRepo }
+// DLQ returns the DLQ repository for dead letter queue operations
 func (s *StorageAdapter) DLQ() *repositories.DLQRepository                 { return s.dlqRepo }
 
 // Utility methods
+
+// GetDB returns the underlying database connection
 func (s *StorageAdapter) GetDB() core.DB {
 	return s.db
 }
 
+// GetTableName returns the DynamoDB table name
 func (s *StorageAdapter) GetTableName() string {
 	return s.tableName
 }
 
+// GetLogger returns the logger instance
 func (s *StorageAdapter) GetLogger() *zap.Logger {
 	return s.logger
+}
+
+// MetricRecord returns the metric record repository for metric operations
+func (s *StorageAdapter) MetricRecord() *repositories.MetricRecordRepository {
+	return s.metricRecordRepo
+}
+
+// CloudWatchMetrics returns the CloudWatch metrics repository for CloudWatch operations
+func (s *StorageAdapter) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
+	return s.cloudWatchMetricsRepo
 }

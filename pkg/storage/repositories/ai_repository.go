@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AIRepository handles AI analysis data persistence
@@ -29,7 +30,7 @@ func NewAIRepository(db core.DB, tableName string, logger *zap.Logger) *AIReposi
 }
 
 // SaveAnalysis stores an AI analysis result
-func (r *AIRepository) SaveAnalysis(ctx context.Context, analysis *ai.AIAnalysis) error {
+func (r *AIRepository) SaveAnalysis(_ context.Context, analysis *ai.AIAnalysis) error {
 	// Convert to DynamORM model
 	model := &models.AIAnalysis{
 		PK:               fmt.Sprintf("AI#%s", analysis.ObjectID),
@@ -46,7 +47,7 @@ func (r *AIRepository) SaveAnalysis(ctx context.Context, analysis *ai.AIAnalysis
 		OverallRisk:      analysis.OverallRisk,
 		ModerationAction: analysis.ModerationAction,
 		Confidence:       analysis.Confidence,
-		GSI4PK:           fmt.Sprintf("AI#ANALYSIS#%s", analysis.AnalyzedAt.Format("2006-01-02")),
+		GSI4PK:           fmt.Sprintf("AI#ANALYSIS#%s", analysis.AnalyzedAt.Format(common.DateFormat)),
 		GSI4SK:           analysis.AnalyzedAt.Format(time.RFC3339Nano),
 		Type:             "AIAnalysis",
 		CreatedAt:        analysis.AnalyzedAt,
@@ -66,7 +67,7 @@ func (r *AIRepository) SaveAnalysis(ctx context.Context, analysis *ai.AIAnalysis
 }
 
 // GetAnalysis retrieves the most recent AI analysis for an object
-func (r *AIRepository) GetAnalysis(ctx context.Context, objectID string) (*ai.AIAnalysis, error) {
+func (r *AIRepository) GetAnalysis(_ context.Context, objectID string) (*ai.AIAnalysis, error) {
 	var analyses []*models.AIAnalysis
 
 	// Query for analyses of this object
@@ -109,7 +110,7 @@ func (r *AIRepository) GetAnalysis(ctx context.Context, objectID string) (*ai.AI
 }
 
 // GetAnalysisByID retrieves a specific AI analysis by ID
-func (r *AIRepository) GetAnalysisByID(ctx context.Context, objectID, analysisID string) (*ai.AIAnalysis, error) {
+func (r *AIRepository) GetAnalysisByID(_ context.Context, objectID, analysisID string) (*ai.AIAnalysis, error) {
 	var model models.AIAnalysis
 
 	// Get specific analysis
@@ -140,19 +141,19 @@ func (r *AIRepository) GetAnalysisByID(ctx context.Context, objectID, analysisID
 }
 
 // GetStats retrieves AI analysis statistics for a given period
-func (r *AIRepository) GetStats(ctx context.Context, period string) (*ai.AIStats, error) {
+func (r *AIRepository) GetStats(_ context.Context, period string) (*ai.AIStats, error) {
 	// Calculate date range based on period
 	now := time.Now()
 	var startDate time.Time
-	
+
 	switch period {
 	case "hour":
 		startDate = now.Add(-1 * time.Hour)
 	case "day":
 		startDate = now.AddDate(0, 0, -1)
-	case "week":
+	case models.PeriodWeek:
 		startDate = now.AddDate(0, 0, -7)
-	case "month":
+	case models.PeriodMonth:
 		startDate = now.AddDate(0, -1, 0)
 	default:
 		startDate = now.AddDate(0, 0, -1) // Default to 24 hours
@@ -160,8 +161,8 @@ func (r *AIRepository) GetStats(ctx context.Context, period string) (*ai.AIStats
 
 	// Query analyses using GSI4
 	var analyses []*models.AIAnalysis
-	dateStr := startDate.Format("2006-01-02")
-	
+	dateStr := startDate.Format(common.DateFormat)
+
 	err := r.db.Model(&models.AIAnalysis{}).
 		Index("cost-date-index"). // GSI4
 		Where("GSI4PK", ">=", fmt.Sprintf("AI#ANALYSIS#%s", dateStr)).
@@ -194,28 +195,28 @@ func (r *AIRepository) GetStats(ctx context.Context, period string) (*ai.AIStats
 		}
 
 		stats.TotalAnalyses++
-		
+
 		// Count based on analysis results
 		if analysis.TextAnalysis != nil && analysis.TextAnalysis.ToxicityScore > 0.7 {
 			stats.ToxicContent++
 		}
-		
+
 		if analysis.SpamAnalysis != nil && analysis.SpamAnalysis.SpamScore > 0.7 {
 			stats.SpamDetected++
 		}
-		
+
 		if analysis.AIDetection != nil && analysis.AIDetection.AIGeneratedProbability > 0.7 {
 			stats.AIGenerated++
 		}
-		
+
 		if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW {
 			stats.NSFWContent++
 		}
-		
+
 		if analysis.TextAnalysis != nil && len(analysis.TextAnalysis.PIIEntities) > 0 {
 			stats.PIIDetected++
 		}
-		
+
 		// Count moderation actions
 		if analysis.ModerationAction != "" {
 			stats.ModerationActions[analysis.ModerationAction]++
@@ -234,13 +235,13 @@ func (r *AIRepository) GetStats(ctx context.Context, period string) (*ai.AIStats
 }
 
 // QueueForAnalysis marks an object for AI analysis
-func (r *AIRepository) QueueForAnalysis(ctx context.Context, objectID string) error {
+func (r *AIRepository) QueueForAnalysis(_ context.Context, objectID string) error {
 	// Update the object to trigger analysis (via DynamoDB streams)
 	// This is a simplified version - in production you might use a proper queue
 	model := &models.AIAnalysisQueue{
-		PK:        fmt.Sprintf("OBJECT#%s", objectID),
-		SK:        fmt.Sprintf("OBJECT#%s", objectID),
-		UpdatedAt: time.Now(),
+		PK:            fmt.Sprintf("OBJECT#%s", objectID),
+		SK:            fmt.Sprintf("OBJECT#%s", objectID),
+		UpdatedAt:     time.Now(),
 		ForceAnalysis: true,
 	}
 

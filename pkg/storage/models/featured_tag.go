@@ -24,6 +24,6 @@ type FeaturedTag struct {
 
 // UpdateKeys sets the PK and SK based on the username and ID
 func (f *FeaturedTag) UpdateKeys() {
-	f.PK = fmt.Sprintf("USER#%s", f.Username)
+	f.PK = fmt.Sprintf(KeyPatternUser, f.Username)
 	f.SK = fmt.Sprintf("FEATURED_TAG#%s", f.ID)
 }

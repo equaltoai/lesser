@@ -1,3 +1,8 @@
+// Package main implements an AI-powered content analysis processor that monitors
+// DynamoDB streams for new content, performs toxicity detection, spam analysis,
+// and automated moderation actions using AWS Bedrock. It processes INSERT and
+// MODIFY events from the stream, analyzing text and media content to ensure
+// community guidelines compliance and protect users from harmful content.
 package main
 
 import (
@@ -19,6 +24,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
 
+// AIProcessor handles AI-based content analysis for posts and media in the system.
+// It integrates with AWS Bedrock to perform toxicity detection, spam filtering,
+// and automated moderation decisions based on configurable thresholds.
 type AIProcessor struct {
 	db        core.DB
 	tableName string
@@ -26,6 +34,9 @@ type AIProcessor struct {
 	logger    *zap.Logger
 }
 
+// NewAIProcessor creates a new AI processor instance configured with the specified
+// database connection, DynamoDB table name, and AI service. The processor will
+// analyze content from stream events and store results for moderation workflows.
 func NewAIProcessor(db core.DB, tableName string, aiService *ai.AIService) *AIProcessor {
 	return &AIProcessor{
 		db:        db,
@@ -38,7 +49,7 @@ func NewAIProcessor(db core.DB, tableName string, aiService *ai.AIService) *AIPr
 // HandleStream processes DynamoDB stream events with Lift-style patterns
 func (ap *AIProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
 	requestID := ctx.GetRequestID()
-	
+
 	ap.logger.Info("processing AI analysis stream batch",
 		zap.String("request_id", requestID),
 		zap.Int("record_count", len(event.Records)),
@@ -202,7 +213,7 @@ func (ap *AIProcessor) storeAnalysis(ctx *lift.Context, analysis *ai.AIAnalysis)
 		ObjectID:         analysis.ObjectID,
 		ObjectType:       analysis.ObjectType,
 		OverallRisk:      analysis.OverallRisk,
-		ModerationAction: string(analysis.ModerationAction),
+		ModerationAction: analysis.ModerationAction,
 		CreatedAt:        time.Now().Format(time.RFC3339),
 		TTL:              time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}

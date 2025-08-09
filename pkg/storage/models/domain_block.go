@@ -16,7 +16,7 @@ type UserDomainBlock struct {
 
 // UpdateKeys updates the keys for the user domain block
 func (d *UserDomainBlock) UpdateKeys() error {
-	d.PK = fmt.Sprintf("USER#%s", d.Username)
+	d.PK = fmt.Sprintf(KeyPatternUser, d.Username)
 	d.SK = fmt.Sprintf("DOMAIN_BLOCK#%s", d.Domain)
 	return nil
 }

@@ -16,9 +16,9 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	var username string
-	
+
 	if testUsername != "" {
 		// Use test username directly (test mode)
 		username = testUsername
@@ -28,7 +28,7 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 		if authHeader == "" {
 			authHeader = ctx.Header("authorization")
 		}
-		
+
 		// Try direct access to headers if ctx.Header doesn't work
 		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
@@ -53,7 +53,7 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 		if !claims.HasScope("read:accounts") && !claims.HasScope(auth.ScopeRead) {
 			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 		}
-		
+
 		username = claims.Username
 	}
 

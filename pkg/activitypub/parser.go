@@ -1,3 +1,4 @@
+// Package activitypub provides parsing and validation utilities for ActivityPub protocol messages.
 package activitypub
 
 import (

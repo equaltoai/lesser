@@ -71,7 +71,7 @@ type Tracker struct {
 	requestID     string
 	operationType string
 	startTime     time.Time
-	
+
 	// Circuit breaker for cost limits
 	circuitBreaker *CostCircuitBreaker
 }
@@ -81,7 +81,7 @@ func New() *Tracker {
 	return &Tracker{
 		startTime: time.Now(),
 		circuitBreaker: NewCostCircuitBreaker(CostCircuitBreakerConfig{
-			MaxCostPerHour:    0.10, // $0.10 per hour
+			MaxCostPerHour:    0.10,  // $0.10 per hour
 			MaxCostPerRequest: 0.001, // $0.001 per request
 			WindowSize:        time.Hour,
 			FailureThreshold:  5,
@@ -97,7 +97,7 @@ func NewWithRequest(requestID, operationType string) *Tracker {
 		operationType: operationType,
 		startTime:     time.Now(),
 		circuitBreaker: NewCostCircuitBreaker(CostCircuitBreakerConfig{
-			MaxCostPerHour:    0.10, // $0.10 per hour
+			MaxCostPerHour:    0.10,  // $0.10 per hour
 			MaxCostPerRequest: 0.001, // $0.001 per request
 			WindowSize:        time.Hour,
 			FailureThreshold:  5,
@@ -296,15 +296,15 @@ func (t *Tracker) Clone() *Tracker {
 }
 
 // TrackWrite tracks DynamoDB write operations (convenience function for storage layer)
-func TrackWrite(_ context.Context, tracker *Tracker, operation string, items int) {
+func TrackWrite(_ context.Context, tracker *Tracker, _ string, items int) {
 	if tracker != nil {
-		tracker.TrackDynamoWrite(items)
+		_ = tracker.TrackDynamoWrite(items)
 	}
 }
 
 // TrackRead tracks DynamoDB read operations (convenience function for storage layer)
-func TrackRead(_ context.Context, tracker *Tracker, operation string, items int64) {
+func TrackRead(_ context.Context, tracker *Tracker, _ string, items int64) {
 	if tracker != nil {
-		tracker.TrackDynamoRead(int(items))
+		_ = tracker.TrackDynamoRead(int(items))
 	}
 }

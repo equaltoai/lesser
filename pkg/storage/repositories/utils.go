@@ -97,15 +97,15 @@ func (k *KeyUtils) WalletKey(address string) string {
 // Common Sort Keys
 const (
 	// Core sort keys
-	SKMetadata    = "METADATA"
-	SKProfile     = "PROFILE"
-	SKState       = "STATE"
-	SKCode        = "CODE"
-	SKToken       = "TOKEN"
-	SKCredential  = "CREDENTIAL"
-	SKChallenge   = "CHALLENGE"
-	SKWebAuthn    = "WEBAUTHN"
-	
+	SKMetadata   = "METADATA"
+	SKProfile    = "PROFILE"
+	SKState      = "STATE"
+	SKCode       = "CODE"
+	SKToken      = "TOKEN"
+	SKCredential = "CREDENTIAL"
+	SKChallenge  = "CHALLENGE"
+	SKWebAuthn   = "WEBAUTHN"
+
 	// Prefixes for range queries
 	SKPrefixFilter    = "FILTER#"
 	SKPrefixKeyword   = "KEYWORD#"
@@ -163,13 +163,13 @@ func (t *TimeUtils) TTLFromDuration(duration time.Duration) int64 {
 
 // StandardTTLs provides common TTL durations
 var StandardTTLs = struct {
-	Session     time.Duration // 24 hours
-	OAuthState  time.Duration // 10 minutes
-	AuthCode    time.Duration // 10 minutes
-	Challenge   time.Duration // 5 minutes
-	ShortTerm   time.Duration // 1 hour
-	MediumTerm  time.Duration // 30 days
-	LongTerm    time.Duration // 90 days
+	Session    time.Duration // 24 hours
+	OAuthState time.Duration // 10 minutes
+	AuthCode   time.Duration // 10 minutes
+	Challenge  time.Duration // 5 minutes
+	ShortTerm  time.Duration // 1 hour
+	MediumTerm time.Duration // 30 days
+	LongTerm   time.Duration // 90 days
 }{
 	Session:    24 * time.Hour,
 	OAuthState: 10 * time.Minute,
@@ -207,7 +207,7 @@ func (v *ValidationUtils) IsValidHashtag(tag string) bool {
 // PaginationUtils provides utilities for cursor-based pagination
 type PaginationUtils struct{}
 
-// NewPaginationUtils creates a new PaginationUtils instance  
+// NewPaginationUtils creates a new PaginationUtils instance
 func NewPaginationUtils() *PaginationUtils {
 	return &PaginationUtils{}
 }
@@ -224,12 +224,12 @@ func (p *PaginationUtils) DecodeCursor(cursor string) (pk, sk string, err error)
 	if cursor == "" {
 		return "", "", nil
 	}
-	
+
 	parts := strings.Split(cursor, "|")
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("invalid cursor format")
 	}
-	
+
 	return parts[0], parts[1], nil
 }
 
@@ -253,5 +253,5 @@ func NewCommonUtils() *CommonUtils {
 	}
 }
 
-// Global instance for easy access across repositories
+// Utils provides a global instance for easy access across repositories
 var Utils = NewCommonUtils()

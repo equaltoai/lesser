@@ -19,6 +19,8 @@ const (
 )
 
 // CostCalculator defines the interface for estimating AWS costs
+//
+//nolint:revive // Cost prefix clarifies this is for cost calculation
 type CostCalculator interface {
 	EstimateDataTransferCost(bytes int64, region string) float64
 	EstimateLambdaCost(invocations int, durationMs int64) float64

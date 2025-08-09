@@ -10,26 +10,26 @@ type Conversation struct {
 	// Primary keys - MUST match legacy exactly
 	PK string `dynamorm:"pk" json:"PK"` // CONVERSATION#conversationID
 	SK string `dynamorm:"sk" json:"SK"` // METADATA
-	
+
 	// GSI1 is used for participant records (additional records per participant)
 	// Note: The main conversation record doesn't use GSI1, only participant records do
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK,omitempty"`
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK,omitempty"`
-	
+
 	// Core fields from legacy
 	ID           string    `json:"id"`
 	Participants []string  `json:"participants"` // Actor IDs/usernames
 	LastStatusID string    `json:"last_status_id,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-	
+
 	// Note: Legacy doesn't have LastStatusAt or Unread fields in the actual struct
 	// These appear to be managed differently in the implementation
 }
 
 // TableName returns the DynamoDB table name
 func (Conversation) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the keys before creating a conversation
@@ -37,21 +37,21 @@ func (c *Conversation) BeforeCreate() error {
 	if c.ID == "" {
 		return fmt.Errorf("conversation ID is required")
 	}
-	
-	c.PK = fmt.Sprintf("CONVERSATION#%s", c.ID)
-	c.SK = "METADATA"
-	
+
+	c.PK = fmt.Sprintf(KeyPatternConversation, c.ID)
+	c.SK = SKMetadata
+
 	if c.CreatedAt.IsZero() {
 		c.CreatedAt = time.Now()
 	}
 	if c.UpdatedAt.IsZero() {
 		c.UpdatedAt = time.Now()
 	}
-	
+
 	// GSI keys are not set on the main record, only on participant records
 	c.GSI1PK = ""
 	c.GSI1SK = ""
-	
+
 	return nil
 }
 
@@ -67,31 +67,31 @@ type ConversationParticipantRecord struct {
 	// Primary keys for participant record
 	PK string `dynamorm:"pk" json:"PK"` // USER_CONVERSATIONS#username
 	SK string `dynamorm:"sk" json:"SK"` // timestamp#conversationID (for sorting by recent)
-	
+
 	// GSI1 for reverse lookup (find participants by conversation)
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // CONVERSATION#conversationID
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // PARTICIPANT#username
-	
+
 	// Embed the full conversation data
 	*Conversation `json:",inline"`
 }
 
 // TableName returns the DynamoDB table name
 func (ConversationParticipantRecord) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the keys for a participant record
 func (p *ConversationParticipantRecord) BeforeCreate(participantID string) error {
-	if p.Conversation == nil || p.Conversation.ID == "" {
+	if p.Conversation == nil || p.ID == "" {
 		return fmt.Errorf("conversation data is required")
 	}
-	
+
 	p.PK = fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)
-	p.SK = fmt.Sprintf("%s#%s", p.Conversation.UpdatedAt.Format(time.RFC3339), p.Conversation.ID)
-	p.GSI1PK = fmt.Sprintf("CONVERSATION#%s", p.Conversation.ID)
+	p.SK = fmt.Sprintf("%s#%s", p.UpdatedAt.Format(time.RFC3339), p.ID)
+	p.GSI1PK = fmt.Sprintf(KeyPatternConversation, p.ID)
 	p.GSI1SK = fmt.Sprintf("PARTICIPANT#%s", participantID)
-	
+
 	return nil
 }
 
@@ -102,11 +102,11 @@ type ConversationParticipantKey struct {
 	SK     string `dynamorm:"sk" json:"SK"`
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"`
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK,omitempty"`
-	
+
 	ConversationID string `json:"conversation_id"`
 }
 
 // TableName returns the DynamoDB table name
 func (ConversationParticipantKey) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }

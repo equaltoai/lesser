@@ -2,13 +2,19 @@ package streaming
 
 import (
 	"time"
-	
+
 	"github.com/equaltoai/lesser/pkg/storage/types"
 )
 
-// Re-export types from storage/types to maintain backward compatibility
+// Quality represents video quality level
 type Quality = types.Quality
+
+// MediaFormat represents streaming media format
 type MediaFormat = types.MediaFormat
+
+// StreamingSession represents an active streaming session
+//
+//nolint:revive // Type alias for storage type
 type StreamingSession = types.StreamingSession
 
 // Re-export constants
@@ -18,7 +24,7 @@ const (
 	QualityMedium = types.QualityMedium
 	QualityHigh   = types.QualityHigh
 	QualitySource = types.QualitySource
-	
+
 	// Additional quality levels specific to streaming
 	Quality4K    Quality = "4k"
 	Quality1080p Quality = "1080p"
@@ -28,6 +34,7 @@ const (
 	Quality240p  Quality = "240p"
 )
 
+// Streaming format constants
 const (
 	FormatHLS    = types.FormatHLS
 	FormatDASH   = types.FormatDASH
@@ -80,6 +87,14 @@ type DASHManifest struct {
 	ManifestURL     string
 	GeneratedAt     time.Time
 	CacheDuration   time.Duration
+	
+	// Live streaming specific fields
+	IsLive                     bool
+	AvailabilityStartTime      time.Time
+	PublishTime                time.Time
+	TimeShiftBufferDepth       float64 // in seconds
+	SuggestedPresentationDelay float64 // in seconds
+	MinimumUpdatePeriod        float64 // in seconds
 }
 
 // DASHRepresentation represents a quality representation in DASH
@@ -112,7 +127,6 @@ type BandwidthMeasurement struct {
 	Timestamp time.Time
 }
 
-
 // MediaStreamer is the main interface for media streaming functionality
 type MediaStreamer interface {
 	// Manifest generation
@@ -144,6 +158,7 @@ type MediaStorage interface {
 	GetSegmentPath(mediaID string, quality Quality, segmentIndex int) string
 	GetMediaMetadata(mediaID string) (*MediaMetadata, error)
 	ManifestExists(mediaID string, format MediaFormat) (bool, error)
+	GetKeyframeData(mediaID string, quality Quality) ([]byte, error)
 }
 
 // MediaMetadata contains metadata about a media file
@@ -158,13 +173,20 @@ type MediaMetadata struct {
 	ProcessedAt        time.Time
 	AvailableQualities []Quality
 	Status             ProcessingStatus
-	
+
 	// Codec information for HLS/DASH manifest generation
-	VideoCodec         string `json:"video_codec,omitempty"`         // e.g., "avc1.640028"
-	AudioCodec         string `json:"audio_codec,omitempty"`         // e.g., "mp4a.40.2"
-	VideoProfile       string `json:"video_profile,omitempty"`       // e.g., "High", "Main", "Baseline"
-	VideoLevel         string `json:"video_level,omitempty"`         // e.g., "4.0", "3.1"
-	QualitySettings    map[Quality]QualityCodecInfo `json:"quality_settings,omitempty"` // Per-quality codec info
+	VideoCodec      string                       `json:"video_codec,omitempty"`      // e.g., "avc1.640028"
+	AudioCodec      string                       `json:"audio_codec,omitempty"`      // e.g., "mp4a.40.2"
+	VideoProfile    string                       `json:"video_profile,omitempty"`    // e.g., "High", "Main", "Baseline"
+	VideoLevel      string                       `json:"video_level,omitempty"`      // e.g., "4.0", "3.1"
+	QualitySettings map[Quality]QualityCodecInfo `json:"quality_settings,omitempty"` // Per-quality codec info
+	
+	// Live streaming specific fields
+	IsLive    bool      `json:"is_live,omitempty"`
+	StartTime time.Time `json:"start_time,omitempty"`
+	
+	// I-frame/keyframe information for trick play
+	KeyframePositions []float64 `json:"keyframe_positions,omitempty"` // PTS positions of keyframes in seconds
 }
 
 // QualityCodecInfo contains codec information for a specific quality level
@@ -179,6 +201,7 @@ type QualityCodecInfo struct {
 // ProcessingStatus represents the processing status of media
 type ProcessingStatus string
 
+// Processing status constants
 const (
 	StatusPending    ProcessingStatus = "pending"
 	StatusProcessing ProcessingStatus = "processing"
@@ -187,6 +210,8 @@ const (
 )
 
 // StreamingConfig holds configuration for the streaming service
+//
+//nolint:revive // Streaming prefix clarifies this is streaming-specific config
 type StreamingConfig struct {
 	CDNBaseURL         string
 	S3Bucket           string
@@ -223,7 +248,9 @@ type QualityMetrics struct {
 	LastQualityChange time.Time
 }
 
-// Error types
+// StreamingError represents an error in streaming operations
+//
+//nolint:revive // Streaming prefix clarifies this is streaming-specific error
 type StreamingError struct {
 	Code    string
 	Message string
@@ -235,7 +262,7 @@ func (e *StreamingError) Error() string {
 	return e.Message
 }
 
-// Helper functions
+// GetQualityInfo returns quality information for a given quality level
 func GetQualityInfo(quality Quality) QualityInfo {
 	switch quality {
 	case Quality4K:

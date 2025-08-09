@@ -43,7 +43,7 @@ func TestEventBus_PublishSubscribe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start event bus: %v", err)
 	}
-	defer eventBus.Stop()
+	defer func() { _ = eventBus.Stop() }()
 
 	// Create a subscriber
 	filter := &EventFilter{
@@ -88,7 +88,7 @@ func TestEventBus_EventFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start event bus: %v", err)
 	}
-	defer eventBus.Stop()
+	defer func() { _ = eventBus.Stop() }()
 
 	// Create subscribers with different filters
 	statusFilter := &EventFilter{
@@ -163,7 +163,7 @@ func TestEventBus_MultipleSubscribers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start event bus: %v", err)
 	}
-	defer eventBus.Stop()
+	defer func() { _ = eventBus.Stop() }()
 
 	// Create multiple subscribers for the same event type
 	filter := &EventFilter{
@@ -218,7 +218,7 @@ func TestEventBus_Unsubscribe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start event bus: %v", err)
 	}
-	defer eventBus.Stop()
+	defer func() { _ = eventBus.Stop() }()
 
 	// Create a subscriber
 	filter := &EventFilter{
@@ -362,7 +362,7 @@ func TestEventBusMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start event bus: %v", err)
 	}
-	defer eventBus.Stop()
+	defer func() { _ = eventBus.Stop() }()
 
 	// Create a subscriber
 	filter := &EventFilter{

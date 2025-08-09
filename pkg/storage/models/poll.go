@@ -36,8 +36,8 @@ type Poll struct {
 // UpdateKeys updates the DynamoDB keys based on the business fields
 func (p *Poll) UpdateKeys() error {
 	p.PK = fmt.Sprintf("POLL#%s", p.ID)
-	p.SK = "METADATA"
-	p.GSI1PK = fmt.Sprintf("STATUS#%s", p.StatusID)
+	p.SK = SKMetadata
+	p.GSI1PK = fmt.Sprintf(KeyPatternStatus, p.StatusID)
 	p.GSI1SK = "POLL"
 
 	// Set TTL for poll expiration (add 1 day buffer)

@@ -11,10 +11,10 @@ type WalletChallenge struct {
 	// DynamoDB keys
 	PK string `dynamorm:"pk" json:"-"`
 	SK string `dynamorm:"sk" json:"-"`
-	
+
 	// TTL for automatic cleanup
 	TTL int64 `dynamorm:"ttl" json:"-"`
-	
+
 	// Business fields matching storage.WalletChallenge
 	ID        string    `json:"id"`
 	Username  string    `json:"username,omitempty"`
@@ -28,7 +28,7 @@ type WalletChallenge struct {
 
 // TableName returns the DynamoDB table name
 func (WalletChallenge) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the keys and TTL before creating
@@ -53,7 +53,7 @@ type WalletCredential struct {
 	// DynamoDB keys - Primary key is user's credentials
 	PK string `dynamorm:"pk" json:"-"`
 	SK string `dynamorm:"sk" json:"-"`
-	
+
 	// Business fields matching storage.WalletCredential
 	Username string    `json:"username"`
 	Address  string    `json:"address"`
@@ -66,7 +66,7 @@ type WalletCredential struct {
 
 // TableName returns the DynamoDB table name
 func (WalletCredential) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the keys before creating
@@ -91,9 +91,9 @@ func (w *WalletCredential) BeforeUpdate() error {
 func (w *WalletCredential) UpdateKeys() {
 	// Normalize address to lowercase
 	address := strings.ToLower(w.Address)
-	
+
 	// Primary key for user's wallets
-	w.PK = fmt.Sprintf("USER#%s", w.Username)
+	w.PK = fmt.Sprintf(KeyPatternUser, w.Username)
 	w.SK = fmt.Sprintf("WALLET#%s", address)
 }
 
@@ -102,7 +102,7 @@ type WalletIndex struct {
 	// DynamoDB keys
 	PK string `dynamorm:"pk" json:"-"`
 	SK string `dynamorm:"sk" json:"-"`
-	
+
 	// Business fields
 	Username string `json:"username"`
 }
@@ -111,8 +111,8 @@ type WalletIndex struct {
 func (w *WalletIndex) UpdateKeys(walletType, address, username string) {
 	// Normalize address to lowercase
 	address = strings.ToLower(address)
-	
+
 	w.PK = fmt.Sprintf("WALLET#%s#%s", walletType, address)
-	w.SK = fmt.Sprintf("USER#%s", username)
+	w.SK = fmt.Sprintf(KeyPatternUser, username)
 	w.Username = username
 }

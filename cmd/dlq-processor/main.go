@@ -1,3 +1,4 @@
+// Package main implements the dlq-processor Lambda function for processing dead letter queue messages.
 package main
 
 import (
@@ -181,17 +182,38 @@ func main() {
 	// Create Lift app
 	app := lift.New()
 
-	// Add request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+	// Set up middleware
+	setupMiddleware(app)
+
+	// Set up route handlers
+	setupRouteHandlers(app)
+
+	// Start the Lambda handler
+	lambda.Start(app.HandleRequest)
+}
+
+// setupMiddleware configures all middleware for the application
+func setupMiddleware(app *lift.App) {
+	app.Use(requestIDMiddleware())
+	app.Use(loggingMiddleware())
+	app.Use(errorHandlingMiddleware())
+	app.Use(costTrackingMiddleware())
+}
+
+// requestIDMiddleware adds a unique request ID to each request
+func requestIDMiddleware() func(lift.Handler) lift.Handler {
+	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("dlq-%d", time.Now().UnixNano())
 			ctx.Set("requestID", requestID)
 			return next.Handle(ctx)
 		})
-	})
+	}
+}
 
-	// Add logging middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+// loggingMiddleware logs request processing details
+func loggingMiddleware() func(lift.Handler) lift.Handler {
+	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			requestID := ctx.Get("requestID").(string)
@@ -202,272 +224,290 @@ func main() {
 
 			err := next.Handle(ctx)
 
-			duration := time.Since(start)
-			if err != nil {
-				logger.Error("request failed",
-					zap.String("request_id", requestID),
-					zap.Error(err),
-					zap.Duration("duration", duration),
-				)
-			} else {
-				logger.Info("request completed successfully",
-					zap.String("request_id", requestID),
-					zap.Duration("duration", duration),
-				)
-			}
-
+			logRequestCompletion(requestID, time.Since(start), err)
 			return err
 		})
-	})
+	}
+}
 
-	// Add error handling middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+// logRequestCompletion logs the completion status of a request
+func logRequestCompletion(requestID string, duration time.Duration, err error) {
+	if err != nil {
+		logger.Error("request failed",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+			zap.Duration("duration", duration),
+		)
+	} else {
+		logger.Info("request completed successfully",
+			zap.String("request_id", requestID),
+			zap.Duration("duration", duration),
+		)
+	}
+}
+
+// errorHandlingMiddleware handles and logs errors
+func errorHandlingMiddleware() func(lift.Handler) lift.Handler {
+	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			err := next.Handle(ctx)
 			if err != nil {
-				logger.Error("handler error",
-					zap.String("request_id", ctx.Get("requestID").(string)),
-					zap.Error(err),
-				)
-
-				// Track error metrics
-				if liftErr, ok := err.(*lift.LiftError); ok {
-					logger.Error("lift error details",
-						zap.String("error_code", liftErr.Code),
-						zap.String("error_message", liftErr.Message),
-						zap.Int("status_code", liftErr.StatusCode),
-					)
-				}
+				logHandlerError(ctx, err)
 			}
 			return err
 		})
-	})
+	}
+}
 
-	// Add cost tracking middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+// logHandlerError logs handler errors with additional details
+func logHandlerError(ctx *lift.Context, err error) {
+	logger.Error("handler error",
+		zap.String("request_id", ctx.Get("requestID").(string)),
+		zap.Error(err),
+	)
+
+	// Track error metrics
+	if liftErr, ok := err.(*lift.LiftError); ok {
+		logger.Error("lift error details",
+			zap.String("error_code", liftErr.Code),
+			zap.String("error_message", liftErr.Message),
+			zap.Int("status_code", liftErr.StatusCode),
+		)
+	}
+}
+
+// costTrackingMiddleware tracks the cost of request processing
+func costTrackingMiddleware() func(lift.Handler) lift.Handler {
+	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
-			
 			err := next.Handle(ctx)
-			
-			// Track processing costs
 			duration := time.Since(start)
-			processingCostMicroCents := int64(20) // Base Lambda cost
 			
-			// Additional cost based on processing time
-			if duration > time.Second {
-				processingCostMicroCents += int64(duration.Seconds() * 10) // Cost per second
-			}
-
-			logger.Info("request cost tracking",
-				zap.String("request_id", ctx.Get("requestID").(string)),
-				zap.Duration("duration", duration),
-				zap.Int64("cost_micro_cents", processingCostMicroCents),
-				zap.Float64("cost_dollars", float64(processingCostMicroCents)/1_000_000.0),
-			)
-
+			trackRequestCost(ctx, duration)
 			return err
 		})
-	})
+	}
+}
+
+// trackRequestCost calculates and logs request processing costs
+func trackRequestCost(ctx *lift.Context, duration time.Duration) {
+	processingCostMicroCents := calculateProcessingCost(duration)
+
+	logger.Info("request cost tracking",
+		zap.String("request_id", ctx.Get("requestID").(string)),
+		zap.Duration("duration", duration),
+		zap.Int64("cost_micro_cents", processingCostMicroCents),
+		zap.Float64("cost_dollars", float64(processingCostMicroCents)/1_000_000.0),
+	)
+}
+
+// calculateProcessingCost calculates the cost based on processing duration
+func calculateProcessingCost(duration time.Duration) int64 {
+	processingCostMicroCents := int64(20) // Base Lambda cost
+
+	// Additional cost based on processing time
+	if duration > time.Second {
+		processingCostMicroCents += int64(duration.Seconds() * 10) // Cost per second
+	}
+
+	return processingCostMicroCents
+}
+
+// setupRouteHandlers configures all route handlers for the application
+func setupRouteHandlers(app *lift.App) {
 
 	// SQS handler for DLQ message processing
-	app.SQS("dlq-processing", func(ctx *lift.Context) error {
-		// Extract SQS event from Lift context
-		if ctx.Request.RawEvent == nil {
-			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
-		}
-
-		// Parse the raw event as SQS event
-		var event events.SQSEvent
-		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-			event = sqsEvent
-		} else {
-			// Try to parse from request body
-			if ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-				if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
-					return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500)
-				}
-			} else {
-				return lift.NewLiftError("EVENT_MISSING", "SQS event not found", 400)
-			}
-		}
-
-		return handler.HandleSQS(ctx, event)
-	})
+	_ = app.SQS("dlq-processing", handleSQSEvent)
 
 	// EventBridge handler for scheduled operations
-	app.EventBridge("dlq-scheduled-operations", func(ctx *lift.Context) error {
-		// Extract EventBridge event from Lift context
-		if ctx.Request.RawEvent == nil {
-			return lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
-		}
+	_ = app.EventBridge("dlq-scheduled-operations", handleEventBridgeEvent)
 
-		// Parse the raw event as EventBridge event
+	// HTTP handlers for admin/monitoring
+	_ = app.GET("/health", handleHealthCheck)
+	_ = app.GET("/analytics/:service", handleAnalytics)
+	_ = app.GET("/trends/:service", handleTrends)
+	_ = app.POST("/search", handleSearch)
+}
+
+// handleSQSEvent processes SQS events from the DLQ
+func handleSQSEvent(ctx *lift.Context) error {
+	event, err := extractSQSEvent(ctx)
+	if err != nil {
+		return err
+	}
+	return handler.HandleSQS(ctx, event)
+}
+
+// extractSQSEvent extracts and parses the SQS event from the context
+func extractSQSEvent(ctx *lift.Context) (events.SQSEvent, error) {
+	if ctx.Request.RawEvent == nil {
+		return events.SQSEvent{}, lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+	}
+
+	// Try direct type assertion
+	if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
+		return sqsEvent, nil
+	}
+
+	// Try parsing from request body
+	if len(ctx.Request.Body) > 0 {
+		var event events.SQSEvent
+		if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
+			return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500)
+		}
+		return event, nil
+	}
+
+	return events.SQSEvent{}, lift.NewLiftError("EVENT_MISSING", "SQS event not found", 400)
+}
+
+// handleEventBridgeEvent processes EventBridge events
+func handleEventBridgeEvent(ctx *lift.Context) error {
+	event, err := extractEventBridgeEvent(ctx)
+	if err != nil {
+		return err
+	}
+	return handler.HandleEventBridge(ctx, event)
+}
+
+// extractEventBridgeEvent extracts and parses the EventBridge event from the context
+func extractEventBridgeEvent(ctx *lift.Context) (events.EventBridgeEvent, error) {
+	if ctx.Request.RawEvent == nil {
+		return events.EventBridgeEvent{}, lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
+	}
+
+	// Try direct type assertion
+	if ebEvent, ok := ctx.Request.RawEvent.(events.EventBridgeEvent); ok {
+		return ebEvent, nil
+	}
+
+	// Try parsing from request body
+	if len(ctx.Request.Body) > 0 {
 		var event events.EventBridgeEvent
-		if ebEvent, ok := ctx.Request.RawEvent.(events.EventBridgeEvent); ok {
-			event = ebEvent
-		} else {
-			// Try to parse from request body
-			if ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-				if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
-					return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500)
-				}
-			} else {
-				return lift.NewLiftError("EVENT_MISSING", "EventBridge event not found", 400)
-			}
+		if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
+			return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500)
 		}
+		return event, nil
+	}
 
-		return handler.HandleEventBridge(ctx, event)
+	return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_MISSING", "EventBridge event not found", 400)
+}
+
+// handleHealthCheck returns the health status of the service
+func handleHealthCheck(ctx *lift.Context) error {
+	return ctx.JSON(map[string]interface{}{
+		"status":    "healthy",
+		"service":   "dlq-processor",
+		"timestamp": time.Now().Format(time.RFC3339),
+		"version":   os.Getenv("AWS_LAMBDA_FUNCTION_VERSION"),
 	})
+}
 
-	// HTTP handlers for admin/monitoring (optional)
-	app.GET("/health", func(ctx *lift.Context) error {
-		return ctx.JSON(map[string]interface{}{
-			"status":    "healthy",
-			"service":   "dlq-processor",
-			"timestamp": time.Now().Format(time.RFC3339),
-			"version":   os.Getenv("AWS_LAMBDA_FUNCTION_VERSION"),
-		})
+// handleAnalytics returns analytics for a specific service
+func handleAnalytics(ctx *lift.Context) error {
+	service := ctx.Param("service")
+	if service == "" {
+		return lift.ValidationError("service parameter is required")
+	}
+
+	// Default to last 24 hours
+	timeRange := repositories.DLQTimeRange{
+		StartTime: time.Now().Add(-24 * time.Hour),
+		EndTime:   time.Now(),
+	}
+
+	analytics, err := handler.processor.GetAnalytics(ctx.Request.Context(), service, timeRange)
+	if err != nil {
+		return lift.NewLiftError("ANALYTICS_ERROR", "failed to get analytics", 500).WithCause(err)
+	}
+
+	return ctx.JSON(analytics)
+}
+
+// handleTrends returns trend data for a specific service
+func handleTrends(ctx *lift.Context) error {
+	service := ctx.Param("service")
+	if service == "" {
+		return lift.ValidationError("service parameter is required")
+	}
+
+	// Default to last 7 days
+	days := 7
+
+	trends, err := handler.processor.GetTrends(ctx.Request.Context(), service, days)
+	if err != nil {
+		return lift.NewLiftError("TRENDS_ERROR", "failed to get trends", 500).WithCause(err)
+	}
+
+	return ctx.JSON(trends)
+}
+
+// searchFilter represents the search filter request body
+type searchFilter struct {
+	Service     string    `json:"service"`
+	ErrorType   string    `json:"error_type,omitempty"`
+	Status      string    `json:"status,omitempty"`
+	Priority    string    `json:"priority,omitempty"`
+	IsPermanent *bool     `json:"is_permanent,omitempty"`
+	StartTime   time.Time `json:"start_time,omitempty"`
+	EndTime     time.Time `json:"end_time,omitempty"`
+	SearchText  string    `json:"search_text,omitempty"`
+	Limit       int       `json:"limit,omitempty"`
+	Cursor      string    `json:"cursor,omitempty"`
+}
+
+// handleSearch processes search requests for DLQ messages
+func handleSearch(ctx *lift.Context) error {
+	filter, err := parseSearchFilter(ctx)
+	if err != nil {
+		return err
+	}
+
+	messages, nextCursor, err := handler.processor.SearchMessages(ctx.Request.Context(), filter)
+	if err != nil {
+		return lift.NewLiftError("SEARCH_ERROR", "failed to search messages", 500).WithCause(err)
+	}
+
+	return ctx.JSON(map[string]interface{}{
+		"messages":    messages,
+		"next_cursor": nextCursor,
+		"count":       len(messages),
 	})
+}
 
-	app.GET("/analytics/:service", func(ctx *lift.Context) error {
-		service := ctx.Param("service")
-		if service == "" {
-			return lift.ValidationError("service parameter is required")
+// parseSearchFilter parses and validates the search filter from the request
+func parseSearchFilter(ctx *lift.Context) (*repositories.DLQSearchFilter, error) {
+	var filter searchFilter
+
+	if len(ctx.Request.Body) > 0 {
+		if err := json.Unmarshal(ctx.Request.Body, &filter); err != nil {
+			return nil, lift.ValidationError("invalid search filter")
 		}
+	}
 
-		// Default to last 24 hours
-		timeRange := repositories.DLQTimeRange{
-			StartTime: time.Now().Add(-24 * time.Hour),
-			EndTime:   time.Now(),
-		}
+	if filter.Service == "" {
+		return nil, lift.ValidationError("service is required for search")
+	}
 
-		analytics, err := handler.processor.GetAnalytics(ctx.Request.Context(), service, timeRange)
-		if err != nil {
-			return lift.NewLiftError("ANALYTICS_ERROR", "failed to get analytics", 500).WithCause(err)
-		}
+	// Set default limit
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
 
-		return ctx.JSON(analytics)
-	})
-
-	app.GET("/trends/:service", func(ctx *lift.Context) error {
-		service := ctx.Param("service")
-		if service == "" {
-			return lift.ValidationError("service parameter is required")
-		}
-
-		// Default to last 7 days
-		days := 7
-
-		trends, err := handler.processor.GetTrends(ctx.Request.Context(), service, days)
-		if err != nil {
-			return lift.NewLiftError("TRENDS_ERROR", "failed to get trends", 500).WithCause(err)
-		}
-
-		return ctx.JSON(trends)
-	})
-
-	// Search endpoint for admin tools
-	app.POST("/search", func(ctx *lift.Context) error {
-		var searchFilter struct {
-			Service      string    `json:"service"`
-			ErrorType    string    `json:"error_type,omitempty"`
-			Status       string    `json:"status,omitempty"`
-			Priority     string    `json:"priority,omitempty"`
-			IsPermanent  *bool     `json:"is_permanent,omitempty"`
-			StartTime    time.Time `json:"start_time,omitempty"`
-			EndTime      time.Time `json:"end_time,omitempty"`
-			SearchText   string    `json:"search_text,omitempty"`
-			Limit        int       `json:"limit,omitempty"`
-			Cursor       string    `json:"cursor,omitempty"`
-		}
-
-		if ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &searchFilter); err != nil {
-				return lift.ValidationError("invalid search filter")
-			}
-		}
-
-		if searchFilter.Service == "" {
-			return lift.ValidationError("service is required for search")
-		}
-
-		// Set default limit
-		if searchFilter.Limit <= 0 {
-			searchFilter.Limit = 50
-		}
-
-		// Convert to the proper type expected by SearchMessages
-		repoFilter := &repositories.DLQSearchFilter{
-			Service:     searchFilter.Service,
-			ErrorType:   searchFilter.ErrorType,
-			Status:      searchFilter.Status,
-			Priority:    searchFilter.Priority,
-			IsPermanent: searchFilter.IsPermanent,
-			StartTime:   searchFilter.StartTime,
-			EndTime:     searchFilter.EndTime,
-			SearchText:  searchFilter.SearchText,
-			Limit:       searchFilter.Limit,
-			Cursor:      searchFilter.Cursor,
-		}
-		
-		messages, nextCursor, err := handler.processor.SearchMessages(ctx.Request.Context(), repoFilter)
-		if err != nil {
-			return lift.NewLiftError("SEARCH_ERROR", "failed to search messages", 500).WithCause(err)
-		}
-
-		return ctx.JSON(map[string]interface{}{
-			"messages":    messages,
-			"next_cursor": nextCursor,
-			"count":       len(messages),
-		})
-	})
-
-	// Start the Lambda handler
-	lambda.Start(app.HandleRequest)
+	// Convert to repository filter type
+	return &repositories.DLQSearchFilter{
+		Service:     filter.Service,
+		ErrorType:   filter.ErrorType,
+		Status:      filter.Status,
+		Priority:    filter.Priority,
+		IsPermanent: filter.IsPermanent,
+		StartTime:   filter.StartTime,
+		EndTime:     filter.EndTime,
+		SearchText:  filter.SearchText,
+		Limit:       filter.Limit,
+		Cursor:      filter.Cursor,
+	}, nil
 }
 
 // Helper functions for admin operations
-
-// triggerReprocessing manually triggers reprocessing for a service
-func triggerReprocessing(ctx context.Context, service string) error {
-	processor := dlq.NewProcessor(db, cfg.DynamoTableName, logger)
-	
-	if err := processor.InitializeAWSClients(ctx); err != nil {
-		return fmt.Errorf("failed to initialize AWS clients: %w", err)
-	}
-
-	return processor.ScheduledReprocessing(ctx)
-}
-
-// generateReport generates a comprehensive DLQ report
-func generateReport(ctx context.Context, services []string, timeRange repositories.DLQTimeRange) (map[string]interface{}, error) {
-	processor := dlq.NewProcessor(db, cfg.DynamoTableName, logger)
-	report := make(map[string]interface{})
-
-	for _, service := range services {
-		analytics, err := processor.GetAnalytics(ctx, service, timeRange)
-		if err != nil {
-			logger.Error("failed to get analytics for service",
-				zap.String("service", service),
-				zap.Error(err),
-			)
-			continue
-		}
-
-		trends, err := processor.GetTrends(ctx, service, 7)
-		if err != nil {
-			logger.Error("failed to get trends for service",
-				zap.String("service", service),
-				zap.Error(err),
-			)
-		}
-
-		report[service] = map[string]interface{}{
-			"analytics": analytics,
-			"trends":    trends,
-		}
-	}
-
-	return report, nil
-}

@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ExportRepository handles export-related database operations using DynamORM
@@ -30,11 +31,11 @@ func NewExportRepository(db core.DB, tableName string, logger *zap.Logger) *Expo
 }
 
 // CreateExport creates a new export record
-func (r *ExportRepository) CreateExport(ctx context.Context, export *models.Export) error {
+func (r *ExportRepository) CreateExport(_ context.Context, export *models.Export) error {
 	export.UpdateKeys()
 	export.CreatedAt = time.Now()
 	export.UpdatedAt = time.Now()
-	
+
 	err := r.db.Model(export).Create()
 	if err != nil {
 		r.logger.Error("failed to create export",
@@ -42,25 +43,25 @@ func (r *ExportRepository) CreateExport(ctx context.Context, export *models.Expo
 			zap.Error(err))
 		return fmt.Errorf("failed to create export: %w", err)
 	}
-	
+
 	r.logger.Info("created export record",
 		zap.String("export_id", export.ID),
 		zap.String("username", export.Username),
 		zap.String("type", export.Type),
 		zap.String("format", export.Format))
-	
+
 	return nil
 }
 
 // GetExport retrieves an export by ID
-func (r *ExportRepository) GetExport(ctx context.Context, exportID string) (*models.Export, error) {
+func (r *ExportRepository) GetExport(_ context.Context, exportID string) (*models.Export, error) {
 	var export models.Export
-	
+
 	err := r.db.Model(&models.Export{}).
 		Where("PK", "=", fmt.Sprintf("EXPORT#%s", exportID)).
 		Where("SK", "=", fmt.Sprintf("EXPORT#%s", exportID)).
 		First(&export)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("export not found: %s", exportID)
@@ -70,7 +71,7 @@ func (r *ExportRepository) GetExport(ctx context.Context, exportID string) (*mod
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get export: %w", err)
 	}
-	
+
 	return &export, nil
 }
 
@@ -80,11 +81,11 @@ func (r *ExportRepository) UpdateExportStatus(ctx context.Context, exportID, sta
 	if err != nil {
 		return err
 	}
-	
+
 	// Update basic status
 	export.Status = status
 	export.UpdatedAt = time.Now()
-	
+
 	// Update completion data if provided
 	if completionData != nil {
 		if url, ok := completionData["download_url"].(string); ok {
@@ -102,19 +103,19 @@ func (r *ExportRepository) UpdateExportStatus(ctx context.Context, exportID, sta
 		if s3Key, ok := completionData["s3_key"].(string); ok {
 			export.S3Key = s3Key
 		}
-		
+
 		// Set completion timestamp for successful exports
-		if status == "completed" {
+		if status == StatusCompleted {
 			now := time.Now()
 			export.CompletedAt = &now
 		}
 	}
-	
+
 	// Update error message if provided
 	if errorMsg != "" {
 		export.Error = errorMsg
 	}
-	
+
 	// Save the updated export
 	export.UpdateKeys()
 	err = r.db.Model(export).Update()
@@ -125,28 +126,28 @@ func (r *ExportRepository) UpdateExportStatus(ctx context.Context, exportID, sta
 			zap.Error(err))
 		return fmt.Errorf("failed to update export status: %w", err)
 	}
-	
+
 	r.logger.Info("updated export status",
 		zap.String("export_id", exportID),
 		zap.String("status", status),
 		zap.String("error", errorMsg))
-	
+
 	return nil
 }
 
 // GetExportsForUser retrieves all exports for a user
-func (r *ExportRepository) GetExportsForUser(ctx context.Context, username string, limit int, cursor string) ([]*models.Export, string, error) {
+func (r *ExportRepository) GetExportsForUser(_ context.Context, username string, limit int, cursor string) ([]*models.Export, string, error) {
 	var exports []*models.Export
-	
+
 	query := r.db.Model(&models.Export{}).
 		Where("Username", "=", username).
 		Limit(limit)
-	
+
 	if cursor != "" {
 		// Add cursor-based pagination
 		query = query.Where("CreatedAt", ">", cursor)
 	}
-	
+
 	err := query.Scan(&exports)
 	if err != nil {
 		r.logger.Error("failed to get exports for user",
@@ -154,29 +155,29 @@ func (r *ExportRepository) GetExportsForUser(ctx context.Context, username strin
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get exports for user: %w", err)
 	}
-	
+
 	// Calculate next cursor
 	var nextCursor string
 	if len(exports) == limit {
 		nextCursor = exports[len(exports)-1].CreatedAt.Format(time.RFC3339)
 	}
-	
+
 	r.logger.Debug("retrieved exports for user",
 		zap.String("username", username),
 		zap.Int("count", len(exports)))
-	
+
 	return exports, nextCursor, nil
 }
 
 // GetUserExportsByStatus retrieves exports for a user filtered by status
-func (r *ExportRepository) GetUserExportsByStatus(ctx context.Context, username string, statuses []string) ([]*models.Export, error) {
+func (r *ExportRepository) GetUserExportsByStatus(_ context.Context, username string, statuses []string) ([]*models.Export, error) {
 	var exports []*models.Export
-	
+
 	// Query using GSI1
 	query := r.db.Model(&models.Export{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username))
-	
+
 	// Get all exports for the user, then filter by status in memory
 	// This is because DynamORM doesn't support complex OR filters on non-key attributes
 	err := query.All(&exports)
@@ -186,14 +187,14 @@ func (r *ExportRepository) GetUserExportsByStatus(ctx context.Context, username 
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get exports for user: %w", err)
 	}
-	
+
 	// Filter by status if specified
 	if len(statuses) > 0 {
 		statusMap := make(map[string]bool)
 		for _, status := range statuses {
 			statusMap[status] = true
 		}
-		
+
 		filtered := make([]*models.Export, 0)
 		for _, export := range exports {
 			if statusMap[export.Status] {
@@ -202,24 +203,24 @@ func (r *ExportRepository) GetUserExportsByStatus(ctx context.Context, username 
 		}
 		exports = filtered
 	}
-	
+
 	// Sort by creation date descending (most recent first)
 	for i, j := 0, len(exports)-1; i < j; i, j = i+1, j-1 {
 		exports[i], exports[j] = exports[j], exports[i]
 	}
-	
+
 	r.logger.Debug("retrieved exports by status",
 		zap.String("username", username),
 		zap.Strings("statuses", statuses),
 		zap.Int("count", len(exports)))
-	
+
 	return exports, nil
 }
 
 // Export Cost Tracking Methods
 
 // CreateExportCostTracking creates a new export cost tracking record
-func (r *ExportRepository) CreateExportCostTracking(ctx context.Context, costTracking *models.ExportCostTracking) error {
+func (r *ExportRepository) CreateExportCostTracking(_ context.Context, costTracking *models.ExportCostTracking) error {
 	if err := costTracking.BeforeCreate(); err != nil {
 		return fmt.Errorf("before create validation failed: %w", err)
 	}
@@ -243,7 +244,7 @@ func (r *ExportRepository) CreateExportCostTracking(ctx context.Context, costTra
 }
 
 // GetExportCostTracking retrieves export cost tracking records for an export
-func (r *ExportRepository) GetExportCostTracking(ctx context.Context, exportID string) ([]*models.ExportCostTracking, error) {
+func (r *ExportRepository) GetExportCostTracking(_ context.Context, exportID string) ([]*models.ExportCostTracking, error) {
 	var costTrackingRecords []*models.ExportCostTracking
 
 	query := r.db.Model(&models.ExportCostTracking{}).
@@ -261,7 +262,7 @@ func (r *ExportRepository) GetExportCostTracking(ctx context.Context, exportID s
 }
 
 // GetUserExportCosts retrieves export costs for a user within a date range
-func (r *ExportRepository) GetUserExportCosts(ctx context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
+func (r *ExportRepository) GetUserExportCosts(_ context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
 	var costTrackingRecords []*models.ExportCostTracking
 
 	startSK := fmt.Sprintf("COST#%s", startDate.Format(time.RFC3339))
@@ -287,14 +288,14 @@ func (r *ExportRepository) GetUserExportCosts(ctx context.Context, username stri
 }
 
 // GetExportCostsByDateRange retrieves export costs for all users within a date range
-func (r *ExportRepository) GetExportCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
+func (r *ExportRepository) GetExportCostsByDateRange(_ context.Context, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
 	var allCosts []*models.ExportCostTracking
 
 	// Query by daily partitions
 	currentDate := startDate
 	for currentDate.Before(endDate) || currentDate.Equal(endDate) {
-		dateStr := currentDate.Format("20060102")
-		
+		dateStr := currentDate.Format(common.CompactDateFormat)
+
 		var dailyCosts []*models.ExportCostTracking
 		query := r.db.Model(&models.ExportCostTracking{}).
 			Index("GSI2").
@@ -314,7 +315,7 @@ func (r *ExportRepository) GetExportCostsByDateRange(ctx context.Context, startD
 
 		// Move to next day
 		currentDate = currentDate.AddDate(0, 0, 1)
-		
+
 		// Break if we have enough results
 		if len(allCosts) >= limit {
 			break
@@ -325,7 +326,7 @@ func (r *ExportRepository) GetExportCostsByDateRange(ctx context.Context, startD
 	sort.Slice(allCosts, func(i, j int) bool {
 		return allCosts[i].Timestamp.After(allCosts[j].Timestamp)
 	})
-	
+
 	if len(allCosts) > limit {
 		allCosts = allCosts[:limit]
 	}
@@ -341,10 +342,10 @@ func (r *ExportRepository) GetExportCostSummary(ctx context.Context, username st
 	}
 
 	summary := &models.ExportCostSummary{
-		Username:    username,
-		Period:      "custom",
-		StartDate:   startDate,
-		EndDate:     endDate,
+		Username:      username,
+		Period:        "custom",
+		StartDate:     startDate,
+		EndDate:       endDate,
 		TypeBreakdown: make(map[string]*models.ExportTypeCostStats),
 	}
 
@@ -355,10 +356,11 @@ func (r *ExportRepository) GetExportCostSummary(ctx context.Context, username st
 	// Calculate statistics
 	for _, cost := range costs {
 		summary.TotalExports++
-		
-		if cost.Status == "completed" {
+
+		switch cost.Status {
+		case StatusCompleted:
 			summary.CompletedExports++
-		} else if cost.Status == "failed" {
+		case StatusFailed:
 			summary.FailedExports++
 		}
 
@@ -378,12 +380,12 @@ func (r *ExportRepository) GetExportCostSummary(ctx context.Context, username st
 				Type: cost.Type,
 			}
 		}
-		
+
 		typeStats.Count++
 		typeStats.TotalCostMicroCents += cost.TotalCostMicroCents
-		typeStats.AverageFileSize = (typeStats.AverageFileSize*int64(typeStats.Count-1) + cost.FileSize) / int64(typeStats.Count)
-		typeStats.AverageRecordCount = (typeStats.AverageRecordCount*int64(typeStats.Count-1) + cost.RecordCount) / int64(typeStats.Count)
-		
+		typeStats.AverageFileSize = (typeStats.AverageFileSize*(typeStats.Count-1) + cost.FileSize) / typeStats.Count
+		typeStats.AverageRecordCount = (typeStats.AverageRecordCount*(typeStats.Count-1) + cost.RecordCount) / typeStats.Count
+
 		summary.TypeBreakdown[cost.Type] = typeStats
 	}
 

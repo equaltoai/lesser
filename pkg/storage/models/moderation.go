@@ -9,11 +9,17 @@ import (
 type ModerationAction string
 
 const (
+	// ModerationActionRemove represents a remove moderation action
 	ModerationActionRemove  ModerationAction = "remove"
+	// ModerationActionSuspend represents a suspend moderation action
 	ModerationActionSuspend ModerationAction = "suspend"
+	// ModerationActionSilence represents a silence moderation action
 	ModerationActionSilence ModerationAction = "silence"
+	// ModerationActionWarning represents a warning moderation action
 	ModerationActionWarning ModerationAction = "warning"
+	// ModerationActionRestore represents a restore moderation action
 	ModerationActionRestore ModerationAction = "restore"
+	// ModerationActionDismiss represents a dismiss moderation action
 	ModerationActionDismiss ModerationAction = "dismiss"
 )
 
@@ -21,11 +27,17 @@ const (
 type ModerationStatus string
 
 const (
+	// ModerationStatusPending represents a pending moderation status
 	ModerationStatusPending   ModerationStatus = "pending"
+	// ModerationStatusReviewing represents a reviewing moderation status
 	ModerationStatusReviewing ModerationStatus = "reviewing"
+	// ModerationStatusActioned represents an actioned moderation status
 	ModerationStatusActioned  ModerationStatus = "actioned"
+	// ModerationStatusAppealed represents an appealed moderation status
 	ModerationStatusAppealed  ModerationStatus = "appealed"
+	// ModerationStatusResolved represents a resolved moderation status
 	ModerationStatusResolved  ModerationStatus = "resolved"
+	// ModerationStatusDismissed represents a dismissed moderation status
 	ModerationStatusDismissed ModerationStatus = "dismissed"
 )
 
@@ -33,9 +45,13 @@ const (
 type ModerationContentType string
 
 const (
+	// ModerationContentTypeStatus represents status content type
 	ModerationContentTypeStatus ModerationContentType = "status"
+	// ModerationContentTypeUser represents user content type
 	ModerationContentTypeUser   ModerationContentType = "user"
+	// ModerationContentTypeMedia represents media content type
 	ModerationContentTypeMedia  ModerationContentType = "media"
+	// ModerationContentTypeReport represents report content type
 	ModerationContentTypeReport ModerationContentType = "report"
 )
 
@@ -43,13 +59,21 @@ const (
 type ModerationReason string
 
 const (
+	// ModerationReasonSpam represents spam moderation reason
 	ModerationReasonSpam            ModerationReason = "spam"
+	// ModerationReasonHateSpeech represents hate speech moderation reason
 	ModerationReasonHateSpeech      ModerationReason = "hate_speech"
+	// ModerationReasonHarassment represents harassment moderation reason
 	ModerationReasonHarassment      ModerationReason = "harassment"
+	// ModerationReasonMisinformation represents misinformation moderation reason
 	ModerationReasonMisinformation  ModerationReason = "misinformation"
+	// ModerationReasonProhibitedWords represents prohibited words moderation reason
 	ModerationReasonProhibitedWords ModerationReason = "prohibited_words"
+	// ModerationReasonRateLimiting represents rate limiting moderation reason
 	ModerationReasonRateLimiting    ModerationReason = "rate_limiting"
+	// ModerationReasonCopyright represents copyright moderation reason
 	ModerationReasonCopyright       ModerationReason = "copyright"
+	// ModerationReasonOther represents other/miscellaneous moderation reason
 	ModerationReasonOther           ModerationReason = "other"
 )
 
@@ -95,7 +119,7 @@ type ModerationEvent struct {
 
 // TableName returns the DynamoDB table name
 func (ModerationEvent) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys based on current field values
@@ -105,7 +129,7 @@ func (m *ModerationEvent) UpdateKeys() {
 	m.SK = fmt.Sprintf("TIME#%s#%s", m.Created.Format(time.RFC3339), m.ID)
 
 	// GSI1 - Actor queries
-	m.GSI1PK = fmt.Sprintf("ACTOR#%s", m.ActorID)
+	m.GSI1PK = fmt.Sprintf(KeyPatternActor, m.ActorID)
 	m.GSI1SK = fmt.Sprintf("TIME#%s", m.Created.Format(time.RFC3339))
 
 	// GSI2 - Type/Category queries
@@ -135,17 +159,17 @@ type ModerationReview struct {
 	Type string `json:"type"` // "REVIEW"
 
 	// Review fields (copied to avoid circular import)
-	ID          string    `json:"id"`
-	EventID     string    `json:"event_id"`
-	ReviewerID  string    `json:"reviewer_id"`
-	ReviewerRep float64   `json:"reviewer_rep,omitempty"`
-	Action      string    `json:"action"` // none, remove, silence, suspend, warning
-	Severity    string    `json:"severity"` // low, medium, high, critical
-	Note        string    `json:"note,omitempty"`
-	Tags        []string  `json:"tags,omitempty"`
+	ID          string                 `json:"id"`
+	EventID     string                 `json:"event_id"`
+	ReviewerID  string                 `json:"reviewer_id"`
+	ReviewerRep float64                `json:"reviewer_rep,omitempty"`
+	Action      string                 `json:"action"`   // none, remove, silence, suspend, warning
+	Severity    string                 `json:"severity"` // low, medium, high, critical
+	Note        string                 `json:"note,omitempty"`
+	Tags        []string               `json:"tags,omitempty"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	Confidence  float64   `json:"confidence"` // 0.0-1.0
-	Created     time.Time `json:"created"`
+	Confidence  float64                `json:"confidence"` // 0.0-1.0
+	Created     time.Time              `json:"created"`
 
 	// DynamoDB TTL
 	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
@@ -154,7 +178,7 @@ type ModerationReview struct {
 
 // TableName returns the DynamoDB table name
 func (ModerationReview) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the keys based on current field values
@@ -187,7 +211,7 @@ type ModerationDecision struct {
 	ID               string                 `json:"id"`
 	EventID          string                 `json:"event_id"`
 	ObjectID         string                 `json:"object_id"`
-	Action           string                 `json:"action"` // none, remove, silence, suspend, warning
+	Action           string                 `json:"action"`          // none, remove, silence, suspend, warning
 	ConsensusScore   float64                `json:"consensus_score"` // 0.0-1.0
 	ReviewerCount    int                    `json:"reviewer_count"`
 	TrustWeightTotal float64                `json:"trust_weight_total"`
@@ -203,7 +227,7 @@ type ModerationDecision struct {
 
 // TableName returns the DynamoDB table name
 func (ModerationDecision) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the keys based on current field values
@@ -211,7 +235,7 @@ func (d *ModerationDecision) UpdateKeys() {
 	d.PK = fmt.Sprintf("DECISION#%s", d.ObjectID)
 	d.SK = fmt.Sprintf("TIME#%s", d.Decided.Format(time.RFC3339))
 	d.GSI1PK = "ACTIVE_DECISIONS"
-	d.GSI1SK = fmt.Sprintf("OBJECT#%s", d.ObjectID)
+	d.GSI1SK = fmt.Sprintf(KeyPatternObject, d.ObjectID)
 	d.Type = "DECISION"
 	d.CreatedAt = d.Decided
 
@@ -253,7 +277,7 @@ type ModerationPattern struct {
 
 // TableName returns the DynamoDB table name
 func (ModerationPattern) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the keys based on current field values
@@ -283,19 +307,19 @@ func (p *ModerationPattern) UpdateKeys() {
 // ModerationEvidence contains detailed evidence for the moderation decision
 type ModerationEvidence struct {
 	// Spam detection
-	SpamScore        float64  `json:"spam_score,omitempty"`
-	SpamIndicators   []string `json:"spam_indicators,omitempty"`
-	DuplicateCount   int      `json:"duplicate_count,omitempty"`
-	LinkCount        int      `json:"link_count,omitempty"`
-	MentionCount     int      `json:"mention_count,omitempty"`
-	HashtagCount     int      `json:"hashtag_count,omitempty"`
-	SuspiciousLinks  []string `json:"suspicious_links,omitempty"`
-	IPAddress        string   `json:"ip_address,omitempty"`
-	UserAgent        string   `json:"user_agent,omitempty"`
-	RegistrationAge  string   `json:"registration_age,omitempty"`
-	PostFrequency    float64  `json:"post_frequency,omitempty"`  // posts per hour
-	FollowerRatio    float64  `json:"follower_ratio,omitempty"`  // followers/following
-	NewAccountPosts  int      `json:"new_account_posts,omitempty"` // posts in first 24h
+	SpamScore       float64  `json:"spam_score,omitempty"`
+	SpamIndicators  []string `json:"spam_indicators,omitempty"`
+	DuplicateCount  int      `json:"duplicate_count,omitempty"`
+	LinkCount       int      `json:"link_count,omitempty"`
+	MentionCount    int      `json:"mention_count,omitempty"`
+	HashtagCount    int      `json:"hashtag_count,omitempty"`
+	SuspiciousLinks []string `json:"suspicious_links,omitempty"`
+	IPAddress       string   `json:"ip_address,omitempty"`
+	UserAgent       string   `json:"user_agent,omitempty"`
+	RegistrationAge string   `json:"registration_age,omitempty"`
+	PostFrequency   float64  `json:"post_frequency,omitempty"`    // posts per hour
+	FollowerRatio   float64  `json:"follower_ratio,omitempty"`    // followers/following
+	NewAccountPosts int      `json:"new_account_posts,omitempty"` // posts in first 24h
 
 	// Content analysis
 	ProhibitedWords  []string `json:"prohibited_words,omitempty"`
@@ -309,12 +333,12 @@ type ModerationEvidence struct {
 	Toxicity         float64  `json:"toxicity,omitempty"`  // 0.0 to 1.0
 
 	// Rate limiting
-	RequestCount     int     `json:"request_count,omitempty"`
-	RequestPeriod    string  `json:"request_period,omitempty"`
-	BurstSize        int     `json:"burst_size,omitempty"`
-	AverageInterval  float64 `json:"average_interval,omitempty"` // seconds between actions
-	LastViolationAt  string  `json:"last_violation_at,omitempty"`
-	ViolationCount   int     `json:"violation_count,omitempty"`
+	RequestCount    int     `json:"request_count,omitempty"`
+	RequestPeriod   string  `json:"request_period,omitempty"`
+	BurstSize       int     `json:"burst_size,omitempty"`
+	AverageInterval float64 `json:"average_interval,omitempty"` // seconds between actions
+	LastViolationAt string  `json:"last_violation_at,omitempty"`
+	ViolationCount  int     `json:"violation_count,omitempty"`
 
 	// External signals
 	ReportCount      int      `json:"report_count,omitempty"`
@@ -323,50 +347,41 @@ type ModerationEvidence struct {
 	ExternalProvider string   `json:"external_provider,omitempty"`
 
 	// Confidence metrics
-	ConfidenceScore  float64 `json:"confidence_score,omitempty"` // 0.0 to 1.0
+	ConfidenceScore   float64 `json:"confidence_score,omitempty"` // 0.0 to 1.0
 	FalsePositiveRisk float64 `json:"false_positive_risk,omitempty"`
-	RequiresReview   bool    `json:"requires_review,omitempty"`
+	RequiresReview    bool    `json:"requires_review,omitempty"`
 }
 
 // ModerationHistoryEntry represents a single entry in the moderation audit trail
 type ModerationHistoryEntry struct {
-	Timestamp   time.Time        `json:"timestamp"`
-	ActorID     string           `json:"actor_id"`
-	ActorType   string           `json:"actor_type"` // "user", "moderator", "system"
-	Action      ModerationAction `json:"action"`
-	FromStatus  ModerationStatus `json:"from_status"`
-	ToStatus    ModerationStatus `json:"to_status"`
-	Note        string           `json:"note,omitempty"`
+	Timestamp   time.Time              `json:"timestamp"`
+	ActorID     string                 `json:"actor_id"`
+	ActorType   string                 `json:"actor_type"` // "user", "moderator", "system"
+	Action      ModerationAction       `json:"action"`
+	FromStatus  ModerationStatus       `json:"from_status"`
+	ToStatus    ModerationStatus       `json:"to_status"`
+	Note        string                 `json:"note,omitempty"`
 	ChangedData map[string]interface{} `json:"changed_data,omitempty"`
 }
 
-// generateRandomString generates a random string of the specified length
-func generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	result := make([]byte, length)
-	for i := range result {
-		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
-	}
-	return string(result)
-}
 
 // Moderation represents an active moderation case being processed
 type Moderation struct {
-	ModerationID  string                    `json:"moderation_id"`
-	ContentID     string                    `json:"content_id"`
-	ContentType   ModerationContentType     `json:"content_type"`
-	UserID        string                    `json:"user_id"`
-	Status        ModerationStatus          `json:"status"`
-	Action        ModerationAction          `json:"action"`
-	Reason        ModerationReason          `json:"reason"`
-	Evidence      ModerationEvidence        `json:"evidence"`
-	ModeratorID   string                    `json:"moderator_id"`
-	ModeratorType string                    `json:"moderator_type"` // "user", "automated", "admin"
-	Metadata      map[string]interface{}    `json:"metadata,omitempty"`
-	History       []ModerationHistoryEntry  `json:"history,omitempty"`
-	CreatedAt     time.Time                 `json:"created_at"`
-	ActionedAt    *time.Time                `json:"actioned_at,omitempty"`
-	ResolvedAt    *time.Time                `json:"resolved_at,omitempty"`
+	ModerationID  string                   `json:"moderation_id"`
+	ContentID     string                   `json:"content_id"`
+	ContentType   ModerationContentType    `json:"content_type"`
+	UserID        string                   `json:"user_id"`
+	Status        ModerationStatus         `json:"status"`
+	Action        ModerationAction         `json:"action"`
+	Reason        ModerationReason         `json:"reason"`
+	Evidence      ModerationEvidence       `json:"evidence"`
+	ModeratorID   string                   `json:"moderator_id"`
+	ModeratorType string                   `json:"moderator_type"` // "user", "automated", "admin"
+	Metadata      map[string]interface{}   `json:"metadata,omitempty"`
+	History       []ModerationHistoryEntry `json:"history,omitempty"`
+	CreatedAt     time.Time                `json:"created_at"`
+	ActionedAt    *time.Time               `json:"actioned_at,omitempty"`
+	ResolvedAt    *time.Time               `json:"resolved_at,omitempty"`
 }
 
 // AddHistoryEntry adds a new entry to the moderation history

@@ -24,12 +24,12 @@ type Filter struct {
 
 // TableName returns the DynamoDB table name
 func (Filter) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the DynamORM keys based on filter data
 func (f *Filter) UpdateKeys() {
-	f.PK = fmt.Sprintf("USER#%s", f.Username)
+	f.PK = fmt.Sprintf(KeyPatternUser, f.Username)
 	f.SK = fmt.Sprintf("FILTER#%s", f.ID)
 }
 
@@ -66,7 +66,7 @@ type FilterKeyword struct {
 
 // TableName returns the DynamoDB table name
 func (FilterKeyword) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the DynamORM keys based on keyword data
@@ -105,13 +105,13 @@ type FilterStatus struct {
 
 // TableName returns the DynamoDB table name
 func (FilterStatus) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the DynamORM keys based on status data
 func (fs *FilterStatus) UpdateKeys() {
 	fs.PK = fmt.Sprintf("FILTER#%s", fs.FilterID)
-	fs.SK = fmt.Sprintf("STATUS#%s", fs.StatusID)
+	fs.SK = fmt.Sprintf(KeyPatternStatus, fs.StatusID)
 }
 
 // BeforeCreate hook to set timestamps and update keys

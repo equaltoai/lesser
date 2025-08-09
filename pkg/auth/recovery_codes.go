@@ -65,7 +65,10 @@ func (s *RecoveryCodeService) GenerateRecoveryCodes(ctx context.Context, usernam
 	}
 
 	// Clear any existing codes first
-	s.clearExistingCodes(ctx, username)
+	if err := s.clearExistingCodes(ctx, username); err != nil {
+		s.logger.Error("failed to clear existing codes", zap.String("username", username), zap.Error(err))
+		return nil, fmt.Errorf("failed to clear existing recovery codes: %w", err)
+	}
 
 	s.logger.Info("generated recovery codes",
 		zap.String("username", username),

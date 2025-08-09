@@ -1,3 +1,4 @@
+// Package httpclient provides HTTP client utilities with DNS caching and security features for federation requests.
 package httpclient
 
 import (
@@ -92,9 +93,9 @@ func WithLogger(logger *zap.Logger) Option {
 }
 
 // WithMaxRedirects sets the maximum number of redirects to follow
-func WithMaxRedirects(max int) Option {
+func WithMaxRedirects(maxVal int) Option {
 	return func(c *SecureClient) {
-		c.maxRedirects = max
+		c.maxRedirects = maxVal
 	}
 }
 
@@ -312,7 +313,7 @@ func (c *SecureClient) checkRedirect(req *http.Request, via []*http.Request) err
 }
 
 // validateURL checks if a URL is safe to request
-func validateURL(u *url.URL, logger *zap.Logger) error {
+func validateURL(u *url.URL, _ *zap.Logger) error {
 	// Check scheme
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "http" && scheme != "https" {

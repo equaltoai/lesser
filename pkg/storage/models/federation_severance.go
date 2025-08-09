@@ -21,12 +21,12 @@ type FederationSeverance struct {
 
 // UpdateKeys updates the GSI keys for federation severance
 func (f *FederationSeverance) UpdateKeys() {
-	f.PK = fmt.Sprintf("USER#%s", f.UserID)
+	f.PK = fmt.Sprintf(KeyPatternUser, f.UserID)
 	f.SK = fmt.Sprintf("SEVERANCE#%s", f.Domain)
-	
+
 	// GSI1 for global severance tracking
 	f.GSI1PK = fmt.Sprintf("SEVERANCE#%s", f.Domain)
-	f.GSI1SK = fmt.Sprintf("USER#%s", f.UserID)
+	f.GSI1SK = fmt.Sprintf(KeyPatternUser, f.UserID)
 }
 
 // FederationIssue tracks federation issues for monitoring
@@ -34,10 +34,10 @@ type FederationIssue struct {
 	PK          string    `dynamorm:"pk"`
 	SK          string    `dynamorm:"sk"`
 	Domain      string    `json:"domain"`
-	IssueType   string    `json:"issue_type"`   // "timeout", "error", "unreachable", "blocked"
+	IssueType   string    `json:"issue_type"` // "timeout", "error", "unreachable", "blocked"
 	Timestamp   time.Time `json:"timestamp"`
 	Description string    `json:"description,omitempty"`
-	Severity    string    `json:"severity"`     // "low", "medium", "high", "critical"
+	Severity    string    `json:"severity"` // "low", "medium", "high", "critical"
 	Resolved    bool      `json:"resolved"`
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
@@ -46,7 +46,7 @@ type FederationIssue struct {
 func (f *FederationIssue) UpdateKeys() {
 	f.PK = fmt.Sprintf("FEDERATION_ISSUE#%s", f.Domain)
 	f.SK = fmt.Sprintf("TIMESTAMP#%d", f.Timestamp.Unix())
-	
+
 	// Set TTL to 90 days
 	if f.TTL == 0 {
 		f.TTL = f.Timestamp.Add(90 * 24 * time.Hour).Unix()
@@ -78,7 +78,7 @@ type FederationTimeSeries struct {
 	GSI1PK         string                 `dynamorm:"index:gsi1,pk"`
 	GSI1SK         string                 `dynamorm:"index:gsi1,sk"`
 	Domain         string                 `json:"domain"`
-	Period         string                 `json:"period"`     // "hourly", "daily", "weekly"
+	Period         string                 `json:"period"` // "hourly", "daily", "weekly"
 	Timestamp      time.Time              `json:"timestamp"`
 	Metrics        map[string]interface{} `json:"metrics"`
 	ActivityVolume int64                  `json:"activity_volume"`
@@ -91,19 +91,19 @@ type FederationTimeSeries struct {
 func (f *FederationTimeSeries) UpdateKeys() {
 	f.PK = fmt.Sprintf("TIMESERIES#%s#%s", f.Domain, f.Period)
 	f.SK = f.Timestamp.Format(time.RFC3339)
-	
+
 	// GSI1 for period-based queries
 	f.GSI1PK = fmt.Sprintf("TIMESERIES#%s", f.Period)
 	f.GSI1SK = fmt.Sprintf("%s#%s", f.Timestamp.Format(time.RFC3339), f.Domain)
-	
+
 	// Set TTL based on period
 	if f.TTL == 0 {
 		switch f.Period {
-		case "hourly":
+		case PeriodHourly:
 			f.TTL = f.Timestamp.Add(7 * 24 * time.Hour).Unix() // Keep hourly data for 7 days
-		case "daily":
+		case PeriodDaily:
 			f.TTL = f.Timestamp.Add(30 * 24 * time.Hour).Unix() // Keep daily data for 30 days
-		case "weekly":
+		case PeriodWeekly:
 			f.TTL = f.Timestamp.Add(365 * 24 * time.Hour).Unix() // Keep weekly data for 1 year
 		}
 	}

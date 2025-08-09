@@ -8,6 +8,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
+// Visibility constants
+const (
+	VisibilityPublic   = "public"
+	VisibilityUnlisted = "unlisted"
+	VisibilityPrivate  = "private"
+	VisibilityDirect   = "direct"
+)
+
 // Status represents an ActivityPub Note/status stored in DynamoDB using DynamORM
 type Status struct {
 	// Primary key - using status ID as the primary identifier
@@ -91,7 +99,7 @@ type StatusTag struct {
 
 // TableName returns the DynamoDB table name for the Status model
 func (Status) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -219,7 +227,7 @@ func (s *Status) setupGSIKeys() {
 	}
 
 	// GSI2 - Public timeline (only for public statuses)
-	if s.Visibility == "public" {
+	if s.Visibility == VisibilityPublic {
 		s.GSI2PK = "PUBLIC_TIMELINE"
 		s.GSI2SK = fmt.Sprintf("%s#%s", timestampStr, statusID)
 	} else {
@@ -287,14 +295,14 @@ func determineVisibilityFromAudience(to, cc []string) string {
 	// Check if public address is in To field
 	for _, addr := range to {
 		if addr == publicAddress {
-			return "public"
+			return VisibilityPublic
 		}
 	}
 
 	// Check if public address is in CC field
 	for _, addr := range cc {
 		if addr == publicAddress {
-			return "unlisted"
+			return VisibilityUnlisted
 		}
 	}
 
@@ -309,7 +317,7 @@ func determineVisibilityFromAudience(to, cc []string) string {
 
 // IsPublic returns true if the status is publicly visible
 func (s *Status) IsPublic() bool {
-	return s.Visibility == "public"
+	return s.Visibility == VisibilityPublic
 }
 
 // IsReply returns true if the status is a reply to another status

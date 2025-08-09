@@ -1,3 +1,4 @@
+// Package main implements the stream-router Lambda function for routing streaming events to WebSocket connections.
 package main
 
 import (
@@ -25,6 +26,34 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+)
+
+// DynamoDB stream event type constants
+const (
+	eventNameInsert = "INSERT"
+	eventNameModify = "MODIFY"
+	eventNameRemove = "REMOVE"
+)
+
+// Stream event type constants
+const (
+	streamEventUpdate       = "update"
+	streamEventNotification = "notification"
+	streamEventStatusUpdate = "status.update"
+)
+
+// Entity type constants
+const (
+	entityTypeStatus       = "status"
+	entityTypeNotification = "notification"
+)
+
+// Media type constants
+const (
+	mediaTypeImage   = "image"
+	mediaTypeVideo   = "video"
+	mediaTypeAudio   = "audio"
+	mediaTypeUnknown = "unknown"
 )
 
 // StreamMessage represents a message sent over WebSocket
@@ -106,14 +135,14 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	// Initialize repositories
 	db := lambdaDB.WithLambdaTimeoutBuffer(500) // 500ms buffer
 	tableName := "lesser-main"
-	
+
 	// Get domain from environment
 	domain := os.Getenv("DOMAIN_NAME")
 	if domain == "" {
 		domain = "localhost"
 		logger.Warn("DOMAIN_NAME not set, using localhost as default")
 	}
-	
+
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
 	actorRepo := repositories.NewActorRepository(db, tableName, logger)
 	statusRepo := repositories.NewStatusRepository(db, tableName, logger)
@@ -125,17 +154,17 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 
 	// Initialize and start the internal event bus
 	eventBusConfig := streaming.DefaultEventBusConfig()
-	eventBusConfig.BufferSize = 2000     // Larger buffer for high-throughput streams
-	eventBusConfig.MaxSubscribers = 500  // Reasonable limit for GraphQL subscriptions
-	
+	eventBusConfig.BufferSize = 2000    // Larger buffer for high-throughput streams
+	eventBusConfig.MaxSubscribers = 500 // Reasonable limit for GraphQL subscriptions
+
 	eventBus := streaming.NewEventBus(eventBusConfig, logger)
-	
+
 	// Start the event bus in a background context
 	// We use a background context here since the Lambda will manage the lifecycle
 	if err := eventBus.Start(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to start internal event bus: %w", err)
 	}
-	
+
 	logger.Info("internal event bus started for stream router")
 
 	return &StreamRouterHandler{
@@ -200,7 +229,7 @@ func (h *StreamRouterHandler) processRecord(ctx *lift.Context, record events.Dyn
 	)
 
 	// Only process INSERT and MODIFY events
-	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+	if record.EventName != eventNameInsert && record.EventName != eventNameModify {
 		return nil
 	}
 
@@ -232,7 +261,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	// Use DynamORM stream utilities to unmarshal the status
 	var status models.Status
 	if err := stream.UnmarshalItem(record, &status); err != nil {
-		h.logger.Debug("failed to unmarshal status from stream", 
+		h.logger.Debug("failed to unmarshal status from stream",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.Error(err))
 		return nil // Skip records we can't unmarshal
@@ -297,24 +326,24 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	}
 
 	// Process attachments from Note
-	if note.Attachment != nil && len(note.Attachment) > 0 {
+	if len(note.Attachment) > 0 {
 		attachments := []any{}
 		for _, att := range note.Attachment {
 			// Convert ActivityPub attachment to Mastodon API format
 			attachment := map[string]any{
-				"id":   generateAttachmentID(att.URL), // Generate ID from URL
-				"type": mapAttachmentType(att.Type),
-				"url":  att.URL,
+				"id":          generateAttachmentID(att.URL), // Generate ID from URL
+				"type":        mapAttachmentType(att.Type),
+				"url":         att.URL,
 				"preview_url": att.URL, // Use same URL for preview
-				"remote_url": att.URL,
-				"meta": map[string]any{},
+				"remote_url":  att.URL,
+				"meta":        map[string]any{},
 			}
-			
+
 			// Add metadata if available
 			if att.Name != "" {
 				attachment["description"] = att.Name
 			}
-			
+
 			// Add dimensions if available
 			if att.Width > 0 && att.Height > 0 {
 				attachment["meta"] = map[string]any{
@@ -326,7 +355,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 					},
 				}
 			}
-			
+
 			attachments = append(attachments, attachment)
 		}
 		statusPayload["media_attachments"] = attachments
@@ -352,9 +381,9 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	}
 
 	// Send to all relevant streams
-	eventType := "update"
-	if record.EventName == "MODIFY" {
-		eventType = "status.update"
+	eventType := streamEventUpdate
+	if record.EventName == eventNameModify {
+		eventType = streamEventStatusUpdate
 	}
 
 	for _, streamName := range streams {
@@ -382,7 +411,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 // processNotificationEvent processes notification events using DynamORM stream utilities
 func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// Extract the notification from the DynamoDB image
-	if record.EventName != "INSERT" {
+	if record.EventName != eventNameInsert {
 		return nil
 	}
 
@@ -418,7 +447,7 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 	}
 
 	if err := attributevalue.UnmarshalMap(notifItem, &notifRecord); err != nil {
-		h.logger.Error("failed to unmarshal notification record", 
+		h.logger.Error("failed to unmarshal notification record",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.Error(err))
 		return nil
@@ -444,7 +473,7 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 
 	// Add status info if present
 	if notification.StatusID != "" {
-		notifPayload["status"] = map[string]any{
+		notifPayload[entityTypeStatus] = map[string]any{
 			"id": strings.TrimPrefix(notification.StatusID, "https://"),
 		}
 	}
@@ -463,7 +492,7 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 
 	// Send to user's notification stream
 	streamName := fmt.Sprintf("user:notification:%s", username)
-	if err := h.broadcastToStream(ctx, streamName, "notification", payload); err != nil {
+	if err := h.broadcastToStream(ctx, streamName, streamEventNotification, payload); err != nil {
 		h.logger.Error("failed to broadcast notification to stream",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.String("stream", streamName),
@@ -483,10 +512,10 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 	return nil
 }
 
-// processAccountEvent processes account/user events using DynamORM stream utilities  
+// processAccountEvent processes account/user events using DynamORM stream utilities
 func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
 	// Account updates (profile changes, etc.)
-	if record.EventName != "MODIFY" {
+	if record.EventName != eventNameModify {
 		return nil
 	}
 
@@ -521,7 +550,7 @@ func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record even
 
 	// Send account update to followers' streams
 	if err := broadcastToFollowers(accountID, payload); err != nil {
-		h.logger.Error("failed to broadcast to followers", 
+		h.logger.Error("failed to broadcast to followers",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.Error(err))
 		// Don't return error - logging is sufficient for broadcast failures
@@ -545,16 +574,6 @@ func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record even
 	return nil
 }
 
-
-func extractTableName(arn string) string {
-	// Extract table name from DynamoDB stream ARN
-	// Format: arn:aws:dynamodb:region:account:table/tablename/stream/timestamp
-	parts := strings.Split(arn, "/")
-	if len(parts) >= 2 {
-		return parts[1]
-	}
-	return ""
-}
 
 // convertEventAttributeValue converts from events.DynamoDBAttributeValue to SDK v2 types.AttributeValue
 func convertEventAttributeValue(attr events.DynamoDBAttributeValue) types.AttributeValue {
@@ -602,35 +621,8 @@ func extractUsernameFromActorID(actorID string) string {
 	return ""
 }
 
-// Helper function to check if a slice contains a value
-func contains(slice []string, value string) bool {
-	for _, v := range slice {
-		if v == value {
-			return true
-		}
-	}
-	return false
-}
 
-// Helper function to generate a random ID
-func generateID(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
-	}
-	return string(b)
-}
 
-// Helper function to determine attachment type from media type
-func getAttachmentType(mediaType string) string {
-	if strings.HasPrefix(mediaType, "video/") {
-		return "video"
-	} else if strings.HasPrefix(mediaType, "audio/") {
-		return "audio"
-	}
-	return "image"
-}
 
 // createAccountPayload creates a proper account payload for streaming
 func createAccountPayload(accountID, eventType string) (map[string]any, error) {
@@ -670,65 +662,45 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 
 // Helper methods for StreamRouterHandler
 
-// generateID generates a random ID (method on handler)
-func (h *StreamRouterHandler) generateID(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
-	}
-	return string(b)
-}
 
-// getAttachmentType determines attachment type from a map
-func (h *StreamRouterHandler) getAttachmentType(attMap map[string]any) string {
-	if mediaType, ok := attMap["mediaType"].(string); ok {
-		if strings.HasPrefix(mediaType, "video/") {
-			return "video"
-		} else if strings.HasPrefix(mediaType, "audio/") {
-			return "audio"
-		}
-	}
-	return "image"
-}
 
 // publishStatusEventToInternalBus publishes a status event to the internal event bus
 func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context, record events.DynamoDBEventRecord, status *models.Status, streams []string) error {
 	// Determine event type and action
 	var eventType streaming.EventType
 	var action streaming.EventAction
-	
+
 	switch record.EventName {
-	case "INSERT":
+	case eventNameInsert:
 		eventType = streaming.EventTypeStatus
 		action = streaming.ActionCreate
-	case "MODIFY":
+	case eventNameModify:
 		eventType = streaming.EventTypeStatusUpdate
 		action = streaming.ActionUpdate
-	case "REMOVE":
+	case eventNameRemove:
 		eventType = streaming.EventTypeStatusDelete
 		action = streaming.ActionDelete
 	default:
 		return fmt.Errorf("unknown event name: %s", record.EventName)
 	}
-	
+
 	// Create status event payload
 	statusPayload := &streaming.StatusEventPayload{
-		StatusID:        status.StatusID,
-		AuthorID:        status.AuthorID,
-		AuthorUsername:  status.AuthorUsername,
-		Content:         status.Content,
-		Visibility:      status.Visibility,
-		InReplyToID:     status.InReplyToID,
-		ReblogOfID:      status.ReblogOfID,
-		Sensitive:       status.Sensitive,
-		Language:        status.Language,
-		Hashtags:        status.Hashtags,
-		Mentions:        status.Mentions,
-		CreatedAt:       status.PublishedAt,
-		UpdatedAt:       status.UpdatedAt,
+		StatusID:       status.StatusID,
+		AuthorID:       status.AuthorID,
+		AuthorUsername: status.AuthorUsername,
+		Content:        status.Content,
+		Visibility:     status.Visibility,
+		InReplyToID:    status.InReplyToID,
+		ReblogOfID:     status.ReblogOfID,
+		Sensitive:      status.Sensitive,
+		Language:       status.Language,
+		Hashtags:       status.Hashtags,
+		Mentions:       status.Mentions,
+		CreatedAt:      status.PublishedAt,
+		UpdatedAt:      status.UpdatedAt,
 	}
-	
+
 	// Create the internal event
 	event := streaming.CreateEvent(eventType, action, statusPayload)
 	event.WithActor(status.AuthorUsername).
@@ -736,35 +708,35 @@ func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context,
 		WithUser(status.AuthorUsername).
 		WithStreams(streams...).
 		WithPriority(streaming.PriorityNormal)
-	
+
 	// Add metadata for filtering
 	event.WithMetadata("visibility", status.Visibility)
-	event.WithMetadata("entity_type", "status")
+	event.WithMetadata("entity_type", entityTypeStatus)
 	event.WithMetadata("request_id", ctx.GetRequestID())
-	
+
 	if status.Language != "" {
 		event.WithMetadata("language", status.Language)
 	}
-	
+
 	// Add hashtags to metadata for filtering
 	if len(status.Hashtags) > 0 {
 		for i, hashtag := range status.Hashtags {
 			event.WithMetadata(fmt.Sprintf("hashtag_%d", i), hashtag)
 		}
 	}
-	
+
 	// Publish to the internal event bus
 	if err := h.eventBus.Publish(event); err != nil {
 		return fmt.Errorf("failed to publish to internal event bus: %w", err)
 	}
-	
+
 	h.logger.Debug("published status event to internal bus",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("event_id", event.ID),
 		zap.String("status_id", status.StatusID),
 		zap.String("event_type", string(eventType)),
 		zap.Strings("streams", streams))
-	
+
 	return nil
 }
 
@@ -780,7 +752,7 @@ func (h *StreamRouterHandler) publishNotificationEventToInternalBus(ctx *lift.Co
 		Read:           notification.Read,
 		CreatedAt:      notification.CreatedAt,
 	}
-	
+
 	// Create the internal event
 	event := streaming.CreateEvent(streaming.EventTypeNotification, streaming.ActionCreate, notificationPayload)
 	event.WithActor(notification.AccountID).
@@ -788,29 +760,29 @@ func (h *StreamRouterHandler) publishNotificationEventToInternalBus(ctx *lift.Co
 		WithUser(notification.Username).
 		WithStreams(streams...).
 		WithPriority(streaming.PriorityHigh) // Notifications are high priority
-	
+
 	// Add metadata for filtering
 	event.WithMetadata("notification_type", notification.Type)
-	event.WithMetadata("entity_type", "notification")
+	event.WithMetadata("entity_type", entityTypeNotification)
 	event.WithMetadata("recipient", notification.Username)
 	event.WithMetadata("request_id", ctx.GetRequestID())
-	
+
 	if notification.StatusID != "" {
 		event.WithMetadata("status_id", notification.StatusID)
 	}
-	
+
 	// Publish to the internal event bus
 	if err := h.eventBus.Publish(event); err != nil {
 		return fmt.Errorf("failed to publish to internal event bus: %w", err)
 	}
-	
+
 	h.logger.Debug("published notification event to internal bus",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("event_id", event.ID),
 		zap.String("notification_id", notification.ID),
 		zap.String("notification_type", notification.Type),
 		zap.Strings("streams", streams))
-	
+
 	return nil
 }
 
@@ -819,29 +791,29 @@ func (h *StreamRouterHandler) publishAccountEventToInternalBus(ctx *lift.Context
 	// Determine event type and action
 	var eventType streaming.EventType
 	var action streaming.EventAction
-	
+
 	switch eventName {
-	case "INSERT":
+	case eventNameInsert:
 		eventType = streaming.EventTypeAccountUpdate
 		action = streaming.ActionCreate
-	case "MODIFY":
+	case eventNameModify:
 		eventType = streaming.EventTypeAccountUpdate
 		action = streaming.ActionUpdate
-	case "REMOVE":
+	case eventNameRemove:
 		eventType = streaming.EventTypeAccountUpdate
 		action = streaming.ActionDelete
 	default:
 		return fmt.Errorf("unknown event name: %s", eventName)
 	}
-	
+
 	// Create account event payload (simplified for now)
 	// In a full implementation, we'd extract more details from the DynamoDB record
 	accountPayload := &streaming.AccountEventPayload{
-		AccountID:   accountID,
-		Username:    extractUsernameFromActorID(accountID),
-		UpdatedAt:   time.Now(),
+		AccountID: accountID,
+		Username:  extractUsernameFromActorID(accountID),
+		UpdatedAt: time.Now(),
 	}
-	
+
 	// Create the internal event
 	event := streaming.CreateEvent(eventType, action, accountPayload)
 	event.WithActor(accountID).
@@ -849,24 +821,24 @@ func (h *StreamRouterHandler) publishAccountEventToInternalBus(ctx *lift.Context
 		WithUser(extractUsernameFromActorID(accountID)).
 		WithStreams(streams...).
 		WithPriority(streaming.PriorityNormal)
-	
+
 	// Add metadata for filtering
 	event.WithMetadata("entity_type", "account")
 	event.WithMetadata("account_id", accountID)
 	event.WithMetadata("request_id", ctx.GetRequestID())
-	
+
 	// Publish to the internal event bus
 	if err := h.eventBus.Publish(event); err != nil {
 		return fmt.Errorf("failed to publish to internal event bus: %w", err)
 	}
-	
+
 	h.logger.Debug("published account event to internal bus",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("event_id", event.ID),
 		zap.String("account_id", accountID),
 		zap.String("event_type", string(eventType)),
 		zap.Strings("streams", streams))
-	
+
 	return nil
 }
 
@@ -913,7 +885,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 	// Send to all subscribed connections
 	var errors []error
 	successCount := 0
-	
+
 	for _, connectionID := range subscriptions {
 		input := &apigatewaymanagementapi.PostToConnectionInput{
 			ConnectionId: aws.String(connectionID),
@@ -928,7 +900,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 				zap.String("stream", streamName),
 				zap.Error(err))
 			errors = append(errors, err)
-			
+
 			// Remove stale connections
 			if isStaleConnection(err) {
 				h.removeSubscription(ctx, streamName, connectionID)
@@ -981,26 +953,26 @@ func generateAttachmentID(url string) string {
 // mapAttachmentType maps ActivityPub attachment types to Mastodon API types
 func mapAttachmentType(apType string) string {
 	switch strings.ToLower(apType) {
-	case "image":
-		return "image"
-	case "video":
-		return "video"
-	case "audio":
-		return "audio"
+	case mediaTypeImage:
+		return mediaTypeImage
+	case mediaTypeVideo:
+		return mediaTypeVideo
+	case mediaTypeAudio:
+		return mediaTypeAudio
 	case "document":
-		return "unknown"
+		return mediaTypeUnknown
 	default:
 		// Try to infer from type if it contains media type info
-		if strings.Contains(strings.ToLower(apType), "image") {
-			return "image"
+		if strings.Contains(strings.ToLower(apType), mediaTypeImage) {
+			return mediaTypeImage
 		}
-		if strings.Contains(strings.ToLower(apType), "video") {
-			return "video"
+		if strings.Contains(strings.ToLower(apType), mediaTypeVideo) {
+			return mediaTypeVideo
 		}
-		if strings.Contains(strings.ToLower(apType), "audio") {
-			return "audio"
+		if strings.Contains(strings.ToLower(apType), mediaTypeAudio) {
+			return mediaTypeAudio
 		}
-		return "unknown"
+		return mediaTypeUnknown
 	}
 }
 
@@ -1018,15 +990,15 @@ func (h *StreamRouterHandler) getStreamSubscriptions(ctx *lift.Context, streamNa
 	// 1. Query the subscriptions table/index by stream name
 	// 2. Return all active connection IDs for this stream
 	// 3. Handle pagination if there are many subscribers
-	
+
 	h.logger.Debug("getting subscriptions for stream",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("stream", streamName))
-	
+
 	// Placeholder implementation - would query subscription repository
 	// Example query pattern:
 	// subscriptions, err := h.subscriptionRepo.GetStreamSubscriptions(ctx, streamName)
-	
+
 	// For now, return empty slice to allow compilation
 	return []string{}, nil
 }
@@ -1037,12 +1009,12 @@ func (h *StreamRouterHandler) removeSubscription(ctx *lift.Context, streamName, 
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("stream", streamName),
 		zap.String("connection_id", connectionID))
-	
+
 	// In a production implementation, this would:
 	// 1. Remove the subscription from the database
 	// 2. Clean up any associated resources
 	// 3. Log the removal for audit purposes
-	
+
 	// Example implementation:
 	// err := h.subscriptionRepo.RemoveSubscription(ctx, streamName, connectionID)
 	// if err != nil {
@@ -1059,16 +1031,16 @@ func isStaleConnection(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	// Check for specific API Gateway WebSocket errors that indicate stale connections
 	errStr := err.Error()
-	
+
 	// Common indicators of stale connections:
 	// - GoneException: Connection no longer exists
 	// - 410 Gone: HTTP status for gone resources
 	// - Connection not found
 	// - Invalid connection ID
-	
+
 	staleIndicators := []string{
 		"GoneException",
 		"410",
@@ -1077,13 +1049,13 @@ func isStaleConnection(err error) bool {
 		"invalid connection",
 		"connection does not exist",
 	}
-	
+
 	for _, indicator := range staleIndicators {
 		if strings.Contains(strings.ToLower(errStr), strings.ToLower(indicator)) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

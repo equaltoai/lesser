@@ -1,3 +1,4 @@
+// Package batch provides example Lambda handlers demonstrating SQS batch processing with DynamORM.
 package batch
 
 import (
@@ -21,85 +22,85 @@ var (
 // init initializes the Lambda environment (runs once per container)
 func init() {
 	var err error
-	
+
 	// Initialize logger
 	logger, err = zap.NewProduction()
 	if err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
-	
+
 	// Initialize DynamoDB connection using Lambda-optimized client
 	// NOTE: In actual usage, import dynamorm from your main package and call:
 	// db, err = dynamorm.GetLambdaClient(context.Background())
 	// For this example, you need to initialize db using the DynamORM package directly
 	// panic("Example file - please initialize 'db' using DynamORM in your actual implementation")
-	
+
 	// Initialize SQS batch processor
 	processor = NewSQSBatchProcessor(db, SQSBatchProcessorConfig{
 		Logger:       logger,
 		Tracker:      nil, // Cost tracker can be provided if needed
-		MaxBatchSize: 25, // DynamoDB batch write limit
+		MaxBatchSize: 25,  // DynamoDB batch write limit
 	})
-	
-	logger.Info("lambda_initialized", 
+
+	logger.Info("lambda_initialized",
 		zap.String("processor_type", "sqs_batch"),
 	)
 }
 
 // HandleGenericBatch handles generic batch operations from SQS
 func HandleGenericBatch(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
-	logger.Info("batch_processing_started", 
+	logger.Info("batch_processing_started",
 		zap.Int("message_count", len(event.Records)),
 	)
-	
+
 	response, err := processor.ProcessBatch(ctx, event)
 	if err != nil {
 		logger.Error("batch_processing_failed", zap.Error(err))
 		return response, err
 	}
-	
+
 	logger.Info("batch_processing_completed",
 		zap.Int("failed_messages", len(response.BatchItemFailures)),
 	)
-	
+
 	return response, nil
 }
 
 // HandleTimelineBatch handles timeline entry batches from SQS
 func HandleTimelineBatch(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
-	logger.Info("timeline_batch_processing_started", 
+	logger.Info("timeline_batch_processing_started",
 		zap.Int("message_count", len(event.Records)),
 	)
-	
+
 	response, err := processor.ProcessTimelineEntries(ctx, event)
 	if err != nil {
 		logger.Error("timeline_batch_processing_failed", zap.Error(err))
 		return response, err
 	}
-	
+
 	logger.Info("timeline_batch_processing_completed",
 		zap.Int("failed_messages", len(response.BatchItemFailures)),
 	)
-	
+
 	return response, nil
 }
 
 // HandleNotificationBatch handles notification batches from SQS
 func HandleNotificationBatch(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
-	logger.Info("notification_batch_processing_started", 
+	logger.Info("notification_batch_processing_started",
 		zap.Int("message_count", len(event.Records)),
 	)
-	
+
 	response, err := processor.ProcessNotifications(ctx, event)
 	if err != nil {
 		logger.Error("notification_batch_processing_failed", zap.Error(err))
 		return response, err
 	}
-	
+
 	logger.Info("notification_batch_processing_completed",
 		zap.Int("failed_messages", len(response.BatchItemFailures)),
 	)
-	
+
 	return response, nil
 }
 
@@ -110,7 +111,7 @@ func TimelineBatchLambda() {
 	lambda.Start(HandleTimelineBatch)
 }
 
-// NotificationBatchLambda - Lambda function for processing notification batches  
+// NotificationBatchLambda - Lambda function for processing notification batches
 func NotificationBatchLambda() {
 	lambda.Start(HandleNotificationBatch)
 }
@@ -137,12 +138,12 @@ func SendTimelineBatchToSQS(sqsURL string, followerIDs []string, statusID, autho
 		AuthorID:    authorID,
 		CreatedAt:   createdAt,
 	}
-	
+
 	messageBody, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}
-	
+
 	// Here you would use AWS SQS SDK to send the message
 	// This is just a placeholder showing the message structure
 	logger.Info("timeline_batch_message_created",
@@ -151,7 +152,7 @@ func SendTimelineBatchToSQS(sqsURL string, followerIDs []string, statusID, autho
 		zap.String("status_id", statusID),
 		zap.String("message_body", string(messageBody)),
 	)
-	
+
 	return nil
 }
 
@@ -170,32 +171,32 @@ func SendNotificationBatchToSQS(sqsURL string, userIDs []string, statusID, autho
 		Type:       notifType,
 		TargetType: targetType,
 	}
-	
+
 	messageBody, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}
-	
+
 	logger.Info("notification_batch_message_created",
 		zap.String("sqs_url", sqsURL),
 		zap.Int("user_count", len(userIDs)),
 		zap.String("type", notifType),
 		zap.String("message_body", string(messageBody)),
 	)
-	
+
 	return nil
 }
 
-// Example of batch size optimization based on payload
+// OptimalBatchSize calculates the optimal batch size based on payload size
 func OptimalBatchSize(items []any) int {
 	if len(items) == 0 {
 		return 0
 	}
-	
+
 	// Estimate item size (this is simplified)
 	sampleItem, _ := json.Marshal(items[0])
 	estimatedItemSize := len(sampleItem)
-	
+
 	// DynamoDB has a 400KB item limit and 16MB request limit
 	// Be conservative with batch sizes for large items
 	if estimatedItemSize > 10000 { // 10KB per item
@@ -203,11 +204,11 @@ func OptimalBatchSize(items []any) int {
 	} else if estimatedItemSize > 1000 { // 1KB per item
 		return 20
 	}
-	
+
 	return 25 // Maximum DynamoDB batch size
 }
 
-// Example error retry logic for failed batches
+// HandleFailedBatch retries failed items with exponential backoff
 func HandleFailedBatch(failedItems []events.SQSBatchItemFailure, originalEvent events.SQSEvent) {
 	// Log failed items for monitoring
 	for _, failure := range failedItems {
@@ -222,7 +223,7 @@ func HandleFailedBatch(failedItems []events.SQSBatchItemFailure, originalEvent e
 			}
 		}
 	}
-	
+
 	// Failed items will automatically be retried by SQS based on the queue's
 	// redrive policy and maxReceiveCount settings
 }

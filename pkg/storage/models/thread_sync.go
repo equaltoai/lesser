@@ -14,10 +14,10 @@ type ThreadSync struct {
 	// Thread sync data
 	StatusID         string    `json:"status_id"`
 	LastSyncAt       time.Time `json:"last_sync_at"`
-	SyncStatus       string    `json:"sync_status"`        // "pending", "syncing", "completed", "failed"
-	MissingReplies   []string  `json:"missing_replies"`    // List of missing reply IDs
-	RemoteFetched    bool      `json:"remote_fetched"`     // Whether we've attempted remote fetch
-	ThreadDepth      int       `json:"thread_depth"`       // Current thread depth known
+	SyncStatus       string    `json:"sync_status"`     // "pending", "syncing", "completed", "failed"
+	MissingReplies   []string  `json:"missing_replies"` // List of missing reply IDs
+	RemoteFetched    bool      `json:"remote_fetched"`  // Whether we've attempted remote fetch
+	ThreadDepth      int       `json:"thread_depth"`    // Current thread depth known
 	LastErrorMessage string    `json:"last_error_message,omitempty"`
 	UpdatedAt        time.Time `json:"updated_at"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -44,7 +44,7 @@ func NewThreadSync(statusID string) *ThreadSync {
 // UpdateKeys updates the primary key fields
 func (t *ThreadSync) UpdateKeys() {
 	t.PK = fmt.Sprintf("THREAD_SYNC#%s", t.StatusID)
-	t.SK = "METADATA"
+	t.SK = SKMetadata
 }
 
 // MarkSyncing updates the sync status to "syncing"
@@ -56,7 +56,7 @@ func (t *ThreadSync) MarkSyncing() {
 
 // MarkCompleted updates the sync status to "completed"
 func (t *ThreadSync) MarkCompleted() {
-	t.SyncStatus = "completed"
+	t.SyncStatus = StatusCompleted
 	t.LastSyncAt = time.Now()
 	t.UpdatedAt = time.Now()
 	t.LastErrorMessage = ""
@@ -64,7 +64,7 @@ func (t *ThreadSync) MarkCompleted() {
 
 // MarkFailed updates the sync status to "failed" with an error message
 func (t *ThreadSync) MarkFailed(errorMessage string) {
-	t.SyncStatus = "failed"
+	t.SyncStatus = StatusFailed
 	t.LastErrorMessage = errorMessage
 	t.UpdatedAt = time.Now()
 }
@@ -94,5 +94,5 @@ func (t *ThreadSync) RemoveMissingReply(replyID string) {
 
 // IsRecentlyCompleted checks if the sync was completed recently (within 30 minutes)
 func (t *ThreadSync) IsRecentlyCompleted() bool {
-	return t.SyncStatus == "completed" && time.Since(t.LastSyncAt) < 30*time.Minute
+	return t.SyncStatus == StatusCompleted && time.Since(t.LastSyncAt) < 30*time.Minute
 }

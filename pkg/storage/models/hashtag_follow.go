@@ -7,7 +7,7 @@ type HashtagFollow struct {
 	// Keys
 	PK string `dynamorm:"pk" json:"-"` // USER#username
 	SK string `dynamorm:"sk" json:"-"` // HASHTAG_FOLLOW#hashtag
-	
+
 	// Fields
 	UserID               string    `json:"user_id"`
 	Hashtag              string    `json:"hashtag"`

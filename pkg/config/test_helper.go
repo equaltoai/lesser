@@ -21,20 +21,20 @@ func SetupTestEnvironment(t *testing.T) {
 	}
 
 	// Set test environment variables
-	os.Setenv("JWT_SECRET", "test_jwt_secret_for_testing")
-	os.Setenv("DOMAIN", "localhost")
-	os.Setenv("INSTANCE_NAME", "Lesser Test")
-	os.Setenv("AWS_REGION", "us-east-1")
-	os.Setenv("DYNAMO_TABLE_NAME", "lesser-test")
-	os.Setenv("S3_BUCKET_NAME", "lesser-test-media")
+	_ = os.Setenv("JWT_SECRET", "test_jwt_secret_for_testing")
+	_ = os.Setenv("DOMAIN", "localhost")
+	_ = os.Setenv("INSTANCE_NAME", "Lesser Test")
+	_ = os.Setenv("AWS_REGION", "us-east-1")
+	_ = os.Setenv("DYNAMO_TABLE_NAME", "lesser-test")
+	_ = os.Setenv("S3_BUCKET_NAME", "lesser-test-media")
 
 	// Cleanup function to restore original environment
 	t.Cleanup(func() {
 		for key, value := range originalEnv {
 			if value == "" {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			} else {
-				os.Setenv(key, value)
+				_ = os.Setenv(key, value)
 			}
 		}
 	})

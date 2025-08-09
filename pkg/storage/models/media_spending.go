@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaSpending tracks spending and costs for media processing operations per user
@@ -16,31 +17,31 @@ type MediaSpending struct {
 	GSI1PK string `dynamorm:"index:spending-time-index,pk" json:"gsi1_pk"` // Format: "SPENDING#{period_type}"
 	GSI1SK string `dynamorm:"index:spending-time-index,sk" json:"gsi1_sk"` // Format: "{year}-{month}-{day}#{userID}"
 
-	// GSI2 - Cost category queries  
+	// GSI2 - Cost category queries
 	GSI2PK string `dynamorm:"index:cost-category-index,pk" json:"gsi2_pk"` // Format: "COST_CATEGORY#{category}"
 	GSI2SK string `dynamorm:"index:cost-category-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{userID}"
 
 	// Core spending data
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	Period   string `json:"period"`     // "2024-01", "2024-01-15" (monthly or daily)
+	UserID     string `json:"user_id"`
+	Username   string `json:"username"`
+	Period     string `json:"period"`      // "2024-01", "2024-01-15" (monthly or daily)
 	PeriodType string `json:"period_type"` // "monthly", "daily"
 
 	// Spending totals (in microdollars - $1 = 1,000,000 microdollars)
-	TotalSpendMicros       int64 `json:"total_spend_micros"`
-	ProcessingSpendMicros  int64 `json:"processing_spend_micros"`  // MediaConvert, Rekognition, etc.
-	StorageSpendMicros     int64 `json:"storage_spend_micros"`     // S3 storage costs
-	BandwidthSpendMicros   int64 `json:"bandwidth_spend_micros"`   // CloudFront/CDN costs
-	ComputeSpendMicros     int64 `json:"compute_spend_micros"`     // Lambda compute costs
+	TotalSpendMicros      int64 `json:"total_spend_micros"`
+	ProcessingSpendMicros int64 `json:"processing_spend_micros"` // MediaConvert, Rekognition, etc.
+	StorageSpendMicros    int64 `json:"storage_spend_micros"`    // S3 storage costs
+	BandwidthSpendMicros  int64 `json:"bandwidth_spend_micros"`  // CloudFront/CDN costs
+	ComputeSpendMicros    int64 `json:"compute_spend_micros"`    // Lambda compute costs
 
 	// Operation counts
-	TotalOperations      int64 `json:"total_operations"`
-	ImageProcessingOps   int64 `json:"image_processing_ops"`
-	VideoProcessingOps   int64 `json:"video_processing_ops"`
-	AudioProcessingOps   int64 `json:"audio_processing_ops"`
-	StorageOperations    int64 `json:"storage_operations"`      // S3 PUT/GET operations
-	BandwidthBytes       int64 `json:"bandwidth_bytes"`         // Bytes transferred
-	ComputeTimeMs        int64 `json:"compute_time_ms"`         // Lambda execution time
+	TotalOperations    int64 `json:"total_operations"`
+	ImageProcessingOps int64 `json:"image_processing_ops"`
+	VideoProcessingOps int64 `json:"video_processing_ops"`
+	AudioProcessingOps int64 `json:"audio_processing_ops"`
+	StorageOperations  int64 `json:"storage_operations"` // S3 PUT/GET operations
+	BandwidthBytes     int64 `json:"bandwidth_bytes"`    // Bytes transferred
+	ComputeTimeMs      int64 `json:"compute_time_ms"`    // Lambda execution time
 
 	// Detailed cost breakdown by service
 	S3StorageCostMicros    int64 `json:"s3_storage_cost_micros"`
@@ -51,22 +52,22 @@ type MediaSpending struct {
 	LambdaCostMicros       int64 `json:"lambda_cost_micros"`
 
 	// Usage statistics
-	FilesProcessed        int64 `json:"files_processed"`
-	BytesProcessed        int64 `json:"bytes_processed"`
-	StorageBytesUsed      int64 `json:"storage_bytes_used"`
-	MediaConvertMinutes   int64 `json:"mediaconvert_minutes"`    // Total minutes processed
-	RekognitionImages     int64 `json:"rekognition_images"`      // Images analyzed
-	ThumbnailsGenerated   int64 `json:"thumbnails_generated"`
+	FilesProcessed      int64 `json:"files_processed"`
+	BytesProcessed      int64 `json:"bytes_processed"`
+	StorageBytesUsed    int64 `json:"storage_bytes_used"`
+	MediaConvertMinutes int64 `json:"mediaconvert_minutes"` // Total minutes processed
+	RekognitionImages   int64 `json:"rekognition_images"`   // Images analyzed
+	ThumbnailsGenerated int64 `json:"thumbnails_generated"`
 
 	// Error tracking
 	FailedOperations int64 `json:"failed_operations"`
 	ErrorCostMicros  int64 `json:"error_cost_micros"` // Costs from failed operations
 
 	// Budget tracking
-	BudgetLimitMicros     int64   `json:"budget_limit_micros"`     // User's budget limit
-	BudgetUsagePercent    float64 `json:"budget_usage_percent"`    // Percentage of budget used
-	BudgetExceeded        bool    `json:"budget_exceeded"`         // True if over budget
-	BudgetExceededAt      *time.Time `json:"budget_exceeded_at,omitempty"` // When budget was exceeded
+	BudgetLimitMicros  int64      `json:"budget_limit_micros"`          // User's budget limit
+	BudgetUsagePercent float64    `json:"budget_usage_percent"`         // Percentage of budget used
+	BudgetExceeded     bool       `json:"budget_exceeded"`              // True if over budget
+	BudgetExceededAt   *time.Time `json:"budget_exceeded_at,omitempty"` // When budget was exceeded
 
 	// Timestamps
 	PeriodStartAt time.Time `json:"period_start_at"`
@@ -77,14 +78,14 @@ type MediaSpending struct {
 	// TTL for old spending records (keep for 2 years)
 	ExpiresAt *int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
 
-	// Version for optimistic locking  
+	// Version for optimistic locking
 	ModelVersion int `dynamorm:"version" json:"model_version"`
 }
 
 // MediaSpendingTransaction represents a single spending transaction
 type MediaSpendingTransaction struct {
 	// Primary key - using user ID as partition key with transaction ID as sort key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "SPENDING_TXN#{userID}" 
+	PK string `dynamorm:"pk" json:"pk"` // Format: "SPENDING_TXN#{userID}"
 	SK string `dynamorm:"sk" json:"sk"` // Format: "TXN#{timestamp}#{transactionID}"
 
 	// GSI1 - Time-based transaction queries
@@ -97,17 +98,17 @@ type MediaSpendingTransaction struct {
 	Username      string `json:"username"`
 
 	// Cost details
-	CostMicros   int64  `json:"cost_micros"`   // Cost in microdollars
-	Category     string `json:"category"`      // "processing", "storage", "bandwidth", "compute"
-	Service      string `json:"service"`       // "s3", "mediaconvert", "cloudfront", "lambda", "rekognition"
-	Operation    string `json:"operation"`     // "image_resize", "video_transcode", "storage_put", etc.
-	Description  string `json:"description"`   // Human-readable description
+	CostMicros  int64  `json:"cost_micros"` // Cost in microdollars
+	Category    string `json:"category"`    // "processing", "storage", "bandwidth", "compute"
+	Service     string `json:"service"`     // "s3", "mediaconvert", "cloudfront", "lambda", "rekognition"
+	Operation   string `json:"operation"`   // "image_resize", "video_transcode", "storage_put", etc.
+	Description string `json:"description"` // Human-readable description
 
 	// Associated media
-	MediaID    string `json:"media_id,omitempty"`
-	JobID      string `json:"job_id,omitempty"`
-	FileName   string `json:"file_name,omitempty"`
-	FileSize   int64  `json:"file_size,omitempty"`
+	MediaID     string `json:"media_id,omitempty"`
+	JobID       string `json:"job_id,omitempty"`
+	FileName    string `json:"file_name,omitempty"`
+	FileSize    int64  `json:"file_size,omitempty"`
 	ContentType string `json:"content_type,omitempty"`
 
 	// Processing details
@@ -128,12 +129,12 @@ type MediaSpendingTransaction struct {
 
 // TableName returns the DynamoDB table name for MediaSpending
 func (MediaSpending) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // TableName returns the DynamoDB table name for MediaSpendingTransaction
 func (MediaSpendingTransaction) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the MediaSpending model before creation
@@ -164,12 +165,12 @@ func (ms *MediaSpending) BeforeCreate() error {
 // BeforeUpdate sets up the model before update
 func (ms *MediaSpending) BeforeUpdate() error {
 	ms.UpdatedAt = time.Now()
-	
+
 	// Update budget usage percentage
 	if ms.BudgetLimitMicros > 0 {
 		ms.BudgetUsagePercent = float64(ms.TotalSpendMicros) / float64(ms.BudgetLimitMicros) * 100.0
 		ms.BudgetExceeded = ms.TotalSpendMicros > ms.BudgetLimitMicros
-		
+
 		// Set budget exceeded timestamp if just exceeded
 		if ms.BudgetExceeded && ms.BudgetExceededAt == nil {
 			now := time.Now()
@@ -204,19 +205,18 @@ func (ms *MediaSpending) getLargestCostCategory() string {
 
 	if ms.ProcessingSpendMicros > maxCost {
 		maxCost = ms.ProcessingSpendMicros
-		category = "processing"
+		category = ResourceProcessing
 	}
 	if ms.StorageSpendMicros > maxCost {
 		maxCost = ms.StorageSpendMicros
-		category = "storage"
+		category = ResourceStorage
 	}
 	if ms.BandwidthSpendMicros > maxCost {
 		maxCost = ms.BandwidthSpendMicros
-		category = "bandwidth"
+		category = ResourceBandwidth
 	}
 	if ms.ComputeSpendMicros > maxCost {
-		maxCost = ms.ComputeSpendMicros
-		category = "compute"
+		category = ResourceCompute
 	}
 
 	return category
@@ -224,23 +224,24 @@ func (ms *MediaSpending) getLargestCostCategory() string {
 
 // setPeriodTimes sets the period start and end times based on the period string
 func (ms *MediaSpending) setPeriodTimes() error {
-	if ms.PeriodType == "monthly" {
+	switch ms.PeriodType {
+	case PeriodMonthly:
 		// Parse YYYY-MM format
-		t, err := time.Parse("2006-01", ms.Period)
+		t, err := time.Parse(common.MonthFormat, ms.Period)
 		if err != nil {
 			return fmt.Errorf("invalid monthly period format: %s", ms.Period)
 		}
 		ms.PeriodStartAt = t
 		ms.PeriodEndAt = t.AddDate(0, 1, 0).Add(-time.Nanosecond) // End of month
-	} else if ms.PeriodType == "daily" {
+	case PeriodDaily:
 		// Parse YYYY-MM-DD format
-		t, err := time.Parse("2006-01-02", ms.Period)
+		t, err := time.Parse(common.DateFormat, ms.Period)
 		if err != nil {
 			return fmt.Errorf("invalid daily period format: %s", ms.Period)
 		}
 		ms.PeriodStartAt = t
 		ms.PeriodEndAt = t.Add(24*time.Hour - time.Nanosecond) // End of day
-	} else {
+	default:
 		return fmt.Errorf("invalid period type: %s", ms.PeriodType)
 	}
 
@@ -253,22 +254,22 @@ func (ms *MediaSpending) Validate() error {
 		return fmt.Errorf("UserID is required")
 	}
 	if strings.TrimSpace(ms.Period) == "" {
-		return fmt.Errorf("Period is required")
+		return fmt.Errorf("period is required")
 	}
-	if ms.PeriodType != "monthly" && ms.PeriodType != "daily" {
+	if ms.PeriodType != PeriodMonthly && ms.PeriodType != PeriodDaily {
 		return fmt.Errorf("PeriodType must be 'monthly' or 'daily'")
 	}
 
 	// Validate that individual spending amounts sum to total
-	calculatedTotal := ms.ProcessingSpendMicros + ms.StorageSpendMicros + 
+	calculatedTotal := ms.ProcessingSpendMicros + ms.StorageSpendMicros +
 		ms.BandwidthSpendMicros + ms.ComputeSpendMicros
 	if ms.TotalSpendMicros != calculatedTotal {
 		ms.TotalSpendMicros = calculatedTotal // Auto-correct
 	}
 
 	// Validate spending amounts are non-negative
-	if ms.TotalSpendMicros < 0 || ms.ProcessingSpendMicros < 0 || 
-		ms.StorageSpendMicros < 0 || ms.BandwidthSpendMicros < 0 || 
+	if ms.TotalSpendMicros < 0 || ms.ProcessingSpendMicros < 0 ||
+		ms.StorageSpendMicros < 0 || ms.BandwidthSpendMicros < 0 ||
 		ms.ComputeSpendMicros < 0 {
 		return fmt.Errorf("spending amounts cannot be negative")
 	}
@@ -291,7 +292,7 @@ func (mst *MediaSpendingTransaction) BeforeCreate() error {
 	mst.SK = fmt.Sprintf("TXN#%s#%s", now.Format("20060102150405"), mst.TransactionID)
 
 	// Set up GSI keys
-	dateStr := now.Format("2006-01-02")
+	dateStr := now.Format(common.DateFormat)
 	mst.GSI1PK = "TXN_TIME#" + dateStr
 	mst.GSI1SK = fmt.Sprintf("%s#%s#%s", now.Format(time.RFC3339), mst.UserID, mst.TransactionID)
 
@@ -314,12 +315,12 @@ func (mst *MediaSpendingTransaction) Validate() error {
 		return fmt.Errorf("CostMicros cannot be negative")
 	}
 	if strings.TrimSpace(mst.Category) == "" {
-		return fmt.Errorf("Category is required")
+		return fmt.Errorf("category is required")
 	}
 
 	// Validate category
 	validCategories := map[string]bool{
-		"processing": true, "storage": true, "bandwidth": true, "compute": true,
+		ResourceProcessing: true, ResourceStorage: true, ResourceBandwidth: true, ResourceCompute: true,
 	}
 	if !validCategories[mst.Category] {
 		return fmt.Errorf("invalid category: %s", mst.Category)
@@ -335,7 +336,7 @@ func (ms *MediaSpending) AddSpending(transaction *MediaSpendingTransaction) {
 
 	// Add to category-specific spending
 	switch transaction.Category {
-	case "processing":
+	case ResourceProcessing:
 		ms.ProcessingSpendMicros += transaction.CostMicros
 		if strings.Contains(transaction.Operation, "image") {
 			ms.ImageProcessingOps++
@@ -371,7 +372,7 @@ func (ms *MediaSpending) AddSpending(transaction *MediaSpendingTransaction) {
 	case "rekognition":
 		ms.RekognitionCostMicros += transaction.CostMicros
 		ms.RekognitionImages += transaction.UnitsConsumed
-	case "lambda":
+	case ResourceLambda:
 		ms.LambdaCostMicros += transaction.CostMicros
 	}
 
@@ -393,7 +394,7 @@ func (ms *MediaSpending) AddSpending(transaction *MediaSpendingTransaction) {
 // GetCostBreakdown returns a breakdown of costs by category
 func (ms *MediaSpending) GetCostBreakdown() map[string]int64 {
 	return map[string]int64{
-		"processing": ms.ProcessingSpendMicros,
+		ResourceProcessing: ms.ProcessingSpendMicros,
 		"storage":    ms.StorageSpendMicros,
 		"bandwidth":  ms.BandwidthSpendMicros,
 		"compute":    ms.ComputeSpendMicros,
@@ -403,12 +404,12 @@ func (ms *MediaSpending) GetCostBreakdown() map[string]int64 {
 // GetServiceBreakdown returns a breakdown of costs by AWS service
 func (ms *MediaSpending) GetServiceBreakdown() map[string]int64 {
 	return map[string]int64{
-		"s3_storage":    ms.S3StorageCostMicros,
-		"s3_requests":   ms.S3RequestCostMicros,
-		"cloudfront":    ms.CloudFrontCostMicros,
-		"mediaconvert":  ms.MediaConvertCostMicros,
-		"rekognition":   ms.RekognitionCostMicros,
-		"lambda":        ms.LambdaCostMicros,
+		"s3_storage":   ms.S3StorageCostMicros,
+		"s3_requests":  ms.S3RequestCostMicros,
+		"cloudfront":   ms.CloudFrontCostMicros,
+		"mediaconvert": ms.MediaConvertCostMicros,
+		"rekognition":  ms.RekognitionCostMicros,
+		"lambda":       ms.LambdaCostMicros,
 	}
 }
 

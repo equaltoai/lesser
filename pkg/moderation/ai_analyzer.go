@@ -1,3 +1,4 @@
+// Package moderation provides AI-powered content analysis using AWS Comprehend and Rekognition for automated content moderation.
 package moderation
 
 import (
@@ -170,7 +171,7 @@ func (ai *AIAnalyzer) detectEntities(ctx context.Context, text, language string)
 		return nil, err
 	}
 
-	var entities []*EntityDetection
+	entities := make([]*EntityDetection, 0, len(result.Entities))
 	for _, entity := range result.Entities {
 		entities = append(entities, &EntityDetection{
 			Text:        *entity.Text,
@@ -195,7 +196,7 @@ func (ai *AIAnalyzer) detectKeyPhrases(ctx context.Context, text, language strin
 		return nil, err
 	}
 
-	var phrases []*KeyPhrase
+	phrases := make([]*KeyPhrase, 0, len(result.KeyPhrases))
 	for _, phrase := range result.KeyPhrases {
 		phrases = append(phrases, &KeyPhrase{
 			Text:        *phrase.Text,
@@ -219,7 +220,7 @@ func (ai *AIAnalyzer) detectPII(ctx context.Context, text, language string) ([]*
 		return nil, err
 	}
 
-	var piiEntities []*PIIEntity
+	piiEntities := make([]*PIIEntity, 0, len(result.Entities))
 	for _, entity := range result.Entities {
 		piiEntities = append(piiEntities, &PIIEntity{
 			Type:        string(entity.Type),
@@ -247,7 +248,7 @@ func (ai *AIAnalyzer) detectModerationLabels(ctx context.Context, imageBytes []b
 		return nil, err
 	}
 
-	var labels []*ModerationLabel
+	labels := make([]*ModerationLabel, 0, len(result.ModerationLabels))
 	for _, label := range result.ModerationLabels {
 		labels = append(labels, &ModerationLabel{
 			Name:       *label.Name,
@@ -273,7 +274,7 @@ func (ai *AIAnalyzer) detectLabels(ctx context.Context, imageBytes []byte) ([]*I
 		return nil, err
 	}
 
-	var labels []*ImageLabel
+	labels := make([]*ImageLabel, 0, len(result.Labels))
 	for _, label := range result.Labels {
 		labels = append(labels, &ImageLabel{
 			Name:       *label.Name,
@@ -322,7 +323,7 @@ func (ai *AIAnalyzer) detectFaces(ctx context.Context, imageBytes []byte) ([]*Fa
 		return nil, err
 	}
 
-	var faces []*FaceDetection
+	faces := make([]*FaceDetection, 0, len(result.FaceDetails))
 	for _, faceDetail := range result.FaceDetails {
 		face := &FaceDetection{
 			Confidence: *faceDetail.Confidence,
@@ -470,17 +471,20 @@ func (ai *AIAnalyzer) generateImageRecommendations(analysis *ImageAnalysis) []st
 
 // Types for AI analysis
 
+// TextContent represents text content to be analyzed
 type TextContent struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`
 }
 
+// ImageContent represents image content to be analyzed
 type ImageContent struct {
 	ID         string `json:"id"`
 	URL        string `json:"url"`
 	ImageBytes []byte `json:"-"`
 }
 
+// TextAnalysis represents the result of text content analysis
 type TextAnalysis struct {
 	ContentID       string             `json:"content_id"`
 	Text            string             `json:"text"`
@@ -495,6 +499,7 @@ type TextAnalysis struct {
 	AnalyzedAt      time.Time          `json:"analyzed_at"`
 }
 
+// ImageAnalysis represents the result of image content analysis
 type ImageAnalysis struct {
 	ContentID        string             `json:"content_id"`
 	ImageURL         string             `json:"image_url"`
@@ -509,6 +514,7 @@ type ImageAnalysis struct {
 	AnalyzedAt       time.Time          `json:"analyzed_at"`
 }
 
+// SentimentAnalysis represents sentiment analysis results
 type SentimentAnalysis struct {
 	Sentiment     string  `json:"sentiment"`
 	PositiveScore float32 `json:"positive_score"`
@@ -517,6 +523,7 @@ type SentimentAnalysis struct {
 	MixedScore    float32 `json:"mixed_score"`
 }
 
+// EntityDetection represents a detected entity in text
 type EntityDetection struct {
 	Text        string  `json:"text"`
 	Type        string  `json:"type"`
@@ -525,6 +532,7 @@ type EntityDetection struct {
 	EndOffset   int32   `json:"end_offset"`
 }
 
+// KeyPhrase represents a detected key phrase in text
 type KeyPhrase struct {
 	Text        string  `json:"text"`
 	Score       float32 `json:"score"`
@@ -532,6 +540,7 @@ type KeyPhrase struct {
 	EndOffset   int32   `json:"end_offset"`
 }
 
+// PIIEntity represents a detected personally identifiable information entity
 type PIIEntity struct {
 	Type        string  `json:"type"`
 	Score       float32 `json:"score"`
@@ -539,29 +548,36 @@ type PIIEntity struct {
 	EndOffset   int32   `json:"end_offset"`
 }
 
+// ModerationLabel represents a moderation label detected in content
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific label
 type ModerationLabel struct {
 	Name       string  `json:"name"`
 	Confidence float32 `json:"confidence"`
 	ParentName string  `json:"parent_name,omitempty"`
 }
 
+// ImageLabel represents a label detected in an image
 type ImageLabel struct {
 	Name       string  `json:"name"`
 	Confidence float32 `json:"confidence"`
 	Instances  int     `json:"instances"`
 }
 
+// FaceDetection represents a detected face in an image
 type FaceDetection struct {
 	Confidence float32    `json:"confidence"`
 	AgeRange   *AgeRange  `json:"age_range,omitempty"`
 	Emotions   []*Emotion `json:"emotions,omitempty"`
 }
 
+// AgeRange represents an estimated age range for a detected face
 type AgeRange struct {
 	Low  int32 `json:"low"`
 	High int32 `json:"high"`
 }
 
+// Emotion represents a detected emotion in a face
 type Emotion struct {
 	Type       string  `json:"type"`
 	Confidence float32 `json:"confidence"`

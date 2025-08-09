@@ -7,18 +7,22 @@ import (
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
+	"go.uber.org/zap"
 )
 
 // FederationHooks provides hooks into federation activities for tracking
+//
+//nolint:revive // Federation prefix clarifies this is federation-specific hooks
 type FederationHooks struct {
 	tracker *RelationshipTracker
 	monitor *monitoring.PerformanceMonitor
 }
 
 // NewFederationHooks creates a new federation hooks instance
-func NewFederationHooks(store core.RepositoryStorage, monitor *monitoring.PerformanceMonitor) *FederationHooks {
+func NewFederationHooks(store core.RepositoryStorage, monitor *monitoring.PerformanceMonitor, db dynamormcore.DB, logger *zap.Logger) *FederationHooks {
 	return &FederationHooks{
-		tracker: NewRelationshipTracker(store),
+		tracker: NewRelationshipTracker(store, db, logger),
 		monitor: monitor,
 	}
 }
@@ -43,13 +47,15 @@ func (fh *FederationHooks) OnOutboxDelivery(ctx context.Context, delivery *Outbo
 
 	// Record performance metrics if monitor is available
 	if fh.monitor != nil {
-		fh.monitor.RecordFederationPerformance(
+		if err := fh.monitor.RecordFederationPerformance(
 			ctx,
 			delivery.TargetDomain,
 			"outbox_delivery",
 			delivery.ResponseTimeMs,
 			delivery.Success,
-		)
+		); err != nil {
+			zap.L().Warn("failed to record federation performance metrics", zap.Error(err))
+		}
 	}
 
 	return nil
@@ -73,13 +79,15 @@ func (fh *FederationHooks) OnInboxReceive(ctx context.Context, activity *InboxAc
 
 	// Record performance metrics
 	if fh.monitor != nil {
-		fh.monitor.RecordFederationPerformance(
+		if err := fh.monitor.RecordFederationPerformance(
 			ctx,
 			activity.SourceDomain,
 			"inbox_receive",
 			0, // No response time for inbound
 			true,
-		)
+		); err != nil {
+			zap.L().Warn("failed to record federation performance metrics", zap.Error(err))
+		}
 	}
 
 	return nil
@@ -122,13 +130,15 @@ func (fh *FederationHooks) OnConnectionError(ctx context.Context, connError *Con
 
 	// Record error metrics
 	if fh.monitor != nil {
-		fh.monitor.RecordFederationPerformance(
+		if err := fh.monitor.RecordFederationPerformance(
 			ctx,
 			connError.TargetDomain,
 			"connection_error",
 			connError.TimeoutMs,
 			false,
-		)
+		); err != nil {
+			zap.L().Warn("failed to record federation performance metrics", zap.Error(err))
+		}
 	}
 
 	return nil
@@ -146,6 +156,7 @@ func (fh *FederationHooks) GetFederationRecommendations(ctx context.Context, dom
 
 // Hook types for federation events
 
+// OutboxDelivery represents an outbound federation delivery event
 type OutboxDelivery struct {
 	SourceDomain   string
 	TargetDomain   string
@@ -157,6 +168,7 @@ type OutboxDelivery struct {
 	ErrorMessage   string
 }
 
+// InboxActivity represents an inbound federation activity event
 type InboxActivity struct {
 	SourceDomain string
 	TargetDomain string
@@ -166,6 +178,7 @@ type InboxActivity struct {
 	ProcessedAt  time.Time
 }
 
+// InstanceDiscovery represents a discovered federated instance
 type InstanceDiscovery struct {
 	Domain       string
 	DisplayName  string
@@ -177,6 +190,7 @@ type InstanceDiscovery struct {
 	DiscoveredAt time.Time
 }
 
+// ConnectionError represents a federation connection error
 type ConnectionError struct {
 	SourceDomain string
 	TargetDomain string

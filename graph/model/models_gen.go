@@ -10,22 +10,22 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/moderation"
-	"github.com/equaltoai/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // AI Analysis types
 type AIAnalysis struct {
-	ID               string           `json:"id"`
-	ObjectID         string           `json:"objectId"`
-	ObjectType       string           `json:"objectType"`
-	TextAnalysis     *TextAnalysis    `json:"textAnalysis,omitempty"`
-	ImageAnalysis    *ImageAnalysis   `json:"imageAnalysis,omitempty"`
-	AiDetection      *AIDetection     `json:"aiDetection,omitempty"`
-	SpamAnalysis     *SpamAnalysis    `json:"spamAnalysis,omitempty"`
-	OverallRisk      float64          `json:"overallRisk"`
-	ModerationAction ModerationAction `json:"moderationAction"`
-	Confidence       float64          `json:"confidence"`
-	AnalyzedAt       Time             `json:"analyzedAt"`
+	ID               string                    `json:"id"`
+	ObjectID         string                    `json:"objectId"`
+	ObjectType       string                    `json:"objectType"`
+	TextAnalysis     *moderation.TextAnalysis  `json:"textAnalysis,omitempty"`
+	ImageAnalysis    *moderation.ImageAnalysis `json:"imageAnalysis,omitempty"`
+	AiDetection      *AIDetection              `json:"aiDetection,omitempty"`
+	SpamAnalysis     *SpamAnalysis             `json:"spamAnalysis,omitempty"`
+	OverallRisk      float64                   `json:"overallRisk"`
+	ModerationAction ModerationAction          `json:"moderationAction"`
+	Confidence       float64                   `json:"confidence"`
+	AnalyzedAt       Time                      `json:"analyzedAt"`
 }
 
 type AIAnalysisRequest struct {
@@ -500,18 +500,6 @@ type HourlyVolume struct {
 	AvgLatency float64 `json:"avgLatency"`
 }
 
-type ImageAnalysis struct {
-	ModerationLabels []*ModerationLabel `json:"moderationLabels"`
-	IsNsfw           bool               `json:"isNSFW"`
-	NsfwConfidence   float64            `json:"nsfwConfidence"`
-	ViolenceScore    float64            `json:"violenceScore"`
-	WeaponsDetected  bool               `json:"weaponsDetected"`
-	DetectedText     []string           `json:"detectedText"`
-	TextToxicity     float64            `json:"textToxicity"`
-	CelebrityFaces   []*Celebrity       `json:"celebrityFaces"`
-	DeepfakeScore    float64            `json:"deepfakeScore"`
-}
-
 type ImageAnalysisCapabilities struct {
 	NsfwDetection        bool `json:"nsfwDetection"`
 	ViolenceDetection    bool `json:"violenceDetection"`
@@ -661,6 +649,35 @@ type Mention struct {
 	URL      string  `json:"url"`
 }
 
+type MetricsDimension struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type MetricsUpdate struct {
+	MetricID             string              `json:"metricId"`
+	ServiceName          string              `json:"serviceName"`
+	MetricType           string              `json:"metricType"`
+	SubscriptionCategory string              `json:"subscriptionCategory"`
+	AggregationLevel     string              `json:"aggregationLevel"`
+	Timestamp            Time                `json:"timestamp"`
+	Count                int                 `json:"count"`
+	Sum                  float64             `json:"sum"`
+	Min                  float64             `json:"min"`
+	Max                  float64             `json:"max"`
+	Average              float64             `json:"average"`
+	P50                  *float64            `json:"p50,omitempty"`
+	P95                  *float64            `json:"p95,omitempty"`
+	P99                  *float64            `json:"p99,omitempty"`
+	Unit                 *string             `json:"unit,omitempty"`
+	UserCostMicrocents   *int                `json:"userCostMicrocents,omitempty"`
+	TotalCostMicrocents  *int                `json:"totalCostMicrocents,omitempty"`
+	Dimensions           []*MetricsDimension `json:"dimensions"`
+	UserID               *string             `json:"userId,omitempty"`
+	TenantID             *string             `json:"tenantId,omitempty"`
+	InstanceDomain       *string             `json:"instanceDomain,omitempty"`
+}
+
 type ModerationActionCounts struct {
 	None      int `json:"none"`
 	Flag      int `json:"flag"`
@@ -671,15 +688,15 @@ type ModerationActionCounts struct {
 }
 
 type ModerationAlert struct {
-	ID              string             `json:"id"`
-	Severity        ModerationSeverity `json:"severity"`
-	Pattern         *ModerationPattern `json:"pattern,omitempty"`
-	Content         *Object            `json:"content"`
-	MatchedText     string             `json:"matchedText"`
-	Confidence      float64            `json:"confidence"`
-	SuggestedAction ModerationAction   `json:"suggestedAction"`
-	Timestamp       Time               `json:"timestamp"`
-	Handled         bool               `json:"handled"`
+	ID              string                        `json:"id"`
+	Severity        ModerationSeverity            `json:"severity"`
+	Pattern         *moderation.ModerationPattern `json:"pattern,omitempty"`
+	Content         *Object                       `json:"content"`
+	MatchedText     string                        `json:"matchedText"`
+	Confidence      float64                       `json:"confidence"`
+	SuggestedAction ModerationAction              `json:"suggestedAction"`
+	Timestamp       Time                          `json:"timestamp"`
+	Handled         bool                          `json:"handled"`
 }
 
 type ModerationDashboard struct {
@@ -702,13 +719,6 @@ type ModerationEffectiveness struct {
 	F1Score        float64 `json:"f1Score"`
 }
 
-type ModerationFilter struct {
-	Severity   *ModerationSeverity `json:"severity,omitempty"`
-	AssignedTo *string             `json:"assignedTo,omitempty"`
-	Priority   *Priority           `json:"priority,omitempty"`
-	Unhandled  *bool               `json:"unhandled,omitempty"`
-}
-
 type ModerationItem struct {
 	ID          string             `json:"id"`
 	Content     *Object            `json:"content"`
@@ -717,25 +727,6 @@ type ModerationItem struct {
 	Priority    Priority           `json:"priority"`
 	AssignedTo  *activitypub.Actor `json:"assignedTo,omitempty"`
 	Deadline    Time               `json:"deadline"`
-}
-
-type ModerationLabel struct {
-	Name       string  `json:"name"`
-	Confidence float64 `json:"confidence"`
-	ParentName *string `json:"parentName,omitempty"`
-}
-
-type ModerationPattern struct {
-	ID                string             `json:"id"`
-	Pattern           string             `json:"pattern"`
-	Type              PatternType        `json:"type"`
-	Severity          ModerationSeverity `json:"severity"`
-	MatchCount        int                `json:"matchCount"`
-	FalsePositiveRate float64            `json:"falsePositiveRate"`
-	CreatedAt         Time               `json:"createdAt"`
-	UpdatedAt         Time               `json:"updatedAt"`
-	CreatedBy         *activitypub.Actor `json:"createdBy"`
-	Active            bool               `json:"active"`
 }
 
 type ModerationPatternInput struct {
@@ -761,7 +752,8 @@ type ModeratorStats struct {
 	Categories      []*CategoryStats `json:"categories"`
 }
 
-type Mutation struct{}
+type Mutation struct {
+}
 
 type MuteHashtagPayload struct {
 	Success    bool     `json:"success"`
@@ -869,11 +861,11 @@ type PageInfo struct {
 }
 
 type PatternStats struct {
-	Pattern    *ModerationPattern `json:"pattern"`
-	MatchCount int                `json:"matchCount"`
-	Accuracy   float64            `json:"accuracy"`
-	LastMatch  Time               `json:"lastMatch"`
-	Trend      Trend              `json:"trend"`
+	Pattern    *moderation.ModerationPattern `json:"pattern"`
+	MatchCount int                           `json:"matchCount"`
+	Accuracy   float64                       `json:"accuracy"`
+	LastMatch  Time                          `json:"lastMatch"`
+	Trend      Trend                         `json:"trend"`
 }
 
 type PerformanceAlert struct {
@@ -939,7 +931,8 @@ type QualityStats struct {
 	AvgBandwidth float64       `json:"avgBandwidth"`
 }
 
-type Query struct{}
+type Query struct {
+}
 
 type QueryPerformance struct {
 	Query       string   `json:"query"`
@@ -1152,7 +1145,8 @@ type StreamingQualityReport struct {
 	ReportID string        `json:"reportId"`
 }
 
-type Subscription struct{}
+type Subscription struct {
+}
 
 type SyncRepliesPayload struct {
 	Success       bool           `json:"success"`
@@ -1165,17 +1159,6 @@ type SyncThreadPayload struct {
 	Thread      *ThreadContext `json:"thread"`
 	SyncedPosts int            `json:"syncedPosts"`
 	Errors      []string       `json:"errors,omitempty"`
-}
-
-type TextAnalysis struct {
-	Sentiment        Sentiment        `json:"sentiment"`
-	SentimentScores  *SentimentScores `json:"sentimentScores"`
-	ToxicityScore    float64          `json:"toxicityScore"`
-	ToxicityLabels   []string         `json:"toxicityLabels"`
-	ContainsPii      bool             `json:"containsPII"`
-	DominantLanguage string           `json:"dominantLanguage"`
-	Entities         []*Entity        `json:"entities"`
-	KeyPhrases       []string         `json:"keyPhrases"`
 }
 
 type TextAnalysisCapabilities struct {
@@ -1227,9 +1210,9 @@ type TrainingResult struct {
 }
 
 type TrustInput struct {
-	TargetActorID string              `json:"targetActorId"`
-	Category      trust.TrustCategory `json:"category"`
-	Score         float64             `json:"score"`
+	TargetActorID string               `json:"targetActorId"`
+	Category      models.TrustCategory `json:"category"`
+	Score         float64              `json:"score"`
 }
 
 type UnfollowHashtagPayload struct {

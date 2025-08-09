@@ -175,7 +175,7 @@ func (r *AnnouncementRepository) GetAnnouncement(ctx context.Context, id string)
 		Where("PK", "=", fmt.Sprintf("ANNOUNCEMENT#%s", id)).
 		Where("SK", "=", "ANNOUNCEMENT").
 		First(&modelAnnouncement)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
@@ -234,7 +234,7 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 
 	var modelAnnouncements []*models.Announcement
 	err := query.All(&modelAnnouncements)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Return empty slice when no announcements found
@@ -312,11 +312,13 @@ func (r *AnnouncementRepository) UpdateAnnouncement(ctx context.Context, announc
 		CreatedBy:   announcement.CreatedBy,
 	}
 
-	modelAnnouncement.UpdateKeys()
+	if err := modelAnnouncement.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update announcement keys: %w", err)
+	}
 
 	// DynamORM doesn't have Condition method, so we'll use regular Update
 	err := r.db.WithContext(ctx).Model(modelAnnouncement).Update()
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
@@ -331,10 +333,12 @@ func (r *AnnouncementRepository) UpdateAnnouncement(ctx context.Context, announc
 func (r *AnnouncementRepository) DeleteAnnouncement(ctx context.Context, id string) error {
 	// Delete the announcement
 	modelAnnouncement := &models.Announcement{ID: id}
-	modelAnnouncement.UpdateKeys()
+	if err := modelAnnouncement.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update announcement keys for deletion: %w", err)
+	}
 
 	err := r.db.WithContext(ctx).Model(modelAnnouncement).Delete()
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
@@ -350,7 +354,7 @@ func (r *AnnouncementRepository) DeleteAnnouncement(ctx context.Context, id stri
 	err = r.db.WithContext(ctx).Model(&models.AnnouncementReaction{}).
 		Where("PK", "=", fmt.Sprintf("ANNOUNCEMENT_REACTION#%s", id)).
 		All(&reactions)
-	
+
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Warn("failed to query reactions for cleanup",
 			zap.String("announcement_id", id),
@@ -372,7 +376,7 @@ func (r *AnnouncementRepository) DeleteAnnouncement(ctx context.Context, id stri
 	var dismissals []*models.AnnouncementDismissal
 	err = r.db.WithContext(ctx).Model(&models.AnnouncementDismissal{}).
 		All(&dismissals)
-	
+
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Warn("failed to scan dismissals for cleanup",
 			zap.String("announcement_id", id),
@@ -419,7 +423,7 @@ func (r *AnnouncementRepository) IsDismissed(ctx context.Context, username, anno
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("ANNOUNCEMENT_DISMISSED#%s", announcementID)).
 		First(&dismissal)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
@@ -437,7 +441,7 @@ func (r *AnnouncementRepository) GetDismissedAnnouncements(ctx context.Context, 
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "begins_with", "ANNOUNCEMENT_DISMISSED#").
 		All(&dismissals)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Return empty slice when no dismissals found
@@ -467,7 +471,7 @@ func (r *AnnouncementRepository) AddAnnouncementReaction(ctx context.Context, us
 	}
 
 	err := r.db.WithContext(ctx).Model(reaction).Create()
-	
+
 	if err != nil {
 		// If it already exists, that's fine - matches legacy behavior
 		return nil
@@ -483,7 +487,9 @@ func (r *AnnouncementRepository) RemoveAnnouncementReaction(ctx context.Context,
 		AnnouncementID: announcementID,
 		EmojiName:      emojiName,
 	}
-	reaction.UpdateKeys()
+	if err := reaction.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update reaction keys: %w", err)
+	}
 
 	err := r.db.WithContext(ctx).Model(reaction).Delete()
 	if err != nil {
@@ -503,7 +509,7 @@ func (r *AnnouncementRepository) GetAnnouncementReactions(ctx context.Context, a
 	err := r.db.WithContext(ctx).Model(&models.AnnouncementReaction{}).
 		Where("PK", "=", fmt.Sprintf("ANNOUNCEMENT_REACTION#%s", announcementID)).
 		All(&reactions)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Return empty map when no reactions found

@@ -1,3 +1,4 @@
+// Package main implements the objects Lambda function for serving ActivityPub object endpoints.
 package main
 
 import (
@@ -22,10 +23,10 @@ import (
 
 // Handler handles ActivityPub federation object requests
 type Handler struct {
-	db             core.DB
-	objectRepo     *repositories.ObjectRepository
-	logger         *zap.Logger
-	cfg            *config.Config
+	db         core.DB
+	objectRepo *repositories.ObjectRepository
+	logger     *zap.Logger
+	cfg        *config.Config
 }
 
 // NewHandler creates a new objects handler
@@ -108,95 +109,147 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 }
 
 // generateObjectHTML creates HTML representation of an ActivityPub object
-func (h *Handler) generateObjectHTML(objInterface any) string {
-	// Convert to ActivityPub Note if possible
-	var objectType, content, name, summary, attributedTo, id string
-	var published, updated time.Time
-	var sensitive bool
-	var attachments []activitypub.Attachment
-	var tags []activitypub.Tag
+// objectData holds extracted object data for HTML generation
+type objectData struct {
+	objectType   string
+	content      string
+	name         string
+	summary      string
+	attributedTo string
+	id           string
+	published    time.Time
+	updated      time.Time
+	sensitive    bool
+	attachments  []activitypub.Attachment
+	tags         []activitypub.Tag
+}
 
+func (h *Handler) generateObjectHTML(objInterface any) string {
+	data := h.extractObjectData(objInterface)
+	return h.generateHTML(data.objectType, data.content, data.name, data.summary, 
+		data.attributedTo, data.id, data.published, data.updated, 
+		data.sensitive, data.attachments, data.tags)
+}
+
+// extractObjectData extracts data from various object types
+func (h *Handler) extractObjectData(objInterface any) *objectData {
 	// Try to convert to Note first
 	if note, ok := objInterface.(*activitypub.Note); ok {
-		objectType = note.Type
-		content = note.Content
-		id = note.ID
-		attributedTo = note.AttributedTo
-		sensitive = note.Sensitive
-		attachments = note.Attachment
-		tags = note.Tag
-		if note.Published != nil {
-			published = *note.Published
-		}
-		if note.Updated != nil {
-			updated = *note.Updated
-		}
-		// Note: ActivityPub Note doesn't have Name field, only content
-		// name remains empty for Note objects
-		if note.Summary != "" {
-			summary = note.Summary
-		}
-	} else if objMap, ok := objInterface.(map[string]any); ok {
-		// Handle generic object as map
-		if v, ok := objMap["type"].(string); ok {
-			objectType = v
-		}
-		if v, ok := objMap["content"].(string); ok {
-			content = v
-		}
-		if v, ok := objMap["id"].(string); ok {
-			id = v
-		}
-		if v, ok := objMap["attributedTo"].(string); ok {
-			attributedTo = v
-		}
-		if v, ok := objMap["name"].(string); ok {
-			name = v
-		}
-		if v, ok := objMap["summary"].(string); ok {
-			summary = v
-		}
-		if v, ok := objMap["sensitive"].(bool); ok {
-			sensitive = v
-		}
-		// Handle published/updated dates
-		if v, ok := objMap["published"].(time.Time); ok {
-			published = v
-		} else if v, ok := objMap["published"].(string); ok {
-			if t, err := time.Parse(time.RFC3339, v); err == nil {
-				published = t
-			}
-		}
-		if v, ok := objMap["updated"].(time.Time); ok {
-			updated = v
-		} else if v, ok := objMap["updated"].(string); ok {
-			if t, err := time.Parse(time.RFC3339, v); err == nil {
-				updated = t
-			}
-		}
-		// Try to parse attachments and tags from interface
-		if v, ok := objMap["attachment"]; ok {
-			if attBytes, err := json.Marshal(v); err == nil {
-				json.Unmarshal(attBytes, &attachments)
-			}
-		}
-		if v, ok := objMap["tag"]; ok {
-			if tagBytes, err := json.Marshal(v); err == nil {
-				json.Unmarshal(tagBytes, &tags)
-			}
-		}
-	} else {
-		// Fallback for unknown object types
-		objectType = "Object"
-		content = "Unknown object type"
-		id = "unknown"
+		return h.extractNoteData(note)
 	}
+	
+	// Handle generic object as map
+	if objMap, ok := objInterface.(map[string]any); ok {
+		return h.extractMapData(objMap)
+	}
+	
+	// Fallback for unknown object types
+	return &objectData{
+		objectType: "Object",
+		content:    "Unknown object type",
+		id:         "unknown",
+	}
+}
 
-	return h.generateHTML(objectType, content, name, summary, attributedTo, id, published, updated, sensitive, attachments, tags)
+// extractNoteData extracts data from an ActivityPub Note
+func (h *Handler) extractNoteData(note *activitypub.Note) *objectData {
+	data := &objectData{
+		objectType:   note.Type,
+		content:      note.Content,
+		id:           note.ID,
+		attributedTo: note.AttributedTo,
+		sensitive:    note.Sensitive,
+		attachments:  note.Attachment,
+		tags:         note.Tag,
+		summary:      note.Summary,
+	}
+	
+	if note.Published != nil {
+		data.published = *note.Published
+	}
+	if note.Updated != nil {
+		data.updated = *note.Updated
+	}
+	
+	return data
+}
+
+// extractMapData extracts data from a generic map object
+func (h *Handler) extractMapData(objMap map[string]any) *objectData {
+	data := &objectData{}
+	
+	// Extract basic fields
+	h.extractBasicFields(objMap, data)
+	
+	// Extract date fields
+	h.extractDateFields(objMap, data)
+	
+	// Extract complex fields
+	h.extractComplexFields(objMap, data)
+	
+	return data
+}
+
+// extractBasicFields extracts simple string and boolean fields
+func (h *Handler) extractBasicFields(objMap map[string]any, data *objectData) {
+	if v, ok := objMap["type"].(string); ok {
+		data.objectType = v
+	}
+	if v, ok := objMap["content"].(string); ok {
+		data.content = v
+	}
+	if v, ok := objMap["id"].(string); ok {
+		data.id = v
+	}
+	if v, ok := objMap["attributedTo"].(string); ok {
+		data.attributedTo = v
+	}
+	if v, ok := objMap["name"].(string); ok {
+		data.name = v
+	}
+	if v, ok := objMap["summary"].(string); ok {
+		data.summary = v
+	}
+	if v, ok := objMap["sensitive"].(bool); ok {
+		data.sensitive = v
+	}
+}
+
+// extractDateFields extracts and parses date fields
+func (h *Handler) extractDateFields(objMap map[string]any, data *objectData) {
+	data.published = h.parseDateTime(objMap["published"])
+	data.updated = h.parseDateTime(objMap["updated"])
+}
+
+// parseDateTime parses a date/time value from various formats
+func (h *Handler) parseDateTime(value any) time.Time {
+	if t, ok := value.(time.Time); ok {
+		return t
+	}
+	if s, ok := value.(string); ok {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+// extractComplexFields extracts attachments and tags
+func (h *Handler) extractComplexFields(objMap map[string]any, data *objectData) {
+	if v, ok := objMap["attachment"]; ok {
+		if attBytes, err := json.Marshal(v); err == nil {
+			_ = json.Unmarshal(attBytes, &data.attachments)
+		}
+	}
+	if v, ok := objMap["tag"]; ok {
+		if tagBytes, err := json.Marshal(v); err == nil {
+			_ = json.Unmarshal(tagBytes, &data.tags)
+		}
+	}
 }
 
 // generateHTML creates the actual HTML content
-func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo, id string, published, updated time.Time, sensitive bool, attachments []activitypub.Attachment, tags []activitypub.Tag) string {
+func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo, _ string, published, updated time.Time, sensitive bool, attachments []activitypub.Attachment, tags []activitypub.Tag) string {
 	// Generate content based on object type and available fields
 	var htmlContent string
 	if content != "" {
@@ -468,7 +521,7 @@ func main() {
 	})
 
 	// ActivityPub federation endpoint
-	app.GET("/objects/:id", handler.HandleGetObject)
+	_ = app.GET("/objects/:id", handler.HandleGetObject)
 
 	// Start Lambda handler
 	lambda.Start(app.HandleRequest)

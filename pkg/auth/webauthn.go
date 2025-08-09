@@ -187,7 +187,7 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 		ID:              base64.StdEncoding.EncodeToString(credential.ID),
 		UserID:          username,
 		PublicKey:       credential.PublicKey,
-		AttestationType: string(credential.AttestationType),
+		AttestationType: credential.AttestationType,
 		AAGUID:          credential.Authenticator.AAGUID,
 		SignCount:       credential.Authenticator.SignCount,
 		CloneWarning:    credential.Authenticator.CloneWarning,

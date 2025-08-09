@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
-	. "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
+	repoTesting "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -20,7 +20,7 @@ type MockTx struct {
 }
 
 func TestNewTransactionManager(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -33,7 +33,7 @@ func TestNewTransactionManager(t *testing.T) {
 }
 
 func TestNewTransactionalRepository(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 	tableName := "test-table"
@@ -47,7 +47,7 @@ func TestNewTransactionalRepository(t *testing.T) {
 }
 
 func TestTransactionManager_ExecuteTransaction_Success(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -58,7 +58,7 @@ func TestTransactionManager_ExecuteTransaction_Success(t *testing.T) {
 	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil).Run(func(args mock.Arguments) {
 		fn := args.Get(0).(func(*core.Tx) error)
 		mockTx := &core.Tx{}
-		fn(mockTx)
+		_ = fn(mockTx)
 	})
 
 	executed := false
@@ -76,7 +76,7 @@ func TestTransactionManager_ExecuteTransaction_Success(t *testing.T) {
 }
 
 func TestTransactionManager_ExecuteTransaction_Error(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -108,16 +108,16 @@ func TestTransactionContext_OperationCount(t *testing.T) {
 	assert.Equal(t, 0, txCtx.GetOperationCount())
 
 	// These will fail with "not implemented" but should increment counter
-	txCtx.Put(map[string]any{"key": "value"})
+	_ = txCtx.Put(map[string]any{"key": "value"})
 	assert.Equal(t, 1, txCtx.GetOperationCount())
 
-	txCtx.Delete(map[string]any{"key": "value"})
+	_ = txCtx.Delete(map[string]any{"key": "value"})
 	assert.Equal(t, 2, txCtx.GetOperationCount())
 
-	txCtx.Update(map[string]any{"key": "value"})
+	_ = txCtx.Update(map[string]any{"key": "value"})
 	assert.Equal(t, 3, txCtx.GetOperationCount())
 
-	txCtx.ConditionCheck(map[string]any{"key": "value"}, "condition")
+	_ = txCtx.ConditionCheck(map[string]any{"key": "value"}, "condition")
 	assert.Equal(t, 4, txCtx.GetOperationCount())
 }
 
@@ -138,7 +138,7 @@ func TestFollowUserTransactional_ConceptualTest(t *testing.T) {
 	// This is a conceptual test since the actual DynamORM transaction API
 	// is not fully implemented. We test the repository setup and call structure.
 
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -157,7 +157,7 @@ func TestFollowUserTransactional_ConceptualTest(t *testing.T) {
 }
 
 func TestCreateStatusWithChecksTransactional_ConceptualTest(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -181,7 +181,7 @@ func TestCreateStatusWithChecksTransactional_ConceptualTest(t *testing.T) {
 }
 
 func TestTransferOwnershipTransactional_ConceptualTest(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -287,7 +287,7 @@ func TestIsRetryableError(t *testing.T) {
 // Benchmark tests for performance validation
 
 func BenchmarkTransactionManager_ExecuteTransaction(b *testing.B) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 
@@ -299,7 +299,7 @@ func BenchmarkTransactionManager_ExecuteTransaction(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		tm.ExecuteTransaction(ctx, func(txCtx *TransactionContext) error {
+		_ = tm.ExecuteTransaction(ctx, func(txCtx *TransactionContext) error {
 			// Simulate some work
 			txCtx.operationsCnt++
 			return nil
@@ -318,9 +318,9 @@ func BenchmarkTransactionContext_Operations(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// These will error but we're measuring the overhead
-		txCtx.Put(item)
-		txCtx.Delete(item)
-		txCtx.Update(item)
-		txCtx.ConditionCheck(item, "condition")
+		_ = txCtx.Put(item)
+		_ = txCtx.Delete(item)
+		_ = txCtx.Update(item)
+		_ = txCtx.ConditionCheck(item, "condition")
 	}
 }

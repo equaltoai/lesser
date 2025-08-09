@@ -9,7 +9,7 @@ type WebAuthnCredential struct {
 	// DynamoDB keys - MUST match legacy exactly
 	PK string `dynamorm:"pk" json:"-"` // USER#username
 	SK string `dynamorm:"sk" json:"-"` // WEBAUTHN_CRED#credentialID
-	
+
 	// Core fields from legacy storage.WebAuthnCredential
 	ID              string    `json:"id"`
 	UserID          string    `json:"user_id"`
@@ -23,14 +23,14 @@ type WebAuthnCredential struct {
 	CreatedAt       time.Time `json:"created_at"`
 	LastUsedAt      time.Time `json:"last_used_at"`
 	Name            string    `json:"name"` // User-friendly name
-	
+
 	// Additional fields for DynamoDB queries
 	Type string `json:"Type"` // "WebAuthnCredential"
 }
 
 // TableName returns the DynamoDB table name
 func (WebAuthnCredential) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the keys before creating
@@ -38,14 +38,14 @@ func (w *WebAuthnCredential) BeforeCreate() error {
 	w.PK = "USER#" + w.UserID
 	w.SK = "WEBAUTHN_CRED#" + w.ID
 	w.Type = "WebAuthnCredential"
-	
+
 	if w.CreatedAt.IsZero() {
 		w.CreatedAt = time.Now()
 	}
 	if w.LastUsedAt.IsZero() {
 		w.LastUsedAt = w.CreatedAt
 	}
-	
+
 	return nil
 }
 

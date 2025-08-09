@@ -34,7 +34,6 @@ func (s *Service) CreateNote(ctx context.Context, note *CommunityNote) error {
 	return s.StoreNote(ctx, note)
 }
 
-
 // VoteOnNote records a vote on a note
 func (s *Service) VoteOnNote(ctx context.Context, vote *Vote) error {
 	return s.StoreVote(ctx, vote)
@@ -72,7 +71,7 @@ func (s *Service) CheckRateLimit(ctx context.Context, userID string, reputation 
 func (s *Service) StoreNote(ctx context.Context, note *CommunityNote) error {
 	// Convert to storage note
 	storageNote := convertToStorageNote(note)
-	
+
 	// Create note using storage adapter
 	err := s.storage.CommunityNote().CreateCommunityNote(ctx, storageNote)
 	if err != nil {
@@ -111,7 +110,7 @@ func (s *Service) GetVisibleNotes(ctx context.Context, objectID string) ([]Commu
 func (s *Service) StoreVote(ctx context.Context, vote *Vote) error {
 	// Convert to storage vote
 	storageVote := convertToStorageVote(vote)
-	
+
 	// Create vote using storage
 	err := s.storage.CommunityNote().CreateCommunityNoteVote(ctx, storageVote)
 	if err != nil {
@@ -142,7 +141,7 @@ func (s *Service) GetUserVotes(ctx context.Context, userID string, noteIDs []str
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user votes: %w", err)
 	}
-	
+
 	// Convert to notes.Vote
 	userVotes := make(map[string]Vote)
 	for noteID, vote := range storageVotes {
@@ -182,11 +181,21 @@ func (s *Service) UpdateNoteScore(ctx context.Context, noteID string, score floa
 func (s *Service) CheckNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int) {
 	// Get user's note count in the last 24 hours
 	// Since we don't have this method on CommunityNote repository, we'll use GetNotesByAuthor
-	notes, err := s.GetNotesByAuthor(ctx, userID, int32(limit+1))
+	// Safe conversion with bounds check
+	queryLimit := limit + 1
+	var queryLimit32 int32
+	if queryLimit > int(^int32(0)) {
+		queryLimit32 = ^int32(0) // Max int32
+	} else if queryLimit < 0 {
+		queryLimit32 = 0
+	} else {
+		queryLimit32 = int32(queryLimit)
+	}
+	notes, err := s.GetNotesByAuthor(ctx, userID, queryLimit32)
 	if err != nil {
 		return false, 0
 	}
-	
+
 	// Count notes from last 24 hours
 	cutoff := time.Now().Add(-24 * time.Hour)
 	count := 0
@@ -195,7 +204,7 @@ func (s *Service) CheckNoteRateLimit(ctx context.Context, userID string, limit i
 			count++
 		}
 	}
-	
+
 	// Check if under limit
 	return count < limit, limit - count
 }

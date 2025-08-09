@@ -28,7 +28,6 @@ type RouteManager interface {
 	GetCircuitStatus(instanceID string) types.CircuitStatus
 }
 
-
 // RouteSelector implements routing algorithms
 type RouteSelector interface {
 	SelectBestRoute(routes []*types.Route, options types.SelectionOptions) (*types.Route, error)
@@ -78,7 +77,6 @@ type DeliveryQueue interface {
 	GetQueueDepth() (int64, error)
 	GetQueueMetrics() (*types.QueueMetrics, error)
 }
-
 
 // RouteOptimizer optimizes routing decisions
 type RouteOptimizer interface {

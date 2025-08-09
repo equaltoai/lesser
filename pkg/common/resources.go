@@ -18,6 +18,7 @@ type LambdaResourceMonitor struct {
 	checkpoints   []ResourceCheckpoint
 }
 
+// ResourceCheckpoint represents a point-in-time snapshot of resource usage
 type ResourceCheckpoint struct {
 	Timestamp   time.Time
 	MemoryUsed  uint64

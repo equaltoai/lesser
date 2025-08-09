@@ -111,9 +111,9 @@ func (b *PatternRepositoryBridge) GetPattern(ctx context.Context, patternID stri
 // GetPatterns retrieves patterns based on filter criteria
 func (b *PatternRepositoryBridge) GetPatterns(ctx context.Context, filter PatternFilter) ([]*ModerationPattern, error) {
 	// Use the storage layer to get patterns
-	storagePatterns, err := b.storage.Moderation().GetModerationPatterns(ctx, 
-		filter.Active != nil && *filter.Active, 
-		string(filter.Severity), 
+	storagePatterns, err := b.storage.Moderation().GetModerationPatterns(ctx,
+		filter.Active != nil && *filter.Active,
+		string(filter.Severity),
 		100) // Default limit
 	if err != nil {
 		return nil, err

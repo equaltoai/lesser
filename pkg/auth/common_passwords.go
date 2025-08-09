@@ -1,3 +1,4 @@
+// Package auth provides common password validation and security utilities for authentication.
 package auth
 
 import "strings"

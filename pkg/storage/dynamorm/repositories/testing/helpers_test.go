@@ -428,7 +428,7 @@ func BenchmarkMockRepository_Create(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		user := &models.User{Username: fmt.Sprintf("user%d", i)}
-		repo.Create(ctx, user)
+		_ = repo.Create(ctx, user)
 	}
 }
 

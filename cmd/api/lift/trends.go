@@ -21,12 +21,12 @@ func (h *Handler) HandleGetTrendsLift(ctx *lift.Context) error {
 	// Get limit from query params, default to 10
 	limit := 10
 	limitStr := ctx.Query("limit")
-	
+
 	// Fallback to direct query param access if ctx.Query doesn't work
 	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
-	
+
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 40 {
 			limit = l
@@ -52,12 +52,12 @@ func (h *Handler) HandleGetTrendingStatusesLift(ctx *lift.Context) error {
 	// Get limit from query params, default to 20
 	limit := 20
 	limitStr := ctx.Query("limit")
-	
+
 	// Fallback to direct query param access if ctx.Query doesn't work
 	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
-	
+
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 40 {
 			limit = l
@@ -95,12 +95,12 @@ func (h *Handler) HandleGetTrendingTagsLift(ctx *lift.Context) error {
 	// Get limit from query params, default to 10
 	limit := 10
 	limitStr := ctx.Query("limit")
-	
+
 	// Fallback to direct query param access if ctx.Query doesn't work
 	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
-	
+
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 20 {
 			limit = l
@@ -146,12 +146,12 @@ func (h *Handler) HandleGetTrendingLinksLift(ctx *lift.Context) error {
 	// Get limit from query params, default to 10
 	limit := 10
 	limitStr := ctx.Query("limit")
-	
+
 	// Fallback to direct query param access if ctx.Query doesn't work
 	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
-	
+
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 20 {
 			limit = l
@@ -194,12 +194,12 @@ func (h *Handler) HandleGetTrendingLinksLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetLinkTimelineLift(ctx *lift.Context) error {
 	// Extract URL from query params
 	url := ctx.Query("url")
-	
+
 	// Fallback to direct query param access if ctx.Query doesn't work
 	if url == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		url = ctx.Request.Request.QueryParams["url"]
 	}
-	
+
 	if url == "" {
 		return ctx.Status(400).JSON(map[string]string{"error": "URL parameter required"})
 	}

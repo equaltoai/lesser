@@ -44,8 +44,8 @@ func (s *SocialRecoveryRequest) UpdateKeys() {
 	}
 
 	// GSI2: For querying pending requests by username
-	if s.Status == "pending" {
-		s.GSI2PK = fmt.Sprintf("USER#%s", s.Username)
+	if s.Status == StatusPending {
+		s.GSI2PK = fmt.Sprintf(KeyPatternUser, s.Username)
 		s.GSI2SK = fmt.Sprintf("RECOVERY#%s", s.InitiatedAt.Format(time.RFC3339))
 	} else {
 		// Clear GSI2 keys when not pending
@@ -62,20 +62,20 @@ func (s *SocialRecoveryRequest) AddVote(trusteeID string) bool {
 	if s.ReceivedVotes == nil {
 		s.ReceivedVotes = make(map[string]bool)
 	}
-	
+
 	// Check if already voted
 	if s.ReceivedVotes[trusteeID] {
 		return false
 	}
-	
+
 	s.ReceivedVotes[trusteeID] = true
-	
+
 	// Check if we have enough votes
 	if s.GetVoteCount() >= s.RequiredVotes {
 		s.Status = "approved"
 		s.UpdateKeys()
 	}
-	
+
 	return true
 }
 
@@ -97,7 +97,7 @@ func (s *SocialRecoveryRequest) IsExpired() bool {
 
 // IsActive checks if the recovery request is still active
 func (s *SocialRecoveryRequest) IsActive() bool {
-	return s.Status == "pending" && !s.IsExpired()
+	return s.Status == StatusPending && !s.IsExpired()
 }
 
 // Cancel cancels the recovery request

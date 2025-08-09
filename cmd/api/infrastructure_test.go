@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/cost"
 	liftPkg "github.com/equaltoai/lesser/pkg/lift"
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap/zaptest"
@@ -33,9 +33,9 @@ func TestInfrastructureIntegration(t *testing.T) {
 			// Create app using factory
 			app := liftPkg.NewHTTPApp(config, logger)
 			assert.NotNil(t, app)
-			
+
 			// Verify app can handle requests
-			app.GET("/test", func(ctx *lift.Context) error {
+			_ = app.GET("/test", func(ctx *lift.Context) error {
 				return ctx.JSON(map[string]string{"status": "ok"})
 			})
 		})
@@ -60,21 +60,21 @@ func TestInfrastructureIntegration(t *testing.T) {
 
 			// Create a test handler that verifies cost tracking
 			testComplete := false
-			app.GET("/test", func(ctx *lift.Context) error {
+			_ = app.GET("/test", func(ctx *lift.Context) error {
 				// Verify cost tracker is available
 				tracker := liftPkg.GetCostTracker(ctx)
 				assert.NotNil(t, tracker)
 
 				// Track some operations
 				liftPkg.TrackCost(ctx, func(t *cost.Tracker) {
-					t.TrackDynamoRead(5)
-					t.TrackDynamoWrite(2)
+					_ = t.TrackDynamoRead(5)
+					_ = t.TrackDynamoWrite(2)
 				})
 
 				testComplete = true
 				return ctx.JSON(map[string]string{"status": "ok"})
 			})
-			
+
 			// Simulate a request using the handler directly
 			ctx := &lift.Context{
 				Request: &lift.Request{
@@ -86,7 +86,7 @@ func TestInfrastructureIntegration(t *testing.T) {
 					Headers:    make(map[string]string),
 				},
 			}
-			
+
 			// The app should have set up cost tracking
 			assert.True(t, testComplete || true, "Handler should process")
 			_ = ctx // Suppress unused
@@ -96,12 +96,12 @@ func TestInfrastructureIntegration(t *testing.T) {
 	t.Run("Middleware", func(t *testing.T) {
 		t.Run("EnhancedLoggingMiddleware", func(t *testing.T) {
 			app := lift.New()
-			
-			// Add enhanced logging middleware
-			app.Use(createEnhancedLoggingMiddleware(logger))
-			
+
+			// Add logging middleware
+			app.Use(createLoggingMiddleware(logger))
+
 			// Add test handler
-			app.GET("/test", func(ctx *lift.Context) error {
+			_ = app.GET("/test", func(ctx *lift.Context) error {
 				// Verify logger is in context
 				contextLogger := GetLogger(ctx)
 				assert.NotNil(t, contextLogger)
@@ -118,22 +118,19 @@ func TestInfrastructureIntegration(t *testing.T) {
 
 	t.Run("Authentication", func(t *testing.T) {
 		t.Run("AuthMiddlewareStructure", func(t *testing.T) {
-			// Verify auth middleware can be created
-			authMiddleware := createAuthMiddleware()
-			assert.NotNil(t, authMiddleware)
-			
-			adminMiddleware := createAdminMiddleware()
-			assert.NotNil(t, adminMiddleware)
+			// Auth middleware is handled directly in handlers via h.authMiddleware
+			// No longer using createAuthMiddleware/createAdminMiddleware functions
+			t.Skip("Auth middleware functions removed - auth handled in handlers")
 		})
 
 		t.Run("ClaimsHelpers", func(t *testing.T) {
 			// Create a mock context with claims
 			ctx := &lift.Context{}
-			
+
 			// Test without claims
 			username := liftPkg.GetOptionalUsername(ctx)
 			assert.Empty(t, username)
-			
+
 			// Test with claims
 			claims := &auth.EnhancedClaims{
 				Claims: auth.Claims{
@@ -145,13 +142,13 @@ func TestInfrastructureIntegration(t *testing.T) {
 			}
 			ctx.Set("claims", claims)
 			ctx.Set("username", claims.Username)
-			
+
 			username = liftPkg.GetOptionalUsername(ctx)
 			assert.Equal(t, "testuser", username)
-			
+
 			// Test IsAuthenticated
 			assert.True(t, liftPkg.IsAuthenticated(ctx))
-			
+
 			// Test HasScope
 			assert.True(t, liftPkg.HasScope(ctx, "read"))
 			assert.False(t, liftPkg.HasScope(ctx, "admin"))
@@ -161,7 +158,7 @@ func TestInfrastructureIntegration(t *testing.T) {
 	t.Run("LegacyHandlerWrapper", func(t *testing.T) {
 		t.Run("WrapsHandlerCorrectly", func(t *testing.T) {
 			// Create a legacy handler
-			legacyHandler := func(ctx context.Context, req events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+			legacyHandler := func(_ context.Context, _ events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 				return &events.APIGatewayV2HTTPResponse{
 					StatusCode: 200,
 					Body:       `{"message": "success"}`,
@@ -174,7 +171,7 @@ func TestInfrastructureIntegration(t *testing.T) {
 			assert.NotNil(t, liftHandler)
 
 			// Test with path parameter wrapper
-			paramHandler := func(ctx context.Context, req events.APIGatewayV2HTTPRequest, id string) (*events.APIGatewayV2HTTPResponse, error) {
+			paramHandler := func(_ context.Context, _ events.APIGatewayV2HTTPRequest, id string) (*events.APIGatewayV2HTTPResponse, error) {
 				return &events.APIGatewayV2HTTPResponse{
 					StatusCode: 200,
 					Body:       `{"id": "` + id + `"}`,
@@ -192,11 +189,11 @@ func TestInfrastructureIntegration(t *testing.T) {
 			// Test tenant resolution from header
 			ctx := &lift.Context{}
 			ctx.Set("tenant_id", "tenant-123")
-			
+
 			tenantID, err := liftPkg.GetTenantID(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, "tenant-123", tenantID)
-			
+
 			// Test tenant context creation
 			tenantCtx, err := liftPkg.GetTenantContext(ctx)
 			assert.NoError(t, err)
@@ -208,7 +205,7 @@ func TestInfrastructureIntegration(t *testing.T) {
 		t.Run("PaginationExtraction", func(t *testing.T) {
 			// Create a mock context with query parameters
 			req := httptest.NewRequest("GET", "/test?limit=50&offset=100", nil)
-			
+
 			// Create lift context with query params
 			ctx := &lift.Context{
 				Request: &lift.Request{
@@ -218,12 +215,12 @@ func TestInfrastructureIntegration(t *testing.T) {
 					},
 				},
 			}
-			
+
 			// Extract pagination
 			params := liftPkg.GetPaginationParams(ctx)
 			assert.Equal(t, 50, params.Limit)
 			assert.Equal(t, 100, params.Offset)
-			
+
 			_ = req // Suppress unused variable warning
 		})
 	})
@@ -238,10 +235,10 @@ func TestInfrastructureIntegration(t *testing.T) {
 					Body:       &bytes.Buffer{},
 				},
 			}
-			
+
 			err := liftPkg.RespondWithError(ctx1, 400, "INVALID_INPUT", "Invalid input provided")
 			assert.NoError(t, err)
-			
+
 			// Test success response creation with fresh context
 			ctx2 := &lift.Context{
 				Response: &lift.Response{
@@ -250,7 +247,7 @@ func TestInfrastructureIntegration(t *testing.T) {
 					Body:       &bytes.Buffer{},
 				},
 			}
-			
+
 			err = liftPkg.RespondWithSuccess(ctx2, map[string]string{"id": "123"}, "Created successfully")
 			assert.NoError(t, err)
 		})
@@ -263,7 +260,7 @@ func TestInfrastructureIntegration(t *testing.T) {
 func TestMainFunctionIntegration(t *testing.T) {
 	// This test verifies that our main.go changes work correctly
 	// by checking that all the global variables are initialized
-	
+
 	t.Run("GlobalsInitialized", func(t *testing.T) {
 		// After init() runs, these should all be set
 		assert.NotNil(t, cfg)
@@ -276,4 +273,3 @@ func TestMainFunctionIntegration(t *testing.T) {
 	})
 }
 */
-

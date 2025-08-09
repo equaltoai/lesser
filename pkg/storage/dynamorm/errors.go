@@ -209,10 +209,10 @@ func MapRepositoryError(err error, operation, entityType, entityID string) error
 	if err == nil {
 		return nil
 	}
-	
+
 	// Map the error first
 	mappedErr := MapError(err)
-	
+
 	// Create detailed error
 	return NewDetailedError(mappedErr, operation, entityType, entityID, "")
 }

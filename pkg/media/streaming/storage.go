@@ -6,8 +6,10 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,8 +28,8 @@ type S3MediaStorage struct {
 	client               *s3.Client
 	bucket               string
 	region               string
-	db                   core.DB                          // DynamORM client for metadata storage
-	metaCache            sync.Map                         // Cache for metadata
+	db                   core.DB  // DynamORM client for metadata storage
+	metaCache            sync.Map // Cache for metadata
 	cloudfrontDomain     string
 	cloudfrontKeyPairID  string
 	cloudfrontPrivateKey *rsa.PrivateKey
@@ -84,7 +86,7 @@ func (s *S3MediaStorage) GetMediaMetadata(mediaID string) (*MediaMetadata, error
 	// Fetch from DynamoDB using DynamORM
 	ctx := context.Background()
 	var metadataModel models.MediaMetadata
-	
+
 	err := s.db.WithContext(ctx).Model(&models.MediaMetadata{}).
 		Where("PK", "=", fmt.Sprintf("MEDIA#%s", mediaID)).
 		Where("SK", "=", "METADATA").
@@ -315,7 +317,7 @@ func (s *S3MediaStorage) getSegmentURL(s3Key string) string {
 	if s.urlSigner != nil && s.cloudfrontDomain != "" {
 		return s.generateCloudFrontURL(s3Key)
 	}
-	
+
 	// Fallback to S3 direct URL
 	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", s.bucket, s.region, s3Key)
 }
@@ -404,8 +406,13 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 	var err error
 
 	if cfPrivateKeyPath != "" {
+		// Validate the file path to prevent directory traversal
+		cleanPath := filepath.Clean(cfPrivateKeyPath)
+		if !filepath.IsAbs(cleanPath) || strings.Contains(cleanPath, "..") {
+			return fmt.Errorf("invalid CloudFront private key path: %s", cfPrivateKeyPath)
+		}
 		// Load from file path
-		privateKeyPEM, err = os.ReadFile(cfPrivateKeyPath)
+		privateKeyPEM, err = os.ReadFile(cleanPath)
 		if err != nil {
 			return fmt.Errorf("failed to read CloudFront private key file: %w", err)
 		}
@@ -533,4 +540,60 @@ func convertQualitySettingsFromStreaming(settings map[Quality]QualityCodecInfo) 
 		}
 	}
 	return result
+}
+
+// GetKeyframeData retrieves keyframe/I-frame data for a media item at a specific quality level
+func (s *S3MediaStorage) GetKeyframeData(mediaID string, quality Quality) ([]byte, error) {
+	ctx := context.Background()
+	
+	// Construct the S3 key for keyframe data
+	// Keyframe data is typically stored alongside the media segments
+	keyframeKey := fmt.Sprintf("media/%s/%s/keyframes.json", mediaID, quality)
+	
+	// First, check if explicit keyframe data exists
+	getInput := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(keyframeKey),
+	}
+	
+	result, err := s.client.GetObject(ctx, getInput)
+	if err != nil {
+		// If keyframe data doesn't exist, check for I-frame playlist
+		if strings.Contains(err.Error(), "NoSuchKey") || strings.Contains(err.Error(), "NotFound") {
+			// Try to get I-frame playlist instead
+			iframeKey := fmt.Sprintf("media/%s/%s/iframe.m3u8", mediaID, quality)
+			iframeInput := &s3.GetObjectInput{
+				Bucket: aws.String(s.bucket),
+				Key:    aws.String(iframeKey),
+			}
+			
+			iframeResult, iframeErr := s.client.GetObject(ctx, iframeInput)
+			if iframeErr != nil {
+				// If neither exists, return nil (no keyframe data available)
+				if strings.Contains(iframeErr.Error(), "NoSuchKey") || strings.Contains(iframeErr.Error(), "NotFound") {
+					return nil, nil
+				}
+				return nil, fmt.Errorf("failed to get keyframe data: %w", iframeErr)
+			}
+			defer func() { _ = iframeResult.Body.Close() }()
+			
+			// Read I-frame playlist data
+			iframeData, readErr := io.ReadAll(iframeResult.Body)
+			if readErr != nil {
+				return nil, fmt.Errorf("failed to read I-frame playlist: %w", readErr)
+			}
+			
+			return iframeData, nil
+		}
+		return nil, fmt.Errorf("failed to get keyframe data: %w", err)
+	}
+	defer func() { _ = result.Body.Close() }()
+	
+	// Read keyframe data
+	keyframeData, readErr := io.ReadAll(result.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read keyframe data: %w", readErr)
+	}
+	
+	return keyframeData, nil
 }

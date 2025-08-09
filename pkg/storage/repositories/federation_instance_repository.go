@@ -312,7 +312,7 @@ func (r *FederationInstanceRepository) storeHealthHistory(ctx context.Context, i
 // GetHealthHistory retrieves health history for an instance
 func (r *FederationInstanceRepository) GetHealthHistory(ctx context.Context, instanceID string, duration time.Duration) ([]*types.HealthStatus, error) {
 	since := time.Now().Add(-duration)
-	
+
 	var historyModels []models.FederationInstanceRegistryHealthHistory
 	err := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistryHealthHistory{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", instanceID)).
@@ -332,7 +332,7 @@ func (r *FederationInstanceRepository) GetHealthHistory(ctx context.Context, ins
 }
 
 // ListAllInstances returns all instances with pagination
-func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, limit int, startKey map[string]interface{}) ([]*types.Instance, map[string]interface{}, error) {
+func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, limit int, _ map[string]interface{}) ([]*types.Instance, map[string]interface{}, error) {
 	var instances []models.FederationInstanceRegistry
 	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Where("SK", "=", "METADATA")
@@ -372,21 +372,21 @@ func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, lim
 // toModel converts a types.Instance to a models.FederationInstanceRegistry
 func (r *FederationInstanceRepository) toModel(instance *types.Instance) *models.FederationInstanceRegistry {
 	model := &models.FederationInstanceRegistry{
-		ID:             instance.ID,
-		Domain:         instance.Domain,
-		InboxURL:       instance.InboxURL,
-		SharedInboxURL: instance.SharedInboxURL,
-		PublicKeyPEM:   instance.PublicKeyPEM,
-		Status:         string(instance.Status),
-		LastSeen:       instance.LastSeen,
-		RegisteredAt:   instance.RegisteredAt,
+		ID:              instance.ID,
+		Domain:          instance.Domain,
+		InboxURL:        instance.InboxURL,
+		SharedInboxURL:  instance.SharedInboxURL,
+		PublicKeyPEM:    instance.PublicKeyPEM,
+		Status:          string(instance.Status),
+		LastSeen:        instance.LastSeen,
+		RegisteredAt:    instance.RegisteredAt,
 		AvgResponseTime: instance.AvgResponseTime.Milliseconds(),
-		SuccessRate:    instance.SuccessRate,
-		ErrorRate:      instance.ErrorRate,
-		TierLevel:      string(instance.TierLevel),
-		MonthlyQuota:   instance.MonthlyQuota,
-		CurrentUsage:   instance.CurrentUsage,
-		MaxMessageSize: instance.MaxMessageSize,
+		SuccessRate:     instance.SuccessRate,
+		ErrorRate:       instance.ErrorRate,
+		TierLevel:       string(instance.TierLevel),
+		MonthlyQuota:    instance.MonthlyQuota,
+		CurrentUsage:    instance.CurrentUsage,
+		MaxMessageSize:  instance.MaxMessageSize,
 	}
 
 	// Convert supported types
@@ -415,21 +415,21 @@ func (r *FederationInstanceRepository) toModel(instance *types.Instance) *models
 // fromModel converts a models.FederationInstanceRegistry to a types.Instance
 func (r *FederationInstanceRepository) fromModel(model *models.FederationInstanceRegistry) *types.Instance {
 	instance := &types.Instance{
-		ID:             model.ID,
-		Domain:         model.Domain,
-		InboxURL:       model.InboxURL,
-		SharedInboxURL: model.SharedInboxURL,
-		PublicKeyPEM:   model.PublicKeyPEM,
-		Status:         types.InstanceStatus(model.Status),
-		LastSeen:       model.LastSeen,
-		RegisteredAt:   model.RegisteredAt,
+		ID:              model.ID,
+		Domain:          model.Domain,
+		InboxURL:        model.InboxURL,
+		SharedInboxURL:  model.SharedInboxURL,
+		PublicKeyPEM:    model.PublicKeyPEM,
+		Status:          types.InstanceStatus(model.Status),
+		LastSeen:        model.LastSeen,
+		RegisteredAt:    model.RegisteredAt,
 		AvgResponseTime: time.Duration(model.AvgResponseTime) * time.Millisecond,
-		SuccessRate:    model.SuccessRate,
-		ErrorRate:      model.ErrorRate,
-		TierLevel:      types.TierLevel(model.TierLevel),
-		MonthlyQuota:   model.MonthlyQuota,
-		CurrentUsage:   model.CurrentUsage,
-		MaxMessageSize: model.MaxMessageSize,
+		SuccessRate:     model.SuccessRate,
+		ErrorRate:       model.ErrorRate,
+		TierLevel:       types.TierLevel(model.TierLevel),
+		MonthlyQuota:    model.MonthlyQuota,
+		CurrentUsage:    model.CurrentUsage,
+		MaxMessageSize:  model.MaxMessageSize,
 	}
 
 	// Convert supported types

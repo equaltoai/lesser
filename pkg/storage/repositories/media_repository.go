@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaRepository handles media and media job operations using DynamORM
@@ -52,7 +53,7 @@ func (r *MediaRepository) GetMediaJob(ctx context.Context, jobID string) (*model
 		Where("PK", "=", fmt.Sprintf("JOB#%s", jobID)).
 		Where("SK", "=", fmt.Sprintf("JOB#%s", jobID)).
 		First(&job)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("media job not found: %s", jobID)
@@ -273,7 +274,7 @@ func (r *MediaRepository) GetUserMedia(ctx context.Context, username string) ([]
 
 // UpdateMediaAttachment updates a media attachment (for interface compatibility)
 func (r *MediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error {
-	r.logger.Debug("updating media attachment", 
+	r.logger.Debug("updating media attachment",
 		zap.String("media_id", mediaID),
 		zap.Any("updates", updates))
 
@@ -288,21 +289,21 @@ func (r *MediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID str
 		case "description":
 			if desc, ok := value.(string); ok {
 				media.Description = desc
-				r.logger.Debug("updated media description", 
+				r.logger.Debug("updated media description",
 					zap.String("media_id", mediaID),
 					zap.String("description", desc))
 			}
 		case "focus":
 			if focus, ok := value.(string); ok {
 				media.Focus = focus
-				r.logger.Debug("updated media focus", 
+				r.logger.Debug("updated media focus",
 					zap.String("media_id", mediaID),
 					zap.String("focus", focus))
 			}
 		case "sensitive":
 			if sensitive, ok := value.(bool); ok {
 				media.IsNSFW = sensitive
-				r.logger.Debug("updated media sensitivity", 
+				r.logger.Debug("updated media sensitivity",
 					zap.String("media_id", mediaID),
 					zap.Bool("is_nsfw", sensitive))
 			}
@@ -371,7 +372,7 @@ func (r *MediaRepository) GetUserMediaConfig(ctx context.Context, userID string)
 }
 
 // GetUserMediaConfigByUsername retrieves a user's media configuration by username
-func (r *MediaRepository) GetUserMediaConfigByUsername(ctx context.Context, username string) (*models.UserMediaConfig, error) {
+func (r *MediaRepository) GetUserMediaConfigByUsername(_ context.Context, username string) (*models.UserMediaConfig, error) {
 	r.logger.Debug("getting user media config by username", zap.String("username", username))
 
 	// For this method, we'd need to either:
@@ -572,8 +573,8 @@ func (r *MediaRepository) AddSpendingTransaction(ctx context.Context, transactio
 	}
 
 	// Determine the period based on the transaction timestamp
-	period := transaction.CreatedAt.Format("2006-01") // Monthly period
-	periodType := "monthly"
+	period := transaction.CreatedAt.Format(common.MonthFormat) // Monthly period
+	periodType := PeriodMonthly
 
 	// Get or create the spending record
 	spending, err := r.GetOrCreateMediaSpending(ctx, transaction.UserID, period, periodType)

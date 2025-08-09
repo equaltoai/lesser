@@ -31,7 +31,7 @@ type OAuthState struct {
 func (o *OAuthState) UpdateKeys() {
 	if o.State != "" {
 		o.PK = fmt.Sprintf("OAUTH_STATE#%s", o.State)
-		o.SK = "STATE"
+		o.SK = SKState
 	}
 
 	// Set TTL for DynamoDB

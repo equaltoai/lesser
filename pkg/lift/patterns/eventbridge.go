@@ -35,7 +35,7 @@ func NewEventBridgeProcessor(eventName string, handler EventBridgeHandler, logge
 // RegisterEventBridge registers an EventBridge handler with a Lift app
 func RegisterEventBridge(app *lift.App, processor *EventBridgeProcessor) {
 	// EventBridge events don't have native Lift support, so we handle the raw Lambda event
-	app.Handle("POST", "/", func(ctx *lift.Context) error {
+	_ = app.Handle("POST", "/", func(ctx *lift.Context) error {
 		// Extract the raw event from context
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
@@ -139,7 +139,7 @@ func NewScheduledEventAdapter(handler ScheduledEventHandler) EventBridgeHandler 
 }
 
 // HandleEvent implements EventBridgeHandler by calling the scheduled handler
-func (a *ScheduledEventAdapter) HandleEvent(ctx *lift.Context, event events.CloudWatchEvent) error {
+func (a *ScheduledEventAdapter) HandleEvent(ctx *lift.Context, _ events.CloudWatchEvent) error {
 	// For scheduled events, we typically don't need the event details
 	// The schedule itself is configured in infrastructure
 	return a.handler.HandleScheduledEvent(ctx)

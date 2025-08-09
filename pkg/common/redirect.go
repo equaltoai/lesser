@@ -15,6 +15,7 @@ var allowedRedirectHosts = map[string]bool{
 	"auth.lesser.example.com": true,
 }
 
+// ValidateRedirectURL validates that a redirect URL is safe and allowed
 func ValidateRedirectURL(redirectURL string, currentHost string) error {
 	if redirectURL == "" {
 		return fmt.Errorf("redirect URL cannot be empty")

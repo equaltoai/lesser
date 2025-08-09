@@ -1,6 +1,6 @@
 # Notification Processor
 
-The notification-processor is a Phase 2 Lambda function that handles the delivery of notifications across multiple channels including email, push notifications, and WebSocket connections.
+The notification-processor is a Phase 2 Lambda function that handles the delivery of notifications across supported channels: push notifications and WebSocket connections.
 
 ## Overview
 
@@ -16,12 +16,6 @@ The notification processor follows the established DynamORM patterns used throug
 - **Cost Tracking**: Tracks delivery costs for each channel
 
 ## Delivery Channels
-
-### Email Delivery
-- Uses AWS SES for email delivery
-- Supports both HTML and text email formats
-- Includes unsubscribe links and proper formatting
-- Cost: ~$0.001 per email
 
 ### Push Notifications
 - Uses AWS SNS for push delivery to mobile devices
@@ -43,7 +37,7 @@ The processor expects SQS messages with the following JSON format:
 {
   "notification_id": "notif_123456",
   "user_id": "user_789",
-  "channels": ["email", "push", "websocket"],
+  "channels": ["push", "websocket"],
   "priority": "high",
   "retry_count": 0,
   "scheduled_at": "2024-01-15T10:30:00Z"
@@ -69,14 +63,10 @@ DOMAIN=your-instance.com
 DYNAMODB_TABLE_NAME=lesser-main
 AWS_REGION=us-east-1
 
-# Email configuration
-FROM_EMAIL=notifications@your-instance.com
-
 # WebSocket configuration
 WEBSOCKET_ENDPOINT=wss://your-websocket-api.execute-api.region.amazonaws.com/stage
 
 # AWS service configuration (automatic from IAM role)
-# - SES permissions for email delivery
 # - SNS permissions for push notifications
 # - API Gateway Management API permissions for WebSocket
 ```
@@ -95,10 +85,8 @@ The processor implements exponential backoff retry logic:
 
 The processor respects user notification preferences:
 
-- `email_notifications`: Enable/disable email delivery
 - `push_notifications`: Enable/disable push delivery  
 - `websocket_notifications`: Enable/disable real-time delivery
-- `email_address`: User's email address
 - `push_endpoint`: FCM/APNS endpoint for push delivery
 
 ## Delivery Tracking
@@ -124,7 +112,7 @@ go test -v
 
 The tests cover:
 - Message parsing and validation
-- Email subject/body generation
+- Push notification formatting
 - Channel delivery logic
 - Retry handling
 - Cost tracking

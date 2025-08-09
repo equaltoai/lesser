@@ -1,3 +1,4 @@
+// Package stream provides DynamoDB stream event handlers for real-time data processing with DynamORM.
 package stream
 
 import (
@@ -9,6 +10,13 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+)
+
+// DynamoDB stream event name constants
+const (
+	eventNameInsert = "INSERT"
+	eventNameModify = "MODIFY"
+	eventNameRemove = "REMOVE"
 )
 
 // Handler is a generic interface for DynamoDB stream handlers
@@ -55,7 +63,7 @@ func (h *BaseHandler) HandleDynamoDBStream(ctx context.Context, event events.Dyn
 
 // processRecord processes a single DynamoDB stream record
 // This is a base implementation that should be overridden by specific handlers
-func (h *BaseHandler) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+func (h *BaseHandler) processRecord(_ context.Context, record events.DynamoDBEventRecord) error {
 	// Extract event type for logging
 	eventType, err := GetEventType(record)
 	if err != nil {
@@ -80,11 +88,11 @@ func GetEventType(record events.DynamoDBEventRecord) (string, error) {
 	var pk string
 
 	switch record.EventName {
-	case "INSERT", "MODIFY":
+	case eventNameInsert, eventNameModify:
 		if pkAttr, ok := record.Change.NewImage["PK"]; ok {
 			pk = pkAttr.String()
 		}
-	case "REMOVE":
+	case eventNameRemove:
 		if pkAttr, ok := record.Change.OldImage["PK"]; ok {
 			pk = pkAttr.String()
 		}

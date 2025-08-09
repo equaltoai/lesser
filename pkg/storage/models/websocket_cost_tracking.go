@@ -8,13 +8,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	wsUserKey = "WS_USER#%s"
+)
+
 // WebSocketCostRecord represents detailed cost tracking for WebSocket operations
 type WebSocketCostRecord struct {
 	// Primary key - using operation type and timestamp for optimal access patterns
 	PK string `dynamorm:"pk" json:"pk"` // Format: "WS_COST#{operation_type}"
 	SK string `dynamorm:"sk" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
-	// GSI1 - Connection-based queries  
+	// GSI1 - Connection-based queries
 	GSI1PK string `dynamorm:"index:connection-index,pk" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
 	GSI1SK string `dynamorm:"index:connection-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
@@ -31,51 +35,51 @@ type WebSocketCostRecord struct {
 	Timestamp     time.Time `json:"timestamp"`
 
 	// Connection details
-	ConnectionDurationMs  int64  `json:"connection_duration_ms,omitempty"`  // For connection lifecycle tracking
-	IdleTimeMs           int64  `json:"idle_time_ms,omitempty"`            // Time connection was idle
-	MessageCount         int    `json:"message_count,omitempty"`           // Number of messages (for message operations)
-	MessageSizeBytes     int64  `json:"message_size_bytes,omitempty"`      // Size of messages sent/received
-	StreamCount          int    `json:"stream_count,omitempty"`            // Number of streams subscribed
+	ConnectionDurationMs int64 `json:"connection_duration_ms,omitempty"` // For connection lifecycle tracking
+	IdleTimeMs           int64 `json:"idle_time_ms,omitempty"`           // Time connection was idle
+	MessageCount         int   `json:"message_count,omitempty"`          // Number of messages (for message operations)
+	MessageSizeBytes     int64 `json:"message_size_bytes,omitempty"`     // Size of messages sent/received
+	StreamCount          int   `json:"stream_count,omitempty"`           // Number of streams subscribed
 
 	// AWS costs in microcents for precision
 	// API Gateway WebSocket costs: $0.25 per million connection minutes, $1.00 per million messages
-	APIGatewayConnectionCost int64 `json:"api_gateway_connection_cost"`  // Connection time cost in microcents
-	APIGatewayMessageCost   int64 `json:"api_gateway_message_cost"`     // Message sending cost in microcents
-	LambdaExecutionCost     int64 `json:"lambda_execution_cost"`        // Lambda execution cost in microcents
-	DynamoDBCost           int64 `json:"dynamodb_cost"`                // DynamoDB operations cost in microcents
-	DataTransferCost       int64 `json:"data_transfer_cost"`           // Data transfer cost in microcents
-	TotalCostMicroCents    int64 `json:"total_cost_micro_cents"`       // Total cost in microcents
+	APIGatewayConnectionCost int64 `json:"api_gateway_connection_cost"` // Connection time cost in microcents
+	APIGatewayMessageCost    int64 `json:"api_gateway_message_cost"`    // Message sending cost in microcents
+	LambdaExecutionCost      int64 `json:"lambda_execution_cost"`       // Lambda execution cost in microcents
+	DynamoDBCost             int64 `json:"dynamodb_cost"`               // DynamoDB operations cost in microcents
+	DataTransferCost         int64 `json:"data_transfer_cost"`          // Data transfer cost in microcents
+	TotalCostMicroCents      int64 `json:"total_cost_micro_cents"`      // Total cost in microcents
 
 	// Cost breakdown by category
-	ConnectionMinuteCost int64 `json:"connection_minute_cost"` // Cost per minute of connection
+	ConnectionMinuteCost  int64 `json:"connection_minute_cost"`  // Cost per minute of connection
 	MessageProcessingCost int64 `json:"message_processing_cost"` // Cost per message processed
-	SubscriptionCost     int64 `json:"subscription_cost"`      // Cost for managing subscriptions
+	SubscriptionCost      int64 `json:"subscription_cost"`       // Cost for managing subscriptions
 
 	// Performance metrics
-	ProcessingTimeMs     int64   `json:"processing_time_ms"`     // Time to process the operation
-	ResponseLatencyMs    int64   `json:"response_latency_ms,omitempty"` // Response latency for messages
-	MemoryUsedMB        float64 `json:"memory_used_mb,omitempty"`      // Lambda memory usage
-	
+	ProcessingTimeMs  int64   `json:"processing_time_ms"`            // Time to process the operation
+	ResponseLatencyMs int64   `json:"response_latency_ms,omitempty"` // Response latency for messages
+	MemoryUsedMB      float64 `json:"memory_used_mb,omitempty"`      // Lambda memory usage
+
 	// Service information
-	ServiceName      string `json:"service_name"`      // streaming or stream-router
-	RequestID        string `json:"request_id"`        // AWS Request ID
-	FunctionName     string `json:"function_name"`     // Lambda function name
-	FunctionVersion  string `json:"function_version"`  // Lambda function version
+	ServiceName     string `json:"service_name"`     // streaming or stream-router
+	RequestID       string `json:"request_id"`       // AWS Request ID
+	FunctionName    string `json:"function_name"`    // Lambda function name
+	FunctionVersion string `json:"function_version"` // Lambda function version
 
 	// Connection context
-	ClientIP         string            `json:"client_ip,omitempty"`      // Client IP address
-	UserAgent        string            `json:"user_agent,omitempty"`     // User agent string
-	ConnectionSource string            `json:"connection_source"`        // web, mobile, api
-	AuthMethod       string            `json:"auth_method,omitempty"`    // oauth, bearer, anonymous
-	
-	// Stream information  
-	ActiveStreams    []string `json:"active_streams,omitempty"`     // Streams active during operation
-	StreamTypes      []string `json:"stream_types,omitempty"`       // Types of streams (public, user, notification)
-	
+	ClientIP         string `json:"client_ip,omitempty"`   // Client IP address
+	UserAgent        string `json:"user_agent,omitempty"`  // User agent string
+	ConnectionSource string `json:"connection_source"`     // web, mobile, api
+	AuthMethod       string `json:"auth_method,omitempty"` // oauth, bearer, anonymous
+
+	// Stream information
+	ActiveStreams []string `json:"active_streams,omitempty"` // Streams active during operation
+	StreamTypes   []string `json:"stream_types,omitempty"`   // Types of streams (public, user, notification)
+
 	// Additional metadata
 	Tags       map[string]string      `json:"tags,omitempty"`
 	Properties map[string]interface{} `json:"properties,omitempty"`
-	
+
 	// Estimated cost in dollars for easy display
 	EstimatedCostDollars float64 `json:"estimated_cost_dollars"`
 
@@ -100,10 +104,10 @@ type WebSocketCostBudget struct {
 	// Budget configuration
 	UserID           string    `json:"user_id"`
 	Username         string    `json:"username"`
-	Period           string    `json:"period"`                    // daily, weekly, monthly
-	BudgetMicroCents int64     `json:"budget_micro_cents"`       // Budget limit in microcents
-	WindowStart      time.Time `json:"window_start"`             // Budget period start
-	WindowEnd        time.Time `json:"window_end"`               // Budget period end
+	Period           string    `json:"period"`             // daily, weekly, monthly
+	BudgetMicroCents int64     `json:"budget_micro_cents"` // Budget limit in microcents
+	WindowStart      time.Time `json:"window_start"`       // Budget period start
+	WindowEnd        time.Time `json:"window_end"`         // Budget period end
 
 	// Current usage tracking
 	UsedMicroCents           int64 `json:"used_micro_cents"`           // Currently used amount
@@ -116,7 +120,7 @@ type WebSocketCostBudget struct {
 	// Budget status
 	Status       string  `json:"status"`        // active, warning, exceeded, suspended
 	UsagePercent float64 `json:"usage_percent"` // Percentage of budget used
-	
+
 	// Alerts and limits
 	AlertThresholds []int     `json:"alert_thresholds"`          // Alert at these usage percentages (e.g., [50, 75, 90])
 	AlertsSent      []string  `json:"alerts_sent,omitempty"`     // Track which alerts have been sent
@@ -126,7 +130,7 @@ type WebSocketCostBudget struct {
 	// Rate limiting
 	ConnectionsPerMinute int `json:"connections_per_minute"` // Max new connections per minute
 	MessagesPerMinute    int `json:"messages_per_minute"`    // Max messages per minute
-	
+
 	// Billing tier
 	BillingTier string `json:"billing_tier"` // free, basic, premium, enterprise
 
@@ -149,69 +153,69 @@ type WebSocketCostAggregation struct {
 	GSI1SK string `dynamorm:"index:user-agg-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
 
 	// Aggregation details
-	Period        string    `json:"period"`         // minute, hour, day, week, month
-	OperationType string    `json:"operation_type"` // Same as WebSocketCostRecord.OperationType
+	Period        string    `json:"period"`            // minute, hour, day, week, month
+	OperationType string    `json:"operation_type"`    // Same as WebSocketCostRecord.OperationType
 	UserID        string    `json:"user_id,omitempty"` // Specific user or empty for global
-	WindowStart   time.Time `json:"window_start"`   // Start of aggregation window
-	WindowEnd     time.Time `json:"window_end"`     // End of aggregation window
+	WindowStart   time.Time `json:"window_start"`      // Start of aggregation window
+	WindowEnd     time.Time `json:"window_end"`        // End of aggregation window
 
 	// Connection metrics
-	TotalConnections         int64   `json:"total_connections"`          // Total connections in period
-	UniqueUsers              int64   `json:"unique_users"`               // Unique users connected
+	TotalConnections          int64   `json:"total_connections"`           // Total connections in period
+	UniqueUsers               int64   `json:"unique_users"`                // Unique users connected
 	AverageConnectionDuration float64 `json:"average_connection_duration"` // Average connection time in minutes
-	MaxConcurrentConnections int     `json:"max_concurrent_connections"` // Peak concurrent connections
-	TotalConnectionMinutes   int64   `json:"total_connection_minutes"`   // Total connection time
+	MaxConcurrentConnections  int     `json:"max_concurrent_connections"`  // Peak concurrent connections
+	TotalConnectionMinutes    int64   `json:"total_connection_minutes"`    // Total connection time
 
-	// Message metrics  
-	TotalMessagesIn          int64   `json:"total_messages_in"`           // Messages received from clients
-	TotalMessagesOut         int64   `json:"total_messages_out"`          // Messages sent to clients
-	TotalMessageBytes        int64   `json:"total_message_bytes"`         // Total message data transferred
-	AverageMessageSize       float64 `json:"average_message_size"`        // Average message size
-	MessageThroughputPerSec  float64 `json:"message_throughput_per_sec"`  // Messages per second
+	// Message metrics
+	TotalMessagesIn         int64   `json:"total_messages_in"`          // Messages received from clients
+	TotalMessagesOut        int64   `json:"total_messages_out"`         // Messages sent to clients
+	TotalMessageBytes       int64   `json:"total_message_bytes"`        // Total message data transferred
+	AverageMessageSize      float64 `json:"average_message_size"`       // Average message size
+	MessageThroughputPerSec float64 `json:"message_throughput_per_sec"` // Messages per second
 
 	// Stream metrics
-	TotalStreamSubscriptions int64              `json:"total_stream_subscriptions"` // Stream subscriptions created
-	UniqueStreamsUsed        int64              `json:"unique_streams_used"`        // Number of unique streams
-	StreamPopularity         map[string]int64   `json:"stream_popularity"`          // Stream name -> subscription count
-	StreamTypeBreakdown      map[string]int64   `json:"stream_type_breakdown"`      // Stream type -> count
+	TotalStreamSubscriptions int64            `json:"total_stream_subscriptions"` // Stream subscriptions created
+	UniqueStreamsUsed        int64            `json:"unique_streams_used"`        // Number of unique streams
+	StreamPopularity         map[string]int64 `json:"stream_popularity"`          // Stream name -> subscription count
+	StreamTypeBreakdown      map[string]int64 `json:"stream_type_breakdown"`      // Stream type -> count
 
 	// Cost aggregations (in microcents)
 	TotalAPIGatewayConnectionCost int64   `json:"total_api_gateway_connection_cost"`
 	TotalAPIGatewayMessageCost    int64   `json:"total_api_gateway_message_cost"`
 	TotalLambdaExecutionCost      int64   `json:"total_lambda_execution_cost"`
-	TotalDynamoDBCost            int64   `json:"total_dynamodb_cost"`
-	TotalDataTransferCost        int64   `json:"total_data_transfer_cost"`
-	TotalCostMicroCents          int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars             float64 `json:"total_cost_dollars"`
+	TotalDynamoDBCost             int64   `json:"total_dynamodb_cost"`
+	TotalDataTransferCost         int64   `json:"total_data_transfer_cost"`
+	TotalCostMicroCents           int64   `json:"total_cost_micro_cents"`
+	TotalCostDollars              float64 `json:"total_cost_dollars"`
 
 	// Performance metrics
-	AverageProcessingTime    float64 `json:"average_processing_time"`    // Average processing time in ms
-	AverageResponseLatency   float64 `json:"average_response_latency"`   // Average response latency in ms
-	AverageMemoryUsage       float64 `json:"average_memory_usage"`       // Average memory usage in MB
-	
+	AverageProcessingTime  float64 `json:"average_processing_time"`  // Average processing time in ms
+	AverageResponseLatency float64 `json:"average_response_latency"` // Average response latency in ms
+	AverageMemoryUsage     float64 `json:"average_memory_usage"`     // Average memory usage in MB
+
 	// Cost efficiency metrics
-	CostPerConnection        float64 `json:"cost_per_connection"`        // Average cost per connection
-	CostPerMessage           float64 `json:"cost_per_message"`           // Average cost per message
-	CostPerMinute           float64 `json:"cost_per_minute"`            // Average cost per connection minute
-	CostPerUser             float64 `json:"cost_per_user"`              // Average cost per unique user
+	CostPerConnection float64 `json:"cost_per_connection"` // Average cost per connection
+	CostPerMessage    float64 `json:"cost_per_message"`    // Average cost per message
+	CostPerMinute     float64 `json:"cost_per_minute"`     // Average cost per connection minute
+	CostPerUser       float64 `json:"cost_per_user"`       // Average cost per unique user
 
 	// Error and reliability metrics
 	FailedConnections       int64   `json:"failed_connections"`        // Connections that failed to establish
 	DroppedConnections      int64   `json:"dropped_connections"`       // Connections dropped unexpectedly
 	MessageDeliveryFailures int64   `json:"message_delivery_failures"` // Failed message deliveries
-	ErrorRate              float64 `json:"error_rate"`                // Percentage of operations that failed
+	ErrorRate               float64 `json:"error_rate"`                // Percentage of operations that failed
 
 	// User behavior metrics
-	UserEngagementScore     float64            `json:"user_engagement_score"`     // Engagement score based on activity
-	TopUsers                []string           `json:"top_users"`                 // Most active users by cost/usage
-	UserBehaviorPatterns    map[string]float64 `json:"user_behavior_patterns"`    // Usage patterns by behavior type
+	UserEngagementScore  float64            `json:"user_engagement_score"`  // Engagement score based on activity
+	TopUsers             []string           `json:"top_users"`              // Most active users by cost/usage
+	UserBehaviorPatterns map[string]float64 `json:"user_behavior_patterns"` // Usage patterns by behavior type
 
 	// Cost breakdown by user tier
 	CostByTier map[string]*WebSocketTierCostStats `json:"cost_by_tier,omitempty"`
 
 	// Percentiles for cost and performance distribution
-	CostPercentiles        map[string]float64 `json:"cost_percentiles,omitempty"`        // p50, p90, p95, p99
-	LatencyPercentiles     map[string]float64 `json:"latency_percentiles,omitempty"`     // p50, p90, p95, p99
+	CostPercentiles               map[string]float64 `json:"cost_percentiles,omitempty"`                // p50, p90, p95, p99
+	LatencyPercentiles            map[string]float64 `json:"latency_percentiles,omitempty"`             // p50, p90, p95, p99
 	ConnectionDurationPercentiles map[string]float64 `json:"connection_duration_percentiles,omitempty"` // p50, p90, p95, p99
 
 	// Timestamps
@@ -235,17 +239,17 @@ type WebSocketTierCostStats struct {
 
 // TableName returns the DynamoDB table name
 func (WebSocketCostRecord) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name
 func (WebSocketCostBudget) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name
 func (WebSocketCostAggregation) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the WebSocketCostRecord model before creation
@@ -306,7 +310,7 @@ func (w *WebSocketCostRecord) setupGSIKeys() {
 
 	// GSI2 - User queries
 	if w.UserID != "" {
-		w.GSI2PK = fmt.Sprintf("WS_USER#%s", w.UserID)
+		w.GSI2PK = fmt.Sprintf(wsUserKey, w.UserID)
 		w.GSI2SK = fmt.Sprintf("%s#%s#%s", timestampStr, w.OperationType, w.ID)
 	}
 }
@@ -415,7 +419,7 @@ func (w *WebSocketCostBudget) Validate() error {
 		return fmt.Errorf("UserID is required")
 	}
 	if strings.TrimSpace(w.Period) == "" {
-		return fmt.Errorf("Period is required")
+		return fmt.Errorf("period is required")
 	}
 	if !isValidWebSocketPeriod(w.Period) {
 		return fmt.Errorf("invalid period: %s", w.Period)
@@ -449,7 +453,7 @@ func (w *WebSocketCostAggregation) BeforeCreate() error {
 	if w.TotalConnections > 0 {
 		w.CostPerConnection = w.TotalCostDollars / float64(w.TotalConnections)
 	}
-	
+
 	totalMessages := w.TotalMessagesIn + w.TotalMessagesOut
 	if totalMessages > 0 {
 		w.CostPerMessage = w.TotalCostDollars / float64(totalMessages)
@@ -501,7 +505,7 @@ func (w *WebSocketCostAggregation) BeforeUpdate() error {
 	if w.TotalConnections > 0 {
 		w.CostPerConnection = w.TotalCostDollars / float64(w.TotalConnections)
 	}
-	
+
 	totalMessages := w.TotalMessagesIn + w.TotalMessagesOut
 	if totalMessages > 0 {
 		w.CostPerMessage = w.TotalCostDollars / float64(totalMessages)
@@ -532,7 +536,7 @@ func (w *WebSocketCostAggregation) Validate() error {
 		return fmt.Errorf("OperationType is required")
 	}
 	if strings.TrimSpace(w.Period) == "" {
-		return fmt.Errorf("Period is required")
+		return fmt.Errorf("period is required")
 	}
 	if w.WindowStart.IsZero() {
 		return fmt.Errorf("WindowStart is required")
@@ -577,13 +581,13 @@ func isValidWebSocketOperationType(opType string) bool {
 	validTypes := map[string]bool{
 		"connect":     true,
 		"disconnect":  true,
-		"message_in":  true,  // Message received from client
-		"message_out": true,  // Message sent to client
-		"subscribe":   true,  // Stream subscription
-		"unsubscribe": true,  // Stream unsubscription
-		"idle_time":   true,  // Connection idle time tracking
-		"ping":        true,  // Ping/pong messages
-		"error":       true,  // Error handling
+		"message_in":  true, // Message received from client
+		"message_out": true, // Message sent to client
+		"subscribe":   true, // Stream subscription
+		"unsubscribe": true, // Stream unsubscription
+		"idle_time":   true, // Connection idle time tracking
+		"ping":        true, // Ping/pong messages
+		"error":       true, // Error handling
 	}
 	return validTypes[opType]
 }
@@ -593,14 +597,14 @@ const (
 	// API Gateway WebSocket pricing (as of 2024)
 	// Connection minutes: $0.25 per million minutes = 0.00000025 per minute = 0.25 microcents per minute
 	APIGatewayConnectionCostPerMinute = 25 // microcents per 100 minutes (for precision)
-	
-	// Messages: $1.00 per million messages = 0.000001 per message = 1 microcent per message  
+
+	// Messages: $1.00 per million messages = 0.000001 per message = 1 microcent per message
 	APIGatewayMessageCostPerMessage = 1 // microcent per message
-	
+
 	// Lambda costs (example: $0.0000166667 per GB-second)
 	// For 512MB Lambda: $0.0000083334 per invocation-second = 8.3334 microcents per second
 	LambdaCostPerSecond512MB = 8334 // microcents per 1000 seconds (for precision)
-	
+
 	// Data transfer: $0.09 per GB = 90 microcents per MB
 	DataTransferCostPerMB = 90 // microcents per MB
 )
@@ -633,7 +637,7 @@ func CalculateWebSocketCosts(operationType string, connectionMinutes, messageCou
 	}
 
 	// Total cost
-	breakdown.TotalCostMicroCents = breakdown.APIGatewayConnectionCost + 
+	breakdown.TotalCostMicroCents = breakdown.APIGatewayConnectionCost +
 		breakdown.APIGatewayMessageCost +
 		breakdown.LambdaExecutionCost +
 		breakdown.DataTransferCost
@@ -643,12 +647,12 @@ func CalculateWebSocketCosts(operationType string, connectionMinutes, messageCou
 
 // WebSocketCostBreakdown represents a cost calculation result
 type WebSocketCostBreakdown struct {
-	OperationType           string
+	OperationType            string
 	APIGatewayConnectionCost int64
-	APIGatewayMessageCost   int64
-	LambdaExecutionCost     int64
-	DataTransferCost        int64
-	TotalCostMicroCents     int64
+	APIGatewayMessageCost    int64
+	LambdaExecutionCost      int64
+	DataTransferCost         int64
+	TotalCostMicroCents      int64
 }
 
 // WebSocketCostRecordBuilder helps create WebSocket cost tracking records
@@ -693,7 +697,7 @@ func (b *WebSocketCostRecordBuilder) WithMessages(count int, sizeBytes int64) *W
 	return b
 }
 
-// WithCosts sets the cost breakdown  
+// WithCosts sets the cost breakdown
 func (b *WebSocketCostRecordBuilder) WithCosts(breakdown *WebSocketCostBreakdown) *WebSocketCostRecordBuilder {
 	b.record.APIGatewayConnectionCost = breakdown.APIGatewayConnectionCost
 	b.record.APIGatewayMessageCost = breakdown.APIGatewayMessageCost

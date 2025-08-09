@@ -77,7 +77,7 @@ type NotificationBuilder struct {
 
 // TableName returns the DynamoDB table name for the Notification model
 func (Notification) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -156,7 +156,7 @@ func (n *Notification) Validate() error {
 		return fmt.Errorf("UserID is required")
 	}
 	if strings.TrimSpace(n.Type) == "" {
-		return fmt.Errorf("Type is required")
+		return fmt.Errorf("type is required")
 	}
 	if !isValidNotificationType(n.Type) {
 		return fmt.Errorf("invalid notification type: %s", n.Type)

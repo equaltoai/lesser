@@ -4,26 +4,37 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/equaltoai/lesser/pkg/httpclient"
 	"go.uber.org/zap"
 )
 
 // ReprocessorClient handles reprocessing of failed messages
 type ReprocessorClient struct {
-	sqsClient *sqs.Client
-	logger    *zap.Logger
-	queueURLs map[string]string // Cache for queue URLs
+	sqsClient  *sqs.Client
+	httpClient *httpclient.SecureClient
+	logger     *zap.Logger
+	queueURLs  map[string]string // Cache for queue URLs
 }
 
 // NewReprocessorClient creates a new reprocessor client
 func NewReprocessorClient(logger *zap.Logger) *ReprocessorClient {
+	// Create HTTP client with short timeout for HEAD requests
+	httpClient := httpclient.NewSecureClient(
+		httpclient.WithTimeout(5*time.Second),
+		httpclient.WithLogger(logger),
+		httpclient.WithMaxRedirects(3),
+	)
+
 	return &ReprocessorClient{
-		logger:    logger,
-		queueURLs: make(map[string]string),
+		httpClient: httpClient,
+		logger:     logger,
+		queueURLs:  make(map[string]string),
 	}
 }
 
@@ -229,7 +240,7 @@ func (r *ReprocessorClient) getQueueURL(ctx context.Context, queueName string) (
 func (r *ReprocessorClient) sendMessageToQueue(ctx context.Context, queueURL, messageBody string, attributes map[string]string, reprocessType string) error {
 	// Add reprocessing metadata
 	messageAttributes := make(map[string]types.MessageAttributeValue)
-	
+
 	// Copy original attributes
 	for key, value := range attributes {
 		messageAttributes[key] = types.MessageAttributeValue{
@@ -243,7 +254,7 @@ func (r *ReprocessorClient) sendMessageToQueue(ctx context.Context, queueURL, me
 		DataType:    aws.String("String"),
 		StringValue: aws.String(reprocessType),
 	}
-	
+
 	messageAttributes["DLQ.ReprocessTimestamp"] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(time.Now().Format(time.RFC3339)),
@@ -274,7 +285,7 @@ func (r *ReprocessorClient) sendMessageToQueue(ctx context.Context, queueURL, me
 // validateNotificationMessage validates a notification message structure
 func (r *ReprocessorClient) validateNotificationMessage(message map[string]interface{}) error {
 	requiredFields := []string{"notification_id", "user_id", "channels"}
-	
+
 	for _, field := range requiredFields {
 		if _, exists := message[field]; !exists {
 			return fmt.Errorf("missing required field: %s", field)
@@ -312,7 +323,7 @@ func (r *ReprocessorClient) validateActivityMessage(message map[string]interface
 // validateMediaMessage validates a media processing message
 func (r *ReprocessorClient) validateMediaMessage(message map[string]interface{}) error {
 	requiredFields := []string{"media_id", "media_url", "processing_type"}
-	
+
 	for _, field := range requiredFields {
 		if _, exists := message[field]; !exists {
 			return fmt.Errorf("missing required field: %s", field)
@@ -334,7 +345,7 @@ func (r *ReprocessorClient) validateMediaMessage(message map[string]interface{})
 // validateFederationMessage validates a federation delivery message
 func (r *ReprocessorClient) validateFederationMessage(message map[string]interface{}) error {
 	requiredFields := []string{"inbox_url", "activity", "actor_id"}
-	
+
 	for _, field := range requiredFields {
 		if _, exists := message[field]; !exists {
 			return fmt.Errorf("missing required field: %s", field)
@@ -356,7 +367,7 @@ func (r *ReprocessorClient) validateFederationMessage(message map[string]interfa
 // validateSearchMessage validates a search indexing message
 func (r *ReprocessorClient) validateSearchMessage(message map[string]interface{}) error {
 	requiredFields := []string{"object_id", "object_type", "action"}
-	
+
 	for _, field := range requiredFields {
 		if _, exists := message[field]; !exists {
 			return fmt.Errorf("missing required field: %s", field)
@@ -385,52 +396,173 @@ func (r *ReprocessorClient) validateSearchMessage(message map[string]interface{}
 
 // validateMediaAccessibility checks if media is still accessible
 func (r *ReprocessorClient) validateMediaAccessibility(ctx context.Context, mediaURL string) error {
-	// For now, just validate URL format
-	// In a full implementation, you would make an HTTP HEAD request
+	// Basic URL validation
 	if !r.isValidURL(mediaURL) {
 		return fmt.Errorf("invalid media URL")
 	}
-	
-	// TODO: Add HTTP HEAD request to check if media is accessible
-	// This would help avoid reprocessing messages for permanently deleted media
-	
-	return nil
+
+	// Perform HTTP HEAD request to check accessibility
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, mediaURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create HEAD request: %w", err)
+	}
+
+	// Add appropriate headers for media requests
+	req.Header.Set("User-Agent", "Lesser/1.0 (ActivityPub; +https://lesser.social)")
+	req.Header.Set("Accept", "*/*")
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		// Network/timeout errors are retryable
+		r.logger.Debug("Media HEAD request failed, treating as retryable",
+			zap.String("url", mediaURL),
+			zap.Error(err))
+		return nil // Allow retry
+	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			r.logger.Warn("Failed to close response body", zap.Error(closeErr))
+		}
+	}()
+
+	// Classify HTTP response codes
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 400:
+		// Success or redirect - media is accessible
+		r.logger.Debug("Media is accessible, allowing retry",
+			zap.String("url", mediaURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+
+	case resp.StatusCode == 404 || resp.StatusCode == 410:
+		// Not Found or Gone - permanent failure
+		r.logger.Info("Media permanently unavailable, marking as non-retryable",
+			zap.String("url", mediaURL),
+			zap.Int("status_code", resp.StatusCode))
+		return fmt.Errorf("media permanently unavailable (HTTP %d)", resp.StatusCode)
+
+	case resp.StatusCode == 429 || resp.StatusCode == 503:
+		// Rate limited or service unavailable - temporary issue
+		r.logger.Debug("Media temporarily unavailable, allowing retry",
+			zap.String("url", mediaURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+
+	case resp.StatusCode == 401 || resp.StatusCode == 403:
+		// Auth issues - may be permanent depending on context
+		r.logger.Warn("Media access denied, treating as potentially permanent",
+			zap.String("url", mediaURL),
+			zap.Int("status_code", resp.StatusCode))
+		return fmt.Errorf("media access denied (HTTP %d)", resp.StatusCode)
+
+	default:
+		// Other client/server errors - treat as retryable for now
+		r.logger.Debug("Media HEAD request returned error, allowing retry",
+			zap.String("url", mediaURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+	}
 }
 
 // validateInboxAccessibility checks if a federation inbox is accessible
 func (r *ReprocessorClient) validateInboxAccessibility(ctx context.Context, inboxURL string) error {
-	// For now, just validate URL format
-	// In a full implementation, you would make an HTTP request to check accessibility
+	// Basic URL validation
 	if !r.isValidURL(inboxURL) {
 		return fmt.Errorf("invalid inbox URL")
 	}
-	
-	// TODO: Add HTTP request to check if inbox is accessible
-	// This would help avoid reprocessing messages for permanently offline instances
-	
-	return nil
+
+	// Perform HTTP HEAD request to check accessibility
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, inboxURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create HEAD request: %w", err)
+	}
+
+	// Add ActivityPub headers for inbox requests
+	req.Header.Set("User-Agent", "Lesser/1.0 (ActivityPub; +https://lesser.social)")
+	req.Header.Set("Accept", "application/activity+json, application/ld+json")
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		// Network/timeout errors are retryable - instance might be temporarily down
+		r.logger.Debug("Inbox HEAD request failed, treating as retryable",
+			zap.String("url", inboxURL),
+			zap.Error(err))
+		return nil // Allow retry
+	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			r.logger.Warn("Failed to close response body", zap.Error(closeErr))
+		}
+	}()
+
+	// Classify HTTP response codes
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 400:
+		// Success or redirect - inbox is accessible
+		r.logger.Debug("Inbox is accessible, allowing retry",
+			zap.String("url", inboxURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+
+	case resp.StatusCode == 404 || resp.StatusCode == 410:
+		// Not Found or Gone - might be permanent but could be temporary server config
+		// For federation, we're more conservative and allow retries
+		r.logger.Debug("Inbox returned 404/410, allowing retry for federation",
+			zap.String("url", inboxURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+
+	case resp.StatusCode == 429 || resp.StatusCode == 503:
+		// Rate limited or service unavailable - temporary issue
+		r.logger.Debug("Inbox temporarily unavailable, allowing retry",
+			zap.String("url", inboxURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+
+	case resp.StatusCode == 401 || resp.StatusCode == 403:
+		// Auth issues - for federation this might indicate signature problems
+		// Allow retry as it might be a temporary key/signature issue
+		r.logger.Debug("Inbox access denied, allowing retry for potential signature issues",
+			zap.String("url", inboxURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+
+	case resp.StatusCode >= 500:
+		// Server errors - definitely retryable
+		r.logger.Debug("Inbox server error, allowing retry",
+			zap.String("url", inboxURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+
+	default:
+		// Other client errors - treat as retryable to be safe for federation
+		r.logger.Debug("Inbox HEAD request returned client error, allowing retry",
+			zap.String("url", inboxURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil
+	}
 }
 
 // isValidURL performs basic URL validation
 func (r *ReprocessorClient) isValidURL(urlStr string) bool {
 	// Basic URL validation
-	return len(urlStr) > 0 && 
-		   (len(urlStr) >= 8) &&
-		   (urlStr[:7] == "http://" || urlStr[:8] == "https://")
+	return len(urlStr) > 0 &&
+		(len(urlStr) >= 8) &&
+		(urlStr[:7] == "http://" || urlStr[:8] == "https://")
 }
 
 // BatchReprocess reprocesses multiple messages in batch
 func (r *ReprocessorClient) BatchReprocess(ctx context.Context, messages []*OriginalMessage, service string) (*BatchReprocessResult, error) {
 	result := &BatchReprocessResult{
-		TotalMessages:     len(messages),
+		TotalMessages:         len(messages),
 		SuccessfulReprocesses: 0,
 		FailedReprocesses:     0,
-		Errors:            make([]string, 0),
+		Errors:                make([]string, 0),
 	}
 
 	for _, message := range messages {
 		var err error
-		
+
 		switch service {
 		case "notification-processor":
 			err = r.ReprocessNotification(ctx, message)
@@ -474,11 +606,11 @@ type BatchReprocessResult struct {
 
 // ReprocessingStrategy represents different strategies for reprocessing
 type ReprocessingStrategy struct {
-	MaxRetries      int           `json:"max_retries"`
-	DelaySeconds    int32         `json:"delay_seconds"`
-	BackoffStrategy string        `json:"backoff_strategy"` // "linear", "exponential", "fixed"
-	ValidateFirst   bool          `json:"validate_first"`
-	CheckAccessibility bool        `json:"check_accessibility"`
+	MaxRetries         int    `json:"max_retries"`
+	DelaySeconds       int32  `json:"delay_seconds"`
+	BackoffStrategy    string `json:"backoff_strategy"` // "linear", "exponential", "fixed"
+	ValidateFirst      bool   `json:"validate_first"`
+	CheckAccessibility bool   `json:"check_accessibility"`
 }
 
 // GetDefaultStrategy returns the default reprocessing strategy for a service

@@ -24,15 +24,15 @@
 //	func TestMyHandler(t *testing.T) {
 //	    // Create test app
 //	    app := lifttesting.NewTestApp()
-//	    
+//
 //	    // Setup routes
 //	    app.App().GET("/health", func(ctx *lift.Context) error {
 //	        return ctx.JSON(map[string]string{"status": "healthy"})
 //	    })
-//	    
+//
 //	    // Test the endpoint
 //	    response := app.GET("/health")
-//	    
+//
 //	    assert.Equal(t, 200, response.StatusCode)
 //	    assert.Contains(t, response.Body, "healthy")
 //	}
@@ -43,18 +43,18 @@
 //	    // Setup mocks
 //	    mockAuth := SetupMockAuthService()
 //	    mockStorage := SetupMockStorage()
-//	    
+//
 //	    // Configure expectations
 //	    claims := CreateTestClaims("user", "standard")
 //	    ExpectValidToken(mockAuth, "token", claims)
-//	    
+//
 //	    // Test with mocked dependencies
 //	    app := NewTestApp()
 //	    // ... setup routes with mocks
-//	    
+//
 //	    response := app.WithHeader("Authorization", "Bearer token").GET("/protected")
 //	    assert.True(t, response.IsSuccess())
-//	    
+//
 //	    // Verify mock expectations
 //	    mockAuth.AssertExpectations(t)
 //	    mockStorage.AssertExpectations(t)
@@ -68,7 +68,7 @@
 //	        ctx := context.Background()
 //	        actor, err := suite.TestData.CreateTestActor(ctx, suite.Storage, "testuser")
 //	        require.NoError(t, err)
-//	        
+//
 //	        // Test against real storage
 //	        app := suite.CreateTestApp()
 //	        response := app.GET("/users/testuser")
@@ -80,21 +80,21 @@
 //
 //	func TestPerformance(t *testing.T) {
 //	    suite := NewPerformanceTestSuite(t)
-//	    
+//
 //	    test := &PerformanceTest{
 //	        Name:        "EndpointPerformance",
 //	        Iterations:  100,
 //	        Concurrency: 10,
 //	        TestFunc:    func() error { /* test logic */ },
 //	    }
-//	    
+//
 //	    results := suite.RunPerformanceTest(test)
-//	    
+//
 //	    requirements := &PerformanceRequirements{
 //	        MaxAvgTime:    100 * time.Millisecond,
 //	        MinThroughput: 10.0,
 //	    }
-//	    
+//
 //	    AssertPerformance(t, results, requirements)
 //	}
 //
@@ -102,11 +102,11 @@
 //
 //	func TestAuth(t *testing.T) {
 //	    app := NewTestApp()
-//	    
+//
 //	    // Test unauthenticated access
 //	    response := app.GET("/protected")
 //	    AssertErrorResponse(t, response, 401, "unauthorized")
-//	    
+//
 //	    // Test authenticated access
 //	    token := GenerateTestToken("user", "standard")
 //	    response = app.WithHeader("Authorization", "Bearer "+token).GET("/protected")

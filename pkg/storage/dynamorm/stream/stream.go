@@ -17,9 +17,9 @@ func UnmarshalItem(record events.DynamoDBEventRecord, out any) error {
 	// Check if we're dealing with a NewImage (INSERT/MODIFY) or OldImage (REMOVE)
 	var image map[string]events.DynamoDBAttributeValue
 	switch record.EventName {
-	case "INSERT", "MODIFY":
+	case eventNameInsert, eventNameModify:
 		image = record.Change.NewImage
-	case "REMOVE":
+	case eventNameRemove:
 		image = record.Change.OldImage
 	default:
 		return fmt.Errorf("unknown event type: %s", record.EventName)
@@ -91,7 +91,7 @@ func UnmarshalItems(records []events.DynamoDBEventRecord, outType any) (any, err
 func ProcessStreamRecords[T any](ctx context.Context, records []events.DynamoDBEventRecord, handler func(ctx context.Context, record events.DynamoDBEventRecord, item T) error) error {
 	for _, record := range records {
 		// Skip records we don't care about
-		if record.EventName != "INSERT" && record.EventName != "MODIFY" && record.EventName != "REMOVE" {
+		if record.EventName != eventNameInsert && record.EventName != eventNameModify && record.EventName != eventNameRemove {
 			continue
 		}
 
@@ -144,79 +144,131 @@ func setFieldValue(field reflect.Value, value any) error {
 		return nil
 	}
 
-	fieldType := field.Type()
-	valueType := reflect.TypeOf(value)
-
-	// Direct assignment if types match
-	if valueType.AssignableTo(fieldType) {
-		field.Set(reflect.ValueOf(value))
+	// Try direct assignment first
+	if tryDirectAssignment(field, value) {
 		return nil
 	}
 
-	// Handle type conversions
+	// Handle type conversions based on field kind
 	switch field.Kind() {
 	case reflect.String:
-		if str, ok := value.(string); ok {
-			field.SetString(str)
-			return nil
-		}
+		return setStringField(field, value)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		switch v := value.(type) {
-		case string:
-			if num, err := strconv.ParseInt(v, 10, 64); err == nil {
-				field.SetInt(num)
-				return nil
-			}
-		case float64:
-			field.SetInt(int64(v))
-			return nil
-		}
+		return setIntField(field, value)
 	case reflect.Float32, reflect.Float64:
-		switch v := value.(type) {
-		case string:
-			if num, err := strconv.ParseFloat(v, 64); err == nil {
-				field.SetFloat(num)
-				return nil
-			}
-		case float64:
-			field.SetFloat(v)
-			return nil
-		}
+		return setFloatField(field, value)
 	case reflect.Bool:
-		if b, ok := value.(bool); ok {
-			field.SetBool(b)
-			return nil
-		}
+		return setBoolField(field, value)
 	case reflect.Slice:
-		// Handle slice types
-		if list, ok := value.([]any); ok {
-			sliceVal := reflect.MakeSlice(fieldType, len(list), len(list))
-			for i, item := range list {
-				if err := setFieldValue(sliceVal.Index(i), item); err != nil {
-					return err
-				}
-			}
-			field.Set(sliceVal)
-			return nil
-		}
+		return setSliceField(field, value)
 	case reflect.Map:
-		// Handle map types
-		if m, ok := value.(map[string]any); ok {
-			mapVal := reflect.MakeMap(fieldType)
-			for k, v := range m {
-				keyVal := reflect.ValueOf(k)
-				valVal := reflect.New(fieldType.Elem()).Elem()
-				if err := setFieldValue(valVal, v); err != nil {
-					return err
-				}
-				mapVal.SetMapIndex(keyVal, valVal)
-			}
-			field.Set(mapVal)
+		return setMapField(field, value)
+	default:
+		return fmt.Errorf("cannot convert %v (type %T) to %v", value, value, field.Type())
+	}
+}
+
+// tryDirectAssignment attempts to directly assign the value if types match
+func tryDirectAssignment(field reflect.Value, value any) bool {
+	valueType := reflect.TypeOf(value)
+	if valueType.AssignableTo(field.Type()) {
+		field.Set(reflect.ValueOf(value))
+		return true
+	}
+	return false
+}
+
+// setStringField sets a string field value
+func setStringField(field reflect.Value, value any) error {
+	if str, ok := value.(string); ok {
+		field.SetString(str)
+		return nil
+	}
+	return fmt.Errorf("cannot convert %v to string", value)
+}
+
+// setIntField sets an integer field value
+func setIntField(field reflect.Value, value any) error {
+	switch v := value.(type) {
+	case string:
+		if num, err := strconv.ParseInt(v, 10, 64); err == nil {
+			field.SetInt(num)
 			return nil
 		}
+	case float64:
+		field.SetInt(int64(v))
+		return nil
+	}
+	return fmt.Errorf("cannot convert %v to int", value)
+}
+
+// setFloatField sets a float field value
+func setFloatField(field reflect.Value, value any) error {
+	switch v := value.(type) {
+	case string:
+		if num, err := strconv.ParseFloat(v, 64); err == nil {
+			field.SetFloat(num)
+			return nil
+		}
+	case float64:
+		field.SetFloat(v)
+		return nil
+	}
+	return fmt.Errorf("cannot convert %v to float", value)
+}
+
+// setBoolField sets a boolean field value
+func setBoolField(field reflect.Value, value any) error {
+	if b, ok := value.(bool); ok {
+		field.SetBool(b)
+		return nil
+	}
+	return fmt.Errorf("cannot convert %v to bool", value)
+}
+
+// setSliceField sets a slice field value
+func setSliceField(field reflect.Value, value any) error {
+	list, ok := value.([]any)
+	if !ok {
+		return fmt.Errorf("cannot convert %v to slice", value)
 	}
 
-	return fmt.Errorf("cannot convert %v (type %T) to %v", value, value, fieldType)
+	sliceVal := reflect.MakeSlice(field.Type(), len(list), len(list))
+	for i, item := range list {
+		if err := setFieldValue(sliceVal.Index(i), item); err != nil {
+			return err
+		}
+	}
+	field.Set(sliceVal)
+	return nil
+}
+
+// setMapField sets a map field value
+func setMapField(field reflect.Value, value any) error {
+	m, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("cannot convert %v to map", value)
+	}
+
+	mapVal := reflect.MakeMap(field.Type())
+	for k, v := range m {
+		if err := setMapEntry(mapVal, field.Type(), k, v); err != nil {
+			return err
+		}
+	}
+	field.Set(mapVal)
+	return nil
+}
+
+// setMapEntry sets a single map entry
+func setMapEntry(mapVal reflect.Value, fieldType reflect.Type, key string, value any) error {
+	keyVal := reflect.ValueOf(key)
+	valVal := reflect.New(fieldType.Elem()).Elem()
+	if err := setFieldValue(valVal, value); err != nil {
+		return err
+	}
+	mapVal.SetMapIndex(keyVal, valVal)
+	return nil
 }
 
 // Helper function to convert a single DynamoDB attribute value to a Go type

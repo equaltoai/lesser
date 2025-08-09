@@ -28,12 +28,12 @@ type PasswordReset struct {
 
 // TableName returns the DynamoDB table name
 func (PasswordReset) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the model before creation
 func (r *PasswordReset) BeforeCreate() error {
-	r.PK = fmt.Sprintf("USER#%s", r.Username)
+	r.PK = fmt.Sprintf(KeyPatternUser, r.Username)
 	r.SK = fmt.Sprintf("RESET#%s", r.Token)
 
 	// Set up GSI for token lookup

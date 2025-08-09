@@ -19,6 +19,7 @@ var (
 	webfingerRegex = regexp.MustCompile(`^acct:([^@]+)@([^@]+)$`)
 )
 
+// ValidateUsername validates an ActivityPub username format
 func ValidateUsername(username string) error {
 	if username == "" {
 		return fmt.Errorf("username cannot be empty")
@@ -44,6 +45,7 @@ func ValidateUsername(username string) error {
 	return nil
 }
 
+// ValidateDomain validates a domain name format
 func ValidateDomain(domain string) error {
 	if domain == "" {
 		return fmt.Errorf("domain cannot be empty")
@@ -66,6 +68,7 @@ func ValidateDomain(domain string) error {
 	return nil
 }
 
+// ValidateActorID validates an ActivityPub actor ID URL
 func ValidateActorID(actorID string) error {
 	u, err := url.Parse(actorID)
 	if err != nil {
@@ -90,6 +93,7 @@ func ValidateActorID(actorID string) error {
 	return nil
 }
 
+// ValidateWebfinger validates a WebFinger resource identifier
 func ValidateWebfinger(resource string) error {
 	matches := webfingerRegex.FindStringSubmatch(resource)
 	if len(matches) != 3 {

@@ -1,3 +1,4 @@
+// Package main implements the inbox Lambda function for receiving ActivityPub federation messages.
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -53,6 +55,14 @@ func NewInboxHandler() (*InboxHandler, error) {
 	logger := common.Logger()
 	cfg := config.Get()
 
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
@@ -60,7 +70,7 @@ func NewInboxHandler() (*InboxHandler, error) {
 	}
 
 	// Initialize repository factory
-	repoFactory, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	repoFactory, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
 	}
@@ -116,8 +126,8 @@ func NewInboxHandler() (*InboxHandler, error) {
 // RegisterRoutes registers all inbox routes
 func (ih *InboxHandler) RegisterRoutes(app *lift.App) {
 	// ActivityPub inbox endpoints
-	app.GET("/inbox/{username}", ih.handleGetInbox)
-	app.POST("/inbox/{username}", ih.handlePostInbox)
+	_ = app.GET("/inbox/{username}", ih.handleGetInbox)
+	_ = app.POST("/inbox/{username}", ih.handlePostInbox)
 }
 
 // handleGetInbox handles GET requests to retrieve inbox activities
@@ -261,11 +271,51 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 	return ctx.JSON(collectionPage)
 }
 
+// InboxRequest represents an incoming ActivityPub request
+type InboxRequest struct {
+	Username     string
+	Activity     *activitypub.Activity
+	Actor        *activitypub.Actor
+	Body         []byte
+	ActorDomain  string
+	StartTime    time.Time
+	CostParams   *federation.CostCalculationParams
+}
+
 // handlePostInbox handles POST requests to receive activities
 func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
+	// Initialize and validate request
+	req, err := ih.initializeInboxRequest(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Perform security checks (rate limiting, domain blocks)
+	if err := ih.performSecurityChecks(ctx, req); err != nil {
+		return err
+	}
+
+	// Verify authentication (signature verification)
+	if err := ih.verifyAuthentication(ctx, req); err != nil {
+		return err
+	}
+
+	// Store and process the activity
+	if err := ih.storeAndProcessActivity(ctx, req); err != nil {
+		return err
+	}
+
+	// Record success and complete
+	ih.recordSuccessAndComplete(ctx, req)
+
+	return ctx.Status(http.StatusAccepted).Text("")
+}
+
+// initializeInboxRequest creates and validates the basic request structure
+func (ih *InboxHandler) initializeInboxRequest(ctx *lift.Context) (*InboxRequest, error) {
 	username := ctx.Param("username")
 	if username == "" {
-		return lift.NewLiftError("VALIDATION_ERROR", "missing username parameter", 400)
+		return nil, lift.NewLiftError("VALIDATION_ERROR", "missing username parameter", 400)
 	}
 
 	ih.logger.Info("received inbox POST request",
@@ -278,14 +328,58 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context, username)
 	if err != nil {
 		if err.Error() == "actor not found" {
-			return lift.NewLiftError("NOT_FOUND", "actor not found", 404)
+			return nil, lift.NewLiftError("NOT_FOUND", "actor not found", 404)
 		}
 		ih.logger.Error("failed to get actor", zap.Error(err))
-		return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
+		return nil, lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
 	}
 
-	// Parse the activity with size limit
+	// Validate and parse request body
 	body := ctx.Request.Body
+	if err := ih.validateRequestBody(body); err != nil {
+		return nil, err
+	}
+
+	activity, err := ih.parseActivity(body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate activity and addressing
+	if err := ih.validateActivity(activity, actor); err != nil {
+		return nil, err
+	}
+
+	// Initialize request structure
+	startTime := time.Now()
+	actorDomain := ih.extractDomainFromURL(activity.Actor)
+
+	req := &InboxRequest{
+		Username:    username,
+		Activity:    activity,
+		Actor:       actor,
+		Body:        body,
+		ActorDomain: actorDomain,
+		StartTime:   startTime,
+		CostParams: &federation.CostCalculationParams{
+			ActivityID:         activity.ID,
+			Domain:             actorDomain,
+			ActivityType:       activity.Type,
+			Direction:          "inbound",
+			OperationType:      "inbox_processing",
+			Timestamp:          startTime,
+			PayloadSize:        int64(len(body)),
+			LambdaMemoryMB:     512,
+			DynamoDBReadCount:  1, // Actor verification
+			DynamoDBWriteCount: 0,
+		},
+	}
+
+	return req, nil
+}
+
+// validateRequestBody validates the request body size and content
+func (ih *InboxHandler) validateRequestBody(body []byte) error {
 	if len(body) == 0 {
 		return lift.NewLiftError("VALIDATION_ERROR", "request body is required", 400)
 	}
@@ -295,14 +389,18 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 		return lift.NewLiftError("PAYLOAD_TOO_LARGE", "request body too large", 413)
 	}
 
-	// Safe JSON parsing for ActivityPub objects
+	return nil
+}
+
+// parseActivity parses and sanitizes the ActivityPub activity
+func (ih *InboxHandler) parseActivity(body []byte) (*activitypub.Activity, error) {
 	var activity activitypub.Activity
 	if err := common.ParseActivityPubObject(body, &activity); err != nil {
 		ih.logger.Warn("failed to parse activity", zap.Error(err))
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid activity: %v", err), 400)
+		return nil, lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid activity: %v", err), 400)
 	}
 
-	// Sanitize any embedded objects in the activity
+	// Sanitize any embedded objects
 	if objMap, ok := activity.Object.(map[string]any); ok {
 		common.SanitizeActivityPubObjectDefault(objMap)
 		activity.Object = objMap
@@ -313,7 +411,11 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 		zap.String("actor", activity.Actor),
 		zap.String("id", activity.ID))
 
-	// Verify required fields
+	return &activity, nil
+}
+
+// validateActivity validates required activity fields and addressing
+func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *activitypub.Actor) error {
 	if activity.ID == "" {
 		return lift.NewLiftError("VALIDATION_ERROR", "activity ID is required", 400)
 	}
@@ -324,8 +426,7 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 		return lift.NewLiftError("VALIDATION_ERROR", "activity type is required", 400)
 	}
 
-	// Check if activity is addressed to this actor
-	if !ih.isAddressedTo(&activity, actor) {
+	if !ih.isAddressedTo(activity, actor) {
 		ih.logger.Warn("activity not addressed to this actor",
 			zap.String("actor_id", actor.ID),
 			zap.Any("to", activity.To),
@@ -333,318 +434,277 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 		return lift.NewLiftError("VALIDATION_ERROR", "activity is not addressed to this actor", 400)
 	}
 
-	// Track start time for response time measurement
-	startTime := time.Now()
+	return nil
+}
 
-	// Extract domain from actor URL
-	actorDomain := ih.extractDomainFromURL(activity.Actor)
-
-	// Prepare cost tracking parameters
-	costParams := &federation.CostCalculationParams{
-		ActivityID:          activity.ID,
-		Domain:              actorDomain,
-		ActivityType:        activity.Type,
-		Direction:           "inbound",
-		OperationType:       "inbox_processing",
-		Timestamp:           startTime,
-		PayloadSize:         int64(len(body)),
-		LambdaMemoryMB:      512, // Standard memory allocation
-		DynamoDBReadCount:   1,   // Actor verification
-		DynamoDBWriteCount:  0,   // Will be updated based on processing
+// performSecurityChecks handles rate limiting and domain blocking
+func (ih *InboxHandler) performSecurityChecks(ctx *lift.Context, req *InboxRequest) error {
+	if req.ActorDomain == "" {
+		return nil
 	}
 
-	// Rate limiting per ActivityPub instance
-	if actorDomain != "" {
-		// Use domain as the "username" for rate limiting purposes
-		if err := ih.rateLimiter.CheckRateLimit(ctx.Context, actorDomain, ctx.Header("X-Forwarded-For")); err != nil {
-			ih.logger.Warn("rate limit exceeded",
-				zap.String("domain", actorDomain),
-				zap.Error(err))
-
-			// Record comprehensive cost tracking for rate limit failure
-			costParams.Success = false
-			costParams.ErrorMessage = "Rate limit exceeded"
-			costParams.ResponseTimeMs = time.Since(startTime).Milliseconds()
-			costParams.LambdaDurationMs = time.Since(startTime).Milliseconds()
-			costParams.DynamoDBReadCount = 2 // Rate limit check + actor lookup
-
-			cost := ih.costCalculator.CalculateFederationCosts(costParams)
-			go func() {
-				if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
-					ih.logger.Warn("failed to record federation cost", zap.Error(err))
-				}
-			}()
-
-			return lift.NewLiftError("RATE_LIMITED", "rate limit exceeded for domain", 429)
-		}
-
-		// Record the rate limit attempt
-		if err := ih.rateLimiter.RecordAttempt(ctx.Context, actorDomain, ctx.Header("X-Forwarded-For"), false); err != nil {
-			ih.logger.Warn("failed to record rate limit attempt", zap.Error(err))
-		}
-
-		// Check if the domain is blocked at the instance level
-		isBlocked, block, err := ih.domainBlockRepository.IsDomainBlocked(ctx.Context, actorDomain)
-		if err != nil {
-			ih.logger.Error("failed to check domain block status",
-				zap.String("domain", actorDomain),
-				zap.Error(err))
-			// Continue processing on error - fail open rather than closed
-		} else if isBlocked && block != nil {
-			ih.logger.Info("rejecting activity from blocked domain",
-				zap.String("domain", actorDomain),
-				zap.String("severity", block.Severity),
-				zap.String("actor", activity.Actor))
-
-			// For suspended domains, reject completely
-			if block.Severity == "suspend" {
-				// Record comprehensive cost tracking for domain suspension
-				costParams.Success = false
-				costParams.ErrorMessage = "Domain is suspended"
-				costParams.ResponseTimeMs = time.Since(startTime).Milliseconds()
-				costParams.LambdaDurationMs = time.Since(startTime).Milliseconds()
-				costParams.DynamoDBReadCount = 3 // Rate limit + actor lookup + domain block check
-
-				cost := ih.costCalculator.CalculateFederationCosts(costParams)
-				go func() {
-					if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
-						ih.logger.Warn("failed to record federation cost", zap.Error(err))
-					}
-				}()
-
-				return lift.NewLiftError("FORBIDDEN", "domain is suspended", 403)
-			}
-
-			// For silenced domains, we accept but may limit visibility
-			// This is handled later in processing
-		}
+	// Check rate limiting
+	if err := ih.checkRateLimit(ctx, req); err != nil {
+		return err
 	}
 
-	// Fetch the sender's public key (track HTTP request cost)
-	keyFetchStart := time.Now()
-	publicKey, err := ih.fetchActorPublicKey(ctx.Context, activity.Actor)
-	keyFetchDuration := time.Since(keyFetchStart)
-	
-	// Update cost tracking with key fetch
-	costParams.HTTPRequestCount = 1
-	costParams.DNSLookupCount = 1
-	
-	if err != nil {
-		ih.logger.Error("failed to fetch actor public key",
-			zap.String("actor", activity.Actor),
+	// Check domain blocking
+	if err := ih.checkDomainBlock(ctx, req); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkRateLimit performs rate limiting checks
+func (ih *InboxHandler) checkRateLimit(ctx *lift.Context, req *InboxRequest) error {
+	if err := ih.rateLimiter.CheckRateLimit(ctx.Context, req.ActorDomain, ctx.Header("X-Forwarded-For")); err != nil {
+		ih.logger.Warn("rate limit exceeded",
+			zap.String("domain", req.ActorDomain),
 			zap.Error(err))
 
-		// Record comprehensive cost tracking for key fetch failure
-		costParams.Success = false
-		costParams.ErrorMessage = fmt.Sprintf("Failed to fetch actor public key: %v", err)
-		costParams.ResponseTimeMs = time.Since(startTime).Milliseconds()
-		costParams.LambdaDurationMs = time.Since(startTime).Milliseconds()
-		costParams.ProcessingTimeMs = keyFetchDuration.Milliseconds()
-		costParams.DynamoDBReadCount = 3 // Rate limit + actor lookup + domain block check
+		ih.recordFailureCost(req, "Rate limit exceeded", 2)
+		return lift.NewLiftError("RATE_LIMITED", "rate limit exceeded for domain", 429)
+	}
 
-		cost := ih.costCalculator.CalculateFederationCosts(costParams)
-		go func() {
-			if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
-				ih.logger.Warn("failed to record federation cost", zap.Error(err))
-			}
-		}()
+	// Record the rate limit attempt
+	if err := ih.rateLimiter.RecordAttempt(ctx.Context, req.ActorDomain, ctx.Header("X-Forwarded-For"), false); err != nil {
+		ih.logger.Warn("failed to record rate limit attempt", zap.Error(err))
+	}
 
+	return nil
+}
+
+// checkDomainBlock checks if the domain is blocked
+func (ih *InboxHandler) checkDomainBlock(ctx *lift.Context, req *InboxRequest) error {
+	isBlocked, block, err := ih.domainBlockRepository.IsDomainBlocked(ctx.Context, req.ActorDomain)
+	if err != nil {
+		ih.logger.Error("failed to check domain block status",
+			zap.String("domain", req.ActorDomain),
+			zap.Error(err))
+		return nil // Fail open rather than closed
+	}
+
+	if !isBlocked || block == nil {
+		return nil
+	}
+
+	ih.logger.Info("rejecting activity from blocked domain",
+		zap.String("domain", req.ActorDomain),
+		zap.String("severity", block.Severity),
+		zap.String("actor", req.Activity.Actor))
+
+	// For suspended domains, reject completely
+	if block.Severity == "suspend" {
+		ih.recordFailureCost(req, "Domain is suspended", 3)
+		return lift.NewLiftError("FORBIDDEN", "domain is suspended", 403)
+	}
+
+	// For silenced domains, we accept but may limit visibility
+	return nil
+}
+
+// verifyAuthentication handles public key fetching and signature verification
+func (ih *InboxHandler) verifyAuthentication(ctx *lift.Context, req *InboxRequest) error {
+	// Fetch public key
+	keyFetchStart := time.Now()
+	publicKey, err := ih.fetchActorPublicKey(ctx.Context, req.Activity.Actor)
+	keyFetchDuration := time.Since(keyFetchStart)
+
+	req.CostParams.HTTPRequestCount = 1
+	req.CostParams.DNSLookupCount = 1
+
+	if err != nil {
+		ih.logger.Error("failed to fetch actor public key",
+			zap.String("actor", req.Activity.Actor),
+			zap.Error(err))
+
+		req.CostParams.ProcessingTimeMs = keyFetchDuration.Milliseconds()
+		ih.recordFailureCost(req, fmt.Sprintf("Failed to fetch actor public key: %v", err), 3)
 		return lift.NewLiftError("VALIDATION_ERROR", "unable to verify sender", 400)
 	}
 
-	// Verify HTTP signature (track CPU-intensive operation)
+	// Verify signature
 	signatureVerifyStart := time.Now()
-	if err := ih.verifyRequest(ctx, publicKey, body); err != nil {
+	if err := ih.verifyRequest(ctx, publicKey, req.Body); err != nil {
 		signatureVerifyDuration := time.Since(signatureVerifyStart)
-		
+
 		ih.logger.Warn("signature verification failed",
-			zap.String("actor", activity.Actor),
+			zap.String("actor", req.Activity.Actor),
 			zap.Error(err))
 
-		// Record comprehensive cost tracking for signature verification failure
-		costParams.Success = false
-		costParams.ErrorMessage = fmt.Sprintf("Signature verification failed: %v", err)
-		costParams.ResponseTimeMs = time.Since(startTime).Milliseconds()
-		costParams.LambdaDurationMs = time.Since(startTime).Milliseconds()
-		costParams.ProcessingTimeMs = keyFetchDuration.Milliseconds() + signatureVerifyDuration.Milliseconds()
-		costParams.SignatureVerificationMs = signatureVerifyDuration.Milliseconds()
-		costParams.DynamoDBReadCount = 3 // Rate limit + actor lookup + domain block check
-
-		cost := ih.costCalculator.CalculateFederationCosts(costParams)
-		go func() {
-			if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
-				ih.logger.Warn("failed to record federation cost", zap.Error(err))
-			}
-		}()
-
+		req.CostParams.ProcessingTimeMs = keyFetchDuration.Milliseconds() + signatureVerifyDuration.Milliseconds()
+		req.CostParams.SignatureVerificationMs = signatureVerifyDuration.Milliseconds()
+		ih.recordFailureCost(req, fmt.Sprintf("Signature verification failed: %v", err), 3)
 		return lift.NewLiftError("UNAUTHORIZED", "signature verification failed", 401)
 	}
+
 	signatureVerifyDuration := time.Since(signatureVerifyStart)
-	
-	// Update cost tracking with successful signature verification
-	costParams.SignatureVerificationMs = signatureVerifyDuration.Milliseconds()
+	req.CostParams.SignatureVerificationMs = signatureVerifyDuration.Milliseconds()
 
 	// Verify digest if present
-	if ctx.Header("Digest") != "" {
-		httpReq, err := ih.convertLiftRequest(ctx, body)
-		if err == nil {
-			if err := federation.VerifyDigest(httpReq, body); err != nil {
-				ih.logger.Warn("digest verification failed",
-					zap.String("actor", activity.Actor),
-					zap.Error(err))
-				return lift.NewLiftError("VALIDATION_ERROR", "digest verification failed", 400)
-			}
-		}
+	return ih.verifyDigest(ctx, req)
+}
+
+// verifyDigest verifies the digest header if present
+func (ih *InboxHandler) verifyDigest(ctx *lift.Context, req *InboxRequest) error {
+	if ctx.Header("Digest") == "" {
+		return nil
 	}
 
-	// Store in inbox (the storage layer will automatically put it in the inbox based on actor)
-	err = ih.activityRepository.CreateActivity(ctx.Context, &activity)
+	httpReq, err := ih.convertLiftRequest(ctx, req.Body)
 	if err != nil {
-		ih.logger.Error("failed to store activity", zap.Error(err))
-		
-		// Record cost tracking for storage failure
-		costParams.Success = false
-		costParams.ErrorMessage = fmt.Sprintf("Failed to store activity: %v", err)
-		costParams.ResponseTimeMs = time.Since(startTime).Milliseconds()
-		costParams.LambdaDurationMs = time.Since(startTime).Milliseconds()
-		costParams.ProcessingTimeMs = keyFetchDuration.Milliseconds() + signatureVerifyDuration.Milliseconds()
-		costParams.DynamoDBReadCount = 3  // Rate limit + actor lookup + domain block check
-		costParams.DynamoDBWriteCount = 1 // Failed activity storage attempt
+		return nil
+	}
 
-		cost := ih.costCalculator.CalculateFederationCosts(costParams)
-		go func() {
-			if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
-				ih.logger.Warn("failed to record federation cost", zap.Error(err))
-			}
-		}()
-		
+	if err := federation.VerifyDigest(httpReq, req.Body); err != nil {
+		ih.logger.Warn("digest verification failed",
+			zap.String("actor", req.Activity.Actor),
+			zap.Error(err))
+		return lift.NewLiftError("VALIDATION_ERROR", "digest verification failed", 400)
+	}
+
+	return nil
+}
+
+// storeAndProcessActivity stores the activity and processes it based on type
+func (ih *InboxHandler) storeAndProcessActivity(ctx *lift.Context, req *InboxRequest) error {
+	// Store the activity
+	if err := ih.activityRepository.CreateActivity(ctx.Context, req.Activity); err != nil {
+		ih.logger.Error("failed to store activity", zap.Error(err))
+		ih.recordFailureCost(req, fmt.Sprintf("Failed to store activity: %v", err), 3)
 		return lift.NewLiftError("INTERNAL_ERROR", "failed to store activity", 500)
 	}
-	
-	// Update cost tracking - successful storage
-	costParams.DynamoDBWriteCount = 1 // Activity storage
 
-	// Process different activity types (track additional DB operations)
+	req.CostParams.DynamoDBWriteCount = 1 // Activity storage
+
+	// Process by activity type
 	processingStart := time.Now()
-	var processingError error
-	
-	switch activity.Type {
-	case activitypub.FollowType:
-		if err := ih.processFollowActivity(ctx.Context, &activity, actor); err != nil {
-			processingError = err
-			ih.logger.Error("failed to process follow activity", zap.Error(err))
-		} else {
-			costParams.DynamoDBWriteCount += 1 // Relationship creation
-			costParams.DynamoDBReadCount += 1  // Follow approval check
-		}
-	case activitypub.AcceptType:
-		if err := ih.processAcceptActivity(ctx.Context, &activity, actor); err != nil {
-			processingError = err
-			ih.logger.Error("failed to process accept activity", zap.Error(err))
-		} else {
-			costParams.DynamoDBWriteCount += 1 // Relationship update
-			costParams.DynamoDBReadCount += 1  // Original activity lookup
-		}
-	case activitypub.RejectType:
-		if err := ih.processRejectActivity(ctx.Context, &activity, actor); err != nil {
-			processingError = err
-			ih.logger.Error("failed to process reject activity", zap.Error(err))
-		} else {
-			costParams.DynamoDBWriteCount += 1 // Relationship deletion
-			costParams.DynamoDBReadCount += 1  // Original activity lookup
-		}
-	case activitypub.CreateType:
-		if err := ih.processRemoteCreateActivity(ctx.Context, &activity, actor); err != nil {
-			processingError = err
-			ih.logger.Error("failed to process create activity", zap.Error(err))
-		} else {
-			costParams.DynamoDBWriteCount += 2 // Object creation + timeline entry
-			costParams.DynamoDBReadCount += 1  // Content validation
-		}
-	case activitypub.UpdateType:
-		if err := ih.processRemoteUpdateActivity(ctx.Context, &activity, actor); err != nil {
-			processingError = err
-			ih.logger.Error("failed to process update activity", zap.Error(err))
-		} else {
-			costParams.DynamoDBWriteCount += 1 // Object update
-			costParams.DynamoDBReadCount += 1  // Object lookup
-		}
-	case activitypub.DeleteType:
-		if err := ih.processRemoteDeleteActivity(ctx.Context, &activity, actor); err != nil {
-			processingError = err
-			ih.logger.Error("failed to process delete activity", zap.Error(err))
-		} else {
-			costParams.DynamoDBWriteCount += 1 // Object deletion
-			costParams.DynamoDBReadCount += 1  // Object lookup
-		}
-	case activitypub.UndoType:
-		if err := ih.processUndoActivity(ctx.Context, &activity, actor); err != nil {
-			processingError = err
-			ih.logger.Error("failed to process undo activity", zap.Error(err))
-		} else {
-			costParams.DynamoDBWriteCount += 1 // Undo operation
-			costParams.DynamoDBReadCount += 2  // Original activity + target lookup
-		}
+	if err := ih.processActivityByType(ctx.Context, req); err != nil {
+		processingDuration := time.Since(processingStart)
+		req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
+		ih.recordFailureCost(req, fmt.Sprintf("Failed to process %s activity: %v", req.Activity.Type, err), 0)
+		return lift.NewLiftError("INTERNAL_ERROR", fmt.Sprintf("failed to process %s activity", req.Activity.Type), 500)
 	}
-	
+
 	processingDuration := time.Since(processingStart)
-	
-	// Handle processing errors
-	if processingError != nil {
-		// Record cost tracking for processing failure
-		costParams.Success = false
-		costParams.ErrorMessage = fmt.Sprintf("Failed to process %s activity: %v", activity.Type, processingError)
-		costParams.ResponseTimeMs = time.Since(startTime).Milliseconds()
-		costParams.LambdaDurationMs = time.Since(startTime).Milliseconds()
-		costParams.ProcessingTimeMs = keyFetchDuration.Milliseconds() + signatureVerifyDuration.Milliseconds() + processingDuration.Milliseconds()
+	req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
+	return nil
+}
 
-		cost := ih.costCalculator.CalculateFederationCosts(costParams)
-		go func() {
-			if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
-				ih.logger.Warn("failed to record federation cost", zap.Error(err))
-			}
-		}()
-		
-		return lift.NewLiftError("INTERNAL_ERROR", fmt.Sprintf("failed to process %s activity", activity.Type), 500)
+// processActivityByType processes the activity based on its type
+func (ih *InboxHandler) processActivityByType(ctx context.Context, req *InboxRequest) error {
+	switch req.Activity.Type {
+	case activitypub.FollowType:
+		if err := ih.processFollowActivity(ctx, req.Activity, req.Actor); err != nil {
+			ih.logger.Error("failed to process follow activity", zap.Error(err))
+			return err
+		}
+		req.CostParams.DynamoDBWriteCount++ // Relationship creation
+		req.CostParams.DynamoDBReadCount++  // Follow approval check
+
+	case activitypub.AcceptType:
+		if err := ih.processAcceptActivity(ctx, req.Activity, req.Actor); err != nil {
+			ih.logger.Error("failed to process accept activity", zap.Error(err))
+			return err
+		}
+		req.CostParams.DynamoDBWriteCount++ // Relationship update
+		req.CostParams.DynamoDBReadCount++  // Original activity lookup
+
+	case activitypub.RejectType:
+		if err := ih.processRejectActivity(ctx, req.Activity, req.Actor); err != nil {
+			ih.logger.Error("failed to process reject activity", zap.Error(err))
+			return err
+		}
+		req.CostParams.DynamoDBWriteCount++ // Relationship deletion
+		req.CostParams.DynamoDBReadCount++  // Original activity lookup
+
+	case activitypub.CreateType:
+		if err := ih.processRemoteCreateActivity(ctx, req.Activity, req.Actor); err != nil {
+			ih.logger.Error("failed to process create activity", zap.Error(err))
+			return err
+		}
+		req.CostParams.DynamoDBWriteCount += 2 // Object creation + timeline entry
+		req.CostParams.DynamoDBReadCount++  // Content validation
+
+	case activitypub.UpdateType:
+		if err := ih.processRemoteUpdateActivity(ctx, req.Activity, req.Actor); err != nil {
+			ih.logger.Error("failed to process update activity", zap.Error(err))
+			return err
+		}
+		req.CostParams.DynamoDBWriteCount++ // Object update
+		req.CostParams.DynamoDBReadCount++  // Object lookup
+
+	case activitypub.DeleteType:
+		if err := ih.processRemoteDeleteActivity(ctx, req.Activity, req.Actor); err != nil {
+			ih.logger.Error("failed to process delete activity", zap.Error(err))
+			return err
+		}
+		req.CostParams.DynamoDBWriteCount++ // Object deletion
+		req.CostParams.DynamoDBReadCount++  // Object lookup
+
+	case activitypub.UndoType:
+		if err := ih.processUndoActivity(ctx, req.Activity, req.Actor); err != nil {
+			ih.logger.Error("failed to process undo activity", zap.Error(err))
+			return err
+		}
+		req.CostParams.DynamoDBWriteCount++ // Undo operation
+		req.CostParams.DynamoDBReadCount += 2  // Original activity + target lookup
 	}
 
+	return nil
+}
+
+// recordSuccessAndComplete handles final success logging and cost tracking
+func (ih *InboxHandler) recordSuccessAndComplete(ctx *lift.Context, req *InboxRequest) {
 	ih.logger.Info("activity accepted and processed",
-		zap.String("id", activity.ID),
-		zap.String("type", activity.Type),
-		zap.String("from", activity.Actor))
+		zap.String("id", req.Activity.ID),
+		zap.String("type", req.Activity.Type),
+		zap.String("from", req.Activity.Actor))
 
-	// Record comprehensive successful federation cost tracking
-	costParams.Success = true
-	costParams.ResponseTimeMs = time.Since(startTime).Milliseconds()
-	costParams.LambdaDurationMs = time.Since(startTime).Milliseconds()
-	costParams.ProcessingTimeMs = keyFetchDuration.Milliseconds() + signatureVerifyDuration.Milliseconds() + processingDuration.Milliseconds()
-	costParams.DynamoDBWriteCount += 1 // Cost tracking record itself
+	// Record successful cost tracking
+	req.CostParams.Success = true
+	req.CostParams.ResponseTimeMs = time.Since(req.StartTime).Milliseconds()
+	req.CostParams.LambdaDurationMs = time.Since(req.StartTime).Milliseconds()
+	req.CostParams.DynamoDBWriteCount++ // Cost tracking record itself
 
-	cost := ih.costCalculator.CalculateFederationCosts(costParams)
-	
-	// Record cost tracking and update budget usage
+	cost := ih.costCalculator.CalculateFederationCosts(req.CostParams)
+
 	go func() {
-		// Record detailed cost tracking
 		if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
 			ih.logger.Warn("failed to record federation cost", zap.Error(err))
 		}
-		
-		// Update budget usage for this domain
-		if err := ih.federationCostRepository.UpdateBudgetUsage(context.Background(), 
-			actorDomain, "daily", activity.Type, "inbound", cost.TotalCostMicroCents); err != nil {
+
+		if err := ih.federationCostRepository.UpdateBudgetUsage(context.Background(),
+			req.ActorDomain, "daily", req.Activity.Type, "inbound", cost.TotalCostMicroCents); err != nil {
 			ih.logger.Warn("failed to update budget usage", zap.Error(err))
 		}
 	}()
 
-	if actorDomain != "" {
-		// Mark rate limit attempt as successful
-		if err := ih.rateLimiter.RecordAttempt(ctx.Context, actorDomain, ctx.Header("X-Forwarded-For"), true); err != nil {
+	// Mark rate limit success
+	if req.ActorDomain != "" {
+		if err := ih.rateLimiter.RecordAttempt(ctx.Context, req.ActorDomain, ctx.Header("X-Forwarded-For"), true); err != nil {
 			ih.logger.Warn("failed to record rate limit success", zap.Error(err))
 		}
 	}
+}
 
-	// Return 202 Accepted
-	return ctx.Status(http.StatusAccepted).Text("")
+// recordFailureCost records cost tracking for failures
+func (ih *InboxHandler) recordFailureCost(req *InboxRequest, errorMsg string, readCount int) {
+	req.CostParams.Success = false
+	req.CostParams.ErrorMessage = errorMsg
+	req.CostParams.ResponseTimeMs = time.Since(req.StartTime).Milliseconds()
+	req.CostParams.LambdaDurationMs = time.Since(req.StartTime).Milliseconds()
+	if readCount > 0 {
+		req.CostParams.DynamoDBReadCount = int64(readCount)
+	}
+
+	cost := ih.costCalculator.CalculateFederationCosts(req.CostParams)
+	go func() {
+		if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
+			ih.logger.Warn("failed to record federation cost", zap.Error(err))
+		}
+	}()
 }
 
 // isAddressedTo checks if the activity is addressed to the given actor
@@ -708,7 +768,7 @@ func (ih *InboxHandler) convertLiftRequest(ctx *lift.Context, body []byte) (*htt
 		for k, v := range ctx.Request.QueryParams {
 			q.Set(k, v)
 		}
-		u.RawQuery = q.Encode()
+	u.RawQuery = q.Encode()
 	}
 
 	// Create request with context
@@ -739,7 +799,10 @@ func (ih *InboxHandler) getConfig() *config.Config {
 func generateActivityID() string {
 	// Use timestamp and random bytes for uniqueness
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-only ID on crypto error
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
 	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), b)
 }
 
@@ -1211,7 +1274,9 @@ func main() {
 						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 						zap.Any("panic", r))
 					// Return a generic error
-					ctx.Status(500).Text("Internal server error")
+					if err := ctx.Status(500).Text("Internal server error"); err != nil {
+						handler.logger.Error("failed to send error response", zap.Error(err))
+					}
 				}
 			}()
 

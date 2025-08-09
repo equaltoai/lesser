@@ -163,13 +163,13 @@ func TestValidateWithTags_Success(t *testing.T) {
 
 func TestValidateWithTags_Failures(t *testing.T) {
 	user := TestUser{
-		Username: "x",                  // Too short
-		Email:    "invalid-email",      // Invalid email
-		Age:      5,                    // Too young
-		Score:    150,                  // Too high
-		Role:     "invalid",            // Not in allowed list
-		Status:   "banned",             // In disallowed list
-		JoinedAt: time.Time{},          // Zero time should be valid for date rule
+		Username: "x",             // Too short
+		Email:    "invalid-email", // Invalid email
+		Age:      5,               // Too young
+		Score:    150,             // Too high
+		Role:     "invalid",       // Not in allowed list
+		Status:   "banned",        // In disallowed list
+		JoinedAt: time.Time{},     // Zero time should be valid for date rule
 	}
 
 	err := ValidateWithTags(user)
@@ -502,7 +502,7 @@ func TestToFloat64(t *testing.T) {
 
 func TestCreateRule(t *testing.T) {
 	tests := []struct {
-		ruleName    string
+		ruleName     string
 		expectedType string
 	}{
 		{"required", "RequiredRule"},
@@ -608,12 +608,12 @@ func TestUsernameRule(t *testing.T) {
 
 	// Test invalid usernames
 	invalidUsernames := []string{
-		"us",              // Too short
+		"us",                    // Too short
 		strings.Repeat("a", 31), // Too long
-		"user@name",       // Invalid character
-		"user.name",       // Invalid character
-		"user name",       // Space not allowed
-		"",                // Empty
+		"user@name",             // Invalid character
+		"user.name",             // Invalid character
+		"user name",             // Space not allowed
+		"",                      // Empty
 	}
 
 	for _, username := range invalidUsernames {
@@ -640,11 +640,11 @@ func TestPasswordRule(t *testing.T) {
 
 	// Test invalid passwords
 	invalidPasswords := []string{
-		"short1A",        // Too short
-		"password123",    // No uppercase
-		"PASSWORD123",    // No lowercase
-		"PasswordABC",    // No digit
-		"",               // Empty
+		"short1A",     // Too short
+		"password123", // No uppercase
+		"PASSWORD123", // No lowercase
+		"PasswordABC", // No digit
+		"",            // Empty
 	}
 
 	for _, password := range invalidPasswords {
@@ -659,12 +659,12 @@ func TestContentRule(t *testing.T) {
 	rule := ContentRule{Constraints: DefaultConstraints()}
 
 	// Test valid content
-	assert.NoError(t, rule.Validate(""))                              // Empty is allowed
-	assert.NoError(t, rule.Validate("Short content"))                 // Short content
-	assert.NoError(t, rule.Validate(strings.Repeat("a", 500)))        // Exactly at limit
+	assert.NoError(t, rule.Validate(""))                       // Empty is allowed
+	assert.NoError(t, rule.Validate("Short content"))          // Short content
+	assert.NoError(t, rule.Validate(strings.Repeat("a", 500))) // Exactly at limit
 
 	// Test invalid content
-	assert.Error(t, rule.Validate(strings.Repeat("a", 501)))          // Too long
+	assert.Error(t, rule.Validate(strings.Repeat("a", 501))) // Too long
 
 	// Test non-string value
 	assert.Error(t, rule.Validate(123))
@@ -739,10 +739,10 @@ func TestComplexValidation(t *testing.T) {
 
 	// Test with invalid data
 	invalidProduct := TestProduct{
-		Name:        "", // Required but empty
-		Price:       -10, // Negative price
-		Category:    "invalid", // Not in allowed list
-		SKU:         "SHORT", // Wrong length
+		Name:        "",                        // Required but empty
+		Price:       -10,                       // Negative price
+		Category:    "invalid",                 // Not in allowed list
+		SKU:         "SHORT",                   // Wrong length
 		Description: strings.Repeat("a", 1001), // Too long
 	}
 
@@ -771,7 +771,7 @@ func BenchmarkValidateWithTags(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ValidateWithTags(user)
+		_ = ValidateWithTags(user)
 	}
 }
 
@@ -786,7 +786,6 @@ func BenchmarkValidator_Validate(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		validator.Validate(user)
+		_ = validator.Validate(user)
 	}
 }
-

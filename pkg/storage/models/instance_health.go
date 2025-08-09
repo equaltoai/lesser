@@ -41,7 +41,7 @@ type InstanceHealth struct {
 func (h *InstanceHealth) UpdateKeys() {
 	h.PK = fmt.Sprintf("INSTANCE#%s", h.Domain)
 	h.SK = fmt.Sprintf("HEALTH#%d", h.Timestamp.UnixNano())
-	
+
 	// Set TTL to 7 days from timestamp
 	h.TTL = h.Timestamp.Add(7 * 24 * time.Hour).Unix()
 }
@@ -90,7 +90,7 @@ func (h *InstanceHealth) GetHealthScore() float64 {
 	// Response time penalty (penalize anything over 1 second)
 	if h.ResponseTime > time.Second {
 		penalty := float64(h.ResponseTime.Milliseconds()-1000) / 100.0 // -1 point per 100ms
-		score -= min(penalty, 30.0)
+		score -= mathMin(penalty, 30.0)
 	}
 
 	// Error rate penalty
@@ -99,10 +99,10 @@ func (h *InstanceHealth) GetHealthScore() float64 {
 	// Backlog penalty (penalize anything over 1000 messages)
 	if h.InboxBacklog > 1000 {
 		penalty := float64(h.InboxBacklog-1000) / 1000.0 // -1 point per 1000 messages
-		score -= min(penalty, 10.0)
+		score -= mathMin(penalty, 10.0)
 	}
 
-	return max(score, 0.0)
+	return mathMax(score, 0.0)
 }
 
 // InstanceHealthSummary represents aggregated health data for an instance
@@ -112,19 +112,19 @@ type InstanceHealthSummary struct {
 	SK string `dynamorm:"sk" json:"-"` // SUMMARY#window (e.g., SUMMARY#1h, SUMMARY#24h)
 
 	// Metadata
-	Domain        string        `json:"domain"`
-	Window        time.Duration `json:"window"`        // Time window for aggregation
-	LastUpdated   time.Time     `json:"last_updated"`
-	SampleCount   int           `json:"sample_count"`
-	
+	Domain      string        `json:"domain"`
+	Window      time.Duration `json:"window"` // Time window for aggregation
+	LastUpdated time.Time     `json:"last_updated"`
+	SampleCount int           `json:"sample_count"`
+
 	// Aggregated metrics
-	Availability      float64       `json:"availability"`       // Percentage of successful checks
-	AvgResponseTime   time.Duration `json:"avg_response_time"`
-	MaxResponseTime   time.Duration `json:"max_response_time"`
-	ErrorRate         float64       `json:"error_rate"`
-	AvgInboxBacklog   int           `json:"avg_inbox_backlog"`
-	MaxInboxBacklog   int           `json:"max_inbox_backlog"`
-	HealthScore       float64       `json:"health_score"`       // 0-100
+	Availability    float64       `json:"availability"` // Percentage of successful checks
+	AvgResponseTime time.Duration `json:"avg_response_time"`
+	MaxResponseTime time.Duration `json:"max_response_time"`
+	ErrorRate       float64       `json:"error_rate"`
+	AvgInboxBacklog int           `json:"avg_inbox_backlog"`
+	MaxInboxBacklog int           `json:"max_inbox_backlog"`
+	HealthScore     float64       `json:"health_score"` // 0-100
 
 	// Status code distribution
 	StatusCodeCounts map[string]int `json:"status_code_counts"` // JSON serialized map
@@ -136,7 +136,7 @@ type InstanceHealthSummary struct {
 // UpdateKeys updates the partition and sort keys for health summary
 func (s *InstanceHealthSummary) UpdateKeys() {
 	s.PK = fmt.Sprintf("INSTANCE#%s", s.Domain)
-	
+
 	// Convert window to string identifier
 	var windowStr string
 	switch s.Window {
@@ -149,9 +149,9 @@ func (s *InstanceHealthSummary) UpdateKeys() {
 	default:
 		windowStr = fmt.Sprintf("%ds", int(s.Window.Seconds()))
 	}
-	
+
 	s.SK = fmt.Sprintf("SUMMARY#%s", windowStr)
-	
+
 	// Set TTL to 30 days from last update
 	s.TTL = s.LastUpdated.Add(30 * 24 * time.Hour).Unix()
 }
@@ -170,14 +170,14 @@ func NewInstanceHealthSummary(domain string, window time.Duration) *InstanceHeal
 }
 
 // Helper functions
-func min(a, b float64) float64 {
+func mathMin(a, b float64) float64 {
 	if a < b {
 		return a
 	}
 	return b
 }
 
-func max(a, b float64) float64 {
+func mathMax(a, b float64) float64 {
 	if a > b {
 		return a
 	}

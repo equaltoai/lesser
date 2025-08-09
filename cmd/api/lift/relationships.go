@@ -19,7 +19,7 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	if testUsername != "" {
 		// Get the user's actor directly (test mode)
 		actor, err := h.repos.Actor().GetActor(ctx, testUsername)
@@ -27,7 +27,7 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 			h.logger.Error("failed to get actor", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
-		
+
 		// Skip to the main logic with test username
 		return h.handleRelationshipsLogic(ctx, actor, testUsername)
 	}
@@ -37,7 +37,7 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 	if authHeader == "" {
 		authHeader = ctx.Header("authorization")
 	}
-	
+
 	// Try direct access to headers if ctx.Header doesn't work
 	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
@@ -45,7 +45,7 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
-	
+
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -189,13 +189,11 @@ func (h *Handler) extractAccountIDsLift(ctx *lift.Context) []string {
 		queryParams = ctx.Request.Request.QueryParams
 	}
 
-
 	for key, value := range queryParams {
 		if strings.HasPrefix(key, "id[") && strings.HasSuffix(key, "]") {
 			accountIDs = append(accountIDs, value)
 		}
 	}
-	
 
 	// If no array format found, check for comma-separated format: id=1,2
 	if len(accountIDs) == 0 {
@@ -236,4 +234,3 @@ func (h *Handler) getRelationshipNoteLift(ctx context.Context, currentUsername, 
 	}
 	return note.Note
 }
-

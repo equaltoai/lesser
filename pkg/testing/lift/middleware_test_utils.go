@@ -116,7 +116,7 @@ func (s *MiddlewareTestSuite) TestMiddlewareChain(name string, middlewares []lif
 
 // createMockHandler creates a mock handler for testing
 func (s *MiddlewareTestSuite) createMockHandler(expectedError string) lift.Handler {
-	return lift.HandlerFunc(func(ctx *lift.Context) error {
+	return lift.HandlerFunc(func(_ *lift.Context) error {
 		s.handlerCalled = true
 		if expectedError != "" {
 			s.handlerError = errors.New(expectedError)
@@ -196,7 +196,7 @@ func TestRateLimitMiddleware(t *testing.T, middleware lift.Middleware) {
 			Middleware:     middleware,
 			Context:        ctx,
 			ExpectedCalled: i < 5, // Assuming limit is 5
-			ExpectedError:  func() string {
+			ExpectedError: func() string {
 				if i >= 5 {
 					return "rate limit exceeded"
 				}
@@ -419,14 +419,14 @@ func WithError(err error) ContextModifier {
 // TestMiddlewareError tests middleware error handling
 func TestMiddlewareError(t *testing.T, middleware lift.Middleware, expectedStatus int, expectedMessage string) {
 	ctx := MockLiftContext("GET", "/test")
-	
-	errorHandler := lift.HandlerFunc(func(ctx *lift.Context) error {
+
+	errorHandler := lift.HandlerFunc(func(_ *lift.Context) error {
 		return errors.New("handler error")
 	})
-	
+
 	wrappedHandler := middleware(errorHandler)
 	err := wrappedHandler.Handle(ctx)
-	
+
 	assert.Error(t, err)
 	assert.Equal(t, expectedStatus, ctx.Response.StatusCode)
 	if expectedMessage != "" {
@@ -437,12 +437,12 @@ func TestMiddlewareError(t *testing.T, middleware lift.Middleware, expectedStatu
 // TestMiddlewarePerformance benchmarks middleware performance
 func TestMiddlewarePerformance(b *testing.B, middleware lift.Middleware) {
 	ctx := MockLiftContext("GET", "/test")
-	handler := lift.HandlerFunc(func(ctx *lift.Context) error {
+	handler := lift.HandlerFunc(func(_ *lift.Context) error {
 		return nil
 	})
-	
+
 	wrappedHandler := middleware(handler)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = wrappedHandler.Handle(ctx)

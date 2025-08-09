@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // converterImpl implements the Converter interface
@@ -97,7 +98,7 @@ func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, met
 
 	// Set last status time if available
 	if metadata.LastStatusAt != nil {
-		account.LastStatusAt = metadata.LastStatusAt.Format("2006-01-02") // Mastodon uses date only
+		account.LastStatusAt = metadata.LastStatusAt.Format(common.DateFormat) // Mastodon uses date only
 	}
 
 	// Convert actor fields to Mastodon format
@@ -145,7 +146,7 @@ func (c *converterImpl) ObjectToStatus(obj any, actor *activitypub.Actor) models
 }
 
 // ObjectToStatusWithContext converts an object with additional context
-func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status {
+func (c *converterImpl) ObjectToStatusWithContext(_ context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status {
 	status := models.Status{
 		MediaAttachments: []any{},
 		Mentions:         []any{},
@@ -340,12 +341,12 @@ func (c *converterImpl) processAttachmentsFromMap(attachments []any) []any {
 			attachment := map[string]any{
 				"id":          c.generateRandomString(8),
 				"type":        "image",
-				"url":         c.getStringFromMap(attMap, "url", ""),
-				"preview_url": c.getStringFromMap(attMap, "url", ""),
-				"text_url":    c.getStringFromMap(attMap, "url", ""),
-				"description": c.getStringFromMap(attMap, "name", ""),
+				"url":         c.getStringFromMap(attMap, "url"),
+				"preview_url": c.getStringFromMap(attMap, "url"),
+				"text_url":    c.getStringFromMap(attMap, "url"),
+				"description": c.getStringFromMap(attMap, "name"),
 			}
-			if mediaType := c.getStringFromMap(attMap, "mediaType", ""); mediaType != "" {
+			if mediaType := c.getStringFromMap(attMap, "mediaType"); mediaType != "" {
 				attachment["type"] = c.getAttachmentType(mediaType)
 			}
 			result = append(result, attachment)
@@ -384,11 +385,11 @@ func (c *converterImpl) generateRandomString(length int) string {
 	return string(b)
 }
 
-func (c *converterImpl) getStringFromMap(m map[string]any, key, defaultValue string) string {
+func (c *converterImpl) getStringFromMap(m map[string]any, key string) string {
 	if val, ok := m[key].(string); ok {
 		return val
 	}
-	return defaultValue
+	return ""
 }
 
 func (c *converterImpl) contains(slice []string, item string) bool {

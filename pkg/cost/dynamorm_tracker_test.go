@@ -128,8 +128,8 @@ func TestTrackOperation_WithContextTracker(t *testing.T) {
 
 	err := tracker.TrackOperation(ctx, operation, func() error {
 		// Simulate some DynamoDB operations
-		tracker.TrackDynamoRead(2)
-		tracker.TrackDynamoWrite(1)
+		_ = tracker.TrackDynamoRead(2)
+		_ = tracker.TrackDynamoWrite(1)
 		return nil
 	})
 
@@ -231,8 +231,8 @@ func TestGetCostSummary(t *testing.T) {
 	tracker := NewDynamORMCostTracker(mockDB, logger)
 
 	// Add some tracked operations - use small numbers to avoid circuit breaker
-	tracker.TrackDynamoRead(30)  // Small number to avoid circuit breaker
-	tracker.TrackDynamoWrite(5)  // Small number to avoid circuit breaker
+	_ = tracker.TrackDynamoRead(30) // Small number to avoid circuit breaker
+	_ = tracker.TrackDynamoWrite(5) // Small number to avoid circuit breaker
 
 	summary := tracker.GetCostSummary()
 
@@ -249,8 +249,8 @@ func TestReset(t *testing.T) {
 	tracker := NewDynamORMCostTracker(mockDB, logger)
 
 	// Add some tracked operations
-	tracker.TrackDynamoRead(5)
-	tracker.TrackDynamoWrite(3)
+	_ = tracker.TrackDynamoRead(5)
+	_ = tracker.TrackDynamoWrite(3)
 
 	// Verify operations were tracked
 	assert.Equal(t, int64(5), tracker.dynamoReads.Load())
@@ -358,8 +358,8 @@ func TestCostCalculationAccuracy(t *testing.T) {
 	reads := 30
 	writes := 5
 
-	tracker.TrackDynamoRead(reads)
-	tracker.TrackDynamoWrite(writes)
+	_ = tracker.TrackDynamoRead(reads)
+	_ = tracker.TrackDynamoWrite(writes)
 
 	cost := tracker.GetCostSummary()
 

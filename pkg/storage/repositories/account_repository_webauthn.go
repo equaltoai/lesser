@@ -175,11 +175,17 @@ func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credenti
 // CreateWebAuthnChallenge creates a WebAuthn challenge for authentication
 func (r *AccountRepository) CreateWebAuthnChallenge(ctx context.Context, challenge *storage.WebAuthnChallenge) error {
 	model := &models.WebAuthnChallenge{
-		Challenge:   challenge.Challenge,
-		UserID:      challenge.UserID,
-		SessionData: func() []byte { if data, ok := challenge.SessionData.([]byte); ok { return data } else { return nil } }(),
-		Type:        challenge.Type,
-		ExpiresAt:   challenge.ExpiresAt,
+		Challenge: challenge.Challenge,
+		UserID:    challenge.UserID,
+		SessionData: func() []byte {
+			data, ok := challenge.SessionData.([]byte)
+			if ok {
+				return data
+			}
+			return nil
+		}(),
+		Type:      challenge.Type,
+		ExpiresAt: challenge.ExpiresAt,
 	}
 
 	err := r.db.WithContext(ctx).Model(model).Create()
@@ -216,7 +222,11 @@ func (r *AccountRepository) GetWebAuthnChallenge(ctx context.Context, challenge 
 	// Check if expired
 	if time.Now().After(model.ExpiresAt) {
 		// Remove expired challenge
-		r.DeleteWebAuthnChallenge(ctx, challenge)
+		if err := r.DeleteWebAuthnChallenge(ctx, challenge); err != nil {
+			r.logger.Warn("failed to delete expired WebAuthn challenge",
+				zap.String("challenge", challenge),
+				zap.Error(err))
+		}
 		return nil, fmt.Errorf("WebAuthn challenge %s has expired", challenge)
 	}
 
@@ -398,7 +408,11 @@ func (r *AccountRepository) GetWalletChallenge(ctx context.Context, challengeID 
 	// Check if expired
 	if time.Now().After(model.ExpiresAt) {
 		// Remove expired challenge
-		r.DeleteWalletChallenge(ctx, challengeID)
+		if err := r.DeleteWalletChallenge(ctx, challengeID); err != nil {
+			r.logger.Warn("failed to delete expired wallet challenge",
+				zap.String("challengeID", challengeID),
+				zap.Error(err))
+		}
 		return nil, fmt.Errorf("wallet challenge %s has expired", challengeID)
 	}
 
@@ -468,7 +482,7 @@ func (r *AccountRepository) GetUserWallets(ctx context.Context, username string)
 	return r.GetUserWalletCredentials(ctx, username)
 }
 
-// DeleteWalletCredential removes a wallet credential by username and address  
+// DeleteWalletCredential removes a wallet credential by username and address
 func (r *AccountRepository) DeleteWalletCredential(ctx context.Context, username, address string) error {
 	// First verify the wallet belongs to the user
 	wallet, err := r.GetWalletCredential(ctx, address)

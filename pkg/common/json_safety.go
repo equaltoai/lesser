@@ -10,19 +10,19 @@ import (
 )
 
 const (
-	// Maximum JSON depth to prevent deep nesting attacks
+	// MaxJSONDepth is the maximum JSON depth to prevent deep nesting attacks
 	MaxJSONDepth = 10
 
-	// Maximum number of keys in an object
+	// MaxJSONKeys is the maximum number of keys in an object
 	MaxJSONKeys = 100
 
-	// Maximum array length
+	// MaxJSONArrayLength is the maximum array length
 	MaxJSONArrayLength = 1000
 
-	// Maximum string length in JSON
+	// MaxJSONStringLength is the maximum string length in JSON
 	MaxJSONStringLength = 50000
 
-	// Maximum total JSON size (already enforced by request limits)
+	// MaxJSONSize is the maximum total JSON size (already enforced by request limits)
 	MaxJSONSize = 512 * 1024 // 512KB
 )
 

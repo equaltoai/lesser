@@ -56,7 +56,7 @@ func TestValidator_ValidateIDFormat(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	migrator := &Migrator{logger: logger}
 	validator := NewValidator(migrator, logger)
-	
+
 	tests := []struct {
 		name    string
 		id      string
@@ -93,7 +93,7 @@ func TestValidator_ValidateIDFormat(t *testing.T) {
 			errMsg:  "invalid character",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validator.validateIDFormat(tt.id)
@@ -110,33 +110,33 @@ func TestValidator_ValidateIDFormat(t *testing.T) {
 func TestValidator_CheckDuplicateVersions(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	registry := NewRegistry()
-	
+
 	// Add existing migrations
-	registry.Register(&MockMigration{
+	_ = registry.Register(&MockMigration{
 		id:      "migration1",
 		version: 20240101120000,
 	})
-	
-	registry.Register(&MockMigration{
+
+	_ = registry.Register(&MockMigration{
 		id:      "migration2",
 		version: 20240102120000,
 	})
-	
+
 	migrator := &Migrator{
 		registry: registry,
 		logger:   logger,
 	}
 	validator := NewValidator(migrator, logger)
-	
+
 	// Test migration with duplicate version
 	migration := &MockMigration{
 		id:      "migration3",
 		version: 20240101120000, // Same as migration1
 	}
-	
+
 	result := &ValidationResult{Valid: true}
 	validator.checkDuplicateVersions(migration, result)
-	
+
 	assert.Len(t, result.Warnings, 1)
 	assert.Equal(t, "duplicate_version", result.Warnings[0].Type)
 	assert.Contains(t, result.Warnings[0].Message, "migration1")
@@ -164,9 +164,9 @@ func TestValidationResult_Format(t *testing.T) {
 			},
 		},
 	}
-	
+
 	formatted := result.Format()
-	
+
 	// Check format contains expected elements
 	assert.Contains(t, formatted, "✗ Validation failed")
 	assert.Contains(t, formatted, "Errors:")
@@ -178,7 +178,7 @@ func TestValidationResult_Format(t *testing.T) {
 
 func TestValidationResult_Format_Valid(t *testing.T) {
 	result := &ValidationResult{Valid: true}
-	
+
 	formatted := result.Format()
 	assert.Contains(t, formatted, "✓ All validations passed")
 }
