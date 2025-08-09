@@ -327,7 +327,7 @@ func init() {
 		logger.Fatal("Failed to load AWS config", zap.Error(err))
 	}
 
-	aiService := ai.NewAIService(awsConfig, aiConfig)
+	aiService := ai.NewAIService(awsConfig, aiConfig, cfg.DynamoTableName)
 
 	// Initialize processor
 	processor = NewAIProcessor(db, cfg.DynamoTableName, aiService)

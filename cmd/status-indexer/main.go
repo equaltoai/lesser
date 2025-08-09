@@ -96,7 +96,7 @@ func init() {
 		BedrockModelID:      "anthropic.claude-3-haiku-20240307-v1:0",
 		S3Bucket:            cfg.S3BucketName,
 	}
-	aiService = ai.NewAIService(awsCfg, aiConfig)
+	aiService = ai.NewAIService(awsCfg, aiConfig, cfg.DynamoTableName)
 
 	// Initialize processor
 	processor = NewStatusIndexer(db, cfg.DynamoTableName, cfg.Domain, aiService)
