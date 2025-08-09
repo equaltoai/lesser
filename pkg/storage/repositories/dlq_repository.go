@@ -11,6 +11,16 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
+)
+
+// DLQ message status constants
+const (
+	DLQStatusNew          = "new"
+	DLQStatusReprocessing = "reprocessing"
+	DLQStatusResolved     = "resolved"
+	DLQStatusFailed       = "failed"
+	DLQStatusAbandoned    = "abandoned"
 )
 
 // DLQRepository handles dead letter queue message operations using DynamORM
@@ -68,9 +78,9 @@ func (r *DLQRepository) GetDLQMessage(ctx context.Context, id string) (*models.D
 
 // GetDLQMessagesByService retrieves DLQ messages for a specific service with pagination
 func (r *DLQRepository) GetDLQMessagesByService(ctx context.Context, service string, date time.Time, limit int, cursor string) ([]*models.DLQMessage, string, error) {
-	dateStr := date.Format("20060102")
+	dateStr := date.Format(common.CompactDateFormat)
 	pk := fmt.Sprintf("DLQ#%s#%s", service, dateStr)
-	
+
 	query := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC") // Most recent first
@@ -104,36 +114,36 @@ func (r *DLQRepository) GetDLQMessagesByService(ctx context.Context, service str
 func (r *DLQRepository) GetDLQMessagesByServiceDateRange(ctx context.Context, service string, startDate, endDate time.Time, limit int) ([]*models.DLQMessage, error) {
 	var allMessages []*models.DLQMessage
 	currentDate := startDate
-	
+
 	for currentDate.Before(endDate) || currentDate.Equal(endDate) {
 		messages, _, err := r.GetDLQMessagesByService(ctx, service, currentDate, limit, "")
 		if err != nil {
 			r.logger.Warn("failed to get DLQ messages for date",
 				zap.String("service", service),
-				zap.String("date", currentDate.Format("2006-01-02")),
+				zap.String("date", currentDate.Format(common.DateFormat)),
 				zap.Error(err),
 			)
 		} else {
 			allMessages = append(allMessages, messages...)
 		}
-		
+
 		currentDate = currentDate.Add(24 * time.Hour)
-		
+
 		// Break if we have enough messages
 		if len(allMessages) >= limit {
 			break
 		}
 	}
-	
+
 	// Sort by timestamp (newest first) and limit
 	sort.Slice(allMessages, func(i, j int) bool {
 		return allMessages[i].FirstSeenAt.After(allMessages[j].FirstSeenAt)
 	})
-	
+
 	if len(allMessages) > limit {
 		allMessages = allMessages[:limit]
 	}
-	
+
 	return allMessages, nil
 }
 
@@ -285,11 +295,11 @@ func (r *DLQRepository) BatchUpdateDLQMessages(ctx context.Context, messages []*
 // GetDLQAnalytics returns analytics data for DLQ messages
 func (r *DLQRepository) GetDLQAnalytics(ctx context.Context, service string, timeRange DLQTimeRange) (*DLQAnalytics, error) {
 	analytics := &DLQAnalytics{
-		Service:           service,
-		TimeRange:         timeRange,
-		ErrorTypeStats:    make(map[string]*DLQErrorTypeStats),
-		ServiceStats:      make(map[string]*DLQServiceStats),
-		SimilarityGroups:  make(map[string]*DLQSimilarityGroup),
+		Service:          service,
+		TimeRange:        timeRange,
+		ErrorTypeStats:   make(map[string]*DLQErrorTypeStats),
+		ServiceStats:     make(map[string]*DLQServiceStats),
+		SimilarityGroups: make(map[string]*DLQSimilarityGroup),
 	}
 
 	// Get messages for the time range
@@ -305,15 +315,15 @@ func (r *DLQRepository) GetDLQAnalytics(ctx context.Context, service string, tim
 
 		// Status counts
 		switch message.Status {
-		case "new":
+		case DLQStatusNew:
 			analytics.NewMessages++
-		case "reprocessing":
+		case DLQStatusReprocessing:
 			analytics.ReprocessingMessages++
-		case "resolved":
+		case DLQStatusResolved:
 			analytics.ResolvedMessages++
-		case "failed":
+		case DLQStatusFailed:
 			analytics.FailedMessages++
-		case "abandoned":
+		case DLQStatusAbandoned:
 			analytics.AbandonedMessages++
 		}
 
@@ -326,9 +336,9 @@ func (r *DLQRepository) GetDLQAnalytics(ctx context.Context, service string, tim
 			}
 		} else {
 			analytics.ErrorTypeStats[message.ErrorType] = &DLQErrorTypeStats{
-				ErrorType:          message.ErrorType,
-				Count:              1,
-				ResolvedCount:      0,
+				ErrorType:           message.ErrorType,
+				Count:               1,
+				ResolvedCount:       0,
 				TotalCostMicroCents: message.GetTotalCost(),
 			}
 			if message.Status == "resolved" {
@@ -389,7 +399,7 @@ func (r *DLQRepository) GetDLQTrends(ctx context.Context, service string, days i
 	// Get messages for each day
 	for d := 0; d < days; d++ {
 		date := startDate.Add(time.Duration(d) * 24 * time.Hour)
-		dateStr := date.Format("2006-01-02")
+		dateStr := date.Format(common.DateFormat)
 
 		messages, _, err := r.GetDLQMessagesByService(ctx, service, date, 1000, "")
 		if err != nil {
@@ -411,10 +421,10 @@ func (r *DLQRepository) GetDLQTrends(ctx context.Context, service string, days i
 		var totalCost int64
 		for _, message := range messages {
 			totalCost += message.GetTotalCost()
-			
+
 			// Count error types
 			dailyStats.ErrorTypes[message.ErrorType]++
-			
+
 			// Count statuses
 			dailyStats.StatusCounts[message.Status]++
 		}
@@ -538,7 +548,7 @@ func (r *DLQRepository) CleanupExpiredMessages(ctx context.Context, before time.
 		Filter("ExpiresAt", "<", before.Unix()).
 		Limit(100). // Process in batches
 		All(&expiredMessages)
-	
+
 	if err != nil {
 		return 0, fmt.Errorf("failed to find expired DLQ messages: %w", err)
 	}
@@ -576,7 +586,7 @@ func (r *DLQRepository) GetSimilarMessages(ctx context.Context, similarityHash s
 		OrderBy("FirstSeenAt", "DESC").
 		Limit(limit).
 		All(&messages)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get similar messages: %w", err)
 	}
@@ -594,22 +604,22 @@ type DLQTimeRange struct {
 
 // DLQAnalytics represents analytics data for DLQ messages
 type DLQAnalytics struct {
-	Service             string                           `json:"service"`
-	TimeRange           DLQTimeRange                     `json:"time_range"`
-	TotalMessages       int                              `json:"total_messages"`
-	NewMessages         int                              `json:"new_messages"`
-	ReprocessingMessages int                             `json:"reprocessing_messages"`
-	ResolvedMessages    int                              `json:"resolved_messages"`
-	FailedMessages      int                              `json:"failed_messages"`
-	AbandonedMessages   int                              `json:"abandoned_messages"`
-	ResolutionRate      float64                          `json:"resolution_rate"`
-	AbandonmentRate     float64                          `json:"abandonment_rate"`
-	TotalCostMicroCents int64                            `json:"total_cost_micro_cents"`
-	TotalCostDollars    float64                          `json:"total_cost_dollars"`
+	Service               string                         `json:"service"`
+	TimeRange             DLQTimeRange                   `json:"time_range"`
+	TotalMessages         int                            `json:"total_messages"`
+	NewMessages           int                            `json:"new_messages"`
+	ReprocessingMessages  int                            `json:"reprocessing_messages"`
+	ResolvedMessages      int                            `json:"resolved_messages"`
+	FailedMessages        int                            `json:"failed_messages"`
+	AbandonedMessages     int                            `json:"abandoned_messages"`
+	ResolutionRate        float64                        `json:"resolution_rate"`
+	AbandonmentRate       float64                        `json:"abandonment_rate"`
+	TotalCostMicroCents   int64                          `json:"total_cost_micro_cents"`
+	TotalCostDollars      float64                        `json:"total_cost_dollars"`
 	AverageCostPerMessage float64                        `json:"average_cost_per_message"`
-	ErrorTypeStats      map[string]*DLQErrorTypeStats    `json:"error_type_stats"`
-	ServiceStats        map[string]*DLQServiceStats      `json:"service_stats"`
-	SimilarityGroups    map[string]*DLQSimilarityGroup   `json:"similarity_groups"`
+	ErrorTypeStats        map[string]*DLQErrorTypeStats  `json:"error_type_stats"`
+	ServiceStats          map[string]*DLQServiceStats    `json:"service_stats"`
+	SimilarityGroups      map[string]*DLQSimilarityGroup `json:"similarity_groups"`
 }
 
 // DLQErrorTypeStats represents statistics for a specific error type
@@ -644,31 +654,31 @@ type DLQSimilarityGroup struct {
 
 // DLQTrends represents trend data over time
 type DLQTrends struct {
-	Service    string                     `json:"service"`
-	Days       int                        `json:"days"`
+	Service    string                    `json:"service"`
+	Days       int                       `json:"days"`
 	DailyStats map[string]*DLQDailyStats `json:"daily_stats"`
 }
 
 // DLQDailyStats represents statistics for a single day
 type DLQDailyStats struct {
-	Date                 time.Time      `json:"date"`
-	MessageCount         int            `json:"message_count"`
-	TotalCostMicroCents  int64          `json:"total_cost_micro_cents"`
-	TotalCostDollars     float64        `json:"total_cost_dollars"`
-	ErrorTypes           map[string]int `json:"error_types"`
-	StatusCounts         map[string]int `json:"status_counts"`
+	Date                time.Time      `json:"date"`
+	MessageCount        int            `json:"message_count"`
+	TotalCostMicroCents int64          `json:"total_cost_micro_cents"`
+	TotalCostDollars    float64        `json:"total_cost_dollars"`
+	ErrorTypes          map[string]int `json:"error_types"`
+	StatusCounts        map[string]int `json:"status_counts"`
 }
 
 // DLQSearchFilter represents search criteria for DLQ messages
 type DLQSearchFilter struct {
-	Service      string     `json:"service"`
-	ErrorType    string     `json:"error_type,omitempty"`
-	Status       string     `json:"status,omitempty"`
-	Priority     string     `json:"priority,omitempty"`
-	IsPermanent  *bool      `json:"is_permanent,omitempty"`
-	StartTime    time.Time  `json:"start_time,omitempty"`
-	EndTime      time.Time  `json:"end_time,omitempty"`
-	SearchText   string     `json:"search_text,omitempty"`
-	Limit        int        `json:"limit,omitempty"`
-	Cursor       string     `json:"cursor,omitempty"`
+	Service     string    `json:"service"`
+	ErrorType   string    `json:"error_type,omitempty"`
+	Status      string    `json:"status,omitempty"`
+	Priority    string    `json:"priority,omitempty"`
+	IsPermanent *bool     `json:"is_permanent,omitempty"`
+	StartTime   time.Time `json:"start_time,omitempty"`
+	EndTime     time.Time `json:"end_time,omitempty"`
+	SearchText  string    `json:"search_text,omitempty"`
+	Limit       int       `json:"limit,omitempty"`
+	Cursor      string    `json:"cursor,omitempty"`
 }

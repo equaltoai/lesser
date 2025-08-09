@@ -11,6 +11,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SearchCostRepository manages search cost tracking and budgets
@@ -101,8 +102,8 @@ func (r *SearchCostRepository) CheckBudget(ctx context.Context, userID, operatio
 
 	// Check if user can make the request
 	if !budget.CanMakeRequest(operationType, estimatedCostMicros) {
-		return fmt.Errorf("budget exceeded: operation %s would cost %d microcents but budget allows %d remaining", 
-			operationType, estimatedCostMicros, budget.BudgetLimitMicros - budget.UsedBudgetMicros)
+		return fmt.Errorf("budget exceeded: operation %s would cost %d microcents but budget allows %d remaining",
+			operationType, estimatedCostMicros, budget.BudgetLimitMicros-budget.UsedBudgetMicros)
 	}
 
 	return nil
@@ -144,13 +145,13 @@ func (r *SearchCostRepository) GetSearchCosts(ctx context.Context, userID string
 	// Query each day in the range
 	current := startDate
 	for !current.After(endDate) {
-		dateStr := current.Format("2006-01-02")
-		
+		dateStr := current.Format(common.DateFormat)
+
 		var dayCosts []models.SearchCostTracking
 		err := r.db.WithContext(ctx).Model(&models.SearchCostTracking{}).
 			Where("PK", "=", fmt.Sprintf("SEARCH_COST#%s#%s", dateStr, userID)).
 			All(&dayCosts)
-		
+
 		if err != nil && !errors.IsNotFound(err) {
 			r.logger.Warn("failed to get search costs for date",
 				zap.String("user_id", userID),
@@ -206,14 +207,14 @@ func (r *SearchCostRepository) GetPopularQueries(ctx context.Context, limit int,
 	// now := time.Now()
 	// switch period {
 	// case "daily":
-	// 	periodDate = now.Format("2006-01-02")
+	// 	periodDate = now.Format(common.DateFormat)
 	// case "weekly":
 	// 	year, week := now.ISOWeek()
 	// 	periodDate = fmt.Sprintf("%d-W%d", year, week)
 	// case "monthly":
-	// 	periodDate = now.Format("2006-01")
+	// 	periodDate = now.Format(common.MonthFormat)
 	// default:
-	// 	periodDate = now.Format("2006-01-02")
+	// 	periodDate = now.Format(common.DateFormat)
 	// }
 	// Note: periodDate could be used for more specific queries in the future
 
@@ -250,10 +251,10 @@ func (r *SearchCostRepository) GetPopularQueries(ctx context.Context, limit int,
 func (r *SearchCostRepository) ResetBudgets(ctx context.Context, period string) error {
 	// This would typically be called by a scheduled Lambda
 	// For now, implement basic logic to reset expired budgets
-	
+
 	var budgets []models.SearchBudget
-	periodDate := time.Now().Format("2006-01-02")
-	
+	periodDate := time.Now().Format(common.DateFormat)
+
 	// Scan for budgets that need resetting
 	err := r.db.WithContext(ctx).Model(&models.SearchBudget{}).
 		Filter("SK", "=", fmt.Sprintf("PERIOD#%s", periodDate)).
@@ -294,9 +295,9 @@ func (r *SearchCostRepository) ResetBudgets(ctx context.Context, period string) 
 
 func (r *SearchCostRepository) getUserBudget(ctx context.Context, userID, period string) (*models.SearchBudget, error) {
 	var budget models.SearchBudget
-	
+
 	periodDate := r.getPeriodDate(period)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.SearchBudget{}).
 		Where("PK", "=", fmt.Sprintf("SEARCH_BUDGET#%s", userID)).
 		Where("SK", "=", fmt.Sprintf("PERIOD#%s", periodDate)).
@@ -313,20 +314,20 @@ func (r *SearchCostRepository) createDefaultBudget(ctx context.Context, userID s
 	budget := &models.SearchBudget{
 		UserID:     userID,
 		Period:     "daily",
-		PeriodDate: time.Now().Format("2006-01-02"),
-		
+		PeriodDate: time.Now().Format(common.DateFormat),
+
 		// Default budget limits (in microcents)
-		BudgetLimitMicros:      1000000,  // $0.01 per day
-		SearchBudgetMicros:     800000,   // $0.008 for regular search
-		SemanticBudgetMicros:   150000,   // $0.0015 for semantic search
-		IndexingBudgetMicros:   50000,    // $0.0005 for indexing
-		
+		BudgetLimitMicros:    1000000, // $0.01 per day
+		SearchBudgetMicros:   800000,  // $0.008 for regular search
+		SemanticBudgetMicros: 150000,  // $0.0015 for semantic search
+		IndexingBudgetMicros: 50000,   // $0.0005 for indexing
+
 		// Request limits
-		MaxRequestsPerHour:     100,
-		MaxSemanticPerHour:     10,
-		
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		MaxRequestsPerHour: 100,
+		MaxSemanticPerHour: 10,
+
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	budget.UpdateKeys()
@@ -350,11 +351,11 @@ func (r *SearchCostRepository) updateQueryStats(ctx context.Context, costData *m
 
 	// Hash the query for privacy
 	queryHash := r.hashQuery(costData.Query)
-	
+
 	// Get or create query stats
 	var stats models.SearchQueryStats
-	// periodDate := time.Now().Format("2006-01-02") // Reserved for future use
-	
+	// periodDate := time.Now().Format(common.DateFormat) // Reserved for future use
+
 	err := r.db.WithContext(ctx).Model(&models.SearchQueryStats{}).
 		Where("PK", "=", fmt.Sprintf("SEARCH_STATS#%s", queryHash)).
 		Where("SK", "=", "STATS#daily").
@@ -363,10 +364,10 @@ func (r *SearchCostRepository) updateQueryStats(ctx context.Context, costData *m
 	if errors.IsNotFound(err) {
 		// Create new stats record
 		stats = models.SearchQueryStats{
-			QueryHash:   queryHash,
-			QueryType:   costData.SearchType,
-			QueryLength: costData.QueryLength,
-			Period:      "daily",
+			QueryHash:    queryHash,
+			QueryType:    costData.SearchType,
+			QueryLength:  costData.QueryLength,
+			Period:       "daily",
 			FirstQueried: costData.Timestamp,
 		}
 	} else if err != nil {
@@ -458,16 +459,16 @@ func (r *SearchCostRepository) getPeriodDate(period string) string {
 	now := time.Now()
 	switch period {
 	case "daily":
-		return now.Format("2006-01-02")
+		return now.Format(common.DateFormat)
 	case "weekly":
 		year, week := now.ISOWeek()
 		return fmt.Sprintf("%d-W%d", year, week)
 	case "monthly":
-		return now.Format("2006-01")
+		return now.Format(common.MonthFormat)
 	case "yearly":
 		return now.Format("2006")
 	default:
-		return now.Format("2006-01-02")
+		return now.Format(common.DateFormat)
 	}
 }
 
@@ -483,15 +484,15 @@ func (r *SearchCostRepository) calculateSummary(costs []*models.SearchCostTracki
 	var totalCost, totalResponseTime int64
 	var cacheHits int
 	operationCounts := make(map[string]int64)
-	
+
 	for _, cost := range costs {
 		totalCost += cost.TotalCostMicros
 		totalResponseTime += cost.ResponseTimeMs
-		
+
 		if cost.CacheHit {
 			cacheHits++
 		}
-		
+
 		operationCounts[cost.OperationType]++
 		summary.TotalResults += int64(cost.ResultCount)
 	}
@@ -500,7 +501,7 @@ func (r *SearchCostRepository) calculateSummary(costs []*models.SearchCostTracki
 	summary.AverageCostMicros = totalCost / summary.TotalRequests
 	summary.AverageResponseTimeMs = totalResponseTime / summary.TotalRequests
 	summary.CacheHitRate = float64(cacheHits) / float64(len(costs))
-	
+
 	if summary.TotalResults > 0 {
 		summary.AverageResultsPerRequest = float64(summary.TotalResults) / float64(summary.TotalRequests)
 		summary.CostPerResult = totalCost / summary.TotalResults
@@ -513,13 +514,13 @@ func (r *SearchCostRepository) calculateSummary(costs []*models.SearchCostTracki
 
 // SearchCostSummary provides aggregated search cost information
 type SearchCostSummary struct {
-	TotalRequests             int64              `json:"total_requests"`
-	TotalCostMicros           int64              `json:"total_cost_micros"`
-	AverageCostMicros         int64              `json:"average_cost_micros"`
-	TotalResults              int64              `json:"total_results"`
-	AverageResultsPerRequest  float64            `json:"average_results_per_request"`
-	CostPerResult             int64              `json:"cost_per_result"`
-	AverageResponseTimeMs     int64              `json:"average_response_time_ms"`
-	CacheHitRate              float64            `json:"cache_hit_rate"`
-	OperationBreakdown        map[string]int64   `json:"operation_breakdown"`
+	TotalRequests            int64            `json:"total_requests"`
+	TotalCostMicros          int64            `json:"total_cost_micros"`
+	AverageCostMicros        int64            `json:"average_cost_micros"`
+	TotalResults             int64            `json:"total_results"`
+	AverageResultsPerRequest float64          `json:"average_results_per_request"`
+	CostPerResult            int64            `json:"cost_per_result"`
+	AverageResponseTimeMs    int64            `json:"average_response_time_ms"`
+	CacheHitRate             float64          `json:"cache_hit_rate"`
+	OperationBreakdown       map[string]int64 `json:"operation_breakdown"`
 }

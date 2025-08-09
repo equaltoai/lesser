@@ -1,3 +1,4 @@
+// Package main implements the outbox Lambda function for serving ActivityPub outbox endpoints.
 package main
 
 import (
@@ -65,7 +66,6 @@ type DeliveryResult struct {
 	Attempt     int
 }
 
-
 // NewOutboxProcessor creates a new outbox processor
 func NewOutboxProcessor() (*OutboxProcessor, error) {
 	logger := common.Logger()
@@ -85,10 +85,10 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 
 	// Create federation storage using DynamORM repositories
 	federationStorage := federation.NewDynamORMFederationStorage(db, cfg.DynamoTableName)
-	
+
 	// Create federation service with federation storage
 	federationService := federation.NewDeliveryService(federationStorage)
-	
+
 	// Initialize cost calculator
 	costCalculator := federation.NewCostCalculator()
 
@@ -202,10 +202,10 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 		)
 		return fmt.Errorf("invalid message format: %w", err)
 	}
-	
+
 	// Extract domain from target inbox
 	targetDomain := extractDomainFromURL(deliveryMsg.TargetInbox)
-	
+
 	// Calculate payload size
 	payloadBytes, err := json.Marshal(deliveryMsg.Activity)
 	payloadSize := int64(len(payloadBytes))
@@ -235,46 +235,46 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 
 	// Prepare comprehensive cost tracking parameters
 	costParams := &federation.CostCalculationParams{
-		ActivityID:    deliveryMsg.Activity.ID,
-		Domain:        targetDomain,
-		ActivityType:  deliveryMsg.Activity.Type,
-		Direction:     "outbound",
-		OperationType: "outbox_delivery",
-		Timestamp:     start,
-		PayloadSize:   payloadSize,
-		LambdaMemoryMB: 512, // Standard memory allocation
-		HTTPRequestCount: 1, // One HTTP request for delivery
-		DataTransferBytes: payloadSize, // Outbound data transfer
-		DynamoDBReadCount: 1, // Delivery status lookup
-		SQSMessageCount: 1, // This SQS message
-		RetryCount: deliveryMsg.Attempt - 1, // Previous attempts
+		ActivityID:        deliveryMsg.Activity.ID,
+		Domain:            targetDomain,
+		ActivityType:      deliveryMsg.Activity.Type,
+		Direction:         "outbound",
+		OperationType:     "outbox_delivery",
+		Timestamp:         start,
+		PayloadSize:       payloadSize,
+		LambdaMemoryMB:    512,                     // Standard memory allocation
+		HTTPRequestCount:  1,                       // One HTTP request for delivery
+		DataTransferBytes: payloadSize,             // Outbound data transfer
+		DynamoDBReadCount: 1,                       // Delivery status lookup
+		SQSMessageCount:   1,                       // This SQS message
+		RetryCount:        deliveryMsg.Attempt - 1, // Previous attempts
 	}
 
 	// Check budget limits before delivery
 	budgetCheck, err := op.federationCostRepository.CheckBudgetLimits(ctx.Request.Context(),
 		targetDomain, "daily", deliveryMsg.Activity.Type, "outbound",
 		op.costCalculator.EstimateOutboundActivityCost(deliveryMsg.Activity.Type, payloadSize, 1))
-	
+
 	if err != nil {
 		op.logger.Warn("failed to check budget limits", zap.Error(err))
 	} else if !budgetCheck.Allowed {
 		op.logger.Warn("delivery blocked by budget limits",
 			zap.String("domain", targetDomain),
 			zap.String("reason", budgetCheck.Message))
-		
+
 		// Record cost tracking for budget block
 		costParams.Success = false
 		costParams.ErrorMessage = fmt.Sprintf("Budget limit exceeded: %s", budgetCheck.Message)
 		costParams.ResponseTimeMs = time.Since(start).Milliseconds()
 		costParams.LambdaDurationMs = time.Since(start).Milliseconds()
-		
+
 		cost := op.costCalculator.CalculateFederationCosts(costParams)
 		go func() {
 			if err := op.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
 				op.logger.Warn("failed to record federation cost", zap.Error(err))
 			}
 		}()
-		
+
 		return fmt.Errorf("delivery blocked by budget limits: %s", budgetCheck.Message)
 	}
 
@@ -301,7 +301,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 }
 
 // deliverActivityWithRetry attempts delivery with exponential backoff retry
-func (op *OutboxProcessor) deliverActivityWithRetry(ctx context.Context, msg ActivityDeliveryMessage, costParams *federation.CostCalculationParams) DeliveryResult {
+func (op *OutboxProcessor) deliverActivityWithRetry(ctx context.Context, msg ActivityDeliveryMessage, _ *federation.CostCalculationParams) DeliveryResult {
 	var lastResult DeliveryResult
 
 	for attempt := 1; attempt <= op.retryConfig.MaxAttempts; attempt++ {
@@ -444,93 +444,6 @@ func (op *OutboxProcessor) trackDeliveryStatus(ctx context.Context, msg Activity
 	return nil
 }
 
-// recordDeliveryMetrics records metrics for federation delivery
-func (op *OutboxProcessor) recordDeliveryMetrics(msg ActivityDeliveryMessage, result DeliveryResult, totalDuration time.Duration) {
-	status := "success"
-	if !result.Success {
-		if op.isPermanentError(result.StatusCode) {
-			status = "permanent_failure"
-		} else {
-			status = "temporary_failure"
-		}
-	}
-
-	// Extract domain from target inbox for metrics
-	domain := extractDomainFromURL(result.TargetInbox)
-
-	// Calculate actual payload size
-	payloadBytes, err := json.Marshal(msg.Activity)
-	payloadSize := int64(len(payloadBytes))
-	if err != nil {
-		// Fallback to ID length if marshaling fails
-		payloadSize = int64(len(msg.Activity.ID))
-	}
-
-	// Check if this is a relay delivery by checking for relay patterns
-	isRelayDelivery := op.isRelayInbox(result.TargetInbox)
-	
-	// Store detailed federation activity with response time and byte size for time series
-	timeSeriesActivity := &models.FederationActivity{
-		Domain:       domain,
-		ActivityType: msg.Activity.Type,
-		OutboundSize: payloadSize,
-		Success:      result.Success,
-		ResponseTime: float64(totalDuration.Milliseconds()),
-		ErrorMessage: "",
-		Timestamp:    time.Now(),
-	}
-
-	if !result.Success && result.Error != nil {
-		timeSeriesActivity.ErrorMessage = result.Error.Error()
-	}
-
-	if err := op.federationActivityRepository.Create(context.Background(), timeSeriesActivity); err != nil {
-		op.logger.Error("failed to record federation time series activity",
-			zap.String("domain", domain),
-			zap.String("activity_type", msg.Activity.Type),
-			zap.Error(err),
-		)
-	}
-
-	// Record general federation activity for cost tracking
-	federationActivity2 := &models.FederationActivity{
-		Domain:       domain,
-		ActivityType: msg.Activity.Type,
-		OutboundSize: payloadSize,
-		Success:      result.Success,
-		ResponseTime: float64(totalDuration.Milliseconds()),
-		ErrorMessage: "", // Will be set if error occurs
-		Timestamp:    time.Now(),
-	}
-
-	if result.Error != nil {
-		federationActivity2.ErrorMessage = result.Error.Error()
-	}
-
-	if err := op.federationActivityRepository.Create(context.Background(), federationActivity2); err != nil {
-		op.logger.Error("failed to record federation activity metrics",
-			zap.String("domain", domain),
-			zap.String("activity_type", msg.Activity.Type),
-			zap.Error(err),
-		)
-	}
-
-	// Record relay-specific cost tracking if this is a relay delivery
-	if isRelayDelivery {
-		op.recordRelayCost(result.TargetInbox, msg.Activity.Type, payloadSize, totalDuration, result.Success, result.Error, result.Attempt)
-	}
-
-	op.logger.Info("federation delivery metrics recorded",
-		zap.String("activity_type", msg.Activity.Type),
-		zap.String("target_domain", domain),
-		zap.String("status", status),
-		zap.Bool("is_relay", isRelayDelivery),
-		zap.Int("attempt_count", result.Attempt),
-		zap.Int("status_code", result.StatusCode),
-		zap.Duration("total_duration", totalDuration),
-		zap.Duration("delivery_duration", result.Duration),
-	)
-}
 
 // recordComprehensiveCostTracking records comprehensive cost tracking for outbound federation
 func (op *OutboxProcessor) recordComprehensiveCostTracking(msg ActivityDeliveryMessage, result DeliveryResult, costParams *federation.CostCalculationParams, totalDuration time.Duration) {
@@ -541,31 +454,31 @@ func (op *OutboxProcessor) recordComprehensiveCostTracking(msg ActivityDeliveryM
 	costParams.ProcessingTimeMs = result.Duration.Milliseconds()
 	costParams.RetryCount = result.Attempt - 1
 	costParams.DynamoDBWriteCount = 2 // Delivery status + cost tracking
-	
+
 	if result.Error != nil {
 		costParams.ErrorMessage = result.Error.Error()
 	}
-	
+
 	// Add DNS lookup for delivery
 	costParams.DNSLookupCount = 1
-	
+
 	// Calculate comprehensive costs
 	cost := op.costCalculator.CalculateFederationCosts(costParams)
-	
+
 	// Record cost tracking asynchronously
 	go func() {
 		// Record detailed cost tracking
 		if err := op.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
 			op.logger.Warn("failed to record federation cost", zap.Error(err))
 		}
-		
+
 		// Update budget usage for this domain
 		if err := op.federationCostRepository.UpdateBudgetUsage(context.Background(),
 			costParams.Domain, "daily", costParams.ActivityType, "outbound", cost.TotalCostMicroCents); err != nil {
 			op.logger.Warn("failed to update budget usage", zap.Error(err))
 		}
 	}()
-	
+
 	op.logger.Info("comprehensive federation cost recorded",
 		zap.String("activity_type", msg.Activity.Type),
 		zap.String("target_domain", costParams.Domain),
@@ -673,7 +586,7 @@ func main() {
 	})
 
 	// Set SQS handler for federation delivery
-	app.SQS("outbox-delivery", func(ctx *lift.Context) error {
+	_ = app.SQS("outbox-delivery", func(ctx *lift.Context) error {
 		// Extract SQS event from Lift context - proper implementation
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
@@ -701,178 +614,3 @@ func main() {
 	lambda.Start(app.HandleRequest)
 }
 
-// Relay Cost Tracking Helper Methods
-
-// isRelayInbox checks if the target inbox is a relay by checking common relay patterns
-func (op *OutboxProcessor) isRelayInbox(inboxURL string) bool {
-	// Common relay inbox patterns
-	relayPatterns := []string{
-		"/relay/inbox",
-		"/relay/",
-		"/inbox/relay",
-		"/activityrelay/inbox",
-		"/ap/relay",
-	}
-	
-	for _, pattern := range relayPatterns {
-		if strings.Contains(inboxURL, pattern) {
-			return true
-		}
-	}
-	
-	// Check if domain contains relay keywords
-	domain := extractDomainFromURL(inboxURL)
-	relayDomainPatterns := []string{
-		"relay",
-		"activityrelay",
-		"ap-relay",
-	}
-	
-	for _, pattern := range relayDomainPatterns {
-		if strings.Contains(domain, pattern) {
-			return true
-		}
-	}
-	
-	return false
-}
-
-// recordRelayCost records relay-specific cost tracking
-func (op *OutboxProcessor) recordRelayCost(inboxURL, activityType string, payloadSize int64, duration time.Duration, success bool, err error, attempts int) {
-	// Don't fail delivery if cost tracking fails
-	if trackErr := op.doRecordRelayCost(inboxURL, activityType, payloadSize, duration, success, err, attempts); trackErr != nil {
-		op.logger.Debug("failed to record relay cost",
-			zap.String("inbox_url", inboxURL),
-			zap.String("activity_type", activityType),
-			zap.Error(trackErr))
-	}
-}
-
-// doRecordRelayCost performs the actual relay cost recording
-func (op *OutboxProcessor) doRecordRelayCost(inboxURL, activityType string, payloadSize int64, duration time.Duration, success bool, err error, attempts int) error {
-	// Import models package for RelayCost
-	now := time.Now()
-	requestID := fmt.Sprintf("outbox-%d", now.UnixNano())
-	
-	// Extract relay URL from inbox URL (remove /inbox suffix)
-	relayURL := inboxURL
-	if strings.HasSuffix(relayURL, "/inbox") {
-		relayURL = strings.TrimSuffix(relayURL, "/inbox")
-	}
-	domain := extractDomainFromURL(relayURL)
-	
-	// Calculate costs for outbound relay delivery
-	relayCost := &models.RelayCost{
-		RelayURL:      relayURL,
-		Domain:        domain,
-		OperationType: "delivery",
-		Direction:     "outbound",
-		ActivityType:  activityType,
-		RequestID:     requestID,
-		Timestamp:     now,
-		Success:       success,
-		ResponseTimeMs: duration.Milliseconds(),
-		RetryCount:    attempts - 1, // attempts includes initial try
-	}
-	
-	if err != nil {
-		relayCost.ErrorMessage = err.Error()
-	}
-	
-	// Calculate specific costs
-	// HTTP request cost
-	relayCost.HTTPRequestCount = int64(attempts)
-	relayCost.HTTPRequestCost = int64(attempts) * 100 // $0.0001 per request in microdollars
-	
-	// Data transfer cost (outbound)
-	relayCost.DataTransferBytes = payloadSize
-	relayCost.DataTransferCost = op.calculateDataTransferCost(payloadSize)
-	
-	// Lambda processing cost (estimated)
-	estimatedLambdaDuration := duration.Milliseconds()
-	if estimatedLambdaDuration < 100 {
-		estimatedLambdaDuration = 100 // Minimum processing time
-	}
-	relayCost.LambdaDurationMs = estimatedLambdaDuration
-	relayCost.LambdaCost = op.calculateLambdaCost(estimatedLambdaDuration)
-	
-	// DynamoDB costs (update relay status, record metrics)
-	relayCost.DynamoDBOperations = 2
-	relayCost.DynamoDBCost = op.calculateDynamoDBCost(2)
-	
-	// SQS costs (this message came from SQS)
-	relayCost.SQSMessages = 1
-	relayCost.SQSCost = 40 // $0.0000004 per message in microdollars
-	
-	// Add retry penalty costs
-	if attempts > 1 {
-		// Additional costs for retries (exponential backoff delays, extra processing)
-		retryPenalty := int64(attempts-1) * 50 // 50 microdollars per retry
-		relayCost.LambdaCost += retryPenalty
-	}
-	
-	// Store the cost record - for now we'll log it since we don't have direct access
-	// to the cost tracking repository in the outbox processor
-	// In a full implementation, you'd either:
-	// 1. Inject the cost tracking repository as a dependency
-	// 2. Send cost tracking data to SQS for async processing
-	// 3. Use a shared storage adapter
-	
-	// Fallback: log the cost tracking
-	op.logger.Info("relay cost tracked",
-		zap.String("relay_url", relayURL),
-		zap.String("operation_type", relayCost.OperationType),
-		zap.String("activity_type", activityType),
-		zap.Int64("total_cost_micro_cents", relayCost.TotalCostMicroCents),
-		zap.Int64("http_requests", relayCost.HTTPRequestCount),
-		zap.Int64("data_transfer_bytes", relayCost.DataTransferBytes),
-		zap.Int64("lambda_duration_ms", relayCost.LambdaDurationMs),
-		zap.Bool("success", success),
-		zap.Int("attempts", attempts))
-	
-	return nil
-}
-
-// createStorageAdapter creates a storage adapter for cost tracking
-// This is a simplified approach - in production you'd inject this dependency
-func (op *OutboxProcessor) createStorageAdapter() interface{} {
-	// Since we don't have direct access to a full storage adapter in the outbox processor,
-	// we'll return nil and fall back to logging
-	// In a full implementation, you'd inject the storage adapter or create one here
-	return nil
-}
-
-// Cost calculation helper functions for relay operations
-
-// calculateDataTransferCost calculates data transfer costs in microdollars
-func (op *OutboxProcessor) calculateDataTransferCost(bytes int64) int64 {
-	// Outbound data transfer: $0.09 per GB
-	// Convert to microdollars: $0.09 * 1,000,000 = 90,000 microdollars per GB
-	gb := float64(bytes) / (1024 * 1024 * 1024)
-	return int64(gb * 90000)
-}
-
-// calculateLambdaCost calculates Lambda execution costs in microdollars
-func (op *OutboxProcessor) calculateLambdaCost(durationMs int64) int64 {
-	// Lambda pricing: $0.0000166667 per GB-second
-	// Assume 512MB (0.5GB) memory allocation
-	// Convert to microdollars and calculate for duration
-	
-	memoryGB := 0.5
-	durationSeconds := float64(durationMs) / 1000.0
-	
-	// Cost = $0.0000166667 * GB * seconds
-	// In microdollars = 16.6667 * GB * seconds
-	return int64(16.6667 * memoryGB * durationSeconds)
-}
-
-// calculateDynamoDBCost calculates DynamoDB operation costs in microdollars
-func (op *OutboxProcessor) calculateDynamoDBCost(operations int64) int64 {
-	// DynamoDB on-demand pricing:
-	// Write: $1.25 per million requests = 1.25 microdollars per request
-	// Read: $0.25 per million requests = 0.25 microdollars per request
-	// Assume 50/50 read/write mix
-	
-	avgCostPerOp := (1.25 + 0.25) / 2 // 0.75 microdollars per operation
-	return int64(float64(operations) * avgCostPerOp)
-}

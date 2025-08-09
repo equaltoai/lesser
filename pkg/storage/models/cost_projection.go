@@ -20,16 +20,16 @@ type CostProjection struct {
 	Recommendations []string     `json:"recommendations"`
 
 	// Additional metadata
-	Timestamp   time.Time `json:"timestamp"`
+	Timestamp    time.Time `json:"timestamp"`
 	CalculatedAt time.Time `json:"calculated_at"`
-	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
+	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys
 func (c *CostProjection) UpdateKeys() {
-	c.PK = "COST#PROJECTION"
+	c.PK = CostProjectionPK
 	c.SK = fmt.Sprintf("%s#%s", c.Period, c.Timestamp.Format(time.RFC3339))
-	
+
 	// Set TTL to 90 days from calculation
 	c.TTL = c.CalculatedAt.AddDate(0, 3, 0).Unix()
 }
@@ -50,17 +50,17 @@ func NewCostProjection(period string) *CostProjection {
 
 // GetCostProjectionKey returns the key for retrieving a specific projection
 func GetCostProjectionKey(period string, timestamp time.Time) (pk, sk string) {
-	return "COST#PROJECTION", fmt.Sprintf("%s#%s", period, timestamp.Format(time.RFC3339))
+	return CostProjectionPK, fmt.Sprintf("%s#%s", period, timestamp.Format(time.RFC3339))
 }
 
 // GetLatestProjectionKeys returns keys for querying the latest projection for a period
 func GetLatestProjectionKeys(period string) (pk, skPrefix string) {
-	return "COST#PROJECTION", fmt.Sprintf("%s#", period)
+	return CostProjectionPK, fmt.Sprintf("%s#", period)
 }
 
 // GetProjectionRangeKeys returns keys for querying projections in a time range
 func GetProjectionRangeKeys(period string, startTime, endTime time.Time) (pk, skStart, skEnd string) {
-	pk = "COST#PROJECTION"
+	pk = CostProjectionPK
 	skStart = fmt.Sprintf("%s#%s", period, startTime.Format(time.RFC3339))
 	skEnd = fmt.Sprintf("%s#%s", period, endTime.Format(time.RFC3339))
 	return
@@ -78,7 +78,7 @@ func (c *CostProjection) CalculateVariance() {
 // AddDriver adds a cost driver and sorts by cost
 func (c *CostProjection) AddDriver(driver CostDriver) {
 	c.TopDrivers = append(c.TopDrivers, driver)
-	
+
 	// Sort by cost descending and keep top 10
 	for i := len(c.TopDrivers) - 1; i > 0; i-- {
 		if c.TopDrivers[i].Cost > c.TopDrivers[i-1].Cost {
@@ -87,7 +87,7 @@ func (c *CostProjection) AddDriver(driver CostDriver) {
 			break
 		}
 	}
-	
+
 	if len(c.TopDrivers) > 10 {
 		c.TopDrivers = c.TopDrivers[:10]
 	}
@@ -96,23 +96,23 @@ func (c *CostProjection) AddDriver(driver CostDriver) {
 // GenerateRecommendations creates recommendations based on the projection
 func (c *CostProjection) GenerateRecommendations() {
 	c.Recommendations = []string{}
-	
+
 	// High variance recommendations
 	if c.Variance > 20 {
-		c.Recommendations = append(c.Recommendations, 
+		c.Recommendations = append(c.Recommendations,
 			fmt.Sprintf("Cost projected to increase by %.1f%% - review top cost drivers", c.Variance))
 	} else if c.Variance < -20 {
 		c.Recommendations = append(c.Recommendations,
 			fmt.Sprintf("Cost projected to decrease by %.1f%% - maintain current optimizations", -c.Variance))
 	}
-	
+
 	// Driver-specific recommendations
 	for _, driver := range c.TopDrivers {
 		if driver.PercentOfTotal > 30 {
 			c.Recommendations = append(c.Recommendations,
 				fmt.Sprintf("'%s' accounts for %.1f%% of costs - consider optimization", driver.Type, driver.PercentOfTotal))
 		}
-		
+
 		if driver.Trend == "increasing" && driver.Cost > 100 {
 			if driver.Domain != "" {
 				c.Recommendations = append(c.Recommendations,
@@ -123,7 +123,7 @@ func (c *CostProjection) GenerateRecommendations() {
 			}
 		}
 	}
-	
+
 	// General recommendations
 	if c.ProjectedCost > 1000 {
 		c.Recommendations = append(c.Recommendations,

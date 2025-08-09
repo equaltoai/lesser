@@ -2,10 +2,12 @@ package observability
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -21,11 +23,11 @@ type EMFMetricsService struct {
 // NewEMFMetricsService creates a new EMF metrics service for Lambda
 func NewEMFMetricsService(logger *zap.Logger) *EMFMetricsService {
 	collector := NewEMFMetricsCollector("Lesser/API", logger)
-	
+
 	// Set Lambda-specific dimensions
 	collector.SetDimension("Runtime", "go1.x")
 	collector.SetDimension("Architecture", "arm64")
-	
+
 	return &EMFMetricsService{
 		collector: collector,
 		logger:    logger,
@@ -38,20 +40,20 @@ func CreateEMFPerformanceMonitoringMiddleware(emfService *EMFMetricsService) lif
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			startTime := time.Now()
-			
+
 			// Add request-specific dimensions
 			emfService.collector.SetDimension("Method", ctx.Request.Method)
 			emfService.collector.SetDimension("Path", sanitizePathForMetrics(ctx.Request.Path))
-			
+
 			// Process the request
 			err := next.Handle(ctx)
-			
+
 			// Collect performance metrics (no background processing)
 			metrics := GetPerformanceMetrics(startTime, time.Time{})
-			
+
 			// Record all performance metrics using EMF
 			emfService.RecordRequestMetrics(ctx, metrics, err)
-			
+
 			// CRITICAL: Flush metrics before Lambda terminates
 			// This ensures all metrics are written to CloudWatch
 			defer func() {
@@ -59,7 +61,7 @@ func CreateEMFPerformanceMonitoringMiddleware(emfService *EMFMetricsService) lif
 					emfService.logger.Error("failed to flush EMF metrics", zap.Error(flushErr))
 				}
 			}()
-			
+
 			return err
 		})
 	}
@@ -72,7 +74,7 @@ func (ems *EMFMetricsService) RecordRequestMetrics(ctx *lift.Context, perfMetric
 		"Operation": getOperationName(ctx),
 		"Method":    ctx.Request.Method,
 	}
-	
+
 	// Record latency
 	ems.collector.recordMetricWithDimensions(
 		"RequestLatency",
@@ -80,7 +82,7 @@ func (ems *EMFMetricsService) RecordRequestMetrics(ctx *lift.Context, perfMetric
 		"Milliseconds",
 		operationDims,
 	)
-	
+
 	// Record cold start metrics
 	if perfMetrics.ColdStartDuration > 0 {
 		ems.collector.recordMetricWithDimensions(
@@ -90,7 +92,7 @@ func (ems *EMFMetricsService) RecordRequestMetrics(ctx *lift.Context, perfMetric
 			operationDims,
 		)
 	}
-	
+
 	// Record memory usage
 	ems.collector.recordMetricWithDimensions(
 		"MemoryUtilization",
@@ -98,7 +100,7 @@ func (ems *EMFMetricsService) RecordRequestMetrics(ctx *lift.Context, perfMetric
 		"Bytes",
 		operationDims,
 	)
-	
+
 	// Record success/error rate
 	if requestErr != nil {
 		ems.collector.recordMetricWithDimensions("RequestErrors", 1, "Count", operationDims)
@@ -107,14 +109,14 @@ func (ems *EMFMetricsService) RecordRequestMetrics(ctx *lift.Context, perfMetric
 		ems.collector.recordMetricWithDimensions("RequestErrors", 0, "Count", operationDims)
 		ems.collector.recordMetricWithDimensions("RequestSuccess", 1, "Count", operationDims)
 	}
-	
+
 	// Record HTTP status code
 	statusDims := make(map[string]string)
 	for k, v := range operationDims {
 		statusDims[k] = v
 	}
 	statusDims["StatusCode"] = getStatusCodeRange(ctx.Response.StatusCode)
-	
+
 	ems.collector.recordMetricWithDimensions("HTTPResponses", 1, "Count", statusDims)
 }
 
@@ -124,7 +126,7 @@ func (ems *EMFMetricsService) RecordDynamoDBMetrics(operation, tableName string,
 		"Operation": operation,
 		"TableName": tableName,
 	}
-	
+
 	// Record operation latency
 	ems.collector.recordMetricWithDimensions(
 		"DynamoDBLatency",
@@ -132,7 +134,7 @@ func (ems *EMFMetricsService) RecordDynamoDBMetrics(operation, tableName string,
 		"Milliseconds",
 		dims,
 	)
-	
+
 	// Record consumed capacity
 	if readUnits > 0 {
 		ems.collector.recordMetricWithDimensions("DynamoDBReadCapacity", readUnits, "Count", dims)
@@ -140,7 +142,7 @@ func (ems *EMFMetricsService) RecordDynamoDBMetrics(operation, tableName string,
 	if writeUnits > 0 {
 		ems.collector.recordMetricWithDimensions("DynamoDBWriteCapacity", writeUnits, "Count", dims)
 	}
-	
+
 	// Record operation result
 	if err != nil {
 		errorDims := make(map[string]string)
@@ -162,13 +164,15 @@ func (ems *EMFMetricsService) RecordBusinessMetrics(metricName string, value flo
 	for k, v := range businessContext {
 		dims[k] = v
 	}
-	
+
 	ems.collector.recordMetricWithDimensions(metricName, value, unit, dims)
 }
 
 // FlushMetrics manually flushes all metrics - call this at the end of Lambda execution
 func (ems *EMFMetricsService) FlushMetrics() error {
-	ems.collector.Flush()
+	if err := ems.collector.Flush(); err != nil {
+		return fmt.Errorf("failed to flush metrics: %w", err)
+	}
 	return nil
 }
 
@@ -183,7 +187,7 @@ func getOperationName(ctx *lift.Context) string {
 	if ctx.Request.Path != "" && ctx.Request.Method != "" {
 		return ctx.Request.Method + "_" + sanitizePathForMetrics(ctx.Request.Path)
 	}
-	return "unknown"
+	return monitoring.StatusUnknown
 }
 
 func sanitizePathForMetrics(path string) string {
@@ -191,22 +195,22 @@ func sanitizePathForMetrics(path string) string {
 	if path == "" || path == "/" {
 		return "root"
 	}
-	
+
 	// Replace path parameters and special characters
 	result := path
 	replacements := map[string]string{
-		"/":  "_",
-		"{":  "",
-		"}":  "",
-		"-":  "_",
-		".":  "_",
-		":":  "_",
+		"/": "_",
+		"{": "",
+		"}": "",
+		"-": "_",
+		".": "_",
+		":": "_",
 	}
-	
+
 	for old, new := range replacements {
 		result = replaceAll(result, old, new)
 	}
-	
+
 	// Remove leading/trailing underscores
 	if len(result) > 0 && result[0] == '_' {
 		result = result[1:]
@@ -214,11 +218,11 @@ func sanitizePathForMetrics(path string) string {
 	if len(result) > 0 && result[len(result)-1] == '_' {
 		result = result[:len(result)-1]
 	}
-	
+
 	if result == "" {
 		return "root"
 	}
-	
+
 	return result
 }
 
@@ -233,27 +237,27 @@ func getStatusCodeRange(statusCode int) string {
 	case statusCode >= 500:
 		return "5xx"
 	default:
-		return "unknown"
+		return monitoring.StatusUnknown
 	}
 }
 
-func replaceAll(s, old, new string) string {
+func replaceAll(s, old, replacement string) string {
 	// Simple string replacement without importing strings package
-	if old == new || len(old) == 0 {
+	if old == replacement || len(old) == 0 {
 		return s
 	}
-	
+
 	result := ""
 	for i := 0; i <= len(s)-len(old); {
 		if i <= len(s)-len(old) && s[i:i+len(old)] == old {
-			result += new
+			result += replacement
 			i += len(old)
 		} else {
 			result += string(s[i])
 			i++
 		}
 	}
-	
+
 	// Add remaining characters
 	if len(s) >= len(old) {
 		remaining := len(s) - (len(s)/len(old))*len(old)
@@ -261,7 +265,7 @@ func replaceAll(s, old, new string) string {
 			result += s[len(s)-remaining:]
 		}
 	}
-	
+
 	return result
 }
 
@@ -270,7 +274,7 @@ func classifyDynamoDBError(err error) string {
 	if err == nil {
 		return "none"
 	}
-	
+
 	errStr := err.Error()
 	switch {
 	case containsString(errStr, "ProvisionedThroughputExceededException"):
@@ -290,7 +294,7 @@ func classifyDynamoDBError(err error) string {
 	case containsString(errStr, "InternalServerError"):
 		return "internal_server_error"
 	default:
-		return "unknown"
+		return monitoring.StatusUnknown
 	}
 }
 
@@ -312,59 +316,59 @@ func findSubstring(s, substr string) bool {
 // ExampleLambdaHandler demonstrates how to properly use EMF metrics in a Lambda function
 func ExampleLambdaHandler() {
 	var (
-		emfService   *EMFMetricsService
-		logger       *zap.Logger
-		initTime     time.Time
+		emfService *EMFMetricsService
+		logger     *zap.Logger
+		initTime   time.Time
 	)
-	
+
 	// Initialize EMF service in init() - this runs once per container
 	func() {
 		initTime = time.Now()
 		logger = zap.L()
 		emfService = NewEMFMetricsService(logger)
-		
+
 		// Set any container-level dimensions
 		emfService.collector.SetDimension("InitTime", initTime.Format(time.RFC3339))
 	}()
-	
+
 	// Lambda handler function
-	handler := func(ctx context.Context, event interface{}) (interface{}, error) {
+	handler := func(_ context.Context, event interface{}) (interface{}, error) {
 		startTime := time.Now()
-		
+
 		// Record cold start if applicable
 		if os.Getenv("AWS_LAMBDA_INITIALIZATION_TYPE") != "provisioned-concurrency" {
 			coldStartDuration := startTime.Sub(initTime)
 			emfService.collector.RecordLatency("cold_start", coldStartDuration)
 		}
-		
+
 		// Process request...
 		result, err := processRequest(event)
-		
+
 		// Record execution metrics
 		executionTime := time.Since(startTime)
 		emfService.collector.RecordLatency("execution", executionTime)
-		
+
 		if err != nil {
 			emfService.collector.RecordMetric("errors", 1, types.StandardUnitCount)
 		} else {
 			emfService.collector.RecordMetric("success", 1, types.StandardUnitCount)
 		}
-		
+
 		// CRITICAL: Always flush before returning
 		// This ensures metrics are written to CloudWatch before Lambda terminates
 		if flushErr := emfService.FlushMetrics(); flushErr != nil {
 			logger.Error("failed to flush metrics", zap.Error(flushErr))
 			// Don't fail the request due to metrics issues
 		}
-		
+
 		return result, err
 	}
-	
+
 	// Use the handler with AWS Lambda Go runtime
 	_ = handler // lambda.Start(handler)
 }
 
-func processRequest(event interface{}) (interface{}, error) {
+func processRequest(_ interface{}) (interface{}, error) {
 	// Placeholder for actual request processing
 	return map[string]string{"status": "success"}, nil
 }
@@ -375,15 +379,15 @@ func processRequest(event interface{}) (interface{}, error) {
 func ConvertPollingMetricsToEMF(oldCollector *MetricsCollector, logger *zap.Logger) *EMFMetricsService {
 	// Flush any remaining metrics from the old collector
 	oldCollector.Flush()
-	
+
 	// Create new EMF-based service
 	emfService := NewEMFMetricsService(logger)
-	
+
 	logger.Info("migrated from polling-based metrics to EMF",
 		zap.String("old_type", "polling"),
 		zap.String("new_type", "emf"),
 		zap.String("benefit", "no_background_goroutines"),
 	)
-	
+
 	return emfService
 }

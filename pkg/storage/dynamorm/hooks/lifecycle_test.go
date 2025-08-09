@@ -13,6 +13,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const (
+	loggerKey    contextKey = "logger"
+	userIDKey    contextKey = "user_id"
+	requestIDKey contextKey = "request_id"
+)
+
 // Test model types
 type TestUser struct {
 	ID        string    `json:"id"`
@@ -75,7 +84,7 @@ func TestHookRegistry_Register(t *testing.T) {
 	userType := reflect.TypeOf(TestUser{})
 
 	hookCalled := false
-	testHook := func(ctx context.Context, model any) error {
+	testHook := func(_ context.Context, _ any) error {
 		hookCalled = true
 		return nil
 	}
@@ -99,7 +108,7 @@ func TestHookRegistry_RegisterAsync(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	asyncHook := func(ctx context.Context, model any) {
+	asyncHook := func(_ context.Context, _ any) {
 		hookCalled = true
 		wg.Done()
 	}
@@ -123,12 +132,12 @@ func TestHookRegistry_RegisterConditional(t *testing.T) {
 	userType := reflect.TypeOf(TestUser{})
 
 	hookCalled := false
-	condition := func(ctx context.Context, model any) bool {
+	condition := func(_ context.Context, model any) bool {
 		user := model.(*TestUser)
 		return user.Username == "test"
 	}
 
-	conditionalHook := func(ctx context.Context, model any) error {
+	conditionalHook := func(_ context.Context, _ any) error {
 		hookCalled = true
 		return nil
 	}
@@ -157,7 +166,7 @@ func TestHookRegistry_Execute_Error(t *testing.T) {
 	userType := reflect.TypeOf(TestUser{})
 
 	expectedError := errors.New("hook failed")
-	failingHook := func(ctx context.Context, model any) error {
+	failingHook := func(_ context.Context, _ any) error {
 		return expectedError
 	}
 
@@ -175,21 +184,21 @@ func TestHookRegistry_Execute_MultipleHooks(t *testing.T) {
 	execOrder := make([]int, 0)
 	var mu sync.Mutex
 
-	hook1 := func(ctx context.Context, model any) error {
+	hook1 := func(_ context.Context, _ any) error {
 		mu.Lock()
 		execOrder = append(execOrder, 1)
 		mu.Unlock()
 		return nil
 	}
 
-	hook2 := func(ctx context.Context, model any) error {
+	hook2 := func(_ context.Context, _ any) error {
 		mu.Lock()
 		execOrder = append(execOrder, 2)
 		mu.Unlock()
 		return nil
 	}
 
-	hook3 := func(ctx context.Context, model any) error {
+	hook3 := func(_ context.Context, _ any) error {
 		mu.Lock()
 		execOrder = append(execOrder, 3)
 		mu.Unlock()
@@ -212,7 +221,7 @@ func TestHookRegistry_Execute_WithCostTracking(t *testing.T) {
 	registry := NewHookRegistry(zap.NewNop())
 	userType := reflect.TypeOf(TestUser{})
 
-	slowHook := func(ctx context.Context, model any) error {
+	slowHook := func(_ context.Context, _ any) error {
 		time.Sleep(2 * time.Millisecond) // Small delay to trigger cost tracking
 		return nil
 	}
@@ -235,7 +244,7 @@ func TestHookRegistry_Clear(t *testing.T) {
 	registry := NewHookRegistry(zap.NewNop())
 	userType := reflect.TypeOf(TestUser{})
 
-	testHook := func(ctx context.Context, model any) error { return nil }
+	testHook := func(_ context.Context, _ any) error { return nil }
 	registry.Register(userType, BeforeCreate, testHook)
 
 	count := registry.GetRegisteredHooksCount(userType, BeforeCreate)
@@ -252,7 +261,7 @@ func TestHookRegistry_ClearAll(t *testing.T) {
 	userType := reflect.TypeOf(TestUser{})
 	statusType := reflect.TypeOf(TestStatus{})
 
-	testHook := func(ctx context.Context, model any) error { return nil }
+	testHook := func(_ context.Context, _ any) error { return nil }
 	registry.Register(userType, BeforeCreate, testHook)
 	registry.Register(statusType, BeforeCreate, testHook)
 
@@ -272,7 +281,7 @@ func TestGlobalRegistry(t *testing.T) {
 	userType := reflect.TypeOf(TestUser{})
 	hookCalled := false
 
-	testHook := func(ctx context.Context, model any) error {
+	testHook := func(_ context.Context, _ any) error {
 		hookCalled = true
 		return nil
 	}
@@ -290,7 +299,7 @@ func TestGlobalRegistry(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	asyncHook := func(ctx context.Context, model any) {
+	asyncHook := func(_ context.Context, _ any) {
 		asyncCalled = true
 		wg.Done()
 	}
@@ -304,8 +313,8 @@ func TestGlobalRegistry(t *testing.T) {
 
 	// Test global conditional registration
 	conditionalCalled := false
-	condition := func(ctx context.Context, model any) bool { return true }
-	conditionalHook := func(ctx context.Context, model any) error {
+	condition := func(_ context.Context, _ any) bool { return true }
+	conditionalHook := func(_ context.Context, _ any) error {
 		conditionalCalled = true
 		return nil
 	}
@@ -320,9 +329,9 @@ func TestGlobalRegistry(t *testing.T) {
 
 func TestAuditHook(t *testing.T) {
 	logger := zap.NewNop()
-	ctx := context.WithValue(context.Background(), "logger", logger)
-	ctx = context.WithValue(ctx, "user_id", "user123")
-	ctx = context.WithValue(ctx, "request_id", "req456")
+	ctx := context.WithValue(context.Background(), loggerKey, logger)
+	ctx = context.WithValue(ctx, userIDKey, "user123")
+	ctx = context.WithValue(ctx, requestIDKey, "req456")
 
 	user := &TestUser{Username: "test"}
 	err := AuditHook(ctx, user)
@@ -355,7 +364,7 @@ func TestTimestampHook(t *testing.T) {
 
 func TestNotificationHook(t *testing.T) {
 	logger := zap.NewNop()
-	ctx := context.WithValue(context.Background(), "logger", logger)
+	ctx := context.WithValue(context.Background(), loggerKey, logger)
 
 	// Test with FollowModel
 	user := &TestUser{ID: "user1"}
@@ -375,7 +384,7 @@ func TestNotificationHook(t *testing.T) {
 
 func TestCacheInvalidationHook(t *testing.T) {
 	logger := zap.NewNop()
-	ctx := context.WithValue(context.Background(), "logger", logger)
+	ctx := context.WithValue(context.Background(), loggerKey, logger)
 
 	user := &TestUser{Username: "test"}
 	err := CacheInvalidationHook(ctx, user)
@@ -384,7 +393,7 @@ func TestCacheInvalidationHook(t *testing.T) {
 
 func TestSearchIndexHook(t *testing.T) {
 	logger := zap.NewNop()
-	ctx := context.WithValue(context.Background(), "logger", logger)
+	ctx := context.WithValue(context.Background(), loggerKey, logger)
 
 	user := &TestUser{Username: "test"}
 	err := SearchIndexHook(ctx, user)
@@ -463,21 +472,21 @@ func TestHookRegistry_Integration(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	syncHook := func(ctx context.Context, model any) error {
+	syncHook := func(_ context.Context, _ any) error {
 		syncCalled = true
 		return nil
 	}
 
-	asyncHook := func(ctx context.Context, model any) {
+	asyncHook := func(_ context.Context, _ any) {
 		asyncCalled = true
 		wg.Done()
 	}
 
-	condition := func(ctx context.Context, model any) bool {
+	condition := func(_ context.Context, _ any) bool {
 		return true
 	}
 
-	conditionalHook := func(ctx context.Context, model any) error {
+	conditionalHook := func(_ context.Context, _ any) error {
 		conditionalCalled = true
 		return nil
 	}
@@ -505,7 +514,7 @@ func BenchmarkHookRegistry_Execute_SingleHook(b *testing.B) {
 	registry := NewHookRegistry(zap.NewNop())
 	userType := reflect.TypeOf(TestUser{})
 
-	hook := func(ctx context.Context, model any) error {
+	hook := func(_ context.Context, _ any) error {
 		return nil
 	}
 
@@ -515,7 +524,7 @@ func BenchmarkHookRegistry_Execute_SingleHook(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		registry.Execute(ctx, user, BeforeCreate)
+		_ = registry.Execute(ctx, user, BeforeCreate)
 	}
 }
 
@@ -525,7 +534,7 @@ func BenchmarkHookRegistry_Execute_MultipleHooks(b *testing.B) {
 
 	// Register 10 hooks
 	for i := 0; i < 10; i++ {
-		hook := func(ctx context.Context, model any) error {
+		hook := func(_ context.Context, _ any) error {
 			return nil
 		}
 		registry.Register(userType, BeforeCreate, hook)
@@ -536,7 +545,7 @@ func BenchmarkHookRegistry_Execute_MultipleHooks(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		registry.Execute(ctx, user, BeforeCreate)
+		_ = registry.Execute(ctx, user, BeforeCreate)
 	}
 }
 
@@ -563,10 +572,10 @@ func TestHookRegistry_ConcurrentAccess(t *testing.T) {
 	// Concurrent registration
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
-		go func(id int) {
+		go func(_ int) {
 			defer wg.Done()
 			for j := 0; j < hooksPerGoroutine; j++ {
-				hook := func(ctx context.Context, model any) error {
+				hook := func(_ context.Context, _ any) error {
 					return nil
 				}
 				registry.Register(userType, BeforeCreate, hook)
@@ -586,7 +595,7 @@ func TestHookRegistry_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			user := &TestUser{Username: "test"}
-			registry.Execute(context.Background(), user, BeforeCreate)
+			_ = registry.Execute(context.Background(), user, BeforeCreate)
 		}()
 	}
 

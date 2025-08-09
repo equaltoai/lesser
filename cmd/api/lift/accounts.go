@@ -10,20 +10,19 @@ import (
 	"mime/multipart"
 	"net/mail"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -179,7 +178,7 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
 	// Get real counts - these are not stored on the ActivityPub actor
 	// For now, we'll default to 0 since we just fetched the actor
 	followerCount := 0
-	followingCount := 0 
+	followingCount := 0
 	statusesCount := 0
 
 	resp := models.VerifyCredentialsResponse{
@@ -188,9 +187,9 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
 		Acct:           user.Username, // For local accounts, same as username
 		DisplayName:    actor.Name,
 		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            actor.Type == "Service",
+		Bot:            actor.Type == actorTypeService,
 		Discoverable:   actor.Discoverable,
-		Group:          actor.Type == "Group",
+		Group:          actor.Type == actorTypeGroup,
 		Email:          user.Email,
 		EmailVerified:  true, // No email verification needed - system doesn't use email
 		Note:           actor.Summary,
@@ -232,247 +231,328 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
 
 // HandleUpdateCredentialsLift updates the current user's profile
 func (h *Handler) HandleUpdateCredentialsLift(ctx *lift.Context) error {
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
+	// Authenticate and get actor
+	claims, actor, err := h.authenticateAndGetActor(ctx)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return err
 	}
 
-	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	// Parse request data
+	updateReq, fileData, err := h.parseUpdateCredentialsRequest(ctx)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return err
 	}
 
-	// Check write scope
-	if err := h.authMiddleware.RequireScope(claims, auth.ScopeWrite); err != nil {
-		return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+	// Handle file uploads
+	if err := h.handleFileUploads(ctx, actor, claims, fileData); err != nil {
+		return err
 	}
 
-	// Get the actor
-	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
-	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Not found"})
-	}
-
-	// Check content type
-	contentType := ctx.Header("Content-Type")
-	
-	var updateReq models.UpdateCredentialsRequest
-	var avatarData []byte
-	var avatarContentType string
-	var headerData []byte
-	var headerContentType string
-
-	// Handle multipart/form-data
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		// Get raw body from request
-		bodyBytes := ctx.Request.Body
-		if len(bodyBytes) == 0 {
-			return ctx.Status(400).JSON(map[string]string{"error": "Empty request body"})
-		}
-
-		// Log request info for debugging
-		h.logger.Info("handling multipart request",
-			zap.Int("body_length", len(bodyBytes)),
-			zap.String("content_type", contentType))
-
-		// Try to decode as base64 first (API Gateway typically encodes binary data)
-		decoded, err := base64.StdEncoding.DecodeString(string(bodyBytes))
-		if err == nil {
-			// Successfully decoded - use the decoded bytes
-			bodyBytes = decoded
-			h.logger.Debug("successfully decoded base64 body", zap.Int("decoded_length", len(bodyBytes)))
-		} else {
-			// Failed to decode - check if it's raw multipart data
-			if strings.Contains(string(bodyBytes[:min(200, len(bodyBytes))]), "------WebKitFormBoundary") {
-				// Looks like raw multipart data
-				h.logger.Debug("using raw body as multipart data", zap.Int("body_length", len(bodyBytes)))
-			} else {
-				// Neither base64 nor raw multipart - return error
-				h.logger.Error("unable to parse request body",
-					zap.Error(err),
-					zap.String("body_preview", string(bodyBytes[:min(50, len(bodyBytes))])))
-				return ctx.Status(400).JSON(map[string]string{"error": "Unable to parse request body"})
-			}
-		}
-
-		// Parse boundary from content type
-		_, params, err := mime.ParseMediaType(contentType)
-		if err != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": "Invalid content type"})
-		}
-
-		boundary := params["boundary"]
-		if boundary == "" {
-			return ctx.Status(400).JSON(map[string]string{"error": "Missing boundary in content type"})
-		}
-
-		// Create multipart reader
-		reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
-
-		// Read form fields and files
-		for {
-			part, err := reader.NextPart()
-			if err != nil {
-				break
-			}
-			defer func() {
-				if err := part.Close(); err != nil {
-					// Log error but don't fail the request
-				}
-			}()
-
-			switch part.FormName() {
-			case "display_name":
-				buf := new(bytes.Buffer)
-				if _, err := buf.ReadFrom(part); err != nil {
-					continue
-				}
-				updateReq.DisplayName = buf.String()
-			case "note":
-				buf := new(bytes.Buffer)
-				if _, err := buf.ReadFrom(part); err != nil {
-					continue
-				}
-				updateReq.Note = buf.String()
-			case "locked":
-				buf := new(bytes.Buffer)
-				if _, err := buf.ReadFrom(part); err != nil {
-					continue
-				}
-				updateReq.Locked = buf.String() == "true"
-			case "bot":
-				buf := new(bytes.Buffer)
-				if _, err := buf.ReadFrom(part); err != nil {
-					continue
-				}
-				updateReq.Bot = buf.String() == "true"
-			case "discoverable":
-				buf := new(bytes.Buffer)
-				if _, err := buf.ReadFrom(part); err != nil {
-					continue
-				}
-				updateReq.Discoverable = buf.String() == "true"
-			case "avatar":
-				if part.FileName() != "" {
-					buf := new(bytes.Buffer)
-					if _, err := buf.ReadFrom(part); err != nil {
-						continue
-					}
-					avatarData = buf.Bytes()
-					avatarContentType = part.Header.Get("Content-Type")
-				}
-			case "header":
-				if part.FileName() != "" {
-					buf := new(bytes.Buffer)
-					if _, err := buf.ReadFrom(part); err != nil {
-						continue
-					}
-					headerData = buf.Bytes()
-					headerContentType = part.Header.Get("Content-Type")
-				}
-			}
-		}
-	} else {
-		// Parse JSON request body
-		if err := ctx.ParseRequest(&updateReq); err != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
-		}
-	}
-
-	// Handle avatar upload if provided
-	if len(avatarData) > 0 {
-		// Validate file size (10MB limit)
-		maxSize := int64(10 * 1024 * 1024)
-		if int64(len(avatarData)) > maxSize {
-			return ctx.Status(422).JSON(map[string]string{"error": "Avatar file size exceeds 10MB limit"})
-		}
-
-		// Validate MIME type
-		if !h.isAllowedImageMimeTypeLift(avatarContentType) {
-			return ctx.Status(422).JSON(map[string]string{"error": fmt.Sprintf("Unsupported avatar file type: %s", avatarContentType)})
-		}
-
-		// Upload avatar to S3
-		avatarURL, err := h.uploadProfileImageLift(ctx.Context, claims.Username, "avatar", avatarData, avatarContentType)
-		if err != nil {
-			h.logger.Error("failed to upload avatar", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Failed to upload avatar"})
-		}
-
-		// Initialize Icon if nil
-		if actor.Icon == nil {
-			actor.Icon = &activitypub.Image{}
-		}
-		actor.Icon.URL = avatarURL
-	}
-
-	// Handle header upload if provided
-	if len(headerData) > 0 {
-		// Validate file size (10MB limit)
-		maxSize := int64(10 * 1024 * 1024)
-		if int64(len(headerData)) > maxSize {
-			return ctx.Status(422).JSON(map[string]string{"error": "Header file size exceeds 10MB limit"})
-		}
-
-		// Validate MIME type
-		if !h.isAllowedImageMimeTypeLift(headerContentType) {
-			return ctx.Status(422).JSON(map[string]string{"error": fmt.Sprintf("Unsupported header file type: %s", headerContentType)})
-		}
-
-		// Upload header to S3
-		headerURL, err := h.uploadProfileImageLift(ctx.Context, claims.Username, "header", headerData, headerContentType)
-		if err != nil {
-			h.logger.Error("failed to upload header", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Failed to upload header"})
-		}
-
-		// Initialize Image if nil
-		if actor.Image == nil {
-			actor.Image = &activitypub.Image{}
-		}
-		actor.Image.URL = headerURL
-	}
-
-	// Update actor information (only fields that exist)
-	if updateReq.DisplayName != "" {
-		actor.Name = updateReq.DisplayName
-	}
-	if updateReq.Note != "" {
-		actor.Summary = updateReq.Note
-	}
-	if updateReq.Avatar != "" && actor.Icon != nil {
-		actor.Icon.URL = updateReq.Avatar
-	}
-	if updateReq.Header != "" && actor.Image != nil {
-		actor.Image.URL = updateReq.Header
-	}
-	// Update actor flags
-	actor.ManuallyApprovesFollowers = updateReq.Locked
-	actor.Discoverable = updateReq.Discoverable
-	// Bot status would need to be tracked separately
+	// Update actor with new data
+	h.updateActorFromRequest(actor, updateReq)
 
 	// Save changes
 	if err := h.repos.Actor().UpdateActor(ctx.Context, actor); err != nil {
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
+	// Build and return response
+	resp := h.buildCredentialsResponse(ctx, actor, claims)
+
+	return ctx.JSON(resp)
+}
+
+// UpdateCredentialsFileData holds file upload data from multipart form
+type UpdateCredentialsFileData struct {
+	AvatarData        []byte
+	AvatarContentType string
+	HeaderData        []byte
+	HeaderContentType string
+}
+
+// authenticateAndGetActor handles authentication and retrieves the actor
+func (h *Handler) authenticateAndGetActor(ctx *lift.Context) (*auth.Claims, *activitypub.Actor, error) {
+	// Extract token from Authorization header
+	authHeader := ctx.Header("Authorization")
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return nil, nil, ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return nil, nil, ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Check write scope
+	if err := h.authMiddleware.RequireScope(claims, auth.ScopeWrite); err != nil {
+		return nil, nil, ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+	}
+
+	// Get the actor
+	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
+	if err != nil {
+		return nil, nil, ctx.Status(404).JSON(map[string]string{"error": "Not found"})
+	}
+
+	return claims, actor, nil
+}
+
+// parseUpdateCredentialsRequest parses both JSON and multipart form requests
+func (h *Handler) parseUpdateCredentialsRequest(ctx *lift.Context) (models.UpdateCredentialsRequest, UpdateCredentialsFileData, error) {
+	var updateReq models.UpdateCredentialsRequest
+	var fileData UpdateCredentialsFileData
+
+	contentType := ctx.Header("Content-Type")
+
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		req, files, err := h.parseMultipartRequest(ctx, contentType)
+		if err != nil {
+			return updateReq, fileData, err
+		}
+		updateReq = req
+		fileData = files
+	} else {
+		// Parse JSON request body
+		if err := ctx.ParseRequest(&updateReq); err != nil {
+			return updateReq, fileData, ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		}
+	}
+
+	return updateReq, fileData, nil
+}
+
+// parseMultipartRequest handles multipart form parsing with base64 decoding
+func (h *Handler) parseMultipartRequest(ctx *lift.Context, contentType string) (models.UpdateCredentialsRequest, UpdateCredentialsFileData, error) {
+	var updateReq models.UpdateCredentialsRequest
+	var fileData UpdateCredentialsFileData
+
+	// Get raw body from request
+	bodyBytes := ctx.Request.Body
+	if len(bodyBytes) == 0 {
+		return updateReq, fileData, ctx.Status(400).JSON(map[string]string{"error": "Empty request body"})
+	}
+
+	// Handle base64 decoding for binary data
+	bodyBytes, err := h.handleBase64Decoding(bodyBytes)
+	if err != nil {
+		return updateReq, fileData, ctx.Status(400).JSON(map[string]string{"error": "Unable to parse request body"})
+	}
+
+	// Parse multipart form
+	boundary, err := h.extractBoundary(contentType)
+	if err != nil {
+		return updateReq, fileData, ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	}
+
+	reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
+
+	// Process each part
+	for {
+		part, err := reader.NextPart()
+		if err != nil {
+			break
+		}
+
+		if err := h.processMultipartPart(part, &updateReq, &fileData); err != nil {
+			h.logger.Warn("failed to process multipart part", zap.Error(err))
+		}
+
+		if err := part.Close(); err != nil {
+			h.logger.Warn("failed to close multipart reader", zap.Error(err))
+		}
+	}
+
+	return updateReq, fileData, nil
+}
+
+// handleBase64Decoding handles base64 decoding for API Gateway
+func (h *Handler) handleBase64Decoding(bodyBytes []byte) ([]byte, error) {
+	h.logger.Info("handling multipart request", zap.Int("body_length", len(bodyBytes)))
+
+	// Try to decode as base64 first (API Gateway typically encodes binary data)
+	if decoded, err := base64.StdEncoding.DecodeString(string(bodyBytes)); err == nil {
+		h.logger.Debug("successfully decoded base64 body", zap.Int("decoded_length", len(decoded)))
+		return decoded, nil
+	}
+
+	// Check if it's raw multipart data
+	preview := string(bodyBytes[:mathMin(200, len(bodyBytes))])
+	if strings.Contains(preview, "------WebKitFormBoundary") {
+		h.logger.Debug("using raw body as multipart data", zap.Int("body_length", len(bodyBytes)))
+		return bodyBytes, nil
+	}
+
+	// Neither base64 nor raw multipart
+	h.logger.Error("unable to parse request body", zap.String("body_preview", preview[:mathMin(50, len(preview))]))
+	return nil, fmt.Errorf("unable to parse request body")
+}
+
+// extractBoundary extracts the boundary from content type header
+func (h *Handler) extractBoundary(contentType string) (string, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return "", fmt.Errorf("invalid content type: %w", err)
+	}
+
+	boundary := params["boundary"]
+	if boundary == "" {
+		return "", fmt.Errorf("missing boundary in content type")
+	}
+
+	return boundary, nil
+}
+
+// processMultipartPart processes a single multipart form part
+func (h *Handler) processMultipartPart(part *multipart.Part, updateReq *models.UpdateCredentialsRequest, fileData *UpdateCredentialsFileData) error {
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(part); err != nil {
+		return err
+	}
+
+	switch part.FormName() {
+	case "display_name":
+		updateReq.DisplayName = buf.String()
+	case "note":
+		updateReq.Note = buf.String()
+	case "locked":
+		updateReq.Locked = buf.String() == boolTrue
+	case "bot":
+		updateReq.Bot = buf.String() == boolTrue
+	case "discoverable":
+		updateReq.Discoverable = buf.String() == boolTrue
+	case "avatar":
+		if part.FileName() != "" {
+			fileData.AvatarData = buf.Bytes()
+			fileData.AvatarContentType = part.Header.Get("Content-Type")
+		}
+	case "header":
+		if part.FileName() != "" {
+			fileData.HeaderData = buf.Bytes()
+			fileData.HeaderContentType = part.Header.Get("Content-Type")
+		}
+	}
+
+	return nil
+}
+
+// handleFileUploads handles avatar and header file uploads
+func (h *Handler) handleFileUploads(ctx *lift.Context, actor *activitypub.Actor, claims *auth.Claims, fileData UpdateCredentialsFileData) error {
+	// Handle avatar upload
+	if len(fileData.AvatarData) > 0 {
+		if err := h.uploadAndSetAvatar(ctx, actor, claims, fileData.AvatarData, fileData.AvatarContentType); err != nil {
+			return err
+		}
+	}
+
+	// Handle header upload
+	if len(fileData.HeaderData) > 0 {
+		if err := h.uploadAndSetHeader(ctx, actor, claims, fileData.HeaderData, fileData.HeaderContentType); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// uploadAndSetAvatar validates and uploads avatar image
+func (h *Handler) uploadAndSetAvatar(ctx *lift.Context, actor *activitypub.Actor, claims *auth.Claims, data []byte, contentType string) error {
+	if err := h.validateImageUpload(data, contentType, "avatar"); err != nil {
+		return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+	}
+
+	avatarURL, err := h.uploadProfileImageLift(ctx.Context, claims.Username, "avatar", data, contentType)
+	if err != nil {
+		h.logger.Error("failed to upload avatar", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "Failed to upload avatar"})
+	}
+
+	if actor.Icon == nil {
+		actor.Icon = &activitypub.Image{}
+	}
+	actor.Icon.URL = avatarURL
+
+	return nil
+}
+
+// uploadAndSetHeader validates and uploads header image
+func (h *Handler) uploadAndSetHeader(ctx *lift.Context, actor *activitypub.Actor, claims *auth.Claims, data []byte, contentType string) error {
+	if err := h.validateImageUpload(data, contentType, "header"); err != nil {
+		return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+	}
+
+	headerURL, err := h.uploadProfileImageLift(ctx.Context, claims.Username, "header", data, contentType)
+	if err != nil {
+		h.logger.Error("failed to upload header", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "Failed to upload header"})
+	}
+
+	if actor.Image == nil {
+		actor.Image = &activitypub.Image{}
+	}
+	actor.Image.URL = headerURL
+
+	return nil
+}
+
+// validateImageUpload validates image file size and type
+func (h *Handler) validateImageUpload(data []byte, contentType, imageType string) error {
+	// Validate file size (10MB limit)
+	maxSize := int64(10 * 1024 * 1024)
+	if int64(len(data)) > maxSize {
+		return fmt.Errorf("%s file size exceeds 10MB limit", imageType)
+	}
+
+	// Validate MIME type
+	if !h.isAllowedImageMimeTypeLift(contentType) {
+		return fmt.Errorf("unsupported %s file type: %s", imageType, contentType)
+	}
+
+	return nil
+}
+
+// updateActorFromRequest updates actor fields from the request
+func (h *Handler) updateActorFromRequest(actor *activitypub.Actor, req models.UpdateCredentialsRequest) {
+	// Update text fields
+	if req.DisplayName != "" {
+		actor.Name = req.DisplayName
+	}
+	if req.Note != "" {
+		actor.Summary = req.Note
+	}
+
+	// Update URL fields if they exist and actor has the corresponding image
+	if req.Avatar != "" && actor.Icon != nil {
+		actor.Icon.URL = req.Avatar
+	}
+	if req.Header != "" && actor.Image != nil {
+		actor.Image.URL = req.Header
+	}
+
+	// Update boolean flags
+	actor.ManuallyApprovesFollowers = req.Locked
+	actor.Discoverable = req.Discoverable
+	// Note: Bot status would need to be tracked separately in a different field
+}
+
+// buildCredentialsResponse builds the credentials response
+func (h *Handler) buildCredentialsResponse(ctx *lift.Context, actor *activitypub.Actor, claims *auth.Claims) models.VerifyCredentialsResponse {
 	// Get user for email
 	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get user", zap.Error(err))
+		user = &storage.User{Email: "", Role: "user"} // Default values
 	}
 
 	// Get real counts - these are not stored on the ActivityPub actor
 	// For now, we'll default to 0 since we just fetched the actor
 	followerCount := 0
-	followingCount := 0 
+	followingCount := 0
 	statusesCount := 0
 
-	// Return updated credentials in Mastodon format
+	// Build response
 	resp := models.VerifyCredentialsResponse{
 		ID:             actor.ID,
 		Username:       actor.PreferredUsername,
@@ -498,17 +578,17 @@ func (h *Handler) HandleUpdateCredentialsLift(ctx *lift.Context) error {
 		},
 	}
 
+	// Set image URLs
 	if actor.Icon != nil {
 		resp.Avatar = actor.Icon.URL
 		resp.AvatarStatic = actor.Icon.URL
 	}
-
 	if actor.Image != nil {
 		resp.Header = actor.Image.URL
 		resp.HeaderStatic = actor.Image.URL
 	}
 
-	return ctx.JSON(resp)
+	return resp
 }
 
 // HandleGetAccountLift retrieves account information by ID (username or URL)
@@ -527,7 +607,7 @@ func (h *Handler) HandleGetAccountLift(ctx *lift.Context) error {
 	// Get real counts - these are not stored on the ActivityPub actor
 	// For now, we'll default to 0 since we just fetched the actor
 	followerCount := 0
-	followingCount := 0 
+	followingCount := 0
 	statusesCount := 0
 
 	// Convert to Mastodon account format
@@ -537,9 +617,9 @@ func (h *Handler) HandleGetAccountLift(ctx *lift.Context) error {
 		Acct:           actor.PreferredUsername,
 		DisplayName:    actor.Name,
 		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            actor.Type == "Service",
+		Bot:            actor.Type == actorTypeService,
 		Discoverable:   actor.Discoverable,
-		Group:          actor.Type == "Group",
+		Group:          actor.Type == actorTypeGroup,
 		CreatedAt:      h.formatActorCreatedTimeLift(actor.CreatedAt),
 		Note:           actor.Summary,
 		URL:            actor.URL,
@@ -596,7 +676,7 @@ func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 	// Get real counts - these are not stored on the ActivityPub actor
 	// For now, we'll default to 0 since we just fetched the actor
 	followerCount := 0
-	followingCount := 0 
+	followingCount := 0
 	statusesCount := 0
 
 	// Convert to Mastodon account format with real counts
@@ -606,8 +686,16 @@ func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 	return ctx.JSON(account)
 }
 
-// HandleGetAccountFollowersLift retrieves the list of accounts following the given account
-func (h *Handler) HandleGetAccountFollowersLift(ctx *lift.Context) error {
+// relationshipType represents the type of relationship being queried
+type relationshipType string
+
+const (
+	relationshipFollowers relationshipType = "followers"
+	relationshipFollowing relationshipType = "following"
+)
+
+// handleAccountRelationshipsList is a generic handler for followers and following lists
+func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType relationshipType) error {
 	accountID := ctx.Param("id")
 	if accountID == "" {
 		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
@@ -633,117 +721,71 @@ func (h *Handler) HandleGetAccountFollowersLift(ctx *lift.Context) error {
 		cursor = minID
 	}
 
-	// Get followers
-	followers, nextCursor, err := h.repos.Relationship().GetFollowers(ctx.Context, username, limit, cursor)
-	if err != nil {
-		h.logger.Error("failed to get followers", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	// Get relationships based on type
+	var relationships []string
+	var nextCursor string
+
+	switch relType {
+	case relationshipFollowers:
+		relationships, nextCursor, err = h.repos.Relationship().GetFollowers(ctx.Context, username, limit, cursor)
+		if err != nil {
+			h.logger.Error("failed to get followers", zap.Error(err))
+			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		}
+	case relationshipFollowing:
+		relationships, nextCursor, err = h.repos.Relationship().GetFollowing(ctx.Context, username, limit, cursor)
+		if err != nil {
+			h.logger.Error("failed to get following", zap.Error(err))
+			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		}
 	}
 
-	// Convert followers to Mastodon account format
+	// Convert relationships to Mastodon account format
 	converter := mastodon.NewConverter(h.cfg.BaseURL())
-	accounts := make([]models.Account, 0, len(followers))
-	for _, follower := range followers {
-		// Extract username from follower ID
-		followerUsername := converter.ExtractUsernameFromActorID(follower)
-		if followerUsername == "" {
-			// Try to parse as a remote actor
-			h.logger.Warn("could not extract username from follower", zap.String("follower_id", follower))
+	accounts := make([]models.Account, 0, len(relationships))
+	for _, relationshipID := range relationships {
+		// Extract username from relationship ID
+		relatedUsername := converter.ExtractUsernameFromActorID(relationshipID)
+		if relatedUsername == "" {
+			h.logger.Warn("could not extract username from relationship",
+				zap.String("relationship_id", relationshipID),
+				zap.String("type", string(relType)))
 			continue
 		}
 
-		// Get the follower actor
-		followerActor, err := h.repos.Actor().GetActor(ctx.Context, followerUsername)
+		// Get the related actor
+		relatedActor, err := h.repos.Actor().GetActor(ctx.Context, relatedUsername)
 		if err != nil {
-			h.logger.Warn("could not get follower actor",
-				zap.String("username", followerUsername),
+			h.logger.Warn("could not get related actor",
+				zap.String("username", relatedUsername),
+				zap.String("type", string(relType)),
 				zap.Error(err))
 			continue
 		}
 
 		// Convert to account
-		account := converter.ActorToAccount(followerActor)
+		account := converter.ActorToAccount(relatedActor)
 		accounts = append(accounts, account)
 	}
 
 	// Set Link header for pagination if there's a cursor
 	if nextCursor != "" {
-		nextURL := fmt.Sprintf("%s/api/v1/accounts/%s/followers?max_id=%s",
-			h.cfg.BaseURL(), accountID, nextCursor)
+		nextURL := fmt.Sprintf("%s/api/v1/accounts/%s/%s?max_id=%s",
+			h.cfg.BaseURL(), accountID, string(relType), nextCursor)
 		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
 	}
 
 	return ctx.JSON(accounts)
 }
 
+// HandleGetAccountFollowersLift retrieves the list of accounts following the given account
+func (h *Handler) HandleGetAccountFollowersLift(ctx *lift.Context) error {
+	return h.handleAccountRelationshipsList(ctx, relationshipFollowers)
+}
+
 // HandleGetAccountFollowingLift retrieves the list of accounts the given account is following
 func (h *Handler) HandleGetAccountFollowingLift(ctx *lift.Context) error {
-	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
-	}
-
-	// Extract username from accountID
-	username := accountID
-
-	// Get the actor to verify it exists
-	_, err := h.repos.Actor().GetActor(ctx.Context, username)
-	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
-	}
-
-	// Parse pagination parameters
-	limit := 40
-	maxID := ctx.Query("max_id")
-	minID := ctx.Query("min_id")
-	cursor := maxID
-
-	// Use minID as cursor if provided and maxID is not
-	if minID != "" && maxID == "" {
-		cursor = minID
-	}
-
-	// Get following
-	following, nextCursor, err := h.repos.Relationship().GetFollowing(ctx.Context, username, limit, cursor)
-	if err != nil {
-		h.logger.Error("failed to get following", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Convert following to Mastodon account format
-	converter := mastodon.NewConverter(h.cfg.BaseURL())
-	accounts := make([]models.Account, 0, len(following))
-	for _, followed := range following {
-		// Extract username from followed ID
-		followedUsername := converter.ExtractUsernameFromActorID(followed)
-		if followedUsername == "" {
-			// Try to parse as a remote actor
-			h.logger.Warn("could not extract username from followed", zap.String("followed_id", followed))
-			continue
-		}
-
-		// Get the followed actor
-		followedActor, err := h.repos.Actor().GetActor(ctx.Context, followedUsername)
-		if err != nil {
-			h.logger.Warn("could not get followed actor",
-				zap.String("username", followedUsername),
-				zap.Error(err))
-			continue
-		}
-
-		// Convert to account
-		account := converter.ActorToAccount(followedActor)
-		accounts = append(accounts, account)
-	}
-
-	// Set Link header for pagination if there's a cursor
-	if nextCursor != "" {
-		nextURL := fmt.Sprintf("%s/api/v1/accounts/%s/following?max_id=%s",
-			h.cfg.BaseURL(), accountID, nextCursor)
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
-	}
-
-	return ctx.JSON(accounts)
+	return h.handleAccountRelationshipsList(ctx, relationshipFollowing)
 }
 
 // HandleGetFamiliarFollowersLift returns accounts that the requesting user follows and who also follow the given account
@@ -1084,30 +1126,7 @@ func (h *Handler) validateRegistrationRequestLift(req models.AccountRegistration
 
 // resolveAccountIDLift resolves an account ID (which can be a username, numeric ID, or URL) to an actor
 func (h *Handler) resolveAccountIDLift(ctx context.Context, accountID string) (*activitypub.Actor, error) {
-	// Handle different account ID formats
-	if strings.HasPrefix(accountID, "http://") || strings.HasPrefix(accountID, "https://") {
-		// Full ActivityPub actor URL
-		// Extract username from URL like https://lesser.host/users/aron
-		if strings.Contains(accountID, h.cfg.Domain) && strings.Contains(accountID, "/users/") {
-			parts := strings.Split(accountID, "/users/")
-			if len(parts) == 2 {
-				username := parts[1]
-				return h.repos.Actor().GetActor(ctx, username)
-			}
-			return nil, fmt.Errorf("invalid account URL")
-		}
-		// Remote actor - not supported yet
-		return nil, fmt.Errorf("remote accounts not yet supported")
-	}
-
-	// Check if it's a numeric ID (Mastodon compatibility)
-	if _, err := strconv.ParseInt(accountID, 10, 64); err == nil && len(accountID) >= 10 {
-		// It's a numeric ID - use the dedicated lookup method
-		return h.repos.Actor().GetActorByNumericID(ctx, accountID)
-	}
-
-	// Assume it's a username for local accounts
-	return h.repos.Actor().GetActor(ctx, accountID)
+	return h.resolveAccountID(ctx, accountID)
 }
 
 // getRelationshipMapLift gets relationship status for Lift implementation
@@ -1250,7 +1269,7 @@ func (h *Handler) getExtensionFromImageMimeTypeLift(mimeType string) string {
 }
 
 // min returns the minimum of two integers
-func min(a, b int) int {
+func mathMin(a, b int) int {
 	if a < b {
 		return a
 	}
@@ -1328,7 +1347,7 @@ func (h *Handler) isNotifyingEnabledLift(ctx context.Context, followerID, follow
 
 	// If preference exists and is "true", notifications are enabled
 	if notifyEnabled != "" {
-		return notifyEnabled == "true"
+		return notifyEnabled == boolTrue
 	}
 
 	return false // Default to not notifying
@@ -1345,7 +1364,7 @@ func (h *Handler) isNotificationsMutedLift(ctx context.Context, muterID, muteeID
 
 	// If preference exists and is "true", notifications are muted
 	if notifMuted != "" {
-		return notifMuted == "true"
+		return notifMuted == boolTrue
 	}
 
 	return false // Default to not muted

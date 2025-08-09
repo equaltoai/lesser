@@ -68,8 +68,14 @@ func (ct *DynamORMCostTracker) TrackOperation(ctx context.Context, operation str
 
 	// Store cost in context using existing method if context has tracker
 	if contextTracker := FromContext(ctx); contextTracker != nil {
-		contextTracker.TrackDynamoRead(int(consumedReads))
-		contextTracker.TrackDynamoWrite(int(consumedWrites))
+		if err := contextTracker.TrackDynamoRead(int(consumedReads)); err != nil {
+			// Log tracking failure but don't fail the DB operation
+			zap.L().Warn("failed to track DynamoDB read cost", zap.Error(err))
+		}
+		if err := contextTracker.TrackDynamoWrite(int(consumedWrites)); err != nil {
+			// Log tracking failure but don't fail the DB operation  
+			zap.L().Warn("failed to track DynamoDB write cost", zap.Error(err))
+		}
 	}
 
 	return err
@@ -85,7 +91,7 @@ func (ct *DynamORMCostTracker) TrackPut(ctx context.Context, tableName string, f
 	return ct.TrackOperation(ctx, fmt.Sprintf("put_%s", tableName), func() error {
 		err := fn()
 		if err == nil {
-			ct.TrackDynamoWrite(1) // One write unit for put
+			_ = ct.TrackDynamoWrite(1) // One write unit for put
 		}
 		return err
 	})
@@ -96,7 +102,7 @@ func (ct *DynamORMCostTracker) TrackUpdate(ctx context.Context, tableName string
 	return ct.TrackOperation(ctx, fmt.Sprintf("update_%s", tableName), func() error {
 		err := fn()
 		if err == nil {
-			ct.TrackDynamoWrite(1) // One write unit for update
+			_ = ct.TrackDynamoWrite(1) // One write unit for update
 		}
 		return err
 	})
@@ -107,7 +113,7 @@ func (ct *DynamORMCostTracker) TrackDelete(ctx context.Context, tableName string
 	return ct.TrackOperation(ctx, fmt.Sprintf("delete_%s", tableName), func() error {
 		err := fn()
 		if err == nil {
-			ct.TrackDynamoWrite(1) // One write unit for delete
+			_ = ct.TrackDynamoWrite(1) // One write unit for delete
 		}
 		return err
 	})
@@ -118,7 +124,7 @@ func (ct *DynamORMCostTracker) TrackBatchWrite(ctx context.Context, tableName st
 	return ct.TrackOperation(ctx, fmt.Sprintf("batch_write_%s", tableName), func() error {
 		err := fn()
 		if err == nil {
-			ct.TrackDynamoWrite(itemCount) // Track actual item count
+			_ = ct.TrackDynamoWrite(itemCount) // Track actual item count
 		}
 		return err
 	})
@@ -130,7 +136,7 @@ func (ct *DynamORMCostTracker) TrackTransaction(ctx context.Context, operationCo
 		err := fn()
 		if err == nil {
 			// Transactions consume write capacity for each operation
-			ct.TrackDynamoWrite(operationCount)
+			_ = ct.TrackDynamoWrite(operationCount)
 		}
 		return err
 	})
@@ -197,7 +203,10 @@ func (ctdb *TrackingDB) Transaction(fn func(*core.Tx) error) error {
 
 	err := ctdb.DB.Transaction(fn)
 	if err == nil && ctdb.tracker != nil {
-		ctdb.tracker.TrackDynamoWrite(operationCount * 2) // Transactions use 2x WCU
+		if trackErr := ctdb.tracker.TrackDynamoWrite(operationCount * 2); trackErr != nil {
+			// Log tracking failure but don't fail the transaction
+			ctdb.logger.Warn("failed to track transaction write cost", zap.Error(trackErr))
+		}
 	}
 
 	if ctdb.logger != nil {
@@ -302,7 +311,7 @@ func (ctq *TrackingQuery) WithRetry(maxRetries int, initialDelay time.Duration) 
 func (ctq *TrackingQuery) First(dest any) error {
 	err := ctq.query.First(dest)
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoRead(1) // One read unit for first
+		_ = ctq.tracker.TrackDynamoRead(1) // One read unit for first
 	}
 
 	if ctq.logger != nil {
@@ -321,7 +330,7 @@ func (ctq *TrackingQuery) All(dest any) error {
 	if err == nil && ctq.tracker != nil {
 		// Estimate read units - in practice, this could be enhanced
 		// by counting items in the result or using query metadata
-		ctq.tracker.TrackDynamoRead(10) // Conservative estimate
+		_ = ctq.tracker.TrackDynamoRead(10) // Conservative estimate
 	}
 
 	if ctq.logger != nil {
@@ -343,7 +352,7 @@ func (ctq *TrackingQuery) AllPaginated(dest any) (*core.PaginatedResult, error) 
 		if result != nil && result.Count > 0 {
 			readUnits = result.Count
 		}
-		ctq.tracker.TrackDynamoRead(readUnits)
+		_ = ctq.tracker.TrackDynamoRead(readUnits)
 	}
 
 	if ctq.logger != nil {
@@ -364,7 +373,7 @@ func (ctq *TrackingQuery) AllPaginated(dest any) (*core.PaginatedResult, error) 
 func (ctq *TrackingQuery) Count() (int64, error) {
 	count, err := ctq.query.Count()
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoRead(1) // Count operations typically use 1 RCU minimum
+		_ = ctq.tracker.TrackDynamoRead(1) // Count operations typically use 1 RCU minimum
 	}
 
 	if ctq.logger != nil {
@@ -382,7 +391,7 @@ func (ctq *TrackingQuery) Count() (int64, error) {
 func (ctq *TrackingQuery) Create() error {
 	err := ctq.query.Create()
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoWrite(1) // One write unit for create
+		_ = ctq.tracker.TrackDynamoWrite(1) // One write unit for create
 	}
 
 	if ctq.logger != nil {
@@ -399,7 +408,7 @@ func (ctq *TrackingQuery) Create() error {
 func (ctq *TrackingQuery) CreateOrUpdate() error {
 	err := ctq.query.CreateOrUpdate()
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoWrite(1) // One write unit for create or update
+		_ = ctq.tracker.TrackDynamoWrite(1) // One write unit for create or update
 	}
 
 	if ctq.logger != nil {
@@ -416,7 +425,7 @@ func (ctq *TrackingQuery) CreateOrUpdate() error {
 func (ctq *TrackingQuery) Update(fields ...string) error {
 	err := ctq.query.Update(fields...)
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoWrite(1) // One write unit for update
+		_ = ctq.tracker.TrackDynamoWrite(1) // One write unit for update
 	}
 
 	if ctq.logger != nil {
@@ -440,7 +449,7 @@ func (ctq *TrackingQuery) UpdateBuilder() core.UpdateBuilder {
 func (ctq *TrackingQuery) Delete() error {
 	err := ctq.query.Delete()
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoWrite(1) // One write unit for delete
+		_ = ctq.tracker.TrackDynamoWrite(1) // One write unit for delete
 	}
 
 	if ctq.logger != nil {
@@ -471,9 +480,9 @@ func TrackDynamORMOperation(ctx context.Context, operation string, fn func() err
 		// actual consumed capacity from DynamoDB response metadata
 		switch operation {
 		case "put", "update", "delete", "create":
-			tracker.TrackDynamoWrite(1)
+			_ = tracker.TrackDynamoWrite(1)
 		case "query", "scan", "get", "first", "all", "count":
-			tracker.TrackDynamoRead(1)
+			_ = tracker.TrackDynamoRead(1)
 		}
 	}
 
@@ -514,7 +523,7 @@ func (ctq *TrackingQuery) Scan(dest any) error {
 	err := ctq.query.Scan(dest)
 	if err == nil && ctq.tracker != nil {
 		// Scans are expensive - estimate high RCU usage
-		ctq.tracker.TrackDynamoRead(100) // Conservative estimate for scan
+		_ = ctq.tracker.TrackDynamoRead(100) // Conservative estimate for scan
 	}
 
 	if ctq.logger != nil {
@@ -539,7 +548,7 @@ func (ctq *TrackingQuery) ScanAllSegments(dest any, totalSegments int32) error {
 	if err == nil && ctq.tracker != nil {
 		// Parallel scan across segments - estimate high usage
 		estimatedReads := int(totalSegments) * 100
-		ctq.tracker.TrackDynamoRead(estimatedReads)
+		_ = ctq.tracker.TrackDynamoRead(estimatedReads)
 	}
 
 	if ctq.logger != nil {
@@ -560,7 +569,7 @@ func (ctq *TrackingQuery) ScanAllSegments(dest any, totalSegments int32) error {
 func (ctq *TrackingQuery) BatchGet(keys []any, dest any) error {
 	err := ctq.query.BatchGet(keys, dest)
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoRead(len(keys)) // One read unit per key
+		_ = ctq.tracker.TrackDynamoRead(len(keys)) // One read unit per key
 	}
 
 	if ctq.logger != nil {
@@ -585,7 +594,7 @@ func (ctq *TrackingQuery) BatchCreate(items any) error {
 
 	err := ctq.query.BatchCreate(items)
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoWrite(itemCount)
+		_ = ctq.tracker.TrackDynamoWrite(itemCount)
 	}
 
 	if ctq.logger != nil {
@@ -603,7 +612,7 @@ func (ctq *TrackingQuery) BatchCreate(items any) error {
 func (ctq *TrackingQuery) BatchDelete(keys []any) error {
 	err := ctq.query.BatchDelete(keys)
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoWrite(len(keys)) // One write unit per key
+		_ = ctq.tracker.TrackDynamoWrite(len(keys)) // One write unit per key
 	}
 
 	if ctq.logger != nil {
@@ -622,7 +631,7 @@ func (ctq *TrackingQuery) BatchWrite(putItems []any, deleteKeys []any) error {
 	err := ctq.query.BatchWrite(putItems, deleteKeys)
 	if err == nil && ctq.tracker != nil {
 		totalWrites := len(putItems) + len(deleteKeys)
-		ctq.tracker.TrackDynamoWrite(totalWrites)
+		_ = ctq.tracker.TrackDynamoWrite(totalWrites)
 	}
 
 	if ctq.logger != nil {
@@ -642,7 +651,7 @@ func (ctq *TrackingQuery) BatchWrite(putItems []any, deleteKeys []any) error {
 func (ctq *TrackingQuery) BatchUpdateWithOptions(items []any, fields []string, options ...any) error {
 	err := ctq.query.BatchUpdateWithOptions(items, fields, options...)
 	if err == nil && ctq.tracker != nil {
-		ctq.tracker.TrackDynamoWrite(len(items)) // One write unit per item
+		_ = ctq.tracker.TrackDynamoWrite(len(items)) // One write unit per item
 	}
 
 	if ctq.logger != nil {

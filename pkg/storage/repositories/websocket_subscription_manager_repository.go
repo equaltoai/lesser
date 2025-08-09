@@ -135,7 +135,7 @@ func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForConnection(c
 	err := r.db.WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
 		Where("PK", "=", fmt.Sprintf("CONNECTION#%s", connectionID)).
 		All(&subscriptions)
-	
+
 	// Filter results to only include subscriptions (SK starts with SUBSCRIPTION#)
 	var filteredSubscriptions []models.WebSocketEventSubscription
 	for _, sub := range subscriptions {
@@ -196,7 +196,7 @@ func (r *WebSocketSubscriptionManagerRepository) CleanupSubscriptions(ctx contex
 }
 
 // GetAllConnections gets all active connections (mainly for broadcasting)
-func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(ctx context.Context) ([]models.WebSocketEventConnection, error) {
+func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(_ context.Context) ([]models.WebSocketEventConnection, error) {
 	var connections []models.WebSocketEventConnection
 
 	// Since we need all connections, we'll need to scan the table

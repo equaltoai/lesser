@@ -10,8 +10,8 @@ import (
 
 // OptimizationTracker tracks Lambda performance optimizations
 type OptimizationTracker struct {
-	logger    *zap.Logger
-	mu        sync.RWMutex
+	logger     *zap.Logger
+	mu         sync.RWMutex
 	coldStarts int64
 	warmStarts int64
 }
@@ -24,7 +24,7 @@ func NewOptimizationTracker(logger *zap.Logger) *OptimizationTracker {
 }
 
 // TrackColdStart records a cold start event
-func (ot *OptimizationTracker) TrackColdStart(ctx context.Context) {
+func (ot *OptimizationTracker) TrackColdStart(_ context.Context) {
 	ot.mu.Lock()
 	ot.coldStarts++
 	ot.mu.Unlock()
@@ -35,7 +35,7 @@ func (ot *OptimizationTracker) TrackColdStart(ctx context.Context) {
 }
 
 // TrackWarmStart records a warm start event
-func (ot *OptimizationTracker) TrackWarmStart(ctx context.Context) {
+func (ot *OptimizationTracker) TrackWarmStart(_ context.Context) {
 	ot.mu.Lock()
 	ot.warmStarts++
 	ot.mu.Unlock()
@@ -58,7 +58,7 @@ func (ot *OptimizationTracker) GetColdStartRatio() float64 {
 }
 
 // TrackLatency records request latency
-func (ot *OptimizationTracker) TrackLatency(ctx context.Context, operation string, duration time.Duration) {
+func (ot *OptimizationTracker) TrackLatency(_ context.Context, operation string, duration time.Duration) {
 	ot.logger.Info("operation latency",
 		zap.String("operation", operation),
 		zap.Duration("duration", duration),
@@ -66,7 +66,7 @@ func (ot *OptimizationTracker) TrackLatency(ctx context.Context, operation strin
 }
 
 // TrackDBQuery records database query performance
-func (ot *OptimizationTracker) TrackDBQuery(ctx context.Context, tableName string, operation string, duration time.Duration) {
+func (ot *OptimizationTracker) TrackDBQuery(_ context.Context, tableName string, operation string, duration time.Duration) {
 	ot.logger.Info("db query performance",
 		zap.String("table", tableName),
 		zap.String("operation", operation),

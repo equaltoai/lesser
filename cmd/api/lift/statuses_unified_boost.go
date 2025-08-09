@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/cmd/api/models" 
+	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -111,7 +112,7 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
 			Type:    activitypub.AnnounceType,
-			ID:      fmt.Sprintf("%s/activities/announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomStringForBoost(8)),
+			ID:      fmt.Sprintf("%s/activities/announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomStringForBoost()),
 			To:      []string{activitypub.PublicAddress},
 		},
 		Actor:  actor.ID,
@@ -147,7 +148,7 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 		Shares:      1,
 		UniqueUsers: 1,
 	}
-	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "boost", objectID, time.Now().Format("2006-01-02"), engagementData); err != nil {
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "boost", objectID, time.Now().Format(common.DateFormat), engagementData); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
@@ -203,11 +204,11 @@ func (h *Handler) extractContentFromObject(obj any) string {
 func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, comment, visibility string, actor *activitypub.Actor) error {
 	// Default visibility if not specified
 	if visibility == "" {
-		visibility = "public"
+		visibility = storageModels.VisibilityPublic
 	}
 
 	// Generate note ID
-	noteID := fmt.Sprintf("%d-%s", time.Now().Unix(), generateRandomStringForBoost(8))
+	noteID := fmt.Sprintf("%d-%s", time.Now().Unix(), generateRandomStringForBoost())
 
 	// Create the QuoteNote object with quote content
 	note := &activitypub.QuoteNote{
@@ -274,7 +275,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 		BaseObject: activitypub.BaseObject{
 			Context:   activitypub.Context,
 			Type:      activitypub.CreateType,
-			ID:        fmt.Sprintf("%s/activities/create-%d-%s", actor.ID, time.Now().Unix(), generateRandomStringForBoost(8)),
+			ID:        fmt.Sprintf("%s/activities/create-%d-%s", actor.ID, time.Now().Unix(), generateRandomStringForBoost()),
 			To:        note.To,
 			CC:        note.CC,
 			Published: &now,
@@ -299,7 +300,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 		Shares:      1,
 		UniqueUsers: 1,
 	}
-	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "quote", objectID, time.Now().Format("2006-01-02"), engagementData); err != nil {
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "quote", objectID, time.Now().Format(common.DateFormat), engagementData); err != nil {
 		h.logger.Warn("failed to record quote engagement",
 			zap.String("quoted_status_id", objectID),
 			zap.Error(err))
@@ -392,49 +393,10 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write scope
-		if !claims.HasScope(auth.ScopeWrite) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	// Authenticate user
+	username, err := h.authenticateUndoBoostRequest(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Get the user's actor
@@ -444,114 +406,214 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Normalize the status ID to a full URL if it's not already
-	objectID := statusID
-	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
-		// Assume it's a local object ID
-		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
-	}
+	// Normalize the status ID to a full URL
+	objectID := h.normalizeBoostObjectID(statusID)
 
-	// First, try to find and undo a traditional announce/boost
-	foundAnnounce := false
-	if announce, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, objectID); err == nil {
-		foundAnnounce = true
-		
-		// Create an Undo Announce activity
-		undoActivity := &activitypub.Activity{
-			BaseObject: activitypub.BaseObject{
-				Context: activitypub.Context,
-				Type:    activitypub.UndoType,
-				ID:      fmt.Sprintf("%s/activities/undo-announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomStringForBoost(8)),
-				To:      []string{activitypub.PublicAddress},
-			},
-			Actor: actor.ID,
-			Object: map[string]any{
-				"type":   activitypub.AnnounceType,
-				"actor":  actor.ID,
-				"object": objectID,
-			},
-		}
-		now := time.Now()
-		undoActivity.Published = &now
+	// Undo traditional boost if found
+	foundAnnounce := h.undoTraditionalBoost(ctx, actor, objectID)
 
-		// Delete the Announce record from dedicated storage
-		if err := h.repos.Social().DeleteAnnounce(ctx.Context, actor.ID, objectID); err != nil {
-			h.logger.Error("failed to delete announce", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-		}
+	// Undo quote boost if found
+	foundQuoteBoost := h.undoQuoteBoost(ctx, actor, objectID)
 
-		// Store the activity in the outbox (this will trigger delivery)
-		if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
-			h.logger.Error("failed to create undo announce activity", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-		}
-
-		h.logger.Info("successfully undid traditional boost",
-			zap.String("actor", actor.ID),
-			zap.String("object", objectID),
-			zap.String("announce_id", announce.ID))
-	}
-
-	// Next, try to find and delete quote boosts for this status
-	foundQuoteBoost := false
-	if quoteRelationships, _, err := h.repos.Object().GetQuotesForNote(ctx.Context, objectID, 100, ""); err == nil {
-		for _, quote := range quoteRelationships {
-			if quote.QuoterID == actor.ID && quote.TargetNoteID == objectID {
-				foundQuoteBoost = true
-				
-				// Withdraw the quote (marks as withdrawn rather than deleting)
-				if err := h.repos.Object().WithdrawQuote(ctx.Context, quote.QuoterNoteID); err != nil {
-					h.logger.Error("failed to withdraw quote", zap.Error(err))
-					// Continue with other operations
-				}
-
-				// Create an Undo activity for the quote note
-				undoActivity := &activitypub.Activity{
-					BaseObject: activitypub.BaseObject{
-						Context: activitypub.Context,
-						Type:    activitypub.UndoType,
-						ID:      fmt.Sprintf("%s/activities/undo-create-%d-%s", actor.ID, time.Now().Unix(), generateRandomStringForBoost(8)),
-						To:      []string{activitypub.PublicAddress},
-					},
-					Actor: actor.ID,
-					Object: map[string]any{
-						"type":   activitypub.CreateType,
-						"actor":  actor.ID,
-						"object": fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), quote.QuoterNoteID),
-					},
-				}
-				now := time.Now()
-				undoActivity.Published = &now
-
-				// Store the undo activity
-				if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
-					h.logger.Error("failed to create undo quote activity", zap.Error(err))
-					// Continue with response
-				}
-
-				// Delete the quote note object
-				if err := h.repos.Object().DeleteObject(ctx.Context, fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), quote.QuoterNoteID)); err != nil {
-					h.logger.Warn("failed to delete quote note object",
-						zap.String("note_id", quote.QuoterNoteID),
-						zap.Error(err))
-				}
-
-				h.logger.Info("successfully undid quote boost",
-					zap.String("actor", actor.ID),
-					zap.String("quoted_object", objectID),
-					zap.String("quote_id", quote.ID))
-				break // Only undo the first matching quote boost
-			}
-		}
-	}
-
-	// If neither announce nor quote boost was found, return success anyway for idempotency
+	// Log if nothing was found (idempotent operation)
 	if !foundAnnounce && !foundQuoteBoost {
 		h.logger.Info("no boost or quote boost found to undo",
 			zap.String("actor", actor.ID),
 			zap.String("object", objectID))
 	}
 
+	// Build and return response
+	return h.buildUndoBoostResponse(ctx, statusID, objectID)
+}
+
+// authenticateUndoBoostRequest handles authentication for undo boost requests
+func (h *Handler) authenticateUndoBoostRequest(ctx *lift.Context) (string, error) {
+	// Check for test username header
+	testUsername := h.getTestUsernameForBoost(ctx)
+	if testUsername != "" {
+		return testUsername, nil
+	}
+
+	// Extract auth header
+	authHeader := h.extractAuthHeaderForBoost(ctx)
+
+	// Extract and validate token
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Validate token and get claims
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+	}
+
+	return claims.Username, nil
+}
+
+// getTestUsernameForBoost extracts test username from headers
+func (h *Handler) getTestUsernameForBoost(ctx *lift.Context) string {
+	testUsername := ctx.Header("X-Test-Username")
+	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	}
+	return testUsername
+}
+
+// extractAuthHeaderForBoost extracts authorization header from various sources
+func (h *Handler) extractAuthHeaderForBoost(ctx *lift.Context) string {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+
+	// Try direct access to headers if ctx.Header doesn't work
+	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
+		if authHeader == "" {
+			authHeader = ctx.Request.Request.Headers["authorization"]
+		}
+	}
+
+	return authHeader
+}
+
+// normalizeBoostObjectID converts a status ID to a full URL if needed
+func (h *Handler) normalizeBoostObjectID(statusID string) string {
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+	}
+	return statusID
+}
+
+// undoTraditionalBoost finds and undoes a traditional announce/boost
+func (h *Handler) undoTraditionalBoost(ctx *lift.Context, actor *activitypub.Actor, objectID string) bool {
+	announce, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, objectID)
+	if err != nil {
+		return false
+	}
+
+	// Create Undo Announce activity
+	undoActivity := h.createUndoAnnounceActivity(actor, objectID)
+
+	// Delete the Announce record
+	if err := h.repos.Social().DeleteAnnounce(ctx.Context, actor.ID, objectID); err != nil {
+		h.logger.Error("failed to delete announce", zap.Error(err))
+		return false
+	}
+
+	// Store the activity in the outbox
+	if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
+		h.logger.Error("failed to create undo announce activity", zap.Error(err))
+		return false
+	}
+
+	h.logger.Info("successfully undid traditional boost",
+		zap.String("actor", actor.ID),
+		zap.String("object", objectID),
+		zap.String("announce_id", announce.ID))
+
+	return true
+}
+
+// createUndoAnnounceActivity creates an Undo Announce activity
+func (h *Handler) createUndoAnnounceActivity(actor *activitypub.Actor, objectID string) *activitypub.Activity {
+	now := time.Now()
+	return &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.UndoType,
+			ID:      fmt.Sprintf("%s/activities/undo-announce-%d-%s", actor.ID, now.Unix(), generateRandomStringForBoost()),
+			To:      []string{activitypub.PublicAddress},
+			Published: &now,
+		},
+		Actor: actor.ID,
+		Object: map[string]any{
+			"type":   activitypub.AnnounceType,
+			"actor":  actor.ID,
+			"object": objectID,
+		},
+	}
+}
+
+// undoQuoteBoost finds and undoes quote boosts for a status
+func (h *Handler) undoQuoteBoost(ctx *lift.Context, actor *activitypub.Actor, objectID string) bool {
+	quoteRelationships, _, err := h.repos.Object().GetQuotesForNote(ctx.Context, objectID, 100, "")
+	if err != nil {
+		return false
+	}
+
+	for _, quote := range quoteRelationships {
+		if h.isMatchingQuoteBoost(quote, actor.ID, objectID) {
+			h.processQuoteBoostUndo(ctx, actor, quote)
+			return true
+		}
+	}
+
+	return false
+}
+
+// isMatchingQuoteBoost checks if a quote relationship matches the actor and object
+func (h *Handler) isMatchingQuoteBoost(quote *storage.QuoteRelationship, actorID, objectID string) bool {
+	return quote.QuoterID == actorID && quote.TargetNoteID == objectID
+}
+
+// processQuoteBoostUndo handles the undo operations for a quote boost
+func (h *Handler) processQuoteBoostUndo(ctx *lift.Context, actor *activitypub.Actor, quote *storage.QuoteRelationship) {
+	// Withdraw the quote
+	if err := h.repos.Object().WithdrawQuote(ctx.Context, quote.QuoterNoteID); err != nil {
+		h.logger.Error("failed to withdraw quote", zap.Error(err))
+	}
+
+	// Create and store Undo activity
+	undoActivity := h.createUndoQuoteActivity(actor, quote.QuoterNoteID)
+	if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
+		h.logger.Error("failed to create undo quote activity", zap.Error(err))
+	}
+
+	// Delete the quote note object
+	noteURL := fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), quote.QuoterNoteID)
+	if err := h.repos.Object().DeleteObject(ctx.Context, noteURL); err != nil {
+		h.logger.Warn("failed to delete quote note object",
+			zap.String("note_id", quote.QuoterNoteID),
+			zap.Error(err))
+	}
+
+	h.logger.Info("successfully undid quote boost",
+		zap.String("actor", actor.ID),
+		zap.String("quoted_object", quote.TargetNoteID),
+		zap.String("quote_id", quote.ID))
+}
+
+// createUndoQuoteActivity creates an Undo activity for a quote note
+func (h *Handler) createUndoQuoteActivity(actor *activitypub.Actor, quoterNoteID string) *activitypub.Activity {
+	now := time.Now()
+	return &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			Type:      activitypub.UndoType,
+			ID:        fmt.Sprintf("%s/activities/undo-create-%d-%s", actor.ID, now.Unix(), generateRandomStringForBoost()),
+			To:        []string{activitypub.PublicAddress},
+			Published: &now,
+		},
+		Actor: actor.ID,
+		Object: map[string]any{
+			"type":   activitypub.CreateType,
+			"actor":  actor.ID,
+			"object": fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), quoterNoteID),
+		},
+	}
+}
+
+// buildUndoBoostResponse builds the response for an undo boost operation
+func (h *Handler) buildUndoBoostResponse(ctx *lift.Context, statusID, objectID string) error {
 	// Get announce count for the object
 	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
 
@@ -571,9 +633,10 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 	return ctx.JSON(resp)
 }
 
-// generateRandomStringForBoost generates a random string of the specified length for boost operations
-func generateRandomStringForBoost(length int) string {
+// generateRandomStringForBoost generates a random string of 8 characters for boost operations
+func generateRandomStringForBoost() string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const length = 8
 	b := make([]byte, length)
 	for i := range b {
 		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))

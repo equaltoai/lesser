@@ -20,29 +20,29 @@ type LinkMetadata struct {
 	Domain      string `json:"domain"`
 
 	// Additional metadata
-	FetchedAt    time.Time `json:"fetched_at"`
-	LastAccessed time.Time `json:"last_accessed"`
-	AccessCount  int64     `json:"access_count"`
-	ContentType  string    `json:"content_type,omitempty"`  // MIME type
-	Language     string    `json:"language,omitempty"`      // Detected language
-	Author       string    `json:"author,omitempty"`        // Article author if available
-	PublishedAt  *time.Time `json:"published_at,omitempty"` // Publication date if available
-	Keywords     []string  `json:"keywords,omitempty"`      // SEO keywords
-	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 30 days cache
+	FetchedAt    time.Time  `json:"fetched_at"`
+	LastAccessed time.Time  `json:"last_accessed"`
+	AccessCount  int64      `json:"access_count"`
+	ContentType  string     `json:"content_type,omitempty"`       // MIME type
+	Language     string     `json:"language,omitempty"`           // Detected language
+	Author       string     `json:"author,omitempty"`             // Article author if available
+	PublishedAt  *time.Time `json:"published_at,omitempty"`       // Publication date if available
+	Keywords     []string   `json:"keywords,omitempty"`           // SEO keywords
+	TTL          int64      `json:"ttl,omitempty" dynamorm:"ttl"` // 30 days cache
 }
 
 // UpdateKeys updates the partition and sort keys
 func (l *LinkMetadata) UpdateKeys() {
 	l.PK = "LINK#" + l.URL
-	l.SK = "METADATA"
-	
+	l.SK = SKMetadata
+
 	// Extract domain from URL if not set
 	if l.Domain == "" && l.URL != "" {
 		if u, err := url.Parse(l.URL); err == nil {
 			l.Domain = strings.ToLower(u.Hostname())
 		}
 	}
-	
+
 	// Set TTL to 30 days from fetch time
 	l.TTL = l.FetchedAt.AddDate(0, 0, 30).Unix()
 }
@@ -84,10 +84,10 @@ func (l *LinkMetadata) HasImage() bool {
 // GetDisplayDomain returns a cleaned domain name for display
 func (l *LinkMetadata) GetDisplayDomain() string {
 	domain := l.Domain
-	
+
 	// Remove www. prefix
 	domain = strings.TrimPrefix(domain, "www.")
-	
+
 	// Remove common TLDs for cleaner display
 	if strings.Count(domain, ".") > 1 {
 		// Keep only the main domain for well-known sites
@@ -96,7 +96,7 @@ func (l *LinkMetadata) GetDisplayDomain() string {
 			return parts[len(parts)-2]
 		}
 	}
-	
+
 	return domain
 }
 
@@ -147,7 +147,7 @@ func (l *LinkMetadata) SanitizeMetadata() {
 	l.Title = strings.TrimSpace(l.Title)
 	l.Description = strings.TrimSpace(l.Description)
 	l.Author = strings.TrimSpace(l.Author)
-	
+
 	// Remove duplicate keywords
 	seen := make(map[string]bool)
 	uniqueKeywords := []string{}
@@ -159,7 +159,7 @@ func (l *LinkMetadata) SanitizeMetadata() {
 		}
 	}
 	l.Keywords = uniqueKeywords
-	
+
 	// Ensure description is reasonable length
 	l.TruncateDescription(500)
 }

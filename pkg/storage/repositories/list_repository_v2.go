@@ -34,9 +34,9 @@ func NewListRepositoryV2(db core.DB, tableName string, logger *zap.Logger) *List
 func (r *ListRepositoryV2) CreateList(ctx context.Context, username, title, repliesPolicy string) (*storage.List, error) {
 	// Validate replies policy
 	if repliesPolicy == "" {
-		repliesPolicy = "list" // default
+		repliesPolicy = RepliesPolicyList // default
 	}
-	if repliesPolicy != "followed" && repliesPolicy != "list" && repliesPolicy != "none" {
+	if repliesPolicy != RepliesPolicyFollowed && repliesPolicy != RepliesPolicyList && repliesPolicy != RepliesPolicyNone {
 		return nil, fmt.Errorf("invalid replies policy: %s", repliesPolicy)
 	}
 
@@ -63,7 +63,7 @@ func (r *ListRepositoryV2) CreateList(ctx context.Context, username, title, repl
 // AFTER: Single BaseRepository Get call
 func (r *ListRepositoryV2) GetList(ctx context.Context, listID string) (*storage.List, error) {
 	list := &models.List{}
-	
+
 	// Use BaseRepository Get - saves ~15 lines of boilerplate
 	err := r.Get(ctx, fmt.Sprintf("LIST#%s", listID), "METADATA", list)
 	if err != nil {

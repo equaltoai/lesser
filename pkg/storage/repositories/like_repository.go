@@ -89,7 +89,7 @@ func (r *LikeRepository) DeleteLike(ctx context.Context, actor, object string) e
 // GetLike retrieves a specific like
 func (r *LikeRepository) GetLike(ctx context.Context, actor, object string) (*models.Like, error) {
 	var like models.Like
-	
+
 	query := r.db.WithContext(ctx).Model(&like).
 		Where("PK", "=", fmt.Sprintf("object#%s#likes", object)).
 		Where("SK", "=", fmt.Sprintf("actor#%s", actor))
@@ -116,13 +116,13 @@ func (r *LikeRepository) GetObjectLikes(ctx context.Context, objectID string, li
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var likes []models.Like
 	err := query.All(&likes)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to scan likes: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(likes) > limit {
@@ -153,13 +153,13 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var likes []models.Like
 	err := query.All(&likes)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to scan likes: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(likes) > limit {
@@ -194,7 +194,7 @@ func (r *LikeRepository) CascadeDeleteLikes(ctx context.Context, objectID string
 	// Query all likes for the object
 	// PK pattern: object#{object_id}#likes
 	pk := fmt.Sprintf("object#%s#likes", objectID)
-	
+
 	// Keep deleting in batches until no more likes remain
 	for {
 		// Query likes with a reasonable batch size
@@ -203,23 +203,23 @@ func (r *LikeRepository) CascadeDeleteLikes(ctx context.Context, objectID string
 			Where("PK", "=", pk).
 			Limit(100). // Process in batches of 100
 			All(&likes)
-		
+
 		if err != nil {
 			return fmt.Errorf("failed to query likes for deletion: %w", err)
 		}
-		
+
 		// If no likes found, we're done
 		if len(likes) == 0 {
 			break
 		}
-		
+
 		// Delete each like
 		for _, like := range likes {
 			err = r.db.WithContext(ctx).Model(&models.Like{}).
 				Where("PK", "=", like.PK).
 				Where("SK", "=", like.SK).
 				Delete()
-			
+
 			if err != nil {
 				// Log but continue - best effort deletion
 				r.logger.Warn("failed to delete like during cascade",
@@ -228,16 +228,16 @@ func (r *LikeRepository) CascadeDeleteLikes(ctx context.Context, objectID string
 					zap.Error(err))
 			}
 		}
-		
+
 		// If we got less than the limit, we're done
 		if len(likes) < 100 {
 			break
 		}
 	}
-	
+
 	r.logger.Info("cascade deleted likes for object",
 		zap.String("object_id", objectID))
-		
+
 	return nil
 }
 
@@ -272,7 +272,7 @@ func (r *LikeRepository) TombstoneObject(ctx context.Context, objectID string, d
 // GetTombstone retrieves a tombstone by object ID
 func (r *LikeRepository) GetTombstone(ctx context.Context, objectID string) (*storage.Tombstone, error) {
 	var tombstone models.Tombstone
-	
+
 	query := r.db.WithContext(ctx).Model(&tombstone).
 		Where("PK", "=", fmt.Sprintf("OBJECT#%s", objectID)).
 		Where("SK", "=", "TOMBSTONE")
@@ -304,11 +304,11 @@ func (r *LikeRepository) GetTombstone(ctx context.Context, objectID string) (*st
 func (r *LikeRepository) GetLikeCount(ctx context.Context, statusID string) (int64, error) {
 	// Query likes with PK pattern: OBJECT#{statusID}#LIKES
 	pk := fmt.Sprintf("OBJECT#%s#LIKES", statusID)
-	
+
 	count, err := r.db.WithContext(ctx).Model(&models.Like{}).
 		Where("PK", "=", pk).
 		Count()
-	
+
 	if err != nil {
 		r.logger.Error("failed to count likes",
 			zap.String("status_id", statusID),
@@ -323,11 +323,11 @@ func (r *LikeRepository) GetLikeCount(ctx context.Context, statusID string) (int
 func (r *LikeRepository) GetBoostCount(ctx context.Context, statusID string) (int64, error) {
 	// Query announces with PK pattern: OBJECT#{statusID}#ANNOUNCES
 	pk := fmt.Sprintf("OBJECT#%s#ANNOUNCES", statusID)
-	
+
 	count, err := r.db.WithContext(ctx).Model(&models.Announce{}).
 		Where("PK", "=", pk).
 		Count()
-	
+
 	if err != nil {
 		r.logger.Error("failed to count boosts",
 			zap.String("status_id", statusID),
@@ -339,11 +339,11 @@ func (r *LikeRepository) GetBoostCount(ctx context.Context, statusID string) (in
 }
 
 // IncrementReblogCount increments the reblog count on an object
-func (r *LikeRepository) IncrementReblogCount(ctx context.Context, objectID string) error {
+func (r *LikeRepository) IncrementReblogCount(_ context.Context, objectID string) error {
 	// This method would typically update a counter field on the object
 	// For now, we'll implement a basic increment pattern
 	// In a real implementation, this might use UpdateExpression to atomically increment
-	
+
 	r.logger.Info("incrementing reblog count",
 		zap.String("object_id", objectID))
 
@@ -352,9 +352,9 @@ func (r *LikeRepository) IncrementReblogCount(ctx context.Context, objectID stri
 	// 1. Get the current object
 	// 2. Use an atomic update to increment a reblog_count field
 	// 3. Or maintain a separate counter record
-	
+
 	// For now, this is a no-op that logs the operation
 	// The actual implementation would depend on the object model structure
-	
+
 	return nil
 }

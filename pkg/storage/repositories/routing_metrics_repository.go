@@ -29,7 +29,7 @@ func NewRoutingMetricsRepository(db core.DB, tableName string, logger *zap.Logge
 // StoreRouteMetricsWindow stores aggregated route metrics for a time window
 func (r *RoutingMetricsRepository) StoreRouteMetricsWindow(ctx context.Context, window *models.RouteMetricsWindow) error {
 	window.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(window).Create()
 	if err != nil {
 		r.logger.Error("Failed to store route metrics window",
@@ -50,10 +50,10 @@ func (r *RoutingMetricsRepository) StoreRouteMetricsWindow(ctx context.Context, 
 // GetRouteMetricsWindows retrieves route metrics for a time range
 func (r *RoutingMetricsRepository) GetRouteMetricsWindows(ctx context.Context, routeID string, since time.Time, limit int) ([]*models.RouteMetricsWindow, error) {
 	var windows []*models.RouteMetricsWindow
-	
+
 	pk := fmt.Sprintf("METRICS#ROUTE#%s", routeID)
 	sinceKey := fmt.Sprintf("WINDOW#%d", since.Unix())
-	
+
 	err := r.db.WithContext(ctx).Model(&models.RouteMetricsWindow{}).
 		Where("PK", "=", pk).
 		Where("SK", ">", sinceKey).
@@ -80,7 +80,7 @@ func (r *RoutingMetricsRepository) GetRouteMetricsWindows(ctx context.Context, r
 // StoreGlobalMetricsWindow stores aggregated global metrics for a time window
 func (r *RoutingMetricsRepository) StoreGlobalMetricsWindow(ctx context.Context, window *models.GlobalMetricsWindow) error {
 	window.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(window).Create()
 	if err != nil {
 		r.logger.Error("Failed to store global metrics window",
@@ -99,9 +99,9 @@ func (r *RoutingMetricsRepository) StoreGlobalMetricsWindow(ctx context.Context,
 // GetGlobalMetricsWindows retrieves global metrics for a time range
 func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, since time.Time, limit int) ([]*models.GlobalMetricsWindow, error) {
 	var windows []*models.GlobalMetricsWindow
-	
+
 	sinceKey := fmt.Sprintf("%d", since.Unix())
-	
+
 	err := r.db.WithContext(ctx).Model(&models.GlobalMetricsWindow{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "METRICS#GLOBAL").
@@ -127,7 +127,7 @@ func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, 
 // StoreInstanceMetricsWindow stores aggregated instance metrics for a time window
 func (r *RoutingMetricsRepository) StoreInstanceMetricsWindow(ctx context.Context, window *models.InstanceMetricsWindow) error {
 	window.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(window).Create()
 	if err != nil {
 		r.logger.Error("Failed to store instance metrics window",
@@ -148,10 +148,10 @@ func (r *RoutingMetricsRepository) StoreInstanceMetricsWindow(ctx context.Contex
 // GetInstanceMetricsWindows retrieves instance metrics for a time range
 func (r *RoutingMetricsRepository) GetInstanceMetricsWindows(ctx context.Context, instanceID string, since time.Time, limit int) ([]*models.InstanceMetricsWindow, error) {
 	var windows []*models.InstanceMetricsWindow
-	
+
 	pk := fmt.Sprintf("METRICS#INSTANCE#%s", instanceID)
 	sinceKey := fmt.Sprintf("WINDOW#%d", since.Unix())
-	
+
 	err := r.db.WithContext(ctx).Model(&models.InstanceMetricsWindow{}).
 		Where("PK", "=", pk).
 		Where("SK", ">", sinceKey).
@@ -176,7 +176,7 @@ func (r *RoutingMetricsRepository) GetInstanceMetricsWindows(ctx context.Context
 }
 
 // BatchStoreMetrics stores multiple metrics windows in batch
-func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context, 
+func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 	routeWindows []*models.RouteMetricsWindow,
 	instanceWindows []*models.InstanceMetricsWindow,
 	globalWindow *models.GlobalMetricsWindow) error {
@@ -229,12 +229,12 @@ func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 }
 
 // CleanupExpiredMetrics removes old metrics (handled by TTL, but can be called manually)
-func (r *RoutingMetricsRepository) CleanupExpiredMetrics(ctx context.Context, before time.Time) error {
+func (r *RoutingMetricsRepository) CleanupExpiredMetrics(_ context.Context, before time.Time) error {
 	// Since we use TTL, this is mainly for manual cleanup if needed
 	// In practice, DynamoDB will automatically remove expired items
-	
+
 	r.logger.Info("Metrics cleanup requested - using TTL for automatic cleanup",
 		zap.Time("before", before))
-	
+
 	return nil
 }

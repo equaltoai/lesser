@@ -14,6 +14,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// Trend direction constants
+const (
+	trendStable    = "stable"
+	trendImproving = "improving"
+	trendDegrading = "degrading"
+)
+
 // SmartRouteOptimizer implements intelligent route optimization
 type SmartRouteOptimizer struct {
 	repoInterface RepositoryInterface
@@ -31,6 +38,7 @@ type SmartRouteOptimizer struct {
 	config *OptimizerConfig
 }
 
+// OptimizerConfig contains configuration for route optimization
 type OptimizerConfig struct {
 	// Weights for scoring
 	LatencyWeight     float64
@@ -124,8 +132,8 @@ func newSmartRouteOptimizer(repo RepositoryInterface, logger *zap.Logger, config
 	sro := &SmartRouteOptimizer{
 		repoInterface: repo,
 		logger:        logger,
-		cacheTTL:  5 * time.Minute,
-		config:    config,
+		cacheTTL:      5 * time.Minute,
+		config:        config,
 		latencyModel: &latencyPredictor{
 			alpha:       0.3,
 			predictions: make(map[string]float64),
@@ -314,7 +322,7 @@ func (sro *SmartRouteOptimizer) getRoutePerformance(ctx context.Context, routeID
 	rawData, err := sro.repoInterface.GetRoutePerformance(ctx, routeID)
 	if err != nil {
 		sro.logger.Warn("failed to get raw performance data", zap.String("routeID", routeID), zap.Error(err))
-		perf.TrendDirection = "stable" // Default to stable if we can't calculate trend
+		perf.TrendDirection = trendStable // Default to stable if we can't calculate trend
 	} else {
 		// Convert raw data to samples for trend calculation
 		if results, ok := rawData.([]*models.RouteDeliveryResult); ok {
@@ -332,7 +340,7 @@ func (sro *SmartRouteOptimizer) getRoutePerformance(ctx context.Context, routeID
 			// Determine trend
 			perf.TrendDirection = sro.calculateTrend(perf)
 		} else {
-			perf.TrendDirection = "stable"
+			perf.TrendDirection = trendStable
 		}
 	}
 
@@ -371,10 +379,10 @@ func (sro *SmartRouteOptimizer) scoreRoute(route *types.Route, perf *routePerfor
 
 		// Boost/penalize based on trend
 		switch perf.TrendDirection {
-		case "improving":
+		case trendImproving:
 			score.latency *= 1.1
 			score.reliability *= 1.1
-		case "degrading":
+		case trendDegrading:
 			score.latency *= 0.9
 			score.reliability *= 0.9
 		}
@@ -463,7 +471,7 @@ func (sro *SmartRouteOptimizer) updateAggregates(perf *routePerformance) {
 
 func (sro *SmartRouteOptimizer) calculateTrend(perf *routePerformance) string {
 	if len(perf.Samples) < 20 {
-		return "stable"
+		return trendStable
 	}
 
 	// Compare recent performance to older performance
@@ -504,12 +512,12 @@ func (sro *SmartRouteOptimizer) calculateTrend(perf *routePerformance) string {
 	successDegraded := newSuccessRate < oldSuccessRate*0.95
 
 	if (latencyImproved || successImproved) && !latencyDegraded && !successDegraded {
-		return "improving"
+		return trendImproving
 	} else if (latencyDegraded || successDegraded) && !latencyImproved && !successImproved {
-		return "degrading"
+		return trendDegrading
 	}
 
-	return "stable"
+	return trendStable
 }
 
 func (sro *SmartRouteOptimizer) getHourlyLatencyFactor() float64 {

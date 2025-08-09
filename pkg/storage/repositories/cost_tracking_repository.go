@@ -7,11 +7,15 @@ import (
 	"sort"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
+
+// Use common time format constants from pkg/common/time_formats.go
+// common.CompactTimeFormat is replaced by common.CompactTimeFormat
 
 // CostTrackingRepository handles cost tracking persistence
 type CostTrackingRepository struct {
@@ -30,7 +34,7 @@ func NewCostTrackingRepository(db core.DB, tableName string, logger *zap.Logger)
 }
 
 // Create creates a new cost tracking record
-func (r *CostTrackingRepository) Create(ctx context.Context, tracking *models.DynamoDBCostRecord) error {
+func (r *CostTrackingRepository) Create(_ context.Context, tracking *models.DynamoDBCostRecord) error {
 	// Call BeforeCreate to set up the model
 	if err := tracking.BeforeCreate(); err != nil {
 		return fmt.Errorf("before create validation failed: %w", err)
@@ -52,7 +56,7 @@ func (r *CostTrackingRepository) Create(ctx context.Context, tracking *models.Dy
 }
 
 // BatchCreate creates multiple cost tracking records efficiently
-func (r *CostTrackingRepository) BatchCreate(ctx context.Context, trackingList []*models.DynamoDBCostRecord) error {
+func (r *CostTrackingRepository) BatchCreate(_ context.Context, trackingList []*models.DynamoDBCostRecord) error {
 	if len(trackingList) == 0 {
 		return nil
 	}
@@ -79,12 +83,12 @@ func (r *CostTrackingRepository) BatchCreate(ctx context.Context, trackingList [
 }
 
 // Get retrieves a cost tracking record by operation type, timestamp and ID
-func (r *CostTrackingRepository) Get(ctx context.Context, operationType, id string, timestamp time.Time) (*models.DynamoDBCostRecord, error) {
+func (r *CostTrackingRepository) Get(_ context.Context, operationType, id string, timestamp time.Time) (*models.DynamoDBCostRecord, error) {
 	tracking := &models.DynamoDBCostRecord{}
 
 	// Construct the keys
 	pk := fmt.Sprintf("cost#%s", operationType)
-	sk := fmt.Sprintf("ts#%s#%s", timestamp.Format("20060102150405"), id)
+	sk := fmt.Sprintf("ts#%s#%s", timestamp.Format(common.CompactTimeFormat), id)
 
 	err := r.db.Model(tracking).
 		Where("PK", "=", pk).
@@ -99,13 +103,13 @@ func (r *CostTrackingRepository) Get(ctx context.Context, operationType, id stri
 }
 
 // ListByOperationType lists cost tracking records by operation type within a time range
-func (r *CostTrackingRepository) ListByOperationType(ctx context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+func (r *CostTrackingRepository) ListByOperationType(_ context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
 	var trackingList []*models.DynamoDBCostRecord
 
 	// Construct SK range for time-based query
 	pk := fmt.Sprintf("cost#%s", operationType)
-	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
-	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
+	startSK := fmt.Sprintf("ts#%s", startTime.Format(common.CompactTimeFormat))
+	endSK := fmt.Sprintf("ts#%s", endTime.Format(common.CompactTimeFormat))
 
 	query := r.db.Model(&models.DynamoDBCostRecord{}).
 		Where("PK", "=", pk).
@@ -123,7 +127,7 @@ func (r *CostTrackingRepository) ListByOperationType(ctx context.Context, operat
 }
 
 // ListByTable lists cost tracking records by table within a time range
-func (r *CostTrackingRepository) ListByTable(ctx context.Context, tableName string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+func (r *CostTrackingRepository) ListByTable(_ context.Context, tableName string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
 	var trackingList []*models.DynamoDBCostRecord
 
 	// Use GSI1 for table-based queries
@@ -170,12 +174,12 @@ func (r *CostTrackingRepository) GetRecentCosts(ctx context.Context, since time.
 
 	// Sort by timestamp (newest first)
 	// Note: In production, you might want to use a more efficient sorting approach
-	
+
 	return allCosts, nil
 }
 
 // GetAggregated retrieves aggregated cost tracking
-func (r *CostTrackingRepository) GetAggregated(ctx context.Context, period, operationType string, windowStart time.Time) (*models.DynamoDBCostAggregation, error) {
+func (r *CostTrackingRepository) GetAggregated(_ context.Context, period, operationType string, windowStart time.Time) (*models.DynamoDBCostAggregation, error) {
 	aggregated := &models.DynamoDBCostAggregation{}
 
 	pk := fmt.Sprintf("cost_agg#%s#%s", period, operationType)
@@ -194,7 +198,7 @@ func (r *CostTrackingRepository) GetAggregated(ctx context.Context, period, oper
 }
 
 // CreateAggregated creates an aggregated cost tracking record
-func (r *CostTrackingRepository) CreateAggregated(ctx context.Context, aggregated *models.DynamoDBCostAggregation) error {
+func (r *CostTrackingRepository) CreateAggregated(_ context.Context, aggregated *models.DynamoDBCostAggregation) error {
 	// Call BeforeCreate to set up the model
 	if err := aggregated.BeforeCreate(); err != nil {
 		return fmt.Errorf("before create validation failed: %w", err)
@@ -216,7 +220,7 @@ func (r *CostTrackingRepository) CreateAggregated(ctx context.Context, aggregate
 }
 
 // UpdateAggregated updates an existing aggregated cost tracking record
-func (r *CostTrackingRepository) UpdateAggregated(ctx context.Context, aggregated *models.DynamoDBCostAggregation) error {
+func (r *CostTrackingRepository) UpdateAggregated(_ context.Context, aggregated *models.DynamoDBCostAggregation) error {
 	// Call BeforeUpdate to set up the model
 	if err := aggregated.BeforeUpdate(); err != nil {
 		return fmt.Errorf("before update validation failed: %w", err)
@@ -232,7 +236,7 @@ func (r *CostTrackingRepository) UpdateAggregated(ctx context.Context, aggregate
 }
 
 // ListAggregatedByPeriod lists aggregated cost tracking for a period
-func (r *CostTrackingRepository) ListAggregatedByPeriod(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostAggregation, error) {
+func (r *CostTrackingRepository) ListAggregatedByPeriod(_ context.Context, period, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostAggregation, error) {
 	var aggregatedList []*models.DynamoDBCostAggregation
 
 	pk := fmt.Sprintf("cost_agg#%s#%s", period, operationType)
@@ -262,10 +266,10 @@ func (r *CostTrackingRepository) GetTableCostStats(ctx context.Context, tableNam
 	}
 
 	stats := &TableCostStats{
-		TableName:   tableName,
-		StartTime:   startTime,
-		EndTime:     endTime,
-		Count:       len(costs),
+		TableName:          tableName,
+		StartTime:          startTime,
+		EndTime:            endTime,
+		Count:              len(costs),
 		OperationBreakdown: make(map[string]OperationCostStats),
 	}
 
@@ -288,12 +292,12 @@ func (r *CostTrackingRepository) GetTableCostStats(ctx context.Context, tableNam
 				OperationType: ct.OperationType,
 			}
 		}
-		
+
 		opStats.Count++
 		opStats.TotalCostMicroCents += ct.TotalCostMicroCents
 		opStats.TotalReadCapacityUnits += ct.ReadCapacityUnits
 		opStats.TotalWriteCapacityUnits += ct.WriteCapacityUnits
-		
+
 		stats.OperationBreakdown[ct.OperationType] = opStats
 	}
 
@@ -329,19 +333,19 @@ func (r *CostTrackingRepository) Aggregate(ctx context.Context, operationType, p
 
 	// Calculate aggregated values
 	aggregated := &models.DynamoDBCostAggregation{
-		Period:        period,
-		OperationType: operationType,
-		Table:         "all", // Default to all tables
-		WindowStart:   windowStart,
-		WindowEnd:     windowEnd,
-		CostPercentiles: make(map[string]float64),
-		TableBreakdown:  make(map[string]*models.DynamoDBTableCostStats),
+		Period:           period,
+		OperationType:    operationType,
+		Table:            "all", // Default to all tables
+		WindowStart:      windowStart,
+		WindowEnd:        windowEnd,
+		CostPercentiles:  make(map[string]float64),
+		TableBreakdown:   make(map[string]*models.DynamoDBTableCostStats),
 		ServiceBreakdown: make(map[string]*models.DynamoDBServiceCostStats),
 	}
 
 	// Collect values for percentile calculation
-	var costValues []float64
-	
+	costValues := make([]float64, 0, len(costs))
+
 	for _, ct := range costs {
 		aggregated.TotalOperations++
 		aggregated.TotalReadCapacityUnits += ct.ReadCapacityUnits
@@ -363,7 +367,7 @@ func (r *CostTrackingRepository) Aggregate(ctx context.Context, operationType, p
 			}
 			aggregated.TableBreakdown[ct.Table] = tableStats
 		}
-		
+
 		tableStats.OperationCount++
 		tableStats.ReadCapacityUnits += ct.ReadCapacityUnits
 		tableStats.WriteCapacityUnits += ct.WriteCapacityUnits
@@ -378,7 +382,7 @@ func (r *CostTrackingRepository) Aggregate(ctx context.Context, operationType, p
 				}
 				aggregated.ServiceBreakdown[ct.ServiceName] = serviceStats
 			}
-			
+
 			serviceStats.OperationCount++
 			serviceStats.TotalCostMicroCents += ct.TotalCostMicroCents
 		}
@@ -421,18 +425,18 @@ func (r *CostTrackingRepository) Aggregate(ctx context.Context, operationType, p
 
 // TableCostStats represents cost statistics for a table
 type TableCostStats struct {
-	TableName                string
-	StartTime                time.Time
-	EndTime                  time.Time
-	Count                    int
-	TotalOperations          int64
-	TotalItemCount           int64
-	TotalReadCapacityUnits   float64
-	TotalWriteCapacityUnits  float64
-	TotalCostMicroCents      int64
-	TotalCostDollars         float64
-	AverageCostPerOperation  float64
-	OperationBreakdown       map[string]OperationCostStats
+	TableName               string
+	StartTime               time.Time
+	EndTime                 time.Time
+	Count                   int
+	TotalOperations         int64
+	TotalItemCount          int64
+	TotalReadCapacityUnits  float64
+	TotalWriteCapacityUnits float64
+	TotalCostMicroCents     int64
+	TotalCostDollars        float64
+	AverageCostPerOperation float64
+	OperationBreakdown      map[string]OperationCostStats
 }
 
 // OperationCostStats represents cost statistics for a specific operation type
@@ -501,14 +505,14 @@ func (r *CostTrackingRepository) GetCostTrends(ctx context.Context, period strin
 
 	// Calculate trend statistics
 	var totalCost float64
-	var minCost, maxCost float64 = aggregatedList[0].TotalCostDollars, aggregatedList[0].TotalCostDollars
+	var minCost, maxCost = aggregatedList[0].TotalCostDollars, aggregatedList[0].TotalCostDollars
 
 	for _, agg := range aggregatedList {
 		dataPoint := CostDataPoint{
-			Timestamp:    agg.WindowStart,
-			CostDollars:  agg.TotalCostDollars,
-			Operations:   agg.TotalOperations,
-			ReadCapacity: agg.TotalReadCapacityUnits,
+			Timestamp:     agg.WindowStart,
+			CostDollars:   agg.TotalCostDollars,
+			Operations:    agg.TotalOperations,
+			ReadCapacity:  agg.TotalReadCapacityUnits,
 			WriteCapacity: agg.TotalWriteCapacityUnits,
 		}
 		trend.DataPoints = append(trend.DataPoints, dataPoint)
@@ -619,11 +623,11 @@ func getPercentileValue(sorted []float64, percentile float64) float64 {
 // GetAggregatedCostsByPeriod retrieves aggregated costs for a specific period
 func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
 	// Query all operation types for the period
-	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan", 
+	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
 		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
-	
+
 	var allAggregates []*models.DynamoDBCostAggregation
-	
+
 	for _, opType := range operationTypes {
 		aggregates, err := r.ListAggregatedByPeriod(ctx, period, opType, startDate, endDate, 1000)
 		if err != nil {
@@ -634,13 +638,13 @@ func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context,
 		}
 		allAggregates = append(allAggregates, aggregates...)
 	}
-	
+
 	// Merge aggregates by window
 	mergedByWindow := make(map[string]*models.DynamoDBCostAggregation)
-	
+
 	for _, agg := range allAggregates {
 		windowKey := agg.WindowStart.Format(time.RFC3339)
-		
+
 		if existing, exists := mergedByWindow[windowKey]; exists {
 			// Merge the aggregates
 			existing.TotalOperations += agg.TotalOperations
@@ -650,7 +654,7 @@ func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context,
 			existing.TotalWriteCostMicroCents += agg.TotalWriteCostMicroCents
 			existing.TotalCostMicroCents += agg.TotalCostMicroCents
 			existing.TotalItemCount += agg.TotalItemCount
-			
+
 			// Merge table breakdown
 			for table, stats := range agg.TableBreakdown {
 				if existingStats, exists := existing.TableBreakdown[table]; exists {
@@ -663,7 +667,7 @@ func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context,
 					existing.TableBreakdown[table] = stats
 				}
 			}
-			
+
 			// Merge service breakdown
 			for service, stats := range agg.ServiceBreakdown {
 				if existingStats, exists := existing.ServiceBreakdown[service]; exists {
@@ -678,9 +682,9 @@ func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context,
 			mergedByWindow[windowKey] = agg
 		}
 	}
-	
+
 	// Convert map back to slice
-	var result []*models.DynamoDBCostAggregation
+	result := make([]*models.DynamoDBCostAggregation, 0, len(mergedByWindow))
 	for _, agg := range mergedByWindow {
 		// Recalculate averages and totals
 		agg.TotalCostDollars = float64(agg.TotalCostMicroCents) / 1_000_000.0
@@ -689,22 +693,22 @@ func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context,
 		}
 		result = append(result, agg)
 	}
-	
+
 	// Sort by window start time
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].WindowStart.Before(result[j].WindowStart)
 	})
-	
+
 	return result, nil
 }
 
 // GetCostsByOperationType retrieves costs grouped by operation type
 func (r *CostTrackingRepository) GetCostsByOperationType(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
-	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan", 
+	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
 		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
-	
+
 	result := make(map[string]*models.DynamoDBServiceCostStats)
-	
+
 	for _, opType := range operationTypes {
 		costs, err := r.ListByOperationType(ctx, opType, startDate, endDate, 10000)
 		if err != nil {
@@ -713,28 +717,28 @@ func (r *CostTrackingRepository) GetCostsByOperationType(ctx context.Context, st
 				zap.Error(err))
 			continue
 		}
-		
+
 		if len(costs) == 0 {
 			continue
 		}
-		
+
 		stats := &models.DynamoDBServiceCostStats{
 			ServiceName: opType,
 		}
-		
+
 		for _, cost := range costs {
 			stats.OperationCount++
 			stats.TotalCostMicroCents += cost.TotalCostMicroCents
 		}
-		
+
 		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
 		if stats.OperationCount > 0 {
 			stats.AverageCostPerOp = stats.TotalCostDollars / float64(stats.OperationCount)
 		}
-		
+
 		result[opType] = stats
 	}
-	
+
 	return result, nil
 }
 
@@ -745,20 +749,20 @@ func (r *CostTrackingRepository) GetCostsByService(ctx context.Context, startDat
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Group by service
 	result := make(map[string]*models.DynamoDBServiceCostStats)
-	
+
 	for _, cost := range costs {
 		if cost.Timestamp.After(endDate) {
 			continue
 		}
-		
+
 		serviceName := cost.ServiceName
 		if serviceName == "" {
-			serviceName = "unknown"
+			serviceName = StatusUnknown
 		}
-		
+
 		stats, exists := result[serviceName]
 		if !exists {
 			stats = &models.DynamoDBServiceCostStats{
@@ -766,11 +770,11 @@ func (r *CostTrackingRepository) GetCostsByService(ctx context.Context, startDat
 			}
 			result[serviceName] = stats
 		}
-		
+
 		stats.OperationCount++
 		stats.TotalCostMicroCents += cost.TotalCostMicroCents
 	}
-	
+
 	// Calculate totals and averages
 	for _, stats := range result {
 		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
@@ -778,23 +782,23 @@ func (r *CostTrackingRepository) GetCostsByService(ctx context.Context, startDat
 			stats.AverageCostPerOp = stats.TotalCostDollars / float64(stats.OperationCount)
 		}
 	}
-	
+
 	return result, nil
 }
 
 // GetCostsByDateRange returns individual cost records for the specified date range
-func (r *CostTrackingRepository) GetCostsByDateRange(ctx context.Context, startDate, endDate time.Time) ([]*models.DynamoDBCostRecord, error) {
+func (r *CostTrackingRepository) GetCostsByDateRange(ctx context.Context, startDate, _ time.Time) ([]*models.DynamoDBCostRecord, error) {
 	return r.GetRecentCosts(ctx, startDate, 1000) // Use existing method with reasonable limit
 }
 
 // DailyAggregate represents aggregated costs for a single day
 type DailyAggregate struct {
-	Date            time.Time
-	TotalRequests   int64
-	UniqueUsers     int64
-	TotalReads      int64
-	TotalWrites     int64
-	TotalDurationMs int64
+	Date             time.Time
+	TotalRequests    int64
+	UniqueUsers      int64
+	TotalReads       int64
+	TotalWrites      int64
+	TotalDurationMs  int64
 	TotalCostDollars float64
 }
 
@@ -807,7 +811,7 @@ func (r *CostTrackingRepository) GetDailyAggregates(ctx context.Context, startDa
 	}
 
 	// Convert to DailyAggregate format
-	var dailyAggregates []*DailyAggregate
+	dailyAggregates := make([]*DailyAggregate, 0, len(aggregations))
 	for _, agg := range aggregations {
 		daily := &DailyAggregate{
 			Date:             agg.WindowStart,
@@ -870,10 +874,10 @@ func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period 
 
 	// Query by PK and SK prefix to get projections for the specified period
 	pk, skPrefix := models.GetLatestProjectionKeys(period)
-	
+
 	// Create SK range - from prefix to prefix + next character (e.g., "DAILY#" to "DAILY#~")
 	skEnd := skPrefix + "~" // Using tilde as it's lexicographically after all common characters
-	
+
 	err := r.db.WithContext(ctx).Model(&models.CostProjection{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", skPrefix).
@@ -893,7 +897,7 @@ func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period 
 	if len(projections) == 0 {
 		r.logger.Debug("no cost projections found, returning default",
 			zap.String("period", period))
-		
+
 		return &storage.CostProjection{
 			Period:          period,
 			CurrentCost:     0.0,
@@ -906,13 +910,13 @@ func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period 
 
 	// Convert models.CostProjection to storage.CostProjection
 	projection := projections[0]
-	
+
 	// Convert models.CostDriver to storage.CostDriver
-	var topDrivers []storage.CostDriver
+	topDrivers := make([]storage.CostDriver, 0, len(projection.TopDrivers))
 	for _, driver := range projection.TopDrivers {
 		topDrivers = append(topDrivers, storage.CostDriver{
-			Name:           driver.Type,            // Use Type as Name
-			Impact:         driver.Cost,           // Use Cost as Impact
+			Name:           driver.Type, // Use Type as Name
+			Impact:         driver.Cost, // Use Cost as Impact
 			Description:    fmt.Sprintf("%.1f%% of total cost", driver.PercentOfTotal),
 			Optimization:   "", // Not available in model
 			Type:           driver.Type,
@@ -971,8 +975,8 @@ func (r *CostTrackingRepository) CreateRelayCost(ctx context.Context, relayCost 
 func (r *CostTrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int) ([]*models.RelayCost, error) {
 	var costs []*models.RelayCost
 
-	startSK := fmt.Sprintf("TS#%s", startTime.Format("20060102150405"))
-	endSK := fmt.Sprintf("TS#%s", endTime.Format("20060102150405"))
+	startSK := fmt.Sprintf("TS#%s", startTime.Format(common.CompactTimeFormat))
+	endSK := fmt.Sprintf("TS#%s", endTime.Format(common.CompactTimeFormat))
 
 	query := r.db.WithContext(ctx).Model(&models.RelayCost{}).
 		Index("GSI1").
@@ -998,7 +1002,7 @@ func (r *CostTrackingRepository) GetRelayCostsByDateRange(ctx context.Context, s
 	currentDate := startDate
 	for currentDate.Before(endDate) || currentDate.Equal(endDate) {
 		dateStr := currentDate.Format("20060102")
-		
+
 		var dailyCosts []*models.RelayCost
 		query := r.db.WithContext(ctx).Model(&models.RelayCost{}).
 			Index("GSI2").
@@ -1018,7 +1022,7 @@ func (r *CostTrackingRepository) GetRelayCostsByDateRange(ctx context.Context, s
 
 		// Move to next day
 		currentDate = currentDate.AddDate(0, 0, 1)
-		
+
 		// Break if we have enough results
 		if len(allCosts) >= limit {
 			break
@@ -1029,7 +1033,7 @@ func (r *CostTrackingRepository) GetRelayCostsByDateRange(ctx context.Context, s
 	sort.Slice(allCosts, func(i, j int) bool {
 		return allCosts[i].Timestamp.After(allCosts[j].Timestamp)
 	})
-	
+
 	if len(allCosts) > limit {
 		allCosts = allCosts[:limit]
 	}
@@ -1081,7 +1085,7 @@ func (r *CostTrackingRepository) GetRelayMetrics(ctx context.Context, relayURL, 
 	var metrics models.RelayMetrics
 
 	pk := fmt.Sprintf("RELAY_METRICS#%s#%s", relayURL, period)
-	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format("20060102150405"))
+	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(common.CompactTimeFormat))
 
 	err := r.db.WithContext(ctx).Model(&models.RelayMetrics{}).
 		Where("PK", "=", pk).
@@ -1099,8 +1103,8 @@ func (r *CostTrackingRepository) GetRelayMetrics(ctx context.Context, relayURL, 
 func (r *CostTrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int) ([]*models.RelayMetrics, error) {
 	var metricsHistory []*models.RelayMetrics
 
-	startSK := fmt.Sprintf("daily#%s", startTime.Format("20060102150405"))
-	endSK := fmt.Sprintf("daily#%s", endTime.Format("20060102150405"))
+	startSK := fmt.Sprintf("daily#%s", startTime.Format(common.CompactTimeFormat))
+	endSK := fmt.Sprintf("daily#%s", endTime.Format(common.CompactTimeFormat))
 
 	query := r.db.WithContext(ctx).Model(&models.RelayMetrics{}).
 		Index("GSI1").
@@ -1160,7 +1164,7 @@ func (r *CostTrackingRepository) GetRelayBudget(ctx context.Context, relayURL, p
 	var budget models.RelayBudget
 
 	pk := fmt.Sprintf("RELAY_BUDGET#%s#%s", relayURL, period)
-	sk := "CONFIG"
+	sk := models.SKConfig
 
 	err := r.db.WithContext(ctx).Model(&models.RelayBudget{}).
 		Where("PK", "=", pk).
@@ -1188,10 +1192,10 @@ func (r *CostTrackingRepository) AggregateRelayCosts(ctx context.Context, relayU
 
 	// Calculate aggregated values
 	metrics := &models.RelayMetrics{
-		RelayURL:        relayURL,
-		Period:          period,
-		WindowStart:     windowStart,
-		WindowEnd:       windowEnd,
+		RelayURL:           relayURL,
+		Period:             period,
+		WindowStart:        windowStart,
+		WindowEnd:          windowEnd,
 		OperationBreakdown: make(map[string]*models.RelayOperationStats),
 	}
 
@@ -1211,7 +1215,7 @@ func (r *CostTrackingRepository) AggregateRelayCosts(ctx context.Context, relayU
 		metrics.TotalLambdaDurationMs += cost.LambdaDurationMs
 		metrics.TotalDynamoDBOps += cost.DynamoDBOperations
 		metrics.TotalSQSMessages += cost.SQSMessages
-		
+
 		metrics.TotalHTTPRequestCost += cost.HTTPRequestCost
 		metrics.TotalDataTransferCost += cost.DataTransferCost
 		metrics.TotalLambdaCost += cost.LambdaCost
@@ -1235,7 +1239,7 @@ func (r *CostTrackingRepository) AggregateRelayCosts(ctx context.Context, relayU
 			}
 			opStats[cost.OperationType] = stats
 		}
-		
+
 		stats.Count++
 		stats.TotalCostMicroCents += cost.TotalCostMicroCents
 		totalResponseTime += float64(cost.ResponseTimeMs)
@@ -1280,10 +1284,10 @@ func (r *CostTrackingRepository) GetRelayCostSummary(ctx context.Context, relayU
 	}
 
 	summary := &RelayCostSummary{
-		RelayURL:  relayURL,
-		StartTime: startTime,
-		EndTime:   endTime,
-		Count:     len(costs),
+		RelayURL:           relayURL,
+		StartTime:          startTime,
+		EndTime:            endTime,
+		Count:              len(costs),
 		OperationBreakdown: make(map[string]*RelayOperationCostStats),
 	}
 
@@ -1317,12 +1321,12 @@ func (r *CostTrackingRepository) GetRelayCostSummary(ctx context.Context, relayU
 				OperationType: cost.OperationType,
 			}
 		}
-		
+
 		opStats.Count++
 		opStats.TotalCostMicroCents += cost.TotalCostMicroCents
 		opStats.TotalHTTPRequests += cost.HTTPRequestCount
 		opStats.TotalDataTransferBytes += cost.DataTransferBytes
-		
+
 		summary.OperationBreakdown[cost.OperationType] = opStats
 	}
 
@@ -1369,24 +1373,24 @@ func (r *CostTrackingRepository) GetHighCostRelayOperations(ctx context.Context,
 
 // RelayCostSummary represents cost summary for a relay
 type RelayCostSummary struct {
-	RelayURL               string
-	Domain                 string
-	StartTime              time.Time
-	EndTime                time.Time
-	Count                  int
-	TotalOperations        int64
-	SuccessfulOperations   int64
-	FailedOperations       int64
-	TotalHTTPRequests      int64
-	TotalDataTransferBytes int64
-	TotalLambdaDurationMs  int64
-	TotalDynamoDBOps       int64
-	TotalSQSMessages       int64
-	TotalCostMicroCents    int64
-	TotalCostDollars       float64
+	RelayURL                string
+	Domain                  string
+	StartTime               time.Time
+	EndTime                 time.Time
+	Count                   int
+	TotalOperations         int64
+	SuccessfulOperations    int64
+	FailedOperations        int64
+	TotalHTTPRequests       int64
+	TotalDataTransferBytes  int64
+	TotalLambdaDurationMs   int64
+	TotalDynamoDBOps        int64
+	TotalSQSMessages        int64
+	TotalCostMicroCents     int64
+	TotalCostDollars        float64
 	AverageCostPerOperation float64
-	SuccessRate            float64
-	OperationBreakdown     map[string]*RelayOperationCostStats
+	SuccessRate             float64
+	OperationBreakdown      map[string]*RelayOperationCostStats
 }
 
 // RelayOperationCostStats represents cost statistics for a specific relay operation type
@@ -1409,21 +1413,21 @@ func (r *CostTrackingRepository) GetImportExportCostsByUser(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get import costs: %w", err)
 	}
-	
+
 	// Get export costs
 	exportCosts, err := r.GetCostsByService(ctx, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get export costs: %w", err)
 	}
-	
+
 	summary := &ImportExportUserCostSummary{
-		Username:  username,
-		StartDate: startDate,
-		EndDate:   endDate,
+		Username:    username,
+		StartDate:   startDate,
+		EndDate:     endDate,
 		ImportCosts: &UserServiceCosts{},
 		ExportCosts: &UserServiceCosts{},
 	}
-	
+
 	// Aggregate import-processor costs
 	if importProcessorStats, exists := importCosts["import-processor"]; exists {
 		summary.ImportCosts.TotalOperations = importProcessorStats.OperationCount
@@ -1431,7 +1435,7 @@ func (r *CostTrackingRepository) GetImportExportCostsByUser(ctx context.Context,
 		summary.ImportCosts.TotalCostDollars = importProcessorStats.TotalCostDollars
 		summary.ImportCosts.AverageCostPerOperation = importProcessorStats.AverageCostPerOp
 	}
-	
+
 	// Aggregate export-generator costs
 	if exportGeneratorStats, exists := exportCosts["export-generator"]; exists {
 		summary.ExportCosts.TotalOperations = exportGeneratorStats.OperationCount
@@ -1439,18 +1443,18 @@ func (r *CostTrackingRepository) GetImportExportCostsByUser(ctx context.Context,
 		summary.ExportCosts.TotalCostDollars = exportGeneratorStats.TotalCostDollars
 		summary.ExportCosts.AverageCostPerOperation = exportGeneratorStats.AverageCostPerOp
 	}
-	
+
 	// Calculate combined totals
 	summary.CombinedCosts = &UserServiceCosts{
-		TotalOperations:        summary.ImportCosts.TotalOperations + summary.ExportCosts.TotalOperations,
-		TotalCostMicroCents:    summary.ImportCosts.TotalCostMicroCents + summary.ExportCosts.TotalCostMicroCents,
-		TotalCostDollars:       summary.ImportCosts.TotalCostDollars + summary.ExportCosts.TotalCostDollars,
+		TotalOperations:     summary.ImportCosts.TotalOperations + summary.ExportCosts.TotalOperations,
+		TotalCostMicroCents: summary.ImportCosts.TotalCostMicroCents + summary.ExportCosts.TotalCostMicroCents,
+		TotalCostDollars:    summary.ImportCosts.TotalCostDollars + summary.ExportCosts.TotalCostDollars,
 	}
-	
+
 	if summary.CombinedCosts.TotalOperations > 0 {
 		summary.CombinedCosts.AverageCostPerOperation = summary.CombinedCosts.TotalCostDollars / float64(summary.CombinedCosts.TotalOperations)
 	}
-	
+
 	return summary, nil
 }
 
@@ -1458,18 +1462,18 @@ func (r *CostTrackingRepository) GetImportExportCostsByUser(ctx context.Context,
 func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, lookbackDays int) (*ImportExportTrends, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -lookbackDays)
-	
+
 	// Get daily aggregated data for import and export services
 	importTrend, err := r.GetCostTrends(ctx, "daily", "ImportProcessing", lookbackDays)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get import trends: %w", err)
 	}
-	
+
 	exportTrend, err := r.GetCostTrends(ctx, "daily", "ExportGeneration", lookbackDays)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get export trends: %w", err)
 	}
-	
+
 	trends := &ImportExportTrends{
 		StartTime:   startTime,
 		EndTime:     endTime,
@@ -1483,19 +1487,19 @@ func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, look
 			DataPoints:    make([]CostDataPoint, 0),
 		},
 	}
-	
+
 	// Combine trends by date
 	combinedDataMap := make(map[string]CostDataPoint)
-	
+
 	// Add import data points
 	for _, dp := range importTrend.DataPoints {
-		dateKey := dp.Timestamp.Format("2006-01-02")
+		dateKey := dp.Timestamp.Format(common.DateFormat)
 		combinedDataMap[dateKey] = dp
 	}
-	
+
 	// Add export data points
 	for _, dp := range exportTrend.DataPoints {
-		dateKey := dp.Timestamp.Format("2006-01-02")
+		dateKey := dp.Timestamp.Format(common.DateFormat)
 		if existing, exists := combinedDataMap[dateKey]; exists {
 			existing.CostDollars += dp.CostDollars
 			existing.Operations += dp.Operations
@@ -1506,26 +1510,26 @@ func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, look
 			combinedDataMap[dateKey] = dp
 		}
 	}
-	
+
 	// Convert map to sorted slice
 	for _, dp := range combinedDataMap {
 		trends.CombinedTrend.DataPoints = append(trends.CombinedTrend.DataPoints, dp)
 	}
-	
+
 	// Sort by timestamp
 	sort.Slice(trends.CombinedTrend.DataPoints, func(i, j int) bool {
 		return trends.CombinedTrend.DataPoints[i].Timestamp.Before(trends.CombinedTrend.DataPoints[j].Timestamp)
 	})
-	
+
 	// Calculate combined statistics
 	var totalCost float64
 	var minCost, maxCost float64
-	
+
 	if len(trends.CombinedTrend.DataPoints) > 0 {
 		minCost = trends.CombinedTrend.DataPoints[0].CostDollars
 		maxCost = trends.CombinedTrend.DataPoints[0].CostDollars
 	}
-	
+
 	for _, dp := range trends.CombinedTrend.DataPoints {
 		totalCost += dp.CostDollars
 		if dp.CostDollars < minCost {
@@ -1535,14 +1539,14 @@ func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, look
 			maxCost = dp.CostDollars
 		}
 	}
-	
+
 	trends.CombinedTrend.TotalCost = totalCost
 	trends.CombinedTrend.MinCost = minCost
 	trends.CombinedTrend.MaxCost = maxCost
-	
+
 	if len(trends.CombinedTrend.DataPoints) > 0 {
 		trends.CombinedTrend.AverageCost = totalCost / float64(len(trends.CombinedTrend.DataPoints))
-		
+
 		// Calculate trend percentage
 		if len(trends.CombinedTrend.DataPoints) >= 2 {
 			firstCost := trends.CombinedTrend.DataPoints[0].CostDollars
@@ -1552,7 +1556,7 @@ func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, look
 			}
 		}
 	}
-	
+
 	return trends, nil
 }
 
@@ -1563,19 +1567,19 @@ func (r *CostTrackingRepository) GetTopCostlyUsers(ctx context.Context, startDat
 	if err != nil {
 		return nil, err
 	}
-	
+
 	userCostMap := make(map[string]*UserCostRanking)
-	
+
 	for _, cost := range costs {
 		if cost.Timestamp.After(endDate) {
 			continue
 		}
-		
+
 		// Only include import and export services
 		if cost.ServiceName != "import-processor" && cost.ServiceName != "export-generator" {
 			continue
 		}
-		
+
 		// Extract username from properties or tags
 		username := ""
 		if cost.Properties != nil {
@@ -1589,7 +1593,7 @@ func (r *CostTrackingRepository) GetTopCostlyUsers(ctx context.Context, startDat
 		if username == "" {
 			continue
 		}
-		
+
 		ranking, exists := userCostMap[username]
 		if !exists {
 			ranking = &UserCostRanking{
@@ -1597,43 +1601,44 @@ func (r *CostTrackingRepository) GetTopCostlyUsers(ctx context.Context, startDat
 			}
 			userCostMap[username] = ranking
 		}
-		
+
 		ranking.TotalCostMicroCents += cost.TotalCostMicroCents
 		ranking.TotalOperations++
-		
-		if cost.ServiceName == "import-processor" {
+
+		switch cost.ServiceName {
+		case "import-processor":
 			ranking.ImportOperations++
 			ranking.ImportCostMicroCents += cost.TotalCostMicroCents
-		} else if cost.ServiceName == "export-generator" {
+		case "export-generator":
 			ranking.ExportOperations++
 			ranking.ExportCostMicroCents += cost.TotalCostMicroCents
 		}
 	}
-	
+
 	// Convert map to slice and calculate totals
-	var rankings []*UserCostRanking
+	rankings := make([]*UserCostRanking, 0, len(userCostMap))
 	for _, ranking := range userCostMap {
 		ranking.TotalCostDollars = float64(ranking.TotalCostMicroCents) / 1_000_000.0
 		ranking.ImportCostDollars = float64(ranking.ImportCostMicroCents) / 1_000_000.0
 		ranking.ExportCostDollars = float64(ranking.ExportCostMicroCents) / 1_000_000.0
-		
+
 		if ranking.TotalOperations > 0 {
 			ranking.AverageCostPerOperation = ranking.TotalCostDollars / float64(ranking.TotalOperations)
 		}
-		
+
 		rankings = append(rankings, ranking)
 	}
-	
+
 	// Sort by total cost (highest first)
 	sort.Slice(rankings, func(i, j int) bool {
 		return rankings[i].TotalCostMicroCents > rankings[j].TotalCostMicroCents
 	})
-	
+
 	// Limit results
 	if len(rankings) > limit {
 		rankings = rankings[:limit]
 	}
-	
+
 	return rankings, nil
 }
 
@@ -1644,12 +1649,12 @@ func (r *CostTrackingRepository) GetImportExportMetrics(ctx context.Context, sta
 	if err != nil {
 		return nil, err
 	}
-	
+
 	metrics := &ImportExportMetrics{
 		StartDate: startDate,
 		EndDate:   endDate,
 	}
-	
+
 	// Calculate import metrics
 	if importStats, exists := serviceCosts["import-processor"]; exists {
 		metrics.TotalImportOperations = importStats.OperationCount
@@ -1657,7 +1662,7 @@ func (r *CostTrackingRepository) GetImportExportMetrics(ctx context.Context, sta
 		metrics.TotalImportCostDollars = importStats.TotalCostDollars
 		metrics.AverageImportCost = importStats.AverageCostPerOp
 	}
-	
+
 	// Calculate export metrics
 	if exportStats, exists := serviceCosts["export-generator"]; exists {
 		metrics.TotalExportOperations = exportStats.OperationCount
@@ -1665,45 +1670,45 @@ func (r *CostTrackingRepository) GetImportExportMetrics(ctx context.Context, sta
 		metrics.TotalExportCostDollars = exportStats.TotalCostDollars
 		metrics.AverageExportCost = exportStats.AverageCostPerOp
 	}
-	
+
 	// Calculate combined metrics
 	metrics.TotalOperations = metrics.TotalImportOperations + metrics.TotalExportOperations
 	metrics.TotalCostMicroCents = metrics.TotalImportCostMicroCents + metrics.TotalExportCostMicroCents
 	metrics.TotalCostDollars = metrics.TotalImportCostDollars + metrics.TotalExportCostDollars
-	
+
 	if metrics.TotalOperations > 0 {
 		metrics.AverageCostPerOperation = metrics.TotalCostDollars / float64(metrics.TotalOperations)
 	}
-	
+
 	// Calculate cost efficiency (operations per dollar)
 	if metrics.TotalCostDollars > 0 {
 		metrics.OperationsPerDollar = float64(metrics.TotalOperations) / metrics.TotalCostDollars
 	}
-	
+
 	// Calculate cost distribution
 	if metrics.TotalCostDollars > 0 {
 		metrics.ImportCostPercentage = (metrics.TotalImportCostDollars / metrics.TotalCostDollars) * 100
 		metrics.ExportCostPercentage = (metrics.TotalExportCostDollars / metrics.TotalCostDollars) * 100
 	}
-	
+
 	return metrics, nil
 }
 
 // ImportExportUserCostSummary represents cost summary for a user's import/export operations
 type ImportExportUserCostSummary struct {
-	Username     string           `json:"username"`
-	StartDate    time.Time        `json:"start_date"`
-	EndDate      time.Time        `json:"end_date"`
-	ImportCosts  *UserServiceCosts `json:"import_costs"`
-	ExportCosts  *UserServiceCosts `json:"export_costs"`
+	Username      string            `json:"username"`
+	StartDate     time.Time         `json:"start_date"`
+	EndDate       time.Time         `json:"end_date"`
+	ImportCosts   *UserServiceCosts `json:"import_costs"`
+	ExportCosts   *UserServiceCosts `json:"export_costs"`
 	CombinedCosts *UserServiceCosts `json:"combined_costs"`
 }
 
 // UserServiceCosts represents cost statistics for a user's service usage
 type UserServiceCosts struct {
-	TotalOperations        int64   `json:"total_operations"`
-	TotalCostMicroCents    int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars       float64 `json:"total_cost_dollars"`
+	TotalOperations         int64   `json:"total_operations"`
+	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
+	TotalCostDollars        float64 `json:"total_cost_dollars"`
 	AverageCostPerOperation float64 `json:"average_cost_per_operation"`
 }
 
@@ -1718,36 +1723,36 @@ type ImportExportTrends struct {
 
 // UserCostRanking represents a user's cost ranking
 type UserCostRanking struct {
-	Username               string  `json:"username"`
-	TotalOperations        int64   `json:"total_operations"`
-	ImportOperations       int64   `json:"import_operations"`
-	ExportOperations       int64   `json:"export_operations"`
-	TotalCostMicroCents    int64   `json:"total_cost_micro_cents"`
-	ImportCostMicroCents   int64   `json:"import_cost_micro_cents"`
-	ExportCostMicroCents   int64   `json:"export_cost_micro_cents"`
-	TotalCostDollars       float64 `json:"total_cost_dollars"`
-	ImportCostDollars      float64 `json:"import_cost_dollars"`
-	ExportCostDollars      float64 `json:"export_cost_dollars"`
+	Username                string  `json:"username"`
+	TotalOperations         int64   `json:"total_operations"`
+	ImportOperations        int64   `json:"import_operations"`
+	ExportOperations        int64   `json:"export_operations"`
+	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
+	ImportCostMicroCents    int64   `json:"import_cost_micro_cents"`
+	ExportCostMicroCents    int64   `json:"export_cost_micro_cents"`
+	TotalCostDollars        float64 `json:"total_cost_dollars"`
+	ImportCostDollars       float64 `json:"import_cost_dollars"`
+	ExportCostDollars       float64 `json:"export_cost_dollars"`
 	AverageCostPerOperation float64 `json:"average_cost_per_operation"`
 }
 
 // ImportExportMetrics represents key metrics for import/export operations
 type ImportExportMetrics struct {
-	StartDate                  time.Time `json:"start_date"`
-	EndDate                    time.Time `json:"end_date"`
-	TotalOperations            int64     `json:"total_operations"`
-	TotalImportOperations      int64     `json:"total_import_operations"`
-	TotalExportOperations      int64     `json:"total_export_operations"`
-	TotalCostMicroCents        int64     `json:"total_cost_micro_cents"`
-	TotalImportCostMicroCents  int64     `json:"total_import_cost_micro_cents"`
-	TotalExportCostMicroCents  int64     `json:"total_export_cost_micro_cents"`
-	TotalCostDollars           float64   `json:"total_cost_dollars"`
-	TotalImportCostDollars     float64   `json:"total_import_cost_dollars"`
-	TotalExportCostDollars     float64   `json:"total_export_cost_dollars"`
-	AverageCostPerOperation    float64   `json:"average_cost_per_operation"`
-	AverageImportCost          float64   `json:"average_import_cost"`
-	AverageExportCost          float64   `json:"average_export_cost"`
-	OperationsPerDollar        float64   `json:"operations_per_dollar"`
-	ImportCostPercentage       float64   `json:"import_cost_percentage"`
-	ExportCostPercentage       float64   `json:"export_cost_percentage"`
+	StartDate                 time.Time `json:"start_date"`
+	EndDate                   time.Time `json:"end_date"`
+	TotalOperations           int64     `json:"total_operations"`
+	TotalImportOperations     int64     `json:"total_import_operations"`
+	TotalExportOperations     int64     `json:"total_export_operations"`
+	TotalCostMicroCents       int64     `json:"total_cost_micro_cents"`
+	TotalImportCostMicroCents int64     `json:"total_import_cost_micro_cents"`
+	TotalExportCostMicroCents int64     `json:"total_export_cost_micro_cents"`
+	TotalCostDollars          float64   `json:"total_cost_dollars"`
+	TotalImportCostDollars    float64   `json:"total_import_cost_dollars"`
+	TotalExportCostDollars    float64   `json:"total_export_cost_dollars"`
+	AverageCostPerOperation   float64   `json:"average_cost_per_operation"`
+	AverageImportCost         float64   `json:"average_import_cost"`
+	AverageExportCost         float64   `json:"average_export_cost"`
+	OperationsPerDollar       float64   `json:"operations_per_dollar"`
+	ImportCostPercentage      float64   `json:"import_cost_percentage"`
+	ExportCostPercentage      float64   `json:"export_cost_percentage"`
 }

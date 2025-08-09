@@ -12,7 +12,7 @@ type InstanceConfig struct {
 	SK string `dynamorm:"sk" json:"-"` // RULES or EXTENDED_DESC
 
 	// Configuration data - use storage.InstanceRule to avoid dependency cycle
-	RulesJSON           string    `json:"rules_json,omitempty"`           // JSON serialized rules
+	RulesJSON           string    `json:"rules_json,omitempty"` // JSON serialized rules
 	ExtendedDescription string    `json:"extended_description,omitempty"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -41,5 +41,42 @@ func NewExtendedDescriptionConfig(description string) *InstanceConfig {
 		SK:                  "EXTENDED_DESC",
 		ExtendedDescription: description,
 		UpdatedAt:           time.Now(),
+	}
+}
+
+// AIInstanceConfig represents AI-specific instance configuration
+type AIInstanceConfig struct {
+	// Primary key fields 
+	PK string `dynamorm:"pk" json:"-"` // INSTANCE#CONFIG
+	SK string `dynamorm:"sk" json:"-"` // AI_CONFIG
+
+	// AI Configuration
+	AIEnabled            bool      `json:"ai_enabled"`
+	ModerationEnabled    bool      `json:"moderation_enabled"`
+	NSFWDetectionEnabled bool      `json:"nsfw_detection_enabled"`
+	SpamDetectionEnabled bool      `json:"spam_detection_enabled"`
+	PIIDetectionEnabled  bool      `json:"pii_detection_enabled"`
+	AIContentDetection   bool      `json:"ai_content_detection_enabled"`
+	UpdatedAt            time.Time `json:"updated_at"`
+}
+
+// UpdateKeys updates the DynamoDB keys
+func (c *AIInstanceConfig) UpdateKeys() {
+	c.PK = "INSTANCE#CONFIG"
+	c.SK = "AI_CONFIG"
+}
+
+// NewAIInstanceConfig creates a new AI config with defaults
+func NewAIInstanceConfig() *AIInstanceConfig {
+	return &AIInstanceConfig{
+		PK:                   "INSTANCE#CONFIG",
+		SK:                   "AI_CONFIG",
+		AIEnabled:            true,  // Default to enabled
+		ModerationEnabled:    true,  // Default to enabled
+		NSFWDetectionEnabled: true,  // Default to enabled
+		SpamDetectionEnabled: true,  // Default to enabled
+		PIIDetectionEnabled:  false, // Default to disabled (privacy)
+		AIContentDetection:   false, // Default to disabled
+		UpdatedAt:            time.Now(),
 	}
 }

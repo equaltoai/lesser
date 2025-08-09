@@ -1,9 +1,26 @@
+// Package dlq provides dead letter queue error classification and handling for failed message processing.
 package dlq
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
+)
+
+// Processor name constants
+const (
+	processorNotification     = "notification-processor"
+	processorActivity         = "activity-processor"
+	processorMedia            = "media-processor"
+	processorFederationDelivery = "federation-delivery"
+	processorSearchIndexer    = "search-indexer"
+)
+
+// Priority level constants
+const (
+	priorityLow      = "low"
+	priorityMedium   = "medium"
+	priorityHigh     = "high"
+	priorityCritical = "critical"
 )
 
 // ErrorClassifier categorizes and analyzes errors from failed messages
@@ -39,7 +56,7 @@ func NewErrorClassifier() *ErrorClassifier {
 
 	// Initialize with common error patterns
 	classifier.initializePatterns()
-	
+
 	return classifier
 }
 
@@ -51,106 +68,106 @@ func (ec *ErrorClassifier) initializePatterns() {
 			ErrorType:     "validation_error",
 			Patterns:      []string{"validation failed", "invalid", "required field", "missing", "malformed"},
 			IsPermanent:   true,
-			Priority:      "medium",
+			Priority:      priorityMedium,
 			FailureReason: "Message failed validation and cannot be processed",
 		},
-		
+
 		// Authentication errors (permanent)
 		{
 			ErrorType:     "auth_error",
 			Patterns:      []string{"unauthorized", "forbidden", "authentication failed", "invalid token", "expired token"},
 			IsPermanent:   true,
-			Priority:      "high",
+			Priority:      priorityHigh,
 			FailureReason: "Authentication or authorization failed",
 		},
-		
+
 		// Resource not found (permanent)
 		{
 			ErrorType:     "not_found_error",
 			Patterns:      []string{"not found", "does not exist", "404", "no such", "unknown"},
 			IsPermanent:   true,
-			Priority:      "medium",
+			Priority:      priorityMedium,
 			FailureReason: "Referenced resource does not exist",
 		},
-		
+
 		// Network/connectivity errors (transient)
 		{
 			ErrorType:     "network_error",
 			Patterns:      []string{"connection", "timeout", "network", "unreachable", "dns", "socket"},
 			IsPermanent:   false,
-			Priority:      "high",
+			Priority:      priorityHigh,
 			FailureReason: "Network connectivity issues",
 		},
-		
+
 		// Rate limiting (transient)
 		{
-			ErrorType:     "rate_limit_error", 
+			ErrorType:     "rate_limit_error",
 			Patterns:      []string{"rate limit", "throttle", "too many requests", "429", "quota exceeded"},
 			IsPermanent:   false,
-			Priority:      "medium",
+			Priority:      priorityMedium,
 			FailureReason: "Rate limiting or quota exceeded",
 		},
-		
+
 		// Service unavailable (transient)
 		{
 			ErrorType:     "service_unavailable",
 			Patterns:      []string{"service unavailable", "503", "502", "500", "internal server error", "bad gateway"},
 			IsPermanent:   false,
-			Priority:      "high",
+			Priority:      priorityHigh,
 			FailureReason: "External service temporarily unavailable",
 		},
-		
+
 		// Database errors (transient)
 		{
 			ErrorType:     "database_error",
 			Patterns:      []string{"database", "connection pool", "deadlock", "lock timeout", "query timeout"},
 			IsPermanent:   false,
-			Priority:      "high",
+			Priority:      priorityHigh,
 			FailureReason: "Database connectivity or performance issues",
 		},
-		
+
 		// Memory/resource errors (transient)
 		{
 			ErrorType:     "resource_error",
 			Patterns:      []string{"out of memory", "memory", "disk full", "no space", "resource exhausted"},
 			IsPermanent:   false,
-			Priority:      "critical",
+			Priority:      priorityCritical,
 			FailureReason: "System resource exhaustion",
 		},
-		
+
 		// Serialization errors (permanent)
 		{
 			ErrorType:     "serialization_error",
 			Patterns:      []string{"json", "unmarshal", "parse", "decode", "serialize", "invalid format"},
 			IsPermanent:   true,
-			Priority:      "medium",
+			Priority:      priorityMedium,
 			FailureReason: "Message format or serialization issues",
 		},
-		
+
 		// Business logic errors (permanent)
 		{
 			ErrorType:     "business_logic_error",
 			Patterns:      []string{"business rule", "constraint", "invariant", "precondition", "postcondition"},
 			IsPermanent:   true,
-			Priority:      "low",
+			Priority:      priorityLow,
 			FailureReason: "Business logic validation failed",
 		},
-		
+
 		// Federation errors (mixed)
 		{
 			ErrorType:     "federation_error",
 			Patterns:      []string{"federation", "activitypub", "webfinger", "signature", "actor"},
 			IsPermanent:   false, // Default to transient for federation
-			Priority:      "medium",
+			Priority:      priorityMedium,
 			FailureReason: "ActivityPub federation issues",
 		},
-		
+
 		// Processing timeout (transient)
 		{
 			ErrorType:     "timeout_error",
 			Patterns:      []string{"timeout", "timed out", "deadline exceeded", "context deadline"},
 			IsPermanent:   false,
-			Priority:      "medium",
+			Priority:      priorityMedium,
 			FailureReason: "Processing timeout exceeded",
 		},
 	}
@@ -165,24 +182,24 @@ func (ec *ErrorClassifier) initializePatterns() {
 func (ec *ErrorClassifier) ClassifyError(messageBody, service string) *ErrorInfo {
 	// Try to parse the message body to extract error information
 	errorInfo := ec.extractErrorFromMessage(messageBody)
-	
+
 	// If we couldn't extract error info, create basic info
 	if errorInfo == nil {
 		errorInfo = &ErrorInfo{
 			ErrorMessage:  "Failed to process message",
 			FailureReason: "Unknown processing error",
 			IsPermanent:   false,
-			Priority:      "medium",
+			Priority:      priorityMedium,
 			Category:      "unknown",
 		}
 	}
 
 	// Classify the error based on patterns
 	errorInfo.ErrorType = ec.classifyByPatterns(errorInfo.ErrorMessage)
-	
+
 	// Apply service-specific classification
 	ec.applyServiceSpecificClassification(errorInfo, service)
-	
+
 	// Set additional properties based on classification
 	if pattern, exists := ec.patterns[errorInfo.ErrorType]; exists {
 		errorInfo.IsPermanent = pattern.IsPermanent
@@ -263,14 +280,14 @@ func (ec *ErrorClassifier) extractFromText(messageBody string) *ErrorInfo {
 		lines := strings.Split(messageBody, "\n")
 		var errorLines []string
 		var stackLines []string
-		
+
 		inStack := false
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
 			}
-			
+
 			if strings.HasPrefix(line, "at ") || strings.Contains(line, ".go:") {
 				inStack = true
 				stackLines = append(stackLines, line)
@@ -278,7 +295,7 @@ func (ec *ErrorClassifier) extractFromText(messageBody string) *ErrorInfo {
 				errorLines = append(errorLines, line)
 			}
 		}
-		
+
 		if len(errorLines) > 0 {
 			errorInfo.ErrorMessage = strings.Join(errorLines, " ")
 		}
@@ -305,7 +322,7 @@ func (ec *ErrorClassifier) classifyByPatterns(errorMessage string) string {
 				score += len(patternStr) // Longer matches get higher scores
 			}
 		}
-		
+
 		if score > bestScore {
 			bestScore = score
 			bestMatch = errorType
@@ -322,15 +339,15 @@ func (ec *ErrorClassifier) classifyByPatterns(errorMessage string) string {
 // applyServiceSpecificClassification applies service-specific error classification logic
 func (ec *ErrorClassifier) applyServiceSpecificClassification(errorInfo *ErrorInfo, service string) {
 	switch service {
-	case "notification-processor":
+	case processorNotification:
 		ec.classifyNotificationErrors(errorInfo)
-	case "activity-processor":
+	case processorActivity:
 		ec.classifyActivityErrors(errorInfo)
-	case "media-processor":
+	case processorMedia:
 		ec.classifyMediaErrors(errorInfo)
-	case "federation-delivery":
+	case processorFederationDelivery:
 		ec.classifyFederationErrors(errorInfo)
-	case "search-indexer":
+	case processorSearchIndexer:
 		ec.classifySearchErrors(errorInfo)
 	}
 }
@@ -342,17 +359,17 @@ func (ec *ErrorClassifier) classifyNotificationErrors(errorInfo *ErrorInfo) {
 	if strings.Contains(message, "user not found") || strings.Contains(message, "invalid user") {
 		errorInfo.ErrorType = "user_not_found"
 		errorInfo.IsPermanent = true
-		errorInfo.Priority = "low"
+		errorInfo.Priority = priorityLow
 		errorInfo.FailureReason = "Target user no longer exists"
 	} else if strings.Contains(message, "email") && strings.Contains(message, "invalid") {
 		errorInfo.ErrorType = "invalid_email"
 		errorInfo.IsPermanent = true
-		errorInfo.Priority = "medium"
+		errorInfo.Priority = priorityMedium
 		errorInfo.FailureReason = "Invalid email address for notification delivery"
 	} else if strings.Contains(message, "push") && (strings.Contains(message, "endpoint") || strings.Contains(message, "subscription")) {
 		errorInfo.ErrorType = "push_subscription_error"
 		errorInfo.IsPermanent = true
-		errorInfo.Priority = "low"
+		errorInfo.Priority = priorityLow
 		errorInfo.FailureReason = "Push subscription is invalid or expired"
 	}
 }
@@ -364,12 +381,12 @@ func (ec *ErrorClassifier) classifyActivityErrors(errorInfo *ErrorInfo) {
 	if strings.Contains(message, "signature") && strings.Contains(message, "verification") {
 		errorInfo.ErrorType = "signature_verification_error"
 		errorInfo.IsPermanent = true
-		errorInfo.Priority = "high"
+		errorInfo.Priority = priorityHigh
 		errorInfo.FailureReason = "ActivityPub signature verification failed"
 	} else if strings.Contains(message, "actor") && strings.Contains(message, "not found") {
 		errorInfo.ErrorType = "actor_not_found"
 		errorInfo.IsPermanent = false // Actor might come back online
-		errorInfo.Priority = "medium"
+		errorInfo.Priority = priorityMedium
 		errorInfo.FailureReason = "ActivityPub actor not accessible"
 	}
 }
@@ -381,17 +398,17 @@ func (ec *ErrorClassifier) classifyMediaErrors(errorInfo *ErrorInfo) {
 	if strings.Contains(message, "format") && (strings.Contains(message, "unsupported") || strings.Contains(message, "invalid")) {
 		errorInfo.ErrorType = "unsupported_media_format"
 		errorInfo.IsPermanent = true
-		errorInfo.Priority = "low"
+		errorInfo.Priority = priorityLow
 		errorInfo.FailureReason = "Media format not supported for processing"
 	} else if strings.Contains(message, "size") && strings.Contains(message, "too large") {
 		errorInfo.ErrorType = "media_too_large"
 		errorInfo.IsPermanent = true
-		errorInfo.Priority = "low"
+		errorInfo.Priority = priorityLow
 		errorInfo.FailureReason = "Media file exceeds size limits"
 	} else if strings.Contains(message, "download") || strings.Contains(message, "fetch") {
 		errorInfo.ErrorType = "media_fetch_error"
 		errorInfo.IsPermanent = false
-		errorInfo.Priority = "medium"
+		errorInfo.Priority = priorityMedium
 		errorInfo.FailureReason = "Failed to download media file"
 	}
 }
@@ -403,12 +420,12 @@ func (ec *ErrorClassifier) classifyFederationErrors(errorInfo *ErrorInfo) {
 	if strings.Contains(message, "webfinger") {
 		errorInfo.ErrorType = "webfinger_error"
 		errorInfo.IsPermanent = false
-		errorInfo.Priority = "medium"
+		errorInfo.Priority = priorityMedium
 		errorInfo.FailureReason = "WebFinger discovery failed"
 	} else if strings.Contains(message, "inbox") && strings.Contains(message, "unreachable") {
 		errorInfo.ErrorType = "inbox_unreachable"
 		errorInfo.IsPermanent = false
-		errorInfo.Priority = "high"
+		errorInfo.Priority = priorityHigh
 		errorInfo.FailureReason = "Remote inbox is unreachable"
 	}
 }
@@ -425,7 +442,7 @@ func (ec *ErrorClassifier) classifySearchErrors(errorInfo *ErrorInfo) {
 	} else if strings.Contains(message, "embedding") {
 		errorInfo.ErrorType = "embedding_error"
 		errorInfo.IsPermanent = false
-		errorInfo.Priority = "medium"
+		errorInfo.Priority = priorityMedium
 		errorInfo.FailureReason = "Failed to generate text embeddings"
 	}
 }
@@ -449,19 +466,19 @@ func (ec *ErrorClassifier) GetPatterns() map[string]*ErrorPattern {
 // AnalyzeErrorTrends analyzes error trends from a collection of messages
 func (ec *ErrorClassifier) AnalyzeErrorTrends(messages []string) *ErrorTrendAnalysis {
 	analysis := &ErrorTrendAnalysis{
-		TotalMessages:    len(messages),
-		ErrorTypeCounts:  make(map[string]int),
-		PermanentErrors:  0,
-		TransientErrors:  0,
+		TotalMessages:     len(messages),
+		ErrorTypeCounts:   make(map[string]int),
+		PermanentErrors:   0,
+		TransientErrors:   0,
 		PriorityBreakdown: make(map[string]int),
 	}
 
 	for _, message := range messages {
 		errorInfo := ec.ClassifyError(message, "")
-		
+
 		analysis.ErrorTypeCounts[errorInfo.ErrorType]++
 		analysis.PriorityBreakdown[errorInfo.Priority]++
-		
+
 		if errorInfo.IsPermanent {
 			analysis.PermanentErrors++
 		} else {
@@ -480,33 +497,14 @@ func (ec *ErrorClassifier) AnalyzeErrorTrends(messages []string) *ErrorTrendAnal
 
 // ErrorTrendAnalysis represents analysis of error patterns
 type ErrorTrendAnalysis struct {
-	TotalMessages       int                `json:"total_messages"`
-	ErrorTypeCounts     map[string]int     `json:"error_type_counts"`
-	PermanentErrors     int                `json:"permanent_errors"`
-	TransientErrors     int                `json:"transient_errors"`
-	PermanentErrorRate  float64            `json:"permanent_error_rate"`
-	TransientErrorRate  float64            `json:"transient_error_rate"`
-	PriorityBreakdown   map[string]int     `json:"priority_breakdown"`
+	TotalMessages      int            `json:"total_messages"`
+	ErrorTypeCounts    map[string]int `json:"error_type_counts"`
+	PermanentErrors    int            `json:"permanent_errors"`
+	TransientErrors    int            `json:"transient_errors"`
+	PermanentErrorRate float64        `json:"permanent_error_rate"`
+	TransientErrorRate float64        `json:"transient_error_rate"`
+	PriorityBreakdown  map[string]int `json:"priority_breakdown"`
 }
 
 // Helper functions for pattern matching
 
-// matchesRegex checks if a string matches a regex pattern
-func matchesRegex(text, pattern string) bool {
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return false
-	}
-	return re.MatchString(text)
-}
-
-// containsAny checks if text contains any of the given substrings
-func containsAny(text string, substrings []string) bool {
-	textLower := strings.ToLower(text)
-	for _, substr := range substrings {
-		if strings.Contains(textLower, strings.ToLower(substr)) {
-			return true
-		}
-	}
-	return false
-}

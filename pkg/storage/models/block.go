@@ -10,11 +10,11 @@ type Block struct {
 	// Primary keys - MUST match legacy exactly
 	PK string `dynamorm:"pk" json:"PK"` // ACTOR#{blocker_username}#BLOCKS
 	SK string `dynamorm:"sk" json:"SK"` // BLOCKED#{blocked_username}
-	
+
 	// GSI5 for reverse lookup
 	GSI5PK string `dynamorm:"index:GSI5,pk" json:"GSI5PK"` // BLOCKED#{blocked_username}
 	GSI5SK string `dynamorm:"index:GSI5,sk" json:"GSI5SK"` // BLOCKER#{blocker_username}
-	
+
 	// Core fields from legacy
 	Type      string    `json:"Type"`      // Always "Block"
 	Actor     string    `json:"Actor"`     // Full actor ID who is blocking
@@ -26,14 +26,14 @@ type Block struct {
 
 // TableName returns the DynamoDB table name
 func (Block) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate prepares the Block for creation
 func (b *Block) BeforeCreate() error {
 	// Set type
 	b.Type = "Block"
-	
+
 	// Set timestamps if not already set
 	if b.Published.IsZero() {
 		b.Published = time.Now().UTC()
@@ -41,15 +41,15 @@ func (b *Block) BeforeCreate() error {
 	if b.CreatedAt.IsZero() {
 		b.CreatedAt = time.Now().UTC()
 	}
-	
+
 	// Generate ID if not provided
 	if b.ID == "" {
 		b.ID = fmt.Sprintf("%s/activities/block-%d", b.Actor, time.Now().Unix())
 	}
-	
+
 	// Update keys based on actor usernames
 	b.UpdateKeys()
-	
+
 	return nil
 }
 
@@ -58,11 +58,11 @@ func (b *Block) UpdateKeys() {
 	// Extract usernames from actor IDs
 	blockerUsername := extractUsername(b.Actor)
 	blockedUsername := extractUsername(b.Object)
-	
+
 	// Primary keys
 	b.PK = fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
 	b.SK = fmt.Sprintf("BLOCKED#%s", blockedUsername)
-	
+
 	// GSI5 for reverse lookup
 	b.GSI5PK = fmt.Sprintf("BLOCKED#%s", blockedUsername)
 	b.GSI5SK = fmt.Sprintf("BLOCKER#%s", blockerUsername)
@@ -87,7 +87,7 @@ func extractUsername(actorID string) string {
 	if current != "" {
 		parts = append(parts, current)
 	}
-	
+
 	// Return the last part
 	if len(parts) > 0 {
 		return parts[len(parts)-1]

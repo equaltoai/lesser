@@ -170,80 +170,164 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 
 // HandleCreateFilterLift handles POST /api/v2/filters
 func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
+	// Authenticate user
+	username, err := h.authenticateFilterRequest(ctx, "write:filters")
+	if err != nil {
+		return err
+	}
+
+	// Parse and validate request
+	params, err := h.parseCreateFilterRequest(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Create the filter
+	filter := h.buildFilterFromParams(username, params)
+
+	// Save filter to storage
+	if err := h.saveFilter(ctx, filter); err != nil {
+		return err
+	}
+
+	// Add keywords if provided
+	keywords := h.addFilterKeywords(ctx, filter.ID, params.KeywordsAttributes)
+
+	// Convert to Mastodon API format
+	mastodonFilter := h.converter.ConvertFilterToMastodon(filter, keywords, []*storage.FilterStatus{})
+	return ctx.Status(200).JSON(mastodonFilter)
+}
+
+// createFilterParams holds parameters for filter creation
+type createFilterParams struct {
+	Title              string           `json:"title"`
+	Context            []string         `json:"context"`
+	FilterAction       string           `json:"filter_action"`
+	ExpiresIn          *int             `json:"expires_in"`
+	KeywordsAttributes []map[string]any `json:"keywords_attributes"`
+}
+
+// authenticateFilterRequest authenticates the user for filter operations
+func (h *Handler) authenticateFilterRequest(ctx *lift.Context, requiredScope string) (string, error) {
 	// Test hook - check for test username header
+	testUsername := h.extractTestUsernameForFilter(ctx)
+	if testUsername != "" {
+		return testUsername, nil
+	}
+
+	// Extract and validate token
+	token, err := h.extractFilterToken(ctx)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Validate token and check scope
+	username, err := h.validateFilterToken(ctx, token, requiredScope)
+	if err != nil {
+		return "", err
+	}
+
+	return username, nil
+}
+
+// extractTestUsernameForFilter extracts test username from headers
+func (h *Handler) extractTestUsernameForFilter(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
+	return testUsername
+}
 
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write:filters scope
-		if !claims.HasScope("write:filters") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+// extractFilterToken extracts the authentication token
+func (h *Handler) extractFilterToken(ctx *lift.Context) (string, error) {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
 	}
+
+	// Try direct access to headers if ctx.Header doesn't work
+	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
+		if authHeader == "" {
+			authHeader = ctx.Request.Request.Headers["authorization"]
+		}
+	}
+
+	return auth.ExtractBearerToken(authHeader)
+}
+
+// validateFilterToken validates the token and checks scope
+func (h *Handler) validateFilterToken(ctx *lift.Context, token, requiredScope string) (string, error) {
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Check required scope
+	if !claims.HasScope(requiredScope) {
+		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+	}
+
+	return claims.Username, nil
+}
+
+// parseCreateFilterRequest parses and validates the filter creation request
+func (h *Handler) parseCreateFilterRequest(ctx *lift.Context) (*createFilterParams, error) {
+	var params createFilterParams
 
 	// Parse request body
-	var params struct {
-		Title              string           `json:"title"`
-		Context            []string         `json:"context"`
-		FilterAction       string           `json:"filter_action"`
-		ExpiresIn          *int             `json:"expires_in"`
-		KeywordsAttributes []map[string]any `json:"keywords_attributes"`
-	}
-
-	if err := ctx.ParseRequest(&params); err != nil {
-		// Fallback to common.ParseRequestBody for test environments
-		bodyBytes := []byte(ctx.Request.Body)
-		if len(bodyBytes) == 0 && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = []byte(ctx.Request.Request.Body)
-		}
-		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
-		}
+	if err := h.parseFilterRequestBody(ctx, &params); err != nil {
+		return nil, err
 	}
 
 	// Validate required fields
+	if err := h.validateFilterRequiredFields(ctx, &params); err != nil {
+		return nil, err
+	}
+
+	// Validate context values
+	if err := h.validateFilterContext(ctx, params.Context); err != nil {
+		return nil, err
+	}
+
+	// Validate and set filter action
+	if err := h.validateFilterAction(ctx, &params); err != nil {
+		return nil, err
+	}
+
+	return &params, nil
+}
+
+// parseFilterRequestBody parses the request body
+func (h *Handler) parseFilterRequestBody(ctx *lift.Context, params *createFilterParams) error {
+	if err := ctx.ParseRequest(params); err != nil {
+		// Fallback to common.ParseRequestBody for test environments
+		bodyBytes := ctx.Request.Body
+		if len(bodyBytes) == 0 && ctx.Request != nil && ctx.Request.Request != nil {
+			bodyBytes = ctx.Request.Request.Body
+		}
+		if err2 := common.ParseRequestBody(bodyBytes, params); err2 != nil {
+			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		}
+	}
+	return nil
+}
+
+// validateFilterRequiredFields validates required fields
+func (h *Handler) validateFilterRequiredFields(ctx *lift.Context, params *createFilterParams) error {
 	if params.Title == "" {
 		return ctx.Status(422).JSON(map[string]string{"error": "title can't be blank"})
 	}
 	if len(params.Context) == 0 {
 		return ctx.Status(422).JSON(map[string]string{"error": "context can't be blank"})
 	}
+	return nil
+}
 
-	// Validate context values
+// validateFilterContext validates context values
+func (h *Handler) validateFilterContext(ctx *lift.Context, contexts []string) error {
 	validContexts := map[string]bool{
 		"home":          true,
 		"notifications": true,
@@ -251,13 +335,18 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 		"thread":        true,
 		"account":       true,
 	}
-	for _, contextVal := range params.Context {
+	
+	for _, contextVal := range contexts {
 		if !validContexts[contextVal] {
 			return ctx.Status(422).JSON(map[string]string{"error": "invalid context supplied"})
 		}
 	}
+	return nil
+}
 
-	// Set default filter action if not provided
+// validateFilterAction validates and sets default filter action
+func (h *Handler) validateFilterAction(ctx *lift.Context, params *createFilterParams) error {
+	// Set default if not provided
 	if params.FilterAction == "" {
 		params.FilterAction = "warn"
 	}
@@ -266,8 +355,12 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 	if params.FilterAction != "warn" && params.FilterAction != "hide" && params.FilterAction != "blur" {
 		return ctx.Status(422).JSON(map[string]string{"error": "invalid filter_action"})
 	}
+	
+	return nil
+}
 
-	// Create the filter
+// buildFilterFromParams builds a Filter object from request parameters
+func (h *Handler) buildFilterFromParams(username string, params *createFilterParams) *storage.Filter {
 	filter := &storage.Filter{
 		Username:     username,
 		Title:        params.Title,
@@ -281,42 +374,59 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 		filter.ExpiresAt = &expiresAt
 	}
 
+	return filter
+}
+
+// saveFilter saves the filter to storage
+func (h *Handler) saveFilter(ctx *lift.Context, filter *storage.Filter) error {
 	if err := h.repos.Moderation().CreateFilter(ctx.Context, filter); err != nil {
 		h.logger.Error("failed to create filter", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
+	return nil
+}
 
-	// Add keywords if provided
+// addFilterKeywords adds keywords to a filter
+func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywordsAttributes []map[string]any) []*storage.FilterKeyword {
 	keywords := make([]*storage.FilterKeyword, 0)
-	if len(params.KeywordsAttributes) > 0 {
-		for _, kwAttr := range params.KeywordsAttributes {
-			keyword, ok := kwAttr["keyword"].(string)
-			if !ok || keyword == "" {
-				continue
-			}
+	
+	if len(keywordsAttributes) == 0 {
+		return keywords
+	}
 
-			wholeWord := false
-			if ww, ok := kwAttr["whole_word"].(bool); ok {
-				wholeWord = ww
-			}
+	for _, kwAttr := range keywordsAttributes {
+		kw := h.extractFilterKeyword(kwAttr)
+		if kw == nil {
+			continue
+		}
 
-			kw := &storage.FilterKeyword{
-				Keyword:   keyword,
-				WholeWord: wholeWord,
-			}
-
-			if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filter.ID, kw); err != nil {
-				h.logger.Error("failed to add filter keyword", zap.Error(err))
-				// Continue with other keywords
-			} else {
-				keywords = append(keywords, kw)
-			}
+		if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, kw); err != nil {
+			h.logger.Error("failed to add filter keyword", zap.Error(err))
+			// Continue with other keywords
+		} else {
+			keywords = append(keywords, kw)
 		}
 	}
 
-	// Convert to Mastodon API format
-	mastodonFilter := h.converter.ConvertFilterToMastodon(filter, keywords, []*storage.FilterStatus{})
-	return ctx.Status(200).JSON(mastodonFilter)
+	return keywords
+}
+
+// extractFilterKeyword extracts a keyword from attributes map
+func (h *Handler) extractFilterKeyword(kwAttr map[string]any) *storage.FilterKeyword {
+	keyword, ok := kwAttr["keyword"].(string)
+	if !ok || keyword == "" {
+		return nil
+	}
+
+	wholeWord := false
+	if ww, ok := kwAttr["whole_word"].(bool); ok {
+		wholeWord = ww
+	}
+
+	return &storage.FilterKeyword{
+		Keyword:   keyword,
+		WholeWord: wholeWord,
+	}
 }
 
 // HandleUpdateFilterLift handles PUT /api/v2/filters/:id
@@ -326,77 +436,78 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write:filters scope
-		if !claims.HasScope("write:filters") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
-	}
-
-	// Get the existing filter
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	// Authenticate user
+	username, err := h.authenticateFilterRequest(ctx, "write:filters")
 	if err != nil {
-		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
+		return err
+	}
+
+	// Validate filter ownership
+	_, err = h.validateFilterOwnership(ctx, filterID, username)
+	if err != nil {
+		return err
+	}
+
+	// Parse request parameters
+	params, err := h.parseFilterUpdateParams(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Build filter updates
+	updates := h.buildFilterUpdates(params)
+
+	// Update the filter
+	if err := h.repos.Moderation().UpdateFilter(ctx.Context, filterID, updates); err != nil {
+		h.logger.Error("failed to update filter", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	if filter == nil || filter.Username != username {
-		return ctx.Status(404).JSON(map[string]string{"error": "filter not found"})
+	// Handle keyword updates
+	h.handleKeywordUpdates(ctx, filterID, params)
+
+	// Return updated filter
+	return h.returnUpdatedFilter(ctx, filterID)
+}
+
+// Helper functions for HandleUpdateFilterLift
+
+
+// validateFilterOwnership validates that the user owns the filter
+func (h *Handler) validateFilterOwnership(ctx *lift.Context, filterID, username string) (*storage.Filter, error) {
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	if err != nil {
+		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
+		return nil, ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Parse request body
+	if filter == nil || filter.Username != username {
+		return nil, ctx.Status(404).JSON(map[string]string{"error": "filter not found"})
+	}
+
+	return filter, nil
+}
+
+// parseFilterUpdateParams parses request parameters for filter updates
+func (h *Handler) parseFilterUpdateParams(ctx *lift.Context) (map[string]any, error) {
 	var params map[string]any
 
 	if err := ctx.ParseRequest(&params); err != nil {
 		// Fallback to common.ParseRequestBody for test environments
-		bodyBytes := []byte(ctx.Request.Body)
+		bodyBytes := ctx.Request.Body
 		if len(bodyBytes) == 0 && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = []byte(ctx.Request.Request.Body)
+			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return nil, ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 		}
 	}
 
-	// Build updates map
+	return params, nil
+}
+
+// buildFilterUpdates builds the updates map from parameters
+func (h *Handler) buildFilterUpdates(params map[string]any) map[string]any {
 	updates := make(map[string]any)
 
 	if title, ok := params["title"].(string); ok {
@@ -422,65 +533,86 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 		updates["expires_at"] = &expiresAt
 	}
 
-	// Update the filter
-	if err := h.repos.Moderation().UpdateFilter(ctx.Context, filterID, updates); err != nil {
-		h.logger.Error("failed to update filter", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	return updates
+}
+
+// handleKeywordUpdates handles keyword updates for a filter
+func (h *Handler) handleKeywordUpdates(ctx *lift.Context, filterID string, params map[string]any) {
+	keywordsAttrs, ok := params["keywords_attributes"].([]any)
+	if !ok {
+		return
 	}
 
-	// Handle keyword updates if provided
-	if keywordsAttrs, ok := params["keywords_attributes"].([]any); ok {
-		for _, kwAttr := range keywordsAttrs {
-			kwMap, ok := kwAttr.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			// Check if this is an update, create, or delete
-			if id, hasID := kwMap["id"].(string); hasID {
-				if destroy, ok := kwMap["_destroy"].(bool); ok && destroy {
-					// Delete the keyword
-					if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context, id); err != nil {
-						h.logger.Error("failed to delete filter keyword", zap.String("keyword_id", id), zap.Error(err))
-					}
-				} else {
-					// Update the keyword
-					kwUpdates := make(map[string]any)
-					if keyword, ok := kwMap["keyword"].(string); ok {
-						kwUpdates["keyword"] = keyword
-					}
-					if wholeWord, ok := kwMap["whole_word"].(bool); ok {
-						kwUpdates["whole_word"] = wholeWord
-					}
-					if err := h.repos.Moderation().UpdateFilterKeyword(ctx.Context, id, kwUpdates); err != nil {
-						h.logger.Error("failed to update filter keyword", zap.String("keyword_id", id), zap.Error(err))
-					}
-				}
-			} else {
-				// Create new keyword
-				keyword, ok := kwMap["keyword"].(string)
-				if !ok || keyword == "" {
-					continue
-				}
-
-				wholeWord := false
-				if ww, ok := kwMap["whole_word"].(bool); ok {
-					wholeWord = ww
-				}
-
-				kw := &storage.FilterKeyword{
-					Keyword:   keyword,
-					WholeWord: wholeWord,
-				}
-
-				if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, kw); err != nil {
-					h.logger.Error("failed to add filter keyword", zap.Error(err))
-				}
-			}
+	for _, kwAttr := range keywordsAttrs {
+		kwMap, ok := kwAttr.(map[string]any)
+		if !ok {
+			continue
 		}
+
+		h.processKeywordUpdate(ctx, filterID, kwMap)
+	}
+}
+
+// processKeywordUpdate processes a single keyword update
+func (h *Handler) processKeywordUpdate(ctx *lift.Context, filterID string, kwMap map[string]any) {
+	if id, hasID := kwMap["id"].(string); hasID {
+		// Update or delete existing keyword
+		if destroy, ok := kwMap["_destroy"].(bool); ok && destroy {
+			h.deleteFilterKeyword(ctx, id)
+		} else {
+			h.updateFilterKeyword(ctx, id, kwMap)
+		}
+	} else {
+		// Create new keyword
+		h.createFilterKeyword(ctx, filterID, kwMap)
+	}
+}
+
+// deleteFilterKeyword deletes a filter keyword
+func (h *Handler) deleteFilterKeyword(ctx *lift.Context, keywordID string) {
+	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context, keywordID); err != nil {
+		h.logger.Error("failed to delete filter keyword", zap.String("keyword_id", keywordID), zap.Error(err))
+	}
+}
+
+// updateFilterKeyword updates a filter keyword
+func (h *Handler) updateFilterKeyword(ctx *lift.Context, keywordID string, kwMap map[string]any) {
+	kwUpdates := make(map[string]any)
+	if keyword, ok := kwMap["keyword"].(string); ok {
+		kwUpdates["keyword"] = keyword
+	}
+	if wholeWord, ok := kwMap["whole_word"].(bool); ok {
+		kwUpdates["whole_word"] = wholeWord
+	}
+	if err := h.repos.Moderation().UpdateFilterKeyword(ctx.Context, keywordID, kwUpdates); err != nil {
+		h.logger.Error("failed to update filter keyword", zap.String("keyword_id", keywordID), zap.Error(err))
+	}
+}
+
+// createFilterKeyword creates a new filter keyword
+func (h *Handler) createFilterKeyword(ctx *lift.Context, filterID string, kwMap map[string]any) {
+	keyword, ok := kwMap["keyword"].(string)
+	if !ok || keyword == "" {
+		return
 	}
 
-	// Get updated filter with keywords and statuses
+	wholeWord := false
+	if ww, ok := kwMap["whole_word"].(bool); ok {
+		wholeWord = ww
+	}
+
+	kw := &storage.FilterKeyword{
+		Keyword:   keyword,
+		WholeWord: wholeWord,
+	}
+
+	if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, kw); err != nil {
+		h.logger.Error("failed to add filter keyword", zap.Error(err))
+	}
+}
+
+// returnUpdatedFilter returns the updated filter with keywords and statuses
+func (h *Handler) returnUpdatedFilter(ctx *lift.Context, filterID string) error {
 	updatedFilter, _ := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	keywords, _ := h.repos.Moderation().GetFilterKeywords(ctx.Context, filterID)
 	statuses, _ := h.repos.Moderation().GetFilterStatuses(ctx.Context, filterID)
@@ -797,9 +929,9 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 
 	if err := ctx.ParseRequest(&params); err != nil {
 		// Fallback to common.ParseRequestBody for test environments
-		bodyBytes := []byte(ctx.Request.Body)
+		bodyBytes := ctx.Request.Body
 		if len(bodyBytes) == 0 && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = []byte(ctx.Request.Request.Body)
+			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
 			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})

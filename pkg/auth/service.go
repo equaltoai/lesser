@@ -17,6 +17,8 @@ import (
 )
 
 // AuthService provides comprehensive authentication functionality
+//
+//nolint:revive // Auth prefix clarifies this is the authentication service
 type AuthService struct {
 	repos           core.RepositoryStorage
 	oauthService    *OAuthService
@@ -141,7 +143,7 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
 		RefreshToken: session.RefreshToken,
 		Scope:        "read write",
-		CreatedAt:    int(time.Now().Unix()),
+		CreatedAt:    time.Now().Unix(),
 		Me:           username,
 	}, nil
 }
@@ -179,7 +181,7 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, refreshToken, ipA
 		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
 		RefreshToken: newRefreshToken,
 		Scope:        "read write",
-		CreatedAt:    int(time.Now().Unix()),
+		CreatedAt:    time.Now().Unix(),
 		Me:           session.Username,
 	}, nil
 }
@@ -379,7 +381,7 @@ func (as *AuthService) FinishWebAuthnLogin(ctx context.Context, username string,
 		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
 		RefreshToken: session.RefreshToken,
 		Scope:        "read write",
-		CreatedAt:    int(time.Now().Unix()),
+		CreatedAt:    time.Now().Unix(),
 		Me:           username,
 		CredentialID: credential.ID, // Include credential ID in response
 	}, nil
@@ -432,7 +434,7 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 			ExpiresIn:    0,
 			RefreshToken: "",
 			Scope:        "",
-			CreatedAt:    int(time.Now().Unix()),
+			CreatedAt:    time.Now().Unix(),
 			Me:           "", // No username yet
 		}, nil
 	}
@@ -467,7 +469,7 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
 		RefreshToken: session.RefreshToken,
 		Scope:        "read write",
-		CreatedAt:    int(time.Now().Unix()),
+		CreatedAt:    time.Now().Unix(),
 		Me:           username,
 	}, nil
 }
@@ -537,13 +539,15 @@ type Config struct {
 // Response types
 
 // AuthResponse represents an authentication response
+//
+//nolint:revive // Auth prefix clarifies this is an authentication response
 type AuthResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
 	RefreshToken string `json:"refresh_token"`
 	Scope        string `json:"scope"`
-	CreatedAt    int    `json:"created_at"`
+	CreatedAt    int64  `json:"created_at"`
 	Me           string `json:"me,omitempty"`            // Username for Mastodon compatibility
 	CredentialID string `json:"credential_id,omitempty"` // WebAuthn credential ID (if applicable)
 }

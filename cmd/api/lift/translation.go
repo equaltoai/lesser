@@ -29,143 +29,236 @@ type TranslationLanguage struct {
 // HandleTranslateStatusLift handles POST /api/v1/statuses/:id/translate
 func (h *Handler) HandleTranslateStatusLift(ctx *lift.Context) error {
 	// Check if translation is enabled
-	translationEnabled := os.Getenv("TRANSLATION_ENABLED") == "true"
-	if !translationEnabled {
+	if !h.isTranslationEnabled() {
 		return ctx.Status(422).JSON(map[string]string{"error": "translation service is not enabled"})
 	}
 
-	// Get status ID from URL parameter
-	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing status ID"})
+	// Get and validate status ID
+	statusID, err := h.getTranslationStatusID(ctx)
+	if err != nil {
+		return err
 	}
 
-	// Test hook - check for test username header
+	// Authenticate user
+	username, err := h.authenticateTranslationRequest(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Get the status object
+	objectID := h.normalizeTranslationObjectID(statusID)
+	obj, err := h.getStatusForTranslation(ctx, statusID, objectID)
+	if err != nil {
+		return err
+	}
+
+	// Extract content from the object
+	content, spoilerText, language := h.extractTranslatableContent(obj)
+	if content == "" {
+		return ctx.Status(422).JSON(map[string]string{"error": "status has no content to translate"})
+	}
+
+	// Get target language
+	targetLang := h.getTargetLanguage(ctx, username)
+
+	// Perform translation
+	translationResult, err := h.performTranslation(ctx, statusID, content, spoilerText, language, targetLang)
+	if err != nil {
+		return err
+	}
+
+	return ctx.Status(200).JSON(translationResult)
+}
+
+// isTranslationEnabled checks if translation service is enabled
+func (h *Handler) isTranslationEnabled() bool {
+	return os.Getenv("TRANSLATION_ENABLED") == "true"
+}
+
+// getTranslationStatusID gets and validates the status ID
+func (h *Handler) getTranslationStatusID(ctx *lift.Context) (string, error) {
+	statusID := ctx.Param("id")
+	if statusID == "" {
+		return "", ctx.Status(400).JSON(map[string]string{"error": "missing status ID"})
+	}
+	return statusID, nil
+}
+
+// authenticateTranslationRequest handles authentication for translation
+func (h *Handler) authenticateTranslationRequest(ctx *lift.Context) (string, error) {
+	// Check for test username
+	testUsername := h.getTranslationTestUsername(ctx)
+	if testUsername != "" {
+		return testUsername, nil
+	}
+
+	// Normal authentication flow
+	return h.authenticateTranslationWithToken(ctx)
+}
+
+// getTranslationTestUsername extracts test username from headers
+func (h *Handler) getTranslationTestUsername(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
+	return testUsername
+}
 
-	var username string
-	if testUsername != "" {
-		// Test mode - skip authentication
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
+// authenticateTranslationWithToken authenticates using bearer token
+func (h *Handler) authenticateTranslationWithToken(ctx *lift.Context) (string, error) {
+	// Extract auth header
+	authHeader := h.extractTranslationAuthHeader(ctx)
+
+	// Extract and validate token
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Validate token
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	return claims.Username, nil
+}
+
+// extractTranslationAuthHeader extracts authorization header
+func (h *Handler) extractTranslationAuthHeader(ctx *lift.Context) string {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+
+	// Try direct access to headers if ctx.Header doesn't work
+	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
 		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
+			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-		username = claims.Username
 	}
 
-	// Normalize the status ID to a full URL if it's not already
-	objectID := statusID
+	return authHeader
+}
+
+// normalizeTranslationObjectID normalizes the status ID to a full URL
+func (h *Handler) normalizeTranslationObjectID(statusID string) string {
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
-		// Assume it's a local object ID
-		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+		return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
 	}
+	return statusID
+}
 
-	// Get the status
+// getStatusForTranslation retrieves the status object
+func (h *Handler) getStatusForTranslation(ctx *lift.Context, statusID, objectID string) (any, error) {
 	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		h.logger.Error("failed to get status for translation",
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+		return nil, ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
+	return obj, nil
+}
 
-	// Extract content from the object
-	var content string
-	var spoilerText string
-	var language string
-
+// extractTranslatableContent extracts content from the status object
+func (h *Handler) extractTranslatableContent(obj any) (content, spoilerText, language string) {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		content = o.Content
 		spoilerText = o.Summary
 		// Note: Language is not part of the standard Note type
-		// It would need to be stored separately or as object metadata
 	case map[string]any:
-		if c, ok := o["content"].(string); ok {
-			content = c
-		}
-		if s, ok := o["summary"].(string); ok {
-			spoilerText = s
-		}
-		if l, ok := o["language"].(string); ok {
-			language = l
-		}
+		content = h.extractStringField(o, "content")
+		spoilerText = h.extractStringField(o, "summary")
+		language = h.extractStringField(o, "language")
 	}
+	return
+}
 
-	// Check if translation is needed
-	if content == "" {
-		return ctx.Status(422).JSON(map[string]string{"error": "status has no content to translate"})
+// extractStringField extracts a string field from a map
+func (h *Handler) extractStringField(m map[string]any, field string) string {
+	if val, ok := m[field].(string); ok {
+		return val
 	}
+	return ""
+}
 
-	// Get user's preferred language
+// getTargetLanguage gets the user's preferred language for translation
+func (h *Handler) getTargetLanguage(ctx *lift.Context, username string) string {
 	userPrefs, err := h.repos.User().GetUserPreferences(ctx.Context, username)
-	targetLang := "en" // Default to English
 	if err == nil && userPrefs != nil && userPrefs.Language != "" {
-		targetLang = userPrefs.Language
+		return userPrefs.Language
+	}
+	return "en" // Default to English
+}
+
+// performTranslation performs the actual translation
+func (h *Handler) performTranslation(ctx *lift.Context, statusID, content, spoilerText, sourceLang, targetLang string) (*TranslationResult, error) {
+	// Initialize translation service
+	translationSvc, err := h.initializeTranslationService(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	// Initialize translation service
+	// Translate main content
+	translatedContent, detectedLang, err := h.translateContent(ctx, translationSvc, statusID, content, sourceLang, targetLang)
+	if err != nil {
+		return nil, err
+	}
+
+	// Translate spoiler text if present
+	translatedSpoiler := h.translateSpoilerText(ctx, translationSvc, spoilerText, sourceLang, targetLang)
+
+	// Build response
+	return &TranslationResult{
+		Content:          translatedContent,
+		SpoilerText:      translatedSpoiler,
+		DetectedLanguage: detectedLang,
+		Provider:         "AWS Translate",
+	}, nil
+}
+
+// initializeTranslationService initializes the translation service
+func (h *Handler) initializeTranslationService(ctx *lift.Context) (*translation.Service, error) {
 	translationSvc, err := translation.NewService(ctx.Context, h.repos, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "translation service initialization failed"})
+		return nil, ctx.Status(500).JSON(map[string]string{"error": "translation service initialization failed"})
 	}
+	return translationSvc, nil
+}
 
-	// Translate the content
-	translatedContent, detectedLang, err := translationSvc.TranslateHTML(ctx.Context, content, language, targetLang)
+// translateContent translates the main content
+func (h *Handler) translateContent(ctx *lift.Context, svc *translation.Service, statusID, content, sourceLang, targetLang string) (string, string, error) {
+	translatedContent, detectedLang, err := svc.TranslateHTML(ctx.Context, content, sourceLang, targetLang)
 	if err != nil {
 		h.logger.Error("failed to translate content",
 			zap.String("status_id", statusID),
 			zap.String("target_lang", targetLang),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "translation failed"})
+		return "", "", ctx.Status(500).JSON(map[string]string{"error": "translation failed"})
+	}
+	return translatedContent, detectedLang, nil
+}
+
+// translateSpoilerText translates the spoiler text if present
+func (h *Handler) translateSpoilerText(ctx *lift.Context, svc *translation.Service, spoilerText, sourceLang, targetLang string) string {
+	if spoilerText == "" {
+		return ""
 	}
 
-	// Translate spoiler text if present
-	translatedSpoiler := spoilerText
-	if spoilerText != "" {
-		translated, _, err := translationSvc.TranslateText(ctx.Context, spoilerText, language, targetLang)
-		if err == nil {
-			translatedSpoiler = translated
-		}
+	translated, _, err := svc.TranslateText(ctx.Context, spoilerText, sourceLang, targetLang)
+	if err == nil {
+		return translated
 	}
 
-	// Build response
-	translationResult := TranslationResult{
-		Content:          translatedContent,
-		SpoilerText:      translatedSpoiler,
-		DetectedLanguage: detectedLang,
-		Provider:         "AWS Translate",
-	}
-
-	return ctx.Status(200).JSON(translationResult)
+	// Return original if translation failed
+	return spoilerText
 }
 
 // HandleGetTranslationLanguagesLift handles GET /api/v1/instance/translation_languages

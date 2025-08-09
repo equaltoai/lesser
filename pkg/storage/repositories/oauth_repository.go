@@ -75,7 +75,7 @@ func (r *OAuthRepository) StoreOAuthState(ctx context.Context, state string, dat
 func (r *OAuthRepository) GetOAuthState(ctx context.Context, state string) (*storage.OAuthState, error) {
 	// Construct the key
 	pk := fmt.Sprintf("OAUTH_STATE#%s", state)
-	sk := "STATE"
+	sk := models.SKState
 
 	// Query for the item
 	var model models.OAuthState
@@ -124,7 +124,7 @@ func (r *OAuthRepository) GetOAuthState(ctx context.Context, state string) (*sto
 func (r *OAuthRepository) DeleteOAuthState(ctx context.Context, state string) error {
 	// Construct the key
 	pk := fmt.Sprintf("OAUTH_STATE#%s", state)
-	sk := "STATE"
+	sk := models.SKState
 
 	// Delete the item
 	err := r.db.WithContext(ctx).Model(&models.OAuthState{}).
@@ -184,7 +184,7 @@ func (r *OAuthRepository) CreateAuthorizationCode(ctx context.Context, code *sto
 func (r *OAuthRepository) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
 	// Construct the key
 	pk := "AUTHCODE#" + code
-	sk := "CODE"
+	sk := models.SKCode
 
 	// Query for the item
 	var model models.AuthorizationCode
@@ -229,7 +229,7 @@ func (r *OAuthRepository) GetAuthorizationCode(ctx context.Context, code string)
 func (r *OAuthRepository) DeleteAuthorizationCode(ctx context.Context, code string) error {
 	// Construct the key
 	pk := "AUTHCODE#" + code
-	sk := "CODE"
+	sk := models.SKCode
 
 	// Delete the item
 	err := r.db.WithContext(ctx).Model(&models.AuthorizationCode{}).
@@ -285,7 +285,7 @@ func (r *OAuthRepository) CreateRefreshToken(ctx context.Context, token *storage
 func (r *OAuthRepository) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
 	// Construct the key
 	pk := "REFRESHTOKEN#" + token
-	sk := "TOKEN"
+	sk := models.SKToken
 
 	// Query for the item
 	var model models.RefreshToken
@@ -329,7 +329,7 @@ func (r *OAuthRepository) GetRefreshToken(ctx context.Context, token string) (*s
 func (r *OAuthRepository) DeleteRefreshToken(ctx context.Context, token string) error {
 	// Construct the key
 	pk := "REFRESHTOKEN#" + token
-	sk := "TOKEN"
+	sk := models.SKToken
 
 	// Delete the item
 	err := r.db.WithContext(ctx).Model(&models.RefreshToken{}).
@@ -414,7 +414,7 @@ func (r *OAuthRepository) CreateOAuthClient(ctx context.Context, client *storage
 func (r *OAuthRepository) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
 	// Construct the key
 	pk := "CLIENT#" + clientID
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	// Query for the item
 	var model models.OAuthClient
@@ -454,7 +454,7 @@ func (r *OAuthRepository) GetOAuthClient(ctx context.Context, clientID string) (
 func (r *OAuthRepository) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	// Construct the key
 	pk := "CLIENT#" + clientID
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	// Delete the item
 	err := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
@@ -479,7 +479,7 @@ func (r *OAuthRepository) UpdateOAuthClient(ctx context.Context, clientID string
 
 	// Construct the key
 	pk := "CLIENT#" + clientID
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	// First, get the existing client
 	var existingClient models.OAuthClient
@@ -487,7 +487,7 @@ func (r *OAuthRepository) UpdateOAuthClient(ctx context.Context, clientID string
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&existingClient)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("OAuth client not found: %s", clientID)
@@ -526,7 +526,7 @@ func (r *OAuthRepository) UpdateOAuthClient(ctx context.Context, clientID string
 			}
 		}
 	}
-	
+
 	// Update timestamp
 	existingClient.UpdatedAt = time.Now()
 
@@ -598,19 +598,19 @@ func generateClientSecret() (string, error) {
 }
 
 // ListOAuthClients lists OAuth clients with pagination
-func (r *OAuthRepository) ListOAuthClients(ctx context.Context, limit int32, cursor string) ([]*storage.OAuthClient, string, error) {
+func (r *OAuthRepository) ListOAuthClients(ctx context.Context, limit int32, _ string) ([]*storage.OAuthClient, string, error) {
 	// For now, implement a simple scan since DynamORM doesn't have great pagination support
 	// In production, you might want to add a GSI for listing clients
 	var clientModels []*models.OAuthClient
-	
+
 	query := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
 		Where("PK", "begins_with", "CLIENT#").
 		Where("SK", "=", "METADATA")
-	
+
 	if limit > 0 {
 		query = query.Limit(int(limit))
 	}
-	
+
 	// For cursor-based pagination, you would need additional GSI setup
 	// This is a simplified implementation
 	err := query.Scan(&clientModels)
@@ -618,7 +618,7 @@ func (r *OAuthRepository) ListOAuthClients(ctx context.Context, limit int32, cur
 		r.logger.Error("failed to list OAuth clients", zap.Error(err))
 		return nil, "", fmt.Errorf("failed to list OAuth clients: %w", err)
 	}
-	
+
 	// Convert to storage models
 	clients := make([]*storage.OAuthClient, len(clientModels))
 	for i, model := range clientModels {
@@ -633,13 +633,13 @@ func (r *OAuthRepository) ListOAuthClients(ctx context.Context, limit int32, cur
 			UpdatedAt:    model.UpdatedAt,
 		}
 	}
-	
+
 	// Simple pagination - in production you'd want proper cursor implementation
 	nextCursor := ""
 	if len(clientModels) == int(limit) {
 		nextCursor = "has_more" // Simplified cursor
 	}
-	
+
 	r.logger.Debug("listed OAuth clients", zap.Int("count", len(clients)))
 	return clients, nextCursor, nil
 }
@@ -651,7 +651,7 @@ func (r *OAuthRepository) GetOAuthApp(ctx context.Context, clientID string) (*st
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert OAuthClient to OAuthApp format based on storage interface
 	app := &storage.OAuthApp{
 		ClientID:     client.ClientID,
@@ -661,7 +661,7 @@ func (r *OAuthRepository) GetOAuthApp(ctx context.Context, clientID string) (*st
 		Scopes:       client.Scopes,
 		CreatedAt:    client.CreatedAt,
 	}
-	
+
 	return app, nil
 }
 
@@ -676,21 +676,21 @@ func (r *OAuthRepository) SaveUserAppConsent(ctx context.Context, consent *stora
 		UpdatedAt: time.Now(),
 		Active:    true, // Default to active
 	}
-	
+
 	// Set default timestamps if not provided
 	if model.CreatedAt.IsZero() {
 		model.CreatedAt = time.Now()
 	}
-	
+
 	// Update keys
 	model.UpdateKeys()
-	
+
 	// Use upsert logic - try to update first, then create if not exists
 	err := r.db.WithContext(ctx).Model(model).
 		Where("PK", "=", model.PK).
 		Where("SK", "=", model.SK).
 		Update()
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Item doesn't exist, create it
@@ -704,11 +704,11 @@ func (r *OAuthRepository) SaveUserAppConsent(ctx context.Context, consent *stora
 			return fmt.Errorf("failed to update user app consent: %w", err)
 		}
 	}
-	
+
 	r.logger.Debug("saved user app consent",
 		zap.String("user_id", consent.UserID),
 		zap.String("app_id", consent.AppID))
-	
+
 	return nil
 }
 
@@ -717,14 +717,14 @@ func (r *OAuthRepository) GetUserAppConsent(ctx context.Context, userID, appID s
 	// Construct the key using the model's pattern
 	pk := fmt.Sprintf("USER#%s", userID)
 	sk := fmt.Sprintf("CONSENT#%s", appID)
-	
+
 	// Query for the item
 	var model models.UserAppConsent
 	err := r.db.WithContext(ctx).Model(&models.UserAppConsent{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&model)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("user app consent not found: %s:%s", userID, appID)
@@ -732,7 +732,7 @@ func (r *OAuthRepository) GetUserAppConsent(ctx context.Context, userID, appID s
 		r.logger.Error("failed to get user app consent", zap.Error(err))
 		return nil, fmt.Errorf("failed to get user app consent: %w", err)
 	}
-	
+
 	// Convert to storage model (only fields that exist in storage interface)
 	result := &storage.UserAppConsent{
 		UserID:    model.UserID,
@@ -740,10 +740,10 @@ func (r *OAuthRepository) GetUserAppConsent(ctx context.Context, userID, appID s
 		Scopes:    model.Scopes,
 		CreatedAt: model.CreatedAt,
 	}
-	
+
 	r.logger.Debug("retrieved user app consent",
 		zap.String("user_id", userID),
 		zap.String("app_id", appID))
-	
+
 	return result, nil
 }

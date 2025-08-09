@@ -63,12 +63,12 @@ func (r *EmojiRepository) CreateCustomEmoji(ctx context.Context, emoji *storage.
 		Where("PK", "=", fmt.Sprintf("EMOJI#%s", emoji.Shortcode)).
 		Where("SK", "=", "EMOJI").
 		First(&existing)
-	
+
 	if err == nil {
 		// Emoji already exists
 		return storage.ErrAlreadyExists
 	}
-	
+
 	if !errors.IsNotFound(err) {
 		r.logger.Error("failed to check existing emoji", zap.Error(err))
 		return err
@@ -125,7 +125,7 @@ func (r *EmojiRepository) GetCustomEmoji(ctx context.Context, shortcode string) 
 // GetCustomEmojis retrieves all custom emojis (not disabled)
 func (r *EmojiRepository) GetCustomEmojis(ctx context.Context) ([]*storage.CustomEmoji, error) {
 	var emojiModels []*models.EmojiModel
-	
+
 	// Query using GSI1 for all emojis
 	err := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
 		Index("gsi1").
@@ -202,7 +202,7 @@ func (r *EmojiRepository) UpdateCustomEmoji(ctx context.Context, emoji *storage.
 		Where("PK", "=", fmt.Sprintf("EMOJI#%s", emoji.Shortcode)).
 		Where("SK", "=", "EMOJI").
 		First(&existing)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
@@ -231,7 +231,7 @@ func (r *EmojiRepository) DeleteCustomEmoji(ctx context.Context, shortcode strin
 		Where("PK", "=", fmt.Sprintf("EMOJI#%s", shortcode)).
 		Where("SK", "=", "EMOJI").
 		First(&existing)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
@@ -257,7 +257,7 @@ func (r *EmojiRepository) DeleteCustomEmoji(ctx context.Context, shortcode strin
 // GetCustomEmojisByCategory retrieves custom emojis by category
 func (r *EmojiRepository) GetCustomEmojisByCategory(ctx context.Context, category string) ([]*storage.CustomEmoji, error) {
 	var emojiModels []*models.EmojiModel
-	
+
 	// Query using GSI2 for category
 	err := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
 		Index("gsi2").

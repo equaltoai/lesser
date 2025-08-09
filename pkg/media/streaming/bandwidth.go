@@ -71,7 +71,7 @@ func (bt *BandwidthTracker) TrackBandwidth(ctx context.Context, userID string, b
 }
 
 // GetBandwidthStats retrieves bandwidth statistics for a user
-func (bt *BandwidthTracker) GetBandwidthStats(ctx context.Context, userID string) (*BandwidthStats, error) {
+func (bt *BandwidthTracker) GetBandwidthStats(_ context.Context, userID string) (*BandwidthStats, error) {
 	// Check cache first
 	if cached, ok := bt.sessionCache.Load(userID); ok {
 		if stats, ok := cached.(*cachedBandwidthStats); ok && time.Since(stats.lastUpdate) < bt.cacheTTL {
@@ -122,7 +122,7 @@ func (bt *BandwidthTracker) GetOptimalQuality(ctx context.Context, userID string
 }
 
 // RecordBandwidthMeasurement records a bandwidth measurement sample (simplified)
-func (bt *BandwidthTracker) RecordBandwidthMeasurement(ctx context.Context, userID string, bandwidth int) error {
+func (bt *BandwidthTracker) RecordBandwidthMeasurement(_ context.Context, userID string, bandwidth int) error {
 	// Update in-memory cache
 	bt.updateCache(userID, int64(bandwidth), time.Now())
 
@@ -135,12 +135,12 @@ func (bt *BandwidthTracker) RecordBandwidthMeasurement(ctx context.Context, user
 }
 
 // GetBandwidthHistory retrieves bandwidth measurement history (simplified)
-func (bt *BandwidthTracker) GetBandwidthHistory(ctx context.Context, userID string, duration time.Duration) ([]BandwidthMeasurement, error) {
+func (bt *BandwidthTracker) GetBandwidthHistory(_ context.Context, userID string, duration time.Duration) ([]BandwidthMeasurement, error) {
 	// Return empty history for now - in a full implementation this could query analytics data
-	bt.logger.Debug("bandwidth history requested", 
-		zap.String("userID", userID), 
+	bt.logger.Debug("bandwidth history requested",
+		zap.String("userID", userID),
 		zap.Duration("duration", duration))
-	
+
 	// Track cost (simplified)
 	if bt.costTracker != nil {
 		bt.costTracker.TrackDynamoRead(1)
@@ -188,14 +188,14 @@ func (bt *BandwidthTracker) updateCache(userID string, bytesTransferred int64, n
 		duration := now.Sub(stats.LastMeasurement)
 		if duration > 0 {
 			bandwidth := int(float64(bytesTransferred*8) / duration.Seconds()) // Convert to bits per second
-			
+
 			// Update average (simple moving average)
 			if stats.AverageBandwidth == 0 {
 				stats.AverageBandwidth = bandwidth
 			} else {
 				stats.AverageBandwidth = (stats.AverageBandwidth + bandwidth) / 2
 			}
-			
+
 			// Update peak
 			if bandwidth > stats.PeakBandwidth {
 				stats.PeakBandwidth = bandwidth

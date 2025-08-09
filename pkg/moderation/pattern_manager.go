@@ -61,7 +61,7 @@ func (pm *PatternManager) GetPatterns(ctx context.Context, active bool, severity
 	}
 
 	// Filter and enrich patterns
-	var filteredPatterns []*ModerationPattern
+	filteredPatterns := make([]*ModerationPattern, 0, len(patterns))
 	for _, pattern := range patterns {
 		// Calculate effectiveness
 		pattern.Effectiveness = pm.calculateEffectiveness(pattern)
@@ -480,6 +480,9 @@ func (pm *PatternManager) analyzePatternForOptimization(pattern *ModerationPatte
 
 // Types for pattern management
 
+// ModerationPattern represents a pattern for content moderation
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific pattern
 type ModerationPattern struct {
 	ID                 string    `json:"id" dynamodbav:"id"`
 	Name               string    `json:"name" dynamodbav:"name"`
@@ -499,6 +502,7 @@ type ModerationPattern struct {
 	Tags               []string  `json:"tags,omitempty" dynamodbav:"tags,omitempty"`
 }
 
+// ContentToModerate represents content to be checked against patterns
 type ContentToModerate struct {
 	ID        string         `json:"id"`
 	Text      string         `json:"text"`
@@ -509,6 +513,7 @@ type ContentToModerate struct {
 	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
+// PatternMatch represents a matched pattern in content
 type PatternMatch struct {
 	PatternID   string    `json:"pattern_id"`
 	PatternName string    `json:"pattern_name"`
@@ -520,6 +525,7 @@ type PatternMatch struct {
 	MatchedAt   time.Time `json:"matched_at"`
 }
 
+// PatternEffectivenessReport represents a report on pattern effectiveness
 type PatternEffectivenessReport struct {
 	GeneratedAt              time.Time          `json:"generated_at"`
 	TotalPatterns            int                `json:"total_patterns"`
@@ -530,6 +536,7 @@ type PatternEffectivenessReport struct {
 	Recommendations          []string           `json:"recommendations"`
 }
 
+// PatternAnalysis represents detailed analysis of a pattern
 type PatternAnalysis struct {
 	PatternID          string    `json:"pattern_id"`
 	PatternType        string    `json:"pattern_type"`
@@ -544,6 +551,7 @@ type PatternAnalysis struct {
 	Recommendations    []string  `json:"recommendations"`
 }
 
+// PatternOptimization represents optimization recommendations for patterns
 type PatternOptimization struct {
 	PatternID            string                   `json:"pattern_id"`
 	PatternName          string                   `json:"pattern_name"`
@@ -551,6 +559,7 @@ type PatternOptimization struct {
 	Suggestions          []OptimizationSuggestion `json:"suggestions"`
 }
 
+// OptimizationSuggestion represents a suggested optimization for a pattern
 type OptimizationSuggestion struct {
 	Type        string `json:"type"` // specificity/relevance/precision/performance
 	Description string `json:"description"`

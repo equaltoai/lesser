@@ -1,3 +1,4 @@
+// Package core provides core storage interfaces and repository access patterns for the DynamORM migration.
 package core
 
 import (
@@ -48,7 +49,9 @@ type RepositoryStorage interface {
 	Export() *repositories.ExportRepository
 	Import() *repositories.ImportRepository
 	DLQ() *repositories.DLQRepository
-	
+	MetricRecord() *repositories.MetricRecordRepository
+	CloudWatchMetrics() *repositories.CloudWatchMetricsRepository
+
 	// Utility methods
 	GetDB() dynamormCore.DB
 	GetTableName() string

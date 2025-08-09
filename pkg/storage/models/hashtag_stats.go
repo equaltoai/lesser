@@ -26,8 +26,8 @@ type HashtagStats struct {
 // UpdateKeys updates the DynamoDB keys based on the hashtag name
 func (h *HashtagStats) UpdateKeys() {
 	if h.Name != "" {
-		h.PK = fmt.Sprintf("HASHTAG#%s", h.Name)
-		h.SK = "STATS"
+		h.PK = fmt.Sprintf(KeyPatternHashtag, h.Name)
+		h.SK = SKStats
 	}
 }
 
@@ -83,7 +83,7 @@ func (h *HashtagStats) AddHistoryEntry(date time.Time, usageCount, userCount int
 		UserCount:  userCount,
 	}
 	h.History = append(h.History, entry)
-	
+
 	// Keep only last 30 days of history
 	if len(h.History) > 30 {
 		h.History = h.History[len(h.History)-30:]
@@ -95,7 +95,7 @@ func (h *HashtagStats) GetAverageUsage() float64 {
 	if len(h.History) == 0 {
 		return float64(h.UsageCount)
 	}
-	
+
 	var total int64
 	for _, entry := range h.History {
 		total += entry.UsageCount
@@ -108,14 +108,14 @@ func (h *HashtagStats) GetGrowthRate() float64 {
 	if len(h.History) < 2 {
 		return 0
 	}
-	
+
 	first := h.History[0]
 	last := h.History[len(h.History)-1]
-	
+
 	if first.UsageCount == 0 {
 		return 0
 	}
-	
+
 	return float64(last.UsageCount-first.UsageCount) / float64(first.UsageCount)
 }
 

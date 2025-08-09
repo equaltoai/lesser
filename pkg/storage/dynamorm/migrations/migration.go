@@ -11,19 +11,19 @@ import (
 type Migration interface {
 	// ID returns a unique identifier for this migration (e.g., "20240101_add_user_index")
 	ID() string
-	
+
 	// Version returns the version number for ordering (e.g., 20240101120000)
 	Version() int64
-	
+
 	// Description returns a human-readable description of what this migration does
 	Description() string
-	
+
 	// Up applies the migration
 	Up(ctx context.Context, db core.DB) error
-	
+
 	// Down reverses the migration
 	Down(ctx context.Context, db core.DB) error
-	
+
 	// Dependencies returns a list of migration IDs that must be applied before this one
 	Dependencies() []string
 }
@@ -87,17 +87,17 @@ func (m *MigrationHistory) GetTableKeys() (string, string) {
 
 // MigrationStatus represents the current state of migrations
 type MigrationStatus struct {
-	PK               string    `dynamorm:"pk"`
-	SK               string    `dynamorm:"sk"`
-	LastMigrationID  string    `dynamorm:"last_migration_id"`
-	LastVersion      int64     `dynamorm:"last_version"`
-	UpdatedAt        time.Time `dynamorm:"updated_at"`
-	IsLocked         bool      `dynamorm:"is_locked"`
-	LockedBy         string    `dynamorm:"locked_by,omitempty"`
-	LockedAt         time.Time `dynamorm:"locked_at,omitempty"`
+	PK              string    `dynamorm:"pk"`
+	SK              string    `dynamorm:"sk"`
+	LastMigrationID string    `dynamorm:"last_migration_id"`
+	LastVersion     int64     `dynamorm:"last_version"`
+	UpdatedAt       time.Time `dynamorm:"updated_at"`
+	IsLocked        bool      `dynamorm:"is_locked"`
+	LockedBy        string    `dynamorm:"locked_by,omitempty"`
+	LockedAt        time.Time `dynamorm:"locked_at,omitempty"`
 }
 
 // GetTableKeys returns the primary key values for DynamoDB
 func (m *MigrationStatus) GetTableKeys() (string, string) {
-	return "MIGRATION#STATUS", "CURRENT"
+	return MigrationStatusKey, StatusCurrent
 }

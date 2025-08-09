@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"math"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ type AdaptiveQualitySelector struct {
 	logger         *zap.Logger
 	metricsCache   sync.Map
 	qualityWeights map[Quality]float64
+	metricsTracker *MetricsTracker // Reference to metrics tracker for real-time data
 }
 
 // NewAdaptiveQualitySelector creates a new quality selector
@@ -29,8 +31,62 @@ func NewAdaptiveQualitySelector(logger *zap.Logger) *AdaptiveQualitySelector {
 	}
 }
 
+// SetMetricsTracker sets the metrics tracker for real-time data access
+func (aqs *AdaptiveQualitySelector) SetMetricsTracker(metricsTracker *MetricsTracker) {
+	aqs.metricsTracker = metricsTracker
+}
+
 // SelectQuality chooses the optimal quality based on bandwidth and buffer health
 func (aqs *AdaptiveQualitySelector) SelectQuality(bandwidth int, bufferHealth float64, availableQualities []Quality) Quality {
+	return aqs.SelectQualityWithSession("", bandwidth, bufferHealth, availableQualities)
+}
+
+// SelectQualityWithSession chooses the optimal quality using real session metrics
+func (aqs *AdaptiveQualitySelector) SelectQualityWithSession(sessionID string, bandwidth int, bufferHealth float64, availableQualities []Quality) Quality {
+	// Get real-time metrics if available
+	var sessionMetrics *SessionMetrics
+	if aqs.metricsTracker != nil && sessionID != "" {
+		sessionMetrics = aqs.metricsTracker.GetSessionMetrics(sessionID)
+	}
+
+	// Enhanced decision making with real metrics
+	if sessionMetrics != nil {
+		// Adjust buffer health based on recent rebuffer history
+		if sessionMetrics.RebufferEvents > 0 {
+			recentRebufferRatio := float64(sessionMetrics.TotalRebufferTime) / float64(time.Since(sessionMetrics.StartTime))
+			if recentRebufferRatio > 0.05 { // More than 5% of time spent rebuffering
+				bufferHealth = bufferHealth * 0.5 // Be more conservative
+			}
+		}
+		
+		// Consider quality switch frequency to avoid thrashing
+		sessionDuration := time.Since(sessionMetrics.StartTime)
+		if sessionDuration > time.Minute {
+			switchRate := float64(sessionMetrics.QualitySwitches) / sessionDuration.Minutes()
+			if switchRate > 3.0 { // More than 3 switches per minute indicates instability
+				// Prefer stability - bias toward current quality
+				currentQuality := sessionMetrics.CurrentQuality
+				if aqs.isQualityAvailable(currentQuality, availableQualities) {
+					currentInfo := GetQualityInfo(currentQuality)
+					if bandwidth >= currentInfo.Bandwidth {
+						aqs.logger.Debug("selecting current quality for stability",
+							zap.String("sessionID", sessionID),
+							zap.String("quality", string(currentQuality)),
+							zap.Float64("switchRate", switchRate))
+						return currentQuality
+					}
+				}
+			}
+		}
+		
+		// Use QoE score to influence decisions
+		if sessionMetrics.QoEScore < 0.3 { // Poor quality of experience
+			bufferHealth = bufferHealth * 0.7 // Be more conservative
+		} else if sessionMetrics.QoEScore > 0.8 { // Good quality of experience
+			bufferHealth = math.Min(bufferHealth*1.2, 1.0) // Be slightly more aggressive
+		}
+	}
+
 	// If buffer is critically low, drop quality aggressively
 	if bufferHealth < 0.2 {
 		return aqs.selectPanicQuality(bandwidth, availableQualities)
@@ -51,7 +107,7 @@ func (aqs *AdaptiveQualitySelector) SelectQuality(bandwidth int, bufferHealth fl
 	}
 
 	// Buffer is healthy, select best quality within bandwidth
-	return aqs.selectOptimalQuality(supportedQualities, bandwidth, bufferHealth)
+	return aqs.selectOptimalQualityWithMetrics(supportedQualities, bandwidth, bufferHealth, sessionMetrics)
 }
 
 // UpdateMetrics updates quality selection metrics
@@ -166,24 +222,65 @@ func (aqs *AdaptiveQualitySelector) selectConservativeQuality(supportedQualities
 	return highestQuality
 }
 
-func (aqs *AdaptiveQualitySelector) selectOptimalQuality(supportedQualities []Quality, bandwidth int, bufferHealth float64) Quality {
+// selectOptimalQualityWithMetrics enhanced version using real session metrics
+func (aqs *AdaptiveQualitySelector) selectOptimalQualityWithMetrics(supportedQualities []Quality, bandwidth int, bufferHealth float64, sessionMetrics *SessionMetrics) Quality {
 	// With healthy buffer, select highest quality that fits comfortably in bandwidth
 	bestQuality := aqs.getLowestQuality(supportedQualities)
 	bestScore := 0.0
 
 	for _, q := range supportedQualities {
 		score := aqs.calculateQualityScore(q, bandwidth, bufferHealth)
+		
+		// Enhanced scoring with session metrics
+		if sessionMetrics != nil {
+			// Bonus for quality consistency (reduce switching)
+			if q == sessionMetrics.CurrentQuality {
+				score += 0.1 // Stability bonus
+			}
+			
+			// Penalty for qualities that have caused problems recently
+			if timeInQuality, exists := sessionMetrics.TimeInEachQuality[q]; exists {
+				totalTime := time.Since(sessionMetrics.StartTime)
+				if totalTime > time.Minute {
+					qualityRatio := float64(timeInQuality) / float64(totalTime)
+					
+					// If we've spent significant time in this quality and had rebuffers, penalize it
+					if qualityRatio > 0.2 && sessionMetrics.RebufferEvents > 0 {
+						rebufferPenalty := float64(sessionMetrics.RebufferEvents) * 0.05
+						score -= rebufferPenalty
+					}
+				}
+			}
+			
+			// Consider segment success rate for this quality
+			if sessionMetrics.SegmentSuccessRate < 0.95 { // Less than 95% success
+				failurePenalty := (1.0 - sessionMetrics.SegmentSuccessRate) * 0.2
+				score -= failurePenalty
+			}
+		}
+		
 		if score > bestScore {
 			bestScore = score
 			bestQuality = q
 		}
 	}
 
-	aqs.logger.Debug("selected optimal quality",
+	logFields := []zap.Field{
 		zap.String("quality", string(bestQuality)),
 		zap.Float64("score", bestScore),
 		zap.Int("bandwidth", bandwidth),
-		zap.Float64("bufferHealth", bufferHealth))
+		zap.Float64("bufferHealth", bufferHealth),
+	}
+	
+	if sessionMetrics != nil {
+		logFields = append(logFields,
+			zap.Int("rebufferEvents", sessionMetrics.RebufferEvents),
+			zap.Int("qualitySwitches", sessionMetrics.QualitySwitches),
+			zap.Float64("qoeScore", sessionMetrics.QoEScore),
+		)
+	}
+	
+	aqs.logger.Debug("selected optimal quality with metrics", logFields...)
 
 	return bestQuality
 }

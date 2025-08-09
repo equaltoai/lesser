@@ -11,6 +11,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// Pattern type constants
+const (
+	patternTypeRegex   = "regex"
+	patternTypeKeyword = "keyword"
+	patternTypePhrase  = "phrase"
+)
+
 // PatternRepository defines the interface for pattern operations
 type PatternRepository interface {
 	CreatePattern(ctx context.Context, pattern *ModerationPattern) error
@@ -77,7 +84,7 @@ func (pm *PatternMatcher) CreatePattern(ctx context.Context, pattern *Moderation
 	pm.patterns.Store(pattern.ID, pattern)
 
 	// Pre-compile regex if applicable
-	if pattern.PatternType == "regex" {
+	if pattern.PatternType == patternTypeRegex {
 		if regex, err := regexp.Compile(pattern.Pattern); err == nil {
 			pm.regexCache.Store(pattern.ID, regex)
 		}
@@ -114,7 +121,7 @@ func (pm *PatternMatcher) UpdatePattern(ctx context.Context, patternID string, u
 	pm.patterns.Store(patternID, updated)
 
 	// Pre-compile regex if applicable
-	if updated.PatternType == "regex" {
+	if updated.PatternType == patternTypeRegex {
 		if regex, err := regexp.Compile(updated.Pattern); err == nil {
 			pm.regexCache.Store(updated.ID, regex)
 		}
@@ -150,12 +157,12 @@ func (pm *PatternMatcher) GetPatterns(ctx context.Context, filter PatternFilter)
 }
 
 // MatchContent checks content against all active patterns
-func (pm *PatternMatcher) MatchContent(ctx context.Context, content string, metadata ContentMetadata) ([]PatternMatch, error) {
+func (pm *PatternMatcher) MatchContent(_ context.Context, content string, _ ContentMetadata) ([]PatternMatch, error) {
 	matches := []PatternMatch{}
 	lowerContent := strings.ToLower(content)
 
 	// Iterate through cached patterns
-	pm.patterns.Range(func(key, value any) bool {
+	pm.patterns.Range(func(_, value any) bool {
 		pattern, ok := value.(*ModerationPattern)
 		if !ok || !pattern.Active {
 			return true
@@ -190,7 +197,7 @@ func (pm *PatternMatcher) validatePattern(pattern *ModerationPattern) error {
 	}
 
 	// Validate regex if applicable
-	if pattern.PatternType == "regex" {
+	if pattern.PatternType == patternTypeRegex {
 		_, err := regexp.Compile(pattern.Pattern)
 		if err != nil {
 			return fmt.Errorf("invalid regex pattern: %w", err)
@@ -198,7 +205,7 @@ func (pm *PatternMatcher) validatePattern(pattern *ModerationPattern) error {
 	}
 
 	// Validate pattern type
-	validTypes := map[string]bool{"regex": true, "keyword": true, "phrase": true}
+	validTypes := map[string]bool{patternTypeRegex: true, patternTypeKeyword: true, patternTypePhrase: true}
 	if !validTypes[pattern.PatternType] {
 		return fmt.Errorf("invalid pattern type: %s", pattern.PatternType)
 	}
@@ -212,7 +219,7 @@ func (pm *PatternMatcher) checkPattern(pattern *ModerationPattern, content, lowe
 	var location string
 
 	switch pattern.PatternType {
-	case "regex":
+	case patternTypeRegex:
 		// Get compiled regex from cache
 		var regex *regexp.Regexp
 		if cached, ok := pm.regexCache.Load(pattern.ID); ok {
@@ -236,7 +243,7 @@ func (pm *PatternMatcher) checkPattern(pattern *ModerationPattern, content, lowe
 			location = fmt.Sprintf("chars %d-%d", match[0], match[1])
 		}
 
-	case "keyword":
+	case patternTypeKeyword:
 		keyword := strings.ToLower(pattern.Pattern)
 		if idx := strings.Index(lowerContent, keyword); idx >= 0 {
 			matched = true
@@ -244,7 +251,7 @@ func (pm *PatternMatcher) checkPattern(pattern *ModerationPattern, content, lowe
 			location = fmt.Sprintf("char %d", idx)
 		}
 
-	case "phrase":
+	case patternTypePhrase:
 		phrase := strings.ToLower(pattern.Pattern)
 		if strings.Contains(lowerContent, phrase) {
 			matched = true
@@ -277,11 +284,11 @@ func (pm *PatternMatcher) loadPatterns(ctx context.Context) error {
 	}
 
 	// Clear existing patterns
-	pm.patterns.Range(func(key, value any) bool {
+	pm.patterns.Range(func(key, _ any) bool {
 		pm.patterns.Delete(key)
 		return true
 	})
-	pm.regexCache.Range(func(key, value any) bool {
+	pm.regexCache.Range(func(key, _ any) bool {
 		pm.regexCache.Delete(key)
 		return true
 	})
@@ -291,7 +298,7 @@ func (pm *PatternMatcher) loadPatterns(ctx context.Context) error {
 		pm.patterns.Store(pattern.ID, pattern)
 
 		// Pre-compile regex
-		if pattern.PatternType == "regex" {
+		if pattern.PatternType == patternTypeRegex {
 			if regex, err := regexp.Compile(pattern.Pattern); err == nil {
 				pm.regexCache.Store(pattern.ID, regex)
 			}
@@ -336,9 +343,6 @@ func (pm *PatternMatcher) incrementHitCount(patternID string) {
 			zap.Error(err))
 	}
 }
-
-
-
 
 func generatePatternID(name string) string {
 	// Simple ID generation

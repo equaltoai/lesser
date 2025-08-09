@@ -39,7 +39,7 @@ type ThreatIntel struct {
 func (t *ThreatIntel) UpdateKeys() {
 	// Primary key: PK=THREAT#{id}, SK=METADATA (exact legacy pattern)
 	t.PK = fmt.Sprintf("THREAT#%s", t.ID)
-	t.SK = "METADATA"
+	t.SK = SKMetadata
 
 	// GSI1 for querying by type: PK=TYPE#{threatType}, SK=THREAT#{id}
 	t.GSI1PK = fmt.Sprintf("TYPE#%s", t.ThreatType)

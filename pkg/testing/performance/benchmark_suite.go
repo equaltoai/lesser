@@ -1,3 +1,4 @@
+// Package performance provides comprehensive benchmarking utilities for serverless Lambda function performance testing.
 package performance
 
 import (
@@ -14,58 +15,60 @@ import (
 
 // BenchmarkConfig defines benchmark configuration
 type BenchmarkConfig struct {
-	Name               string
-	WarmupIterations   int
+	Name                string
+	WarmupIterations    int
 	BenchmarkIterations int
-	ConcurrentWorkers  int
-	RequestsPerWorker  int
-	TargetRPS          int
-	MaxDuration        time.Duration
-	CollectMetrics     bool
-	ProfileCPU         bool
-	ProfileMemory      bool
+	ConcurrentWorkers   int
+	RequestsPerWorker   int
+	TargetRPS           int
+	MaxDuration         time.Duration
+	CollectMetrics      bool
+	ProfileCPU          bool
+	ProfileMemory       bool
 }
 
 // BenchmarkResult contains benchmark results
 type BenchmarkResult struct {
-	Name              string
-	TotalRequests     int64
+	Name               string
+	TotalRequests      int64
 	SuccessfulRequests int64
-	FailedRequests    int64
-	TotalDuration     time.Duration
-	MinLatency        time.Duration
-	MaxLatency        time.Duration
-	AvgLatency        time.Duration
-	P50Latency        time.Duration
-	P90Latency        time.Duration
-	P95Latency        time.Duration
-	P99Latency        time.Duration
-	RequestsPerSecond float64
-	MemoryStats       MemoryStats
-	CPUStats          CPUStats
-	Errors            map[string]int
+	FailedRequests     int64
+	TotalDuration      time.Duration
+	MinLatency         time.Duration
+	MaxLatency         time.Duration
+	AvgLatency         time.Duration
+	P50Latency         time.Duration
+	P90Latency         time.Duration
+	P95Latency         time.Duration
+	P99Latency         time.Duration
+	RequestsPerSecond  float64
+	MemoryStats        MemoryStats
+	CPUStats           CPUStats
+	Errors             map[string]int
 }
 
 // MemoryStats tracks memory usage
 type MemoryStats struct {
-	InitialHeap   uint64
-	PeakHeap      uint64
-	FinalHeap     uint64
-	TotalAlloc    uint64
-	NumGC         uint32
-	GCPauseTotal  time.Duration
-	GCPauseAvg    time.Duration
+	InitialHeap  uint64
+	PeakHeap     uint64
+	FinalHeap    uint64
+	TotalAlloc   uint64
+	NumGC        uint32
+	GCPauseTotal time.Duration
+	GCPauseAvg   time.Duration
 }
 
 // CPUStats tracks CPU usage
 type CPUStats struct {
-	UserTime   time.Duration
-	SystemTime time.Duration
-	NumCPU     int
+	UserTime      time.Duration
+	SystemTime    time.Duration
+	NumCPU        int
 	NumGoroutines int
 }
 
 // PerformanceBenchmark runs performance benchmarks
+//
+//nolint:revive // Performance prefix clarifies this is performance-specific benchmark
 type PerformanceBenchmark struct {
 	config      BenchmarkConfig
 	handler     lift.Handler
@@ -76,14 +79,14 @@ type PerformanceBenchmark struct {
 
 // MetricsCollector collects performance metrics
 type MetricsCollector struct {
-	mu         sync.RWMutex
-	latencies  []time.Duration
-	errors     map[string]int
-	startTime  time.Time
-	endTime    time.Time
-	requests   int64
-	successes  int64
-	failures   int64
+	mu        sync.RWMutex
+	latencies []time.Duration
+	errors    map[string]int
+	startTime time.Time
+	endTime   time.Time
+	requests  int64
+	successes int64
+	failures  int64
 }
 
 // NewPerformanceBenchmark creates a new benchmark
@@ -152,7 +155,7 @@ func (b *PerformanceBenchmark) Run(t *testing.T) *BenchmarkResult {
 func (b *PerformanceBenchmark) runWarmup() {
 	for i := 0; i < b.config.WarmupIterations; i++ {
 		req := b.createTestRequest(i)
-		b.handler.Handle(req)
+		_ = b.handler.Handle(req)
 	}
 }
 
@@ -280,12 +283,26 @@ func (b *PerformanceBenchmark) recordMemoryStats() runtime.MemStats {
 
 // calculateMemoryDiff calculates memory usage difference
 func (b *PerformanceBenchmark) calculateMemoryDiff(initial, final runtime.MemStats) MemoryStats {
+	// Safe uint64 subtraction and conversion to Duration
+	const maxInt64AsUint64 = uint64(9223372036854775807) // math.MaxInt64
+	var gcPauseTotal time.Duration
+	if final.PauseTotalNs >= initial.PauseTotalNs {
+		pauseDiff := final.PauseTotalNs - initial.PauseTotalNs
+		if pauseDiff <= maxInt64AsUint64 {
+			gcPauseTotal = time.Duration(pauseDiff)
+		} else {
+			gcPauseTotal = time.Duration(^int64(0)) // Max duration
+		}
+	} else {
+		gcPauseTotal = 0 // Handle underflow case
+	}
+
 	return MemoryStats{
 		InitialHeap:  initial.HeapAlloc,
 		FinalHeap:    final.HeapAlloc,
 		TotalAlloc:   final.TotalAlloc - initial.TotalAlloc,
 		NumGC:        final.NumGC - initial.NumGC,
-		GCPauseTotal: time.Duration(final.PauseTotalNs - initial.PauseTotalNs),
+		GCPauseTotal: gcPauseTotal,
 	}
 }
 
@@ -293,12 +310,12 @@ func (b *PerformanceBenchmark) calculateMemoryDiff(initial, final runtime.MemSta
 func (b *PerformanceBenchmark) printResults(t *testing.T) {
 	t.Logf("\n=== Benchmark Results: %s ===", b.results.Name)
 	t.Logf("Total Requests: %d", b.results.TotalRequests)
-	t.Logf("Successful: %d (%.2f%%)", b.results.SuccessfulRequests, 
+	t.Logf("Successful: %d (%.2f%%)", b.results.SuccessfulRequests,
 		float64(b.results.SuccessfulRequests)/float64(b.results.TotalRequests)*100)
 	t.Logf("Failed: %d", b.results.FailedRequests)
 	t.Logf("Duration: %v", b.results.TotalDuration)
 	t.Logf("Requests/sec: %.2f", b.results.RequestsPerSecond)
-	
+
 	t.Logf("\nLatency Statistics:")
 	t.Logf("  Min: %v", b.results.MinLatency)
 	t.Logf("  Max: %v", b.results.MaxLatency)
@@ -346,10 +363,10 @@ func percentile(sorted []time.Duration, p float64) time.Duration {
 
 // RateLimiter implements token bucket rate limiting
 type RateLimiter struct {
-	rate       int
-	bucket     chan struct{}
-	ticker     *time.Ticker
-	stopCh     chan struct{}
+	rate   int
+	bucket chan struct{}
+	ticker *time.Ticker
+	stopCh chan struct{}
 }
 
 // NewRateLimiter creates a rate limiter
@@ -413,14 +430,14 @@ func BenchmarkAPIEndpoint(b *testing.B, handler lift.Handler) {
 		WarmupIterations:    100,
 		BenchmarkIterations: b.N,
 		ConcurrentWorkers:   10,
-		TargetRPS:          0, // No limit
-		MaxDuration:        5 * time.Minute,
-		CollectMetrics:     true,
+		TargetRPS:           0, // No limit
+		MaxDuration:         5 * time.Minute,
+		CollectMetrics:      true,
 	}, handler)
 
 	b.ResetTimer()
 	result := benchmark.Run(&testing.T{})
-	
+
 	b.ReportMetric(float64(result.RequestsPerSecond), "req/s")
 	b.ReportMetric(float64(result.P99Latency.Microseconds()), "p99_μs")
 }
@@ -428,10 +445,10 @@ func BenchmarkAPIEndpoint(b *testing.B, handler lift.Handler) {
 // BenchmarkDatabaseOperations benchmarks database operations
 func BenchmarkDatabaseOperations(b *testing.B, operation func() error) {
 	b.ResetTimer()
-	
+
 	var totalDuration time.Duration
 	errors := 0
-	
+
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
 		if err := operation(); err != nil {
@@ -439,7 +456,7 @@ func BenchmarkDatabaseOperations(b *testing.B, operation func() error) {
 		}
 		totalDuration += time.Since(start)
 	}
-	
+
 	avgDuration := totalDuration / time.Duration(b.N)
 	b.ReportMetric(float64(avgDuration.Microseconds()), "avg_μs")
 	b.ReportMetric(float64(errors), "errors")
@@ -460,55 +477,55 @@ type LoadTestScenario struct {
 // RunLoadTest executes a load test scenario
 func RunLoadTest(t *testing.T, scenario LoadTestScenario) {
 	t.Logf("Starting load test: %s", scenario.Name)
-	
+
 	startTime := time.Now()
 	currentRPS := scenario.InitialRPS
 	step := (scenario.TargetRPS - scenario.InitialRPS) / int(scenario.RampUpTime/scenario.StepDuration)
-	
+
 	results := make([]*BenchmarkResult, 0)
-	
+
 	// Ramp up phase
 	for elapsed := time.Duration(0); elapsed < scenario.RampUpTime; elapsed += scenario.StepDuration {
 		t.Logf("Load test at %d RPS", currentRPS)
-		
+
 		benchmark := NewPerformanceBenchmark(BenchmarkConfig{
 			Name:              fmt.Sprintf("%s-%dRPS", scenario.Name, currentRPS),
 			ConcurrentWorkers: currentRPS / 10, // Adjust based on target
-			TargetRPS:        currentRPS,
-			MaxDuration:      scenario.StepDuration,
-			CollectMetrics:   true,
+			TargetRPS:         currentRPS,
+			MaxDuration:       scenario.StepDuration,
+			CollectMetrics:    true,
 		}, scenario.Handler)
-		
+
 		result := benchmark.Run(t)
 		results = append(results, result)
-		
+
 		// Check for degradation
-		if result.P99Latency > 500*time.Millisecond || 
-		   float64(result.FailedRequests)/float64(result.TotalRequests) > 0.01 {
+		if result.P99Latency > 500*time.Millisecond ||
+			float64(result.FailedRequests)/float64(result.TotalRequests) > 0.01 {
 			t.Logf("Performance degradation detected at %d RPS", currentRPS)
 			break
 		}
-		
+
 		currentRPS += step
 	}
-	
+
 	// Sustained load phase
 	remainingTime := scenario.Duration - time.Since(startTime)
 	if remainingTime > 0 {
 		t.Logf("Sustaining load at %d RPS for %v", currentRPS, remainingTime)
-		
+
 		benchmark := NewPerformanceBenchmark(BenchmarkConfig{
 			Name:              fmt.Sprintf("%s-sustained", scenario.Name),
 			ConcurrentWorkers: currentRPS / 10,
-			TargetRPS:        currentRPS,
-			MaxDuration:      remainingTime,
-			CollectMetrics:   true,
+			TargetRPS:         currentRPS,
+			MaxDuration:       remainingTime,
+			CollectMetrics:    true,
 		}, scenario.Handler)
-		
+
 		result := benchmark.Run(t)
 		results = append(results, result)
 	}
-	
+
 	// Generate report
 	generateLoadTestReport(t, results)
 }
@@ -516,11 +533,11 @@ func RunLoadTest(t *testing.T, scenario LoadTestScenario) {
 // generateLoadTestReport generates a load test report
 func generateLoadTestReport(t *testing.T, results []*BenchmarkResult) {
 	t.Logf("\n=== Load Test Summary ===")
-	
+
 	for _, result := range results {
 		t.Logf("\n%s:", result.Name)
 		t.Logf("  RPS: %.2f", result.RequestsPerSecond)
-		t.Logf("  Success Rate: %.2f%%", 
+		t.Logf("  Success Rate: %.2f%%",
 			float64(result.SuccessfulRequests)/float64(result.TotalRequests)*100)
 		t.Logf("  P99 Latency: %v", result.P99Latency)
 	}

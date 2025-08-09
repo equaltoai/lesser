@@ -1,3 +1,4 @@
+// Package main implements the federation-tracker Lambda function for tracking federation relationships and activity.
 package main
 
 import (

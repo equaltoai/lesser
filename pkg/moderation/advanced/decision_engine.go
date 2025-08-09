@@ -1,3 +1,4 @@
+// Package advanced provides sophisticated content moderation decision engines with threat analysis.
 package advanced
 
 import (
@@ -8,6 +9,11 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+)
+
+// Signal type constants
+const (
+	signalTypeThreat = "threat"
 )
 
 // DecisionEngine makes moderation decisions based on analysis results
@@ -37,7 +43,7 @@ func NewDecisionEngine(config *ModerationConfig, logger *zap.Logger, reputationS
 }
 
 // MakeDecision makes a moderation decision based on all analysis results
-func (de *DecisionEngine) MakeDecision(ctx context.Context, analysis *ModerationAnalysis) (*ModerationDecision, error) {
+func (de *DecisionEngine) MakeDecision(_ context.Context, analysis *ModerationAnalysis) (*ModerationDecision, error) {
 	decision := &ModerationDecision{
 		ContentID:       analysis.ContentMetadata.ContentID,
 		Decision:        ActionAllow,
@@ -57,9 +63,8 @@ func (de *DecisionEngine) MakeDecision(ctx context.Context, analysis *Moderation
 	decision.Confidence = confidence
 
 	// Factor in reputation
-	reputationMultiplier := 1.0
 	if analysis.ReputationScore != nil {
-		reputationMultiplier = de.calculateReputationMultiplier(analysis.ReputationScore)
+		reputationMultiplier := de.calculateReputationMultiplier(analysis.ReputationScore)
 		totalScore *= reputationMultiplier
 
 		// Add reputation reason if it affected the decision
@@ -128,7 +133,7 @@ func (de *DecisionEngine) collectSignals(analysis *ModerationAnalysis) []Signal 
 		// Threats
 		for _, threat := range analysis.TextAnalysis.Threats {
 			signals = append(signals, Signal{
-				Type:       "threat",
+				Type:       signalTypeThreat,
 				Severity:   threat.Severity,
 				Score:      de.getSeverityScore(threat.Severity),
 				Confidence: threat.Confidence,
@@ -240,7 +245,7 @@ func (de *DecisionEngine) calculateWeightedScore(signals []Signal) (float64, flo
 func (de *DecisionEngine) getSignalWeight(signal Signal) float64 {
 	// Base weights by type
 	typeWeights := map[string]float64{
-		"threat":                     3.0,
+		signalTypeThreat:                     3.0,
 		"explicit_content":           2.5,
 		"violence":                   2.5,
 		"toxicity":                   2.0,
@@ -277,9 +282,9 @@ func (de *DecisionEngine) calculateReputationMultiplier(reputation *ReputationSc
 		return 0.7 // 30% reduction in severity for trusted users
 	case "normal":
 		return 1.0 // No change
-	case "suspicious":
+	case reputationLevelSuspicious:
 		return 1.3 // 30% increase in severity
-	case "bad_actor":
+	case reputationLevelBadActor:
 		return 1.5 // 50% increase in severity
 	default:
 		return 1.0
@@ -291,7 +296,7 @@ func (de *DecisionEngine) determineAction(score float64, signals []Signal) Moder
 	// Check for critical signals that warrant immediate action
 	for _, signal := range signals {
 		if signal.Severity == SeverityCritical && signal.Confidence > 0.8 {
-			if signal.Type == "threat" && signal.Evidence != nil {
+			if signal.Type == signalTypeThreat && signal.Evidence != nil {
 				if threat, ok := signal.Evidence.(ThreatIndicator); ok && threat.Type == "SELF_HARM" {
 					return ActionFlag // Flag for immediate human review with resources
 				}
@@ -316,7 +321,7 @@ func (de *DecisionEngine) determineAction(score float64, signals []Signal) Moder
 }
 
 // generateReasons generates detailed reasons for the decision
-func (de *DecisionEngine) generateReasons(signals []Signal, analysis *ModerationAnalysis) []DecisionReason {
+func (de *DecisionEngine) generateReasons(signals []Signal, _ *ModerationAnalysis) []DecisionReason {
 	reasons := []DecisionReason{}
 
 	for _, signal := range signals {
@@ -338,7 +343,7 @@ func (de *DecisionEngine) generateReasons(signals []Signal, analysis *Moderation
 					toxicity.ToxicityScore, categories)
 			}
 
-		case "threat":
+		case signalTypeThreat:
 			if threat, ok := signal.Evidence.(ThreatIndicator); ok {
 				reason.Description = fmt.Sprintf("%s threat detected: %v",
 					threat.Type, threat.Evidence)
@@ -384,7 +389,7 @@ func (de *DecisionEngine) setReviewRequirements(decision *ModerationDecision, si
 
 	// Require review for critical threats
 	for _, signal := range signals {
-		if signal.Type == "threat" && signal.Severity == SeverityCritical {
+		if signal.Type == signalTypeThreat && signal.Severity == SeverityCritical {
 			decision.RequiresReview = true
 			decision.ReviewPriority = 10
 			break
@@ -424,7 +429,7 @@ func (de *DecisionEngine) generateRecommendations(decision *ModerationDecision, 
 	// Specific recommendations based on content
 	for _, reason := range decision.Reasons {
 		switch reason.Type {
-		case "threat":
+		case signalTypeThreat:
 			if threat, ok := reason.Evidence.(ThreatIndicator); ok {
 				switch threat.Type {
 				case "SELF_HARM":

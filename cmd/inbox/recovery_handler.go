@@ -14,14 +14,16 @@ import (
 // RecoveryActivityHandler handles recovery-related ActivityPub activities
 type RecoveryActivityHandler struct {
 	userRepository     *repositories.UserRepository
+	recoveryRepository *repositories.RecoveryRepository
 	recoveryFedService *auth.RecoveryFederationService
 	logger             *zap.Logger
 }
 
 // NewRecoveryActivityHandler creates a new recovery activity handler
-func NewRecoveryActivityHandler(userRepository *repositories.UserRepository, recoveryFedService *auth.RecoveryFederationService, logger *zap.Logger) *RecoveryActivityHandler {
+func NewRecoveryActivityHandler(userRepository *repositories.UserRepository, recoveryRepository *repositories.RecoveryRepository, recoveryFedService *auth.RecoveryFederationService, logger *zap.Logger) *RecoveryActivityHandler {
 	return &RecoveryActivityHandler{
 		userRepository:     userRepository,
+		recoveryRepository: recoveryRepository,
 		recoveryFedService: recoveryFedService,
 		logger:             logger,
 	}
@@ -67,7 +69,7 @@ func (h *RecoveryActivityHandler) handleTrusteeConfirmation(ctx context.Context,
 }
 
 // handleTrusteeAcceptance processes a trustee accepting an invitation
-func (h *RecoveryActivityHandler) handleTrusteeAcceptance(_ context.Context, activity *activitypub.Activity, inviteData map[string]any) error {
+func (h *RecoveryActivityHandler) handleTrusteeAcceptance(ctx context.Context, activity *activitypub.Activity, inviteData map[string]any) error {
 	inviterUsername, ok := inviteData["inviterUsername"].(string)
 	if !ok {
 		return fmt.Errorf("missing inviter username in trustee acceptance")
@@ -79,14 +81,14 @@ func (h *RecoveryActivityHandler) handleTrusteeAcceptance(_ context.Context, act
 	}
 
 	// Update the trustee confirmation status
-	// TODO: This needs to be implemented in the user repository or a separate recovery repository
-	h.logger.Info("would update trustee confirmation",
-		zap.String("inviter", inviterUsername),
-		zap.String("trustee", trusteeActorID))
-	// err := h.userRepository.UpdateTrusteeConfirmed(ctx, inviterUsername, trusteeActorID, true)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to update trustee confirmation: %w", err)
-	// 	}
+	err := h.recoveryRepository.UpdateTrusteeConfirmed(ctx, inviterUsername, trusteeActorID, true)
+	if err != nil {
+		h.logger.Error("failed to update trustee confirmation",
+			zap.String("inviter", inviterUsername),
+			zap.String("trustee", trusteeActorID),
+			zap.Error(err))
+		return fmt.Errorf("failed to update trustee confirmation: %w", err)
+	}
 
 	h.logger.Info("trustee accepted invitation",
 		zap.String("inviter", inviterUsername),

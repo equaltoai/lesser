@@ -13,7 +13,7 @@ type NotificationDelivery struct {
 
 	// Core fields
 	NotificationID string    `json:"notification_id"`
-	DeliveryMethod string    `json:"delivery_method"` // "push", "email", "web"
+	DeliveryMethod string    `json:"delivery_method"` // "push", "websocket", "web"
 	Status         string    `json:"status"`          // "pending", "sent", "failed"
 	AttemptCount   int       `json:"attempt_count"`
 	LastAttempt    time.Time `json:"last_attempt"`
@@ -30,7 +30,7 @@ type NotificationDelivery struct {
 
 // TableName returns the DynamoDB table name
 func (NotificationDelivery) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the primary keys based on the model's fields
@@ -51,7 +51,7 @@ func (n *NotificationDelivery) BeforeCreate() error {
 
 	// Set initial status
 	if n.Status == "" {
-		n.Status = "pending"
+		n.Status = StatusPending
 	}
 
 	// Initialize attempt count
@@ -96,7 +96,7 @@ func (n *NotificationDelivery) MarkSent() {
 
 // MarkFailed marks the delivery as failed
 func (n *NotificationDelivery) MarkFailed(errorMsg string) {
-	n.Status = "failed"
+	n.Status = StatusFailed
 	n.Error = errorMsg
 	n.LastAttempt = time.Now()
 	n.AttemptCount++
@@ -104,7 +104,7 @@ func (n *NotificationDelivery) MarkFailed(errorMsg string) {
 
 // MarkPending marks the delivery as pending
 func (n *NotificationDelivery) MarkPending() {
-	n.Status = "pending"
+	n.Status = StatusPending
 	n.Error = ""
 }
 
@@ -126,9 +126,13 @@ func (n *NotificationDelivery) CanRetry() bool {
 // isValidDeliveryMethod checks if the delivery method is valid
 func isValidDeliveryMethod(method string) bool {
 	validMethods := map[string]bool{
-		"push":  true,
-		"email": true,
-		"web":   true,
+		"push":      true,
+		"websocket": true,
+		"web":       true,
+	}
+	// Email and SMS are not supported by Lesser
+	if method == "email" || method == "sms" {
+		return false
 	}
 	return validMethods[method]
 }
@@ -136,9 +140,9 @@ func isValidDeliveryMethod(method string) bool {
 // isValidDeliveryStatus checks if the delivery status is valid
 func isValidDeliveryStatus(status string) bool {
 	validStatuses := map[string]bool{
-		"pending": true,
+		StatusPending: true,
 		"sent":    true,
-		"failed":  true,
+		StatusFailed:  true,
 	}
 	return validStatuses[status]
 }
@@ -148,7 +152,7 @@ func NewNotificationDelivery(notificationID, method string) *NotificationDeliver
 	return &NotificationDelivery{
 		NotificationID: notificationID,
 		DeliveryMethod: method,
-		Status:         "pending",
+		Status:         StatusPending,
 		AttemptCount:   0,
 	}
 }

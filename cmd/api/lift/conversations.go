@@ -10,55 +10,17 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // HandleGetConversationsLift retrieves all conversations for the authenticated user
 func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check read scope
-		if !claims.HasScope(auth.ScopeRead) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	// Authenticate user
+	username, err := h.authenticateConversationRequest(ctx, auth.ScopeRead)
+	if err != nil {
+		return err
 	}
 
 	// Get current user's actor
@@ -69,13 +31,7 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 20
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
-			limit = parsedLimit
-		}
-	}
-
+	limit := h.parseConversationLimit(ctx)
 	maxID := ctx.Query("max_id")
 
 	// Get conversations
@@ -86,50 +42,162 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 	}
 
 	// Convert to API format
+	apiConversations := h.convertConversationsToAPI(ctx.Context, conversations, actor)
+
+	// Set pagination header
+	h.setConversationPaginationHeader(ctx, cursor, limit)
+
+	return ctx.JSON(apiConversations)
+}
+
+// authenticateConversationRequest handles authentication for conversation endpoints
+func (h *Handler) authenticateConversationRequest(ctx *lift.Context, requiredScope string) (string, error) {
+	// Test hook - check for test username header
+	testUsername := h.extractTestUsername(ctx)
+	if testUsername != "" {
+		return testUsername, nil
+	}
+
+	// Extract and validate token
+	authHeader := h.extractAuthHeader(ctx)
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Validate token
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Check required scope
+	if !claims.HasScope(requiredScope) {
+		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+	}
+
+	return claims.Username, nil
+}
+
+// extractTestUsername extracts test username from headers
+func (h *Handler) extractTestUsername(ctx *lift.Context) string {
+	testUsername := ctx.Header("X-Test-Username")
+	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	}
+	return testUsername
+}
+
+// extractAuthHeader extracts authorization header from request
+func (h *Handler) extractAuthHeader(ctx *lift.Context) string {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+
+	// Try direct access to headers if ctx.Header doesn't work
+	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
+		if authHeader == "" {
+			authHeader = ctx.Request.Request.Headers["authorization"]
+		}
+	}
+
+	return authHeader
+}
+
+// parseConversationLimit parses the limit query parameter
+func (h *Handler) parseConversationLimit(ctx *lift.Context) int {
+	limit := 20
+	if limitStr := ctx.Query("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
+			limit = parsedLimit
+		}
+	}
+	return limit
+}
+
+// convertConversationsToAPI converts conversations to API format
+func (h *Handler) convertConversationsToAPI(ctx context.Context, conversations []*storage.Conversation, actor *activitypub.Actor) []models.Conversation {
 	converter := mastodon.NewConverter(h.cfg.BaseURL())
-
 	apiConversations := make([]models.Conversation, 0, len(conversations))
+
 	for _, conv := range conversations {
-		// Get participants (excluding current user)
-		participantActors := make([]*activitypub.Actor, 0, len(conv.Participants)-1)
-		for _, participantID := range conv.Participants {
-			if participantID == actor.ID {
-				continue // Skip current user
-			}
-
-			// Extract username from actor ID
-			username := converter.ExtractUsernameFromActorID(participantID)
-			if username != "" {
-				participantActor, err := h.repos.Actor().GetActor(ctx.Context, username)
-				if err == nil {
-					participantActors = append(participantActors, participantActor)
-				}
-			}
-		}
-
-		// Get last status
-		var lastStatus any
-		if conv.LastStatusID != "" {
-			lastStatus, _ = h.repos.Object().GetObject(ctx.Context, conv.LastStatusID)
-		}
-
-		// Check unread status by comparing last message time with user's last read time
-		unread := h.isConversationUnreadLift(ctx.Context, conv.ID, actor.ID, &conv.UpdatedAt)
-
-		apiConv := converter.ConversationToAPI(conv, participantActors, lastStatus, unread)
+		apiConv := h.convertSingleConversation(ctx, conv, actor, converter)
 		apiConversations = append(apiConversations, apiConv)
 	}
 
-	// Set Link header for pagination if there's a cursor
-	if cursor != "" {
-		nextURL := fmt.Sprintf("%s/api/v1/conversations?max_id=%s", h.cfg.BaseURL(), cursor)
-		if limit != 20 {
-			nextURL += fmt.Sprintf("&limit=%d", limit)
+	return apiConversations
+}
+
+// convertSingleConversation converts a single conversation to API format
+func (h *Handler) convertSingleConversation(ctx context.Context, conv *storage.Conversation, actor *activitypub.Actor, converter mastodon.Converter) models.Conversation {
+	// Get participants
+	participantActors := h.getConversationParticipants(ctx, conv, actor, converter)
+
+	// Get last status
+	lastStatus := h.getConversationLastStatus(ctx, conv)
+
+	// Check unread status
+	unread := h.isConversationUnreadLift(ctx, conv.ID, actor.ID, &conv.UpdatedAt)
+
+	return converter.ConversationToAPI(conv, participantActors, lastStatus, unread)
+}
+
+// getConversationParticipants gets participant actors for a conversation
+func (h *Handler) getConversationParticipants(ctx context.Context, conv *storage.Conversation, currentActor *activitypub.Actor, converter mastodon.Converter) []*activitypub.Actor {
+	participantActors := make([]*activitypub.Actor, 0, len(conv.Participants)-1)
+	
+	for _, participantID := range conv.Participants {
+		if participantID == currentActor.ID {
+			continue // Skip current user
 		}
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+
+		if actor := h.loadParticipantActor(ctx, participantID, converter); actor != nil {
+			participantActors = append(participantActors, actor)
+		}
 	}
 
-	return ctx.JSON(apiConversations)
+	return participantActors
+}
+
+// loadParticipantActor loads a participant actor by ID
+func (h *Handler) loadParticipantActor(ctx context.Context, participantID string, converter mastodon.Converter) *activitypub.Actor {
+	username := converter.ExtractUsernameFromActorID(participantID)
+	if username == "" {
+		return nil
+	}
+
+	participantActor, err := h.repos.Actor().GetActor(ctx, username)
+	if err != nil {
+		return nil
+	}
+
+	return participantActor
+}
+
+// getConversationLastStatus gets the last status for a conversation
+func (h *Handler) getConversationLastStatus(ctx context.Context, conv *storage.Conversation) any {
+	if conv.LastStatusID == "" {
+		return nil
+	}
+
+	lastStatus, _ := h.repos.Object().GetObject(ctx, conv.LastStatusID)
+	return lastStatus
+}
+
+// setConversationPaginationHeader sets the Link header for pagination
+func (h *Handler) setConversationPaginationHeader(ctx *lift.Context, cursor string, limit int) {
+	if cursor == "" {
+		return
+	}
+
+	nextURL := fmt.Sprintf("%s/api/v1/conversations?max_id=%s", h.cfg.BaseURL(), cursor)
+	if limit != 20 {
+		nextURL += fmt.Sprintf("&limit=%d", limit)
+	}
+	ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
 }
 
 // HandleDeleteConversationLift removes a conversation from the user's list

@@ -2,16 +2,24 @@ package repositories
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
+	lesserconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -82,7 +90,7 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 	}
 
 	// Set domain for GSI3 if available
-	domain := config.Get().Domain
+	domain := lesserconfig.Get().Domain
 	if domain != "" {
 		actorModel.GSI3PK = "DOMAIN#" + domain
 		actorModel.GSI3SK = username
@@ -301,7 +309,7 @@ func (r *ActorRepository) DeleteActor(ctx context.Context, username string) erro
 }
 
 // SearchAccounts searches for actors by username or display name
-func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error) {
+func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limit int, _ bool, _ int) ([]*activitypub.Actor, error) {
 	if query == "" {
 		return []*activitypub.Actor{}, nil
 	}
@@ -387,9 +395,14 @@ func convertActorFields(fields []models.ActorField) []storage.ActorField {
 	result := make([]storage.ActorField, len(fields))
 	for i, field := range fields {
 		result[i] = storage.ActorField{
-			Name:       field.Name,
-			Value:      field.Value,
-			VerifiedAt: func() time.Time { if field.VerifiedAt != nil { return *field.VerifiedAt } else { return time.Time{} } }(),
+			Name:  field.Name,
+			Value: field.Value,
+			VerifiedAt: func() time.Time {
+				if field.VerifiedAt != nil {
+					return *field.VerifiedAt
+				}
+				return time.Time{}
+			}(),
 		}
 	}
 	return result
@@ -400,24 +413,324 @@ func convertStorageActorFields(fields []storage.ActorField) []models.ActorField 
 	result := make([]models.ActorField, len(fields))
 	for i, field := range fields {
 		result[i] = models.ActorField{
-			Name:       field.Name,
-			Value:      field.Value,
-			VerifiedAt: func() *time.Time { if !field.VerifiedAt.IsZero() { return &field.VerifiedAt } else { return nil } }(),
+			Name:  field.Name,
+			Value: field.Value,
+			VerifiedAt: func() *time.Time {
+				if !field.VerifiedAt.IsZero() {
+					return &field.VerifiedAt
+				}
+				return nil
+			}(),
 		}
 	}
 	return result
 }
 
-// getEncryptor returns an AES encryptor for private key encryption
-// Falls back gracefully if encryption key is not available
-func getEncryptor() (marshalers.Encryptor, error) {
-	// First check for KMS (future implementation)
-	if kmsKeyID := config.Get().KMSKeyID; kmsKeyID != "" {
-		// TODO: Implement KMS encryptor when KMS client is available
-		// For now, fall through to AES encryption
+// KMSEncryptor implements envelope encryption using AWS KMS
+type KMSEncryptor struct {
+	kmsClient *kms.Client
+	keyID     string
+	mutex     sync.RWMutex
+	dataKeyCache map[string]*dataKeyCacheEntry
+	logger    *zap.Logger
+}
+
+// dataKeyCacheEntry represents a cached data key with TTL
+type dataKeyCacheEntry struct {
+	key       []byte
+	encrypted []byte
+	expiresAt time.Time
+}
+
+// NewKMSEncryptor creates a new KMS encryptor with data key caching
+func NewKMSEncryptor(keyID string) (*KMSEncryptor, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Load AWS config
+	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Check for AES encryption key
+	// Create KMS client
+	kmsClient := kms.NewFromConfig(cfg)
+
+	// Verify key exists and access
+	_, err = kmsClient.DescribeKey(ctx, &kms.DescribeKeyInput{
+		KeyId: aws.String(keyID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to access KMS key %s: %w", keyID, err)
+	}
+
+	return &KMSEncryptor{
+		kmsClient:    kmsClient,
+		keyID:        keyID,
+		dataKeyCache: make(map[string]*dataKeyCacheEntry),
+		logger:       zap.L().Named("kms-encryptor"),
+	}, nil
+}
+
+// Encrypt encrypts plaintext using envelope encryption
+func (e *KMSEncryptor) Encrypt(plaintext []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Generate or get cached data key
+	dataKey, encryptedDataKey, err := e.getDataKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get data key: %w", err)
+	}
+	defer e.clearKey(dataKey) // Clear from memory
+
+	// Encrypt data locally with AES-GCM
+	block, err := aes.NewCipher(dataKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+
+	// Format: [encryptedDataKeyLength(4 bytes)][encryptedDataKey][ciphertext]
+	result := make([]byte, 4+len(encryptedDataKey)+len(ciphertext))
+	
+	// Store encrypted data key length (big endian)
+	result[0] = byte(len(encryptedDataKey) >> 24)
+	result[1] = byte(len(encryptedDataKey) >> 16)
+	result[2] = byte(len(encryptedDataKey) >> 8)
+	result[3] = byte(len(encryptedDataKey))
+	
+	// Store encrypted data key
+	copy(result[4:4+len(encryptedDataKey)], encryptedDataKey)
+	
+	// Store ciphertext
+	copy(result[4+len(encryptedDataKey):], ciphertext)
+
+	return result, nil
+}
+
+// Decrypt decrypts ciphertext using envelope encryption
+func (e *KMSEncryptor) Decrypt(ciphertext []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if len(ciphertext) < 4 {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	// Extract encrypted data key length
+	encryptedKeyLen := int(ciphertext[0])<<24 | int(ciphertext[1])<<16 | int(ciphertext[2])<<8 | int(ciphertext[3])
+	if len(ciphertext) < 4+encryptedKeyLen {
+		return nil, fmt.Errorf("invalid ciphertext format")
+	}
+
+	// Extract encrypted data key and encrypted data
+	encryptedDataKey := ciphertext[4 : 4+encryptedKeyLen]
+	encryptedData := ciphertext[4+encryptedKeyLen:]
+
+	// Decrypt data key with KMS (with retry)
+	dataKey, err := e.decryptDataKeyWithRetry(ctx, encryptedDataKey, 3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt data key: %w", err)
+	}
+	defer e.clearKey(dataKey) // Clear from memory
+
+	// Decrypt data locally with AES-GCM
+	block, err := aes.NewCipher(dataKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(encryptedData) < nonceSize {
+		return nil, fmt.Errorf("encrypted data too short")
+	}
+
+	nonce, encryptedData := encryptedData[:nonceSize], encryptedData[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, encryptedData, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt: %w", err)
+	}
+
+	return plaintext, nil
+}
+
+// getDataKey gets or generates a data encryption key with caching
+func (e *KMSEncryptor) getDataKey(ctx context.Context) ([]byte, []byte, error) {
+	cacheKey := "default" // For simplicity, using single cache key
+
+	// Check cache first
+	e.mutex.RLock()
+	if entry, exists := e.dataKeyCache[cacheKey]; exists && time.Now().Before(entry.expiresAt) {
+		// Return cached key copy
+		keyCopy := make([]byte, len(entry.key))
+		copy(keyCopy, entry.key)
+		encryptedCopy := make([]byte, len(entry.encrypted))
+		copy(encryptedCopy, entry.encrypted)
+		e.mutex.RUnlock()
+		return keyCopy, encryptedCopy, nil
+	}
+	e.mutex.RUnlock()
+
+	// Generate new data key with retry
+	key, encrypted, err := e.generateDataKeyWithRetry(ctx, 3)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Cache the key (5 minute TTL)
+	e.mutex.Lock()
+	e.dataKeyCache[cacheKey] = &dataKeyCacheEntry{
+		key:       key,
+		encrypted: encrypted,
+		expiresAt: time.Now().Add(5 * time.Minute),
+	}
+	e.mutex.Unlock()
+
+	// Return copies
+	keyCopy := make([]byte, len(key))
+	copy(keyCopy, key)
+	encryptedCopy := make([]byte, len(encrypted))
+	copy(encryptedCopy, encrypted)
+
+	return keyCopy, encryptedCopy, nil
+}
+
+// generateDataKeyWithRetry generates a new data key with retry logic
+func (e *KMSEncryptor) generateDataKeyWithRetry(ctx context.Context, maxRetries int) ([]byte, []byte, error) {
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff
+			backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return nil, nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		resp, err := e.kmsClient.GenerateDataKey(ctx, &kms.GenerateDataKeyInput{
+			KeyId:   aws.String(e.keyID),
+			KeySpec: "AES_256",
+			EncryptionContext: map[string]string{
+				"service":   "lesser",
+				"component": "actor-private-key",
+				"version":   "1.0",
+			},
+		})
+
+		if err != nil {
+			lastErr = err
+			e.logger.Warn("KMS GenerateDataKey failed",
+				zap.Int("attempt", attempt+1),
+				zap.Error(err))
+			continue
+		}
+
+		return resp.Plaintext, resp.CiphertextBlob, nil
+	}
+
+	return nil, nil, fmt.Errorf("failed to generate data key after %d attempts: %w", maxRetries+1, lastErr)
+}
+
+// decryptDataKeyWithRetry decrypts a data key with retry logic
+func (e *KMSEncryptor) decryptDataKeyWithRetry(ctx context.Context, encryptedKey []byte, maxRetries int) ([]byte, error) {
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff
+			backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		resp, err := e.kmsClient.Decrypt(ctx, &kms.DecryptInput{
+			CiphertextBlob: encryptedKey,
+			EncryptionContext: map[string]string{
+				"service":   "lesser",
+				"component": "actor-private-key",
+				"version":   "1.0",
+			},
+		})
+
+		if err != nil {
+			lastErr = err
+			e.logger.Warn("KMS Decrypt failed",
+				zap.Int("attempt", attempt+1),
+				zap.Error(err))
+			continue
+		}
+
+		return resp.Plaintext, nil
+	}
+
+	return nil, fmt.Errorf("failed to decrypt data key after %d attempts: %w", maxRetries+1, lastErr)
+}
+
+// clearKey securely clears encryption key from memory
+func (e *KMSEncryptor) clearKey(key []byte) {
+	for i := range key {
+		key[i] = 0
+	}
+}
+
+// CleanupCache removes expired entries from the data key cache
+func (e *KMSEncryptor) CleanupCache() {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+
+	now := time.Now()
+	for key, entry := range e.dataKeyCache {
+		if now.After(entry.expiresAt) {
+			// Clear sensitive data before removal
+			e.clearKey(entry.key)
+			e.clearKey(entry.encrypted)
+			delete(e.dataKeyCache, key)
+		}
+	}
+}
+
+// getEncryptor returns an encryptor for private key encryption
+// Prioritizes KMS, falls back to AES encryption gracefully
+func getEncryptor() (marshalers.Encryptor, error) {
+	// First check for KMS
+	if kmsKeyID := lesserconfig.Get().KMSKeyID; kmsKeyID != "" {
+		kmsEncryptor, err := NewKMSEncryptor(kmsKeyID)
+		if err != nil {
+			// Log KMS error but continue to AES fallback
+			zap.L().Warn("Failed to initialize KMS encryptor, falling back to AES",
+				zap.String("keyID", kmsKeyID),
+				zap.Error(err))
+		} else {
+			zap.L().Info("Using KMS encryption for actor private keys",
+				zap.String("keyID", kmsKeyID))
+			return kmsEncryptor, nil
+		}
+	}
+
+	// Fallback to AES encryption
 	encryptionKey := os.Getenv("DYNAMODB_ENCRYPTION_KEY")
 	if encryptionKey == "" {
 		// Try alternative env var
@@ -430,17 +743,18 @@ func getEncryptor() (marshalers.Encryptor, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid encryption key format: %w", err)
 		}
+		zap.L().Info("Using AES encryption for actor private keys")
 		return marshalers.NewAESEncryptorWithKey(key)
 	}
 
-	return nil, fmt.Errorf("no encryption key available")
+	return nil, fmt.Errorf("no encryption key available (neither KMS nor AES)")
 }
 
 // GetActorByUsername retrieves an actor by username
-func (r *ActorRepository) GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {
+func (r *ActorRepository) GetActorByUsername(_ context.Context, username string) (*activitypub.Actor, error) {
 	// Query for the actor
 	var actorModel models.Actor
-	
+
 	query := r.db.Model(&actorModel).
 		Where("PK = ? AND SK = ?",
 			fmt.Sprintf("ACTOR#%s", username),
@@ -469,6 +783,7 @@ func (r *ActorRepository) modelToActivityPubActor(model *models.Actor) (*activit
 }
 
 // GetAccountSuggestions gets suggested accounts for a user based on "friends of friends" algorithm
+//nolint:dupl // Account suggestion algorithms are shared between actor repositories
 func (r *ActorRepository) GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error) {
 	log := r.logger.With(zap.String("method", "GetAccountSuggestions"), zap.String("user_id", userID))
 
@@ -477,70 +792,128 @@ func (r *ActorRepository) GetAccountSuggestions(ctx context.Context, userID stri
 		return []*activitypub.Actor{}, nil
 	}
 
-	// Step 1: Get users that the current user follows
-	following, _, err := r.deps.GetFollowing(ctx, userID, 100, "")
+	// Get user's following list
+	following, err := r.getUserFollowing(ctx, userID, log)
 	if err != nil {
-		log.Error("failed to get user following for suggestions", zap.Error(err))
-		// Fall back to discoverable users if we can't get following
 		return r.getDiscoverableActors(ctx, limit)
 	}
 
-	suggestionCandidates := make(map[string]int) // actorID -> score
-	processedActors := make(map[string]bool)
+	// Build exclusion set
+	userFollows := r.buildExclusionSet(following, userID)
 
-	// Get who the user already follows to exclude them
+	// Collect suggestion candidates from mutual connections
+	candidates := r.collectSuggestionCandidates(ctx, userID, following, userFollows)
+
+	// Score and sort candidates
+	scored := r.scoreCandidates(candidates)
+
+	// Get actor details for top suggestions
+	suggestions := r.buildSuggestions(ctx, scored, limit)
+
+	// Fill remaining slots if needed
+	suggestions = r.fillRemainingSuggestions(ctx, suggestions, userFollows, limit)
+
+	log.Info("generated account suggestions",
+		zap.Int("requested_limit", limit),
+		zap.Int("returned_count", len(suggestions)))
+
+	return suggestions, nil
+}
+
+// getUserFollowing gets the list of users that the current user follows
+func (r *ActorRepository) getUserFollowing(ctx context.Context, userID string, log *zap.Logger) ([]string, error) {
+	following, _, err := r.deps.GetFollowing(ctx, userID, 100, "")
+	if err != nil {
+		log.Error("failed to get user following for suggestions", zap.Error(err))
+		return nil, err
+	}
+	return following, nil
+}
+
+// buildExclusionSet creates a set of actor IDs to exclude from suggestions
+func (r *ActorRepository) buildExclusionSet(following []string, userID string) map[string]bool {
 	userFollows := make(map[string]bool)
 	for _, followedID := range following {
 		userFollows[followedID] = true
 	}
 	userFollows[userID] = true // Exclude self
+	return userFollows
+}
 
-	// For each user the current user follows, get who they follow
+// suggestionCandidate holds information about a potential suggestion
+type suggestionCandidate struct {
+	actorID string
+	score   int
+}
+
+// collectSuggestionCandidates collects candidates from users that the current user follows
+func (r *ActorRepository) collectSuggestionCandidates(ctx context.Context, userID string, following []string, userFollows map[string]bool) map[string]int {
+	candidates := make(map[string]int) // actorID -> score
+	processedActors := make(map[string]bool)
+
 	for i, followedUserID := range following {
 		if i >= 20 { // Limit to prevent excessive API calls
 			break
 		}
 
-		followedUsername := r.extractUsernameFromActorID(followedUserID)
-		if followedUsername == "" {
+		r.processMutualConnections(ctx, userID, followedUserID, userFollows, processedActors, candidates)
+	}
+
+	return candidates
+}
+
+// processMutualConnections processes mutual connections for a single followed user
+func (r *ActorRepository) processMutualConnections(ctx context.Context, userID, followedUserID string, userFollows, processedActors map[string]bool, candidates map[string]int) {
+	followedUsername := r.extractUsernameFromActorID(followedUserID)
+	if followedUsername == "" {
+		return
+	}
+
+	// Get who this followed user follows
+	theirFollowing, _, err := r.deps.GetFollowing(ctx, followedUsername, 50, "")
+	if err != nil {
+		return // Skip if we can't get their following
+	}
+
+	// Score each of their follows
+	for _, candidate := range theirFollowing {
+		if r.shouldSkipCandidate(ctx, userID, candidate, userFollows, processedActors) {
 			continue
 		}
 
-		// Get who this followed user follows
-		theirFollowing, _, err := r.deps.GetFollowing(ctx, followedUsername, 50, "")
-		if err != nil {
-			continue // Skip if we can't get their following
-		}
+		candidates[candidate]++
+		processedActors[candidate] = true
+	}
+}
 
-		// Score each of their follows
-		for _, candidate := range theirFollowing {
-			if userFollows[candidate] || processedActors[candidate] {
-				continue // Skip if user already follows or we've processed
-			}
-
-			// Check if user has dismissed this suggestion
-			dismissedKey := fmt.Sprintf("dismissed_suggestion:%s", candidate)
-			dismissed, _ := r.deps.GetPreference(ctx, userID, dismissedKey)
-			if dismissed != nil {
-				if isDismissed, ok := dismissed.(bool); ok && isDismissed {
-					continue // Skip dismissed suggestions
-				}
-			}
-
-			suggestionCandidates[candidate]++
-			processedActors[candidate] = true
-		}
+// shouldSkipCandidate checks if a candidate should be skipped
+func (r *ActorRepository) shouldSkipCandidate(ctx context.Context, userID, candidate string, userFollows, processedActors map[string]bool) bool {
+	// Skip if user already follows or we've processed
+	if userFollows[candidate] || processedActors[candidate] {
+		return true
 	}
 
-	// Step 2: Get actors with high scores (multiple mutual connections)
-	type scoredActor struct {
-		actorID string
-		score   int
-	}
+	// Check if user has dismissed this suggestion
+	return r.isSuggestionDismissed(ctx, userID, candidate)
+}
 
-	var scored []scoredActor
-	for actorID, score := range suggestionCandidates {
-		scored = append(scored, scoredActor{actorID: actorID, score: score})
+// isSuggestionDismissed checks if a suggestion has been dismissed by the user
+func (r *ActorRepository) isSuggestionDismissed(ctx context.Context, userID, candidate string) bool {
+	dismissedKey := fmt.Sprintf("dismissed_suggestion:%s", candidate)
+	dismissed, _ := r.deps.GetPreference(ctx, userID, dismissedKey)
+	if dismissed != nil {
+		if isDismissed, ok := dismissed.(bool); ok && isDismissed {
+			return true
+		}
+	}
+	return false
+}
+
+// scoreCandidates converts candidates map to sorted slice
+func (r *ActorRepository) scoreCandidates(candidates map[string]int) []suggestionCandidate {
+	scored := make([]suggestionCandidate, 0, len(candidates))
+	for actorID, score := range candidates {
+		scored = append(scored, suggestionCandidate{actorID: actorID, score: score})
 	}
 
 	// Sort by score (highest first)
@@ -548,61 +921,89 @@ func (r *ActorRepository) GetAccountSuggestions(ctx context.Context, userID stri
 		return scored[i].score > scored[j].score
 	})
 
-	// Step 3: Get actor details for top suggestions
+	return scored
+}
+
+// buildSuggestions builds actor suggestions from scored candidates
+func (r *ActorRepository) buildSuggestions(ctx context.Context, scored []suggestionCandidate, limit int) []*activitypub.Actor {
 	var suggestions []*activitypub.Actor
-	for _, scoredActor := range scored {
+
+	for _, candidate := range scored {
 		if len(suggestions) >= limit {
 			break
 		}
 
-		username := r.extractUsernameFromActorID(scoredActor.actorID)
-		if username == "" {
-			continue
-		}
-
-		actor, err := r.GetActor(ctx, username)
-		if err != nil {
-			continue // Skip if we can't get actor details
-		}
-
-		// Only suggest discoverable accounts
-		if actor.Discoverable {
+		actor := r.loadActorIfDiscoverable(ctx, candidate.actorID)
+		if actor != nil {
 			suggestions = append(suggestions, actor)
 		}
 	}
 
-	// Step 4: Fill remaining slots with discoverable users if needed
-	if len(suggestions) < limit {
-		remaining := limit - len(suggestions)
-		discoverable, err := r.getDiscoverableActors(ctx, remaining*2) // Get more to filter
-		if err == nil {
-			for _, actor := range discoverable {
-				if len(suggestions) >= limit {
-					break
-				}
+	return suggestions
+}
 
-				// Skip if already in suggestions or user follows them
-				skip := false
-				for _, existing := range suggestions {
-					if existing.ID == actor.ID {
-						skip = true
-						break
-					}
-				}
-				if skip || userFollows[actor.ID] {
-					continue
-				}
+// loadActorIfDiscoverable loads an actor if it's discoverable
+func (r *ActorRepository) loadActorIfDiscoverable(ctx context.Context, actorID string) *activitypub.Actor {
+	username := r.extractUsernameFromActorID(actorID)
+	if username == "" {
+		return nil
+	}
 
-				suggestions = append(suggestions, actor)
-			}
+	actor, err := r.GetActor(ctx, username)
+	if err != nil {
+		return nil
+	}
+
+	// Only suggest discoverable accounts
+	if !actor.Discoverable {
+		return nil
+	}
+
+	return actor
+}
+
+// fillRemainingSuggestions fills remaining slots with discoverable users
+func (r *ActorRepository) fillRemainingSuggestions(ctx context.Context, suggestions []*activitypub.Actor, userFollows map[string]bool, limit int) []*activitypub.Actor {
+	if len(suggestions) >= limit {
+		return suggestions
+	}
+
+	remaining := limit - len(suggestions)
+	discoverable, err := r.getDiscoverableActors(ctx, remaining*2) // Get more to filter
+	if err != nil {
+		return suggestions
+	}
+
+	for _, actor := range discoverable {
+		if len(suggestions) >= limit {
+			break
+		}
+
+		if !r.shouldIncludeDiscoverable(actor, suggestions, userFollows) {
+			continue
+		}
+
+		suggestions = append(suggestions, actor)
+	}
+
+	return suggestions
+}
+
+// shouldIncludeDiscoverable checks if a discoverable actor should be included
+func (r *ActorRepository) shouldIncludeDiscoverable(actor *activitypub.Actor, suggestions []*activitypub.Actor, userFollows map[string]bool) bool {
+	// Skip if user already follows
+	if userFollows[actor.ID] {
+		return false
+	}
+
+	// Skip if already in suggestions
+	for _, existing := range suggestions {
+		if existing.ID == actor.ID {
+			return false
 		}
 	}
 
-	log.Info("generated account suggestions",
-		zap.Int("requested_limit", limit),
-		zap.Int("returned_count", len(suggestions)))
-
-	return suggestions, nil
+	return true
 }
 
 // RemoveAccountSuggestion removes an account from suggestions for a user
@@ -663,12 +1064,13 @@ func (r *ActorRepository) extractUsernameFromActorID(actorID string) string {
 		username = strings.TrimPrefix(username, "@")
 		return username
 	}
-	
+
 	// Handle direct username format
 	return strings.TrimPrefix(actorID, "@")
 }
 
 // GetCachedRemoteActor retrieves a cached remote actor by handle
+//nolint:dupl // Remote actor caching patterns are shared between actor repositories
 func (r *ActorRepository) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
 	log := r.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("handle", handle))
 

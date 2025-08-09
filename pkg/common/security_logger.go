@@ -7,20 +7,23 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// SecurityLogger is the global logger for security-related events
 var SecurityLogger *zap.Logger
 
 // Security event types
 const (
-	EventAuthFailure        = "auth_failure"
-	EventCSRFFailure        = "csrf_failure"
-	EventTokenReuse         = "token_reuse"
-	EventRateLimitExceed    = "rate_limit_exceed"
-	EventSSRFBlocked        = "ssrf_blocked"
-	EventSuspiciousActivity = "suspicious_activity"
-	EventPasswordFailure    = "password_failure"
-	EventAccountLocked      = "account_locked"
-	EventTokenRevoked       = "token_revoked"
-	EventSecurityAlert      = "security_alert"
+	EventAuthFailure         = "auth_failure"
+	EventCSRFFailure         = "csrf_failure"
+	EventTokenReuse          = "token_reuse"
+	EventRateLimitExceed     = "rate_limit_exceed"
+	EventSSRFBlocked         = "ssrf_blocked"
+	EventSuspiciousActivity  = "suspicious_activity"
+	EventPasswordFailure     = "password_failure"
+	EventAccountLocked       = "account_locked"
+	EventTokenRevoked        = "token_revoked"
+	EventTokenFamilyRevoked  = "token_family_revoked" // #nosec G101 - not a credential
+	EventUserTokensRevoked   = "user_tokens_revoked"  // #nosec G101 - not a credential
+	EventSecurityAlert       = "security_alert"
 )
 
 // InitSecurityLogger initializes the security-specific logger

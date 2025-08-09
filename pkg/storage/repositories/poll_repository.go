@@ -64,13 +64,13 @@ func (r *PollRepository) CreatePoll(ctx context.Context, poll *storage.Poll) err
 
 	// Create DynamORM model
 	model := &models.Poll{
-		ID:          poll.ID,
-		StatusID:    poll.StatusID,
-		CreatedBy:   poll.CreatedBy,
-		Options:     poll.Options,
-		Multiple:    poll.Multiple,
-		HideTotals:  poll.HideTotals,
-		ExpiresAt:   func() time.Time {
+		ID:         poll.ID,
+		StatusID:   poll.StatusID,
+		CreatedBy:  poll.CreatedBy,
+		Options:    poll.Options,
+		Multiple:   poll.Multiple,
+		HideTotals: poll.HideTotals,
+		ExpiresAt: func() time.Time {
 			if poll.ExpiresAt != nil {
 				return *poll.ExpiresAt
 			}
@@ -84,7 +84,9 @@ func (r *PollRepository) CreatePoll(ctx context.Context, poll *storage.Poll) err
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update poll keys: %w", err)
+	}
 
 	// Create the poll
 	err := r.db.WithContext(ctx).Model(model).Create()
@@ -137,7 +139,7 @@ func (r *PollRepository) GetPoll(ctx context.Context, pollID string) (*storage.P
 		VotersCount: model.VotersCount,
 		Votes:       make([]int, len(model.Options)), // Convert from votes map
 	}
-	
+
 	// Calculate votes per option from the votes map
 	for _, indices := range model.Votes {
 		for _, idx := range indices {
@@ -193,7 +195,7 @@ func (r *PollRepository) GetPollByStatusID(ctx context.Context, statusID string)
 		VotersCount: model.VotersCount,
 		Votes:       make([]int, len(model.Options)), // Convert from votes map
 	}
-	
+
 	// Calculate votes per option from the votes map
 	for _, indices := range model.Votes {
 		for _, idx := range indices {
@@ -245,7 +247,7 @@ func (r *PollRepository) VoteOnPoll(ctx context.Context, pollID string, voterID 
 		Where("PK", "=", fmt.Sprintf("POLL#%s", pollID)).
 		Where("SK", "=", fmt.Sprintf("VOTE#%s", voterID)).
 		First(existingVote)
-	
+
 	if err == nil {
 		// Vote already exists
 		return fmt.Errorf("user has already voted on this poll")
@@ -351,15 +353,15 @@ func (r *PollRepository) updatePollCounts(ctx context.Context, poll *storage.Pol
 	for _, count := range poll.VotesCount {
 		totalVotes += count
 	}
-	
+
 	model := &models.Poll{
-		ID:          poll.ID,
-		StatusID:    poll.StatusID,
-		CreatedBy:   poll.CreatedBy,
-		Options:     poll.Options,
-		Multiple:    poll.Multiple,
-		HideTotals:  poll.HideTotals,
-		ExpiresAt:   func() time.Time {
+		ID:         poll.ID,
+		StatusID:   poll.StatusID,
+		CreatedBy:  poll.CreatedBy,
+		Options:    poll.Options,
+		Multiple:   poll.Multiple,
+		HideTotals: poll.HideTotals,
+		ExpiresAt: func() time.Time {
 			if poll.ExpiresAt != nil {
 				return *poll.ExpiresAt
 			}
@@ -373,7 +375,9 @@ func (r *PollRepository) updatePollCounts(ctx context.Context, poll *storage.Pol
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update poll keys: %w", err)
+	}
 
 	// Update the poll
 	err := r.db.WithContext(ctx).Model(model).Update()

@@ -22,12 +22,12 @@ type UserLogin struct {
 
 // TableName returns the DynamoDB table name
 func (UserLogin) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the model before creation
 func (l *UserLogin) BeforeCreate() error {
-	l.PK = fmt.Sprintf("USER#%s", l.Username)
+	l.PK = fmt.Sprintf(KeyPatternUser, l.Username)
 	l.SK = fmt.Sprintf("LOGIN#%s", l.Timestamp.Format(time.RFC3339Nano))
 
 	// Set TTL to 90 days from now

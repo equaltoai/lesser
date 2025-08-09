@@ -33,7 +33,7 @@ type TenantQueryBuilder struct {
 	logger    *zap.Logger
 }
 
-// NewTenantQueryBuilder creates a query builder for a specific tenant
+// ForTenant creates a query builder for a specific tenant
 func (s *TenantService) ForTenant(tenantID string) *TenantQueryBuilder {
 	return &TenantQueryBuilder{
 		db:        s.db,
@@ -54,7 +54,7 @@ func (tqb *TenantQueryBuilder) QueryByEntityType(ctx context.Context, entityType
 		zap.String("tenant_id", tqb.tenantID),
 		zap.String("entity_type", entityType),
 		zap.String("table", tqb.tableName))
-	
+
 	// Use DynamORM's Query API with the tenant-entity GSI
 	return tqb.db.WithContext(ctx).Model(dest).
 		Index("tenant-entity").
@@ -67,12 +67,12 @@ func (tqb *TenantQueryBuilder) QueryByEntityType(ctx context.Context, entityType
 func (tqb *TenantQueryBuilder) GetByID(ctx context.Context, entityType, entityID string, dest interface{}) error {
 	pk := tqb.GetPartitionKey()
 	sk := fmt.Sprintf("%s#%s", entityType, entityID)
-	
+
 	tqb.logger.Debug("GetByID",
 		zap.String("pk", pk),
 		zap.String("sk", sk),
 		zap.String("table", tqb.tableName))
-	
+
 	// Use DynamORM get pattern
 	return tqb.db.WithContext(ctx).Model(dest).
 		Where("pk", "=", pk).
@@ -85,7 +85,7 @@ func (tqb *TenantQueryBuilder) Create(ctx context.Context, model interface{}) er
 	tqb.logger.Debug("Create",
 		zap.String("tenant_id", tqb.tenantID),
 		zap.String("table", tqb.tableName))
-	
+
 	// Use DynamORM create pattern
 	return tqb.db.WithContext(ctx).Model(model).Create()
 }
@@ -96,7 +96,7 @@ func (tqb *TenantQueryBuilder) Update(ctx context.Context, model interface{}, fi
 		zap.String("tenant_id", tqb.tenantID),
 		zap.String("table", tqb.tableName),
 		zap.Strings("fields", fields))
-	
+
 	// Use DynamORM update pattern
 	if len(fields) > 0 {
 		return tqb.db.WithContext(ctx).Model(model).Update(fields...)
@@ -108,12 +108,12 @@ func (tqb *TenantQueryBuilder) Update(ctx context.Context, model interface{}, fi
 func (tqb *TenantQueryBuilder) Delete(ctx context.Context, entityType, entityID string) error {
 	pk := tqb.GetPartitionKey()
 	sk := fmt.Sprintf("%s#%s", entityType, entityID)
-	
+
 	tqb.logger.Debug("Delete",
 		zap.String("pk", pk),
 		zap.String("sk", sk),
 		zap.String("table", tqb.tableName))
-	
+
 	// Use DynamORM delete pattern
 	model := struct {
 		PK string `dynamorm:"pk"`
@@ -129,12 +129,12 @@ func TenantServiceFromContext(ctx *lift.Context, db core.DB, tableName string, l
 	if !ok || tenantID == "" {
 		return nil, fmt.Errorf("tenant context required")
 	}
-	
+
 	service := NewTenantService(db, tableName, logger)
 	return service.ForTenant(tenantID), nil
 }
 
-// RepositoryExample shows how to use the tenant service in a repository pattern
+// UserRepository shows how to use the tenant service in a repository pattern
 type UserRepository struct {
 	service *TenantService
 }
@@ -152,7 +152,7 @@ func (r *UserRepository) CreateUser(ctx *lift.Context, user *TenantUser) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return tenantBuilder.Create(ctx.Context, user)
 }
 
@@ -162,13 +162,13 @@ func (r *UserRepository) GetUser(ctx *lift.Context, userID string) (*TenantUser,
 	if err != nil {
 		return nil, err
 	}
-	
+
 	user := &TenantUser{}
 	err = tenantBuilder.GetByID(ctx.Context, "user", userID, user)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return user, nil
 }
 
@@ -178,12 +178,12 @@ func (r *UserRepository) ListUsers(ctx *lift.Context) ([]*TenantUser, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var users []*TenantUser
 	err = tenantBuilder.QueryByEntityType(ctx.Context, "user", &users)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return users, nil
 }

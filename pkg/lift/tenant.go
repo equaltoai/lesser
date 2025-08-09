@@ -86,13 +86,13 @@ func (tc *TenantContext) ValidateAccess(key string) error {
 type TenantIsolationConfig struct {
 	// EnableStrict enforces tenant isolation on all operations
 	EnableStrict bool
-	
+
 	// AllowCrossTenantRead allows read operations across tenants (for admin use)
 	AllowCrossTenantRead bool
-	
+
 	// SharedResources lists resource types that are shared across tenants
 	SharedResources []string
-	
+
 	// DefaultTenantID is used when no tenant context is available
 	DefaultTenantID string
 }
@@ -125,7 +125,7 @@ func TenantAwareMiddleware(config *TenantIsolationConfig) lift.Middleware {
 			if !config.EnableStrict {
 				return next.Handle(ctx)
 			}
-			
+
 			// Try to resolve tenant, use default if not found
 			tenantID, err := resolveTenantFromContext(ctx)
 			if err != nil && config.DefaultTenantID != "" {
@@ -133,11 +133,11 @@ func TenantAwareMiddleware(config *TenantIsolationConfig) lift.Middleware {
 			} else if err != nil {
 				return ctx.Forbidden("Tenant context required", err)
 			}
-			
+
 			// Store tenant ID and config in context
 			ctx.Set("tenant_id", tenantID)
 			ctx.Set("tenant_config", config)
-			
+
 			return next.Handle(ctx)
 		})
 	}
@@ -207,7 +207,7 @@ func extractTenantFromSubdomainLocal(host string) string {
 // Example: /tenant/tenant1/api/... -> tenant1
 func extractTenantFromPathLocal(path string) string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) >= 2 && parts[0] == "tenant" {
+	if len(parts) >= 2 && parts[0] == PathSegmentTenant {
 		return parts[1]
 	}
 	return ""

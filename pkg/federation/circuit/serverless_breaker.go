@@ -1,3 +1,4 @@
+// Package circuit provides serverless circuit breaker implementation for federation fault tolerance.
 package circuit
 
 import (
@@ -11,7 +12,16 @@ import (
 	"go.uber.org/zap"
 )
 
+// Circuit breaker state constants
+const (
+	stateClosed   = "closed"
+	stateOpen     = "open"
+	stateHalfOpen = "half_open"
+)
+
 // CircuitBreakerRepository interface for dependency injection and testing
+//
+//nolint:revive // CircuitBreaker prefix clarifies this is for circuit breaker pattern
 type CircuitBreakerRepository interface {
 	GetCircuitState(ctx context.Context, instanceID string) (*models.CircuitBreakerState, error)
 	SaveCircuitState(ctx context.Context, state *models.CircuitBreakerState) error
@@ -50,8 +60,8 @@ func NewServerlessCircuitBreaker(repo CircuitBreakerRepository, config *models.C
 func (cb *ServerlessCircuitBreaker) IsOpen(ctx context.Context, instanceID string) bool {
 	state, err := cb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		cb.logger.Error("failed to get circuit state", 
-			zap.String("instanceID", instanceID), 
+		cb.logger.Error("failed to get circuit state",
+			zap.String("instanceID", instanceID),
 			zap.Error(err))
 		return false // Fail open - allow requests if we can't determine state
 	}
@@ -64,8 +74,8 @@ func (cb *ServerlessCircuitBreaker) IsOpen(ctx context.Context, instanceID strin
 func (cb *ServerlessCircuitBreaker) CanAttempt(ctx context.Context, instanceID string) bool {
 	state, err := cb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		cb.logger.Error("failed to get circuit state", 
-			zap.String("instanceID", instanceID), 
+		cb.logger.Error("failed to get circuit state",
+			zap.String("instanceID", instanceID),
 			zap.Error(err))
 		return true // Fail open
 	}
@@ -73,10 +83,10 @@ func (cb *ServerlessCircuitBreaker) CanAttempt(ctx context.Context, instanceID s
 	now := time.Now()
 
 	switch state.Status {
-	case "closed":
+	case stateClosed:
 		return true
 
-	case "open":
+	case stateOpen:
 		// Check if it's time to test recovery
 		if now.After(state.NextRetry) {
 			// Attempt to transition to half-open
@@ -90,13 +100,13 @@ func (cb *ServerlessCircuitBreaker) CanAttempt(ctx context.Context, instanceID s
 		}
 		return false
 
-	case "half_open":
+	case stateHalfOpen:
 		// Allow limited attempts in half-open state
 		return true
 
 	default:
-		cb.logger.Warn("unknown circuit status", 
-			zap.String("instanceID", instanceID), 
+		cb.logger.Warn("unknown circuit status",
+			zap.String("instanceID", instanceID),
 			zap.String("status", state.Status))
 		return true // Fail open for unknown states
 	}
@@ -117,10 +127,10 @@ func (cb *ServerlessCircuitBreaker) RecordSuccess(ctx context.Context, instanceI
 
 		// Handle state transitions
 		switch state.Status {
-		case "half_open":
+		case stateHalfOpen:
 			if state.SuccessCount >= cb.config.SuccessThreshold {
 				// Close the circuit - recovery successful
-				state.Status = "closed"
+				state.Status = stateClosed
 				state.LastStateChange = now
 				state.FailureCount = 0
 				state.SuccessCount = 0
@@ -131,9 +141,9 @@ func (cb *ServerlessCircuitBreaker) RecordSuccess(ctx context.Context, instanceI
 					zap.String("instanceID", instanceID))
 			}
 
-		case "open":
+		case stateOpen:
 			// Shouldn't happen, but handle gracefully by transitioning to half-open
-			state.Status = "half_open"
+			state.Status = stateHalfOpen
 			state.LastStateChange = now
 			state.SuccessCount = 1 // This success counts
 			state.NextRetry = now.Add(cb.config.HalfOpenTimeout)
@@ -180,18 +190,18 @@ func (cb *ServerlessCircuitBreaker) RecordFailure(ctx context.Context, instanceI
 
 		// Handle state transitions
 		switch state.Status {
-		case "closed":
+		case stateClosed:
 			// Check if we should open the circuit
 			if state.ConsecutiveFails >= cb.config.FailureThreshold {
 				cb.openCircuit(state, now, fmt.Sprintf("consecutive failures: %d, error: %s", state.ConsecutiveFails, errorType))
 			}
 
-		case "half_open":
+		case stateHalfOpen:
 			// Single failure in half-open returns to open with backoff
 			cb.openCircuit(state, now, fmt.Sprintf("half-open test failed: %s", errorType))
 			state.SuccessCount = 0
 
-		case "open":
+		case stateOpen:
 			// Already open, just update counters and potentially extend backoff
 			// Don't change state but update next retry time
 			backoffDuration := cb.calculateBackoff(state.GetBackoffDuration())
@@ -226,8 +236,8 @@ func (cb *ServerlessCircuitBreaker) RecordFailure(ctx context.Context, instanceI
 func (cb *ServerlessCircuitBreaker) GetStatus(ctx context.Context, instanceID string) types.CircuitStatus {
 	state, err := cb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		cb.logger.Error("failed to get circuit state", 
-			zap.String("instanceID", instanceID), 
+		cb.logger.Error("failed to get circuit state",
+			zap.String("instanceID", instanceID),
 			zap.Error(err))
 		return types.CircuitClosed // Default to closed if we can't determine
 	}
@@ -236,9 +246,9 @@ func (cb *ServerlessCircuitBreaker) GetStatus(ctx context.Context, instanceID st
 	cb.evaluateCircuitState(ctx, state)
 
 	switch state.Status {
-	case "open":
+	case stateOpen:
 		return types.CircuitOpen
-	case "half_open":
+	case stateHalfOpen:
 		return types.CircuitHalfOpen
 	default:
 		return types.CircuitClosed
@@ -249,8 +259,8 @@ func (cb *ServerlessCircuitBreaker) GetStatus(ctx context.Context, instanceID st
 func (cb *ServerlessCircuitBreaker) GetMetrics(ctx context.Context, instanceID string) map[string]any {
 	state, err := cb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		cb.logger.Error("failed to get circuit state", 
-			zap.String("instanceID", instanceID), 
+		cb.logger.Error("failed to get circuit state",
+			zap.String("instanceID", instanceID),
 			zap.Error(err))
 		return map[string]any{"error": err.Error()}
 	}
@@ -277,11 +287,11 @@ func (cb *ServerlessCircuitBreaker) GetMetrics(ctx context.Context, instanceID s
 // Helper methods
 
 // evaluateCircuitState checks if the current state is still valid and updates if needed
-func (cb *ServerlessCircuitBreaker) evaluateCircuitState(ctx context.Context, state *models.CircuitBreakerState) bool {
+func (cb *ServerlessCircuitBreaker) evaluateCircuitState(_ context.Context, state *models.CircuitBreakerState) bool {
 	now := time.Now()
 
 	switch state.Status {
-	case "open":
+	case stateOpen:
 		// Check if it's time to attempt recovery
 		if now.After(state.NextRetry) {
 			// Don't automatically transition here, let CanAttempt handle it
@@ -289,14 +299,14 @@ func (cb *ServerlessCircuitBreaker) evaluateCircuitState(ctx context.Context, st
 		}
 		return true // Circuit is still open
 
-	case "half_open":
+	case stateHalfOpen:
 		// Check for timeout in half-open state
 		if now.After(state.NextRetry) {
 			// Half-open timed out, return to open
 			go func() {
 				ctx := context.Background()
 				_, err := cb.repo.UpdateCircuitState(ctx, state.InstanceID, func(s *models.CircuitBreakerState) error {
-					s.Status = "open"
+					s.Status = stateOpen
 					s.LastStateChange = now
 					s.NextRetry = now.Add(s.GetBackoffDuration())
 					s.Reason = "half-open timeout"
@@ -318,12 +328,12 @@ func (cb *ServerlessCircuitBreaker) evaluateCircuitState(ctx context.Context, st
 // transitionToHalfOpen transitions circuit from open to half-open
 func (cb *ServerlessCircuitBreaker) transitionToHalfOpen(ctx context.Context, state *models.CircuitBreakerState) error {
 	_, err := cb.repo.UpdateCircuitState(ctx, state.InstanceID, func(s *models.CircuitBreakerState) error {
-		if s.Status != "open" {
+		if s.Status != stateOpen {
 			return fmt.Errorf("cannot transition to half-open from %s state", s.Status)
 		}
 
 		now := time.Now()
-		s.Status = "half_open"
+		s.Status = stateHalfOpen
 		s.LastStateChange = now
 		s.NextRetry = now.Add(cb.config.HalfOpenTimeout)
 		s.SuccessCount = 0
@@ -340,7 +350,7 @@ func (cb *ServerlessCircuitBreaker) transitionToHalfOpen(ctx context.Context, st
 
 // openCircuit transitions the circuit to open state with backoff
 func (cb *ServerlessCircuitBreaker) openCircuit(state *models.CircuitBreakerState, now time.Time, reason string) {
-	state.Status = "open"
+	state.Status = stateOpen
 	state.LastStateChange = now
 	state.Reason = reason
 

@@ -17,9 +17,9 @@ import (
 
 // WebSocketCostTracker handles cost tracking for WebSocket operations
 type WebSocketCostTracker struct {
-	costRepo   *WebSocketCostRepository
-	logger     *zap.Logger
-	serviceName string
+	costRepo     *WebSocketCostRepository
+	logger       *zap.Logger
+	serviceName  string
 	functionName string
 }
 
@@ -51,15 +51,15 @@ type WebSocketOperationContext struct {
 
 // WebSocketOperationResult holds the result of a WebSocket operation
 type WebSocketOperationResult struct {
-	Success             bool
-	ProcessingTimeMs    int64
-	ResponseLatencyMs   int64
-	MessageCount        int
-	MessageSizeBytes    int64
+	Success              bool
+	ProcessingTimeMs     int64
+	ResponseLatencyMs    int64
+	MessageCount         int
+	MessageSizeBytes     int64
 	ConnectionDurationMs int64
-	IdleTimeMs          int64
-	MemoryUsedMB        float64
-	Error               error
+	IdleTimeMs           int64
+	MemoryUsedMB         float64
+	Error                error
 }
 
 // TrackWebSocketOperation tracks costs for a WebSocket operation
@@ -135,14 +135,14 @@ func (t *WebSocketCostTracker) calculateOperationCosts(opCtx *WebSocketOperation
 
 	// Calculate costs based on operation type
 	switch opCtx.OperationType {
-	case "connect", "disconnect":
+	case WSEventConnect, WSEventDisconnect:
 		// Connection costs are primarily time-based
 		if result.ConnectionDurationMs > 0 {
 			connectionMinutes = result.ConnectionDurationMs / (60 * 1000) // Convert ms to minutes
 		}
 		lambdaDurationMs = result.ProcessingTimeMs
 
-	case "message_in", "message_out":
+	case WSEventMessageIn, WSEventMessageOut:
 		// Message costs are per-message plus data transfer
 		messageCount = int64(result.MessageCount)
 		if result.MessageSizeBytes > 0 {
@@ -157,7 +157,7 @@ func (t *WebSocketCostTracker) calculateOperationCosts(opCtx *WebSocketOperation
 	case "idle_time":
 		// Idle time tracking for connection minutes
 		if result.IdleTimeMs > 0 {
-			connectionMinutes = result.IdleTimeMs / (60 * 1000) // Convert ms to minutes  
+			connectionMinutes = result.IdleTimeMs / (60 * 1000) // Convert ms to minutes
 		}
 
 	case "ping", "error":
@@ -177,7 +177,7 @@ func (t *WebSocketCostTracker) calculateOperationCosts(opCtx *WebSocketOperation
 	// Add DynamoDB costs (estimated based on operations)
 	// Connection operations typically do 2-3 DynamoDB operations
 	dynamodbOperations := 2
-	if opCtx.OperationType == "message_in" || opCtx.OperationType == "message_out" {
+	if opCtx.OperationType == WSEventMessageIn || opCtx.OperationType == WSEventMessageOut {
 		dynamodbOperations = 1 // Messages typically do fewer DB operations
 	}
 
@@ -243,7 +243,7 @@ func (t *WebSocketCostTracker) CheckBudgetLimits(ctx context.Context, userID str
 // TrackConnectionLifecycle tracks the complete lifecycle of a WebSocket connection
 func (t *WebSocketCostTracker) TrackConnectionLifecycle(ctx context.Context, connectionID, userID, username string, duration time.Duration, messagesSent, messagesReceived int, totalDataBytes int64) error {
 	durationMs := duration.Milliseconds()
-	
+
 	// Track the connection session as a single operation
 	opCtx := &WebSocketOperationContext{
 		ConnectionID:  connectionID,
@@ -272,7 +272,7 @@ func (t *WebSocketCostTracker) TrackIdleConnections(ctx context.Context, connect
 	for _, conn := range connections {
 		// Calculate idle time since last activity
 		idleTime := now.Sub(conn.LastActivity)
-		
+
 		// Only track if idle for more than 1 minute
 		if idleTime < time.Minute {
 			continue
@@ -358,7 +358,7 @@ func getClientIP(event events.APIGatewayWebsocketProxyRequest) string {
 			}
 		}
 	}
-	return "unknown"
+	return StatusUnknown
 }
 
 func getUserAgent(event events.APIGatewayWebsocketProxyRequest) string {
@@ -370,22 +370,22 @@ func getUserAgent(event events.APIGatewayWebsocketProxyRequest) string {
 			return ua
 		}
 	}
-	return "unknown"
+	return StatusUnknown
 }
 
 func determineConnectionSource(event events.APIGatewayWebsocketProxyRequest) string {
 	userAgent := getUserAgent(event)
-	
+
 	// Simple heuristics to determine source
 	lowerUA := strings.ToLower(userAgent)
-	
+
 	if strings.Contains(lowerUA, "mobile") || strings.Contains(lowerUA, "android") || strings.Contains(lowerUA, "iphone") {
 		return "mobile"
 	}
 	if strings.Contains(lowerUA, "postman") || strings.Contains(lowerUA, "curl") || strings.Contains(lowerUA, "wget") {
 		return "api"
 	}
-	
+
 	return "web"
 }
 
@@ -419,11 +419,11 @@ func determineAuthMethod(event events.APIGatewayWebsocketProxyRequest) string {
 
 func getErrorType(err error) string {
 	if err == nil {
-		return "none"
+		return RepliesPolicyNone
 	}
 
 	errStr := strings.ToLower(err.Error())
-	
+
 	if strings.Contains(errStr, "timeout") {
 		return "timeout"
 	}
@@ -443,90 +443,122 @@ func getErrorType(err error) string {
 		return "budget"
 	}
 
-	return "unknown"
+	return StatusUnknown
 }
 
 // WebSocketCostMiddleware creates a Lift middleware for WebSocket cost tracking
 func WebSocketCostMiddleware(costTracker *WebSocketCostTracker) func(lift.Handler) lift.Handler {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// This middleware is specifically designed for WebSocket events
-			// Extract WebSocket event from Lift context
-			var event events.APIGatewayWebsocketProxyRequest
-			if ctx.Request.RawEvent != nil {
-				if wsEvent, ok := ctx.Request.RawEvent.(events.APIGatewayWebsocketProxyRequest); ok {
-					event = wsEvent
-				} else {
-					// Try to parse from request body
-					if ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-						_ = json.Unmarshal(ctx.Request.Body, &event)
-					}
-				}
-			}
-
-			// Determine operation type from route key
-			operationType := "unknown"
-			switch event.RequestContext.RouteKey {
-			case "$connect":
-				operationType = "connect"
-			case "$disconnect":
-				operationType = "disconnect"
-			case "$default":
-				operationType = "message_in" // Default to message handling
-			}
+			// Extract WebSocket event and operation type
+			event := extractWebSocketEvent(ctx)
+			operationType := determineOperationType(event)
 
 			// Create operation context
 			opCtx := costTracker.CreateOperationContext(ctx, event, operationType)
 
-			// Check budget limits before processing (for non-disconnect operations)
-			if operationType != "disconnect" && opCtx.UserID != "" {
-				budgetStatus, err := costTracker.CheckBudgetLimits(ctx.Request.Context(), opCtx.UserID)
-				if err != nil {
-					// Log but don't fail - budget checking is not critical
-					costTracker.logger.Warn("failed to check budget limits",
-						zap.String("user_id", opCtx.UserID),
-						zap.Error(err))
-				} else if !budgetStatus.AllowConnection {
-					// User has exceeded budget limits
-					return lift.NewLiftError("BUDGET_EXCEEDED", "WebSocket budget exceeded", 429)
-				}
+			// Check budget limits if needed
+			if err := checkBudgetIfRequired(costTracker, ctx, operationType, opCtx); err != nil {
+				return err
 			}
 
-			// Execute the handler
-			startTime := time.Now()
-			err := next.Handle(ctx)
-			processingTime := time.Since(startTime)
+			// Execute the handler and measure performance
+			result, err := executeAndMeasure(next, ctx, operationType)
 
-			// Create operation result
-			result := &WebSocketOperationResult{
-				Success:          err == nil,
-				ProcessingTimeMs: processingTime.Milliseconds(),
-				Error:            err,
-			}
-
-			// Estimate memory usage (placeholder - would need actual metrics in production)
-			result.MemoryUsedMB = 128.0 // Default assumption for 128MB function
-
-			// For message operations, try to extract message details from context
-			if operationType == "message_in" && ctx.Request.Body != nil {
-				result.MessageCount = 1
-				result.MessageSizeBytes = int64(len(ctx.Request.Body))
-			}
-
-			// Track the operation asynchronously to not impact response time
-			go func() {
-				trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				
-				if trackErr := costTracker.TrackWebSocketOperation(trackCtx, opCtx, result); trackErr != nil {
-					costTracker.logger.Error("failed to track WebSocket operation cost",
-						zap.String("connection_id", opCtx.ConnectionID),
-						zap.String("operation_type", operationType),
-						zap.Error(trackErr))
-				}
-			}()
+			// Track the operation asynchronously
+			trackOperationAsync(costTracker, opCtx, operationType, result)
 
 			return err
 		})
 	}
+}
+
+// extractWebSocketEvent extracts the WebSocket event from the Lift context
+func extractWebSocketEvent(ctx *lift.Context) events.APIGatewayWebsocketProxyRequest {
+	var event events.APIGatewayWebsocketProxyRequest
+	
+	if ctx.Request.RawEvent != nil {
+		if wsEvent, ok := ctx.Request.RawEvent.(events.APIGatewayWebsocketProxyRequest); ok {
+			return wsEvent
+		}
+		// Try to parse from request body
+		if len(ctx.Request.Body) > 0 {
+			_ = json.Unmarshal(ctx.Request.Body, &event)
+		}
+	}
+	
+	return event
+}
+
+// determineOperationType determines the operation type from the route key
+func determineOperationType(event events.APIGatewayWebsocketProxyRequest) string {
+	switch event.RequestContext.RouteKey {
+	case "$connect":
+		return "connect"
+	case "$disconnect":
+		return WSEventDisconnect
+	case "$default":
+		return WSEventMessageIn
+	default:
+		return StatusUnknown
+	}
+}
+
+// checkBudgetIfRequired checks budget limits for non-disconnect operations with a user ID
+func checkBudgetIfRequired(costTracker *WebSocketCostTracker, ctx *lift.Context, operationType string, opCtx *WebSocketOperationContext) error {
+	if operationType == WSEventDisconnect || opCtx.UserID == "" {
+		return nil
+	}
+
+	budgetStatus, err := costTracker.CheckBudgetLimits(ctx.Request.Context(), opCtx.UserID)
+	if err != nil {
+		// Log but don't fail - budget checking is not critical
+		costTracker.logger.Warn("failed to check budget limits",
+			zap.String("user_id", opCtx.UserID),
+			zap.Error(err))
+		return nil
+	}
+
+	if !budgetStatus.AllowConnection {
+		return lift.NewLiftError("BUDGET_EXCEEDED", "WebSocket budget exceeded", 429)
+	}
+
+	return nil
+}
+
+// executeAndMeasure executes the handler and measures performance metrics
+func executeAndMeasure(next lift.Handler, ctx *lift.Context, operationType string) (*WebSocketOperationResult, error) {
+	startTime := time.Now()
+	err := next.Handle(ctx)
+	processingTime := time.Since(startTime)
+
+	result := &WebSocketOperationResult{
+		Success:          err == nil,
+		ProcessingTimeMs: processingTime.Milliseconds(),
+		Error:            err,
+		MemoryUsedMB:     128.0, // Default assumption for 128MB function
+	}
+
+	// For message operations, extract message details
+	if operationType == WSEventMessageIn && ctx.Request.Body != nil {
+		result.MessageCount = 1
+		result.MessageSizeBytes = int64(len(ctx.Request.Body))
+	}
+
+	return result, err
+}
+
+// trackOperationAsync tracks the operation asynchronously to not impact response time
+func trackOperationAsync(costTracker *WebSocketCostTracker, opCtx *WebSocketOperationContext, operationType string, result *WebSocketOperationResult) {
+	go func() {
+		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if trackErr := costTracker.TrackWebSocketOperation(trackCtx, opCtx, result); trackErr != nil {
+			costTracker.logger.Error("failed to track WebSocket operation cost",
+				zap.String("connection_id", opCtx.ConnectionID),
+				zap.String("operation_type", operationType),
+				zap.Error(trackErr))
+		}
+	}()
 }

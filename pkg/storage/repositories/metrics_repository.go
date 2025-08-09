@@ -10,11 +10,19 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MetricsRepository handles metrics persistence
 type MetricsRepository struct {
 	db        core.DB
+	tableName string
+	logger    *zap.Logger
+}
+
+// MetricRecordRepository handles new reporting table schema with extensive indexing
+type MetricRecordRepository struct {
+	*BaseRepository[*models.MetricRecord]
 	tableName string
 	logger    *zap.Logger
 }
@@ -29,7 +37,7 @@ func NewMetricsRepository(db core.DB, tableName string, logger *zap.Logger) *Met
 }
 
 // Create creates a new metrics record
-func (r *MetricsRepository) Create(ctx context.Context, metrics *models.Metrics) error {
+func (r *MetricsRepository) Create(_ context.Context, metrics *models.Metrics) error {
 	// Call BeforeCreate to set up the model
 	if err := metrics.BeforeCreate(); err != nil {
 		return fmt.Errorf("before create validation failed: %w", err)
@@ -50,7 +58,7 @@ func (r *MetricsRepository) Create(ctx context.Context, metrics *models.Metrics)
 }
 
 // BatchCreate creates multiple metrics records efficiently
-func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*models.Metrics) error {
+func (r *MetricsRepository) BatchCreate(_ context.Context, metricsList []*models.Metrics) error {
 	if len(metricsList) == 0 {
 		return nil
 	}
@@ -77,7 +85,7 @@ func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*mode
 }
 
 // Get retrieves a metrics record by ID and type
-func (r *MetricsRepository) Get(ctx context.Context, metricType, id string, timestamp time.Time) (*models.Metrics, error) {
+func (r *MetricsRepository) Get(_ context.Context, metricType, id string, timestamp time.Time) (*models.Metrics, error) {
 	metrics := &models.Metrics{}
 
 	// Construct the keys
@@ -97,7 +105,7 @@ func (r *MetricsRepository) Get(ctx context.Context, metricType, id string, time
 }
 
 // ListByType lists metrics by type within a time range
-func (r *MetricsRepository) ListByType(ctx context.Context, metricType string, startTime, endTime time.Time, limit int) ([]*models.Metrics, error) {
+func (r *MetricsRepository) ListByType(_ context.Context, metricType string, startTime, endTime time.Time, limit int) ([]*models.Metrics, error) {
 	var metricsList []*models.Metrics
 
 	// Construct SK range for time-based query
@@ -121,7 +129,7 @@ func (r *MetricsRepository) ListByType(ctx context.Context, metricType string, s
 }
 
 // ListByService lists metrics by service within a time range
-func (r *MetricsRepository) ListByService(ctx context.Context, service string, startTime, endTime time.Time, limit int) ([]*models.Metrics, error) {
+func (r *MetricsRepository) ListByService(_ context.Context, service string, startTime, endTime time.Time, limit int) ([]*models.Metrics, error) {
 	var metricsList []*models.Metrics
 
 	// Use GSI1 for service-based queries
@@ -145,7 +153,7 @@ func (r *MetricsRepository) ListByService(ctx context.Context, service string, s
 }
 
 // GetAggregated retrieves aggregated metrics
-func (r *MetricsRepository) GetAggregated(ctx context.Context, period, metricType string, windowStart time.Time) (*models.AggregatedMetrics, error) {
+func (r *MetricsRepository) GetAggregated(_ context.Context, period, metricType string, windowStart time.Time) (*models.AggregatedMetrics, error) {
 	aggregated := &models.AggregatedMetrics{}
 
 	pk := fmt.Sprintf("metrics_agg#%s#%s", period, metricType)
@@ -164,7 +172,7 @@ func (r *MetricsRepository) GetAggregated(ctx context.Context, period, metricTyp
 }
 
 // CreateAggregated creates an aggregated metrics record
-func (r *MetricsRepository) CreateAggregated(ctx context.Context, aggregated *models.AggregatedMetrics) error {
+func (r *MetricsRepository) CreateAggregated(_ context.Context, aggregated *models.AggregatedMetrics) error {
 	// Call BeforeCreate to set up the model
 	if err := aggregated.BeforeCreate(); err != nil {
 		return fmt.Errorf("before create validation failed: %w", err)
@@ -185,7 +193,7 @@ func (r *MetricsRepository) CreateAggregated(ctx context.Context, aggregated *mo
 }
 
 // UpdateAggregated updates an existing aggregated metrics record
-func (r *MetricsRepository) UpdateAggregated(ctx context.Context, aggregated *models.AggregatedMetrics) error {
+func (r *MetricsRepository) UpdateAggregated(_ context.Context, aggregated *models.AggregatedMetrics) error {
 	// Call BeforeUpdate to set up the model
 	if err := aggregated.BeforeUpdate(); err != nil {
 		return fmt.Errorf("before update validation failed: %w", err)
@@ -201,7 +209,7 @@ func (r *MetricsRepository) UpdateAggregated(ctx context.Context, aggregated *mo
 }
 
 // ListAggregatedByPeriod lists aggregated metrics for a period
-func (r *MetricsRepository) ListAggregatedByPeriod(ctx context.Context, period, metricType string, startTime, endTime time.Time, limit int) ([]*models.AggregatedMetrics, error) {
+func (r *MetricsRepository) ListAggregatedByPeriod(_ context.Context, period, metricType string, startTime, endTime time.Time, limit int) ([]*models.AggregatedMetrics, error) {
 	var aggregatedList []*models.AggregatedMetrics
 
 	pk := fmt.Sprintf("metrics_agg#%s#%s", period, metricType)
@@ -262,7 +270,7 @@ func (r *MetricsRepository) GetServiceStats(ctx context.Context, service string,
 	for _, m := range metrics {
 		totalSum += m.Sum
 		totalCount += m.Count
-		
+
 		if m.Min < stats.Min {
 			stats.Min = m.Min
 		}
@@ -294,12 +302,12 @@ func (r *MetricsRepository) Aggregate(ctx context.Context, metricType, period st
 
 	// Calculate aggregated values
 	aggregated := &models.AggregatedMetrics{
-		Period:      period,
-		Type:        metricType,
-		Service:     metrics[0].Service, // Assume same service for now
-		WindowStart: windowStart,
-		WindowEnd:   windowEnd,
-		Percentiles: make(map[string]float64),
+		Period:             period,
+		Type:               metricType,
+		Service:            metrics[0].Service, // Assume same service for now
+		WindowStart:        windowStart,
+		WindowEnd:          windowEnd,
+		Percentiles:        make(map[string]float64),
 		DimensionBreakdown: make(map[string]models.DimensionStats),
 	}
 
@@ -310,7 +318,7 @@ func (r *MetricsRepository) Aggregate(ctx context.Context, metricType, period st
 	for _, m := range metrics {
 		aggregated.TotalCount += m.Count
 		aggregated.TotalSum += m.Sum
-		
+
 		if m.Min < aggregated.Min {
 			aggregated.Min = m.Min
 		}
@@ -454,4 +462,309 @@ func calculateStandardDeviation(values []float64, mean float64) float64 {
 
 	variance := sumSquaredDiff / float64(len(values))
 	return math.Sqrt(variance)
+}
+
+// NewMetricRecordRepository creates a new metric record repository following BaseRepository pattern
+func NewMetricRecordRepository(db core.DB, tableName string, logger *zap.Logger) *MetricRecordRepository {
+	return &MetricRecordRepository{
+		BaseRepository: NewBaseRepository[*models.MetricRecord](db, tableName, logger),
+		tableName:      tableName,
+		logger:         logger,
+	}
+}
+
+// GetMetricsByService queries metrics by service within a time range using GSI1
+func (r *MetricRecordRepository) GetMetricsByService(ctx context.Context, serviceName string, startTime, endTime time.Time) ([]*models.MetricRecord, error) {
+	var records []*models.MetricRecord
+
+	gsi1pk := fmt.Sprintf("SERVICE#%s", serviceName)
+	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
+	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
+
+	err := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+		Index("service-index").
+		Where("GSI1PK", "=", gsi1pk).
+		Where("GSI1SK", ">=", startSK).
+		Where("GSI1SK", "<=", endSK).
+		OrderBy("GSI1SK", "DESC").
+		All(&records)
+
+	if err != nil {
+		r.logger.Error("failed to get metrics by service",
+			zap.Error(err),
+			zap.String("service", serviceName),
+			zap.Time("startTime", startTime),
+			zap.Time("endTime", endTime))
+		return nil, MapErrorWithContext(err, "failed to get metrics by service")
+	}
+
+	return records, nil
+}
+
+// GetMetricsByType queries metrics by type within a time range using GSI2
+func (r *MetricRecordRepository) GetMetricsByType(ctx context.Context, metricType string, startTime, endTime time.Time) ([]*models.MetricRecord, error) {
+	var records []*models.MetricRecord
+
+	gsi2pk := fmt.Sprintf("METRIC_TYPE#%s", metricType)
+	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
+	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
+
+	err := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+		Index("metric-type-index").
+		Where("GSI2PK", "=", gsi2pk).
+		Where("GSI2SK", ">=", startSK).
+		Where("GSI2SK", "<=", endSK).
+		OrderBy("GSI2SK", "DESC").
+		All(&records)
+
+	if err != nil {
+		r.logger.Error("failed to get metrics by type",
+			zap.Error(err),
+			zap.String("metricType", metricType),
+			zap.Time("startTime", startTime),
+			zap.Time("endTime", endTime))
+		return nil, MapErrorWithContext(err, "failed to get metrics by type")
+	}
+
+	return records, nil
+}
+
+// GetMetricsByDate queries metrics by date and service using GSI3
+func (r *MetricRecordRepository) GetMetricsByDate(ctx context.Context, date time.Time, serviceName string) ([]*models.MetricRecord, error) {
+	var records []*models.MetricRecord
+
+	gsi3pk := fmt.Sprintf("DATE#%s", date.Format(common.DateFormat))
+
+	// Build the query
+	query := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+		Index("date-index").
+		Where("GSI3PK", "=", gsi3pk)
+
+	// If service is specified, add prefix filter
+	if serviceName != "" {
+		skPrefix := fmt.Sprintf("SERVICE#%s#", serviceName)
+		query = query.Where("GSI3SK", "BEGINS_WITH", skPrefix)
+	}
+
+	err := query.OrderBy("GSI3SK", "DESC").All(&records)
+
+	if err != nil {
+		r.logger.Error("failed to get metrics by date",
+			zap.Error(err),
+			zap.Time("date", date),
+			zap.String("service", serviceName))
+		return nil, MapErrorWithContext(err, "failed to get metrics by date")
+	}
+
+	return records, nil
+}
+
+// GetMetricsByAggregationLevel queries metrics by aggregation level within a time range using GSI4
+func (r *MetricRecordRepository) GetMetricsByAggregationLevel(ctx context.Context, level string, startTime, endTime time.Time) ([]*models.MetricRecord, error) {
+	var records []*models.MetricRecord
+
+	gsi4pk := fmt.Sprintf("AGGREGATION#%s", level)
+	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
+	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
+
+	err := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+		Index("aggregation-index").
+		Where("GSI4PK", "=", gsi4pk).
+		Where("GSI4SK", ">=", startSK).
+		Where("GSI4SK", "<=", endSK).
+		OrderBy("GSI4SK", "DESC").
+		All(&records)
+
+	if err != nil {
+		r.logger.Error("failed to get metrics by aggregation level",
+			zap.Error(err),
+			zap.String("level", level),
+			zap.Time("startTime", startTime),
+			zap.Time("endTime", endTime))
+		return nil, MapErrorWithContext(err, "failed to get metrics by aggregation level")
+	}
+
+	return records, nil
+}
+
+// CreateMetricRecord creates a new metric record
+func (r *MetricRecordRepository) CreateMetricRecord(ctx context.Context, record *models.MetricRecord) error {
+	// Call BeforeCreate to set up the model
+	if err := record.BeforeCreate(); err != nil {
+		return fmt.Errorf("before create validation failed: %w", err)
+	}
+
+	// Use BaseRepository Create method
+	err := r.Create(ctx, record)
+	if err != nil {
+		r.logger.Error("failed to create metric record",
+			zap.Error(err),
+			zap.String("metricType", record.MetricType),
+			zap.String("service", record.ServiceName),
+			zap.String("level", record.AggregationLevel))
+		return fmt.Errorf("failed to create metric record: %w", err)
+	}
+
+	r.logger.Debug("created metric record",
+		zap.String("id", record.MetricID),
+		zap.String("type", record.MetricType),
+		zap.String("service", record.ServiceName),
+		zap.String("level", record.AggregationLevel))
+
+	return nil
+}
+
+// BatchCreateMetricRecords creates multiple metric records efficiently
+func (r *MetricRecordRepository) BatchCreateMetricRecords(ctx context.Context, records []*models.MetricRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	// Prepare all records
+	for _, record := range records {
+		if err := record.BeforeCreate(); err != nil {
+			return fmt.Errorf("before create validation failed for record %s: %w", record.MetricID, err)
+		}
+	}
+
+	// Create each record (in a real implementation, this would use DynamORM's batch capabilities)
+	var errors []error
+	for _, record := range records {
+		if err := r.Create(ctx, record); err != nil {
+			r.logger.Error("failed to create metric record in batch",
+				zap.String("id", record.MetricID),
+				zap.Error(err))
+			errors = append(errors, err)
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("batch create had %d errors, first: %w", len(errors), errors[0])
+	}
+
+	r.logger.Debug("batch created metric records", zap.Int("count", len(records)))
+	return nil
+}
+
+// GetMetricRecord retrieves a single metric record by its keys
+func (r *MetricRecordRepository) GetMetricRecord(ctx context.Context, metricType, bucket, timestamp string) (*models.MetricRecord, error) {
+	record := &models.MetricRecord{}
+
+	pk := fmt.Sprintf("METRICS#%s#%s", metricType, bucket)
+	sk := timestamp
+
+	err := r.Get(ctx, pk, sk, record)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metric record: %w", err)
+	}
+
+	return record, nil
+}
+
+// UpdateMetricRecord updates an existing metric record
+func (r *MetricRecordRepository) UpdateMetricRecord(ctx context.Context, record *models.MetricRecord) error {
+	// Call BeforeUpdate to set up the model
+	if err := record.BeforeUpdate(); err != nil {
+		return fmt.Errorf("before update validation failed: %w", err)
+	}
+
+	// Use BaseRepository Update method
+	err := r.Update(ctx, record)
+	if err != nil {
+		r.logger.Error("failed to update metric record",
+			zap.Error(err),
+			zap.String("metricType", record.MetricType),
+			zap.String("service", record.ServiceName))
+		return fmt.Errorf("failed to update metric record: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteMetricRecord deletes a metric record by its keys
+func (r *MetricRecordRepository) DeleteMetricRecord(ctx context.Context, metricType, bucket, timestamp string) error {
+	pk := fmt.Sprintf("METRICS#%s#%s", metricType, bucket)
+	sk := timestamp
+
+	err := r.Delete(ctx, pk, sk)
+	if err != nil {
+		r.logger.Error("failed to delete metric record",
+			zap.Error(err),
+			zap.String("pk", pk),
+			zap.String("sk", sk))
+		return fmt.Errorf("failed to delete metric record: %w", err)
+	}
+
+	return nil
+}
+
+// GetServiceMetricsStats calculates statistics for a service's metrics
+func (r *MetricRecordRepository) GetServiceMetricsStats(ctx context.Context, serviceName string, metricType string, startTime, endTime time.Time) (*MetricRecordStats, error) {
+	records, err := r.GetMetricsByService(ctx, serviceName, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service metrics: %w", err)
+	}
+
+	// Filter by metric type if specified
+	if metricType != "" {
+		filtered := make([]*models.MetricRecord, 0)
+		for _, record := range records {
+			if record.MetricType == metricType {
+				filtered = append(filtered, record)
+			}
+		}
+		records = filtered
+	}
+
+	stats := &MetricRecordStats{
+		Service:   serviceName,
+		Type:      metricType,
+		StartTime: startTime,
+		EndTime:   endTime,
+		Count:     len(records),
+	}
+
+	if stats.Count == 0 {
+		return stats, nil
+	}
+
+	// Calculate statistics
+	var totalSum float64
+	var totalCount int64
+	stats.Min = records[0].Min
+	stats.Max = records[0].Max
+
+	for _, record := range records {
+		totalSum += record.Sum
+		totalCount += record.Count
+
+		if record.Min < stats.Min {
+			stats.Min = record.Min
+		}
+		if record.Max > stats.Max {
+			stats.Max = record.Max
+		}
+	}
+
+	if totalCount > 0 {
+		stats.Average = totalSum / float64(totalCount)
+	}
+	stats.TotalSum = totalSum
+	stats.TotalCount = totalCount
+
+	return stats, nil
+}
+
+// MetricRecordStats represents statistics for metric records
+type MetricRecordStats struct {
+	Service    string
+	Type       string
+	StartTime  time.Time
+	EndTime    time.Time
+	Count      int
+	TotalCount int64
+	TotalSum   float64
+	Average    float64
+	Min        float64
+	Max        float64
 }

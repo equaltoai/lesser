@@ -1,3 +1,4 @@
+// Package main implements the federation-delivery Lambda function for delivering ActivityPub messages to remote instances.
 package main
 
 // Federation Delivery Lambda Function
@@ -42,7 +43,7 @@ import (
 
 // FederationDeliveryProcessor handles federation delivery from SQS messages
 type FederationDeliveryProcessor struct {
-	repos           core.RepositoryStorage      // Repository storage for data access
+	repos           core.RepositoryStorage // Repository storage for data access
 	deliveryService *federation.DeliveryService
 	cfg             *config.Config
 	sqsClient       *sqs.Client
@@ -60,26 +61,32 @@ type FederationStorageAdapter struct {
 // Ensure we implement the FederationStorage interface
 var _ federation.FederationStorage = (*FederationStorageAdapter)(nil)
 
+// GetActorPrivateKey retrieves the private key for an actor
 func (f *FederationStorageAdapter) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
 	return f.repos.Account().GetActorPrivateKey(ctx, username)
 }
 
+// GetActor retrieves an actor by username
 func (f *FederationStorageAdapter) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
 	return f.repos.Account().GetActor(ctx, username)
 }
 
+// GetFollowers retrieves a paginated list of followers for a user
 func (f *FederationStorageAdapter) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
 	return f.repos.Relationship().GetFollowers(ctx, username, limit, cursor)
 }
 
+// GetCachedRemoteActor retrieves a cached remote actor by ID
 func (f *FederationStorageAdapter) GetCachedRemoteActor(ctx context.Context, actorID string) (*activitypub.Actor, error) {
 	return f.repos.Actor().GetCachedRemoteActor(ctx, actorID)
 }
 
+// CacheRemoteActor caches a remote actor with a TTL
 func (f *FederationStorageAdapter) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
 	return f.repos.User().CacheRemoteActor(ctx, handle, actor, ttl)
 }
 
+// RecordFederationActivity records a federation activity for analytics
 func (f *FederationStorageAdapter) RecordFederationActivity(ctx context.Context, activity *storage.FederationActivity) error {
 	return f.repos.Federation().RecordFederationActivity(ctx, activity)
 }
@@ -89,6 +96,12 @@ func init() {
 	logger := common.Logger()
 	cfg := config.Get()
 
+	// Initialize AWS SQS client config first
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
+
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
@@ -96,22 +109,17 @@ func init() {
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsCfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
-	
+
 	// Create federation storage adapter that implements FederationStorage interface
 	federationStore := &FederationStorageAdapter{repos: repos}
 
 	// Initialize federation delivery service
 	deliveryService := federation.NewDeliveryService(federationStore)
 
-	// Initialize AWS SQS client
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
-	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
-	}
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Get queue URL from environment
@@ -177,20 +185,20 @@ func main() {
 			processor.logger.Info("processing SQS batch",
 				zap.String("request_id", requestID),
 				zap.Time("start_time", start))
-			
+
 			err := next.Handle(ctx)
-			
+
 			processor.logger.Info("completed SQS batch",
 				zap.String("request_id", requestID),
 				zap.Duration("duration", time.Since(start)),
 				zap.Error(err))
-			
+
 			return err
 		})
 	})
 
 	// Handle SQS events (using Lift pattern from notification-processor)
-	app.Handle("POST", "/", func(ctx *lift.Context) error {
+	_ = app.Handle("POST", "/", func(ctx *lift.Context) error {
 		// Parse event from context
 		var event events.SQSEvent
 		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
@@ -387,16 +395,26 @@ func (p *FederationDeliveryProcessor) requeueDelivery(ctx context.Context, msg *
 	}
 
 	// Calculate delay seconds (SQS DelaySeconds max is 900 seconds / 15 minutes)
-	delaySeconds := delayMinutes * 60
+	delayMinutesInt := delayMinutes
+	if delayMinutesInt < 0 {
+		delayMinutesInt = 0
+	}
+
+	delaySeconds := delayMinutesInt * 60
 	if delaySeconds > 900 {
 		delaySeconds = 900 // Max SQS delay
 	}
+
+	// Since SQS DelaySeconds is always bounded to [0, 900],
+	// and 900 < max int32 (2,147,483,647), the conversion is mathematically safe
+	// #nosec G115 - Safe conversion: SQS DelaySeconds max is 900, well within int32 range
+	delaySeconds32 := int32(delaySeconds)
 
 	// Send message to SQS with delay
 	_, err = p.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
 		QueueUrl:     aws.String(p.queueURL),
 		MessageBody:  aws.String(string(messageBody)),
-		DelaySeconds: int32(delaySeconds),
+		DelaySeconds: delaySeconds32,
 		MessageAttributes: map[string]types.MessageAttributeValue{
 			"retry_count": {
 				StringValue: aws.String(fmt.Sprintf("%d", msg.RetryCount)),

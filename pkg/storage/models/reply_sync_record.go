@@ -15,20 +15,20 @@ type ReplySyncRecord struct {
 	StatusID    string    `json:"status_id"`    // The status we're syncing replies for
 	SyncAttempt time.Time `json:"sync_attempt"` // When the sync was attempted
 	SyncResult  string    `json:"sync_result"`  // "success", "partial", "failed"
-	
+
 	// Sync details
 	TotalReplies   int `json:"total_replies"`   // Total replies known to exist
 	FetchedReplies int `json:"fetched_replies"` // Successfully fetched replies
 	FailedReplies  int `json:"failed_replies"`  // Failed to fetch
-	
+
 	// Error tracking
-	LastError     string `json:"last_error,omitempty"`     // Last error message
-	RetryCount    int    `json:"retry_count"`              // Number of retries
-	NextRetryAt   *time.Time `json:"next_retry_at,omitempty"` // When to retry next
-	
+	LastError   string     `json:"last_error,omitempty"`    // Last error message
+	RetryCount  int        `json:"retry_count"`             // Number of retries
+	NextRetryAt *time.Time `json:"next_retry_at,omitempty"` // When to retry next
+
 	// TTL for automatic cleanup (30 days)
 	TTL int64 `dynamorm:"ttl" json:"ttl"`
-	
+
 	// Timestamps
 	CreatedAt time.Time `dynamorm:"created_at" json:"created_at"`
 	UpdatedAt time.Time `dynamorm:"updated_at" json:"updated_at"`
@@ -74,12 +74,12 @@ func (r *ReplySyncRecord) BeforeUpdate() error {
 
 // TableName returns the DynamoDB table name
 func (ReplySyncRecord) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // MarkSuccess marks the sync as successful
 func (r *ReplySyncRecord) MarkSuccess(fetched int) {
-	r.SyncResult = "success"
+	r.SyncResult = StatusSuccess
 	r.FetchedReplies = fetched
 	r.LastError = ""
 	r.NextRetryAt = nil
@@ -94,34 +94,43 @@ func (r *ReplySyncRecord) MarkPartial(fetched, failed int) {
 
 // MarkFailed marks the sync as failed and schedules retry
 func (r *ReplySyncRecord) MarkFailed(errorMsg string) {
-	r.SyncResult = "failed"
+	r.SyncResult = StatusFailed
 	r.LastError = errorMsg
 	r.RetryCount++
-	
+
 	// Exponential backoff: 1h, 4h, 16h, then 24h max
-	retryDelay := time.Duration(1<<uint(r.RetryCount)) * time.Hour
+	// Safe int to uint conversion for bitshift
+	var shiftAmount uint
+	if r.RetryCount < 0 {
+		shiftAmount = 0
+	} else if r.RetryCount > 63 { // Prevent overflow in bitshift
+		shiftAmount = 63
+	} else {
+		shiftAmount = uint(r.RetryCount)
+	}
+	retryDelay := time.Duration(1<<shiftAmount) * time.Hour
 	if retryDelay > 24*time.Hour {
 		retryDelay = 24 * time.Hour
 	}
-	
+
 	nextRetry := time.Now().Add(retryDelay)
 	r.NextRetryAt = &nextRetry
 }
 
 // ShouldRetry returns whether this sync should be retried
 func (r *ReplySyncRecord) ShouldRetry() bool {
-	if r.SyncResult == "success" {
+	if r.SyncResult == StatusSuccess {
 		return false
 	}
-	
+
 	if r.RetryCount >= 5 { // Max 5 retries
 		return false
 	}
-	
+
 	if r.NextRetryAt == nil {
 		return true // No retry time set, can retry immediately
 	}
-	
+
 	return time.Now().After(*r.NextRetryAt)
 }
 

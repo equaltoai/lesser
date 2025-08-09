@@ -21,7 +21,7 @@ type QuotePermissions struct {
 // UpdateKeys updates the composite keys based on the quote permissions
 func (q *QuotePermissions) UpdateKeys() {
 	// Primary key: USER#username
-	q.PK = fmt.Sprintf("USER#%s", q.Username)
+	q.PK = fmt.Sprintf(KeyPatternUser, q.Username)
 	q.SK = "QUOTE_PERMISSIONS"
 }
 

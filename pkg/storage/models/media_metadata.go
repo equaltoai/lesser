@@ -21,21 +21,21 @@ type MediaMetadata struct {
 	MediaID string `json:"media_id"`
 
 	// Basic metadata
-	OriginalURL        string  `json:"original_url,omitempty"`
-	Duration           float64 `json:"duration"`           // Duration in seconds
-	Width              int     `json:"width"`              // Video width in pixels
-	Height             int     `json:"height"`             // Video height in pixels
-	Bitrate            int     `json:"bitrate"`            // Bitrate in kbps
-	FileSize           int64   `json:"file_size"`          // Size in bytes
-	ProcessedAt        time.Time `json:"processed_at"`     // When processing completed
+	OriginalURL        string    `json:"original_url,omitempty"`
+	Duration           float64   `json:"duration"`            // Duration in seconds
+	Width              int       `json:"width"`               // Video width in pixels
+	Height             int       `json:"height"`              // Video height in pixels
+	Bitrate            int       `json:"bitrate"`             // Bitrate in kbps
+	FileSize           int64     `json:"file_size"`           // Size in bytes
+	ProcessedAt        time.Time `json:"processed_at"`        // When processing completed
 	AvailableQualities []string  `json:"available_qualities"` // Available quality levels
-	Status             string    `json:"status"`           // pending, processing, complete, failed
+	Status             string    `json:"status"`              // pending, processing, complete, failed
 
 	// Codec information for HLS/DASH manifest generation
-	VideoCodec   string                     `json:"video_codec,omitempty"`   // e.g., "avc1.640028"
-	AudioCodec   string                     `json:"audio_codec,omitempty"`   // e.g., "mp4a.40.2"
-	VideoProfile string                     `json:"video_profile,omitempty"` // e.g., "High", "Main", "Baseline"
-	VideoLevel   string                     `json:"video_level,omitempty"`   // e.g., "4.0", "3.1"
+	VideoCodec      string                      `json:"video_codec,omitempty"`      // e.g., "avc1.640028"
+	AudioCodec      string                      `json:"audio_codec,omitempty"`      // e.g., "mp4a.40.2"
+	VideoProfile    string                      `json:"video_profile,omitempty"`    // e.g., "High", "Main", "Baseline"
+	VideoLevel      string                      `json:"video_level,omitempty"`      // e.g., "4.0", "3.1"
 	QualitySettings map[string]QualityCodecInfo `json:"quality_settings,omitempty"` // Per-quality codec info
 
 	// Timestamps
@@ -57,17 +57,17 @@ type QualityCodecInfo struct {
 
 // TableName returns the DynamoDB table name
 func (MediaMetadata) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys sets the primary and GSI keys based on the media metadata
 func (m *MediaMetadata) UpdateKeys() {
 	// Set primary keys following legacy pattern: MEDIA#{mediaID} / METADATA
 	m.PK = fmt.Sprintf("MEDIA#%s", m.MediaID)
-	m.SK = "METADATA"
+	m.SK = SKMetadata
 
 	// Set GSI1 keys for status-based queries
-	m.GSI1PK = fmt.Sprintf("STATUS#%s", m.Status)
+	m.GSI1PK = fmt.Sprintf(KeyPatternStatus, m.Status)
 	m.GSI1SK = fmt.Sprintf("PROCESSED#%s", m.ProcessedAt.Format(time.RFC3339))
 }
 
@@ -84,7 +84,7 @@ func (m *MediaMetadata) BeforeCreate() error {
 
 	// Set default status if not set
 	if m.Status == "" {
-		m.Status = "pending"
+		m.Status = StatusPending
 	}
 
 	// Ensure keys are set
@@ -98,7 +98,7 @@ func (m *MediaMetadata) BeforeUpdate() error {
 	m.UpdatedAt = time.Now()
 
 	// Update processed timestamp when status changes to complete
-	if m.Status == "complete" && m.ProcessedAt.IsZero() {
+	if m.Status == StatusComplete && m.ProcessedAt.IsZero() {
 		m.ProcessedAt = m.UpdatedAt
 	}
 
@@ -115,7 +115,7 @@ func (m *MediaMetadata) Validate() error {
 	}
 
 	// Validate status
-	validStatuses := []string{"pending", "processing", "complete", "failed"}
+	validStatuses := []string{StatusPending, StatusProcessing, StatusComplete, StatusFailed}
 	isValidStatus := false
 	for _, vs := range validStatuses {
 		if m.Status == vs {
@@ -150,27 +150,27 @@ func (m *MediaMetadata) Validate() error {
 
 // IsComplete returns true if the media processing is complete
 func (m *MediaMetadata) IsComplete() bool {
-	return m.Status == "complete"
+	return m.Status == StatusComplete
 }
 
 // IsFailed returns true if the media processing failed
 func (m *MediaMetadata) IsFailed() bool {
-	return m.Status == "failed"
+	return m.Status == StatusFailed
 }
 
 // IsProcessing returns true if the media is currently being processed
 func (m *MediaMetadata) IsProcessing() bool {
-	return m.Status == "processing"
+	return m.Status == StatusProcessing
 }
 
 // IsPending returns true if the media is pending processing
 func (m *MediaMetadata) IsPending() bool {
-	return m.Status == "pending"
+	return m.Status == StatusPending
 }
 
 // SetProcessing marks the media as being processed
 func (m *MediaMetadata) SetProcessing() {
-	m.Status = "processing"
+	m.Status = StatusProcessing
 	m.UpdateKeys()
 }
 
@@ -183,7 +183,7 @@ func (m *MediaMetadata) SetComplete() {
 
 // SetFailed marks the media as processing failed
 func (m *MediaMetadata) SetFailed() {
-	m.Status = "failed"
+	m.Status = StatusFailed
 	m.UpdateKeys()
 	// Set TTL for failed media to be cleaned up after 7 days
 	m.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()

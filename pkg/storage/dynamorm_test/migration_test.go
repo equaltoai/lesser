@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	testconst "github.com/equaltoai/lesser/pkg/testing"
 	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -65,10 +66,10 @@ func createLegacyUserItem(username, email string, createdAt time.Time) LegacyUse
 func createLegacyActorItem(username string, displayName string, createdAt time.Time) LegacyActorItem {
 	actor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
-			Context:           []string{"https://www.w3.org/ns/activitystreams"},
-			ID:                fmt.Sprintf("https://example.com/users/%s", username),
-			Type:              "Person",
-			Published:         &createdAt,
+			Context:   []string{"https://www.w3.org/ns/activitystreams"},
+			ID:        fmt.Sprintf("https://example.com/users/%s", username),
+			Type:      "Person",
+			Published: &createdAt,
 		},
 		PreferredUsername: username,
 		Name:              displayName,
@@ -113,18 +114,7 @@ func createLegacyActorItem(username string, displayName string, createdAt time.T
 	return item
 }
 
-func createLegacyActivityItem(actorUsername, activityID string, activityType string, createdAt time.Time) LegacyActivityItem {
-	return LegacyActivityItem{
-		"PK":           &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorUsername)},
-		"SK":           &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTIVITY#%s", activityID)},
-		"activity_id":  &types.AttributeValueMemberS{Value: activityID},
-		"actor":        &types.AttributeValueMemberS{Value: actorUsername},
-		"type":         &types.AttributeValueMemberS{Value: activityType},
-		"created_at":   &types.AttributeValueMemberS{Value: createdAt.Format(time.RFC3339)},
-		"GSI1PK":       &types.AttributeValueMemberS{Value: "ACTIVITIES"},
-		"GSI1SK":       &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", createdAt.Format(time.RFC3339), activityID)},
-	}
-}
+// createLegacyActivityItem removed - not used in current tests
 
 // Key pattern validation utilities
 
@@ -254,7 +244,7 @@ func TestReadLegacyUserData(t *testing.T) {
 			}).Return(nil)
 
 			// Test reading with DynamORM repository
-			repo := repositories.NewUserRepository(mockDB, "test-table", logger)
+			repo := repositories.NewUserRepository(mockDB, testconst.TestTableName, logger)
 			user, err := repo.GetUser(context.Background(), tt.username)
 
 			// Verify read was successful
@@ -323,8 +313,8 @@ func TestReadLegacyActorData(t *testing.T) {
 		// Mock ActivityPub actor object
 		actor.Actor = &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
-				ID:                fmt.Sprintf("https://example.com/users/%s", username),
-				Type:              "Person",
+				ID:   fmt.Sprintf("https://example.com/users/%s", username),
+				Type: "Person",
 			},
 			PreferredUsername: username,
 			Name:              displayName,
@@ -332,7 +322,7 @@ func TestReadLegacyActorData(t *testing.T) {
 	}).Return(nil)
 
 	// Test reading with DynamORM repository
-	repo := repositories.NewActorRepository(mockDB, "test-table", logger)
+	repo := repositories.NewActorRepository(mockDB, testconst.TestTableName, logger)
 	actor, err := repo.GetActor(context.Background(), username)
 
 	// Verify read was successful
@@ -367,12 +357,12 @@ func TestWriteCompatibleUserData(t *testing.T) {
 	// Setup expectations for user creation
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
-	mockQuery.On("Create").Run(func(args mock.Arguments) {
+	mockQuery.On("Create").Run(func(_ mock.Arguments) {
 		// Verify the model was set up correctly before creation
 		// This would happen in BeforeCreate hook
 	}).Return(nil)
 
-	repo := repositories.NewUserRepository(mockDB, "test-table", logger)
+	repo := repositories.NewUserRepository(mockDB, testconst.TestTableName, logger)
 	err := repo.CreateUser(context.Background(), user)
 
 	require.NoError(t, err)
@@ -427,7 +417,7 @@ func TestWriteCompatibleActorData(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Create").Return(nil)
 
-	repo := repositories.NewActorRepository(mockDB, "test-table", logger)
+	repo := repositories.NewActorRepository(mockDB, testconst.TestTableName, logger)
 	err := repo.CreateActor(context.Background(), apActor, "test-private-key")
 
 	require.NoError(t, err)
@@ -479,21 +469,21 @@ func TestGSIQueriesWithLegacyData(t *testing.T) {
 		mockQuery.On("All", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
 			users := args.Get(0).(*[]models.User)
 			user := &models.User{
-				PK:           fmt.Sprintf("USER#%s", username),
-				SK:           "METADATA",
-				Username:     username,
-				Email:        email,
-				GSI2PK:       fmt.Sprintf("EMAIL#%s", strings.ToLower(email)),
-				GSI2SK:       fmt.Sprintf("USERNAME#%s", username),
-				CreatedAt:    time.Now(),
-				UpdatedAt:    time.Now(),
-				Role:         "user",
-				Approved:     true,
+				PK:        fmt.Sprintf("USER#%s", username),
+				SK:        "METADATA",
+				Username:  username,
+				Email:     email,
+				GSI2PK:    fmt.Sprintf("EMAIL#%s", strings.ToLower(email)),
+				GSI2SK:    fmt.Sprintf("USERNAME#%s", username),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+				Role:      "user",
+				Approved:  true,
 			}
 			*users = []models.User{*user}
 		}).Return(nil)
 
-		repo := repositories.NewUserRepository(mockDB, "test-table", logger)
+		repo := repositories.NewUserRepository(mockDB, testconst.TestTableName, logger)
 		user, err := repo.GetUserByEmail(context.Background(), email)
 
 		require.NoError(t, err)
@@ -523,13 +513,13 @@ func TestGSIQueriesWithLegacyData(t *testing.T) {
 		mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 			actors := args.Get(0).(*[]models.Actor)
 			actor := &models.Actor{
-				PK:         fmt.Sprintf("ACTOR#%s", username),
-				SK:         "PROFILE",
-				Username:   username,
-				GSI1PK:     fmt.Sprintf("USERNAME_SEARCH#%s", prefix),
-				GSI1SK:     strings.ToLower(username),
-				CreatedAt:  time.Now(),
-				UpdatedAt:  time.Now(),
+				PK:        fmt.Sprintf("ACTOR#%s", username),
+				SK:        "PROFILE",
+				Username:  username,
+				GSI1PK:    fmt.Sprintf("USERNAME_SEARCH#%s", prefix),
+				GSI1SK:    strings.ToLower(username),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
 				Actor: &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
 						ID:   fmt.Sprintf("https://example.com/users/%s", username),
@@ -541,7 +531,7 @@ func TestGSIQueriesWithLegacyData(t *testing.T) {
 			*actors = []models.Actor{*actor}
 		}).Return(nil)
 
-		repo := repositories.NewActorRepository(mockDB, "test-table", logger)
+		repo := repositories.NewActorRepository(mockDB, testconst.TestTableName, logger)
 		actors, err := repo.SearchAccounts(context.Background(), username, 10, false, 0)
 
 		require.NoError(t, err)
@@ -561,7 +551,7 @@ func TestEdgeCasesAndErrorScenarios(t *testing.T) {
 		logger := zap.NewNop()
 
 		// Test empty username
-		repo := repositories.NewUserRepository(mockDB, "test-table", logger)
+		repo := repositories.NewUserRepository(mockDB, testconst.TestTableName, logger)
 		err := repo.CreateUser(context.Background(), &storage.User{})
 
 		assert.Error(t, err)
@@ -571,7 +561,7 @@ func TestEdgeCasesAndErrorScenarios(t *testing.T) {
 	t.Run("malformed keys", func(t *testing.T) {
 		user := &models.User{
 			Username: "testuser",
-			PK:       "INVALID#KEY",  // Wrong format
+			PK:       "INVALID#KEY", // Wrong format
 			SK:       "WRONG",       // Wrong format
 		}
 
@@ -596,7 +586,7 @@ func TestEdgeCasesAndErrorScenarios(t *testing.T) {
 			*users = []models.User{} // Empty result
 		}).Return(nil)
 
-		repo := repositories.NewUserRepository(mockDB, "test-table", logger)
+		repo := repositories.NewUserRepository(mockDB, testconst.TestTableName, logger)
 		user, err := repo.GetUserByEmail(context.Background(), "nonexistent@example.com")
 
 		assert.Error(t, err)
@@ -617,7 +607,7 @@ func TestEdgeCasesAndErrorScenarios(t *testing.T) {
 		}
 
 		// Call UpdateKeys to ensure GSI keys are set
-		actor.UpdateKeys()
+		_ = actor.UpdateKeys()
 
 		// Verify follower count bucket is correctly calculated
 		assert.Contains(t, actor.GSI4PK, "100+")
@@ -654,7 +644,7 @@ func TestPerformanceBaseline(t *testing.T) {
 		// Measure key generation time
 		start := time.Now()
 		for i := 0; i < 1000; i++ {
-			user.UpdateKeys()
+			_ = user.UpdateKeys()
 		}
 		duration := time.Since(start)
 
@@ -733,7 +723,7 @@ func TestMigrationIntegration(t *testing.T) {
 			readUser.UpdatedAt = time.Now()
 		}).Return(nil).Once()
 
-		repo := repositories.NewUserRepository(mockDB, "test-table", logger)
+		repo := repositories.NewUserRepository(mockDB, testconst.TestTableName, logger)
 
 		// Create user
 		err := repo.CreateUser(context.Background(), user)
@@ -769,7 +759,7 @@ func TestRepositoryInterfaceCompliance(t *testing.T) {
 	t.Run("user repository implements storage interface", func(t *testing.T) {
 		mockDB := new(dynamormmocks.MockDB)
 		logger := zap.NewNop()
-		repo := repositories.NewUserRepository(mockDB, "test-table", logger)
+		repo := repositories.NewUserRepository(mockDB, testconst.TestTableName, logger)
 
 		// Verify repo implements the interface methods we need
 		var _ interface {
@@ -783,7 +773,7 @@ func TestRepositoryInterfaceCompliance(t *testing.T) {
 	t.Run("actor repository implements storage interface", func(t *testing.T) {
 		mockDB := new(dynamormmocks.MockDB)
 		logger := zap.NewNop()
-		repo := repositories.NewActorRepository(mockDB, "test-table", logger)
+		repo := repositories.NewActorRepository(mockDB, testconst.TestTableName, logger)
 
 		// Verify repo implements the interface methods we need
 		var _ interface {
@@ -804,20 +794,20 @@ func BenchmarkKeyGeneration(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		user.UpdateKeys()
+		_ = user.UpdateKeys()
 	}
 }
 
 func BenchmarkKeyValidation(b *testing.B) {
 	user := &models.User{
-		PK:       "USER#testuser",
-		SK:       "METADATA",
-		Username: "testuser",
-		Email:    "test@example.com",
-		GSI1PK:   "USERS",
-		GSI1SK:   "2024-01-01T00:00:00Z#testuser",
-		GSI2PK:   "EMAIL#test@example.com",
-		GSI2SK:   "USERNAME#testuser",
+		PK:        "USER#testuser",
+		SK:        "METADATA",
+		Username:  "testuser",
+		Email:     "test@example.com",
+		GSI1PK:    "USERS",
+		GSI1SK:    "2024-01-01T00:00:00Z#testuser",
+		GSI2PK:    "EMAIL#test@example.com",
+		GSI2SK:    "USERNAME#testuser",
 		CreatedAt: time.Now(),
 	}
 

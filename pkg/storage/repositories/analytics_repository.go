@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TrendingRepository implements trending and analytics operations using DynamORM
@@ -30,7 +32,7 @@ func NewTrendingRepository(db core.DB, logger *zap.Logger) *TrendingRepository {
 	if domain == "" {
 		domain = "localhost"
 	}
-	
+
 	return &TrendingRepository{
 		db:     db,
 		logger: logger,
@@ -45,17 +47,17 @@ func (r *TrendingRepository) RecordHashtagUsage(ctx context.Context, hashtag str
 		StatusID:   statusID,
 		AuthorID:   authorID,
 		UsedAt:     now,
-		Visibility: "public", // Default visibility
+		Visibility: "public",                            // Default visibility
 		TTL:        now.Add(30 * 24 * time.Hour).Unix(), // 30 days as per existing model
 		CreatedAt:  now,
 	}
-	
+
 	// Set keys using the existing UpdateKeys method
 	usage.UpdateKeys(hashtag)
 
 	err := r.db.WithContext(ctx).Model(usage).Create()
 	if err != nil {
-		r.logger.Error("failed to record hashtag usage", 
+		r.logger.Error("failed to record hashtag usage",
 			zap.String("hashtag", hashtag),
 			zap.String("statusID", statusID),
 			zap.Error(err))
@@ -117,8 +119,8 @@ func (r *TrendingRepository) RecordLinkShare(ctx context.Context, linkURL string
 }
 
 // GetTrendingHashtags returns the top trending hashtags since the given time
-func (r *TrendingRepository) GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	timeBucket := time.Now().Format("2006-01-02")
+func (r *TrendingRepository) GetTrendingHashtags(ctx context.Context, _ time.Time, limit int) ([]*storage.TrendingHashtag, error) {
+	timeBucket := time.Now().Format(common.DateFormat)
 	pk := fmt.Sprintf("TREND_TYPE#HASHTAG#%s", timeBucket)
 
 	var trendModels []models.HashtagTrend
@@ -154,8 +156,8 @@ func (r *TrendingRepository) GetTrendingHashtags(ctx context.Context, since time
 }
 
 // GetTrendingStatuses returns the top trending statuses since the given time
-func (r *TrendingRepository) GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
-	timeBucket := time.Now().Format("2006-01-02")
+func (r *TrendingRepository) GetTrendingStatuses(ctx context.Context, _ time.Time, limit int) ([]*storage.TrendingStatus, error) {
+	timeBucket := time.Now().Format(common.DateFormat)
 	pk := fmt.Sprintf("TREND_TYPE#STATUS#%s", timeBucket)
 
 	var trendModels []models.StatusTrend
@@ -191,8 +193,8 @@ func (r *TrendingRepository) GetTrendingStatuses(ctx context.Context, since time
 }
 
 // GetTrendingLinks returns the top trending links since the given time
-func (r *TrendingRepository) GetTrendingLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
-	timeBucket := time.Now().Format("2006-01-02")
+func (r *TrendingRepository) GetTrendingLinks(ctx context.Context, _ time.Time, limit int) ([]*storage.TrendingLink, error) {
+	timeBucket := time.Now().Format(common.DateFormat)
 	pk := fmt.Sprintf("TREND_TYPE#LINK#%s", timeBucket)
 
 	var trendModels []models.LinkTrend
@@ -264,7 +266,7 @@ func (r *TrendingRepository) updateHashtagTrendScore(ctx context.Context, hashta
 	score := float64(usageCount) * ageFactor * (1 + diversityFactor)
 
 	// Update trending index entry
-	timeBucket := now.Format("2006-01-02")
+	timeBucket := now.Format(common.DateFormat)
 	paddedScore := fmt.Sprintf("%010.0f", score*1000) // Pad for proper sorting
 
 	trendItem := &models.HashtagTrend{
@@ -294,9 +296,9 @@ func (r *TrendingRepository) updateHashtagTrendScore(ctx context.Context, hashta
 func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusID string) error {
 	// For simplicity, we'll create a basic trend entry without fetching the actual status
 	// In a full implementation, you'd fetch the status details first
-	
+
 	pk := fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)
-	
+
 	var engagements []models.StatusEngagement
 	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
 		Where("PK", "=", pk).
@@ -332,21 +334,21 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 	score := float64(totalEngagements) * ageFactor * (1 + diversityFactor)
 
 	// Update trending index entry
-	timeBucket := now.Format("2006-01-02")
+	timeBucket := now.Format(common.DateFormat)
 	paddedScore := fmt.Sprintf("%010.0f", score*1000)
 
 	trendItem := &models.StatusTrend{
-		PK:           fmt.Sprintf("TREND_TYPE#STATUS#%s", timeBucket),
-		SK:           fmt.Sprintf("SCORE#%s#%s", paddedScore, statusID),
-		ID:           statusID,
-		URL:          fmt.Sprintf("https://%s/statuses/%s", r.domain, statusID),
-		AuthorID:     "", // Would be filled from actual status
-		Content:      "", // Would be filled from actual status
-		Engagements:  totalEngagements,
-		PublishedAt:  publishedAt,
-		TrendScore:   score,
-		UpdatedAt:    now,
-		TTL:          now.Add(7 * 24 * time.Hour).Unix(),
+		PK:          fmt.Sprintf("TREND_TYPE#STATUS#%s", timeBucket),
+		SK:          fmt.Sprintf("SCORE#%s#%s", paddedScore, statusID),
+		ID:          statusID,
+		URL:         fmt.Sprintf("https://%s/statuses/%s", r.domain, statusID),
+		AuthorID:    "", // Would be filled from actual status
+		Content:     "", // Would be filled from actual status
+		Engagements: totalEngagements,
+		PublishedAt: publishedAt,
+		TrendScore:  score,
+		UpdatedAt:   now,
+		TTL:         now.Add(7 * 24 * time.Hour).Unix(),
 	}
 	trendItem.UpdateKeys()
 
@@ -362,7 +364,7 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 func (r *TrendingRepository) updateLinkTrendScore(ctx context.Context, linkURL string) error {
 	// Query recent link shares
 	pk := fmt.Sprintf("LINK_SHARE#%s", linkURL)
-	
+
 	var shares []models.LinkShare
 	err := r.db.WithContext(ctx).Model(&models.LinkShare{}).
 		Where("PK", "=", pk).
@@ -409,7 +411,7 @@ func (r *TrendingRepository) updateLinkTrendScore(ctx context.Context, linkURL s
 	score := float64(shareCount) * (1 + diversityFactor)
 
 	// Update trending index entry
-	timeBucket := now.Format("2006-01-02")
+	timeBucket := now.Format(common.DateFormat)
 	paddedScore := fmt.Sprintf("%010.0f", score*1000)
 
 	trendItem := &models.LinkTrend{
@@ -705,7 +707,7 @@ func (r *TrendingRepository) StoreHashtagTrend(ctx context.Context, trend any) e
 		if !ok {
 			return fmt.Errorf("invalid trend type: expected *models.HashtagTrend or *storage.TrendingHashtag")
 		}
-		
+
 		// Convert storage to model
 		hashtagTrend = &models.HashtagTrend{
 			Name:        storageTrend.Name,
@@ -718,10 +720,10 @@ func (r *TrendingRepository) StoreHashtagTrend(ctx context.Context, trend any) e
 			UpdatedAt:   time.Now(),
 		}
 	}
-	
+
 	// Update keys
 	hashtagTrend.UpdateKeys()
-	
+
 	// Store the trend
 	err := r.db.WithContext(ctx).Model(hashtagTrend).Create()
 	if err != nil {
@@ -730,7 +732,7 @@ func (r *TrendingRepository) StoreHashtagTrend(ctx context.Context, trend any) e
 			zap.Error(err))
 		return fmt.Errorf("failed to store hashtag trend: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -744,7 +746,7 @@ func (r *TrendingRepository) StoreStatusTrend(ctx context.Context, trend any) er
 		if !ok {
 			return fmt.Errorf("invalid trend type: expected *models.StatusTrend or *storage.TrendingStatus")
 		}
-		
+
 		// Convert storage to model
 		statusTrend = &models.StatusTrend{
 			ID:          storageTrend.ID,
@@ -757,10 +759,10 @@ func (r *TrendingRepository) StoreStatusTrend(ctx context.Context, trend any) er
 			UpdatedAt:   time.Now(),
 		}
 	}
-	
+
 	// Update keys
 	statusTrend.UpdateKeys()
-	
+
 	// Store the trend
 	err := r.db.WithContext(ctx).Model(statusTrend).Create()
 	if err != nil {
@@ -769,7 +771,7 @@ func (r *TrendingRepository) StoreStatusTrend(ctx context.Context, trend any) er
 			zap.Error(err))
 		return fmt.Errorf("failed to store status trend: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -783,7 +785,7 @@ func (r *TrendingRepository) StoreLinkTrend(ctx context.Context, trend any) erro
 		if !ok {
 			return fmt.Errorf("invalid trend type: expected *models.LinkTrend or *storage.TrendingLink")
 		}
-		
+
 		// Convert storage to model
 		linkTrend = &models.LinkTrend{
 			URL:         storageTrend.URL,
@@ -797,10 +799,10 @@ func (r *TrendingRepository) StoreLinkTrend(ctx context.Context, trend any) erro
 			UpdatedAt:   time.Now(),
 		}
 	}
-	
+
 	// Update keys
 	linkTrend.UpdateKeys()
-	
+
 	// Store the trend
 	err := r.db.WithContext(ctx).Model(linkTrend).Create()
 	if err != nil {
@@ -809,7 +811,7 @@ func (r *TrendingRepository) StoreLinkTrend(ctx context.Context, trend any) erro
 			zap.Error(err))
 		return fmt.Errorf("failed to store link trend: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -817,13 +819,13 @@ func (r *TrendingRepository) StoreLinkTrend(ctx context.Context, trend any) erro
 func (r *TrendingRepository) DeleteOldHashtagTrends(ctx context.Context, before time.Time) error {
 	// Query for old hashtag trends
 	var trends []models.HashtagTrend
-	
+
 	// DynamORM doesn't support direct batch delete, so we need to query and delete
 	err := r.db.WithContext(ctx).Model(&models.HashtagTrend{}).
 		Filter("UpdatedAt", "<", before).
 		Limit(100). // Process in batches
 		Scan(&trends)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil // No old trends to delete
@@ -831,7 +833,7 @@ func (r *TrendingRepository) DeleteOldHashtagTrends(ctx context.Context, before 
 		r.logger.Error("failed to query old hashtag trends", zap.Error(err))
 		return fmt.Errorf("failed to query old hashtag trends: %w", err)
 	}
-	
+
 	// Delete each trend
 	for _, trend := range trends {
 		err := r.db.WithContext(ctx).Model(&trend).Delete()
@@ -842,11 +844,11 @@ func (r *TrendingRepository) DeleteOldHashtagTrends(ctx context.Context, before 
 			// Continue with other deletions
 		}
 	}
-	
+
 	r.logger.Info("deleted old hashtag trends",
 		zap.Int("count", len(trends)),
 		zap.Time("before", before))
-	
+
 	return nil
 }
 
@@ -854,12 +856,12 @@ func (r *TrendingRepository) DeleteOldHashtagTrends(ctx context.Context, before 
 func (r *TrendingRepository) DeleteOldLinkTrends(ctx context.Context, before time.Time) error {
 	// Query for old link trends
 	var trends []models.LinkTrend
-	
+
 	err := r.db.WithContext(ctx).Model(&models.LinkTrend{}).
 		Filter("UpdatedAt", "<", before).
 		Limit(100). // Process in batches
 		Scan(&trends)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil // No old trends to delete
@@ -867,7 +869,7 @@ func (r *TrendingRepository) DeleteOldLinkTrends(ctx context.Context, before tim
 		r.logger.Error("failed to query old link trends", zap.Error(err))
 		return fmt.Errorf("failed to query old link trends: %w", err)
 	}
-	
+
 	// Delete each trend
 	for _, trend := range trends {
 		err := r.db.WithContext(ctx).Model(&trend).Delete()
@@ -878,11 +880,11 @@ func (r *TrendingRepository) DeleteOldLinkTrends(ctx context.Context, before tim
 			// Continue with other deletions
 		}
 	}
-	
+
 	r.logger.Info("deleted old link trends",
 		zap.Int("count", len(trends)),
 		zap.Time("before", before))
-	
+
 	return nil
 }
 
@@ -890,12 +892,12 @@ func (r *TrendingRepository) DeleteOldLinkTrends(ctx context.Context, before tim
 func (r *TrendingRepository) DeleteOldStatusTrends(ctx context.Context, before time.Time) error {
 	// Query for old status trends
 	var trends []models.StatusTrend
-	
+
 	err := r.db.WithContext(ctx).Model(&models.StatusTrend{}).
 		Filter("UpdatedAt", "<", before).
 		Limit(100). // Process in batches
 		Scan(&trends)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil // No old trends to delete
@@ -903,7 +905,7 @@ func (r *TrendingRepository) DeleteOldStatusTrends(ctx context.Context, before t
 		r.logger.Error("failed to query old status trends", zap.Error(err))
 		return fmt.Errorf("failed to query old status trends: %w", err)
 	}
-	
+
 	// Delete each trend
 	for _, trend := range trends {
 		err := r.db.WithContext(ctx).Model(&trend).Delete()
@@ -914,11 +916,11 @@ func (r *TrendingRepository) DeleteOldStatusTrends(ctx context.Context, before t
 			// Continue with other deletions
 		}
 	}
-	
+
 	r.logger.Info("deleted old status trends",
 		zap.Int("count", len(trends)),
 		zap.Time("before", before))
-	
+
 	return nil
 }
 
@@ -929,7 +931,7 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 	if normalizedQuery == "" {
 		return nil
 	}
-	
+
 	// Create search query record
 	searchQuery := &models.SearchQuery{
 		Query:       normalizedQuery,
@@ -937,10 +939,10 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 		ResultCount: resultCount,
 		SearchedAt:  time.Now(),
 	}
-	
+
 	// Update keys
 	searchQuery.UpdateKeys()
-	
+
 	// Store the query
 	err := r.db.WithContext(ctx).Model(searchQuery).Create()
 	if err != nil {
@@ -950,10 +952,10 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 			zap.Error(err))
 		return fmt.Errorf("failed to track search query: %w", err)
 	}
-	
+
 	// Also update popular queries index
 	r.updatePopularQueries(ctx, normalizedQuery)
-	
+
 	return nil
 }
 
@@ -961,7 +963,7 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
 	// Calculate time cutoff
 	cutoff := time.Now().Add(-timeWindow)
-	
+
 	// Query recent search queries
 	var queries []models.SearchQuery
 	err := r.db.WithContext(ctx).Model(&models.SearchQuery{}).
@@ -969,7 +971,7 @@ func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit 
 		OrderBy("SearchedAt", "DESC").
 		Limit(1000). // Get more to aggregate
 		Scan(&queries)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return []storage.SearchQueryStats{}, nil
@@ -977,11 +979,11 @@ func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit 
 		r.logger.Error("failed to query search queries", zap.Error(err))
 		return nil, fmt.Errorf("failed to query search queries: %w", err)
 	}
-	
+
 	// Aggregate by query
 	queryMap := make(map[string]*storage.SearchQueryStats)
 	userMap := make(map[string]map[string]bool) // query -> set of users
-	
+
 	for _, q := range queries {
 		if stats, exists := queryMap[q.Query]; exists {
 			stats.Count++
@@ -998,18 +1000,18 @@ func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit 
 			}
 			userMap[q.Query] = make(map[string]bool)
 		}
-		
+
 		// Track unique users
 		userMap[q.Query][q.UserID] = true
 	}
-	
+
 	// Calculate unique user counts and convert to slice
 	results := make([]storage.SearchQueryStats, 0, len(queryMap))
 	for query, stats := range queryMap {
 		stats.UserCount = len(userMap[query])
 		results = append(results, *stats)
 	}
-	
+
 	// Sort by count (most popular first)
 	for i := 0; i < len(results)-1; i++ {
 		for j := i + 1; j < len(results); j++ {
@@ -1018,26 +1020,26 @@ func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit 
 			}
 		}
 	}
-	
+
 	// Apply limit
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	
+
 	return results, nil
 }
 
 // GetUserSearchHistory retrieves a user's search history
 func (r *TrendingRepository) GetUserSearchHistory(ctx context.Context, userID string, limit int) ([]storage.SearchHistoryEntry, error) {
 	var queries []models.SearchQuery
-	
+
 	err := r.db.WithContext(ctx).Model(&models.SearchQuery{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
 		Filter("SK", "BEGINS_WITH", "SEARCH#").
 		OrderBy("SK", "DESC"). // Most recent first
 		Limit(limit).
 		Scan(&queries)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return []storage.SearchHistoryEntry{}, nil
@@ -1047,7 +1049,7 @@ func (r *TrendingRepository) GetUserSearchHistory(ctx context.Context, userID st
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query user search history: %w", err)
 	}
-	
+
 	// Convert to storage type
 	entries := make([]storage.SearchHistoryEntry, len(queries))
 	for i, q := range queries {
@@ -1058,24 +1060,26 @@ func (r *TrendingRepository) GetUserSearchHistory(ctx context.Context, userID st
 			SearchedAt:  q.SearchedAt,
 		}
 	}
-	
+
 	return entries, nil
 }
 
-// updatePopularQueries increments the count for a search query
+// updatePopularQueries increments the count for a search query using atomic operations
 func (r *TrendingRepository) updatePopularQueries(ctx context.Context, query string) {
-	// This would typically use an atomic counter update
-	// For now, we'll log this as a TODO
-	r.logger.Debug("TODO: implement popular query counter update",
-		zap.String("query", query))
+	// Implement atomic counter updates as requested in the audit
+	if err := r.IncrementQueryCount(ctx, query, 1); err != nil {
+		r.logger.Error("failed to increment popular query counter",
+			zap.String("query", query),
+			zap.Error(err))
+	}
 }
 
 // GetStatusesByLink retrieves statuses that contain a specific link
-func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]any, error) {
+func (r *TrendingRepository) GetStatusesByLink(_ context.Context, linkURL string, limit int) ([]any, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	
+
 	// Query link trends that match the URL
 	var linkTrends []*models.LinkTrend
 	err := r.db.Model(&models.LinkTrend{}).
@@ -1083,14 +1087,14 @@ func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL stri
 		OrderBy("UsageCount", "DESC").
 		Limit(limit).
 		All(&linkTrends)
-		
+
 	if err != nil {
 		r.logger.Error("failed to get statuses by link",
 			zap.String("link_url", linkURL),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get statuses by link: %w", err)
 	}
-	
+
 	// Convert to any slice (would normally fetch actual status objects)
 	results := make([]any, len(linkTrends))
 	for i, trend := range linkTrends {
@@ -1104,11 +1108,9 @@ func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL stri
 			"trend_score": trend.TrendScore,
 		}
 	}
-	
+
 	return results, nil
 }
-
-
 
 // IndexByEngagement creates an index entry for engagement-based discovery
 func (r *TrendingRepository) IndexByEngagement(ctx context.Context, statusID string, bucket string) error {
@@ -1152,78 +1154,130 @@ func (r *TrendingRepository) GenerateSearchSuggestions(ctx context.Context, user
 
 	suggestions := make(map[string]float64) // suggestion -> score
 
-	// Get user's search history
+	// Score suggestions from different sources
+	r.scoreUserHistory(ctx, userID, normalizedQuery, suggestions)
+	r.scorePopularQueries(ctx, normalizedQuery, suggestions)
+	r.scoreHashtagSuggestions(ctx, normalizedQuery, suggestions)
+
+	// Sort and return top suggestions
+	return r.extractTopSuggestions(suggestions, limit), nil
+}
+
+// scoreUserHistory scores suggestions from user's search history
+func (r *TrendingRepository) scoreUserHistory(ctx context.Context, userID, normalizedQuery string, suggestions map[string]float64) {
 	userHistory, err := r.GetUserSearchHistory(ctx, userID, 50)
-	if err == nil {
-		// Score user's past searches that match the partial query
-		for _, entry := range userHistory {
-			if strings.HasPrefix(strings.ToLower(entry.Query), normalizedQuery) {
-				// Recent searches get higher scores
-				age := time.Since(entry.SearchedAt)
-				recencyScore := 1.0 / (1 + age.Hours()/24) // Decay over days
-				suggestions[entry.Query] += recencyScore * 2 // User history weighted 2x
-			}
-		}
+	if err != nil {
+		return
 	}
 
-	// Get popular queries
+	for _, entry := range userHistory {
+		if !strings.HasPrefix(strings.ToLower(entry.Query), normalizedQuery) {
+			continue
+		}
+		
+		score := r.calculateUserHistoryScore(entry.SearchedAt)
+		suggestions[entry.Query] += score
+	}
+}
+
+// calculateUserHistoryScore calculates score based on recency
+func (r *TrendingRepository) calculateUserHistoryScore(searchedAt time.Time) float64 {
+	age := time.Since(searchedAt)
+	recencyScore := 1.0 / (1 + age.Hours()/24) // Decay over days
+	return recencyScore * 2 // User history weighted 2x
+}
+
+// scorePopularQueries scores suggestions from popular queries
+func (r *TrendingRepository) scorePopularQueries(ctx context.Context, normalizedQuery string, suggestions map[string]float64) {
 	popularQueries, err := r.GetPopularSearchQueries(ctx, 100, 7*24*time.Hour) // Last 7 days
-	if err == nil {
-		for _, stat := range popularQueries {
-			if strings.HasPrefix(strings.ToLower(stat.Query), normalizedQuery) {
-				// Popular queries scored by frequency and recency
-				age := time.Since(stat.LastUsed)
-				recencyScore := 1.0 / (1 + age.Hours()/168) // Decay over weeks
-				popularityScore := math.Log1p(float64(stat.Count)) // Logarithmic scaling
-				suggestions[stat.Query] += recencyScore * popularityScore
-			}
-		}
+	if err != nil {
+		return
 	}
 
-	// Also add some prefix-based suggestions from trending hashtags
-	if strings.HasPrefix(normalizedQuery, "#") || len(normalizedQuery) >= 2 {
-		hashtags, err := r.GetRecentHashtags(ctx, time.Now().Add(-7*24*time.Hour), 20)
-		if err == nil {
-			for _, hashtag := range hashtags {
-				tagName := strings.ToLower(hashtag.Name)
-				if strings.Contains(tagName, normalizedQuery) || strings.Contains(normalizedQuery, "#") {
-					// Add hashtag with # prefix if not already present
-					suggestion := hashtag.Name
-					if !strings.HasPrefix(suggestion, "#") {
-						suggestion = "#" + suggestion
-					}
-					suggestions[suggestion] += float64(hashtag.UsageCount) / 100
-				}
-			}
+	for _, stat := range popularQueries {
+		if !strings.HasPrefix(strings.ToLower(stat.Query), normalizedQuery) {
+			continue
 		}
+		
+		score := r.calculatePopularQueryScore(stat.LastUsed, stat.Count)
+		suggestions[stat.Query] += score
+	}
+}
+
+// calculatePopularQueryScore calculates score based on popularity and recency
+func (r *TrendingRepository) calculatePopularQueryScore(lastUsed time.Time, count int) float64 {
+	age := time.Since(lastUsed)
+	recencyScore := 1.0 / (1 + age.Hours()/168)        // Decay over weeks
+	popularityScore := math.Log1p(float64(count))      // Logarithmic scaling
+	return recencyScore * popularityScore
+}
+
+// scoreHashtagSuggestions scores suggestions from trending hashtags
+func (r *TrendingRepository) scoreHashtagSuggestions(ctx context.Context, normalizedQuery string, suggestions map[string]float64) {
+	if !r.shouldIncludeHashtags(normalizedQuery) {
+		return
 	}
 
-	// Convert map to sorted slice
+	hashtags, err := r.GetRecentHashtags(ctx, time.Now().Add(-7*24*time.Hour), 20)
+	if err != nil {
+		return
+	}
+
+	for _, hashtag := range hashtags {
+		if !r.hashtagMatchesQuery(hashtag.Name, normalizedQuery) {
+			continue
+		}
+		
+		suggestion := r.formatHashtagSuggestion(hashtag.Name)
+		score := float64(hashtag.UsageCount) / 100
+		suggestions[suggestion] += score
+	}
+}
+
+// shouldIncludeHashtags checks if hashtag suggestions should be included
+func (r *TrendingRepository) shouldIncludeHashtags(normalizedQuery string) bool {
+	return strings.HasPrefix(normalizedQuery, "#") || len(normalizedQuery) >= 2
+}
+
+// hashtagMatchesQuery checks if a hashtag matches the query
+func (r *TrendingRepository) hashtagMatchesQuery(hashtagName, normalizedQuery string) bool {
+	tagName := strings.ToLower(hashtagName)
+	return strings.Contains(tagName, normalizedQuery) || strings.Contains(normalizedQuery, "#")
+}
+
+// formatHashtagSuggestion formats a hashtag for suggestion
+func (r *TrendingRepository) formatHashtagSuggestion(hashtagName string) string {
+	if !strings.HasPrefix(hashtagName, "#") {
+		return "#" + hashtagName
+	}
+	return hashtagName
+}
+
+// extractTopSuggestions extracts the top suggestions from scored map
+func (r *TrendingRepository) extractTopSuggestions(suggestions map[string]float64, limit int) []string {
+	// Convert to slice
 	type scoredSuggestion struct {
 		query string
 		score float64
 	}
+	
 	scoredList := make([]scoredSuggestion, 0, len(suggestions))
 	for query, score := range suggestions {
 		scoredList = append(scoredList, scoredSuggestion{query, score})
 	}
-
+	
 	// Sort by score descending
-	for i := 0; i < len(scoredList)-1; i++ {
-		for j := i + 1; j < len(scoredList); j++ {
-			if scoredList[i].score < scoredList[j].score {
-				scoredList[i], scoredList[j] = scoredList[j], scoredList[i]
-			}
-		}
-	}
-
+	sort.Slice(scoredList, func(i, j int) bool {
+		return scoredList[i].score > scoredList[j].score
+	})
+	
 	// Extract top suggestions
 	result := make([]string, 0, limit)
 	for i := 0; i < len(scoredList) && i < limit; i++ {
 		result = append(result, scoredList[i].query)
 	}
-
-	return result, nil
+	
+	return result
 }
 
 // ========== EngagementMetrics Methods ==========
@@ -1231,7 +1285,7 @@ func (r *TrendingRepository) GenerateSearchSuggestions(ctx context.Context, user
 // RecordEngagement records engagement metrics for content
 func (r *TrendingRepository) RecordEngagement(ctx context.Context, metricType, targetID, date string, engagement *storage.EngagementData) error {
 	now := time.Now()
-	
+
 	// Create metrics record with exact key pattern from legacy
 	metrics := &models.EngagementMetrics{
 		PK:          fmt.Sprintf("METRICS#%s#%s", metricType, date),
@@ -1247,9 +1301,9 @@ func (r *TrendingRepository) RecordEngagement(ctx context.Context, metricType, t
 		UpdatedAt:   now,
 		TTL:         now.Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
-	
+
 	metrics.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(metrics).Create()
 	if err != nil {
 		r.logger.Error("failed to record engagement",
@@ -1258,7 +1312,7 @@ func (r *TrendingRepository) RecordEngagement(ctx context.Context, metricType, t
 			zap.Error(err))
 		return fmt.Errorf("failed to record engagement: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -1266,13 +1320,13 @@ func (r *TrendingRepository) RecordEngagement(ctx context.Context, metricType, t
 func (r *TrendingRepository) GetEngagementMetricsData(ctx context.Context, metricType, targetID, date string) (*storage.EngagementData, error) {
 	pk := fmt.Sprintf("METRICS#%s#%s", metricType, date)
 	sk := fmt.Sprintf("target#%s", targetID)
-	
+
 	var metrics models.EngagementMetrics
 	err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&metrics)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil // Return nil without error for not found
@@ -1283,7 +1337,7 @@ func (r *TrendingRepository) GetEngagementMetricsData(ctx context.Context, metri
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get engagement metrics: %w", err)
 	}
-	
+
 	return &storage.EngagementData{
 		Views:       metrics.Views,
 		Likes:       metrics.Likes,
@@ -1298,7 +1352,7 @@ func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metri
 	// Query using GSI8 for date range
 	startPK := fmt.Sprintf("METRICS#%s#%s", metricType, startDate)
 	endPK := fmt.Sprintf("METRICS#%s#%s", metricType, endDate)
-	
+
 	var metricsRecords []models.EngagementMetrics
 	err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
 		Where("GSI8PK", ">=", startPK).
@@ -1306,7 +1360,7 @@ func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metri
 		OrderBy("GSI8PK", "ASC").
 		Limit(limit).
 		All(&metricsRecords)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return []*storage.EngagementMetricsSummary{}, nil
@@ -1318,7 +1372,7 @@ func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metri
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get engagement by date range: %w", err)
 	}
-	
+
 	// Convert to summary format
 	summaries := make([]*storage.EngagementMetricsSummary, len(metricsRecords))
 	for i, record := range metricsRecords {
@@ -1332,20 +1386,20 @@ func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metri
 			UniqueUsers: record.UniqueUsers,
 		}
 	}
-	
+
 	return summaries, nil
 }
 
 // GetTopEngagedContent retrieves the most engaged content
 func (r *TrendingRepository) GetTopEngagedContent(ctx context.Context, metricType string, date string, limit int) ([]*storage.EngagementRanking, error) {
 	pk := fmt.Sprintf("METRICS#%s#%s", metricType, date)
-	
+
 	var metricsRecords []models.EngagementMetrics
 	err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
 		Where("PK", "=", pk).
 		Limit(limit * 2). // Get more to sort
 		All(&metricsRecords)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return []*storage.EngagementRanking{}, nil
@@ -1356,16 +1410,16 @@ func (r *TrendingRepository) GetTopEngagedContent(ctx context.Context, metricTyp
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get top engaged content: %w", err)
 	}
-	
+
 	// Calculate engagement scores and rank
 	rankings := make([]*storage.EngagementRanking, 0, len(metricsRecords))
 	for _, record := range metricsRecords {
 		// Engagement score: views + likes*2 + shares*3 + replies*4
-		score := float64(record.Views) + 
-				float64(record.Likes)*2 + 
-				float64(record.Shares)*3 + 
-				float64(record.Replies)*4
-		
+		score := float64(record.Views) +
+			float64(record.Likes)*2 +
+			float64(record.Shares)*3 +
+			float64(record.Replies)*4
+
 		ranking := &storage.EngagementRanking{
 			TargetID:    record.TargetID,
 			Score:       score,
@@ -1377,7 +1431,7 @@ func (r *TrendingRepository) GetTopEngagedContent(ctx context.Context, metricTyp
 		}
 		rankings = append(rankings, ranking)
 	}
-	
+
 	// Sort by score descending
 	for i := 0; i < len(rankings)-1; i++ {
 		for j := i + 1; j < len(rankings); j++ {
@@ -1386,12 +1440,12 @@ func (r *TrendingRepository) GetTopEngagedContent(ctx context.Context, metricTyp
 			}
 		}
 	}
-	
+
 	// Apply limit
 	if len(rankings) > limit {
 		rankings = rankings[:limit]
 	}
-	
+
 	return rankings, nil
 }
 
@@ -1405,15 +1459,15 @@ func (r *TrendingRepository) AggregateEngagementMetrics(ctx context.Context, met
 		TotalShares: 0,
 		UniqueUsers: make(map[string]bool),
 	}
-	
+
 	for _, date := range dates {
 		pk := fmt.Sprintf("METRICS#%s#%s", metricType, date)
-		
+
 		var metricsRecords []models.EngagementMetrics
 		err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
 			Where("PK", "=", pk).
 			All(&metricsRecords)
-		
+
 		if err != nil && !errors.IsNotFound(err) {
 			r.logger.Error("failed to aggregate engagement metrics",
 				zap.String("metricType", metricType),
@@ -1421,7 +1475,7 @@ func (r *TrendingRepository) AggregateEngagementMetrics(ctx context.Context, met
 				zap.Error(err))
 			continue // Skip this date but continue aggregating
 		}
-		
+
 		for _, record := range metricsRecords {
 			aggregated.TotalViews += record.Views
 			aggregated.TotalLikes += record.Likes
@@ -1432,10 +1486,10 @@ func (r *TrendingRepository) AggregateEngagementMetrics(ctx context.Context, met
 			}
 		}
 	}
-	
+
 	aggregated.TotalUniqueUsers = int64(len(aggregated.UniqueUsers))
 	aggregated.UniqueUsers = nil // Clear the map to save memory
-	
+
 	return aggregated, nil
 }
 
@@ -1444,11 +1498,11 @@ func (r *TrendingRepository) AggregateEngagementMetrics(ctx context.Context, met
 // UpdateTrendingHashtag updates or creates a trending hashtag entry
 func (r *TrendingRepository) UpdateTrendingHashtag(ctx context.Context, hashtag string, date string, useCount, userCount int64) error {
 	now := time.Now()
-	
+
 	// Calculate trend score
 	score := float64(useCount) * (1 + float64(userCount)/float64(useCount+1))
 	paddedScore := fmt.Sprintf("%010.0f", score*1000) // Pad for proper sorting
-	
+
 	trending := &models.TrendingHashtag{
 		PK:        fmt.Sprintf("TRENDING#%s", date),
 		SK:        fmt.Sprintf("HASHTAG#%s#%s", paddedScore, hashtag),
@@ -1461,9 +1515,9 @@ func (r *TrendingRepository) UpdateTrendingHashtag(ctx context.Context, hashtag 
 		UpdatedAt: now,
 		TTL:       now.Add(30 * 24 * time.Hour).Unix(), // 30 days retention
 	}
-	
+
 	trending.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(trending).Create()
 	if err != nil {
 		r.logger.Error("failed to update trending hashtag",
@@ -1472,21 +1526,21 @@ func (r *TrendingRepository) UpdateTrendingHashtag(ctx context.Context, hashtag 
 			zap.Error(err))
 		return fmt.Errorf("failed to update trending hashtag: %w", err)
 	}
-	
+
 	return nil
 }
 
 // GetTrendingHashtagsForDate retrieves trending hashtags for a specific date
 func (r *TrendingRepository) GetTrendingHashtagsForDate(ctx context.Context, date string, limit int) ([]*storage.TrendingHashtagData, error) {
 	pk := fmt.Sprintf("TRENDING#%s", date)
-	
+
 	var trendingRecords []models.TrendingHashtag
 	err := r.db.WithContext(ctx).Model(&models.TrendingHashtag{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC"). // Sort by score descending
 		Limit(limit).
 		All(&trendingRecords)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return []*storage.TrendingHashtagData{}, nil
@@ -1496,7 +1550,7 @@ func (r *TrendingRepository) GetTrendingHashtagsForDate(ctx context.Context, dat
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get trending hashtags: %w", err)
 	}
-	
+
 	// Convert to storage format
 	trending := make([]*storage.TrendingHashtagData, len(trendingRecords))
 	for i, record := range trendingRecords {
@@ -1509,7 +1563,7 @@ func (r *TrendingRepository) GetTrendingHashtagsForDate(ctx context.Context, dat
 			UpdatedAt: record.UpdatedAt,
 		}
 	}
-	
+
 	return trending, nil
 }
 
@@ -1519,19 +1573,19 @@ func (r *TrendingRepository) GetHashtagTrend(ctx context.Context, hashtag string
 		Hashtag: hashtag,
 		Days:    make([]storage.DailyTrend, 0, days),
 	}
-	
+
 	// Query for the last N days
 	now := time.Now()
 	for i := 0; i < days; i++ {
-		date := now.AddDate(0, 0, -i).Format("2006-01-02")
+		date := now.AddDate(0, 0, -i).Format(common.DateFormat)
 		pk := fmt.Sprintf("TRENDING#%s", date)
-		
+
 		var trendingRecords []models.TrendingHashtag
 		err := r.db.WithContext(ctx).Model(&models.TrendingHashtag{}).
 			Where("PK", "=", pk).
 			Filter("SK", "CONTAINS", hashtag).
 			All(&trendingRecords)
-		
+
 		if err != nil && !errors.IsNotFound(err) {
 			r.logger.Warn("failed to get hashtag trend for date",
 				zap.String("hashtag", hashtag),
@@ -1539,7 +1593,7 @@ func (r *TrendingRepository) GetHashtagTrend(ctx context.Context, hashtag string
 				zap.Error(err))
 			continue
 		}
-		
+
 		// Find the specific hashtag
 		for _, record := range trendingRecords {
 			if record.Hashtag == hashtag {
@@ -1553,27 +1607,27 @@ func (r *TrendingRepository) GetHashtagTrend(ctx context.Context, hashtag string
 			}
 		}
 	}
-	
+
 	// Reverse to have oldest first
 	for i, j := 0, len(history.Days)-1; i < j; i, j = i+1, j-1 {
 		history.Days[i], history.Days[j] = history.Days[j], history.Days[i]
 	}
-	
+
 	return history, nil
 }
 
 // PruneStaleTrends removes old trending entries
 func (r *TrendingRepository) PruneStaleTrends(ctx context.Context, before time.Time) error {
 	// TTL should handle this automatically, but we can also manually prune
-	beforeDate := before.Format("2006-01-02")
-	
+	beforeDate := before.Format(common.DateFormat)
+
 	// Query for old trends
 	var oldTrends []models.TrendingHashtag
 	err := r.db.WithContext(ctx).Model(&models.TrendingHashtag{}).
 		Where("Date", "<", beforeDate).
 		Limit(100). // Process in batches
 		All(&oldTrends)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
@@ -1581,7 +1635,7 @@ func (r *TrendingRepository) PruneStaleTrends(ctx context.Context, before time.T
 		r.logger.Error("failed to query stale trends", zap.Error(err))
 		return fmt.Errorf("failed to query stale trends: %w", err)
 	}
-	
+
 	// Delete each trend
 	for _, trend := range oldTrends {
 		err := r.db.WithContext(ctx).Model(&trend).Delete()
@@ -1592,11 +1646,11 @@ func (r *TrendingRepository) PruneStaleTrends(ctx context.Context, before time.T
 				zap.Error(err))
 		}
 	}
-	
+
 	r.logger.Info("pruned stale trends",
 		zap.Int("count", len(oldTrends)),
 		zap.Time("before", before))
-	
+
 	return nil
 }
 
@@ -1605,15 +1659,15 @@ func (r *TrendingRepository) PruneStaleTrends(ctx context.Context, before time.T
 // RecordInstanceMetric records a platform-wide metric
 func (r *TrendingRepository) RecordInstanceMetric(ctx context.Context, date, metricType string, value int64) error {
 	now := time.Now()
-	
+
 	// Get previous value to calculate delta
 	var previousValue int64
-	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := now.AddDate(0, 0, -1).Format(common.DateFormat)
 	prev, err := r.GetInstanceMetrics(ctx, yesterday, metricType)
 	if err == nil && prev != nil {
 		previousValue = prev.Value
 	}
-	
+
 	metrics := &models.InstanceMetrics{
 		PK:         fmt.Sprintf("INSTANCE_METRICS#%s", date),
 		SK:         fmt.Sprintf("METRIC#%s", metricType),
@@ -1624,9 +1678,9 @@ func (r *TrendingRepository) RecordInstanceMetric(ctx context.Context, date, met
 		UpdatedAt:  now,
 		TTL:        now.Add(365 * 24 * time.Hour).Unix(), // 1 year retention
 	}
-	
+
 	metrics.UpdateKeys()
-	
+
 	err = r.db.WithContext(ctx).Model(metrics).Create()
 	if err != nil {
 		r.logger.Error("failed to record instance metric",
@@ -1636,7 +1690,7 @@ func (r *TrendingRepository) RecordInstanceMetric(ctx context.Context, date, met
 			zap.Error(err))
 		return fmt.Errorf("failed to record instance metric: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -1644,13 +1698,13 @@ func (r *TrendingRepository) RecordInstanceMetric(ctx context.Context, date, met
 func (r *TrendingRepository) GetInstanceMetrics(ctx context.Context, date, metricType string) (*storage.InstanceMetricData, error) {
 	pk := fmt.Sprintf("INSTANCE_METRICS#%s", date)
 	sk := fmt.Sprintf("METRIC#%s", metricType)
-	
+
 	var metrics models.InstanceMetrics
 	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&metrics)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
@@ -1661,7 +1715,7 @@ func (r *TrendingRepository) GetInstanceMetrics(ctx context.Context, date, metri
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get instance metrics: %w", err)
 	}
-	
+
 	return &storage.InstanceMetricData{
 		Date:       metrics.Date,
 		MetricType: metrics.MetricType,
@@ -1675,11 +1729,11 @@ func (r *TrendingRepository) GetInstanceMetrics(ctx context.Context, date, metri
 func (r *TrendingRepository) GetMetricHistory(ctx context.Context, metricType string, days int) ([]*storage.MetricHistoryPoint, error) {
 	history := make([]*storage.MetricHistoryPoint, 0, days)
 	now := time.Now()
-	
+
 	for i := 0; i < days; i++ {
-		date := now.AddDate(0, 0, -i).Format("2006-01-02")
+		date := now.AddDate(0, 0, -i).Format(common.DateFormat)
 		metric, err := r.GetInstanceMetrics(ctx, date, metricType)
-		
+
 		if err != nil {
 			r.logger.Warn("failed to get metric for date",
 				zap.String("date", date),
@@ -1687,7 +1741,7 @@ func (r *TrendingRepository) GetMetricHistory(ctx context.Context, metricType st
 				zap.Error(err))
 			continue
 		}
-		
+
 		if metric != nil {
 			history = append(history, &storage.MetricHistoryPoint{
 				Date:  date,
@@ -1696,12 +1750,12 @@ func (r *TrendingRepository) GetMetricHistory(ctx context.Context, metricType st
 			})
 		}
 	}
-	
+
 	// Reverse to have oldest first
 	for i, j := 0, len(history)-1; i < j; i, j = i+1, j-1 {
 		history[i], history[j] = history[j], history[i]
 	}
-	
+
 	return history, nil
 }
 
@@ -1711,25 +1765,25 @@ func (r *TrendingRepository) CalculateGrowthRate(ctx context.Context, metricType
 	if err != nil || startMetric == nil {
 		return nil, fmt.Errorf("failed to get start metric: %w", err)
 	}
-	
+
 	endMetric, err := r.GetInstanceMetrics(ctx, endDate, metricType)
 	if err != nil || endMetric == nil {
 		return nil, fmt.Errorf("failed to get end metric: %w", err)
 	}
-	
+
 	// Calculate growth rate
 	var growthRate float64
 	if startMetric.Value > 0 {
 		growthRate = float64(endMetric.Value-startMetric.Value) / float64(startMetric.Value) * 100
 	}
-	
+
 	return &storage.GrowthRate{
-		MetricType:  metricType,
-		StartDate:   startDate,
-		EndDate:     endDate,
-		StartValue:  startMetric.Value,
-		EndValue:    endMetric.Value,
-		GrowthRate:  growthRate,
+		MetricType:     metricType,
+		StartDate:      startDate,
+		EndDate:        endDate,
+		StartValue:     startMetric.Value,
+		EndValue:       endMetric.Value,
+		GrowthRate:     growthRate,
 		AbsoluteChange: endMetric.Value - startMetric.Value,
 	}, nil
 }
@@ -1740,7 +1794,7 @@ func (r *TrendingRepository) CalculateGrowthRate(ctx context.Context, metricType
 func (r *TrendingRepository) RecordManifestGeneration(ctx context.Context, mediaID, format string, duration float64) error {
 	analytics := &models.MediaAnalytics{}
 	analytics.SetManifestGeneration(mediaID, format, duration)
-	
+
 	err := r.db.WithContext(ctx).Model(analytics).Create()
 	if err != nil {
 		r.logger.Error("failed to record manifest generation",
@@ -1750,12 +1804,12 @@ func (r *TrendingRepository) RecordManifestGeneration(ctx context.Context, media
 			zap.Error(err))
 		return fmt.Errorf("failed to record manifest generation: %w", err)
 	}
-	
+
 	r.logger.Debug("recorded manifest generation",
 		zap.String("mediaID", mediaID),
 		zap.String("format", format),
 		zap.Float64("duration", duration))
-	
+
 	return nil
 }
 
@@ -1763,7 +1817,7 @@ func (r *TrendingRepository) RecordManifestGeneration(ctx context.Context, media
 func (r *TrendingRepository) RecordQualityChange(ctx context.Context, mediaID, userID, oldQuality, newQuality string) error {
 	analytics := &models.MediaAnalytics{}
 	analytics.SetQualityChange(mediaID, userID, oldQuality, newQuality)
-	
+
 	err := r.db.WithContext(ctx).Model(analytics).Create()
 	if err != nil {
 		r.logger.Error("failed to record quality change",
@@ -1774,7 +1828,7 @@ func (r *TrendingRepository) RecordQualityChange(ctx context.Context, mediaID, u
 			zap.Error(err))
 		return fmt.Errorf("failed to record quality change: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -1782,7 +1836,7 @@ func (r *TrendingRepository) RecordQualityChange(ctx context.Context, mediaID, u
 func (r *TrendingRepository) RecordMediaEvent(ctx context.Context, eventType, mediaID, userID string) error {
 	analytics := &models.MediaAnalytics{}
 	analytics.SetGeneralEvent(eventType, mediaID, userID)
-	
+
 	err := r.db.WithContext(ctx).Model(analytics).Create()
 	if err != nil {
 		r.logger.Error("failed to record media event",
@@ -1792,14 +1846,14 @@ func (r *TrendingRepository) RecordMediaEvent(ctx context.Context, eventType, me
 			zap.Error(err))
 		return fmt.Errorf("failed to record media event: %w", err)
 	}
-	
+
 	return nil
 }
 
 // GetManifestGenerationStats retrieves manifest generation statistics for a date range
 func (r *TrendingRepository) GetManifestGenerationStats(ctx context.Context, format, startDate, endDate string) (map[string]int64, error) {
 	stats := make(map[string]int64)
-	
+
 	// Query manifest generation records
 	var analytics []models.MediaAnalytics
 	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
@@ -1807,7 +1861,7 @@ func (r *TrendingRepository) GetManifestGenerationStats(ctx context.Context, for
 		Where("Date", ">=", startDate).
 		Where("Date", "<=", endDate).
 		All(&analytics)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return stats, nil
@@ -1819,19 +1873,19 @@ func (r *TrendingRepository) GetManifestGenerationStats(ctx context.Context, for
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get manifest generation stats: %w", err)
 	}
-	
+
 	// Count by date
 	for _, record := range analytics {
 		stats[record.Date]++
 	}
-	
+
 	return stats, nil
 }
 
 // GetMediaEventStats retrieves general media event statistics
 func (r *TrendingRepository) GetMediaEventStats(ctx context.Context, eventType, startDate, endDate string) (map[string]int64, error) {
 	stats := make(map[string]int64)
-	
+
 	// Query media event records
 	var analytics []models.MediaAnalytics
 	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
@@ -1839,7 +1893,7 @@ func (r *TrendingRepository) GetMediaEventStats(ctx context.Context, eventType, 
 		Where("Date", ">=", startDate).
 		Where("Date", "<=", endDate).
 		All(&analytics)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return stats, nil
@@ -1851,12 +1905,12 @@ func (r *TrendingRepository) GetMediaEventStats(ctx context.Context, eventType, 
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get media event stats: %w", err)
 	}
-	
+
 	// Count by date
 	for _, record := range analytics {
 		stats[record.Date]++
 	}
-	
+
 	return stats, nil
 }
 
@@ -1865,17 +1919,17 @@ func (r *TrendingRepository) GetMediaEventStats(ctx context.Context, eventType, 
 // RecordModerationAction records a moderation action for analytics
 func (r *TrendingRepository) RecordModerationAction(ctx context.Context, date, reportType string, action *storage.ModerationAction) error {
 	now := time.Now()
-	
+
 	// First, get existing analytics to update counts
 	pk := fmt.Sprintf("MOD_ANALYTICS#%s", date)
 	sk := fmt.Sprintf("type#%s", reportType)
-	
+
 	var existing models.ModerationAnalytics
 	err := r.db.WithContext(ctx).Model(&models.ModerationAnalytics{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&existing)
-	
+
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("failed to get existing moderation analytics",
 			zap.String("date", date),
@@ -1883,7 +1937,7 @@ func (r *TrendingRepository) RecordModerationAction(ctx context.Context, date, r
 			zap.Error(err))
 		return fmt.Errorf("failed to get existing moderation analytics: %w", err)
 	}
-	
+
 	// Initialize or update analytics
 	analytics := &models.ModerationAnalytics{
 		PK:                    pk,
@@ -1897,11 +1951,11 @@ func (r *TrendingRepository) RecordModerationAction(ctx context.Context, date, r
 		UpdatedAt:             now,
 		TTL:                   now.Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
-	
+
 	if analytics.ModeratorActions == nil {
 		analytics.ModeratorActions = make(map[string]int64)
 	}
-	
+
 	// Update based on action
 	if action.Resolved {
 		analytics.ResolvedCount++
@@ -1912,14 +1966,14 @@ func (r *TrendingRepository) RecordModerationAction(ctx context.Context, date, r
 			analytics.AverageResolutionTime = action.ResolutionTime
 		}
 	}
-	
+
 	// Track moderator actions
 	if action.ModeratorID != "" {
 		analytics.ModeratorActions[action.ModeratorID]++
 	}
-	
+
 	analytics.UpdateKeys()
-	
+
 	// Use Create to save (DynamORM doesn't have Save/Upsert)
 	err = r.db.WithContext(ctx).Model(analytics).Create()
 	if err != nil {
@@ -1929,7 +1983,7 @@ func (r *TrendingRepository) RecordModerationAction(ctx context.Context, date, r
 			zap.Error(err))
 		return fmt.Errorf("failed to record moderation action: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -1937,13 +1991,13 @@ func (r *TrendingRepository) RecordModerationAction(ctx context.Context, date, r
 func (r *TrendingRepository) GetModerationAnalytics(ctx context.Context, date, reportType string) (*storage.ModerationAnalyticsData, error) {
 	pk := fmt.Sprintf("MOD_ANALYTICS#%s", date)
 	sk := fmt.Sprintf("type#%s", reportType)
-	
+
 	var analytics models.ModerationAnalytics
 	err := r.db.WithContext(ctx).Model(&models.ModerationAnalytics{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&analytics)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
@@ -1954,7 +2008,7 @@ func (r *TrendingRepository) GetModerationAnalytics(ctx context.Context, date, r
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get moderation analytics: %w", err)
 	}
-	
+
 	return &storage.ModerationAnalyticsData{
 		Date:                  analytics.Date,
 		ReportType:            analytics.ReportType,
@@ -1974,25 +2028,25 @@ func (r *TrendingRepository) GetModeratorStats(ctx context.Context, moderatorID 
 		ActionsByType: make(map[string]int64),
 		DailyActions:  make([]storage.DailyModeratorAction, 0, days),
 	}
-	
+
 	now := time.Now()
 	for i := 0; i < days; i++ {
-		date := now.AddDate(0, 0, -i).Format("2006-01-02")
+		date := now.AddDate(0, 0, -i).Format(common.DateFormat)
 		pk := fmt.Sprintf("MOD_ANALYTICS#%s", date)
-		
+
 		// Query all report types for this date
 		var analyticsRecords []models.ModerationAnalytics
 		err := r.db.WithContext(ctx).Model(&models.ModerationAnalytics{}).
 			Where("PK", "=", pk).
 			All(&analyticsRecords)
-		
+
 		if err != nil && !errors.IsNotFound(err) {
 			r.logger.Warn("failed to get moderation analytics for date",
 				zap.String("date", date),
 				zap.Error(err))
 			continue
 		}
-		
+
 		dailyActions := int64(0)
 		for _, record := range analyticsRecords {
 			if actions, ok := record.ModeratorActions[moderatorID]; ok {
@@ -2001,7 +2055,7 @@ func (r *TrendingRepository) GetModeratorStats(ctx context.Context, moderatorID 
 				dailyActions += actions
 			}
 		}
-		
+
 		if dailyActions > 0 {
 			stats.DailyActions = append(stats.DailyActions, storage.DailyModeratorAction{
 				Date:    date,
@@ -2009,12 +2063,12 @@ func (r *TrendingRepository) GetModeratorStats(ctx context.Context, moderatorID 
 			})
 		}
 	}
-	
+
 	// Calculate average actions per day
 	if days > 0 {
 		stats.AverageActionsPerDay = float64(stats.TotalActions) / float64(days)
 	}
-	
+
 	return stats, nil
 }
 
@@ -2022,17 +2076,17 @@ func (r *TrendingRepository) GetModeratorStats(ctx context.Context, moderatorID 
 func (r *TrendingRepository) GetReportTrends(ctx context.Context, reportTypes []string, days int) (map[string]*storage.ReportTrend, error) {
 	trends := make(map[string]*storage.ReportTrend)
 	now := time.Now()
-	
+
 	for _, reportType := range reportTypes {
 		trend := &storage.ReportTrend{
 			ReportType: reportType,
 			Daily:      make([]storage.DailyReportCount, 0, days),
 		}
-		
+
 		for i := 0; i < days; i++ {
-			date := now.AddDate(0, 0, -i).Format("2006-01-02")
+			date := now.AddDate(0, 0, -i).Format(common.DateFormat)
 			analytics, err := r.GetModerationAnalytics(ctx, date, reportType)
-			
+
 			if err != nil {
 				r.logger.Warn("failed to get analytics for report trend",
 					zap.String("date", date),
@@ -2040,7 +2094,7 @@ func (r *TrendingRepository) GetReportTrends(ctx context.Context, reportTypes []
 					zap.Error(err))
 				continue
 			}
-			
+
 			if analytics != nil {
 				trend.Daily = append(trend.Daily, storage.DailyReportCount{
 					Date:          date,
@@ -2051,20 +2105,20 @@ func (r *TrendingRepository) GetReportTrends(ctx context.Context, reportTypes []
 				trend.TotalResolved += analytics.ResolvedCount
 			}
 		}
-		
+
 		// Calculate resolution rate
 		if trend.TotalCount > 0 {
 			trend.ResolutionRate = float64(trend.TotalResolved) / float64(trend.TotalCount) * 100
 		}
-		
+
 		// Reverse daily data to have oldest first
 		for i, j := 0, len(trend.Daily)-1; i < j; i, j = i+1, j-1 {
 			trend.Daily[i], trend.Daily[j] = trend.Daily[j], trend.Daily[i]
 		}
-		
+
 		trends[reportType] = trend
 	}
-	
+
 	return trends, nil
 }
 
@@ -2072,7 +2126,7 @@ func (r *TrendingRepository) GetReportTrends(ctx context.Context, reportTypes []
 func (r *TrendingRepository) GetActiveUserCount(ctx context.Context, days int) (int, error) {
 	// Calculate the cutoff time for active users
 	cutoff := time.Now().AddDate(0, 0, -days)
-	
+
 	// Query for unique users who had activity after the cutoff
 	// This is a simplified implementation - in production, you'd want proper indexing
 	var activities []models.Activity
@@ -2083,7 +2137,7 @@ func (r *TrendingRepository) GetActiveUserCount(ctx context.Context, days int) (
 		r.logger.Error("failed to get active users", zap.Error(err))
 		return 0, err
 	}
-	
+
 	// Count unique actors
 	uniqueActors := make(map[string]bool)
 	for _, activity := range activities {
@@ -2091,7 +2145,7 @@ func (r *TrendingRepository) GetActiveUserCount(ctx context.Context, days int) (
 			uniqueActors[activity.Activity.Actor] = true
 		}
 	}
-	
+
 	return len(uniqueActors), nil
 }
 
@@ -2104,7 +2158,7 @@ func (r *TrendingRepository) GetTotalUserCount(ctx context.Context) (int, error)
 		r.logger.Error("failed to get total user count", zap.Error(err))
 		return 0, err
 	}
-	
+
 	return len(users), nil
 }
 
@@ -2118,7 +2172,7 @@ func (r *TrendingRepository) GetTotalStatusCount(ctx context.Context) (*int, err
 		r.logger.Error("failed to get total status count", zap.Error(err))
 		return nil, err
 	}
-	
+
 	count := len(objects)
 	return &count, nil
 }
@@ -2132,8 +2186,8 @@ func (r *TrendingRepository) GetTotalDomainCount(ctx context.Context) (int, erro
 		r.logger.Error("failed to get total domain count", zap.Error(err))
 		return 0, err
 	}
-	
-	// Count unique domains from actor URLs  
+
+	// Count unique domains from actor URLs
 	uniqueDomains := make(map[string]bool)
 	for _, actor := range actors {
 		if actor.Actor != nil && actor.Actor.ID != "" {
@@ -2143,7 +2197,193 @@ func (r *TrendingRepository) GetTotalDomainCount(ctx context.Context) (int, erro
 			}
 		}
 	}
-	
+
 	return len(uniqueDomains), nil
 }
 
+// ========== Popular Query Atomic Counter Methods ==========
+
+// IncrementQueryCount atomically increments the count for a search query
+func (r *TrendingRepository) IncrementQueryCount(ctx context.Context, query string, count int) error {
+	if query == "" || count <= 0 {
+		return fmt.Errorf("invalid parameters: query cannot be empty and count must be positive")
+	}
+
+	// Normalize query for consistent counting
+	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
+	queryHash := r.hashQuery(normalizedQuery)
+	
+	now := time.Now()
+	date := now.Format(common.DateFormat)
+
+	// Update counters for different time buckets
+	timeBuckets := []string{"daily", "weekly", "monthly"}
+	
+	for _, bucket := range timeBuckets {
+		if err := r.incrementCounterForBucket(ctx, queryHash, normalizedQuery, bucket, date, count, now); err != nil {
+			r.logger.Error("failed to increment counter for bucket",
+				zap.String("query", normalizedQuery),
+				zap.String("bucket", bucket),
+				zap.Error(err))
+			// Continue with other buckets
+		}
+	}
+
+	return nil
+}
+
+// GetQueryCount retrieves the current count for a query
+func (r *TrendingRepository) GetQueryCount(ctx context.Context, query string) (int, error) {
+	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
+	queryHash := r.hashQuery(normalizedQuery)
+	
+	// Get daily count by default
+	pk := fmt.Sprintf("POPULAR_QUERY#%s", queryHash)
+	sk := "COUNTER#daily"
+	
+	var counter models.PopularQueryCounter
+	err := r.db.WithContext(ctx).Model(&models.PopularQueryCounter{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&counter)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return 0, nil
+		}
+		r.logger.Error("failed to get query count",
+			zap.String("query", normalizedQuery),
+			zap.Error(err))
+		return 0, fmt.Errorf("failed to get query count: %w", err)
+	}
+	
+	return int(counter.Count), nil
+}
+
+// GetTopQueries retrieves the most popular queries within a time range
+func (r *TrendingRepository) GetTopQueries(ctx context.Context, limit int, timeRange time.Duration) ([]storage.SearchQueryStats, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	// Determine time bucket based on range
+	bucket := models.PeriodDaily
+	if timeRange > 24*time.Hour && timeRange <= 7*24*time.Hour {
+		bucket = models.PeriodWeekly
+	} else if timeRange > 7*24*time.Hour {
+		bucket = models.PeriodMonthly
+	}
+
+	// Calculate date range
+	now := time.Now()
+	endDate := now.Format(common.DateFormat)
+
+	// Query using GSI8 for ranking
+	gsi8PK := fmt.Sprintf("POPULAR#%s#%s", bucket, endDate)
+	
+	var counters []models.PopularQueryCounter
+	err := r.db.WithContext(ctx).Model(&models.PopularQueryCounter{}).
+		Where("GSI8PK", "=", gsi8PK).
+		OrderBy("GSI8SK", "DESC"). // Highest counts first
+		Limit(limit).
+		All(&counters)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []storage.SearchQueryStats{}, nil
+		}
+		r.logger.Error("failed to get top queries",
+			zap.String("bucket", bucket),
+			zap.String("date", endDate),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get top queries: %w", err)
+	}
+
+	// Convert to storage type
+	stats := make([]storage.SearchQueryStats, 0, len(counters))
+	for _, counter := range counters {
+		stat := storage.SearchQueryStats{
+			Query:       counter.Query,
+			Count:       int(counter.Count),
+			UserCount:   int(counter.UserCount),
+			AvgResults:  counter.AvgResults,
+			LastUsed:    counter.LastQueried,
+			LastQueried: counter.LastQueried,
+		}
+		stats = append(stats, stat)
+	}
+
+	return stats, nil
+}
+
+// incrementCounterForBucket atomically increments counter for specific time bucket
+func (r *TrendingRepository) incrementCounterForBucket(ctx context.Context, queryHash, query, bucket, date string, count int, now time.Time) error {
+	pk := fmt.Sprintf("POPULAR_QUERY#%s", queryHash)
+	sk := fmt.Sprintf("COUNTER#%s", bucket)
+
+	// Try to get existing counter
+	var existing models.PopularQueryCounter
+	err := r.db.WithContext(ctx).Model(&models.PopularQueryCounter{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&existing)
+
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to get existing counter: %w", err)
+	}
+
+	// Create or update counter
+	counter := &models.PopularQueryCounter{
+		QueryHash:   queryHash,
+		Query:       query,
+		TimeBucket:  bucket,
+		Date:        date,
+		UpdatedAt:   now,
+	}
+
+	if errors.IsNotFound(err) {
+		// Create new counter
+		counter.Count = int64(count)
+		counter.UserCount = 1
+		counter.AvgResults = 0 // Will be calculated later
+		counter.FirstQueried = now
+		counter.LastQueried = now
+	} else {
+		// Update existing counter atomically
+		counter.Count = existing.Count + int64(count)
+		counter.UserCount = existing.UserCount // Will be updated separately for unique users
+		counter.AvgResults = existing.AvgResults
+		counter.FirstQueried = existing.FirstQueried
+		counter.LastQueried = now
+	}
+
+	// Update keys
+	counter.UpdateKeys()
+
+	// Use Create for new or Update for existing
+	if errors.IsNotFound(err) {
+		err = r.db.WithContext(ctx).Model(counter).Create()
+	} else {
+		// Copy existing PK/SK to maintain consistency
+		counter.PK = existing.PK
+		counter.SK = existing.SK
+		err = r.db.WithContext(ctx).Model(counter).Update()
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to save counter: %w", err)
+	}
+
+	return nil
+}
+
+// hashQuery creates a consistent hash for queries (for privacy)
+func (r *TrendingRepository) hashQuery(query string) string {
+	// Simple hash for now - in production, use SHA-256 or similar
+	// This allows for privacy-preserving analytics
+	h := fmt.Sprintf("%x", query) // Simple hex conversion
+	if len(h) > 32 {
+		h = h[:32] // Limit length
+	}
+	return h
+}

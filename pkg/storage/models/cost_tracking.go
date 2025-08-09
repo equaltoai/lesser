@@ -42,15 +42,15 @@ type DynamoDBCostRecord struct {
 	EstimatedCostDollars float64 `json:"estimated_cost_dollars"`
 
 	// Operation details
-	ItemCount       int    `json:"item_count"`        // Number of items in operation
-	RequestDuration int64  `json:"request_duration"`  // Duration in milliseconds
+	ItemCount       int    `json:"item_count"`           // Number of items in operation
+	RequestDuration int64  `json:"request_duration"`     // Duration in milliseconds
 	IndexName       string `json:"index_name,omitempty"` // GSI name if used
 	ConsistentRead  bool   `json:"consistent_read"`
 
 	// Service and function information
-	ServiceName    string `json:"service_name"`    // Lambda function or service
-	RequestID      string `json:"request_id"`      // AWS Request ID
-	FunctionName   string `json:"function_name"`   // Lambda function name
+	ServiceName     string `json:"service_name"`     // Lambda function or service
+	RequestID       string `json:"request_id"`       // AWS Request ID
+	FunctionName    string `json:"function_name"`    // Lambda function name
 	FunctionVersion string `json:"function_version"` // Lambda function version
 
 	// Additional metadata
@@ -72,16 +72,16 @@ type DynamoDBCostAggregation struct {
 	SK string `dynamorm:"sk" json:"sk"` // Format: "window#{windowStart}"
 
 	// Aggregation details
-	Period      string    `json:"period"`       // minute, hour, day, week, month
-	OperationType string `json:"operation_type"` // Same as CostTracking.OperationType
-	Table       string    `json:"table_name"`   // Specific table or "all" for all tables
-	WindowStart time.Time `json:"window_start"` // Start of aggregation window
-	WindowEnd   time.Time `json:"window_end"`   // End of aggregation window
+	Period        string    `json:"period"`         // minute, hour, day, week, month
+	OperationType string    `json:"operation_type"` // Same as CostTracking.OperationType
+	Table         string    `json:"table_name"`     // Specific table or "all" for all tables
+	WindowStart   time.Time `json:"window_start"`   // Start of aggregation window
+	WindowEnd     time.Time `json:"window_end"`     // End of aggregation window
 
 	// Aggregated capacity units
 	TotalReadCapacityUnits  float64 `json:"total_read_capacity_units"`
 	TotalWriteCapacityUnits float64 `json:"total_write_capacity_units"`
-	
+
 	// Aggregated costs
 	TotalReadCostMicroCents  int64   `json:"total_read_cost_micro_cents"`
 	TotalWriteCostMicroCents int64   `json:"total_write_cost_micro_cents"`
@@ -89,10 +89,10 @@ type DynamoDBCostAggregation struct {
 	TotalCostDollars         float64 `json:"total_cost_dollars"`
 
 	// Operation statistics
-	TotalOperations int64   `json:"total_operations"`
-	TotalItemCount  int64   `json:"total_item_count"`
+	TotalOperations         int64   `json:"total_operations"`
+	TotalItemCount          int64   `json:"total_item_count"`
 	AverageCostPerOperation float64 `json:"average_cost_per_operation"`
-	AverageDuration float64 `json:"average_duration"` // milliseconds
+	AverageDuration         float64 `json:"average_duration"` // milliseconds
 
 	// Cost breakdown by table
 	TableBreakdown map[string]*DynamoDBTableCostStats `json:"table_breakdown,omitempty"`
@@ -113,19 +113,19 @@ type DynamoDBCostAggregation struct {
 
 // DynamoDBTableCostStats represents cost statistics for a specific table
 type DynamoDBTableCostStats struct {
-	TableName        string  `json:"table_name"`
-	OperationCount   int64   `json:"operation_count"`
-	ReadCapacityUnits  float64 `json:"read_capacity_units"`
-	WriteCapacityUnits float64 `json:"write_capacity_units"`
+	TableName           string  `json:"table_name"`
+	OperationCount      int64   `json:"operation_count"`
+	ReadCapacityUnits   float64 `json:"read_capacity_units"`
+	WriteCapacityUnits  float64 `json:"write_capacity_units"`
 	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
 	TotalCostDollars    float64 `json:"total_cost_dollars"`
-	UniqueUsers      int64   `json:"unique_users"`      // Number of unique users for this table
+	UniqueUsers         int64   `json:"unique_users"` // Number of unique users for this table
 }
 
 // DynamoDBServiceCostStats represents cost statistics for a specific service
 type DynamoDBServiceCostStats struct {
-	ServiceName      string  `json:"service_name"`
-	OperationCount   int64   `json:"operation_count"`
+	ServiceName         string  `json:"service_name"`
+	OperationCount      int64   `json:"operation_count"`
 	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
 	TotalCostDollars    float64 `json:"total_cost_dollars"`
 	AverageCostPerOp    float64 `json:"average_cost_per_op"`
@@ -134,12 +134,12 @@ type DynamoDBServiceCostStats struct {
 
 // TableName returns the DynamoDB table name
 func (DynamoDBCostRecord) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name
 func (DynamoDBCostAggregation) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the model before creation
@@ -214,7 +214,7 @@ func (ct *DynamoDBCostRecord) Validate() error {
 		return fmt.Errorf("OperationType is required")
 	}
 	if strings.TrimSpace(ct.Table) == "" {
-		return fmt.Errorf("Table is required")
+		return fmt.Errorf("table is required")
 	}
 	if !isValidOperationType(ct.OperationType) {
 		return fmt.Errorf("invalid operation type: %s", ct.OperationType)
@@ -242,7 +242,7 @@ func (act *DynamoDBCostAggregation) BeforeCreate() error {
 
 	// Set TTL (keep aggregated data longer)
 	ttlDays := 90
-	if act.Period == "month" {
+	if act.Period == PeriodMonth {
 		ttlDays = 365 // Keep monthly data for a year
 	}
 	act.ExpiresAt = now.Add(time.Duration(ttlDays) * 24 * time.Hour).Unix()
@@ -273,7 +273,7 @@ func (act *DynamoDBCostAggregation) Validate() error {
 		return fmt.Errorf("OperationType is required")
 	}
 	if strings.TrimSpace(act.Period) == "" {
-		return fmt.Errorf("Period is required")
+		return fmt.Errorf("period is required")
 	}
 	if act.WindowStart.IsZero() {
 		return fmt.Errorf("WindowStart is required")
@@ -316,20 +316,19 @@ func (ct *DynamoDBCostRecord) GetProperty(key string) (interface{}, bool) {
 // isValidOperationType checks if the operation type is valid
 func isValidOperationType(opType string) bool {
 	validTypes := map[string]bool{
-		"GetItem":         true,
-		"PutItem":         true,
-		"UpdateItem":      true,
-		"DeleteItem":      true,
-		"Query":           true,
-		"Scan":            true,
-		"BatchGetItem":    true,
-		"BatchWriteItem":  true,
-		"TransactGetItems": true,
+		"GetItem":            true,
+		"PutItem":            true,
+		"UpdateItem":         true,
+		"DeleteItem":         true,
+		"Query":              true,
+		"Scan":               true,
+		"BatchGetItem":       true,
+		"BatchWriteItem":     true,
+		"TransactGetItems":   true,
 		"TransactWriteItems": true,
 	}
 	return validTypes[opType]
 }
-
 
 // DynamoDBCostRecordBuilder helps create cost tracking records
 type DynamoDBCostRecordBuilder struct {
@@ -433,7 +432,7 @@ const (
 	// On-demand pricing (as of 2024)
 	// Read: $0.25 per million read request units = 0.025 cents per 1000 = 25 microcents per 1000
 	ReadCostMicroCentsPerUnit = 25 // per 1000 units
-	
+
 	// Write: $1.25 per million write request units = 0.125 cents per 1000 = 125 microcents per 1000
 	WriteCostMicroCentsPerUnit = 125 // per 1000 units
 )

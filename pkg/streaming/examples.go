@@ -11,7 +11,7 @@ import (
 // ExampleGraphQLSubscription demonstrates how GraphQL subscriptions would use the internal event bus
 func ExampleGraphQLSubscription(logger *zap.Logger) {
 	// This would typically be called from GraphQL resolver
-	
+
 	// Get the global event bus (from stream-router)
 	eventBus := GetGlobalEventBus(logger)
 	if eventBus == nil {
@@ -48,17 +48,17 @@ func ExampleGraphQLSubscription(logger *zap.Logger) {
 				zap.String("event_type", string(event.Type)),
 				zap.String("user_id", event.UserID),
 				zap.Any("data", graphqlData))
-			
+
 			// In real implementation, this would be sent to the GraphQL client
 			// via WebSocket or Server-Sent Events
-			
+
 		case <-subscriber.Quit:
 			logger.Info("subscriber disconnected")
 			return
-			
+
 		case <-ctx.Done():
 			logger.Info("subscription timeout")
-			eventBus.Unsubscribe("graphql-timeline-alice")
+			_ = eventBus.Unsubscribe("graphql-timeline-alice")
 			return
 		}
 	}
@@ -72,9 +72,9 @@ func convertEventToGraphQL(event *InternalEvent) map[string]interface{} {
 			return map[string]interface{}{
 				"__typename": "StatusUpdate",
 				"status": map[string]interface{}{
-					"id":          payload.StatusID,
-					"content":     payload.Content,
-					"visibility":  payload.Visibility,
+					"id":         payload.StatusID,
+					"content":    payload.Content,
+					"visibility": payload.Visibility,
 					"author": map[string]interface{}{
 						"id":       payload.AuthorID,
 						"username": payload.AuthorUsername,
@@ -84,7 +84,7 @@ func convertEventToGraphQL(event *InternalEvent) map[string]interface{} {
 				"streams": event.Streams,
 			}
 		}
-		
+
 	case EventTypeNotification:
 		if payload, ok := event.Data.(*NotificationEventPayload); ok {
 			return map[string]interface{}{
@@ -100,20 +100,20 @@ func convertEventToGraphQL(event *InternalEvent) map[string]interface{} {
 				},
 			}
 		}
-		
+
 	case EventTypeAccountUpdate:
 		if payload, ok := event.Data.(*AccountEventPayload); ok {
 			return map[string]interface{}{
 				"__typename": "AccountUpdate",
 				"account": map[string]interface{}{
-					"id":       payload.AccountID,
-					"username": payload.Username,
+					"id":        payload.AccountID,
+					"username":  payload.Username,
 					"updatedAt": payload.UpdatedAt.Format(time.RFC3339),
 				},
 			}
 		}
 	}
-	
+
 	// Fallback for unknown event types
 	return map[string]interface{}{
 		"__typename": "GenericUpdate",
@@ -139,18 +139,18 @@ func ExampleTimelineSubscription(userID string, eventBus *EventBus, logger *zap.
 			"public:local",
 		},
 	}
-	
+
 	subscriberID := fmt.Sprintf("timeline:%s:%d", userID, time.Now().UnixNano())
-	
+
 	_, err := eventBus.Subscribe(subscriberID, filter, 100)
 	if err != nil {
 		return "", fmt.Errorf("failed to subscribe to timeline: %w", err)
 	}
-	
+
 	logger.Info("timeline subscription created",
 		zap.String("subscriber_id", subscriberID),
 		zap.String("user_id", userID))
-	
+
 	return subscriberID, nil
 }
 
@@ -167,18 +167,18 @@ func ExampleNotificationSubscription(userID string, eventBus *EventBus, logger *
 			fmt.Sprintf("user:notification:%s", userID),
 		},
 	}
-	
+
 	subscriberID := fmt.Sprintf("notifications:%s:%d", userID, time.Now().UnixNano())
-	
+
 	_, err := eventBus.Subscribe(subscriberID, filter, 50)
 	if err != nil {
 		return "", fmt.Errorf("failed to subscribe to notifications: %w", err)
 	}
-	
+
 	logger.Info("notification subscription created",
 		zap.String("subscriber_id", subscriberID),
 		zap.String("user_id", userID))
-	
+
 	return subscriberID, nil
 }
 
@@ -193,18 +193,18 @@ func ExampleModerationSubscription(moderatorID string, eventBus *EventBus, logge
 		},
 		MinPriority: PriorityHigh, // Only high priority moderation events
 	}
-	
+
 	subscriberID := fmt.Sprintf("moderation:%s:%d", moderatorID, time.Now().UnixNano())
-	
+
 	_, err := eventBus.Subscribe(subscriberID, filter, 200) // Larger buffer for moderators
 	if err != nil {
 		return "", fmt.Errorf("failed to subscribe to moderation events: %w", err)
 	}
-	
+
 	logger.Info("moderation subscription created",
 		zap.String("subscriber_id", subscriberID),
 		zap.String("moderator_id", moderatorID))
-	
+
 	return subscriberID, nil
 }
 
@@ -220,18 +220,18 @@ func ExampleHashtagSubscription(hashtag string, eventBus *EventBus, logger *zap.
 			"hashtag_0": hashtag, // Match hashtag in metadata
 		},
 	}
-	
+
 	subscriberID := fmt.Sprintf("hashtag:%s:%d", hashtag, time.Now().UnixNano())
-	
+
 	_, err := eventBus.Subscribe(subscriberID, filter, 30)
 	if err != nil {
 		return "", fmt.Errorf("failed to subscribe to hashtag events: %w", err)
 	}
-	
+
 	logger.Info("hashtag subscription created",
 		zap.String("subscriber_id", subscriberID),
 		zap.String("hashtag", hashtag))
-	
+
 	return subscriberID, nil
 }
 
@@ -244,10 +244,10 @@ func ExampleUnsubscribe(subscriberID string, eventBus *EventBus, logger *zap.Log
 			zap.Error(err))
 		return err
 	}
-	
+
 	logger.Info("successfully unsubscribed",
 		zap.String("subscriber_id", subscriberID))
-	
+
 	return nil
 }
 
@@ -258,7 +258,7 @@ func ExampleEventBusHealthCheck(eventBus *EventBus, logger *zap.Logger) {
 		logger.Warn("event bus metrics not available")
 		return
 	}
-	
+
 	logger.Info("event bus health check",
 		zap.Int64("events_published", metrics.EventsPublished),
 		zap.Int64("events_delivered", metrics.EventsDelivered),
@@ -268,7 +268,7 @@ func ExampleEventBusHealthCheck(eventBus *EventBus, logger *zap.Logger) {
 		zap.Int64("delivery_errors", metrics.DeliveryErrors),
 		zap.Duration("avg_delivery_time", metrics.AverageDeliveryTime),
 		zap.Time("last_event_time", metrics.LastEventTime))
-	
+
 	// Alert if error rate is too high
 	if metrics.EventsPublished > 0 {
 		errorRate := float64(metrics.DeliveryErrors) / float64(metrics.EventsPublished)
@@ -277,7 +277,7 @@ func ExampleEventBusHealthCheck(eventBus *EventBus, logger *zap.Logger) {
 				zap.Float64("error_rate", errorRate))
 		}
 	}
-	
+
 	// Alert if too many events are being dropped
 	if metrics.EventsDropped > 100 {
 		logger.Warn("high number of dropped events",

@@ -33,7 +33,11 @@ func (r *CSRFRepository) Store(ctx context.Context, token string, userID string,
 	count, err := r.GetUserActiveTokenCount(ctx, userID)
 	if err == nil && count >= 10 {
 		// Clean up old tokens before rejecting
-		r.CleanupUserTokens(ctx, userID)
+		if cleanupErr := r.CleanupUserTokens(ctx, userID); cleanupErr != nil {
+			r.logger.Warn("failed to cleanup user CSRF tokens",
+				zap.String("userID", userID),
+				zap.Error(cleanupErr))
+		}
 
 		// Check again after cleanup
 		count, err = r.GetUserActiveTokenCount(ctx, userID)
@@ -144,15 +148,15 @@ func (r *CSRFRepository) ValidateAndConsume(ctx context.Context, token string, u
 	if err != nil {
 		return fmt.Errorf("failed to validate token: %w", err)
 	}
-	
+
 	if !valid {
 		return fmt.Errorf("invalid CSRF token")
 	}
-	
+
 	if time.Now().After(expiresAt) {
 		return fmt.Errorf("expired CSRF token")
 	}
-	
+
 	if retrievedUserID != userID {
 		return fmt.Errorf("invalid CSRF token")
 	}
@@ -160,13 +164,13 @@ func (r *CSRFRepository) ValidateAndConsume(ctx context.Context, token string, u
 	// Now update to mark as used
 	pk := fmt.Sprintf("CSRF#%s", token)
 	var csrfToken models.CSRFToken
-	
+
 	// Get the current token record
 	err = r.db.WithContext(ctx).Model(&models.CSRFToken{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", "TOKEN").
 		First(&csrfToken)
-		
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("invalid CSRF token")
@@ -177,10 +181,10 @@ func (r *CSRFRepository) ValidateAndConsume(ctx context.Context, token string, u
 			zap.Error(err))
 		return fmt.Errorf("failed to validate token: %w", err)
 	}
-	
+
 	// Mark as used and save using Create (upsert semantics)
 	csrfToken.MarkAsUsed()
-	
+
 	err = r.db.WithContext(ctx).Model(&csrfToken).Create()
 	if err != nil {
 		r.logger.Error("failed to mark CSRF token as used",
@@ -279,7 +283,7 @@ func (r *CSRFRepository) CleanupUserTokens(ctx context.Context, userID string) e
 }
 
 // CleanExpired removes expired tokens - matches legacy interface (DynamoDB TTL handles this automatically)
-func (r *CSRFRepository) CleanExpired(ctx context.Context) error {
+func (r *CSRFRepository) CleanExpired(_ context.Context) error {
 	// DynamoDB TTL handles this automatically - this method exists for interface compatibility
 	r.logger.Debug("clean expired called - DynamoDB TTL handles automatic cleanup")
 	return nil

@@ -50,7 +50,7 @@ type User struct {
 
 // TableName returns the DynamoDB table name for the User model
 func (User) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -66,7 +66,7 @@ func (u *User) BeforeCreate() error {
 
 	// Set up primary key - matches legacy exactly
 	u.PK = "USER#" + u.Username
-	u.SK = "METADATA"
+	u.SK = SKMetadata
 
 	// Set up GSI keys
 	u.setupGSIKeys()

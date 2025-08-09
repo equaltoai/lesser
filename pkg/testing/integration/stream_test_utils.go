@@ -51,14 +51,14 @@ type StreamTestSuite struct {
 
 // StreamMetrics tracks stream processing metrics
 type StreamMetrics struct {
-	mu                sync.RWMutex
-	TotalRecords      int
-	ProcessedRecords  int
-	FailedRecords     int
-	RetryCount        int
-	ProcessingTime    map[string]time.Duration
-	RecordLag         []time.Duration
-	BatchSizes        []int
+	mu               sync.RWMutex
+	TotalRecords     int
+	ProcessedRecords int
+	FailedRecords    int
+	RetryCount       int
+	ProcessingTime   map[string]time.Duration
+	RecordLag        []time.Duration
+	BatchSizes       []int
 }
 
 // StreamEventCollector collects events for validation
@@ -122,14 +122,14 @@ func (s *StreamTestSuite) RunTest(tc StreamTestCase) {
 // createStreamEvent creates a DynamoDB stream event from test case
 func (s *StreamTestSuite) createStreamEvent(tc StreamTestCase) events.DynamoDBEvent {
 	record := events.DynamoDBEventRecord{
-		EventID:       fmt.Sprintf("event-%d", time.Now().UnixNano()),
-		EventName:     tc.Operation,
-		EventSource:   "aws:dynamodb",
-		EventVersion:  "1.1",
-		AWSRegion:     "us-east-1",
+		EventID:      fmt.Sprintf("event-%d", time.Now().UnixNano()),
+		EventName:    tc.Operation,
+		EventSource:  "aws:dynamodb",
+		EventVersion: "1.1",
+		AWSRegion:    "us-east-1",
 		Change: events.DynamoDBStreamRecord{
 			ApproximateCreationDateTime: events.SecondsEpochTime{Time: time.Now()},
-			SequenceNumber:             fmt.Sprintf("%d", time.Now().UnixNano()),
+			SequenceNumber:              fmt.Sprintf("%d", time.Now().UnixNano()),
 		},
 	}
 
@@ -155,7 +155,7 @@ func marshalToDynamoDBAttributes(obj interface{}) map[string]events.DynamoDBAttr
 
 	// Convert to events.DynamoDBAttributeValue format
 	result := make(map[string]events.DynamoDBAttributeValue)
-	
+
 	// Simplified conversion for testing
 	result["pk"] = events.NewStringAttribute("test-pk")
 	result["sk"] = events.NewStringAttribute("test-sk")
@@ -298,7 +298,7 @@ func createOrderedEvent(id string, timestamp time.Time) events.DynamoDBEvent {
 				EventName: "INSERT",
 				Change: events.DynamoDBStreamRecord{
 					ApproximateCreationDateTime: events.SecondsEpochTime{Time: timestamp},
-					SequenceNumber:             id,
+					SequenceNumber:              id,
 					NewImage: map[string]events.DynamoDBAttributeValue{
 						"id":        events.NewStringAttribute(id),
 						"timestamp": events.NewStringAttribute(timestamp.Format(time.RFC3339)),
@@ -325,8 +325,8 @@ func RunStreamReplay(t *testing.T, test StreamReplayTest, records []events.Dynam
 
 	for _, record := range records {
 		// Check time range
-		if record.Change.ApproximateCreationDateTime.Time.Before(test.StartTime) ||
-			record.Change.ApproximateCreationDateTime.Time.After(test.EndTime) {
+		if record.Change.ApproximateCreationDateTime.Before(test.StartTime) ||
+			record.Change.ApproximateCreationDateTime.After(test.EndTime) {
 			continue
 		}
 
@@ -402,7 +402,7 @@ func RunBatchStreamTest(t *testing.T, handler func(context.Context, events.Dynam
 // createBatches splits records into batches
 func createBatches(records []events.DynamoDBEventRecord, batchSize int) [][]events.DynamoDBEventRecord {
 	var batches [][]events.DynamoDBEventRecord
-	
+
 	for i := 0; i < len(records); i += batchSize {
 		end := i + batchSize
 		if end > len(records) {
@@ -410,15 +410,15 @@ func createBatches(records []events.DynamoDBEventRecord, batchSize int) [][]even
 		}
 		batches = append(batches, records[i:end])
 	}
-	
+
 	return batches
 }
 
-// StreamErrorScenarios tests error handling in stream processing
+// TestStreamErrorScenarios tests error handling in stream processing
 func TestStreamErrorScenarios(t *testing.T, handler func(context.Context, events.DynamoDBEvent) error) {
 	scenarios := []struct {
-		Name  string
-		Event events.DynamoDBEvent
+		Name        string
+		Event       events.DynamoDBEvent
 		ExpectError bool
 	}{
 		{
@@ -470,8 +470,8 @@ func TestStreamErrorScenarios(t *testing.T, handler func(context.Context, events
 
 // StreamLagMonitor monitors stream processing lag
 type StreamLagMonitor struct {
-	mu            sync.RWMutex
-	measurements  []LagMeasurement
+	mu             sync.RWMutex
+	measurements   []LagMeasurement
 	alertThreshold time.Duration
 }
 

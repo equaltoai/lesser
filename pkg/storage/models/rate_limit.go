@@ -12,9 +12,9 @@ type LoginAttempt struct {
 	SK string `dynamorm:"sk" json:"sk"` // timestamp in RFC3339Nano format
 
 	// Attributes
-	Type      string    `json:"type"`       // "LoginAttempt"
-	Success   bool      `json:"success"`    // whether the login was successful
-	Timestamp time.Time `json:"timestamp"`  // when the attempt occurred
+	Type      string    `json:"type"`               // "LoginAttempt"
+	Success   bool      `json:"success"`            // whether the login was successful
+	Timestamp time.Time `json:"timestamp"`          // when the attempt occurred
 	TTL       int64     `json:"ttl" dynamorm:"ttl"` // automatic cleanup after 24 hours
 }
 
@@ -47,8 +47,8 @@ type RateLimitLockout struct {
 	SK string `dynamorm:"sk" json:"sk"` // "LOCKOUT"
 
 	// Attributes
-	Type       string    `json:"type"`        // "RateLimitLockout"
-	UnlockTime time.Time `json:"unlock_time"` // when the lockout expires
+	Type       string    `json:"type"`               // "RateLimitLockout"
+	UnlockTime time.Time `json:"unlock_time"`        // when the lockout expires
 	TTL        int64     `json:"ttl" dynamorm:"ttl"` // automatic cleanup
 }
 
@@ -76,16 +76,16 @@ type APIRateLimit struct {
 	// Primary keys
 	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{userID}#{endpoint}
 	SK string `dynamorm:"sk" json:"sk"` // WINDOW#{window_start}
-	
+
 	// Attributes
-	Type         string    `json:"type"`          // "APIRateLimit"
-	UserID       string    `json:"user_id"`       // User identifier
-	Endpoint     string    `json:"endpoint"`      // API endpoint pattern
-	Count        int       `json:"count"`         // Current request count
-	Window       time.Time `json:"window"`        // Window start time
-	Blocked      bool      `json:"blocked"`       // Whether user is blocked
-	BlockedUntil time.Time `json:"blocked_until"` // When block expires
-	UpdatedAt    time.Time `json:"updated_at"`    // Last update time
+	Type         string    `json:"type"`               // "APIRateLimit"
+	UserID       string    `json:"user_id"`            // User identifier
+	Endpoint     string    `json:"endpoint"`           // API endpoint pattern
+	Count        int       `json:"count"`              // Current request count
+	Window       time.Time `json:"window"`             // Window start time
+	Blocked      bool      `json:"blocked"`            // Whether user is blocked
+	BlockedUntil time.Time `json:"blocked_until"`      // When block expires
+	UpdatedAt    time.Time `json:"updated_at"`         // Last update time
 	TTL          int64     `json:"ttl" dynamorm:"ttl"` // Automatic cleanup
 }
 
@@ -101,7 +101,7 @@ func (arl *APIRateLimit) UpdateKeys() {
 func NewAPIRateLimit(userID, endpoint string, windowStart time.Time) *APIRateLimit {
 	now := time.Now()
 	key := fmt.Sprintf("%s:%s", userID, endpoint)
-	
+
 	return &APIRateLimit{
 		PK:        fmt.Sprintf("RATELIMIT#%s", key),
 		SK:        fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339)),

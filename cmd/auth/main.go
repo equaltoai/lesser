@@ -1,9 +1,8 @@
+// Package main implements the auth Lambda function for authentication operations.
 package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -67,6 +67,14 @@ func NewAuthHandler() (*AuthHandler, error) {
 		return nil, fmt.Errorf("DYNAMODB_TABLE environment variable is required")
 	}
 
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
@@ -74,7 +82,7 @@ func NewAuthHandler() (*AuthHandler, error) {
 	}
 
 	// Create repository factory
-	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
 	}
@@ -117,14 +125,14 @@ func NewAuthHandler() (*AuthHandler, error) {
 // RegisterRoutes registers all authentication routes
 func (ah *AuthHandler) RegisterRoutes(app *lift.App) {
 	// OAuth 2.0 endpoints
-	app.GET("/oauth/authorize", ah.handleAuthorize)
-	app.POST("/oauth/token", ah.handleToken)
-	app.POST("/oauth/revoke", ah.handleRevoke)
+	_ = app.GET("/oauth/authorize", ah.handleAuthorize)
+	_ = app.POST("/oauth/token", ah.handleToken)
+	_ = app.POST("/oauth/revoke", ah.handleRevoke)
 
 	// Session management
-	app.POST("/auth/login", ah.handleLogin)
-	app.POST("/auth/logout", ah.handleLogout)
-	app.GET("/auth/session", ah.handleSession)
+	_ = app.POST("/auth/login", ah.handleLogin)
+	_ = app.POST("/auth/logout", ah.handleLogout)
+	_ = app.GET("/auth/session", ah.handleSession)
 }
 
 // handleAuthorize handles OAuth authorization requests with PKCE
@@ -264,7 +272,11 @@ func (ah *AuthHandler) handleToken(ctx *lift.Context) error {
 	if time.Now().After(authCode.ExpiresAt) {
 		ah.logger.Warn("expired authorization code", zap.String("code", code[:8]+"..."))
 		// Clean up expired code
-		ah.deleteAuthCode(ctx.Context, code)
+		if deleteErr := ah.deleteAuthCode(ctx.Context, code); deleteErr != nil {
+			ah.logger.Warn("failed to delete expired auth code", 
+				zap.String("code", code[:8]+"..."),
+				zap.Error(deleteErr))
+		}
 		return lift.NewLiftError("INVALID_GRANT", "authorization code expired", 400)
 	}
 
@@ -442,16 +454,8 @@ func (ah *AuthHandler) handleSession(ctx *lift.Context) error {
 
 // Helper methods
 
-func (ah *AuthHandler) generateAuthCode() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(bytes), nil
-}
-
 func (ah *AuthHandler) buildQueryString(ctx *lift.Context) string {
-	var parts []string
+	parts := make([]string, 0, len(ctx.Request.QueryParams))
 	for key, value := range ctx.Request.QueryParams {
 		parts = append(parts, fmt.Sprintf("%s=%s", url.QueryEscape(key), url.QueryEscape(value)))
 	}

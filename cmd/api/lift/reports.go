@@ -33,7 +33,7 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	
+
 	var username string
 	var claims *auth.Claims
 
@@ -74,8 +74,8 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 		// Fallback for test environment - try parsing directly from request body
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				h.logger.Debug("invalid report request", 
-					zap.Error(err), 
+				h.logger.Debug("invalid report request",
+					zap.Error(err),
 					zap.Error(jsonErr))
 				return ctx.Status(400).JSON(map[string]string{"error": "invalid request"})
 			}

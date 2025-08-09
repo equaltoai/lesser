@@ -8,9 +8,13 @@ import (
 type EventType string
 
 const (
+	// EventTypeFlagged represents a flagged content event
 	EventTypeFlagged  EventType = "flagged"
+	// EventTypeReviewed represents a reviewed content event
 	EventTypeReviewed EventType = "reviewed"
+	// EventTypeAppealed represents an appealed content event
 	EventTypeAppealed EventType = "appealed"
+	// EventTypeExpired represents an expired content event
 	EventTypeExpired  EventType = "expired"
 )
 
@@ -18,12 +22,19 @@ const (
 type Category string
 
 const (
+	// CategorySpam represents spam content category
 	CategorySpam           Category = "spam"
+	// CategoryHateSpeech represents hate speech content category
 	CategoryHateSpeech     Category = "hate_speech"
+	// CategoryHarassment represents harassment content category
 	CategoryHarassment     Category = "harassment"
+	// CategoryMisinformation represents misinformation content category
 	CategoryMisinformation Category = "misinformation"
+	// CategoryNSFW represents NSFW content category
 	CategoryNSFW           Category = "nsfw"
+	// CategoryViolence represents violence-related content
 	CategoryViolence       Category = "violence"
+	// CategoryOther represents other content categories
 	CategoryOther          Category = "other"
 )
 
@@ -31,9 +42,13 @@ const (
 type Severity int
 
 const (
+	// SeverityLow represents low severity level
 	SeverityLow      Severity = 1
+	// SeverityMedium represents medium severity level
 	SeverityMedium   Severity = 2
+	// SeverityHigh represents high severity level
 	SeverityHigh     Severity = 3
+	// SeverityCritical represents critical severity level
 	SeverityCritical Severity = 4
 )
 
@@ -41,10 +56,15 @@ const (
 type ActionType string
 
 const (
+	// ActionTypeNone represents no action taken
 	ActionTypeNone    ActionType = "none"
+	// ActionTypeWarning represents a warning action
 	ActionTypeWarning ActionType = "warning"
+	// ActionTypeSilence represents a silence action
 	ActionTypeSilence ActionType = "silence"
+	// ActionTypeSuspend represents a suspend action
 	ActionTypeSuspend ActionType = "suspend"
+	// ActionTypeRemove represents a remove action
 	ActionTypeRemove  ActionType = "remove"
 )
 
@@ -58,6 +78,8 @@ type Evidence struct {
 }
 
 // ModerationEvent represents a moderation event in the system
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific event
 type ModerationEvent struct {
 	ID              string     `json:"id"`
 	EventType       EventType  `json:"event_type"`
@@ -89,6 +111,8 @@ type Review struct {
 }
 
 // ModerationDecision represents the consensus decision
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific decision
 type ModerationDecision struct {
 	ID               string     `json:"id"`
 	EventID          string     `json:"event_id"`
@@ -113,6 +137,8 @@ type QueueItem struct {
 }
 
 // ModerationHistory represents the complete history for an object
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific history
 type ModerationHistory struct {
 	ObjectID      string               `json:"object_id"`
 	Events        []ModerationEvent    `json:"events"`

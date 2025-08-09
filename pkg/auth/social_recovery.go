@@ -166,7 +166,12 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 
 	if time.Now().After(request.ExpiresAt) {
 		request.Status = "expired"
-		s.repos.Recovery().UpdateRecoveryRequest(ctx, request)
+		if updateErr := s.repos.Recovery().UpdateRecoveryRequest(ctx, request); updateErr != nil {
+			// Log the error but still return the expiration error as primary
+			s.logger.Error("failed to update expired recovery request", 
+				zap.String("request_id", requestID),
+				zap.Error(updateErr))
+		}
 		return fmt.Errorf("recovery request expired")
 	}
 
@@ -191,7 +196,9 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 		}
 
 		// Notify user (if they have other auth methods)
-		s.notifyRecoveryApproved(ctx, request)
+		if err := s.notifyRecoveryApproved(ctx, request); err != nil {
+			s.logger.Warn("failed to send recovery approval notification", zap.Error(err))
+		}
 	}
 
 	// Update request in DynamoDB
@@ -212,7 +219,10 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 
 func (s *SocialRecoveryService) generateRecoveryID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to time-based ID on crypto error (should not happen)
+		return fmt.Sprintf("recovery_%d", time.Now().UnixNano())
+	}
 	return base64.URLEncoding.EncodeToString(b)
 }
 

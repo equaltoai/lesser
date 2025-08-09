@@ -194,8 +194,8 @@ func (h *EmailFreeRecoveryHandler) HandleGenerateRecoveryCodesLift(ctx *lift.Con
 		username = testUsername
 	} else {
 		// Get from JWT context - this would be populated by auth middleware
-		if ctx.Context.Value("jwt_claims") != nil {
-			if claims, ok := ctx.Context.Value("jwt_claims").(map[string]any); ok {
+		if ctx.Value("jwt_claims") != nil {
+			if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
 				if sub, ok := claims["sub"].(string); ok {
 					username = sub
 				}
@@ -282,8 +282,8 @@ func (h *EmailFreeRecoveryHandler) HandleAddTrusteeLift(ctx *lift.Context) error
 		username = testUsername
 	} else {
 		// Get from JWT context - this would be populated by auth middleware
-		if ctx.Context.Value("jwt_claims") != nil {
-			if claims, ok := ctx.Context.Value("jwt_claims").(map[string]any); ok {
+		if ctx.Value("jwt_claims") != nil {
+			if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
 				if sub, ok := claims["sub"].(string); ok {
 					username = sub
 				}
@@ -342,8 +342,8 @@ func (h *EmailFreeRecoveryHandler) HandleListTrusteesLift(ctx *lift.Context) err
 		username = testUsername
 	} else {
 		// Get from JWT context - this would be populated by auth middleware
-		if ctx.Context.Value("jwt_claims") != nil {
-			if claims, ok := ctx.Context.Value("jwt_claims").(map[string]any); ok {
+		if ctx.Value("jwt_claims") != nil {
+			if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
 				if sub, ok := claims["sub"].(string); ok {
 					username = sub
 				}
@@ -382,8 +382,8 @@ func (h *EmailFreeRecoveryHandler) HandleRemoveTrusteeLift(ctx *lift.Context) er
 		username = testUsername
 	} else {
 		// Get from JWT context - this would be populated by auth middleware
-		if ctx.Context.Value("jwt_claims") != nil {
-			if claims, ok := ctx.Context.Value("jwt_claims").(map[string]any); ok {
+		if ctx.Value("jwt_claims") != nil {
+			if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
 				if sub, ok := claims["sub"].(string); ok {
 					username = sub
 				}

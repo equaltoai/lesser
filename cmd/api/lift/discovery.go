@@ -10,6 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -17,77 +18,11 @@ import (
 // HandleGetDirectoryLift handles GET /api/v1/directory
 // Returns profile directory of discoverable accounts
 func (h *Handler) HandleGetDirectoryLift(ctx *lift.Context) error {
-	// Get query parameters
-	limit := 40
-	limitStr := ctx.Query("limit")
-	
-	// Test mode fallback - extract from path query string
-	if limitStr == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
-		parts := strings.Split(ctx.Request.Path, "?")
-		if len(parts) > 1 {
-			params := strings.Split(parts[1], "&")
-			for _, param := range params {
-				kv := strings.Split(param, "=")
-				if len(kv) == 2 && kv[0] == "limit" {
-					limitStr = kv[1]
-					break
-				}
-			}
-		}
-	}
-	
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 80 {
-			limit = l
-		}
-	}
+	// Parse query parameters
+	params := h.parseDirectoryParams(ctx)
 
-	offset := 0
-	offsetStr := ctx.Query("offset")
-	
-	// Test mode fallback - extract from path query string
-	if offsetStr == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
-		parts := strings.Split(ctx.Request.Path, "?")
-		if len(parts) > 1 {
-			params := strings.Split(parts[1], "&")
-			for _, param := range params {
-				kv := strings.Split(param, "=")
-				if len(kv) == 2 && kv[0] == "offset" {
-					offsetStr = kv[1]
-					break
-				}
-			}
-		}
-	}
-	
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
-			offset = o
-		}
-	}
-
-	// Filter options
-	local := ctx.Query("local") == "true"
-	
-	// Test mode fallback - extract from path query string
-	if ctx.Query("local") == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
-		parts := strings.Split(ctx.Request.Path, "?")
-		if len(parts) > 1 {
-			params := strings.Split(parts[1], "&")
-			for _, param := range params {
-				kv := strings.Split(param, "=")
-				if len(kv) == 2 && kv[0] == "local" {
-					local = kv[1] == "true"
-					break
-				}
-			}
-		}
-	}
-	
-	order := ctx.Query("order") // active, new
-
-	// Get discoverable accounts using SearchAccounts with empty query
-	actors, err := h.repos.Search().SearchAccounts(ctx.Context, "", limit*2, false, offset)
+	// Get discoverable accounts
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context, "", params.limit*2, false, params.offset)
 	if err != nil {
 		h.logger.Error("failed to get directory", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -96,67 +31,195 @@ func (h *Handler) HandleGetDirectoryLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Convert to account format first to allow sorting
-	accounts := make([]map[string]any, 0, len(actors))
-	for _, actor := range actors {
-		// Filter local only if requested
-		if local && !h.isLocalLift(actor.ID) {
-			continue
-		}
+	// Convert actors to accounts
+	accounts := h.convertActorsToDirectory(ctx.Context, actors, params.local)
 
-		account := map[string]any{
-			"id":              actor.ID,
-			"username":        actor.PreferredUsername,
-			"acct":            h.getAccountAcctLift(actor),
-			"display_name":    actor.Name,
-			"locked":          actor.ManuallyApprovesFollowers,
-			"bot":             actor.Type == "Service",
-			"discoverable":    true, // Only showing discoverable accounts
-			"created_at":      actor.Published.Format("2006-01-02T15:04:05.000Z"),
-			"note":            actor.Summary,
-			"url":             actor.URL,
-			"avatar":          actor.Icon.URL,
-			"avatar_static":   actor.Icon.URL,
-			"header":          h.getHeaderURLLift(actor),
-			"header_static":   "",
-			"followers_count": h.getFollowerCountLift(ctx.Context, actor.ID),
-			"following_count": h.getFollowingCountLift(ctx.Context, actor.ID),
-			"statuses_count":  h.getStatusCountLift(ctx.Context, actor.ID),
-			"last_status_at":  h.formatLastStatusTimeLift(actor.LastStatusAt),
-		}
-		accounts = append(accounts, account)
-	}
-
-	// Apply ordering based on parameter
-	switch order {
-	case "active":
-		// Sort by recent activity - this would need last_activity_at field
-		// For now, sort by last_status_at
-		sort.Slice(accounts, func(i, j int) bool {
-			lastStatusI, _ := accounts[i]["last_status_at"].(string)
-			lastStatusJ, _ := accounts[j]["last_status_at"].(string)
-			return lastStatusI > lastStatusJ
-		})
-	case "new":
-		// Sort by account creation date
-		sort.Slice(accounts, func(i, j int) bool {
-			createdI, _ := accounts[i]["created_at"].(string)
-			createdJ, _ := accounts[j]["created_at"].(string)
-			return createdI > createdJ
-		})
-	}
+	// Apply ordering
+	h.sortDirectoryAccounts(accounts, params.order)
 
 	ctx.Status(http.StatusOK)
 	return ctx.JSON(accounts)
+}
+
+// directoryParams holds parsed directory query parameters
+type directoryParams struct {
+	limit  int
+	offset int
+	local  bool
+	order  string
+}
+
+// parseDirectoryParams parses query parameters for directory endpoint
+func (h *Handler) parseDirectoryParams(ctx *lift.Context) directoryParams {
+	params := directoryParams{
+		limit:  40,
+		offset: 0,
+		local:  false,
+		order:  ctx.Query("order"),
+	}
+
+	// Parse limit
+	params.limit = h.parseDirectoryLimit(ctx)
+
+	// Parse offset
+	params.offset = h.parseDirectoryOffset(ctx)
+
+	// Parse local filter
+	params.local = h.parseDirectoryLocal(ctx)
+
+	return params
+}
+
+// parseDirectoryLimit parses the limit parameter
+func (h *Handler) parseDirectoryLimit(ctx *lift.Context) int {
+	limitStr := h.extractQueryParam(ctx, "limit")
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 80 {
+			return l
+		}
+	}
+	return 40
+}
+
+// parseDirectoryOffset parses the offset parameter
+func (h *Handler) parseDirectoryOffset(ctx *lift.Context) int {
+	offsetStr := h.extractQueryParam(ctx, "offset")
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			return o
+		}
+	}
+	return 0
+}
+
+// parseDirectoryLocal parses the local filter parameter
+func (h *Handler) parseDirectoryLocal(ctx *lift.Context) bool {
+	localStr := h.extractQueryParam(ctx, "local")
+	return localStr == boolTrue
+}
+
+// extractQueryParam extracts a query parameter with test mode fallback
+func (h *Handler) extractQueryParam(ctx *lift.Context, param string) string {
+	value := ctx.Query(param)
+	
+	// Test mode fallback - extract from path query string
+	if value == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
+		value = h.extractFromPathQuery(ctx.Request.Path, param)
+	}
+	
+	return value
+}
+
+// extractFromPathQuery extracts a parameter from path query string
+func (h *Handler) extractFromPathQuery(path, param string) string {
+	parts := strings.Split(path, "?")
+	if len(parts) <= 1 {
+		return ""
+	}
+
+	params := strings.Split(parts[1], "&")
+	for _, p := range params {
+		kv := strings.Split(p, "=")
+		if len(kv) == 2 && kv[0] == param {
+			return kv[1]
+		}
+	}
+
+	return ""
+}
+
+// convertActorsToDirectory converts actors to directory account format
+func (h *Handler) convertActorsToDirectory(ctx context.Context, actors []*activitypub.Actor, localOnly bool) []map[string]any {
+	accounts := make([]map[string]any, 0, len(actors))
+	
+	for _, actor := range actors {
+		// Filter local only if requested
+		if localOnly && !h.isLocalLift(actor.ID) {
+			continue
+		}
+
+		account := h.buildDirectoryAccount(ctx, actor)
+		accounts = append(accounts, account)
+	}
+
+	return accounts
+}
+
+// buildDirectoryAccount builds a single directory account entry
+func (h *Handler) buildDirectoryAccount(ctx context.Context, actor *activitypub.Actor) map[string]any {
+	return map[string]any{
+		"id":              actor.ID,
+		"username":        actor.PreferredUsername,
+		"acct":            h.getAccountAcctLift(actor),
+		"display_name":    actor.Name,
+		"locked":          actor.ManuallyApprovesFollowers,
+		"bot":             actor.Type == actorTypeService,
+		"discoverable":    true, // Only showing discoverable accounts
+		"created_at":      h.formatActorCreatedAt(actor),
+		"note":            actor.Summary,
+		"url":             actor.URL,
+		"avatar":          h.getActorAvatarURL(actor),
+		"avatar_static":   h.getActorAvatarURL(actor),
+		"header":          h.getHeaderURLLift(actor),
+		"header_static":   "",
+		"followers_count": h.getFollowerCountLift(ctx, actor.ID),
+		"following_count": h.getFollowingCountLift(ctx, actor.ID),
+		"statuses_count":  h.getStatusCountLift(ctx, actor.ID),
+		"last_status_at":  h.formatLastStatusTimeLift(actor.LastStatusAt),
+	}
+}
+
+// formatActorCreatedAt formats the actor creation date
+func (h *Handler) formatActorCreatedAt(actor *activitypub.Actor) string {
+	if actor.Published != nil {
+		return actor.Published.Format("2006-01-02T15:04:05.000Z")
+	}
+	return ""
+}
+
+// getActorAvatarURL gets the avatar URL for an actor
+func (h *Handler) getActorAvatarURL(actor *activitypub.Actor) string {
+	if actor.Icon != nil {
+		return actor.Icon.URL
+	}
+	return ""
+}
+
+// sortDirectoryAccounts sorts accounts based on the order parameter
+func (h *Handler) sortDirectoryAccounts(accounts []map[string]any, order string) {
+	switch order {
+	case "active":
+		h.sortByActivity(accounts)
+	case "new":
+		h.sortByCreation(accounts)
+	}
+}
+
+// sortByActivity sorts accounts by last activity
+func (h *Handler) sortByActivity(accounts []map[string]any) {
+	sort.Slice(accounts, func(i, j int) bool {
+		lastStatusI, _ := accounts[i]["last_status_at"].(string)
+		lastStatusJ, _ := accounts[j]["last_status_at"].(string)
+		return lastStatusI > lastStatusJ
+	})
+}
+
+// sortByCreation sorts accounts by creation date
+func (h *Handler) sortByCreation(accounts []map[string]any) {
+	sort.Slice(accounts, func(i, j int) bool {
+		createdI, _ := accounts[i]["created_at"].(string)
+		createdJ, _ := accounts[j]["created_at"].(string)
+		return createdI > createdJ
+	})
 }
 
 // HandleGetSuggestionsV1Lift handles GET /api/v1/suggestions
 // Returns follow suggestions (v1 format)
 func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
+	testUsername := ctx.Header(common.XTestUsernameHeader)
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
 	}
 
 	var claims *auth.Claims
@@ -218,7 +281,7 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 				"acct":            h.getAccountAcctLift(actor),
 				"display_name":    actor.Name,
 				"locked":          actor.ManuallyApprovesFollowers,
-				"bot":             actor.Type == "Service",
+				"bot":             actor.Type == actorTypeService,
 				"discoverable":    actor.Discoverable,
 				"created_at":      actor.Published.Format("2006-01-02T15:04:05.000Z"),
 				"note":            actor.Summary,
@@ -243,9 +306,9 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 // Returns follow suggestions (v2 format with sources)
 func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
+	testUsername := ctx.Header(common.XTestUsernameHeader)
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
 	}
 
 	var claims *auth.Claims
@@ -319,7 +382,7 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 				"acct":            h.getAccountAcctLift(actor),
 				"display_name":    actor.Name,
 				"locked":          actor.ManuallyApprovesFollowers,
-				"bot":             actor.Type == "Service",
+				"bot":             actor.Type == actorTypeService,
 				"discoverable":    actor.Discoverable,
 				"created_at":      actor.Published.Format("2006-01-02T15:04:05.000Z"),
 				"note":            actor.Summary,
@@ -344,9 +407,9 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 // Removes an account from suggestions
 func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
+	testUsername := ctx.Header(common.XTestUsernameHeader)
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
 	}
 
 	var claims *auth.Claims
@@ -380,7 +443,7 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 
 	// Get account ID from path
 	accountID := ctx.Param("account_id")
-	
+
 	// Test mode fallback - extract from path
 	if accountID == "" && ctx.Request != nil && ctx.Request.Path != "" {
 		// Extract account_id from path like /api/v1/suggestions/account123
@@ -389,7 +452,7 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 			accountID = parts[4]
 		}
 	}
-	
+
 	if accountID == "" {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
@@ -415,8 +478,8 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 func (h *Handler) isLocalLift(actorID string) bool {
 	// Check if the actor ID contains our domain
 	// More precise check: ensure it starts with https:// or http:// followed by our domain
-	return strings.HasPrefix(actorID, "https://"+h.cfg.Domain+"/") || 
-	       strings.HasPrefix(actorID, "http://"+h.cfg.Domain+"/")
+	return strings.HasPrefix(actorID, "https://"+h.cfg.Domain+"/") ||
+		strings.HasPrefix(actorID, "http://"+h.cfg.Domain+"/")
 }
 
 // getAccountAcctLift returns the account acct (username@domain for remote)
@@ -455,4 +518,3 @@ func (h *Handler) getStatusCountLift(ctx context.Context, actorID string) int {
 	count, _ := h.repos.Status().CountStatusesByAuthor(ctx, actorID)
 	return count
 }
-

@@ -1,3 +1,4 @@
+// Package federation provides ActivityPub federation services including authorized fetch and object retrieval.
 package federation
 
 import (
@@ -49,8 +50,8 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	}
 
 	// Set headers
-	req.Header.Set("Accept", "application/activity+json, application/ld+json")
-	req.Header.Set("User-Agent", "Lesser/1.0")
+	req.Header.Set("Accept", ActivityPubAcceptType)
+	req.Header.Set("User-Agent", UserAgent)
 
 	// Get the actor's private key
 	privateKeyPEM, err := f.store.Actor().GetActorPrivateKey(ctx, signingActor.PreferredUsername)
@@ -74,7 +75,7 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
@@ -241,7 +242,7 @@ func (f *AuthorizedFetchService) fetchActorWithoutAuth(ctx context.Context, acto
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch actor: status %d", resp.StatusCode)

@@ -29,33 +29,33 @@ type CSRFToken struct {
 
 // TableName returns the DynamoDB table name for the CSRFToken model
 func (CSRFToken) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
 func (c *CSRFToken) BeforeCreate() error {
 	now := time.Now()
-	
+
 	// Set timestamps if not already set
 	if c.CreatedAt == 0 {
 		c.CreatedAt = now.Unix()
 	}
-	
+
 	// Set default expiry to 1 hour if not specified (matching legacy behavior)
 	if c.ExpiresAt == 0 {
 		c.ExpiresAt = now.Add(1 * time.Hour).Unix()
 	}
-	
+
 	// Set TTL to same as expiry for automatic cleanup
 	c.TTL = c.ExpiresAt
-	
+
 	// Set up primary key - CRITICAL: Use exact format from legacy
 	c.PK = "CSRF#" + c.Token
-	c.SK = "TOKEN"
-	
+	c.SK = SKToken
+
 	// Set up GSI keys for user lookups (rate limiting)
 	c.UpdateKeys()
-	
+
 	return c.Validate()
 }
 
@@ -63,10 +63,10 @@ func (c *CSRFToken) BeforeCreate() error {
 func (c *CSRFToken) BeforeUpdate() error {
 	// Update GSI keys in case user or other indexed fields changed
 	c.UpdateKeys()
-	
+
 	// Ensure TTL matches expiry
 	c.TTL = c.ExpiresAt
-	
+
 	return c.Validate()
 }
 
@@ -85,7 +85,7 @@ func (c *CSRFToken) UpdateKeys() {
 // Validate performs validation on the CSRFToken
 func (c *CSRFToken) Validate() error {
 	if strings.TrimSpace(c.Token) == "" {
-		return fmt.Errorf("Token is required")
+		return fmt.Errorf("token is required")
 	}
 	if strings.TrimSpace(c.UserID) == "" {
 		return fmt.Errorf("UserID is required")
@@ -99,7 +99,7 @@ func (c *CSRFToken) Validate() error {
 	if c.ExpiresAt <= c.CreatedAt {
 		return fmt.Errorf("ExpiresAt must be after CreatedAt")
 	}
-	
+
 	return nil
 }
 

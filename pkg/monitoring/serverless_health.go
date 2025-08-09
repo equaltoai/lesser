@@ -3,22 +3,26 @@ package monitoring
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm/pkg/core"
 )
 
 // ServerlessHealthMonitor provides on-demand health checking for serverless environments
 type ServerlessHealthMonitor struct {
-	db         core.DB
-	logger     *zap.Logger
-	requestID  string
-	checkers   map[string]ComponentChecker
+	db               core.DB
+	logger           *zap.Logger
+	requestID        string
+	checkers         map[string]ComponentChecker
+	metricsPublisher *CloudWatchMetrics
 }
 
 // ComponentChecker defines the interface for checking individual components
@@ -30,10 +34,11 @@ type ComponentChecker interface {
 // NewServerlessHealthMonitor creates a new serverless health monitor
 func NewServerlessHealthMonitor(db core.DB, logger *zap.Logger) *ServerlessHealthMonitor {
 	monitor := &ServerlessHealthMonitor{
-		db:        db,
-		logger:    logger,
-		requestID: uuid.New().String(),
-		checkers:  make(map[string]ComponentChecker),
+		db:               db,
+		logger:           logger,
+		requestID:        uuid.New().String(),
+		checkers:         make(map[string]ComponentChecker),
+		metricsPublisher: nil, // Will be set via SetMetricsPublisher if CloudWatch is configured
 	}
 
 	// Register built-in checkers
@@ -44,6 +49,11 @@ func NewServerlessHealthMonitor(db core.DB, logger *zap.Logger) *ServerlessHealt
 	return monitor
 }
 
+// SetMetricsPublisher sets the CloudWatch metrics publisher for the health monitor
+func (s *ServerlessHealthMonitor) SetMetricsPublisher(publisher *CloudWatchMetrics) {
+	s.metricsPublisher = publisher
+}
+
 // RegisterChecker registers a component checker
 func (s *ServerlessHealthMonitor) RegisterChecker(checker ComponentChecker) {
 	s.checkers[checker.GetType()] = checker
@@ -52,7 +62,7 @@ func (s *ServerlessHealthMonitor) RegisterChecker(checker ComponentChecker) {
 // ProcessHealthCheckEvent processes a health check event synchronously
 func (s *ServerlessHealthMonitor) ProcessHealthCheckEvent(ctx context.Context, event HealthCheckEvent) (*HealthCheckResponse, error) {
 	startTime := time.Now()
-	
+
 	// Validate the event
 	if err := ValidateHealthCheckEvent(event); err != nil {
 		return nil, fmt.Errorf("invalid health check event: %w", err)
@@ -81,10 +91,10 @@ func (s *ServerlessHealthMonitor) ProcessHealthCheckEvent(ctx context.Context, e
 	for _, component := range event.Components {
 		result := s.checkComponent(ctx, component, event.Options)
 		response.ComponentResults = append(response.ComponentResults, *result)
-		
+
 		// Update summary counts
 		s.updateSummary(&response.Summary, result.Status)
-		
+
 		// Store result if requested
 		if event.Options.StoreResults {
 			if err := s.storeHealthCheckResult(ctx, result); err != nil {
@@ -94,7 +104,7 @@ func (s *ServerlessHealthMonitor) ProcessHealthCheckEvent(ctx context.Context, e
 				)
 			}
 		}
-		
+
 		// Publish metrics if requested
 		if event.Options.PublishMetrics {
 			s.publishComponentMetrics(ctx, result)
@@ -138,7 +148,7 @@ func (s *ServerlessHealthMonitor) checkComponent(ctx context.Context, config Com
 	maxAttempts := options.RetryAttempts + 1 // +1 for initial attempt
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		attemptStart := time.Now()
-		
+
 		result, lastErr = checker.Check(ctx, config.Identifier)
 		if lastErr == nil && result.Status != HealthStatusCritical {
 			// Success or non-critical status, no need to retry
@@ -200,7 +210,7 @@ func (s *ServerlessHealthMonitor) updateSummary(summary *HealthCheckSummary, sta
 	default:
 		summary.UnknownComponents++
 	}
-	
+
 	if status == HealthStatusCritical {
 		summary.FailedChecks++
 	}
@@ -263,82 +273,163 @@ func (s *ServerlessHealthMonitor) storeHealthCheckResult(ctx context.Context, re
 	return s.db.WithContext(ctx).Model(healthResult).Create()
 }
 
-// publishComponentMetrics publishes health check metrics (placeholder for CloudWatch integration)
-func (s *ServerlessHealthMonitor) publishComponentMetrics(ctx context.Context, result *ComponentHealthResult) {
-	// This would integrate with CloudWatch or other metrics system
-	// For now, just log the metrics
-	s.logger.Info("Health check metric",
+// publishComponentMetrics publishes health check metrics to CloudWatch
+func (s *ServerlessHealthMonitor) publishComponentMetrics(_ context.Context, result *ComponentHealthResult) {
+	// Check if CloudWatch metrics publisher is available
+	if s.metricsPublisher == nil {
+		// Fallback to logging if no metrics publisher configured
+		s.logger.Debug("Health check metric (CloudWatch not configured)",
+			zap.String("component", result.Component),
+			zap.String("type", result.Type),
+			zap.String("status", string(result.Status)),
+			zap.Int64("latency_ms", result.LatencyMs),
+			zap.Int("retry_attempts", result.RetryAttempts),
+		)
+		return
+	}
+
+	// Prepare dimensions for CloudWatch metrics
+	dimensions := map[string]string{
+		"ComponentType": result.Type,
+		"Component":     result.Component,
+		"HealthStatus":  string(result.Status),
+	}
+
+	// Add friendly name if available
+	if result.Metadata != nil {
+		if friendlyName, ok := result.Metadata["friendly_name"].(string); ok {
+			dimensions["FriendlyName"] = friendlyName
+		}
+	}
+
+	// Publish latency metric
+	s.metricsPublisher.RecordBusinessMetrics(
+		"HealthCheck.Latency",
+		float64(result.LatencyMs),
+		types.StandardUnitMilliseconds,
+		dimensions,
+	)
+
+	// Publish status metric (1 for healthy, 0 for unhealthy)
+	statusValue := 0.0
+	if result.Status == HealthStatusHealthy {
+		statusValue = 1.0
+	}
+	s.metricsPublisher.RecordBusinessMetrics(
+		"HealthCheck.Status",
+		statusValue,
+		types.StandardUnitNone,
+		dimensions,
+	)
+
+	// Publish retry attempts if any
+	if result.RetryAttempts > 0 {
+		s.metricsPublisher.RecordBusinessMetrics(
+			"HealthCheck.RetryAttempts",
+			float64(result.RetryAttempts),
+			types.StandardUnitCount,
+			dimensions,
+		)
+	}
+
+	// Publish error metric if there was an error
+	if result.Error != "" {
+		errorDims := make(map[string]string)
+		for k, v := range dimensions {
+			errorDims[k] = v
+		}
+		// Classify error type if possible
+		errorType := "unknown"
+		if strings.Contains(result.Error, "timeout") {
+			errorType = "timeout"
+		} else if strings.Contains(result.Error, "connection") {
+			errorType = "connection"
+		} else if strings.Contains(result.Error, "permission") || strings.Contains(result.Error, "unauthorized") {
+			errorType = "permission"
+		} else if strings.Contains(result.Error, "throttle") || strings.Contains(result.Error, "rate") {
+			errorType = "throttling"
+		}
+		errorDims["ErrorType"] = errorType
+
+		s.metricsPublisher.RecordBusinessMetrics(
+			"HealthCheck.Errors",
+			1.0,
+			types.StandardUnitCount,
+			errorDims,
+		)
+	}
+
+	// Log that metrics were published
+	s.logger.Debug("Published health check metrics to CloudWatch",
 		zap.String("component", result.Component),
 		zap.String("type", result.Type),
 		zap.String("status", string(result.Status)),
 		zap.Int64("latency_ms", result.LatencyMs),
-		zap.Int("retry_attempts", result.RetryAttempts),
 	)
 }
 
 // GetStoredResults retrieves stored health check results for a component
 func (s *ServerlessHealthMonitor) GetStoredResults(ctx context.Context, componentType, component string, limit int) ([]models.HealthCheckResult, error) {
 	var results []models.HealthCheckResult
-	
+
 	gsi1PK := fmt.Sprintf("COMPONENT#%s#%s", componentType, component)
-	
+
 	query := s.db.WithContext(ctx).Model(&models.HealthCheckResult{}).
 		Where("GSI1PK", "=", gsi1PK).
 		Limit(limit)
-	
+
 	err := query.All(&results)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query health check results: %w", err)
 	}
-	
+
 	return results, nil
 }
 
 // GetComponentHistory retrieves health history for a component
 func (s *ServerlessHealthMonitor) GetComponentHistory(ctx context.Context, componentType, component string, limit int) ([]models.ComponentHealthHistory, error) {
 	var history []models.ComponentHealthHistory
-	
+
 	pk := fmt.Sprintf("COMPONENT_HISTORY#%s#%s", componentType, component)
-	
+
 	query := s.db.WithContext(ctx).Model(&models.ComponentHealthHistory{}).
 		Where("PK", "=", pk).
 		Limit(limit)
-	
+
 	err := query.All(&history)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query component history: %w", err)
 	}
-	
+
 	return history, nil
 }
 
 // CreateHealthCheckSummary creates or updates hourly summary statistics
 func (s *ServerlessHealthMonitor) CreateHealthCheckSummary(ctx context.Context, results []ComponentHealthResult) error {
 	now := time.Now()
-	date := now.Format("2006-01-02")
+	date := now.Format(common.DateFormat)
 	hour := now.Hour()
-	
+
 	// Try to get existing summary
 	summary := models.NewHealthCheckSummaryResult(date, hour)
-	
+
 	err := s.db.WithContext(ctx).Model(summary).
 		Where("PK = ? AND SK = ?", summary.PK, summary.SK).
 		First(summary)
-	
+
 	if err != nil && err != storage.ErrNotFound {
 		return fmt.Errorf("failed to query existing summary: %w", err)
 	}
-	
+
 	// Add results to summary
 	for _, result := range results {
 		summary.AddCheckResult(string(result.Status), result.LatencyMs)
 	}
-	
+
 	// Save summary
 	if err == storage.ErrNotFound {
 		return s.db.WithContext(ctx).Model(summary).Create()
-	} else {
-		// Update existing summary
-		return s.db.WithContext(ctx).Model(summary).Update()
 	}
+	// Update existing summary
+	return s.db.WithContext(ctx).Model(summary).Update()
 }

@@ -34,7 +34,7 @@ func NewSQSProcessor(queueName string, handler SQSHandler, logger *zap.Logger) *
 
 // RegisterSQS registers an SQS handler with a Lift app using the native SQS support
 func RegisterSQS(app *lift.App, processor *SQSProcessor) {
-	app.SQS(processor.queueName, func(ctx *lift.Context) error {
+	_ = app.SQS(processor.queueName, func(ctx *lift.Context) error {
 		// Extract SQS event from Lift context
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)

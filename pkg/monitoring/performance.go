@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-xray-sdk-go/xray"
+	"go.uber.org/zap"
 )
 
 // PerformanceMonitor handles performance metrics collection
@@ -361,21 +362,23 @@ func (pm *PerformanceMonitor) TraceDBQuery(ctx context.Context, operation string
 	if err := seg.AddAnnotation("table_name", tableName); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray annotation 'table_name': %v\n", err)
 	}
-	seg.Namespace = "aws"
+	seg.Namespace = ProviderAWS
 
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
 
 	if err != nil {
-		seg.AddError(err)
-		pm.RecordError(ctx, "db_query", err.Error())
+		_ = seg.AddError(err)
+		if recordErr := pm.RecordError(ctx, "db_query", err.Error()); recordErr != nil {
+			fmt.Printf("Warning: failed to record db error metric: %v\n", recordErr)
+		}
 	}
 
 	if err := seg.AddMetadata("dynamodb", map[string]any{"duration_ms": duration.Milliseconds()}); err != nil {
 		fmt.Printf("Warning: failed to add X-Ray metadata 'dynamodb': %v\n", err)
 	}
-	pm.RecordLatency(ctx, "db_query_"+operation, float64(duration.Milliseconds()))
+	_ = pm.RecordLatency(ctx, "db_query_"+operation, float64(duration.Milliseconds()))
 
 	return err
 }
@@ -399,7 +402,7 @@ func (pm *PerformanceMonitor) TraceFederationCall(ctx context.Context, domain st
 
 	success := err == nil
 	if err != nil {
-		seg.AddError(err)
+		_ = seg.AddError(err)
 	}
 
 	if err := seg.AddMetadata("federation", map[string]any{
@@ -409,7 +412,9 @@ func (pm *PerformanceMonitor) TraceFederationCall(ctx context.Context, domain st
 		fmt.Printf("Warning: failed to add X-Ray metadata 'federation': %v\n", err)
 	}
 
-	pm.RecordFederationPerformance(ctx, domain, operation, float64(duration.Milliseconds()), success)
+	if err := pm.RecordFederationPerformance(ctx, domain, operation, float64(duration.Milliseconds()), success); err != nil {
+		zap.L().Warn("failed to record federation performance", zap.Error(err))
+	}
 
 	return err
 }
@@ -432,8 +437,10 @@ func (pm *PerformanceMonitor) TraceGraphQLQuery(ctx context.Context, queryName s
 	duration := time.Since(start)
 
 	if err != nil {
-		seg.AddError(err)
-		pm.RecordError(ctx, "graphql_query", err.Error())
+		_ = seg.AddError(err)
+		if recordErr := pm.RecordError(ctx, "graphql_query", err.Error()); recordErr != nil {
+			fmt.Printf("Warning: failed to record graphql error metric: %v\n", recordErr)
+		}
 	}
 
 	if err := seg.AddMetadata("graphql", map[string]any{
@@ -443,8 +450,10 @@ func (pm *PerformanceMonitor) TraceGraphQLQuery(ctx context.Context, queryName s
 		fmt.Printf("Warning: failed to add X-Ray metadata 'graphql': %v\n", err)
 	}
 
-	pm.RecordLatency(ctx, "graphql_"+queryName, float64(duration.Milliseconds()))
-	pm.RecordQueryComplexity(ctx, queryName, complexity)
+	_ = pm.RecordLatency(ctx, "graphql_"+queryName, float64(duration.Milliseconds()))
+	if recordErr := pm.RecordQueryComplexity(ctx, queryName, complexity); recordErr != nil {
+		fmt.Printf("Warning: failed to record query complexity metric: %v\n", recordErr)
+	}
 
 	return err
 }
@@ -469,7 +478,9 @@ func (pm *PerformanceMonitor) TraceLambdaHandler(ctx context.Context, functionNa
 		if err := seg.AddAnnotation("cold_start", true); err != nil {
 			fmt.Printf("Warning: failed to add X-Ray annotation 'cold_start': %v\n", err)
 		}
-		pm.RecordLambdaColdStart(ctx, functionName, coldStart, initDuration)
+		if err := pm.RecordLambdaColdStart(ctx, functionName, coldStart, initDuration); err != nil {
+			zap.L().Warn("failed to record Lambda cold start", zap.Error(err))
+		}
 	}
 
 	start := time.Now()
@@ -477,8 +488,10 @@ func (pm *PerformanceMonitor) TraceLambdaHandler(ctx context.Context, functionNa
 	duration := time.Since(start)
 
 	if err != nil {
-		seg.AddError(err)
-		pm.RecordError(ctx, "lambda_handler", err.Error())
+		_ = seg.AddError(err)
+		if recordErr := pm.RecordError(ctx, "lambda_handler", err.Error()); recordErr != nil {
+			fmt.Printf("Warning: failed to record lambda error metric: %v\n", recordErr)
+		}
 	}
 
 	if err := seg.AddMetadata("lambda", map[string]any{
@@ -488,7 +501,7 @@ func (pm *PerformanceMonitor) TraceLambdaHandler(ctx context.Context, functionNa
 		fmt.Printf("Warning: failed to add X-Ray metadata 'lambda': %v\n", err)
 	}
 
-	pm.RecordLatency(ctx, "lambda_"+functionName, float64(duration.Milliseconds()))
+	_ = pm.RecordLatency(ctx, "lambda_"+functionName, float64(duration.Milliseconds()))
 
 	return err
 }

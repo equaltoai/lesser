@@ -2,6 +2,7 @@ package models
 
 import (
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // FederationStats represents federation activity statistics
@@ -16,19 +17,19 @@ type FederationStats struct {
 	TotalUsers      int   `json:"total_users"`
 
 	// Additional metadata
-	Date      string    `json:"date"`       // The date these stats are for
-	UpdatedAt time.Time `json:"updated_at"` // Last update time
+	Date      string    `json:"date"`                         // The date these stats are for
+	UpdatedAt time.Time `json:"updated_at"`                   // Last update time
 	TTL       int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys based on the date
 func (f *FederationStats) UpdateKeys() {
-	f.PK = "FEDERATION#STATS"
+	f.PK = FederationStatsPK
 	f.SK = f.Date
-	
+
 	// Set TTL to 90 days from the stats date
 	if f.Date != "" {
-		if t, err := time.Parse("2006-01-02", f.Date); err == nil {
+		if t, err := time.Parse(common.DateFormat, f.Date); err == nil {
 			f.TTL = t.AddDate(0, 3, 0).Unix() // 3 months retention
 		}
 	}
@@ -44,12 +45,12 @@ func NewFederationStats(date string) *FederationStats {
 	return stats
 }
 
-// GetStatsKey returns the key for retrieving stats for a specific date
+// GetFederationStatsKey returns the key for retrieving stats for a specific date
 func GetFederationStatsKey(date string) (pk, sk string) {
 	return "FEDERATION#STATS", date
 }
 
-// GetStatsRangeKeys returns keys for querying a date range
+// GetFederationStatsRangeKeys returns keys for querying a date range
 func GetFederationStatsRangeKeys(startDate, endDate string) (pk, skStart, skEnd string) {
 	return "FEDERATION#STATS", startDate, endDate
 }
@@ -62,7 +63,7 @@ func (f *FederationStats) IncrementStats(activeInstances int, messages int64, us
 	f.UpdatedAt = time.Now().UTC()
 }
 
-// FormatDate formats a time as a date string for use as sort key
+// FormatStatsDate formats a time as a date string for use as sort key
 func FormatStatsDate(t time.Time) string {
-	return t.Format("2006-01-02")
+	return t.Format(common.DateFormat)
 }

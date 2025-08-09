@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // FederationInstance represents federation instance information in DynamoDB
@@ -12,15 +14,15 @@ type FederationInstance struct {
 	GSI1PK        string    `dynamorm:"index:gsi1,pk"`
 	GSI1SK        string    `dynamorm:"index:gsi1,sk"`
 	Domain        string    `json:"domain"`
-	Software      string    `json:"software"`      // mastodon, pleroma, etc.
-	Version       string    `json:"version"`       // Software version
-	FirstSeen     time.Time `json:"first_seen"`    // When we first saw this instance
-	LastSeen      time.Time `json:"last_seen"`     // Last activity from this instance
-	PublicKey     string    `json:"public_key"`    // Instance actor public key
-	SharedInbox   string    `json:"shared_inbox"`  // Shared inbox endpoint
-	TrustScore    float64   `json:"trust_score"`   // Calculated trust score
-	ActiveUsers   int       `json:"active_users"`  // Number of active users
-	TotalMessages int64     `json:"total_messages"`// Total messages received
+	Software      string    `json:"software"`       // mastodon, pleroma, etc.
+	Version       string    `json:"version"`        // Software version
+	FirstSeen     time.Time `json:"first_seen"`     // When we first saw this instance
+	LastSeen      time.Time `json:"last_seen"`      // Last activity from this instance
+	PublicKey     string    `json:"public_key"`     // Instance actor public key
+	SharedInbox   string    `json:"shared_inbox"`   // Shared inbox endpoint
+	TrustScore    float64   `json:"trust_score"`    // Calculated trust score
+	ActiveUsers   int       `json:"active_users"`   // Number of active users
+	TotalMessages int64     `json:"total_messages"` // Total messages received
 }
 
 // UpdateKeys updates the GSI keys for federation instance
@@ -28,7 +30,7 @@ func (f *FederationInstance) UpdateKeys() {
 	// Primary key pattern: INSTANCE#domain
 	f.PK = fmt.Sprintf("INSTANCE#%s", f.Domain)
 	f.SK = fmt.Sprintf("INSTANCE#%s", f.Domain)
-	
+
 	// GSI1 for active federation tracking
 	f.GSI1PK = "FEDERATION_ACTIVE"
 	f.GSI1SK = f.LastSeen.Format(time.RFC3339)
@@ -42,11 +44,11 @@ type FederationCostActivity struct {
 	GSI1SK       string    `dynamorm:"index:gsi1,sk"`
 	ID           string    `json:"id"`
 	Domain       string    `json:"domain"`
-	Type         string    `json:"type"`                     // ingress/egress
-	ActivityType string    `json:"activity_type"`            // Create/Update/Delete/Follow/etc
+	Type         string    `json:"type"`          // ingress/egress
+	ActivityType string    `json:"activity_type"` // Create/Update/Delete/Follow/etc
 	ByteSize     int64     `json:"byte_size"`
 	Success      bool      `json:"success"`
-	ResponseTime int64     `json:"response_time"`            // milliseconds
+	ResponseTime int64     `json:"response_time"` // milliseconds
 	ErrorMessage string    `json:"error_message,omitempty"`
 	Timestamp    time.Time `json:"timestamp"`
 	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"`
@@ -58,15 +60,15 @@ func (f *FederationCostActivity) UpdateKeys() {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	
+
 	// Monthly partition for time-series queries
-	f.PK = fmt.Sprintf("FEDERATION#%s#%s", f.Domain, now.Format("2006-01"))
-	f.SK = fmt.Sprintf("ACTIVITY#%s#%s", now.Format("20060102150405"), f.ID)
-	
+	f.PK = fmt.Sprintf("FEDERATION#%s#%s", f.Domain, now.Format(common.MonthFormat))
+	f.SK = fmt.Sprintf("ACTIVITY#%s#%s", now.Format(common.CompactTimeFormat), f.ID)
+
 	// GSI1 for daily queries
-	f.GSI1PK = fmt.Sprintf("FEDERATION_DAILY#%s", now.Format("2006-01-02"))
+	f.GSI1PK = fmt.Sprintf("FEDERATION_DAILY#%s", now.Format(common.DateFormat))
 	f.GSI1SK = fmt.Sprintf("DOMAIN#%s#%s", f.Domain, f.ID)
-	
+
 	// Set TTL to 90 days
 	f.TTL = now.Add(90 * 24 * time.Hour).Unix()
 }
@@ -76,7 +78,7 @@ type FederationCost struct {
 	PK               string    `dynamorm:"pk"`
 	SK               string    `dynamorm:"sk"`
 	Domain           string    `json:"domain"`
-	Period           string    `json:"period"`            // daily/monthly
+	Period           string    `json:"period"` // daily/monthly
 	IngressBytes     int64     `json:"ingress_bytes"`
 	EgressBytes      int64     `json:"egress_bytes"`
 	RequestCount     int64     `json:"request_count"`
@@ -90,14 +92,14 @@ type FederationCost struct {
 // UpdateKeys updates the GSI keys for federation cost
 func (f *FederationCost) UpdateKeys() {
 	// Cost aggregation keys
-	f.PK = fmt.Sprintf("FEDERATION_COSTS#%s", time.Now().Format("2006-01"))
+	f.PK = fmt.Sprintf("FEDERATION_COSTS#%s", time.Now().Format(common.MonthFormat))
 	f.SK = fmt.Sprintf("DOMAIN#%s", f.Domain)
 }
 
 // FederationHealthReport represents instance health metrics (computed, not stored)
 type FederationHealthReport struct {
 	Domain          string    `json:"domain"`
-	Status          string    `json:"status"`           // healthy/warning/critical
+	Status          string    `json:"status"` // healthy/warning/critical
 	ResponseTime    float64   `json:"response_time"`
 	ErrorRate       float64   `json:"error_rate"`
 	FederationDelay float64   `json:"federation_delay"`
@@ -125,10 +127,10 @@ type FederationNode struct {
 	ActiveUsers       int64          `json:"active_users"`
 	FirstSeen         time.Time      `json:"first_seen"`
 	LastSeen          time.Time      `json:"last_seen"`
-	Health            string         `json:"health"`            // healthy/warning/critical/unknown
+	Health            string         `json:"health"` // healthy/warning/critical/unknown
 	ErrorRate         float64        `json:"error_rate"`
 	ResponseTime      float64        `json:"response_time"`
-	ConnectionType    string         `json:"connection_type"`   // direct/relay/blocked
+	ConnectionType    string         `json:"connection_type"` // direct/relay/blocked
 	TotalConnections  int64          `json:"total_connections,omitempty"`
 	ActiveConnections int64          `json:"active_connections,omitempty"`
 	ActivityVolume    int64          `json:"activity_volume,omitempty"`
@@ -139,11 +141,11 @@ type FederationNode struct {
 func (f *FederationNode) UpdateKeys() {
 	f.PK = fmt.Sprintf("FEDERATION_NODE#%s", f.Domain)
 	f.SK = "NODE"
-	
+
 	// GSI1 for active federation tracking
 	f.GSI1PK = "FEDERATION_ACTIVE"
 	f.GSI1SK = fmt.Sprintf("%d#%s", f.LastSeen.Unix(), f.Domain)
-	
+
 	// GSI3 for domain lookups
 	f.GSI3PK = fmt.Sprintf("DOMAIN#%s", f.Domain)
 	f.GSI3SK = "FEDERATION_NODE"
@@ -157,10 +159,10 @@ type FederationEdge struct {
 	GSI2SK         string    `dynamorm:"index:gsi2,sk"`
 	SourceDomain   string    `json:"source_domain"`
 	TargetDomain   string    `json:"target_domain"`
-	ConnectionType string    `json:"connection_type"`   // follows/mentions/boosts/replies
+	ConnectionType string    `json:"connection_type"` // follows/mentions/boosts/replies
 	VolumeIn       int64     `json:"volume_in"`
 	VolumeOut      int64     `json:"volume_out"`
-	Strength       float64   `json:"strength"`          // 0.0-1.0 based on activity volume
+	Strength       float64   `json:"strength"` // 0.0-1.0 based on activity volume
 	LastActivity   time.Time `json:"last_activity"`
 	SharedUsers    int64     `json:"shared_users"`
 	ErrorCount     int64     `json:"error_count"`
@@ -171,7 +173,7 @@ type FederationEdge struct {
 func (f *FederationEdge) UpdateKeys() {
 	f.PK = fmt.Sprintf("FEDERATION_EDGE#%s", f.SourceDomain)
 	f.SK = f.TargetDomain
-	
+
 	// GSI2 for connection queries
 	f.GSI2PK = fmt.Sprintf("INSTANCE#%s#CONNECTIONS#%s", f.SourceDomain, f.ConnectionType)
 	f.GSI2SK = fmt.Sprintf("%d#%s", f.LastActivity.Unix(), f.TargetDomain)
@@ -188,8 +190,8 @@ type InstanceMetadata struct {
 	Version         string    `json:"version,omitempty"`
 	UserCount       int64     `json:"user_count,omitempty"`
 	StatusCount     int64     `json:"status_count,omitempty"`
-	NodeInfo        string    `json:"nodeinfo"`             // JSON string of nodeinfo response
-	InstanceInfo    string    `json:"instance_info"`        // JSON string of instance API response
+	NodeInfo        string    `json:"nodeinfo"`      // JSON string of nodeinfo response
+	InstanceInfo    string    `json:"instance_info"` // JSON string of instance API response
 	AdminContact    string    `json:"admin_contact,omitempty"`
 	Rules           []string  `json:"rules,omitempty"`
 	Languages       []string  `json:"languages,omitempty"`
@@ -201,7 +203,7 @@ type InstanceMetadata struct {
 // UpdateKeys updates the GSI keys for instance metadata
 func (i *InstanceMetadata) UpdateKeys() {
 	i.PK = fmt.Sprintf("INSTANCE_META#%s", i.Domain)
-	i.SK = "METADATA"
+	i.SK = SKMetadata
 }
 
 // InstanceCluster represents a group of closely connected instances
@@ -213,8 +215,8 @@ type InstanceCluster struct {
 	ClusterID   string    `json:"cluster_id"`
 	Name        string    `json:"name"`
 	Instances   []string  `json:"instances"`
-	CenterNode  string    `json:"center_node"`      // Most connected instance
-	Cohesion    float64   `json:"cohesion"`         // How tightly connected (0.0-1.0)
+	CenterNode  string    `json:"center_node"` // Most connected instance
+	Cohesion    float64   `json:"cohesion"`    // How tightly connected (0.0-1.0)
 	Size        int       `json:"size"`
 	Description string    `json:"description,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -224,7 +226,7 @@ type InstanceCluster struct {
 func (i *InstanceCluster) UpdateKeys() {
 	i.PK = "FEDERATION_CLUSTER#CLUSTERS"
 	i.SK = i.ClusterID
-	
+
 	// GSI1 for size-based queries
 	i.GSI1PK = "CLUSTERS_BY_SIZE"
 	i.GSI1SK = fmt.Sprintf("%05d#%s", i.Size, i.ClusterID)
@@ -238,7 +240,7 @@ type InstanceConnection struct {
 	GSI2SK         string    `dynamorm:"index:gsi2,sk"`
 	Domain         string    `json:"domain"`
 	TargetDomain   string    `json:"target_domain"`
-	Direction      string    `json:"direction"`         // inbound/outbound
+	Direction      string    `json:"direction"` // inbound/outbound
 	ConnectionType string    `json:"connection_type"`
 	VolumeIn       int64     `json:"volume_in"`
 	VolumeOut      int64     `json:"volume_out"`
@@ -248,9 +250,9 @@ type InstanceConnection struct {
 
 // UpdateKeys updates the GSI keys for instance connection
 func (i *InstanceConnection) UpdateKeys() {
-	i.PK = fmt.Sprintf("CONNECTION#%s", i.Domain)
+	i.PK = fmt.Sprintf(KeyPatternConnection, i.Domain)
 	i.SK = fmt.Sprintf("%s#%s", i.ConnectionType, i.TargetDomain)
-	
+
 	// GSI2 for connection queries
 	i.GSI2PK = fmt.Sprintf("INSTANCE#%s#CONNECTIONS#%s", i.Domain, i.ConnectionType)
 	i.GSI2SK = fmt.Sprintf("%d#%s", i.LastActivity.Unix(), i.TargetDomain)

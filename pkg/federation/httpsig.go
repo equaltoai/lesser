@@ -32,10 +32,10 @@ const (
 	// DateHeader is the HTTP header containing the request date
 	DateHeader = "Date"
 
-	// Default signature algorithm
+	// DefaultAlgorithm is the default signature algorithm
 	DefaultAlgorithm = "rsa-sha256"
 
-	// Maximum clock skew allowed (5 minutes)
+	// MaxClockSkew is the maximum clock skew allowed (5 minutes)
 	MaxClockSkew = 5 * time.Minute
 )
 
@@ -106,7 +106,7 @@ func ParseSignatureHeader(header string) (*HTTPSignature, error) {
 
 // buildSignatureString builds the signature string from the request and headers list
 func buildSignatureString(req *http.Request, headers []string) (string, error) {
-	var parts []string
+	parts := make([]string, 0, len(headers))
 
 	for _, header := range headers {
 		var value string

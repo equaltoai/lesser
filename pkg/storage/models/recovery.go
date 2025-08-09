@@ -12,15 +12,15 @@ type Trustee struct {
 	SK string `dynamorm:"sk"` // TRUSTEE#actorID
 
 	// Business fields
-	Username  string    `json:"username"`  // Who owns this trustee relationship
-	ActorID   string    `json:"actor_id"`  // @friend@mastodon.social
+	Username  string    `json:"username"` // Who owns this trustee relationship
+	ActorID   string    `json:"actor_id"` // @friend@mastodon.social
 	AddedAt   time.Time `json:"added_at"`
 	Confirmed bool      `json:"confirmed"`
 }
 
 // UpdateKeys updates the primary and GSI keys based on the model's business fields
 func (t *Trustee) UpdateKeys() {
-	t.PK = fmt.Sprintf("USER#%s", t.Username)
+	t.PK = fmt.Sprintf(KeyPatternUser, t.Username)
 	t.SK = fmt.Sprintf("TRUSTEE#%s", t.ActorID)
 }
 
@@ -52,7 +52,7 @@ type RecoveryRequest struct {
 func (r *RecoveryRequest) UpdateKeys() {
 	r.PK = fmt.Sprintf("RECOVERY#%s", r.ID)
 	r.SK = "REQUEST"
-	r.GSI1PK = fmt.Sprintf("USER#%s", r.Username)
+	r.GSI1PK = fmt.Sprintf(KeyPatternUser, r.Username)
 	r.GSI1SK = fmt.Sprintf("RECOVERY#%s", r.InitiatedAt.Format(time.RFC3339))
 	if !r.ExpiresAt.IsZero() {
 		r.TTL = r.ExpiresAt.Unix()
@@ -75,7 +75,7 @@ type RecoveryCode struct {
 
 // UpdateKeys updates the primary and GSI keys based on the model's business fields
 func (c *RecoveryCode) UpdateKeys() {
-	c.PK = fmt.Sprintf("USER#%s", c.Username)
+	c.PK = fmt.Sprintf(KeyPatternUser, c.Username)
 	c.SK = fmt.Sprintf("RECOVERY_CODE#%d", c.Position)
 }
 
@@ -96,7 +96,7 @@ type RecoveryToken struct {
 // UpdateKeys updates the primary keys and TTL based on the model's business fields
 func (t *RecoveryToken) UpdateKeys() {
 	// PK is set directly from the key parameter
-	t.SK = "TOKEN"
+	t.SK = SKToken
 	// Set TTL to 24 hours from creation
 	if !t.CreatedAt.IsZero() {
 		t.TTL = t.CreatedAt.Add(24 * time.Hour).Unix()

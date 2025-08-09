@@ -29,12 +29,12 @@ func TestCreateRefreshToken(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockModel := new(mocks.MockModel)
 	logger := zap.NewNop()
-	
+
 	repo := repositories.NewAuthRefreshTokenRepository(mockDB, "test-table", logger)
 	store := NewRefreshTokenStore(repo, logger)
 
 	ctx := context.Background()
-	
+
 	// Mock the Create operation
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", &models.AuthRefreshToken{}).Return(mockModel)
@@ -49,7 +49,7 @@ func TestCreateRefreshToken(t *testing.T) {
 	require.Equal(t, "192.168.1.1", token.IPAddress)
 	require.Equal(t, 1, token.Generation)
 	require.False(t, token.Revoked)
-	
+
 	mockDB.AssertExpectations(t)
 	mockModel.AssertExpectations(t)
 }
@@ -58,13 +58,13 @@ func TestGetRefreshToken(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	
+
 	repo := repositories.NewAuthRefreshTokenRepository(mockDB, "test-table", logger)
 	store := NewRefreshTokenStore(repo, logger)
 
 	ctx := context.Background()
 	tokenStr := "test-token-123"
-	
+
 	// Create expected token
 	expectedToken := &models.AuthRefreshToken{
 		Token:      tokenStr,
@@ -77,7 +77,7 @@ func TestGetRefreshToken(t *testing.T) {
 		DeviceName: "iPhone 12",
 		IPAddress:  "192.168.1.1",
 	}
-	
+
 	// Mock the query operations
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", &models.AuthRefreshToken{}).Return(mockQuery)
@@ -94,7 +94,7 @@ func TestGetRefreshToken(t *testing.T) {
 	require.Equal(t, expectedToken.UserID, token.UserID)
 	require.Equal(t, expectedToken.Family, token.Family)
 	require.Equal(t, expectedToken.Generation, token.Generation)
-	
+
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
@@ -103,13 +103,13 @@ func TestExpiredRefreshToken(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	
+
 	repo := repositories.NewAuthRefreshTokenRepository(mockDB, "test-table", logger)
 	store := NewRefreshTokenStore(repo, logger)
 
 	ctx := context.Background()
 	tokenStr := "expired-token"
-	
+
 	// Create expired token
 	expiredToken := &models.AuthRefreshToken{
 		Token:     tokenStr,
@@ -117,7 +117,7 @@ func TestExpiredRefreshToken(t *testing.T) {
 		ExpiresAt: time.Now().Add(-1 * time.Hour).Unix(), // Expired 1 hour ago
 		Revoked:   false,
 	}
-	
+
 	// Mock the query operations
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", &models.AuthRefreshToken{}).Return(mockQuery)
@@ -130,7 +130,7 @@ func TestExpiredRefreshToken(t *testing.T) {
 	_, err := store.GetRefreshToken(ctx, tokenStr)
 
 	require.Equal(t, ErrExpiredRefreshToken, err)
-	
+
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
@@ -140,13 +140,13 @@ func TestRefreshTokenRotation(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	mockModel := new(mocks.MockModel)
 	logger := zap.NewNop()
-	
+
 	repo := repositories.NewAuthRefreshTokenRepository(mockDB, "test-table", logger)
 	store := NewRefreshTokenStore(repo, logger)
 
 	ctx := context.Background()
 	oldTokenStr := "old-token-123"
-	
+
 	// Create old token
 	oldToken := &models.AuthRefreshToken{
 		Token:      oldTokenStr,
@@ -159,7 +159,7 @@ func TestRefreshTokenRotation(t *testing.T) {
 		DeviceName: "iPhone 12",
 		IPAddress:  "192.168.1.1",
 	}
-	
+
 	// Mock getting the old token
 	mockDB.On("WithContext", ctx).Return(mockDB).Times(3) // Called multiple times
 	mockDB.On("Model", &models.AuthRefreshToken{}).Return(mockQuery).Times(2)
@@ -168,7 +168,7 @@ func TestRefreshTokenRotation(t *testing.T) {
 		token := args[0].(*models.AuthRefreshToken)
 		*token = *oldToken
 	}).Return(nil)
-	
+
 	// Mock creating new token
 	mockDB.On("Model", &models.AuthRefreshToken{}).Return(mockModel)
 	mockModel.On("Create").Return(nil)
@@ -180,7 +180,7 @@ func TestRefreshTokenRotation(t *testing.T) {
 	require.Equal(t, oldToken.Family, newToken.Family)
 	require.Equal(t, oldToken.Generation+1, newToken.Generation)
 	require.Equal(t, "192.168.1.2", newToken.IPAddress)
-	
+
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 	mockModel.AssertExpectations(t)
@@ -190,13 +190,13 @@ func TestTokenReuseDetection(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	
+
 	repo := repositories.NewAuthRefreshTokenRepository(mockDB, "test-table", logger)
 	store := NewRefreshTokenStore(repo, logger)
 
 	ctx := context.Background()
 	revokedTokenStr := "revoked-token-123"
-	
+
 	// Create revoked token (simulating reuse)
 	revokedToken := &models.AuthRefreshToken{
 		Token:         revokedTokenStr,
@@ -207,7 +207,7 @@ func TestTokenReuseDetection(t *testing.T) {
 		Revoked:       true, // Already revoked
 		RevokedReason: "Rotated",
 	}
-	
+
 	// Mock getting the revoked token
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", &models.AuthRefreshToken{}).Return(mockQuery)
@@ -220,7 +220,7 @@ func TestTokenReuseDetection(t *testing.T) {
 	_, err := store.RotateRefreshToken(ctx, revokedTokenStr, "192.168.1.3")
 
 	require.Equal(t, ErrTokenReuse, err)
-	
+
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
@@ -231,22 +231,22 @@ func TestRefreshTokenStore_CreateAndGet(t *testing.T) {
 	mockModel := new(mocks.MockModel)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	
+
 	repo := repositories.NewAuthRefreshTokenRepository(mockDB, "test-table", logger)
 	store := NewRefreshTokenStore(repo, logger)
 
 	ctx := context.Background()
-	
+
 	// Mock create operation
 	mockDB.On("WithContext", ctx).Return(mockDB).Times(2)
 	mockDB.On("Model", &models.AuthRefreshToken{}).Return(mockModel).Once()
 	mockModel.On("Create").Return(nil).Once()
-	
+
 	// Create token
 	createdToken, err := store.CreateRefreshToken(ctx, "user123", "Test Device", "192.168.1.1")
 	require.NoError(t, err)
 	require.NotEmpty(t, createdToken.Token)
-	
+
 	// Mock get operation
 	mockDB.On("Model", &models.AuthRefreshToken{}).Return(mockQuery).Once()
 	mockQuery.On("Where", "Token", "=", createdToken.Token).Return(mockQuery)
@@ -263,14 +263,14 @@ func TestRefreshTokenStore_CreateAndGet(t *testing.T) {
 			IPAddress:  createdToken.IPAddress,
 		}
 	}).Return(nil)
-	
+
 	// Get token
 	retrievedToken, err := store.GetRefreshToken(ctx, createdToken.Token)
 	require.NoError(t, err)
 	assert.Equal(t, createdToken.Token, retrievedToken.Token)
 	assert.Equal(t, createdToken.UserID, retrievedToken.UserID)
 	assert.Equal(t, createdToken.Family, retrievedToken.Family)
-	
+
 	mockDB.AssertExpectations(t)
 	mockModel.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)

@@ -57,7 +57,7 @@ func TestPreciseTime_MarshalUnmarshal(t *testing.T) {
 			require.NoError(t, err)
 
 			// Verify
-			assert.Equal(t, original.Time.Truncate(tt.precision), unmarshaled.Time)
+			assert.Equal(t, original.Truncate(tt.precision), unmarshaled.Time)
 			assert.Equal(t, original.Precision, unmarshaled.Precision)
 		})
 	}
@@ -74,7 +74,7 @@ func TestPreciseTime_NewPreciseTimeNow(t *testing.T) {
 func TestPreciseTime_String(t *testing.T) {
 	pt := NewPreciseTime(time.Date(2023, 10, 15, 14, 30, 45, 123456789, time.UTC), time.Millisecond)
 	str := pt.String()
-	
+
 	assert.Contains(t, str, "2023-10-15T14:30:45")
 	assert.Contains(t, str, "precision: 1ms")
 }
@@ -202,7 +202,7 @@ func TestMoney_MarshalUnmarshal(t *testing.T) {
 
 func TestMoney_NewMoneyFromFloat(t *testing.T) {
 	money := NewMoneyFromFloat(123.45, "USD")
-	
+
 	assert.Equal(t, "123.45", money.Amount.StringFixed(2))
 	assert.Equal(t, "USD", money.Currency)
 }
@@ -210,7 +210,7 @@ func TestMoney_NewMoneyFromFloat(t *testing.T) {
 func TestMoney_NewMoneyFromString(t *testing.T) {
 	money, err := NewMoneyFromString("123.45", "USD")
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, "123.45", money.Amount.StringFixed(2))
 	assert.Equal(t, "USD", money.Currency)
 
@@ -255,7 +255,7 @@ func TestMoney_Operations(t *testing.T) {
 func TestMoney_String(t *testing.T) {
 	money := NewMoneyFromFloat(123.45, "USD")
 	str := money.String()
-	
+
 	assert.Equal(t, "123.45 USD", str)
 }
 
@@ -340,7 +340,7 @@ func TestAESEncryptor_EncryptDecrypt(t *testing.T) {
 	}
 
 	for _, original := range testData {
-		t.Run("encrypt/decrypt: "+original[:min(20, len(original))], func(t *testing.T) {
+		t.Run("encrypt/decrypt: "+original[:mathMin(20, len(original))], func(t *testing.T) {
 			// Encrypt
 			encrypted, err := encryptor.Encrypt([]byte(original))
 			require.NoError(t, err)
@@ -626,7 +626,7 @@ func TestStringSet_Operations(t *testing.T) {
 
 	// Test IsEmpty
 	assert.False(t, ss.IsEmpty())
-	
+
 	emptySet := NewStringSet()
 	assert.True(t, emptySet.IsEmpty())
 
@@ -638,7 +638,7 @@ func TestStringSet_Operations(t *testing.T) {
 func TestStringSet_String(t *testing.T) {
 	ss := NewStringSet("a", "b", "c")
 	str := ss.String()
-	
+
 	// Should be valid JSON array
 	var result []string
 	err := json.Unmarshal([]byte(str), &result)
@@ -656,8 +656,8 @@ func TestNewAESEncryptor_FromEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	keyBase64 := EncodeEncryptionKey(key)
 
-	os.Setenv("DYNAMODB_ENCRYPTION_KEY", keyBase64)
-	defer os.Unsetenv("DYNAMODB_ENCRYPTION_KEY")
+	_ = os.Setenv("DYNAMODB_ENCRYPTION_KEY", keyBase64)
+	defer func() { _ = os.Unsetenv("DYNAMODB_ENCRYPTION_KEY") }()
 
 	encryptor, err := NewAESEncryptor()
 	require.NoError(t, err)
@@ -675,21 +675,21 @@ func TestNewAESEncryptor_FromEnvironment(t *testing.T) {
 
 func TestNewAESEncryptor_FromEnvironment_Errors(t *testing.T) {
 	// Test with missing environment variable
-	os.Unsetenv("DYNAMODB_ENCRYPTION_KEY")
+	_ = os.Unsetenv("DYNAMODB_ENCRYPTION_KEY")
 	_, err := NewAESEncryptor()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "environment variable not set")
 
 	// Test with invalid base64
-	os.Setenv("DYNAMODB_ENCRYPTION_KEY", "invalid-base64!")
-	defer os.Unsetenv("DYNAMODB_ENCRYPTION_KEY")
+	_ = os.Setenv("DYNAMODB_ENCRYPTION_KEY", "invalid-base64!")
+	defer func() { _ = os.Unsetenv("DYNAMODB_ENCRYPTION_KEY") }()
 	_, err = NewAESEncryptor()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid encryption key")
 
 	// Test with wrong key length
 	shortKey := []byte("short")
-	os.Setenv("DYNAMODB_ENCRYPTION_KEY", EncodeEncryptionKey(shortKey))
+	_ = os.Setenv("DYNAMODB_ENCRYPTION_KEY", EncodeEncryptionKey(shortKey))
 	_, err = NewAESEncryptor()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "must be 32 bytes")
@@ -709,10 +709,10 @@ func TestGenerateEncryptionKey(t *testing.T) {
 func TestEncodeEncryptionKey(t *testing.T) {
 	key := []byte("this-is-exactly-32-bytes-long!!!")
 	encoded := EncodeEncryptionKey(key)
-	
+
 	// Should be valid base64
 	assert.NotEmpty(t, encoded)
-	
+
 	// Should decode back to original key
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	require.NoError(t, err)
@@ -720,7 +720,7 @@ func TestEncodeEncryptionKey(t *testing.T) {
 }
 
 // Helper function to get minimum of two integers
-func min(a, b int) int {
+func mathMin(a, b int) int {
 	if a < b {
 		return a
 	}

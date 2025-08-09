@@ -1,9 +1,11 @@
+// Package main implements the push-delivery Lambda function for delivering web push notifications.
 package main
 
 import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/hmac"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -30,6 +33,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+)
+
+// Push notification delivery status constants
+const (
+	PushStatusPending             = "pending"
+	PushStatusDelivered           = "delivered"
+	PushStatusFailed              = "failed"
+	PushStatusSubscriptionInvalid = "subscription_invalid"
 )
 
 // PushDeliveryProcessor handles push notification delivery via SQS
@@ -114,9 +125,17 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 		tableName = "lesser-main"
 	}
 
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
 	// Create repository factory
 	logger := common.Logger()
-	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create repository factory: %w", err)
 	}
@@ -301,7 +320,7 @@ type DeliveryResult struct {
 func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription *storage.PushSubscription, msg *PushMessage, vapidKeys *storage.VAPIDKeys) DeliveryResult {
 	result := DeliveryResult{
 		SubscriptionID: subscription.ID,
-		Status:         "pending",
+		Status:         PushStatusPending,
 	}
 
 	// Create the payload
@@ -318,7 +337,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		result.Status = "failed"
+		result.Status = PushStatusFailed
 		result.Error = fmt.Errorf("failed to marshal payload: %w", err)
 		return result
 	}
@@ -326,7 +345,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 	// Encrypt the payload
 	encryptedPayload, salt, serverPublicKey, err := pdp.encryptPayload(payloadBytes, subscription.P256dh, subscription.Auth)
 	if err != nil {
-		result.Status = "failed"
+		result.Status = PushStatusFailed
 		result.Error = fmt.Errorf("failed to encrypt payload: %w", err)
 		return result
 	}
@@ -334,7 +353,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 	// Create VAPID JWT
 	vapidJWT, err := pdp.createVAPIDJWT(subscription.Endpoint, vapidKeys.Subject, vapidKeys.PrivateKey)
 	if err != nil {
-		result.Status = "failed"
+		result.Status = PushStatusFailed
 		result.Error = fmt.Errorf("failed to create VAPID JWT: %w", err)
 		return result
 	}
@@ -342,7 +361,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 	// Send the request
 	req, err := http.NewRequestWithContext(ctx, "POST", subscription.Endpoint, strings.NewReader(encryptedPayload))
 	if err != nil {
-		result.Status = "failed"
+		result.Status = PushStatusFailed
 		result.Error = fmt.Errorf("failed to create request: %w", err)
 		return result
 	}
@@ -357,11 +376,11 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 
 	resp, err := pdp.httpClient.Do(req)
 	if err != nil {
-		result.Status = "failed"
+		result.Status = PushStatusFailed
 		result.Error = fmt.Errorf("failed to send request: %w", err)
 		return result
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	result.StatusCode = resp.StatusCode
 
@@ -380,19 +399,19 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 					zap.Error(err),
 				)
 			}
-			result.Status = "subscription_invalid"
+			result.Status = PushStatusSubscriptionInvalid
 		default:
 			pdp.logger.Warn("push service returned error",
 				zap.String("subscription_id", subscription.ID),
 				zap.Int("status_code", resp.StatusCode),
 			)
-			result.Status = "failed"
+			result.Status = PushStatusFailed
 		}
 		result.Error = fmt.Errorf("push service returned status %d", resp.StatusCode)
 		return result
 	}
 
-	result.Status = "delivered"
+	result.Status = PushStatusDelivered
 	pdp.logger.Info("successfully sent push notification",
 		zap.String("subscription_id", subscription.ID),
 		zap.String("type", msg.NotificationType),
@@ -429,7 +448,7 @@ func (pdp *PushDeliveryProcessor) trackDelivery(ctx context.Context, notificatio
 }
 
 // recordMetrics records performance and delivery metrics
-func (pdp *PushDeliveryProcessor) recordMetrics(ctx *lift.Context, notificationType string, duration time.Duration, err error, status string) {
+func (pdp *PushDeliveryProcessor) recordMetrics(_ *lift.Context, notificationType string, duration time.Duration, err error, status string) {
 	// Record push notification metrics to CloudWatch via structured logging
 	// The log aggregation system will parse these and send to CloudWatch
 	pdp.logger.Info("push_delivery_metrics",
@@ -491,7 +510,7 @@ func shouldSendNotification(alerts storage.PushSubscriptionAlerts, notificationT
 
 func hasDeliveryFailures(results []DeliveryResult) bool {
 	for _, result := range results {
-		if result.Status == "failed" {
+		if result.Status == PushStatusFailed {
 			return true
 		}
 	}
@@ -586,23 +605,23 @@ func (pdp *PushDeliveryProcessor) encryptPayload(payload []byte, p256dhBase64, a
 		return "", "", "", fmt.Errorf("failed to generate server key: %w", err)
 	}
 
-	// Marshal server public key
-	serverPublicKeyBytes := elliptic.Marshal(serverPrivateKey.Curve, serverPrivateKey.X, serverPrivateKey.Y)
-
-	// Unmarshal client public key
-	x, y := elliptic.Unmarshal(elliptic.P256(), clientPublicKeyBytes)
-	if x == nil {
-		return "", "", "", fmt.Errorf("failed to unmarshal client public key")
+	// Convert server private key to ECDH and get public key bytes
+	serverECDHKey, err := serverPrivateKey.ECDH()
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to convert server key to ECDH: %w", err)
 	}
-	clientPublicKey := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     x,
-		Y:     y,
-	}
+	serverPublicKeyBytes := serverECDHKey.PublicKey().Bytes()
 
-	// Perform ECDH
-	sharedX, _ := serverPrivateKey.ScalarMult(clientPublicKey.X, clientPublicKey.Y, serverPrivateKey.D.Bytes())
-	sharedSecret := sharedX.Bytes()
+	// Convert client public key bytes to ECDH public key
+	clientECDHPublicKey, err := ecdh.P256().NewPublicKey(clientPublicKeyBytes)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to parse client public key: %w", err)
+	}
+	// Perform ECDH key exchange
+	sharedSecret, err := serverECDHKey.ECDH(clientECDHPublicKey)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to perform ECDH: %w", err)
+	}
 
 	// Generate salt
 	salt := make([]byte, 16)
@@ -704,7 +723,7 @@ func main() {
 	})
 
 	// Set SQS handler for push notification delivery
-	app.SQS("push-delivery", func(ctx *lift.Context) error {
+	_ = app.SQS("push-delivery", func(ctx *lift.Context) error {
 		// Extract SQS event from Lift context - proper implementation
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)

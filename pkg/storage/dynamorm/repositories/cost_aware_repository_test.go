@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
-	. "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
+	repoTesting "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -27,7 +27,7 @@ func TestDefaultCostThresholds(t *testing.T) {
 }
 
 func TestNewCostAwareRepository(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 	tableName := "test-table"
@@ -43,7 +43,7 @@ func TestNewCostAwareRepository(t *testing.T) {
 }
 
 func TestNewCostAwareRepositoryWithRequest(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	logger := zap.NewNop()
 	tracker := cost.New()
 	tableName := "test-table"
@@ -59,7 +59,7 @@ func TestNewCostAwareRepositoryWithRequest(t *testing.T) {
 }
 
 func TestCostAwareRepository_SetCostThresholds(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	customThresholds := CostThresholds{
@@ -79,7 +79,7 @@ func TestCostAwareRepository_SetCostThresholds(t *testing.T) {
 }
 
 func TestCostAwareRepository_UpdateOperationStats(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	operationName := "test_operation"
@@ -103,7 +103,7 @@ func TestCostAwareRepository_UpdateOperationStats(t *testing.T) {
 }
 
 func TestCostAwareRepository_GetCostSummary(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test_table", zap.NewNop(), cost.New())
 
 	// Add some operation stats
@@ -137,7 +137,7 @@ func TestCostAwareRepository_GetCostSummary(t *testing.T) {
 }
 
 func TestCostAwareRepository_CheckCostAlerts(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test_table", zap.NewNop(), cost.New())
 
 	// Set low thresholds to trigger alerts
@@ -187,7 +187,7 @@ func TestCostAwareRepository_CheckCostAlerts(t *testing.T) {
 }
 
 func TestCostAwareRepository_ResetStats(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	// Add some stats
@@ -204,7 +204,7 @@ func TestCostAwareRepository_ResetStats(t *testing.T) {
 }
 
 func TestCostAwareRepository_OptimizeQuery(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	// Create a simple mock query that just returns basic suggestions
@@ -219,7 +219,7 @@ func TestCostAwareRepository_OptimizeQuery(t *testing.T) {
 // Test context integration
 
 func TestWithCostAwareRepository(t *testing.T) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	ctx := WithCostAwareRepository(context.Background(), repo)
@@ -238,8 +238,8 @@ func TestFromContext_NotFound(t *testing.T) {
 // Test NewCostAwareQuery
 
 func TestNewCostAwareQuery(t *testing.T) {
-	mockDB := &MockDB{}
-	mockQuery := &MockQuery{}
+	mockDB := &repoTesting.MockDB{}
+	mockQuery := &repoTesting.MockQuery{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
@@ -256,8 +256,8 @@ func TestNewCostAwareQuery(t *testing.T) {
 }
 
 func TestCostAwareQuery_Chaining(t *testing.T) {
-	mockDB := &MockDB{}
-	mockQuery := &MockQuery{}
+	mockDB := &repoTesting.MockDB{}
+	mockQuery := &repoTesting.MockQuery{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
@@ -281,8 +281,8 @@ func TestCostAwareQuery_Chaining(t *testing.T) {
 // Test actual cost tracking operations (these will be limited by mock constraints)
 
 func TestCostAwareRepository_CreateWithCostTracking_MockLimitations(t *testing.T) {
-	mockDB := &MockDB{}
-	mockQuery := &MockQuery{}
+	mockDB := &repoTesting.MockDB{}
+	mockQuery := &repoTesting.MockQuery{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	model := map[string]any{"id": "test"}
@@ -306,8 +306,8 @@ func TestCostAwareRepository_CreateWithCostTracking_MockLimitations(t *testing.T
 }
 
 func TestCostAwareRepository_GetWithCostTracking_MockLimitations(t *testing.T) {
-	mockDB := &MockDB{}
-	mockQuery := &MockQuery{}
+	mockDB := &repoTesting.MockDB{}
+	mockQuery := &repoTesting.MockQuery{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	model := map[string]any{"id": "test"}
@@ -334,7 +334,7 @@ func TestCostAwareRepository_GetWithCostTracking_MockLimitations(t *testing.T) {
 // Benchmark tests
 
 func BenchmarkCostAwareRepository_UpdateOperationStats(b *testing.B) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	operationName := "benchmark_op"
@@ -348,7 +348,7 @@ func BenchmarkCostAwareRepository_UpdateOperationStats(b *testing.B) {
 }
 
 func BenchmarkCostAwareRepository_GetOperationStats(b *testing.B) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	// Pre-populate with stats
@@ -363,7 +363,7 @@ func BenchmarkCostAwareRepository_GetOperationStats(b *testing.B) {
 }
 
 func BenchmarkCostAwareRepository_CheckCostAlerts(b *testing.B) {
-	mockDB := &MockDB{}
+	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
 	// Pre-populate with stats that will trigger alerts

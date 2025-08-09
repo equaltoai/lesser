@@ -10,6 +10,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // NotificationCostRepository handles notification cost tracking operations
@@ -52,9 +53,9 @@ func (r *NotificationCostRepository) CreateCostTracking(ctx context.Context, tra
 // GetCostTrackingByNotification retrieves cost tracking records for a notification
 func (r *NotificationCostRepository) GetCostTrackingByNotification(ctx context.Context, notificationID string, limit int) ([]*models.NotificationCostTracking, error) {
 	var trackingRecords []*models.NotificationCostTracking
-	
+
 	pk := fmt.Sprintf("NOTIF_COST#%s", notificationID)
-	
+
 	query := r.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC").
@@ -71,10 +72,10 @@ func (r *NotificationCostRepository) GetCostTrackingByNotification(ctx context.C
 // GetCostTrackingByUser retrieves cost tracking records for a user within a time range
 func (r *NotificationCostRepository) GetCostTrackingByUser(ctx context.Context, username string, startTime, endTime time.Time, limit int) ([]*models.NotificationCostTracking, error) {
 	var trackingRecords []*models.NotificationCostTracking
-	
-	startSK := fmt.Sprintf("COST#%s", startTime.Format("20060102150405"))
-	endSK := fmt.Sprintf("COST#%s", endTime.Format("20060102150405"))
-	
+
+	startSK := fmt.Sprintf("COST#%s", startTime.Format(common.CompactTimeFormat))
+	endSK := fmt.Sprintf("COST#%s", endTime.Format(common.CompactTimeFormat))
+
 	query := r.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Index("gsi1").
 		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username)).
@@ -94,10 +95,10 @@ func (r *NotificationCostRepository) GetCostTrackingByUser(ctx context.Context, 
 // GetCostTrackingByMethod retrieves cost tracking records by delivery method within a time range
 func (r *NotificationCostRepository) GetCostTrackingByMethod(ctx context.Context, deliveryMethod string, startTime, endTime time.Time, limit int) ([]*models.NotificationCostTracking, error) {
 	var trackingRecords []*models.NotificationCostTracking
-	
-	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format("20060102150405"))
-	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format("20060102150405"))
-	
+
+	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(common.CompactTimeFormat))
+	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(common.CompactTimeFormat))
+
 	query := r.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Index("gsi2").
 		Where("GSI2PK", "=", fmt.Sprintf("METHOD#%s", deliveryMethod)).
@@ -117,9 +118,9 @@ func (r *NotificationCostRepository) GetCostTrackingByMethod(ctx context.Context
 // GetDailyCostTracking retrieves cost tracking records for a specific date
 func (r *NotificationCostRepository) GetDailyCostTracking(ctx context.Context, date time.Time, limit int) ([]*models.NotificationCostTracking, error) {
 	var trackingRecords []*models.NotificationCostTracking
-	
-	dateStr := date.Format("20060102")
-	
+
+	dateStr := date.Format(common.CompactDateFormat)
+
 	query := r.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Index("gsi3").
 		Where("GSI3PK", "=", fmt.Sprintf("DAILY#%s", dateStr)).
@@ -290,301 +291,463 @@ func (r *NotificationCostRepository) GetUserBudgets(ctx context.Context, usernam
 
 // AggregateNotificationCosts aggregates raw cost data into aggregation records
 func (r *NotificationCostRepository) AggregateNotificationCosts(ctx context.Context, period, deliveryMethod string, windowStart, windowEnd time.Time) error {
-	// Get all cost tracking records in the window
-	var allCosts []*models.NotificationCostTracking
-	
-	// Query by day to get all records in the time window
-	currentDate := windowStart
-	for currentDate.Before(windowEnd) || currentDate.Equal(windowEnd) {
-		dailyCosts, err := r.GetDailyCostTracking(ctx, currentDate, 10000)
-		if err != nil {
-			r.logger.Warn("failed to get daily costs for aggregation",
-				zap.Time("date", currentDate),
-				zap.Error(err))
-		} else {
-			// Filter by delivery method and time range
-			for _, cost := range dailyCosts {
-				if (deliveryMethod == "all" || cost.DeliveryMethod == deliveryMethod) &&
-					!cost.Timestamp.Before(windowStart) &&
-					!cost.Timestamp.After(windowEnd) {
-					allCosts = append(allCosts, cost)
-				}
-			}
-		}
-		currentDate = currentDate.AddDate(0, 0, 1)
-	}
-
+	// Collect all cost records in the window
+	allCosts := r.collectCostRecords(ctx, deliveryMethod, windowStart, windowEnd)
 	if len(allCosts) == 0 {
 		return nil // Nothing to aggregate
 	}
 
-	// Calculate aggregated values
-	aggregation := &models.NotificationCostAggregation{
-		Period:          period,
-		DeliveryMethod:  deliveryMethod,
-		WindowStart:     windowStart,
-		WindowEnd:       windowEnd,
-		TypeBreakdown:   make(map[string]*models.NotificationTypeCostStats),
+	// Create and populate aggregation
+	aggregation := r.createAggregation(period, deliveryMethod, windowStart, windowEnd)
+	timings := r.aggregateCostData(aggregation, allCosts)
+	
+	// Calculate statistics
+	r.calculateAverages(aggregation, timings)
+	r.calculateBreakdownStatistics(aggregation)
+	
+	// Save aggregation
+	return r.saveAggregation(ctx, aggregation)
+}
+
+// collectCostRecords collects all cost tracking records in the time window
+func (r *NotificationCostRepository) collectCostRecords(ctx context.Context, deliveryMethod string, windowStart, windowEnd time.Time) []*models.NotificationCostTracking {
+	var allCosts []*models.NotificationCostTracking
+	
+	currentDate := windowStart
+	for currentDate.Before(windowEnd) || currentDate.Equal(windowEnd) {
+		dailyCosts := r.fetchDailyCosts(ctx, currentDate)
+		filtered := r.filterCosts(dailyCosts, deliveryMethod, windowStart, windowEnd)
+		allCosts = append(allCosts, filtered...)
+		currentDate = currentDate.AddDate(0, 0, 1)
+	}
+	
+	return allCosts
+}
+
+// fetchDailyCosts fetches costs for a specific date
+func (r *NotificationCostRepository) fetchDailyCosts(ctx context.Context, date time.Time) []*models.NotificationCostTracking {
+	dailyCosts, err := r.GetDailyCostTracking(ctx, date, 10000)
+	if err != nil {
+		r.logger.Warn("failed to get daily costs for aggregation",
+			zap.Time("date", date),
+			zap.Error(err))
+		return nil
+	}
+	return dailyCosts
+}
+
+// filterCosts filters costs by delivery method and time range
+func (r *NotificationCostRepository) filterCosts(costs []*models.NotificationCostTracking, deliveryMethod string, windowStart, windowEnd time.Time) []*models.NotificationCostTracking {
+	var filtered []*models.NotificationCostTracking
+	
+	for _, cost := range costs {
+		if r.shouldIncludeCost(cost, deliveryMethod, windowStart, windowEnd) {
+			filtered = append(filtered, cost)
+		}
+	}
+	
+	return filtered
+}
+
+// shouldIncludeCost checks if a cost record should be included
+func (r *NotificationCostRepository) shouldIncludeCost(cost *models.NotificationCostTracking, deliveryMethod string, windowStart, windowEnd time.Time) bool {
+	return (deliveryMethod == "all" || cost.DeliveryMethod == deliveryMethod) &&
+		!cost.Timestamp.Before(windowStart) &&
+		!cost.Timestamp.After(windowEnd)
+}
+
+// createAggregation creates a new aggregation object
+func (r *NotificationCostRepository) createAggregation(period, deliveryMethod string, windowStart, windowEnd time.Time) *models.NotificationCostAggregation {
+	return &models.NotificationCostAggregation{
+		Period:           period,
+		DeliveryMethod:   deliveryMethod,
+		WindowStart:      windowStart,
+		WindowEnd:        windowEnd,
+		TypeBreakdown:    make(map[string]*models.NotificationTypeCostStats),
 		ChannelBreakdown: make(map[string]*models.NotificationChannelCostStats),
-		UserBreakdown:   make(map[string]*models.NotificationUserCostStats),
+		UserBreakdown:    make(map[string]*models.NotificationUserCostStats),
 	}
+}
 
-	// Track processing times for averages
-	var totalProcessingTime, totalDeliveryTime, totalTime float64
+// aggregateTimings holds timing data for averaging
+type aggregateTimings struct {
+	totalProcessingTime float64
+	totalDeliveryTime   float64
+	totalTime          float64
+}
 
-	// Aggregate costs
-	for _, cost := range allCosts {
-		aggregation.TotalNotifications++
-		
-		if cost.Success {
-			aggregation.SuccessfulDeliveries++
-		} else {
-			aggregation.FailedDeliveries++
-		}
-		
-		aggregation.TotalRetries += int64(cost.RetryCount)
-		
-		// Add costs
-		aggregation.TotalEmailCostMicroCents += cost.EmailCostMicroCents
-		aggregation.TotalPushCostMicroCents += cost.PushCostMicroCents
-		aggregation.TotalSMSCostMicroCents += cost.SMSCostMicroCents
-		aggregation.TotalWebSocketCostMicroCents += cost.WebSocketCostMicroCents
-		aggregation.TotalLambdaCostMicroCents += cost.LambdaCostMicroCents
-		aggregation.TotalDynamoDBCostMicroCents += cost.DynamoDBCostMicroCents
-		aggregation.TotalCostMicroCents += cost.TotalCostMicroCents
-		
-		// Add processing times
-		totalProcessingTime += float64(cost.ProcessingTimeMs)
-		totalDeliveryTime += float64(cost.DeliveryTimeMs)
-		totalTime += float64(cost.TotalTimeMs)
-		
-		// Aggregate by notification type
-		typeStats, exists := aggregation.TypeBreakdown[cost.NotificationType]
-		if !exists {
-			typeStats = &models.NotificationTypeCostStats{
-				Type: cost.NotificationType,
-			}
-			aggregation.TypeBreakdown[cost.NotificationType] = typeStats
-		}
-		
-		typeStats.Count++
-		if cost.Success {
-			typeStats.SuccessfulDeliveries++
-		} else {
-			typeStats.FailedDeliveries++
-		}
-		typeStats.TotalCostMicroCents += cost.TotalCostMicroCents
-		
-		// Aggregate by channel
-		channelStats, exists := aggregation.ChannelBreakdown[cost.Channel]
-		if !exists {
-			channelStats = &models.NotificationChannelCostStats{
-				Channel: cost.Channel,
-			}
-			aggregation.ChannelBreakdown[cost.Channel] = channelStats
-		}
-		
-		channelStats.Count++
-		if cost.Success {
-			channelStats.SuccessfulDeliveries++
-		} else {
-			channelStats.FailedDeliveries++
-		}
-		channelStats.TotalCostMicroCents += cost.TotalCostMicroCents
-		
-		// Aggregate by user
-		userStats, exists := aggregation.UserBreakdown[cost.Username]
-		if !exists {
-			userStats = &models.NotificationUserCostStats{
-				Username: cost.Username,
-			}
-			aggregation.UserBreakdown[cost.Username] = userStats
-		}
-		
-		userStats.Count++
-		if cost.Success {
-			userStats.SuccessfulDeliveries++
-		} else {
-			userStats.FailedDeliveries++
-		}
-		userStats.TotalCostMicroCents += cost.TotalCostMicroCents
+// aggregateCostData aggregates all cost data into the aggregation
+func (r *NotificationCostRepository) aggregateCostData(aggregation *models.NotificationCostAggregation, costs []*models.NotificationCostTracking) aggregateTimings {
+	timings := aggregateTimings{}
+	
+	for _, cost := range costs {
+		r.updateTotalCounts(aggregation, cost)
+		r.updateCostTotals(aggregation, cost)
+		r.updateTimings(&timings, cost)
+		r.updateTypeBreakdown(aggregation, cost)
+		r.updateChannelBreakdown(aggregation, cost)
+		r.updateUserBreakdown(aggregation, cost)
 	}
+	
+	return timings
+}
 
-	// Calculate averages
+// updateTotalCounts updates total notification counts
+func (r *NotificationCostRepository) updateTotalCounts(aggregation *models.NotificationCostAggregation, cost *models.NotificationCostTracking) {
+	aggregation.TotalNotifications++
+	
+	if cost.Success {
+		aggregation.SuccessfulDeliveries++
+	} else {
+		aggregation.FailedDeliveries++
+	}
+	
+	aggregation.TotalRetries += int64(cost.RetryCount)
+}
+
+// updateCostTotals updates total cost amounts
+func (r *NotificationCostRepository) updateCostTotals(aggregation *models.NotificationCostAggregation, cost *models.NotificationCostTracking) {
+	aggregation.TotalPushCostMicroCents += cost.PushCostMicroCents
+	aggregation.TotalWebSocketCostMicroCents += cost.WebSocketCostMicroCents
+	aggregation.TotalLambdaCostMicroCents += cost.LambdaCostMicroCents
+	aggregation.TotalDynamoDBCostMicroCents += cost.DynamoDBCostMicroCents
+	aggregation.TotalCostMicroCents += cost.TotalCostMicroCents
+}
+
+// updateTimings updates timing totals
+func (r *NotificationCostRepository) updateTimings(timings *aggregateTimings, cost *models.NotificationCostTracking) {
+	timings.totalProcessingTime += float64(cost.ProcessingTimeMs)
+	timings.totalDeliveryTime += float64(cost.DeliveryTimeMs)
+	timings.totalTime += float64(cost.TotalTimeMs)
+}
+
+// updateTypeBreakdown updates notification type breakdown
+func (r *NotificationCostRepository) updateTypeBreakdown(aggregation *models.NotificationCostAggregation, cost *models.NotificationCostTracking) {
+	stats := r.getOrCreateTypeStats(aggregation, cost.NotificationType)
+	r.updateBreakdownStats(stats, cost)
+}
+
+// getOrCreateTypeStats gets or creates type stats
+func (r *NotificationCostRepository) getOrCreateTypeStats(aggregation *models.NotificationCostAggregation, notifType string) *models.NotificationTypeCostStats {
+	stats, exists := aggregation.TypeBreakdown[notifType]
+	if !exists {
+		stats = &models.NotificationTypeCostStats{Type: notifType}
+		aggregation.TypeBreakdown[notifType] = stats
+	}
+	return stats
+}
+
+// updateChannelBreakdown updates channel breakdown
+func (r *NotificationCostRepository) updateChannelBreakdown(aggregation *models.NotificationCostAggregation, cost *models.NotificationCostTracking) {
+	stats := r.getOrCreateChannelStats(aggregation, cost.Channel)
+	r.updateBreakdownStats(stats, cost)
+}
+
+// getOrCreateChannelStats gets or creates channel stats
+func (r *NotificationCostRepository) getOrCreateChannelStats(aggregation *models.NotificationCostAggregation, channel string) *models.NotificationChannelCostStats {
+	stats, exists := aggregation.ChannelBreakdown[channel]
+	if !exists {
+		stats = &models.NotificationChannelCostStats{Channel: channel}
+		aggregation.ChannelBreakdown[channel] = stats
+	}
+	return stats
+}
+
+// updateUserBreakdown updates user breakdown
+func (r *NotificationCostRepository) updateUserBreakdown(aggregation *models.NotificationCostAggregation, cost *models.NotificationCostTracking) {
+	stats := r.getOrCreateUserStats(aggregation, cost.Username)
+	r.updateBreakdownStats(stats, cost)
+}
+
+// getOrCreateUserStats gets or creates user stats
+func (r *NotificationCostRepository) getOrCreateUserStats(aggregation *models.NotificationCostAggregation, username string) *models.NotificationUserCostStats {
+	stats, exists := aggregation.UserBreakdown[username]
+	if !exists {
+		stats = &models.NotificationUserCostStats{Username: username}
+		aggregation.UserBreakdown[username] = stats
+	}
+	return stats
+}
+
+// updateBreakdownStats updates common breakdown statistics
+func (r *NotificationCostRepository) updateBreakdownStats(stats interface{}, cost *models.NotificationCostTracking) {
+	switch s := stats.(type) {
+	case *models.NotificationTypeCostStats:
+		s.Count++
+		if cost.Success {
+			s.SuccessfulDeliveries++
+		} else {
+			s.FailedDeliveries++
+		}
+		s.TotalCostMicroCents += cost.TotalCostMicroCents
+	case *models.NotificationChannelCostStats:
+		s.Count++
+		if cost.Success {
+			s.SuccessfulDeliveries++
+		} else {
+			s.FailedDeliveries++
+		}
+		s.TotalCostMicroCents += cost.TotalCostMicroCents
+	case *models.NotificationUserCostStats:
+		s.Count++
+		if cost.Success {
+			s.SuccessfulDeliveries++
+		} else {
+			s.FailedDeliveries++
+		}
+		s.TotalCostMicroCents += cost.TotalCostMicroCents
+	}
+}
+
+// calculateAverages calculates average times
+func (r *NotificationCostRepository) calculateAverages(aggregation *models.NotificationCostAggregation, timings aggregateTimings) {
 	if aggregation.TotalNotifications > 0 {
-		aggregation.AverageProcessingTimeMs = totalProcessingTime / float64(aggregation.TotalNotifications)
-		aggregation.AverageDeliveryTimeMs = totalDeliveryTime / float64(aggregation.TotalNotifications)
-		aggregation.AverageTotalTimeMs = totalTime / float64(aggregation.TotalNotifications)
+		count := float64(aggregation.TotalNotifications)
+		aggregation.AverageProcessingTimeMs = timings.totalProcessingTime / count
+		aggregation.AverageDeliveryTimeMs = timings.totalDeliveryTime / count
+		aggregation.AverageTotalTimeMs = timings.totalTime / count
 	}
+}
 
-	// Calculate statistics for type breakdown
-	for notifType := range aggregation.TypeBreakdown {
-		stats := aggregation.TypeBreakdown[notifType]
-		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
-		if stats.Count > 0 {
-			stats.AverageCostMicroCents = stats.TotalCostMicroCents / stats.Count
-			stats.AverageCostDollars = float64(stats.AverageCostMicroCents) / 1_000_000.0
-			stats.SuccessRate = (float64(stats.SuccessfulDeliveries) / float64(stats.Count)) * 100
-		}
+// calculateBreakdownStatistics calculates statistics for all breakdowns
+func (r *NotificationCostRepository) calculateBreakdownStatistics(aggregation *models.NotificationCostAggregation) {
+	r.calculateTypeStatistics(aggregation.TypeBreakdown)
+	r.calculateChannelStatistics(aggregation.ChannelBreakdown)
+	r.calculateUserStatistics(aggregation.UserBreakdown)
+}
+
+// calculateTypeStatistics calculates statistics for type breakdown
+func (r *NotificationCostRepository) calculateTypeStatistics(breakdown map[string]*models.NotificationTypeCostStats) {
+	for _, stats := range breakdown {
+		r.calculateCostStatistics(&stats.Count, &stats.TotalCostMicroCents, &stats.AverageCostMicroCents,
+			&stats.TotalCostDollars, &stats.AverageCostDollars, &stats.SuccessfulDeliveries, &stats.SuccessRate)
 	}
+}
 
-	// Calculate statistics for channel breakdown
-	for channel := range aggregation.ChannelBreakdown {
-		stats := aggregation.ChannelBreakdown[channel]
-		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
-		if stats.Count > 0 {
-			stats.AverageCostMicroCents = stats.TotalCostMicroCents / stats.Count
-			stats.AverageCostDollars = float64(stats.AverageCostMicroCents) / 1_000_000.0
-			stats.SuccessRate = (float64(stats.SuccessfulDeliveries) / float64(stats.Count)) * 100
-		}
+// calculateChannelStatistics calculates statistics for channel breakdown
+func (r *NotificationCostRepository) calculateChannelStatistics(breakdown map[string]*models.NotificationChannelCostStats) {
+	for _, stats := range breakdown {
+		r.calculateCostStatistics(&stats.Count, &stats.TotalCostMicroCents, &stats.AverageCostMicroCents,
+			&stats.TotalCostDollars, &stats.AverageCostDollars, &stats.SuccessfulDeliveries, &stats.SuccessRate)
 	}
+}
 
-	// Calculate statistics for user breakdown
-	for username := range aggregation.UserBreakdown {
-		stats := aggregation.UserBreakdown[username]
-		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
-		if stats.Count > 0 {
-			stats.AverageCostMicroCents = stats.TotalCostMicroCents / stats.Count
-			stats.AverageCostDollars = float64(stats.AverageCostMicroCents) / 1_000_000.0
-			stats.SuccessRate = (float64(stats.SuccessfulDeliveries) / float64(stats.Count)) * 100
-		}
+// calculateUserStatistics calculates statistics for user breakdown
+func (r *NotificationCostRepository) calculateUserStatistics(breakdown map[string]*models.NotificationUserCostStats) {
+	for _, stats := range breakdown {
+		r.calculateCostStatistics(&stats.Count, &stats.TotalCostMicroCents, &stats.AverageCostMicroCents,
+			&stats.TotalCostDollars, &stats.AverageCostDollars, &stats.SuccessfulDeliveries, &stats.SuccessRate)
 	}
+}
 
-	// Check if aggregation already exists
-	existing, err := r.GetAggregation(ctx, period, deliveryMethod, windowStart)
+// calculateCostStatistics calculates common cost statistics
+func (r *NotificationCostRepository) calculateCostStatistics(count, totalCostMicroCents, avgCostMicroCents *int64, totalCostDollars, avgCostDollars *float64, successfulDeliveries *int64, successRate *float64) {
+	*totalCostDollars = float64(*totalCostMicroCents) / 1_000_000.0
+	if *count > 0 {
+		*avgCostMicroCents = *totalCostMicroCents / *count
+		*avgCostDollars = float64(*avgCostMicroCents) / 1_000_000.0
+		*successRate = (float64(*successfulDeliveries) / float64(*count)) * 100
+	}
+}
+
+// saveAggregation saves or updates the aggregation
+func (r *NotificationCostRepository) saveAggregation(ctx context.Context, aggregation *models.NotificationCostAggregation) error {
+	existing, err := r.GetAggregation(ctx, aggregation.Period, aggregation.DeliveryMethod, aggregation.WindowStart)
 	if err != nil {
 		return fmt.Errorf("failed to check existing aggregation: %w", err)
 	}
 
 	if existing != nil {
-		// Update existing
 		aggregation.CreatedAt = existing.CreatedAt
 		return r.UpdateAggregation(ctx, aggregation)
 	}
 
-	// Create new aggregation
 	return r.CreateAggregation(ctx, aggregation)
 }
 
 // GetNotificationCostSummary calculates cost summary for notifications within a time range
 func (r *NotificationCostRepository) GetNotificationCostSummary(ctx context.Context, startTime, endTime time.Time) (*NotificationCostSummary, error) {
-	// Get costs for each day in the range
-	var allCosts []*models.NotificationCostTracking
-	
-	currentDate := startTime
-	for currentDate.Before(endTime) || currentDate.Equal(endTime) {
-		dailyCosts, err := r.GetDailyCostTracking(ctx, currentDate, 10000)
-		if err != nil {
-			r.logger.Warn("failed to get daily costs for summary",
-				zap.Time("date", currentDate),
-				zap.Error(err))
-		} else {
-			// Filter by time range
-			for _, cost := range dailyCosts {
-				if !cost.Timestamp.Before(startTime) && !cost.Timestamp.After(endTime) {
-					allCosts = append(allCosts, cost)
-				}
-			}
-		}
-		currentDate = currentDate.AddDate(0, 0, 1)
-	}
+	// Collect all costs in the time range
+	allCosts := r.collectCostsInRange(ctx, startTime, endTime)
 
-	summary := &NotificationCostSummary{
-		StartTime: startTime,
-		EndTime:   endTime,
-		Count:     len(allCosts),
-		DeliveryMethodBreakdown: make(map[string]*DeliveryMethodSummaryStats),
-		NotificationTypeBreakdown: make(map[string]*NotificationTypeSummaryStats),
-	}
-
+	// Initialize summary
+	summary := r.initializeSummary(startTime, endTime, allCosts)
 	if summary.Count == 0 {
 		return summary, nil
 	}
 
-	// Calculate summary statistics
-	for _, cost := range allCosts {
-		summary.TotalNotifications++
-		if cost.Success {
-			summary.SuccessfulDeliveries++
-		} else {
-			summary.FailedDeliveries++
-		}
-		summary.TotalRetries += int64(cost.RetryCount)
-		summary.TotalCostMicroCents += cost.TotalCostMicroCents
+	// Process all costs
+	r.processCosts(summary, allCosts)
 
-		// Aggregate by delivery method
-		methodStats, exists := summary.DeliveryMethodBreakdown[cost.DeliveryMethod]
-		if !exists {
-			methodStats = &DeliveryMethodSummaryStats{
-				Method: cost.DeliveryMethod,
-			}
-			summary.DeliveryMethodBreakdown[cost.DeliveryMethod] = methodStats
-		}
-		
-		methodStats.Count++
-		if cost.Success {
-			methodStats.SuccessfulDeliveries++
-		} else {
-			methodStats.FailedDeliveries++
-		}
-		methodStats.TotalCostMicroCents += cost.TotalCostMicroCents
-
-		// Aggregate by notification type
-		typeStats, exists := summary.NotificationTypeBreakdown[cost.NotificationType]
-		if !exists {
-			typeStats = &NotificationTypeSummaryStats{
-				Type: cost.NotificationType,
-			}
-			summary.NotificationTypeBreakdown[cost.NotificationType] = typeStats
-		}
-		
-		typeStats.Count++
-		if cost.Success {
-			typeStats.SuccessfulDeliveries++
-		} else {
-			typeStats.FailedDeliveries++
-		}
-		typeStats.TotalCostMicroCents += cost.TotalCostMicroCents
-	}
-
-	// Calculate totals and averages
-	summary.TotalCostDollars = float64(summary.TotalCostMicroCents) / 1_000_000.0
-	if summary.TotalNotifications > 0 {
-		summary.AverageCostPerNotification = summary.TotalCostDollars / float64(summary.TotalNotifications)
-		summary.SuccessRate = (float64(summary.SuccessfulDeliveries) / float64(summary.TotalNotifications)) * 100
-		summary.RetryRate = (float64(summary.TotalRetries) / float64(summary.TotalNotifications)) * 100
-	}
-
-	// Calculate method averages
-	for method := range summary.DeliveryMethodBreakdown {
-		stats := summary.DeliveryMethodBreakdown[method]
-		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
-		if stats.Count > 0 {
-			stats.AverageCostMicroCents = stats.TotalCostMicroCents / stats.Count
-			stats.AverageCostDollars = float64(stats.AverageCostMicroCents) / 1_000_000.0
-			stats.SuccessRate = (float64(stats.SuccessfulDeliveries) / float64(stats.Count)) * 100
-		}
-	}
-
-	// Calculate type averages
-	for notifType := range summary.NotificationTypeBreakdown {
-		stats := summary.NotificationTypeBreakdown[notifType]
-		stats.TotalCostDollars = float64(stats.TotalCostMicroCents) / 1_000_000.0
-		if stats.Count > 0 {
-			stats.AverageCostMicroCents = stats.TotalCostMicroCents / stats.Count
-			stats.AverageCostDollars = float64(stats.AverageCostMicroCents) / 1_000_000.0
-			stats.SuccessRate = (float64(stats.SuccessfulDeliveries) / float64(stats.Count)) * 100
-		}
-	}
+	// Calculate final statistics
+	r.calculateSummaryStatistics(summary)
+	r.calculateMethodStatistics(summary)
+	r.calculateNotificationTypeStatistics(summary)
 
 	return summary, nil
+}
+
+// collectCostsInRange collects all notification costs within the time range
+func (r *NotificationCostRepository) collectCostsInRange(ctx context.Context, startTime, endTime time.Time) []*models.NotificationCostTracking {
+	var allCosts []*models.NotificationCostTracking
+
+	currentDate := startTime
+	for currentDate.Before(endTime) || currentDate.Equal(endTime) {
+		dailyCosts := r.fetchDailySummaryCosts(ctx, currentDate)
+		filteredCosts := r.filterCostsByTimeRange(dailyCosts, startTime, endTime)
+		allCosts = append(allCosts, filteredCosts...)
+		currentDate = currentDate.AddDate(0, 0, 1)
+	}
+
+	return allCosts
+}
+
+// fetchDailySummaryCosts fetches costs for a specific date for summary
+func (r *NotificationCostRepository) fetchDailySummaryCosts(ctx context.Context, date time.Time) []*models.NotificationCostTracking {
+	dailyCosts, err := r.GetDailyCostTracking(ctx, date, 10000)
+	if err != nil {
+		r.logger.Warn("failed to get daily costs for summary",
+			zap.Time("date", date),
+			zap.Error(err))
+		return nil
+	}
+	return dailyCosts
+}
+
+// filterCostsByTimeRange filters costs to only include those within the time range
+func (r *NotificationCostRepository) filterCostsByTimeRange(costs []*models.NotificationCostTracking, startTime, endTime time.Time) []*models.NotificationCostTracking {
+	var filtered []*models.NotificationCostTracking
+	for _, cost := range costs {
+		if !cost.Timestamp.Before(startTime) && !cost.Timestamp.After(endTime) {
+			filtered = append(filtered, cost)
+		}
+	}
+	return filtered
+}
+
+// initializeSummary creates and initializes a new summary
+func (r *NotificationCostRepository) initializeSummary(startTime, endTime time.Time, costs []*models.NotificationCostTracking) *NotificationCostSummary {
+	return &NotificationCostSummary{
+		StartTime:                 startTime,
+		EndTime:                   endTime,
+		Count:                     len(costs),
+		DeliveryMethodBreakdown:   make(map[string]*DeliveryMethodSummaryStats),
+		NotificationTypeBreakdown: make(map[string]*NotificationTypeSummaryStats),
+	}
+}
+
+// processCosts processes all costs and updates the summary
+func (r *NotificationCostRepository) processCosts(summary *NotificationCostSummary, costs []*models.NotificationCostTracking) {
+	for _, cost := range costs {
+		r.updateBasicCounts(summary, cost)
+		r.updateMethodBreakdown(summary, cost)
+		r.updateNotificationTypeBreakdown(summary, cost)
+	}
+}
+
+// updateBasicCounts updates basic count fields in the summary
+func (r *NotificationCostRepository) updateBasicCounts(summary *NotificationCostSummary, cost *models.NotificationCostTracking) {
+	summary.TotalNotifications++
+	if cost.Success {
+		summary.SuccessfulDeliveries++
+	} else {
+		summary.FailedDeliveries++
+	}
+	summary.TotalRetries += int64(cost.RetryCount)
+	summary.TotalCostMicroCents += cost.TotalCostMicroCents
+}
+
+// updateMethodBreakdown updates delivery method breakdown statistics
+func (r *NotificationCostRepository) updateMethodBreakdown(summary *NotificationCostSummary, cost *models.NotificationCostTracking) {
+	methodStats := r.getOrCreateMethodStats(summary, cost.DeliveryMethod)
+	methodStats.Count++
+	if cost.Success {
+		methodStats.SuccessfulDeliveries++
+	} else {
+		methodStats.FailedDeliveries++
+	}
+	methodStats.TotalCostMicroCents += cost.TotalCostMicroCents
+}
+
+// getOrCreateMethodStats gets or creates method statistics
+func (r *NotificationCostRepository) getOrCreateMethodStats(summary *NotificationCostSummary, method string) *DeliveryMethodSummaryStats {
+	stats, exists := summary.DeliveryMethodBreakdown[method]
+	if !exists {
+		stats = &DeliveryMethodSummaryStats{
+			Method: method,
+		}
+		summary.DeliveryMethodBreakdown[method] = stats
+	}
+	return stats
+}
+
+// updateTypeBreakdown updates notification type breakdown statistics
+func (r *NotificationCostRepository) updateNotificationTypeBreakdown(summary *NotificationCostSummary, cost *models.NotificationCostTracking) {
+	typeStats := r.getOrCreateNotificationTypeStats(summary, cost.NotificationType)
+	typeStats.Count++
+	if cost.Success {
+		typeStats.SuccessfulDeliveries++
+	} else {
+		typeStats.FailedDeliveries++
+	}
+	typeStats.TotalCostMicroCents += cost.TotalCostMicroCents
+}
+
+// getOrCreateNotificationTypeStats gets or creates type statistics
+func (r *NotificationCostRepository) getOrCreateNotificationTypeStats(summary *NotificationCostSummary, notifType string) *NotificationTypeSummaryStats {
+	stats, exists := summary.NotificationTypeBreakdown[notifType]
+	if !exists {
+		stats = &NotificationTypeSummaryStats{
+			Type: notifType,
+		}
+		summary.NotificationTypeBreakdown[notifType] = stats
+	}
+	return stats
+}
+
+// calculateSummaryStatistics calculates overall summary statistics
+func (r *NotificationCostRepository) calculateSummaryStatistics(summary *NotificationCostSummary) {
+	summary.TotalCostDollars = float64(summary.TotalCostMicroCents) / 1_000_000.0
+	if summary.TotalNotifications == 0 {
+		return
+	}
+	summary.AverageCostPerNotification = summary.TotalCostDollars / float64(summary.TotalNotifications)
+	summary.SuccessRate = (float64(summary.SuccessfulDeliveries) / float64(summary.TotalNotifications)) * 100
+	summary.RetryRate = (float64(summary.TotalRetries) / float64(summary.TotalNotifications)) * 100
+}
+
+// calculateMethodStatistics calculates statistics for each delivery method
+func (r *NotificationCostRepository) calculateMethodStatistics(summary *NotificationCostSummary) {
+	for _, stats := range summary.DeliveryMethodBreakdown {
+		r.calculateBreakdownStats(stats.Count, stats.TotalCostMicroCents, stats.SuccessfulDeliveries,
+			&stats.TotalCostDollars, &stats.AverageCostMicroCents, &stats.AverageCostDollars, &stats.SuccessRate)
+	}
+}
+
+// calculateTypeStatistics calculates statistics for each notification type
+func (r *NotificationCostRepository) calculateNotificationTypeStatistics(summary *NotificationCostSummary) {
+	for _, stats := range summary.NotificationTypeBreakdown {
+		r.calculateBreakdownStats(stats.Count, stats.TotalCostMicroCents, stats.SuccessfulDeliveries,
+			&stats.TotalCostDollars, &stats.AverageCostMicroCents, &stats.AverageCostDollars, &stats.SuccessRate)
+	}
+}
+
+// calculateBreakdownStats calculates common statistics for breakdowns
+func (r *NotificationCostRepository) calculateBreakdownStats(count, totalCostMicroCents, successfulDeliveries int64,
+	totalCostDollars *float64, avgCostMicroCents *int64, avgCostDollars, successRate *float64) {
+	*totalCostDollars = float64(totalCostMicroCents) / 1_000_000.0
+	if count > 0 {
+		*avgCostMicroCents = totalCostMicroCents / count
+		*avgCostDollars = float64(*avgCostMicroCents) / 1_000_000.0
+		*successRate = (float64(successfulDeliveries) / float64(count)) * 100
+	}
 }
 
 // GetHighCostNotifications returns notifications that exceed a cost threshold
 func (r *NotificationCostRepository) GetHighCostNotifications(ctx context.Context, thresholdMicroCents int64, startTime, endTime time.Time, limit int) ([]*models.NotificationCostTracking, error) {
 	// Get all costs in the time range
 	var allCosts []*models.NotificationCostTracking
-	
+
 	currentDate := startTime
 	for currentDate.Before(endTime) || currentDate.Equal(endTime) {
 		dailyCosts, err := r.GetDailyCostTracking(ctx, currentDate, 10000)
@@ -630,9 +793,9 @@ func (r *NotificationCostRepository) GetUserSpending(ctx context.Context, userna
 	}
 
 	summary := &UserSpendingSummary{
-		Username:  username,
-		StartTime: startTime,
-		EndTime:   endTime,
+		Username:                username,
+		StartTime:               startTime,
+		EndTime:                 endTime,
 		DeliveryMethodBreakdown: make(map[string]*DeliveryMethodSpending),
 	}
 
@@ -653,7 +816,7 @@ func (r *NotificationCostRepository) GetUserSpending(ctx context.Context, userna
 			}
 			summary.DeliveryMethodBreakdown[cost.DeliveryMethod] = methodSpending
 		}
-		
+
 		methodSpending.Count++
 		methodSpending.TotalCostMicroCents += cost.TotalCostMicroCents
 	}
@@ -680,69 +843,69 @@ func (r *NotificationCostRepository) GetUserSpending(ctx context.Context, userna
 
 // NotificationCostSummary represents a summary of notification costs
 type NotificationCostSummary struct {
-	StartTime                   time.Time
-	EndTime                     time.Time
-	Count                       int
-	TotalNotifications          int64
-	SuccessfulDeliveries        int64
-	FailedDeliveries            int64
-	TotalRetries                int64
-	TotalCostMicroCents         int64
-	TotalCostDollars            float64
-	AverageCostPerNotification  float64
-	SuccessRate                 float64
-	RetryRate                   float64
-	DeliveryMethodBreakdown     map[string]*DeliveryMethodSummaryStats
-	NotificationTypeBreakdown   map[string]*NotificationTypeSummaryStats
+	StartTime                  time.Time
+	EndTime                    time.Time
+	Count                      int
+	TotalNotifications         int64
+	SuccessfulDeliveries       int64
+	FailedDeliveries           int64
+	TotalRetries               int64
+	TotalCostMicroCents        int64
+	TotalCostDollars           float64
+	AverageCostPerNotification float64
+	SuccessRate                float64
+	RetryRate                  float64
+	DeliveryMethodBreakdown    map[string]*DeliveryMethodSummaryStats
+	NotificationTypeBreakdown  map[string]*NotificationTypeSummaryStats
 }
 
 // DeliveryMethodSummaryStats represents cost statistics for a delivery method
 type DeliveryMethodSummaryStats struct {
-	Method                  string
-	Count                   int64
-	SuccessfulDeliveries    int64
-	FailedDeliveries        int64
-	TotalCostMicroCents     int64
-	TotalCostDollars        float64
-	AverageCostMicroCents   int64
-	AverageCostDollars      float64
-	SuccessRate             float64
+	Method                string
+	Count                 int64
+	SuccessfulDeliveries  int64
+	FailedDeliveries      int64
+	TotalCostMicroCents   int64
+	TotalCostDollars      float64
+	AverageCostMicroCents int64
+	AverageCostDollars    float64
+	SuccessRate           float64
 }
 
 // NotificationTypeSummaryStats represents cost statistics for a notification type
 type NotificationTypeSummaryStats struct {
-	Type                    string
-	Count                   int64
-	SuccessfulDeliveries    int64
-	FailedDeliveries        int64
-	TotalCostMicroCents     int64
-	TotalCostDollars        float64
-	AverageCostMicroCents   int64
-	AverageCostDollars      float64
-	SuccessRate             float64
+	Type                  string
+	Count                 int64
+	SuccessfulDeliveries  int64
+	FailedDeliveries      int64
+	TotalCostMicroCents   int64
+	TotalCostDollars      float64
+	AverageCostMicroCents int64
+	AverageCostDollars    float64
+	SuccessRate           float64
 }
 
 // UserSpendingSummary represents spending summary for a user
 type UserSpendingSummary struct {
-	Username                    string
-	StartTime                   time.Time
-	EndTime                     time.Time
-	TotalNotifications          int64
-	SuccessfulDeliveries        int64
-	FailedDeliveries            int64
-	TotalCostMicroCents         int64
-	TotalCostDollars            float64
-	AverageCostPerNotification  float64
-	SuccessRate                 float64
-	DeliveryMethodBreakdown     map[string]*DeliveryMethodSpending
+	Username                   string
+	StartTime                  time.Time
+	EndTime                    time.Time
+	TotalNotifications         int64
+	SuccessfulDeliveries       int64
+	FailedDeliveries           int64
+	TotalCostMicroCents        int64
+	TotalCostDollars           float64
+	AverageCostPerNotification float64
+	SuccessRate                float64
+	DeliveryMethodBreakdown    map[string]*DeliveryMethodSpending
 }
 
 // DeliveryMethodSpending represents spending for a specific delivery method
 type DeliveryMethodSpending struct {
-	Method                  string
-	Count                   int64
-	TotalCostMicroCents     int64
-	TotalCostDollars        float64
-	AverageCostMicroCents   int64
-	AverageCostDollars      float64
+	Method                string
+	Count                 int64
+	TotalCostMicroCents   int64
+	TotalCostDollars      float64
+	AverageCostMicroCents int64
+	AverageCostDollars    float64
 }

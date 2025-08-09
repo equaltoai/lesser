@@ -1,3 +1,4 @@
+// Package storage provides account data structures and types for user authentication and profile management.
 package storage
 
 import (
@@ -46,4 +47,3 @@ type AccountSuggestion struct {
 	MutualFollowers int                `json:"mutual_followers,omitempty"`
 	FollowerCount   int                `json:"follower_count,omitempty"`
 }
-

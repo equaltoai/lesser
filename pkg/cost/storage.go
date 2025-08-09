@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Storage handles persistence of cost data
@@ -34,14 +35,14 @@ func (s *Storage) SaveOperationCost(ctx context.Context, cost *OperationCost) er
 	// PK: COST#YYYY-MM-DD
 	// SK: TIMESTAMP#REQUEST_ID
 
-	date := cost.Timestamp.Format("2006-01-02")
+	date := cost.Timestamp.Format(common.DateFormat)
 	pk := fmt.Sprintf("COST#%s", date)
 	sk := fmt.Sprintf("%d#%s", cost.Timestamp.UnixNano(), cost.RequestID)
 
 	// Also store in GSI for monthly aggregation
 	// GSI1PK: COST#YYYY-MM
 	// GSI1SK: TIMESTAMP
-	month := cost.Timestamp.Format("2006-01")
+	month := cost.Timestamp.Format(common.MonthFormat)
 	gsi1pk := fmt.Sprintf("COST#%s", month)
 	gsi1sk := fmt.Sprintf("%d", cost.Timestamp.UnixNano())
 
@@ -93,7 +94,7 @@ func (s *Storage) GetDailyCosts(ctx context.Context, startDate, endDate time.Tim
 
 	// Query each day in the range
 	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
-		date := d.Format("2006-01-02")
+		date := d.Format(common.DateFormat)
 		pk := fmt.Sprintf("COST_DAILY#%s", date)
 
 		result, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
@@ -245,7 +246,7 @@ func (s *Storage) QueryCostsByDate(ctx context.Context, date string) ([]map[stri
 	return result.Items, nil
 }
 
-// Helper types for aggregates
+// DailyCostAggregate represents aggregated costs for a single day
 type DailyCostAggregate struct {
 	Date                string
 	TotalCostMicrocents int64
@@ -258,6 +259,7 @@ type DailyCostAggregate struct {
 	DataTransferBytes   int64
 }
 
+// MonthlyCostAggregate represents aggregated costs for a month
 type MonthlyCostAggregate struct {
 	Year                    int
 	Month                   int

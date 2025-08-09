@@ -341,7 +341,7 @@ func TestSession_HasScope(t *testing.T) {
 
 func TestSession_ValidateRequest(t *testing.T) {
 	session := &Session{}
-	
+
 	// For now, this always returns true
 	// In the future, it might validate IP/UserAgent
 	result := session.ValidateRequest("192.168.1.1", "Mozilla/5.0")

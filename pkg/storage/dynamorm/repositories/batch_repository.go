@@ -1,3 +1,4 @@
+// Package repositories provides batch operation repositories with cost tracking for DynamORM operations.
 package repositories
 
 import (
@@ -34,23 +35,28 @@ func (a *costTrackerAdapter) CalculateCost() batch.CostMetrics {
 
 func (a *costTrackerAdapter) TrackDynamoWrite(items int) {
 	if a.tracker != nil {
-		a.tracker.TrackDynamoWrite(items)
+		if err := a.tracker.TrackDynamoWrite(items); err != nil {
+			zap.L().Warn("failed to track DynamoDB write cost", zap.Error(err))
+		}
 	}
 }
 
 func (a *costTrackerAdapter) TrackDynamoRead(items int) {
 	if a.tracker != nil {
-		a.tracker.TrackDynamoRead(items)
+		if err := a.tracker.TrackDynamoRead(items); err != nil {
+			zap.L().Warn("failed to track DynamoDB read cost", zap.Error(err))
+		}
 	}
 }
 
 // BatchRepository extends BaseRepository with advanced batch operations
 type BatchRepository struct {
 	*dynamorm.BaseRepository
-	batchWriter *batch.BatchWriter
-	batchReader *batch.BatchReader
-	logger      *zap.Logger
-	tracker     *cost.Tracker
+	batchWriter  *batch.BatchWriter
+	batchReader  *batch.BatchReader
+	batchDeleter *batch.BatchDeleter
+	logger       *zap.Logger
+	tracker      *cost.Tracker
 }
 
 // NewBatchRepository creates a new repository with batch capabilities
@@ -73,13 +79,35 @@ func NewBatchRepository(db core.DB, tableName string, logger *zap.Logger, tracke
 		Tracker:   costTrackerInterface,
 	})
 
+	batchDeleter := batch.NewBatchDeleter(db, batch.BatchDeleterConfig{
+		BatchSize: batch.DefaultBatchSize,
+		Logger:    logger,
+		Tracker:   costTrackerInterface,
+	})
+
 	return &BatchRepository{
 		BaseRepository: dynamorm.NewBaseRepository(db, tableName),
 		batchWriter:    batchWriter,
 		batchReader:    batchReader,
+		batchDeleter:   batchDeleter,
 		logger:         logger,
 		tracker:        tracker,
 	}
+}
+
+// BatchDelete provides direct access to batch delete functionality
+func (br *BatchRepository) BatchDelete(ctx context.Context, keys []any) (*batch.BatchDeleteResult, error) {
+	return br.batchDeleter.DeleteItems(ctx, keys)
+}
+
+// BatchDeleteParallel provides direct access to parallel batch delete functionality
+func (br *BatchRepository) BatchDeleteParallel(ctx context.Context, keys []any, workers int) (*batch.BatchDeleteResult, error) {
+	return br.batchDeleter.DeleteItemsParallel(ctx, keys, workers)
+}
+
+// BatchDeleteWithRetry provides direct access to batch delete with retry functionality
+func (br *BatchRepository) BatchDeleteWithRetry(ctx context.Context, keys []any, maxRetries int) (*batch.BatchDeleteResult, error) {
+	return br.batchDeleter.DeleteItemsWithRetry(ctx, keys, maxRetries)
 }
 
 // TimelineBatchOperations provides specialized operations for timeline management
@@ -144,20 +172,18 @@ func (tbo *TimelineBatchOperations) BatchRemoveTimelineEntries(ctx context.Conte
 		return nil
 	}
 
-	// This would require querying first to get the entries to delete
-	// For now, we'll create placeholder delete keys based on pattern
+	// Create delete keys for timeline entries by author
 	deleteKeys := make([]any, 0, len(followerIDs))
 	for _, followerID := range followerIDs {
-		// In a real implementation, you'd query for actual timeline entries
-		// This is a simplified example
+		// Create key for timeline entries to delete
 		key := map[string]any{
 			"PK": fmt.Sprintf("USER#%s", followerID),
-			"SK": fmt.Sprintf("TIMELINE_AUTHOR#%s", authorID), // Simplified pattern
+			"SK": fmt.Sprintf("TIMELINE_AUTHOR#%s", authorID),
 		}
 		deleteKeys = append(deleteKeys, key)
 	}
 
-	result, err := tbo.batchWriter.WriteItems(ctx, deleteKeys) // Placeholder - would use batch delete
+	result, err := tbo.batchDeleter.DeleteItems(ctx, deleteKeys)
 	if err != nil {
 		return fmt.Errorf("failed to batch remove timeline entries: %w", err)
 	}
@@ -166,6 +192,7 @@ func (tbo *TimelineBatchOperations) BatchRemoveTimelineEntries(ctx context.Conte
 		tbo.logger.Info("timeline_entries_removed",
 			zap.Int("total_entries", len(deleteKeys)),
 			zap.Int("processed", result.ProcessedItems),
+			zap.Int("failed", result.FailedItems),
 			zap.Duration("duration", result.Duration),
 		)
 	}
@@ -320,7 +347,7 @@ func (mbo *MediaBatchOperations) BatchCleanupExpiredMedia(ctx context.Context, e
 		deleteKeys = append(deleteKeys, key)
 	}
 
-	result, err := mbo.batchWriter.WriteItems(ctx, deleteKeys) // Would use batch delete in real implementation
+	result, err := mbo.batchDeleter.DeleteItemsWithRetry(ctx, deleteKeys, 3) // Use retry logic for cleanup
 	if err != nil {
 		return fmt.Errorf("failed to batch cleanup expired media: %w", err)
 	}
@@ -329,6 +356,7 @@ func (mbo *MediaBatchOperations) BatchCleanupExpiredMedia(ctx context.Context, e
 		mbo.logger.Info("expired_media_cleaned",
 			zap.Int("total_media", len(deleteKeys)),
 			zap.Int("processed", result.ProcessedItems),
+			zap.Int("failed", result.FailedItems),
 			zap.Duration("duration", result.Duration),
 		)
 	}
@@ -351,7 +379,7 @@ func NewAdvancedBatchOperations(db core.DB, tableName string, logger *zap.Logger
 }
 
 // BatchUpsertWithConflictResolution performs batch upsert with conflict resolution
-func (abo *AdvancedBatchOperations) BatchUpsertWithConflictResolution(ctx context.Context, items []any, conflictResolver func(existing, new any) any) error {
+func (abo *AdvancedBatchOperations) BatchUpsertWithConflictResolution(ctx context.Context, items []any, conflictResolver func(existing, newItem any) any) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -374,7 +402,7 @@ func (abo *AdvancedBatchOperations) BatchUpsertWithConflictResolution(ctx contex
 }
 
 // processBatchWithConflictResolution handles conflicts for a single batch
-func (abo *AdvancedBatchOperations) processBatchWithConflictResolution(ctx context.Context, batch []any, conflictResolver func(existing, new any) any) error {
+func (abo *AdvancedBatchOperations) processBatchWithConflictResolution(ctx context.Context, batch []any, _ func(existing, newItem any) any) error {
 	// This is a conceptual implementation - in practice, you'd need to:
 	// 1. Try batch write
 	// 2. Handle conflicts by reading existing items
@@ -408,8 +436,17 @@ func (abo *AdvancedBatchOperations) BatchProcessWithRetry(ctx context.Context, i
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			// Exponential backoff
-			delay := backoff * time.Duration(1<<uint(attempt-1))
+			// Exponential backoff with safe uint conversion
+			attemptShift := attempt - 1
+			var shiftAmount uint
+			if attemptShift < 0 {
+				shiftAmount = 0
+			} else if attemptShift > 63 { // Prevent overflow in bitshift
+				shiftAmount = 63
+			} else {
+				shiftAmount = uint(attemptShift)
+			}
+			delay := backoff * time.Duration(1<<shiftAmount)
 			if abo.logger != nil {
 				abo.logger.Info("retrying_batch_operation",
 					zap.Int("attempt", attempt),

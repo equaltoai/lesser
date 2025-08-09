@@ -69,7 +69,7 @@ type OperationStats struct {
 }
 
 // NewCostAwareRepository creates a repository with comprehensive cost tracking
-func NewCostAwareRepository(db core.DB, tableName string, logger *zap.Logger, tracker *cost.Tracker) *CostAwareRepository {
+func NewCostAwareRepository(db core.DB, tableName string, logger *zap.Logger, _ *cost.Tracker) *CostAwareRepository {
 	costTracker := cost.WrapWithCostTracking(db, logger)
 
 	return &CostAwareRepository{
@@ -82,7 +82,7 @@ func NewCostAwareRepository(db core.DB, tableName string, logger *zap.Logger, tr
 }
 
 // NewCostAwareRepositoryWithRequest creates a repository with request-scoped cost tracking
-func NewCostAwareRepositoryWithRequest(db core.DB, tableName, requestID, operationType string, logger *zap.Logger, tracker *cost.Tracker) *CostAwareRepository {
+func NewCostAwareRepositoryWithRequest(db core.DB, tableName, requestID, operationType string, logger *zap.Logger, _ *cost.Tracker) *CostAwareRepository {
 	costTracker := cost.WrapWithCostTrackingAndRequest(db, requestID, operationType, logger)
 
 	return &CostAwareRepository{
@@ -177,7 +177,7 @@ func (r *CostAwareRepository) checkPreOperationLimits(ctx context.Context, opera
 }
 
 // checkPostOperationThresholds checks and logs threshold violations
-func (r *CostAwareRepository) checkPostOperationThresholds(operationName string, operationCost float64, duration time.Duration) {
+func (r *CostAwareRepository) checkPostOperationThresholds(operationName string, operationCost float64, _ time.Duration) {
 	// Check operation cost thresholds
 	if operationCost > r.costThresholds.MaxCostPerOp {
 		if r.logger != nil {
@@ -445,7 +445,7 @@ func (r *CostAwareRepository) GetCostTracker() *cost.DynamORMCostTracker {
 // Cost optimization helpers
 
 // OptimizeQuery analyzes a query and suggests optimizations
-func (r *CostAwareRepository) OptimizeQuery(ctx context.Context, query core.Query) *QueryOptimizationSuggestion {
+func (r *CostAwareRepository) OptimizeQuery(_ context.Context, _ core.Query) *QueryOptimizationSuggestion {
 	// This is a basic implementation - in practice, you'd analyze:
 	// - Index usage
 	// - Filter efficiency
@@ -549,6 +549,7 @@ func (r *CostAwareRepository) CheckCostAlerts() []*CostAlert {
 type ContextKey string
 
 const (
+	// CostAwareRepoKey is the context key for cost-aware repository
 	CostAwareRepoKey ContextKey = "cost_aware_repository"
 )
 

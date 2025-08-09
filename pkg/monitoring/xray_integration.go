@@ -30,21 +30,23 @@ type XRayTracer struct {
 func NewXRayTracer(serviceName, environment string, logger *zap.Logger) *XRayTracer {
 	// Check if X-Ray is enabled via environment variable
 	enabled := os.Getenv("_X_AMZN_TRACE_ID") != ""
-	
+
 	if enabled {
 		// Configure X-Ray
-		xray.Configure(xray.Config{
+		if err := xray.Configure(xray.Config{
 			LogLevel:       "info",
 			ServiceVersion: "1.0.0",
-		})
-		
+		}); err != nil {
+			logger.Warn("failed to configure X-Ray", zap.Error(err))
+		}
+
 		logger.Info("X-Ray tracing enabled",
 			zap.String("service", serviceName),
 			zap.String("environment", environment))
 	} else {
 		logger.Info("X-Ray tracing disabled (not running in AWS Lambda)")
 	}
-	
+
 	return &XRayTracer{
 		serviceName: serviceName,
 		environment: environment,
@@ -58,10 +60,10 @@ func (xt *XRayTracer) InstrumentAWSConfig(cfg aws.Config) aws.Config {
 	if !xt.enabled {
 		return cfg
 	}
-	
+
 	// Instrument AWS SDK v2 with X-Ray
 	awsv2.AWSV2Instrumentor(&cfg.APIOptions)
-	
+
 	return cfg
 }
 
@@ -70,54 +72,54 @@ func (xt *XRayTracer) TraceLiftHandler(handlerName string, handler func(*lift.Co
 	if !xt.enabled {
 		return handler
 	}
-	
+
 	return func(ctx *lift.Context) error {
 		// Start X-Ray segment for the handler
 		_, seg := xray.BeginSegment(context.Background(), xt.serviceName)
 		defer seg.Close(nil)
-		
+
 		// Add annotations for searchability
-		seg.AddAnnotation("handler", handlerName)
-		seg.AddAnnotation("environment", xt.environment)
-		seg.AddAnnotation("method", ctx.Request.Method)
-		seg.AddAnnotation("path", ctx.Request.Path)
-		
+		_ = seg.AddAnnotation("handler", handlerName)
+		_ = seg.AddAnnotation("environment", xt.environment)
+		_ = seg.AddAnnotation("method", ctx.Request.Method)
+		_ = seg.AddAnnotation("path", ctx.Request.Path)
+
 		// Add metadata for detailed tracing
-		seg.AddMetadata("request", map[string]interface{}{
+		_ = seg.AddMetadata("request", map[string]interface{}{
 			"headers":    ctx.Request.Headers,
 			"tenant_id":  ctx.TenantID,
 			"request_id": ctx.RequestID,
 		})
-		
+
 		// Track cold start
 		if lambdaCtx, ok := lambdacontext.FromContext(context.Background()); ok {
-			seg.AddAnnotation("cold_start", true)
-			seg.AddMetadata("lambda", map[string]interface{}{
-				"request_id":     lambdaCtx.AwsRequestID,
-				"function_name":  lambdaCtx.InvokedFunctionArn,
+			_ = seg.AddAnnotation("cold_start", true)
+			_ = seg.AddMetadata("lambda", map[string]interface{}{
+				"request_id":    lambdaCtx.AwsRequestID,
+				"function_name": lambdaCtx.InvokedFunctionArn,
 			})
 		}
-		
+
 		// Execute handler with X-Ray context
 		start := time.Now()
 		err := handler(ctx)
 		duration := time.Since(start)
-		
+
 		// Record error if present
 		if err != nil {
-			seg.AddError(err)
-			seg.AddMetadata("error", map[string]interface{}{
+			_ = seg.AddError(err)
+			_ = seg.AddMetadata("error", map[string]interface{}{
 				"message": err.Error(),
 				"type":    fmt.Sprintf("%T", err),
 			})
 		}
-		
+
 		// Add response metadata
-		seg.AddMetadata("response", map[string]interface{}{
+		_ = seg.AddMetadata("response", map[string]interface{}{
 			"duration_ms": duration.Milliseconds(),
 			"success":     err == nil,
 		})
-		
+
 		return err
 	}
 }
@@ -127,30 +129,30 @@ func (xt *XRayTracer) TraceDynamoDBOperation(ctx context.Context, operation, tab
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, subseg := xray.BeginSubsegment(ctx, "DynamoDB."+operation)
 	defer subseg.Close(nil)
-	
+
 	// Set AWS namespace for proper service map
-	subseg.Namespace = "aws"
-	
+	subseg.Namespace = ProviderAWS
+
 	// Add annotations
-	subseg.AddAnnotation("operation", operation)
-	subseg.AddAnnotation("table_name", tableName)
-	
+	_ = subseg.AddAnnotation("operation", operation)
+	_ = subseg.AddAnnotation("table_name", tableName)
+
 	// Add metadata
-	subseg.AddMetadata("dynamodb", map[string]interface{}{
+	_ = subseg.AddMetadata("dynamodb", map[string]interface{}{
 		"table_name": tableName,
 		"operation":  operation,
 	})
-	
+
 	// Execute operation
 	err := fn(ctx)
-	
+
 	if err != nil {
-		subseg.AddError(err)
+		_ = subseg.AddError(err)
 	}
-	
+
 	return err
 }
 
@@ -159,31 +161,31 @@ func (xt *XRayTracer) TraceS3Operation(ctx context.Context, operation, bucket, k
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, subseg := xray.BeginSubsegment(ctx, "S3."+operation)
 	defer subseg.Close(nil)
-	
+
 	// Set AWS namespace
 	subseg.Namespace = "aws"
-	
+
 	// Add annotations
-	subseg.AddAnnotation("operation", operation)
-	subseg.AddAnnotation("bucket", bucket)
-	
+	_ = subseg.AddAnnotation("operation", operation)
+	_ = subseg.AddAnnotation("bucket", bucket)
+
 	// Add metadata
-	subseg.AddMetadata("s3", map[string]interface{}{
+	_ = subseg.AddMetadata("s3", map[string]interface{}{
 		"bucket":    bucket,
 		"key":       key,
 		"operation": operation,
 	})
-	
+
 	// Execute operation
 	err := fn(ctx)
-	
+
 	if err != nil {
-		subseg.AddError(err)
+		_ = subseg.AddError(err)
 	}
-	
+
 	return err
 }
 
@@ -192,31 +194,31 @@ func (xt *XRayTracer) TraceSQSOperation(ctx context.Context, operation, queueNam
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, subseg := xray.BeginSubsegment(ctx, "SQS."+operation)
 	defer subseg.Close(nil)
-	
+
 	// Set AWS namespace
 	subseg.Namespace = "aws"
-	
+
 	// Add annotations
-	subseg.AddAnnotation("operation", operation)
-	subseg.AddAnnotation("queue_name", queueName)
-	
+	_ = subseg.AddAnnotation("operation", operation)
+	_ = subseg.AddAnnotation("queue_name", queueName)
+
 	// Add metadata
-	subseg.AddMetadata("sqs", map[string]interface{}{
+	_ = subseg.AddMetadata("sqs", map[string]interface{}{
 		"queue_name":    queueName,
 		"operation":     operation,
 		"message_count": messageCount,
 	})
-	
+
 	// Execute operation
 	err := fn(ctx)
-	
+
 	if err != nil {
-		subseg.AddError(err)
+		_ = subseg.AddError(err)
 	}
-	
+
 	return err
 }
 
@@ -225,40 +227,40 @@ func (xt *XRayTracer) TraceFederationCall(ctx context.Context, domain, operation
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, subseg := xray.BeginSubsegment(ctx, "Federation."+operation)
 	defer subseg.Close(nil)
-	
+
 	// Set remote namespace for external calls
 	subseg.Namespace = "remote"
-	
+
 	// Add annotations
-	subseg.AddAnnotation("domain", domain)
-	subseg.AddAnnotation("operation", operation)
-	subseg.AddAnnotation("activity_type", activityType)
-	
+	_ = subseg.AddAnnotation("domain", domain)
+	_ = subseg.AddAnnotation("operation", operation)
+	_ = subseg.AddAnnotation("activity_type", activityType)
+
 	// Add metadata
-	subseg.AddMetadata("federation", map[string]interface{}{
+	_ = subseg.AddMetadata("federation", map[string]interface{}{
 		"domain":        domain,
 		"operation":     operation,
 		"activity_type": activityType,
 	})
-	
+
 	// Execute operation
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	// Add performance metadata
-	subseg.AddMetadata("performance", map[string]interface{}{
+	_ = subseg.AddMetadata("performance", map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
 		"success":     err == nil,
 	})
-	
+
 	if err != nil {
-		subseg.AddError(err)
+		_ = subseg.AddError(err)
 	}
-	
+
 	return err
 }
 
@@ -267,34 +269,34 @@ func (xt *XRayTracer) TraceGraphQLResolver(ctx context.Context, resolver, fieldN
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, subseg := xray.BeginSubsegment(ctx, "GraphQL."+resolver)
 	defer subseg.Close(nil)
-	
+
 	// Set custom namespace
 	subseg.Namespace = "graphql"
-	
+
 	// Add annotations
-	subseg.AddAnnotation("resolver", resolver)
-	subseg.AddAnnotation("field", fieldName)
-	
+	_ = subseg.AddAnnotation("resolver", resolver)
+	_ = subseg.AddAnnotation("field", fieldName)
+
 	// Execute resolver
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	// Add metadata
-	subseg.AddMetadata("graphql", map[string]interface{}{
+	_ = subseg.AddMetadata("graphql", map[string]interface{}{
 		"resolver":    resolver,
 		"field":       fieldName,
 		"duration_ms": duration.Milliseconds(),
 		"success":     err == nil,
 	})
-	
+
 	if err != nil {
-		subseg.AddError(err)
+		_ = subseg.AddError(err)
 	}
-	
+
 	return err
 }
 
@@ -303,32 +305,32 @@ func (xt *XRayTracer) TraceMediaProcessing(ctx context.Context, operation, media
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, subseg := xray.BeginSubsegment(ctx, "MediaProcessing."+operation)
 	defer subseg.Close(nil)
-	
+
 	// Add annotations
-	subseg.AddAnnotation("operation", operation)
-	subseg.AddAnnotation("media_type", mediaType)
-	
+	_ = subseg.AddAnnotation("operation", operation)
+	_ = subseg.AddAnnotation("media_type", mediaType)
+
 	// Execute operation
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	// Add metadata
-	subseg.AddMetadata("media", map[string]interface{}{
+	_ = subseg.AddMetadata("media", map[string]interface{}{
 		"operation":   operation,
 		"media_type":  mediaType,
 		"size_bytes":  size,
 		"duration_ms": duration.Milliseconds(),
 		"success":     err == nil,
 	})
-	
+
 	if err != nil {
-		subseg.AddError(err)
+		_ = subseg.AddError(err)
 	}
-	
+
 	return err
 }
 
@@ -337,33 +339,33 @@ func (xt *XRayTracer) TraceStreamProcessor(ctx context.Context, processorName st
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, seg := xray.BeginSegment(ctx, processorName)
 	defer seg.Close(nil)
-	
+
 	// Add annotations
-	seg.AddAnnotation("processor", processorName)
-	seg.AddAnnotation("record_count", recordCount)
-	seg.AddAnnotation("environment", xt.environment)
-	
+	_ = seg.AddAnnotation("processor", processorName)
+	_ = seg.AddAnnotation("record_count", recordCount)
+	_ = seg.AddAnnotation("environment", xt.environment)
+
 	// Execute processing
 	start := time.Now()
 	err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	// Add metadata
-	seg.AddMetadata("stream", map[string]interface{}{
-		"processor":     processorName,
-		"record_count":  recordCount,
-		"duration_ms":   duration.Milliseconds(),
-		"success":       err == nil,
+	_ = seg.AddMetadata("stream", map[string]interface{}{
+		"processor":      processorName,
+		"record_count":   recordCount,
+		"duration_ms":    duration.Milliseconds(),
+		"success":        err == nil,
 		"records_per_ms": float64(recordCount) / float64(duration.Milliseconds()),
 	})
-	
+
 	if err != nil {
-		seg.AddError(err)
+		_ = seg.AddError(err)
 	}
-	
+
 	return err
 }
 
@@ -372,32 +374,32 @@ func (xt *XRayTracer) TraceAuthOperation(ctx context.Context, operation, authTyp
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, subseg := xray.BeginSubsegment(ctx, "Auth."+operation)
 	defer subseg.Close(nil)
-	
+
 	// Add annotations
-	subseg.AddAnnotation("operation", operation)
-	subseg.AddAnnotation("auth_type", authType)
-	
+	_ = subseg.AddAnnotation("operation", operation)
+	_ = subseg.AddAnnotation("auth_type", authType)
+
 	// Execute operation
 	start := time.Now()
 	success, err := fn(ctx)
 	duration := time.Since(start)
-	
+
 	// Add metadata
-	subseg.AddMetadata("auth", map[string]interface{}{
+	_ = subseg.AddMetadata("auth", map[string]interface{}{
 		"operation":   operation,
 		"auth_type":   authType,
 		"duration_ms": duration.Milliseconds(),
 		"success":     success,
 		"error":       err != nil,
 	})
-	
+
 	if err != nil {
-		subseg.AddError(err)
+		_ = subseg.AddError(err)
 	}
-	
+
 	return success, err
 }
 
@@ -406,29 +408,29 @@ func (xt *XRayTracer) TraceCostOperation(ctx context.Context, service string, co
 	if !xt.enabled {
 		return fn(ctx)
 	}
-	
+
 	ctx, subseg := xray.BeginSubsegment(ctx, "CostTracking."+service)
 	defer subseg.Close(nil)
-	
+
 	// Add annotations
-	subseg.AddAnnotation("service", service)
-	subseg.AddAnnotation("cost_micro_cents", costMicroCents)
-	
+	_ = subseg.AddAnnotation("service", service)
+	_ = subseg.AddAnnotation("cost_micro_cents", costMicroCents)
+
 	// Execute operation
 	err := fn(ctx)
-	
+
 	// Add metadata
-	subseg.AddMetadata("cost", map[string]interface{}{
+	_ = subseg.AddMetadata("cost", map[string]interface{}{
 		"service":          service,
 		"cost_micro_cents": costMicroCents,
 		"cost_dollars":     float64(costMicroCents) / 1000000.0,
 		"success":          err == nil,
 	})
-	
+
 	if err != nil {
-		subseg.AddError(err)
+		_ = subseg.AddError(err)
 	}
-	
+
 	return err
 }
 
@@ -437,17 +439,17 @@ func (xt *XRayTracer) InstrumentDynamoDBClient(client *dynamodb.Client) *dynamod
 	if !xt.enabled {
 		return client
 	}
-	
+
 	// Get the client's config
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		xt.logger.Warn("failed to load config for X-Ray instrumentation", zap.Error(err))
 		return client
 	}
-	
+
 	// Instrument the config
 	cfg = xt.InstrumentAWSConfig(cfg)
-	
+
 	// Return new instrumented client
 	return dynamodb.NewFromConfig(cfg)
 }
@@ -457,17 +459,17 @@ func (xt *XRayTracer) InstrumentS3Client(client *s3.Client) *s3.Client {
 	if !xt.enabled {
 		return client
 	}
-	
+
 	// Get the client's config
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		xt.logger.Warn("failed to load config for X-Ray instrumentation", zap.Error(err))
 		return client
 	}
-	
+
 	// Instrument the config
 	cfg = xt.InstrumentAWSConfig(cfg)
-	
+
 	// Return new instrumented client
 	return s3.NewFromConfig(cfg)
 }
@@ -477,17 +479,17 @@ func (xt *XRayTracer) InstrumentSQSClient(client *sqs.Client) *sqs.Client {
 	if !xt.enabled {
 		return client
 	}
-	
+
 	// Get the client's config
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		xt.logger.Warn("failed to load config for X-Ray instrumentation", zap.Error(err))
 		return client
 	}
-	
+
 	// Instrument the config
 	cfg = xt.InstrumentAWSConfig(cfg)
-	
+
 	// Return new instrumented client
 	return sqs.NewFromConfig(cfg)
 }
@@ -497,7 +499,7 @@ func (xt *XRayTracer) AddAnnotation(ctx context.Context, key string, value inter
 	if !xt.enabled {
 		return nil
 	}
-	
+
 	return xray.AddAnnotation(ctx, key, value)
 }
 
@@ -506,7 +508,7 @@ func (xt *XRayTracer) AddMetadata(ctx context.Context, namespace string, data ma
 	if !xt.enabled {
 		return nil
 	}
-	
+
 	return xray.AddMetadata(ctx, namespace, data)
 }
 
@@ -515,9 +517,9 @@ func (xt *XRayTracer) RecordError(ctx context.Context, err error) {
 	if !xt.enabled || err == nil {
 		return
 	}
-	
+
 	if xrayErr := xray.AddError(ctx, err); xrayErr != nil {
-		xt.logger.Warn("failed to record X-Ray error", 
+		xt.logger.Warn("failed to record X-Ray error",
 			zap.Error(xrayErr),
 			zap.Error(err))
 	}
@@ -528,11 +530,11 @@ func (xt *XRayTracer) GetTraceID(ctx context.Context) string {
 	if !xt.enabled {
 		return ""
 	}
-	
+
 	if seg := xray.GetSegment(ctx); seg != nil {
 		return seg.TraceID
 	}
-	
+
 	return ""
 }
 

@@ -1,8 +1,8 @@
+// Package main provides migration tooling for converting Lift storage calls to DynamORM repository patterns.
 package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,9 +11,9 @@ import (
 
 // MethodMapping represents a storage method to repository method mapping
 type MethodMapping struct {
-	Pattern      string // Regex pattern to match
-	Replacement  string // Replacement string
-	Description  string // Description for logging
+	Pattern     string // Regex pattern to match
+	Replacement string // Replacement string
+	Description string // Description for logging
 }
 
 // Define all the method mappings based on our analysis
@@ -208,7 +208,7 @@ func main() {
 	}
 
 	directory := os.Args[1]
-	
+
 	// Find all Go files in the directory
 	files, err := filepath.Glob(filepath.Join(directory, "*.go"))
 	if err != nil {
@@ -239,7 +239,7 @@ func main() {
 
 func processFile(filename string) (int, error) {
 	// Read the file
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename) //nolint:gosec // Controlled input in migration tool
 	if err != nil {
 		return 0, err
 	}
@@ -279,13 +279,13 @@ func processFile(filename string) (int, error) {
 	if replacements > 0 {
 		// Create backup
 		backupName := filename + ".backup"
-		err = ioutil.WriteFile(backupName, content, 0644)
+		err = os.WriteFile(backupName, content, 0600)
 		if err != nil {
 			return 0, fmt.Errorf("failed to create backup: %w", err)
 		}
 
 		// Write modified content
-		err = ioutil.WriteFile(filename, []byte(modifiedContent), 0644)
+		err = os.WriteFile(filename, []byte(modifiedContent), 0600)
 		if err != nil {
 			return 0, fmt.Errorf("failed to write file: %w", err)
 		}
@@ -294,18 +294,3 @@ func processFile(filename string) (int, error) {
 	return replacements, nil
 }
 
-// Helper function to extract method calls and parameters
-func extractMethodCall(line string, methodName string) (string, []string) {
-	// This is a simplified version - in practice you'd want a proper parser
-	pattern := fmt.Sprintf(`h\.store\.%s\((.*?)\)`, methodName)
-	re := regexp.MustCompile(pattern)
-	matches := re.FindStringSubmatch(line)
-	if len(matches) > 1 {
-		params := strings.Split(matches[1], ",")
-		for i := range params {
-			params[i] = strings.TrimSpace(params[i])
-		}
-		return matches[0], params
-	}
-	return "", nil
-}

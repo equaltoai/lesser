@@ -1,3 +1,4 @@
+// Package repositories provides DynamORM repository implementations for account and user management operations.
 package repositories
 
 import (
@@ -27,7 +28,7 @@ type AccountRepository struct {
 	logger    *zap.Logger
 	tableName string
 	domain    string
-	
+
 	// Dependencies for cross-repository operations
 	// Note: storage.Storage dependency removed in Phase 5.6
 }
@@ -44,7 +45,7 @@ func NewAccountRepository(db core.DB, tableName string, domain string, logger *z
 }
 
 // SetStorage is deprecated - storage dependency removed in Phase 5.6
-func (r *AccountRepository) SetStorage(storage interface{}) {
+func (r *AccountRepository) SetStorage(_ interface{}) {
 	// No-op: storage dependency removed
 }
 
@@ -57,7 +58,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, username, email, 
 	if username == "" {
 		return common.ValidationError{Field: "username", Message: "username is required"}
 	}
-	
+
 	// Create User model
 	user := &models.User{
 		Username:     username,
@@ -68,7 +69,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, username, email, 
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
-	
+
 	// Create user using BaseRepository
 	if err := r.Create(ctx, user); err != nil {
 		if errors.IsConditionFailed(err) {
@@ -79,20 +80,22 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, username, email, 
 		}
 		return fmt.Errorf("failed to create user: %w", err)
 	}
-	
+
 	// Create Actor
 	if actor != nil {
 		if err := r.createActor(ctx, actor, privateKey); err != nil {
 			// Rollback user creation (best effort)
-			r.Delete(ctx, fmt.Sprintf("USER#%s", username), "METADATA")
+			if delErr := r.Delete(ctx, fmt.Sprintf(storage.UserKeyPrefix, username), "METADATA"); delErr != nil {
+				r.logger.Warn("failed to rollback user creation after actor failure", zap.Error(delErr))
+			}
 			return fmt.Errorf("failed to create actor: %w", err)
 		}
 	}
-	
+
 	r.logger.Info("created account",
 		zap.String("username", username),
 		zap.Bool("with_actor", actor != nil))
-	
+
 	return nil
 }
 
@@ -103,19 +106,19 @@ func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*s
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Get actor data
 	actor, err := r.GetActor(ctx, username)
 	if err != nil && !isAccountNotFound(err) {
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
-	
+
 	// Combine into account
 	account := &storage.Account{
 		User:  user,
 		Actor: actor,
 	}
-	
+
 	return account, nil
 }
 
@@ -123,17 +126,17 @@ func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*s
 func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) error {
 	// Delete actor first (it's optional)
 	if err := r.deleteActor(ctx, username); err != nil && !isAccountNotFound(err) {
-		r.logger.Error("failed to delete actor", 
+		r.logger.Error("failed to delete actor",
 			zap.String("username", username),
 			zap.Error(err))
 	}
-	
+
 	// Delete user using key utilities
 	pk := Utils.Keys.UserKey(username)
 	if err := r.Delete(ctx, pk, SKMetadata); err != nil {
 		return ErrorHandler.HandleDeleteError(err, EntityUser, username)
 	}
-	
+
 	r.logger.Info("deleted account", zap.String("username", username))
 	return nil
 }
@@ -143,35 +146,35 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 // GetUser retrieves user authentication data
 func (r *AccountRepository) GetUser(ctx context.Context, username string) (*storage.User, error) {
 	user := &models.User{}
-	
+
 	// Use key utility for consistent key generation
 	pk := Utils.Keys.UserKey(username)
-	
+
 	err := r.Get(ctx, pk, SKMetadata, user)
 	if err != nil {
 		// Use error utility for consistent error handling
 		return nil, ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
-	
+
 	return r.modelToStorageUser(user), nil
 }
 
 // GetUserByEmail retrieves a user by email address
 func (r *AccountRepository) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
 	var user models.User
-	
+
 	// Use GSI key utility for consistent key generation
 	emailKey := Utils.GSI.EmailIndexKey(email)
-	
+
 	err := r.db.WithContext(ctx).Model(&user).
 		Index("email-index").
 		Where("GSI2PK", "=", emailKey).
 		First(&user)
-		
+
 	if err != nil {
 		return nil, ErrorHandler.HandleGetError(err, EntityUser, email)
 	}
-	
+
 	return r.modelToStorageUser(&user), nil
 }
 
@@ -184,17 +187,17 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 	if err != nil {
 		return ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
-	
+
 	// Apply updates
 	if err := r.applyUserUpdates(user, updates); err != nil {
 		return err
 	}
-	
+
 	// Update using BaseRepository with error handling
 	if err := r.Update(ctx, user); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityUser, username)
 	}
-	
+
 	return nil
 }
 
@@ -203,19 +206,19 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 // GetActor retrieves an actor by username
 func (r *AccountRepository) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
 	var actorModel models.Actor
-	
+
 	// Use key utilities for consistent key generation
 	pk := Utils.Keys.ActorKey(username)
-	
+
 	err := r.db.WithContext(ctx).Model(&actorModel).
 		Where("PK", "=", pk).
 		Where("SK", "=", SKProfile).
 		First(&actorModel)
-		
+
 	if err != nil {
 		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
-	
+
 	return actorModel.Actor, nil
 }
 
@@ -229,10 +232,10 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 	if actor.PreferredUsername == "" {
 		return common.ValidationError{Field: "PreferredUsername", Message: "username is required"}
 	}
-	
+
 	username := actor.PreferredUsername
 	numericID := common.GenerateNumericID(username)
-	
+
 	// Encrypt private key if available
 	encryptedKey := privateKey
 	if encryptor, err := r.getEncryptor(); err == nil {
@@ -240,7 +243,7 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 			encryptedKey = base64.StdEncoding.EncodeToString(encrypted)
 		}
 	}
-	
+
 	// Create actor model
 	actorModel := &models.Actor{
 		Username:       username,
@@ -251,13 +254,13 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		FollowingCount: 0,
 		StatusCount:    0,
 	}
-	
+
 	// Set domain for GSI3
 	if r.domain != "" {
 		actorModel.GSI3PK = fmt.Sprintf("DOMAIN#%s", r.domain)
 		actorModel.GSI3SK = username
 	}
-	
+
 	// Create using DynamORM
 	if err := r.db.WithContext(ctx).Model(actorModel).Create(); err != nil {
 		if errors.IsConditionFailed(err) {
@@ -268,7 +271,7 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		}
 		return fmt.Errorf("failed to create actor: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -276,12 +279,12 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 func (r *AccountRepository) deleteActor(ctx context.Context, username string) error {
 	// Use key utilities for consistent key generation
 	pk := Utils.Keys.ActorKey(username)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", SKProfile).
 		Delete()
-		
+
 	// Use error utility for consistent error handling (delete doesn't fail on not found)
 	return ErrorHandler.HandleDeleteError(err, EntityActor, username)
 }
@@ -289,20 +292,20 @@ func (r *AccountRepository) deleteActor(ctx context.Context, username string) er
 // GetActorPrivateKey retrieves an actor's private key
 func (r *AccountRepository) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
 	var actorModel models.Actor
-	
+
 	// Use key utilities for consistent key generation
 	pk := Utils.Keys.ActorKey(username)
-	
+
 	err := r.db.WithContext(ctx).Model(&actorModel).
 		Where("PK", "=", pk).
 		Where("SK", "=", SKProfile).
 		Select("PrivateKey").
 		First(&actorModel)
-		
+
 	if err != nil {
 		return "", ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
-	
+
 	// Decrypt private key if encrypted
 	privateKey := actorModel.PrivateKey
 	if encryptor, err := r.getEncryptor(); err == nil {
@@ -312,7 +315,7 @@ func (r *AccountRepository) GetActorPrivateKey(ctx context.Context, username str
 			}
 		}
 	}
-	
+
 	return privateKey, nil
 }
 
@@ -340,7 +343,7 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[string]interface{}) error {
 	for key, value := range updates {
 		switch key {
-		case "email":
+		case AccountStatusEmail:
 			if v, ok := value.(string); ok {
 				user.Email = v
 			}
@@ -356,7 +359,7 @@ func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[stri
 			if v, ok := value.(bool); ok {
 				user.Approved = v
 			}
-		case "suspended":
+		case AccountStatusSuspended:
 			if v, ok := value.(bool); ok {
 				user.Suspended = v
 			}
@@ -374,7 +377,7 @@ func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[stri
 			}
 		}
 	}
-	
+
 	user.UpdatedAt = time.Now()
 	return nil
 }
@@ -387,7 +390,7 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 	if jwtSecret == "" {
 		return nil, fmt.Errorf("no JWT secret available for encryption")
 	}
-	
+
 	// Use first 32 bytes of JWT secret as AES key
 	key := []byte(jwtSecret)
 	if len(key) > 32 {
@@ -396,7 +399,7 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 	for len(key) < 32 {
 		key = append(key, 0) // Pad with zeros if needed
 	}
-	
+
 	return marshalers.NewAESEncryptorWithKey(key)
 }
 
@@ -416,7 +419,7 @@ func (r *AccountRepository) CreateAccountPin(ctx context.Context, pin *storage.A
 		PinnedUsername: pin.PinnedUsername,
 		CreatedAt:      pin.CreatedAt,
 	}
-	
+
 	// Set timestamp if not provided
 	if pinModel.CreatedAt.IsZero() {
 		pinModel.CreatedAt = time.Now()
@@ -492,7 +495,7 @@ func (r *AccountRepository) CreateAccountNote(ctx context.Context, note *storage
 		CreatedAt:     note.CreatedAt,
 		UpdatedAt:     note.UpdatedAt,
 	}
-	
+
 	// Set timestamps if not provided
 	now := time.Now()
 	if noteModel.CreatedAt.IsZero() {

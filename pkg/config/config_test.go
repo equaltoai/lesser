@@ -9,12 +9,12 @@ import (
 
 func TestSetupTestEnvironment(t *testing.T) {
 	// Clear environment variables before test
-	os.Unsetenv("JWT_SECRET")
-	os.Unsetenv("DOMAIN")
-	os.Unsetenv("INSTANCE_NAME")
-	os.Unsetenv("AWS_REGION")
-	os.Unsetenv("DYNAMO_TABLE_NAME")
-	os.Unsetenv("S3_BUCKET_NAME")
+	_ = os.Unsetenv("JWT_SECRET")
+	_ = os.Unsetenv("DOMAIN")
+	_ = os.Unsetenv("INSTANCE_NAME")
+	_ = os.Unsetenv("AWS_REGION")
+	_ = os.Unsetenv("DYNAMO_TABLE_NAME")
+	_ = os.Unsetenv("S3_BUCKET_NAME")
 
 	// Setup test environment
 	SetupTestEnvironment(t)

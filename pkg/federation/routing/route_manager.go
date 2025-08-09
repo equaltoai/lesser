@@ -1,14 +1,21 @@
 package routing
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
@@ -16,26 +23,35 @@ import (
 
 // Manager implements the RouteManager interface
 type Manager struct {
-	logger    *zap.Logger
-	config    *types.RoutingConfig
+	logger *zap.Logger
+	config *types.RoutingConfig
 
 	// Repository dependencies
-	instanceRepo        FederationInstanceRepository
-	instanceHealthRepo  interface{} // repositories.InstanceHealthRepository
-	circuitBreakerRepo  interface{} // repositories.CircuitBreakerRepository
-	routeOptimRepo      interface{} // RouteOptimizationRepository - not yet implemented
-	routingMetricsRepo  *repositories.RoutingMetricsRepository
+	instanceRepo       FederationInstanceRepository
+	instanceHealthRepo interface{} // repositories.InstanceHealthRepository
+	circuitBreakerRepo *repositories.CircuitBreakerRepository
+	routeOptimRepo     *repositories.RouteOptimizerRepository
+	routingMetricsRepo *repositories.RoutingMetricsRepository
 
 	// Components
-	registry       *InstanceRegistry
-	optimizer      *SmartRouteOptimizer
-	circuitBreaker *DistributedCircuitBreaker
-	healthChecker  *InstanceHealthChecker
-	loadBalancer   *AdaptiveLoadBalancer
+	registry         *InstanceRegistry
+	optimizer        *SmartRouteOptimizer
+	circuitBreaker   *DistributedCircuitBreaker
+	healthChecker    *InstanceHealthChecker
+	loadBalancer     *AdaptiveLoadBalancer
+	thresholdManager *RouteThresholdManager
 
-	// Route cache
-	routeCache sync.Map // domain -> []*types.Route
-	cacheTTL   time.Duration
+	// HTTP client for federation delivery
+	httpClient *httpclient.SecureClient
+
+	// Federation storage for actor keys
+	federationStore federation.FederationStorage
+
+	// Route cache with adaptive TTL
+	routeCache   sync.Map // domain -> *cachedRoutes
+	cacheTTL     time.Duration
+	emergencyMode bool
+	emergencyMu   sync.RWMutex
 
 	// Metrics
 	metrics *RoutingMetrics
@@ -43,18 +59,19 @@ type Manager struct {
 
 // ManagerConfig holds configuration for the route manager
 type ManagerConfig struct {
-	RoutingConfig          *types.RoutingConfig
-	OptimizerConfig        *OptimizerConfig
-	CircuitBreakerConfig   *models.CircuitBreakerConfig
-	CacheTTL               time.Duration
+	RoutingConfig        *types.RoutingConfig
+	OptimizerConfig      *OptimizerConfig
+	CircuitBreakerConfig *models.CircuitBreakerConfig
+	CacheTTL             time.Duration
+	FederationStore      federation.FederationStorage
 }
 
 // NewManager creates a new route manager with dependency injection
 func NewManager(
 	instanceRepo FederationInstanceRepository,
 	instanceHealthRepo interface{}, // repositories.InstanceHealthRepository,
-	circuitBreakerRepo interface{}, // repositories.CircuitBreakerRepository,
-	routeOptimRepo interface{}, // RouteOptimizationRepository - not yet implemented
+	circuitBreakerRepo *repositories.CircuitBreakerRepository,
+	routeOptimRepo *repositories.RouteOptimizerRepository,
 	routingMetricsRepo *repositories.RoutingMetricsRepository,
 	logger *zap.Logger,
 	config *ManagerConfig,
@@ -95,20 +112,53 @@ func NewManager(
 
 	// Create components with injected repositories
 	registry := NewInstanceRegistry(instanceRepo, logger)
-	
-	// Create SmartRouteOptimizer
-	// TODO: Implement RouteOptimizationRepository and use it here
+
+	// Create threshold manager with guidance document defaults
+	thresholdManager := NewRouteThresholdManager(logger, DefaultThresholdConfig())
+
+	// Create SmartRouteOptimizer with repository
 	var optimizer *SmartRouteOptimizer
 	if routeOptimRepo != nil {
-		// For now, we can't use the interface until it's properly implemented
-		// optimizer = NewSmartRouteOptimizerFromInterface(routeOptimRepo, logger, config.OptimizerConfig)
+		optimizer = NewSmartRouteOptimizer(routeOptimRepo, logger, config.OptimizerConfig)
+		logger.Info("route optimization repository configured successfully")
+	} else {
+		logger.Warn("route optimization repository not provided - optimization disabled")
 	}
-	// TODO: Update constructors to accept repositories
-	circuitBreaker := &DistributedCircuitBreaker{} // NewDistributedCircuitBreaker(circuitBreakerRepo, logger, config.CircuitBreakerConfig)
-	healthChecker := &InstanceHealthChecker{}      // NewHealthChecker(instanceHealthRepo, logger, config.RoutingConfig)
+
+	// Create circuit breaker with threshold manager
+	var circuitBreaker *DistributedCircuitBreaker
+	if circuitBreakerRepo != nil {
+		circuitBreaker = NewDistributedCircuitBreaker(circuitBreakerRepo, thresholdManager, logger, config.CircuitBreakerConfig)
+		logger.Info("circuit breaker configured successfully")
+	} else {
+		logger.Warn("circuit breaker repository not provided - circuit breaker disabled")
+	}
+
+	// Create health checker with repository-backed storage and circuit breaker integration
+	var healthChecker *InstanceHealthChecker
+	if instanceHealthRepo != nil {
+		healthRepo, ok := instanceHealthRepo.(*repositories.InstanceHealthRepository)
+		if ok {
+			healthChecker = NewHealthChecker(healthRepo, logger, config.RoutingConfig)
+			logger.Info("health checker configured successfully with repository")
+		} else {
+			logger.Warn("invalid instance health repository type - health checker disabled")
+			healthChecker = &InstanceHealthChecker{}
+		}
+	} else {
+		logger.Warn("instance health repository not provided - health checker disabled")
+		healthChecker = &InstanceHealthChecker{}
+	}
 	loadBalancer := NewAdaptiveLoadBalancer(logger)
-	
-	// TODO: Update RoutingMetrics constructor to accept repository
+
+	// Initialize HTTP client for federation delivery
+	httpClient := httpclient.NewSecureClient(
+		httpclient.WithTimeout(config.RoutingConfig.DefaultTimeout),
+		httpclient.WithLogger(logger),
+		httpclient.WithMaxRedirects(3),
+	)
+
+	// Create routing metrics
 	metrics := &RoutingMetrics{
 		logger: logger,
 	}
@@ -126,13 +176,24 @@ func NewManager(
 		circuitBreaker:     circuitBreaker,
 		healthChecker:      healthChecker,
 		loadBalancer:       loadBalancer,
+		thresholdManager:   thresholdManager,
+		httpClient:         httpClient,
+		federationStore:    config.FederationStore,
 		metrics:            metrics,
 		cacheTTL:           config.CacheTTL,
 	}
 }
 
-// SelectRoute selects the best route for a destination
+// SelectRoute selects the best route for a destination with emergency mode handling
 func (m *Manager) SelectRoute(destination string, messageType types.MessageType) (*types.Route, error) {
+	// Check emergency mode first
+	m.emergencyMu.RLock()
+	inEmergencyMode := m.emergencyMode
+	m.emergencyMu.RUnlock()
+
+	if inEmergencyMode {
+		return m.selectRouteInEmergencyMode(destination, messageType)
+	}
 	// Get all routes for destination
 	routes, err := m.GetRoutes(destination)
 	if err != nil {
@@ -151,10 +212,17 @@ func (m *Manager) SelectRoute(destination string, messageType types.MessageType)
 
 	// Filter by circuit breaker status
 	healthyRoutes := m.filterHealthyRoutes(supportedRoutes)
+	
+	// Check for emergency mode conditions
+	if m.shouldEnterEmergencyMode(len(healthyRoutes), len(supportedRoutes)) {
+		m.enterEmergencyMode()
+		return m.selectRouteInEmergencyMode(destination, messageType)
+	}
+
 	if len(healthyRoutes) == 0 {
 		// Try half-open circuits as last resort
 		for _, route := range supportedRoutes {
-			if m.circuitBreaker.GetStatus(route.InstanceID) == types.CircuitHalfOpen {
+			if m.circuitBreaker != nil && m.circuitBreaker.GetStatus(route.InstanceID) == types.CircuitHalfOpen {
 				m.logger.Warn("using half-open circuit",
 					zap.String("routeID", route.ID),
 					zap.String("destination", destination))
@@ -188,17 +256,50 @@ func (m *Manager) SelectRoute(destination string, messageType types.MessageType)
 	return bestRoute, nil
 }
 
-// GetRoutes retrieves all routes for a destination
+// GetRoutes retrieves all routes for a destination with adaptive caching
 func (m *Manager) GetRoutes(destination string) ([]*types.Route, error) {
-	// Check cache first
-	cacheKey := fmt.Sprintf("routes:%s", destination)
-	if cached, ok := m.routeCache.Load(cacheKey); ok {
-		if cr, ok := cached.(*cachedRoutes); ok && time.Since(cr.cachedAt) < m.cacheTTL {
-			return cr.routes, nil
-		}
+	// Try to get from cache first
+	if routes := m.getRoutesFromCache(destination); routes != nil {
+		return routes, nil
 	}
 
-	// Get instance for domain
+	// Build new routes
+	routes, err := m.buildRoutesForDestination(destination)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the routes
+	m.cacheRoutes(destination, routes)
+
+	return routes, nil
+}
+
+// getRoutesFromCache attempts to retrieve routes from cache
+func (m *Manager) getRoutesFromCache(destination string) []*types.Route {
+	cacheKey := fmt.Sprintf("routes:%s", destination)
+	cached, ok := m.routeCache.Load(cacheKey)
+	if !ok {
+		return nil
+	}
+	
+	cr, ok := cached.(*cachedRoutes)
+	if !ok {
+		return nil
+	}
+	
+	// Use adaptive TTL based on route health
+	adaptiveTTL := m.getAdaptiveCacheTTL(cr.routes)
+	if time.Since(cr.cachedAt) >= adaptiveTTL {
+		return nil
+	}
+	
+	return cr.routes
+}
+
+// buildRoutesForDestination builds routes for a given destination
+func (m *Manager) buildRoutesForDestination(destination string) ([]*types.Route, error) {
+	// Get instances for domain
 	instances, err := m.getInstancesForDomain(destination)
 	if err != nil {
 		return nil, fmt.Errorf("get instances: %w", err)
@@ -207,27 +308,10 @@ func (m *Manager) GetRoutes(destination string) ([]*types.Route, error) {
 	// Build routes from instances
 	routes := make([]*types.Route, 0, len(instances))
 	for _, instance := range instances {
-		// Create route from instance
-		route, err := m.createRouteFromInstance(instance)
-		if err != nil {
-			m.logger.Warn("failed to create route",
-				zap.String("instanceID", instance.ID),
-				zap.Error(err))
-			continue
+		route := m.buildRouteFromInstance(instance)
+		if route != nil {
+			routes = append(routes, route)
 		}
-
-		// Get performance metrics
-		metrics, err := m.optimizer.GetRouteMetrics(context.Background(), route.ID)
-		if err == nil && metrics.TotalMessages > 0 {
-			route.Latency = metrics.AvgLatency
-			route.SuccessRate = float64(metrics.SuccessfulCount) / float64(metrics.TotalMessages)
-			route.CostPerByte = metrics.TotalCost / float64(metrics.TotalBytes)
-		}
-
-		// Get circuit status
-		route.CircuitStatus = m.circuitBreaker.GetStatus(instance.ID)
-
-		routes = append(routes, route)
 	}
 
 	// Sort by priority
@@ -235,13 +319,83 @@ func (m *Manager) GetRoutes(destination string) ([]*types.Route, error) {
 		return routes[i].Priority < routes[j].Priority
 	})
 
-	// Cache routes
-	m.routeCache.Store(cacheKey, &cachedRoutes{
-		routes:   routes,
-		cachedAt: time.Now(),
-	})
-
 	return routes, nil
+}
+
+// buildRouteFromInstance creates a single route from an instance
+func (m *Manager) buildRouteFromInstance(instance *types.Instance) *types.Route {
+	// Create route from instance
+	route, err := m.createRouteFromInstance(instance)
+	if err != nil {
+		m.logger.Warn("failed to create route",
+			zap.String("instanceID", instance.ID),
+			zap.Error(err))
+		return nil
+	}
+
+	// Enhance route with metrics
+	m.enhanceRouteWithMetrics(route)
+
+	// Get circuit status
+	route.CircuitStatus = m.circuitBreaker.GetStatus(instance.ID)
+
+	return route
+}
+
+// enhanceRouteWithMetrics adds performance metrics to a route
+func (m *Manager) enhanceRouteWithMetrics(route *types.Route) {
+	if m.optimizer == nil {
+		return
+	}
+
+	metrics, err := m.optimizer.GetRouteMetrics(context.Background(), route.ID)
+	if err != nil || metrics.TotalMessages == 0 {
+		return
+	}
+
+	// Update route metrics
+	route.Latency = metrics.AvgLatency
+	route.SuccessRate = float64(metrics.SuccessfulCount) / float64(metrics.TotalMessages)
+	route.CostPerByte = metrics.TotalCost / float64(metrics.TotalBytes)
+
+	// Assess route health if circuit breaker is available
+	if m.circuitBreaker != nil {
+		if assessErr := m.circuitBreaker.AssessRouteHealthAndAdjustCircuit(context.Background(), route.ID, metrics); assessErr != nil {
+			m.logger.Warn("failed to assess route health",
+				zap.String("routeID", route.ID),
+				zap.Error(assessErr))
+		}
+	}
+}
+
+// cacheRoutes stores routes in cache with health information
+func (m *Manager) cacheRoutes(destination string, routes []*types.Route) {
+	cacheKey := fmt.Sprintf("routes:%s", destination)
+	cachedData := &cachedRoutes{
+		routes:       routes,
+		cachedAt:     time.Now(),
+		healthStatus: make(map[string]RouteHealthStatus),
+	}
+
+	// Store health status for adaptive caching
+	m.populateHealthStatus(cachedData, routes)
+
+	m.routeCache.Store(cacheKey, cachedData)
+}
+
+// populateHealthStatus fills health status for each route
+func (m *Manager) populateHealthStatus(cachedData *cachedRoutes, routes []*types.Route) {
+	if m.thresholdManager == nil || m.optimizer == nil {
+		return
+	}
+
+	for _, route := range routes {
+		metrics, err := m.optimizer.GetRouteMetrics(context.Background(), route.ID)
+		if err == nil {
+			assessment := m.thresholdManager.AssessRouteHealth(context.Background(), route.ID, metrics)
+			cachedData.healthStatus[route.ID] = assessment.Status
+		}
+	}
 }
 
 // RegisterInstance registers a new federated instance
@@ -400,6 +554,259 @@ func (m *Manager) GetRouteMetrics(destination string) (*types.RouteMetrics, erro
 	return aggregated, nil
 }
 
+// Health checker integration methods
+
+// PerformHealthCheck performs a comprehensive health check on an instance
+func (m *Manager) PerformHealthCheck(instanceID string) (*types.HealthStatus, error) {
+	// Get instance information
+	instance, err := m.GetInstance(instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("get instance: %w", err)
+	}
+
+	// Check if circuit breaker allows health check
+	if m.circuitBreaker != nil && !m.circuitBreaker.CanAttempt(instanceID) {
+		return &types.HealthStatus{
+			Timestamp:    time.Now(),
+			Reachable:    false,
+			ErrorMessage: "circuit breaker open - health check skipped",
+		}, nil
+	}
+
+	// Perform the actual health check
+	health, err := m.healthChecker.CheckHealth(instance)
+	if err != nil {
+		// Record failure in circuit breaker
+		if m.circuitBreaker != nil {
+			if cbErr := m.circuitBreaker.RecordFailure(instanceID, err); cbErr != nil {
+				m.logger.Error("failed to record circuit breaker failure", zap.Error(cbErr))
+			}
+		}
+		return health, err
+	}
+
+	// Update circuit breaker based on health result
+	if m.circuitBreaker != nil {
+		if health.Reachable && health.StatusCode < 500 {
+			if cbErr := m.circuitBreaker.RecordSuccess(instanceID); cbErr != nil {
+				m.logger.Error("failed to record circuit breaker success", zap.Error(cbErr))
+			}
+		} else {
+			cbErr := m.circuitBreaker.RecordFailure(instanceID, fmt.Errorf("health check failed: reachable=%v, status=%d",
+				health.Reachable, health.StatusCode))
+			if cbErr != nil {
+				m.logger.Error("failed to record circuit breaker failure", zap.Error(cbErr))
+			}
+		}
+	}
+
+	// Clear route cache if health changed significantly
+	m.clearRouteCache(instance.Domain)
+
+	return health, nil
+}
+
+// MonitorInstanceHealth performs continuous health monitoring for all instances
+func (m *Manager) MonitorInstanceHealth() error {
+	instances, err := m.ListHealthyInstances()
+	if err != nil {
+		return fmt.Errorf("list instances: %w", err)
+	}
+
+	if len(instances) == 0 {
+		m.logger.Info("No instances to monitor")
+		return nil
+	}
+
+	// Perform health checks in parallel with limited concurrency
+	semaphore := make(chan struct{}, 10) // Max 10 concurrent health checks
+	var wg sync.WaitGroup
+	
+	for _, instance := range instances {
+		wg.Add(1)
+		go func(inst *types.Instance) {
+			defer wg.Done()
+			
+			// Acquire semaphore
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			
+			health, err := m.PerformHealthCheck(inst.ID)
+			if err != nil {
+				m.logger.Error("Health check failed",
+					zap.String("instanceID", inst.ID),
+					zap.String("domain", inst.Domain),
+					zap.Error(err))
+				return
+			}
+			
+			// Update instance health
+			if updateErr := m.UpdateInstanceHealth(inst.ID, health); updateErr != nil {
+				m.logger.Error("Failed to update instance health",
+					zap.String("instanceID", inst.ID),
+					zap.Error(updateErr))
+			}
+		}(instance)
+	}
+	
+	wg.Wait()
+	
+	m.logger.Info("Health monitoring completed",
+		zap.Int("instances_checked", len(instances)))
+	
+	return nil
+}
+
+// DetectUnhealthyInstances identifies instances that should be removed from rotation
+func (m *Manager) DetectUnhealthyInstances() ([]string, error) {
+	if m.healthChecker.healthRepo == nil {
+		return nil, fmt.Errorf("health repository not available")
+	}
+
+	// Get unhealthy instances with 40% health score threshold
+	unhealthy, err := m.healthChecker.healthRepo.GetUnhealthyInstances(context.Background(), 40.0)
+	if err != nil {
+		return nil, fmt.Errorf("get unhealthy instances: %w", err)
+	}
+
+	// Cross-reference with circuit breaker status
+	filteredUnhealthy := make([]string, 0)
+	for _, instanceID := range unhealthy {
+		// Check if circuit breaker confirms unhealthy state
+		if m.circuitBreaker != nil {
+			status := m.circuitBreaker.GetStatus(instanceID)
+			if status == types.CircuitOpen || status == types.CircuitHalfOpen {
+				filteredUnhealthy = append(filteredUnhealthy, instanceID)
+			}
+		} else {
+			// No circuit breaker, trust health repository
+			filteredUnhealthy = append(filteredUnhealthy, instanceID)
+		}
+	}
+
+	m.logger.Info("Detected unhealthy instances",
+		zap.Int("total_unhealthy", len(unhealthy)),
+		zap.Int("filtered_unhealthy", len(filteredUnhealthy)),
+		zap.Strings("instances", filteredUnhealthy))
+
+	return filteredUnhealthy, nil
+}
+
+// RecoverInstances attempts to recover instances from unhealthy state
+func (m *Manager) RecoverInstances() error {
+	// Get instances that might be recoverable (half-open circuits)
+	instances, err := m.ListHealthyInstances()
+	if err != nil {
+		return fmt.Errorf("list instances: %w", err)
+	}
+
+	recoverableCount := 0
+	for _, instance := range instances {
+		if m.circuitBreaker != nil {
+			status := m.circuitBreaker.GetStatus(instance.ID)
+			if status == types.CircuitHalfOpen {
+				// Attempt recovery by performing health check
+				health, checkErr := m.PerformHealthCheck(instance.ID)
+				if checkErr == nil && health.Reachable && health.StatusCode < 400 {
+					recoverableCount++
+					m.logger.Info("Instance recovery attempted",
+						zap.String("instanceID", instance.ID),
+						zap.String("domain", instance.Domain),
+						zap.Bool("successful", true))
+				}
+			}
+		}
+	}
+
+	m.logger.Info("Instance recovery completed",
+		zap.Int("recovery_attempts", recoverableCount))
+
+	return nil
+}
+
+// GetHealthSummary provides comprehensive health overview
+func (m *Manager) GetHealthSummary() (*HealthSummary, error) {
+	instances, err := m.ListHealthyInstances()
+	if err != nil {
+		return nil, fmt.Errorf("list instances: %w", err)
+	}
+
+	summary := &HealthSummary{
+		Timestamp:         time.Now(),
+		TotalInstances:    len(instances),
+		HealthyInstances:  0,
+		DegradedInstances: 0,
+		UnhealthyInstances: 0,
+		InstanceDetails:   make(map[string]InstanceHealthDetail),
+	}
+
+	// Analyze each instance
+	for _, instance := range instances {
+		detail := InstanceHealthDetail{
+			Domain:        instance.Domain,
+			LastChecked:   time.Time{},
+			HealthScore:   0,
+			CircuitStatus: types.CircuitClosed,
+		}
+
+		// Get circuit status
+		if m.circuitBreaker != nil {
+			detail.CircuitStatus = m.circuitBreaker.GetStatus(instance.ID)
+		}
+
+		// Get latest health check if available
+		if m.healthChecker.healthRepo != nil {
+			health, healthErr := m.healthChecker.healthRepo.GetLatestHealthCheck(context.Background(), instance.Domain)
+			if healthErr == nil {
+				detail.LastChecked = health.Timestamp
+				detail.HealthScore = health.GetHealthScore()
+				detail.ResponseTime = health.ResponseTime
+				detail.ErrorRate = health.ErrorRate
+			}
+		}
+
+		// Categorize health status
+		switch {
+		case detail.CircuitStatus == types.CircuitOpen:
+			summary.UnhealthyInstances++
+		case detail.CircuitStatus == types.CircuitHalfOpen || detail.HealthScore < 70:
+			summary.DegradedInstances++
+		default:
+			summary.HealthyInstances++
+		}
+
+		summary.InstanceDetails[instance.ID] = detail
+	}
+
+	// Calculate overall health percentage
+	if summary.TotalInstances > 0 {
+		summary.OverallHealth = float64(summary.HealthyInstances) / float64(summary.TotalInstances) * 100
+	}
+
+	return summary, nil
+}
+
+// HealthSummary represents overall health status of the federation system
+type HealthSummary struct {
+	Timestamp          time.Time                        `json:"timestamp"`
+	TotalInstances     int                             `json:"total_instances"`
+	HealthyInstances   int                             `json:"healthy_instances"`
+	DegradedInstances  int                             `json:"degraded_instances"`
+	UnhealthyInstances int                             `json:"unhealthy_instances"`
+	OverallHealth      float64                         `json:"overall_health_percentage"`
+	InstanceDetails    map[string]InstanceHealthDetail `json:"instance_details"`
+}
+
+// InstanceHealthDetail represents detailed health information for a single instance
+type InstanceHealthDetail struct {
+	Domain        string               `json:"domain"`
+	LastChecked   time.Time           `json:"last_checked"`
+	HealthScore   float64             `json:"health_score"`
+	ResponseTime  time.Duration       `json:"response_time"`
+	ErrorRate     float64             `json:"error_rate"`
+	CircuitStatus types.CircuitStatus `json:"circuit_status"`
+}
+
 // Circuit breaker methods
 
 // OpenCircuit opens the circuit for an instance
@@ -471,7 +878,7 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *types.FederationM
 
 	for routeID, targets := range routeTargets {
 		wg.Add(1)
-		go func(rid string, tgts []string) {
+		go func(_ string, tgts []string) {
 			defer wg.Done()
 
 			route := routeMap[tgts[0]] // Get route from first target
@@ -628,29 +1035,129 @@ func (m *Manager) createRouteFromInstance(instance *types.Instance) (*types.Rout
 	return route, nil
 }
 
-func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, message *types.FederationMessage, _ []string, _ types.DeliveryOptions) *types.DeliveryResult {
-	// This is where actual HTTP delivery would happen
-	// For now, return a simulated result
-
+func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, message *types.FederationMessage, targets []string, options types.DeliveryOptions) *types.DeliveryResult {
+	startTime := time.Now()
+	
+	// Create the delivery result
 	result := &types.DeliveryResult{
 		MessageID:  message.ID,
 		InstanceID: route.InstanceID,
 		RouteID:    route.ID,
-		Success:    true,
-		StatusCode: 200,
 		Attempts:   1,
-		Duration:   route.Latency,
-		BytesSent:  message.PayloadSize,
-		Cost:       float64(message.PayloadSize) * route.CostPerByte,
-		Timestamp:  time.Now(),
+		Timestamp:  startTime,
 	}
 
-	// Simulate failures based on success rate
-	if time.Now().UnixNano()%100 > int64(route.SuccessRate*100) {
+	// Get instance information for delivery
+	instance, err := m.GetInstance(route.InstanceID)
+	if err != nil {
+		m.logger.Error("failed to get instance for delivery",
+			zap.String("instanceID", route.InstanceID),
+			zap.Error(err))
 		result.Success = false
-		result.StatusCode = 500
-		result.ErrorMessage = "simulated failure"
+		result.ErrorMessage = fmt.Sprintf("failed to get instance: %v", err)
+		result.Duration = time.Since(startTime)
+		return result
 	}
+
+	// Determine the target inbox URL
+	targetInbox := instance.SharedInboxURL
+	if targetInbox == "" {
+		targetInbox = instance.InboxURL
+	}
+	if targetInbox == "" {
+		result.Success = false
+		result.ErrorMessage = "no inbox URL available for instance"
+		result.Duration = time.Since(startTime)
+		return result
+	}
+
+	// Convert federation message to ActivityPub activity
+	activity, signingActor, err := m.prepareActivityForDelivery(ctx, message, targets)
+	if err != nil {
+		m.logger.Error("failed to prepare activity for delivery",
+			zap.String("messageID", message.ID),
+			zap.Error(err))
+		result.Success = false
+		result.ErrorMessage = fmt.Sprintf("failed to prepare activity: %v", err)
+		result.Duration = time.Since(startTime)
+		return result
+	}
+
+	// Perform the HTTP delivery with retries
+	maxRetries := options.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = m.config.MaxRetries
+	}
+	
+	retryBackoff := options.RetryBackoff
+	if retryBackoff <= 0 {
+		retryBackoff = m.config.RetryBackoff
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		result.Attempts = attempt
+		
+		// Apply exponential backoff for retries
+		if attempt > 1 {
+			backoffDuration := time.Duration(attempt-1) * retryBackoff
+			select {
+			case <-ctx.Done():
+				result.Success = false
+				result.ErrorMessage = "delivery cancelled"
+				result.Duration = time.Since(startTime)
+				return result
+			case <-time.After(backoffDuration):
+				// Continue with retry
+			}
+		}
+
+		// Attempt delivery
+		deliveryErr := m.performHTTPDelivery(ctx, activity, targetInbox, signingActor, result)
+		if deliveryErr == nil {
+			// Success!
+			result.Success = true
+			result.Duration = time.Since(startTime)
+			result.BytesSent = int64(len(message.Payload))
+			result.Cost = float64(result.BytesSent) * route.CostPerByte
+			
+			m.logger.Info("federation delivery successful",
+				zap.String("messageID", message.ID),
+				zap.String("routeID", route.ID),
+				zap.String("targetInbox", targetInbox),
+				zap.Int("attempts", attempt),
+				zap.Duration("duration", result.Duration))
+			
+			return result
+		}
+
+		lastErr = deliveryErr
+		
+		// Check if this is a retryable error
+		if !m.isRetryableError(result.StatusCode) {
+			break
+		}
+		
+		m.logger.Warn("federation delivery attempt failed",
+			zap.String("messageID", message.ID),
+			zap.String("routeID", route.ID),
+			zap.Int("attempt", attempt),
+			zap.Int("maxRetries", maxRetries),
+			zap.Error(deliveryErr))
+	}
+
+	// All retries exhausted
+	result.Success = false
+	result.Duration = time.Since(startTime)
+	if lastErr != nil {
+		result.ErrorMessage = lastErr.Error()
+	}
+	
+	m.logger.Error("federation delivery failed after retries",
+		zap.String("messageID", message.ID),
+		zap.String("routeID", route.ID),
+		zap.Int("attempts", result.Attempts),
+		zap.Error(lastErr))
 
 	return result
 }
@@ -661,9 +1168,310 @@ func (m *Manager) clearRouteCache(domain string) {
 }
 
 type cachedRoutes struct {
-	routes   []*types.Route
-	cachedAt time.Time
+	routes       []*types.Route
+	cachedAt     time.Time
+	healthStatus map[string]RouteHealthStatus
 }
+
+// getAdaptiveCacheTTL returns cache TTL based on route health status
+func (m *Manager) getAdaptiveCacheTTL(routes []*types.Route) time.Duration {
+	if m.thresholdManager == nil {
+		return m.cacheTTL
+	}
+
+	// Find the worst route health status
+	worstHealth := RouteHealthPreferred
+	for _, route := range routes {
+		if m.optimizer != nil {
+			metrics, err := m.optimizer.GetRouteMetrics(context.Background(), route.ID)
+			if err == nil {
+				assessment := m.thresholdManager.AssessRouteHealth(context.Background(), route.ID, metrics)
+				if assessment.Status > worstHealth {
+					worstHealth = assessment.Status
+				}
+			}
+		}
+	}
+
+	// Return appropriate TTL based on worst health
+	switch worstHealth {
+	case RouteHealthPreferred, RouteHealthHealthy:
+		return m.thresholdManager.config.HealthyRouteTTL
+	case RouteHealthDegraded, RouteHealthCritical:
+		return m.thresholdManager.config.DegradedRouteTTL
+	default:
+		return m.thresholdManager.config.UnknownRouteTTL
+	}
+}
+
+// shouldEnterEmergencyMode checks if emergency mode should be activated
+func (m *Manager) shouldEnterEmergencyMode(healthyRoutes, totalRoutes int) bool {
+	if m.circuitBreaker == nil {
+		return false
+	}
+	return m.circuitBreaker.ShouldEnterEmergencyMode(healthyRoutes, totalRoutes)
+}
+
+// enterEmergencyMode activates emergency mode with proper logging
+func (m *Manager) enterEmergencyMode() {
+	m.emergencyMu.Lock()
+	defer m.emergencyMu.Unlock()
+
+	if !m.emergencyMode {
+		m.emergencyMode = true
+		m.logger.Error("Entering emergency mode - all routes degraded",
+			zap.String("action", "progressive_backpressure_activated"))
+	}
+}
+
+// selectRouteInEmergencyMode selects routes with emergency mode logic
+func (m *Manager) selectRouteInEmergencyMode(destination string, messageType types.MessageType) (*types.Route, error) {
+	m.logger.Debug("Selecting route in emergency mode",
+		zap.String("destination", destination),
+		zap.String("messageType", string(messageType)))
+
+	// Get all routes (including degraded ones)
+	routes, err := m.GetRoutes(destination)
+	if err != nil {
+		return nil, fmt.Errorf("get routes in emergency mode: %w", err)
+	}
+
+	if len(routes) == 0 {
+		return nil, types.ErrNoHealthyRoutes
+	}
+
+	// Apply emergency backpressure rules
+	if m.circuitBreaker != nil && m.thresholdManager != nil {
+		backpressureRules := m.circuitBreaker.GetBackpressureRules()
+		priority := m.thresholdManager.getMessagePriority(messageType)
+		
+		rule, exists := backpressureRules[priority]
+		if exists {
+			// Calculate current health ratio
+			healthyCount := 0
+			for _, route := range routes {
+				if m.circuitBreaker.GetStatus(route.InstanceID) == types.CircuitClosed {
+					healthyCount++
+				}
+			}
+			
+			healthRatio := float64(healthyCount) / float64(len(routes))
+			
+			// Apply backpressure rules
+			switch rule.Action {
+			case "queue_if_below_threshold":
+				if healthRatio < rule.Threshold {
+					return nil, fmt.Errorf("message queued due to emergency backpressure (health ratio: %.2f < %.2f)", healthRatio, rule.Threshold)
+				}
+			case "queue":
+				return nil, fmt.Errorf("message queued due to emergency mode")
+			case "drop":
+				return nil, fmt.Errorf("message dropped due to emergency mode")
+			}
+		}
+	}
+
+	// Select best available route (even if degraded)
+	for _, route := range routes {
+		if m.circuitBreaker == nil || m.circuitBreaker.CanAttempt(route.InstanceID) {
+			m.logger.Warn("Using degraded route in emergency mode",
+				zap.String("routeID", route.ID),
+				zap.String("destination", destination))
+			return route, nil
+		}
+	}
+
+	return nil, types.ErrNoHealthyRoutes
+}
+
+// prepareActivityForDelivery converts a federation message to an ActivityPub activity
+func (m *Manager) prepareActivityForDelivery(ctx context.Context, message *types.FederationMessage, targets []string) (*activitypub.Activity, *activitypub.Actor, error) {
+	// If the message already has a payload, try to parse it as an activity
+	if len(message.Payload) > 0 {
+		var activity activitypub.Activity
+		if err := json.Unmarshal(message.Payload, &activity); err == nil {
+			// Get the signing actor
+			signingActor, err := m.getSigningActor(ctx, message.Actor)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get signing actor: %w", err)
+			}
+			return &activity, signingActor, nil
+		}
+	}
+
+	// Create a new activity from the message
+	publishedTime := message.CreatedAt
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:        message.ID,
+			Type:      string(message.Type),
+			Published: &publishedTime,
+		},
+		Actor: message.Actor,
+	}
+
+	// Set recipients
+	if len(targets) > 0 {
+		activity.To = targets
+	}
+
+	// Set the object
+	if message.Object != nil {
+		activity.Object = message.Object
+	}
+
+	// Get the signing actor
+	signingActor, err := m.getSigningActor(ctx, message.Actor)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get signing actor: %w", err)
+	}
+
+	return activity, signingActor, nil
+}
+
+// getSigningActor retrieves the actor for signing the request
+func (m *Manager) getSigningActor(ctx context.Context, actorID string) (*activitypub.Actor, error) {
+	if m.federationStore == nil {
+		return nil, fmt.Errorf("federation store not configured")
+	}
+
+	// Extract username from actor ID
+	username := extractUsernameFromActorID(actorID)
+	if username == "" {
+		return nil, fmt.Errorf("could not extract username from actor ID: %s", actorID)
+	}
+
+	// Get actor from storage
+	actor, err := m.federationStore.GetActor(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get actor %s: %w", username, err)
+	}
+
+	return actor, nil
+}
+
+// performHTTPDelivery performs the actual HTTP delivery
+func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor, result *types.DeliveryResult) error {
+	// Serialize the activity
+	body, err := json.Marshal(activity)
+	if err != nil {
+		return fmt.Errorf("failed to marshal activity: %w", err)
+	}
+
+	// Create the request
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetInbox, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/activity+json")
+	req.Header.Set("Accept", "application/activity+json")
+	req.Header.Set("User-Agent", "Lesser/1.0 ActivityPub")
+
+	// Get the actor's private key from storage
+	if m.federationStore == nil {
+		return fmt.Errorf("federation store not configured for signing")
+	}
+
+	privateKeyPEM, err := m.federationStore.GetActorPrivateKey(ctx, signingActor.PreferredUsername)
+	if err != nil {
+		return fmt.Errorf("failed to get private key: %w", err)
+	}
+
+	// Parse the private key
+	privateKey, err := federation.ParsePrivateKeyPEM([]byte(privateKeyPEM))
+	if err != nil {
+		return fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	// Sign the request
+	keyID := signingActor.PublicKey.ID
+	if err := federation.SignHTTPRequest(req, privateKey, keyID); err != nil {
+		return fmt.Errorf("failed to sign request: %w", err)
+	}
+
+	// Send the request
+	resp, err := m.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Update result with status code
+	result.StatusCode = resp.StatusCode
+
+	// Read the response body for logging
+	respBody, _ := io.ReadAll(resp.Body)
+
+	// Check the response
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		m.logger.Debug("HTTP delivery successful",
+			zap.String("targetInbox", targetInbox),
+			zap.Int("statusCode", resp.StatusCode),
+			zap.String("response", string(respBody)))
+		return nil
+	}
+
+	// Log the failure
+	m.logger.Warn("HTTP delivery failed",
+		zap.String("targetInbox", targetInbox),
+		zap.Int("statusCode", resp.StatusCode),
+		zap.String("response", string(respBody)))
+
+	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+}
+
+// isRetryableError determines if an HTTP status code indicates a retryable error
+func (m *Manager) isRetryableError(statusCode int) bool {
+	switch statusCode {
+	case http.StatusInternalServerError,        // 500
+		http.StatusBadGateway,               // 502
+		http.StatusServiceUnavailable,       // 503
+		http.StatusGatewayTimeout,          // 504
+		http.StatusInsufficientStorage,      // 507
+		http.StatusNetworkAuthenticationRequired: // 511
+		return true
+	case http.StatusTooManyRequests: // 429
+		return true
+	default:
+		// 4xx errors (except 429) are generally not retryable
+		// 2xx and 3xx are success/redirect (shouldn't get here)
+		return false
+	}
+}
+
+// extractUsernameFromActorID extracts username from an ActivityPub actor ID
+func extractUsernameFromActorID(actorID string) string {
+	// Parse the URL
+	u, err := url.Parse(actorID)
+	if err != nil {
+		return ""
+	}
+
+	// Extract from path - typical format: /users/username or /actors/username
+	path := u.Path
+	if path == "" {
+		return ""
+	}
+
+	parts := bytes.Split([]byte(path), []byte("/"))
+	if len(parts) >= 3 {
+		// Look for users/ or actors/ prefix
+		if string(parts[1]) == "users" || string(parts[1]) == "actors" {
+			return string(parts[2])
+		}
+	}
+
+	// Fallback: use the last path segment
+	if len(parts) > 1 {
+		return string(parts[len(parts)-1])
+	}
+
+	return ""
+}
+
+// Removed unused function: generateRequestID
 
 func defaultRoutingConfig() *types.RoutingConfig {
 	return &types.RoutingConfig{

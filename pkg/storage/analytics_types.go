@@ -115,11 +115,11 @@ type ModerationAnalyticsData struct {
 
 // ModeratorStatistics represents statistics for a moderator
 type ModeratorStatistics struct {
-	ModeratorID          string                    `json:"moderator_id"`
-	TotalActions         int64                     `json:"total_actions"`
-	ActionsByType        map[string]int64          `json:"actions_by_type"`
-	AverageActionsPerDay float64                   `json:"average_actions_per_day"`
-	DailyActions         []DailyModeratorAction    `json:"daily_actions"`
+	ModeratorID          string                 `json:"moderator_id"`
+	TotalActions         int64                  `json:"total_actions"`
+	ActionsByType        map[string]int64       `json:"actions_by_type"`
+	AverageActionsPerDay float64                `json:"average_actions_per_day"`
+	DailyActions         []DailyModeratorAction `json:"daily_actions"`
 }
 
 // DailyModeratorAction represents daily action count for a moderator
@@ -130,11 +130,11 @@ type DailyModeratorAction struct {
 
 // ReportTrend represents trend data for a report type
 type ReportTrend struct {
-	ReportType     string              `json:"report_type"`
-	TotalCount     int64               `json:"total_count"`
-	TotalResolved  int64               `json:"total_resolved"`
-	ResolutionRate float64             `json:"resolution_rate"`
-	Daily          []DailyReportCount  `json:"daily"`
+	ReportType     string             `json:"report_type"`
+	TotalCount     int64              `json:"total_count"`
+	TotalResolved  int64              `json:"total_resolved"`
+	ResolutionRate float64            `json:"resolution_rate"`
+	Daily          []DailyReportCount `json:"daily"`
 }
 
 // DailyReportCount represents daily report counts

@@ -38,15 +38,15 @@ func (ta *TestApp) WithHeader(key, value string) *TestApp {
 		liftTestApp: ta.liftTestApp,
 		headers:     make(map[string]string),
 	}
-	
+
 	// Copy existing headers
 	for k, v := range ta.headers {
 		newTA.headers[k] = v
 	}
-	
+
 	// Add new header
 	newTA.headers[key] = value
-	
+
 	return newTA
 }
 
@@ -88,31 +88,31 @@ func (ta *TestApp) PATCH(path string, body interface{}) *TestResponse {
 // OPTIONS performs an OPTIONS request
 func (ta *TestApp) OPTIONS(path string) *TestResponse {
 	// Add an OPTIONS handler to the app dynamically using Handle method
-	ta.App().Handle("OPTIONS", path, func(ctx *lift.Context) error {
+	_ = ta.App().Handle("OPTIONS", path, func(ctx *lift.Context) error {
 		return ctx.Status(200).JSON(map[string]string{"allowed": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD"})
 	})
-	
+
 	// Create response - OPTIONS returns allowed methods
 	response := &lifttesting.TestResponse{}
 	response.StatusCode = 200
 	response.Body = `{"allowed": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD"}`
-	
+
 	return &TestResponse{TestResponse: response}
 }
 
 // HEAD performs a HEAD request
 func (ta *TestApp) HEAD(path string) *TestResponse {
 	// Add a HEAD handler to the app dynamically using Handle method
-	ta.App().Handle("HEAD", path, func(ctx *lift.Context) error {
+	_ = ta.App().Handle("HEAD", path, func(ctx *lift.Context) error {
 		// HEAD should return same headers as GET but no body
 		return ctx.Status(200).JSON(nil)
 	})
-	
+
 	// Create response - HEAD has same status as GET but no body
 	response := &lifttesting.TestResponse{}
 	response.StatusCode = 200
 	response.Body = "" // HEAD responses have no body
-	
+
 	return &TestResponse{TestResponse: response}
 }
 
@@ -124,68 +124,132 @@ func (ta *TestApp) applyHeaders(liftTestApp *lifttesting.TestApp) *lifttesting.T
 	return liftTestApp
 }
 
-
 // HandleRequest handles Lambda events directly
 func (ta *TestApp) HandleRequest(event interface{}) *TestResponse {
-	// Handle different event types by routing to appropriate HTTP methods
-	switch e := event.(type) {
-	case map[string]interface{}:
-		// Check if it's an API Gateway event
-		if httpMethod, ok := e["httpMethod"].(string); ok {
-			path, _ := e["path"].(string)
-			body, _ := e["body"].(string)
-			
-			// Apply headers from event
-			testApp := ta
-			if headers, ok := e["headers"].(map[string]interface{}); ok {
-				for k, v := range headers {
-					if vs, ok := v.(string); ok {
-						testApp = testApp.WithHeader(k, vs)
-					}
-				}
-			}
-			
-			// Route to appropriate HTTP method using TestApp methods
-			switch strings.ToUpper(httpMethod) {
-			case "GET":
-				return testApp.GET(path)
-			case "POST":
-				return testApp.POST(path, body)
-			case "PUT":
-				return testApp.PUT(path, body)
-			case "DELETE":
-				return testApp.DELETE(path)
-			case "PATCH":
-				return testApp.PATCH(path, body)
-			case "OPTIONS":
-				return testApp.OPTIONS(path)
-			case "HEAD":
-				return testApp.HEAD(path)
-			default:
-				response := &lifttesting.TestResponse{}
-				response.StatusCode = 405
-				response.Body = `{"error": "Method not allowed"}`
-				return &TestResponse{TestResponse: response}
-			}
-		}
-		
-		// Handle SQS events
-		if records, ok := e["Records"].([]interface{}); ok {
-			for _, record := range records {
-				if r, ok := record.(map[string]interface{}); ok {
-					if eventSource, ok := r["eventSource"].(string); ok && eventSource == "aws:sqs" {
-						// Process SQS message - return success response
-						response := &lifttesting.TestResponse{}
-						response.StatusCode = 200
-						response.Body = `{"status": "processed"}`
-						return &TestResponse{TestResponse: response}
-					}
-				}
-			}
+	// Handle different event types
+	if eventMap, ok := event.(map[string]interface{}); ok {
+		return ta.handleEventMap(eventMap)
+	}
+
+	// Default response for unhandled events
+	return ta.createDefaultResponse()
+}
+
+// handleEventMap handles map-based events
+func (ta *TestApp) handleEventMap(eventMap map[string]interface{}) *TestResponse {
+	// Try API Gateway event first
+	if response := ta.handleAPIGatewayEvent(eventMap); response != nil {
+		return response
+	}
+
+	// Try SQS event
+	if response := ta.handleSQSEvent(eventMap); response != nil {
+		return response
+	}
+
+	// Default response
+	return ta.createDefaultResponse()
+}
+
+// handleAPIGatewayEvent handles API Gateway HTTP events
+func (ta *TestApp) handleAPIGatewayEvent(eventMap map[string]interface{}) *TestResponse {
+	httpMethod, ok := eventMap["httpMethod"].(string)
+	if !ok {
+		return nil
+	}
+
+	path, _ := eventMap["path"].(string)
+	body, _ := eventMap["body"].(string)
+
+	// Apply headers from event
+	testApp := ta.applyEventHeaders(eventMap)
+
+	// Route to appropriate HTTP method
+	return testApp.routeHTTPMethod(httpMethod, path, body)
+}
+
+// applyEventHeaders applies headers from the event to the test app
+func (ta *TestApp) applyEventHeaders(eventMap map[string]interface{}) *TestApp {
+	testApp := ta
+	headers, ok := eventMap["headers"].(map[string]interface{})
+	if !ok {
+		return testApp
+	}
+
+	for k, v := range headers {
+		if vs, ok := v.(string); ok {
+			testApp = testApp.WithHeader(k, vs)
 		}
 	}
-	
-	// Default response for unhandled events
+	return testApp
+}
+
+// routeHTTPMethod routes the request to the appropriate HTTP method handler
+func (ta *TestApp) routeHTTPMethod(httpMethod, path, body string) *TestResponse {
+	switch strings.ToUpper(httpMethod) {
+	case "GET":
+		return ta.GET(path)
+	case "POST":
+		return ta.POST(path, body)
+	case "PUT":
+		return ta.PUT(path, body)
+	case "DELETE":
+		return ta.DELETE(path)
+	case "PATCH":
+		return ta.PATCH(path, body)
+	case "OPTIONS":
+		return ta.OPTIONS(path)
+	case "HEAD":
+		return ta.HEAD(path)
+	default:
+		return ta.createMethodNotAllowedResponse()
+	}
+}
+
+// handleSQSEvent handles SQS events
+func (ta *TestApp) handleSQSEvent(eventMap map[string]interface{}) *TestResponse {
+	records, ok := eventMap["Records"].([]interface{})
+	if !ok {
+		return nil
+	}
+
+	for _, record := range records {
+		if ta.isSQSRecord(record) {
+			return ta.createSQSSuccessResponse()
+		}
+	}
+	return nil
+}
+
+// isSQSRecord checks if a record is an SQS record
+func (ta *TestApp) isSQSRecord(record interface{}) bool {
+	r, ok := record.(map[string]interface{})
+	if !ok {
+		return false
+	}
+
+	eventSource, ok := r["eventSource"].(string)
+	return ok && eventSource == "aws:sqs"
+}
+
+// createMethodNotAllowedResponse creates a 405 Method Not Allowed response
+func (ta *TestApp) createMethodNotAllowedResponse() *TestResponse {
+	response := &lifttesting.TestResponse{}
+	response.StatusCode = 405
+	response.Body = `{"error": "Method not allowed"}`
+	return &TestResponse{TestResponse: response}
+}
+
+// createSQSSuccessResponse creates a success response for SQS processing
+func (ta *TestApp) createSQSSuccessResponse() *TestResponse {
+	response := &lifttesting.TestResponse{}
+	response.StatusCode = 200
+	response.Body = `{"status": "processed"}`
+	return &TestResponse{TestResponse: response}
+}
+
+// createDefaultResponse creates a default success response
+func (ta *TestApp) createDefaultResponse() *TestResponse {
 	response := &lifttesting.TestResponse{}
 	response.StatusCode = 200
 	response.Body = `{"status": "event_handled"}`

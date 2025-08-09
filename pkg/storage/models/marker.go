@@ -24,7 +24,7 @@ type Marker struct {
 
 // TableName returns the DynamoDB table name for the Marker model
 func (Marker) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -33,7 +33,7 @@ func (m *Marker) BeforeCreate() error {
 	m.UpdatedAt = now
 
 	// Set up primary key using exact legacy pattern
-	m.PK = fmt.Sprintf("USER#%s", m.Username)
+	m.PK = fmt.Sprintf(KeyPatternUser, m.Username)
 	m.SK = fmt.Sprintf("MARKER#%s", m.Timeline)
 
 	return nil
@@ -44,7 +44,7 @@ func (m *Marker) BeforeUpdate() error {
 	m.UpdatedAt = time.Now()
 
 	// Ensure keys are set using exact legacy pattern
-	m.PK = fmt.Sprintf("USER#%s", m.Username)
+	m.PK = fmt.Sprintf(KeyPatternUser, m.Username)
 	m.SK = fmt.Sprintf("MARKER#%s", m.Timeline)
 
 	return nil
@@ -53,6 +53,6 @@ func (m *Marker) BeforeUpdate() error {
 // UpdateKeys updates the primary key fields based on username and timeline
 // This method allows for key updates when username or timeline changes
 func (m *Marker) UpdateKeys() {
-	m.PK = fmt.Sprintf("USER#%s", m.Username)
+	m.PK = fmt.Sprintf(KeyPatternUser, m.Username)
 	m.SK = fmt.Sprintf("MARKER#%s", m.Timeline)
 }

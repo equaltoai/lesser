@@ -31,7 +31,7 @@ func NewCommunityNoteRepository(db core.DB, tableName string, logger *zap.Logger
 }
 
 // CreateCommunityNote creates a new community note
-func (r *CommunityNoteRepository) CreateCommunityNote(ctx context.Context, note *storage.CommunityNote) error {
+func (r *CommunityNoteRepository) CreateCommunityNote(_ context.Context, note *storage.CommunityNote) error {
 	// Generate ID if not provided
 	if note.ID == "" {
 		note.ID = uuid.New().String()
@@ -86,7 +86,7 @@ func (r *CommunityNoteRepository) CreateCommunityNote(ctx context.Context, note 
 }
 
 // GetCommunityNote retrieves a note by ID
-func (r *CommunityNoteRepository) GetCommunityNote(ctx context.Context, noteID string) (*storage.CommunityNote, error) {
+func (r *CommunityNoteRepository) GetCommunityNote(_ context.Context, noteID string) (*storage.CommunityNote, error) {
 	var model models.CommunityNote
 	err := r.db.Model(&models.CommunityNote{}).
 		Where("PK", "=", fmt.Sprintf("NOTE#%s", noteID)).
@@ -127,9 +127,9 @@ func (r *CommunityNoteRepository) GetCommunityNote(ctx context.Context, noteID s
 }
 
 // GetVisibleCommunityNotes retrieves visible notes for an object
-func (r *CommunityNoteRepository) GetVisibleCommunityNotes(ctx context.Context, objectID string) ([]*storage.CommunityNote, error) {
+func (r *CommunityNoteRepository) GetVisibleCommunityNotes(_ context.Context, objectID string) ([]*storage.CommunityNote, error) {
 	var modelsSlice []models.CommunityNote
-	
+
 	// Query by object ID using GSI1
 	err := r.db.Model(&models.CommunityNote{}).
 		Index("gsi1").
@@ -227,7 +227,7 @@ func (r *CommunityNoteRepository) UpdateCommunityNoteScore(ctx context.Context, 
 }
 
 // CreateCommunityNoteVote creates a vote on a note
-func (r *CommunityNoteRepository) CreateCommunityNoteVote(ctx context.Context, vote *storage.CommunityNoteVote) error {
+func (r *CommunityNoteRepository) CreateCommunityNoteVote(_ context.Context, vote *storage.CommunityNoteVote) error {
 	vote.CreatedAt = time.Now()
 
 	// Create model
@@ -259,7 +259,7 @@ func (r *CommunityNoteRepository) CreateCommunityNoteVote(ctx context.Context, v
 }
 
 // GetUserCommunityNoteVotes retrieves a user's votes on specific notes
-func (r *CommunityNoteRepository) GetUserCommunityNoteVotes(ctx context.Context, userID string, noteIDs []string) (map[string]*storage.CommunityNoteVote, error) {
+func (r *CommunityNoteRepository) GetUserCommunityNoteVotes(_ context.Context, userID string, noteIDs []string) (map[string]*storage.CommunityNoteVote, error) {
 	votes := make(map[string]*storage.CommunityNoteVote)
 
 	// Batch get votes - DynamORM doesn't have batch get, so we query individually
@@ -299,9 +299,9 @@ func (r *CommunityNoteRepository) GetUserCommunityNoteVotes(ctx context.Context,
 }
 
 // GetCommunityNotesByAuthor retrieves community notes authored by a specific actor
-func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error) {
+func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(_ context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error) {
 	var modelsSlice []models.CommunityNote
-	
+
 	// Build query using GSI3
 	query := r.db.Model(&models.CommunityNote{}).
 		Index("gsi3").
@@ -364,9 +364,9 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context,
 }
 
 // GetCommunityNoteVotes retrieves votes on a specific community note
-func (r *CommunityNoteRepository) GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error) {
+func (r *CommunityNoteRepository) GetCommunityNoteVotes(_ context.Context, noteID string) ([]*storage.CommunityNoteVote, error) {
 	var modelsSlice []models.CommunityNoteVote
-	
+
 	// Query votes for the note
 	err := r.db.Model(&models.CommunityNoteVote{}).
 		Where("PK", "=", fmt.Sprintf("NOTE#%s", noteID)).
@@ -388,7 +388,7 @@ func (r *CommunityNoteRepository) GetCommunityNoteVotes(ctx context.Context, not
 	for _, model := range modelsSlice {
 		// Set the Helpful flag based on VoteType for easier access
 		model.Helpful = (model.VoteType == "helpful")
-		
+
 		vote := &storage.CommunityNoteVote{
 			NoteID:    model.NoteID,
 			VoterID:   model.VoterID,

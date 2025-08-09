@@ -36,12 +36,12 @@ func NewStreamingRepository(db core.DB, logger *zap.Logger, deviceProvider Devic
 // GetStreamingPreferences retrieves streaming preferences for a user
 func (r *StreamingRepository) GetStreamingPreferences(ctx context.Context, username string) (*storage.StreamingPreferences, error) {
 	var model models.StreamingPreferences
-	
+
 	err := r.db.WithContext(ctx).Model(&models.StreamingPreferences{}).
 		Where("PK", "=", fmt.Sprintf("STREAMING_PREFS#%s", username)).
 		Where("SK", "=", "CURRENT").
 		First(&model)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Return default preferences if none exist - matching legacy behavior
@@ -61,7 +61,7 @@ func (r *StreamingRepository) GetStreamingPreferences(ctx context.Context, usern
 		}
 		return nil, fmt.Errorf("failed to get streaming preferences: %w", err)
 	}
-	
+
 	return r.modelToStorageType(&model), nil
 }
 
@@ -70,40 +70,40 @@ func (r *StreamingRepository) UpdateStreamingPreferences(ctx context.Context, pr
 	if prefs.Username == "" {
 		return fmt.Errorf("username is required")
 	}
-	
+
 	// Get current preferences to handle versioning
 	currentPrefs, err := r.GetStreamingPreferences(ctx, prefs.Username)
 	if err != nil {
 		return err
 	}
-	
+
 	// Increment version for conflict detection
 	prefs.Version = currentPrefs.Version + 1
 	prefs.UpdatedAt = time.Now()
-	
+
 	// Convert to DynamORM model
 	model := r.storageTypeToModel(prefs)
 	model.SetCurrentPreference()
-	
+
 	// Update with version check - use conditional update to prevent conflicts
 	// Note: DynamORM conditional updates may need adjustment based on actual API
 	err = r.db.WithContext(ctx).Model(model).Update()
-	
+
 	if err != nil {
 		if isConditionalCheckFailedException(err) {
 			return storage.ErrVersionConflict
 		}
 		return fmt.Errorf("failed to update streaming preferences: %w", err)
 	}
-	
+
 	// Store version history
 	if err := r.storePreferenceVersion(ctx, prefs); err != nil {
 		// Log error but don't fail the update - matching legacy behavior
-		r.logger.Warn("failed to store preference version", 
+		r.logger.Warn("failed to store preference version",
 			zap.String("username", prefs.Username),
 			zap.Error(err))
 	}
-	
+
 	return nil
 }
 
@@ -111,12 +111,12 @@ func (r *StreamingRepository) UpdateStreamingPreferences(ctx context.Context, pr
 func (r *StreamingRepository) storePreferenceVersion(ctx context.Context, prefs *storage.StreamingPreferences) error {
 	model := r.storageTypeToModel(prefs)
 	model.SetVersionedPreference() // This sets TTL to 30 days
-	
+
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
 		return fmt.Errorf("failed to store preference version: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -127,14 +127,14 @@ func (r *StreamingRepository) GetStreamingPreferencesByDevice(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Then check for device-specific overrides
 	var deviceModel models.StreamingPreferences
 	err = r.db.WithContext(ctx).Model(&models.StreamingPreferences{}).
 		Where("PK", "=", fmt.Sprintf("STREAMING_PREFS#%s", username)).
 		Where("SK", "=", fmt.Sprintf("DEVICE#%s", deviceID)).
 		First(&deviceModel)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// No device-specific preferences, return user defaults - matching legacy behavior
@@ -142,7 +142,7 @@ func (r *StreamingRepository) GetStreamingPreferencesByDevice(ctx context.Contex
 		}
 		return nil, fmt.Errorf("failed to get device preferences: %w", err)
 	}
-	
+
 	// Device preferences override user preferences - matching legacy behavior
 	return r.modelToStorageType(&deviceModel), nil
 }
@@ -152,34 +152,34 @@ func (r *StreamingRepository) UpdateDeviceStreamingPreferences(ctx context.Conte
 	if prefs.Username == "" || deviceID == "" {
 		return fmt.Errorf("username and deviceID are required")
 	}
-	
+
 	prefs.DeviceID = deviceID
 	prefs.UpdatedAt = time.Now()
-	
+
 	// Convert to DynamORM model
 	model := r.storageTypeToModel(prefs)
 	model.SetDevicePreference(deviceID)
-	
+
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
 		return fmt.Errorf("failed to update device streaming preferences: %w", err)
 	}
-	
+
 	return nil
 }
 
 // GetStreamingPreferenceHistory retrieves the version history of streaming preferences
 func (r *StreamingRepository) GetStreamingPreferenceHistory(ctx context.Context, username string, limit int) ([]*storage.StreamingPreferences, error) {
 	var streamingModels []models.StreamingPreferences
-	
+
 	query := r.db.WithContext(ctx).Model(&models.StreamingPreferences{}).
 		Where("PK", "=", fmt.Sprintf("STREAMING_PREFS#%s", username)).
 		Where("SK", "begins_with", "VERSION#")
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	err := query.All(&streamingModels)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -187,13 +187,13 @@ func (r *StreamingRepository) GetStreamingPreferenceHistory(ctx context.Context,
 		}
 		return nil, fmt.Errorf("failed to query preference history: %w", err)
 	}
-	
+
 	// Convert to storage types
 	history := make([]*storage.StreamingPreferences, 0, len(streamingModels))
 	for _, model := range streamingModels {
 		history = append(history, r.modelToStorageType(&model))
 	}
-	
+
 	return history, nil
 }
 
@@ -204,23 +204,23 @@ func (r *StreamingRepository) SyncStreamingPreferences(ctx context.Context, user
 	if err != nil {
 		return fmt.Errorf("failed to get source device preferences: %w", err)
 	}
-	
+
 	// Get all user devices via device provider
 	devices, err := r.deviceProvider.GetUserDevices(ctx, username)
 	if err != nil {
 		return fmt.Errorf("failed to get user devices: %w", err)
 	}
-	
+
 	// Update preferences on all other devices
 	for _, device := range devices {
 		if device.DeviceID == sourceDeviceID {
 			continue // Skip source device
 		}
-		
+
 		// Create a copy of preferences for this device
 		devicePrefs := *sourcePrefs
 		devicePrefs.DeviceID = device.DeviceID
-		
+
 		if err := r.UpdateDeviceStreamingPreferences(ctx, &devicePrefs, device.DeviceID); err != nil {
 			// Log error but continue with other devices - matching legacy behavior
 			r.logger.Warn("failed to sync preferences to device",
@@ -229,7 +229,7 @@ func (r *StreamingRepository) SyncStreamingPreferences(ctx context.Context, user
 				zap.Error(err))
 		}
 	}
-	
+
 	return nil
 }
 
@@ -237,25 +237,25 @@ func (r *StreamingRepository) SyncStreamingPreferences(ctx context.Context, user
 func (r *StreamingRepository) ResolvePreferenceConflict(ctx context.Context, username string, strategy storage.ConflictResolutionStrategy) (*storage.StreamingPreferences, error) {
 	// Get all active preference versions
 	var streamingModels []models.StreamingPreferences
-	
+
 	err := r.db.WithContext(ctx).Model(&models.StreamingPreferences{}).
 		Where("PK", "=", fmt.Sprintf("STREAMING_PREFS#%s", username)).
 		All(&streamingModels)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to query preferences: %w", err)
 	}
-	
+
 	if len(streamingModels) == 0 {
 		return nil, storage.ErrNotFound
 	}
-	
+
 	// Find the preference to use based on strategy
 	var selectedPrefs *storage.StreamingPreferences
-	
+
 	switch strategy {
 	case storage.ConflictResolutionLatest:
 		// Find the most recently updated preference
@@ -267,7 +267,7 @@ func (r *StreamingRepository) ResolvePreferenceConflict(ctx context.Context, use
 				selectedPrefs = prefs
 			}
 		}
-		
+
 	case storage.ConflictResolutionHighestQuality:
 		// Select preferences with highest quality setting
 		qualityOrder := map[string]int{
@@ -277,7 +277,7 @@ func (r *StreamingRepository) ResolvePreferenceConflict(ctx context.Context, use
 			"480p":  1,
 			"auto":  0,
 		}
-		
+
 		highestQuality := -1
 		for _, model := range streamingModels {
 			prefs := r.modelToStorageType(&model)
@@ -286,7 +286,7 @@ func (r *StreamingRepository) ResolvePreferenceConflict(ctx context.Context, use
 				selectedPrefs = prefs
 			}
 		}
-		
+
 	case storage.ConflictResolutionLowestBandwidth:
 		// Select preferences with lowest bandwidth usage
 		lowestBandwidth := int64(999999)
@@ -298,17 +298,17 @@ func (r *StreamingRepository) ResolvePreferenceConflict(ctx context.Context, use
 			}
 		}
 	}
-	
+
 	if selectedPrefs == nil {
 		return nil, fmt.Errorf("failed to resolve preference conflict")
 	}
-	
+
 	// Update the current preference to the selected one
 	selectedPrefs.Version++
 	if err := r.UpdateStreamingPreferences(ctx, selectedPrefs); err != nil {
 		return nil, err
 	}
-	
+
 	return selectedPrefs, nil
 }
 
@@ -316,57 +316,77 @@ func (r *StreamingRepository) ResolvePreferenceConflict(ctx context.Context, use
 func isConditionalCheckFailedException(err error) bool {
 	// In DynamORM, conditional check failures are typically wrapped
 	// This is a simplified check - may need adjustment based on actual DynamORM error handling
-	return err != nil && (err.Error() == "ConditionalCheckFailedException" || 
+	return err != nil && (err.Error() == "ConditionalCheckFailedException" ||
 		fmt.Sprintf("%T", err) == "*types.ConditionalCheckFailedException")
 }
 
 // modelToStorageType converts a DynamORM model to storage.StreamingPreferences
 func (r *StreamingRepository) modelToStorageType(model *models.StreamingPreferences) *storage.StreamingPreferences {
 	return &storage.StreamingPreferences{
-		Username:                  model.Username,
-		DeviceID:                  model.DeviceID,
-		DefaultQuality:            model.DefaultQuality,
-		AutoQuality:               model.AutoQuality,
-		PreloadNext:               model.PreloadNext,
-		DataSaverMode:             model.DataSaverMode,
-		PreferredCodec:            model.PreferredCodec,
-		MaxBandwidthMbps:          model.MaxBandwidthMbps,
-		BufferSizeSeconds:         model.BufferSizeSeconds,
-		Version:                   model.Version,
-		SchemaVersion:             model.SchemaVersion,
-		HDREnabled:                func() bool { if model.HDREnabled != nil { return *model.HDREnabled }; return false }(),
-		ColorSpace:                model.ColorSpace,
-		SubtitleEnabled:           func() bool { if model.SubtitleEnabled != nil { return *model.SubtitleEnabled }; return false }(),
-		SubtitleLanguage:          model.SubtitleLanguage,
-		AudioDescriptionEnabled:   func() bool { if model.AudioDescriptionEnabled != nil { return *model.AudioDescriptionEnabled }; return false }(),
-		ClosedCaptionsEnabled:     func() bool { if model.ClosedCaptionsEnabled != nil { return *model.ClosedCaptionsEnabled }; return false }(),
-		UpdatedAt:                 model.UpdatedAt,
+		Username:          model.Username,
+		DeviceID:          model.DeviceID,
+		DefaultQuality:    model.DefaultQuality,
+		AutoQuality:       model.AutoQuality,
+		PreloadNext:       model.PreloadNext,
+		DataSaverMode:     model.DataSaverMode,
+		PreferredCodec:    model.PreferredCodec,
+		MaxBandwidthMbps:  model.MaxBandwidthMbps,
+		BufferSizeSeconds: model.BufferSizeSeconds,
+		Version:           model.Version,
+		SchemaVersion:     model.SchemaVersion,
+		HDREnabled: func() bool {
+			if model.HDREnabled != nil {
+				return *model.HDREnabled
+			}
+			return false
+		}(),
+		ColorSpace: model.ColorSpace,
+		SubtitleEnabled: func() bool {
+			if model.SubtitleEnabled != nil {
+				return *model.SubtitleEnabled
+			}
+			return false
+		}(),
+		SubtitleLanguage: model.SubtitleLanguage,
+		AudioDescriptionEnabled: func() bool {
+			if model.AudioDescriptionEnabled != nil {
+				return *model.AudioDescriptionEnabled
+			}
+			return false
+		}(),
+		ClosedCaptionsEnabled: func() bool {
+			if model.ClosedCaptionsEnabled != nil {
+				return *model.ClosedCaptionsEnabled
+			}
+			return false
+		}(),
+		UpdatedAt: model.UpdatedAt,
 	}
 }
 
 // storageTypeToModel converts storage.StreamingPreferences to DynamORM model
 func (r *StreamingRepository) storageTypeToModel(prefs *storage.StreamingPreferences) *models.StreamingPreferences {
 	model := &models.StreamingPreferences{
-		Username:                  prefs.Username,
-		DeviceID:                  prefs.DeviceID,
-		DefaultQuality:            prefs.DefaultQuality,
-		AutoQuality:               prefs.AutoQuality,
-		PreloadNext:               prefs.PreloadNext,
-		DataSaverMode:             prefs.DataSaverMode,
-		PreferredCodec:            prefs.PreferredCodec,
-		MaxBandwidthMbps:          prefs.MaxBandwidthMbps,
-		BufferSizeSeconds:         prefs.BufferSizeSeconds,
-		Version:                   prefs.Version,
-		SchemaVersion:             prefs.SchemaVersion,
-		HDREnabled:                &prefs.HDREnabled,
-		ColorSpace:                prefs.ColorSpace,
-		SubtitleEnabled:           &prefs.SubtitleEnabled,
-		SubtitleLanguage:          prefs.SubtitleLanguage,
-		AudioDescriptionEnabled:   &prefs.AudioDescriptionEnabled,
-		ClosedCaptionsEnabled:     &prefs.ClosedCaptionsEnabled,
-		UpdatedAt:                 prefs.UpdatedAt,
+		Username:                prefs.Username,
+		DeviceID:                prefs.DeviceID,
+		DefaultQuality:          prefs.DefaultQuality,
+		AutoQuality:             prefs.AutoQuality,
+		PreloadNext:             prefs.PreloadNext,
+		DataSaverMode:           prefs.DataSaverMode,
+		PreferredCodec:          prefs.PreferredCodec,
+		MaxBandwidthMbps:        prefs.MaxBandwidthMbps,
+		BufferSizeSeconds:       prefs.BufferSizeSeconds,
+		Version:                 prefs.Version,
+		SchemaVersion:           prefs.SchemaVersion,
+		HDREnabled:              &prefs.HDREnabled,
+		ColorSpace:              prefs.ColorSpace,
+		SubtitleEnabled:         &prefs.SubtitleEnabled,
+		SubtitleLanguage:        prefs.SubtitleLanguage,
+		AudioDescriptionEnabled: &prefs.AudioDescriptionEnabled,
+		ClosedCaptionsEnabled:   &prefs.ClosedCaptionsEnabled,
+		UpdatedAt:               prefs.UpdatedAt,
 	}
-	
+
 	// Update DynamoDB keys
 	model.UpdateKeys()
 	return model

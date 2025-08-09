@@ -1,3 +1,4 @@
+// Package patterns provides DynamoDB stream processing patterns and handlers for the Lift framework.
 package patterns
 
 import (
@@ -36,7 +37,7 @@ func NewDynamoDBStreamProcessor(name string, handler DynamoDBStreamHandler, logg
 func RegisterDynamoDBStream(app *lift.App, processor *DynamoDBStreamProcessor) {
 	// DynamoDB streams don't have native Lift support, so we handle the raw Lambda event
 	// This is called directly by lambda.Start(app.HandleRequest)
-	app.Handle("POST", "/", func(ctx *lift.Context) error {
+	_ = app.Handle("POST", "/", func(ctx *lift.Context) error {
 		// Extract the raw event from context
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no DynamoDB event in request", 400)

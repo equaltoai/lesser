@@ -16,28 +16,28 @@ type StatusMetadata struct {
 	StatusID string `json:"status_id"`
 
 	// Quote-related metadata
-	QuoteType            string `json:"quote_type"`             // "public", "followers", "mentioned", "disabled"
-	WithdrawnFromQuotes  bool   `json:"withdrawn_from_quotes"`  // Whether status is withdrawn from quotes
-	AllowQuotes          bool   `json:"allow_quotes"`           // Whether quotes are allowed at all
-	QuotePermissions     string `json:"quote_permissions"`      // JSON serialized quote permissions
-	
+	QuoteType           string `json:"quote_type"`            // "public", "followers", "mentioned", "disabled"
+	WithdrawnFromQuotes bool   `json:"withdrawn_from_quotes"` // Whether status is withdrawn from quotes
+	AllowQuotes         bool   `json:"allow_quotes"`          // Whether quotes are allowed at all
+	QuotePermissions    string `json:"quote_permissions"`     // JSON serialized quote permissions
+
 	// Reply-related metadata
-	AllowReplies         bool   `json:"allow_replies"`          // Whether replies are allowed
-	ReplyPermissions     string `json:"reply_permissions"`      // JSON serialized reply permissions
-	
+	AllowReplies     bool   `json:"allow_replies"`     // Whether replies are allowed
+	ReplyPermissions string `json:"reply_permissions"` // JSON serialized reply permissions
+
 	// Moderation metadata
-	ContentWarning       string `json:"content_warning"`        // Content warning text
-	ModerationFlags      []string `json:"moderation_flags"`     // Applied moderation flags
-	ModerationNotes      string `json:"moderation_notes"`       // Internal moderation notes
-	
+	ContentWarning  string   `json:"content_warning"`  // Content warning text
+	ModerationFlags []string `json:"moderation_flags"` // Applied moderation flags
+	ModerationNotes string   `json:"moderation_notes"` // Internal moderation notes
+
 	// Engagement settings
-	DisableLikes         bool   `json:"disable_likes"`          // Whether likes are disabled
-	DisableReblogs       bool   `json:"disable_reblogs"`        // Whether reblogs are disabled
-	
+	DisableLikes   bool `json:"disable_likes"`   // Whether likes are disabled
+	DisableReblogs bool `json:"disable_reblogs"` // Whether reblogs are disabled
+
 	// Timestamps
 	CreatedAt time.Time `dynamorm:"created_at" json:"created_at"`
 	UpdatedAt time.Time `dynamorm:"updated_at" json:"updated_at"`
-	
+
 	// Version for optimistic locking
 	Version int `dynamorm:"version" json:"version"`
 }
@@ -47,12 +47,12 @@ func NewStatusMetadata(statusID string) *StatusMetadata {
 	now := time.Now()
 	metadata := &StatusMetadata{
 		StatusID:            statusID,
-		QuoteType:           "public",  // Default to public quotes
-		WithdrawnFromQuotes: false,     // Default to not withdrawn
-		AllowQuotes:         true,      // Default to allow quotes
-		AllowReplies:        true,      // Default to allow replies
-		DisableLikes:        false,     // Default to allow likes
-		DisableReblogs:      false,     // Default to allow reblogs
+		QuoteType:           "public", // Default to public quotes
+		WithdrawnFromQuotes: false,    // Default to not withdrawn
+		AllowQuotes:         true,     // Default to allow quotes
+		AllowReplies:        true,     // Default to allow replies
+		DisableLikes:        false,    // Default to allow likes
+		DisableReblogs:      false,    // Default to allow reblogs
 		ModerationFlags:     []string{},
 		CreatedAt:           now,
 		UpdatedAt:           now,
@@ -64,7 +64,7 @@ func NewStatusMetadata(statusID string) *StatusMetadata {
 // UpdateKeys updates the DynamoDB keys
 func (sm *StatusMetadata) UpdateKeys() {
 	sm.PK = fmt.Sprintf("STATUS_META#%s", sm.StatusID)
-	sm.SK = "METADATA"
+	sm.SK = SKMetadata
 }
 
 // BeforeCreate is called before creating the record
@@ -85,22 +85,22 @@ func (sm *StatusMetadata) BeforeUpdate() error {
 
 // TableName returns the DynamoDB table name
 func (StatusMetadata) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // WithdrawFromQuotes marks the status as withdrawn from quotes
 func (sm *StatusMetadata) WithdrawFromQuotes() {
 	sm.WithdrawnFromQuotes = true
 	sm.AllowQuotes = false
-	sm.QuoteType = "disabled"
+	sm.QuoteType = StatusDisabled
 }
 
 // RestoreToQuotes restores the status to allow quotes
 func (sm *StatusMetadata) RestoreToQuotes() {
 	sm.WithdrawnFromQuotes = false
 	sm.AllowQuotes = true
-	if sm.QuoteType == "disabled" {
-		sm.QuoteType = "public" // Reset to default
+	if sm.QuoteType == StatusDisabled {
+		sm.QuoteType = VisibilityPublic // Reset to default
 	}
 }
 
@@ -108,15 +108,15 @@ func (sm *StatusMetadata) RestoreToQuotes() {
 func (sm *StatusMetadata) SetQuoteType(quoteType string) {
 	sm.QuoteType = quoteType
 	switch quoteType {
-	case "disabled":
+	case StatusDisabled:
 		sm.AllowQuotes = false
 		sm.WithdrawnFromQuotes = true
-	case "public", "followers", "mentioned":
+	case VisibilityPublic, "followers", "mentioned":
 		sm.AllowQuotes = true
 		sm.WithdrawnFromQuotes = false
 	default:
 		// Unknown type, default to public
-		sm.QuoteType = "public"
+		sm.QuoteType = VisibilityPublic
 		sm.AllowQuotes = true
 		sm.WithdrawnFromQuotes = false
 	}
@@ -156,10 +156,10 @@ func (sm *StatusMetadata) HasModerationFlag(flag string) bool {
 
 // IsQuotable returns whether the status can be quoted
 func (sm *StatusMetadata) IsQuotable() bool {
-	return sm.AllowQuotes && !sm.WithdrawnFromQuotes && sm.QuoteType != "disabled"
+	return sm.AllowQuotes && !sm.WithdrawnFromQuotes && sm.QuoteType != StatusDisabled
 }
 
 // IsPubliclyQuotable returns whether the status can be quoted by anyone
 func (sm *StatusMetadata) IsPubliclyQuotable() bool {
-	return sm.IsQuotable() && sm.QuoteType == "public"
+	return sm.IsQuotable() && sm.QuoteType == VisibilityPublic
 }

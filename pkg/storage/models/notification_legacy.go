@@ -10,21 +10,21 @@ import (
 // NotificationLegacy represents a notification with legacy key patterns
 // Used for compatibility with existing notification data
 type NotificationLegacy struct {
-	PK        string `dynamorm:"pk" json:"PK"`        // NOTIFICATIONS#username
-	SK        string `dynamorm:"sk" json:"SK"`        // timestamp#notificationID
+	PK        string `dynamorm:"pk" json:"PK"` // NOTIFICATIONS#username
+	SK        string `dynamorm:"sk" json:"SK"` // timestamp#notificationID
 	ID        string `json:"ID"`
 	Type      string `json:"Type"`
 	Username  string `json:"Username"`
 	AccountID string `json:"AccountID"`
 	StatusID  string `json:"StatusID,omitempty"`
 	Read      bool   `json:"Read"`
-	CreatedAt int64  `json:"CreatedAt"` // Unix timestamp for sorting
-	TTL       int64  `dynamorm:"ttl" json:"TTL"`       // 30 days auto-deletion
+	CreatedAt int64  `json:"CreatedAt"`          // Unix timestamp for sorting
+	TTL       int64  `dynamorm:"ttl" json:"TTL"` // 30 days auto-deletion
 }
 
 // TableName returns the DynamoDB table name
 func (NotificationLegacy) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the notification keys

@@ -22,21 +22,21 @@ type ReviewerStats struct {
 	ReviewsByCategory map[string]int `json:"reviews_by_category"`
 
 	// Additional statistics
-	ConsecutiveAccurate   int              `json:"consecutive_accurate"`   // Current streak
-	MaxStreak             int              `json:"max_streak"`             // Best streak
-	RecentAccuracy        float64          `json:"recent_accuracy"`        // Last 100 reviews
-	ResponseTimeAvg       float64          `json:"response_time_avg"`      // Average response time in seconds
-	DisagreementRate      float64          `json:"disagreement_rate"`      // Rate of disagreeing with consensus
+	ConsecutiveAccurate   int                `json:"consecutive_accurate"`  // Current streak
+	MaxStreak             int                `json:"max_streak"`            // Best streak
+	RecentAccuracy        float64            `json:"recent_accuracy"`       // Last 100 reviews
+	ResponseTimeAvg       float64            `json:"response_time_avg"`     // Average response time in seconds
+	DisagreementRate      float64            `json:"disagreement_rate"`     // Rate of disagreeing with consensus
 	SpecializationScores  map[string]float64 `json:"specialization_scores"` // Accuracy by category
-	LastTrainingCompleted *time.Time       `json:"last_training_completed,omitempty"`
-	BadgesEarned          []string         `json:"badges_earned,omitempty"`
-	UpdatedAt             time.Time        `json:"updated_at"`
+	LastTrainingCompleted *time.Time         `json:"last_training_completed,omitempty"`
+	BadgesEarned          []string           `json:"badges_earned,omitempty"`
+	UpdatedAt             time.Time          `json:"updated_at"`
 }
 
 // UpdateKeys updates the partition and sort keys
 func (r *ReviewerStats) UpdateKeys() {
 	r.PK = fmt.Sprintf("REVIEWER#%s", r.ReviewerID)
-	r.SK = "STATS"
+	r.SK = SKStats
 }
 
 // NewReviewerStats creates new reviewer statistics
@@ -65,13 +65,13 @@ func (r *ReviewerStats) RecordReview(category string, wasAccurate bool, response
 	r.TotalReviews++
 	r.LastReviewAt = time.Now().UTC()
 	r.UpdatedAt = time.Now().UTC()
-	
+
 	// Update category counts
 	if r.ReviewsByCategory == nil {
 		r.ReviewsByCategory = make(map[string]int)
 	}
 	r.ReviewsByCategory[category]++
-	
+
 	// Update accuracy
 	if wasAccurate {
 		r.AccurateReviews++
@@ -82,17 +82,17 @@ func (r *ReviewerStats) RecordReview(category string, wasAccurate bool, response
 	} else {
 		r.ConsecutiveAccurate = 0
 	}
-	
+
 	// Update accuracy rate
 	r.CalculateAccuracyRate()
-	
+
 	// Update response time average
 	if r.TotalReviews == 1 {
 		r.ResponseTimeAvg = responseTime
 	} else {
 		r.ResponseTimeAvg = ((r.ResponseTimeAvg * float64(r.TotalReviews-1)) + responseTime) / float64(r.TotalReviews)
 	}
-	
+
 	// Update trust score
 	r.CalculateTrustScore()
 }
@@ -110,7 +110,7 @@ func (r *ReviewerStats) CalculateAccuracyRate() {
 func (r *ReviewerStats) CalculateTrustScore() {
 	// Base score from accuracy (0-50 points)
 	accuracyScore := r.AccuracyRate * 0.5
-	
+
 	// Experience bonus (0-20 points)
 	experienceScore := 0.0
 	if r.TotalReviews >= 1000 {
@@ -122,7 +122,7 @@ func (r *ReviewerStats) CalculateTrustScore() {
 	} else if r.TotalReviews >= 50 {
 		experienceScore = 5.0
 	}
-	
+
 	// Consistency bonus (0-15 points)
 	consistencyScore := 0.0
 	if r.ConsecutiveAccurate >= 50 {
@@ -132,7 +132,7 @@ func (r *ReviewerStats) CalculateTrustScore() {
 	} else if r.ConsecutiveAccurate >= 10 {
 		consistencyScore = 5.0
 	}
-	
+
 	// Speed bonus (0-10 points) - faster reviews get more points
 	speedScore := 0.0
 	if r.ResponseTimeAvg > 0 && r.ResponseTimeAvg < 30 {
@@ -142,7 +142,7 @@ func (r *ReviewerStats) CalculateTrustScore() {
 	} else if r.ResponseTimeAvg < 120 {
 		speedScore = 4.0
 	}
-	
+
 	// Activity bonus (0-5 points) - recent activity
 	activityScore := 0.0
 	daysSinceLastReview := time.Since(r.LastReviewAt).Hours() / 24
@@ -153,9 +153,9 @@ func (r *ReviewerStats) CalculateTrustScore() {
 	} else if daysSinceLastReview < 30 {
 		activityScore = 1.0
 	}
-	
+
 	r.TrustScore = accuracyScore + experienceScore + consistencyScore + speedScore + activityScore
-	
+
 	// Cap at 100
 	if r.TrustScore > 100 {
 		r.TrustScore = 100
@@ -195,13 +195,13 @@ func (r *ReviewerStats) IsTrusted() bool {
 func (r *ReviewerStats) NeedsTraining() bool {
 	// Needs training if accuracy drops below 70% or hasn't trained in 90 days
 	needsAccuracyTraining := r.AccuracyRate < 70 && r.TotalReviews >= 20
-	
+
 	needsRefresher := false
 	if r.LastTrainingCompleted != nil {
 		daysSinceTraining := time.Since(*r.LastTrainingCompleted).Hours() / 24
 		needsRefresher = daysSinceTraining > 90
 	}
-	
+
 	return needsAccuracyTraining || needsRefresher
 }
 

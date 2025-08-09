@@ -1,3 +1,4 @@
+// Package main implements the search-indexer Lambda function for indexing content for search functionality.
 package main
 
 import (
@@ -21,19 +22,21 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
+// SearchIndexer handles search index operations for content
 type SearchIndexer struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
-	costRepo  *repositories.SearchCostRepository
+	db          core.DB
+	tableName   string
+	logger      *zap.Logger
+	costRepo    *repositories.SearchCostRepository
 	costTracker *cost.Tracker
 }
 
+// NewSearchIndexer creates a new search indexer instance
 func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
 	logger := common.Logger()
 	costRepo := repositories.NewSearchCostRepository(db, logger)
 	costTracker := cost.NewWithRequest("search-indexer", "search_indexing")
-	
+
 	return &SearchIndexer{
 		db:          db,
 		tableName:   tableName,
@@ -46,7 +49,7 @@ func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
 // HandleStream implements patterns.DynamoDBStreamHandler interface
 func (si *SearchIndexer) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
 	requestID := ctx.GetRequestID()
-	
+
 	si.logger.Info("processing search indexer stream event",
 		zap.String("request_id", requestID),
 		zap.Int("record_count", len(event.Records)),
@@ -181,6 +184,7 @@ func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDB
 	return nil
 }
 
+// IndexableContent represents content that can be indexed for search
 type IndexableContent struct {
 	ID        string
 	Type      string
@@ -284,7 +288,7 @@ func (si *SearchIndexer) createSearchIndex(ctx *lift.Context, content *Indexable
 		TTL         int64    `dynamorm:"ttl"`
 	}{
 		PK:          fmt.Sprintf("SEARCH#%s", content.Type),
-		SK:          fmt.Sprintf("CONTENT#%s#%s", content.CreatedAt.Format("2006-01-02"), content.ID),
+		SK:          fmt.Sprintf("CONTENT#%s#%s", content.CreatedAt.Format(common.DateFormat), content.ID),
 		Type:        "SearchIndex",
 		ContentID:   content.ID,
 		ContentType: content.Type,
@@ -379,7 +383,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *Ind
 }
 
 // recordIndexingCost records the cost of indexing operations
-func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, writeCount int64, err error) {
+func (si *SearchIndexer) recordIndexingCost(_ *lift.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, writeCount int64, err error) {
 	// Complete cost tracking
 	responseTime := time.Since(startTime)
 	costData.ResponseTimeMs = responseTime.Milliseconds()
@@ -389,7 +393,9 @@ func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.
 
 	// Track costs in cost tracker
 	if si.costTracker != nil {
-		si.costTracker.TrackDynamoWrite(int(writeCount))
+		if err := si.costTracker.TrackDynamoWrite(int(writeCount)); err != nil {
+			si.logger.Warn("failed to track cost", zap.Error(err))
+		}
 	}
 
 	// Calculate costs
@@ -422,11 +428,11 @@ func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.
 func (si *SearchIndexer) calculateIndexingCost(writeCount int64) int64 {
 	// DynamoDB write cost: $1.25 per million write request units
 	const writeCostPer1M = 125000 // 125000 microcents per million writes
-	
+
 	if writeCount == 0 {
 		return 0
 	}
-	
+
 	return (writeCount * writeCostPer1M) / 1000000
 }
 

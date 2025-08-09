@@ -101,7 +101,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go d.store.RecordFederationActivity(context.Background(), federationActivity)
+		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -117,7 +117,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go d.store.RecordFederationActivity(context.Background(), federationActivity)
+		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 		return fmt.Errorf("failed to get private key: %w", err)
 	}
 
@@ -128,7 +128,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go d.store.RecordFederationActivity(context.Background(), federationActivity)
+		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 		return fmt.Errorf("failed to parse private key: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go d.store.RecordFederationActivity(context.Background(), federationActivity)
+		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 		return fmt.Errorf("failed to sign request: %w", err)
 	}
 
@@ -149,10 +149,10 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go d.store.RecordFederationActivity(context.Background(), federationActivity)
+		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read the response body for logging
 	respBody, _ := io.ReadAll(resp.Body)
@@ -167,7 +167,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 			zap.String("response", string(respBody)))
 
 		federationActivity.Success = true
-		go d.store.RecordFederationActivity(context.Background(), federationActivity)
+		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 		return nil
 	}
 
@@ -178,7 +178,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	// Record failure
 	federationActivity.Success = false
 	federationActivity.ErrorMessage = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody))
-	go d.store.RecordFederationActivity(context.Background(), federationActivity)
+	go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 
 	// Return error for non-2xx status codes
 	return fmt.Errorf("delivery failed with status %d: %s", resp.StatusCode, string(respBody))
@@ -344,14 +344,14 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Accept", "application/activity+json, application/ld+json")
-	req.Header.Set("User-Agent", "Lesser/1.0")
+	req.Header.Set("Accept", ActivityPubAcceptType)
+	req.Header.Set("User-Agent", UserAgent)
 
 	resp, err := d.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch actor: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -476,8 +476,7 @@ func (d *DeliveryService) getQueueURL() string {
 // generateDeliveryID generates a unique delivery ID
 func generateDeliveryID() string {
 	b := make([]byte, 8)
-	_, err := rand.Read(b)
-	if err != nil {
+	if _, err := rand.Read(b); err != nil {
 		// Fallback to less random source on error
 		return fmt.Sprintf("%x", time.Now().UnixNano())
 	}

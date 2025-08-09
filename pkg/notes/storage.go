@@ -40,9 +40,9 @@ func convertFromStorageNote(storageNote *storage.CommunityNote) *CommunityNote {
 	for i, url := range storageNote.Sources {
 		sources[i] = Source{
 			URL:         url,
-			Title:       "",        // Title not stored in storage format
-			Domain:      "",        // Domain not stored in storage format
-			Reliability: 0.5,       // Default reliability
+			Title:       "",  // Title not stored in storage format
+			Domain:      "",  // Domain not stored in storage format
+			Reliability: 0.5, // Default reliability
 		}
 	}
 
@@ -99,7 +99,7 @@ func convertFromStorageVote(storageVote *storage.CommunityNoteVote) Vote {
 		NoteID:    storageVote.NoteID,
 		VoterID:   storageVote.VoterID,
 		VoteType:  voteType,
-		Reason:    "", // Not stored in storage layer  
+		Reason:    "", // Not stored in storage layer
 		Weight:    storageVote.Weight,
 		CreatedAt: storageVote.CreatedAt,
 	}

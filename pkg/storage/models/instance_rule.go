@@ -16,18 +16,18 @@ type InstanceRule struct {
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"-"` // {order}#{id}
 
 	// Rule data
-	ID          string    `json:"id"`
-	Text        string    `json:"text"`
-	Order       int       `json:"order"`       // Display order
-	Category    string    `json:"category,omitempty"` // Optional category
-	Severity    string    `json:"severity,omitempty"` // info, warning, critical
-	Active      bool      `json:"active"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	CreatedBy   string    `json:"created_by,omitempty"` // Admin who created
+	ID          string     `json:"id"`
+	Text        string     `json:"text"`
+	Order       int        `json:"order"`              // Display order
+	Category    string     `json:"category,omitempty"` // Optional category
+	Severity    string     `json:"severity,omitempty"` // info, warning, critical
+	Active      bool       `json:"active"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CreatedBy   string     `json:"created_by,omitempty"`  // Admin who created
 	EnforcedAt  *time.Time `json:"enforced_at,omitempty"` // When enforcement started
-	Description string    `json:"description,omitempty"` // Extended description
-	Examples    []string  `json:"examples,omitempty"`    // Example violations
+	Description string     `json:"description,omitempty"` // Extended description
+	Examples    []string   `json:"examples,omitempty"`    // Example violations
 }
 
 // UpdateKeys updates the GSI keys based on the rule data

@@ -43,7 +43,7 @@ func NewModelRepository(db core.DB, tableName string) *ModelRepository {
 }
 
 // Create creates a new model
-func (r *ModelRepository) Create(ctx context.Context, model *Model) error {
+func (r *ModelRepository) Create(_ context.Context, model *Model) error {
 	// Set timestamps
 	now := time.Now()
 	model.CreatedAt = now
@@ -67,7 +67,7 @@ func (r *ModelRepository) Create(ctx context.Context, model *Model) error {
 }
 
 // Get gets a model by ID
-func (r *ModelRepository) Get(ctx context.Context, id string) (*Model, error) {
+func (r *ModelRepository) Get(_ context.Context, id string) (*Model, error) {
 	model := &Model{}
 
 	err := r.GetDB().Model(model).
@@ -83,7 +83,7 @@ func (r *ModelRepository) Get(ctx context.Context, id string) (*Model, error) {
 }
 
 // Update updates a model
-func (r *ModelRepository) Update(ctx context.Context, model *Model) error {
+func (r *ModelRepository) Update(_ context.Context, model *Model) error {
 	// Update timestamp
 	model.UpdatedAt = time.Now()
 
@@ -105,7 +105,7 @@ func (r *ModelRepository) Update(ctx context.Context, model *Model) error {
 }
 
 // Delete deletes a model
-func (r *ModelRepository) Delete(ctx context.Context, id string) error {
+func (r *ModelRepository) Delete(_ context.Context, id string) error {
 	model := &Model{
 		PK: fmt.Sprintf("model#%s", id),
 		SK: fmt.Sprintf("model#%s", id),
@@ -120,7 +120,7 @@ func (r *ModelRepository) Delete(ctx context.Context, id string) error {
 }
 
 // List lists models by type
-func (r *ModelRepository) List(ctx context.Context, modelType string, limit int) ([]*Model, error) {
+func (r *ModelRepository) List(_ context.Context, modelType string, limit int) ([]*Model, error) {
 	var models []*Model
 
 	err := r.GetDB().Model(&Model{}).

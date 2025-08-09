@@ -32,12 +32,12 @@ type WebFingerLink struct {
 func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 	// Get resource parameter
 	resource := ctx.Query("resource")
-	
+
 	// Fallback to direct query param access if ctx.Query doesn't work
 	if resource == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		resource = ctx.Request.Request.QueryParams["resource"]
 	}
-	
+
 	if resource == "" {
 		return ctx.Status(400).JSON(map[string]string{"error": "resource parameter is required"})
 	}

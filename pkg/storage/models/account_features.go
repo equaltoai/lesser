@@ -1,3 +1,4 @@
+// Package models provides DynamORM data models for account features and relationship management.
 package models
 
 import (
@@ -21,7 +22,7 @@ type AccountPin struct {
 
 // TableName returns the DynamoDB table name
 func (AccountPin) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate prepares the AccountPin for creation
@@ -30,10 +31,10 @@ func (p *AccountPin) BeforeCreate() error {
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = time.Now()
 	}
-	
+
 	// Update keys
 	p.UpdateKeys()
-	
+
 	return nil
 }
 
@@ -60,7 +61,7 @@ type AccountNote struct {
 
 // TableName returns the DynamoDB table name
 func (AccountNote) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate prepares the AccountNote for creation
@@ -72,15 +73,15 @@ func (n *AccountNote) BeforeCreate() error {
 	if n.UpdatedAt.IsZero() {
 		n.UpdatedAt = n.CreatedAt
 	}
-	
+
 	// Update keys
 	n.UpdateKeys()
-	
+
 	return nil
 }
 
 // UpdateKeys updates the primary key fields based on the current data
 func (n *AccountNote) UpdateKeys() {
 	n.PK = fmt.Sprintf("ACCOUNT_NOTE#%s", n.Username)
-	n.SK = fmt.Sprintf("NOTE#%s", n.TargetActorID)
+	n.SK = fmt.Sprintf(KeyPatternNote, n.TargetActorID)
 }

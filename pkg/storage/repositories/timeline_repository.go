@@ -29,7 +29,7 @@ func NewTimelineRepository(db core.DB, tableName string, logger *zap.Logger) *Ti
 }
 
 // CreateTimelineEntry creates a new timeline entry
-func (r *TimelineRepository) CreateTimelineEntry(ctx context.Context, entry *models.Timeline) error {
+func (r *TimelineRepository) CreateTimelineEntry(_ context.Context, entry *models.Timeline) error {
 	if err := entry.BeforeCreate(); err != nil {
 		return fmt.Errorf("failed to prepare timeline entry for creation: %w", err)
 	}
@@ -91,15 +91,15 @@ func (r *TimelineRepository) GetHomeTimeline(ctx context.Context, username strin
 }
 
 // GetPublicTimeline retrieves public timeline entries
-func (r *TimelineRepository) GetPublicTimeline(ctx context.Context, local bool, limit int, cursor string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) GetPublicTimeline(_ context.Context, local bool, limit int, cursor string) ([]*models.Timeline, string, error) {
 	// Public timeline uses GSI1 in legacy code
 	timelineID := "FEDERATED"
 	if local {
 		timelineID = "LOCAL"
 	}
-	
+
 	gsi1pk := fmt.Sprintf("TIMELINE#PUBLIC#%s", timelineID)
-	
+
 	query := r.db.Model(&models.Timeline{}).
 		Index("post-timeline-index"). // GSI1
 		Where("GSI1PK", "=", gsi1pk).
@@ -151,7 +151,7 @@ func (r *TimelineRepository) GetHashtagTimeline(ctx context.Context, hashtag str
 }
 
 // getTimelineEntries is a helper method to retrieve timeline entries
-func (r *TimelineRepository) getTimelineEntries(ctx context.Context, timelineType, timelineID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) getTimelineEntries(_ context.Context, timelineType, timelineID string, limit int, cursor string) ([]*models.Timeline, string, error) {
 	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
 	query := r.db.Model(&models.Timeline{}).
 		Where("PK", "=", pk).
@@ -184,7 +184,7 @@ func (r *TimelineRepository) getTimelineEntries(ctx context.Context, timelineTyp
 }
 
 // GetTimelineEntriesByPost retrieves all timeline entries for a specific post
-func (r *TimelineRepository) GetTimelineEntriesByPost(ctx context.Context, postID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) GetTimelineEntriesByPost(_ context.Context, postID string, limit int, cursor string) ([]*models.Timeline, string, error) {
 	query := r.db.Model(&models.Timeline{}).
 		Index("post-timeline-index").
 		Where("GSI1PK", "=", "POST#"+postID).
@@ -215,7 +215,7 @@ func (r *TimelineRepository) GetTimelineEntriesByPost(ctx context.Context, postI
 }
 
 // GetTimelineEntriesByActor retrieves all timeline entries by a specific actor
-func (r *TimelineRepository) GetTimelineEntriesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) GetTimelineEntriesByActor(_ context.Context, actorID string, limit int, cursor string) ([]*models.Timeline, string, error) {
 	query := r.db.Model(&models.Timeline{}).
 		Index("actor-timeline-index").
 		Where("GSI2PK", "=", "ACTOR#"+actorID).
@@ -246,7 +246,7 @@ func (r *TimelineRepository) GetTimelineEntriesByActor(ctx context.Context, acto
 }
 
 // GetTimelineEntriesByVisibility retrieves timeline entries by visibility level
-func (r *TimelineRepository) GetTimelineEntriesByVisibility(ctx context.Context, visibility string, limit int, cursor string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) GetTimelineEntriesByVisibility(_ context.Context, visibility string, limit int, cursor string) ([]*models.Timeline, string, error) {
 	query := r.db.Model(&models.Timeline{}).
 		Index("visibility-timeline-index").
 		Where("GSI3PK", "=", "VISIBILITY#"+visibility).
@@ -277,7 +277,7 @@ func (r *TimelineRepository) GetTimelineEntriesByVisibility(ctx context.Context,
 }
 
 // GetTimelineEntriesByLanguage retrieves timeline entries by language
-func (r *TimelineRepository) GetTimelineEntriesByLanguage(ctx context.Context, language string, limit int, cursor string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) GetTimelineEntriesByLanguage(_ context.Context, language string, limit int, cursor string) ([]*models.Timeline, string, error) {
 	query := r.db.Model(&models.Timeline{}).
 		Index("language-timeline-index").
 		Where("GSI4PK", "=", "LANGUAGE#"+language).
@@ -308,7 +308,7 @@ func (r *TimelineRepository) GetTimelineEntriesByLanguage(ctx context.Context, l
 }
 
 // GetTimelineEntry retrieves a specific timeline entry
-func (r *TimelineRepository) GetTimelineEntry(ctx context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) (*models.Timeline, error) {
+func (r *TimelineRepository) GetTimelineEntry(_ context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) (*models.Timeline, error) {
 	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
 	sk := fmt.Sprintf("%d#%s", timelineAt.Unix(), entryID)
 
@@ -325,7 +325,7 @@ func (r *TimelineRepository) GetTimelineEntry(ctx context.Context, timelineType,
 }
 
 // UpdateTimelineEntry updates an existing timeline entry
-func (r *TimelineRepository) UpdateTimelineEntry(ctx context.Context, entry *models.Timeline) error {
+func (r *TimelineRepository) UpdateTimelineEntry(_ context.Context, entry *models.Timeline) error {
 	if err := entry.BeforeUpdate(); err != nil {
 		return fmt.Errorf("failed to prepare timeline entry for update: %w", err)
 	}
@@ -339,7 +339,7 @@ func (r *TimelineRepository) UpdateTimelineEntry(ctx context.Context, entry *mod
 }
 
 // DeleteTimelineEntry deletes a specific timeline entry
-func (r *TimelineRepository) DeleteTimelineEntry(ctx context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) error {
+func (r *TimelineRepository) DeleteTimelineEntry(_ context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) error {
 	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
 	sk := fmt.Sprintf("%d#%s", timelineAt.Unix(), entryID)
 
@@ -393,7 +393,7 @@ func (r *TimelineRepository) DeleteTimelineEntriesByPost(ctx context.Context, po
 }
 
 // DeleteExpiredTimelineEntries deletes timeline entries that have expired
-func (r *TimelineRepository) DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error {
+func (r *TimelineRepository) DeleteExpiredTimelineEntries(_ context.Context, before time.Time) error {
 	// This is a complex operation that would require scanning the table
 	// In a real implementation, you might want to use DynamoDB TTL instead
 	// For now, we'll implement a basic version that scans and deletes
@@ -440,7 +440,7 @@ func (r *TimelineRepository) DeleteExpiredTimelineEntries(ctx context.Context, b
 }
 
 // CountTimelineEntries counts the number of entries in a timeline
-func (r *TimelineRepository) CountTimelineEntries(ctx context.Context, timelineType, timelineID string) (int, error) {
+func (r *TimelineRepository) CountTimelineEntries(_ context.Context, timelineType, timelineID string) (int, error) {
 	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
 
 	count, err := r.db.Model(&models.Timeline{}).
@@ -454,7 +454,7 @@ func (r *TimelineRepository) CountTimelineEntries(ctx context.Context, timelineT
 }
 
 // GetTimelineEntriesInRange retrieves timeline entries within a time range
-func (r *TimelineRepository) GetTimelineEntriesInRange(ctx context.Context, timelineType, timelineID string, startTime, endTime time.Time, limit int) ([]*models.Timeline, error) {
+func (r *TimelineRepository) GetTimelineEntriesInRange(_ context.Context, timelineType, timelineID string, startTime, endTime time.Time, limit int) ([]*models.Timeline, error) {
 	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
 	startSK := fmt.Sprintf("%d#", startTime.Unix())
 	endSK := fmt.Sprintf("%d#", endTime.Unix())
@@ -475,7 +475,7 @@ func (r *TimelineRepository) GetTimelineEntriesInRange(ctx context.Context, time
 }
 
 // GetTimelineEntriesWithFilters retrieves timeline entries with various filters
-func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, cursor string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) GetTimelineEntriesWithFilters(_ context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, cursor string) ([]*models.Timeline, string, error) {
 	query := r.db.Model(&models.Timeline{}).
 		Where("PK", "=", fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)).
 		OrderBy("SK", "DESC")

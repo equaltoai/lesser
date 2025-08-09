@@ -7,9 +7,9 @@ import (
 
 // HealthCheckEvent represents an EventBridge event for triggering health checks
 type HealthCheckEvent struct {
-	Action     string                    `json:"action"`
-	Components []ComponentCheckConfig    `json:"components"`
-	Options    HealthCheckOptions        `json:"options,omitempty"`
+	Action     string                 `json:"action"`
+	Components []ComponentCheckConfig `json:"components"`
+	Options    HealthCheckOptions     `json:"options,omitempty"`
 }
 
 // ComponentCheckConfig defines a component to check
@@ -21,21 +21,21 @@ type ComponentCheckConfig struct {
 
 // HealthCheckOptions provides configuration for health checks
 type HealthCheckOptions struct {
-	StoreResults     bool   `json:"store_results"`      // whether to store results in DynamoDB
-	PublishMetrics   bool   `json:"publish_metrics"`    // whether to publish CloudWatch metrics
-	IncludeMetadata  bool   `json:"include_metadata"`   // whether to include detailed metadata
-	TimeoutSeconds   int    `json:"timeout_seconds"`    // timeout for individual checks
-	RetryAttempts    int    `json:"retry_attempts"`     // number of retry attempts for failed checks
+	StoreResults    bool `json:"store_results"`    // whether to store results in DynamoDB
+	PublishMetrics  bool `json:"publish_metrics"`  // whether to publish CloudWatch metrics
+	IncludeMetadata bool `json:"include_metadata"` // whether to include detailed metadata
+	TimeoutSeconds  int  `json:"timeout_seconds"`  // timeout for individual checks
+	RetryAttempts   int  `json:"retry_attempts"`   // number of retry attempts for failed checks
 }
 
 // HealthCheckResponse represents the response from a health check Lambda
 type HealthCheckResponse struct {
-	RequestID        string                      `json:"request_id"`
-	Timestamp        time.Time                   `json:"timestamp"`
-	OverallStatus    HealthStatus                `json:"overall_status"`
-	ComponentResults []ComponentHealthResult     `json:"component_results"`
-	Summary          HealthCheckSummary          `json:"summary"`
-	ExecutionTime    int64                       `json:"execution_time_ms"`
+	RequestID        string                  `json:"request_id"`
+	Timestamp        time.Time               `json:"timestamp"`
+	OverallStatus    HealthStatus            `json:"overall_status"`
+	ComponentResults []ComponentHealthResult `json:"component_results"`
+	Summary          HealthCheckSummary      `json:"summary"`
+	ExecutionTime    int64                   `json:"execution_time_ms"`
 }
 
 // ComponentHealthResult represents the result of checking a single component
@@ -52,12 +52,12 @@ type ComponentHealthResult struct {
 
 // HealthCheckSummary provides aggregated information about the health check
 type HealthCheckSummary struct {
-	TotalComponents   int `json:"total_components"`
-	HealthyComponents int `json:"healthy_components"`
-	WarningComponents int `json:"warning_components"`
+	TotalComponents    int `json:"total_components"`
+	HealthyComponents  int `json:"healthy_components"`
+	WarningComponents  int `json:"warning_components"`
 	CriticalComponents int `json:"critical_components"`
-	UnknownComponents int `json:"unknown_components"`
-	FailedChecks      int `json:"failed_checks"`
+	UnknownComponents  int `json:"unknown_components"`
+	FailedChecks       int `json:"failed_checks"`
 }
 
 // Predefined health check event configurations

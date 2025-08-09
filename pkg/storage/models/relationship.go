@@ -11,11 +11,11 @@ type RelationshipRecord struct {
 	// Primary keys - MUST match legacy exactly (UPPERCASE prefixes!)
 	PK string `dynamorm:"pk" json:"PK"` // FOLLOW#{followerUsername}
 	SK string `dynamorm:"sk" json:"SK"` // FOLLOWING#{followingUsername}
-	
+
 	// GSI1 for reverse lookups (who follows me)
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // FOLLOW#{followedUsername}
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // FOLLOWER#{followerUsername}
-	
+
 	// Core fields from legacy
 	ActivityID string    `json:"ActivityID"`
 	State      string    `json:"State"` // pending, accepted, rejected
@@ -32,7 +32,7 @@ const (
 
 // TableName returns the DynamoDB table name
 func (RelationshipRecord) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the record before creation

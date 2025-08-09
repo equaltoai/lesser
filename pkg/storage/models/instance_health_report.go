@@ -12,18 +12,18 @@ type InstanceHealthReport struct {
 	SK string `dynamorm:"sk" json:"-"` // HEALTH#{timestamp}
 
 	// Attributes from interface
-	Domain          string   `json:"domain"`
-	Status          string   `json:"status"` // healthy/warning/critical
-	ResponseTime    float64  `json:"response_time"`
-	ErrorRate       float64  `json:"error_rate"`
-	FederationDelay float64  `json:"federation_delay"`
-	QueueDepth      int      `json:"queue_depth"`
-	Issues          []string `json:"issues"`
-	Recommendations []string `json:"recommendations"`
+	Domain          string    `json:"domain"`
+	Status          string    `json:"status"` // healthy/warning/critical
+	ResponseTime    float64   `json:"response_time"`
+	ErrorRate       float64   `json:"error_rate"`
+	FederationDelay float64   `json:"federation_delay"`
+	QueueDepth      int       `json:"queue_depth"`
+	Issues          []string  `json:"issues"`
+	Recommendations []string  `json:"recommendations"`
 	LastChecked     time.Time `json:"last_checked"`
 
 	// Additional metadata
-	Timestamp string `json:"timestamp"` // ISO timestamp for sorting
+	Timestamp string `json:"timestamp"`                    // ISO timestamp for sorting
 	TTL       int64  `json:"ttl,omitempty" dynamorm:"ttl"` // 30 days retention
 }
 
@@ -31,7 +31,7 @@ type InstanceHealthReport struct {
 func (h *InstanceHealthReport) UpdateKeys() {
 	h.PK = fmt.Sprintf("INSTANCE#%s", h.Domain)
 	h.SK = fmt.Sprintf("HEALTH#%s", h.Timestamp)
-	
+
 	// Set TTL to 30 days from last check
 	h.TTL = h.LastChecked.AddDate(0, 0, 30).Unix()
 }
@@ -40,11 +40,11 @@ func (h *InstanceHealthReport) UpdateKeys() {
 func NewInstanceHealthReport(domain string) *InstanceHealthReport {
 	now := time.Now().UTC()
 	report := &InstanceHealthReport{
-		Domain:      domain,
-		LastChecked: now,
-		Timestamp:   now.Format(time.RFC3339Nano),
-		Status:      "unknown",
-		Issues:      []string{},
+		Domain:          domain,
+		LastChecked:     now,
+		Timestamp:       now.Format(time.RFC3339Nano),
+		Status:          "unknown",
+		Issues:          []string{},
 		Recommendations: []string{},
 	}
 	report.UpdateKeys()
@@ -73,10 +73,10 @@ func GetHealthReportRangeKeys(domain string, startTime, endTime time.Time) (pk, 
 func (h *InstanceHealthReport) SetHealthStatus() {
 	h.Issues = []string{}
 	h.Recommendations = []string{}
-	
+
 	// Determine health status based on metrics
 	if h.ErrorRate > 0.5 || h.ResponseTime > 5000 {
-		h.Status = "critical"
+		h.Status = StatusCritical
 		if h.ErrorRate > 0.5 {
 			h.Issues = append(h.Issues, fmt.Sprintf("High error rate: %.1f%%", h.ErrorRate*100))
 			h.Recommendations = append(h.Recommendations, "Check instance logs for errors")
@@ -86,7 +86,7 @@ func (h *InstanceHealthReport) SetHealthStatus() {
 			h.Recommendations = append(h.Recommendations, "Consider reducing federation frequency")
 		}
 	} else if h.ErrorRate > 0.1 || h.ResponseTime > 2000 || h.QueueDepth > 1000 {
-		h.Status = "warning"
+		h.Status = StatusWarning
 		if h.ErrorRate > 0.1 {
 			h.Issues = append(h.Issues, fmt.Sprintf("Elevated error rate: %.1f%%", h.ErrorRate*100))
 		}
@@ -100,7 +100,7 @@ func (h *InstanceHealthReport) SetHealthStatus() {
 	} else {
 		h.Status = "healthy"
 	}
-	
+
 	if h.FederationDelay > 300 { // 5 minutes
 		h.Issues = append(h.Issues, fmt.Sprintf("Federation delay: %.0f seconds", h.FederationDelay))
 		h.Recommendations = append(h.Recommendations, "Check network connectivity")

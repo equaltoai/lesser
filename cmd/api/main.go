@@ -15,6 +15,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/aws/aws-lambda-go/lambda"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	liftHandlers "github.com/equaltoai/lesser/cmd/api/lift"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -24,25 +26,21 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 )
 
 var (
-	cfg              *config.Config
-	repos            core.RepositoryStorage
-	logger           *zap.Logger
-	liftHandler      *liftHandlers.Handler
-	authService      *auth.AuthService
-	liftAuthSvc      *liftAuth.LiftAuthService
+	cfg               *config.Config
+	repos             core.RepositoryStorage
+	logger            *zap.Logger
+	liftHandler       *liftHandlers.Handler
+	authService       *auth.AuthService
 	emfMetricsService *observability.EMFMetricsService
-	initTime         time.Time
 )
 
 func init() {
-	initTime = time.Now()
 	cfg = config.Get()
 	logger = common.Logger()
 
@@ -55,14 +53,22 @@ func init() {
 		logger.Fatal("DYNAMODB_TABLE environment variable is required")
 	}
 
+	// Load AWS configuration
+	awsCfg, err := awsConfig.LoadDefaultConfig(context.Background(),
+		awsConfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
+
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Create repository storage using new factory pattern
-	repos, err = factory.NewRepositoryFactory(db, tableName, logger)
+	// Create repository storage using new factory pattern with AWS config
+	repos, err = factory.NewRepositoryFactory(db, tableName, awsCfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -73,8 +79,8 @@ func init() {
 		logger.Fatal("failed to initialize auth service", zap.Error(err))
 	}
 
-	// Initialize Lift-native auth service
-	liftAuthSvc = liftAuth.NewLiftAuthService(authService)
+	// Initialize Lift-native auth service (not currently used but initialized for future use)
+	_ = liftAuth.NewLiftAuthService(authService)
 
 	// Initialize EMF metrics service (replaces polling-based metrics)
 	if os.Getenv("DISABLE_METRICS") != "true" {
@@ -87,7 +93,7 @@ func init() {
 	if err != nil {
 		logger.Fatal("failed to initialize legacy auth middleware", zap.Error(err))
 	}
-	
+
 	// Create Lift handler for all endpoints
 	// The handler uses repos which implements RepositoryStorage
 	liftHandler = liftHandlers.NewHandler(cfg, repos, logger, legacyAuthMiddleware)
@@ -111,23 +117,16 @@ func main() {
 
 	// Add CORS middleware
 	app.Use(createCORSMiddleware())
-	
+
 	// Add cost tracking middleware
 	app.Use(createCostTrackingMiddleware(logger))
-	
+
 	// Add EMF-based performance monitoring middleware (no polling)
 	if emfMetricsService != nil {
 		app.Use(observability.CreateEMFPerformanceMonitoringMiddleware(emfMetricsService))
 	}
 
-	// Configure routes
-	// TODO: Restore routes after migration
-	// configurePublicRoutes(app)
-	// configureAuthenticatedReadRoutes(app)
-	// configureAuthenticatedWriteRoutes(app)
-	// configureAdminRoutes(app)
-	
-	// Configure native Lift routes (controlled by environment variable)
+	// Configure native Lift routes
 	configureLiftRoutes(app)
 
 	// Start the Lambda handler with EMF metrics flushing
@@ -135,7 +134,7 @@ func main() {
 	lambdaHandler := func(ctx context.Context, event interface{}) (interface{}, error) {
 		// Process the request
 		result, err := app.HandleRequest(ctx, event)
-		
+
 		// CRITICAL: Flush EMF metrics before Lambda terminates
 		// This ensures all metrics are written to CloudWatch
 		if emfMetricsService != nil {
@@ -144,9 +143,9 @@ func main() {
 				// Don't fail the request due to metrics issues
 			}
 		}
-		
+
 		return result, err
 	}
-	
+
 	lambda.Start(lambdaHandler)
 }

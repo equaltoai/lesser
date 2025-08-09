@@ -8,6 +8,8 @@ import (
 )
 
 // CostCircuitBreakerConfig defines circuit breaker thresholds
+//
+//nolint:revive // Cost prefix clarifies this is cost-specific circuit breaker config
 type CostCircuitBreakerConfig struct {
 	MaxCostPerHour    float64       // Maximum cost per hour in USD
 	MaxCostPerRequest float64       // Maximum cost per request in USD
@@ -17,6 +19,8 @@ type CostCircuitBreakerConfig struct {
 }
 
 // CostCircuitBreaker implements cost-aware circuit breaking
+//
+//nolint:revive // Cost prefix clarifies this is cost-specific circuit breaker
 type CostCircuitBreaker struct {
 	config       CostCircuitBreakerConfig
 	state        CircuitState
@@ -26,21 +30,30 @@ type CostCircuitBreaker struct {
 	mu           sync.RWMutex
 }
 
+// CircuitState represents the state of a circuit breaker
 type CircuitState int
 
 const (
-	StateClosed CircuitState = iota // Normal operation
-	StateOpen                       // Circuit open - rejecting requests
-	StateHalfOpen                   // Testing recovery
+	// StateClosed represents normal operation
+	StateClosed   CircuitState = iota
+	// StateOpen represents circuit open - rejecting requests
+	StateOpen
+	// StateHalfOpen represents testing recovery
+	StateHalfOpen
 )
 
+// CostWindow tracks costs within a time window
+//
+//nolint:revive // Cost prefix clarifies this is cost-specific window
 type CostWindow struct {
 	costs     []CostSample
-	total     float64
 	startTime time.Time
 	mu        sync.RWMutex
 }
 
+// CostSample represents a single cost measurement
+//
+//nolint:revive // Cost prefix clarifies this is cost-specific sample
 type CostSample struct {
 	cost      float64
 	timestamp time.Time
@@ -49,8 +62,8 @@ type CostSample struct {
 // NewCostCircuitBreaker creates a new cost-aware circuit breaker
 func NewCostCircuitBreaker(config CostCircuitBreakerConfig) *CostCircuitBreaker {
 	return &CostCircuitBreaker{
-		config:     config,
-		state:      StateClosed,
+		config: config,
+		state:  StateClosed,
 		costWindow: &CostWindow{
 			costs:     make([]CostSample, 0, 1000),
 			startTime: time.Now(),
@@ -59,7 +72,7 @@ func NewCostCircuitBreaker(config CostCircuitBreakerConfig) *CostCircuitBreaker 
 }
 
 // CheckCost validates if operation is within cost limits
-func (cb *CostCircuitBreaker) CheckCost(ctx context.Context, estimatedCost float64) error {
+func (cb *CostCircuitBreaker) CheckCost(_ context.Context, estimatedCost float64) error {
 	// First, check current state without holding locks for too long
 	cb.mu.RLock()
 	state := cb.state

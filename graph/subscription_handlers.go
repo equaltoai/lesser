@@ -622,7 +622,7 @@ func (sm *GraphQLSubscriptionManager) processHashtagEvents(subscription *GraphQL
 }
 
 // processQuoteEvents processes quote activity events from the event bus
-func (sm *GraphQLSubscriptionManager) processQuoteEvents(subscription *GraphQLSubscription, ch chan *model.QuoteActivityUpdate, noteID string, noteObj any) {
+func (sm *GraphQLSubscriptionManager) processQuoteEvents(subscription *GraphQLSubscription, ch chan *model.QuoteActivityUpdate, noteID string, _ any) {
 	defer func() {
 		close(ch)
 		sm.subscriptionsMux.Lock()
@@ -651,6 +651,134 @@ func (sm *GraphQLSubscriptionManager) processQuoteEvents(subscription *GraphQLSu
 				default:
 					sm.logger.Warn("quote subscription channel full, dropping event",
 						zap.String("subscription_id", subscription.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+// createMetricsEventBusSubscription creates a metrics subscription using the event bus
+func (sm *GraphQLSubscriptionManager) createMetricsEventBusSubscription(ctx context.Context, subscriptionID, username string, categories, services []string, threshold *float64, filter *streaming.EventFilter, ch chan *model.MetricsUpdate) (<-chan *model.MetricsUpdate, error) {
+	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 100)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
+	}
+
+	subCtx, cancel := context.WithCancel(ctx)
+
+	params := make(map[string]interface{})
+	if len(categories) > 0 {
+		params["categories"] = categories
+	}
+	if len(services) > 0 {
+		params["services"] = services
+	}
+	if threshold != nil {
+		params["threshold"] = *threshold
+	}
+
+	subscription := &GraphQLSubscription{
+		ID:            subscriptionID,
+		Type:          "metrics",
+		UserID:        username,
+		Params:        params,
+		Filter:        filter,
+		Subscriber:    subscriber,
+		OutputChannel: ch,
+		Context:       subCtx,
+		Cancel:        cancel,
+		Created:       time.Now(),
+		LastActivity:  time.Now(),
+	}
+
+	sm.subscriptionsMux.Lock()
+	sm.subscriptions[subscriptionID] = subscription
+	sm.subscriptionsMux.Unlock()
+
+	go sm.processMetricsEvents(subscription, ch, categories, services, threshold)
+
+	sm.logger.Info("created event bus metrics subscription",
+		zap.String("subscription_id", subscriptionID),
+		zap.String("username", username),
+		zap.Strings("categories", categories),
+		zap.Strings("services", services))
+
+	return ch, nil
+}
+
+// processMetricsEvents processes metrics events from the event bus
+func (sm *GraphQLSubscriptionManager) processMetricsEvents(subscription *GraphQLSubscription, ch chan *model.MetricsUpdate, categories, services []string, threshold *float64) {
+	defer func() {
+		close(ch)
+		sm.subscriptionsMux.Lock()
+		delete(sm.subscriptions, subscription.ID)
+		sm.subscriptionsMux.Unlock()
+	}()
+
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			subscription.LastActivity = time.Now()
+
+			if metricsUpdate := sm.converter.ConvertToMetricsUpdate(event); metricsUpdate != nil {
+				// Apply category filter if specified
+				if len(categories) > 0 {
+					categoryMatch := false
+					for _, category := range categories {
+						if metricsUpdate.SubscriptionCategory == category {
+							categoryMatch = true
+							break
+						}
+					}
+					if !categoryMatch {
+						continue
+					}
+				}
+
+				// Apply service filter if specified
+				if len(services) > 0 {
+					serviceMatch := false
+					for _, service := range services {
+						if metricsUpdate.ServiceName == service {
+							serviceMatch = true
+							break
+						}
+					}
+					if !serviceMatch {
+						continue
+					}
+				}
+
+				// Apply threshold filter if specified
+				if threshold != nil {
+					if metricsUpdate.Sum < *threshold && metricsUpdate.Max < *threshold {
+						continue
+					}
+				}
+
+				select {
+				case ch <- metricsUpdate:
+					sm.logger.Debug("sent metrics event to GraphQL subscription",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID),
+						zap.String("metric_type", metricsUpdate.MetricType),
+						zap.String("service", metricsUpdate.ServiceName),
+						zap.String("category", metricsUpdate.SubscriptionCategory))
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("metrics subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("metric_id", metricsUpdate.MetricID))
 				}
 			}
 

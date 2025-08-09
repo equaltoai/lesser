@@ -46,9 +46,10 @@ func NewSessionManager(repo MediaSessionRepository, logger *zap.Logger, costTrac
 // - 7 days for historical metrics
 //
 // Example usage:
-//   sm.SetSessionTTL(6 * time.Hour)  // Short-lived media sessions
-//   sm.SetSessionTTL(24 * time.Hour) // Analytics data (default)
-//   sm.SetSessionTTL(7 * 24 * time.Hour) // Historical metrics
+//
+//	sm.SetSessionTTL(6 * time.Hour)  // Short-lived media sessions
+//	sm.SetSessionTTL(24 * time.Hour) // Analytics data (default)
+//	sm.SetSessionTTL(7 * 24 * time.Hour) // Historical metrics
 func (sm *SessionManager) SetSessionTTL(ttl time.Duration) {
 	sm.sessionTTL = ttl
 	sm.repo.SetSessionTTL(ttl)

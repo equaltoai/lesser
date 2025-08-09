@@ -1,11 +1,14 @@
 package graph
 
 import (
+	"strconv"
+	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
@@ -376,8 +379,297 @@ func extractUsernameFromID(actorID string) string {
 	if actorID == "" {
 		return ""
 	}
-	
+
 	// For now, just use the actor ID as username
 	// In practice, this would parse URLs like "https://example.com/users/alice" -> "alice"
 	return actorID
+}
+
+// ConvertToMetricsUpdate converts a streaming event to a GraphQL MetricsUpdate
+func (ec *EventConverter) ConvertToMetricsUpdate(event *streaming.InternalEvent) *model.MetricsUpdate {
+	if event == nil || event.Type != streaming.EventTypeMetricsUpdate {
+		return nil
+	}
+
+	// Try to extract MetricsRecord from event data
+	if record, ok := event.Data.(*models.MetricRecord); ok {
+		return ec.convertMetricRecordToUpdate(record, event)
+	}
+
+	// Try to extract MetricsEventPayload from event data  
+	if payload, ok := event.Data.(*streaming.MetricsEventPayload); ok {
+		return ec.convertMetricsPayloadToUpdate(payload, event)
+	}
+
+	// Try to extract directly from event metadata
+	return ec.convertEventMetadataToUpdate(event)
+}
+
+// convertMetricRecordToUpdate converts a MetricRecord to MetricsUpdate
+func (ec *EventConverter) convertMetricRecordToUpdate(record *models.MetricRecord, event *streaming.InternalEvent) *model.MetricsUpdate {
+	update := &model.MetricsUpdate{
+		MetricID:         record.MetricID,
+		ServiceName:      record.ServiceName,
+		MetricType:      record.MetricType,
+		AggregationLevel: record.AggregationLevel,
+		Timestamp:       model.Time(record.Timestamp),
+		Count:           int(record.Count),
+		Sum:             record.Sum,
+		Min:             record.Min,
+		Max:             record.Max,
+	}
+
+	// Calculate average if not already set
+	if record.Count > 0 {
+		update.Average = record.Sum / float64(record.Count)
+	}
+
+	// Add percentiles if available
+	if record.P50 > 0 {
+		p50 := record.P50
+		update.P50 = &p50
+	}
+	if record.P95 > 0 {
+		p95 := record.P95
+		update.P95 = &p95
+	}
+	if record.P99 > 0 {
+		p99 := record.P99
+		update.P99 = &p99
+	}
+
+	// Add unit if available
+	if record.Unit != "" {
+		update.Unit = &record.Unit
+	}
+
+	// Extract subscription category from event metadata
+	if event.Metadata != nil {
+		if category, exists := event.Metadata["subscription_category"]; exists {
+			update.SubscriptionCategory = category
+		}
+		
+		// Extract cost information
+		if userCost, exists := event.Metadata["user_cost_microcents"]; exists {
+			if cost64, err := parseIntFromString(userCost); err == nil {
+				cost := int(cost64)
+				update.UserCostMicrocents = &cost
+			}
+		}
+		if totalCost, exists := event.Metadata["total_cost_microcents"]; exists {
+			if cost64, err := parseIntFromString(totalCost); err == nil {
+				cost := int(cost64)
+				update.TotalCostMicrocents = &cost
+			}
+		}
+		
+		// Extract user/tenant information
+		if userID, exists := event.Metadata["user_id"]; exists {
+			update.UserID = &userID
+		}
+		if tenantID, exists := event.Metadata["tenant_id"]; exists {
+			update.TenantID = &tenantID
+		}
+		if domain, exists := event.Metadata["instance_domain"]; exists {
+			update.InstanceDomain = &domain
+		}
+	}
+
+	// Convert dimensions to GraphQL format
+	if record.Dimensions != nil {
+		dimensions := make([]*model.MetricsDimension, 0, len(record.Dimensions))
+		for key, value := range record.Dimensions {
+			dimensions = append(dimensions, &model.MetricsDimension{
+				Key:   key,
+				Value: value,
+			})
+		}
+		update.Dimensions = dimensions
+	}
+
+	return update
+}
+
+// convertMetricsPayloadToUpdate converts a MetricsEventPayload to MetricsUpdate
+func (ec *EventConverter) convertMetricsPayloadToUpdate(payload *streaming.MetricsEventPayload, _ *streaming.InternalEvent) *model.MetricsUpdate {
+	update := &model.MetricsUpdate{
+		MetricID:             payload.MetricID,
+		ServiceName:          payload.ServiceName,
+		MetricType:          payload.MetricType,
+		SubscriptionCategory: payload.SubscriptionCategory,
+		AggregationLevel:    payload.AggregationLevel,
+		Timestamp:           model.Time(payload.Timestamp),
+		Count:               int(payload.Count),
+		Sum:                 payload.Sum,
+		Min:                 payload.Min,
+		Max:                 payload.Max,
+		Average:             payload.Average,
+	}
+
+	// Add optional fields if available
+	if payload.P50 > 0 {
+		update.P50 = &payload.P50
+	}
+	if payload.P95 > 0 {
+		update.P95 = &payload.P95
+	}
+	if payload.P99 > 0 {
+		update.P99 = &payload.P99
+	}
+	if payload.Unit != "" {
+		update.Unit = &payload.Unit
+	}
+	if payload.UserCostMicrocents > 0 {
+		userCost := int(payload.UserCostMicrocents)
+		update.UserCostMicrocents = &userCost
+	}
+	if payload.TotalCostMicrocents > 0 {
+		totalCost := int(payload.TotalCostMicrocents)
+		update.TotalCostMicrocents = &totalCost
+	}
+	if payload.UserID != "" {
+		update.UserID = &payload.UserID
+	}
+	if payload.TenantID != "" {
+		update.TenantID = &payload.TenantID
+	}
+	if payload.InstanceDomain != "" {
+		update.InstanceDomain = &payload.InstanceDomain
+	}
+
+	// Convert dimensions to GraphQL format
+	if payload.Dimensions != nil {
+		dimensions := make([]*model.MetricsDimension, 0, len(payload.Dimensions))
+		for key, value := range payload.Dimensions {
+			dimensions = append(dimensions, &model.MetricsDimension{
+				Key:   key,
+				Value: value,
+			})
+		}
+		update.Dimensions = dimensions
+	}
+
+	return update
+}
+
+// convertEventMetadataToUpdate creates a MetricsUpdate from event metadata
+func (ec *EventConverter) convertEventMetadataToUpdate(event *streaming.InternalEvent) *model.MetricsUpdate {
+	if event.Metadata == nil {
+		ec.logger.Debug("cannot convert metrics event without metadata",
+			zap.String("event_id", event.ID))
+		return nil
+	}
+
+	update := &model.MetricsUpdate{
+		MetricID:  event.ID,
+		Timestamp: model.Time(event.Timestamp),
+	}
+
+	// Extract required fields from metadata
+	if serviceName, exists := event.Metadata["service_name"]; exists {
+		update.ServiceName = serviceName
+	}
+	if metricType, exists := event.Metadata["metric_type"]; exists {
+		update.MetricType = metricType
+	}
+	if category, exists := event.Metadata["subscription_category"]; exists {
+		update.SubscriptionCategory = category
+	}
+	if level, exists := event.Metadata["aggregation_level"]; exists {
+		update.AggregationLevel = level
+	}
+
+	// Extract numeric fields
+	if count, exists := event.Metadata["count"]; exists {
+		if c, err := parseIntFromString(count); err == nil {
+			update.Count = int(c)
+		}
+	}
+	if sum, exists := event.Metadata["sum"]; exists {
+		if s, err := parseFloatFromString(sum); err == nil {
+			update.Sum = s
+		}
+	}
+	if minVal, exists := event.Metadata["min"]; exists {
+		if m, err := parseFloatFromString(minVal); err == nil {
+			update.Min = m
+		}
+	}
+	if maxVal, exists := event.Metadata["max"]; exists {
+		if m, err := parseFloatFromString(maxVal); err == nil {
+			update.Max = m
+		}
+	}
+	if avg, exists := event.Metadata["average"]; exists {
+		if a, err := parseFloatFromString(avg); err == nil {
+			update.Average = a
+		}
+	}
+
+	// Extract percentiles
+	if p50, exists := event.Metadata["p50"]; exists {
+		if p, err := parseFloatFromString(p50); err == nil {
+			update.P50 = &p
+		}
+	}
+	if p95, exists := event.Metadata["p95"]; exists {
+		if p, err := parseFloatFromString(p95); err == nil {
+			update.P95 = &p
+		}
+	}
+	if p99, exists := event.Metadata["p99"]; exists {
+		if p, err := parseFloatFromString(p99); err == nil {
+			update.P99 = &p
+		}
+	}
+
+	// Extract optional fields
+	if unit, exists := event.Metadata["unit"]; exists {
+		update.Unit = &unit
+	}
+	if userCost, exists := event.Metadata["user_cost_microcents"]; exists {
+		if cost64, err := parseIntFromString(userCost); err == nil {
+			cost := int(cost64)
+			update.UserCostMicrocents = &cost
+		}
+	}
+	if totalCost, exists := event.Metadata["total_cost_microcents"]; exists {
+		if cost64, err := parseIntFromString(totalCost); err == nil {
+			cost := int(cost64)
+			update.TotalCostMicrocents = &cost
+		}
+	}
+	if userID, exists := event.Metadata["user_id"]; exists {
+		update.UserID = &userID
+	}
+	if tenantID, exists := event.Metadata["tenant_id"]; exists {
+		update.TenantID = &tenantID
+	}
+	if domain, exists := event.Metadata["instance_domain"]; exists {
+		update.InstanceDomain = &domain
+	}
+
+	// Extract dimensions (prefixed with "dim_")
+	dimensions := make([]*model.MetricsDimension, 0)
+	for key, value := range event.Metadata {
+		if strings.HasPrefix(key, "dim_") {
+			dimensionKey := strings.TrimPrefix(key, "dim_")
+			dimensions = append(dimensions, &model.MetricsDimension{
+				Key:   dimensionKey,
+				Value: value,
+			})
+		}
+	}
+	update.Dimensions = dimensions
+
+	return update
+}
+
+// Helper functions for parsing metadata strings
+func parseIntFromString(s string) (int64, error) {
+	return strconv.ParseInt(s, 10, 64)
+}
+
+func parseFloatFromString(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
 }

@@ -19,8 +19,7 @@ type QueryOptimizer struct {
 	// Query result cache (in-memory for batching)
 	cache *queryCache
 
-	// Batch query coordinator
-	batcher *queryBatcher
+	// Batch query coordinator removed - not implemented
 }
 
 // queryCache implements an LRU cache for query results
@@ -51,21 +50,7 @@ type lruList struct {
 	tail *lruNode
 }
 
-// queryBatcher batches multiple queries for efficiency (serverless-compatible)
-type queryBatcher struct {
-	mu      sync.Mutex
-	batches map[string]*queryBatch
-}
-
-type queryBatch struct {
-	queries []batchedQuery
-	created time.Time
-}
-
-type batchedQuery struct {
-	key        string
-	resultChan chan any
-}
+// Query batching removed - not currently implemented
 
 // NewQueryOptimizer creates a new query optimizer
 func NewQueryOptimizer(cacheRepo *repositories.QueryCacheRepository, logger *zap.Logger) *QueryOptimizer {
@@ -78,9 +63,7 @@ func NewQueryOptimizer(cacheRepo *repositories.QueryCacheRepository, logger *zap
 			maxSize: 10000, // Cache up to 10k entries
 			ttl:     5 * time.Minute,
 		},
-		batcher: &queryBatcher{
-			batches: make(map[string]*queryBatch),
-		},
+		// Batch coordinator removed
 	}
 
 	return qo
@@ -275,11 +258,11 @@ func (qo *QueryOptimizer) PrewarmCache(ctx context.Context) error {
 func (qo *QueryOptimizer) InvalidateCache(pattern string) {
 	// Invalidate in-memory cache
 	qo.cache.invalidatePattern(pattern)
-	
+
 	// Invalidate persistent cache
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	if err := qo.cacheRepo.InvalidateCachePattern(ctx, pattern); err != nil {
 		qo.logger.Warn("Failed to invalidate persistent cache",
 			zap.String("pattern", pattern),
@@ -364,18 +347,7 @@ func (c *queryCache) invalidatePattern(pattern string) {
 
 // evictionLoop removed - using passive eviction instead
 
-func (c *queryCache) evictExpired() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	now := time.Now()
-	for key, entry := range c.entries {
-		if now.After(entry.expiry) {
-			delete(c.entries, key)
-			c.lru.remove(entry.listNode)
-		}
-	}
-}
+// evictExpired removed - using passive eviction instead
 
 // LRU list operations
 

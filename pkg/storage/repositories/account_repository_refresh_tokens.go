@@ -105,14 +105,14 @@ func (r *AccountRepository) RotateAdvancedRefreshToken(ctx context.Context, oldT
 			zap.String("family", oldToken.Family),
 			zap.String("userID", oldToken.UserID),
 			zap.String("ipAddress", ipAddress))
-		
+
 		// Revoke entire token family due to potential compromise
 		if revokeErr := r.RevokeAdvancedTokenFamily(ctx, oldToken.Family, "token_reuse_detected"); revokeErr != nil {
 			r.logger.Error("failed to revoke token family after reuse detection",
 				zap.String("family", oldToken.Family),
 				zap.Error(revokeErr))
 		}
-		
+
 		return nil, common.ErrTokenRevoked
 	}
 
@@ -177,6 +177,8 @@ func (r *AccountRepository) revokeAdvancedRefreshToken(ctx context.Context, toke
 }
 
 // RevokeAdvancedTokenFamily revokes all tokens in a family (security measure)
+//
+//nolint:dupl // similar token revocation pattern for different scope (family vs user)
 func (r *AccountRepository) RevokeAdvancedTokenFamily(ctx context.Context, family string, reason string) error {
 	tokens, err := r.GetAdvancedTokensByFamily(ctx, family)
 	if err != nil {
@@ -209,6 +211,8 @@ func (r *AccountRepository) RevokeAdvancedTokenFamily(ctx context.Context, famil
 }
 
 // RevokeAdvancedUserTokens revokes all tokens for a user (e.g., on logout)
+//
+//nolint:dupl // similar token revocation pattern for different scope (family vs user)
 func (r *AccountRepository) RevokeAdvancedUserTokens(ctx context.Context, userID string, reason string) error {
 	tokens, err := r.GetAdvancedTokensByUser(ctx, userID)
 	if err != nil {
@@ -337,7 +341,7 @@ func (r *AccountRepository) UpdateAdvancedTokenLastUsed(ctx context.Context, tok
 func (r *AccountRepository) CleanupExpiredAdvancedTokens(ctx context.Context) (int, error) {
 	// Note: In production, this would use a more efficient scan or be handled by DynamoDB TTL
 	// For now, we'll implement a basic cleanup
-	
+
 	var allTokens []models.AuthRefreshToken
 	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
 		Where("SK", "=", "TOKEN").

@@ -1,3 +1,4 @@
+// Package main implements the auth-api Lambda function for authentication API endpoints.
 package main
 
 /*
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -255,6 +257,14 @@ func main() {
 		logger.Fatal("DYNAMODB_TABLE environment variable is required")
 	}
 
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		logger.Fatal("failed to load AWS config", zap.Error(err))
+	}
+
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
@@ -262,7 +272,7 @@ func main() {
 	}
 
 	// Create repository storage using new factory pattern
-	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -291,16 +301,16 @@ func main() {
 	app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
-			
+
 			err := next.Handle(ctx)
-			
+
 			logger.Info("auth api request",
 				zap.String("method", ctx.Request.Method),
 				zap.String("path", ctx.Request.Path),
 				zap.Duration("duration", time.Since(start)),
 				zap.Bool("error", err != nil),
 			)
-			
+
 			return err
 		})
 	})
@@ -313,12 +323,12 @@ func main() {
 			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
 			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
 			ctx.Response.Headers["Access-Control-Max-Age"] = "86400"
-			
+
 			// Handle preflight
 			if ctx.Request.Method == http.MethodOptions {
 				return ctx.Status(http.StatusNoContent).Text("")
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	})
@@ -326,38 +336,38 @@ func main() {
 	// Configure routes
 
 	// Basic auth
-	app.POST("/auth/login", handler.HandleLogin)
-	app.POST("/auth/refresh", handler.HandleRefreshToken)
-	app.POST("/auth/logout", handler.HandleLogout)
-	app.POST("/auth/logout/all", handler.HandleLogoutAllDevices)
+	_ = app.POST("/auth/login", handler.HandleLogin)
+	_ = app.POST("/auth/refresh", handler.HandleRefreshToken)
+	_ = app.POST("/auth/logout", handler.HandleLogout)
+	_ = app.POST("/auth/logout/all", handler.HandleLogoutAllDevices)
 
 	// Device management
-	app.GET("/auth/devices", handler.HandleGetDevices)
-	app.POST("/auth/devices/:deviceID/trust", handler.HandleTrustDevice)
-	app.DELETE("/auth/devices/:deviceID", handler.HandleDeleteDevice)
+	_ = app.GET("/auth/devices", handler.HandleGetDevices)
+	_ = app.POST("/auth/devices/:deviceID/trust", handler.HandleTrustDevice)
+	_ = app.DELETE("/auth/devices/:deviceID", handler.HandleDeleteDevice)
 
 	// Password management
-	app.POST("/auth/password/change", handler.HandleChangePassword)
+	_ = app.POST("/auth/password/change", handler.HandleChangePassword)
 
 	// Admin endpoints
-	app.GET("/auth/accounts/:username/status", handler.HandleGetAccountStatus)
-	app.POST("/auth/accounts/:username/unlock", handler.HandleClearAccountLockout)
+	_ = app.GET("/auth/accounts/:username/status", handler.HandleGetAccountStatus)
+	_ = app.POST("/auth/accounts/:username/unlock", handler.HandleClearAccountLockout)
 
 	// WebAuthn/Passkeys
-	app.POST("/auth/webauthn/register/begin", handler.HandleBeginWebAuthnRegistration)
-	app.POST("/auth/webauthn/register/finish", handler.HandleFinishWebAuthnRegistration)
-	app.POST("/auth/webauthn/login/begin", handler.HandleBeginWebAuthnLogin)
-	app.POST("/auth/webauthn/login/finish", handler.HandleFinishWebAuthnLogin)
-	app.GET("/auth/webauthn/credentials", handler.HandleListCredentials)
-	app.DELETE("/auth/webauthn/credentials/:credentialID", handler.HandleDeleteCredential)
-	app.PUT("/auth/webauthn/credentials/:credentialID", handler.HandleUpdateCredentialName)
+	_ = app.POST("/auth/webauthn/register/begin", handler.HandleBeginWebAuthnRegistration)
+	_ = app.POST("/auth/webauthn/register/finish", handler.HandleFinishWebAuthnRegistration)
+	_ = app.POST("/auth/webauthn/login/begin", handler.HandleBeginWebAuthnLogin)
+	_ = app.POST("/auth/webauthn/login/finish", handler.HandleFinishWebAuthnLogin)
+	_ = app.GET("/auth/webauthn/credentials", handler.HandleListCredentials)
+	_ = app.DELETE("/auth/webauthn/credentials/:credentialID", handler.HandleDeleteCredential)
+	_ = app.PUT("/auth/webauthn/credentials/:credentialID", handler.HandleUpdateCredentialName)
 
 	// Wallet authentication
-	app.POST("/auth/wallet/challenge", handler.HandleCreateWalletChallenge)
-	app.POST("/auth/wallet/verify", handler.HandleVerifyWalletSignature)
-	app.POST("/auth/wallet/link", handler.HandleLinkWallet)
-	app.DELETE("/auth/wallet/unlink/:walletAddress", handler.HandleUnlinkWallet)
-	app.GET("/auth/wallet/list", handler.HandleGetWallets)
+	_ = app.POST("/auth/wallet/challenge", handler.HandleCreateWalletChallenge)
+	_ = app.POST("/auth/wallet/verify", handler.HandleVerifyWalletSignature)
+	_ = app.POST("/auth/wallet/link", handler.HandleLinkWallet)
+	_ = app.DELETE("/auth/wallet/unlink/:walletAddress", handler.HandleUnlinkWallet)
+	_ = app.GET("/auth/wallet/list", handler.HandleGetWallets)
 
 	// Start Lambda handler
 	lambda.Start(app.HandleRequest)

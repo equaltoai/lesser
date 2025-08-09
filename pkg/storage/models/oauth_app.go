@@ -33,7 +33,7 @@ type OAuthApp struct {
 func (o *OAuthApp) UpdateKeys() {
 	// Primary key
 	o.PK = fmt.Sprintf("OAUTH_APP#%s", o.ClientID)
-	o.SK = "METADATA"
+	o.SK = SKMetadata
 
 	// GSI for listing all apps and querying by name
 	o.GSI1PK = "OAUTH_APPS"

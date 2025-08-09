@@ -30,7 +30,7 @@ func TestLiftTestingFramework_BasicUsage(t *testing.T) {
 	app := NewTestApp()
 
 	// Setup a simple endpoint
-	app.App().GET("/health", func(ctx *lift.Context) error {
+	_ = app.App().GET("/health", func(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"status": "healthy"})
 	})
 
@@ -79,7 +79,7 @@ func TestLiftTestingFramework_WithMocks(t *testing.T) {
 	})
 
 	// Setup test route that uses mocks
-	app.App().GET("/user/:id", func(ctx *lift.Context) error {
+	_ = app.App().GET("/user/:id", func(ctx *lift.Context) error {
 		userID := ctx.Param("id")
 
 		// Use the mocked storage service
@@ -108,7 +108,7 @@ func TestLiftTestingFramework_AuthenticationFlow(t *testing.T) {
 	app := NewTestApp()
 
 	// Setup authenticated endpoint
-	app.App().GET("/protected", func(ctx *lift.Context) error {
+	_ = app.App().GET("/protected", func(ctx *lift.Context) error {
 		// Check if authenticated (in real app, this would be middleware)
 		authHeader := ctx.Header("Authorization")
 		if authHeader == "" {
@@ -134,7 +134,7 @@ func TestLiftTestingFramework_PostRequest(t *testing.T) {
 	app := NewTestApp()
 
 	// Setup POST endpoint
-	app.App().POST("/users", func(ctx *lift.Context) error {
+	_ = app.App().POST("/users", func(ctx *lift.Context) error {
 		var user CreateUserRequest
 		if err := ctx.ParseRequest(&user); err != nil {
 			return ctx.Status(400).JSON(map[string]string{"error": "invalid request"})
@@ -169,7 +169,7 @@ func TestLiftTestingFramework_ErrorHandling(t *testing.T) {
 	app := NewTestApp()
 
 	// Setup endpoint that can fail
-	app.App().GET("/error", func(ctx *lift.Context) error {
+	_ = app.App().GET("/error", func(ctx *lift.Context) error {
 		return errors.New("something went wrong")
 	})
 
@@ -209,7 +209,7 @@ func TestLiftTestingFramework_PerformanceTest(t *testing.T) {
 		WarmupRuns:  5,
 		TestFunc: func() error {
 			app := NewTestApp()
-			app.App().GET("/fast", func(ctx *lift.Context) error {
+			_ = app.App().GET("/fast", func(ctx *lift.Context) error {
 				return ctx.JSON(map[string]string{"result": "fast"})
 			})
 
@@ -258,7 +258,7 @@ func TestLiftTestingFramework_ColdStartTest(t *testing.T) {
 		HandlerFunc: func() error {
 			// Simulate handler execution
 			app := NewTestApp()
-			app.App().GET("/test", func(ctx *lift.Context) error {
+			_ = app.App().GET("/test", func(ctx *lift.Context) error {
 				return ctx.JSON(map[string]string{"cold": "start"})
 			})
 
@@ -298,7 +298,7 @@ func TestLiftTestingFramework_LoadTest(t *testing.T) {
 		RampUpTime:  1 * time.Second,
 		TestFunc: func() error {
 			app := NewTestApp()
-			app.App().GET("/load", func(ctx *lift.Context) error {
+			_ = app.App().GET("/load", func(ctx *lift.Context) error {
 				// Simulate some work
 				time.Sleep(10 * time.Millisecond)
 				return ctx.JSON(map[string]string{"load": "test"})
@@ -369,7 +369,7 @@ func TestLiftTestingFramework_CompleteWorkflow(t *testing.T) {
 	})
 
 	// 4. Setup routes
-	app.App().POST("/admin/users", func(ctx *lift.Context) error {
+	_ = app.App().POST("/admin/users", func(ctx *lift.Context) error {
 		// Auth is handled by middleware, just check claims
 		claims := ctx.Get("claims").(*auth.EnhancedClaims)
 		if !contains(claims.Scopes, "admin:write") {
@@ -391,7 +391,7 @@ func TestLiftTestingFramework_CompleteWorkflow(t *testing.T) {
 		return ctx.Status(201).JSON(actor)
 	})
 
-	app.App().GET("/admin/users/:id", func(ctx *lift.Context) error {
+	_ = app.App().GET("/admin/users/:id", func(ctx *lift.Context) error {
 		// Auth is handled by middleware
 		userID := ctx.Param("id")
 		actor, err := mockStorage.GetActor(ctx.Context, userID)
@@ -437,7 +437,7 @@ func TestLiftTestingFramework_CompleteWorkflow(t *testing.T) {
 
 func BenchmarkTestApp_SimpleGET(b *testing.B) {
 	app := NewTestApp()
-	app.App().GET("/bench", func(ctx *lift.Context) error {
+	_ = app.App().GET("/bench", func(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"benchmark": "test"})
 	})
 
@@ -454,7 +454,7 @@ func BenchmarkTestApp_SimpleGET(b *testing.B) {
 
 func BenchmarkTestApp_WithHeaders(b *testing.B) {
 	app := NewTestApp()
-	app.App().GET("/bench", func(ctx *lift.Context) error {
+	_ = app.App().GET("/bench", func(ctx *lift.Context) error {
 		auth := ctx.Header("Authorization")
 		tenant := ctx.Header("X-Tenant-ID")
 
@@ -482,7 +482,7 @@ func BenchmarkTestApp_WithHeaders(b *testing.B) {
 
 func BenchmarkTestApp_POST(b *testing.B) {
 	app := NewTestApp()
-	app.App().POST("/bench", func(ctx *lift.Context) error {
+	_ = app.App().POST("/bench", func(ctx *lift.Context) error {
 		var req CreateUserRequest
 		if err := ctx.ParseRequest(&req); err != nil {
 			return ctx.Status(400).JSON(map[string]string{"error": "bad request"})

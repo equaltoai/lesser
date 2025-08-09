@@ -8,10 +8,10 @@ import (
 // TenantAwareModel provides base structure for tenant-isolated DynamoDB models
 // Following the official DynamORM multi-tenant pattern
 type TenantAwareModel struct {
-	PK         string `dynamorm:"pk" json:"pk"`                              // tenant#{tenant_id}
-	SK         string `dynamorm:"sk" json:"sk"`                              // entity#{id}
-	TenantID   string `dynamorm:"index:tenant-entity,pk" json:"tenant_id"`   // For GSI
-	EntityType string `dynamorm:"index:tenant-entity,sk" json:"entity_type"` // For GSI
+	PK         string    `dynamorm:"pk" json:"pk"`                              // tenant#{tenant_id}
+	SK         string    `dynamorm:"sk" json:"sk"`                              // entity#{id}
+	TenantID   string    `dynamorm:"index:tenant-entity,pk" json:"tenant_id"`   // For GSI
+	EntityType string    `dynamorm:"index:tenant-entity,sk" json:"entity_type"` // For GSI
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
@@ -53,7 +53,7 @@ func (m *TenantAwareModel) ValidateTenant(tenantID string) bool {
 // TenantUser represents a user within a tenant
 type TenantUser struct {
 	TenantAwareModel
-	
+
 	// User-specific fields
 	UserID string `json:"user_id"`
 	Email  string `json:"email"`
@@ -66,15 +66,15 @@ type TenantUser struct {
 func NewTenantUser(tenantID, userID string) *TenantUser {
 	return &TenantUser{
 		TenantAwareModel: NewTenantAwareModel(tenantID, "user", userID),
-		UserID:          userID,
-		Status:          "active",
+		UserID:           userID,
+		Status:           "active",
 	}
 }
 
 // TenantProject represents a project within a tenant
 type TenantProject struct {
 	TenantAwareModel
-	
+
 	// Project-specific fields
 	ProjectID   string `json:"project_id"`
 	Name        string `json:"name"`
@@ -87,31 +87,31 @@ type TenantProject struct {
 func NewTenantProject(tenantID, projectID, ownerID string) *TenantProject {
 	return &TenantProject{
 		TenantAwareModel: NewTenantAwareModel(tenantID, "project", projectID),
-		ProjectID:       projectID,
-		OwnerID:         ownerID,
-		Status:          "active",
+		ProjectID:        projectID,
+		OwnerID:          ownerID,
+		Status:           "active",
 	}
 }
 
 // TenantConfig represents tenant configuration
 type TenantConfig struct {
 	TenantAwareModel
-	
+
 	// Config-specific fields
-	Name       string            `json:"name"`
-	Settings   map[string]string `json:"settings"`
-	Plan       string            `json:"plan"`
-	RateLimit  int               `json:"rate_limit"`
-	IsActive   bool              `json:"is_active"`
+	Name      string            `json:"name"`
+	Settings  map[string]string `json:"settings"`
+	Plan      string            `json:"plan"`
+	RateLimit int               `json:"rate_limit"`
+	IsActive  bool              `json:"is_active"`
 }
 
 // NewTenantConfig creates a new tenant configuration
 func NewTenantConfig(tenantID string) *TenantConfig {
 	return &TenantConfig{
 		TenantAwareModel: NewTenantAwareModel(tenantID, "config", tenantID),
-		Plan:            "free",
-		RateLimit:       100,
-		IsActive:        true,
-		Settings:        make(map[string]string),
+		Plan:             "free",
+		RateLimit:        100,
+		IsActive:         true,
+		Settings:         make(map[string]string),
 	}
 }

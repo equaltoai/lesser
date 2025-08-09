@@ -34,15 +34,15 @@ type PushSubscription struct {
 	GSI1SK string `dynamorm:"index:endpoint-index,sk" json:"gsi1_sk"` // username
 
 	// Core subscription data
-	ID        string                       `json:"id"`
-	Username  string                       `json:"username"`
-	Endpoint  string                       `json:"endpoint"`
-	P256dh    string                       `json:"p256dh"`    // Public key for encryption
-	Auth      string                       `json:"auth"`      // Auth secret
-	Alerts    PushSubscriptionAlerts `json:"alerts"`    // Which notifications to send
-	Policy    string                       `json:"policy,omitempty"`
-	UserAgent string                       `json:"user_agent,omitempty"`
-	
+	ID        string                 `json:"id"`
+	Username  string                 `json:"username"`
+	Endpoint  string                 `json:"endpoint"`
+	P256dh    string                 `json:"p256dh"` // Public key for encryption
+	Auth      string                 `json:"auth"`   // Auth secret
+	Alerts    PushSubscriptionAlerts `json:"alerts"` // Which notifications to send
+	Policy    string                 `json:"policy,omitempty"`
+	UserAgent string                 `json:"user_agent,omitempty"`
+
 	// Timestamps
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -51,14 +51,14 @@ type PushSubscription struct {
 
 // TableName returns the DynamoDB table name
 func (PushSubscription) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys for the push subscription
 func (p *PushSubscription) UpdateKeys() {
 	p.PK = fmt.Sprintf("PUSH#%s", p.Username)
 	p.SK = fmt.Sprintf("SUB#%s", p.ID)
-	
+
 	// Set GSI keys for endpoint lookup
 	if p.Endpoint != "" {
 		endpointHash := hashString(p.Endpoint)
@@ -72,11 +72,11 @@ func (p *PushSubscription) BeforeCreate() error {
 	if p.ID == "" {
 		p.ID = uuid.New().String()
 	}
-	
+
 	now := time.Now()
 	p.CreatedAt = now
 	p.UpdatedAt = now
-	
+
 	p.UpdateKeys()
 	return p.Validate()
 }
@@ -116,4 +116,3 @@ func hashString(s string) string {
 	h.Write([]byte(s))
 	return hex.EncodeToString(h.Sum(nil))
 }
-

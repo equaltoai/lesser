@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ModerationMetrics tracks moderation system performance using DynamORM
@@ -69,20 +70,20 @@ func (mm *ModerationMetrics) RecordAnalysis(ctx context.Context, contentType str
 	mm.responseTimeMu.Unlock()
 
 	// Update detailed counters
-	mm.incrementCounter(fmt.Sprintf("content_type:%s", contentType), 1)
-	mm.incrementCounter(fmt.Sprintf("decision:%s", decision.Decision), 1)
-	mm.incrementCounter(fmt.Sprintf("confidence:%.1f", roundToNearest(decision.Confidence, 0.1)), 1)
+	mm.incrementCounter(fmt.Sprintf("content_type:%s", contentType))
+	mm.incrementCounter(fmt.Sprintf("decision:%s", decision.Decision))
+	mm.incrementCounter(fmt.Sprintf("confidence:%.1f", roundToNearest(decision.Confidence, 0.1)))
 
 	// Track severity distribution
 	for _, reason := range decision.Reasons {
-		mm.incrementCounter(fmt.Sprintf("severity:%s", reason.Severity), 1)
-		mm.incrementCounter(fmt.Sprintf("reason_type:%s", reason.Type), 1)
+		mm.incrementCounter(fmt.Sprintf("severity:%s", reason.Severity))
+		mm.incrementCounter(fmt.Sprintf("reason_type:%s", reason.Type))
 	}
 
 	// Track review requirements
 	if decision.RequiresReview {
-		mm.incrementCounter("requires_review", 1)
-		mm.incrementCounter(fmt.Sprintf("review_priority:%d", decision.ReviewPriority), 1)
+		mm.incrementCounter("requires_review")
+		mm.incrementCounter(fmt.Sprintf("review_priority:%d", decision.ReviewPriority))
 	}
 
 	// Store decision for later analysis if significant
@@ -93,15 +94,15 @@ func (mm *ModerationMetrics) RecordAnalysis(ctx context.Context, contentType str
 
 // RecordFalsePositive records a false positive
 func (mm *ModerationMetrics) RecordFalsePositive(ctx context.Context, contentID string, originalDecision *ModerationDecision) {
-	mm.incrementCounter("false_positives", 1)
-	mm.incrementCounter(fmt.Sprintf("false_positive:%s", originalDecision.Decision), 1)
+	mm.incrementCounter("false_positives")
+	mm.incrementCounter(fmt.Sprintf("false_positive:%s", originalDecision.Decision))
 
 	// Store for analysis
 	fp := &models.ModerationFalsePositive{
 		ContentID:        contentID,
 		OriginalDecision: string(originalDecision.Decision),
 		Confidence:       originalDecision.Confidence,
-		Date:             time.Now().Format("2006-01-02"),
+		Date:             time.Now().Format(common.DateFormat),
 	}
 
 	err := mm.repo.RecordFalsePositive(ctx, fp)
@@ -111,9 +112,9 @@ func (mm *ModerationMetrics) RecordFalsePositive(ctx context.Context, contentID 
 }
 
 // RecordTruePositive records a true positive (confirmed violation)
-func (mm *ModerationMetrics) RecordTruePositive(ctx context.Context, contentID string, decision *ModerationDecision) {
-	mm.incrementCounter("true_positives", 1)
-	mm.incrementCounter(fmt.Sprintf("true_positive:%s", decision.Decision), 1)
+func (mm *ModerationMetrics) RecordTruePositive(_ context.Context, _ string, decision *ModerationDecision) {
+	mm.incrementCounter("true_positives")
+	mm.incrementCounter(fmt.Sprintf("true_positive:%s", decision.Decision))
 }
 
 // GetStats retrieves moderation statistics for a time range
@@ -250,7 +251,7 @@ func (mm *ModerationMetrics) GetTopPatterns(ctx context.Context, limit int) ([]P
 func (mm *ModerationMetrics) FlushMetrics(ctx context.Context) error {
 	// Get current date and hour for partition key
 	now := time.Now()
-	date := now.Format("2006-01-02")
+	date := now.Format(common.DateFormat)
 	hour := now.Format("15")
 
 	var entries []*models.ModerationMetricsEntry
@@ -297,10 +298,10 @@ func (mm *ModerationMetrics) FlushMetrics(ctx context.Context) error {
 
 // Helper methods
 
-func (mm *ModerationMetrics) incrementCounter(key string, delta int64) {
+func (mm *ModerationMetrics) incrementCounter(key string) {
 	val, _ := mm.counters.LoadOrStore(key, &atomic.Int64{})
 	counter := val.(*atomic.Int64)
-	counter.Add(delta)
+	counter.Add(1)
 }
 
 func (mm *ModerationMetrics) getCounter(key string) int64 {
@@ -320,7 +321,7 @@ func (mm *ModerationMetrics) storeDecisionSampleAsync(ctx context.Context, decis
 		ProcessingTime: processingTime.Milliseconds(),
 		ReasonCount:    len(decision.Reasons),
 		RequiresReview: decision.RequiresReview,
-		Date:           time.Now().Format("2006-01-02"),
+		Date:           time.Now().Format(common.DateFormat),
 	}
 
 	// Use goroutine for async storage (acceptable for non-critical data)

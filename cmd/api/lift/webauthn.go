@@ -283,7 +283,7 @@ func (h *Handler) HandleListWebAuthnCredentialsLift(ctx *lift.Context) error {
 	}
 
 	// Format response
-	var response []map[string]any
+	response := make([]map[string]any, 0, len(credentials))
 	for _, cred := range credentials {
 		response = append(response, map[string]any{
 			"id":           cred.ID,
@@ -428,4 +428,3 @@ func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) erro
 		"message": "credential updated successfully",
 	})
 }
-

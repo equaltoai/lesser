@@ -1,3 +1,4 @@
+// Package patterns provides soft delete functionality and patterns for DynamORM model operations.
 package patterns
 
 import (
@@ -75,9 +76,9 @@ func (m *SoftDeleteModel) SetDeletedBy(deletedBy string) {
 
 // SoftDeleteRepository provides repository methods with soft delete support
 type SoftDeleteRepository struct {
-	client       DynamoDBClient
-	tableName    string
-	logger       *zap.Logger
+	client         DynamoDBClient
+	tableName      string
+	logger         *zap.Logger
 	includeDeleted bool // When true, queries include soft-deleted items
 }
 
@@ -170,7 +171,7 @@ func (r *SoftDeleteRepository) Restore(ctx context.Context, model SoftDeletable)
 }
 
 // HardDelete permanently deletes an item from DynamoDB
-func (r *SoftDeleteRepository) HardDelete(ctx context.Context, keys map[string]*dynamodb.AttributeValue) error {
+func (r *SoftDeleteRepository) HardDelete(_ context.Context, keys map[string]*dynamodb.AttributeValue) error {
 	input := &dynamodb.DeleteItemInput{
 		TableName: aws.String(r.tableName),
 		Key:       keys,
@@ -192,7 +193,7 @@ func (r *SoftDeleteRepository) HardDelete(ctx context.Context, keys map[string]*
 }
 
 // Get retrieves an item by key, optionally including soft-deleted items
-func (r *SoftDeleteRepository) Get(ctx context.Context, keys map[string]*dynamodb.AttributeValue) (map[string]*dynamodb.AttributeValue, error) {
+func (r *SoftDeleteRepository) Get(_ context.Context, keys map[string]*dynamodb.AttributeValue) (map[string]*dynamodb.AttributeValue, error) {
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(r.tableName),
 		Key:       keys,
@@ -216,7 +217,7 @@ func (r *SoftDeleteRepository) Get(ctx context.Context, keys map[string]*dynamod
 }
 
 // Query performs a query with soft delete filtering
-func (r *SoftDeleteRepository) Query(ctx context.Context, input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+func (r *SoftDeleteRepository) Query(_ context.Context, input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
 	// Add soft delete filter if needed
 	if !r.includeDeleted {
 		input = r.addSoftDeleteFilter(input)
@@ -236,7 +237,7 @@ func (r *SoftDeleteRepository) Query(ctx context.Context, input *dynamodb.QueryI
 }
 
 // QueryOnlyDeleted queries only soft-deleted items
-func (r *SoftDeleteRepository) QueryOnlyDeleted(ctx context.Context, input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+func (r *SoftDeleteRepository) QueryOnlyDeleted(_ context.Context, input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
 	// Add filter for only soft-deleted items
 	input = r.addOnlyDeletedFilter(input)
 
@@ -249,7 +250,7 @@ func (r *SoftDeleteRepository) QueryOnlyDeleted(ctx context.Context, input *dyna
 }
 
 // Scan performs a scan with soft delete filtering
-func (r *SoftDeleteRepository) Scan(ctx context.Context, input *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+func (r *SoftDeleteRepository) Scan(_ context.Context, input *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
 	// Add soft delete filter if needed
 	if !r.includeDeleted {
 		input = r.addSoftDeleteFilterToScan(input)
@@ -269,7 +270,7 @@ func (r *SoftDeleteRepository) Scan(ctx context.Context, input *dynamodb.ScanInp
 }
 
 // ScanOnlyDeleted scans only soft-deleted items
-func (r *SoftDeleteRepository) ScanOnlyDeleted(ctx context.Context, input *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+func (r *SoftDeleteRepository) ScanOnlyDeleted(_ context.Context, input *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
 	// Add filter for only soft-deleted items
 	input = r.addOnlyDeletedFilterToScan(input)
 
@@ -361,7 +362,7 @@ func (r *SoftDeleteRepository) CleanupOldDeletes(ctx context.Context, olderThan 
 }
 
 // GetDeletedItemsOlderThan returns items that have been soft-deleted for longer than the specified duration
-func (r *SoftDeleteRepository) GetDeletedItemsOlderThan(ctx context.Context, olderThan time.Duration) ([]map[string]*dynamodb.AttributeValue, error) {
+func (r *SoftDeleteRepository) GetDeletedItemsOlderThan(_ context.Context, olderThan time.Duration) ([]map[string]*dynamodb.AttributeValue, error) {
 	cutoff := time.Now().Add(-olderThan)
 
 	scanInput := &dynamodb.ScanInput{
@@ -406,7 +407,7 @@ func (r *SoftDeleteRepository) GetDeletedItemsOlderThan(ctx context.Context, old
 }
 
 // GetSoftDeleteStats returns statistics about soft-deleted items
-func (r *SoftDeleteRepository) GetSoftDeleteStats(ctx context.Context) (SoftDeleteStats, error) {
+func (r *SoftDeleteRepository) GetSoftDeleteStats(_ context.Context) (SoftDeleteStats, error) {
 	stats := SoftDeleteStats{}
 
 	// Count total items
@@ -449,11 +450,11 @@ func (r *SoftDeleteRepository) GetSoftDeleteStats(ctx context.Context) (SoftDele
 
 // Private helper methods
 
-func (r *SoftDeleteRepository) save(ctx context.Context, model interface{}) error {
+func (r *SoftDeleteRepository) save(_ context.Context, _ interface{}) error {
 	// This is a simplified save operation
 	// In a real implementation, you would use your existing save logic
 	// For now, we'll assume the model can be marshaled to DynamoDB format
-	
+
 	// This would typically use your existing DynamoDB marshaling logic
 	// For the example, we'll return nil
 	return nil
@@ -547,22 +548,22 @@ func (r *SoftDeleteRepository) addOnlyDeletedFilterToScan(input *dynamodb.ScanIn
 	return &newInput
 }
 
-func (r *SoftDeleteRepository) hardDeleteBatch(ctx context.Context, items []map[string]*dynamodb.AttributeValue) (int, error) {
+func (r *SoftDeleteRepository) hardDeleteBatch(_ context.Context, items []map[string]*dynamodb.AttributeValue) (int, error) {
 	if len(items) == 0 {
 		return 0, nil
 	}
 
 	// Extract keys from items (assumes pk and sk are the keys)
-	var writeRequests []*dynamodb.WriteRequest
+	writeRequests := make([]*dynamodb.WriteRequest, 0, len(items))
 	for _, item := range items {
 		// Build key from item
 		key := make(map[string]*dynamodb.AttributeValue)
-		
+
 		// Add primary key
 		if pk, exists := item["pk"]; exists {
 			key["pk"] = pk
 		}
-		
+
 		// Add sort key if it exists
 		if sk, exists := item["sk"]; exists {
 			key["sk"] = sk
@@ -641,15 +642,15 @@ func GetItemDeletionInfo(model SoftDeletable) (deletedAt *time.Time, deletedBy s
 	return model.GetDeletedAt(), model.GetDeletedBy(), model.IsDeleted()
 }
 
-// Example usage with a model
+// ExampleModel demonstrates usage of soft delete pattern
 type ExampleModel struct {
-	ID       string `dynamodbav:"pk" json:"id"`
-	Name     string `dynamodbav:"name" json:"name"`
-	Email    string `dynamodbav:"email" json:"email"`
-	
+	ID    string `dynamodbav:"pk" json:"id"`
+	Name  string `dynamodbav:"name" json:"name"`
+	Email string `dynamodbav:"email" json:"email"`
+
 	// Embed soft delete functionality
 	SoftDeleteModel
-	
+
 	CreatedAt time.Time `dynamodbav:"created_at" json:"created_at"`
 	UpdatedAt time.Time `dynamodbav:"updated_at" json:"updated_at"`
 }

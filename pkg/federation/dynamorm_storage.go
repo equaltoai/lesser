@@ -1,9 +1,9 @@
 package federation
 
 import (
-	"github.com/equaltoai/lesser/pkg/storage"
 	"context"
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"strings"
 	"time"
 
@@ -61,26 +61,26 @@ func (s *DynamORMFederationStorage) GetCachedRemoteActor(ctx context.Context, ac
 	if handle == "" {
 		return nil, storage.ErrNotFound
 	}
-	
+
 	// Query for cached remote actor
 	var remoteActor models.RemoteActor
 	err := s.db.WithContext(ctx).Model(&remoteActor).
 		Where("PK", "=", fmt.Sprintf("REMOTE_ACTOR#%s", handle)).
 		Where("SK", "=", "PROFILE").
 		First(&remoteActor)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to get cached remote actor: %w", err)
 	}
-	
+
 	// Check if cache has expired
 	if time.Now().After(remoteActor.ExpiresAt) {
 		return nil, storage.ErrNotFound
 	}
-	
+
 	return remoteActor.Actor, nil
 }
 
@@ -88,7 +88,7 @@ func (s *DynamORMFederationStorage) GetCachedRemoteActor(ctx context.Context, ac
 func (s *DynamORMFederationStorage) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
 	now := time.Now()
 	expiresAt := now.Add(ttl)
-	
+
 	remoteActor := &models.RemoteActor{
 		Handle:    handle,
 		Actor:     actor,
@@ -96,10 +96,10 @@ func (s *DynamORMFederationStorage) CacheRemoteActor(ctx context.Context, handle
 		UpdatedAt: now,
 		ExpiresAt: expiresAt,
 	}
-	
+
 	// Update keys for DynamORM
 	remoteActor.UpdateKeys()
-	
+
 	// Store in database
 	err := s.db.WithContext(ctx).Model(remoteActor).Create()
 	if err != nil {
@@ -116,7 +116,7 @@ func (s *DynamORMFederationStorage) CacheRemoteActor(ctx context.Context, handle
 			return fmt.Errorf("failed to cache remote actor: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -148,16 +148,16 @@ func extractHandleFromURL(actorID string) string {
 	// Remove protocol
 	withoutProtocol := strings.TrimPrefix(actorID, "https://")
 	withoutProtocol = strings.TrimPrefix(withoutProtocol, "http://")
-	
+
 	// Split by /
 	parts := strings.Split(withoutProtocol, "/")
 	if len(parts) < 3 {
 		return ""
 	}
-	
+
 	// Extract domain and username
 	domain := parts[0]
-	
+
 	// Find users part and get username
 	for i, part := range parts {
 		if part == "users" && i+1 < len(parts) {
@@ -165,6 +165,6 @@ func extractHandleFromURL(actorID string) string {
 			return fmt.Sprintf("%s@%s", username, domain)
 		}
 	}
-	
+
 	return ""
 }

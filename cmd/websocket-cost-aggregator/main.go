@@ -1,3 +1,4 @@
+// Package main implements the websocket-cost-aggregator Lambda function for aggregating WebSocket connection costs.
 package main
 
 /*
@@ -13,19 +14,26 @@ Uses Lift framework and DynamORM patterns.
 */
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
+	lessercfg "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -37,12 +45,15 @@ type WebSocketCostAggregatorHandler struct {
 	connectionRepo *repositories.StreamingConnectionRepository
 	costTracker    *repositories.WebSocketCostTracker
 	logger         *zap.Logger
-	cfg            *config.Config
+	cfg            *lessercfg.Config
+	snsClient      *sns.Client
+	webhookURL     string
+	snsTopicArn    string
 }
 
 var (
 	logger  *zap.Logger
-	cfg     *config.Config
+	cfg     *lessercfg.Config
 	handler *WebSocketCostAggregatorHandler
 )
 
@@ -51,7 +62,7 @@ func init() {
 	logger = common.Logger()
 
 	// Load configuration
-	cfg = config.Get()
+	cfg = lessercfg.Get()
 
 	// Initialize DynamORM database connection
 	db, err := dynamorm.GetLambdaClient(context.Background())
@@ -79,6 +90,25 @@ func init() {
 	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger)
 	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
 
+	// Initialize AWS SDK config for SNS
+	awsCfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		logger.Error("failed to load AWS config for SNS", zap.Error(err))
+	}
+
+	var snsClient *sns.Client
+	if awsCfg.Region != "" {
+		snsClient = sns.NewFromConfig(awsCfg)
+	}
+
+	// Get alerting configuration from environment
+	webhookURL := os.Getenv("BUDGET_ALERT_WEBHOOK_URL")
+	snsTopicArn := os.Getenv("BUDGET_ALERT_SNS_TOPIC_ARN")
+
+	if webhookURL == "" && snsTopicArn == "" {
+		logger.Warn("No alerting configuration found. Set BUDGET_ALERT_WEBHOOK_URL or BUDGET_ALERT_SNS_TOPIC_ARN to enable budget alerts")
+	}
+
 	// Create handler instance
 	handler = &WebSocketCostAggregatorHandler{
 		costRepo:       costRepo,
@@ -86,6 +116,9 @@ func init() {
 		costTracker:    costTracker,
 		logger:         logger,
 		cfg:            cfg,
+		snsClient:      snsClient,
+		webhookURL:     webhookURL,
+		snsTopicArn:    snsTopicArn,
 	}
 }
 
@@ -99,7 +132,7 @@ func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *lift.Context,
 
 	// Determine what operations to perform based on the event
 	operations := []string{"idle_tracking", "cost_aggregation", "budget_updates"}
-	
+
 	// Check if specific operations are requested via detail
 	if event.Detail != nil {
 		var detail map[string]interface{}
@@ -163,28 +196,57 @@ func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *lift.Context,
 func (h *WebSocketCostAggregatorHandler) trackIdleConnections(ctx context.Context) error {
 	h.logger.Info("tracking idle WebSocket connections")
 
-	// Get all active connections (this would need to be implemented in the connection repository)
-	// For now, we'll simulate getting connections that have been idle for more than 5 minutes
-	// idleThreshold := time.Now().Add(-5 * time.Minute) // TODO: Use when implementing actual query
+	// Get idle timeout from environment or use default (30 minutes)
+	idleTimeoutMinutes := getIdleTimeoutMinutes()
+	idleThreshold := time.Now().Add(-time.Duration(idleTimeoutMinutes) * time.Minute)
 
-	// In a real implementation, you'd query for connections with LastActivity < idleThreshold
-	// For this example, we'll create a placeholder
-	idleConnections := []models.WebSocketConnection{
-		// This would be populated from actual database query
+	// Get all WebSocket connections that have been idle past the threshold
+	idleConnections, err := h.getIdleConnections(ctx, idleThreshold)
+	if err != nil {
+		return fmt.Errorf("failed to get idle connections: %w", err)
 	}
 
 	if len(idleConnections) == 0 {
-		h.logger.Debug("no idle connections found")
+		h.logger.Debug("no idle connections found",
+			zap.Duration("idle_threshold", time.Since(idleThreshold)))
 		return nil
 	}
 
-	// Track costs for idle connections
-	if err := h.costTracker.TrackIdleConnections(ctx, idleConnections); err != nil {
-		return fmt.Errorf("failed to track idle connections: %w", err)
+	h.logger.Info("found idle connections to track",
+		zap.Int("idle_connections", len(idleConnections)),
+		zap.Duration("idle_threshold", time.Since(idleThreshold)))
+
+	// Track costs for idle connections in batches
+	batchSize := 50
+	totalTracked := 0
+	totalCost := int64(0)
+
+	for i := 0; i < len(idleConnections); i += batchSize {
+		end := i + batchSize
+		if end > len(idleConnections) {
+			end = len(idleConnections)
+		}
+		batch := idleConnections[i:end]
+
+		// Track costs for this batch of idle connections
+		batchCost, err := h.trackIdleConnectionsBatch(ctx, batch, idleThreshold)
+		if err != nil {
+			h.logger.Error("failed to track idle connections batch",
+				zap.Int("batch_start", i),
+				zap.Int("batch_size", len(batch)),
+				zap.Error(err))
+			// Continue with next batch
+			continue
+		}
+
+		totalTracked += len(batch)
+		totalCost += batchCost
 	}
 
-	h.logger.Info("tracked idle connection costs",
-		zap.Int("idle_connections", len(idleConnections)))
+	h.logger.Info("completed idle connection cost tracking",
+		zap.Int("total_tracked", totalTracked),
+		zap.Int64("total_cost_microcents", totalCost),
+		zap.Float64("total_cost_dollars", float64(totalCost)/1_000_000.0))
 
 	return nil
 }
@@ -261,36 +323,467 @@ func (h *WebSocketCostAggregatorHandler) updateBudgetAlerts(ctx context.Context)
 	return nil
 }
 
-// sendBudgetAlert sends a budget alert for a user (placeholder implementation)
+// sendBudgetAlert sends a budget alert for a user via webhook and/or SNS
 func (h *WebSocketCostAggregatorHandler) sendBudgetAlert(ctx context.Context, user *repositories.WebSocketUserCostRanking, budgetStatus *repositories.BudgetStatus) error {
-	// In a real implementation, this would send an email, push notification, or webhook
-	h.logger.Info("budget alert triggered",
-		zap.String("user_id", user.UserID),
-		zap.String("username", user.Username),
-		zap.Float64("total_cost_dollars", user.TotalCostDollars),
-		zap.Strings("exceeded_budgets", budgetStatus.ExceededBudgets),
-		zap.Strings("warning_budgets", budgetStatus.WarningBudgets))
+	// Prepare alert message
+	alertMessage := BudgetAlertMessage{
+		AlertType:        "BUDGET_ALERT",
+		Timestamp:        time.Now().UTC(),
+		UserID:           user.UserID,
+		Username:         user.Username,
+		TotalCostDollars: user.TotalCostDollars,
+		ExceededBudgets:  budgetStatus.ExceededBudgets,
+		WarningBudgets:   budgetStatus.WarningBudgets,
+		Severity:         determineSeverity(budgetStatus),
+		Message:          formatAlertMessage(user, budgetStatus),
+	}
 
-	// For now, just log the alert
-	// TODO: Implement actual alerting mechanism (email, SNS, webhook, etc.)
+	// Marshal to JSON
+	alertJSON, err := json.Marshal(alertMessage)
+	if err != nil {
+		return fmt.Errorf("failed to marshal alert message: %w", err)
+	}
+
+	var alertErrors []error
+
+	// Send via webhook if configured
+	if h.webhookURL != "" {
+		if err := h.sendWebhookAlert(ctx, alertJSON); err != nil {
+			h.logger.Error("failed to send webhook alert",
+				zap.String("user_id", user.UserID),
+				zap.Error(err))
+			alertErrors = append(alertErrors, err)
+		} else {
+			h.logger.Info("webhook alert sent successfully",
+				zap.String("user_id", user.UserID))
+		}
+	}
+
+	// Send via SNS if configured
+	if h.snsTopicArn != "" && h.snsClient != nil {
+		if err := h.sendSNSAlert(ctx, alertJSON); err != nil {
+			h.logger.Error("failed to send SNS alert",
+				zap.String("user_id", user.UserID),
+				zap.Error(err))
+			alertErrors = append(alertErrors, err)
+		} else {
+			h.logger.Info("SNS alert sent successfully",
+				zap.String("user_id", user.UserID))
+		}
+	}
+
+	// Store alert in DynamoDB for audit trail
+	if err := h.storeAlertRecord(ctx, &alertMessage); err != nil {
+		h.logger.Warn("failed to store alert record",
+			zap.String("user_id", user.UserID),
+			zap.Error(err))
+	}
+
+	// Return error if all alert methods failed
+	if len(alertErrors) > 0 && len(alertErrors) == countConfiguredAlertMethods(h) {
+		return fmt.Errorf("all alert methods failed: %v", alertErrors)
+	}
 
 	return nil
+}
+
+// BudgetAlertMessage represents a budget alert notification
+type BudgetAlertMessage struct {
+	AlertType        string    `json:"alert_type"`
+	Timestamp        time.Time `json:"timestamp"`
+	UserID           string    `json:"user_id"`
+	Username         string    `json:"username"`
+	TotalCostDollars float64   `json:"total_cost_dollars"`
+	ExceededBudgets  []string  `json:"exceeded_budgets"`
+	WarningBudgets   []string  `json:"warning_budgets"`
+	Severity         string    `json:"severity"`
+	Message          string    `json:"message"`
+}
+
+// sendWebhookAlert sends an alert via webhook
+func (h *WebSocketCostAggregatorHandler) sendWebhookAlert(ctx context.Context, alertJSON []byte) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", h.webhookURL, bytes.NewBuffer(alertJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create webhook request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Alert-Type", "budget-alert")
+	req.Header.Set("X-Instance-Domain", os.Getenv("DOMAIN_NAME"))
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("webhook request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("webhook returned non-2xx status: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// sendSNSAlert sends an alert via AWS SNS
+func (h *WebSocketCostAggregatorHandler) sendSNSAlert(ctx context.Context, alertJSON []byte) error {
+	input := &sns.PublishInput{
+		TopicArn: aws.String(h.snsTopicArn),
+		Message:  aws.String(string(alertJSON)),
+		Subject:  aws.String("Lesser WebSocket Budget Alert"),
+		MessageAttributes: map[string]types.MessageAttributeValue{
+			"AlertType": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String("BudgetAlert"),
+			},
+			"Instance": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(os.Getenv("DOMAIN_NAME")),
+			},
+		},
+	}
+
+	_, err := h.snsClient.Publish(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to publish SNS message: %w", err)
+	}
+
+	return nil
+}
+
+// storeAlertRecord stores the alert in DynamoDB for audit trail
+func (h *WebSocketCostAggregatorHandler) storeAlertRecord(ctx context.Context, alert *BudgetAlertMessage) error {
+	// Create a WebSocket cost record for the alert
+	// Note: We're using the cost tracking table to store alert history for audit purposes
+	record := &models.WebSocketCostRecord{
+		PK:            "WS_COST#ALERT",
+		SK:            fmt.Sprintf("ts#%d#%s", alert.Timestamp.UnixNano(), alert.UserID),
+		ID:            fmt.Sprintf("alert_%s_%d", alert.UserID, time.Now().UnixNano()),
+		UserID:        alert.UserID,
+		Username:      alert.Username,
+		ConnectionID:  "BUDGET_ALERT",  // Special connection ID for alerts
+		OperationType: "BUDGET_ALERT",
+		Timestamp:     alert.Timestamp,
+		// Store the total cost that triggered the alert in the cost field
+		TotalCostMicroCents: int64(alert.TotalCostDollars * 1_000_000), // Convert to microcents for storage
+		// Use MessageCount to store severity level (1=INFO, 2=WARNING, 3=CRITICAL)
+		MessageCount: severityToLevel(alert.Severity),
+		// Store exceeded budget count in StreamCount for tracking
+		StreamCount: len(alert.ExceededBudgets),
+	}
+
+	// Update GSI keys for user-based queries
+	record.GSI2PK = fmt.Sprintf("WS_USER#%s", alert.UserID)
+	record.GSI2SK = fmt.Sprintf("%d#BUDGET_ALERT#%s", alert.Timestamp.Unix(), record.ID)
+
+	return h.costRepo.Create(ctx, record)
+}
+
+func severityToLevel(severity string) int {
+	switch severity {
+	case "CRITICAL":
+		return 3
+	case "WARNING":
+		return 2
+	case "INFO":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// Helper functions
+
+func determineSeverity(budgetStatus *repositories.BudgetStatus) string {
+	if len(budgetStatus.ExceededBudgets) > 0 {
+		return "CRITICAL"
+	}
+	if len(budgetStatus.WarningBudgets) > 0 {
+		return "WARNING"
+	}
+	return "INFO"
+}
+
+func formatAlertMessage(user *repositories.WebSocketUserCostRanking, budgetStatus *repositories.BudgetStatus) string {
+	if len(budgetStatus.ExceededBudgets) > 0 {
+		return fmt.Sprintf("User %s has exceeded budget limits: %v. Total cost: $%.2f",
+			user.Username, budgetStatus.ExceededBudgets, user.TotalCostDollars)
+	}
+	if len(budgetStatus.WarningBudgets) > 0 {
+		return fmt.Sprintf("User %s is approaching budget limits: %v. Total cost: $%.2f",
+			user.Username, budgetStatus.WarningBudgets, user.TotalCostDollars)
+	}
+	return fmt.Sprintf("Budget status update for user %s. Total cost: $%.2f",
+		user.Username, user.TotalCostDollars)
+}
+
+func countConfiguredAlertMethods(h *WebSocketCostAggregatorHandler) int {
+	count := 0
+	if h.webhookURL != "" {
+		count++
+	}
+	if h.snsTopicArn != "" && h.snsClient != nil {
+		count++
+	}
+	return count
 }
 
 // cleanupStaleConnections removes connection records for connections that have been disconnected
 func (h *WebSocketCostAggregatorHandler) cleanupStaleConnections(ctx context.Context) error {
 	h.logger.Info("cleaning up stale WebSocket connections")
 
-	// In a real implementation, you'd query for connections older than a certain threshold
-	// and verify they're no longer active with API Gateway, then clean them up
+	// Get stale timeout from environment or use default (24 hours)
+	staleTimeoutHours := getStaleTimeoutHours()
+	staleThreshold := time.Now().Add(-time.Duration(staleTimeoutHours) * time.Hour)
 
-	// For now, this is a placeholder
-	staleThreshold := time.Now().Add(-24 * time.Hour)
-	
-	h.logger.Info("cleanup completed",
-		zap.Time("stale_threshold", staleThreshold))
+	// Find connections that are older than the stale threshold
+	staleConnections, err := h.getStaleConnections(ctx, staleThreshold)
+	if err != nil {
+		return fmt.Errorf("failed to get stale connections: %w", err)
+	}
+
+	if len(staleConnections) == 0 {
+		h.logger.Debug("no stale connections found to clean up",
+			zap.Duration("stale_threshold", time.Since(staleThreshold)))
+		return nil
+	}
+
+	h.logger.Info("found stale connections to clean up",
+		zap.Int("stale_connections", len(staleConnections)),
+		zap.Duration("stale_threshold", time.Since(staleThreshold)))
+
+	// Clean up connections in batches
+	batchSize := 25 // Smaller batch for cleanup operations
+	totalCleaned := 0
+	totalErrors := 0
+	reclaimedCost := int64(0)
+
+	for i := 0; i < len(staleConnections); i += batchSize {
+		end := i + batchSize
+		if end > len(staleConnections) {
+			end = len(staleConnections)
+		}
+		batch := staleConnections[i:end]
+
+		// Clean up this batch of stale connections
+		batchResults := h.cleanupStaleConnectionsBatch(ctx, batch)
+		totalCleaned += batchResults.Cleaned
+		totalErrors += batchResults.Errors
+		reclaimedCost += batchResults.ReclaimedCostMicroCents
+	}
+
+	h.logger.Info("completed stale connection cleanup",
+		zap.Int("total_cleaned", totalCleaned),
+		zap.Int("total_errors", totalErrors),
+		zap.Int64("reclaimed_cost_microcents", reclaimedCost),
+		zap.Float64("reclaimed_cost_dollars", float64(reclaimedCost)/1_000_000.0))
+
+	// Send alert if cleanup reclaimed significant cost
+	if reclaimedCost > 100_000 { // > $0.10 reclaimed
+		h.sendCleanupAlert(ctx, totalCleaned, reclaimedCost)
+	}
 
 	return nil
+}
+
+// getIdleConnections retrieves WebSocket connections that have been idle past the threshold
+func (h *WebSocketCostAggregatorHandler) getIdleConnections(ctx context.Context, idleThreshold time.Time) ([]models.WebSocketConnection, error) {
+	// Use the repository method to get idle connections
+	return h.connectionRepo.GetIdleConnections(ctx, idleThreshold)
+}
+
+// trackIdleConnectionsBatch tracks costs for a batch of idle connections
+func (h *WebSocketCostAggregatorHandler) trackIdleConnectionsBatch(ctx context.Context, connections []models.WebSocketConnection, idleThreshold time.Time) (int64, error) {
+	if err := h.costTracker.TrackIdleConnections(ctx, connections); err != nil {
+		return 0, fmt.Errorf("failed to track idle connections: %w", err)
+	}
+
+	// Calculate total idle cost for reporting
+	totalIdleCost := int64(0)
+	now := time.Now()
+
+	for _, conn := range connections {
+		// Calculate idle time since threshold
+		idleTime := now.Sub(conn.LastActivity)
+		if conn.LastActivity.Before(idleThreshold) {
+			idleTime = now.Sub(idleThreshold)
+		}
+
+		// Estimate idle cost (connection minutes * cost per minute)
+		idleMinutes := int64(idleTime.Minutes())
+		// Using API Gateway connection cost: ~0.25 microcents per minute
+		idleCost := (idleMinutes * 25) / 100 // microcents
+		totalIdleCost += idleCost
+	}
+
+	return totalIdleCost, nil
+}
+
+// getStaleConnections retrieves WebSocket connections that are considered stale
+func (h *WebSocketCostAggregatorHandler) getStaleConnections(ctx context.Context, staleThreshold time.Time) ([]models.WebSocketConnection, error) {
+	// Use the repository method to get stale connections
+	return h.connectionRepo.GetStaleConnections(ctx, staleThreshold)
+}
+
+// CleanupBatchResult represents the result of cleaning up a batch of stale connections
+type CleanupBatchResult struct {
+	Cleaned                int
+	Errors                 int
+	ReclaimedCostMicroCents int64
+}
+
+// cleanupStaleConnectionsBatch cleans up a batch of stale connections
+func (h *WebSocketCostAggregatorHandler) cleanupStaleConnectionsBatch(ctx context.Context, connections []models.WebSocketConnection) *CleanupBatchResult {
+	result := &CleanupBatchResult{}
+	now := time.Now()
+
+	for _, conn := range connections {
+		// Calculate how long the connection has been stale
+		staleTime := now.Sub(conn.LastActivity)
+
+		// Estimate reclaimed cost (connection time that won't accumulate further cost)
+		staleMinutes := int64(staleTime.Minutes())
+		reclaimedCost := (staleMinutes * 25) / 100 // microcents (API Gateway connection cost)
+
+		// Delete the connection record
+		if err := h.connectionRepo.DeleteConnection(ctx, conn.ConnectionID); err != nil {
+			h.logger.Error("failed to delete stale connection",
+				zap.String("connection_id", conn.ConnectionID),
+				zap.String("user_id", conn.UserID),
+				zap.Duration("stale_time", staleTime),
+				zap.Error(err))
+			result.Errors++
+			continue
+		}
+
+		// Delete all subscriptions for this connection
+		if err := h.connectionRepo.DeleteAllSubscriptions(ctx, conn.ConnectionID); err != nil {
+			h.logger.Warn("failed to delete stale connection subscriptions",
+				zap.String("connection_id", conn.ConnectionID),
+				zap.Error(err))
+			// Don't count this as an error since the main connection was deleted
+		}
+
+		// Record cleanup action for audit
+		h.recordCleanupAction(ctx, conn, staleTime, reclaimedCost)
+
+		result.Cleaned++
+		result.ReclaimedCostMicroCents += reclaimedCost
+
+		h.logger.Debug("cleaned up stale connection",
+			zap.String("connection_id", conn.ConnectionID),
+			zap.String("user_id", conn.UserID),
+			zap.Duration("stale_time", staleTime),
+			zap.Int64("reclaimed_cost_microcents", reclaimedCost))
+	}
+
+	return result
+}
+
+// recordCleanupAction records a cleanup action for audit purposes
+func (h *WebSocketCostAggregatorHandler) recordCleanupAction(ctx context.Context, conn models.WebSocketConnection, staleTime time.Duration, reclaimedCost int64) {
+	// Create a cost record to track the cleanup action
+	record := &models.WebSocketCostRecord{
+		PK:            "WS_COST#cleanup",
+		SK:            fmt.Sprintf("ts#%d#%s", time.Now().UnixNano(), conn.ConnectionID),
+		ID:            fmt.Sprintf("cleanup_%s_%d", conn.ConnectionID, time.Now().UnixNano()),
+		UserID:        conn.UserID,
+		Username:      conn.Username,
+		ConnectionID:  conn.ConnectionID,
+		OperationType: "cleanup",
+		Timestamp:     time.Now(),
+		// Store stale time in ConnectionDurationMs for tracking
+		ConnectionDurationMs: staleTime.Milliseconds(),
+		// Use negative cost to represent reclaimed/prevented cost
+		TotalCostMicroCents: -reclaimedCost,
+		// Mark as cleanup operation
+		Tags: map[string]string{
+			"action":      "stale_cleanup",
+			"automated":   "true",
+			"stale_hours": fmt.Sprintf("%.1f", staleTime.Hours()),
+		},
+	}
+
+	// Update GSI keys
+	record.GSI1PK = fmt.Sprintf("WS_CONN#%s", conn.ConnectionID)
+	record.GSI1SK = fmt.Sprintf("%s#cleanup#%s", time.Now().Format(time.RFC3339), record.ID)
+
+	if conn.UserID != "" {
+		record.GSI2PK = fmt.Sprintf("WS_USER#%s", conn.UserID)
+		record.GSI2SK = fmt.Sprintf("%s#cleanup#%s", time.Now().Format(time.RFC3339), record.ID)
+	}
+
+	if err := h.costRepo.Create(ctx, record); err != nil {
+		h.logger.Warn("failed to record cleanup action",
+			zap.String("connection_id", conn.ConnectionID),
+			zap.Error(err))
+	}
+}
+
+// sendCleanupAlert sends an alert about significant cleanup activity
+func (h *WebSocketCostAggregatorHandler) sendCleanupAlert(ctx context.Context, cleanedCount int, reclaimedCost int64) {
+	alertMessage := CleanupAlertMessage{
+		AlertType:        "CLEANUP_ALERT",
+		Timestamp:        time.Now().UTC(),
+		CleanedConnections: cleanedCount,
+		ReclaimedCostMicroCents: reclaimedCost,
+		ReclaimedCostDollars: float64(reclaimedCost) / 1_000_000.0,
+		Message: fmt.Sprintf("Cleaned up %d stale WebSocket connections, reclaiming $%.4f in potential costs", 
+			cleanedCount, float64(reclaimedCost)/1_000_000.0),
+	}
+
+	// Marshal to JSON
+	alertJSON, err := json.Marshal(alertMessage)
+	if err != nil {
+		h.logger.Error("failed to marshal cleanup alert", zap.Error(err))
+		return
+	}
+
+	// Send via configured channels
+	if h.webhookURL != "" {
+		if err := h.sendWebhookAlert(ctx, alertJSON); err != nil {
+			h.logger.Error("failed to send cleanup webhook alert", zap.Error(err))
+		}
+	}
+
+	if h.snsTopicArn != "" && h.snsClient != nil {
+		if err := h.sendSNSAlert(ctx, alertJSON); err != nil {
+			h.logger.Error("failed to send cleanup SNS alert", zap.Error(err))
+		}
+	}
+}
+
+// CleanupAlertMessage represents a cleanup alert notification
+type CleanupAlertMessage struct {
+	AlertType               string    `json:"alert_type"`
+	Timestamp               time.Time `json:"timestamp"`
+	CleanedConnections      int       `json:"cleaned_connections"`
+	ReclaimedCostMicroCents int64     `json:"reclaimed_cost_micro_cents"`
+	ReclaimedCostDollars    float64   `json:"reclaimed_cost_dollars"`
+	Message                 string    `json:"message"`
+}
+
+// getIdleTimeoutMinutes returns the idle timeout in minutes from environment or default
+func getIdleTimeoutMinutes() int {
+	if timeoutStr := os.Getenv("IDLE_TIMEOUT_MINUTES"); timeoutStr != "" {
+		if timeout, err := strconv.Atoi(timeoutStr); err == nil && timeout > 0 {
+			return timeout
+		}
+	}
+	return 30 // Default: 30 minutes
+}
+
+// getStaleTimeoutHours returns the stale timeout in hours from environment or default  
+func getStaleTimeoutHours() int {
+	if timeoutStr := os.Getenv("STALE_TIMEOUT_HOURS"); timeoutStr != "" {
+		if timeout, err := strconv.Atoi(timeoutStr); err == nil && timeout > 0 {
+			return timeout
+		}
+	}
+	return 24 // Default: 24 hours
 }
 
 func main() {
@@ -310,7 +803,7 @@ func main() {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			requestID := ctx.Get("requestID")
-			
+
 			logger.Info("processing WebSocket cost aggregation",
 				zap.Any("request_id", requestID))
 
@@ -348,7 +841,7 @@ func main() {
 	})
 
 	// Set up the scheduled event handler
-	app.Use(func(next lift.Handler) lift.Handler {
+	app.Use(func(_ lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Parse the event as CloudWatch Event
 			if ctx.Request.RawEvent == nil {
@@ -360,7 +853,7 @@ func main() {
 				event = cwEvent
 			} else {
 				// Try to parse from request body
-				if ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+				if len(ctx.Request.Body) > 0 {
 					if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
 						return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse CloudWatch event", 500)
 					}

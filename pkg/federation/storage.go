@@ -10,6 +10,8 @@ import (
 
 // FederationStorage defines the minimal storage interface needed for federation delivery.
 // This is a much smaller interface than storage.Storage, focused only on federation needs.
+//
+//nolint:revive // Federation prefix clarifies this is federation-specific storage interface
 type FederationStorage interface {
 	// Actor operations needed for federation
 	GetActorPrivateKey(ctx context.Context, username string) (string, error)

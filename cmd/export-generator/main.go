@@ -1,3 +1,4 @@
+// Package main implements the export-generator Lambda function for generating user data exports.
 package main
 
 import (
@@ -32,15 +33,15 @@ import (
 
 // ExportProcessor handles data export generation from SQS messages
 type ExportProcessor struct {
-	db                core.DB
-	repos             storageCore.RepositoryStorage
-	exportRepo        *repositories.ExportRepository
-	costTrackingRepo  *repositories.CostTrackingRepository
-	s3Client          *s3.Client
-	logger            *zap.Logger
-	tableName         string
-	bucketName        string
-	baseURL           string
+	db               core.DB
+	repos            storageCore.RepositoryStorage
+	exportRepo       *repositories.ExportRepository
+	costTrackingRepo *repositories.CostTrackingRepository
+	s3Client         *s3.Client
+	logger           *zap.Logger
+	tableName        string
+	bucketName       string
+	baseURL          string
 }
 
 var (
@@ -69,6 +70,14 @@ func init() {
 	logger := common.Logger()
 	cfg = config.Get()
 
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		logger.Fatal("failed to load AWS config", zap.Error(err))
+	}
+
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
@@ -76,27 +85,27 @@ func init() {
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
 	// Initialize export repository
 	exportRepo := repositories.NewExportRepository(db, cfg.DynamoTableName, logger)
-	
+
 	// Initialize cost tracking repository
 	costTrackingRepo := repositories.NewCostTrackingRepository(db, cfg.DynamoTableName, logger)
 
 	// Create processor instance
 	processor = &ExportProcessor{
-		db:                db,
-		repos:             repos,
-		exportRepo:        exportRepo,
-		costTrackingRepo:  costTrackingRepo,
-		logger:            logger,
-		tableName:         cfg.DynamoTableName,
-		bucketName:        cfg.S3BucketName,
-		baseURL:           cfg.BaseURL(),
+		db:               db,
+		repos:            repos,
+		exportRepo:       exportRepo,
+		costTrackingRepo: costTrackingRepo,
+		logger:           logger,
+		tableName:        cfg.DynamoTableName,
+		bucketName:       cfg.S3BucketName,
+		baseURL:          cfg.BaseURL(),
 	}
 
 	if processor.bucketName == "" {
@@ -142,7 +151,11 @@ func (ep *ExportProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) e
 				zap.String("request_id", ctx.GetRequestID()),
 				zap.Error(err))
 			// Update job status as failed
-			ep.exportRepo.UpdateExportStatus(ctx.Request.Context(), exportEvent.ExportID, "failed", nil, err.Error())
+			if updateErr := ep.exportRepo.UpdateExportStatus(ctx.Request.Context(), exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
+				ep.logger.Error("failed to update export status to failed",
+					zap.String("export_id", exportEvent.ExportID),
+					zap.Error(updateErr))
+			}
 		}
 	}
 
@@ -180,7 +193,7 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 		Status:       "processing",
 		StartedAt:    startTime,
 	}
-	
+
 	// Note: Budget enforcement should be implemented at the API level before jobs are queued
 	// This ensures users cannot exceed limits even if multiple exports are processed simultaneously
 
@@ -190,32 +203,32 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 			completedAt := time.Now()
 			exportCostTracking.CompletedAt = &completedAt
 		}
-		
+
 		// Calculate Lambda execution cost
 		exportCostTracking.LambdaDurationMs = time.Since(startTime).Milliseconds()
 		exportCostTracking.LambdaExecutionCost = ep.calculateLambdaCost(exportCostTracking.LambdaDurationMs)
-		
+
 		// Calculate total cost
 		exportCostTracking.CalculateTotalCost()
-		
+
 		// Save cost tracking record
 		if err := ep.costTrackingRepo.Create(ctx, &models.DynamoDBCostRecord{
-			Table:           ep.tableName,
-			OperationType:   "ExportGeneration",
+			Table:                ep.tableName,
+			OperationType:        "ExportGeneration",
 			EstimatedCostDollars: exportCostTracking.GetTotalCostDollars(),
 			TotalCostMicroCents:  exportCostTracking.TotalCostMicroCents,
-			ServiceName:     "export-generator",
-			RequestDuration: time.Since(startTime).Milliseconds(),
+			ServiceName:          "export-generator",
+			RequestDuration:      time.Since(startTime).Milliseconds(),
 			Properties: map[string]interface{}{
-				"username":   event.Username,
-				"export_id":  event.ExportID,
+				"username":  event.Username,
+				"export_id": event.ExportID,
 			},
 		}); err != nil {
 			ep.logger.Error("failed to save export cost tracking",
 				zap.String("export_id", event.ExportID),
 				zap.Error(err))
 		}
-		
+
 		// Create a dedicated ImportRepository instance to update budget usage
 		// This tracks actual costs against user budgets
 		importRepo := repositories.NewImportRepository(ep.db, ep.tableName, ep.logger)
@@ -268,7 +281,7 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 	if err := ep.uploadToS3(ctx, s3Key, exportData, contentType, exportCostTracking); err != nil {
 		return fmt.Errorf("failed to upload export: %w", err)
 	}
-	
+
 	// Update export cost tracking with file metrics
 	exportCostTracking.FileSize = int64(len(exportData))
 	exportCostTracking.RecordCount = int64(recordCount)
@@ -309,161 +322,215 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
-	recordCount := 0
-
-	switch event.Type {
-	case "followers":
-		// Write header
-		writer.Write([]string{"Account address", "Show boosts", "Notify on new posts", "Languages"})
-
-		// Get followers
-		followers, err := ep.getFollowers(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-		
-		// Track DynamoDB read costs
-		if costTracking != nil {
-			// Estimate read capacity units (1 RCU per item, pagination queries)
-			estimatedRCU := float64(len(followers)) / 1000 * 5 // 5 RCU per 1000 items (pagination overhead)
-			if estimatedRCU < 1 {
-				estimatedRCU = 1
-			}
-			costTracking.DynamoDBReadUnits += estimatedRCU
-			costTracking.DynamoDBOperations += 1
-			costTracking.DynamoDBReadCost += ep.calculateDynamoDBReadCost(estimatedRCU)
-		}
-
-		for _, follower := range followers {
-			writer.Write([]string{
-				follower,
-				"true",  // Show boosts default
-				"false", // Notify default
-				"",      // Languages default
-			})
-			recordCount++
-		}
-
-	case "following":
-		// Write header
-		writer.Write([]string{"Account address", "Show boosts", "Notify on new posts", "Languages"})
-
-		// Get following
-		following, err := ep.getFollowing(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-		
-		// Track DynamoDB read costs
-		if costTracking != nil {
-			estimatedRCU := float64(len(following)) / 1000 * 5
-			if estimatedRCU < 1 {
-				estimatedRCU = 1
-			}
-			costTracking.DynamoDBReadUnits += estimatedRCU
-			costTracking.DynamoDBOperations += 1
-			costTracking.DynamoDBReadCost += ep.calculateDynamoDBReadCost(estimatedRCU)
-		}
-
-		for _, follow := range following {
-			writer.Write([]string{
-				follow,
-				"true",  // Show boosts default
-				"false", // Notify default
-				"",      // Languages default
-			})
-			recordCount++
-		}
-
-	case "blocks":
-		// Write header
-		writer.Write([]string{"Account address"})
-
-		// Get blocks
-		blocks, err := ep.getBlocks(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, block := range blocks {
-			writer.Write([]string{block})
-			recordCount++
-		}
-
-	case "mutes":
-		// Write header
-		writer.Write([]string{"Account address", "Hide notifications"})
-
-		// Get mutes
-		mutes, err := ep.getMutes(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, mute := range mutes {
-			writer.Write([]string{
-				mute.AccountID,
-				fmt.Sprintf("%t", mute.HideNotifications),
-			})
-			recordCount++
-		}
-
-	case "lists":
-		// Write header
-		writer.Write([]string{"List name", "Account address"})
-
-		// Get lists with members
-		lists, err := ep.getListsWithMembers(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for listName, members := range lists {
-			for _, member := range members {
-				writer.Write([]string{listName, member})
-				recordCount++
-			}
-		}
-
-	case "bookmarks":
-		// Write header
-		writer.Write([]string{"Status URL", "Bookmarked at"})
-
-		// Get bookmarks
-		bookmarks, err := ep.getBookmarks(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, bookmark := range bookmarks {
-			writer.Write([]string{
-				bookmark.StatusURL,
-				bookmark.CreatedAt.Format(time.RFC3339),
-			})
-			recordCount++
-		}
-
-	case "domain_blocks":
-		// Write header
-		writer.Write([]string{"Domain"})
-
-		// Get domain blocks
-		domainBlocks, err := ep.getDomainBlocks(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, domain := range domainBlocks {
-			writer.Write([]string{domain})
-			recordCount++
-		}
-
-	default:
-		return nil, 0, fmt.Errorf("CSV export not supported for type: %s", event.Type)
+	
+	recordCount, err := ep.writeCSVData(ctx, writer, event, costTracking)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, 0, fmt.Errorf("CSV writer error: %w", err)
+	}
 	return buf.Bytes(), recordCount, nil
+}
+
+// writeCSVData writes the appropriate CSV data based on export type
+func (ep *ExportProcessor) writeCSVData(ctx context.Context, writer *csv.Writer, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) (int, error) {
+	switch event.Type {
+	case "followers":
+		return ep.writeFollowersCSV(ctx, writer, event.Username, costTracking)
+	case "following":
+		return ep.writeFollowingCSV(ctx, writer, event.Username, costTracking)
+	case "blocks":
+		return ep.writeBlocksCSV(ctx, writer, event.Username)
+	case "mutes":
+		return ep.writeMutesCSV(ctx, writer, event.Username)
+	case "lists":
+		return ep.writeListsCSV(ctx, writer, event.Username)
+	case "bookmarks":
+		return ep.writeBookmarksCSV(ctx, writer, event.Username)
+	case "domain_blocks":
+		return ep.writeDomainBlocksCSV(ctx, writer, event.Username)
+	default:
+		return 0, fmt.Errorf("CSV export not supported for type: %s", event.Type)
+	}
+}
+
+// writeFollowersCSV writes followers data to CSV
+func (ep *ExportProcessor) writeFollowersCSV(ctx context.Context, writer *csv.Writer, username string, costTracking *models.ExportCostTracking) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Account address", "Show boosts", "Notify on new posts", "Languages"})
+
+	// Get followers
+	followers, err := ep.getFollowers(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Track costs
+	ep.trackReadCosts(costTracking, len(followers))
+
+	// Write data
+	return ep.writeAccountRows(writer, followers)
+}
+
+// writeFollowingCSV writes following data to CSV
+func (ep *ExportProcessor) writeFollowingCSV(ctx context.Context, writer *csv.Writer, username string, costTracking *models.ExportCostTracking) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Account address", "Show boosts", "Notify on new posts", "Languages"})
+
+	// Get following
+	following, err := ep.getFollowing(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Track costs
+	ep.trackReadCosts(costTracking, len(following))
+
+	// Write data
+	return ep.writeAccountRows(writer, following)
+}
+
+// writeAccountRows writes account data rows with default values
+func (ep *ExportProcessor) writeAccountRows(writer *csv.Writer, accounts []string) (int, error) {
+	recordCount := 0
+	for _, account := range accounts {
+		_ = writer.Write([]string{
+			account,
+			"true",  // Show boosts default
+			"false", // Notify default
+			"",      // Languages default
+		})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// writeBlocksCSV writes blocks data to CSV
+func (ep *ExportProcessor) writeBlocksCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Account address"})
+
+	// Get blocks
+	blocks, err := ep.getBlocks(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for _, block := range blocks {
+		_ = writer.Write([]string{block})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// writeMutesCSV writes mutes data to CSV
+func (ep *ExportProcessor) writeMutesCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Account address", "Hide notifications"})
+
+	// Get mutes
+	mutes, err := ep.getMutes(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for _, mute := range mutes {
+		_ = writer.Write([]string{
+			mute.AccountID,
+			fmt.Sprintf("%t", mute.HideNotifications),
+		})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// writeListsCSV writes lists data to CSV
+func (ep *ExportProcessor) writeListsCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"List name", "Account address"})
+
+	// Get lists with members
+	lists, err := ep.getListsWithMembers(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for listName, members := range lists {
+		for _, member := range members {
+			_ = writer.Write([]string{listName, member})
+			recordCount++
+		}
+	}
+	return recordCount, nil
+}
+
+// writeBookmarksCSV writes bookmarks data to CSV
+func (ep *ExportProcessor) writeBookmarksCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Status URL", "Bookmarked at"})
+
+	// Get bookmarks
+	bookmarks, err := ep.getBookmarks(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for _, bookmark := range bookmarks {
+		_ = writer.Write([]string{
+			bookmark.StatusURL,
+			bookmark.CreatedAt.Format(time.RFC3339),
+		})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// writeDomainBlocksCSV writes domain blocks data to CSV
+func (ep *ExportProcessor) writeDomainBlocksCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Domain"})
+
+	// Get domain blocks
+	domainBlocks, err := ep.getDomainBlocks(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for _, domain := range domainBlocks {
+		_ = writer.Write([]string{domain})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// trackReadCosts tracks DynamoDB read costs for export operations
+func (ep *ExportProcessor) trackReadCosts(costTracking *models.ExportCostTracking, itemCount int) {
+	if costTracking == nil {
+		return
+	}
+	
+	// Estimate read capacity units (1 RCU per item, pagination queries)
+	estimatedRCU := float64(itemCount) / 1000 * 5 // 5 RCU per 1000 items (pagination overhead)
+	if estimatedRCU < 1 {
+		estimatedRCU = 1
+	}
+	
+	costTracking.DynamoDBReadUnits += estimatedRCU
+	costTracking.DynamoDBOperations++
+	costTracking.DynamoDBReadCost += ep.calculateDynamoDBReadCost(estimatedRCU)
 }
 
 func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
@@ -565,13 +632,13 @@ func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event 
 				// Don't fail the export, just log the error
 			} else {
 				ep.logger.Info("included media files in export", zap.Int("count", mediaCount))
-				
+
 				// Track media file costs (estimate based on media count)
 				if costTracking != nil {
 					costTracking.MediaFilesIncluded = int64(mediaCount)
 					costTracking.S3GetRequests += int64(mediaCount)
 					costTracking.S3GetRequestCost += ep.calculateS3GetCost(int64(mediaCount))
-					
+
 					// Estimate media size (approximate 2MB per file)
 					estimatedMediaSize := int64(mediaCount) * 2 * 1024 * 1024 // 2MB per file
 					costTracking.MediaSizeBytes = estimatedMediaSize
@@ -581,7 +648,10 @@ func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event 
 		}
 	}
 
-	zipWriter.Close()
+	if err := zipWriter.Close(); err != nil {
+		ep.logger.Error("failed to close zip writer", zap.Error(err))
+		return nil, 0, fmt.Errorf("failed to close zip writer: %w", err)
+	}
 	return buf.Bytes(), recordCount, nil
 }
 
@@ -690,13 +760,13 @@ func (ep *ExportProcessor) generateMastodonExport(ctx context.Context, event Exp
 				// Don't fail the export, just log the error
 			} else {
 				ep.logger.Info("included media files in export", zap.Int("count", mediaCount))
-				
+
 				// Track media file costs (estimate based on media count)
 				if costTracking != nil {
 					costTracking.MediaFilesIncluded = int64(mediaCount)
 					costTracking.S3GetRequests += int64(mediaCount)
 					costTracking.S3GetRequestCost += ep.calculateS3GetCost(int64(mediaCount))
-					
+
 					// Estimate media size (approximate 2MB per file)
 					estimatedMediaSize := int64(mediaCount) * 2 * 1024 * 1024 // 2MB per file
 					costTracking.MediaSizeBytes = estimatedMediaSize
@@ -706,7 +776,10 @@ func (ep *ExportProcessor) generateMastodonExport(ctx context.Context, event Exp
 		}
 	}
 
-	zipWriter.Close()
+	if err := zipWriter.Close(); err != nil {
+		ep.logger.Error("failed to close zip writer", zap.Error(err))
+		return nil, 0, fmt.Errorf("failed to close zip writer: %w", err)
+	}
 	return buf.Bytes(), recordCount, nil
 }
 
@@ -717,7 +790,7 @@ func (ep *ExportProcessor) getActor(ctx context.Context, username string) (*acti
 	if err != nil {
 		return nil, fmt.Errorf("failed to get actor: %w", err)
 	}
-	
+
 	return actor, nil
 }
 
@@ -801,6 +874,7 @@ func (ep *ExportProcessor) getBlocks(ctx context.Context, username string) ([]st
 	return allBlocks, nil
 }
 
+// MuteInfo contains information about a muted account
 type MuteInfo struct {
 	AccountID         string
 	HideNotifications bool
@@ -867,84 +941,25 @@ func (ep *ExportProcessor) getListsWithMembers(ctx context.Context, username str
 	return result, nil
 }
 
+// BookmarkInfo contains information about a bookmarked status
 type BookmarkInfo struct {
 	StatusURL string
 	CreatedAt time.Time
 }
 
 func (ep *ExportProcessor) getBookmarks(ctx context.Context, username string) ([]BookmarkInfo, error) {
-	// Query bookmarks from DynamoDB using storage client
 	var allBookmarks []BookmarkInfo
 	cursor := ""
 
 	for {
-		bookmarkIDs, nextCursor, err := ep.repos.User().GetBookmarks(ctx, username, 1000, cursor)
+		bookmarkIDs, nextCursor, err := ep.fetchBookmarkBatch(ctx, username, cursor)
 		if err != nil {
-			ep.logger.Error("failed to get bookmarks", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get bookmarks: %w", err)
+			return nil, err
 		}
 
 		// Convert bookmark IDs to BookmarkInfo
-		// Note: We need to get the actual status objects to get their URLs
-		for _, bookmarkID := range bookmarkIDs {
-			obj, err := ep.repos.Object().GetObject(ctx, bookmarkID)
-			if err != nil {
-				ep.logger.Warn("failed to get bookmarked object",
-					zap.String("bookmark_id", bookmarkID),
-					zap.Error(err))
-				continue
-			}
-
-			// Extract URL from the object
-			var statusURL string
-			var createdAt time.Time
-
-			// Handle different object types
-			switch v := obj.(type) {
-			case map[string]any:
-				if url, ok := v["url"].(string); ok {
-					statusURL = url
-				} else if id, ok := v["id"].(string); ok {
-					statusURL = id // Fallback to ID if no URL
-				}
-				if published, ok := v["published"].(string); ok {
-					createdAt, _ = time.Parse(time.RFC3339, published)
-				}
-			case *activitypub.Note:
-				// Notes have ID from BaseObject
-				statusURL = v.ID
-				if v.Published != nil {
-					createdAt = *v.Published
-				} else {
-					createdAt = time.Now()
-				}
-			case *activitypub.Article:
-				// Articles have ID from BaseObject
-				statusURL = v.ID
-				if v.Published != nil {
-					createdAt = *v.Published
-				} else {
-					createdAt = time.Now()
-				}
-			default:
-				// For any other type, try to extract ID
-				if baseObj, ok := v.(*activitypub.BaseObject); ok {
-					statusURL = baseObj.ID
-					if baseObj.Published != nil {
-						createdAt = *baseObj.Published
-					} else {
-						createdAt = time.Now()
-					}
-				}
-			}
-
-			if statusURL != "" {
-				allBookmarks = append(allBookmarks, BookmarkInfo{
-					StatusURL: statusURL,
-					CreatedAt: createdAt,
-				})
-			}
-		}
+		bookmarks := ep.convertBookmarkIDsToInfo(ctx, bookmarkIDs)
+		allBookmarks = append(allBookmarks, bookmarks...)
 
 		if nextCursor == "" {
 			break
@@ -953,6 +968,126 @@ func (ep *ExportProcessor) getBookmarks(ctx context.Context, username string) ([
 	}
 
 	return allBookmarks, nil
+}
+
+// fetchBookmarkBatch fetches a batch of bookmark IDs from the repository
+func (ep *ExportProcessor) fetchBookmarkBatch(ctx context.Context, username, cursor string) ([]string, string, error) {
+	bookmarkIDs, nextCursor, err := ep.repos.User().GetBookmarks(ctx, username, 1000, cursor)
+	if err != nil {
+		ep.logger.Error("failed to get bookmarks", 
+			zap.String("username", username), 
+			zap.Error(err))
+		return nil, "", fmt.Errorf("get bookmarks: %w", err)
+	}
+	return bookmarkIDs, nextCursor, nil
+}
+
+// convertBookmarkIDsToInfo converts bookmark IDs to BookmarkInfo objects
+func (ep *ExportProcessor) convertBookmarkIDsToInfo(ctx context.Context, bookmarkIDs []string) []BookmarkInfo {
+	var bookmarks []BookmarkInfo
+	
+	for _, bookmarkID := range bookmarkIDs {
+		info := ep.convertSingleBookmark(ctx, bookmarkID)
+		if info != nil {
+			bookmarks = append(bookmarks, *info)
+		}
+	}
+	
+	return bookmarks
+}
+
+// convertSingleBookmark converts a single bookmark ID to BookmarkInfo
+func (ep *ExportProcessor) convertSingleBookmark(ctx context.Context, bookmarkID string) *BookmarkInfo {
+	obj, err := ep.repos.Object().GetObject(ctx, bookmarkID)
+	if err != nil {
+		ep.logger.Warn("failed to get bookmarked object",
+			zap.String("bookmark_id", bookmarkID),
+			zap.Error(err))
+		return nil
+	}
+
+	statusURL, createdAt := ep.extractBookmarkData(obj)
+	if statusURL == "" {
+		return nil
+	}
+
+	return &BookmarkInfo{
+		StatusURL: statusURL,
+		CreatedAt: createdAt,
+	}
+}
+
+// extractBookmarkData extracts URL and creation time from an object
+func (ep *ExportProcessor) extractBookmarkData(obj any) (string, time.Time) {
+	switch v := obj.(type) {
+	case map[string]any:
+		return ep.extractBookmarkFromMap(v)
+	case *activitypub.Note:
+		return ep.extractBookmarkFromNote(v)
+	case *activitypub.Article:
+		return ep.extractBookmarkFromArticle(v)
+	default:
+		return ep.extractBookmarkFromBaseObject(v)
+	}
+}
+
+// extractBookmarkFromMap extracts bookmark data from a map
+func (ep *ExportProcessor) extractBookmarkFromMap(v map[string]any) (string, time.Time) {
+	var statusURL string
+	var createdAt time.Time
+	
+	if url, ok := v["url"].(string); ok {
+		statusURL = url
+	} else if id, ok := v["id"].(string); ok {
+		statusURL = id // Fallback to ID if no URL
+	}
+	
+	if published, ok := v["published"].(string); ok {
+		createdAt, _ = time.Parse(time.RFC3339, published)
+	}
+	
+	return statusURL, createdAt
+}
+
+// extractBookmarkFromNote extracts bookmark data from a Note
+func (ep *ExportProcessor) extractBookmarkFromNote(v *activitypub.Note) (string, time.Time) {
+	statusURL := v.ID
+	createdAt := time.Now()
+	
+	if v.Published != nil {
+		createdAt = *v.Published
+	}
+	
+	return statusURL, createdAt
+}
+
+// extractBookmarkFromArticle extracts bookmark data from an Article
+func (ep *ExportProcessor) extractBookmarkFromArticle(v *activitypub.Article) (string, time.Time) {
+	statusURL := v.ID
+	createdAt := time.Now()
+	
+	if v.Published != nil {
+		createdAt = *v.Published
+	}
+	
+	return statusURL, createdAt
+}
+
+// extractBookmarkFromBaseObject tries to extract bookmark data from a BaseObject
+func (ep *ExportProcessor) extractBookmarkFromBaseObject(v any) (string, time.Time) {
+	baseObj, ok := v.(*activitypub.BaseObject)
+	if !ok {
+		return "", time.Time{}
+	}
+	
+	statusURL := baseObj.ID
+	createdAt := time.Now()
+	
+	if baseObj.Published != nil {
+		createdAt = *baseObj.Published
+	}
+	
+	return statusURL, createdAt
 }
 
 func (ep *ExportProcessor) getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]any, int, error) {
@@ -1092,7 +1227,7 @@ func (ep *ExportProcessor) getBookmarksForExport(ctx context.Context, username s
 	}
 
 	// Convert to ActivityPub bookmark activities
-	var result []any
+	result := make([]any, 0, len(bookmarks))
 	for _, bookmark := range bookmarks {
 		bookmarkActivity := map[string]any{
 			"@context":  activitypub.Context,
@@ -1117,7 +1252,7 @@ func (ep *ExportProcessor) getListsForExport(ctx context.Context, username strin
 	}
 
 	// Convert to export format
-	var result []any
+	result := make([]any, 0, len(lists))
 	for _, list := range lists {
 		// Get members for each list
 		members, err := ep.repos.List().GetListAccounts(ctx, list.ID)
@@ -1199,7 +1334,7 @@ func (ep *ExportProcessor) uploadToS3(ctx context.Context, key string, data []by
 	}
 
 	_, err := ep.s3Client.PutObject(ctx, input)
-	
+
 	// Track S3 costs
 	if costTracking != nil {
 		costTracking.S3PutRequests = 1
@@ -1208,7 +1343,7 @@ func (ep *ExportProcessor) uploadToS3(ctx context.Context, key string, data []by
 		costTracking.DataTransferBytes = int64(len(data))
 		costTracking.S3DataTransferCost = ep.calculateS3DataTransferCost(int64(len(data)))
 	}
-	
+
 	return err
 }
 
@@ -1241,17 +1376,46 @@ func (ep *ExportProcessor) getDomainBlocks(ctx context.Context, username string)
 func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip.Writer, username string, dateRange *DateRange) (int, error) {
 	// Note: This function now tracks S3 GET costs for media file downloads
 	// The costs will be accumulated in the calling function's cost tracking
-	ep.logger.Info("including media files in export", 
+	ep.logger.Info("including media files in export",
 		zap.String("username", username),
 		zap.Bool("has_date_range", dateRange != nil))
 
-	// Get user's media files using the storage adapter (DynamORM pattern)
+	// Get user's media files
+	userMedia, err := ep.fetchUserMedia(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	ep.logger.Info("found user media files",
+		zap.String("username", username),
+		zap.Int("total_count", len(userMedia)))
+
+	// Collect all media keys to download
+	allMediaKeys := ep.collectMediaKeys(userMedia, dateRange)
+
+	ep.logger.Info("downloading media files",
+		zap.String("username", username),
+		zap.Int("files_to_download", len(allMediaKeys)))
+
+	// Download and add media files to ZIP
+	totalDownloaded := ep.downloadMediaFilesToZip(ctx, zipWriter, allMediaKeys)
+
+	ep.logger.Info("completed media files export",
+		zap.String("username", username),
+		zap.Int("files_downloaded", totalDownloaded),
+		zap.Int("files_requested", len(allMediaKeys)))
+
+	return totalDownloaded, nil
+}
+
+// fetchUserMedia retrieves and converts user media from the repository
+func (ep *ExportProcessor) fetchUserMedia(ctx context.Context, username string) ([]map[string]any, error) {
 	userMediaAny, err := ep.repos.Media().GetUserMedia(ctx, username)
 	if err != nil {
-		ep.logger.Error("failed to get user media", 
+		ep.logger.Error("failed to get user media",
 			zap.String("username", username),
 			zap.Error(err))
-		return 0, fmt.Errorf("get user media: %w", err)
+		return nil, fmt.Errorf("get user media: %w", err)
 	}
 
 	// Convert to proper media type
@@ -1262,108 +1426,174 @@ func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip
 		}
 	}
 
-	ep.logger.Info("found user media files", 
-		zap.String("username", username),
-		zap.Int("total_count", len(userMedia)))
+	return userMedia, nil
+}
 
-	var totalDownloaded int
+// collectMediaKeys collects all S3 keys from media items within the date range
+func (ep *ExportProcessor) collectMediaKeys(userMedia []map[string]any, dateRange *DateRange) []string {
 	var allMediaKeys []string
 
-	// Process each media item
 	for _, mediaItem := range userMedia {
-		// Check date range if specified
-		if dateRange != nil {
-			if createdAtAny, exists := mediaItem["CreatedAt"]; exists {
-				if createdAtStr, ok := createdAtAny.(string); ok {
-					if mediaDate, err := time.Parse(time.RFC3339, createdAtStr); err == nil {
-						if mediaDate.Before(dateRange.Start) || mediaDate.After(dateRange.End) {
-							continue // Skip media outside date range
-						}
-					}
-				}
-			}
+		// Check if media is within date range
+		if !ep.isMediaInDateRange(mediaItem, dateRange) {
+			continue
 		}
 
-		// Extract S3 key from the media item
-		if s3KeyAny, exists := mediaItem["S3Key"]; exists {
-			if s3Key, ok := s3KeyAny.(string); ok && s3Key != "" {
-				allMediaKeys = append(allMediaKeys, s3Key)
-			}
+		// Extract main S3 key
+		if s3Key := ep.extractS3Key(mediaItem); s3Key != "" {
+			allMediaKeys = append(allMediaKeys, s3Key)
 		}
 
-		// Also include variants if they exist
-		if variantsAny, exists := mediaItem["Variants"]; exists {
-			if variants, ok := variantsAny.(map[string]any); ok {
-				for variantName, variantAny := range variants {
-					if variant, ok := variantAny.(map[string]any); ok {
-						if variantS3Key, exists := variant["S3Key"]; exists {
-							if s3Key, ok := variantS3Key.(string); ok && s3Key != "" {
-								allMediaKeys = append(allMediaKeys, s3Key)
-								ep.logger.Debug("added variant to export", 
-									zap.String("variant_name", variantName),
-									zap.String("s3_key", s3Key))
-							}
-						}
-					}
-				}
-			}
-		}
+		// Extract variant S3 keys
+		variantKeys := ep.extractVariantKeys(mediaItem)
+		allMediaKeys = append(allMediaKeys, variantKeys...)
 	}
 
-	ep.logger.Info("downloading media files", 
-		zap.String("username", username),
-		zap.Int("files_to_download", len(allMediaKeys)))
+	return allMediaKeys
+}
 
-	// Download each media file and add to ZIP
+// isMediaInDateRange checks if a media item falls within the specified date range
+func (ep *ExportProcessor) isMediaInDateRange(mediaItem map[string]any, dateRange *DateRange) bool {
+	if dateRange == nil {
+		return true
+	}
+
+	createdAtAny, exists := mediaItem["CreatedAt"]
+	if !exists {
+		return true
+	}
+
+	createdAtStr, ok := createdAtAny.(string)
+	if !ok {
+		return true
+	}
+
+	mediaDate, err := time.Parse(time.RFC3339, createdAtStr)
+	if err != nil {
+		return true
+	}
+
+	return !mediaDate.Before(dateRange.Start) && !mediaDate.After(dateRange.End)
+}
+
+// extractS3Key extracts the main S3 key from a media item
+func (ep *ExportProcessor) extractS3Key(mediaItem map[string]any) string {
+	s3KeyAny, exists := mediaItem["S3Key"]
+	if !exists {
+		return ""
+	}
+
+	s3Key, ok := s3KeyAny.(string)
+	if !ok {
+		return ""
+	}
+
+	return s3Key
+}
+
+// extractVariantKeys extracts all variant S3 keys from a media item
+func (ep *ExportProcessor) extractVariantKeys(mediaItem map[string]any) []string {
+	var keys []string
+
+	variantsAny, exists := mediaItem["Variants"]
+	if !exists {
+		return keys
+	}
+
+	variants, ok := variantsAny.(map[string]any)
+	if !ok {
+		return keys
+	}
+
+	for variantName, variantAny := range variants {
+		variant, ok := variantAny.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		variantS3Key, exists := variant["S3Key"]
+		if !exists {
+			continue
+		}
+
+		s3Key, ok := variantS3Key.(string)
+		if !ok || s3Key == "" {
+			continue
+		}
+
+		keys = append(keys, s3Key)
+		ep.logger.Debug("added variant to export",
+			zap.String("variant_name", variantName),
+			zap.String("s3_key", s3Key))
+	}
+
+	return keys
+}
+
+// downloadMediaFilesToZip downloads media files from S3 and adds them to the ZIP
+func (ep *ExportProcessor) downloadMediaFilesToZip(ctx context.Context, zipWriter *zip.Writer, allMediaKeys []string) int {
+	var totalDownloaded int
+
 	for _, s3Key := range allMediaKeys {
-		// Download file from S3
-		getObjectInput := &s3.GetObjectInput{
-			Bucket: &ep.bucketName,
-			Key:    &s3Key,
+		if ep.downloadSingleMediaFile(ctx, zipWriter, s3Key) {
+			totalDownloaded++
 		}
-
-		result, err := ep.s3Client.GetObject(ctx, getObjectInput)
-		if err != nil {
-			ep.logger.Warn("failed to download media file", 
-				zap.String("s3_key", s3Key),
-				zap.Error(err))
-			continue
-		}
-
-		// Create file in ZIP
-		fileName := fmt.Sprintf("media/%s", strings.TrimPrefix(s3Key, "media/"))
-		zipFile, err := zipWriter.Create(fileName)
-		if err != nil {
-			result.Body.Close()
-			ep.logger.Warn("failed to create ZIP entry", 
-				zap.String("file_name", fileName),
-				zap.Error(err))
-			continue
-		}
-
-		// Copy content to ZIP
-		if _, err := io.Copy(zipFile, result.Body); err != nil {
-			result.Body.Close()
-			ep.logger.Warn("failed to copy media to ZIP", 
-				zap.String("s3_key", s3Key),
-				zap.Error(err))
-			continue
-		}
-
-		result.Body.Close()
-		totalDownloaded++
-
-		ep.logger.Debug("added media file to export", 
-			zap.String("s3_key", s3Key),
-			zap.String("zip_path", fileName))
 	}
 
-	ep.logger.Info("completed media files export", 
-		zap.String("username", username),
-		zap.Int("files_downloaded", totalDownloaded),
-		zap.Int("files_requested", len(allMediaKeys)))
+	return totalDownloaded
+}
 
-	return totalDownloaded, nil
+// downloadSingleMediaFile downloads a single media file and adds it to the ZIP
+func (ep *ExportProcessor) downloadSingleMediaFile(ctx context.Context, zipWriter *zip.Writer, s3Key string) bool {
+	// Download file from S3
+	result, err := ep.downloadFromS3(ctx, s3Key)
+	if err != nil {
+		ep.logger.Warn("failed to download media file",
+			zap.String("s3_key", s3Key),
+			zap.Error(err))
+		return false
+	}
+	defer func() { _ = result.Body.Close() }()
+
+	// Add to ZIP
+	fileName := fmt.Sprintf("media/%s", strings.TrimPrefix(s3Key, "media/"))
+	if err := ep.addFileToZip(zipWriter, fileName, result.Body); err != nil {
+		ep.logger.Warn("failed to add media to ZIP",
+			zap.String("s3_key", s3Key),
+			zap.String("file_name", fileName),
+			zap.Error(err))
+		return false
+	}
+
+	ep.logger.Debug("added media file to export",
+		zap.String("s3_key", s3Key),
+		zap.String("zip_path", fileName))
+
+	return true
+}
+
+// downloadFromS3 downloads a file from S3
+func (ep *ExportProcessor) downloadFromS3(ctx context.Context, s3Key string) (*s3.GetObjectOutput, error) {
+	getObjectInput := &s3.GetObjectInput{
+		Bucket: &ep.bucketName,
+		Key:    &s3Key,
+	}
+
+	return ep.s3Client.GetObject(ctx, getObjectInput)
+}
+
+// addFileToZip adds a file to the ZIP archive
+func (ep *ExportProcessor) addFileToZip(zipWriter *zip.Writer, fileName string, content io.Reader) error {
+	zipFile, err := zipWriter.Create(fileName)
+	if err != nil {
+		return fmt.Errorf("create ZIP entry: %w", err)
+	}
+
+	if _, err := io.Copy(zipFile, content); err != nil {
+		return fmt.Errorf("copy to ZIP: %w", err)
+	}
+
+	return nil
 }
 
 // Cost calculation helper functions
@@ -1371,12 +1601,12 @@ func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip
 // calculateLambdaCost calculates the cost of Lambda execution
 // Lambda pricing: $0.0000166667 per GB-second (assumes 512MB memory)
 func (ep *ExportProcessor) calculateLambdaCost(durationMs int64) int64 {
-	const memoryGB = 0.5 // 512MB = 0.5GB
+	const memoryGB = 0.5                 // 512MB = 0.5GB
 	const costPerGBSecond = 0.0000166667 // USD per GB-second
-	
+
 	durationSeconds := float64(durationMs) / 1000.0
 	costDollars := memoryGB * durationSeconds * costPerGBSecond
-	
+
 	// Convert to microcents (1 dollar = 1,000,000 microcents)
 	return int64(costDollars * 1_000_000)
 }
@@ -1385,9 +1615,9 @@ func (ep *ExportProcessor) calculateLambdaCost(durationMs int64) int64 {
 // S3 PUT pricing: $0.005 per 1,000 requests
 func (ep *ExportProcessor) calculateS3PutCost(requestCount int64) int64 {
 	const costPer1000Requests = 0.005 // USD per 1,000 requests
-	
+
 	costDollars := float64(requestCount) * costPer1000Requests / 1000.0
-	
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }
@@ -1396,9 +1626,9 @@ func (ep *ExportProcessor) calculateS3PutCost(requestCount int64) int64 {
 // S3 GET pricing: $0.0004 per 1,000 requests
 func (ep *ExportProcessor) calculateS3GetCost(requestCount int64) int64 {
 	const costPer1000Requests = 0.0004 // USD per 1,000 requests
-	
+
 	costDollars := float64(requestCount) * costPer1000Requests / 1000.0
-	
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }
@@ -1407,12 +1637,12 @@ func (ep *ExportProcessor) calculateS3GetCost(requestCount int64) int64 {
 // S3 storage pricing: $0.023 per GB per month (prorated)
 func (ep *ExportProcessor) calculateS3StorageCost(sizeBytes int64) int64 {
 	const costPerGBMonth = 0.023 // USD per GB per month
-	
+
 	sizeGB := float64(sizeBytes) / (1024 * 1024 * 1024) // Convert bytes to GB
-	
+
 	// Assume storage for 30 days (1 month)
 	costDollars := sizeGB * costPerGBMonth
-	
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }
@@ -1421,10 +1651,10 @@ func (ep *ExportProcessor) calculateS3StorageCost(sizeBytes int64) int64 {
 // S3 data transfer pricing: $0.09 per GB (outbound)
 func (ep *ExportProcessor) calculateS3DataTransferCost(transferBytes int64) int64 {
 	const costPerGB = 0.09 // USD per GB
-	
+
 	transferGB := float64(transferBytes) / (1024 * 1024 * 1024) // Convert bytes to GB
 	costDollars := transferGB * costPerGB
-	
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }
@@ -1433,9 +1663,9 @@ func (ep *ExportProcessor) calculateS3DataTransferCost(transferBytes int64) int6
 // DynamoDB pricing: $0.25 per million read requests
 func (ep *ExportProcessor) calculateDynamoDBReadCost(readUnits float64) int64 {
 	const costPerMillionReads = 0.25 // USD per million read requests
-	
+
 	costDollars := (readUnits / 1_000_000) * costPerMillionReads
-	
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }

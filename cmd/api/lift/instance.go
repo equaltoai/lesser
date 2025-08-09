@@ -77,7 +77,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 			"locked":          false, // Default to false as ActorRecord doesn't have this field
 			"bot":             false, // Default to false as ActorRecord doesn't have Bot field
 			"discoverable":    true,  // Default to true as ActorRecord doesn't have this field
-			"group":           adminActor.ActorType == "Group",
+			"group":           adminActor.ActorType == actorTypeGroup,
 			"created_at":      adminActor.CreatedAt.Format(time.RFC3339),
 			"note":            "", // ActorRecord doesn't have summary
 			"url":             fmt.Sprintf("https://%s/@%s", h.cfg.Domain, adminActor.Username),
@@ -364,57 +364,72 @@ Last updated: 2025-01-01`
 func (h *Handler) markdownToHTMLLift(markdown string) string {
 	// Very basic markdown to HTML conversion
 	// In production, use a proper markdown parser
-	
-	// Split by lines first to handle headers properly
+
 	lines := strings.Split(markdown, "\n")
 	var processedLines []string
 	var inParagraph bool
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		
-		// Handle headers
-		if strings.HasPrefix(trimmed, "# ") {
-			if inParagraph {
-				processedLines = append(processedLines, "</p>")
-				inParagraph = false
-			}
-			processedLines = append(processedLines, "<h1>" + strings.TrimPrefix(trimmed, "# ") + "</h1>")
-		} else if strings.HasPrefix(trimmed, "## ") {
-			if inParagraph {
-				processedLines = append(processedLines, "</p>")
-				inParagraph = false
-			}
-			processedLines = append(processedLines, "<h2>" + strings.TrimPrefix(trimmed, "## ") + "</h2>")
-		} else if strings.HasPrefix(trimmed, "### ") {
-			if inParagraph {
-				processedLines = append(processedLines, "</p>")
-				inParagraph = false
-			}
-			processedLines = append(processedLines, "<h3>" + strings.TrimPrefix(trimmed, "### ") + "</h3>")
-		} else if trimmed == "" {
-			// Empty line - close paragraph if open
-			if inParagraph {
-				processedLines = append(processedLines, "</p>")
-				inParagraph = false
-			}
-		} else {
-			// Regular text
-			if !inParagraph {
-				processedLines = append(processedLines, "<p>" + line)
-				inParagraph = true
-			} else {
-				processedLines = append(processedLines, line)
-			}
+		// Process each line and update paragraph state
+		result, newParagraphState := h.processMarkdownLine(line, trimmed, inParagraph)
+		if result != "" {
+			processedLines = append(processedLines, result)
 		}
+		inParagraph = newParagraphState
 	}
-	
+
 	// Close any open paragraph
 	if inParagraph {
 		processedLines = append(processedLines, "</p>")
 	}
-	
+
 	return strings.Join(processedLines, "\n")
+}
+
+// processMarkdownLine processes a single line of markdown and returns HTML
+func (h *Handler) processMarkdownLine(line, trimmed string, inParagraph bool) (string, bool) {
+	// Check for header
+	if header := h.convertMarkdownHeader(trimmed); header != "" {
+		if inParagraph {
+			return "</p>\n" + header, false
+		}
+		return header, false
+	}
+	
+	// Handle empty lines
+	if trimmed == "" {
+		if inParagraph {
+			return "</p>", false
+		}
+		return "", false
+	}
+	
+	// Handle regular text
+	if !inParagraph {
+		return "<p>" + line, true
+	}
+	return line, true
+}
+
+// convertMarkdownHeader converts markdown headers to HTML
+func (h *Handler) convertMarkdownHeader(trimmed string) string {
+	headerPrefixes := map[string]string{
+		"### ": "h3",
+		"## ":  "h2",
+		"# ":   "h1",
+	}
+	
+	// Check prefixes in order (longest first to avoid false matches)
+	for prefix, tag := range headerPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			content := strings.TrimPrefix(trimmed, prefix)
+			return fmt.Sprintf("<%s>%s</%s>", tag, content, tag)
+		}
+	}
+	
+	return ""
 }
 
 // Helper methods for getting account statistics

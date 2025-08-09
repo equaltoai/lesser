@@ -31,7 +31,7 @@ type ModerationMetricsEntry struct {
 
 // TableName returns the DynamoDB table name
 func (ModerationMetricsEntry) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys based on current field values
@@ -79,7 +79,7 @@ type ModerationFalsePositive struct {
 
 // TableName returns the DynamoDB table name
 func (ModerationFalsePositive) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys based on current field values
@@ -115,13 +115,13 @@ type ModerationDecisionSample struct {
 	Type string `json:"type"` // "DECISION_SAMPLE"
 
 	// Sample data
-	ContentID       string  `json:"content_id"`
-	Decision        string  `json:"decision"`
-	Confidence      float64 `json:"confidence"`
-	ProcessingTime  int64   `json:"processing_time"` // milliseconds
-	ReasonCount     int     `json:"reason_count"`
-	RequiresReview  bool    `json:"requires_review"`
-	Date            string  `json:"date"`
+	ContentID      string  `json:"content_id"`
+	Decision       string  `json:"decision"`
+	Confidence     float64 `json:"confidence"`
+	ProcessingTime int64   `json:"processing_time"` // milliseconds
+	ReasonCount    int     `json:"reason_count"`
+	RequiresReview bool    `json:"requires_review"`
+	Date           string  `json:"date"`
 
 	// Timestamps
 	Timestamp time.Time `json:"timestamp"`
@@ -130,7 +130,7 @@ type ModerationDecisionSample struct {
 
 // TableName returns the DynamoDB table name
 func (ModerationDecisionSample) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys based on current field values
@@ -179,14 +179,14 @@ type ModerationPatternStats struct {
 
 // TableName returns the DynamoDB table name
 func (ModerationPatternStats) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys based on current field values
 func (m *ModerationPatternStats) UpdateKeys() {
 	// Primary key - pattern stats by ID
 	m.PK = fmt.Sprintf("PATTERN_STATS#%s", m.PatternID)
-	m.SK = "STATS"
+	m.SK = SKStats
 
 	// GSI1 - hit count ranking (pad hit count for lexicographic sorting)
 	m.GSI1PK = "PATTERN_HITS"
@@ -203,15 +203,21 @@ func (m *ModerationPatternStats) UpdateKeys() {
 
 // Helper types for moderation metrics
 
-// Advanced moderation action types - different from legacy ModerationAction
+// AdvancedModerationAction represents advanced moderation action types - different from legacy ModerationAction
 type AdvancedModerationAction string
 
 const (
+	// AdvancedModerationActionAllow represents allowing content
 	AdvancedModerationActionAllow        AdvancedModerationAction = "allow"
+	// AdvancedModerationActionFlag represents flagging content
 	AdvancedModerationActionFlag         AdvancedModerationAction = "flag"
+	// AdvancedModerationActionQuarantine represents quarantining content
 	AdvancedModerationActionQuarantine   AdvancedModerationAction = "quarantine"
+	// AdvancedModerationActionRemove represents removing content
 	AdvancedModerationActionRemove       AdvancedModerationAction = "remove"
+	// AdvancedModerationActionShadowBan represents shadow banning
 	AdvancedModerationActionShadowBan    AdvancedModerationAction = "shadow_ban"
+	// AdvancedModerationActionReportToAuth represents reporting to authorities
 	AdvancedModerationActionReportToAuth AdvancedModerationAction = "report_to_authorities"
 )
 
@@ -219,9 +225,13 @@ const (
 type AdvancedSeverity string
 
 const (
+	// AdvancedSeverityLow represents low severity
 	AdvancedSeverityLow      AdvancedSeverity = "low"
+	// AdvancedSeverityMedium represents medium severity
 	AdvancedSeverityMedium   AdvancedSeverity = "medium"
+	// AdvancedSeverityHigh represents high severity
 	AdvancedSeverityHigh     AdvancedSeverity = "high"
+	// AdvancedSeverityCritical represents critical severity
 	AdvancedSeverityCritical AdvancedSeverity = "critical"
 )
 

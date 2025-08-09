@@ -65,7 +65,7 @@ func (r *BaseRepository) GetDB() core.DB {
 
 // NewLambdaOptimizedClient creates a new DynamORM client optimized for Lambda functions
 // This should be used in the init() function of Lambda handlers to ensure connection reuse
-func NewLambdaOptimizedClient(ctx context.Context, region string) (core.DB, error) {
+func NewLambdaOptimizedClient(_ context.Context, region string) (core.DB, error) {
 	config := session.Config{
 		Region: region,
 	}
@@ -83,7 +83,7 @@ func NewLambdaOptimizedClient(ctx context.Context, region string) (core.DB, erro
 // PreRegisterModels pre-registers models with the DynamORM client to reduce cold start time
 // Note: The latest version of DynamORM doesn't have a PreRegisterModels method
 // This is a placeholder for compatibility
-func PreRegisterModels(db core.DB, models ...any) error {
+func PreRegisterModels(_ core.DB, _ ...any) error {
 	// In the latest version, models are registered automatically when used
 	// So this is essentially a no-op
 	return nil

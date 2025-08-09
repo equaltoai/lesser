@@ -21,6 +21,7 @@ type ObjectRepository struct {
 	tableName string
 	domain    string
 	logger    *zap.Logger
+	accountRepo *AccountRepository
 }
 
 // NewObjectRepository creates a new object repository
@@ -30,6 +31,7 @@ func NewObjectRepository(db core.DB, tableName, domain string, logger *zap.Logge
 		tableName: tableName,
 		domain:    domain,
 		logger:    logger,
+		accountRepo: NewAccountRepository(db, tableName, domain, logger),
 	}
 }
 
@@ -69,7 +71,7 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 
 	// Create the model
 	objModel := models.NewObject(baseObj.ID, baseObj.Type, actorID)
-	
+
 	// Set common fields
 	if isNote {
 		objModel.Content = note.Content
@@ -80,7 +82,7 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 			objModel.InReplyTo = &note.InReplyTo
 		}
 		objModel.Sensitive = note.Sensitive
-		
+
 		// Store complex fields as JSON
 		if len(note.Attachment) > 0 {
 			attachJSON, _ := json.Marshal(note.Attachment)
@@ -129,7 +131,7 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 // GetObject retrieves an object by ID
 func (r *ObjectRepository) GetObject(ctx context.Context, id string) (any, error) {
 	var objModel models.Object
-	
+
 	query := r.db.WithContext(ctx).Model(&objModel).
 		Where("PK", "=", fmt.Sprintf("object#%s", id)).
 		Where("SK", "=", fmt.Sprintf("object#%s", id))
@@ -239,13 +241,13 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var objects []models.Object
 	err := query.All(&objects)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to scan objects: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(objects) > limit {
@@ -274,7 +276,7 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 func (r *ObjectRepository) CountObjectReplies(ctx context.Context, objectID string) (int, error) {
 	// Query objects that have InReplyTo set to this objectID
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi2-index").  // Assuming GSI2 is used for reply relationships
+		Index("gsi2-index"). // Assuming GSI2 is used for reply relationships
 		Where("GSI2PK", "=", fmt.Sprintf("reply#%s", objectID))
 
 	var objects []models.Object
@@ -320,10 +322,10 @@ func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string,
 	tombstone.Content = fmt.Sprintf("Object %s was deleted", objectID)
 	tombstone.Published = time.Now()
 	tombstone.Updated = time.Now()
-	
+
 	// Set tombstone-specific fields
 	tombstone.AttributedTo = deletedBy
-	
+
 	// Update GSI keys
 	tombstone.UpdateGSIKeys()
 
@@ -369,7 +371,7 @@ func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (an
 			Content:      objModel.Content,
 			AttributedTo: objModel.AttributedTo,
 		}
-		
+
 		// Set InReplyTo if present
 		if objModel.InReplyTo != nil {
 			note.InReplyTo = *objModel.InReplyTo
@@ -377,13 +379,13 @@ func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (an
 
 		// Parse complex fields from JSON
 		if objModel.AttachmentJSON != "" {
-			json.Unmarshal([]byte(objModel.AttachmentJSON), &note.Attachment)
+			_ = json.Unmarshal([]byte(objModel.AttachmentJSON), &note.Attachment)
 		}
 		if objModel.TagJSON != "" {
-			json.Unmarshal([]byte(objModel.TagJSON), &note.Tag)
+			_ = json.Unmarshal([]byte(objModel.TagJSON), &note.Tag)
 		}
 		if objModel.ContextJSON != "" {
-			json.Unmarshal([]byte(objModel.ContextJSON), &note.Context)
+			_ = json.Unmarshal([]byte(objModel.ContextJSON), &note.Context)
 		}
 
 		return note, nil
@@ -398,14 +400,14 @@ func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (an
 			"published":    objModel.Published,
 			"updated":      objModel.Updated,
 		}
-		
+
 		if objModel.To != nil {
 			result["to"] = objModel.To
 		}
 		if objModel.CC != nil {
 			result["cc"] = objModel.CC
 		}
-		
+
 		return result, nil
 	}
 }
@@ -423,7 +425,7 @@ func (r *ObjectRepository) CreateUpdateHistory(ctx context.Context, history *sto
 		}
 		previousStateJSON = string(jsonBytes)
 	}
-	
+
 	updateHistory := &models.UpdateHistory{
 		ObjectID:      history.ObjectID,
 		Version:       history.Version,
@@ -484,14 +486,14 @@ func (r *ObjectRepository) GetUpdateHistory(ctx context.Context, objectID string
 		var previousState map[string]interface{}
 		if h.PreviousState != "" {
 			if err := json.Unmarshal([]byte(h.PreviousState), &previousState); err != nil {
-				r.logger.Warn("failed to unmarshal previous state", 
+				r.logger.Warn("failed to unmarshal previous state",
 					zap.String("object_id", h.ObjectID),
 					zap.Int("version", h.Version),
 					zap.Error(err))
 				// Continue without previous state rather than failing
 			}
 		}
-		
+
 		result[i] = &storage.UpdateHistory{
 			ObjectID:      h.ObjectID,
 			Version:       h.Version,
@@ -580,7 +582,7 @@ func (r *ObjectRepository) GetCollectionItems(ctx context.Context, collection st
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var items []models.CollectionItem
 	err := query.All(&items)
 	if err != nil {
@@ -589,7 +591,7 @@ func (r *ObjectRepository) GetCollectionItems(ctx context.Context, collection st
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get collection items: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(items) > limit {
@@ -617,7 +619,7 @@ func (r *ObjectRepository) GetCollectionItems(ctx context.Context, collection st
 // IsInCollection checks if an item is in a collection
 func (r *ObjectRepository) IsInCollection(ctx context.Context, collection, itemID string) (bool, error) {
 	var item models.CollectionItem
-	
+
 	err := r.db.WithContext(ctx).Model(&item).
 		Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)).
 		Where("SK", "=", fmt.Sprintf("ITEM#%s", itemID)).
@@ -785,7 +787,7 @@ func (r *ObjectRepository) GetMissingReplies(ctx context.Context, statusID strin
 // getThreadSyncRecord retrieves the thread sync record for a status
 func (r *ObjectRepository) getThreadSyncRecord(ctx context.Context, statusID string) (*models.ThreadSync, error) {
 	var sync models.ThreadSync
-	
+
 	err := r.db.WithContext(ctx).Model(&sync).
 		Where("PK", "=", fmt.Sprintf("THREAD_SYNC#%s", statusID)).
 		Where("SK", "=", "METADATA").
@@ -887,7 +889,7 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var objects []models.Object
 	err := query.All(&objects)
 	if err != nil {
@@ -897,7 +899,7 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get replies: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(objects) > limit {
@@ -930,7 +932,7 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 func (r *ObjectRepository) IncrementReplyCount(ctx context.Context, objectID string) error {
 	// This would typically be done atomically with DynamoDB's ADD operation
 	// For now, we'll track this in the object itself or in a separate counter
-	
+
 	// Update the parent object's reply count (if it exists)
 	var objModel models.Object
 	err := r.db.WithContext(ctx).Model(&objModel).
@@ -987,7 +989,7 @@ func (r *ObjectRepository) GetReplyCount(ctx context.Context, statusID string) (
 // SyncThreadFromRemote syncs a thread from a remote server
 func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID string) (*storage.StatusSearchResult, error) {
 	r.logger.Info("syncing thread from remote", zap.String("status_id", statusID))
-	
+
 	// Try to find the status locally first
 	var objectModel models.Object
 	err := r.db.WithContext(ctx).Model(&models.Object{}).
@@ -996,8 +998,8 @@ func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID st
 		First(&objectModel)
 
 	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Error("Failed to query local object for sync", 
-			zap.String("status_id", statusID), 
+		r.logger.Error("Failed to query local object for sync",
+			zap.String("status_id", statusID),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query local object: %w", err)
 	}
@@ -1023,7 +1025,7 @@ func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID st
 	// For now, return nil to indicate the thread couldn't be synced
 	r.logger.Info("thread not found locally, remote fetching not yet implemented",
 		zap.String("status_id", statusID))
-	
+
 	// Return nil instead of error to indicate "not found but not an error"
 	// This allows callers to handle the case gracefully
 	return nil, nil
@@ -1040,7 +1042,7 @@ func (r *ObjectRepository) SyncMissingRepliesFromRemote(ctx context.Context, sta
 	r.logger.Info("syncing missing replies from remote",
 		zap.String("status_id", statusID),
 		zap.Int("missing_count", len(missing)))
-	
+
 	// Implement basic remote reply sync tracking
 	syncRecord := &models.ReplySyncRecord{
 		StatusID:    statusID,
@@ -1048,28 +1050,33 @@ func (r *ObjectRepository) SyncMissingRepliesFromRemote(ctx context.Context, sta
 		SyncResult:  "partial", // Mark as partial sync
 	}
 	syncRecord.UpdateKeys()
-	
+
 	// Store sync attempt record
 	if err := syncRecord.BeforeCreate(); err == nil {
-		r.db.WithContext(ctx).Model(syncRecord).Create()
+		if createErr := r.db.WithContext(ctx).Model(syncRecord).Create(); createErr != nil {
+			// Log but don't fail the operation - sync record is just for tracking
+			r.logger.Warn("failed to create reply sync record",
+				zap.String("statusID", statusID),
+				zap.Error(createErr))
+		}
 	}
-	
+
 	// Filter missing replies that are too old to fetch (> 30 days)
 	cutoff := time.Now().Add(-30 * 24 * time.Hour)
 	fetchableReplies := make([]*storage.StatusSearchResult, 0)
-	
+
 	for _, reply := range missing {
 		// Check if reply is recent enough to attempt fetching
 		if reply.Published.After(cutoff) {
 			fetchableReplies = append(fetchableReplies, reply)
 		}
 	}
-	
+
 	r.logger.Info("filtered fetchable replies",
 		zap.String("status_id", statusID),
 		zap.Int("total_missing", len(missing)),
 		zap.Int("fetchable", len(fetchableReplies)))
-	
+
 	// Return only fetchable replies for further processing by federation layer
 	return fetchableReplies, nil
 }
@@ -1077,7 +1084,7 @@ func (r *ObjectRepository) SyncMissingRepliesFromRemote(ctx context.Context, sta
 // GetThreadContext retrieves the thread context for a status
 func (r *ObjectRepository) GetThreadContext(ctx context.Context, statusID string) (*storage.ThreadContext, error) {
 	var context models.ThreadContext
-	
+
 	// Try to find by GSI1 (status lookup)
 	err := r.db.WithContext(ctx).Model(&context).
 		Index("GSI1").
@@ -1133,7 +1140,7 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var quoteModels []models.QuoteRelationship
 	err := query.All(&quoteModels)
 	if err != nil {
@@ -1150,7 +1157,7 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 		nextCursor = quoteModels[limit-1].GSI1SK
 		quoteModels = quoteModels[:limit] // Trim to requested limit
 	}
-	
+
 	// Convert to storage.QuoteRelationship
 	quotes := make([]*storage.QuoteRelationship, len(quoteModels))
 	for i, model := range quoteModels {
@@ -1176,7 +1183,7 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 // IsQuoted checks if a note is quoted by a specific actor
 func (r *ObjectRepository) IsQuoted(ctx context.Context, actorID, noteID string) (bool, error) {
 	var quote models.QuoteRelationship
-	
+
 	err := r.db.WithContext(ctx).Model(&quote).
 		Where("PK", "=", fmt.Sprintf("QUOTE#%s", actorID)).
 		Where("SK", "=", fmt.Sprintf("TARGET#%s", noteID)).
@@ -1201,7 +1208,7 @@ func (r *ObjectRepository) IsQuoted(ctx context.Context, actorID, noteID string)
 func (r *ObjectRepository) WithdrawQuote(ctx context.Context, quoteNoteID string) error {
 	// Find the quote relationship by quoter note ID
 	var quote models.QuoteRelationship
-	
+
 	// We need to find the quote by the quoter note ID, which could be in GSI2
 	err := r.db.WithContext(ctx).Model(&quote).
 		Index("GSI2").
@@ -1250,29 +1257,29 @@ func (r *ObjectRepository) WithdrawStatusFromQuotes(ctx context.Context, statusI
 	// For now, just log the action
 	r.logger.Info("withdrawing status from quotes",
 		zap.String("status_id", statusID))
-	
+
 	// Get or create status metadata
 	metadata, err := r.getOrCreateStatusMetadata(ctx, statusID)
 	if err != nil {
 		return fmt.Errorf("failed to get status metadata: %w", err)
 	}
-	
+
 	// Mark as withdrawn from quotes
 	metadata.WithdrawFromQuotes()
-	
+
 	// Update the metadata
 	if err := metadata.BeforeUpdate(); err != nil {
 		return fmt.Errorf("failed to prepare metadata update: %w", err)
 	}
-	
+
 	err = r.db.WithContext(ctx).Model(metadata).Update()
 	if err != nil {
 		return fmt.Errorf("failed to update status metadata: %w", err)
 	}
-	
+
 	r.logger.Info("status withdrawn from quotes",
 		zap.String("status_id", statusID))
-	
+
 	return nil
 }
 
@@ -1280,47 +1287,47 @@ func (r *ObjectRepository) WithdrawStatusFromQuotes(ctx context.Context, statusI
 func (r *ObjectRepository) UpdateQuotePermissions(ctx context.Context, statusID string, permissions *storage.QuotePermissions) error {
 	r.logger.Info("updating quote permissions",
 		zap.String("status_id", statusID))
-	
+
 	// Get or create status metadata
 	metadata, err := r.getOrCreateStatusMetadata(ctx, statusID)
 	if err != nil {
 		return fmt.Errorf("failed to get status metadata: %w", err)
 	}
-	
+
 	// Update quote permissions
 	metadata.AllowQuotes = permissions.AllowPublic || permissions.AllowFollowers || permissions.AllowMentioned
-	
+
 	// Set quote type based on permissions
 	if permissions.AllowPublic {
-		metadata.QuoteType = "public"
+		metadata.QuoteType = models.VisibilityPublic
 	} else if permissions.AllowFollowers {
 		metadata.QuoteType = "followers"
 	} else if permissions.AllowMentioned {
 		metadata.QuoteType = "mentioned"
 	} else {
-		metadata.QuoteType = "disabled"
+		metadata.QuoteType = VisibilityDisabled
 		metadata.AllowQuotes = false
 	}
-	
+
 	// Serialize and store permissions as JSON
 	permissionsJSON := fmt.Sprintf(`{"allow_public":%t,"allow_followers":%t,"allow_mentioned":%t,"block_list":[]}`,
 		permissions.AllowPublic, permissions.AllowFollowers, permissions.AllowMentioned)
 	metadata.QuotePermissions = permissionsJSON
-	
+
 	// Update the metadata
 	if err := metadata.BeforeUpdate(); err != nil {
 		return fmt.Errorf("failed to prepare metadata update: %w", err)
 	}
-	
+
 	err = r.db.WithContext(ctx).Model(metadata).Update()
 	if err != nil {
 		return fmt.Errorf("failed to update quote permissions: %w", err)
 	}
-	
+
 	r.logger.Info("updated quote permissions",
 		zap.String("status_id", statusID),
 		zap.String("quote_type", metadata.QuoteType))
-	
+
 	return nil
 }
 
@@ -1330,12 +1337,15 @@ func (r *ObjectRepository) IsQuoteAllowed(ctx context.Context, statusID, quoterI
 	metadata, err := r.getStatusMetadata(ctx, statusID)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// No metadata means default permissions (allow public quotes)
-			return true, nil
+			// No metadata means default to restrictive (quotes disabled)
+			r.logger.Debug("no metadata found, defaulting to disabled quotes",
+				zap.String("status_id", statusID),
+				zap.String("quoter_id", quoterID))
+			return false, nil
 		}
 		return false, fmt.Errorf("failed to get status metadata: %w", err)
 	}
-	
+
 	// Check if quotes are allowed at all
 	if !metadata.IsQuotable() {
 		r.logger.Debug("quotes not allowed for status",
@@ -1344,36 +1354,31 @@ func (r *ObjectRepository) IsQuoteAllowed(ctx context.Context, statusID, quoterI
 			zap.String("quote_type", metadata.QuoteType))
 		return false, nil
 	}
-	
+
 	// If public quotes are allowed, allow all quotes
 	if metadata.IsPubliclyQuotable() {
 		return true, nil
 	}
-	
-	// For followers/mentioned permissions, we'd need to check relationships
-	// For now, implement basic logic based on quote type
+
+	// Handle permission-based quote types
 	switch metadata.QuoteType {
-	case "public":
+	case models.VisibilityPublic:
 		return true, nil
 	case "followers":
-		// Would need to check if quoter follows the author
-		// For now, allow (this would be implemented with relationship checks)
-		r.logger.Debug("allowing follower quote (relationship check not implemented)",
-			zap.String("status_id", statusID),
-			zap.String("quoter_id", quoterID))
-		return true, nil
+		// Check if quoter follows the original author
+		return r.checkFollowerPermission(ctx, statusID, quoterID)
 	case "mentioned":
-		// Would need to check if quoter is mentioned in the status
-		// For now, allow (this would be implemented with mention parsing)
-		r.logger.Debug("allowing mentioned quote (mention check not implemented)",
-			zap.String("status_id", statusID),
-			zap.String("quoter_id", quoterID))
-		return true, nil
+		// Check if quoter is mentioned in the original status
+		return r.checkMentionPermission(ctx, statusID, quoterID)
 	case "disabled":
 		return false, nil
 	default:
-		// Unknown type, default to allow
-		return true, nil
+		// Unknown type, default to restrictive
+		r.logger.Debug("unknown quote type, defaulting to disabled",
+			zap.String("status_id", statusID),
+			zap.String("quoter_id", quoterID),
+			zap.String("quote_type", metadata.QuoteType))
+		return false, nil
 	}
 }
 
@@ -1383,16 +1388,18 @@ func (r *ObjectRepository) GetQuoteType(ctx context.Context, statusID string) (s
 	metadata, err := r.getStatusMetadata(ctx, statusID)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// No metadata means default to public
-			return "public", nil
+			// No metadata means default to disabled (restrictive)
+			r.logger.Debug("no metadata found for status, defaulting to disabled quotes",
+				zap.String("status_id", statusID))
+			return "disabled", nil
 		}
 		return "", fmt.Errorf("failed to get status metadata: %w", err)
 	}
-	
+
 	r.logger.Debug("getting quote type",
 		zap.String("status_id", statusID),
 		zap.String("quote_type", metadata.QuoteType))
-	
+
 	return metadata.QuoteType, nil
 }
 
@@ -1407,11 +1414,11 @@ func (r *ObjectRepository) IsWithdrawnFromQuotes(ctx context.Context, statusID s
 		}
 		return false, fmt.Errorf("failed to get status metadata: %w", err)
 	}
-	
+
 	r.logger.Debug("checking if withdrawn from quotes",
 		zap.String("status_id", statusID),
 		zap.Bool("withdrawn", metadata.WithdrawnFromQuotes))
-	
+
 	return metadata.WithdrawnFromQuotes, nil
 }
 
@@ -1466,16 +1473,16 @@ func (r *ObjectRepository) getStatusMetadata(ctx context.Context, statusID strin
 	var metadata models.StatusMetadata
 	metadata.StatusID = statusID
 	metadata.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(&models.StatusMetadata{}).
 		Where("PK", "=", metadata.PK).
 		Where("SK", "=", metadata.SK).
 		First(&metadata)
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &metadata, nil
 }
 
@@ -1486,24 +1493,166 @@ func (r *ObjectRepository) getOrCreateStatusMetadata(ctx context.Context, status
 	if err == nil {
 		return metadata, nil
 	}
-	
+
 	// If not found, create new metadata with defaults
 	if errors.IsNotFound(err) {
 		metadata = models.NewStatusMetadata(statusID)
-		
+
 		// Save the new metadata
 		if err := metadata.BeforeCreate(); err != nil {
 			return nil, fmt.Errorf("failed to prepare metadata creation: %w", err)
 		}
-		
+
 		err = r.db.WithContext(ctx).Model(metadata).Create()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create status metadata: %w", err)
 		}
-		
+
 		return metadata, nil
 	}
-	
+
 	// Other error occurred
 	return nil, err
+}
+
+// checkFollowerPermission checks if quoter follows the original status author
+func (r *ObjectRepository) checkFollowerPermission(ctx context.Context, statusID, quoterID string) (bool, error) {
+	// Get the original status to find the author
+	status, err := r.GetObject(ctx, statusID)
+	if err != nil {
+		r.logger.Error("failed to get status for follower check",
+			zap.String("status_id", statusID),
+			zap.String("quoter_id", quoterID),
+			zap.Error(err))
+		return false, nil // Default to deny on error
+	}
+
+	// Extract author ID from the status
+	var authorID string
+	if statusMap, ok := status.(map[string]any); ok {
+		if attr, ok := statusMap["attributedTo"].(string); ok {
+			authorID = attr
+		}
+	} else if note, ok := status.(*activitypub.Note); ok {
+		authorID = note.AttributedTo
+	}
+
+	if authorID == "" {
+		r.logger.Error("could not extract author from status",
+			zap.String("status_id", statusID),
+			zap.String("quoter_id", quoterID))
+		return false, nil // Default to deny if we can't find author
+	}
+
+	// Check if quoter follows the author
+	isFollowing, err := r.accountRepo.IsFollowing(ctx, quoterID, authorID)
+	if err != nil {
+		r.logger.Error("failed to check following relationship",
+			zap.String("status_id", statusID),
+			zap.String("quoter_id", quoterID),
+			zap.String("author_id", authorID),
+			zap.Error(err))
+		return false, nil // Default to deny on error
+	}
+
+	r.logger.Debug("checked follower quote permission",
+		zap.String("status_id", statusID),
+		zap.String("quoter_id", quoterID),
+		zap.String("author_id", authorID),
+		zap.Bool("is_following", isFollowing),
+		zap.Bool("allowed", isFollowing))
+
+	return isFollowing, nil
+}
+
+// checkMentionPermission checks if quoter is mentioned in the original status
+func (r *ObjectRepository) checkMentionPermission(ctx context.Context, statusID, quoterID string) (bool, error) {
+	// Get the original status to check mentions
+	status, err := r.GetObject(ctx, statusID)
+	if err != nil {
+		r.logger.Error("failed to get status for mention check",
+			zap.String("status_id", statusID),
+			zap.String("quoter_id", quoterID),
+			zap.Error(err))
+		return false, nil // Default to deny on error
+	}
+
+	// Parse mentions from the status
+	mentions := r.extractMentions(status)
+	
+	// Check if quoter is in the mentions
+	for _, mention := range mentions {
+		if mention == quoterID {
+			r.logger.Debug("quoter found in mentions, allowing quote",
+				zap.String("status_id", statusID),
+				zap.String("quoter_id", quoterID))
+			return true, nil
+		}
+	}
+
+	r.logger.Debug("quoter not found in mentions, denying quote",
+		zap.String("status_id", statusID),
+		zap.String("quoter_id", quoterID),
+		zap.Strings("mentions", mentions))
+
+	return false, nil
+}
+
+// extractMentions extracts mentioned user IDs from a status object
+func (r *ObjectRepository) extractMentions(status any) []string {
+	var mentions []string
+
+	// Handle different status types
+	if statusMap, ok := status.(map[string]any); ok {
+		// Try to get tags from the map
+		if tagsInterface, ok := statusMap["tag"]; ok {
+			mentions = r.parseMentionsFromTags(tagsInterface)
+		}
+	} else if note, ok := status.(*activitypub.Note); ok {
+		// Extract mentions from ActivityPub Note tags
+		for _, tag := range note.Tag {
+			if tag.Type == TagTypeMention && tag.Href != "" {
+				mentions = append(mentions, tag.Href)
+			}
+		}
+	}
+
+	return mentions
+}
+
+// parseMentionsFromTags parses mentions from various tag formats
+func (r *ObjectRepository) parseMentionsFromTags(tagsInterface any) []string {
+	var mentions []string
+
+	// Handle different tag formats
+	switch tags := tagsInterface.(type) {
+	case []any:
+		for _, tagInterface := range tags {
+			if tagMap, ok := tagInterface.(map[string]any); ok {
+				if tagType, ok := tagMap["type"].(string); ok && tagType == "Mention" {
+					if href, ok := tagMap["href"].(string); ok && href != "" {
+						mentions = append(mentions, href)
+					}
+				}
+			}
+		}
+	case []activitypub.Tag:
+		for _, tag := range tags {
+			if tag.Type == TagTypeMention && tag.Href != "" {
+				mentions = append(mentions, tag.Href)
+			}
+		}
+	case string:
+		// Handle JSON string format - try to unmarshal
+		var tagSlice []activitypub.Tag
+		if err := json.Unmarshal([]byte(tags), &tagSlice); err == nil {
+			for _, tag := range tagSlice {
+				if tag.Type == TagTypeMention && tag.Href != "" {
+					mentions = append(mentions, tag.Href)
+				}
+			}
+		}
+	}
+
+	return mentions
 }

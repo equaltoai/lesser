@@ -227,11 +227,17 @@ func (r *AuthRepository) UpdateWebAuthnLastUsed(ctx context.Context, credentialI
 func (r *AuthRepository) CreateWebAuthnChallenge(ctx context.Context, challenge *storage.WebAuthnChallenge) error {
 	// Create DynamORM model
 	model := &models.WebAuthnChallenge{
-		Challenge:   challenge.Challenge,
-		UserID:      challenge.UserID,
-		SessionData: func() []byte { if data, ok := challenge.SessionData.([]byte); ok { return data } else { return nil } }(),
-		ExpiresAt:   challenge.ExpiresAt,
-		Type:        challenge.Type,
+		Challenge: challenge.Challenge,
+		UserID:    challenge.UserID,
+		SessionData: func() []byte {
+			data, ok := challenge.SessionData.([]byte)
+			if ok {
+				return data
+			}
+			return nil
+		}(),
+		ExpiresAt: challenge.ExpiresAt,
+		Type:      challenge.Type,
 	}
 
 	// BeforeCreate will set up keys and TTL
@@ -359,14 +365,14 @@ func (r *AuthRepository) StoreWalletCredential(ctx context.Context, credential *
 		Type     string `json:"Type"`
 		Username string `json:"Username"`
 	}
-	
+
 	indexModel := &IndexRecord{
 		PK:       reverseIndexPK,
 		SK:       reverseIndexSK,
 		Type:     "WalletIndex",
 		Username: credential.Username,
 	}
-	
+
 	// Note: In a real implementation, you might want to use a transaction here
 	// For now, we'll just log if the reverse index fails
 	err = r.db.WithContext(ctx).Model(indexModel).Create()
@@ -390,7 +396,7 @@ func (r *AuthRepository) StoreWalletCredential(ctx context.Context, credential *
 func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, address string) (*storage.WalletCredential, error) {
 	// Normalize address
 	normalizedAddress := strings.ToLower(address)
-	
+
 	// First try to find via reverse index
 	reverseIndexPK := fmt.Sprintf("WALLET#%s#%s", walletType, normalizedAddress)
 	reverseIndexSK := "USER#"
@@ -402,7 +408,7 @@ func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, add
 		Type     string `json:"Type"`
 		Username string `json:"Username"`
 	}
-	
+
 	var indexRecords []IndexRecord
 	err := r.db.WithContext(ctx).Model(&IndexRecord{}).
 		Where("PK", "=", reverseIndexPK).

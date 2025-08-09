@@ -1,3 +1,4 @@
+// Package cost provides AWS cost calculation utilities for federation operations.
 package cost
 
 import (

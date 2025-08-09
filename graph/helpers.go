@@ -15,6 +15,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// generateID generates a unique ID for objects
+func generateID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
 // deriveVisibility determines the visibility level based on To and CC fields
 func deriveVisibility(to, cc []string) model.Visibility {
 	// Check for public visibility
@@ -420,8 +427,8 @@ func getObjectActorID(obj any) string {
 func determineModerationCategory(reason string) string {
 	lowerReason := strings.ToLower(reason)
 
-	if strings.Contains(lowerReason, "spam") {
-		return "spam"
+	if strings.Contains(lowerReason, ContentTypeSpam) {
+		return ContentTypeSpam
 	}
 	if strings.Contains(lowerReason, "violence") || strings.Contains(lowerReason, "hate") ||
 		strings.Contains(lowerReason, "harassment") || strings.Contains(lowerReason, "abuse") {
@@ -546,16 +553,3 @@ func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext
 	return float64(totalEngagement) / float64(postCount)
 }
 
-// getObjectID extracts the ID from an ActivityPub object
-func (r *Resolver) getObjectID(obj any) string {
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		return o.ID
-	case *activitypub.Article:
-		return o.ID
-	case *activitypub.Image:
-		return o.ID
-	default:
-		return ""
-	}
-}

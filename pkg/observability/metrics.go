@@ -1,9 +1,9 @@
 // Package observability provides serverless-friendly metrics collection for AWS Lambda.
-// 
+//
 // Usage in Lambda functions:
-//   1. Create a collector during init() or at handler start
-//   2. Record metrics during execution
-//   3. Call Flush() before handler returns to send metrics to CloudWatch
+//  1. Create a collector during init() or at handler start
+//  2. Record metrics during execution
+//  3. Call Flush() before handler returns to send metrics to CloudWatch
 //
 // This implementation avoids background goroutines and polling to be compatible
 // with serverless environments where Lambda containers can be frozen.
@@ -33,6 +33,7 @@ type MetricsCollector struct {
 	mu         sync.RWMutex
 }
 
+// MetricBuffer represents a buffer for metrics collection
 type MetricBuffer struct {
 	values    []float64
 	unit      types.StandardUnit
@@ -42,13 +43,13 @@ type MetricBuffer struct {
 
 // PerformanceMetrics contains runtime performance data
 type PerformanceMetrics struct {
-	ColdStartDuration  time.Duration
-	ExecutionDuration  time.Duration
-	MemoryUsed         int64
-	MemoryAllocated    int64
-	CPUUtilization     float64
-	GoroutineCount     int
-	GCPauseTime        time.Duration
+	ColdStartDuration time.Duration
+	ExecutionDuration time.Duration
+	MemoryUsed        int64
+	MemoryAllocated   int64
+	CPUUtilization    float64
+	GoroutineCount    int
+	GCPauseTime       time.Duration
 }
 
 // NewMetricsCollector creates a new metrics collector
@@ -136,7 +137,7 @@ func (mc *MetricsCollector) RecordErrorRate(operation string, errorCount, totalC
 	if totalCount > 0 {
 		errorRate = float64(errorCount) / float64(totalCount) * 100.0
 	}
-	
+
 	mc.RecordMetric(
 		"ErrorRate",
 		errorRate,
@@ -170,14 +171,38 @@ func GetPerformanceMetrics(startTime time.Time, initTime time.Time) *Performance
 		coldStartDuration = time.Since(initTime)
 	}
 
+	// Safe uint64 to int64 conversions with overflow checks
+	const maxInt64AsUint64 = uint64(9223372036854775807) // math.MaxInt64
+	var memUsed int64
+	if m.Alloc > maxInt64AsUint64 {
+		memUsed = ^int64(0) // Max int64
+	} else {
+		memUsed = int64(m.Alloc)
+	}
+
+	var memAllocated int64
+	if m.TotalAlloc > maxInt64AsUint64 {
+		memAllocated = ^int64(0) // Max int64
+	} else {
+		memAllocated = int64(m.TotalAlloc)
+	}
+
+	// Safe uint64 to Duration conversion
+	var gcPauseTime time.Duration
+	if m.PauseTotalNs > maxInt64AsUint64 {
+		gcPauseTime = time.Duration(^int64(0)) // Max duration
+	} else {
+		gcPauseTime = time.Duration(m.PauseTotalNs)
+	}
+
 	return &PerformanceMetrics{
 		ColdStartDuration: coldStartDuration,
 		ExecutionDuration: time.Since(startTime),
-		MemoryUsed:        int64(m.Alloc),
-		MemoryAllocated:   int64(m.TotalAlloc),
+		MemoryUsed:        memUsed,
+		MemoryAllocated:   memAllocated,
 		CPUUtilization:    calculateCPUUtilization(),
 		GoroutineCount:    runtime.NumGoroutine(),
-		GCPauseTime:       time.Duration(m.PauseTotalNs),
+		GCPauseTime:       gcPauseTime,
 	}
 }
 
@@ -208,7 +233,7 @@ func (mc *MetricsCollector) flushMetrics() {
 		buffer.mu.Lock()
 		if len(buffer.values) > 0 {
 			// Calculate statistics
-			sum, min, max := calculateStats(buffer.values)
+			sum, minVal, maxVal := calculateStats(buffer.values)
 			count := float64(len(buffer.values))
 
 			metricDatum := types.MetricDatum{
@@ -219,8 +244,8 @@ func (mc *MetricsCollector) flushMetrics() {
 				StatisticValues: &types.StatisticSet{
 					Sum:         aws.Float64(sum),
 					SampleCount: aws.Float64(count),
-					Minimum:     aws.Float64(min),
-					Maximum:     aws.Float64(max),
+					Minimum:     aws.Float64(minVal),
+					Maximum:     aws.Float64(maxVal),
 				},
 			}
 			metricData = append(metricData, metricDatum)
@@ -265,36 +290,36 @@ func (mc *MetricsCollector) extractMetricName(key string) string {
 	return key
 }
 
-func (mc *MetricsCollector) extractDimensions(key string) []types.Dimension {
+func (mc *MetricsCollector) extractDimensions(_ string) []types.Dimension {
 	// Add base dimensions
 	dimensions := make([]types.Dimension, len(mc.dimensions))
 	copy(dimensions, mc.dimensions)
-	
+
 	// Extract additional dimensions from key
 	// This is a simplified implementation
 	return dimensions
 }
 
-func calculateStats(values []float64) (sum, min, max float64) {
+func calculateStats(values []float64) (sum, minVal, maxVal float64) {
 	if len(values) == 0 {
 		return 0, 0, 0
 	}
-	
+
 	sum = values[0]
-	min = values[0]
-	max = values[0]
-	
+	minVal = values[0]
+	maxVal = values[0]
+
 	for i := 1; i < len(values); i++ {
 		sum += values[i]
-		if values[i] < min {
-			min = values[i]
+		if values[i] < minVal {
+			minVal = values[i]
 		}
-		if values[i] > max {
-			max = values[i]
+		if values[i] > maxVal {
+			maxVal = values[i]
 		}
 	}
-	
-	return sum, min, max
+
+	return sum, minVal, maxVal
 }
 
 func calculateCPUUtilization() float64 {
@@ -310,5 +335,5 @@ func getEnvironment() string {
 	if env := os.Getenv("STAGE"); env != "" {
 		return env
 	}
-	return "unknown"
+	return StatusUnknown
 }

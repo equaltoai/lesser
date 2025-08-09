@@ -1,3 +1,4 @@
+// Package types defines federation message types and data structures for ActivityPub protocol handling.
 package types
 
 import (
@@ -8,6 +9,7 @@ import (
 // MessageType represents the type of federation message
 type MessageType string
 
+// Message type constants
 const (
 	MessageTypeActivity MessageType = "activity"
 	MessageTypeFollow   MessageType = "follow"
@@ -53,6 +55,7 @@ type Instance struct {
 // InstanceStatus represents the status of an instance
 type InstanceStatus string
 
+// Instance status constants
 const (
 	InstanceStatusActive      InstanceStatus = "active"
 	InstanceStatusDegraded    InstanceStatus = "degraded"
@@ -64,6 +67,7 @@ const (
 // TierLevel represents the service tier of an instance
 type TierLevel string
 
+// Tier level constants
 const (
 	TierPremium  TierLevel = "premium"
 	TierStandard TierLevel = "standard"
@@ -102,6 +106,7 @@ type Route struct {
 // CircuitStatus represents circuit breaker status
 type CircuitStatus string
 
+// Circuit status constants
 const (
 	CircuitClosed   CircuitStatus = "closed"
 	CircuitOpen     CircuitStatus = "open"
@@ -166,6 +171,7 @@ type DeliveryOptions struct {
 // DeliveryPriority defines message priority levels
 type DeliveryPriority int
 
+// Delivery priority constants
 const (
 	PriorityUrgent DeliveryPriority = 1
 	PriorityHigh   DeliveryPriority = 2
@@ -235,6 +241,7 @@ type QueuedMessage struct {
 // QueueStatus represents message queue status
 type QueueStatus string
 
+// Queue status constants
 const (
 	QueueStatusPending    QueueStatus = "pending"
 	QueueStatusProcessing QueueStatus = "processing"

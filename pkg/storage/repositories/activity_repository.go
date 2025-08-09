@@ -83,7 +83,7 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 	// We need to scan for the activity since we don't know the username
 	// In a production system, you might want to extract username from the ID
 	// or maintain a separate GSI for activity lookups
-	
+
 	// Use DynamORM to scan the table for the activity by ID
 	// This is a simplified approach - in production you might want a GSI for activity ID lookups
 	var activities []models.Activity
@@ -91,7 +91,7 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 		Where("SK", "CONTAINS", id).
 		Limit(50). // Limit results to avoid scanning too much
 		All(&activities)
-	
+
 	if err != nil {
 		r.logger.Error("failed to search for activity",
 			zap.String("activity_id", id),
@@ -267,7 +267,7 @@ func (r *ActivityRepository) GetCollection(ctx context.Context, username, collec
 		// These collections are handled by other repositories
 		// The adapter should route these to the appropriate repository
 		return nil, fmt.Errorf("collection type %s should be handled by adapter routing to appropriate repository", collectionType)
-		
+
 	default:
 		// Unknown collection type - return empty collection
 		return r.createEmptyCollectionPage(username, collectionType), nil
@@ -299,14 +299,14 @@ func (r *ActivityRepository) createActivityCollectionPage(username, collectionTy
 	for i, activity := range activities {
 		items[i] = activity
 	}
-	page.Collection.OrderedItems = items
+	page.OrderedItems = items
 
 	// Set pagination info
 	if nextCursor != "" {
 		page.Next = fmt.Sprintf("%s?cursor=%s&limit=%d", collectionID, nextCursor, limit)
 	}
 
-	page.Collection.TotalItems = len(items)
+	page.TotalItems = len(items)
 	return page
 }
 
@@ -330,7 +330,7 @@ func (r *ActivityRepository) createEmptyCollectionPage(username, collectionType 
 			PartOf: collectionID,
 		},
 	}
-	
+
 	return page
 }
 
@@ -338,11 +338,11 @@ func (r *ActivityRepository) createEmptyCollectionPage(username, collectionType 
 func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
 	// For now, we'll create a simple implementation that counts activities in that week
 	// In a production system, this would likely use a separate analytics table
-	
+
 	// Calculate week start and end
 	weekStart := time.Unix(weekTimestamp, 0)
 	weekEnd := weekStart.Add(7 * 24 * time.Hour)
-	
+
 	// Query activities for the week
 	// This is a simplified implementation - in production you'd likely use a separate analytics table
 	var activities []models.Activity
@@ -350,16 +350,16 @@ func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 		Where("CreatedAt", ">=", weekStart).
 		Where("CreatedAt", "<", weekEnd).
 		All(&activities)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to query weekly activities: %w", err)
 	}
-	
+
 	// Count different types of activities
 	statuses := int64(0)
-	logins := int64(0)    // Would need separate tracking
+	logins := int64(0)        // Would need separate tracking
 	registrations := int64(0) // Would need separate tracking
-	
+
 	for _, activity := range activities {
 		if activity.Activity != nil {
 			switch activity.Activity.Type {
@@ -368,7 +368,7 @@ func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 			}
 		}
 	}
-	
+
 	return &storage.WeeklyActivity{
 		Week:          fmt.Sprintf("%d", weekTimestamp),
 		Statuses:      int(statuses),
@@ -381,10 +381,10 @@ func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
 	// Create a simple activity record
 	// In production, this might aggregate into time buckets for efficient querying
-	
+
 	pk := fmt.Sprintf("activity_metric#%s", actorID)
 	sk := fmt.Sprintf("%s#%s", activityType, timestamp.Format(time.RFC3339Nano))
-	
+
 	activityRecord := map[string]interface{}{
 		"PK":           pk,
 		"SK":           sk,
@@ -394,7 +394,7 @@ func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType st
 		"CreatedAt":    timestamp,
 		"Type":         "activity_metric",
 	}
-	
+
 	// Use the generic model interface to store this
 	if err := r.db.WithContext(ctx).Model(activityRecord).Create(); err != nil {
 		r.logger.Error("failed to record activity metric",
@@ -403,7 +403,7 @@ func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType st
 			zap.Error(err))
 		return fmt.Errorf("failed to record activity: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -411,23 +411,23 @@ func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType st
 func (r *ActivityRepository) GetHashtagActivity(ctx context.Context, hashtag string, since time.Time) ([]*storage.Activity, error) {
 	// Query activities that contain the hashtag
 	// This is a simplified implementation - production would likely use a hashtag index
-	
+
 	var activities []models.Activity
 	err := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Where("CreatedAt", ">=", since).
 		All(&activities)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to query hashtag activities: %w", err)
 	}
-	
+
 	// Filter activities that contain the hashtag
 	var result []*storage.Activity
 	for _, activityModel := range activities {
 		if activityModel.Activity == nil {
 			continue
 		}
-		
+
 		// Check if the activity contains the hashtag
 		activityJSON, _ := json.Marshal(activityModel.Activity)
 		if strings.Contains(strings.ToLower(string(activityJSON)), strings.ToLower("#"+hashtag)) {
@@ -441,7 +441,7 @@ func (r *ActivityRepository) GetHashtagActivity(ctx context.Context, hashtag str
 			})
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -449,7 +449,7 @@ func (r *ActivityRepository) GetHashtagActivity(ctx context.Context, hashtag str
 func (r *ActivityRepository) RecordFederationActivity(ctx context.Context, activity *storage.FederationActivity) error {
 	pk := fmt.Sprintf("federation#%s", activity.Domain)
 	sk := fmt.Sprintf("%s#%s", activity.Type, activity.Timestamp.Format(time.RFC3339Nano))
-	
+
 	federationRecord := map[string]interface{}{
 		"PK":           pk,
 		"SK":           sk,
@@ -465,7 +465,7 @@ func (r *ActivityRepository) RecordFederationActivity(ctx context.Context, activ
 		"CreatedAt":    activity.Timestamp,
 		"RecordType":   "federation_activity",
 	}
-	
+
 	if err := r.db.WithContext(ctx).Model(federationRecord).Create(); err != nil {
 		r.logger.Error("failed to record federation activity",
 			zap.String("domain", activity.Domain),
@@ -473,13 +473,13 @@ func (r *ActivityRepository) RecordFederationActivity(ctx context.Context, activ
 			zap.Error(err))
 		return fmt.Errorf("failed to record federation activity: %w", err)
 	}
-	
+
 	r.logger.Debug("recorded federation activity",
 		zap.String("domain", activity.Domain),
 		zap.String("type", activity.Type),
 		zap.String("activity_type", activity.ActivityType),
 		zap.Bool("success", activity.Success))
-	
+
 	return nil
 }
 

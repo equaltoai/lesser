@@ -28,13 +28,13 @@ type WebSocketEventConnection struct {
 // UpdateKeys sets the GSI keys based on the current values
 func (w *WebSocketEventConnection) UpdateKeys() {
 	// Set primary keys
-	w.PK = fmt.Sprintf("CONNECTION#%s", w.ConnectionID)
-	w.SK = "METADATA"
+	w.PK = fmt.Sprintf(KeyPatternConnection, w.ConnectionID)
+	w.SK = SKMetadata
 
 	// Set GSI1 keys for user-based queries
 	if w.UserID != "" {
-		w.GSI1PK = fmt.Sprintf("USER#%s", w.UserID)
-		w.GSI1SK = fmt.Sprintf("CONNECTION#%s", w.ConnectionID)
+		w.GSI1PK = fmt.Sprintf(KeyPatternUser, w.UserID)
+		w.GSI1SK = fmt.Sprintf(KeyPatternConnection, w.ConnectionID)
 	}
 }
 
@@ -61,10 +61,10 @@ type WebSocketEventSubscription struct {
 // UpdateKeys sets the GSI keys based on the current values
 func (w *WebSocketEventSubscription) UpdateKeys() {
 	// Set primary keys
-	w.PK = fmt.Sprintf("CONNECTION#%s", w.ConnectionID)
+	w.PK = fmt.Sprintf(KeyPatternConnection, w.ConnectionID)
 	w.SK = fmt.Sprintf("SUBSCRIPTION#%s", w.SubscriptionType)
 
 	// Set GSI1 keys for subscription-type-based queries
 	w.GSI1PK = fmt.Sprintf("SUBSCRIPTION#%s", w.SubscriptionType)
-	w.GSI1SK = fmt.Sprintf("CONNECTION#%s", w.ConnectionID)
+	w.GSI1SK = fmt.Sprintf(KeyPatternConnection, w.ConnectionID)
 }

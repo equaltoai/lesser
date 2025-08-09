@@ -161,7 +161,7 @@ func (r *CircuitBreakerRepository) GetRecentEvents(ctx context.Context, instance
 	var events []*models.CircuitBreakerEvent
 
 	pk := fmt.Sprintf("CIRCUIT#%s", instanceID)
-	
+
 	// Use scan to get all events for this instance
 	err := r.db.WithContext(ctx).Model(&models.CircuitBreakerEvent{}).
 		Where("PK", "=", pk).

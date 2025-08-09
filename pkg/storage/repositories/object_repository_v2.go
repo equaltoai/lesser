@@ -70,7 +70,7 @@ func (r *ObjectRepositoryV2) CreateObject(ctx context.Context, object any) error
 
 	// Create the model
 	objModel := models.NewObject(baseObj.ID, baseObj.Type, actorID)
-	
+
 	// Set common fields
 	if isNote {
 		objModel.Content = note.Content
@@ -81,7 +81,7 @@ func (r *ObjectRepositoryV2) CreateObject(ctx context.Context, object any) error
 			objModel.InReplyTo = &note.InReplyTo
 		}
 		objModel.Sensitive = note.Sensitive
-		
+
 		// Store complex fields as JSON
 		if len(note.Attachment) > 0 {
 			attachJSON, _ := json.Marshal(note.Attachment)
@@ -132,7 +132,7 @@ func (r *ObjectRepositoryV2) CreateObject(ctx context.Context, object any) error
 // AFTER: Single BaseRepository Get call
 func (r *ObjectRepositoryV2) GetObject(ctx context.Context, id string) (any, error) {
 	objModel := &models.Object{}
-	
+
 	// Use BaseRepository Get - saves ~15 lines of boilerplate
 	err := r.Get(ctx, fmt.Sprintf("object#%s", id), fmt.Sprintf("object#%s", id), objModel)
 	if err != nil {
@@ -220,7 +220,7 @@ func (r *ObjectRepositoryV2) DeleteObject(ctx context.Context, objectID string) 
 
 // GetObjectsByActor retrieves objects created by a specific actor
 // Uses BaseRepository QueryGSI for efficient queries
-func (r *ObjectRepositoryV2) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error) {
+func (r *ObjectRepositoryV2) GetObjectsByActor(ctx context.Context, actorID string, _ string, limit int) ([]any, string, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -230,7 +230,7 @@ func (r *ObjectRepositoryV2) GetObjectsByActor(ctx context.Context, actorID stri
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to scan objects: %w", err)
 	}
-	
+
 	// Handle cursor logic manually for now (BaseRepository doesn't support cursor yet)
 	// Generate next cursor
 	var nextCursor string
@@ -261,7 +261,7 @@ func (r *ObjectRepositoryV2) CountObjectReplies(ctx context.Context, objectID st
 	// This is using a different GSI pattern, keep original implementation
 	// Would need to enhance BaseRepository for complex GSI queries
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi2-index").  // Assuming GSI2 is used for reply relationships
+		Index("gsi2-index"). // Assuming GSI2 is used for reply relationships
 		Where("GSI2PK", "=", fmt.Sprintf("reply#%s", objectID))
 
 	var objects []models.Object
@@ -307,10 +307,10 @@ func (r *ObjectRepositoryV2) TombstoneObject(ctx context.Context, objectID strin
 	tombstone.Content = fmt.Sprintf("Object %s was deleted", objectID)
 	tombstone.Published = time.Now()
 	tombstone.Updated = time.Now()
-	
+
 	// Set tombstone-specific fields
 	tombstone.AttributedTo = deletedBy
-	
+
 	// Update GSI keys
 	tombstone.UpdateGSIKeys()
 
@@ -356,7 +356,7 @@ func (r *ObjectRepositoryV2) modelToActivityPubObject(objModel *models.Object) (
 			Content:      objModel.Content,
 			AttributedTo: objModel.AttributedTo,
 		}
-		
+
 		// Set InReplyTo if present
 		if objModel.InReplyTo != nil {
 			note.InReplyTo = *objModel.InReplyTo
@@ -364,13 +364,13 @@ func (r *ObjectRepositoryV2) modelToActivityPubObject(objModel *models.Object) (
 
 		// Parse complex fields from JSON
 		if objModel.AttachmentJSON != "" {
-			json.Unmarshal([]byte(objModel.AttachmentJSON), &note.Attachment)
+			_ = json.Unmarshal([]byte(objModel.AttachmentJSON), &note.Attachment)
 		}
 		if objModel.TagJSON != "" {
-			json.Unmarshal([]byte(objModel.TagJSON), &note.Tag)
+			_ = json.Unmarshal([]byte(objModel.TagJSON), &note.Tag)
 		}
 		if objModel.ContextJSON != "" {
-			json.Unmarshal([]byte(objModel.ContextJSON), &note.Context)
+			_ = json.Unmarshal([]byte(objModel.ContextJSON), &note.Context)
 		}
 
 		return note, nil
@@ -385,14 +385,14 @@ func (r *ObjectRepositoryV2) modelToActivityPubObject(objModel *models.Object) (
 			"published":    objModel.Published,
 			"updated":      objModel.Updated,
 		}
-		
+
 		if objModel.To != nil {
 			result["to"] = objModel.To
 		}
 		if objModel.CC != nil {
 			result["cc"] = objModel.CC
 		}
-		
+
 		return result, nil
 	}
 }
@@ -402,10 +402,10 @@ func (r *ObjectRepositoryV2) CreateUpdateHistory(ctx context.Context, history *s
 	// This requires a different model (UpdateHistory), keeping original implementation
 	// Would need separate BaseRepository for UpdateHistory
 	updateHistory := &models.UpdateHistory{
-		ObjectID:      history.ObjectID,
-		Version:       history.Version,
-		UpdatedAt:     history.UpdatedAt,
-		UpdatedBy:     history.UpdatedBy,
+		ObjectID:  history.ObjectID,
+		Version:   history.Version,
+		UpdatedAt: history.UpdatedAt,
+		UpdatedBy: history.UpdatedBy,
 		PreviousState: func() string {
 			if history.PreviousState != nil {
 				jsonBytes, _ := json.Marshal(history.PreviousState)
@@ -413,8 +413,8 @@ func (r *ObjectRepositoryV2) CreateUpdateHistory(ctx context.Context, history *s
 			}
 			return ""
 		}(),
-		Summary:       history.Summary,
-		CreatedAt:     time.Now(),
+		Summary:   history.Summary,
+		CreatedAt: time.Now(),
 	}
 
 	// Update the key fields
@@ -467,14 +467,14 @@ func (r *ObjectRepositoryV2) GetUpdateHistory(ctx context.Context, objectID stri
 		var previousState map[string]interface{}
 		if h.PreviousState != "" {
 			if err := json.Unmarshal([]byte(h.PreviousState), &previousState); err != nil {
-				r.logger.Warn("failed to unmarshal previous state", 
+				r.logger.Warn("failed to unmarshal previous state",
 					zap.String("object_id", h.ObjectID),
 					zap.Int("version", h.Version),
 					zap.Error(err))
 				// Continue without previous state rather than failing
 			}
 		}
-		
+
 		result[i] = &storage.UpdateHistory{
 			ObjectID:      h.ObjectID,
 			Version:       h.Version,
@@ -543,7 +543,7 @@ func (r *ObjectRepositoryV2) GetReplies(ctx context.Context, objectID string, li
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var objects []models.Object
 	err := query.All(&objects)
 	if err != nil {
@@ -553,7 +553,7 @@ func (r *ObjectRepositoryV2) GetReplies(ctx context.Context, objectID string, li
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get replies: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(objects) > limit {
@@ -585,7 +585,7 @@ func (r *ObjectRepositoryV2) GetReplies(ctx context.Context, objectID string, li
 // Additional methods remain largely the same...
 // The following methods handle complex operations that don't benefit much from BaseRepository:
 // - CollectionItem operations (different model)
-// - QuoteRelationship operations (different model)  
+// - QuoteRelationship operations (different model)
 // - Thread sync operations (different model)
 // - Status metadata operations (different model)
 

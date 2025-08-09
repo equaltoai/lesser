@@ -94,7 +94,7 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
 	}
-	if user.Role != "admin" {
+	if user.Role != roleAdmin {
 		return ctx.Status(403).JSON(map[string]string{"error": "admin access required"})
 	}
 
@@ -104,8 +104,8 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 		// Fallback for test environment - try parsing directly from request body
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				h.logger.Debug("invalid create custom emoji request", 
-					zap.Error(err), 
+				h.logger.Debug("invalid create custom emoji request",
+					zap.Error(err),
 					zap.Error(jsonErr))
 				return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
 			}
@@ -214,7 +214,7 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
 	}
-	if user.Role != "admin" {
+	if user.Role != roleAdmin {
 		return ctx.Status(403).JSON(map[string]string{"error": "admin access required"})
 	}
 
@@ -236,8 +236,8 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 		// Fallback for test environment - try parsing directly from request body
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				h.logger.Debug("invalid update custom emoji request", 
-					zap.Error(err), 
+				h.logger.Debug("invalid update custom emoji request",
+					zap.Error(err),
 					zap.Error(jsonErr))
 				return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
 			}
@@ -334,7 +334,7 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
 	}
-	if user.Role != "admin" {
+	if user.Role != roleAdmin {
 		return ctx.Status(403).JSON(map[string]string{"error": "admin access required"})
 	}
 

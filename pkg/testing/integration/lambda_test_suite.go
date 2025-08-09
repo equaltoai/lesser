@@ -1,3 +1,4 @@
+// Package integration provides end-to-end Lambda function testing utilities and test case management.
 package integration
 
 import (
@@ -34,16 +35,16 @@ type LambdaTestSuite struct {
 
 // TestMetrics tracks Lambda execution metrics
 type TestMetrics struct {
-	Invocations      int
-	ColdStarts       int
-	TotalDuration    time.Duration
-	AverageDuration  time.Duration
-	MaxDuration      time.Duration
-	MinDuration      time.Duration
-	Errors           int
-	Timeouts         int
-	MemoryUsed       []int
-	ConcurrentExecs  int
+	Invocations     int
+	ColdStarts      int
+	TotalDuration   time.Duration
+	AverageDuration time.Duration
+	MaxDuration     time.Duration
+	MinDuration     time.Duration
+	Errors          int
+	Timeouts        int
+	MemoryUsed      []int
+	ConcurrentExecs int
 }
 
 // NewLambdaTestSuite creates a new Lambda test suite
@@ -219,10 +220,10 @@ func BuildSQSEvent(messages ...string) events.SQSEvent {
 	records := make([]events.SQSMessage, len(messages))
 	for i, msg := range messages {
 		records[i] = events.SQSMessage{
-			MessageId:     fmt.Sprintf("msg-%d", i),
-			ReceiptHandle: fmt.Sprintf("receipt-%d", i),
-			Body:          msg,
-			EventSource:   "aws:sqs",
+			MessageId:      fmt.Sprintf("msg-%d", i),
+			ReceiptHandle:  fmt.Sprintf("receipt-%d", i),
+			Body:           msg,
+			EventSource:    "aws:sqs",
 			EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:test-queue",
 		}
 	}
@@ -342,11 +343,11 @@ func AssertWarmStartTime(t *testing.T, duration time.Duration, maxAllowed time.D
 
 // LambdaConcurrencyTest tests Lambda under concurrent load
 type LambdaConcurrencyTest struct {
-	Name              string
+	Name               string
 	ConcurrentRequests int
-	RequestBuilder    func(int) interface{}
-	ValidateResponse  func(*testing.T, interface{}, error)
-	MaxDuration       time.Duration
+	RequestBuilder     func(int) interface{}
+	ValidateResponse   func(*testing.T, interface{}, error)
+	MaxDuration        time.Duration
 }
 
 // RunConcurrencyTest executes Lambda concurrency test
@@ -370,7 +371,7 @@ func RunConcurrencyTest(t *testing.T, handler lambda.Handler, test LambdaConcurr
 
 			var response interface{}
 			if err == nil {
-				json.Unmarshal(result, &response)
+				_ = json.Unmarshal(result, &response)
 			}
 
 			results <- struct {
@@ -405,7 +406,7 @@ func RunConcurrencyTest(t *testing.T, handler lambda.Handler, test LambdaConcurr
 	totalTime := time.Since(start)
 
 	// Assert performance
-	assert.GreaterOrEqual(t, successCount, test.ConcurrentRequests*90/100, 
+	assert.GreaterOrEqual(t, successCount, test.ConcurrentRequests*90/100,
 		"Less than 90%% success rate")
 	assert.LessOrEqual(t, totalTime, test.MaxDuration,
 		"Total execution time exceeds limit")

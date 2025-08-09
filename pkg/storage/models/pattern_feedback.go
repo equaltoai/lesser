@@ -18,23 +18,23 @@ type PatternFeedback struct {
 	WasFalsePositive bool `json:"was_false_positive"`
 
 	// Additional attributes
-	PatternID    string    `json:"pattern_id"`
-	FeedbackID   string    `json:"feedback_id"`
-	SubmittedBy  string    `json:"submitted_by"`  // User or system that submitted feedback
-	SubmittedAt  time.Time `json:"submitted_at"`
-	ContentID    string    `json:"content_id"`    // ID of content that was evaluated
-	ContentType  string    `json:"content_type"`  // Type of content (status, user, etc)
-	PatternType  string    `json:"pattern_type"`  // spam, abuse, etc
-	Confidence   float64   `json:"confidence"`    // Original confidence score
-	Notes        string    `json:"notes,omitempty"` // Additional feedback notes
-	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
+	PatternID   string    `json:"pattern_id"`
+	FeedbackID  string    `json:"feedback_id"`
+	SubmittedBy string    `json:"submitted_by"` // User or system that submitted feedback
+	SubmittedAt time.Time `json:"submitted_at"`
+	ContentID   string    `json:"content_id"`                   // ID of content that was evaluated
+	ContentType string    `json:"content_type"`                 // Type of content (status, user, etc)
+	PatternType string    `json:"pattern_type"`                 // spam, abuse, etc
+	Confidence  float64   `json:"confidence"`                   // Original confidence score
+	Notes       string    `json:"notes,omitempty"`              // Additional feedback notes
+	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys
 func (p *PatternFeedback) UpdateKeys() {
 	p.PK = fmt.Sprintf("PATTERN#%s", p.PatternID)
 	p.SK = fmt.Sprintf("FEEDBACK#%s#%s", p.SubmittedAt.Format(time.RFC3339Nano), p.FeedbackID)
-	
+
 	// Set TTL to 90 days from submission
 	p.TTL = p.SubmittedAt.AddDate(0, 3, 0).Unix()
 }
@@ -54,8 +54,8 @@ func NewPatternFeedback(patternID, contentID, submittedBy string) *PatternFeedba
 
 // GetPatternFeedbackKey returns the key for retrieving specific feedback
 func GetPatternFeedbackKey(patternID, timestamp, feedbackID string) (pk, sk string) {
-	return fmt.Sprintf("PATTERN#%s", patternID), 
-	       fmt.Sprintf("FEEDBACK#%s#%s", timestamp, feedbackID)
+	return fmt.Sprintf("PATTERN#%s", patternID),
+		fmt.Sprintf("FEEDBACK#%s#%s", timestamp, feedbackID)
 }
 
 // GetPatternFeedbackKeys returns keys for querying all feedback for a pattern
@@ -98,36 +98,36 @@ func CalculatePatternAccuracy(feedbacks []*PatternFeedback) float64 {
 	if len(feedbacks) == 0 {
 		return 0
 	}
-	
+
 	correct := 0
 	for _, f := range feedbacks {
 		if f.IsCorrect() {
 			correct++
 		}
 	}
-	
+
 	return float64(correct) / float64(len(feedbacks)) * 100
 }
 
 // CalculatePatternMetrics calculates detailed metrics from feedback
 func CalculatePatternMetrics(feedbacks []*PatternFeedback) map[string]interface{} {
 	metrics := map[string]interface{}{
-		"total_feedback": len(feedbacks),
-		"true_positives": 0,
+		"total_feedback":  len(feedbacks),
+		"true_positives":  0,
 		"false_positives": 0,
-		"true_negatives": 0,
+		"true_negatives":  0,
 		"false_negatives": 0,
-		"accuracy": 0.0,
-		"precision": 0.0,
-		"recall": 0.0,
+		"accuracy":        0.0,
+		"precision":       0.0,
+		"recall":          0.0,
 	}
-	
+
 	if len(feedbacks) == 0 {
 		return metrics
 	}
-	
+
 	tp, fp, tn, fn := 0, 0, 0, 0
-	
+
 	for _, f := range feedbacks {
 		switch f.GetFeedbackType() {
 		case "true_positive":
@@ -140,26 +140,26 @@ func CalculatePatternMetrics(feedbacks []*PatternFeedback) map[string]interface{
 			fn++
 		}
 	}
-	
+
 	metrics["true_positives"] = tp
 	metrics["false_positives"] = fp
 	metrics["true_negatives"] = tn
 	metrics["false_negatives"] = fn
-	
+
 	// Calculate accuracy
 	if total := tp + fp + tn + fn; total > 0 {
 		metrics["accuracy"] = float64(tp+tn) / float64(total) * 100
 	}
-	
+
 	// Calculate precision (how many selected items are relevant)
 	if tp+fp > 0 {
 		metrics["precision"] = float64(tp) / float64(tp+fp) * 100
 	}
-	
+
 	// Calculate recall (how many relevant items are selected)
 	if tp+fn > 0 {
 		metrics["recall"] = float64(tp) / float64(tp+fn) * 100
 	}
-	
+
 	return metrics
 }

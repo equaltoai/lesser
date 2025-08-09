@@ -18,7 +18,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Enhanced HTTPSignature with support for hs2019
+// EnhancedHTTPSignature provides enhanced HTTP signature with support for hs2019
 type EnhancedHTTPSignature struct {
 	HTTPSignature
 	Created int64 // Unix timestamp (for hs2019)

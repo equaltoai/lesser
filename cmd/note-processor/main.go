@@ -1,3 +1,4 @@
+// Package main implements the note-processor Lambda function for processing ActivityPub notes and posts.
 package main
 
 import (
@@ -28,6 +29,19 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
+// Visibility status constants
+const (
+	visibilityProminent = "prominent"
+	visibilityVisible   = "visible"
+	visibilityHidden    = "hidden"
+	visibilityDisputed  = "disputed"
+)
+
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
 // NoteProcessor handles DynamoDB stream events for community notes
 type NoteProcessor struct {
 	db                core.DB
@@ -37,6 +51,7 @@ type NoteProcessor struct {
 	activityRepo      *repositories.ActivityRepository
 	comprehendClient  *comprehend.Client
 	apiGatewayClient  *apigatewaymanagementapi.Client
+	wsRepo            *repositories.WebSocketSubscriptionManagerRepository
 	wsEndpoint        string
 	baseURL           string
 }
@@ -45,10 +60,11 @@ type NoteProcessor struct {
 func NewNoteProcessor(db core.DB, tableName string, baseURL string) *NoteProcessor {
 	// Get logger
 	logger := common.Logger()
-	
+
 	// Initialize repositories
 	communityNoteRepo := repositories.NewCommunityNoteRepository(db, tableName, logger)
 	activityRepo := repositories.NewActivityRepository(db, tableName, logger)
+	wsRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, tableName, logger)
 
 	// Initialize AWS clients for external services
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
@@ -74,8 +90,9 @@ func NewNoteProcessor(db core.DB, tableName string, baseURL string) *NoteProcess
 		activityRepo:      activityRepo,
 		comprehendClient:  comprehendClient,
 		apiGatewayClient:  apiGatewayClient,
+		wsRepo:            wsRepo,
 		wsEndpoint:        wsEndpoint,
-		baseURL:          baseURL,
+		baseURL:           baseURL,
 	}
 }
 
@@ -202,7 +219,7 @@ func (np *NoteProcessor) processNewNoteByID(ctx context.Context, noteID string) 
 
 	// 3. Initial scoring - calculate from analysis results
 	initialScore := np.calculateInitialScoreFromAnalysis(analysis, sourceQuality)
-	
+
 	// 4. Update note with analysis results (score will be updated by repository)
 	if err := np.updateNoteAnalysis(ctx, note, analysis, sourceQuality); err != nil {
 		return fmt.Errorf("failed to update note analysis: %w", err)
@@ -215,7 +232,7 @@ func (np *NoteProcessor) processNewNoteByID(ctx context.Context, noteID string) 
 	}
 
 	// 6. If visible, broadcast to WebSocket subscribers
-	if status == "visible" || status == "prominent" {
+	if status == visibilityVisible || status == visibilityProminent {
 		np.broadcastNoteUpdate(ctx, note)
 	}
 
@@ -327,7 +344,7 @@ func (np *NoteProcessor) calculateObjectivity(sentiment *comprehend.DetectSentim
 	return objectivity
 }
 
-func (np *NoteProcessor) verifySources(ctx context.Context, sources []string) float64 {
+func (np *NoteProcessor) verifySources(_ context.Context, sources []string) float64 {
 	if len(sources) == 0 {
 		return 0.3 // Low quality without sources
 	}
@@ -384,15 +401,6 @@ func (np *NoteProcessor) evaluateSourceDomain(domain string) float64 {
 	return 0.3 // Low score for unrecognized domains
 }
 
-func (np *NoteProcessor) calculateInitialScore(note *storage.CommunityNote) float64 {
-	// Use the existing score from the note if available
-	if note.Score > 0 {
-		return note.Score
-	}
-	
-	// Default score for new notes
-	return 0.5
-}
 
 func (np *NoteProcessor) calculateInitialScoreFromAnalysis(analysis *Analysis, sourceQuality float64) float64 {
 	// Author reputation component (normalized to 0-1)
@@ -460,41 +468,115 @@ func (np *NoteProcessor) recalculateNoteScore(ctx context.Context, noteID string
 
 func (np *NoteProcessor) broadcastNoteUpdate(ctx context.Context, note *storage.CommunityNote) {
 	if np.apiGatewayClient == nil {
+		np.logger.Warn("websocket endpoint not configured, skipping broadcast")
 		return
 	}
 
 	// Create update message
 	message := map[string]any{
-		"type": "note.update",
-		"payload": map[string]any{
-			"object_id": note.ObjectID,
-			"note":      note,
-			"action":    np.determineAction(note),
+		"type": "community_note_update",
+		"data": map[string]any{
+			"id":                note.ID,
+			"object_id":         note.ObjectID,
+			"object_type":       note.ObjectType,
+			"author_id":         note.AuthorID,
+			"content":           note.Content,
+			"language":          note.Language,
+			"sources":           note.Sources,
+			"helpful_votes":     note.HelpfulVotes,
+			"not_helpful_votes": note.NotHelpfulVotes,
+			"score":             note.Score,
+			"visibility_status": note.VisibilityStatus,
+			"action":            np.determineAction(note),
+			"created_at":        note.CreatedAt,
+			"updated_at":        note.UpdatedAt,
 		},
+		"timestamp": time.Now(),
 	}
 
-	_, err := json.Marshal(message)
+	messageData, err := json.Marshal(message)
 	if err != nil {
-		np.logger.Error("failed to marshal message", zap.Error(err))
+		np.logger.Error("failed to marshal websocket message", zap.Error(err))
 		return
 	}
 
-	// Get subscribers for this object
-	// In a real implementation, this would query a subscription table
-	// For now, we'll skip the actual broadcast
-	np.logger.Info("would broadcast note update",
+	// Get all subscriptions that might be interested in community note updates
+	// We'll broadcast to timeline and notification subscribers
+	subscriptionTypes := []string{"timeline", "notifications", "community_notes"}
+	
+	var allConnections []string
+	for _, subType := range subscriptionTypes {
+		subscriptions, err := np.wsRepo.GetSubscriptionsForType(ctx, subType)
+		if err != nil {
+			np.logger.Error("failed to get subscriptions",
+				zap.String("subscription_type", subType),
+				zap.Error(err))
+			continue
+		}
+
+		// Collect connection IDs
+		for _, sub := range subscriptions {
+			allConnections = append(allConnections, sub.ConnectionID)
+		}
+	}
+
+	// Remove duplicates
+	connectionMap := make(map[string]bool)
+	for _, connID := range allConnections {
+		connectionMap[connID] = true
+	}
+
+	// Send message to all unique connections
+	successCount := 0
+	failureCount := 0
+
+	for connectionID := range connectionMap {
+		err := np.sendWebSocketMessage(ctx, connectionID, messageData)
+		if err != nil {
+			np.logger.Error("failed to send websocket message",
+				zap.String("connection_id", connectionID),
+				zap.Error(err))
+			failureCount++
+			
+			// Handle stale connections by attempting cleanup
+			go func(connID string) {
+				if cleanupErr := np.wsRepo.HandleDisconnect(context.Background(), connID); cleanupErr != nil {
+					np.logger.Warn("failed to cleanup stale connection",
+						zap.String("connection_id", connID),
+						zap.Error(cleanupErr))
+				}
+			}(connectionID)
+		} else {
+			successCount++
+		}
+	}
+
+	np.logger.Info("broadcasted community note update",
 		zap.String("note_id", note.ID),
 		zap.String("object_id", note.ObjectID),
-		zap.String("action", np.determineAction(note)))
+		zap.String("action", np.determineAction(note)),
+		zap.Int("successful_sends", successCount),
+		zap.Int("failed_sends", failureCount))
+}
+
+// sendWebSocketMessage sends a message to a specific WebSocket connection
+func (np *NoteProcessor) sendWebSocketMessage(ctx context.Context, connectionID string, messageData []byte) error {
+	input := &apigatewaymanagementapi.PostToConnectionInput{
+		ConnectionId: &connectionID,
+		Data:         messageData,
+	}
+
+	_, err := np.apiGatewayClient.PostToConnection(ctx, input)
+	return err
 }
 
 func (np *NoteProcessor) determineAction(note *storage.CommunityNote) string {
 	switch note.VisibilityStatus {
-	case "visible", "prominent":
+	case visibilityVisible, visibilityProminent:
 		return "show"
-	case "hidden":
+	case visibilityHidden:
 		return "hide"
-	case "disputed":
+	case visibilityDisputed:
 		return "dispute"
 	default:
 		return "pending"
@@ -561,21 +643,39 @@ func (np *NoteProcessor) convertToComprehendLanguageCode(language string) types.
 // Helper methods for note processing
 
 func (np *NoteProcessor) updateNoteAnalysis(ctx context.Context, note *storage.CommunityNote, analysis *Analysis, sourceQuality float64) error {
-	// In a full implementation, we'd store analysis results in the note
-	// For now, we'll just update the note with the score
+	// Store AI analysis results in the note using the dedicated repository method
+	err := np.communityNoteRepo.UpdateCommunityNoteAnalysis(
+		ctx,
+		note.ID,
+		analysis.Sentiment,
+		analysis.Objectivity,
+		sourceQuality,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update note analysis: %w", err)
+	}
+
+	np.logger.Info("updated note AI analysis",
+		zap.String("note_id", note.ID),
+		zap.Float64("sentiment", analysis.Sentiment),
+		zap.Float64("objectivity", analysis.Objectivity),
+		zap.Float64("source_quality", sourceQuality),
+		zap.String("language", analysis.Language),
+		zap.Bool("has_pii", analysis.HasPII))
+
 	return nil
 }
 
 func (np *NoteProcessor) determineVisibilityStatus(score float64) string {
 	if score >= 0.8 {
-		return "prominent"
+		return visibilityProminent
 	} else if score >= 0.6 {
-		return "visible"
-	} else if score >= 0.4 {
-		return "hidden"
-	} else {
-		return "disputed"
+		return visibilityVisible
 	}
+	if score >= 0.4 {
+		return visibilityHidden
+	}
+	return visibilityDisputed
 }
 
 func (np *NoteProcessor) calculateNoteScore(note *storage.CommunityNote, votes []*storage.CommunityNoteVote) float64 {
@@ -597,7 +697,7 @@ func (np *NoteProcessor) calculateNoteScore(note *storage.CommunityNote, votes [
 
 	// Calculate weighted score
 	voteScore := helpfulWeight / totalWeight
-	
+
 	// Combine with existing score (60% vote, 40% initial)
 	return voteScore*0.6 + note.Score*0.4
 }
@@ -607,7 +707,7 @@ func main() {
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()
 		requestID := fmt.Sprintf("note-processor-%d", time.Now().UnixNano())
-		
+
 		// Recovery handling (Lift pattern)
 		defer func() {
 			if r := recover(); r != nil {
@@ -620,7 +720,7 @@ func main() {
 		}()
 
 		// Add request ID to context
-		ctx = context.WithValue(ctx, "request_id", requestID)
+		ctx = context.WithValue(ctx, requestIDKey, requestID)
 
 		logger.Info("processing note stream batch",
 			zap.String("request_id", requestID),

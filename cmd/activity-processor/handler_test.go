@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
 )
 
 // MockDB is a mock implementation of the core.DB interface
@@ -103,7 +102,6 @@ func handleDynamoDBStream(ctx context.Context, event events.DynamoDBEvent) error
 	}
 	return nil
 }
-
 
 func TestActivityHandler_ProcessRecord(t *testing.T) {
 	// Create mock DB

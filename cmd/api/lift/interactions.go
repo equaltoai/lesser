@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HandleFollowLift handles POST /api/v1/accounts/:id/follow
@@ -85,7 +86,7 @@ func (h *Handler) HandleFollowLift(ctx *lift.Context) error {
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
 			Type:    activitypub.FollowType,
-			ID:      fmt.Sprintf("%s/activities/follow-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			ID:      fmt.Sprintf("%s/activities/follow-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 			To:      []string{targetActor.ID},
 		},
 		Actor:  actor.ID,
@@ -226,7 +227,7 @@ func (h *Handler) HandleUnfollowLift(ctx *lift.Context) error {
 			BaseObject: activitypub.BaseObject{
 				Context: activitypub.Context,
 				Type:    activitypub.UndoType,
-				ID:      fmt.Sprintf("%s/activities/undo-follow-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+				ID:      fmt.Sprintf("%s/activities/undo-follow-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 				To:      []string{targetActor.ID},
 			},
 			Actor: actor.ID,
@@ -349,7 +350,7 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
 			Type:    activitypub.BlockType,
-			ID:      fmt.Sprintf("%s/activities/block-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			ID:      fmt.Sprintf("%s/activities/block-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 			To:      []string{targetActor.ID},
 		},
 		Actor:  actor.ID,
@@ -386,7 +387,7 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 			BaseObject: activitypub.BaseObject{
 				Context: activitypub.Context,
 				Type:    activitypub.UndoType,
-				ID:      fmt.Sprintf("%s/activities/undo-follow-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+				ID:      fmt.Sprintf("%s/activities/undo-follow-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 				To:      []string{targetActor.ID},
 			},
 			Actor: actor.ID,
@@ -398,7 +399,7 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 		}
 		undoFollowActivity.Published = &now
 		if err := h.repos.Activity().CreateActivity(ctx.Context, undoFollowActivity); err != nil {
-			// Log error but continue with the response
+			h.logger.Warn("failed to create undo follow activity", zap.Error(err), zap.String("actor_id", actor.ID))
 		}
 	}
 
@@ -513,7 +514,7 @@ func (h *Handler) HandleUnblockLift(ctx *lift.Context) error {
 			BaseObject: activitypub.BaseObject{
 				Context: activitypub.Context,
 				Type:    activitypub.UndoType,
-				ID:      fmt.Sprintf("%s/activities/undo-block-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+				ID:      fmt.Sprintf("%s/activities/undo-block-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 				To:      []string{targetActor.ID},
 			},
 			Actor: actor.ID,
@@ -758,7 +759,7 @@ func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
 			Type:    activitypub.LikeType,
-			ID:      fmt.Sprintf("%s/activities/like-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			ID:      fmt.Sprintf("%s/activities/like-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 			To:      []string{activitypub.PublicAddress},
 		},
 		Actor:  actor.ID,
@@ -780,7 +781,7 @@ func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 	}
 
 	// Record engagement for trending
-	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "status", objectID, time.Now().Format("2006-01-02"), &storage.EngagementData{Likes: 1}); err != nil {
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "status", objectID, time.Now().Format(common.DateFormat), &storage.EngagementData{Likes: 1}); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
@@ -892,7 +893,7 @@ func (h *Handler) HandleUnfavoriteLift(ctx *lift.Context) error {
 			BaseObject: activitypub.BaseObject{
 				Context: activitypub.Context,
 				Type:    activitypub.UndoType,
-				ID:      fmt.Sprintf("%s/activities/undo-like-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+				ID:      fmt.Sprintf("%s/activities/undo-like-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 				To:      []string{activitypub.PublicAddress},
 			},
 			Actor: actor.ID,
@@ -1008,7 +1009,7 @@ func (h *Handler) HandleReblogLift(ctx *lift.Context) error {
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
 			Type:    activitypub.AnnounceType,
-			ID:      fmt.Sprintf("%s/activities/announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+			ID:      fmt.Sprintf("%s/activities/announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 			To:      []string{activitypub.PublicAddress},
 		},
 		Actor:  actor.ID,
@@ -1027,7 +1028,7 @@ func (h *Handler) HandleReblogLift(ctx *lift.Context) error {
 	}
 
 	// Record engagement for trending
-	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "status", objectID, time.Now().Format("2006-01-02"), &storage.EngagementData{Shares: 1}); err != nil {
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "status", objectID, time.Now().Format(common.DateFormat), &storage.EngagementData{Shares: 1}); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
@@ -1139,7 +1140,7 @@ func (h *Handler) HandleUnreblogLift(ctx *lift.Context) error {
 			BaseObject: activitypub.BaseObject{
 				Context: activitypub.Context,
 				Type:    activitypub.UndoType,
-				ID:      fmt.Sprintf("%s/activities/undo-announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomString(8)),
+				ID:      fmt.Sprintf("%s/activities/undo-announce-%d-%s", actor.ID, time.Now().Unix(), generateRandomString()),
 				To:      []string{activitypub.PublicAddress},
 			},
 			Actor: actor.ID,
@@ -1184,9 +1185,10 @@ func (h *Handler) HandleUnreblogLift(ctx *lift.Context) error {
 	return ctx.JSON(resp)
 }
 
-// generateRandomString generates a random string of the specified length
-func generateRandomString(length int) string {
+// generateRandomString generates a random string of 8 characters
+func generateRandomString() string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const length = 8
 	b := make([]byte, length)
 	for i := range b {
 		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))

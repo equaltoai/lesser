@@ -31,12 +31,11 @@ type Hashtag struct {
 // UpdateKeys updates the GSI keys when the hashtag data changes
 func (h *Hashtag) UpdateKeys() {
 	tagLower := strings.ToLower(strings.TrimPrefix(h.Name, "#"))
-	h.PK = fmt.Sprintf("HASHTAG#%s", tagLower)
-	h.SK = "METADATA"
-	h.GSI3PK = fmt.Sprintf("HASHTAG_SEARCH#%s", getHashtagPrefix(tagLower))
+	h.PK = fmt.Sprintf(KeyPatternHashtag, tagLower)
+	h.SK = SKMetadata
+	h.GSI3PK = fmt.Sprintf(KeyPatternHashtagSearch, getHashtagPrefix(tagLower))
 	h.GSI3SK = tagLower
 }
-
 
 // HashtagUsage represents a single usage of a hashtag stored in DynamoDB using DynamORM
 type HashtagUsage struct {
@@ -60,7 +59,7 @@ type HashtagUsage struct {
 // UpdateKeys updates the keys when the usage data changes
 func (hu *HashtagUsage) UpdateKeys(hashtag string) {
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	hu.PK = fmt.Sprintf("HASHTAG#%s", tagLower)
+	hu.PK = fmt.Sprintf(KeyPatternHashtag, tagLower)
 	hu.SK = fmt.Sprintf("USAGE#%d#%s", hu.UsedAt.Unix(), hu.StatusID)
 }
 

@@ -36,40 +36,16 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 	h.logger.Info("oembed request",
 		zap.String("user_agent", ctx.Header("User-Agent")))
 
-	// Get URL parameter
-	requestedURL := ctx.Query("url")
-	
-	// Fallback to direct query param access if ctx.Query doesn't work
-	if requestedURL == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		requestedURL = ctx.Request.Request.QueryParams["url"]
-	}
-	
-	if requestedURL == "" {
-		h.logger.Warn("missing required parameter: url")
-		return ctx.Status(400).JSON(map[string]string{
-			"error": "missing required parameter: url",
-		})
-	}
-
-	// Parse the URL to extract status ID
-	parsedURL, err := url.Parse(requestedURL)
+	// Extract and validate URL parameter
+	requestedURL, err := h.extractOEmbedURL(ctx)
 	if err != nil {
-		h.logger.Warn("invalid URL", zap.String("url", requestedURL), zap.Error(err))
-		return ctx.Status(400).JSON(map[string]string{
-			"error": "invalid URL",
-		})
+		return err
 	}
 
-	// Check if it's from our instance
-	expectedHost := strings.TrimPrefix(h.cfg.BaseURL(), "https://")
-	expectedHost = strings.TrimPrefix(expectedHost, "http://")
-	if parsedURL.Host != expectedHost {
-		h.logger.Warn("URL does not belong to this instance",
-			zap.String("requested_host", parsedURL.Host),
-			zap.String("expected_host", expectedHost))
-		return ctx.Status(404).JSON(map[string]string{
-			"error": "URL does not belong to this instance",
-		})
+	// Parse and validate the URL
+	parsedURL, err := h.validateOEmbedURL(ctx, requestedURL)
+	if err != nil {
+		return err
 	}
 
 	// Extract status ID from path
@@ -81,7 +57,86 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Get format parameter (default to json)
+	// Get request parameters
+	format := h.getOEmbedFormat(ctx)
+	maxWidth := h.getOEmbedMaxWidth(ctx)
+
+	// Fetch and process the status
+	objectID := h.normalizeStatusID(statusID)
+	note, err := h.fetchAndConvertNote(ctx, objectID)
+	if err != nil {
+		return err
+	}
+
+	// Check if status is embeddable
+	if !h.isStatusEmbeddable(note) {
+		h.logger.Warn("status is not embeddable", zap.String("object_id", objectID))
+		return ctx.Status(403).JSON(map[string]string{
+			"error": "status is not embeddable",
+		})
+	}
+
+	// Get the author's actor
+	authorActor := h.getOEmbedAuthorActor(ctx, note)
+
+	// Generate oEmbed response
+	oembed := h.generateOEmbed(note, authorActor, maxWidth)
+
+	// Return based on format
+	return h.sendOEmbedResponse(ctx, oembed, format)
+}
+
+// extractOEmbedURL extracts the URL parameter from the request
+func (h *Handler) extractOEmbedURL(ctx *lift.Context) (string, error) {
+	requestedURL := ctx.Query("url")
+
+	// Fallback to direct query param access if ctx.Query doesn't work
+	if requestedURL == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		requestedURL = ctx.Request.Request.QueryParams["url"]
+	}
+
+	if requestedURL == "" {
+		h.logger.Warn("missing required parameter: url")
+		return "", ctx.Status(400).JSON(map[string]string{
+			"error": "missing required parameter: url",
+		})
+	}
+
+	return requestedURL, nil
+}
+
+// validateOEmbedURL parses and validates the requested URL
+func (h *Handler) validateOEmbedURL(ctx *lift.Context, requestedURL string) (*url.URL, error) {
+	parsedURL, err := url.Parse(requestedURL)
+	if err != nil {
+		h.logger.Warn("invalid URL", zap.String("url", requestedURL), zap.Error(err))
+		return nil, ctx.Status(400).JSON(map[string]string{
+			"error": "invalid URL",
+		})
+	}
+
+	// Check if it's from our instance
+	expectedHost := h.getExpectedHost()
+	if parsedURL.Host != expectedHost {
+		h.logger.Warn("URL does not belong to this instance",
+			zap.String("requested_host", parsedURL.Host),
+			zap.String("expected_host", expectedHost))
+		return nil, ctx.Status(404).JSON(map[string]string{
+			"error": "URL does not belong to this instance",
+		})
+	}
+
+	return parsedURL, nil
+}
+
+// getExpectedHost extracts the hostname from the base URL
+func (h *Handler) getExpectedHost() string {
+	host := strings.TrimPrefix(h.cfg.BaseURL(), "https://")
+	return strings.TrimPrefix(host, "http://")
+}
+
+// getOEmbedFormat extracts the format parameter (defaults to "json")
+func (h *Handler) getOEmbedFormat(ctx *lift.Context) string {
 	format := ctx.Query("format")
 	if format == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		format = ctx.Request.Request.QueryParams["format"]
@@ -89,8 +144,11 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 	if format == "" {
 		format = "json"
 	}
+	return format
+}
 
-	// Get maxwidth parameter
+// getOEmbedMaxWidth extracts the maxwidth parameter (defaults to 650)
+func (h *Handler) getOEmbedMaxWidth(ctx *lift.Context) int {
 	maxWidth := 650 // default
 	mw := ctx.Query("maxwidth")
 	if mw == "" && ctx.Request != nil && ctx.Request.Request != nil {
@@ -101,96 +159,94 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 			maxWidth = parsed
 		}
 	}
+	return maxWidth
+}
 
-	// Normalize the status ID to a full URL if it's not already
-	objectID := statusID
+// normalizeStatusID converts a status ID to a full URL if needed
+func (h *Handler) normalizeStatusID(statusID string) string {
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
 		// Assume it's a local object ID
-		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+		return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
 	}
+	return statusID
+}
 
+// fetchAndConvertNote fetches an object and converts it to a Note
+func (h *Handler) fetchAndConvertNote(ctx *lift.Context, objectID string) (*activitypub.Note, error) {
 	// Fetch the status
 	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		h.logger.Error("failed to get object", zap.String("object_id", objectID), zap.Error(err))
-		return ctx.Status(404).JSON(map[string]string{
+		return nil, ctx.Status(404).JSON(map[string]string{
 			"error": "status not found",
 		})
 	}
 
 	// Convert to Note
+	return h.convertToNote(ctx, obj, objectID)
+}
+
+// convertToNote converts an object to an ActivityPub Note
+func (h *Handler) convertToNote(ctx *lift.Context, obj any, objectID string) (*activitypub.Note, error) {
 	note, ok := obj.(*activitypub.Note)
-	if !ok {
-		// Try to extract Note from map
-		if objMap, mapOk := obj.(map[string]any); mapOk {
-			// Convert map to Note
-			noteData, _ := json.Marshal(objMap)
-			note = &activitypub.Note{}
-			if err := json.Unmarshal(noteData, note); err != nil {
-				h.logger.Error("failed to parse note", zap.Error(err))
-				return ctx.Status(500).JSON(map[string]string{
-					"error": "failed to parse status",
-				})
-			}
-		} else {
-			h.logger.Warn("object is not a status", zap.String("object_id", objectID))
-			return ctx.Status(400).JSON(map[string]string{
-				"error": "object is not a status",
-			})
-		}
+	if ok {
+		return note, nil
 	}
 
-	// Check if status is public or unlisted
-	isPublic := false
-	for _, to := range note.To {
-		if to == activitypub.PublicAddress {
-			isPublic = true
-			break
-		}
-	}
-	if !isPublic {
-		for _, cc := range note.CC {
-			if cc == activitypub.PublicAddress {
-				isPublic = true
-				break
-			}
-		}
-	}
-
-	if !isPublic {
-		h.logger.Warn("status is not embeddable", zap.String("object_id", objectID))
-		return ctx.Status(403).JSON(map[string]string{
-			"error": "status is not embeddable",
+	// Try to extract Note from map
+	objMap, mapOk := obj.(map[string]any)
+	if !mapOk {
+		h.logger.Warn("object is not a status", zap.String("object_id", objectID))
+		return nil, ctx.Status(400).JSON(map[string]string{
+			"error": "object is not a status",
 		})
 	}
 
-	// Get the author's actor
-	var authorActor *activitypub.Actor
-	if note.AttributedTo != "" {
-		// Extract username from actor ID
-		parts := strings.Split(note.AttributedTo, "/")
-		if len(parts) > 0 {
-			username := parts[len(parts)-1]
-			authorActor, err = h.repos.Actor().GetActor(ctx.Context, username)
-			if err != nil {
-				h.logger.Warn("failed to get author actor", zap.String("actor_id", note.AttributedTo), zap.Error(err))
-				// Create a minimal actor
-				authorActor = &activitypub.Actor{
-					BaseObject: activitypub.BaseObject{
-						ID: note.AttributedTo,
-					},
-					PreferredUsername: username,
-					Name:              username,
-					URL:               note.AttributedTo,
-				}
-			}
+	// Convert map to Note
+	noteData, _ := json.Marshal(objMap)
+	note = &activitypub.Note{}
+	if err := json.Unmarshal(noteData, note); err != nil {
+		h.logger.Error("failed to parse note", zap.Error(err))
+		return nil, ctx.Status(500).JSON(map[string]string{
+			"error": "failed to parse status",
+		})
+	}
+
+	return note, nil
+}
+
+// getOEmbedAuthorActor retrieves the author actor for the note
+func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note) *activitypub.Actor {
+	if note.AttributedTo == "" {
+		return nil
+	}
+
+	// Extract username from actor ID
+	parts := strings.Split(note.AttributedTo, "/")
+	if len(parts) == 0 {
+		return nil
+	}
+
+	username := parts[len(parts)-1]
+	authorActor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	if err != nil {
+		h.logger.Warn("failed to get author actor", zap.String("actor_id", note.AttributedTo), zap.Error(err))
+		// Create a minimal actor
+		return &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID: note.AttributedTo,
+			},
+			PreferredUsername: username,
+			Name:              username,
+			URL:               note.AttributedTo,
 		}
 	}
 
-	// Generate oEmbed response
-	oembed := h.generateOEmbed(note, authorActor, maxWidth)
+	return authorActor
+}
 
-	// Return based on format
+// sendOEmbedResponse sends the oEmbed response in the requested format
+func (h *Handler) sendOEmbedResponse(ctx *lift.Context, oembed *OEmbedResponse, format string) error {
 	switch format {
 	case "json":
 		return ctx.JSON(oembed)
@@ -216,7 +272,7 @@ func (h *Handler) extractStatusID(urlPath string) string {
 		index  int
 	}{
 		{"web/@", 3, 2},    // /web/@username/statusid - parts: ["web", "@username", "statusid"]
-		{"@", 2, 1},        // /@username/statusid - parts: ["@username", "statusid"] 
+		{"@", 2, 1},        // /@username/statusid - parts: ["@username", "statusid"]
 		{"users/", 4, 3},   // /users/username/statuses/statusid
 		{"objects/", 1, 0}, // /objects/statusid (direct object URL)
 	}
@@ -246,7 +302,7 @@ func (h *Handler) extractStatusID(urlPath string) string {
 // generateOEmbed creates the oEmbed response
 func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Actor, maxWidth int) *OEmbedResponse {
 	// Generate HTML embed
-	embedHTML := h.generateEmbedHTML(note, maxWidth)
+	embedHTML := h.generateOEmbedHTML(note, maxWidth)
 
 	// Calculate height estimate (rough approximation)
 	// Base height + content height + media height
@@ -293,8 +349,8 @@ func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Act
 	return oembed
 }
 
-// generateEmbedHTML creates the HTML for embedding
-func (h *Handler) generateEmbedHTML(note *activitypub.Note, maxWidth int) string {
+// generateOEmbedHTML creates the HTML for oEmbed
+func (h *Handler) generateOEmbedHTML(note *activitypub.Note, maxWidth int) string {
 	// Extract clean status ID from note ID
 	statusID := strings.TrimPrefix(note.ID, h.cfg.BaseURL()+"/objects/")
 
@@ -359,9 +415,64 @@ func (h *Handler) sendXMLResponseLift(ctx *lift.Context, oembed *OEmbedResponse)
 
 // HandleEmbedPageLift handles GET /embed/:id using Lift framework
 func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
-	// Get status ID from path parameter or extract from path
+	// Extract and validate status ID
+	statusID, err := h.extractEmbedStatusID(ctx)
+	if err != nil {
+		return err
+	}
+
+	h.logger.Info("embed page request",
+		zap.String("status_id", statusID),
+		zap.String("user_agent", ctx.Header("User-Agent")))
+
+	// Normalize and fetch the status
+	objectID := h.normalizeEmbedObjectID(statusID)
+	obj, err := h.fetchEmbedObject(ctx, objectID)
+	if err != nil {
+		return err
+	}
+
+	// Convert object to Note
+	note, err := h.convertObjectToNote(ctx, obj, objectID)
+	if err != nil {
+		return err
+	}
+
+	// Check if status is embeddable (public/unlisted)
+	if !h.isStatusEmbeddable(note) {
+		h.logger.Warn("status is not embeddable", zap.String("object_id", objectID))
+		return ctx.Status(403).JSON(map[string]string{
+			"error": "status is not embeddable",
+		})
+	}
+
+	// Get author information
+	authorInfo := h.getEmbedAuthorInfo(ctx, note)
+
+	// Format timestamp
+	timestamp := h.formatEmbedTimestamp(note)
+
+	// Generate embed HTML
+	htmlContent := h.generateEmbedHTML(note, authorInfo, timestamp)
+
+	// Set HTML content type and additional headers
+	ctx.Response.Header("Content-Type", "text/html; charset=utf-8")
+	ctx.Response.Header("X-Frame-Options", "ALLOWALL") // Allow embedding
+	ctx.Status(200)
+	return ctx.HTML(htmlContent)
+}
+
+// embedAuthorInfo holds author information for embeds
+type embedAuthorInfo struct {
+	name     string
+	username string
+	actor    *activitypub.Actor
+}
+
+// extractEmbedStatusID extracts the status ID from the request
+func (h *Handler) extractEmbedStatusID(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
-	
+
 	// Fallback: extract from path if param not available (for testing)
 	if statusID == "" {
 		path := ""
@@ -372,35 +483,40 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
 			statusID = strings.TrimPrefix(path, "/embed/")
 		}
 	}
-	
+
 	if statusID == "" {
 		h.logger.Warn("missing status ID in embed page request")
-		return ctx.Status(400).JSON(map[string]string{
+		return "", ctx.Status(400).JSON(map[string]string{
 			"error": "missing status ID",
 		})
 	}
 
-	h.logger.Info("embed page request",
-		zap.String("status_id", statusID),
-		zap.String("user_agent", ctx.Header("User-Agent")))
+	return statusID, nil
+}
 
-	// Normalize the status ID to a full URL if it's not already
-	objectID := statusID
+// normalizeEmbedObjectID normalizes the status ID to a full URL
+func (h *Handler) normalizeEmbedObjectID(statusID string) string {
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
 		// Assume it's a local object ID
-		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+		return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
 	}
+	return statusID
+}
 
-	// Fetch the status
+// fetchEmbedObject fetches the object for embedding
+func (h *Handler) fetchEmbedObject(ctx *lift.Context, objectID string) (any, error) {
 	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
 		h.logger.Error("failed to get object for embed", zap.String("object_id", objectID), zap.Error(err))
-		return ctx.Status(404).JSON(map[string]string{
+		return nil, ctx.Status(404).JSON(map[string]string{
 			"error": "status not found",
 		})
 	}
+	return obj, nil
+}
 
-	// Convert to Note
+// convertObjectToNote converts an object to an ActivityPub Note
+func (h *Handler) convertObjectToNote(ctx *lift.Context, obj any, objectID string) (*activitypub.Note, error) {
 	note, ok := obj.(*activitypub.Note)
 	if !ok {
 		// Try to extract Note from map
@@ -410,79 +526,104 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
 			note = &activitypub.Note{}
 			if err := json.Unmarshal(noteData, note); err != nil {
 				h.logger.Error("failed to parse note for embed", zap.Error(err))
-				return ctx.Status(500).JSON(map[string]string{
+				return nil, ctx.Status(500).JSON(map[string]string{
 					"error": "failed to parse status",
 				})
 			}
 		} else {
 			h.logger.Warn("object is not a status for embed", zap.String("object_id", objectID))
-			return ctx.Status(400).JSON(map[string]string{
+			return nil, ctx.Status(400).JSON(map[string]string{
 				"error": "object is not a status",
 			})
 		}
 	}
+	return note, nil
+}
 
-	// Check if status is public or unlisted
-	isPublic := false
+// isStatusEmbeddable checks if a status is public or unlisted
+func (h *Handler) isStatusEmbeddable(note *activitypub.Note) bool {
+	// Check "to" field
 	for _, to := range note.To {
 		if to == activitypub.PublicAddress {
-			isPublic = true
-			break
+			return true
 		}
 	}
-	if !isPublic {
-		for _, cc := range note.CC {
-			if cc == activitypub.PublicAddress {
-				isPublic = true
-				break
+	
+	// Check "cc" field
+	for _, cc := range note.CC {
+		if cc == activitypub.PublicAddress {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// getEmbedAuthorInfo retrieves author information for embedding
+func (h *Handler) getEmbedAuthorInfo(ctx *lift.Context, note *activitypub.Note) embedAuthorInfo {
+	info := embedAuthorInfo{
+		name:     "Unknown",
+		username: "unknown",
+	}
+
+	if note.AttributedTo == "" {
+		return info
+	}
+
+	// Extract username from actor ID
+	parts := strings.Split(note.AttributedTo, "/")
+	if len(parts) > 0 {
+		username := parts[len(parts)-1]
+		info.username = username
+		
+		actor, err := h.repos.Actor().GetActor(ctx.Context, username)
+		if err == nil {
+			info.actor = actor
+			info.name = actor.Name
+			if info.name == "" {
+				info.name = actor.PreferredUsername
 			}
 		}
 	}
 
-	if !isPublic {
-		h.logger.Warn("status is not embeddable", zap.String("object_id", objectID))
-		return ctx.Status(403).JSON(map[string]string{
-			"error": "status is not embeddable",
-		})
-	}
+	return info
+}
 
-	// Get the author's actor
-	var authorActor *activitypub.Actor
-	authorName := "Unknown"
-	authorUsername := "unknown"
-	if note.AttributedTo != "" {
-		// Extract username from actor ID
-		parts := strings.Split(note.AttributedTo, "/")
-		if len(parts) > 0 {
-			username := parts[len(parts)-1]
-			authorUsername = username
-			authorActor, err = h.repos.Actor().GetActor(ctx.Context, username)
-			if err == nil {
-				authorName = authorActor.Name
-				if authorName == "" {
-					authorName = authorActor.PreferredUsername
-				}
-			}
-		}
-	}
-
-	// Format timestamp
-	timestamp := "Unknown"
+// formatEmbedTimestamp formats the timestamp for embedding
+func (h *Handler) formatEmbedTimestamp(note *activitypub.Note) string {
 	if note.Published != nil {
-		timestamp = note.Published.Format("Jan 2, 2006")
+		return note.Published.Format("Jan 2, 2006")
 	}
+	return "Unknown"
+}
 
-	// Generate minimal HTML page for embed
+// generateEmbedHTML generates the HTML for the embed page
+func (h *Handler) generateEmbedHTML(note *activitypub.Note, authorInfo embedAuthorInfo, timestamp string) string {
 	var htmlBuilder strings.Builder
-	htmlBuilder.WriteString(`<!DOCTYPE html>
+	
+	// Add HTML header and styles
+	h.writeEmbedHTMLHeader(&htmlBuilder, authorInfo.name)
+	
+	// Add body content
+	h.writeEmbedBodyContent(&htmlBuilder, note, authorInfo, timestamp)
+	
+	// Add footer and scripts
+	h.writeEmbedHTMLFooter(&htmlBuilder)
+	
+	return htmlBuilder.String()
+}
+
+// writeEmbedHTMLHeader writes the HTML header and styles
+func (h *Handler) writeEmbedHTMLHeader(builder *strings.Builder, authorName string) {
+	builder.WriteString(`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>`)
-	htmlBuilder.WriteString(htmlpkg.EscapeString(authorName))
-	htmlBuilder.WriteString(" - Lesser Instance")
-	htmlBuilder.WriteString(`</title>
+	builder.WriteString(htmlpkg.EscapeString(authorName))
+	builder.WriteString(" - Lesser Instance")
+	builder.WriteString(`</title>
     <style>
         body {
             margin: 0;
@@ -543,52 +684,75 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
         }
     </style>
 </head>
-<body>
+<body>`)
+}
+
+// writeEmbedBodyContent writes the main body content
+func (h *Handler) writeEmbedBodyContent(builder *strings.Builder, note *activitypub.Note, authorInfo embedAuthorInfo, timestamp string) {
+	builder.WriteString(`
     <article class="status">
         <div class="author">
             <div class="avatar"></div>
             <div class="author-info">
                 <a href="`)
-	htmlBuilder.WriteString(h.cfg.BaseURL())
-	htmlBuilder.WriteString("/@")
-	htmlBuilder.WriteString(authorUsername)
-	htmlBuilder.WriteString(`" target="_blank" class="display-name">`)
-	htmlBuilder.WriteString(htmlpkg.EscapeString(authorName))
-	htmlBuilder.WriteString(`</a>
+	builder.WriteString(h.cfg.BaseURL())
+	builder.WriteString("/@")
+	builder.WriteString(authorInfo.username)
+	builder.WriteString(`" target="_blank" class="display-name">`)
+	builder.WriteString(htmlpkg.EscapeString(authorInfo.name))
+	builder.WriteString(`</a>
                 <div class="username">@`)
-	htmlBuilder.WriteString(authorUsername)
-	htmlBuilder.WriteString(`</div>
+	builder.WriteString(authorInfo.username)
+	builder.WriteString(`</div>
             </div>
         </div>
         <div class="content">`)
-	htmlBuilder.WriteString(note.Content) // Already HTML
-	htmlBuilder.WriteString(`</div>`)
+	builder.WriteString(note.Content) // Already HTML
+	builder.WriteString(`</div>`)
 
-	// Add media if present
-	if len(note.Attachment) > 0 {
-		for _, attachment := range note.Attachment {
-			if attachment.Type == "Document" || attachment.Type == "Image" {
-				if attachment.MediaType != "" && strings.HasPrefix(attachment.MediaType, "image/") {
-					htmlBuilder.WriteString(`<img src="`)
-					htmlBuilder.WriteString(attachment.URL)
-					htmlBuilder.WriteString(`" alt="`)
-					htmlBuilder.WriteString(htmlpkg.EscapeString(attachment.Name))
-					htmlBuilder.WriteString(`" class="media">`)
-				}
-			}
-		}
-	}
+	// Add media attachments
+	h.writeEmbedMediaAttachments(builder, note)
 
 	// Add timestamp
-	htmlBuilder.WriteString(`
+	builder.WriteString(`
         <div>
             <a href="`)
-	htmlBuilder.WriteString(note.ID)
-	htmlBuilder.WriteString(`" target="_blank" class="timestamp">`)
-	htmlBuilder.WriteString(timestamp)
-	htmlBuilder.WriteString(`</a>
+	builder.WriteString(note.ID)
+	builder.WriteString(`" target="_blank" class="timestamp">`)
+	builder.WriteString(timestamp)
+	builder.WriteString(`</a>
         </div>
-    </article>
+    </article>`)
+}
+
+// writeEmbedMediaAttachments writes media attachments to the embed
+func (h *Handler) writeEmbedMediaAttachments(builder *strings.Builder, note *activitypub.Note) {
+	if len(note.Attachment) == 0 {
+		return
+	}
+
+	for _, attachment := range note.Attachment {
+		if h.isImageAttachment(attachment) {
+			builder.WriteString(`<img src="`)
+			builder.WriteString(attachment.URL)
+			builder.WriteString(`" alt="`)
+			builder.WriteString(htmlpkg.EscapeString(attachment.Name))
+			builder.WriteString(`" class="media">`)
+		}
+	}
+}
+
+// isImageAttachment checks if an attachment is an image
+func (h *Handler) isImageAttachment(attachment activitypub.Attachment) bool {
+	if attachment.Type != "Document" && attachment.Type != "Image" {
+		return false
+	}
+	return attachment.MediaType != "" && strings.HasPrefix(attachment.MediaType, "image/")
+}
+
+// writeEmbedHTMLFooter writes the HTML footer and scripts
+func (h *Handler) writeEmbedHTMLFooter(builder *strings.Builder) {
+	builder.WriteString(`
     <script>
         // Send height to parent
         function sendHeight() {
@@ -605,10 +769,4 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
     </script>
 </body>
 </html>`)
-
-	// Set HTML content type and additional headers
-	ctx.Response.Header("Content-Type", "text/html; charset=utf-8")
-	ctx.Response.Header("X-Frame-Options", "ALLOWALL") // Allow embedding
-	ctx.Status(200)
-	return ctx.HTML(htmlBuilder.String())
 }

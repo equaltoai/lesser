@@ -60,7 +60,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 		// Fallback to config domain
 		host = h.cfg.Domain
 	}
-	
+
 	if err := common.ValidateRedirectURL(redirectURI, host); err != nil {
 		h.logger.Error("potentially malicious redirect URI",
 			zap.String("client_id", clientID),
@@ -205,7 +205,7 @@ func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
 	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
 		return testUsername
 	}
-	
+
 	// Check for JWT in Authorization header
 	authHeader := ctx.Header("Authorization")
 	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
@@ -282,7 +282,7 @@ func (h *Handler) showConsentScreenLift(ctx *lift.Context, authState *storage.OA
 
 // formatScopes formats scopes for display
 func (h *Handler) formatScopes(scopes []string) string {
-	var items []string
+	items := make([]string, 0, len(scopes))
 	for _, scope := range scopes {
 		description := h.getScopeDescription(scope)
 		items = append(items, fmt.Sprintf("<li><strong>%s</strong>: %s</li>", scope, description))
@@ -299,7 +299,7 @@ func (h *Handler) getScopeDescription(scope string) string {
 		"push":   "Send push notifications",
 		"admin":  "Access admin functions",
 	}
-	
+
 	if desc, ok := descriptions[scope]; ok {
 		return desc
 	}
@@ -312,18 +312,18 @@ func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID 
 	if err != nil || consent == nil {
 		return false
 	}
-	
+
 	// Check if all requested scopes are granted
 	grantedMap := make(map[string]bool)
 	for _, s := range consent.Scopes {
 		grantedMap[s] = true
 	}
-	
+
 	for _, s := range scopes {
 		if !grantedMap[s] {
 			return false
 		}
 	}
-	
+
 	return true
 }

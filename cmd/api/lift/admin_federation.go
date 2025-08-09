@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -84,8 +85,8 @@ func (h *Handler) requireAdminLift(ctx *lift.Context) (*auth.Claims, error) {
 
 	// Check admin role
 	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
-	if err != nil || user.Role != "admin" {
-		return nil, errors.New("admin access required")
+	if err != nil || user.Role != roleAdmin {
+		return nil, errors.New(common.ErrorAdminAccessRequired)
 	}
 
 	return claims, nil
@@ -227,9 +228,9 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Validate severity
 	if req.Severity == "" {
-		req.Severity = "suspend" // Default to suspend
+		req.Severity = actionSuspend // Default to suspend
 	}
-	if req.Severity != "silence" && req.Severity != "suspend" {
+	if req.Severity != actionSilence && req.Severity != actionSuspend {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "severity must be 'silence' or 'suspend'"})
 	}
@@ -310,7 +311,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 	// Build updates map
 	updates := make(map[string]any)
 	if req.Severity != "" {
-		if req.Severity != "silence" && req.Severity != "suspend" {
+		if req.Severity != actionSilence && req.Severity != actionSuspend {
 			ctx.Status(http.StatusBadRequest)
 			return ctx.JSON(map[string]string{"error": "severity must be 'silence' or 'suspend'"})
 		}

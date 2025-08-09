@@ -14,6 +14,8 @@ import (
 )
 
 // RoutingMetrics tracks and aggregates routing performance metrics
+//
+//nolint:revive // Routing prefix clarifies this is routing-specific metrics
 type RoutingMetrics struct {
 	db        *dynamodb.Client
 	tableName string
@@ -38,8 +40,10 @@ type metricEvent struct {
 	errorType string
 }
 
+// MetricEventType represents the type of metric event
 type MetricEventType string
 
+// Metric event types
 const (
 	EventRouteSelected  MetricEventType = "route_selected"
 	EventDeliveryResult MetricEventType = "delivery_result"
@@ -418,7 +422,6 @@ func (rm *RoutingMetrics) processHealthCheck(event *metricEvent) {
 		instanceMetrics.Availability = (instanceMetrics.Availability * float64(instanceMetrics.HealthChecks-1)) / float64(instanceMetrics.HealthChecks)
 	}
 }
-
 
 func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
 	windowID := rm.aggregator.windowStart.Unix()

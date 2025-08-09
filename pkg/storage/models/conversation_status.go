@@ -11,17 +11,17 @@ type ConversationStatus struct {
 	// Primary keys - MUST match legacy exactly
 	PK string `dynamorm:"pk" json:"PK"` // CONVERSATION_STATUS#conversationID
 	SK string `dynamorm:"sk" json:"SK"` // USER#username
-	
+
 	// Core fields from storage.ConversationStatus
 	ConversationID string    `json:"conversation_id"`
-	UserID         string    `json:"user_id"`         // username
+	UserID         string    `json:"user_id"` // username
 	Unread         bool      `json:"unread"`
 	LastReadAt     time.Time `json:"last_read_at"`
 }
 
 // TableName returns the DynamoDB table name
 func (ConversationStatus) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the keys before creating a status record
@@ -32,14 +32,14 @@ func (s *ConversationStatus) BeforeCreate() error {
 	if s.UserID == "" {
 		return fmt.Errorf("user ID is required")
 	}
-	
+
 	s.PK = fmt.Sprintf("CONVERSATION_STATUS#%s", s.ConversationID)
-	s.SK = fmt.Sprintf("USER#%s", s.UserID)
-	
+	s.SK = fmt.Sprintf(KeyPatternUser, s.UserID)
+
 	if s.LastReadAt.IsZero() {
 		s.LastReadAt = time.Now()
 	}
-	
+
 	return nil
 }
 
@@ -51,23 +51,23 @@ func (s *ConversationStatus) BeforeCreate() error {
 // This model is included for completeness based on the instructions.
 type ConversationMessage struct {
 	// Primary keys as specified in instructions
-	PK string `dynamorm:"pk" json:"PK"` // CONVERSATION#conversationID  
+	PK string `dynamorm:"pk" json:"PK"` // CONVERSATION#conversationID
 	SK string `dynamorm:"sk" json:"SK"` // STATUS#timestamp#statusID
-	
+
 	// Fields from instructions
-	ConversationID  string              `json:"conversation_id"`
-	StatusID        string              `json:"status_id"`
-	SenderUsername  string              `json:"sender_username"`
-	CreatedAt       time.Time           `json:"created_at"`
-	ReadBy          map[string]time.Time `json:"read_by,omitempty"` // username -> read timestamp
-	
+	ConversationID string               `json:"conversation_id"`
+	StatusID       string               `json:"status_id"`
+	SenderUsername string               `json:"sender_username"`
+	CreatedAt      time.Time            `json:"created_at"`
+	ReadBy         map[string]time.Time `json:"read_by,omitempty"` // username -> read timestamp
+
 	// TTL for message retention (optional)
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
 // TableName returns the DynamoDB table name
 func (ConversationMessage) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the keys before creating a message record
@@ -78,17 +78,17 @@ func (m *ConversationMessage) BeforeCreate() error {
 	if m.StatusID == "" {
 		return fmt.Errorf("status ID is required")
 	}
-	
+
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now()
 	}
-	
-	m.PK = fmt.Sprintf("CONVERSATION#%s", m.ConversationID)
+
+	m.PK = fmt.Sprintf(KeyPatternConversation, m.ConversationID)
 	m.SK = fmt.Sprintf("STATUS#%s#%s", m.CreatedAt.Format(time.RFC3339Nano), m.StatusID)
-	
+
 	if m.ReadBy == nil {
 		m.ReadBy = make(map[string]time.Time)
 	}
-	
+
 	return nil
 }

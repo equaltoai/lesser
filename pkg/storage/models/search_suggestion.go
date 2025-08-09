@@ -12,9 +12,9 @@ type SearchSuggestion struct {
 	SK string `dynamorm:"sk" json:"-"`
 
 	// Fields
-	Type      string    `json:"type"`       // hashtag, account, username, display_name
-	Term      string    `json:"term"`       // the search term
-	Score     float64   `json:"score"`      // popularity/relevance score
+	Type      string    `json:"type"`  // hashtag, account, username, display_name
+	Term      string    `json:"term"`  // the search term
+	Score     float64   `json:"score"` // popularity/relevance score
 	LastUsed  time.Time `json:"last_used"`
 	UseCount  int       `json:"use_count"`
 	CreatedAt time.Time `json:"created_at"`

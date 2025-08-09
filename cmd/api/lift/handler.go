@@ -21,7 +21,7 @@ type Handler struct {
 // NewHandler creates a new handler with dependencies
 func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, authMiddleware *auth.Middleware) *Handler {
 	converter := mastodon.NewConverter(cfg.BaseURL())
-	
+
 	return &Handler{
 		cfg:            cfg,
 		repos:          repos,
@@ -37,11 +37,11 @@ func (h *Handler) getBearerTokenLift(ctx *lift.Context) string {
 	if authHeader == "" {
 		authHeader = ctx.Header("authorization")
 	}
-	
+
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		return ""
 	}
-	
+
 	return token
 }

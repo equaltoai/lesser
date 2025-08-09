@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -28,60 +28,103 @@ import (
 
 // HandleUploadMediaV2Lift handles POST /api/v2/media - Async media upload
 func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
+	// Authenticate user
+	claims, err := h.authenticateMediaRequest(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Parse multipart form data
+	reader, err := h.createMultipartReader(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Parse and validate multipart data
+	data, err := h.parseAndValidateMultipartData(ctx, reader)
+	if err != nil {
+		return err
+	}
+
+	// Upload files to S3 and create records
+	mediaID, jobID, s3Key, thumbnailS3Key, err := h.uploadToS3(ctx, claims.Username, data)
+	if err != nil {
+		return err
+	}
+
+	// Create database records and trigger processing
+	attachment, err := h.createMediaRecordsAndTriggerProcessing(ctx, claims.Username, mediaID, jobID, s3Key, thumbnailS3Key, data)
+	if err != nil {
+		return err
+	}
+
+	ctx.Status(http.StatusAccepted)
+	return ctx.JSON(attachment)
+}
+
+// Helper functions for HandleUploadMediaV2Lift
+
+// MediaUploadData holds parsed multipart data
+type MediaUploadData struct {
+	FileData      []byte
+	ThumbnailData []byte
+	MimeType      string
+	Description   string
+	Focus         string
+}
+
+// authenticateMediaRequest handles authentication for media upload
+func (h *Handler) authenticateMediaRequest(ctx *lift.Context) (*auth.Claims, error) {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
-	var claims *auth.Claims
 	if testUsername != "" {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
+		return &auth.Claims{
 			Username: testUsername,
 			Scopes:   []string{auth.ScopeWrite},
-		}
-	} else {
-		// Extract token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
+		}, nil
+	}
 
-		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Extract token
+	token := h.getBearerTokenLift(ctx)
+	if token == "" {
+		ctx.Status(http.StatusUnauthorized)
+		return nil, ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
+	}
+
+	// Validate token
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return nil, ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Check write scope
 	if !claims.HasScope(auth.ScopeWrite) {
 		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
+		return nil, ctx.JSON(map[string]string{
 			"error": "insufficient scope",
 		})
 	}
 
-	// Parse multipart form data
-	var bodyBytes []byte
-	
-	// Get raw body data
-	bodyBytes = ctx.Request.Body
+	return claims, nil
+}
+
+// createMultipartReader creates and initializes a multipart reader
+func (h *Handler) createMultipartReader(ctx *lift.Context) (*multipart.Reader, error) {
+	bodyBytes := ctx.Request.Body
 
 	// Handle potential base64 encoding (legacy support)
 	if len(bodyBytes) > 0 {
-		// Try to decode as base64 if it looks like base64
 		if decoded, err := base64.StdEncoding.DecodeString(string(bodyBytes)); err == nil {
-			// Check if the decoded data looks like multipart form data
 			if bytes.Contains(decoded, []byte("boundary")) || bytes.Contains(decoded, []byte("Content-Disposition")) {
 				bodyBytes = decoded
 			}
@@ -99,7 +142,7 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 	if err != nil {
 		h.logger.Error("invalid content type", zap.Error(err))
 		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
+		return nil, ctx.JSON(map[string]string{
 			"error": fmt.Sprintf("invalid content type: %v", err),
 		})
 	}
@@ -108,20 +151,17 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 	if boundary == "" {
 		h.logger.Error("missing boundary in content type")
 		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
+		return nil, ctx.JSON(map[string]string{
 			"error": "missing boundary in content type",
 		})
 	}
 
-	// Create multipart reader
-	reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
+	return multipart.NewReader(bytes.NewReader(bodyBytes), boundary), nil
+}
 
-	// Read the file part
-	var fileData []byte
-	var thumbnailData []byte
-	var mimeType string
-	var description string
-	var focus string
+// parseAndValidateMultipartData parses multipart data and validates it
+func (h *Handler) parseAndValidateMultipartData(ctx *lift.Context, reader *multipart.Reader) (*MediaUploadData, error) {
+	data := &MediaUploadData{}
 
 	for {
 		part, err := reader.NextPart()
@@ -130,105 +170,157 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 		}
 		defer func() {
 			if err := part.Close(); err != nil {
-				// Log error but don't fail the request
 				h.logger.Warn("failed to close multipart", zap.Error(err))
 			}
 		}()
 
-		switch part.FormName() {
-		case "file":
-			// Read file data
-			buf := new(bytes.Buffer)
-			if _, err := buf.ReadFrom(part); err != nil {
-				h.logger.Error("failed to read file", zap.Error(err))
-				ctx.Status(http.StatusBadRequest)
-				return ctx.JSON(map[string]string{
-					"error": fmt.Sprintf("failed to read file: %v", err),
-				})
-			}
-			fileData = buf.Bytes()
-
-			// Get MIME type from header or detect it
-			mimeType = part.Header.Get("Content-Type")
-			if mimeType == "" {
-				mimeType = http.DetectContentType(fileData)
-			}
-
-		case "thumbnail":
-			// Read thumbnail data (optional)
-			buf := new(bytes.Buffer)
-			if _, err := buf.ReadFrom(part); err != nil {
-				h.logger.Warn("failed to read thumbnail", zap.Error(err))
-			}
-			thumbnailData = buf.Bytes()
-
-		case "description":
-			// Read description
-			buf := new(bytes.Buffer)
-			if _, err := buf.ReadFrom(part); err != nil {
-				h.logger.Warn("failed to read description", zap.Error(err))
-			}
-			description = buf.String()
-
-		case "focus":
-			// Read focus point
-			buf := new(bytes.Buffer)
-			if _, err := buf.ReadFrom(part); err != nil {
-				h.logger.Warn("failed to read focus", zap.Error(err))
-			}
-			focus = buf.String()
+		if err := h.processMediaMultipartPart(part, data); err != nil {
+			return nil, err
 		}
 	}
 
-	if len(fileData) == 0 {
+	return h.validateMediaData(ctx, data)
+}
+
+// processMediaMultipartPart processes a single multipart part for media upload
+func (h *Handler) processMediaMultipartPart(part *multipart.Part, data *MediaUploadData) error {
+	switch part.FormName() {
+	case "file":
+		return h.processFilePart(part, data)
+	case "thumbnail":
+		return h.processThumbnailPart(part, data)
+	case "description":
+		return h.processDescriptionPart(part, data)
+	case "focus":
+		return h.processFocusPart(part, data)
+	}
+	return nil
+}
+
+// processFilePart processes the main file part
+func (h *Handler) processFilePart(part *multipart.Part, data *MediaUploadData) error {
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(part); err != nil {
+		h.logger.Error("failed to read file", zap.Error(err))
+		return fmt.Errorf("failed to read file: %v", err)
+	}
+	data.FileData = buf.Bytes()
+
+	// Get MIME type from header or detect it
+	data.MimeType = part.Header.Get("Content-Type")
+	if data.MimeType == "" {
+		data.MimeType = http.DetectContentType(data.FileData)
+	}
+
+	return nil
+}
+
+// processThumbnailPart processes the thumbnail part
+func (h *Handler) processThumbnailPart(part *multipart.Part, data *MediaUploadData) error {
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(part); err != nil {
+		h.logger.Warn("failed to read thumbnail", zap.Error(err))
+		return nil
+	}
+	data.ThumbnailData = buf.Bytes()
+	return nil
+}
+
+// processDescriptionPart processes the description part
+func (h *Handler) processDescriptionPart(part *multipart.Part, data *MediaUploadData) error {
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(part); err != nil {
+		h.logger.Warn("failed to read description", zap.Error(err))
+		return nil
+	}
+	data.Description = buf.String()
+	return nil
+}
+
+// processFocusPart processes the focus part
+func (h *Handler) processFocusPart(part *multipart.Part, data *MediaUploadData) error {
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(part); err != nil {
+		h.logger.Warn("failed to read focus", zap.Error(err))
+		return nil
+	}
+	data.Focus = buf.String()
+	return nil
+}
+
+// validateMediaData validates the parsed media data
+func (h *Handler) validateMediaData(ctx *lift.Context, data *MediaUploadData) (*MediaUploadData, error) {
+	if len(data.FileData) == 0 {
 		h.logger.Error("no file data provided")
 		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
+		return nil, ctx.JSON(map[string]string{
 			"error": "no file data provided",
 		})
 	}
 
 	// Validate file size (10MB limit for v2, can be configured)
 	maxSize := int64(10 * 1024 * 1024)
-	if int64(len(fileData)) > maxSize {
-		h.logger.Error("file size exceeds limit", 
-			zap.Int("file_size", len(fileData)),
+	if int64(len(data.FileData)) > maxSize {
+		h.logger.Error("file size exceeds limit",
+			zap.Int("file_size", len(data.FileData)),
 			zap.Int64("max_size", maxSize))
 		ctx.Status(http.StatusUnprocessableEntity)
-		return ctx.JSON(map[string]string{
+		return nil, ctx.JSON(map[string]string{
 			"error": fmt.Sprintf("file size exceeds %dMB limit", maxSize/1024/1024),
 		})
 	}
 
 	// Validate MIME type
-	if !isAllowedMimeTypeLift(mimeType) {
-		h.logger.Error("unsupported file type", zap.String("mime_type", mimeType))
+	if !isAllowedMimeTypeLift(data.MimeType) {
+		h.logger.Error("unsupported file type", zap.String("mime_type", data.MimeType))
 		ctx.Status(http.StatusUnprocessableEntity)
-		return ctx.JSON(map[string]string{
-			"error": fmt.Sprintf("unsupported file type: %s", mimeType),
+		return nil, ctx.JSON(map[string]string{
+			"error": fmt.Sprintf("unsupported file type: %s", data.MimeType),
 		})
 	}
 
-	// Generate unique ID for the media
+	return data, nil
+}
+
+// uploadToS3 uploads files to S3 and returns identifiers
+func (h *Handler) uploadToS3(ctx *lift.Context, username string, data *MediaUploadData) (string, string, string, string, error) {
 	mediaID := uuid.New().String()
 	jobID := uuid.New().String()
 
 	// Generate S3 key for original file
-	ext := getExtensionFromMimeTypeLift(mimeType)
-	s3Key := fmt.Sprintf("media/%s/%s/original%s", claims.Username, mediaID, ext)
+	ext := getExtensionFromMimeTypeLift(data.MimeType)
+	s3Key := fmt.Sprintf("media/%s/%s/original%s", username, mediaID, ext)
 
 	// Initialize S3 client
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx.Context)
 	if err != nil {
 		h.logger.Error("failed to load AWS config", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
+		return "", "", "", "", ctx.JSON(map[string]string{
 			"error": "failed to initialize S3 client",
 		})
 	}
 	s3Client := s3.NewFromConfig(awsCfg)
 
-	// Upload original file to S3
+	// Upload original file
+	if err := h.uploadFileToS3(ctx, s3Client, s3Key, data.FileData, data.MimeType); err != nil {
+		return "", "", "", "", err
+	}
+
+	// Upload thumbnail if provided
+	var thumbnailS3Key string
+	if len(data.ThumbnailData) > 0 {
+		thumbnailS3Key = fmt.Sprintf("media/%s/%s/thumbnail%s", username, mediaID, ext)
+		if err := h.uploadFileToS3(ctx, s3Client, thumbnailS3Key, data.ThumbnailData, data.MimeType); err != nil {
+			h.logger.Warn("failed to upload thumbnail", zap.Error(err))
+		}
+	}
+
+	return mediaID, jobID, s3Key, thumbnailS3Key, nil
+}
+
+// uploadFileToS3 uploads a single file to S3
+func (h *Handler) uploadFileToS3(ctx *lift.Context, s3Client *s3.Client, s3Key string, fileData []byte, mimeType string) error {
 	bucketName := h.cfg.S3BucketName
 	if bucketName == "" {
 		h.logger.Error("S3 bucket not configured")
@@ -247,7 +339,7 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 		CacheControl: aws.String("public, max-age=31536000, immutable"),
 	}
 
-	_, err = s3Client.PutObject(ctx.Context, putInput)
+	_, err := s3Client.PutObject(ctx.Context, putInput)
 	if err != nil {
 		h.logger.Error("failed to upload to S3",
 			zap.String("bucket", bucketName),
@@ -259,38 +351,47 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 		})
 	}
 
-	// Upload thumbnail if provided
-	var thumbnailS3Key string
-	if len(thumbnailData) > 0 {
-		thumbnailS3Key = fmt.Sprintf("media/%s/%s/thumbnail%s", claims.Username, mediaID, ext)
-		thumbnailInput := &s3.PutObjectInput{
-			Bucket:       aws.String(bucketName),
-			Key:          aws.String(thumbnailS3Key),
-			Body:         bytes.NewReader(thumbnailData),
-			ContentType:  aws.String(mimeType),
-			ACL:          types.ObjectCannedACLPrivate,
-			CacheControl: aws.String("public, max-age=31536000, immutable"),
-		}
-		_, err = s3Client.PutObject(ctx.Context, thumbnailInput)
-		if err != nil {
-			h.logger.Warn("failed to upload thumbnail", zap.Error(err))
-		}
-	}
+	return nil
+}
+
+// createMediaRecordsAndTriggerProcessing creates database records and triggers async processing
+func (h *Handler) createMediaRecordsAndTriggerProcessing(ctx *lift.Context, username, mediaID, jobID, s3Key, thumbnailS3Key string, data *MediaUploadData) (*models.MediaAttachment, error) {
+	now := time.Now()
 
 	// Create media record
-	now := time.Now()
+	if err := h.createMediaRecord(ctx, mediaID, username, s3Key, data, jobID, now); err != nil {
+		return nil, err
+	}
+
+	// Create processing job
+	if err := h.createProcessingJob(ctx, jobID, mediaID, username, s3Key, thumbnailS3Key, data.MimeType, now); err != nil {
+		h.logger.Error("failed to create processing job", zap.Error(err))
+		// Don't fail the request, media is uploaded
+	}
+
+	// Trigger media processor
+	if err := h.triggerMediaProcessorLift(ctx, jobID, mediaID, s3Key, data.MimeType); err != nil {
+		h.logger.Error("failed to trigger media processor", zap.Error(err))
+		// Don't fail the request, processing can be retried later
+	}
+
+	return h.buildMediaAttachmentResponse(mediaID, data), nil
+}
+
+// createMediaRecord creates the media metadata record
+func (h *Handler) createMediaRecord(ctx *lift.Context, mediaID, username, s3Key string, data *MediaUploadData, jobID string, now time.Time) error {
 	mediaRecord := map[string]any{
 		"PK":          fmt.Sprintf("MEDIA#%s", mediaID),
 		"SK":          "METADATA",
 		"id":          fmt.Sprintf("MEDIA#%s", mediaID),
 		"MediaID":     mediaID,
-		"Username":    claims.Username,
+		"Username":    username,
 		"S3Key":       s3Key,
-		"MimeType":    mimeType,
-		"Size":        len(fileData),
-		"Description": description,
-		"Focus":       focus,
-		"Processing":  true, // Mark as processing
+		"MimeType":    data.MimeType,
+		"Size":        len(data.FileData),
+		"Description": data.Description,
+		"Focus":       data.Focus,
+		"Processing":  true,
 		"JobID":       jobID,
 		"CreatedAt":   now,
 		"UpdatedAt":   now,
@@ -304,30 +405,24 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 		})
 	}
 
-	// Create processing job
-	processingTasks := []string{}
-	mediaType := getMediaTypeLift(mimeType)
+	return nil
+}
 
-	switch mediaType {
-	case "image", "gifv":
-		processingTasks = append(processingTasks, "resize", "blurhash", "dimensions", "exif")
-	case "video":
-		processingTasks = append(processingTasks, "thumbnail", "dimensions", "duration", "transcode")
-	case "audio":
-		processingTasks = append(processingTasks, "waveform", "duration", "metadata")
-	}
+// createProcessingJob creates the async processing job
+func (h *Handler) createProcessingJob(ctx *lift.Context, jobID, mediaID, username, s3Key, thumbnailS3Key, mimeType string, now time.Time) error {
+	processingTasks := h.determineProcessingTasks(mimeType)
 
 	jobRecord := map[string]any{
 		"PK":              fmt.Sprintf("JOB#%s", jobID),
 		"SK":              fmt.Sprintf("JOB#%s", jobID),
 		"id":              fmt.Sprintf("JOB#%s", jobID),
-		"GSI1PK":          fmt.Sprintf("USER#%s", claims.Username),
+		"GSI1PK":          fmt.Sprintf("USER#%s", username),
 		"GSI1SK":          fmt.Sprintf("CREATED#%s", now.Format(time.RFC3339)),
 		"GSI2PK":          "STATUS#pending",
 		"GSI2SK":          fmt.Sprintf("CREATED#%s", now.Format(time.RFC3339)),
 		"JobID":           jobID,
 		"MediaID":         mediaID,
-		"Username":        claims.Username,
+		"Username":        username,
 		"S3Key":           s3Key,
 		"ThumbnailS3Key":  thumbnailS3Key,
 		"MimeType":        mimeType,
@@ -337,28 +432,41 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 		"Results":         map[string]any{},
 		"CreatedAt":       now,
 		"UpdatedAt":       now,
-		"TTL":             now.Add(7 * 24 * time.Hour).Unix(), // 7 days TTL
+		"TTL":             now.Add(7 * 24 * time.Hour).Unix(),
 	}
 
-	if err := h.repos.Object().CreateObject(ctx.Context, jobRecord); err != nil {
-		h.logger.Error("failed to create processing job", zap.Error(err))
-		// Don't fail the request, media is uploaded
-	}
+	return h.repos.Object().CreateObject(ctx.Context, jobRecord)
+}
 
-	// Trigger media processor Lambda via SQS
-	if err := h.triggerMediaProcessorLift(ctx, jobID, mediaID, s3Key, mimeType); err != nil {
-		h.logger.Error("failed to trigger media processor", zap.Error(err))
-		// Don't fail the request, processing can be retried later
+// determineProcessingTasks determines what processing tasks are needed based on media type
+func (h *Handler) determineProcessingTasks(mimeType string) []string {
+	mediaType := getMediaTypeLift(mimeType)
+	switch mediaType {
+	case "image", "gifv":
+		return []string{"resize", "blurhash", "dimensions", "exif"}
+	case "video":
+		return []string{"thumbnail", "dimensions", "duration", "transcode"}
+	case "audio":
+		return []string{"waveform", "duration", "metadata"}
+	default:
+		return []string{}
 	}
+}
 
+// buildMediaAttachmentResponse builds the response MediaAttachment object
+func (h *Handler) buildMediaAttachmentResponse(mediaID string, data *MediaUploadData) *models.MediaAttachment {
 	// Parse focus if provided
 	var focusX, focusY float64
-	if focus != "" {
-		fmt.Sscanf(focus, "%f,%f", &focusX, &focusY)
+	if data.Focus != "" {
+		if _, err := fmt.Sscanf(data.Focus, "%f,%f", &focusX, &focusY); err != nil {
+			// Invalid focus format, leave as zero values
+			h.logger.Debug("invalid focus format", zap.String("focus", data.Focus), zap.Error(err))
+		}
 	}
 
-	// Create MediaAttachment response (processing version)
-	attachment := &models.MediaAttachment{
+	mediaType := getMediaTypeLift(data.MimeType)
+
+	return &models.MediaAttachment{
 		ID:         mediaID,
 		Type:       mediaType,
 		URL:        "", // Empty until processed
@@ -372,12 +480,9 @@ func (h *Handler) HandleUploadMediaV2Lift(ctx *lift.Context) error {
 				"y": focusY,
 			},
 		},
-		Description: description,
+		Description: data.Description,
 		Blurhash:    "", // Will be generated during processing
 	}
-
-	ctx.Status(http.StatusAccepted)
-	return ctx.JSON(attachment)
 }
 
 // HandleGetMediaV2Lift handles GET /api/v2/media/:id
@@ -386,7 +491,7 @@ func (h *Handler) HandleGetMediaV2Lift(ctx *lift.Context) error {
 	mediaID := ctx.Param("id")
 	if mediaID == "" {
 		h.logger.Error("missing media ID")
-		ctx.Status(http.StatusBadRequest) 
+		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "missing media ID",
 		})
@@ -450,7 +555,7 @@ func (h *Handler) HandleGetMediaV2Lift(ctx *lift.Context) error {
 	// Media processing is complete, return full attachment
 	url := getStringFromMediaDataLift(mediaData, "URL")
 	previewURL := getStringFromMediaDataLift(mediaData, "PreviewURL", url)
-	
+
 	attachment := &models.MediaAttachment{
 		ID:         mediaID,
 		Type:       getMediaTypeLift(getStringFromMediaDataLift(mediaData, "MimeType")),
@@ -571,7 +676,7 @@ func (h *Handler) HandleUpdateMediaV2Lift(ctx *lift.Context) error {
 	}
 
 	if mediaData["Username"] != claims.Username {
-		h.logger.Error("not authorized to update media", 
+		h.logger.Error("not authorized to update media",
 			zap.String("media_id", mediaID),
 			zap.String("owner", fmt.Sprintf("%v", mediaData["Username"])),
 			zap.String("user", claims.Username))
@@ -744,7 +849,7 @@ func getMediaTypeLift(mimeType string) string {
 	} else if strings.HasPrefix(mimeType, "audio/") {
 		return "audio"
 	}
-	return "unknown"
+	return MediaTypeUnknown
 }
 
 // Helper functions for media data extraction

@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ScheduledJobCostRepository handles scheduled job cost tracking persistence
@@ -96,10 +97,10 @@ func (r *ScheduledJobCostRepository) Get(ctx context.Context, jobName, schedule 
 func (r *ScheduledJobCostRepository) GetByID(ctx context.Context, id string) (*models.ScheduledJobCostRecord, error) {
 	// Query across all job status partitions to find the record by ID
 	statuses := []string{"success", "failed", "timeout", "cancelled", "running", "queued"}
-	
+
 	for _, status := range statuses {
 		var statusRecords []*models.ScheduledJobCostRecord
-		
+
 		err := r.db.WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 			Index("job-status-index").
 			Where("GSI1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
@@ -180,7 +181,7 @@ func (r *ScheduledJobCostRepository) ListByDateRange(ctx context.Context, startD
 	currentDate := startDate
 	for currentDate.Before(endDate) || currentDate.Equal(endDate) {
 		dateStr := currentDate.Format("20060102")
-		
+
 		var dailyRecords []*models.ScheduledJobCostRecord
 		query := r.db.WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 			Index("job-date-index").
@@ -200,7 +201,7 @@ func (r *ScheduledJobCostRepository) ListByDateRange(ctx context.Context, startD
 
 		// Move to next day
 		currentDate = currentDate.AddDate(0, 0, 1)
-		
+
 		// Break if we have enough results
 		if len(allRecords) >= limit {
 			break
@@ -211,7 +212,7 @@ func (r *ScheduledJobCostRepository) ListByDateRange(ctx context.Context, startD
 	sort.Slice(allRecords, func(i, j int) bool {
 		return allRecords[i].Timestamp.After(allRecords[j].Timestamp)
 	})
-	
+
 	if len(allRecords) > limit {
 		allRecords = allRecords[:limit]
 	}
@@ -279,12 +280,12 @@ func (r *ScheduledJobCostRepository) GetJobExecutionStats(ctx context.Context, j
 	}
 
 	stats := &JobExecutionStats{
-		JobName:     jobName,
-		Schedule:    schedule,
-		StartTime:   startTime,
-		EndTime:     endTime,
-		TotalRuns:   len(records),
-		StatusBreakdown: make(map[string]int64),
+		JobName:           jobName,
+		Schedule:          schedule,
+		StartTime:         startTime,
+		EndTime:           endTime,
+		TotalRuns:         len(records),
+		StatusBreakdown:   make(map[string]int64),
 		CategoryBreakdown: make(map[string]*JobCategoryStats),
 	}
 
@@ -293,15 +294,15 @@ func (r *ScheduledJobCostRepository) GetJobExecutionStats(ctx context.Context, j
 	}
 
 	// Collect values for percentile calculations
-	var durations []float64
-	var costs []float64
+	durations := make([]float64, 0, len(records))
+	costs := make([]float64, 0, len(records))
 	var totalDuration int64
 	var totalCost float64
 
 	for _, record := range records {
 		// Count by status
 		stats.StatusBreakdown[record.Status]++
-		
+
 		// Track success/failure
 		if record.Success {
 			stats.SuccessfulRuns++
@@ -332,7 +333,7 @@ func (r *ScheduledJobCostRepository) GetJobExecutionStats(ctx context.Context, j
 				}
 				stats.CategoryBreakdown[record.JobCategory] = categoryStats
 			}
-			
+
 			categoryStats.ExecutionCount++
 			categoryStats.TotalCostMicroCents += record.TotalCostMicroCents
 			categoryStats.TotalDurationMs += record.Duration
@@ -385,11 +386,11 @@ func (r *ScheduledJobCostRepository) GetJobPerformanceTrends(ctx context.Context
 	}
 
 	trend := &JobPerformanceTrend{
-		JobName:     jobName,
-		Schedule:    schedule,
-		StartTime:   startTime,
-		EndTime:     endTime,
-		DataPoints:  make([]JobPerformanceDataPoint, 0),
+		JobName:    jobName,
+		Schedule:   schedule,
+		StartTime:  startTime,
+		EndTime:    endTime,
+		DataPoints: make([]JobPerformanceDataPoint, 0),
 	}
 
 	if len(records) == 0 {
@@ -398,10 +399,10 @@ func (r *ScheduledJobCostRepository) GetJobPerformanceTrends(ctx context.Context
 
 	// Group records by day
 	dailyData := make(map[string]*JobPerformanceDataPoint)
-	
+
 	for _, record := range records {
-		dayKey := record.Timestamp.Format("2006-01-02")
-		
+		dayKey := record.Timestamp.Format(common.DateFormat)
+
 		dataPoint, exists := dailyData[dayKey]
 		if !exists {
 			dataPoint = &JobPerformanceDataPoint{
@@ -409,12 +410,12 @@ func (r *ScheduledJobCostRepository) GetJobPerformanceTrends(ctx context.Context
 			}
 			dailyData[dayKey] = dataPoint
 		}
-		
+
 		dataPoint.TotalExecutions++
 		dataPoint.TotalCostDollars += record.TotalCostDollars
 		dataPoint.TotalDurationMs += record.Duration
 		dataPoint.TotalItemsProcessed += record.ItemsProcessed
-		
+
 		if record.Success {
 			dataPoint.SuccessfulExecutions++
 		} else {
@@ -429,11 +430,11 @@ func (r *ScheduledJobCostRepository) GetJobPerformanceTrends(ctx context.Context
 			dataPoint.AverageDurationMs = float64(dataPoint.TotalDurationMs) / float64(dataPoint.TotalExecutions)
 			dataPoint.SuccessRate = (float64(dataPoint.SuccessfulExecutions) / float64(dataPoint.TotalExecutions)) * 100
 		}
-		
+
 		if dataPoint.TotalItemsProcessed > 0 {
 			dataPoint.CostPerItemProcessed = dataPoint.TotalCostDollars / float64(dataPoint.TotalItemsProcessed)
 		}
-		
+
 		trend.DataPoints = append(trend.DataPoints, *dataPoint)
 	}
 
@@ -446,16 +447,16 @@ func (r *ScheduledJobCostRepository) GetJobPerformanceTrends(ctx context.Context
 	if len(trend.DataPoints) > 0 {
 		firstDay := &trend.DataPoints[0]
 		lastDay := &trend.DataPoints[len(trend.DataPoints)-1]
-		
+
 		// Calculate trend percentages
 		if firstDay.AverageCostPerExecution > 0 {
 			trend.CostTrendPercentage = ((lastDay.AverageCostPerExecution - firstDay.AverageCostPerExecution) / firstDay.AverageCostPerExecution) * 100
 		}
-		
+
 		if firstDay.AverageDurationMs > 0 {
 			trend.DurationTrendPercentage = ((lastDay.AverageDurationMs - firstDay.AverageDurationMs) / firstDay.AverageDurationMs) * 100
 		}
-		
+
 		if firstDay.SuccessRate > 0 {
 			trend.SuccessRateTrendPercentage = ((lastDay.SuccessRate - firstDay.SuccessRate) / firstDay.SuccessRate) * 100
 		}
@@ -525,7 +526,7 @@ func (r *ScheduledJobCostRepository) GetAggregation(ctx context.Context, period,
 // AggregateJobCosts performs aggregation of raw scheduled job cost data
 func (r *ScheduledJobCostRepository) AggregateJobCosts(ctx context.Context, jobName, period string, windowStart, windowEnd time.Time) error {
 	// Get all job cost records in the window
-	records, err := r.ListByJob(ctx, jobName, "all", windowStart, windowEnd, 10000) // Use "all" to get all schedules
+	records, err := r.ListByJob(ctx, jobName, "all", windowStart, windowEnd, 10000)
 	if err != nil {
 		return fmt.Errorf("failed to list job costs for aggregation: %w", err)
 	}
@@ -534,114 +535,196 @@ func (r *ScheduledJobCostRepository) AggregateJobCosts(ctx context.Context, jobN
 		return nil // Nothing to aggregate
 	}
 
-	// Calculate aggregated values
-	aggregation := &models.ScheduledJobCostAggregation{
-		JobName:     jobName,
-		Period:      period,
-		WindowStart: windowStart,
-		WindowEnd:   windowEnd,
+	// Initialize aggregation
+	aggregation := r.initializeAggregation(jobName, period, windowStart, windowEnd)
+
+	// Process records and collect metrics
+	metrics := r.processJobRecords(records, aggregation)
+
+	// Calculate statistics
+	r.calculateAggregationStatistics(aggregation, metrics)
+
+	// Calculate percentiles
+	r.calculateAggregationPercentiles(aggregation, metrics)
+
+	// Finalize breakdowns
+	r.finalizeBreakdownStatistics(aggregation)
+
+	// Save aggregation
+	return r.saveAggregation(ctx, aggregation, period, jobName, windowStart)
+}
+
+// jobMetrics holds metrics collected during processing
+type jobMetrics struct {
+	executionTimes     []float64
+	costValues         []float64
+	totalExecutionTime float64
+}
+
+// initializeAggregation creates a new aggregation structure
+func (r *ScheduledJobCostRepository) initializeAggregation(jobName, period string, windowStart, windowEnd time.Time) *models.ScheduledJobCostAggregation {
+	return &models.ScheduledJobCostAggregation{
+		JobName:                  jobName,
+		Period:                   period,
+		WindowStart:              windowStart,
+		WindowEnd:                windowEnd,
 		ExecutionTimePercentiles: make(map[string]float64),
-		CostPercentiles:         make(map[string]float64),
-		JobCategoryBreakdown:    make(map[string]*models.ScheduledJobCategoryStats),
-		EnvironmentBreakdown:    make(map[string]*models.ScheduledJobEnvironmentStats),
-		ScheduleBreakdown:       make(map[string]*models.ScheduledJobScheduleStats),
+		CostPercentiles:          make(map[string]float64),
+		JobCategoryBreakdown:     make(map[string]*models.ScheduledJobCategoryStats),
+		EnvironmentBreakdown:     make(map[string]*models.ScheduledJobEnvironmentStats),
+		ScheduleBreakdown:        make(map[string]*models.ScheduledJobScheduleStats),
+	}
+}
+
+// processJobRecords processes all records and updates aggregation
+func (r *ScheduledJobCostRepository) processJobRecords(records []*models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) *jobMetrics {
+	metrics := &jobMetrics{
+		executionTimes: make([]float64, 0, len(records)),
+		costValues:     make([]float64, 0, len(records)),
 	}
 
-	// Collect values for percentile calculation
-	var executionTimes []float64
-	var costValues []float64
-	var totalExecutionTime float64
-	
 	for _, record := range records {
-		aggregation.TotalExecutions++
-		
-		// Count by status
-		switch record.Status {
-		case "success":
-			aggregation.SuccessfulExecutions++
-		case "failed":
-			aggregation.FailedExecutions++
-		case "timeout":
-			aggregation.TimeoutExecutions++
-		case "cancelled":
-			aggregation.CancelledExecutions++
-		}
-
-		// Aggregate resource usage
-		aggregation.TotalLambdaInvocations += record.LambdaInvocations
-		aggregation.TotalLambdaDurationMs += record.LambdaDurationMs
-		aggregation.TotalDynamoDBOperations += record.DynamoDBReadOperations + record.DynamoDBWriteOperations
-		aggregation.TotalDynamoDBCapacity += record.DynamoDBReadCapacity + record.DynamoDBWriteCapacity
-		aggregation.TotalItemsProcessed += record.ItemsProcessed
-		aggregation.TotalItemsErrored += record.ItemsErrored
-
-		// Sum memory usage for average calculation
-		aggregation.AverageLambdaMemoryUsedMB += float64(record.LambdaMemoryUsedMB)
-
-		// Aggregate costs
-		aggregation.TotalLambdaCostMicroCents += record.LambdaCostMicroCents
-		aggregation.TotalDynamoDBCostMicroCents += record.DynamoDBCostMicroCents
-		aggregation.TotalSQSCostMicroCents += record.SQSCostMicroCents
-		aggregation.TotalS3CostMicroCents += record.S3CostMicroCents
-		aggregation.TotalCloudWatchCostMicroCents += record.CloudWatchCostMicroCents
-		aggregation.TotalDataTransferCostMicroCents += record.DataTransferCostMicroCents
-		aggregation.TotalExternalAPICostMicroCents += record.ExternalAPICostMicroCents
-		aggregation.TotalCascadingCostMicroCents += record.CascadingCostMicroCents
-		aggregation.TotalCostMicroCents += record.TotalCostMicroCents
-
-		// Collect values for percentiles
-		executionTimes = append(executionTimes, float64(record.Duration))
-		costValues = append(costValues, record.TotalCostDollars)
-		totalExecutionTime += float64(record.Duration)
-
-		// Aggregate by category
-		if record.JobCategory != "" {
-			categoryStats, exists := aggregation.JobCategoryBreakdown[record.JobCategory]
-			if !exists {
-				categoryStats = &models.ScheduledJobCategoryStats{
-					Category: record.JobCategory,
-				}
-				aggregation.JobCategoryBreakdown[record.JobCategory] = categoryStats
-			}
-			
-			categoryStats.ExecutionCount++
-			categoryStats.TotalCostMicroCents += record.TotalCostMicroCents
-			if record.Success {
-				categoryStats.SuccessRate += 1.0
-			}
-		}
-
-		// Aggregate by environment
-		if record.Environment != "" {
-			envStats, exists := aggregation.EnvironmentBreakdown[record.Environment]
-			if !exists {
-				envStats = &models.ScheduledJobEnvironmentStats{
-					Environment: record.Environment,
-				}
-				aggregation.EnvironmentBreakdown[record.Environment] = envStats
-			}
-			
-			envStats.ExecutionCount++
-			envStats.TotalCostMicroCents += record.TotalCostMicroCents
-		}
-
-		// Aggregate by schedule
-		scheduleStats, exists := aggregation.ScheduleBreakdown[record.Schedule]
-		if !exists {
-			scheduleStats = &models.ScheduledJobScheduleStats{
-				Schedule: record.Schedule,
-			}
-			aggregation.ScheduleBreakdown[record.Schedule] = scheduleStats
-		}
-		
-		scheduleStats.ExecutionCount++
-		scheduleStats.TotalCostMicroCents += record.TotalCostMicroCents
-		scheduleStats.AverageExecutionTime += float64(record.Duration)
+		r.processJobRecord(record, aggregation, metrics)
 	}
 
-	// Calculate averages and rates
+	return metrics
+}
+
+// processJobRecord processes a single job record
+func (r *ScheduledJobCostRepository) processJobRecord(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation, metrics *jobMetrics) {
+	aggregation.TotalExecutions++
+
+	// Update status counts
+	r.updateStatusCounts(record, aggregation)
+
+	// Aggregate resource usage
+	r.aggregateResourceUsage(record, aggregation)
+
+	// Aggregate costs
+	r.aggregateCosts(record, aggregation)
+
+	// Collect metrics
+	metrics.executionTimes = append(metrics.executionTimes, float64(record.Duration))
+	metrics.costValues = append(metrics.costValues, record.TotalCostDollars)
+	metrics.totalExecutionTime += float64(record.Duration)
+
+	// Update breakdowns
+	r.updateCategoryBreakdown(record, aggregation)
+	r.updateEnvironmentBreakdown(record, aggregation)
+	r.updateScheduleBreakdown(record, aggregation)
+}
+
+// updateStatusCounts updates execution status counts
+func (r *ScheduledJobCostRepository) updateStatusCounts(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) {
+	switch record.Status {
+	case "success":
+		aggregation.SuccessfulExecutions++
+	case "failed":
+		aggregation.FailedExecutions++
+	case "timeout":
+		aggregation.TimeoutExecutions++
+	case "cancelled":
+		aggregation.CancelledExecutions++
+	}
+}
+
+// aggregateResourceUsage aggregates resource usage metrics
+func (r *ScheduledJobCostRepository) aggregateResourceUsage(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) {
+	aggregation.TotalLambdaInvocations += record.LambdaInvocations
+	aggregation.TotalLambdaDurationMs += record.LambdaDurationMs
+	aggregation.TotalDynamoDBOperations += record.DynamoDBReadOperations + record.DynamoDBWriteOperations
+	aggregation.TotalDynamoDBCapacity += record.DynamoDBReadCapacity + record.DynamoDBWriteCapacity
+	aggregation.TotalItemsProcessed += record.ItemsProcessed
+	aggregation.TotalItemsErrored += record.ItemsErrored
+	aggregation.AverageLambdaMemoryUsedMB += float64(record.LambdaMemoryUsedMB)
+}
+
+// aggregateCosts aggregates cost metrics
+func (r *ScheduledJobCostRepository) aggregateCosts(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) {
+	aggregation.TotalLambdaCostMicroCents += record.LambdaCostMicroCents
+	aggregation.TotalDynamoDBCostMicroCents += record.DynamoDBCostMicroCents
+	aggregation.TotalSQSCostMicroCents += record.SQSCostMicroCents
+	aggregation.TotalS3CostMicroCents += record.S3CostMicroCents
+	aggregation.TotalCloudWatchCostMicroCents += record.CloudWatchCostMicroCents
+	aggregation.TotalDataTransferCostMicroCents += record.DataTransferCostMicroCents
+	aggregation.TotalExternalAPICostMicroCents += record.ExternalAPICostMicroCents
+	aggregation.TotalCascadingCostMicroCents += record.CascadingCostMicroCents
+	aggregation.TotalCostMicroCents += record.TotalCostMicroCents
+}
+
+// updateCategoryBreakdown updates category breakdown statistics
+func (r *ScheduledJobCostRepository) updateCategoryBreakdown(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) {
+	if record.JobCategory == "" {
+		return
+	}
+
+	categoryStats := r.getOrCreateCategoryStats(record.JobCategory, aggregation)
+	categoryStats.ExecutionCount++
+	categoryStats.TotalCostMicroCents += record.TotalCostMicroCents
+	if record.Success {
+		categoryStats.SuccessRate += 1.0
+	}
+}
+
+// getOrCreateCategoryStats gets or creates category statistics
+func (r *ScheduledJobCostRepository) getOrCreateCategoryStats(category string, aggregation *models.ScheduledJobCostAggregation) *models.ScheduledJobCategoryStats {
+	categoryStats, exists := aggregation.JobCategoryBreakdown[category]
+	if !exists {
+		categoryStats = &models.ScheduledJobCategoryStats{
+			Category: category,
+		}
+		aggregation.JobCategoryBreakdown[category] = categoryStats
+	}
+	return categoryStats
+}
+
+// updateEnvironmentBreakdown updates environment breakdown statistics
+func (r *ScheduledJobCostRepository) updateEnvironmentBreakdown(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) {
+	if record.Environment == "" {
+		return
+	}
+
+	envStats := r.getOrCreateEnvironmentStats(record.Environment, aggregation)
+	envStats.ExecutionCount++
+	envStats.TotalCostMicroCents += record.TotalCostMicroCents
+}
+
+// getOrCreateEnvironmentStats gets or creates environment statistics
+func (r *ScheduledJobCostRepository) getOrCreateEnvironmentStats(environment string, aggregation *models.ScheduledJobCostAggregation) *models.ScheduledJobEnvironmentStats {
+	envStats, exists := aggregation.EnvironmentBreakdown[environment]
+	if !exists {
+		envStats = &models.ScheduledJobEnvironmentStats{
+			Environment: environment,
+		}
+		aggregation.EnvironmentBreakdown[environment] = envStats
+	}
+	return envStats
+}
+
+// updateScheduleBreakdown updates schedule breakdown statistics
+func (r *ScheduledJobCostRepository) updateScheduleBreakdown(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) {
+	scheduleStats := r.getOrCreateScheduleStats(record.Schedule, aggregation)
+	scheduleStats.ExecutionCount++
+	scheduleStats.TotalCostMicroCents += record.TotalCostMicroCents
+	scheduleStats.AverageExecutionTime += float64(record.Duration)
+}
+
+// getOrCreateScheduleStats gets or creates schedule statistics
+func (r *ScheduledJobCostRepository) getOrCreateScheduleStats(schedule string, aggregation *models.ScheduledJobCostAggregation) *models.ScheduledJobScheduleStats {
+	scheduleStats, exists := aggregation.ScheduleBreakdown[schedule]
+	if !exists {
+		scheduleStats = &models.ScheduledJobScheduleStats{
+			Schedule: schedule,
+		}
+		aggregation.ScheduleBreakdown[schedule] = scheduleStats
+	}
+	return scheduleStats
+}
+
+// calculateAggregationStatistics calculates averages and rates
+func (r *ScheduledJobCostRepository) calculateAggregationStatistics(aggregation *models.ScheduledJobCostAggregation, metrics *jobMetrics) {
 	if aggregation.TotalExecutions > 0 {
-		aggregation.AverageExecutionTime = totalExecutionTime / float64(aggregation.TotalExecutions)
+		aggregation.AverageExecutionTime = metrics.totalExecutionTime / float64(aggregation.TotalExecutions)
 		aggregation.AverageLambdaMemoryUsedMB = aggregation.AverageLambdaMemoryUsedMB / float64(aggregation.TotalExecutions)
 		aggregation.SuccessRate = (float64(aggregation.SuccessfulExecutions) / float64(aggregation.TotalExecutions)) * 100
 		aggregation.AverageCostPerExecution = float64(aggregation.TotalCostMicroCents) / 1_000_000.0 / float64(aggregation.TotalExecutions)
@@ -654,20 +737,31 @@ func (r *ScheduledJobCostRepository) AggregateJobCosts(ctx context.Context, jobN
 	if aggregation.SuccessfulExecutions > 0 {
 		aggregation.CostPerSuccessfulExecution = float64(aggregation.TotalCostMicroCents) / 1_000_000.0 / float64(aggregation.SuccessfulExecutions)
 	}
+}
 
-	// Calculate percentiles
-	if len(executionTimes) > 0 {
-		sort.Float64s(executionTimes)
-		aggregation.MedianExecutionTime = getPercentileValue(executionTimes, 50)
-		aggregation.P95ExecutionTime = getPercentileValue(executionTimes, 95)
-		aggregation.ExecutionTimePercentiles = calculatePercentiles(executionTimes)
-	}
-	
-	if len(costValues) > 0 {
-		aggregation.CostPercentiles = calculatePercentiles(costValues)
+// calculateAggregationPercentiles calculates execution time and cost percentiles
+func (r *ScheduledJobCostRepository) calculateAggregationPercentiles(aggregation *models.ScheduledJobCostAggregation, metrics *jobMetrics) {
+	if len(metrics.executionTimes) > 0 {
+		sort.Float64s(metrics.executionTimes)
+		aggregation.MedianExecutionTime = getPercentileValue(metrics.executionTimes, 50)
+		aggregation.P95ExecutionTime = getPercentileValue(metrics.executionTimes, 95)
+		aggregation.ExecutionTimePercentiles = calculatePercentiles(metrics.executionTimes)
 	}
 
-	// Finalize breakdown statistics
+	if len(metrics.costValues) > 0 {
+		aggregation.CostPercentiles = calculatePercentiles(metrics.costValues)
+	}
+}
+
+// finalizeBreakdownStatistics finalizes all breakdown statistics
+func (r *ScheduledJobCostRepository) finalizeBreakdownStatistics(aggregation *models.ScheduledJobCostAggregation) {
+	r.finalizeCategoryBreakdown(aggregation)
+	r.finalizeEnvironmentBreakdown(aggregation)
+	r.finalizeScheduleBreakdown(aggregation)
+}
+
+// finalizeCategoryBreakdown finalizes category breakdown statistics
+func (r *ScheduledJobCostRepository) finalizeCategoryBreakdown(aggregation *models.ScheduledJobCostAggregation) {
 	for category, categoryStats := range aggregation.JobCategoryBreakdown {
 		categoryStats.TotalCostDollars = float64(categoryStats.TotalCostMicroCents) / 1_000_000.0
 		if categoryStats.ExecutionCount > 0 {
@@ -676,7 +770,10 @@ func (r *ScheduledJobCostRepository) AggregateJobCosts(ctx context.Context, jobN
 		}
 		aggregation.JobCategoryBreakdown[category] = categoryStats
 	}
+}
 
+// finalizeEnvironmentBreakdown finalizes environment breakdown statistics
+func (r *ScheduledJobCostRepository) finalizeEnvironmentBreakdown(aggregation *models.ScheduledJobCostAggregation) {
 	for env, envStats := range aggregation.EnvironmentBreakdown {
 		envStats.TotalCostDollars = float64(envStats.TotalCostMicroCents) / 1_000_000.0
 		if envStats.ExecutionCount > 0 {
@@ -684,7 +781,10 @@ func (r *ScheduledJobCostRepository) AggregateJobCosts(ctx context.Context, jobN
 		}
 		aggregation.EnvironmentBreakdown[env] = envStats
 	}
+}
 
+// finalizeScheduleBreakdown finalizes schedule breakdown statistics
+func (r *ScheduledJobCostRepository) finalizeScheduleBreakdown(aggregation *models.ScheduledJobCostAggregation) {
 	for schedule, scheduleStats := range aggregation.ScheduleBreakdown {
 		scheduleStats.TotalCostDollars = float64(scheduleStats.TotalCostMicroCents) / 1_000_000.0
 		if scheduleStats.ExecutionCount > 0 {
@@ -693,7 +793,10 @@ func (r *ScheduledJobCostRepository) AggregateJobCosts(ctx context.Context, jobN
 		}
 		aggregation.ScheduleBreakdown[schedule] = scheduleStats
 	}
+}
 
+// saveAggregation saves or updates the aggregation
+func (r *ScheduledJobCostRepository) saveAggregation(ctx context.Context, aggregation *models.ScheduledJobCostAggregation, period, jobName string, windowStart time.Time) error {
 	// Check if aggregation already exists
 	existing, err := r.GetAggregation(ctx, period, jobName, windowStart)
 	if err == nil && existing != nil {
@@ -713,82 +816,132 @@ func (r *ScheduledJobCostRepository) GetScheduledJobsSummary(ctx context.Context
 		return nil, err
 	}
 
-	summary := &ScheduledJobsSummary{
-		StartTime:       startTime,
-		EndTime:         endTime,
-		TotalExecutions: len(records),
-		JobBreakdown:    make(map[string]*JobSummaryStats),
-		CategoryBreakdown: make(map[string]*CategorySummaryStats),
-		ScheduleBreakdown: make(map[string]*ScheduleSummaryStats),
-	}
-
+	summary := r.initializeJobsSummary(startTime, endTime, records)
 	if summary.TotalExecutions == 0 {
 		return summary, nil
 	}
 
+	// Process all records
+	r.processSummaryRecords(summary, records)
+
+	// Calculate all metrics
+	r.calculateOverallMetrics(summary)
+	r.calculateJobMetrics(summary)
+	r.calculateCategoryMetrics(summary)
+	r.calculateScheduleMetrics(summary)
+
+	return summary, nil
+}
+
+// initializeJobsSummary creates and initializes a new jobs summary
+func (r *ScheduledJobCostRepository) initializeJobsSummary(startTime, endTime time.Time, records []*models.ScheduledJobCostRecord) *ScheduledJobsSummary {
+	return &ScheduledJobsSummary{
+		StartTime:         startTime,
+		EndTime:           endTime,
+		TotalExecutions:   len(records),
+		JobBreakdown:      make(map[string]*JobSummaryStats),
+		CategoryBreakdown: make(map[string]*CategorySummaryStats),
+		ScheduleBreakdown: make(map[string]*ScheduleSummaryStats),
+	}
+}
+
+// processSummaryRecords processes all job records and updates the summary
+func (r *ScheduledJobCostRepository) processSummaryRecords(summary *ScheduledJobsSummary, records []*models.ScheduledJobCostRecord) {
 	for _, record := range records {
-		// Overall statistics
-		summary.TotalCostMicroCents += record.TotalCostMicroCents
-		summary.TotalDurationMs += record.Duration
-		summary.TotalItemsProcessed += record.ItemsProcessed
+		r.updateOverallStats(summary, record)
+		r.updateJobSummaryBreakdown(summary, record)
+		r.updateCategorySummaryBreakdown(summary, record)
+		r.updateScheduleSummaryBreakdown(summary, record)
+	}
+}
 
-		if record.Success {
-			summary.SuccessfulExecutions++
-		} else {
-			summary.FailedExecutions++
-		}
+// updateOverallStats updates overall statistics for the summary
+func (r *ScheduledJobCostRepository) updateOverallStats(summary *ScheduledJobsSummary, record *models.ScheduledJobCostRecord) {
+	summary.TotalCostMicroCents += record.TotalCostMicroCents
+	summary.TotalDurationMs += record.Duration
+	summary.TotalItemsProcessed += record.ItemsProcessed
 
-		// Job breakdown
-		jobStats, exists := summary.JobBreakdown[record.JobName]
-		if !exists {
-			jobStats = &JobSummaryStats{
-				JobName: record.JobName,
-			}
-			summary.JobBreakdown[record.JobName] = jobStats
-		}
-		
-		jobStats.ExecutionCount++
-		jobStats.TotalCostMicroCents += record.TotalCostMicroCents
-		jobStats.TotalDurationMs += record.Duration
-		if record.Success {
-			jobStats.SuccessfulExecutions++
-		}
+	if record.Success {
+		summary.SuccessfulExecutions++
+	} else {
+		summary.FailedExecutions++
+	}
+}
 
-		// Category breakdown
-		if record.JobCategory != "" {
-			categoryStats, exists := summary.CategoryBreakdown[record.JobCategory]
-			if !exists {
-				categoryStats = &CategorySummaryStats{
-					Category: record.JobCategory,
-				}
-				summary.CategoryBreakdown[record.JobCategory] = categoryStats
-			}
-			
-			categoryStats.ExecutionCount++
-			categoryStats.TotalCostMicroCents += record.TotalCostMicroCents
-			if record.Success {
-				categoryStats.SuccessfulExecutions++
-			}
-		}
+// updateJobSummaryBreakdown updates job-specific breakdown statistics
+func (r *ScheduledJobCostRepository) updateJobSummaryBreakdown(summary *ScheduledJobsSummary, record *models.ScheduledJobCostRecord) {
+	jobStats := r.getOrCreateJobStats(summary, record.JobName)
+	jobStats.ExecutionCount++
+	jobStats.TotalCostMicroCents += record.TotalCostMicroCents
+	jobStats.TotalDurationMs += record.Duration
+	if record.Success {
+		jobStats.SuccessfulExecutions++
+	}
+}
 
-		// Schedule breakdown
-		scheduleStats, exists := summary.ScheduleBreakdown[record.Schedule]
-		if !exists {
-			scheduleStats = &ScheduleSummaryStats{
-				Schedule: record.Schedule,
-			}
-			summary.ScheduleBreakdown[record.Schedule] = scheduleStats
+// getOrCreateJobStats gets or creates job statistics
+func (r *ScheduledJobCostRepository) getOrCreateJobStats(summary *ScheduledJobsSummary, jobName string) *JobSummaryStats {
+	jobStats, exists := summary.JobBreakdown[jobName]
+	if !exists {
+		jobStats = &JobSummaryStats{
+			JobName: jobName,
 		}
-		
-		scheduleStats.ExecutionCount++
-		scheduleStats.TotalCostMicroCents += record.TotalCostMicroCents
-		scheduleStats.TotalDurationMs += record.Duration
-		if record.Success {
-			scheduleStats.SuccessfulExecutions++
-		}
+		summary.JobBreakdown[jobName] = jobStats
+	}
+	return jobStats
+}
+
+// updateCategorySummaryBreakdown updates category-specific breakdown statistics
+func (r *ScheduledJobCostRepository) updateCategorySummaryBreakdown(summary *ScheduledJobsSummary, record *models.ScheduledJobCostRecord) {
+	if record.JobCategory == "" {
+		return
 	}
 
-	// Calculate overall metrics
+	categoryStats := r.getOrCreateCategorySummaryStats(summary, record.JobCategory)
+	categoryStats.ExecutionCount++
+	categoryStats.TotalCostMicroCents += record.TotalCostMicroCents
+	if record.Success {
+		categoryStats.SuccessfulExecutions++
+	}
+}
+
+// getOrCreateCategorySummaryStats gets or creates category statistics
+func (r *ScheduledJobCostRepository) getOrCreateCategorySummaryStats(summary *ScheduledJobsSummary, category string) *CategorySummaryStats {
+	categoryStats, exists := summary.CategoryBreakdown[category]
+	if !exists {
+		categoryStats = &CategorySummaryStats{
+			Category: category,
+		}
+		summary.CategoryBreakdown[category] = categoryStats
+	}
+	return categoryStats
+}
+
+// updateScheduleSummaryBreakdown updates schedule-specific breakdown statistics
+func (r *ScheduledJobCostRepository) updateScheduleSummaryBreakdown(summary *ScheduledJobsSummary, record *models.ScheduledJobCostRecord) {
+	scheduleStats := r.getOrCreateScheduleSummaryStats(summary, record.Schedule)
+	scheduleStats.ExecutionCount++
+	scheduleStats.TotalCostMicroCents += record.TotalCostMicroCents
+	scheduleStats.TotalDurationMs += record.Duration
+	if record.Success {
+		scheduleStats.SuccessfulExecutions++
+	}
+}
+
+// getOrCreateScheduleSummaryStats gets or creates schedule statistics
+func (r *ScheduledJobCostRepository) getOrCreateScheduleSummaryStats(summary *ScheduledJobsSummary, schedule string) *ScheduleSummaryStats {
+	scheduleStats, exists := summary.ScheduleBreakdown[schedule]
+	if !exists {
+		scheduleStats = &ScheduleSummaryStats{
+			Schedule: schedule,
+		}
+		summary.ScheduleBreakdown[schedule] = scheduleStats
+	}
+	return scheduleStats
+}
+
+// calculateOverallMetrics calculates overall summary metrics
+func (r *ScheduledJobCostRepository) calculateOverallMetrics(summary *ScheduledJobsSummary) {
 	summary.TotalCostDollars = float64(summary.TotalCostMicroCents) / 1_000_000.0
 	summary.AverageCostPerExecution = summary.TotalCostDollars / float64(summary.TotalExecutions)
 	summary.AverageDurationMs = float64(summary.TotalDurationMs) / float64(summary.TotalExecutions)
@@ -797,111 +950,127 @@ func (r *ScheduledJobCostRepository) GetScheduledJobsSummary(ctx context.Context
 	if summary.TotalItemsProcessed > 0 {
 		summary.CostPerItemProcessed = summary.TotalCostDollars / float64(summary.TotalItemsProcessed)
 	}
+}
 
-	// Calculate job breakdown metrics
-	for jobName, jobStats := range summary.JobBreakdown {
-		jobStats.TotalCostDollars = float64(jobStats.TotalCostMicroCents) / 1_000_000.0
-		if jobStats.ExecutionCount > 0 {
-			jobStats.AverageCostPerExecution = jobStats.TotalCostDollars / float64(jobStats.ExecutionCount)
-			jobStats.AverageDurationMs = float64(jobStats.TotalDurationMs) / float64(jobStats.ExecutionCount)
-			jobStats.SuccessRate = (float64(jobStats.SuccessfulExecutions) / float64(jobStats.ExecutionCount)) * 100
-		}
-		summary.JobBreakdown[jobName] = jobStats
+// calculateJobMetrics calculates metrics for each job
+func (r *ScheduledJobCostRepository) calculateJobMetrics(summary *ScheduledJobsSummary) {
+	for _, jobStats := range summary.JobBreakdown {
+		r.calculateJobStatsMetrics(jobStats)
 	}
+}
 
-	// Calculate category breakdown metrics
-	for category, categoryStats := range summary.CategoryBreakdown {
-		categoryStats.TotalCostDollars = float64(categoryStats.TotalCostMicroCents) / 1_000_000.0
-		if categoryStats.ExecutionCount > 0 {
-			categoryStats.AverageCostPerExecution = categoryStats.TotalCostDollars / float64(categoryStats.ExecutionCount)
-			categoryStats.SuccessRate = (float64(categoryStats.SuccessfulExecutions) / float64(categoryStats.ExecutionCount)) * 100
-		}
-		summary.CategoryBreakdown[category] = categoryStats
+// calculateJobStatsMetrics calculates metrics for a single job's statistics
+func (r *ScheduledJobCostRepository) calculateJobStatsMetrics(jobStats *JobSummaryStats) {
+	jobStats.TotalCostDollars = float64(jobStats.TotalCostMicroCents) / 1_000_000.0
+	if jobStats.ExecutionCount > 0 {
+		jobStats.AverageCostPerExecution = jobStats.TotalCostDollars / float64(jobStats.ExecutionCount)
+		jobStats.AverageDurationMs = float64(jobStats.TotalDurationMs) / float64(jobStats.ExecutionCount)
+		jobStats.SuccessRate = (float64(jobStats.SuccessfulExecutions) / float64(jobStats.ExecutionCount)) * 100
 	}
+}
 
-	// Calculate schedule breakdown metrics
-	for schedule, scheduleStats := range summary.ScheduleBreakdown {
-		scheduleStats.TotalCostDollars = float64(scheduleStats.TotalCostMicroCents) / 1_000_000.0
-		if scheduleStats.ExecutionCount > 0 {
-			scheduleStats.AverageCostPerExecution = scheduleStats.TotalCostDollars / float64(scheduleStats.ExecutionCount)
-			scheduleStats.AverageDurationMs = float64(scheduleStats.TotalDurationMs) / float64(scheduleStats.ExecutionCount)
-			scheduleStats.SuccessRate = (float64(scheduleStats.SuccessfulExecutions) / float64(scheduleStats.ExecutionCount)) * 100
-		}
-		summary.ScheduleBreakdown[schedule] = scheduleStats
+// calculateCategoryMetrics calculates metrics for each category
+func (r *ScheduledJobCostRepository) calculateCategoryMetrics(summary *ScheduledJobsSummary) {
+	for _, categoryStats := range summary.CategoryBreakdown {
+		r.calculateCategoryStatsMetrics(categoryStats)
 	}
+}
 
-	return summary, nil
+// calculateCategoryStatsMetrics calculates metrics for a single category's statistics
+func (r *ScheduledJobCostRepository) calculateCategoryStatsMetrics(categoryStats *CategorySummaryStats) {
+	categoryStats.TotalCostDollars = float64(categoryStats.TotalCostMicroCents) / 1_000_000.0
+	if categoryStats.ExecutionCount > 0 {
+		categoryStats.AverageCostPerExecution = categoryStats.TotalCostDollars / float64(categoryStats.ExecutionCount)
+		categoryStats.SuccessRate = (float64(categoryStats.SuccessfulExecutions) / float64(categoryStats.ExecutionCount)) * 100
+	}
+}
+
+// calculateScheduleMetrics calculates metrics for each schedule
+func (r *ScheduledJobCostRepository) calculateScheduleMetrics(summary *ScheduledJobsSummary) {
+	for _, scheduleStats := range summary.ScheduleBreakdown {
+		r.calculateScheduleStatsMetrics(scheduleStats)
+	}
+}
+
+// calculateScheduleStatsMetrics calculates metrics for a single schedule's statistics
+func (r *ScheduledJobCostRepository) calculateScheduleStatsMetrics(scheduleStats *ScheduleSummaryStats) {
+	scheduleStats.TotalCostDollars = float64(scheduleStats.TotalCostMicroCents) / 1_000_000.0
+	if scheduleStats.ExecutionCount > 0 {
+		scheduleStats.AverageCostPerExecution = scheduleStats.TotalCostDollars / float64(scheduleStats.ExecutionCount)
+		scheduleStats.AverageDurationMs = float64(scheduleStats.TotalDurationMs) / float64(scheduleStats.ExecutionCount)
+		scheduleStats.SuccessRate = (float64(scheduleStats.SuccessfulExecutions) / float64(scheduleStats.ExecutionCount)) * 100
+	}
 }
 
 // Supporting types for repository methods
 
 // JobExecutionStats represents execution statistics for a job
 type JobExecutionStats struct {
-	JobName       string
-	Schedule      string
-	StartTime     time.Time
-	EndTime       time.Time
-	TotalRuns     int
+	JobName        string
+	Schedule       string
+	StartTime      time.Time
+	EndTime        time.Time
+	TotalRuns      int
 	SuccessfulRuns int64
-	FailedRuns    int64
-	SuccessRate   float64
+	FailedRuns     int64
+	SuccessRate    float64
 
-	AverageDurationMs float64
-	AverageCostDollars float64
-	TotalCostDollars  float64
+	AverageDurationMs   float64
+	AverageCostDollars  float64
+	TotalCostDollars    float64
 	TotalCostMicroCents int64
 
-	TotalItemsProcessed       int64
-	TotalItemsErrored         int64
-	TotalLambdaInvocations    int64
-	TotalLambdaDurationMs     int64
-	CostPerItemProcessed      float64
+	TotalItemsProcessed        int64
+	TotalItemsErrored          int64
+	TotalLambdaInvocations     int64
+	TotalLambdaDurationMs      int64
+	CostPerItemProcessed       float64
 	CostPerSuccessfulExecution float64
 
-	StatusBreakdown      map[string]int64
-	CategoryBreakdown    map[string]*JobCategoryStats
-	DurationPercentiles  map[string]float64
-	CostPercentiles      map[string]float64
+	StatusBreakdown     map[string]int64
+	CategoryBreakdown   map[string]*JobCategoryStats
+	DurationPercentiles map[string]float64
+	CostPercentiles     map[string]float64
 }
 
 // JobCategoryStats represents statistics for a job category
 type JobCategoryStats struct {
-	Category               string
-	ExecutionCount         int64
-	SuccessfulExecutions   int64
-	TotalCostMicroCents    int64
-	TotalCostDollars       float64
-	TotalDurationMs        int64
+	Category                string
+	ExecutionCount          int64
+	SuccessfulExecutions    int64
+	TotalCostMicroCents     int64
+	TotalCostDollars        float64
+	TotalDurationMs         int64
 	AverageCostPerExecution float64
-	AverageDurationMs      float64
-	SuccessRate            float64
+	AverageDurationMs       float64
+	SuccessRate             float64
 }
 
 // JobPerformanceTrend represents performance trends for a job over time
 type JobPerformanceTrend struct {
-	JobName                     string
-	Schedule                    string
-	StartTime                   time.Time
-	EndTime                     time.Time
-	DataPoints                  []JobPerformanceDataPoint
-	CostTrendPercentage         float64
-	DurationTrendPercentage     float64
-	SuccessRateTrendPercentage  float64
+	JobName                    string
+	Schedule                   string
+	StartTime                  time.Time
+	EndTime                    time.Time
+	DataPoints                 []JobPerformanceDataPoint
+	CostTrendPercentage        float64
+	DurationTrendPercentage    float64
+	SuccessRateTrendPercentage float64
 }
 
 // JobPerformanceDataPoint represents a single data point in the performance trend
 type JobPerformanceDataPoint struct {
-	Date                   time.Time
-	TotalExecutions        int64
-	SuccessfulExecutions   int64
-	FailedExecutions       int64
-	TotalCostDollars       float64
-	TotalDurationMs        int64
-	TotalItemsProcessed    int64
+	Date                    time.Time
+	TotalExecutions         int64
+	SuccessfulExecutions    int64
+	FailedExecutions        int64
+	TotalCostDollars        float64
+	TotalDurationMs         int64
+	TotalItemsProcessed     int64
 	AverageCostPerExecution float64
-	AverageDurationMs      float64
-	CostPerItemProcessed   float64
-	SuccessRate            float64
+	AverageDurationMs       float64
+	CostPerItemProcessed    float64
+	SuccessRate             float64
 }
 
 // ScheduledJobsSummary represents a summary of all scheduled jobs
@@ -928,39 +1097,39 @@ type ScheduledJobsSummary struct {
 
 // JobSummaryStats represents summary statistics for a job
 type JobSummaryStats struct {
-	JobName                string
-	ExecutionCount         int64
-	SuccessfulExecutions   int64
-	TotalCostMicroCents    int64
-	TotalCostDollars       float64
-	TotalDurationMs        int64
+	JobName                 string
+	ExecutionCount          int64
+	SuccessfulExecutions    int64
+	TotalCostMicroCents     int64
+	TotalCostDollars        float64
+	TotalDurationMs         int64
 	AverageCostPerExecution float64
-	AverageDurationMs      float64
-	SuccessRate            float64
+	AverageDurationMs       float64
+	SuccessRate             float64
 }
 
 // CategorySummaryStats represents summary statistics for a category
 type CategorySummaryStats struct {
-	Category               string
-	ExecutionCount         int64
-	SuccessfulExecutions   int64
-	TotalCostMicroCents    int64
-	TotalCostDollars       float64
+	Category                string
+	ExecutionCount          int64
+	SuccessfulExecutions    int64
+	TotalCostMicroCents     int64
+	TotalCostDollars        float64
 	AverageCostPerExecution float64
-	SuccessRate            float64
+	SuccessRate             float64
 }
 
 // ScheduleSummaryStats represents summary statistics for a schedule
 type ScheduleSummaryStats struct {
-	Schedule               string
-	ExecutionCount         int64
-	SuccessfulExecutions   int64
-	TotalCostMicroCents    int64
-	TotalCostDollars       float64
-	TotalDurationMs        int64
+	Schedule                string
+	ExecutionCount          int64
+	SuccessfulExecutions    int64
+	TotalCostMicroCents     int64
+	TotalCostDollars        float64
+	TotalDurationMs         int64
 	AverageCostPerExecution float64
-	AverageDurationMs      float64
-	SuccessRate            float64
+	AverageDurationMs       float64
+	SuccessRate             float64
 }
 
 // Note: calculatePercentiles and getPercentileValue functions are shared utilities

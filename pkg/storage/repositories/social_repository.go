@@ -136,7 +136,7 @@ func (r *SocialRepository) IsBlocked(ctx context.Context, actor, targetActor str
 // GetBlockedUsers returns a paginated list of actors blocked by the given actor
 func (r *SocialRepository) GetBlockedUsers(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
 	blockerUsername := extractUsername(actor)
-	
+
 	query := r.db.WithContext(ctx).Model(&models.Block{}).
 		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
 		Limit(limit + 1) // Get one extra to check if there are more results
@@ -182,7 +182,7 @@ func (r *SocialRepository) GetBlockedUsers(ctx context.Context, actor string, li
 // GetBlockedByUsers returns a paginated list of actors who have blocked the given actor
 func (r *SocialRepository) GetBlockedByUsers(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
 	blockedUsername := extractUsername(actor)
-	
+
 	query := r.db.WithContext(ctx).Model(&models.Block{}).
 		Index("GSI5").
 		Where("GSI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
@@ -325,7 +325,7 @@ func (r *SocialRepository) GetMutedUsers(ctx context.Context, actor string, limi
 
 	query := r.db.WithContext(ctx).Model(&models.Mute{}).
 		Where("PK", "=", fmt.Sprintf("MUTE#%s", actor)).
-		Limit(limit + 1). // Get one extra to check if there are more results
+		Limit(limit+1).       // Get one extra to check if there are more results
 		OrderBy("SK", "DESC") // Newest first
 
 	if cursor != "" {
@@ -452,7 +452,7 @@ func (r *SocialRepository) GetStatusAnnounces(ctx context.Context, objectID stri
 
 	query := r.db.WithContext(ctx).Model(&models.Announce{}).
 		Where("PK", "=", fmt.Sprintf("OBJECT#%s#ANNOUNCES", objectID)).
-		Limit(limit + 1). // Get one extra to check if there are more results
+		Limit(limit+1).       // Get one extra to check if there are more results
 		OrderBy("SK", "DESC") // Most recent first
 
 	if cursor != "" {
@@ -517,7 +517,7 @@ func (r *SocialRepository) GetActorAnnounces(ctx context.Context, actorID string
 	query := r.db.WithContext(ctx).Model(&models.Announce{}).
 		Index("GSI4").
 		Where("GSI4PK", "=", fmt.Sprintf("ACTOR#%s#ANNOUNCES", actorID)).
-		Limit(limit + 1). // Get one extra to check if there are more results
+		Limit(limit+1).           // Get one extra to check if there are more results
 		OrderBy("GSI4SK", "DESC") // Most recent first
 
 	if cursor != "" {
@@ -868,7 +868,7 @@ func (r *SocialRepository) CreateStatusPin(ctx context.Context, pin *storage.Sta
 // DeleteStatusPin removes a status pin
 func (r *SocialRepository) DeleteStatusPin(ctx context.Context, username, statusID string) error {
 	err := r.db.WithContext(ctx).Model(&models.StatusPin{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#PINS", username)).
+		Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)).
 		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
 		Delete()
 
@@ -896,7 +896,7 @@ func (r *SocialRepository) GetStatusPinsPaginated(ctx context.Context, username 
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.StatusPin{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#PINS", username)).
+		Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)).
 		OrderBy("SK", "ASC")
 
 	// Handle cursor-based pagination
@@ -940,7 +940,7 @@ func (r *SocialRepository) GetStatusPinsPaginated(ctx context.Context, username 
 func (r *SocialRepository) IsStatusPinned(ctx context.Context, username, statusID string) (bool, error) {
 	var pin models.StatusPin
 	err := r.db.WithContext(ctx).Model(&models.StatusPin{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#PINS", username)).
+		Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)).
 		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
 		First(&pin)
 
@@ -986,13 +986,13 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 	for i, statusID := range statusIDs {
 		// Delete the existing pin
 		err := r.db.WithContext(ctx).Model(&models.StatusPin{}).
-			Where("PK", "=", fmt.Sprintf("USER#%s#PINS", username)).
+			Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)).
 			Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
 			Delete()
 		if err != nil {
-			r.logger.Error("Failed to delete existing pin for reordering", 
-				zap.String("username", username), 
-				zap.String("status_id", statusID), 
+			r.logger.Error("Failed to delete existing pin for reordering",
+				zap.String("username", username),
+				zap.String("status_id", statusID),
 				zap.Error(err))
 			return fmt.Errorf("failed to delete existing pin: %w", err)
 		}
@@ -1006,25 +1006,25 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 
 		// BeforeCreate will set the keys
 		if err := newPin.BeforeCreate(); err != nil {
-			r.logger.Error("Failed to prepare pin for creation", 
-				zap.String("username", username), 
-				zap.String("status_id", statusID), 
+			r.logger.Error("Failed to prepare pin for creation",
+				zap.String("username", username),
+				zap.String("status_id", statusID),
 				zap.Error(err))
 			return fmt.Errorf("failed to prepare pin: %w", err)
 		}
 
 		err = r.db.WithContext(ctx).Model(newPin).Create()
 		if err != nil {
-			r.logger.Error("Failed to create reordered pin", 
-				zap.String("username", username), 
-				zap.String("status_id", statusID), 
+			r.logger.Error("Failed to create reordered pin",
+				zap.String("username", username),
+				zap.String("status_id", statusID),
 				zap.Error(err))
 			return fmt.Errorf("failed to create reordered pin: %w", err)
 		}
 	}
 
-	r.logger.Info("Successfully reordered status pins", 
-		zap.String("username", username), 
+	r.logger.Info("Successfully reordered status pins",
+		zap.String("username", username),
 		zap.Int("count", len(statusIDs)))
 
 	return nil
@@ -1033,7 +1033,7 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 // CountUserPinnedStatuses counts how many statuses a user has pinned
 func (r *SocialRepository) CountUserPinnedStatuses(ctx context.Context, username string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.StatusPin{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#PINS", username)).
+		Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)).
 		Count()
 
 	if err != nil {

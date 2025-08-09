@@ -1,3 +1,4 @@
+// Package main implements the init-deploy Lambda function for initializing deployment configuration.
 package main
 
 import (
@@ -124,7 +125,7 @@ func main() {
 	}
 
 	// Create repository factory
-	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, cfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -196,8 +197,12 @@ func generateVAPIDKeys() (string, string, error) {
 		Bytes: privateKeyBytes,
 	})
 
-	// Extract public key
-	publicKeyBytes := elliptic.Marshal(elliptic.P256(), privateKey.X, privateKey.Y)
+	// Convert ECDSA key to ECDH and get public key bytes
+	ecdhKey, err := privateKey.ECDH()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to convert to ECDH key: %w", err)
+	}
+	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 
 	// Encode public key to base64url (without padding)
 	publicKeyB64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)

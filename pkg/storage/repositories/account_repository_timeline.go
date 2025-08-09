@@ -16,6 +16,7 @@ import (
 // This file contains timeline-related methods for the AccountRepository
 
 // GetHomeTimeline retrieves the home timeline for a user
+//nolint:dupl // Timeline query patterns are similar by design
 func (r *AccountRepository) GetHomeTimeline(ctx context.Context, username string, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error) {
 	var entries []models.TimelineEntry
 
@@ -232,7 +233,12 @@ func (r *AccountRepository) AddToTimeline(ctx context.Context, username string, 
 		SpoilerText:  entry.SpoilerText,
 		CreatedAt:    entry.CreatedAt,
 		TimelineAt:   entry.TimelineAt,
-		ExpiresAt:    func() time.Time { if entry.ExpiresAt != nil { return *entry.ExpiresAt } else { return time.Time{} } }(),
+		ExpiresAt: func() time.Time {
+			if entry.ExpiresAt != nil {
+				return *entry.ExpiresAt
+			}
+			return time.Time{}
+		}(),
 	}
 
 	// Create timeline entry
@@ -267,6 +273,7 @@ func (r *AccountRepository) RemoveFromTimeline(ctx context.Context, username, ob
 }
 
 // GetConversations retrieves conversations for a user
+//nolint:dupl // Timeline query patterns are similar by design
 func (r *AccountRepository) GetConversations(ctx context.Context, username string, limit int, maxID, sinceID string) ([]*storage.Conversation, error) {
 	var conversations []models.Conversation
 
@@ -415,7 +422,7 @@ func (r *AccountRepository) UpdateTimelineMarker(ctx context.Context, username, 
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("MARKER#%s", timeline)).
 		First(marker)
-		
+
 	if err == nil {
 		// Update existing marker
 		marker.LastReadID = lastReadID
@@ -443,26 +450,31 @@ func (r *AccountRepository) UpdateTimelineMarker(ctx context.Context, username, 
 // modelToTimelineEntry converts a timeline entry model to storage type
 func (r *AccountRepository) modelToTimelineEntry(model *models.TimelineEntry) *storage.TimelineEntry {
 	return &storage.TimelineEntry{
-		TimelineType:   model.TimelineType,
-		TimelineID:     model.TimelineID,
-		EntryID:        model.EntryID,
-		PostID:         model.PostID,
-		ActorID:        model.ActorID,
-		ActorHandle:    model.ActorHandle,
-		Content:        model.Content,
-		ContentType:    model.ContentType,
-		HasMedia:       model.HasMedia,
-		IsReply:        model.IsReply,
-		InReplyTo:      model.InReplyTo,
-		IsBoost:        model.IsBoost,
-		BoostedBy:      model.BoostedBy,
-		Visibility:     model.Visibility,
-		Language:       model.Language,
-		Sensitive:      model.Sensitive,
-		SpoilerText:    model.SpoilerText,
-		CreatedAt:      model.CreatedAt,
-		TimelineAt:     model.TimelineAt,
-		ExpiresAt:      func() *time.Time { if !model.ExpiresAt.IsZero() { return &model.ExpiresAt } else { return nil } }(),
+		TimelineType: model.TimelineType,
+		TimelineID:   model.TimelineID,
+		EntryID:      model.EntryID,
+		PostID:       model.PostID,
+		ActorID:      model.ActorID,
+		ActorHandle:  model.ActorHandle,
+		Content:      model.Content,
+		ContentType:  model.ContentType,
+		HasMedia:     model.HasMedia,
+		IsReply:      model.IsReply,
+		InReplyTo:    model.InReplyTo,
+		IsBoost:      model.IsBoost,
+		BoostedBy:    model.BoostedBy,
+		Visibility:   model.Visibility,
+		Language:     model.Language,
+		Sensitive:    model.Sensitive,
+		SpoilerText:  model.SpoilerText,
+		CreatedAt:    model.CreatedAt,
+		TimelineAt:   model.TimelineAt,
+		ExpiresAt: func() *time.Time {
+			if !model.ExpiresAt.IsZero() {
+				return &model.ExpiresAt
+			}
+			return nil
+		}(),
 	}
 }
 

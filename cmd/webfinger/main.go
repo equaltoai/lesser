@@ -1,3 +1,4 @@
+// Package main implements the webfinger Lambda function for serving WebFinger discovery protocol endpoints.
 package main
 
 import (
@@ -7,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -20,18 +22,26 @@ import (
 
 // WebFingerHandler handles WebFinger and NodeInfo requests using Lift
 type WebFingerHandler struct {
-	actorRepo   *repositories.ActorRepository
-	userRepo    *repositories.UserRepository
-	statusRepo  *repositories.StatusRepository
-	logger      *zap.Logger
-	cfg         *config.Config
-	repService  *reputation.Service
+	actorRepo  *repositories.ActorRepository
+	userRepo   *repositories.UserRepository
+	statusRepo *repositories.StatusRepository
+	logger     *zap.Logger
+	cfg        *config.Config
+	repService *reputation.Service
 }
 
 // NewWebFingerHandler creates a new webfinger handler with DynamORM repositories
 func NewWebFingerHandler() (*WebFingerHandler, error) {
 	logger := common.Logger()
 	cfg := config.Get()
+
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
 
 	// Initialize DynamORM database connection using the established pattern
 	db, err := dynamorm.GetClient(context.Background())
@@ -41,11 +51,11 @@ func NewWebFingerHandler() (*WebFingerHandler, error) {
 
 	// Initialize repositories through factory
 	tableName := "lesser-main"
-	repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create repository factory: %w", err)
 	}
-	
+
 	// Initialize reputation service with repository storage
 	repService, err := reputation.NewService(&reputation.Config{
 		Storage:     repos,
@@ -92,11 +102,11 @@ func parseWebFingerResource(resource string) (username, domain string, err error
 // RegisterRoutes registers all webfinger routes
 func (wh *WebFingerHandler) RegisterRoutes(app *lift.App) {
 	// WebFinger and NodeInfo endpoints
-	app.GET("/.well-known/webfinger", wh.handleWebFinger)
-	app.GET("/.well-known/nodeinfo", wh.handleNodeInfoDiscovery)
-	app.GET("/.well-known/reputation-keys", wh.handleReputationKeys)
-	app.GET("/nodeinfo/2.0", wh.handleNodeInfo20)
-	app.GET("/nodeinfo/2.1", wh.handleNodeInfo21)
+	_ = app.GET("/.well-known/webfinger", wh.handleWebFinger)
+	_ = app.GET("/.well-known/nodeinfo", wh.handleNodeInfoDiscovery)
+	_ = app.GET("/.well-known/reputation-keys", wh.handleReputationKeys)
+	_ = app.GET("/nodeinfo/2.0", wh.handleNodeInfo20)
+	_ = app.GET("/nodeinfo/2.1", wh.handleNodeInfo21)
 }
 
 // handleWebFinger handles webfinger requests using DynamORM
@@ -296,9 +306,9 @@ func (wh *WebFingerHandler) handleNodeInfo21(ctx *lift.Context) error {
 		},
 		"usage": map[string]any{
 			"users": map[string]any{
-				"total":           userCount,
-				"activeMonth":     activeMonth,
-				"activeHalfyear":  activeHalfyear,
+				"total":          userCount,
+				"activeMonth":    activeMonth,
+				"activeHalfyear": activeHalfyear,
 			},
 			"localPosts": postCount,
 		},
@@ -430,7 +440,9 @@ func main() {
 					handler.logger.Error("panic recovered in webfinger handler",
 						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 						zap.Any("panic", r))
-					ctx.Status(500).Text("Internal server error")
+					if err := ctx.Status(500).Text("Internal server error"); err != nil {
+						handler.logger.Error("failed to send error response", zap.Error(err))
+					}
 				}
 			}()
 

@@ -304,7 +304,7 @@ func (e *ConsensusEngine) getDefaultAction(event *ModerationEvent) ActionType {
 }
 
 // GetConsensusStats returns statistics about consensus decisions
-func (e *ConsensusEngine) GetConsensusStats(ctx context.Context, startTime, endTime time.Time) (*ConsensusStats, error) {
+func (e *ConsensusEngine) GetConsensusStats(_ context.Context, _, _ time.Time) (*ConsensusStats, error) {
 	// This would query stored decisions and calculate statistics
 	// Implementation depends on specific requirements
 	return &ConsensusStats{

@@ -47,7 +47,7 @@ func (h *HashtagSearchResult) GetLatestUsage() int64 {
 	if len(h.History) == 0 {
 		return 0
 	}
-	
+
 	// Find the most recent entry based on UpdatedAt
 	var latest *TrendingHashtag
 	for _, trend := range h.History {
@@ -55,7 +55,7 @@ func (h *HashtagSearchResult) GetLatestUsage() int64 {
 			latest = trend
 		}
 	}
-	
+
 	if latest != nil {
 		return latest.UseCount
 	}

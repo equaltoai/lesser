@@ -17,7 +17,110 @@ import (
 	"go.uber.org/zap"
 )
 
+// Admin action constants
+const (
+	actionSuspend = "suspend"
+	actionApprove = "approve"
+	actionSilence = "silence"
+	actionEnable  = "enable"
+	actionReject  = "reject"
+	
+	roleAdmin     = "admin"
+	roleModerator = "moderator"
+	
+	// ActivityPub actor types
+	actorTypeService = "Service"
+	actorTypeGroup   = "Group"
+)
+
 // requireAdminLift is already defined in admin_federation.go
+
+// processUserSessions processes user sessions to extract IP history and most recent IP
+func processUserSessions(sessions []*storage.Session) (lastIP *string, ipHistory []models.AdminIP) {
+	if len(sessions) == 0 {
+		return nil, nil
+	}
+
+	// Sort sessions by last activity (most recent first)
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].LastActivity.After(sessions[j].LastActivity)
+	})
+
+	// Get the most recent IP
+	if sessions[0].IPAddress != "" {
+		lastIP = &sessions[0].IPAddress
+	}
+
+	// Build IP history (unique IPs with their usage info)
+	ipMap := make(map[string]*models.AdminIP)
+	for _, sess := range sessions {
+		if sess.IPAddress != "" {
+			if existing, ok := ipMap[sess.IPAddress]; ok {
+				// Update if this session is more recent
+				if sess.LastActivity.After(existing.UsedAt) {
+					existing.UsedAt = sess.LastActivity
+				}
+			} else {
+				ipMap[sess.IPAddress] = &models.AdminIP{
+					IP:     sess.IPAddress,
+					UsedAt: sess.LastActivity,
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	for _, ip := range ipMap {
+		ipHistory = append(ipHistory, *ip)
+	}
+
+	// Sort by most recent use
+	sort.Slice(ipHistory, func(i, j int) bool {
+		return ipHistory[i].UsedAt.After(ipHistory[j].UsedAt)
+	})
+
+	return lastIP, ipHistory
+}
+
+// adminAction performs a generic admin action with logging and validation
+func (h *Handler) adminAction(ctx *lift.Context, action string, updatesFn func(username string) (map[string]any, error)) error {
+	// Check admin access
+	adminClaims, err := h.requireAdminLift(ctx)
+	if err != nil {
+		ctx.Status(http.StatusForbidden)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	accountID := ctx.Param("id")
+	// Extract username from account ID
+	username := strings.TrimPrefix(accountID, "user-")
+
+	// Log admin action
+	h.logger.Info("admin "+action+" account",
+		zap.String(roleAdmin, adminClaims.Username),
+		zap.String("target", username))
+
+	// Get updates from callback
+	updates, err := updatesFn(username)
+	if err != nil {
+		h.logger.Error("failed to execute "+action, zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	// Update user if we have updates
+	if len(updates) > 0 {
+		updates["updated_at"] = time.Now()
+		if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
+			h.logger.Error("failed to "+action+" user", zap.Error(err))
+			ctx.Status(http.StatusInternalServerError)
+			return ctx.JSON(map[string]string{"error": err.Error()})
+		}
+	}
+
+	ctx.Status(http.StatusNoContent)
+	return nil
+}
 
 // HandleAdminGetAccountsLift handles GET /api/v1/admin/accounts
 func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
@@ -39,7 +142,16 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 	cursor := ctx.Query("cursor")
 
 	// Get users from storage
-	users, nextCursor, err := h.repos.User().ListUsers(ctx.Context, int32(limit), cursor)
+	// Safely convert limit to int32, capping at max int32 if needed
+	var safeLimit32 int32
+	if limit > int(^int32(0)) {
+		safeLimit32 = ^int32(0) // Max int32 value
+	} else if limit < 0 {
+		safeLimit32 = 0
+	} else {
+		safeLimit32 = int32(limit)
+	}
+	users, nextCursor, err := h.repos.User().ListUsers(ctx.Context, safeLimit32, cursor)
 	if err != nil {
 		h.logger.Error("failed to list users", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -59,48 +171,11 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 		}
 
 		// Get IP history from sessions
+		sessions, err := h.repos.Account().GetUserSessions(ctx.Context, user.Username)
 		var lastIP *string
 		var ipHistory []models.AdminIP
-
-		sessions, err := h.repos.Account().GetUserSessions(ctx.Context, user.Username)
-		if err == nil && len(sessions) > 0 {
-			// Sort sessions by last activity (most recent first)
-			sort.Slice(sessions, func(i, j int) bool {
-				return sessions[i].LastActivity.After(sessions[j].LastActivity)
-			})
-
-			// Get the most recent IP
-			if sessions[0].IPAddress != "" {
-				lastIP = &sessions[0].IPAddress
-			}
-
-			// Build IP history (unique IPs with their usage info)
-			ipMap := make(map[string]*models.AdminIP)
-			for _, sess := range sessions {
-				if sess.IPAddress != "" {
-					if existing, ok := ipMap[sess.IPAddress]; ok {
-						// Update if this session is more recent
-						if sess.LastActivity.After(existing.UsedAt) {
-							existing.UsedAt = sess.LastActivity
-						}
-					} else {
-						ipMap[sess.IPAddress] = &models.AdminIP{
-							IP:     sess.IPAddress,
-							UsedAt: sess.LastActivity,
-						}
-					}
-				}
-			}
-
-			// Convert map to slice
-			for _, ip := range ipMap {
-				ipHistory = append(ipHistory, *ip)
-			}
-
-			// Sort by most recent use
-			sort.Slice(ipHistory, func(i, j int) bool {
-				return ipHistory[i].UsedAt.After(ipHistory[j].UsedAt)
-			})
+		if err == nil {
+			lastIP, ipHistory = processUserSessions(sessions)
 		}
 
 		account := models.AdminAccount{
@@ -136,7 +211,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 			RawQuery: url.Values{
 				"limit":  []string{strconv.Itoa(limit)},
 				"cursor": []string{nextCursor},
-			}.Encode(),
+		}.Encode(),
 		}
 		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
 	}
@@ -187,48 +262,11 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 	}
 
 	// Get IP history from sessions
+	sessions, err := h.repos.Account().GetUserSessions(ctx.Context, username)
 	var lastIP *string
 	var ipHistory []models.AdminIP
-
-	sessions, err := h.repos.Account().GetUserSessions(ctx.Context, username)
-	if err == nil && len(sessions) > 0 {
-		// Sort sessions by last activity (most recent first)
-		sort.Slice(sessions, func(i, j int) bool {
-			return sessions[i].LastActivity.After(sessions[j].LastActivity)
-		})
-
-		// Get the most recent IP
-		if sessions[0].IPAddress != "" {
-			lastIP = &sessions[0].IPAddress
-		}
-
-		// Build IP history (unique IPs with their usage info)
-		ipMap := make(map[string]*models.AdminIP)
-		for _, sess := range sessions {
-			if sess.IPAddress != "" {
-				if existing, ok := ipMap[sess.IPAddress]; ok {
-					// Update if this session is more recent
-					if sess.LastActivity.After(existing.UsedAt) {
-						existing.UsedAt = sess.LastActivity
-					}
-				} else {
-					ipMap[sess.IPAddress] = &models.AdminIP{
-						IP:     sess.IPAddress,
-						UsedAt: sess.LastActivity,
-					}
-				}
-			}
-		}
-
-		// Convert map to slice
-		for _, ip := range ipMap {
-			ipHistory = append(ipHistory, *ip)
-		}
-
-		// Sort by most recent use
-		sort.Slice(ipHistory, func(i, j int) bool {
-			return ipHistory[i].UsedAt.After(ipHistory[j].UsedAt)
-		})
+	if err == nil {
+		lastIP, ipHistory = processUserSessions(sessions)
 	}
 
 	account := models.AdminAccount{
@@ -283,15 +321,15 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 
 	// Validate action type
 	validActions := map[string]bool{
-		"suspend":     true,
+		actionSuspend:     true,
 		"unsuspend":   true,
-		"silence":     true,
+		actionSilence:     true,
 		"unsilence":   true,
 		"sensitive":   true,
 		"unsensitive": true,
 		"disable":     true,
-		"enable":      true,
-		"approve":     true,
+		actionEnable:      true,
+		actionApprove:     true,
 	}
 
 	if !validActions[req.Type] {
@@ -301,7 +339,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 
 	// Log admin action for audit trail
 	h.logger.Info("admin account action",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("target", username),
 		zap.String("action", req.Type),
 		zap.String("reason", req.Text))
@@ -310,7 +348,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 	updates := make(map[string]any)
 
 	switch req.Type {
-	case "suspend":
+	case actionSuspend:
 		updates["suspended"] = true
 		// Cancel all follow relationships when suspending
 		if err := h.cancelUserFollowRelationships(ctx.Context, username); err != nil {
@@ -320,9 +358,9 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 		updates["suspended"] = false
 	case "disable":
 		updates["approved"] = false
-	case "enable", "approve":
+	case actionEnable, actionApprove:
 		updates["approved"] = true
-	case "silence":
+	case actionSilence:
 		updates["silenced"] = true
 	case "unsilence":
 		updates["silenced"] = false
@@ -359,39 +397,9 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 
 // HandleAdminApproveAccountLift handles POST /api/v1/admin/accounts/:id/approve
 func (h *Handler) HandleAdminApproveAccountLift(ctx *lift.Context) error {
-	// Check admin access
-	adminClaims, err := h.requireAdminLift(ctx)
-	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	accountID := ctx.Param("id")
-
-	// Extract username from account ID
-	username := strings.TrimPrefix(accountID, "user-")
-
-	// Log admin action
-	h.logger.Info("admin approve account",
-		zap.String("admin", adminClaims.Username),
-		zap.String("target", username))
-
-	// Update user
-	updates := map[string]any{
-		"approved":   true,
-		"updated_at": time.Now(),
-	}
-
-	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
-		h.logger.Error("failed to approve user", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	// Lesser does not support email functionality
-
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return h.adminAction(ctx, actionApprove, func(_ string) (map[string]any, error) {
+		return map[string]any{"approved": true}, nil
+	})
 }
 
 // HandleAdminRejectAccountLift handles POST /api/v1/admin/accounts/:id/reject
@@ -410,7 +418,7 @@ func (h *Handler) HandleAdminRejectAccountLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin reject account",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("target", username))
 
 	// Delete the user and associated data
@@ -442,7 +450,7 @@ func (h *Handler) HandleAdminEnableAccountLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin enable account",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("target", username))
 
 	// Update user
@@ -464,72 +472,16 @@ func (h *Handler) HandleAdminEnableAccountLift(ctx *lift.Context) error {
 
 // HandleAdminUnsilenceAccountLift handles POST /api/v1/admin/accounts/:id/unsilence
 func (h *Handler) HandleAdminUnsilenceAccountLift(ctx *lift.Context) error {
-	// Check admin access
-	adminClaims, err := h.requireAdminLift(ctx)
-	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	accountID := ctx.Param("id")
-
-	// Extract username from account ID
-	username := strings.TrimPrefix(accountID, "user-")
-
-	// Log admin action
-	h.logger.Info("admin unsilence account",
-		zap.String("admin", adminClaims.Username),
-		zap.String("target", username))
-
-	// Update user silencing status
-	updates := map[string]any{
-		"silenced":   false,
-		"updated_at": time.Now(),
-	}
-
-	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
-		h.logger.Error("failed to unsilence user", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return h.adminAction(ctx, "unsilence", func(_ string) (map[string]any, error) {
+		return map[string]any{"silenced": false}, nil
+	})
 }
 
 // HandleAdminUnsuspendAccountLift handles POST /api/v1/admin/accounts/:id/unsuspend
 func (h *Handler) HandleAdminUnsuspendAccountLift(ctx *lift.Context) error {
-	// Check admin access
-	adminClaims, err := h.requireAdminLift(ctx)
-	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	accountID := ctx.Param("id")
-
-	// Extract username from account ID
-	username := strings.TrimPrefix(accountID, "user-")
-
-	// Log admin action
-	h.logger.Info("admin unsuspend account",
-		zap.String("admin", adminClaims.Username),
-		zap.String("target", username))
-
-	// Update user
-	updates := map[string]any{
-		"suspended":  false,
-		"updated_at": time.Now(),
-	}
-
-	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
-		h.logger.Error("failed to unsuspend user", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return h.adminAction(ctx, "unsuspend", func(_ string) (map[string]any, error) {
+		return map[string]any{"suspended": false}, nil
+	})
 }
 
 // HandleAdminUnsensitiveAccountLift handles POST /api/v1/admin/accounts/:id/unsensitive
@@ -548,7 +500,7 @@ func (h *Handler) HandleAdminUnsensitiveAccountLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin unsensitive account",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("target", username))
 
 	// Remove sensitive flag from all media
@@ -669,7 +621,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 				"limit":  []string{strconv.Itoa(limit)},
 				"cursor": []string{nextCursor},
 				"status": []string{string(status)},
-			}.Encode(),
+		}.Encode(),
 		}
 		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
 	}
@@ -834,7 +786,7 @@ func (h *Handler) HandleAdminReopenReportLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin reopened report",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
 	// Return updated report
@@ -873,7 +825,7 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin assigned report to self",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
 	// Return updated report
@@ -912,7 +864,7 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin unassigned report",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
 	// Return updated report
@@ -1052,7 +1004,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 
 	// Parse request body
 	var req struct {
-		Decision string `json:"decision"` // "approve" or "reject"
+		Decision string `json:"decision"` // actionApprove or actionReject
 		Reason   string `json:"reason"`
 	}
 	if err := ctx.ParseRequest(&req); err != nil {
@@ -1061,7 +1013,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	}
 
 	// Validate decision
-	if req.Decision != "approve" && req.Decision != "reject" {
+	if req.Decision != actionApprove && req.Decision != actionReject {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "invalid decision: must be 'approve' or 'reject'"})
 	}
@@ -1081,9 +1033,9 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	// Map decision to action type
 	var action storage.ActionType
 	switch req.Decision {
-	case "approve":
+	case actionApprove:
 		action = storage.ActionTypeNone // Approve means no action needed
-	case "reject":
+	case actionReject:
 		// Choose action based on event severity
 		switch event.Severity {
 		case "4": // Critical
@@ -1105,7 +1057,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 
 	// Log admin action
 	h.logger.Info("admin override moderation event",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("event_id", eventID),
 		zap.String("decision", req.Decision),
 		zap.String("action", string(action)),
@@ -1248,7 +1200,7 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin updated trust relationship",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("from", fromActorID),
 		zap.String("to", toActorID),
 		zap.Float64("trust", req.Trust),
@@ -1278,7 +1230,7 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 	}
 
 	// Get users with moderator role
-	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx.Context, "moderator")
+	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx.Context, roleModerator)
 	if err != nil {
 		h.logger.Error("failed to list moderator users", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -1286,7 +1238,7 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 	}
 
 	// Get users with admin role
-	adminUsers, err := h.repos.User().ListUsersByRole(ctx.Context, "admin")
+	adminUsers, err := h.repos.User().ListUsersByRole(ctx.Context, roleAdmin)
 	if err != nil {
 		h.logger.Error("failed to list admin users", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -1298,7 +1250,7 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 
 	reviewers := make([]map[string]any, 0)
 	for _, user := range users {
-		if user.Role == "moderator" || user.Role == "admin" {
+		if user.Role == roleModerator || user.Role == roleAdmin {
 			// Get review stats for this user
 			stats, err := h.repos.Moderation().GetReviewerStats(ctx.Context, user.Username)
 			if err != nil {
@@ -1343,7 +1295,7 @@ func (h *Handler) HandleAdminPromoteModeratorLift(ctx *lift.Context) error {
 
 	// Update user role to moderator
 	updates := map[string]any{
-		"role":       "moderator",
+		"role":       roleModerator,
 		"updated_at": time.Now(),
 	}
 
@@ -1355,14 +1307,14 @@ func (h *Handler) HandleAdminPromoteModeratorLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin promoted user to moderator",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("target", username))
 
 	ctx.Status(http.StatusOK)
 	return ctx.JSON(map[string]any{
 		"user_id":     userID,
 		"username":    username,
-		"new_role":    "moderator",
+		"new_role":    roleModerator,
 		"promoted_by": adminClaims.Username,
 	})
 }
@@ -1393,7 +1345,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
-	if user.Role == "admin" {
+	if user.Role == roleAdmin {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "cannot demote admin users"})
 	}
@@ -1412,7 +1364,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 
 	// Log admin action
 	h.logger.Info("admin demoted moderator to user",
-		zap.String("admin", adminClaims.Username),
+		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("target", username))
 
 	ctx.Status(http.StatusOK)
@@ -1472,7 +1424,7 @@ func (h *Handler) convertActorToAccountWithCounts(ctx context.Context, actor *ac
 		Header:         header,
 		HeaderStatic:   header,
 		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            actor.Type == "Service",
+		Bot:            actor.Type == actorTypeService,
 		Discoverable:   actor.Discoverable,
 		CreatedAt:      createdAt.Format(time.RFC3339),
 		LastStatusAt:   lastStatusAt,
@@ -1487,7 +1439,7 @@ func getAdminRoleID(role string) string {
 	switch role {
 	case "admin":
 		return "3"
-	case "moderator":
+	case roleModerator:
 		return "2"
 	default:
 		return "1" // user
@@ -1498,17 +1450,16 @@ func getAdminRolePermissions(role string) int {
 	switch role {
 	case "admin":
 		return 0xFFFFFFFF // All permissions
-	case "moderator":
+	case roleModerator:
 		return 0x0000FFFF // Moderation permissions
 	default:
 		return 0x00000001 // Basic user permissions
 	}
 }
 
-
 // getActiveModeratorsCount returns the number of active moderators
 func (h *Handler) getActiveModeratorsCount(ctx context.Context) int {
-	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx, "moderator")
+	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx, roleModerator)
 	if err != nil {
 		h.logger.Warn("failed to get moderator users", zap.Error(err))
 		return 0

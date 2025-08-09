@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ScheduledJobCostRecord represents detailed cost tracking for scheduled/cron jobs
@@ -23,27 +24,27 @@ type ScheduledJobCostRecord struct {
 	GSI2SK string `dynamorm:"index:job-date-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// Core job information
-	ID           string    `json:"id"`                      // Unique execution ID
-	JobName      string    `json:"job_name"`                // e.g., "cost-aggregation", "cleanup-expired-data"
-	Schedule     string    `json:"schedule"`                // e.g., "hourly", "daily", "weekly", "monthly"
-	CronPattern  string    `json:"cron_pattern,omitempty"`  // Actual cron expression if available
-	Timestamp    time.Time `json:"timestamp"`               // When the job ran
-	StartTime    time.Time `json:"start_time"`              // Job start time
-	EndTime      time.Time `json:"end_time"`                // Job end time
-	Duration     int64     `json:"duration_ms"`             // Duration in milliseconds
+	ID          string    `json:"id"`                     // Unique execution ID
+	JobName     string    `json:"job_name"`               // e.g., "cost-aggregation", "cleanup-expired-data"
+	Schedule    string    `json:"schedule"`               // e.g., "hourly", "daily", "weekly", "monthly"
+	CronPattern string    `json:"cron_pattern,omitempty"` // Actual cron expression if available
+	Timestamp   time.Time `json:"timestamp"`              // When the job ran
+	StartTime   time.Time `json:"start_time"`             // Job start time
+	EndTime     time.Time `json:"end_time"`               // Job end time
+	Duration    int64     `json:"duration_ms"`            // Duration in milliseconds
 
 	// Job execution status
-	Status          string `json:"status"`           // "success", "failed", "timeout", "cancelled"
-	Success         bool   `json:"success"`          // Whether job completed successfully
-	ErrorMessage    string `json:"error_message,omitempty"` // Error details if failed
-	RetryCount      int    `json:"retry_count"`      // Number of retries attempted
-	MaxRetries      int    `json:"max_retries"`      // Maximum retries configured
+	Status       string `json:"status"`                  // "success", "failed", "timeout", "cancelled"
+	Success      bool   `json:"success"`                 // Whether job completed successfully
+	ErrorMessage string `json:"error_message,omitempty"` // Error details if failed
+	RetryCount   int    `json:"retry_count"`             // Number of retries attempted
+	MaxRetries   int    `json:"max_retries"`             // Maximum retries configured
 
 	// Resource usage tracking
-	LambdaInvocations    int64 `json:"lambda_invocations"`     // Number of Lambda invocations
-	LambdaDurationMs     int64 `json:"lambda_duration_ms"`     // Total Lambda execution time
-	LambdaMemoryUsedMB   int   `json:"lambda_memory_used_mb"`  // Peak memory usage
-	LambdaRequestCount   int64 `json:"lambda_request_count"`   // Total Lambda requests
+	LambdaInvocations  int64 `json:"lambda_invocations"`    // Number of Lambda invocations
+	LambdaDurationMs   int64 `json:"lambda_duration_ms"`    // Total Lambda execution time
+	LambdaMemoryUsedMB int   `json:"lambda_memory_used_mb"` // Peak memory usage
+	LambdaRequestCount int64 `json:"lambda_request_count"`  // Total Lambda requests
 
 	// DynamoDB operations performed by the job
 	DynamoDBReadOperations  int64   `json:"dynamodb_read_operations"`  // Read operations count
@@ -52,46 +53,46 @@ type ScheduledJobCostRecord struct {
 	DynamoDBWriteCapacity   float64 `json:"dynamodb_write_capacity"`   // Write capacity consumed
 
 	// Other AWS service usage
-	SQSMessages           int64 `json:"sqs_messages"`            // SQS messages processed
-	S3Operations          int64 `json:"s3_operations"`           // S3 operations performed
-	CloudWatchLogs        int64 `json:"cloudwatch_logs"`         // Log entries written
-	DataTransferBytes     int64 `json:"data_transfer_bytes"`     // Data transfer volume
-	ExternalAPIRequests   int64 `json:"external_api_requests"`   // External API calls made
+	SQSMessages         int64 `json:"sqs_messages"`          // SQS messages processed
+	S3Operations        int64 `json:"s3_operations"`         // S3 operations performed
+	CloudWatchLogs      int64 `json:"cloudwatch_logs"`       // Log entries written
+	DataTransferBytes   int64 `json:"data_transfer_bytes"`   // Data transfer volume
+	ExternalAPIRequests int64 `json:"external_api_requests"` // External API calls made
 
 	// Cost breakdown (in microcents for precision)
-	LambdaCostMicroCents      int64 `json:"lambda_cost_micro_cents"`       // Lambda execution cost
-	DynamoDBCostMicroCents    int64 `json:"dynamodb_cost_micro_cents"`     // DynamoDB operations cost
-	SQSCostMicroCents         int64 `json:"sqs_cost_micro_cents"`          // SQS cost
-	S3CostMicroCents          int64 `json:"s3_cost_micro_cents"`           // S3 operations cost
-	CloudWatchCostMicroCents  int64 `json:"cloudwatch_cost_micro_cents"`   // CloudWatch logs cost
+	LambdaCostMicroCents       int64 `json:"lambda_cost_micro_cents"`        // Lambda execution cost
+	DynamoDBCostMicroCents     int64 `json:"dynamodb_cost_micro_cents"`      // DynamoDB operations cost
+	SQSCostMicroCents          int64 `json:"sqs_cost_micro_cents"`           // SQS cost
+	S3CostMicroCents           int64 `json:"s3_cost_micro_cents"`            // S3 operations cost
+	CloudWatchCostMicroCents   int64 `json:"cloudwatch_cost_micro_cents"`    // CloudWatch logs cost
 	DataTransferCostMicroCents int64 `json:"data_transfer_cost_micro_cents"` // Data transfer cost
-	ExternalAPICostMicroCents int64 `json:"external_api_cost_micro_cents"` // External API costs
-	TotalCostMicroCents       int64 `json:"total_cost_micro_cents"`        // Total cost
+	ExternalAPICostMicroCents  int64 `json:"external_api_cost_micro_cents"`  // External API costs
+	TotalCostMicroCents        int64 `json:"total_cost_micro_cents"`         // Total cost
 
 	// Cost in dollars for display
 	TotalCostDollars float64 `json:"total_cost_dollars"`
 
 	// Job-specific metrics and properties
-	ItemsProcessed    int64                  `json:"items_processed"`     // Number of items/records processed
-	ItemsSkipped      int64                  `json:"items_skipped"`       // Items skipped due to conditions
-	ItemsErrored      int64                  `json:"items_errored"`       // Items that failed processing
-	BatchSize         int                    `json:"batch_size"`          // Batch size used
-	JobProperties     map[string]interface{} `json:"job_properties,omitempty"` // Job-specific properties
-	PerformanceMetrics map[string]float64    `json:"performance_metrics,omitempty"` // Performance indicators
+	ItemsProcessed     int64                  `json:"items_processed"`               // Number of items/records processed
+	ItemsSkipped       int64                  `json:"items_skipped"`                 // Items skipped due to conditions
+	ItemsErrored       int64                  `json:"items_errored"`                 // Items that failed processing
+	BatchSize          int                    `json:"batch_size"`                    // Batch size used
+	JobProperties      map[string]interface{} `json:"job_properties,omitempty"`      // Job-specific properties
+	PerformanceMetrics map[string]float64     `json:"performance_metrics,omitempty"` // Performance indicators
 
 	// Cascading costs (costs triggered by this job)
-	TriggeredJobs         []string `json:"triggered_jobs,omitempty"`          // Jobs triggered by this execution
-	CascadingCostMicroCents int64   `json:"cascading_cost_micro_cents"`       // Cost of triggered operations
-	DownstreamOperations  int64    `json:"downstream_operations"`             // Operations triggered downstream
+	TriggeredJobs           []string `json:"triggered_jobs,omitempty"`   // Jobs triggered by this execution
+	CascadingCostMicroCents int64    `json:"cascading_cost_micro_cents"` // Cost of triggered operations
+	DownstreamOperations    int64    `json:"downstream_operations"`      // Operations triggered downstream
 
 	// Job context and metadata
-	Environment       string            `json:"environment"`                    // "production", "staging", etc.
-	Region            string            `json:"region"`                         // AWS region
-	FunctionName      string            `json:"function_name"`                  // Lambda function name
-	RequestID         string            `json:"request_id"`                     // AWS request ID
-	Tags              map[string]string `json:"tags,omitempty"`                 // Custom tags
-	JobCategory       string            `json:"job_category"`                   // "maintenance", "aggregation", "cleanup", etc.
-	Priority          string            `json:"priority"`                       // "low", "normal", "high", "critical"
+	Environment  string            `json:"environment"`    // "production", "staging", etc.
+	Region       string            `json:"region"`         // AWS region
+	FunctionName string            `json:"function_name"`  // Lambda function name
+	RequestID    string            `json:"request_id"`     // AWS request ID
+	Tags         map[string]string `json:"tags,omitempty"` // Custom tags
+	JobCategory  string            `json:"job_category"`   // "maintenance", "aggregation", "cleanup", etc.
+	Priority     string            `json:"priority"`       // "low", "normal", "high", "critical"
 
 	// Scheduling context
 	ScheduledTime     time.Time `json:"scheduled_time"`      // When job was scheduled to run
@@ -102,7 +103,7 @@ type ScheduledJobCostRecord struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	// TTL for automatic cleanup (90 days for job execution records) 
+	// TTL for automatic cleanup (90 days for job execution records)
 	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp
 }
 
@@ -113,22 +114,22 @@ type ScheduledJobCostAggregation struct {
 	SK string `dynamorm:"sk" json:"sk"` // Format: "WINDOW#{windowStart}"
 
 	// Aggregation details
-	JobName       string    `json:"job_name"`       // Specific job or "all" for all jobs
-	Period        string    `json:"period"`         // "hour", "day", "week", "month"
-	Schedule      string    `json:"schedule"`       // Job schedule pattern
-	WindowStart   time.Time `json:"window_start"`   // Start of aggregation window
-	WindowEnd     time.Time `json:"window_end"`     // End of aggregation window
+	JobName     string    `json:"job_name"`     // Specific job or "all" for all jobs
+	Period      string    `json:"period"`       // "hour", "day", "week", "month"
+	Schedule    string    `json:"schedule"`     // Job schedule pattern
+	WindowStart time.Time `json:"window_start"` // Start of aggregation window
+	WindowEnd   time.Time `json:"window_end"`   // End of aggregation window
 
 	// Execution statistics
-	TotalExecutions       int64   `json:"total_executions"`        // Total job executions
-	SuccessfulExecutions  int64   `json:"successful_executions"`   // Successful executions
-	FailedExecutions      int64   `json:"failed_executions"`       // Failed executions
-	TimeoutExecutions     int64   `json:"timeout_executions"`      // Timed out executions
-	CancelledExecutions   int64   `json:"cancelled_executions"`    // Cancelled executions
-	SuccessRate           float64 `json:"success_rate"`            // Success rate percentage
-	AverageExecutionTime  float64 `json:"average_execution_time"`  // Average execution time (ms)
-	MedianExecutionTime   float64 `json:"median_execution_time"`   // Median execution time (ms)
-	P95ExecutionTime      float64 `json:"p95_execution_time"`      // 95th percentile execution time (ms)
+	TotalExecutions      int64   `json:"total_executions"`       // Total job executions
+	SuccessfulExecutions int64   `json:"successful_executions"`  // Successful executions
+	FailedExecutions     int64   `json:"failed_executions"`      // Failed executions
+	TimeoutExecutions    int64   `json:"timeout_executions"`     // Timed out executions
+	CancelledExecutions  int64   `json:"cancelled_executions"`   // Cancelled executions
+	SuccessRate          float64 `json:"success_rate"`           // Success rate percentage
+	AverageExecutionTime float64 `json:"average_execution_time"` // Average execution time (ms)
+	MedianExecutionTime  float64 `json:"median_execution_time"`  // Median execution time (ms)
+	P95ExecutionTime     float64 `json:"p95_execution_time"`     // 95th percentile execution time (ms)
 
 	// Resource aggregations
 	TotalLambdaInvocations    int64   `json:"total_lambda_invocations"`
@@ -140,31 +141,31 @@ type ScheduledJobCostAggregation struct {
 	TotalItemsErrored         int64   `json:"total_items_errored"`
 
 	// Cost aggregations
-	TotalLambdaCostMicroCents      int64   `json:"total_lambda_cost_micro_cents"`
-	TotalDynamoDBCostMicroCents    int64   `json:"total_dynamodb_cost_micro_cents"`
-	TotalSQSCostMicroCents         int64   `json:"total_sqs_cost_micro_cents"`
-	TotalS3CostMicroCents          int64   `json:"total_s3_cost_micro_cents"`
-	TotalCloudWatchCostMicroCents  int64   `json:"total_cloudwatch_cost_micro_cents"`
-	TotalDataTransferCostMicroCents int64  `json:"total_data_transfer_cost_micro_cents"`
-	TotalExternalAPICostMicroCents int64   `json:"total_external_api_cost_micro_cents"`
-	TotalCascadingCostMicroCents   int64   `json:"total_cascading_cost_micro_cents"`
-	TotalCostMicroCents            int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars               float64 `json:"total_cost_dollars"`
-	AverageCostPerExecution        float64 `json:"average_cost_per_execution"`
+	TotalLambdaCostMicroCents       int64   `json:"total_lambda_cost_micro_cents"`
+	TotalDynamoDBCostMicroCents     int64   `json:"total_dynamodb_cost_micro_cents"`
+	TotalSQSCostMicroCents          int64   `json:"total_sqs_cost_micro_cents"`
+	TotalS3CostMicroCents           int64   `json:"total_s3_cost_micro_cents"`
+	TotalCloudWatchCostMicroCents   int64   `json:"total_cloudwatch_cost_micro_cents"`
+	TotalDataTransferCostMicroCents int64   `json:"total_data_transfer_cost_micro_cents"`
+	TotalExternalAPICostMicroCents  int64   `json:"total_external_api_cost_micro_cents"`
+	TotalCascadingCostMicroCents    int64   `json:"total_cascading_cost_micro_cents"`
+	TotalCostMicroCents             int64   `json:"total_cost_micro_cents"`
+	TotalCostDollars                float64 `json:"total_cost_dollars"`
+	AverageCostPerExecution         float64 `json:"average_cost_per_execution"`
 
 	// Cost efficiency metrics
-	CostPerItemProcessed       float64 `json:"cost_per_item_processed"`      // Cost efficiency
+	CostPerItemProcessed       float64 `json:"cost_per_item_processed"`       // Cost efficiency
 	CostPerSuccessfulExecution float64 `json:"cost_per_successful_execution"` // Cost of successful runs
-	CostEfficiencyTrend        float64 `json:"cost_efficiency_trend"`        // Trend in cost efficiency
+	CostEfficiencyTrend        float64 `json:"cost_efficiency_trend"`         // Trend in cost efficiency
 
 	// Breakdown by job properties
-	JobCategoryBreakdown  map[string]*ScheduledJobCategoryStats `json:"job_category_breakdown,omitempty"`
-	EnvironmentBreakdown  map[string]*ScheduledJobEnvironmentStats `json:"environment_breakdown,omitempty"`
-	ScheduleBreakdown     map[string]*ScheduledJobScheduleStats `json:"schedule_breakdown,omitempty"`
+	JobCategoryBreakdown map[string]*ScheduledJobCategoryStats    `json:"job_category_breakdown,omitempty"`
+	EnvironmentBreakdown map[string]*ScheduledJobEnvironmentStats `json:"environment_breakdown,omitempty"`
+	ScheduleBreakdown    map[string]*ScheduledJobScheduleStats    `json:"schedule_breakdown,omitempty"`
 
 	// Performance trends
 	ExecutionTimePercentiles map[string]float64 `json:"execution_time_percentiles,omitempty"` // p50, p90, p95, p99
-	CostPercentiles         map[string]float64 `json:"cost_percentiles,omitempty"`            // Cost distribution
+	CostPercentiles          map[string]float64 `json:"cost_percentiles,omitempty"`           // Cost distribution
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at"`
@@ -176,41 +177,41 @@ type ScheduledJobCostAggregation struct {
 
 // ScheduledJobCategoryStats represents cost statistics for a job category
 type ScheduledJobCategoryStats struct {
-	Category         string  `json:"category"`
-	ExecutionCount   int64   `json:"execution_count"`
-	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars    float64 `json:"total_cost_dollars"`
+	Category                string  `json:"category"`
+	ExecutionCount          int64   `json:"execution_count"`
+	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
+	TotalCostDollars        float64 `json:"total_cost_dollars"`
 	AverageCostPerExecution float64 `json:"average_cost_per_execution"`
-	SuccessRate         float64 `json:"success_rate"`
+	SuccessRate             float64 `json:"success_rate"`
 }
 
 // ScheduledJobEnvironmentStats represents cost statistics for an environment
 type ScheduledJobEnvironmentStats struct {
-	Environment      string  `json:"environment"`
-	ExecutionCount   int64   `json:"execution_count"`
-	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars    float64 `json:"total_cost_dollars"`
+	Environment             string  `json:"environment"`
+	ExecutionCount          int64   `json:"execution_count"`
+	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
+	TotalCostDollars        float64 `json:"total_cost_dollars"`
 	AverageCostPerExecution float64 `json:"average_cost_per_execution"`
 }
 
 // ScheduledJobScheduleStats represents cost statistics for a schedule pattern
 type ScheduledJobScheduleStats struct {
-	Schedule         string  `json:"schedule"`
-	ExecutionCount   int64   `json:"execution_count"`
-	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars    float64 `json:"total_cost_dollars"`
+	Schedule                string  `json:"schedule"`
+	ExecutionCount          int64   `json:"execution_count"`
+	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
+	TotalCostDollars        float64 `json:"total_cost_dollars"`
 	AverageCostPerExecution float64 `json:"average_cost_per_execution"`
-	AverageExecutionTime float64 `json:"average_execution_time"`
+	AverageExecutionTime    float64 `json:"average_execution_time"`
 }
 
 // TableName returns the DynamoDB table name
 func (ScheduledJobCostRecord) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name
 func (ScheduledJobCostAggregation) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the model before creation
@@ -235,7 +236,7 @@ func (sjcr *ScheduledJobCostRecord) BeforeCreate() error {
 	}
 
 	// Set end time if not provided and status is completed
-	if sjcr.EndTime.IsZero() && (sjcr.Status == "success" || sjcr.Status == "failed") {
+	if sjcr.EndTime.IsZero() && (sjcr.Status == StatusSuccess || sjcr.Status == StatusFailed) {
 		sjcr.EndTime = now
 	}
 
@@ -253,14 +254,14 @@ func (sjcr *ScheduledJobCostRecord) BeforeCreate() error {
 	sjcr.TotalCostDollars = float64(sjcr.TotalCostMicroCents) / 1_000_000.0
 
 	// Set success flag based on status
-	sjcr.Success = sjcr.Status == "success"
+	sjcr.Success = sjcr.Status == StatusSuccess
 
 	// Set TTL (90 days for job execution records)
 	sjcr.ExpiresAt = now.Add(90 * 24 * time.Hour).Unix()
 
 	// Set up primary key
 	sjcr.PK = fmt.Sprintf("SCHEDULED_JOB_COST#%s#%s", sjcr.JobName, sjcr.Schedule)
-	timestampStr := sjcr.Timestamp.Format("20060102150405")
+	timestampStr := sjcr.Timestamp.Format(common.CompactTimeFormat)
 	sjcr.SK = fmt.Sprintf("RUN#%s#%s", timestampStr, sjcr.ID)
 
 	// Set up GSI keys
@@ -282,7 +283,7 @@ func (sjcr *ScheduledJobCostRecord) BeforeUpdate() error {
 	sjcr.TotalCostDollars = float64(sjcr.TotalCostMicroCents) / 1_000_000.0
 
 	// Update success flag based on status
-	sjcr.Success = sjcr.Status == "success"
+	sjcr.Success = sjcr.Status == StatusSuccess
 
 	// Update GSI keys in case indexed fields changed
 	sjcr.setupGSIKeys()
@@ -299,7 +300,7 @@ func (sjcr *ScheduledJobCostRecord) setupGSIKeys() {
 	sjcr.GSI1SK = fmt.Sprintf("%s#%s#%s", timestampStr, sjcr.JobName, sjcr.ID)
 
 	// GSI2 - Date range queries
-	dateStr := sjcr.Timestamp.Format("20060102")
+	dateStr := sjcr.Timestamp.Format(common.CompactDateFormat)
 	sjcr.GSI2PK = fmt.Sprintf("SCHEDULED_JOB_DATE#%s", dateStr)
 	sjcr.GSI2SK = fmt.Sprintf("%s#%s#%s", timestampStr, sjcr.JobName, sjcr.ID)
 }
@@ -313,7 +314,7 @@ func (sjcr *ScheduledJobCostRecord) Validate() error {
 		return fmt.Errorf("JobName is required")
 	}
 	if strings.TrimSpace(sjcr.Schedule) == "" {
-		return fmt.Errorf("Schedule is required")
+		return fmt.Errorf("schedule is required")
 	}
 	if strings.TrimSpace(sjcr.Status) == "" {
 		return fmt.Errorf("Status is required")
@@ -390,7 +391,7 @@ func (sjca *ScheduledJobCostAggregation) Validate() error {
 		return fmt.Errorf("JobName is required")
 	}
 	if strings.TrimSpace(sjca.Period) == "" {
-		return fmt.Errorf("Period is required")
+		return fmt.Errorf("period is required")
 	}
 	if sjca.WindowStart.IsZero() {
 		return fmt.Errorf("WindowStart is required")
@@ -453,7 +454,7 @@ func (sjcr *ScheduledJobCostRecord) GetPerformanceMetric(key string) (float64, b
 // isValidScheduledJobStatus checks if the job status is valid
 func isValidScheduledJobStatus(status string) bool {
 	validStatuses := map[string]bool{
-		"success":   true,
+		StatusSuccess:   true,
 		"failed":    true,
 		"timeout":   true,
 		"cancelled": true,
@@ -554,7 +555,7 @@ func (builder *ScheduledJobCostRecordBuilder) WithCosts(lambdaCost, dynamoDBCost
 	builder.record.CloudWatchCostMicroCents = cloudWatchCost
 	builder.record.DataTransferCostMicroCents = dataTransferCost
 	builder.record.ExternalAPICostMicroCents = externalAPICost
-	
+
 	// Calculate total
 	builder.record.TotalCostMicroCents = lambdaCost + dynamoDBCost + sqsCost + s3Cost + cloudWatchCost + dataTransferCost + externalAPICost
 	return builder
@@ -627,21 +628,21 @@ func (builder *ScheduledJobCostRecordBuilder) Build() *ScheduledJobCostRecord {
 const (
 	// Lambda pricing (per 1ms, 128MB)
 	LambdaCostPerMSMicroCents = 2 // Approximately $0.0000000021 per ms
-	
+
 	// DynamoDB on-demand pricing (per 1000 units)
 	DynamoDBReadCostMicroCentsPerUnit  = 25  // $0.25 per million reads = 25 microcents per 1000
 	DynamoDBWriteCostMicroCentsPerUnit = 125 // $1.25 per million writes = 125 microcents per 1000
-	
+
 	// SQS pricing (per 1 million requests)
 	SQSCostMicroCentsPerMessage = 40 // $0.40 per million = 40 microcents per 1000
-	
+
 	// S3 pricing (per 1000 requests)
 	S3GetCostMicroCentsPerRequest = 40  // $0.0004 per 1000 GET requests
 	S3PutCostMicroCentsPerRequest = 500 // $0.005 per 1000 PUT requests
-	
+
 	// CloudWatch Logs pricing (per GB)
 	CloudWatchLogsCostMicroCentsPerMB = 50 // $0.50 per GB = 50 microcents per MB
-	
+
 	// Data transfer pricing (per GB)
 	DataTransferCostMicroCentsPerMB = 9 // $0.09 per GB = 9 microcents per MB
 )
@@ -651,25 +652,25 @@ func CalculateScheduledJobCosts(lambdaDurationMs int64, memoryMB int, dynamoDBRe
 	// Lambda cost: duration * memory factor
 	memoryFactor := float64(memoryMB) / 128.0 // Base is 128MB
 	lambdaCost = int64(float64(lambdaDurationMs) * memoryFactor * float64(LambdaCostPerMSMicroCents))
-	
+
 	// DynamoDB cost
-	dynamoDBCost = (dynamoDBReadOps * DynamoDBReadCostMicroCentsPerUnit / 1000) + 
-	               (dynamoDBWriteOps * DynamoDBWriteCostMicroCentsPerUnit / 1000)
-	
+	dynamoDBCost = (dynamoDBReadOps * DynamoDBReadCostMicroCentsPerUnit / 1000) +
+		(dynamoDBWriteOps * DynamoDBWriteCostMicroCentsPerUnit / 1000)
+
 	// SQS cost
 	sqsCost = sqsMessages * SQSCostMicroCentsPerMessage / 1000
-	
+
 	// S3 cost (assuming mostly GET operations)
 	s3Cost = s3Operations * S3GetCostMicroCentsPerRequest / 1000
-	
+
 	// CloudWatch Logs cost
 	cloudWatchCost = logSizeMB * CloudWatchLogsCostMicroCentsPerMB
-	
+
 	// Data transfer cost
 	dataTransferCost = dataTransferMB * DataTransferCostMicroCentsPerMB
-	
+
 	// Total cost
 	totalCost = lambdaCost + dynamoDBCost + sqsCost + s3Cost + cloudWatchCost + dataTransferCost
-	
+
 	return
 }

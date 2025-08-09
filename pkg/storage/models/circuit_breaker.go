@@ -38,8 +38,8 @@ type CircuitBreakerState struct {
 // UpdateKeys sets the DynamoDB keys
 func (c *CircuitBreakerState) UpdateKeys() {
 	c.PK = fmt.Sprintf("CIRCUIT#%s", c.InstanceID)
-	c.SK = "STATE"
-	
+	c.SK = SKState
+
 	// Set TTL to 30 days after last state change
 	if !c.LastStateChange.IsZero() {
 		c.TTL = c.LastStateChange.Add(30 * 24 * time.Hour).Unix()
@@ -65,17 +65,17 @@ type CircuitBreakerEvent struct {
 	SK string `dynamorm:"sk" json:"sk"` // EVENT#<timestamp_nanos>
 
 	// Event details
-	InstanceID  string    `json:"instance_id"`
-	EventType   string    `json:"event_type"` // state_change, metric
-	NewStatus   string    `json:"new_status,omitempty"`
-	OldStatus   string    `json:"old_status,omitempty"`
-	Reason      string    `json:"reason"`
-	Timestamp   time.Time `json:"timestamp"`
+	InstanceID string    `json:"instance_id"`
+	EventType  string    `json:"event_type"` // state_change, metric
+	NewStatus  string    `json:"new_status,omitempty"`
+	OldStatus  string    `json:"old_status,omitempty"`
+	Reason     string    `json:"reason"`
+	Timestamp  time.Time `json:"timestamp"`
 
 	// For metric events
-	Success   *bool   `json:"success,omitempty"`
-	Error     string  `json:"error,omitempty"`
-	ErrorType string  `json:"error_type,omitempty"`
+	Success   *bool  `json:"success,omitempty"`
+	Error     string `json:"error,omitempty"`
+	ErrorType string `json:"error_type,omitempty"`
 
 	// TTL for cleanup (7 days for events)
 	TTL int64 `dynamorm:"ttl" json:"ttl"`
@@ -84,13 +84,13 @@ type CircuitBreakerEvent struct {
 // UpdateKeys sets the DynamoDB keys for events
 func (e *CircuitBreakerEvent) UpdateKeys() {
 	e.PK = fmt.Sprintf("CIRCUIT#%s", e.InstanceID)
-	
+
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now()
 	}
-	
+
 	e.SK = fmt.Sprintf("EVENT#%d", e.Timestamp.UnixNano())
-	
+
 	// Set TTL to 7 days from now
 	e.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
 }

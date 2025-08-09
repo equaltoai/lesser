@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // FederationCostTracking represents comprehensive cost tracking for federation activities
@@ -10,104 +11,104 @@ type FederationCostTracking struct {
 	// Primary keys - federation cost tracking uses FED_COST#{domain}#{timestamp} pattern
 	PK string `dynamorm:"pk" json:"pk"`
 	SK string `dynamorm:"sk" json:"sk"`
-	
+
 	// GSI1 for time-based queries - FED_COSTS#{date}, TS#{timestamp}
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
-	
+
 	// GSI2 for activity type queries - FED_TYPE#{activity_type}, DOMAIN#{domain}#{timestamp}
 	GSI2PK string `dynamorm:"index:GSI2,pk" json:"gsi2_pk"`
 	GSI2SK string `dynamorm:"index:GSI2,sk" json:"gsi2_sk"`
-	
+
 	// Federation activity metadata
-	ActivityID     string    `json:"activity_id"`
-	Domain         string    `json:"domain"`         // Remote instance domain
-	InstanceDomain string    `json:"instance_domain"` // Alias for Domain for compatibility
-	ActivityType   string    `json:"activity_type"`  // Create, Follow, Like, etc.
-	Direction      string    `json:"direction"`      // inbound, outbound
-	OperationType  string    `json:"operation_type"` // inbox_processing, outbox_delivery, signature_verification
-	
+	ActivityID     string `json:"activity_id"`
+	Domain         string `json:"domain"`          // Remote instance domain
+	InstanceDomain string `json:"instance_domain"` // Alias for Domain for compatibility
+	ActivityType   string `json:"activity_type"`   // Create, Follow, Like, etc.
+	Direction      string `json:"direction"`       // inbound, outbound
+	OperationType  string `json:"operation_type"`  // inbox_processing, outbox_delivery, signature_verification
+
 	// Billing period tracking
 	BillingPeriod string    `json:"billing_period"` // YYYY-MM format
 	LastUpdated   time.Time `json:"last_updated"`   // Last update timestamp
-	
+
 	// Legacy compatibility fields for aggregated metrics
-	IngressBytes   int64   `json:"ingress_bytes"`   // Inbound data bytes
-	EgressBytes    int64   `json:"egress_bytes"`    // Outbound data bytes
-	RequestCount   int     `json:"request_count"`   // Number of requests
-	ErrorCount     int     `json:"error_count"`     // Number of errors
-	ErrorRate      float64 `json:"error_rate"`      // Error rate percentage
+	IngressBytes   int64   `json:"ingress_bytes"`    // Inbound data bytes
+	EgressBytes    int64   `json:"egress_bytes"`     // Outbound data bytes
+	RequestCount   int     `json:"request_count"`    // Number of requests
+	ErrorCount     int     `json:"error_count"`      // Number of errors
+	ErrorRate      float64 `json:"error_rate"`       // Error rate percentage
 	AverageCostUSD float64 `json:"average_cost_usd"` // Average cost in USD
-	
+
 	// Success/failure tracking
 	Success      bool   `json:"success"`
 	ErrorMessage string `json:"error_message,omitempty"`
-	
+
 	// Lambda execution costs (all in microdollars)
-	LambdaExecutionCost   int64 `json:"lambda_execution_cost"`   // Lambda compute cost
-	LambdaDurationMs      int64 `json:"lambda_duration_ms"`      // Lambda execution time
-	LambdaMemoryMB        int64 `json:"lambda_memory_mb"`        // Lambda memory allocation
-	
+	LambdaExecutionCost int64 `json:"lambda_execution_cost"` // Lambda compute cost
+	LambdaDurationMs    int64 `json:"lambda_duration_ms"`    // Lambda execution time
+	LambdaMemoryMB      int64 `json:"lambda_memory_mb"`      // Lambda memory allocation
+
 	// HTTP signature verification costs (CPU intensive)
-	SignatureVerificationMs     int64 `json:"signature_verification_ms"`   // Time spent verifying signatures
-	SignatureVerificationCost   int64 `json:"signature_verification_cost"` // CPU cost for signature verification
-	
+	SignatureVerificationMs   int64 `json:"signature_verification_ms"`   // Time spent verifying signatures
+	SignatureVerificationCost int64 `json:"signature_verification_cost"` // CPU cost for signature verification
+
 	// Network costs
-	HTTPRequestCount    int64 `json:"http_request_count"`    // Number of HTTP requests made
-	HTTPRequestCost     int64 `json:"http_request_cost"`     // Cost of HTTP requests ($0.0001 per request)
-	DataTransferBytes   int64 `json:"data_transfer_bytes"`   // Bytes transferred (inbound/outbound)
-	DataTransferCost    int64 `json:"data_transfer_cost"`    // Data transfer costs ($0.09 per GB outbound)
-	
+	HTTPRequestCount  int64 `json:"http_request_count"`  // Number of HTTP requests made
+	HTTPRequestCost   int64 `json:"http_request_cost"`   // Cost of HTTP requests ($0.0001 per request)
+	DataTransferBytes int64 `json:"data_transfer_bytes"` // Bytes transferred (inbound/outbound)
+	DataTransferCost  int64 `json:"data_transfer_cost"`  // Data transfer costs ($0.09 per GB outbound)
+
 	// DynamoDB costs
-	DynamoDBWriteCount    int64   `json:"dynamodb_write_count"`     // Number of write operations
-	DynamoDBReadCount     int64   `json:"dynamodb_read_count"`      // Number of read operations
-	DynamoDBWriteUnits    float64 `json:"dynamodb_write_units"`     // Write capacity consumed
-	DynamoDBReadUnits     float64 `json:"dynamodb_read_units"`      // Read capacity consumed
-	DynamoDBWriteCost     int64   `json:"dynamodb_write_cost"`      // Write operation costs
-	DynamoDBReadCost      int64   `json:"dynamodb_read_cost"`       // Read operation costs
-	
+	DynamoDBWriteCount int64   `json:"dynamodb_write_count"` // Number of write operations
+	DynamoDBReadCount  int64   `json:"dynamodb_read_count"`  // Number of read operations
+	DynamoDBWriteUnits float64 `json:"dynamodb_write_units"` // Write capacity consumed
+	DynamoDBReadUnits  float64 `json:"dynamodb_read_units"`  // Read capacity consumed
+	DynamoDBWriteCost  int64   `json:"dynamodb_write_cost"`  // Write operation costs
+	DynamoDBReadCost   int64   `json:"dynamodb_read_cost"`   // Read operation costs
+
 	// DNS/WebFinger costs
-	DNSLookupCount   int64 `json:"dns_lookup_count"`   // Number of DNS lookups
-	DNSLookupCost    int64 `json:"dns_lookup_cost"`    // DNS lookup costs ($0.0004 per query)
-	WebFingerCount   int64 `json:"webfinger_count"`    // WebFinger lookups
-	WebFingerCost    int64 `json:"webfinger_cost"`     // WebFinger lookup costs
-	
+	DNSLookupCount int64 `json:"dns_lookup_count"` // Number of DNS lookups
+	DNSLookupCost  int64 `json:"dns_lookup_cost"`  // DNS lookup costs ($0.0004 per query)
+	WebFingerCount int64 `json:"webfinger_count"`  // WebFinger lookups
+	WebFingerCost  int64 `json:"webfinger_cost"`   // WebFinger lookup costs
+
 	// SQS costs (for outbound delivery queue)
 	SQSMessageCount int64 `json:"sqs_message_count"` // SQS messages sent
 	SQSMessageCost  int64 `json:"sqs_message_cost"`  // SQS message costs ($0.0000004 per message)
-	
+
 	// Retry penalty costs
-	RetryCount     int   `json:"retry_count"`      // Number of retries performed
-	RetryCost      int64 `json:"retry_cost"`       // Additional cost penalties for retries
-	
+	RetryCount int   `json:"retry_count"` // Number of retries performed
+	RetryCost  int64 `json:"retry_cost"`  // Additional cost penalties for retries
+
 	// Performance metrics
-	ResponseTimeMs       int64 `json:"response_time_ms"`       // Total response time
-	ProcessingTimeMs     int64 `json:"processing_time_ms"`     // Time spent processing
-	QueueWaitTimeMs      int64 `json:"queue_wait_time_ms"`     // Time spent waiting in queue
-	
+	ResponseTimeMs   int64 `json:"response_time_ms"`   // Total response time
+	ProcessingTimeMs int64 `json:"processing_time_ms"` // Time spent processing
+	QueueWaitTimeMs  int64 `json:"queue_wait_time_ms"` // Time spent waiting in queue
+
 	// Data volume metrics
-	PayloadSize       int64 `json:"payload_size"`        // Size of activity payload
-	CompressedSize    int64 `json:"compressed_size"`     // Size after compression
-	CompressionRatio  float64 `json:"compression_ratio"` // Compression efficiency
-	
+	PayloadSize      int64   `json:"payload_size"`      // Size of activity payload
+	CompressedSize   int64   `json:"compressed_size"`   // Size after compression
+	CompressionRatio float64 `json:"compression_ratio"` // Compression efficiency
+
 	// Total cost breakdown
 	TotalCostMicroCents int64 `json:"total_cost_micro_cents"` // Total cost in microcents
-	
+
 	// Timestamps
 	Timestamp time.Time `json:"timestamp"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	
+
 	// TTL for automatic cleanup (30 days for detailed cost records)
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
 // UpdateKeys sets the primary keys for the FederationCostTracking model
 func (f *FederationCostTracking) UpdateKeys() {
-	timestampStr := f.Timestamp.Format("20060102150405")
+	timestampStr := f.Timestamp.Format(common.CompactTimeFormat)
 	f.PK = fmt.Sprintf("FED_COST#%s#%s", f.Domain, timestampStr)
 	f.SK = fmt.Sprintf("ACTIVITY#%s#%s", f.ActivityType, f.ActivityID)
-	f.GSI1PK = fmt.Sprintf("FED_COSTS#%s", f.Timestamp.Format("20060102"))
+	f.GSI1PK = fmt.Sprintf("FED_COSTS#%s", f.Timestamp.Format(common.CompactDateFormat))
 	f.GSI1SK = fmt.Sprintf("TS#%s#%s", timestampStr, f.Domain)
 	f.GSI2PK = fmt.Sprintf("FED_TYPE#%s", f.ActivityType)
 	f.GSI2SK = fmt.Sprintf("DOMAIN#%s#%s", f.Domain, timestampStr)
@@ -123,10 +124,10 @@ func (f *FederationCostTracking) BeforeCreate() error {
 		f.CreatedAt = now
 	}
 	f.UpdatedAt = now
-	
+
 	// Set TTL to 30 days from creation (detailed records)
 	f.TTL = now.AddDate(0, 0, 30).Unix()
-	
+
 	f.UpdateKeys()
 	f.CalculateTotalCost()
 	return nil
@@ -169,54 +170,54 @@ type FederationBudget struct {
 	// Primary keys - federation budgets use FED_BUDGET#{domain}#{period} pattern
 	PK string `dynamorm:"pk" json:"pk"`
 	SK string `dynamorm:"sk" json:"sk"`
-	
+
 	// GSI1 for active budget queries - ACTIVE_BUDGETS, DOMAIN#{domain}#{period}
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
-	
+
 	// Budget configuration
 	Domain string `json:"domain"`
 	Period string `json:"period"` // daily, weekly, monthly
-	
+
 	// Budget limits (in microcents)
 	InboundLimitMicroCents  int64 `json:"inbound_limit_micro_cents"`
 	OutboundLimitMicroCents int64 `json:"outbound_limit_micro_cents"`
 	CombinedLimitMicroCents int64 `json:"combined_limit_micro_cents"`
-	
+
 	// Per-activity type limits
 	ActivityTypeLimits map[string]int64 `json:"activity_type_limits,omitempty"`
-	
+
 	// Current usage (reset per period)
 	CurrentInboundCost  int64 `json:"current_inbound_cost"`
 	CurrentOutboundCost int64 `json:"current_outbound_cost"`
 	CurrentCombinedCost int64 `json:"current_combined_cost"`
-	
+
 	// Activity type usage
 	ActivityTypeUsage map[string]int64 `json:"activity_type_usage,omitempty"`
-	
+
 	// Usage tracking
-	InboundActivityCount  int64 `json:"inbound_activity_count"`
-	OutboundActivityCount int64 `json:"outbound_activity_count"`
+	InboundActivityCount  int64      `json:"inbound_activity_count"`
+	OutboundActivityCount int64      `json:"outbound_activity_count"`
 	LastInboundAt         *time.Time `json:"last_inbound_at,omitempty"`
 	LastOutboundAt        *time.Time `json:"last_outbound_at,omitempty"`
-	
+
 	// Period tracking
 	PeriodStart time.Time `json:"period_start"`
 	PeriodEnd   time.Time `json:"period_end"`
-	
+
 	// Alert settings
-	AlertThresholdPercent float64    `json:"alert_threshold_percent"`  // Send alert at this % of limit
+	AlertThresholdPercent float64    `json:"alert_threshold_percent"` // Send alert at this % of limit
 	AlertSendingEnabled   bool       `json:"alert_sending_enabled"`
 	LastAlertSentAt       *time.Time `json:"last_alert_sent_at,omitempty"`
-	
+
 	// Enforcement settings
 	BlockOnLimitExceeded bool `json:"block_on_limit_exceeded"`
 	RateLimitOnThreshold bool `json:"rate_limit_on_threshold"`
-	
+
 	// Status
 	IsActive bool   `json:"is_active"`
 	Status   string `json:"status"` // active, suspended, over_limit
-	
+
 	// Timestamps
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -225,7 +226,7 @@ type FederationBudget struct {
 // UpdateKeys sets the primary keys for the FederationBudget model
 func (f *FederationBudget) UpdateKeys() {
 	f.PK = fmt.Sprintf("FED_BUDGET#%s#%s", f.Domain, f.Period)
-	f.SK = "CONFIG"
+	f.SK = SKConfig
 	f.GSI1PK = "ACTIVE_BUDGETS"
 	f.GSI1SK = fmt.Sprintf("DOMAIN#%s#%s", f.Domain, f.Period)
 }
@@ -237,7 +238,7 @@ func (f *FederationBudget) BeforeCreate() error {
 		f.CreatedAt = now
 	}
 	f.UpdatedAt = now
-	
+
 	// Initialize maps if nil
 	if f.ActivityTypeLimits == nil {
 		f.ActivityTypeLimits = make(map[string]int64)
@@ -245,7 +246,7 @@ func (f *FederationBudget) BeforeCreate() error {
 	if f.ActivityTypeUsage == nil {
 		f.ActivityTypeUsage = make(map[string]int64)
 	}
-	
+
 	f.UpdateKeys()
 	return nil
 }
@@ -321,17 +322,17 @@ func (f *FederationBudget) ShouldSendAlert() bool {
 	if !f.AlertSendingEnabled {
 		return false
 	}
-	
+
 	// Check if we've exceeded the alert threshold
 	if f.GetCombinedUsagePercent() < f.AlertThresholdPercent {
 		return false
 	}
-	
+
 	// Check if we've already sent an alert recently (within 1 hour)
 	if f.LastAlertSentAt != nil && time.Since(*f.LastAlertSentAt) < time.Hour {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -340,7 +341,7 @@ func (f *FederationBudget) ShouldBlock() bool {
 	if !f.BlockOnLimitExceeded {
 		return false
 	}
-	
+
 	return f.IsOverCombinedLimit()
 }
 
@@ -349,7 +350,7 @@ func (f *FederationBudget) ShouldRateLimit() bool {
 	if !f.RateLimitOnThreshold {
 		return false
 	}
-	
+
 	return f.GetCombinedUsagePercent() >= f.AlertThresholdPercent
 }
 
@@ -359,10 +360,10 @@ func (f *FederationBudget) AddUsage(activityType, direction string, cost int64) 
 	if f.ActivityTypeUsage == nil {
 		f.ActivityTypeUsage = make(map[string]int64)
 	}
-	
+
 	// Add to activity type usage
 	f.ActivityTypeUsage[activityType] += cost
-	
+
 	// Add to directional usage
 	switch direction {
 	case "inbound":
@@ -376,7 +377,7 @@ func (f *FederationBudget) AddUsage(activityType, direction string, cost int64) 
 		now := time.Now()
 		f.LastOutboundAt = &now
 	}
-	
+
 	// Update combined cost
 	f.CurrentCombinedCost = f.CurrentInboundCost + f.CurrentOutboundCost
 }
@@ -392,15 +393,15 @@ func (f *FederationBudget) ResetPeriod(newPeriodStart, newPeriodEnd time.Time) {
 	f.LastOutboundAt = nil
 	f.PeriodStart = newPeriodStart
 	f.PeriodEnd = newPeriodEnd
-	
+
 	// Reset activity type usage
 	if f.ActivityTypeUsage != nil {
 		for key := range f.ActivityTypeUsage {
 			f.ActivityTypeUsage[key] = 0
 		}
 	}
-	
-	f.Status = "active"
+
+	f.Status = StatusActive
 }
 
 // TableName returns the DynamoDB table name

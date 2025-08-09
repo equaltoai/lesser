@@ -20,7 +20,7 @@ type UpdateHistory struct {
 	Summary       string    `json:"summary,omitempty"` // Edit summary
 
 	// Metadata
-	CreatedAt time.Time `json:"-"` // When this history record was created
+	CreatedAt time.Time `json:"-"`                          // When this history record was created
 	TTL       int64     `json:"-" dynamorm:"ttl,omitempty"` // Optional TTL for automatic cleanup
 }
 

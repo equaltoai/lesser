@@ -1,3 +1,4 @@
+// Package reputation provides actor reputation calculation algorithms based on activity history and trust metrics.
 package reputation
 
 import (
@@ -26,7 +27,7 @@ func NewCalculator(store core.RepositoryStorage, instanceURL string, logger *zap
 }
 
 // Calculate computes a reputation score for an actor
-func (c *Calculator) Calculate(ctx context.Context, input *CalculationInput) (*Reputation, error) {
+func (c *Calculator) Calculate(_ context.Context, input *CalculationInput) (*Reputation, error) {
 	rep := &Reputation{
 		ActorID:      input.ActorID,
 		InstanceURL:  c.instanceURL, // Use configured instance URL

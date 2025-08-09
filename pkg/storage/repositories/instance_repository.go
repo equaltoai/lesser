@@ -12,6 +12,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // InstanceRepository implements instance operations using DynamORM
@@ -35,7 +36,7 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 func (r *InstanceRepository) GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error) {
 	var config models.InstanceConfig
 	err := r.db.WithContext(ctx).Model(&models.InstanceConfig{}).
-		Where("PK", "=", "INSTANCE#CONFIG").
+		Where("PK", "=", storage.InstanceConfigKey).
 		Where("SK", "=", "RULES").
 		First(&config)
 
@@ -97,7 +98,7 @@ func (r *InstanceRepository) SetInstanceRules(ctx context.Context, rules []stora
 func (r *InstanceRepository) GetExtendedDescription(ctx context.Context) (string, time.Time, error) {
 	var config models.InstanceConfig
 	err := r.db.WithContext(ctx).Model(&models.InstanceConfig{}).
-		Where("PK", "=", "INSTANCE#CONFIG").
+		Where("PK", "=", storage.InstanceConfigKey).
 		Where("SK", "=", "EXTENDED_DESC").
 		First(&config)
 
@@ -129,7 +130,7 @@ func (r *InstanceRepository) SetExtendedDescription(ctx context.Context, descrip
 
 // GetRulesByCategory retrieves rules filtered by category
 // Since legacy doesn't implement this, we'll use the instance rules model with category filtering
-func (r *InstanceRepository) GetRulesByCategory(ctx context.Context, category string) ([]storage.InstanceRule, error) {
+func (r *InstanceRepository) GetRulesByCategory(ctx context.Context, _ string) ([]storage.InstanceRule, error) {
 	rules, err := r.GetInstanceRules(ctx)
 	if err != nil {
 		return nil, err
@@ -137,11 +138,9 @@ func (r *InstanceRepository) GetRulesByCategory(ctx context.Context, category st
 
 	// Filter by category
 	var filtered []storage.InstanceRule
-	for _, rule := range rules {
-		// Since storage.InstanceRule doesn't have Category field, we'll need to work with what we have
-		// For now, return all rules - this method may need interface updates
-		filtered = append(filtered, rule)
-	}
+	// Since storage.InstanceRule doesn't have Category field, we'll need to work with what we have
+	// For now, return all rules - this method may need interface updates
+	filtered = append(filtered, rules...)
 
 	return filtered, nil
 }
@@ -251,9 +250,9 @@ func (r *InstanceRepository) GetLocalPostCount(ctx context.Context) (int64, erro
 // GetWeeklyActivity retrieves weekly activity data for a specific week
 func (r *InstanceRepository) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
 	var activity models.WeeklyActivity
-	
+
 	// Use the pattern from the model: PK="INSTANCE#ACTIVITY", SK="ACTIVITY#WEEK#{date}"
-	weekStart := time.Unix(weekTimestamp, 0).Format("2006-01-02")
+	weekStart := time.Unix(weekTimestamp, 0).Format(common.DateFormat)
 	err := r.db.WithContext(ctx).Model(&models.WeeklyActivity{}).
 		Where("PK", "=", "INSTANCE#ACTIVITY").
 		Where("SK", "=", fmt.Sprintf("ACTIVITY#WEEK#%s", weekStart)).
@@ -276,13 +275,13 @@ func (r *InstanceRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 }
 
 // RecordActivity records activity data for analytics
-func (r *InstanceRepository) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
+func (r *InstanceRepository) RecordActivity(ctx context.Context, activityType string, _ string, timestamp time.Time) error {
 	// Create activity record for instance-wide tracking
 	week := getWeekStart(timestamp)
-	
+
 	// Create a new weekly activity using the model's constructor
 	activity := models.NewWeeklyActivity(week)
-	
+
 	// Try to get existing record first
 	err := r.db.WithContext(ctx).Model(&models.WeeklyActivity{}).
 		Where("PK", "=", activity.PK).
@@ -349,8 +348,8 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 			// Admin user exists but no actor profile - this is unusual but not an error
 			return nil, nil
 		}
-		r.logger.Error("Failed to get actor for contact account", 
-			zap.String("username", user.Username), 
+		r.logger.Error("Failed to get actor for contact account",
+			zap.String("username", user.Username),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get actor for contact user: %w", err)
 	}
@@ -394,18 +393,84 @@ func (r *InstanceRepository) GetStorageUsage(ctx context.Context) (any, error) {
 
 // GetStorageHistory returns storage usage history for the last N days
 func (r *InstanceRepository) GetStorageHistory(ctx context.Context, days int) ([]any, error) {
-	// TODO: Implement proper query once DynamORM query patterns are established
-	// For now, return empty history
-	r.logger.Info("GetStorageHistory called but not fully implemented", zap.Int("days", days))
-	return []any{}, nil
+	if days <= 0 {
+		days = 30 // Default to 30 days
+	}
+
+	// Calculate date range
+	startDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+	endDate := time.Now().Format("2006-01-02")
+
+	// Query daily storage metrics using GSI1
+	var histories []models.InstanceHistory
+	err := r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", "METRIC#storage_bytes").
+		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
+		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
+		All(&histories)
+
+	if err != nil {
+		r.logger.Error("Failed to get storage history", zap.Error(err), zap.Int("days", days))
+		return nil, fmt.Errorf("failed to get storage history: %w", err)
+	}
+
+	// Convert to expected format
+	result := make([]any, len(histories))
+	for i, h := range histories {
+		result[i] = map[string]interface{}{
+			"date":           h.Date,
+			"total_bytes":    h.StorageBytes,
+			"media_bytes":    h.MediaBytes,
+			"database_bytes": h.DatabaseBytes,
+			"delta":          h.Delta,
+			"recorded_at":    h.RecordedAt,
+		}
+	}
+
+	r.logger.Info("Retrieved storage history", zap.Int("days", days), zap.Int("records", len(result)))
+	return result, nil
 }
 
 // GetUserGrowthHistory returns user growth data for the last N days
 func (r *InstanceRepository) GetUserGrowthHistory(ctx context.Context, days int) ([]any, error) {
-	// TODO: Implement proper query once DynamORM query patterns are established
-	// For now, return empty history
-	r.logger.Info("GetUserGrowthHistory called but not fully implemented", zap.Int("days", days))
-	return []any{}, nil
+	if days <= 0 {
+		days = 30 // Default to 30 days
+	}
+
+	// Calculate date range
+	startDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+	endDate := time.Now().Format("2006-01-02")
+
+	// Query daily user metrics using GSI1
+	var histories []models.InstanceHistory
+	err := r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", "METRIC#user_count").
+		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
+		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
+		All(&histories)
+
+	if err != nil {
+		r.logger.Error("Failed to get user growth history", zap.Error(err), zap.Int("days", days))
+		return nil, fmt.Errorf("failed to get user growth history: %w", err)
+	}
+
+	// Convert to expected format
+	result := make([]any, len(histories))
+	for i, h := range histories {
+		result[i] = map[string]interface{}{
+			"date":         h.Date,
+			"total_users":  h.TotalUsers,
+			"active_users": h.ActiveUsers,
+			"new_users":    h.NewUsers,
+			"delta":        h.Delta,
+			"recorded_at":  h.RecordedAt,
+		}
+	}
+
+	r.logger.Info("Retrieved user growth history", zap.Int("days", days), zap.Int("records", len(result)))
+	return result, nil
 }
 
 // GetDomainStats returns statistics for a specific domain
@@ -436,6 +501,190 @@ func (r *InstanceRepository) GetDomainStats(ctx context.Context, domain string) 
 	}, nil
 }
 
+// RecordDailyMetrics records daily historical metrics for the instance
+func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string, metrics map[string]interface{}) error {
+	now := time.Now()
+	if date == "" {
+		date = now.Format("2006-01-02")
+	}
+
+	// Record user metrics
+	if userCount, ok := metrics["total_users"].(int64); ok {
+		userHistory := models.NewDailyInstanceHistory(date, "user_count")
+		if activeUsers, hasActive := metrics["active_users"].(int64); hasActive {
+			if newUsers, hasNew := metrics["new_users"].(int64); hasNew {
+				userHistory.SetUserMetrics(userCount, activeUsers, newUsers)
+			} else {
+				userHistory.SetUserMetrics(userCount, activeUsers, 0)
+			}
+		} else {
+			userHistory.SetUserMetrics(userCount, 0, 0)
+		}
+
+		// Get previous day's value for delta calculation
+		if prevValue, err := r.getPreviousDayValue(ctx, date, "user_count"); err == nil {
+			userHistory.CalculateDelta(prevValue)
+		}
+
+		if err := r.db.WithContext(ctx).Model(userHistory).Create(); err != nil {
+			r.logger.Error("Failed to record daily user metrics", zap.Error(err), zap.String("date", date))
+			return fmt.Errorf("failed to record user metrics: %w", err)
+		}
+	}
+
+	// Record storage metrics
+	if storageBytes, ok := metrics["storage_bytes"].(int64); ok {
+		storageHistory := models.NewDailyInstanceHistory(date, "storage_bytes")
+		mediaBytes, _ := metrics["media_bytes"].(int64)
+		dbBytes, _ := metrics["database_bytes"].(int64)
+		storageHistory.SetStorageMetrics(storageBytes, mediaBytes, dbBytes)
+
+		// Get previous day's value for delta calculation
+		if prevValue, err := r.getPreviousDayValue(ctx, date, "storage_bytes"); err == nil {
+			storageHistory.CalculateDelta(prevValue)
+		}
+
+		if err := r.db.WithContext(ctx).Model(storageHistory).Create(); err != nil {
+			r.logger.Error("Failed to record daily storage metrics", zap.Error(err), zap.String("date", date))
+			return fmt.Errorf("failed to record storage metrics: %w", err)
+		}
+	}
+
+	// Record post metrics
+	if postCount, ok := metrics["total_posts"].(int64); ok {
+		postHistory := models.NewDailyInstanceHistory(date, "post_count")
+		newPosts, _ := metrics["new_posts"].(int64)
+		localPosts, _ := metrics["local_posts"].(int64)
+		federatedPosts, _ := metrics["federated_posts"].(int64)
+		postHistory.SetPostMetrics(postCount, newPosts, localPosts, federatedPosts)
+
+		// Get previous day's value for delta calculation
+		if prevValue, err := r.getPreviousDayValue(ctx, date, "post_count"); err == nil {
+			postHistory.CalculateDelta(prevValue)
+		}
+
+		if err := r.db.WithContext(ctx).Model(postHistory).Create(); err != nil {
+			r.logger.Error("Failed to record daily post metrics", zap.Error(err), zap.String("date", date))
+			return fmt.Errorf("failed to record post metrics: %w", err)
+		}
+	}
+
+	// Record federation metrics
+	if knownInstances, ok := metrics["known_instances"].(int64); ok {
+		fedHistory := models.NewDailyInstanceHistory(date, "federation_count")
+		activeInstances, _ := metrics["active_instances"].(int64)
+		fedHistory.SetFederationMetrics(knownInstances, activeInstances)
+
+		// Get previous day's value for delta calculation
+		if prevValue, err := r.getPreviousDayValue(ctx, date, "federation_count"); err == nil {
+			fedHistory.CalculateDelta(prevValue)
+		}
+
+		if err := r.db.WithContext(ctx).Model(fedHistory).Create(); err != nil {
+			r.logger.Error("Failed to record daily federation metrics", zap.Error(err), zap.String("date", date))
+			return fmt.Errorf("failed to record federation metrics: %w", err)
+		}
+	}
+
+	r.logger.Info("Successfully recorded daily metrics", zap.String("date", date))
+	return nil
+}
+
+// GetMetricsSummary returns aggregated metrics for a given time range
+func (r *InstanceRepository) GetMetricsSummary(ctx context.Context, timeRange string) (map[string]interface{}, error) {
+	var startDate, endDate string
+	now := time.Now()
+
+	switch timeRange {
+	case "week":
+		startDate = now.AddDate(0, 0, -7).Format("2006-01-02")
+		endDate = now.Format("2006-01-02")
+	case "month":
+		startDate = now.AddDate(0, -1, 0).Format("2006-01-02")
+		endDate = now.Format("2006-01-02")
+	case "quarter":
+		startDate = now.AddDate(0, -3, 0).Format("2006-01-02")
+		endDate = now.Format("2006-01-02")
+	case "year":
+		startDate = now.AddDate(-1, 0, 0).Format("2006-01-02")
+		endDate = now.Format("2006-01-02")
+	default:
+		startDate = now.AddDate(0, 0, -30).Format("2006-01-02")
+		endDate = now.Format("2006-01-02")
+	}
+
+	summary := make(map[string]interface{})
+
+	// Get metrics for each type
+	metricTypes := []string{"user_count", "storage_bytes", "post_count", "federation_count"}
+	
+	for _, metricType := range metricTypes {
+		var histories []models.InstanceHistory
+		err := r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
+			Index("GSI1").
+			Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
+			Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
+			Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
+			All(&histories)
+
+		if err != nil {
+			r.logger.Error("Failed to get metrics summary", zap.Error(err), zap.String("metric_type", metricType))
+			continue
+		}
+
+		if len(histories) > 0 {
+			// Get latest and earliest values for growth calculation
+			latest := histories[len(histories)-1]
+			earliest := histories[0]
+			growth := float64(0)
+			if earliest.Value > 0 {
+				growth = ((float64(latest.Value) - float64(earliest.Value)) / float64(earliest.Value)) * 100
+			}
+
+			summary[metricType] = map[string]interface{}{
+				"current_value": latest.Value,
+				"start_value":   earliest.Value,
+				"growth_pct":    growth,
+				"total_change":  latest.Value - earliest.Value,
+				"data_points":   len(histories),
+			}
+		}
+	}
+
+	summary["time_range"] = timeRange
+	summary["start_date"] = startDate
+	summary["end_date"] = endDate
+	summary["generated_at"] = time.Now()
+
+	return summary, nil
+}
+
+// getPreviousDayValue gets the value from the previous day for delta calculation
+func (r *InstanceRepository) getPreviousDayValue(ctx context.Context, currentDate, metricType string) (int64, error) {
+	// Parse current date and get previous day
+	date, err := time.Parse("2006-01-02", currentDate)
+	if err != nil {
+		return 0, err
+	}
+	prevDate := date.AddDate(0, 0, -1).Format("2006-01-02")
+
+	var history models.InstanceHistory
+	err = r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
+		Where("GSI1SK", "=", fmt.Sprintf("DATE#%s", prevDate)).
+		First(&history)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return 0, nil // No previous data, delta from 0
+		}
+		return 0, err
+	}
+
+	return history.Value, nil
+}
+
 // Helper function to get the start of the week for a given timestamp
 func getWeekStart(t time.Time) time.Time {
 	// Get Monday of the week
@@ -443,5 +692,5 @@ func getWeekStart(t time.Time) time.Time {
 	if weekday == 0 {
 		weekday = 7 // Sunday = 7
 	}
-	return t.AddDate(0, 0, -(weekday-1)).Truncate(24 * time.Hour)
+	return t.AddDate(0, 0, -(weekday - 1)).Truncate(24 * time.Hour)
 }

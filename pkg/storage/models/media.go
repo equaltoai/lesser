@@ -28,11 +28,11 @@ type Media struct {
 
 	// Core media data
 	MediaID     string `json:"media_id"`
-	Version     string `json:"version"`     // "original", "v1", "v2", etc.
-	UserID      string `json:"user_id"`     // Owner of the media
-	FileName    string `json:"file_name"`   // Original filename
+	Version     string `json:"version"`      // "original", "v1", "v2", etc.
+	UserID      string `json:"user_id"`      // Owner of the media
+	FileName    string `json:"file_name"`    // Original filename
 	ContentType string `json:"content_type"` // MIME type
-	FileSize    int64  `json:"file_size"`   // Size in bytes
+	FileSize    int64  `json:"file_size"`    // Size in bytes
 
 	// Storage details
 	S3Bucket string `json:"s3_bucket"`
@@ -40,15 +40,15 @@ type Media struct {
 	CDNUrl   string `json:"cdn_url,omitempty"`
 
 	// Processing status
-	Status      string     `json:"status"`      // "pending", "processing", "ready", "failed"
+	Status      string     `json:"status"` // "pending", "processing", "ready", "failed"
 	ProcessedAt *time.Time `json:"processed_at,omitempty"`
 	Error       string     `json:"error,omitempty"`
 
 	// Media analysis results
-	Width    int    `json:"width,omitempty"`     // For images/videos
-	Height   int    `json:"height,omitempty"`    // For images/videos
-	Duration int    `json:"duration,omitempty"`  // For videos/audio in seconds
-	Blurhash string `json:"blurhash,omitempty"`  // For images
+	Width    int    `json:"width,omitempty"`    // For images/videos
+	Height   int    `json:"height,omitempty"`   // For images/videos
+	Duration int    `json:"duration,omitempty"` // For videos/audio in seconds
+	Blurhash string `json:"blurhash,omitempty"` // For images
 
 	// Media variants (thumbnails, different sizes, formats)
 	Variants map[string]MediaVariant `json:"variants,omitempty"`
@@ -74,7 +74,7 @@ type Media struct {
 	// TTL for unused media (30 days)
 	ExpiresAt *int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
 
-	// Version for optimistic locking  
+	// Version for optimistic locking
 	ModelVersion int `dynamorm:"version" json:"model_version"`
 }
 
@@ -91,7 +91,7 @@ type MediaVariant struct {
 
 // TableName returns the DynamoDB table name for the Media model
 func (Media) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -113,7 +113,7 @@ func (m *Media) BeforeCreate() error {
 
 	// Set default status
 	if m.Status == "" {
-		m.Status = "pending"
+		m.Status = StatusPending
 	}
 
 	// Initialize usage count
@@ -223,7 +223,7 @@ func (m *Media) SetProcessed() {
 
 // SetFailed marks the media as failed with an error message
 func (m *Media) SetFailed(errorMsg string) {
-	m.Status = "failed"
+	m.Status = StatusFailed
 	now := time.Now()
 	m.ProcessedAt = &now
 	m.Error = errorMsg
@@ -231,7 +231,7 @@ func (m *Media) SetFailed(errorMsg string) {
 
 // SetProcessing marks the media as currently being processed
 func (m *Media) SetProcessing() {
-	m.Status = "processing"
+	m.Status = StatusProcessing
 	m.Error = ""
 }
 
@@ -242,12 +242,12 @@ func (m *Media) IsReady() bool {
 
 // IsFailed returns true if the media processing failed
 func (m *Media) IsFailed() bool {
-	return m.Status == "failed"
+	return m.Status == StatusFailed
 }
 
 // IsProcessing returns true if the media is currently being processed
 func (m *Media) IsProcessing() bool {
-	return m.Status == "processing"
+	return m.Status == StatusProcessing
 }
 
 // AddVariant adds a processed variant to the media
@@ -270,7 +270,7 @@ func (m *Media) GetVariant(name string) (MediaVariant, bool) {
 
 // GetBestVariant returns the best variant for the requested dimensions
 func (m *Media) GetBestVariant(maxWidth, maxHeight int) MediaVariant {
-	if m.Variants == nil || len(m.Variants) == 0 {
+	if len(m.Variants) == 0 {
 		// Return original as fallback
 		return MediaVariant{
 			S3Key:       m.S3Key,
@@ -351,13 +351,13 @@ func (m *Media) IsAudio() bool {
 // GetTotalSize returns the total size including all variants
 func (m *Media) GetTotalSize() int64 {
 	total := m.FileSize
-	
+
 	if m.Variants != nil {
 		for _, variant := range m.Variants {
 			total += variant.FileSize
 		}
 	}
-	
+
 	return total
 }
 
@@ -373,38 +373,38 @@ func isValidMediaType(contentType string) bool {
 		"image/svg+xml": true,
 		"image/bmp":     true,
 		"image/tiff":    true,
-		
+
 		// Videos
-		"video/mp4":        true,
-		"video/webm":       true,
-		"video/ogg":        true,
-		"video/avi":        true,
-		"video/mov":        true,
-		"video/quicktime":  true,
+		"video/mp4":       true,
+		"video/webm":      true,
+		"video/ogg":       true,
+		"video/avi":       true,
+		"video/mov":       true,
+		"video/quicktime": true,
 		"video/x-msvideo": true,
-		
+
 		// Audio
-		"audio/mpeg":     true,
-		"audio/mp3":      true,
-		"audio/wav":      true,
-		"audio/ogg":      true,
-		"audio/aac":      true,
-		"audio/flac":     true,
-		"audio/x-wav":    true,
-		"audio/webm":     true,
+		"audio/mpeg":  true,
+		"audio/mp3":   true,
+		"audio/wav":   true,
+		"audio/ogg":   true,
+		"audio/aac":   true,
+		"audio/flac":  true,
+		"audio/x-wav": true,
+		"audio/webm":  true,
 	}
-	
+
 	return validTypes[strings.ToLower(contentType)]
 }
 
 // isValidMediaStatus checks if the status is valid
 func isValidMediaStatus(status string) bool {
 	validStatuses := map[string]bool{
-		"pending":    true,
-		"processing": true,
-		"ready":      true,
-		"failed":     true,
+		StatusPending:    true,
+		StatusProcessing: true,
+		"ready":          true,
+		StatusFailed:     true,
 	}
-	
+
 	return validStatuses[strings.ToLower(status)]
 }

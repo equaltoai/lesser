@@ -32,9 +32,9 @@ func NewListRepository(db core.DB, tableName string, logger *zap.Logger) *ListRe
 func (r *ListRepository) CreateList(ctx context.Context, username, title, repliesPolicy string) (*storage.List, error) {
 	// Validate replies policy
 	if repliesPolicy == "" {
-		repliesPolicy = "list" // default
+		repliesPolicy = RepliesPolicyList // default
 	}
-	if repliesPolicy != "followed" && repliesPolicy != "list" && repliesPolicy != "none" {
+	if repliesPolicy != RepliesPolicyFollowed && repliesPolicy != RepliesPolicyList && repliesPolicy != RepliesPolicyNone {
 		return nil, fmt.Errorf("invalid replies policy: %s", repliesPolicy)
 	}
 
@@ -113,7 +113,7 @@ func (r *ListRepository) UpdateList(ctx context.Context, listID string, updates 
 
 	if repliesPolicy, ok := updates["replies_policy"].(string); ok {
 		// Validate replies policy
-		if repliesPolicy != "followed" && repliesPolicy != "list" && repliesPolicy != "none" {
+		if repliesPolicy != RepliesPolicyFollowed && repliesPolicy != RepliesPolicyList && repliesPolicy != RepliesPolicyNone {
 			return fmt.Errorf("invalid replies policy: %s", repliesPolicy)
 		}
 		model.RepliesPolicy = repliesPolicy
@@ -511,7 +511,7 @@ func (r *ListRepository) RemoveAccountFromAllLists(ctx context.Context, accountI
 }
 
 // GetListTimeline retrieves timeline entries for a list
-func (r *ListRepository) GetListTimeline(ctx context.Context, listID string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+func (r *ListRepository) GetListTimeline(_ context.Context, _ string, _ int, _ string) ([]*storage.TimelineEntry, string, error) {
 	// This would typically query a timeline table filtered by list members
 	// For now, return empty as timeline functionality is handled elsewhere
 	return []*storage.TimelineEntry{}, "", nil
@@ -520,17 +520,15 @@ func (r *ListRepository) GetListTimeline(ctx context.Context, listID string, lim
 // GetExclusiveLists retrieves all exclusive lists for a user
 func (r *ListRepository) GetExclusiveLists(ctx context.Context, username string) ([]*storage.List, error) {
 	// Get all user lists
-	lists, err := r.GetUserLists(ctx, username)
+	_, err := r.GetUserLists(ctx, username)
 	if err != nil {
 		return nil, err
 	}
 
 	// Filter for exclusive lists
 	exclusive := make([]*storage.List, 0)
-	for range lists {
-		// Note: The legacy code doesn't have an Exclusive field, so this would need to be added
-		// For now, return empty array
-	}
+	// Note: The legacy code doesn't have an Exclusive field, so this would need to be added
+	// For now, return empty array
 
 	return exclusive, nil
 }

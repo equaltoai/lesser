@@ -19,7 +19,7 @@ type ServerlessHealthChecker struct {
 	healthRepo *repositories.InstanceHealthRepository
 	logger     *zap.Logger
 	httpClient *http.Client
-	
+
 	// Configuration
 	config CheckerConfig
 }
@@ -27,23 +27,23 @@ type ServerlessHealthChecker struct {
 // CheckerConfig contains configuration for the health checker
 type CheckerConfig struct {
 	// HTTP configuration
-	RequestTimeout    time.Duration `json:"request_timeout"`
-	MaxIdleConns      int           `json:"max_idle_conns"`
-	MaxIdleConnsPerHost int         `json:"max_idle_conns_per_host"`
-	IdleConnTimeout   time.Duration `json:"idle_conn_timeout"`
-	FollowRedirects   bool          `json:"follow_redirects"`
-	UserAgent         string        `json:"user_agent"`
-	
+	RequestTimeout      time.Duration `json:"request_timeout"`
+	MaxIdleConns        int           `json:"max_idle_conns"`
+	MaxIdleConnsPerHost int           `json:"max_idle_conns_per_host"`
+	IdleConnTimeout     time.Duration `json:"idle_conn_timeout"`
+	FollowRedirects     bool          `json:"follow_redirects"`
+	UserAgent           string        `json:"user_agent"`
+
 	// Concurrency configuration
 	MaxConcurrentChecks int `json:"max_concurrent_checks"`
-	
+
 	// Retry configuration
-	MaxRetries    int           `json:"max_retries"`
-	RetryBackoff  time.Duration `json:"retry_backoff"`
-	
+	MaxRetries   int           `json:"max_retries"`
+	RetryBackoff time.Duration `json:"retry_backoff"`
+
 	// Validation configuration
-	RequiredHeaders map[string]string `json:"required_headers"`
-	ValidStatusCodes []int            `json:"valid_status_codes"`
+	RequiredHeaders  map[string]string `json:"required_headers"`
+	ValidStatusCodes []int             `json:"valid_status_codes"`
 }
 
 // DefaultConfig returns a sensible default configuration
@@ -74,15 +74,15 @@ func NewServerlessHealthChecker(db core.DB, tableName string, logger *zap.Logger
 		IdleConnTimeout:     config.IdleConnTimeout,
 		DisableCompression:  true, // Reduce CPU usage in Lambda
 	}
-	
+
 	// Configure redirect policy
 	client := &http.Client{
 		Transport: transport,
 		Timeout:   config.RequestTimeout,
 	}
-	
+
 	if !config.FollowRedirects {
-		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
 	}
@@ -98,7 +98,7 @@ func NewServerlessHealthChecker(db core.DB, tableName string, logger *zap.Logger
 // ProcessHealthCheckEvent processes an EventBridge health check event
 func (c *ServerlessHealthChecker) ProcessHealthCheckEvent(ctx context.Context, event *HealthCheckEvent) (*HealthCheckResult, error) {
 	startTime := time.Now()
-	
+
 	c.logger.Info("Processing health check event",
 		zap.String("action", event.Detail.Action),
 		zap.Int("domain_count", len(event.Detail.Domains)),
@@ -193,7 +193,7 @@ func (c *ServerlessHealthChecker) checkInstanceHealth(ctx context.Context, domai
 		wg.Add(1)
 		go func(domain string) {
 			defer wg.Done()
-			
+
 			// Acquire semaphore
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
@@ -253,7 +253,7 @@ func (c *ServerlessHealthChecker) checkInstanceHealth(ctx context.Context, domai
 // checkSingleDomain performs a health check on a single domain
 func (c *ServerlessHealthChecker) checkSingleDomain(ctx context.Context, domain string) (*DomainHealthCheckResult, error) {
 	startTime := time.Now()
-	
+
 	result := &DomainHealthCheckResult{
 		Domain:    domain,
 		CheckedAt: startTime.UTC(),
@@ -263,7 +263,7 @@ func (c *ServerlessHealthChecker) checkSingleDomain(ctx context.Context, domain 
 
 	// Construct inbox URL (ActivityPub standard)
 	inboxURL := fmt.Sprintf("https://%s/inbox", domain)
-	
+
 	// Create HTTP request with context for timeout
 	req, err := http.NewRequestWithContext(ctx, "GET", inboxURL, nil)
 	if err != nil {
@@ -280,18 +280,18 @@ func (c *ServerlessHealthChecker) checkSingleDomain(ctx context.Context, domain 
 	// Perform the request with retries
 	var resp *http.Response
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
 		if attempt > 0 {
 			// Exponential backoff
 			time.Sleep(c.config.RetryBackoff * time.Duration(attempt))
 		}
-		
+
 		resp, lastErr = c.httpClient.Do(req)
 		if lastErr == nil {
 			break
 		}
-		
+
 		c.logger.Debug("HTTP request failed, retrying",
 			zap.String("domain", domain),
 			zap.Int("attempt", attempt+1),
@@ -371,7 +371,7 @@ func (c *ServerlessHealthChecker) convertToHealthModel(result DomainHealthCheckR
 	health.ErrorMessage = result.ErrorMessage
 	health.InboxBacklog = result.InboxBacklog
 	health.ProcessingDelay = result.ProcessingDelay
-	
+
 	// Calculate error rate based on success
 	if !result.Success && result.Reachable {
 		health.ErrorRate = 1.0
@@ -447,7 +447,7 @@ func (c *ServerlessHealthChecker) cleanupOldData(ctx context.Context, retentionD
 	}
 
 	retentionDuration := time.Duration(retentionDays) * 24 * time.Hour
-	
+
 	c.logger.Info("Starting health data cleanup",
 		zap.Int("retention_days", retentionDays),
 		zap.Duration("retention_duration", retentionDuration))
@@ -485,6 +485,6 @@ func (c *ServerlessHealthChecker) GetUnhealthyInstances(ctx context.Context, thr
 	if threshold <= 0 {
 		threshold = 50.0 // Default threshold of 50% health score
 	}
-	
+
 	return c.healthRepo.GetUnhealthyInstances(ctx, threshold)
 }

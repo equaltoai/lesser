@@ -15,58 +15,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// HandleBookmarkLift handles POST /api/v1/statuses/:id/bookmark
-func (h *Handler) HandleBookmarkLift(ctx *lift.Context) error {
-	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
-	}
-
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write scope
-		if !claims.HasScope(auth.ScopeWrite) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
-	}
-
+// bookmarkAction performs the bookmark action for a status
+func (h *Handler) bookmarkAction(statusID, username string) (*models.Status, error) {
 	// Normalize the status ID to a full URL if it's not already
 	objectID := statusID
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
@@ -75,31 +25,28 @@ func (h *Handler) HandleBookmarkLift(ctx *lift.Context) error {
 	}
 
 	// Check if the status exists
-	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(context.Background(), objectID)
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+		return nil, fmt.Errorf("status not found")
 	}
 
 	// Add bookmark
-	if err := h.repos.Account().AddBookmark(ctx.Context, username, objectID); err != nil {
-		h.logger.Error("failed to create bookmark",
-			zap.String("username", username),
-			zap.String("status_id", statusID),
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to bookmark status"})
+	if err := h.repos.Account().AddBookmark(context.Background(), username, objectID); err != nil {
+		return nil, fmt.Errorf("failed to bookmark status")
 	}
 
 	// Convert object to status using the proper converter
-	status, err := h.convertBookmarkedObjectToStatus(ctx.Context, obj, objectID, username, true)
+	status, err := h.convertBookmarkedObjectToStatus(context.Background(), obj, objectID, username, true)
 	if err != nil {
-		h.logger.Error("failed to convert object to status",
-			zap.String("status_id", statusID),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to convert status"})
+		return nil, fmt.Errorf("failed to convert object to status: %w", err)
 	}
 
-	return ctx.JSON(status)
+	return status, nil
+}
+
+// HandleBookmarkLift handles POST /api/v1/statuses/:id/bookmark
+func (h *Handler) HandleBookmarkLift(ctx *lift.Context) error {
+	return h.statusActionHandler(ctx, auth.ScopeWrite, h.bookmarkAction)
 }
 
 // HandleUnbookmarkLift handles POST /api/v1/statuses/:id/unbookmark
@@ -109,49 +56,13 @@ func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
+	// Authenticate user
+	username, err := h.authenticateUser(ctx, auth.ScopeWrite)
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write scope
-		if !claims.HasScope(auth.ScopeWrite) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
 	}
 
 	// Normalize the status ID to a full URL if it's not already

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // DLQMessage represents a failed message captured from a dead letter queue
@@ -27,50 +28,50 @@ type DLQMessage struct {
 	GSI3SK string `dynamorm:"index:service-index,sk" json:"gsi3_sk"` // Format: "{timestamp}#{errorType}#{messageId}"
 
 	// Core message data
-	ID              string `json:"id"`                // Unique DLQ message ID
+	ID                string `json:"id"`                  // Unique DLQ message ID
 	OriginalMessageID string `json:"original_message_id"` // Original SQS message ID
-	Service         string `json:"service"`           // Service that failed (e.g., "notification-processor")
-	QueueName       string `json:"queue_name"`        // Name of the source DLQ
-	SourceQueue     string `json:"source_queue"`      // Original queue name
+	Service           string `json:"service"`             // Service that failed (e.g., "notification-processor")
+	QueueName         string `json:"queue_name"`          // Name of the source DLQ
+	SourceQueue       string `json:"source_queue"`        // Original queue name
 
 	// Message content
-	MessageBody     string                 `json:"message_body"`     // Original message body
-	MessageAttributes map[string]string   `json:"message_attributes,omitempty"` // SQS message attributes
+	MessageBody       string                 `json:"message_body"`                 // Original message body
+	MessageAttributes map[string]string      `json:"message_attributes,omitempty"` // SQS message attributes
 	MessageMetadata   map[string]interface{} `json:"message_metadata,omitempty"`   // Additional metadata
 
 	// Error information
-	ErrorType       string `json:"error_type"`        // Categorized error type
-	ErrorMessage    string `json:"error_message"`     // Full error message
-	ErrorStack      string `json:"error_stack,omitempty"` // Stack trace if available
-	FailureReason   string `json:"failure_reason"`    // Human-readable failure reason
-	IsPermanent     bool   `json:"is_permanent"`      // Whether this is a permanent failure
+	ErrorType     string `json:"error_type"`            // Categorized error type
+	ErrorMessage  string `json:"error_message"`         // Full error message
+	ErrorStack    string `json:"error_stack,omitempty"` // Stack trace if available
+	FailureReason string `json:"failure_reason"`        // Human-readable failure reason
+	IsPermanent   bool   `json:"is_permanent"`          // Whether this is a permanent failure
 
 	// Processing context
-	FunctionName    string `json:"function_name"`     // Lambda function that failed
+	FunctionName    string `json:"function_name"`              // Lambda function that failed
 	FunctionVersion string `json:"function_version,omitempty"` // Lambda function version
-	LogGroup        string `json:"log_group,omitempty"`      // CloudWatch log group
-	LogStream       string `json:"log_stream,omitempty"`     // CloudWatch log stream
-	RequestID       string `json:"request_id,omitempty"`     // AWS request ID
+	LogGroup        string `json:"log_group,omitempty"`        // CloudWatch log group
+	LogStream       string `json:"log_stream,omitempty"`       // CloudWatch log stream
+	RequestID       string `json:"request_id,omitempty"`       // AWS request ID
 
 	// Retry information
-	OriginalRetryCount int       `json:"original_retry_count"` // How many times original message was retried
-	ReprocessingCount  int       `json:"reprocessing_count"`   // How many times we've tried to reprocess
-	MaxReprocessAttempts int     `json:"max_reprocess_attempts"` // Maximum reprocessing attempts
-	NextRetryAt        *time.Time `json:"next_retry_at,omitempty"` // When to retry next
-	Status             string    `json:"status"`               // "new", "reprocessing", "failed", "resolved", "abandoned"
+	OriginalRetryCount   int        `json:"original_retry_count"`    // How many times original message was retried
+	ReprocessingCount    int        `json:"reprocessing_count"`      // How many times we've tried to reprocess
+	MaxReprocessAttempts int        `json:"max_reprocess_attempts"`  // Maximum reprocessing attempts
+	NextRetryAt          *time.Time `json:"next_retry_at,omitempty"` // When to retry next
+	Status               string     `json:"status"`                  // "new", "reprocessing", "failed", "resolved", "abandoned"
 
 	// Analysis metadata
-	SimilarityHash  string   `json:"similarity_hash"`   // Hash for grouping similar errors
-	Tags            []string `json:"tags,omitempty"`    // Tags for categorization
-	Priority        string   `json:"priority"`          // "low", "medium", "high", "critical"
-	BusinessImpact  string   `json:"business_impact,omitempty"` // Impact assessment
+	SimilarityHash string   `json:"similarity_hash"`           // Hash for grouping similar errors
+	Tags           []string `json:"tags,omitempty"`            // Tags for categorization
+	Priority       string   `json:"priority"`                  // "low", "medium", "high", "critical"
+	BusinessImpact string   `json:"business_impact,omitempty"` // Impact assessment
 
 	// Cost tracking
-	ProcessingCostMicroCents int64 `json:"processing_cost_micro_cents"` // Cost of processing attempts
+	ProcessingCostMicroCents   int64 `json:"processing_cost_micro_cents"`   // Cost of processing attempts
 	ReprocessingCostMicroCents int64 `json:"reprocessing_cost_micro_cents"` // Cost of reprocessing
 
 	// Timestamps
-	FirstSeenAt     time.Time  `json:"first_seen_at"`     // When first captured in DLQ
+	FirstSeenAt     time.Time  `json:"first_seen_at"`               // When first captured in DLQ
 	LastProcessedAt *time.Time `json:"last_processed_at,omitempty"` // Last processing attempt
 	ResolvedAt      *time.Time `json:"resolved_at,omitempty"`       // When successfully reprocessed
 	CreatedAt       time.Time  `json:"created_at"`
@@ -90,7 +91,7 @@ type DLQMessageBuilder struct {
 
 // TableName returns the DynamoDB table name for the DLQMessage model
 func (DLQMessage) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -110,7 +111,7 @@ func (d *DLQMessage) BeforeCreate() error {
 		d.Status = "new"
 	}
 	if d.Priority == "" {
-		d.Priority = "medium"
+		d.Priority = string(AdvancedSeverityMedium)
 	}
 	if d.MaxReprocessAttempts == 0 {
 		d.MaxReprocessAttempts = 3
@@ -125,9 +126,9 @@ func (d *DLQMessage) BeforeCreate() error {
 	}
 
 	// Set up primary key
-	dateStr := d.FirstSeenAt.Format("20060102")
+	dateStr := d.FirstSeenAt.Format(common.CompactDateFormat)
 	d.PK = fmt.Sprintf("DLQ#%s#%s", d.Service, dateStr)
-	timestamp := d.FirstSeenAt.Format("20060102150405")
+	timestamp := d.FirstSeenAt.Format(common.CompactTimeFormat)
 	d.SK = fmt.Sprintf("MSG#%s#%s", timestamp, d.OriginalMessageID)
 
 	// Set up GSI keys
@@ -172,7 +173,7 @@ func (d *DLQMessage) Validate() error {
 		return fmt.Errorf("OriginalMessageID is required")
 	}
 	if strings.TrimSpace(d.Service) == "" {
-		return fmt.Errorf("Service is required")
+		return fmt.Errorf("service is required")
 	}
 	if strings.TrimSpace(d.MessageBody) == "" {
 		return fmt.Errorf("MessageBody is required")
@@ -198,13 +199,13 @@ func (d *DLQMessage) generateSimilarityHash() string {
 	// Create a hash based on service, error type, and sanitized error message
 	sanitizedError := sanitizeErrorForGrouping(d.ErrorMessage)
 	hashInput := fmt.Sprintf("%s:%s:%s", d.Service, d.ErrorType, sanitizedError)
-	
+
 	// Use a simple hash for grouping (in production, use a proper hash function)
 	hash := 0
 	for _, char := range hashInput {
 		hash = hash*31 + int(char)
 	}
-	
+
 	return fmt.Sprintf("%x", hash)
 }
 
@@ -214,7 +215,7 @@ func sanitizeErrorForGrouping(errorMsg string) string {
 	errorMsg = strings.ReplaceAll(errorMsg, "request-", "request-X")
 	errorMsg = strings.ReplaceAll(errorMsg, "user-", "user-X")
 	errorMsg = strings.ReplaceAll(errorMsg, "status-", "status-X")
-	
+
 	// Remove numbers and UUIDs
 	words := strings.Fields(errorMsg)
 	var sanitized []string
@@ -225,7 +226,7 @@ func sanitizeErrorForGrouping(errorMsg string) string {
 			sanitized = append(sanitized, word)
 		}
 	}
-	
+
 	return strings.Join(sanitized, " ")
 }
 
@@ -245,7 +246,7 @@ func isNumeric(s string) bool {
 func (d *DLQMessage) MarkForReprocessing() {
 	d.Status = "reprocessing"
 	d.ReprocessingCount++
-	
+
 	// Set next retry with exponential backoff
 	backoffMinutes := 1 << d.ReprocessingCount // 2^attempts minutes
 	if backoffMinutes > 60 {
@@ -265,7 +266,7 @@ func (d *DLQMessage) MarkResolved() {
 
 // MarkFailed marks the message as failed during reprocessing
 func (d *DLQMessage) MarkFailed(errorMsg string) {
-	d.Status = "failed"
+	d.Status = DeliveryStatusFailed
 	d.ErrorMessage = errorMsg
 	now := time.Now()
 	d.LastProcessedAt = &now
@@ -304,14 +305,14 @@ func (d *DLQMessage) AddTag(tag string) {
 	if d.Tags == nil {
 		d.Tags = make([]string, 0)
 	}
-	
+
 	// Check if tag already exists
 	for _, existingTag := range d.Tags {
 		if existingTag == tag {
 			return
 		}
 	}
-	
+
 	d.Tags = append(d.Tags, tag)
 }
 

@@ -1,3 +1,4 @@
+// Package main implements the report-trust-updater Lambda function for updating trust scores based on reports.
 package main
 
 import (
@@ -71,7 +72,7 @@ func (r *ReportTrustService) UpdateReporterTrustOnDecision(ctx context.Context, 
 	switch decision.Action {
 	case moderation.ActionTypeRemove, moderation.ActionTypeSuspend, moderation.ActionTypeSilence, moderation.ActionTypeWarning:
 		reportValid = true
-	case moderation.ActionTypeNone:  
+	case moderation.ActionTypeNone:
 		reportValid = false
 	}
 
@@ -147,7 +148,7 @@ type ReportTrustUpdater struct {
 func NewReportTrustUpdater(db core.DB, tableName string, logger *zap.Logger) *ReportTrustUpdater {
 	// Create direct trust service using DynamORM
 	trustService := NewReportTrustService(db, tableName, logger)
-	
+
 	return &ReportTrustUpdater{
 		logger:       logger,
 		trustService: trustService,
@@ -157,7 +158,7 @@ func NewReportTrustUpdater(db core.DB, tableName string, logger *zap.Logger) *Re
 // HandleStream processes DynamoDB stream events using Lift patterns
 func (rtu *ReportTrustUpdater) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
 	requestID := ctx.GetRequestID()
-	
+
 	rtu.logger.Info("processing report trust updater stream batch",
 		zap.String("request_id", requestID),
 		zap.Int("record_count", len(event.Records)),
@@ -165,7 +166,7 @@ func (rtu *ReportTrustUpdater) HandleStream(ctx *lift.Context, event events.Dyna
 
 	// Process each record, continuing on individual failures
 	var processedCount, errorCount int
-	
+
 	for _, record := range event.Records {
 		if err := rtu.processRecord(ctx.Request.Context(), record); err != nil {
 			errorCount++
@@ -191,82 +192,105 @@ func (rtu *ReportTrustUpdater) HandleStream(ctx *lift.Context, event events.Dyna
 
 // processRecord processes a single DynamoDB stream record
 func (rtu *ReportTrustUpdater) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
-	// Only process INSERT and MODIFY events
-	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+	// Check if we should process this event
+	if !rtu.shouldProcessEvent(record) {
+		return nil
+	}
+
+	// Extract and validate keys
+	pk, sk, err := rtu.extractRecordKeys(record)
+	if err != nil {
 		return nil
 	}
 
 	// Check if this is a moderation decision
-	pkAttr, pkExists := record.Change.NewImage["PK"]
-	skAttr, skExists := record.Change.NewImage["SK"]
-
-	if !pkExists || !skExists {
+	if !rtu.isModerationDecision(pk, sk) {
 		return nil
 	}
 
-	// Extract PK and SK values
-	pk := ""
-	sk := ""
-
-	switch pkAttr.DataType() {
-	case events.DataTypeString:
-		pk = pkAttr.String()
-	}
-
-	switch skAttr.DataType() {
-	case events.DataTypeString:
-		sk = skAttr.String()
-	}
-
-	// Look for moderation decisions: PK=MODERATION#objectID, SK=DECISION
-	if !strings.HasPrefix(pk, "MODERATION#") || sk != "DECISION" {
-		return nil
-	}
-
-	// Extract the decision data
-	var decision moderation.ModerationDecision
-
-	// Helper functions to extract values from DynamoDB stream events
-	getString := func(attr events.DynamoDBAttributeValue) string {
-		if attr.DataType() == events.DataTypeString {
-			return attr.String()
-		}
-		return ""
-	}
-
-	getNumber := func(attr events.DynamoDBAttributeValue) float64 {
-		if attr.DataType() == events.DataTypeNumber {
-			val, _ := strconv.ParseFloat(attr.Number(), 64)
-			return val
-		}
-		return 0
-	}
-
-	// Extract decision fields
-	if idAttr, ok := record.Change.NewImage["ID"]; ok {
-		decision.ID = getString(idAttr)
-	}
-	if eventIDAttr, ok := record.Change.NewImage["EventID"]; ok {
-		decision.EventID = getString(eventIDAttr)
-	}
-	if objectIDAttr, ok := record.Change.NewImage["ObjectID"]; ok {
-		decision.ObjectID = getString(objectIDAttr)
-	}
-	if actionAttr, ok := record.Change.NewImage["Action"]; ok {
-		decision.Action = moderation.ActionType(getString(actionAttr))
-	}
-	if consensusAttr, ok := record.Change.NewImage["ConsensusScore"]; ok {
-		decision.ConsensusScore = getNumber(consensusAttr)
-	}
-	if countAttr, ok := record.Change.NewImage["ReviewerCount"]; ok {
-		decision.ReviewerCount = int(getNumber(countAttr))
-	}
+	// Extract decision from record
+	decision := rtu.extractModerationDecision(record)
 
 	// Check if this decision is related to a report
 	if decision.EventID == "" {
 		return nil
 	}
 
+	// Process the moderation event
+	return rtu.processModerationEvent(ctx, decision)
+}
+
+// shouldProcessEvent checks if the event should be processed
+func (rtu *ReportTrustUpdater) shouldProcessEvent(record events.DynamoDBEventRecord) bool {
+	return record.EventName == "INSERT" || record.EventName == "MODIFY"
+}
+
+// extractRecordKeys extracts PK and SK from the record
+func (rtu *ReportTrustUpdater) extractRecordKeys(record events.DynamoDBEventRecord) (string, string, error) {
+	pkAttr, pkExists := record.Change.NewImage["PK"]
+	skAttr, skExists := record.Change.NewImage["SK"]
+
+	if !pkExists || !skExists {
+		return "", "", fmt.Errorf("missing keys")
+	}
+
+	pk := rtu.getStringFromAttribute(pkAttr)
+	sk := rtu.getStringFromAttribute(skAttr)
+
+	return pk, sk, nil
+}
+
+// getStringFromAttribute extracts string value from DynamoDB attribute
+func (rtu *ReportTrustUpdater) getStringFromAttribute(attr events.DynamoDBAttributeValue) string {
+	if attr.DataType() == events.DataTypeString {
+		return attr.String()
+	}
+	return ""
+}
+
+// getNumberFromAttribute extracts number value from DynamoDB attribute
+func (rtu *ReportTrustUpdater) getNumberFromAttribute(attr events.DynamoDBAttributeValue) float64 {
+	if attr.DataType() == events.DataTypeNumber {
+		val, _ := strconv.ParseFloat(attr.Number(), 64)
+		return val
+	}
+	return 0
+}
+
+// isModerationDecision checks if the record is a moderation decision
+func (rtu *ReportTrustUpdater) isModerationDecision(pk, sk string) bool {
+	return strings.HasPrefix(pk, "MODERATION#") && sk == "DECISION"
+}
+
+// extractModerationDecision extracts decision data from the record
+func (rtu *ReportTrustUpdater) extractModerationDecision(record events.DynamoDBEventRecord) moderation.ModerationDecision {
+	var decision moderation.ModerationDecision
+
+	// Extract decision fields
+	if idAttr, ok := record.Change.NewImage["ID"]; ok {
+		decision.ID = rtu.getStringFromAttribute(idAttr)
+	}
+	if eventIDAttr, ok := record.Change.NewImage["EventID"]; ok {
+		decision.EventID = rtu.getStringFromAttribute(eventIDAttr)
+	}
+	if objectIDAttr, ok := record.Change.NewImage["ObjectID"]; ok {
+		decision.ObjectID = rtu.getStringFromAttribute(objectIDAttr)
+	}
+	if actionAttr, ok := record.Change.NewImage["Action"]; ok {
+		decision.Action = moderation.ActionType(rtu.getStringFromAttribute(actionAttr))
+	}
+	if consensusAttr, ok := record.Change.NewImage["ConsensusScore"]; ok {
+		decision.ConsensusScore = rtu.getNumberFromAttribute(consensusAttr)
+	}
+	if countAttr, ok := record.Change.NewImage["ReviewerCount"]; ok {
+		decision.ReviewerCount = int(rtu.getNumberFromAttribute(countAttr))
+	}
+
+	return decision
+}
+
+// processModerationEvent processes the moderation event and updates trust
+func (rtu *ReportTrustUpdater) processModerationEvent(ctx context.Context, decision moderation.ModerationDecision) error {
 	// Get the moderation event to check if it originated from a report
 	event, err := rtu.trustService.GetModerationEvent(ctx, decision.EventID)
 	if err != nil {
@@ -276,49 +300,88 @@ func (rtu *ReportTrustUpdater) processRecord(ctx context.Context, record events.
 		return nil
 	}
 
-	// Check if this event has report metadata
-	var reportID string
-	for _, evidence := range event.Evidence {
-		// Type assert evidence to map
-		if evidenceMap, ok := evidence.(map[string]interface{}); ok {
-			if evidenceType, ok := evidenceMap["type"].(string); ok && evidenceType == "user_report" {
-				if metadata, ok := evidenceMap["metadata"].(map[string]interface{}); ok {
-					if rid, ok := metadata["report_id"].(string); ok {
-						reportID = rid
-						break
-					}
-				}
-			}
-		}
-	}
-
+	// Extract report ID from event evidence
+	reportID := rtu.extractReportIDFromEvent(event)
 	if reportID == "" {
 		// Not a report-based moderation event
 		return nil
 	}
 
+	// Log processing
+	rtu.logModerationProcessing(reportID, decision)
+
+	// Update reporter trust
+	if err := rtu.updateReporterTrust(ctx, reportID, decision, event.ActorID); err != nil {
+		return err
+	}
+
+	// Log success
+	rtu.logTrustUpdateSuccess(reportID, event.ActorID, decision)
+
+	return nil
+}
+
+// extractReportIDFromEvent extracts report ID from moderation event evidence
+func (rtu *ReportTrustUpdater) extractReportIDFromEvent(event *storage.ModerationEvent) string {
+	for _, evidence := range event.Evidence {
+		reportID := rtu.extractReportIDFromEvidence(evidence)
+		if reportID != "" {
+			return reportID
+		}
+	}
+	return ""
+}
+
+// extractReportIDFromEvidence extracts report ID from a single evidence item
+func (rtu *ReportTrustUpdater) extractReportIDFromEvidence(evidence interface{}) string {
+	evidenceMap, ok := evidence.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	evidenceType, ok := evidenceMap["type"].(string)
+	if !ok || evidenceType != "user_report" {
+		return ""
+	}
+
+	metadata, ok := evidenceMap["metadata"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	reportID, ok := metadata["report_id"].(string)
+	if !ok {
+		return ""
+	}
+
+	return reportID
+}
+
+// logModerationProcessing logs the start of moderation processing
+func (rtu *ReportTrustUpdater) logModerationProcessing(reportID string, decision moderation.ModerationDecision) {
 	rtu.logger.Info("processing moderation decision for report",
 		zap.String("reportID", reportID),
 		zap.String("decision", string(decision.Action)),
 		zap.Float64("consensus", decision.ConsensusScore))
+}
 
-	// Update reporter trust based on the decision
-	if err := rtu.trustService.UpdateReporterTrustOnDecision(ctx, reportID, &decision, event.ActorID); err != nil {
+// updateReporterTrust updates the reporter's trust score
+func (rtu *ReportTrustUpdater) updateReporterTrust(ctx context.Context, reportID string, decision moderation.ModerationDecision, actorID string) error {
+	if err := rtu.trustService.UpdateReporterTrustOnDecision(ctx, reportID, &decision, actorID); err != nil {
 		rtu.logger.Error("failed to update reporter trust",
 			zap.String("reportID", reportID),
 			zap.Error(err))
 		return err
 	}
+	return nil
+}
 
-	// Check if we need to send notifications about trust changes
-	// This could trigger notifications to the reporter about their trust score changes
-	// For now, we'll just log it
+// logTrustUpdateSuccess logs successful trust update
+func (rtu *ReportTrustUpdater) logTrustUpdateSuccess(reportID, actorID string, decision moderation.ModerationDecision) {
 	rtu.logger.Info("successfully updated reporter trust",
 		zap.String("reportID", reportID),
-		zap.String("reporterActorID", event.ActorID),
+		zap.String("reporterActorID", actorID),
 		zap.String("decision", string(decision.Action)))
-
-	return nil
 }
 
 func main() {

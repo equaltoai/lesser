@@ -27,7 +27,7 @@ func NewFederationActivityRepository(db core.DB, tableName string, logger *zap.L
 }
 
 // Create creates a new federation activity record
-func (r *FederationActivityRepository) Create(ctx context.Context, activity *models.FederationActivity) error {
+func (r *FederationActivityRepository) Create(_ context.Context, activity *models.FederationActivity) error {
 	// Call BeforeCreate to set up the model
 	if err := activity.BeforeCreate(); err != nil {
 		return fmt.Errorf("before create validation failed: %w", err)
@@ -48,7 +48,7 @@ func (r *FederationActivityRepository) Create(ctx context.Context, activity *mod
 }
 
 // Get retrieves a federation activity by ID and domain
-func (r *FederationActivityRepository) Get(ctx context.Context, domain, id string) (*models.FederationActivity, error) {
+func (r *FederationActivityRepository) Get(_ context.Context, domain, id string) (*models.FederationActivity, error) {
 	activity := &models.FederationActivity{}
 
 	// We need to know the timestamp to construct the SK, so we'll query by GSI
@@ -66,7 +66,7 @@ func (r *FederationActivityRepository) Get(ctx context.Context, domain, id strin
 }
 
 // ListByDomain lists federation activities for a specific domain
-func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
+func (r *FederationActivityRepository) ListByDomain(_ context.Context, domain string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
 	// Construct SK range for time-based query
@@ -79,7 +79,7 @@ func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain 
 		Where("SK", "<=", endSK).
 		OrderBy("SK", "DESC").
 		Limit(limit)
-	
+
 	err := query.All(&activities)
 
 	if err != nil {
@@ -90,12 +90,12 @@ func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain 
 }
 
 // ListByType lists federation activities by type
-func (r *FederationActivityRepository) ListByType(ctx context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
+func (r *FederationActivityRepository) ListByType(_ context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
 	// Use GSI1 for type-based queries
-	startSK := fmt.Sprintf("%s", startTime.Format(time.RFC3339))
-	endSK := fmt.Sprintf("%s", endTime.Format(time.RFC3339))
+	startSK := startTime.Format(time.RFC3339)
+	endSK := endTime.Format(time.RFC3339)
 
 	query := r.db.Model(&models.FederationActivity{}).
 		Index("type-index").
@@ -104,7 +104,7 @@ func (r *FederationActivityRepository) ListByType(ctx context.Context, activityT
 		Where("GSI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
 		Limit(limit)
-	
+
 	err := query.All(&activities)
 
 	if err != nil {
@@ -115,12 +115,12 @@ func (r *FederationActivityRepository) ListByType(ctx context.Context, activityT
 }
 
 // ListByActor lists federation activities by actor
-func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
+func (r *FederationActivityRepository) ListByActor(_ context.Context, actorID string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
 	// Use GSI2 for actor-based queries
-	startSK := fmt.Sprintf("%s", startTime.Format(time.RFC3339))
-	endSK := fmt.Sprintf("%s", endTime.Format(time.RFC3339))
+	startSK := startTime.Format(time.RFC3339)
+	endSK := endTime.Format(time.RFC3339)
 
 	query := r.db.Model(&models.FederationActivity{}).
 		Index("actor-index").
@@ -129,7 +129,7 @@ func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID 
 		Where("GSI2SK", "<=", endSK).
 		OrderBy("GSI2SK", "DESC").
 		Limit(limit)
-	
+
 	err := query.All(&activities)
 
 	if err != nil {
@@ -140,7 +140,7 @@ func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID 
 }
 
 // GetRecentActivities gets recent activities across all domains
-func (r *FederationActivityRepository) GetRecentActivities(ctx context.Context, since time.Time, limit int) ([]*models.FederationActivity, error) {
+func (r *FederationActivityRepository) GetRecentActivities(_ context.Context, since time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
 	// Use type index to get recent activities
@@ -185,7 +185,7 @@ func (r *FederationActivityRepository) GetDomainStats(ctx context.Context, domai
 	for _, activity := range activities {
 		stats.InboundVolume += activity.InboundSize
 		stats.OutboundVolume += activity.OutboundSize
-		
+
 		if activity.Success {
 			stats.SuccessCount++
 			totalResponseTime += activity.ResponseTime
@@ -207,7 +207,7 @@ func (r *FederationActivityRepository) GetDomainStats(ctx context.Context, domai
 }
 
 // UpdateInstanceInfo updates or creates instance information
-func (r *FederationActivityRepository) UpdateInstanceInfo(ctx context.Context, info *models.InstanceInfo) error {
+func (r *FederationActivityRepository) UpdateInstanceInfo(_ context.Context, info *models.InstanceInfo) error {
 	// Store as a separate item with instance information
 	item := &InstanceInfoItem{
 		PK:          fmt.Sprintf("instance#%s", info.Domain),
@@ -239,7 +239,7 @@ func (r *FederationActivityRepository) UpdateInstanceInfo(ctx context.Context, i
 }
 
 // GetInstanceInfo retrieves instance information
-func (r *FederationActivityRepository) GetInstanceInfo(ctx context.Context, domain string) (*models.InstanceInfo, error) {
+func (r *FederationActivityRepository) GetInstanceInfo(_ context.Context, domain string) (*models.InstanceInfo, error) {
 	item := &InstanceInfoItem{}
 
 	err := r.db.Model(item).

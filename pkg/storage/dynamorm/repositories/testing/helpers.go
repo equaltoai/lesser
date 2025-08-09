@@ -1,3 +1,4 @@
+// Package testing provides test utilities and helpers for DynamORM repository testing with mock support.
 package testing
 
 import (
@@ -548,7 +549,7 @@ func RunBenchmark(b *testing.B, config BenchmarkConfig) {
 			i := 0
 			for pb.Next() {
 				item := items[i%len(items)]
-				config.BenchmarkFunc(item)
+				_ = config.BenchmarkFunc(item)
 				i++
 			}
 		})
@@ -556,7 +557,7 @@ func RunBenchmark(b *testing.B, config BenchmarkConfig) {
 		// Sequential benchmark
 		for i := 0; i < b.N; i++ {
 			item := items[i%len(items)]
-			config.BenchmarkFunc(item)
+			_ = config.BenchmarkFunc(item)
 		}
 	}
 }
@@ -603,7 +604,7 @@ func (itc *IntegrationTestContext) Cleanup(t *testing.T) {
 // Utility functions
 
 // createMockDB creates a mock database for testing
-func newMockDB(t *testing.T) core.DB {
+func newMockDB(_ *testing.T) core.DB {
 	mockDB := &MockDB{}
 
 	// Set up default mock behaviors
@@ -644,31 +645,37 @@ type MockDB struct {
 	mock.Mock
 }
 
+// Model mocks the Model method of the core.DB interface
 func (m *MockDB) Model(model any) core.Query {
 	args := m.Called(model)
 	return args.Get(0).(core.Query)
 }
 
+// Transaction mocks the Transaction method of the core.DB interface
 func (m *MockDB) Transaction(fn func(*core.Tx) error) error {
 	args := m.Called(fn)
 	return args.Error(0)
 }
 
+// WithContext mocks the WithContext method of the core.DB interface
 func (m *MockDB) WithContext(ctx context.Context) core.DB {
 	args := m.Called(ctx)
 	return args.Get(0).(core.DB)
 }
 
+// AutoMigrate mocks the AutoMigrate method of the core.DB interface
 func (m *MockDB) AutoMigrate(models ...any) error {
 	args := m.Called(models)
 	return args.Error(0)
 }
 
+// Close mocks the Close method of the core.DB interface
 func (m *MockDB) Close() error {
 	args := m.Called()
 	return args.Error(0)
 }
 
+// Migrate mocks the Migrate method of the core.DB interface
 func (m *MockDB) Migrate() error {
 	args := m.Called()
 	return args.Error(0)
@@ -679,156 +686,187 @@ type MockQuery struct {
 	mock.Mock
 }
 
+// Where mocks the Where method of the core.Query interface
 func (m *MockQuery) Where(field, op string, value any) core.Query {
 	args := m.Called(field, op, value)
 	return args.Get(0).(core.Query)
 }
 
+// Index mocks the Index method of the core.Query interface
 func (m *MockQuery) Index(indexName string) core.Query {
 	args := m.Called(indexName)
 	return args.Get(0).(core.Query)
 }
 
+// Limit mocks the Limit method of the core.Query interface
 func (m *MockQuery) Limit(limit int) core.Query {
 	args := m.Called(limit)
 	return args.Get(0).(core.Query)
 }
 
+// First mocks the First method of the core.Query interface
 func (m *MockQuery) First(dest any) error {
 	args := m.Called(dest)
 	return args.Error(0)
 }
 
+// All mocks the All method of the core.Query interface
 func (m *MockQuery) All(dest any) error {
 	args := m.Called(dest)
 	return args.Error(0)
 }
 
+// Count mocks the Count method of the core.Query interface
 func (m *MockQuery) Count() (int64, error) {
 	args := m.Called()
 	return args.Get(0).(int64), args.Error(1)
 }
 
+// Create mocks the Create method of the core.Query interface
 func (m *MockQuery) Create() error {
 	args := m.Called()
 	return args.Error(0)
 }
 
+// Update mocks the Update method of the core.Query interface
 func (m *MockQuery) Update(fields ...string) error {
 	args := m.Called(fields)
 	return args.Error(0)
 }
 
+// Delete mocks the Delete method of the core.Query interface
 func (m *MockQuery) Delete() error {
 	args := m.Called()
 	return args.Error(0)
 }
 
+// BatchCreate mocks the BatchCreate method of the core.Query interface
 func (m *MockQuery) BatchCreate(items any) error {
 	args := m.Called(items)
 	return args.Error(0)
 }
 
+// AllPaginated mocks the AllPaginated method of the core.Query interface
 func (m *MockQuery) AllPaginated(dest any) (*core.PaginatedResult, error) {
 	args := m.Called(dest)
 	return args.Get(0).(*core.PaginatedResult), args.Error(1)
 }
 
+// BatchDelete mocks the BatchDelete method of the core.Query interface
 func (m *MockQuery) BatchDelete(items []any) error {
 	args := m.Called(items)
 	return args.Error(0)
 }
 
+// BatchGet mocks the BatchGet method of the core.Query interface
 func (m *MockQuery) BatchGet(keys []any, dest any) error {
 	args := m.Called(keys, dest)
 	return args.Error(0)
 }
 
+// BatchUpdateWithOptions mocks the BatchUpdateWithOptions method of the core.Query interface
 func (m *MockQuery) BatchUpdateWithOptions(items []any, fields []string, options ...any) error {
 	args := m.Called(items, fields, options)
 	return args.Error(0)
 }
 
+// BatchWrite mocks the BatchWrite method of the core.Query interface
 func (m *MockQuery) BatchWrite(putItems []any, deleteKeys []any) error {
 	args := m.Called(putItems, deleteKeys)
 	return args.Error(0)
 }
 
+// Filter mocks the Filter method of the core.Query interface
 func (m *MockQuery) Filter(field string, op string, value any) core.Query {
 	args := m.Called(field, op, value)
 	return args.Get(0).(core.Query)
 }
 
+// OrFilter mocks the OrFilter method of the core.Query interface
 func (m *MockQuery) OrFilter(field string, op string, value any) core.Query {
 	args := m.Called(field, op, value)
 	return args.Get(0).(core.Query)
 }
 
+// FilterGroup mocks the FilterGroup method of the core.Query interface
 func (m *MockQuery) FilterGroup(fn func(core.Query)) core.Query {
 	args := m.Called(fn)
 	return args.Get(0).(core.Query)
 }
 
+// OrFilterGroup mocks the OrFilterGroup method of the core.Query interface
 func (m *MockQuery) OrFilterGroup(fn func(core.Query)) core.Query {
 	args := m.Called(fn)
 	return args.Get(0).(core.Query)
 }
 
+// Offset mocks the Offset method of the core.Query interface
 func (m *MockQuery) Offset(offset int) core.Query {
 	args := m.Called(offset)
 	return args.Get(0).(core.Query)
 }
 
+// Select mocks the Select method of the core.Query interface
 func (m *MockQuery) Select(fields ...string) core.Query {
 	args := m.Called(fields)
 	return args.Get(0).(core.Query)
 }
 
+// ConsistentRead mocks the ConsistentRead method of the core.Query interface
 func (m *MockQuery) ConsistentRead() core.Query {
 	args := m.Called()
 	return args.Get(0).(core.Query)
 }
 
+// WithRetry mocks the WithRetry method of the core.Query interface
 func (m *MockQuery) WithRetry(maxRetries int, initialDelay time.Duration) core.Query {
 	args := m.Called(maxRetries, initialDelay)
 	return args.Get(0).(core.Query)
 }
 
+// CreateOrUpdate mocks the CreateOrUpdate method of the core.Query interface
 func (m *MockQuery) CreateOrUpdate() error {
 	args := m.Called()
 	return args.Error(0)
 }
 
+// Cursor mocks the Cursor method of the core.Query interface
 func (m *MockQuery) Cursor(cursor string) core.Query {
 	args := m.Called(cursor)
 	return args.Get(0).(core.Query)
 }
 
+// OrderBy mocks the OrderBy method of the core.Query interface
 func (m *MockQuery) OrderBy(field string, order string) core.Query {
 	args := m.Called(field, order)
 	return args.Get(0).(core.Query)
 }
 
+// Scan mocks the Scan method of the core.Query interface
 func (m *MockQuery) Scan(dest any) error {
 	args := m.Called(dest)
 	return args.Error(0)
 }
 
+// ParallelScan mocks the ParallelScan method of the core.Query interface
 func (m *MockQuery) ParallelScan(segment int32, totalSegments int32) core.Query {
 	args := m.Called(segment, totalSegments)
 	return args.Get(0).(core.Query)
 }
 
+// ScanAllSegments mocks the ScanAllSegments method of the core.Query interface
 func (m *MockQuery) ScanAllSegments(dest any, totalSegments int32) error {
 	args := m.Called(dest, totalSegments)
 	return args.Error(0)
 }
 
+// SetCursor mocks the SetCursor method of the core.Query interface
 func (m *MockQuery) SetCursor(cursor string) error {
 	args := m.Called(cursor)
 	return args.Error(0)
 }
 
+// UpdateBuilder mocks the UpdateBuilder method of the core.Query interface
 func (m *MockQuery) UpdateBuilder() core.UpdateBuilder {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -837,6 +875,7 @@ func (m *MockQuery) UpdateBuilder() core.UpdateBuilder {
 	return args.Get(0).(core.UpdateBuilder)
 }
 
+// WithContext mocks the WithContext method of the core.Query interface
 func (m *MockQuery) WithContext(ctx context.Context) core.Query {
 	args := m.Called(ctx)
 	return args.Get(0).(core.Query)
@@ -847,6 +886,7 @@ type MockUpdateBuilder struct {
 	mock.Mock
 }
 
+// Set mocks the Set method of the core.UpdateBuilder interface
 func (m *MockUpdateBuilder) Set(field string, value any) core.UpdateBuilder {
 	args := m.Called(field, value)
 	if args.Get(0) == nil {
@@ -855,6 +895,7 @@ func (m *MockUpdateBuilder) Set(field string, value any) core.UpdateBuilder {
 	return args.Get(0).(core.UpdateBuilder)
 }
 
+// Execute mocks the Execute method of the core.UpdateBuilder interface
 func (m *MockUpdateBuilder) Execute() error {
 	args := m.Called()
 	return args.Error(0)

@@ -39,7 +39,7 @@ type RouteMetricsWindow struct {
 func (r *RouteMetricsWindow) UpdateKeys() {
 	r.PK = fmt.Sprintf("METRICS#ROUTE#%s", r.RouteID)
 	r.SK = fmt.Sprintf("WINDOW#%d", r.WindowStart.Unix())
-	
+
 	// Set TTL for 30 days from now
 	r.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 }
@@ -83,7 +83,7 @@ func (g *GlobalMetricsWindow) UpdateKeys() {
 	g.SK = fmt.Sprintf("WINDOW#%d", windowUnix)
 	g.GSI1PK = "METRICS#GLOBAL"
 	g.GSI1SK = fmt.Sprintf("%d", windowUnix)
-	
+
 	// Set TTL for 30 days from now
 	g.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 }
@@ -117,7 +117,7 @@ type InstanceMetricsWindow struct {
 func (i *InstanceMetricsWindow) UpdateKeys() {
 	i.PK = fmt.Sprintf("METRICS#INSTANCE#%s", i.InstanceID)
 	i.SK = fmt.Sprintf("WINDOW#%d", i.WindowStart.Unix())
-	
+
 	// Set TTL for 30 days from now
 	i.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 }

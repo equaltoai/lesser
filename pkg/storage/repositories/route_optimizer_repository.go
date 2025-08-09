@@ -32,7 +32,7 @@ func NewRouteOptimizerRepository(db core.DB, tableName string, logger *zap.Logge
 // recordDeliveryResultInternal stores a delivery result for route learning
 func (r *RouteOptimizerRepository) recordDeliveryResultInternal(ctx context.Context, result *models.RouteDeliveryResult) error {
 	result.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(result).Create()
 	if err != nil {
 		r.logger.Error("Failed to record delivery result",
@@ -53,15 +53,15 @@ func (r *RouteOptimizerRepository) recordDeliveryResultInternal(ctx context.Cont
 // GetRouteResults retrieves recent delivery results for a route
 func (r *RouteOptimizerRepository) GetRouteResults(ctx context.Context, routeID string, limit int) ([]*models.RouteDeliveryResult, error) {
 	var results []*models.RouteDeliveryResult
-	
+
 	pk := fmt.Sprintf("ROUTE#%s", routeID)
-	
+
 	query := r.db.WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 		Where("PK", "=", pk).
 		Where("SK", "begins_with", "RESULT#").
 		OrderBy("SK", "DESC"). // Most recent first
 		Limit(limit)
-	
+
 	err := query.All(&results)
 
 	if err != nil {
@@ -81,16 +81,16 @@ func (r *RouteOptimizerRepository) GetRouteResults(ctx context.Context, routeID 
 // GetRecentResults retrieves recent delivery results across all routes
 func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since time.Time, limit int) ([]*models.RouteDeliveryResult, error) {
 	var results []*models.RouteDeliveryResult
-	
+
 	sinceKey := fmt.Sprintf("%d", since.Unix())
-	
+
 	query := r.db.WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "RESULTS").
 		Where("GSI1SK", ">", sinceKey).
 		OrderBy("GSI1SK", "DESC"). // Most recent first
 		Limit(limit)
-	
+
 	err := query.All(&results)
 
 	if err != nil {
@@ -110,7 +110,7 @@ func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since t
 // storeOptimizationDecisionInternal records an optimization decision for analysis
 func (r *RouteOptimizerRepository) storeOptimizationDecisionInternal(ctx context.Context, decision *models.OptimizationDecision) error {
 	decision.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(decision).Create()
 	if err != nil {
 		r.logger.Error("Failed to store optimization decision",
@@ -130,15 +130,15 @@ func (r *RouteOptimizerRepository) storeOptimizationDecisionInternal(ctx context
 // GetOptimizationDecisions retrieves recent optimization decisions
 func (r *RouteOptimizerRepository) GetOptimizationDecisions(ctx context.Context, since time.Time, limit int) ([]*models.OptimizationDecision, error) {
 	var decisions []*models.OptimizationDecision
-	
+
 	sinceKey := fmt.Sprintf("DECISION#%d", since.UnixNano())
-	
+
 	query := r.db.WithContext(ctx).Model(&models.OptimizationDecision{}).
 		Where("PK", "=", "OPTIMIZATION").
 		Where("SK", ">", sinceKey).
 		OrderBy("SK", "DESC"). // Most recent first
 		Limit(limit)
-	
+
 	err := query.All(&decisions)
 
 	if err != nil {
@@ -286,12 +286,12 @@ func (r *RouteOptimizerRepository) GetRoutePerformance(ctx context.Context, rout
 }
 
 // CleanupExpiredResults removes old delivery results (handled by TTL, but can be called manually)
-func (r *RouteOptimizerRepository) CleanupExpiredResults(ctx context.Context, before time.Time) error {
+func (r *RouteOptimizerRepository) CleanupExpiredResults(_ context.Context, before time.Time) error {
 	// Since we use TTL, this is mainly for manual cleanup if needed
 	// In practice, DynamoDB will automatically remove expired items
-	
+
 	r.logger.Info("Cleanup requested - using TTL for automatic cleanup",
 		zap.Time("before", before))
-	
+
 	return nil
 }

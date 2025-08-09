@@ -1,3 +1,4 @@
+// Package marshalers provides custom DynamoDB marshaling utilities with encryption support for sensitive data.
 package marshalers
 
 import (
@@ -22,7 +23,7 @@ type Marshaler interface {
 	MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error)
 }
 
-// Unmarshaler interface for custom DynamoDB unmarshaling  
+// Unmarshaler interface for custom DynamoDB unmarshaling
 type Unmarshaler interface {
 	UnmarshalDynamoDB(map[string]*dynamodb.AttributeValue) error
 }
@@ -54,8 +55,8 @@ func NewPreciseTimeNow(precision time.Duration) PreciseTime {
 
 // MarshalDynamoDB implements the Marshaler interface for PreciseTime
 func (pt PreciseTime) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error) {
-	truncated := pt.Time.Truncate(pt.Precision)
-	
+	truncated := pt.Truncate(pt.Precision)
+
 	// Store as a map with timestamp and precision
 	return map[string]*dynamodb.AttributeValue{
 		"M": {
@@ -103,7 +104,7 @@ func (pt *PreciseTime) UnmarshalDynamoDB(av map[string]*dynamodb.AttributeValue)
 
 // String returns a string representation of PreciseTime
 func (pt PreciseTime) String() string {
-	return fmt.Sprintf("%s (precision: %s)", pt.Time.Format(time.RFC3339Nano), pt.Precision)
+	return fmt.Sprintf("%s (precision: %s)", pt.Format(time.RFC3339Nano), pt.Precision)
 }
 
 // Money represents monetary values with currency information
@@ -463,7 +464,7 @@ func NewStringSet(values ...string) StringSet {
 	// Remove duplicates and sort
 	unique := make(map[string]bool)
 	var result []string
-	
+
 	for _, v := range values {
 		if v != "" && !unique[v] {
 			unique[v] = true
@@ -578,12 +579,12 @@ func (ss StringSet) String() string {
 	if len(ss.Values) == 0 {
 		return "[]"
 	}
-	
+
 	jsonBytes, _ := json.Marshal(ss.Values)
 	return string(jsonBytes)
 }
 
-// Helper function to create encryption key for testing
+// GenerateEncryptionKey creates an encryption key for testing
 func GenerateEncryptionKey() ([]byte, error) {
 	key := make([]byte, 32) // AES-256
 	if _, err := rand.Read(key); err != nil {
@@ -592,7 +593,7 @@ func GenerateEncryptionKey() ([]byte, error) {
 	return key, nil
 }
 
-// Helper function to encode encryption key as base64
+// EncodeEncryptionKey encodes an encryption key as base64
 func EncodeEncryptionKey(key []byte) string {
 	return base64.StdEncoding.EncodeToString(key)
 }

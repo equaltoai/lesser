@@ -96,7 +96,7 @@ func (r *BaseRepository[T]) Update(ctx context.Context, item T) error {
 func (r *BaseRepository[T]) Delete(ctx context.Context, pk, sk string) error {
 	// Create a zero value of T to get the model type
 	var model T
-	
+
 	// Delete the item
 	err := r.db.WithContext(ctx).Model(model).
 		Where("PK", "=", pk).
@@ -117,11 +117,11 @@ func (r *BaseRepository[T]) Delete(ctx context.Context, pk, sk string) error {
 // Query performs a query operation on a partition key
 func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]T, error) {
 	var results []T
-	
+
 	// Create query
 	query := r.db.WithContext(ctx).Model(new(T)).
 		Where("PK", "=", pk)
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -142,12 +142,12 @@ func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]
 // QueryWithSKPrefix performs a query with a sort key prefix
 func (r *BaseRepository[T]) QueryWithSKPrefix(ctx context.Context, pk, skPrefix string, limit int) ([]T, error) {
 	var results []T
-	
+
 	// Create query
 	query := r.db.WithContext(ctx).Model(new(T)).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix)
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -169,12 +169,12 @@ func (r *BaseRepository[T]) QueryWithSKPrefix(ctx context.Context, pk, skPrefix 
 // QueryGSI performs a query on a Global Secondary Index
 func (r *BaseRepository[T]) QueryGSI(ctx context.Context, indexName, pk string, limit int) ([]T, error) {
 	var results []T
-	
+
 	// Create query
 	query := r.db.WithContext(ctx).Model(new(T)).
 		Index(indexName).
 		Where(fmt.Sprintf("%sPK", indexName), "=", pk)
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -200,7 +200,7 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 	}
 
 	var results []T
-	
+
 	// DynamoDB batch get has a limit of 100 items
 	batchSize := 100
 	for i := 0; i < len(keys); i += batchSize {
@@ -208,16 +208,16 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 		if end > len(keys) {
 			end = len(keys)
 		}
-		
+
 		batch := keys[i:end]
 		var batchResults []T
-		
+
 		// Create batch get request
 		batchGet := r.db.WithContext(ctx).Model(new(T))
 		for _, key := range batch {
 			batchGet = batchGet.Where("PK", "=", key.PK).Where("SK", "=", key.SK)
 		}
-		
+
 		// Execute batch get
 		err := batchGet.All(&batchResults)
 		if err != nil {
@@ -226,7 +226,7 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 				zap.Int("batchSize", len(batch)))
 			return nil, fmt.Errorf("failed to batch get items: %w", err)
 		}
-		
+
 		results = append(results, batchResults...)
 	}
 

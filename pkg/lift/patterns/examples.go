@@ -6,12 +6,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// Example: DynamoDB Stream Handler
+// ExampleStreamHandler demonstrates DynamoDB Stream handler pattern
 type ExampleStreamHandler struct {
 	logger *zap.Logger
 }
 
-func (h *ExampleStreamHandler) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
+// HandleStream processes DynamoDB stream events
+func (h *ExampleStreamHandler) HandleStream(_ *lift.Context, event events.DynamoDBEvent) error {
 	for _, record := range event.Records {
 		h.logger.Info("processing record",
 			zap.String("event_name", record.EventName),
@@ -29,14 +30,15 @@ func (h *ExampleStreamHandler) HandleStream(ctx *lift.Context, event events.Dyna
 //     StartDynamoDBStreamLambda("my-processor", handler, logger)
 // }
 
-// Example: SQS Handler
+// ExampleSQSHandler demonstrates SQS handler pattern
 type ExampleSQSHandler struct {
 	logger *zap.Logger
 }
 
+// HandleSQS processes SQS events with partial batch failure support
 func (h *ExampleSQSHandler) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
 	// Process messages with partial batch failure support
-	return ProcessSQSBatch(ctx, event, func(ctx *lift.Context, msg events.SQSMessage) error {
+	return ProcessSQSBatch(ctx, event, func(_ *lift.Context, msg events.SQSMessage) error {
 		h.logger.Info("processing message",
 			zap.String("message_id", msg.MessageId),
 			zap.String("body", msg.Body),
@@ -53,12 +55,13 @@ func (h *ExampleSQSHandler) HandleSQS(ctx *lift.Context, event events.SQSEvent) 
 //     StartSQSLambda("my-queue", handler, logger)
 // }
 
-// Example: Scheduled Task Handler
+// ExampleScheduledHandler demonstrates scheduled task handler pattern
 type ExampleScheduledHandler struct {
 	logger *zap.Logger
 }
 
-func (h *ExampleScheduledHandler) HandleScheduledEvent(ctx *lift.Context) error {
+// HandleScheduledEvent processes scheduled events from CloudWatch Events
+func (h *ExampleScheduledHandler) HandleScheduledEvent(_ *lift.Context) error {
 	h.logger.Info("running scheduled task")
 	// Perform scheduled work...
 	return nil

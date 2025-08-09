@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
@@ -380,33 +379,4 @@ func TestErrorHandling(t *testing.T) {
 	})
 }
 
-// Mock helpers for isolated testing
-type mockDB struct {
-	core.DB
-	preRegisterCalls int
-	mu               sync.Mutex
-}
-
-func (m *mockDB) PreRegisterModels(models ...interface{}) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.preRegisterCalls++
-	return nil
-}
-
-func (m *mockDB) Model(model interface{}) core.Query {
-	return &mockQuery{}
-}
-
-type mockQuery struct {
-	core.Query
-}
-
-func (m *mockQuery) Where(field string, op string, value interface{}) core.Query {
-	return m
-}
-
-func (m *mockQuery) First(dest interface{}) error {
-	// Return a generic not found error
-	return nil
-}
+// Mock helpers removed - not currently used in tests

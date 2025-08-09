@@ -7,7 +7,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 )
 
-// Example migration demonstrating how to create custom migrations
+// ExampleAddUserEmailIndex demonstrates how to create custom migrations
 type ExampleAddUserEmailIndex struct {
 	BaseMigration
 }
@@ -24,41 +24,41 @@ func NewExampleAddUserEmailIndex() *ExampleAddUserEmailIndex {
 }
 
 // Up applies the migration
-func (m *ExampleAddUserEmailIndex) Up(ctx context.Context, db core.DB) error {
+func (m *ExampleAddUserEmailIndex) Up(_ context.Context, _ core.DB) error {
 	// Example: Add a new GSI for email lookups
 	// In a real migration, you would use the GSIHelper
-	
+
 	fmt.Println("Adding user email index...")
-	
+
 	// Example of data migration
 	// results, err := db.Query(ctx).
 	//     PK("USER#").
 	//     BeginsWith("USER#").
 	//     Execute()
-	// 
+	//
 	// if err != nil {
 	//     return fmt.Errorf("failed to query users: %w", err)
 	// }
-	// 
+	//
 	// for _, item := range results {
 	//     // Update items as needed
 	// }
-	
+
 	return nil
 }
 
 // Down reverses the migration
-func (m *ExampleAddUserEmailIndex) Down(ctx context.Context, db core.DB) error {
+func (m *ExampleAddUserEmailIndex) Down(_ context.Context, _ core.DB) error {
 	// Example: Remove the GSI
-	
+
 	fmt.Println("Removing user email index...")
-	
+
 	// Reverse any data changes made in Up
-	
+
 	return nil
 }
 
-// Example of using GSIMigration helper
+// NewExampleGSIMigration creates an example GSI migration
 func NewExampleGSIMigration() Migration {
 	return NewGSIMigration(
 		"20240116_add_activity_timestamp_index",
@@ -76,11 +76,12 @@ func NewExampleGSIMigration() Migration {
 	)
 }
 
-// Example migration with dependencies
+// ExampleDependentMigration demonstrates a migration with dependencies
 type ExampleDependentMigration struct {
 	BaseMigration
 }
 
+// NewExampleDependentMigration creates a new example dependent migration
 func NewExampleDependentMigration() *ExampleDependentMigration {
 	return &ExampleDependentMigration{
 		BaseMigration: NewBaseMigration(
@@ -92,13 +93,15 @@ func NewExampleDependentMigration() *ExampleDependentMigration {
 	}
 }
 
-func (m *ExampleDependentMigration) Up(ctx context.Context, db core.DB) error {
+// Up applies the migration
+func (m *ExampleDependentMigration) Up(_ context.Context, _ core.DB) error {
 	// This migration depends on the email index being present
 	fmt.Println("Adding user preferences...")
 	return nil
 }
 
-func (m *ExampleDependentMigration) Down(ctx context.Context, db core.DB) error {
+// Down reverses the migration
+func (m *ExampleDependentMigration) Down(_ context.Context, _ core.DB) error {
 	fmt.Println("Removing user preferences...")
 	return nil
 }

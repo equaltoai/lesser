@@ -22,8 +22,8 @@ type ProviderAccount struct {
 
 	// Core provider data
 	UserID       string `json:"user_id"`
-	Provider     string `json:"provider"`     // "google", "github", "twitter", etc.
-	ProviderID   string `json:"provider_id"` // Provider's unique ID for the user
+	Provider     string `json:"provider"`                // "google", "github", "twitter", etc.
+	ProviderID   string `json:"provider_id"`             // Provider's unique ID for the user
 	ProviderName string `json:"provider_name,omitempty"` // Display name from provider
 
 	// OAuth tokens (stored encrypted)
@@ -52,7 +52,7 @@ type ProviderAccount struct {
 
 // TableName returns the DynamoDB table name for the ProviderAccount model
 func (ProviderAccount) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -66,14 +66,14 @@ func (pa *ProviderAccount) BeforeCreate() error {
 		return fmt.Errorf("UserID is required")
 	}
 	if pa.Provider == "" {
-		return fmt.Errorf("Provider is required")
+		return fmt.Errorf("provider is required")
 	}
 	if pa.ProviderID == "" {
 		return fmt.Errorf("ProviderID is required")
 	}
 
 	// Set defaults
-	if pa.IsActive == false && pa.IsPrimary == false {
+	if !pa.IsActive && !pa.IsPrimary {
 		pa.IsActive = true // Default to active
 	}
 
@@ -115,7 +115,7 @@ func (pa *ProviderAccount) Validate() error {
 		return fmt.Errorf("UserID cannot be empty")
 	}
 	if strings.TrimSpace(pa.Provider) == "" {
-		return fmt.Errorf("Provider cannot be empty")
+		return fmt.Errorf("provider cannot be empty")
 	}
 	if strings.TrimSpace(pa.ProviderID) == "" {
 		return fmt.Errorf("ProviderID cannot be empty")

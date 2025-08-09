@@ -229,7 +229,6 @@ func (r *AccountRepository) DeleteAuthorizationCode(ctx context.Context, code st
 	return nil
 }
 
-
 // CreateRefreshToken creates a new OAuth refresh token
 func (r *AccountRepository) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
 	// Create DynamORM model
@@ -330,11 +329,10 @@ func (r *AccountRepository) DeleteRefreshToken(ctx context.Context, token string
 	return nil
 }
 
-
-
 // ===== OAuth Client Operations =====
 
 // CreateOAuthClient creates a new OAuth client
+//nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
 	// Validate required fields
 	if client.Name == "" || len(client.RedirectURIs) == 0 {
@@ -402,7 +400,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
 	// Construct the key using the correct pattern from existing OAuth repository
 	pk := "CLIENT#" + clientID
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	// Query for the item
 	var model models.OAuthClient
@@ -439,6 +437,7 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 }
 
 // UpdateOAuthClient updates an existing OAuth client
+//nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
 	if len(updates) == 0 {
 		return fmt.Errorf("no updates provided")
@@ -446,7 +445,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 
 	// Construct the key
 	pk := "CLIENT#" + clientID
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	// First, get the existing client
 	var existingClient models.OAuthClient
@@ -454,7 +453,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&existingClient)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("OAuth client not found: %s", clientID)
@@ -493,7 +492,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 			}
 		}
 	}
-	
+
 	// Update timestamp
 	existingClient.UpdatedAt = time.Now()
 
@@ -521,7 +520,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 func (r *AccountRepository) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	// Construct the key
 	pk := "CLIENT#" + clientID
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	// Delete the item
 	err := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
@@ -539,19 +538,20 @@ func (r *AccountRepository) DeleteOAuthClient(ctx context.Context, clientID stri
 }
 
 // ListOAuthClients lists OAuth clients with pagination
-func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, cursor string) ([]*storage.OAuthClient, string, error) {
+//nolint:dupl // OAuth client operations are shared between account and oauth repositories
+func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, _ string) ([]*storage.OAuthClient, string, error) {
 	// For now, implement a simple scan since DynamORM doesn't have great pagination support
 	// In production, you might want to add a GSI for listing clients
 	var clientModels []*models.OAuthClient
-	
+
 	query := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
 		Where("PK", "begins_with", "CLIENT#").
-		Where("SK", "=", "METADATA")
-	
+		Where("SK", "=", models.SKMetadata)
+
 	if limit > 0 {
-		query = query.Limit(int(limit))
+		query = query.Limit(limit)
 	}
-	
+
 	// For cursor-based pagination, you would need additional GSI setup
 	// This is a simplified implementation
 	err := query.Scan(&clientModels)
@@ -559,7 +559,7 @@ func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, cur
 		r.logger.Error("failed to list OAuth clients", zap.Error(err))
 		return nil, "", fmt.Errorf("failed to list OAuth clients: %w", err)
 	}
-	
+
 	// Convert to storage models
 	clients := make([]*storage.OAuthClient, len(clientModels))
 	for i, model := range clientModels {
@@ -574,13 +574,13 @@ func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, cur
 			UpdatedAt:    model.UpdatedAt,
 		}
 	}
-	
+
 	// Simple pagination - in production you'd want proper cursor implementation
 	nextCursor := ""
-	if len(clientModels) == int(limit) {
+	if len(clientModels) == limit {
 		nextCursor = "has_more" // Simplified cursor
 	}
-	
+
 	r.logger.Debug("listed OAuth clients", zap.Int("count", len(clients)))
 	return clients, nextCursor, nil
 }
@@ -603,6 +603,7 @@ func (r *AccountRepository) GetOAuthApp(ctx context.Context, clientID string) (*
 }
 
 // SaveUserAppConsent saves user consent for an OAuth app
+//nolint:dupl // OAuth operations are shared between account and oauth repositories
 func (r *AccountRepository) SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error {
 	// Create DynamORM model
 	model := &models.UserAppConsent{
@@ -613,21 +614,21 @@ func (r *AccountRepository) SaveUserAppConsent(ctx context.Context, consent *sto
 		UpdatedAt: time.Now(),
 		Active:    true, // Default to active
 	}
-	
+
 	// Set default timestamps if not provided
 	if model.CreatedAt.IsZero() {
 		model.CreatedAt = time.Now()
 	}
-	
+
 	// Update keys
 	model.UpdateKeys()
-	
+
 	// Use upsert logic - try to update first, then create if not exists
 	err := r.db.WithContext(ctx).Model(model).
 		Where("PK", "=", model.PK).
 		Where("SK", "=", model.SK).
 		Update()
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Item doesn't exist, create it
@@ -641,11 +642,11 @@ func (r *AccountRepository) SaveUserAppConsent(ctx context.Context, consent *sto
 			return fmt.Errorf("failed to update user app consent: %w", err)
 		}
 	}
-	
+
 	r.logger.Debug("saved user app consent",
 		zap.String("user_id", consent.UserID),
 		zap.String("app_id", consent.AppID))
-	
+
 	return nil
 }
 
@@ -654,14 +655,14 @@ func (r *AccountRepository) GetUserAppConsent(ctx context.Context, userID, appID
 	// Construct the key using the model's pattern
 	pk := fmt.Sprintf("USER#%s", userID)
 	sk := fmt.Sprintf("CONSENT#%s", appID)
-	
+
 	// Query for the item
 	var model models.UserAppConsent
 	err := r.db.WithContext(ctx).Model(&models.UserAppConsent{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&model)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("user app consent not found: %s:%s", userID, appID)
@@ -669,7 +670,7 @@ func (r *AccountRepository) GetUserAppConsent(ctx context.Context, userID, appID
 		r.logger.Error("failed to get user app consent", zap.Error(err))
 		return nil, fmt.Errorf("failed to get user app consent: %w", err)
 	}
-	
+
 	// Convert to storage model (only fields that exist in storage interface)
 	result := &storage.UserAppConsent{
 		UserID:    model.UserID,
@@ -677,11 +678,10 @@ func (r *AccountRepository) GetUserAppConsent(ctx context.Context, userID, appID
 		Scopes:    model.Scopes,
 		CreatedAt: model.CreatedAt,
 	}
-	
+
 	r.logger.Debug("retrieved user app consent",
 		zap.String("user_id", userID),
 		zap.String("app_id", appID))
-	
+
 	return result, nil
 }
-

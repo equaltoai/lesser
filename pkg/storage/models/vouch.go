@@ -20,23 +20,23 @@ type Vouch struct {
 	GSI2SK string `dynamorm:"index:gsi2-index,sk"`
 
 	// Data fields
-	VouchData string    `json:"vouch_data"`              // JSON encoded vouch
+	VouchData string    `json:"vouch_data"` // JSON encoded vouch
 	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt int64     `json:"ttl" dynamorm:"ttl"`      // Unix timestamp for TTL
+	ExpiresAt int64     `json:"ttl" dynamorm:"ttl"` // Unix timestamp for TTL
 }
 
 // UpdateKeys sets all the DynamoDB keys based on the vouch data
 func (v *Vouch) UpdateKeys(vouchID, fromActorID, toActorID string, active bool, createdAt, expiresAt time.Time) {
 	// Set primary keys
 	v.PK = fmt.Sprintf("VOUCH#%s", vouchID)
-	v.SK = "METADATA"
+	v.SK = SKMetadata
 
 	// Set GSI1 keys (vouches given by an actor)
 	v.GSI1PK = fmt.Sprintf("VOUCHER#%s", fromActorID)
 	v.GSI1SK = fmt.Sprintf("TO#%s", toActorID)
 
-	// Set GSI2 keys (vouches received by an actor) 
+	// Set GSI2 keys (vouches received by an actor)
 	v.GSI2PK = fmt.Sprintf("VOUCHEE#%s", toActorID)
 	v.GSI2SK = fmt.Sprintf("FROM#%s", fromActorID)
 

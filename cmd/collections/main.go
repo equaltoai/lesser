@@ -1,3 +1,4 @@
+// Package main implements the collections Lambda function for serving ActivityPub federation collections.
 package main
 
 import (
@@ -16,6 +17,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+)
+
+// Collection type constants
+const (
+	collectionTypeFollowers = "followers"
+	collectionTypeFollowing = "following"
+	collectionTypeLiked     = "liked"
 )
 
 // CollectionsHandler handles ActivityPub federation collections using Lift
@@ -59,9 +67,9 @@ func NewCollectionsHandler() (*CollectionsHandler, error) {
 // RegisterRoutes registers all collections routes
 func (ch *CollectionsHandler) RegisterRoutes(app *lift.App) {
 	// ActivityPub federation collection endpoints
-	app.GET("/users/:username/followers", ch.handleFollowersCollection)
-	app.GET("/users/:username/following", ch.handleFollowingCollection)
-	app.GET("/users/:username/liked", ch.handleLikedCollection)
+	_ = app.GET("/users/:username/followers", ch.handleFollowersCollection)
+	_ = app.GET("/users/:username/following", ch.handleFollowingCollection)
+	_ = app.GET("/users/:username/liked", ch.handleLikedCollection)
 }
 
 // handleFollowersCollection handles the followers collection endpoint
@@ -131,11 +139,11 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	var nextCursor string
 
 	switch collectionType {
-	case "followers":
+	case collectionTypeFollowers:
 		usernames, nextCursor, err = ch.relationshipRepo.GetFollowers(ctx.Context, username, limit, cursor)
-	case "following":
+	case collectionTypeFollowing:
 		usernames, nextCursor, err = ch.relationshipRepo.GetFollowing(ctx.Context, username, limit, cursor)
-	case "liked":
+	case collectionTypeLiked:
 		// For liked collection, we get Like objects and convert to storage.Like
 		modelLikes, likesNextCursor, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, limit, cursor)
 		if err == nil {
@@ -172,7 +180,7 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 	var itemCount int
 
 	switch collectionType {
-	case "followers":
+	case collectionTypeFollowers:
 		usernames, _, err := ch.relationshipRepo.GetFollowers(ctx.Context, actor.PreferredUsername, 1, "")
 		if err != nil {
 			ch.logger.Error("failed to get count", zap.Error(err))
@@ -180,7 +188,7 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 		}
 		hasItems = len(usernames) > 0
 		itemCount = len(usernames)
-	case "following":
+	case collectionTypeFollowing:
 		usernames, _, err := ch.relationshipRepo.GetFollowing(ctx.Context, actor.PreferredUsername, 1, "")
 		if err != nil {
 			ch.logger.Error("failed to get count", zap.Error(err))
@@ -188,7 +196,7 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 		}
 		hasItems = len(usernames) > 0
 		itemCount = len(usernames)
-	case "liked":
+	case collectionTypeLiked:
 		likes, _, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, 1, "")
 		if err != nil {
 			ch.logger.Error("failed to get count", zap.Error(err))
@@ -337,7 +345,9 @@ func main() {
 					handler.logger.Error("panic recovered in collections handler",
 						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 						zap.Any("panic", r))
-					ctx.Status(500).Text("Internal server error")
+					if err := ctx.Status(500).Text("Internal server error"); err != nil {
+						handler.logger.Error("failed to send error response", zap.Error(err))
+					}
 				}
 			}()
 
@@ -352,12 +362,12 @@ func main() {
 			ctx.Response.Headers["Access-Control-Allow-Origin"] = "*"
 			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
 			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Accept, Authorization, Content-Type, Signature, Date, Digest"
-			
+
 			// Handle preflight requests
 			if ctx.Request.Method == "OPTIONS" {
 				return ctx.Status(http.StatusNoContent).JSON(nil)
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	})

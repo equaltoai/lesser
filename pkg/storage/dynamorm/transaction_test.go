@@ -35,7 +35,7 @@ func TestTransaction_Execute(t *testing.T) {
 			mockTx := &core.Tx{}
 
 			// Execute the transaction function with the mock transaction
-			txFunc(mockTx)
+			_ = txFunc(mockTx)
 		}).
 		Return(nil)
 
@@ -70,7 +70,7 @@ func TestTransaction_ExecuteWithError(t *testing.T) {
 			mockTx := &core.Tx{}
 
 			// Execute the transaction function with the mock transaction
-			txFunc(mockTx)
+			_ = txFunc(mockTx)
 		}).
 		Return(expectedErr)
 

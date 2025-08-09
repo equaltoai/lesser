@@ -87,9 +87,9 @@ func (o *StatusSearchOptions) WithLanguage(language string) *StatusSearchOptions
 }
 
 // WithMinEngagement sets minimum engagement threshold
-func (o *StatusSearchOptions) WithMinEngagement(min int) *StatusSearchOptions {
-	if min >= 0 {
-		o.MinEngagement = min
+func (o *StatusSearchOptions) WithMinEngagement(minVal int) *StatusSearchOptions {
+	if minVal >= 0 {
+		o.MinEngagement = minVal
 	}
 	return o
 }

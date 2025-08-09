@@ -1,3 +1,4 @@
+// Package main implements the import-processor Lambda function for processing user data imports.
 package main
 
 import (
@@ -64,6 +65,14 @@ func init() {
 	logger := common.Logger()
 	cfg := config.Get()
 
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		logger.Fatal("failed to load AWS config", zap.Error(err))
+	}
+
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
@@ -71,7 +80,7 @@ func init() {
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -184,32 +193,32 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 			completedAt := time.Now()
 			importCostTracking.CompletedAt = &completedAt
 		}
-		
+
 		// Calculate Lambda execution cost
 		importCostTracking.LambdaDurationMs = time.Since(startTime).Milliseconds()
 		importCostTracking.LambdaExecutionCost = p.calculateLambdaCost(importCostTracking.LambdaDurationMs)
-		
+
 		// Calculate total cost
 		importCostTracking.CalculateTotalCost()
-		
+
 		// Save cost tracking record
 		if err := p.costTrackingRepo.Create(ctx, &models.DynamoDBCostRecord{
-			Table:               p.cfg.DynamoTableName,
-			OperationType:       "ImportProcessing",
+			Table:                p.cfg.DynamoTableName,
+			OperationType:        "ImportProcessing",
 			EstimatedCostDollars: importCostTracking.GetTotalCostDollars(),
-			TotalCostMicroCents: importCostTracking.TotalCostMicroCents,
-			ServiceName:         "import-processor",
-			RequestDuration:     time.Since(startTime).Milliseconds(),
+			TotalCostMicroCents:  importCostTracking.TotalCostMicroCents,
+			ServiceName:          "import-processor",
+			RequestDuration:      time.Since(startTime).Milliseconds(),
 			Properties: map[string]interface{}{
-				"username":   event.Username,
-				"import_id":  event.ImportID,
+				"username":  event.Username,
+				"import_id": event.ImportID,
 			},
 		}); err != nil {
 			p.logger.Error("failed to save import cost tracking",
 				zap.String("import_id", event.ImportID),
 				zap.Error(err))
 		}
-		
+
 		// Update budget usage with actual import costs
 		if err := p.importRepo.UpdateBudgetUsage(ctx, event.Username, "daily", importCostTracking.TotalCostMicroCents, 0); err != nil {
 			p.logger.Warn("failed to update budget usage",
@@ -229,7 +238,7 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 	if err != nil {
 		return fmt.Errorf("failed to download import file: %w", err)
 	}
-	
+
 	// Track S3 download costs
 	importCostTracking.FileSize = int64(len(fileData))
 	importCostTracking.S3GetRequests = 1
@@ -258,7 +267,7 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 	if err != nil {
 		return fmt.Errorf("failed to process import: %w", err)
 	}
-	
+
 	// Update cost tracking with final metrics
 	importCostTracking.RecordCount = int64(result.Success + result.Skipped + result.Failed)
 	importCostTracking.ProcessedCount = int64(result.Success + result.Failed)
@@ -312,226 +321,37 @@ func detectFormat(data []byte) string {
 }
 
 func (p *ImportProcessor) processCSVImport(ctx context.Context, event ImportProcessorEvent, data []byte, costTracking *models.ImportCostTracking) (ImportResult, error) {
-	result := ImportResult{
-		Errors: make([]string, 0),
-	}
-
 	reader := csv.NewReader(bytes.NewReader(data))
 
 	// Read header
 	header, err := reader.Read()
 	if err != nil {
-		return result, fmt.Errorf("failed to read CSV header: %w", err)
+		return ImportResult{Errors: make([]string, 0)}, fmt.Errorf("failed to read CSV header: %w", err)
 	}
 
 	// Process based on type
 	switch event.Type {
 	case "followers":
-		// For followers, we don't actually import them (they need to follow us)
-		// Just count the records
-		for {
-			_, err := reader.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, fmt.Sprintf("CSV parse error: %v", err))
-				continue
-			}
-
-			// In a real implementation, we might send follow invites or something
-			result.Skipped++
-		}
+		return p.processFollowersCSV(reader)
 
 	case "following":
-		// Process following list
-		for {
-			record, err := reader.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, fmt.Sprintf("CSV parse error: %v", err))
-				continue
-			}
-
-			if len(record) < 1 {
-				continue
-			}
-
-			accountAddress := record[0]
-			if accountAddress == "" {
-				continue
-			}
-
-			// Update progress
-			if err := p.importRepo.UpdateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-				p.logger.Warn("failed to update import progress",
-					zap.String("import_id", event.ImportID),
-					zap.Error(err))
-			}
-
-			// Follow the account
-			if err := p.followAccount(ctx, event.Username, accountAddress); err != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed to follow %s: %v", accountAddress, err))
-			} else {
-				result.Success++
-				
-				// Track DynamoDB write costs for follow operation
-				if costTracking != nil {
-					costTracking.DynamoDBOperations += 2 // Follow creation + activity storage
-					costTracking.DynamoDBWriteUnits += 2.0 // Estimated write capacity
-					costTracking.DynamoDBWriteCost += p.calculateDynamoDBWriteCost(2.0)
-					costTracking.ExternalAPICalls += 1 // WebFinger lookup
-					costTracking.ExternalAPICallCost += p.calculateExternalAPICallCost(1)
-				}
-			}
-		}
+		return p.processFollowingCSV(ctx, event, reader, costTracking)
 
 	case "blocks":
-		// Process blocks
-		for {
-			record, err := reader.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				result.Failed++
-				continue
-			}
-
-			if len(record) < 1 {
-				continue
-			}
-
-			accountAddress := record[0]
-			if accountAddress == "" {
-				continue
-			}
-
-			// Update progress
-			if err := p.importRepo.UpdateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-				p.logger.Warn("failed to update import progress",
-					zap.String("import_id", event.ImportID),
-					zap.Error(err))
-			}
-
-			// Block the account
-			if err := p.blockAccount(ctx, event.Username, accountAddress); err != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed to block %s: %v", accountAddress, err))
-			} else {
-				result.Success++
-				
-				// Track DynamoDB write costs for block operation
-				if costTracking != nil {
-					costTracking.DynamoDBOperations += 1
-					costTracking.DynamoDBWriteUnits += 1.0
-					costTracking.DynamoDBWriteCost += p.calculateDynamoDBWriteCost(1.0)
-					costTracking.ExternalAPICalls += 1 // WebFinger lookup
-					costTracking.ExternalAPICallCost += p.calculateExternalAPICallCost(1)
-				}
-			}
-		}
+		return p.processBlocksCSV(ctx, event, reader, costTracking)
 
 	case "mutes":
-		// Process mutes
-		hideNotificationsIndex := -1
-		for i, col := range header {
-			if col == "Hide notifications" {
-				hideNotificationsIndex = i
-				break
-			}
-		}
-
-		for {
-			record, err := reader.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				result.Failed++
-				continue
-			}
-
-			if len(record) < 1 {
-				continue
-			}
-
-			accountAddress := record[0]
-			if accountAddress == "" {
-				continue
-			}
-
-			hideNotifications := false
-			if hideNotificationsIndex >= 0 && len(record) > hideNotificationsIndex {
-				hideNotifications = record[hideNotificationsIndex] == "true"
-			}
-
-			// Update progress
-			if err := p.importRepo.UpdateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-				p.logger.Warn("failed to update import progress",
-					zap.String("import_id", event.ImportID),
-					zap.Error(err))
-			}
-
-			// Mute the account
-			if err := p.muteAccount(ctx, event.Username, accountAddress, hideNotifications); err != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed to mute %s: %v", accountAddress, err))
-			} else {
-				result.Success++
-			}
-		}
+		return p.processMutesCSV(ctx, event, reader, header)
 
 	case "bookmarks":
-		// Process bookmarks
-		for {
-			record, err := reader.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				result.Failed++
-				continue
-			}
-
-			if len(record) < 1 {
-				continue
-			}
-
-			statusURL := record[0]
-			if statusURL == "" {
-				continue
-			}
-
-			// Update progress
-			if err := p.importRepo.UpdateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1); err != nil {
-				p.logger.Warn("failed to update import progress",
-					zap.String("import_id", event.ImportID),
-					zap.Error(err))
-			}
-
-			// Bookmark the status
-			if err := p.bookmarkStatus(ctx, event.Username, statusURL); err != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed to bookmark %s: %v", statusURL, err))
-			} else {
-				result.Success++
-			}
-		}
+		return p.processBookmarksCSV(ctx, event, reader)
 
 	default:
-		return result, fmt.Errorf("CSV import not supported for type: %s", event.Type)
+		return ImportResult{Errors: make([]string, 0)}, fmt.Errorf("CSV import not supported for type: %s", event.Type)
 	}
-
-	return result, nil
 }
 
-func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportProcessorEvent, data []byte, costTracking *models.ImportCostTracking) (ImportResult, error) {
+func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportProcessorEvent, data []byte, _ *models.ImportCostTracking) (ImportResult, error) {
 	result := ImportResult{
 		Errors: make([]string, 0),
 	}
@@ -578,7 +398,7 @@ func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportPro
 	return result, nil
 }
 
-func (p *ImportProcessor) processActivityPubImport(ctx context.Context, event ImportProcessorEvent, data []byte, costTracking *models.ImportCostTracking) (ImportResult, error) {
+func (p *ImportProcessor) processActivityPubImport(_ context.Context, event ImportProcessorEvent, data []byte, _ *models.ImportCostTracking) (ImportResult, error) {
 	result := ImportResult{
 		Errors: make([]string, 0),
 	}
@@ -607,14 +427,240 @@ func (p *ImportProcessor) processActivityPubImport(ctx context.Context, event Im
 	return result, nil
 }
 
+// CSV processing helper functions
+
+// processFollowersCSV processes a followers CSV file
+func (p *ImportProcessor) processFollowersCSV(reader *csv.Reader) (ImportResult, error) {
+	result := ImportResult{Errors: make([]string, 0)}
+	
+	// For followers, we don't actually import them (they need to follow us)
+	// Just count the records
+	for {
+		_, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("CSV parse error: %v", err))
+			continue
+		}
+
+		// In a real implementation, we might send follow invites or something
+		result.Skipped++
+	}
+	
+	return result, nil
+}
+
+// processFollowingCSV processes a following CSV file
+func (p *ImportProcessor) processFollowingCSV(ctx context.Context, event ImportProcessorEvent, reader *csv.Reader, costTracking *models.ImportCostTracking) (ImportResult, error) {
+	result := ImportResult{Errors: make([]string, 0)}
+	
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("CSV parse error: %v", err))
+			continue
+		}
+
+		if len(record) < 1 {
+			continue
+		}
+
+		accountAddress := record[0]
+		if accountAddress == "" {
+			continue
+		}
+
+		// Update progress and process follow
+		p.updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+		
+		if err := p.followAccount(ctx, event.Username, accountAddress); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to follow %s: %v", accountAddress, err))
+		} else {
+			result.Success++
+			p.trackFollowCosts(costTracking)
+		}
+	}
+	
+	return result, nil
+}
+
+// processBlocksCSV processes a blocks CSV file
+func (p *ImportProcessor) processBlocksCSV(ctx context.Context, event ImportProcessorEvent, reader *csv.Reader, costTracking *models.ImportCostTracking) (ImportResult, error) {
+	result := ImportResult{Errors: make([]string, 0)}
+	
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			result.Failed++
+			continue
+		}
+
+		if len(record) < 1 {
+			continue
+		}
+
+		accountAddress := record[0]
+		if accountAddress == "" {
+			continue
+		}
+
+		// Update progress and process block
+		p.updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+		
+		if err := p.blockAccount(ctx, event.Username, accountAddress); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to block %s: %v", accountAddress, err))
+		} else {
+			result.Success++
+			p.trackBlockCosts(costTracking)
+		}
+	}
+	
+	return result, nil
+}
+
+// processMutesCSV processes a mutes CSV file
+func (p *ImportProcessor) processMutesCSV(ctx context.Context, event ImportProcessorEvent, reader *csv.Reader, header []string) (ImportResult, error) {
+	result := ImportResult{Errors: make([]string, 0)}
+	
+	// Find hide notifications column
+	hideNotificationsIndex := p.findHideNotificationsIndex(header)
+	
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			result.Failed++
+			continue
+		}
+
+		if len(record) < 1 {
+			continue
+		}
+
+		accountAddress := record[0]
+		if accountAddress == "" {
+			continue
+		}
+
+		hideNotifications := p.shouldHideNotifications(record, hideNotificationsIndex)
+
+		// Update progress and process mute
+		p.updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+		
+		if err := p.muteAccount(ctx, event.Username, accountAddress, hideNotifications); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to mute %s: %v", accountAddress, err))
+		} else {
+			result.Success++
+		}
+	}
+	
+	return result, nil
+}
+
+// processBookmarksCSV processes a bookmarks CSV file
+func (p *ImportProcessor) processBookmarksCSV(ctx context.Context, event ImportProcessorEvent, reader *csv.Reader) (ImportResult, error) {
+	result := ImportResult{Errors: make([]string, 0)}
+	
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			result.Failed++
+			continue
+		}
+
+		if len(record) < 1 {
+			continue
+		}
+
+		statusURL := record[0]
+		if statusURL == "" {
+			continue
+		}
+
+		// Update progress and process bookmark
+		p.updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
+		
+		p.bookmarkStatus(ctx, event.Username, statusURL)
+		result.Success++
+	}
+	
+	return result, nil
+}
+
+// Helper utility functions
+
+// updateImportProgress updates the import progress
+func (p *ImportProcessor) updateImportProgress(ctx context.Context, importID string, progress int) {
+	if err := p.importRepo.UpdateImportProgress(ctx, importID, progress); err != nil {
+		p.logger.Warn("failed to update import progress",
+			zap.String("import_id", importID),
+			zap.Error(err))
+	}
+}
+
+// trackFollowCosts tracks costs for follow operations
+func (p *ImportProcessor) trackFollowCosts(costTracking *models.ImportCostTracking) {
+	if costTracking != nil {
+		costTracking.DynamoDBOperations += 2   // Follow creation + activity storage
+		costTracking.DynamoDBWriteUnits += 2.0 // Estimated write capacity
+		costTracking.DynamoDBWriteCost += p.calculateDynamoDBWriteCost(2.0)
+		costTracking.ExternalAPICalls++ // WebFinger lookup
+		costTracking.ExternalAPICallCost += p.calculateExternalAPICallCost(1)
+	}
+}
+
+// trackBlockCosts tracks costs for block operations
+func (p *ImportProcessor) trackBlockCosts(costTracking *models.ImportCostTracking) {
+	if costTracking != nil {
+		costTracking.DynamoDBOperations++
+		costTracking.DynamoDBWriteUnits += 1.0
+		costTracking.DynamoDBWriteCost += p.calculateDynamoDBWriteCost(1.0)
+		costTracking.ExternalAPICalls++ // WebFinger lookup
+		costTracking.ExternalAPICallCost += p.calculateExternalAPICallCost(1)
+	}
+}
+
+// findHideNotificationsIndex finds the index of the "Hide notifications" column
+func (p *ImportProcessor) findHideNotificationsIndex(header []string) int {
+	for i, col := range header {
+		if col == "Hide notifications" {
+			return i
+		}
+	}
+	return -1
+}
+
+// shouldHideNotifications determines if notifications should be hidden for a mute
+func (p *ImportProcessor) shouldHideNotifications(record []string, hideNotificationsIndex int) bool {
+	if hideNotificationsIndex >= 0 && len(record) > hideNotificationsIndex {
+		return record[hideNotificationsIndex] == "true"
+	}
+	return false
+}
+
 // Helper functions for performing the actual import operations
 
 func (p *ImportProcessor) followAccount(ctx context.Context, username, targetAccount string) error {
 	// Resolve the account via WebFinger if needed
-	actorID, err := p.resolveAccount(ctx, targetAccount)
-	if err != nil {
-		return err
-	}
+	actorID := p.resolveAccount(ctx, targetAccount)
 
 	// Create follow relationship using the storage interface
 	follow := models.NewFollow(username, actorID, fmt.Sprintf("%s/activities/follow-%d", actorID, time.Now().Unix()))
@@ -664,10 +710,7 @@ func (p *ImportProcessor) followAccount(ctx context.Context, username, targetAcc
 
 func (p *ImportProcessor) blockAccount(ctx context.Context, username, targetAccount string) error {
 	// Resolve the account
-	actorID, err := p.resolveAccount(ctx, targetAccount)
-	if err != nil {
-		return err
-	}
+	actorID := p.resolveAccount(ctx, targetAccount)
 
 	// Create block using the storage interface
 	block := &models.Block{
@@ -683,10 +726,7 @@ func (p *ImportProcessor) blockAccount(ctx context.Context, username, targetAcco
 
 func (p *ImportProcessor) muteAccount(ctx context.Context, username, targetAccount string, hideNotifications bool) error {
 	// Resolve the account
-	actorID, err := p.resolveAccount(ctx, targetAccount)
-	if err != nil {
-		return err
-	}
+	actorID := p.resolveAccount(ctx, targetAccount)
 
 	// Create mute using the storage interface
 	mute := &models.Mute{
@@ -701,7 +741,7 @@ func (p *ImportProcessor) muteAccount(ctx context.Context, username, targetAccou
 	return p.repos.Object().CreateObject(ctx, mute)
 }
 
-func (p *ImportProcessor) bookmarkStatus(ctx context.Context, username, statusURL string) error {
+func (p *ImportProcessor) bookmarkStatus(_ context.Context, username, statusURL string) {
 	// Extract status ID from URL
 	// This is simplified - would need proper URL parsing
 	statusID := strings.TrimPrefix(statusURL, p.baseURL+"/")
@@ -714,16 +754,15 @@ func (p *ImportProcessor) bookmarkStatus(ctx context.Context, username, statusUR
 		"status_url": statusURL,
 		"created_at": time.Now().Format(time.RFC3339),
 	}
-	
+
 	// For now, log that we would create the bookmark
 	// In production, this needs a proper Bookmark model
 	p.logger.Info("would create bookmark",
 		zap.String("username", username),
 		zap.String("status_id", statusID),
 		zap.String("status_url", statusURL))
-	
+
 	_ = bookmark // Use the variable to avoid compiler warning
-	return nil // Return success since import should continue
 }
 
 func (p *ImportProcessor) createOrUpdateList(ctx context.Context, username, listName string) (string, error) {
@@ -750,10 +789,7 @@ func (p *ImportProcessor) createOrUpdateList(ctx context.Context, username, list
 
 func (p *ImportProcessor) addToList(ctx context.Context, username, listID, accountAddress string) error {
 	// Resolve the account
-	actorID, err := p.resolveAccount(ctx, accountAddress)
-	if err != nil {
-		return err
-	}
+	actorID := p.resolveAccount(ctx, accountAddress)
 
 	// Add member to list using the storage interface
 	listMember := &models.ListMember{
@@ -768,17 +804,17 @@ func (p *ImportProcessor) addToList(ctx context.Context, username, listID, accou
 	return p.repos.Object().CreateObject(ctx, listMember)
 }
 
-func (p *ImportProcessor) resolveAccount(ctx context.Context, accountAddress string) (string, error) {
+func (p *ImportProcessor) resolveAccount(_ context.Context, accountAddress string) string {
 	// If it's already a full actor ID, return it
 	if strings.HasPrefix(accountAddress, "https://") {
-		return accountAddress, nil
+		return accountAddress
 	}
 
 	// Parse account address (user@domain)
 	parts := strings.Split(accountAddress, "@")
 	if len(parts) != 2 {
 		// Assume local user if no domain
-		return fmt.Sprintf("%s/users/%s", p.baseURL, accountAddress), nil
+		return fmt.Sprintf("%s/users/%s", p.baseURL, accountAddress)
 	}
 
 	username := parts[0]
@@ -786,7 +822,7 @@ func (p *ImportProcessor) resolveAccount(ctx context.Context, accountAddress str
 
 	// Check if it's a local user
 	if domain == strings.TrimPrefix(p.baseURL, "https://") {
-		return fmt.Sprintf("%s/users/%s", p.baseURL, username), nil
+		return fmt.Sprintf("%s/users/%s", p.baseURL, username)
 	}
 
 	// For import processing, use a simple fallback without WebFinger resolution
@@ -794,9 +830,9 @@ func (p *ImportProcessor) resolveAccount(ctx context.Context, accountAddress str
 	p.logger.Info("resolving remote account for import",
 		zap.String("username", username),
 		zap.String("domain", domain))
-	
+
 	// Construct likely actor ID as fallback
-	return fmt.Sprintf("https://%s/users/%s", domain, username), nil
+	return fmt.Sprintf("https://%s/users/%s", domain, username)
 }
 
 // Helper functions for status updates
@@ -830,12 +866,12 @@ func (p *ImportProcessor) downloadFromS3(ctx context.Context, key string) ([]byt
 // calculateLambdaCost calculates the cost of Lambda execution
 // Lambda pricing: $0.0000166667 per GB-second (assumes 512MB memory)
 func (p *ImportProcessor) calculateLambdaCost(durationMs int64) int64 {
-	const memoryGB = 0.5 // 512MB = 0.5GB
+	const memoryGB = 0.5                 // 512MB = 0.5GB
 	const costPerGBSecond = 0.0000166667 // USD per GB-second
-	
+
 	durationSeconds := float64(durationMs) / 1000.0
 	costDollars := memoryGB * durationSeconds * costPerGBSecond
-	
+
 	// Convert to microcents (1 dollar = 1,000,000 microcents)
 	return int64(costDollars * 1_000_000)
 }
@@ -844,9 +880,9 @@ func (p *ImportProcessor) calculateLambdaCost(durationMs int64) int64 {
 // S3 GET pricing: $0.0004 per 1,000 requests
 func (p *ImportProcessor) calculateS3GetCost(requestCount int64) int64 {
 	const costPer1000Requests = 0.0004 // USD per 1,000 requests
-	
+
 	costDollars := float64(requestCount) * costPer1000Requests / 1000.0
-	
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }
@@ -855,10 +891,10 @@ func (p *ImportProcessor) calculateS3GetCost(requestCount int64) int64 {
 // S3 data transfer pricing: $0.09 per GB (outbound)
 func (p *ImportProcessor) calculateS3DataTransferCost(transferBytes int64) int64 {
 	const costPerGB = 0.09 // USD per GB
-	
+
 	transferGB := float64(transferBytes) / (1024 * 1024 * 1024) // Convert bytes to GB
 	costDollars := transferGB * costPerGB
-	
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }
@@ -867,20 +903,9 @@ func (p *ImportProcessor) calculateS3DataTransferCost(transferBytes int64) int64
 // DynamoDB pricing: $1.25 per million write requests
 func (p *ImportProcessor) calculateDynamoDBWriteCost(writeUnits float64) int64 {
 	const costPerMillionWrites = 1.25 // USD per million write requests
-	
-	costDollars := (writeUnits / 1_000_000) * costPerMillionWrites
-	
-	// Convert to microcents
-	return int64(costDollars * 1_000_000)
-}
 
-// calculateDynamoDBReadCost calculates the cost of DynamoDB read operations
-// DynamoDB pricing: $0.25 per million read requests
-func (p *ImportProcessor) calculateDynamoDBReadCost(readUnits float64) int64 {
-	const costPerMillionReads = 0.25 // USD per million read requests
-	
-	costDollars := (readUnits / 1_000_000) * costPerMillionReads
-	
+	costDollars := (writeUnits / 1_000_000) * costPerMillionWrites
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }
@@ -889,9 +914,9 @@ func (p *ImportProcessor) calculateDynamoDBReadCost(readUnits float64) int64 {
 // Estimated cost: $0.001 per call (WebFinger, ActivityPub lookups)
 func (p *ImportProcessor) calculateExternalAPICallCost(callCount int64) int64 {
 	const costPerCall = 0.001 // USD per call
-	
+
 	costDollars := float64(callCount) * costPerCall
-	
+
 	// Convert to microcents
 	return int64(costDollars * 1_000_000)
 }

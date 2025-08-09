@@ -211,10 +211,10 @@ func (r *WebSocketCostRepository) GetConnectionCostSummary(ctx context.Context, 
 	}
 
 	summary := &WebSocketConnectionCostSummary{
-		ConnectionID: connectionID,
-		StartTime:    startTime,
-		EndTime:      endTime,
-		Count:        len(costs),
+		ConnectionID:       connectionID,
+		StartTime:          startTime,
+		EndTime:            endTime,
+		Count:              len(costs),
 		OperationBreakdown: make(map[string]*WebSocketOperationCostStats),
 	}
 
@@ -281,10 +281,10 @@ func (r *WebSocketCostRepository) GetUserCostSummary(ctx context.Context, userID
 	}
 
 	summary := &WebSocketUserCostSummary{
-		UserID:    userID,
-		StartTime: startTime,
-		EndTime:   endTime,
-		Count:     len(costs),
+		UserID:             userID,
+		StartTime:          startTime,
+		EndTime:            endTime,
+		Count:              len(costs),
 		OperationBreakdown: make(map[string]*WebSocketOperationCostStats),
 		StreamBreakdown:    make(map[string]*WebSocketStreamCostStats),
 	}
@@ -364,7 +364,7 @@ func (r *WebSocketCostRepository) GetUserCostSummary(ctx context.Context, userID
 	if summary.TotalMessages > 0 {
 		summary.AverageMessageSize = float64(summary.TotalMessageBytes) / float64(summary.TotalMessages)
 	}
-	
+
 	if summary.UniqueConnections > 0 {
 		summary.AverageCostPerConnection = summary.TotalCostDollars / float64(summary.UniqueConnections)
 		summary.AverageConnectionDuration = float64(summary.TotalConnectionMinutes) / float64(summary.UniqueConnections)
@@ -518,8 +518,8 @@ func (r *WebSocketCostRepository) CheckBudgetLimits(ctx context.Context, userID 
 	}
 
 	status := &BudgetStatus{
-		UserID:   userID,
-		Budgets:  make(map[string]*BudgetPeriodStatus),
+		UserID:          userID,
+		Budgets:         make(map[string]*BudgetPeriodStatus),
 		AllowConnection: true,
 		AllowMessages:   true,
 	}
@@ -533,22 +533,23 @@ func (r *WebSocketCostRepository) CheckBudgetLimits(ctx context.Context, userID 
 		}
 
 		periodStatus := &BudgetPeriodStatus{
-			Period:           budget.Period,
-			BudgetMicroCents: budget.BudgetMicroCents,
-			UsedMicroCents:   budget.UsedMicroCents,
-			UsagePercent:     budget.UsagePercent,
-			Status:           budget.Status,
+			Period:              budget.Period,
+			BudgetMicroCents:    budget.BudgetMicroCents,
+			UsedMicroCents:      budget.UsedMicroCents,
+			UsagePercent:        budget.UsagePercent,
+			Status:              budget.Status,
 			RemainingMicroCents: budget.RemainingMicroCents,
 		}
 
 		status.Budgets[budget.Period] = periodStatus
 
 		// Check if any budget restricts operations
-		if budget.Status == "exceeded" || budget.Status == "suspended" {
+		switch budget.Status {
+		case "exceeded", "suspended":
 			status.AllowConnection = false
 			status.AllowMessages = false
 			status.ExceededBudgets = append(status.ExceededBudgets, budget.Period)
-		} else if budget.Status == "warning" {
+		case "warning":
 			status.WarningBudgets = append(status.WarningBudgets, budget.Period)
 		}
 	}
@@ -673,149 +674,225 @@ func (r *WebSocketCostRepository) AggregateWebSocketCosts(ctx context.Context, o
 		return nil // Nothing to aggregate
 	}
 
-	// Calculate aggregated values
-	aggregation := &models.WebSocketCostAggregation{
-		Period:        period,
-		OperationType: operationType,
-		WindowStart:   windowStart,
-		WindowEnd:     windowEnd,
-		CostPercentiles: make(map[string]float64),
-		LatencyPercentiles: make(map[string]float64),
-		ConnectionDurationPercentiles: make(map[string]float64),
-		StreamPopularity: make(map[string]int64),
-		StreamTypeBreakdown: make(map[string]int64),
-		CostByTier: make(map[string]*models.WebSocketTierCostStats),
-	}
-
-	// Track unique entities and collect values for percentiles
-	uniqueUsers := make(map[string]bool)
-	uniqueConnections := make(map[string]bool)
-	uniqueStreams := make(map[string]bool)
-	var costValues []float64
-	var latencyValues []float64
-	var durationValues []float64
+	// Initialize aggregation
+	aggregation := r.initializeAggregation(period, operationType, windowStart, windowEnd)
 	
-	totalProcessingTime := float64(0)
-	totalResponseLatency := float64(0)
-	totalMemoryUsage := float64(0)
-	measurementCount := int64(0)
-
+	// Create collectors for tracking metrics
+	collectors := r.createMetricCollectors(len(costs))
+	
+	// Process each cost record
 	for _, cost := range costs {
-		// Track unique entities
-		if cost.UserID != "" {
-			uniqueUsers[cost.UserID] = true
-		}
-		uniqueConnections[cost.ConnectionID] = true
-		for _, stream := range cost.ActiveStreams {
-			uniqueStreams[stream] = true
-			aggregation.StreamPopularity[stream]++
-		}
-		
-		// Track stream types
-		for _, streamType := range cost.StreamTypes {
-			aggregation.StreamTypeBreakdown[streamType]++
-		}
-
-		// Aggregate metrics based on operation type
-		switch cost.OperationType {
-		case "connect":
-			aggregation.TotalConnections++
-			if cost.ConnectionDurationMs > 0 {
-				durationMinutes := float64(cost.ConnectionDurationMs) / (60 * 1000)
-				aggregation.TotalConnectionMinutes += int64(durationMinutes)
-				aggregation.AverageConnectionDuration += durationMinutes
-				durationValues = append(durationValues, durationMinutes)
-			}
-		case "disconnect":
-			aggregation.DroppedConnections++ // Assume disconnect means dropped for now
-		case "message_in":
-			aggregation.TotalMessagesIn += int64(cost.MessageCount)
-			aggregation.TotalMessageBytes += cost.MessageSizeBytes
-		case "message_out":
-			aggregation.TotalMessagesOut += int64(cost.MessageCount)
-			aggregation.TotalMessageBytes += cost.MessageSizeBytes
-		case "subscribe":
-			aggregation.TotalStreamSubscriptions++
-		case "error":
-			aggregation.MessageDeliveryFailures++
-		}
-
-		// Aggregate costs
-		aggregation.TotalAPIGatewayConnectionCost += cost.APIGatewayConnectionCost
-		aggregation.TotalAPIGatewayMessageCost += cost.APIGatewayMessageCost
-		aggregation.TotalLambdaExecutionCost += cost.LambdaExecutionCost
-		aggregation.TotalDynamoDBCost += cost.DynamoDBCost
-		aggregation.TotalDataTransferCost += cost.DataTransferCost
-		aggregation.TotalCostMicroCents += cost.TotalCostMicroCents
-
-		// Collect values for percentiles
-		costValues = append(costValues, cost.EstimatedCostDollars)
-		
-		// Performance metrics
-		if cost.ProcessingTimeMs > 0 {
-			totalProcessingTime += float64(cost.ProcessingTimeMs)
-			measurementCount++
-		}
-		if cost.ResponseLatencyMs > 0 {
-			totalResponseLatency += float64(cost.ResponseLatencyMs)
-			latencyValues = append(latencyValues, float64(cost.ResponseLatencyMs))
-		}
-		if cost.MemoryUsedMB > 0 {
-			totalMemoryUsage += cost.MemoryUsedMB
-		}
+		r.processCostRecord(cost, aggregation, collectors)
 	}
 
+	// Finalize aggregation calculations
+	r.finalizeAggregation(aggregation, collectors, windowStart, windowEnd)
+
+	// Save or update aggregation
+	return r.saveOrUpdateAggregation(ctx, aggregation, period, operationType, windowStart)
+}
+
+// initializeAggregation creates a new aggregation with default values
+func (r *WebSocketCostRepository) initializeAggregation(period, operationType string, windowStart, windowEnd time.Time) *models.WebSocketCostAggregation {
+	return &models.WebSocketCostAggregation{
+		Period:                        period,
+		OperationType:                 operationType,
+		WindowStart:                   windowStart,
+		WindowEnd:                     windowEnd,
+		CostPercentiles:               make(map[string]float64),
+		LatencyPercentiles:            make(map[string]float64),
+		ConnectionDurationPercentiles: make(map[string]float64),
+		StreamPopularity:              make(map[string]int64),
+		StreamTypeBreakdown:           make(map[string]int64),
+		CostByTier:                    make(map[string]*models.WebSocketTierCostStats),
+	}
+}
+
+// webSocketMetricCollectors holds collectors for various metrics
+type webSocketMetricCollectors struct {
+	uniqueUsers        map[string]bool
+	uniqueConnections  map[string]bool
+	uniqueStreams      map[string]bool
+	costValues         []float64
+	latencyValues      []float64
+	durationValues     []float64
+	totalProcessingTime float64
+	totalResponseLatency float64
+	totalMemoryUsage    float64
+	measurementCount    int64
+}
+
+// createMetricCollectors initializes metric collectors
+func (r *WebSocketCostRepository) createMetricCollectors(capacity int) *webSocketMetricCollectors {
+	return &webSocketMetricCollectors{
+		uniqueUsers:       make(map[string]bool),
+		uniqueConnections: make(map[string]bool),
+		uniqueStreams:     make(map[string]bool),
+		costValues:        make([]float64, 0, capacity),
+		latencyValues:     []float64{},
+		durationValues:    []float64{},
+	}
+}
+
+// processCostRecord processes a single cost record and updates aggregation
+func (r *WebSocketCostRepository) processCostRecord(cost *models.WebSocketCostRecord, aggregation *models.WebSocketCostAggregation, collectors *webSocketMetricCollectors) {
+	// Track unique entities
+	r.trackUniqueEntities(cost, collectors, aggregation)
+	
+	// Process operation-specific metrics
+	r.processOperationMetrics(cost, aggregation, collectors)
+	
+	// Aggregate cost components
+	r.aggregateCostComponents(cost, aggregation)
+	
+	// Collect performance metrics
+	r.collectPerformanceMetrics(cost, collectors)
+}
+
+// trackUniqueEntities tracks unique users, connections, and streams
+func (r *WebSocketCostRepository) trackUniqueEntities(cost *models.WebSocketCostRecord, collectors *webSocketMetricCollectors, aggregation *models.WebSocketCostAggregation) {
+	if cost.UserID != "" {
+		collectors.uniqueUsers[cost.UserID] = true
+	}
+	collectors.uniqueConnections[cost.ConnectionID] = true
+	
+	for _, stream := range cost.ActiveStreams {
+		collectors.uniqueStreams[stream] = true
+		aggregation.StreamPopularity[stream]++
+	}
+	
+	for _, streamType := range cost.StreamTypes {
+		aggregation.StreamTypeBreakdown[streamType]++
+	}
+}
+
+// processOperationMetrics processes metrics based on operation type
+func (r *WebSocketCostRepository) processOperationMetrics(cost *models.WebSocketCostRecord, aggregation *models.WebSocketCostAggregation, collectors *webSocketMetricCollectors) {
+	switch cost.OperationType {
+	case WSEventConnect:
+		r.processConnectOperation(cost, aggregation, collectors)
+	case WSEventDisconnect:
+		aggregation.DroppedConnections++
+	case WSEventMessageIn:
+		aggregation.TotalMessagesIn += int64(cost.MessageCount)
+		aggregation.TotalMessageBytes += cost.MessageSizeBytes
+	case WSEventMessageOut:
+		aggregation.TotalMessagesOut += int64(cost.MessageCount)
+		aggregation.TotalMessageBytes += cost.MessageSizeBytes
+	case WSEventSubscribe:
+		aggregation.TotalStreamSubscriptions++
+	case "error":
+		aggregation.MessageDeliveryFailures++
+	}
+}
+
+// processConnectOperation handles connect operation metrics
+func (r *WebSocketCostRepository) processConnectOperation(cost *models.WebSocketCostRecord, aggregation *models.WebSocketCostAggregation, collectors *webSocketMetricCollectors) {
+	aggregation.TotalConnections++
+	if cost.ConnectionDurationMs > 0 {
+		durationMinutes := float64(cost.ConnectionDurationMs) / (60 * 1000)
+		aggregation.TotalConnectionMinutes += int64(durationMinutes)
+		aggregation.AverageConnectionDuration += durationMinutes
+		collectors.durationValues = append(collectors.durationValues, durationMinutes)
+	}
+}
+
+// aggregateCostComponents aggregates all cost components
+func (r *WebSocketCostRepository) aggregateCostComponents(cost *models.WebSocketCostRecord, aggregation *models.WebSocketCostAggregation) {
+	aggregation.TotalAPIGatewayConnectionCost += cost.APIGatewayConnectionCost
+	aggregation.TotalAPIGatewayMessageCost += cost.APIGatewayMessageCost
+	aggregation.TotalLambdaExecutionCost += cost.LambdaExecutionCost
+	aggregation.TotalDynamoDBCost += cost.DynamoDBCost
+	aggregation.TotalDataTransferCost += cost.DataTransferCost
+	aggregation.TotalCostMicroCents += cost.TotalCostMicroCents
+}
+
+// collectPerformanceMetrics collects performance-related metrics
+func (r *WebSocketCostRepository) collectPerformanceMetrics(cost *models.WebSocketCostRecord, collectors *webSocketMetricCollectors) {
+	collectors.costValues = append(collectors.costValues, cost.EstimatedCostDollars)
+	
+	if cost.ProcessingTimeMs > 0 {
+		collectors.totalProcessingTime += float64(cost.ProcessingTimeMs)
+		collectors.measurementCount++
+	}
+	if cost.ResponseLatencyMs > 0 {
+		collectors.totalResponseLatency += float64(cost.ResponseLatencyMs)
+		collectors.latencyValues = append(collectors.latencyValues, float64(cost.ResponseLatencyMs))
+	}
+	if cost.MemoryUsedMB > 0 {
+		collectors.totalMemoryUsage += cost.MemoryUsedMB
+	}
+}
+
+// finalizeAggregation calculates final aggregation values
+func (r *WebSocketCostRepository) finalizeAggregation(aggregation *models.WebSocketCostAggregation, collectors *webSocketMetricCollectors, windowStart, windowEnd time.Time) {
 	// Set unique counts
-	aggregation.UniqueUsers = int64(len(uniqueUsers))
-	aggregation.UniqueStreamsUsed = int64(len(uniqueStreams))
-
+	aggregation.UniqueUsers = int64(len(collectors.uniqueUsers))
+	aggregation.UniqueStreamsUsed = int64(len(collectors.uniqueStreams))
+	
 	// Calculate averages
-	if measurementCount > 0 {
-		aggregation.AverageProcessingTime = totalProcessingTime / float64(measurementCount)
-		aggregation.AverageMemoryUsage = totalMemoryUsage / float64(measurementCount)
+	r.calculateAverages(aggregation, collectors)
+	
+	// Calculate message metrics
+	r.calculateMessageMetrics(aggregation, windowStart, windowEnd)
+	
+	// Calculate percentiles
+	r.calculatePercentiles(aggregation, collectors)
+}
+
+// calculateAverages calculates average metrics
+func (r *WebSocketCostRepository) calculateAverages(aggregation *models.WebSocketCostAggregation, collectors *webSocketMetricCollectors) {
+	if collectors.measurementCount > 0 {
+		aggregation.AverageProcessingTime = collectors.totalProcessingTime / float64(collectors.measurementCount)
+		aggregation.AverageMemoryUsage = collectors.totalMemoryUsage / float64(collectors.measurementCount)
 	}
-	if len(latencyValues) > 0 {
+	
+	if len(collectors.latencyValues) > 0 {
 		var totalLatency float64
-		for _, latency := range latencyValues {
+		for _, latency := range collectors.latencyValues {
 			totalLatency += latency
 		}
-		aggregation.AverageResponseLatency = totalLatency / float64(len(latencyValues))
+		aggregation.AverageResponseLatency = totalLatency / float64(len(collectors.latencyValues))
 	}
+	
 	if aggregation.TotalConnections > 0 {
 		aggregation.AverageConnectionDuration = aggregation.AverageConnectionDuration / float64(aggregation.TotalConnections)
 	}
+}
 
+// calculateMessageMetrics calculates message-related metrics
+func (r *WebSocketCostRepository) calculateMessageMetrics(aggregation *models.WebSocketCostAggregation, windowStart, windowEnd time.Time) {
 	totalMessages := aggregation.TotalMessagesIn + aggregation.TotalMessagesOut
 	if totalMessages > 0 {
 		aggregation.AverageMessageSize = float64(aggregation.TotalMessageBytes) / float64(totalMessages)
 		
-		// Calculate throughput (messages per second)
 		windowSeconds := windowEnd.Sub(windowStart).Seconds()
 		if windowSeconds > 0 {
 			aggregation.MessageThroughputPerSec = float64(totalMessages) / windowSeconds
 		}
 	}
+}
 
-	// Calculate percentiles
-	if len(costValues) > 0 {
-		aggregation.CostPercentiles = calculateWebSocketPercentiles(costValues)
+// calculatePercentiles calculates percentile metrics
+func (r *WebSocketCostRepository) calculatePercentiles(aggregation *models.WebSocketCostAggregation, collectors *webSocketMetricCollectors) {
+	if len(collectors.costValues) > 0 {
+		aggregation.CostPercentiles = calculateWebSocketPercentiles(collectors.costValues)
 	}
-	if len(latencyValues) > 0 {
-		aggregation.LatencyPercentiles = calculateWebSocketPercentiles(latencyValues)
+	if len(collectors.latencyValues) > 0 {
+		aggregation.LatencyPercentiles = calculateWebSocketPercentiles(collectors.latencyValues)
 	}
-	if len(durationValues) > 0 {
-		aggregation.ConnectionDurationPercentiles = calculateWebSocketPercentiles(durationValues)
+	if len(collectors.durationValues) > 0 {
+		aggregation.ConnectionDurationPercentiles = calculateWebSocketPercentiles(collectors.durationValues)
 	}
+}
 
-	// Check if aggregation already exists
+// saveOrUpdateAggregation saves or updates the aggregation
+func (r *WebSocketCostRepository) saveOrUpdateAggregation(ctx context.Context, aggregation *models.WebSocketCostAggregation, period, operationType string, windowStart time.Time) error {
 	existing, err := r.GetAggregation(ctx, period, operationType, windowStart)
 	if err == nil && existing != nil {
-		// Update existing
 		aggregation.CreatedAt = existing.CreatedAt
 		return r.UpdateAggregation(ctx, aggregation)
 	}
-
-	// Create new aggregation
 	return r.CreateAggregation(ctx, aggregation)
 }
 
@@ -879,9 +956,9 @@ func (r *WebSocketCostRepository) GetTopCostlyUsers(ctx context.Context, startDa
 
 		// Track by operation type
 		switch cost.OperationType {
-		case "connect", "disconnect":
+		case WSEventConnect, WSEventDisconnect:
 			ranking.ConnectionOperations++
-		case "message_in", "message_out":
+		case WSEventMessageIn, WSEventMessageOut:
 			ranking.MessageOperations++
 		case "subscribe", "unsubscribe":
 			ranking.SubscriptionOperations++
@@ -889,7 +966,7 @@ func (r *WebSocketCostRepository) GetTopCostlyUsers(ctx context.Context, startDa
 	}
 
 	// Convert map to slice and calculate totals
-	var rankings []*WebSocketUserCostRanking
+	rankings := make([]*WebSocketUserCostRanking, 0, len(userCostMap))
 	for _, ranking := range userCostMap {
 		ranking.TotalCostDollars = float64(ranking.TotalCostMicroCents) / 1_000_000.0
 
@@ -1052,12 +1129,12 @@ type WebSocketUserCostRanking struct {
 
 // BudgetStatus represents current budget status for a user
 type BudgetStatus struct {
-	UserID           string
-	AllowConnection  bool
-	AllowMessages    bool
-	ExceededBudgets  []string
-	WarningBudgets   []string
-	Budgets          map[string]*BudgetPeriodStatus
+	UserID          string
+	AllowConnection bool
+	AllowMessages   bool
+	ExceededBudgets []string
+	WarningBudgets  []string
+	Budgets         map[string]*BudgetPeriodStatus
 }
 
 // BudgetPeriodStatus represents budget status for a specific period

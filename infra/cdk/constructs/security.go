@@ -108,7 +108,7 @@ func createDynamoDBPolicy(stack awscdk.Stack, table awsdynamodb.Table) awsiam.Po
 
 	policyJSON, _ := json.Marshal(policyDoc)
 	var jsonData interface{}
-	json.Unmarshal(policyJSON, &jsonData)
+	_ = json.Unmarshal(policyJSON, &jsonData)
 	document := awsiam.PolicyDocument_FromJson(jsonData)
 
 	return awsiam.NewPolicy(stack, jsii.String("LambdaDynamoDBPolicy"), &awsiam.PolicyProps{
@@ -135,7 +135,7 @@ func createS3Policy(stack awscdk.Stack, bucket awss3.Bucket) awsiam.Policy {
 
 	policyJSON, _ := json.Marshal(policyDoc)
 	var jsonData interface{}
-	json.Unmarshal(policyJSON, &jsonData)
+	_ = json.Unmarshal(policyJSON, &jsonData)
 	document := awsiam.PolicyDocument_FromJson(jsonData)
 
 	return awsiam.NewPolicy(stack, jsii.String("LambdaS3Policy"), &awsiam.PolicyProps{
@@ -168,7 +168,7 @@ func createSQSPolicy(stack awscdk.Stack, federationQueue, federationDLQ, pushQue
 
 	policyJSON, _ := json.Marshal(policyDoc)
 	var jsonData interface{}
-	json.Unmarshal(policyJSON, &jsonData)
+	_ = json.Unmarshal(policyJSON, &jsonData)
 	document := awsiam.PolicyDocument_FromJson(jsonData)
 
 	return awsiam.NewPolicy(stack, jsii.String("LambdaSQSPolicy"), &awsiam.PolicyProps{
@@ -203,7 +203,7 @@ func createBedrockPolicy(stack awscdk.Stack) awsiam.Policy {
 
 	policyJSON, _ := json.Marshal(policyDoc)
 	var jsonData interface{}
-	json.Unmarshal(policyJSON, &jsonData)
+	_ = json.Unmarshal(policyJSON, &jsonData)
 	document := awsiam.PolicyDocument_FromJson(jsonData)
 
 	return awsiam.NewPolicy(stack, jsii.String("LambdaAIPolicy"), &awsiam.PolicyProps{
@@ -230,7 +230,7 @@ func createKMSPolicy(stack awscdk.Stack, kmsKey awskms.IKey) awsiam.Policy {
 
 	policyJSON, _ := json.Marshal(policyDoc)
 	var jsonData interface{}
-	json.Unmarshal(policyJSON, &jsonData)
+	_ = json.Unmarshal(policyJSON, &jsonData)
 	document := awsiam.PolicyDocument_FromJson(jsonData)
 
 	return awsiam.NewPolicy(stack, jsii.String("LambdaKMSPolicy"), &awsiam.PolicyProps{

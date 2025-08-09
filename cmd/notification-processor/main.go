@@ -1,3 +1,4 @@
+// Package main implements the notification-processor Lambda function for processing user notifications.
 package main
 
 import (
@@ -5,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,8 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
-	"github.com/aws/aws-sdk-go-v2/service/ses"
-	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -31,28 +29,26 @@ import (
 
 // NotificationProcessor handles notification delivery across multiple channels
 type NotificationProcessor struct {
-	db                       core.DB
-	tableName                string
-	logger                   *zap.Logger
-	notificationRepo         *repositories.NotificationRepository
-	userRepo                 *repositories.UserRepository
-	costTrackingRepo         *repositories.CostTrackingRepository
-	notificationCostRepo     *repositories.NotificationCostRepository
-	sesClient                *ses.Client
-	snsClient                *sns.Client
-	apiGatewayClient         *apigatewaymanagementapi.Client
-	domain                   string
-	fromEmail                string
-	webSocketEndpoint        string
+	db                   core.DB
+	tableName            string
+	logger               *zap.Logger
+	notificationRepo     *repositories.NotificationRepository
+	userRepo             *repositories.UserRepository
+	costTrackingRepo     *repositories.CostTrackingRepository
+	notificationCostRepo *repositories.NotificationCostRepository
+	snsClient            *sns.Client
+	apiGatewayClient     *apigatewaymanagementapi.Client
+	domain               string
+	webSocketEndpoint    string
 }
 
 // NotificationDeliveryRequest represents a request to deliver a notification
 type NotificationDeliveryRequest struct {
-	NotificationID string   `json:"notification_id"`
-	UserID         string   `json:"user_id"`
-	Channels       []string `json:"channels"`       // email, push, websocket
-	Priority       string   `json:"priority"`       // high, medium, low
-	RetryCount     int      `json:"retry_count"`    // current retry attempt
+	NotificationID string     `json:"notification_id"`
+	UserID         string     `json:"user_id"`
+	Channels       []string   `json:"channels"`     // push, websocket
+	Priority       string     `json:"priority"`     // high, medium, low
+	RetryCount     int        `json:"retry_count"`  // current retry attempt
 	ScheduledAt    *time.Time `json:"scheduled_at"` // for delayed delivery
 }
 
@@ -74,13 +70,12 @@ type WebSocketMessage struct {
 
 // UserPreferences represents user notification preferences
 type UserPreferences struct {
-	EmailNotifications    bool `json:"email_notifications"`
-	PushNotifications     bool `json:"push_notifications"`
-	WebSocketNotifications bool `json:"websocket_notifications"`
-	EmailAddress          string `json:"email_address"`
-	PushEndpoint          string `json:"push_endpoint"`
+	PushNotifications      bool   `json:"push_notifications"`
+	WebSocketNotifications bool   `json:"websocket_notifications"`
+	PushEndpoint           string `json:"push_endpoint"`
 }
 
+// NewNotificationProcessor creates a new notification processor instance
 func NewNotificationProcessor(db core.DB, tableName string, domain string) *NotificationProcessor {
 	// Initialize repositories
 	logger := common.Logger()
@@ -90,11 +85,6 @@ func NewNotificationProcessor(db core.DB, tableName string, domain string) *Noti
 	notificationCostRepo := repositories.NewNotificationCostRepository(db, tableName, logger)
 
 	// Get configuration from environment
-	fromEmail := os.Getenv("FROM_EMAIL")
-	if fromEmail == "" {
-		fromEmail = fmt.Sprintf("notifications@%s", domain)
-	}
-
 	webSocketEndpoint := os.Getenv("WEBSOCKET_ENDPOINT")
 
 	return &NotificationProcessor{
@@ -106,7 +96,6 @@ func NewNotificationProcessor(db core.DB, tableName string, domain string) *Noti
 		costTrackingRepo:     costTrackingRepo,
 		notificationCostRepo: notificationCostRepo,
 		domain:               domain,
-		fromEmail:            fromEmail,
 		webSocketEndpoint:    webSocketEndpoint,
 	}
 }
@@ -117,9 +106,6 @@ func (np *NotificationProcessor) initializeAWSClients(ctx context.Context) error
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
-
-	// Initialize SES client for email delivery
-	np.sesClient = ses.NewFromConfig(cfg)
 
 	// Initialize SNS client for push notifications
 	np.snsClient = sns.NewFromConfig(cfg)
@@ -178,8 +164,8 @@ func (np *NotificationProcessor) HandleSQS(ctx *lift.Context, event events.SQSEv
 	wg.Wait()
 
 	if len(errors) > 0 {
-		return lift.NewLiftError("PARTIAL_BATCH_FAILURE", 
-			fmt.Sprintf("partial batch failure: %d of %d messages failed", len(errors), len(event.Records)), 
+		return lift.NewLiftError("PARTIAL_BATCH_FAILURE",
+			fmt.Sprintf("partial batch failure: %d of %d messages failed", len(errors), len(event.Records)),
 			500)
 	}
 
@@ -223,7 +209,6 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 			zap.Error(err),
 		)
 		userPrefs = &UserPreferences{
-			EmailNotifications:     false,
 			PushNotifications:      true,
 			WebSocketNotifications: true,
 		}
@@ -233,14 +218,12 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 	var estimatedCostMicroCents int64
 	for _, channel := range request.Channels {
 		switch channel {
-		case "email":
-			estimatedCostMicroCents += models.CalculateEmailCost(1)
 		case "push":
 			estimatedCostMicroCents += models.CalculatePushCost(1)
 		case "websocket":
 			estimatedCostMicroCents += models.CalculateWebSocketCost(1)
-		case "sms":
-			estimatedCostMicroCents += models.CalculateSMSCost(1)
+		default:
+			// Unsupported channels don't contribute to cost estimates
 		}
 	}
 	estimatedCostMicroCents += 20 // Add Lambda base cost
@@ -261,7 +244,7 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 	}
 
 	// Attempt delivery on each requested channel
-	var deliveryResults []DeliveryResult
+	deliveryResults := make([]DeliveryResult, 0, len(request.Channels))
 	var lastError error
 
 	for _, channel := range request.Channels {
@@ -287,7 +270,7 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 			zap.String("notification_id", request.NotificationID),
 			zap.Int("retry_count", request.RetryCount+1),
 		)
-		
+
 		// In a real implementation, you'd requeue the message with exponential backoff
 		// For now, we'll just log the retry attempt
 		return fmt.Errorf("delivery failed, retry needed: %w", lastError)
@@ -314,26 +297,6 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 	var lambdaCostMicroCents int64 = 20 // Base Lambda invocation cost
 
 	switch channel {
-	case "email":
-		if !userPrefs.EmailNotifications || userPrefs.EmailAddress == "" {
-			result.Error = "email notifications disabled or no email address"
-			costBuilder.WithError(result.Error)
-		} else {
-			deliveryStart = time.Now()
-			if err := np.deliverEmail(ctx, notification, userPrefs.EmailAddress); err != nil {
-				result.Error = err.Error()
-				costBuilder.WithError(result.Error)
-			} else {
-				result.Success = true
-				costBuilder.WithDelivery(channel, channel, true, 0)
-				
-				// Calculate email cost
-				emailCost := models.CalculateEmailCost(1)
-				result.Cost = emailCost
-				costBuilder.WithCosts(emailCost, 0, 0, 0, lambdaCostMicroCents, 0)
-			}
-		}
-
 	case "push":
 		if !userPrefs.PushNotifications {
 			result.Error = "push notifications disabled"
@@ -346,11 +309,11 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 			} else {
 				result.Success = true
 				costBuilder.WithDelivery(channel, channel, true, 0)
-				
+
 				// Calculate push cost
 				pushCost := models.CalculatePushCost(1)
 				result.Cost = pushCost
-				costBuilder.WithCosts(0, pushCost, 0, 0, lambdaCostMicroCents, 0)
+				costBuilder.WithCosts(pushCost, 0, lambdaCostMicroCents, 0)
 			}
 		}
 
@@ -366,22 +329,16 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 			} else {
 				result.Success = true
 				costBuilder.WithDelivery(channel, channel, true, 0)
-				
+
 				// Calculate websocket cost
 				websocketCost := models.CalculateWebSocketCost(1)
 				result.Cost = websocketCost
-				costBuilder.WithCosts(0, 0, 0, websocketCost, lambdaCostMicroCents, 0)
+				costBuilder.WithCosts(0, websocketCost, lambdaCostMicroCents, 0)
 			}
 		}
 
-	case "sms":
-		// SMS delivery would go here if implemented
-		deliveryStart = time.Now()
-		result.Error = "SMS delivery not implemented"
-		costBuilder.WithError(result.Error)
-
 	default:
-		result.Error = fmt.Sprintf("unknown delivery channel: %s", channel)
+		result.Error = fmt.Sprintf("unsupported delivery channel: %s (only push and websocket are supported)", channel)
 		costBuilder.WithError(result.Error)
 	}
 
@@ -391,9 +348,9 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 	if !deliveryStart.IsZero() {
 		deliveryDuration = time.Since(deliveryStart)
 	}
-	
+
 	processingDuration := totalDuration - deliveryDuration
-	
+
 	costBuilder.WithPerformance(
 		processingDuration.Milliseconds(),
 		deliveryDuration.Milliseconds(),
@@ -410,12 +367,12 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 
 	// Create cost tracking record
 	costTracking := costBuilder.Build()
-	
+
 	// Store cost tracking record asynchronously to avoid impacting delivery performance
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		if err := np.storeCostTracking(ctx, costTracking); err != nil {
 			np.logger.Warn("failed to store notification cost tracking",
 				zap.String("notification_id", notification.ID),
@@ -438,54 +395,7 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 	return result
 }
 
-func (np *NotificationProcessor) deliverEmail(ctx context.Context, notification *models.Notification, emailAddress string) error {
-	if np.sesClient == nil {
-		return fmt.Errorf("SES client not initialized")
-	}
-
-	// Build email content
-	subject := np.buildEmailSubject(notification)
-	bodyText := np.buildEmailBodyText(notification)
-	bodyHTML := np.buildEmailBodyHTML(notification)
-
-	// Send email using SES
-	input := &ses.SendEmailInput{
-		Source: aws.String(np.fromEmail),
-		Destination: &sestypes.Destination{
-			ToAddresses: []string{emailAddress},
-		},
-		Message: &sestypes.Message{
-			Subject: &sestypes.Content{
-				Data:    aws.String(subject),
-				Charset: aws.String("UTF-8"),
-			},
-			Body: &sestypes.Body{
-				Text: &sestypes.Content{
-					Data:    aws.String(bodyText),
-					Charset: aws.String("UTF-8"),
-				},
-				Html: &sestypes.Content{
-					Data:    aws.String(bodyHTML),
-					Charset: aws.String("UTF-8"),
-				},
-			},
-		},
-	}
-
-	_, err := np.sesClient.SendEmail(ctx, input)
-	if err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-
-	np.logger.Info("email notification delivered",
-		zap.String("notification_id", notification.ID),
-		zap.String("email", emailAddress),
-	)
-
-	return nil
-}
-
-func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *models.Notification, userPrefs *UserPreferences) error {
+func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *models.Notification, _ *UserPreferences) error {
 	if np.snsClient == nil {
 		return fmt.Errorf("SNS client not initialized")
 	}
@@ -496,9 +406,9 @@ func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *
 		"body":  notification.Body,
 		"data": map[string]any{
 			"notification_id": notification.ID,
-			"type":           notification.Type,
-			"actor_id":       notification.ActorID,
-			"target_id":      notification.TargetID,
+			"type":            notification.Type,
+			"actor_id":        notification.ActorID,
+			"target_id":       notification.TargetID,
 		},
 	}
 
@@ -516,7 +426,7 @@ func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *
 			zap.Error(err))
 		return fmt.Errorf("failed to send push notification: %w", err)
 	}
-	
+
 	np.logger.Info("push notification delivered successfully",
 		zap.String("notification_id", notification.ID),
 		zap.String("user_id", notification.UserID))
@@ -606,105 +516,8 @@ func (np *NotificationProcessor) sendWebSocketMessage(ctx context.Context, conne
 	return err
 }
 
-func (np *NotificationProcessor) buildEmailSubject(notification *models.Notification) string {
-	switch notification.Type {
-	case "mention":
-		return fmt.Sprintf("%s mentioned you", np.getActorName(notification))
-	case "follow":
-		return fmt.Sprintf("%s started following you", np.getActorName(notification))
-	case "favourite":
-		return fmt.Sprintf("%s favourited your post", np.getActorName(notification))
-	case "reblog":
-		return fmt.Sprintf("%s reblogged your post", np.getActorName(notification))
-	case "follow_request":
-		return fmt.Sprintf("%s requested to follow you", np.getActorName(notification))
-	default:
-		return notification.Title
-	}
-}
-
-func (np *NotificationProcessor) buildEmailBodyText(notification *models.Notification) string {
-	actorName := np.getActorName(notification)
-	baseURL := fmt.Sprintf("https://%s", np.domain)
-
-	switch notification.Type {
-	case "mention":
-		return fmt.Sprintf("Hello,\n\n%s mentioned you in a post.\n\nView the mention: %s/web/notifications\n\nBest regards,\n%s",
-			actorName, baseURL, np.domain)
-	case "follow":
-		return fmt.Sprintf("Hello,\n\n%s started following you.\n\nView your followers: %s/web/notifications\n\nBest regards,\n%s",
-			actorName, baseURL, np.domain)
-	case "favourite":
-		return fmt.Sprintf("Hello,\n\n%s favourited your post.\n\nView the notification: %s/web/notifications\n\nBest regards,\n%s",
-			actorName, baseURL, np.domain)
-	case "reblog":
-		return fmt.Sprintf("Hello,\n\n%s reblogged your post.\n\nView the notification: %s/web/notifications\n\nBest regards,\n%s",
-			actorName, baseURL, np.domain)
-	default:
-		return fmt.Sprintf("Hello,\n\n%s\n\nView your notifications: %s/web/notifications\n\nBest regards,\n%s",
-			notification.Body, baseURL, np.domain)
-	}
-}
-
-func (np *NotificationProcessor) buildEmailBodyHTML(notification *models.Notification) string {
-	baseURL := fmt.Sprintf("https://%s", np.domain)
-
-	return fmt.Sprintf(`
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>%s</title>
-</head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #4a5568;">%s</h2>
-        <p>%s</p>
-        <div style="margin: 20px 0;">
-            <a href="%s/web/notifications" style="background-color: #3182ce; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Notifications</a>
-        </div>
-        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-        <p style="font-size: 12px; color: #718096;">
-            This notification was sent from %s. You can manage your notification preferences in your account settings.
-        </p>
-    </div>
-</body>
-</html>`,
-		np.buildEmailSubject(notification),
-		np.buildEmailSubject(notification),
-		notification.Body,
-		baseURL,
-		np.domain,
-	)
-}
-
-func (np *NotificationProcessor) getActorName(notification *models.Notification) string {
-	// Look up the actor details from storage using userRepo
-	if notification.ActorID != "" {
-		// Try to get actor details - this would need an actor repository
-		// For now, we'll extract a username from the actor ID and use that
-		actorUsername := extractUsernameFromActorID(notification.ActorID)
-		if actorUsername != "" {
-			user, err := np.userRepo.GetUser(context.Background(), actorUsername)
-			if err != nil {
-				np.logger.Warn("failed to get user details for actor",
-					zap.String("actor_id", notification.ActorID),
-					zap.String("username", actorUsername),
-					zap.Error(err))
-				return notification.ActorID // Fallback to ID
-			}
-			
-			// Return display name if available
-			if user.DisplayName != "" {
-				return user.DisplayName
-			}
-			return user.Username
-		}
-		
-		return notification.ActorID
-	}
-	return "Someone"
-}
+// Removed unused getActorName function
+// If needed in the future, this function looked up actor details from storage
 
 func (np *NotificationProcessor) getUserPreferences(ctx context.Context, userID string) (*UserPreferences, error) {
 	// Get user preferences from storage
@@ -715,26 +528,22 @@ func (np *NotificationProcessor) getUserPreferences(ctx context.Context, userID 
 			zap.Error(err))
 		// Return default preferences if not found
 		return &UserPreferences{
-			EmailNotifications:     true,
 			PushNotifications:      true,
 			WebSocketNotifications: true,
-			EmailAddress:          "",
-			PushEndpoint:          "",
+			PushEndpoint:           "",
 		}, nil
 	}
-	
+
 	// Convert storage preferences to notification preferences
 	_ = userPrefs // Use the variable to avoid unused error
 	return &UserPreferences{
-		EmailNotifications:     true, // Could be derived from userPrefs fields
 		PushNotifications:      true, // Could be derived from userPrefs fields
 		WebSocketNotifications: true, // Could be derived from userPrefs fields
-		EmailAddress:          "", // Would be in user data
-		PushEndpoint:          "", // Would be stored in user preferences
+		PushEndpoint:           "",   // Would be stored in user preferences
 	}, nil
 }
 
-func (np *NotificationProcessor) getActiveWebSocketConnections(ctx context.Context, userID string) ([]string, error) {
+func (np *NotificationProcessor) getActiveWebSocketConnections(_ context.Context, userID string) ([]string, error) {
 	// Query the WebSocket connections from storage using userRepo
 	// In a full implementation, this would query a WebSocket connections table
 	// For now, we'll return an empty list as a safe fallback
@@ -749,13 +558,13 @@ func (np *NotificationProcessor) getActiveWebSocketConnections(ctx context.Conte
 		// Return empty slice on error - websocket delivery is not critical
 		return []string{}, nil
 	}
-	
+
 	// Extract connection IDs
 	connectionIDs := make([]string, len(connections))
 	for i, conn := range connections {
 		connectionIDs[i] = conn.ConnectionID
 	}
-	
+
 	return connectionIDs, nil
 }
 
@@ -763,16 +572,16 @@ func (np *NotificationProcessor) getActiveWebSocketConnections(ctx context.Conte
 func (np *NotificationProcessor) sendPushNotification(ctx context.Context, userID string, payload []byte) error {
 	// Get user's push notification endpoints from preferences
 	// In a full implementation, users would have registered FCM tokens or APNS device tokens
-	
+
 	// Create SNS message for push notification
 	message := string(payload)
-	
+
 	// Get push notification topic from environment
 	pushTopicArn := os.Getenv("PUSH_NOTIFICATION_TOPIC_ARN")
 	if pushTopicArn == "" {
 		return fmt.Errorf("PUSH_NOTIFICATION_TOPIC_ARN not configured")
 	}
-	
+
 	// Publish to SNS topic for push notifications
 	// This would route to FCM for Android or APNS for iOS based on user's device registrations
 	_, err := np.snsClient.Publish(ctx, &sns.PublishInput{
@@ -789,11 +598,11 @@ func (np *NotificationProcessor) sendPushNotification(ctx context.Context, userI
 			},
 		},
 	})
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to publish push notification to SNS: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -824,27 +633,8 @@ func (np *NotificationProcessor) updateDeliveryStatus(ctx context.Context, notif
 	return np.notificationRepo.UpdateNotification(ctx, notification)
 }
 
-// extractUsernameFromActorID extracts username from an ActivityPub actor ID
-func extractUsernameFromActorID(actorID string) string {
-	// For actor IDs like "https://domain.com/users/username" or "@username@domain"
-	if strings.Contains(actorID, "/users/") {
-		parts := strings.Split(actorID, "/users/")
-		if len(parts) >= 2 {
-			return strings.TrimSuffix(parts[1], "/")
-		}
-	}
-	
-	// Handle @username@domain format
-	if strings.HasPrefix(actorID, "@") && strings.Contains(actorID, "@") {
-		parts := strings.Split(strings.TrimPrefix(actorID, "@"), "@")
-		if len(parts) >= 1 {
-			return parts[0]
-		}
-	}
-	
-	// Fallback - return empty string for unknown formats
-	return ""
-}
+// Removed unused extractUsernameFromActorID function
+// This function extracted usernames from ActivityPub actor IDs
 
 var (
 	logger    *zap.Logger
@@ -929,7 +719,7 @@ func main() {
 	})
 
 	// Set SQS handler for notification delivery
-	app.SQS("notification-delivery", func(ctx *lift.Context) error {
+	_ = app.SQS("notification-delivery", func(ctx *lift.Context) error {
 		// Extract SQS event from Lift context
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
@@ -977,12 +767,12 @@ func (np *NotificationProcessor) storeCostTracking(ctx context.Context, costTrac
 		EstimatedCostDollars: float64(costTracking.TotalCostMicroCents) / 1_000_000.0,
 		Properties: map[string]interface{}{
 			"notification_id":   costTracking.NotificationID,
-			"user_id":          costTracking.UserID,
-			"username":         costTracking.Username,
-			"delivery_method":  costTracking.DeliveryMethod,
+			"user_id":           costTracking.UserID,
+			"username":          costTracking.Username,
+			"delivery_method":   costTracking.DeliveryMethod,
 			"notification_type": costTracking.NotificationType,
-			"success":          costTracking.Success,
-			"retry_count":      costTracking.RetryCount,
+			"success":           costTracking.Success,
+			"retry_count":       costTracking.RetryCount,
 		},
 		Tags: costTracking.Tags,
 	}
@@ -1003,37 +793,37 @@ func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, us
 	// Get the user's daily budget
 	budget, err := np.notificationCostRepo.GetBudget(ctx, username, "daily")
 	if err != nil {
-		np.logger.Error("failed to get user budget", 
+		np.logger.Error("failed to get user budget",
 			zap.String("username", username),
 			zap.Error(err))
 		// On error, allow the notification (fail open)
 		return true, nil
 	}
-	
+
 	// If no budget is set, use default limits
 	if budget == nil {
 		// Default budget: $0.01 per user per day (1000 micro-cents)
 		dailyBudgetMicroCents := int64(1000)
-		
+
 		np.logger.Debug("no budget set, using default",
 			zap.String("username", username),
 			zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents),
 			zap.Int64("daily_budget_micro_cents", dailyBudgetMicroCents))
-		
+
 		// For now, always allow (budget checking can be enabled by setting budgets)
 		return true, nil
 	}
-	
+
 	// Check if budget enforcement is enabled
 	if !budget.Enabled {
 		np.logger.Debug("budget disabled for user",
 			zap.String("username", username))
 		return true, nil
 	}
-	
+
 	// Check if adding this cost would exceed the budget
 	projectedSpending := budget.SpentMicroCents + estimatedCostMicroCents
-	
+
 	np.logger.Debug("checking notification budget",
 		zap.String("username", username),
 		zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents),
@@ -1041,7 +831,7 @@ func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, us
 		zap.Int64("projected_spending_micro_cents", projectedSpending),
 		zap.Int64("budget_limit_micro_cents", budget.LimitMicroCents),
 		zap.Bool("budget_exceeded", budget.BudgetExceeded))
-	
+
 	// Check if delivery should be blocked
 	if budget.ShouldBlockDelivery() {
 		np.logger.Warn("notification blocked due to budget limits",
@@ -1051,7 +841,7 @@ func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, us
 			zap.Bool("budget_exceeded", budget.BudgetExceeded))
 		return false, nil
 	}
-	
+
 	// Check if this would exceed the budget
 	if projectedSpending > budget.LimitMicroCents {
 		np.logger.Warn("notification would exceed budget",
@@ -1060,80 +850,6 @@ func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, us
 			zap.Int64("limit_micro_cents", budget.LimitMicroCents))
 		return false, nil
 	}
-	
+
 	return true, nil
-}
-
-// aggregateNotificationCosts aggregates costs by period for reporting
-func (np *NotificationProcessor) aggregateNotificationCosts(ctx context.Context, period string, startTime, endTime time.Time) error {
-	// This would implement cost aggregation similar to relay cost aggregation
-	// It would:
-	// 1. Query all notification cost records in the time window
-	// 2. Group by delivery method, user, notification type
-	// 3. Calculate aggregate statistics
-	// 4. Store in NotificationCostAggregation records
-	
-	np.logger.Info("aggregating notification costs",
-		zap.String("period", period),
-		zap.Time("start_time", startTime),
-		zap.Time("end_time", endTime))
-	
-	// Implementation would go here
-	return nil
-}
-
-// getNotificationCostStats returns cost statistics for the notification system
-func (np *NotificationProcessor) getNotificationCostStats(ctx context.Context, startTime, endTime time.Time) (*NotificationCostStats, error) {
-	// This would calculate comprehensive notification cost statistics
-	stats := &NotificationCostStats{
-		StartTime: startTime,
-		EndTime:   endTime,
-		DeliveryMethodBreakdown: make(map[string]*DeliveryMethodStats),
-		NotificationTypeBreakdown: make(map[string]*NotificationTypeStats),
-	}
-	
-	// Implementation would query cost tracking records and calculate statistics
-	return stats, nil
-}
-
-// NotificationCostStats represents comprehensive notification cost statistics
-type NotificationCostStats struct {
-	StartTime                   time.Time
-	EndTime                     time.Time
-	TotalNotifications          int64
-	SuccessfulDeliveries        int64
-	FailedDeliveries            int64
-	TotalCostMicroCents         int64
-	TotalCostDollars            float64
-	AverageCostPerNotification  float64
-	SuccessRate                 float64
-	DeliveryMethodBreakdown     map[string]*DeliveryMethodStats
-	NotificationTypeBreakdown   map[string]*NotificationTypeStats
-}
-
-// DeliveryMethodStats represents statistics for a specific delivery method
-type DeliveryMethodStats struct {
-	Method                  string
-	Count                   int64
-	SuccessfulDeliveries    int64
-	FailedDeliveries        int64
-	TotalCostMicroCents     int64
-	TotalCostDollars        float64
-	AverageCostMicroCents   int64
-	AverageCostDollars      float64
-	SuccessRate             float64
-	AverageDeliveryTimeMs   float64
-}
-
-// NotificationTypeStats represents statistics for a specific notification type
-type NotificationTypeStats struct {
-	Type                    string
-	Count                   int64
-	SuccessfulDeliveries    int64
-	FailedDeliveries        int64
-	TotalCostMicroCents     int64
-	TotalCostDollars        float64
-	AverageCostMicroCents   int64
-	AverageCostDollars      float64
-	SuccessRate             float64
 }

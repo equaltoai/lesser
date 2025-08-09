@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/stretchr/testify/assert"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 func TestActor_TableName(t *testing.T) {
@@ -245,7 +246,7 @@ func TestActor_GSI5RecentActivity(t *testing.T) {
 	afterSetup := time.Now()
 
 	// GSI5PK should be today's date
-	expectedDatePrefix := "ACTIVE#" + time.Now().Format("2006-01-02")
+	expectedDatePrefix := "ACTIVE#" + time.Now().Format(common.DateFormat)
 	assert.Equal(t, expectedDatePrefix, actor.GSI5PK)
 
 	// GSI5SK should contain timestamp and username

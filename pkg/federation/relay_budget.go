@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
-// RelayBudgetService manages relay budgets and cost limits  
+// RelayBudgetService manages relay budgets and cost limits
 type RelayBudgetService struct {
 	store  core.RepositoryStorage
 	logger *zap.Logger
@@ -49,7 +50,7 @@ func (rbs *RelayBudgetService) CreateRelayBudget(ctx context.Context, relayURL, 
 		zap.String("relay_url", relayURL),
 		zap.String("period", period),
 		zap.Int64("limit_micro_cents", limitMicroCents),
-		zap.Float64("warning_threshold", warningThreshold),
+		zap.Float64(storage.FieldWarningThreshold, warningThreshold),
 		zap.Float64("critical_threshold", criticalThreshold))
 
 	return nil
@@ -108,7 +109,7 @@ func (rbs *RelayBudgetService) GetRelayBudgetStatus(ctx context.Context, relayUR
 		budget.WarningAlertSent = false
 		budget.CriticalAlertSent = false
 		budget.BudgetExceeded = false
-		
+
 		// Update in storage
 		if updateErr := rbs.store.Cost().UpdateRelayBudget(ctx, budget); updateErr != nil {
 			rbs.logger.Error("failed to reset budget", zap.Error(updateErr))
@@ -116,18 +117,18 @@ func (rbs *RelayBudgetService) GetRelayBudgetStatus(ctx context.Context, relayUR
 	}
 
 	return &RelayBudgetStatus{
-		RelayURL:                relayURL,
-		Period:                  period,
-		HasBudget:               true,
-		LimitMicroCents:         budget.LimitMicroCents,
-		CurrentUsageMicroCents:  budget.CurrentUsageMicroCents,
-		UsagePercent:            budget.CurrentUsagePercent,
-		BudgetExceeded:          budget.BudgetExceeded,
-		WarningThresholdReached: budget.CurrentUsagePercent >= budget.WarningThresholdPercent,
+		RelayURL:                 relayURL,
+		Period:                   period,
+		HasBudget:                true,
+		LimitMicroCents:          budget.LimitMicroCents,
+		CurrentUsageMicroCents:   budget.CurrentUsageMicroCents,
+		UsagePercent:             budget.CurrentUsagePercent,
+		BudgetExceeded:           budget.BudgetExceeded,
+		WarningThresholdReached:  budget.CurrentUsagePercent >= budget.WarningThresholdPercent,
 		CriticalThresholdReached: budget.CurrentUsagePercent >= budget.CriticalThresholdPercent,
-		PauseRelay:              budget.PauseRelay,
-		ReduceFrequency:         budget.ReduceFrequency,
-		LastResetAt:             budget.LastResetAt,
+		PauseRelay:               budget.PauseRelay,
+		ReduceFrequency:          budget.ReduceFrequency,
+		LastResetAt:              budget.LastResetAt,
 	}, nil
 }
 
@@ -141,12 +142,12 @@ func (rbs *RelayBudgetService) CheckRelayBudget(ctx context.Context, relayURL st
 		if dailyStatus.BudgetExceeded {
 			return fmt.Errorf("daily budget already exceeded for relay %s", relayURL)
 		}
-		
+
 		if dailyStatus.CurrentUsageMicroCents+estimatedCostMicroCents > dailyStatus.LimitMicroCents {
 			return fmt.Errorf("operation would exceed daily budget: current %d + estimated %d > limit %d microcents",
 				dailyStatus.CurrentUsageMicroCents, estimatedCostMicroCents, dailyStatus.LimitMicroCents)
 		}
-		
+
 		if dailyStatus.PauseRelay {
 			return fmt.Errorf("relay operations paused due to budget limit")
 		}
@@ -160,7 +161,7 @@ func (rbs *RelayBudgetService) CheckRelayBudget(ctx context.Context, relayURL st
 		if monthlyStatus.BudgetExceeded {
 			return fmt.Errorf("monthly budget already exceeded for relay %s", relayURL)
 		}
-		
+
 		if monthlyStatus.CurrentUsageMicroCents+estimatedCostMicroCents > monthlyStatus.LimitMicroCents {
 			return fmt.Errorf("operation would exceed monthly budget: current %d + estimated %d > limit %d microcents",
 				monthlyStatus.CurrentUsageMicroCents, estimatedCostMicroCents, monthlyStatus.LimitMicroCents)
@@ -173,11 +174,11 @@ func (rbs *RelayBudgetService) CheckRelayBudget(ctx context.Context, relayURL st
 // AggregateRelayCosts aggregates relay costs into metrics for budget tracking
 func (rbs *RelayBudgetService) AggregateRelayCosts(ctx context.Context, relayURL string) error {
 	now := time.Now()
-	
+
 	// Aggregate daily costs
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	dayEnd := dayStart.Add(24 * time.Hour)
-	
+
 	if err := rbs.store.Cost().AggregateRelayCosts(ctx, relayURL, "daily", dayStart, dayEnd); err != nil {
 		rbs.logger.Error("failed to aggregate daily relay costs",
 			zap.String("relay_url", relayURL),
@@ -213,7 +214,7 @@ func (rbs *RelayBudgetService) GetRelayBudgetRecommendations(ctx context.Context
 	// Get recent cost summary
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -30) // Last 30 days
-	
+
 	summary, err := rbs.store.Cost().GetRelayCostSummary(ctx, relayURL, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get relay cost summary: %w", err)
@@ -283,30 +284,30 @@ func (rbs *RelayBudgetService) GetRelayBudgetRecommendations(ctx context.Context
 // shouldResetBudget checks if the budget period has passed and needs reset
 func (rbs *RelayBudgetService) shouldResetBudget(budget *models.RelayBudget) bool {
 	now := time.Now()
-	
+
 	switch budget.Period {
 	case "daily":
 		// Reset if it's a new day
-		return budget.LastResetAt.Day() != now.Day() || 
-			   budget.LastResetAt.Month() != now.Month() ||
-			   budget.LastResetAt.Year() != now.Year()
-			   
+		return budget.LastResetAt.Day() != now.Day() ||
+			budget.LastResetAt.Month() != now.Month() ||
+			budget.LastResetAt.Year() != now.Year()
+
 	case "weekly":
 		// Reset if it's been more than 7 days
 		return now.Sub(budget.LastResetAt) >= 7*24*time.Hour
-		
+
 	case "monthly":
 		// Reset if it's a new month
 		return budget.LastResetAt.Month() != now.Month() ||
-			   budget.LastResetAt.Year() != now.Year()
-			   
+			budget.LastResetAt.Year() != now.Year()
+
 	default:
 		return false
 	}
 }
 
 // checkBudgetThresholds checks and handles budget threshold alerts
-func (rbs *RelayBudgetService) checkBudgetThresholds(ctx context.Context, budget *models.RelayBudget) error {
+func (rbs *RelayBudgetService) checkBudgetThresholds(_ context.Context, budget *models.RelayBudget) error {
 	usagePercent := budget.CurrentUsagePercent
 
 	// Check warning threshold
@@ -315,10 +316,10 @@ func (rbs *RelayBudgetService) checkBudgetThresholds(ctx context.Context, budget
 			zap.String("relay_url", budget.RelayURL),
 			zap.String("period", budget.Period),
 			zap.Float64("usage_percent", usagePercent),
-			zap.Float64("warning_threshold", budget.WarningThresholdPercent))
-		
+			zap.Float64(storage.FieldWarningThreshold, budget.WarningThresholdPercent))
+
 		budget.WarningAlertSent = true
-		
+
 		// Send notification if enabled
 		if budget.NotifyAdmin {
 			// In a full implementation, you'd send an actual notification here
@@ -335,20 +336,20 @@ func (rbs *RelayBudgetService) checkBudgetThresholds(ctx context.Context, budget
 			zap.String("period", budget.Period),
 			zap.Float64("usage_percent", usagePercent),
 			zap.Float64("critical_threshold", budget.CriticalThresholdPercent))
-		
+
 		budget.CriticalAlertSent = true
-		
+
 		// Take configured actions
 		if budget.PauseRelay {
 			rbs.logger.Warn("pausing relay due to budget threshold",
 				zap.String("relay_url", budget.RelayURL))
 		}
-		
+
 		if budget.ReduceFrequency {
 			rbs.logger.Info("reducing relay forwarding frequency",
 				zap.String("relay_url", budget.RelayURL))
 		}
-		
+
 		// Send critical notification
 		if budget.NotifyAdmin {
 			rbs.logger.Error("would send critical alert to admin",
@@ -364,18 +365,18 @@ func (rbs *RelayBudgetService) checkBudgetThresholds(ctx context.Context, budget
 
 // RelayBudgetStatus represents the current budget status for a relay
 type RelayBudgetStatus struct {
-	RelayURL                  string    `json:"relay_url"`
-	Period                    string    `json:"period"`
-	HasBudget                 bool      `json:"has_budget"`
-	LimitMicroCents           int64     `json:"limit_micro_cents"`
-	CurrentUsageMicroCents    int64     `json:"current_usage_micro_cents"`
-	UsagePercent              float64   `json:"usage_percent"`
-	BudgetExceeded            bool      `json:"budget_exceeded"`
-	WarningThresholdReached   bool      `json:"warning_threshold_reached"`
-	CriticalThresholdReached  bool      `json:"critical_threshold_reached"`
-	PauseRelay                bool      `json:"pause_relay"`
-	ReduceFrequency           bool      `json:"reduce_frequency"`
-	LastResetAt               time.Time `json:"last_reset_at"`
+	RelayURL                 string    `json:"relay_url"`
+	Period                   string    `json:"period"`
+	HasBudget                bool      `json:"has_budget"`
+	LimitMicroCents          int64     `json:"limit_micro_cents"`
+	CurrentUsageMicroCents   int64     `json:"current_usage_micro_cents"`
+	UsagePercent             float64   `json:"usage_percent"`
+	BudgetExceeded           bool      `json:"budget_exceeded"`
+	WarningThresholdReached  bool      `json:"warning_threshold_reached"`
+	CriticalThresholdReached bool      `json:"critical_threshold_reached"`
+	PauseRelay               bool      `json:"pause_relay"`
+	ReduceFrequency          bool      `json:"reduce_frequency"`
+	LastResetAt              time.Time `json:"last_reset_at"`
 }
 
 // RelayBudgetRecommendations provides budget optimization recommendations

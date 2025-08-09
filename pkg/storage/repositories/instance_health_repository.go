@@ -80,7 +80,7 @@ func (r *InstanceHealthRepository) SaveHealthChecks(ctx context.Context, healthC
 // GetLatestHealthCheck retrieves the most recent health check for a domain
 func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, domain string) (*models.InstanceHealth, error) {
 	var healthChecks []models.InstanceHealth
-	
+
 	err := r.db.WithContext(ctx).Model(&models.InstanceHealth{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
 		Where("SK", ">", "HEALTH#").
@@ -105,12 +105,12 @@ func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, dom
 // GetHealthHistory retrieves health history for a domain within a time range
 func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain string, since time.Time, limit int) ([]*models.InstanceHealth, error) {
 	var healthChecks []models.InstanceHealth
-	
+
 	// Build query
 	query := r.db.WithContext(ctx).Model(&models.InstanceHealth{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
 		OrderBy("SK", "DESC") // Most recent first
-	
+
 	// Add time range filter if specified
 	if !since.IsZero() {
 		query = query.Where("SK", ">=", fmt.Sprintf("HEALTH#%d", since.UnixNano()))
@@ -118,12 +118,12 @@ func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain 
 		// Ensure we only get health records
 		query = query.Where("SK", ">", "HEALTH#")
 	}
-	
+
 	// Add limit if specified
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	err := query.All(&healthChecks)
 	if err != nil {
 		r.logger.Error("Failed to get health history",
@@ -148,14 +148,14 @@ func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain 
 func (r *InstanceHealthRepository) GetDomainsForHealthCheck(ctx context.Context, limit int) ([]string, error) {
 	// Query for recent health summaries to get active domains
 	var summaries []models.InstanceHealthSummary
-	
+
 	query := r.db.WithContext(ctx).Model(&models.InstanceHealthSummary{}).
 		Where("SK", "=", "SUMMARY#24h")
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	err := query.All(&summaries)
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("Failed to get domains for health check", zap.Error(err))
@@ -311,7 +311,7 @@ func (r *InstanceHealthRepository) calculateAggregatedHealthScore(summary *model
 	// Response time penalty (30% weight)
 	if summary.AvgResponseTime > time.Second {
 		penalty := float64(summary.AvgResponseTime.Milliseconds()-1000) / 100.0
-		score -= min(penalty, 30.0)
+		score -= mathMin(penalty, 30.0)
 	}
 
 	// Error rate penalty (20% weight)
@@ -320,17 +320,17 @@ func (r *InstanceHealthRepository) calculateAggregatedHealthScore(summary *model
 	// Backlog penalty (10% weight)
 	if summary.MaxInboxBacklog > 1000 {
 		penalty := float64(summary.MaxInboxBacklog-1000) / 1000.0
-		score -= min(penalty, 10.0)
+		score -= mathMin(penalty, 10.0)
 	}
 
-	return max(score, 0.0)
+	return mathMax(score, 0.0)
 }
 
 // CleanupOldHealthData removes health data older than the specified duration
-func (r *InstanceHealthRepository) CleanupOldHealthData(ctx context.Context, olderThan time.Duration) (int, error) {
+func (r *InstanceHealthRepository) CleanupOldHealthData(_ context.Context, olderThan time.Duration) (int, error) {
 	// DynamoDB TTL should handle this automatically, but we can implement manual cleanup if needed
 	cutoff := time.Now().UTC().Add(-olderThan)
-	
+
 	r.logger.Info("Health data cleanup triggered (TTL should handle this automatically)",
 		zap.Time("cutoff", cutoff),
 		zap.Duration("older_than", olderThan))
@@ -343,7 +343,7 @@ func (r *InstanceHealthRepository) CleanupOldHealthData(ctx context.Context, old
 func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, threshold float64) ([]string, error) {
 	// Query recent summaries and check health scores
 	var summaries []models.InstanceHealthSummary
-	
+
 	err := r.db.WithContext(ctx).Model(&models.InstanceHealthSummary{}).
 		Where("SK", "=", "SUMMARY#1h"). // Check hourly summaries
 		All(&summaries)
@@ -367,14 +367,14 @@ func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, th
 }
 
 // Helper functions
-func min(a, b float64) float64 {
+func mathMin(a, b float64) float64 {
 	if a < b {
 		return a
 	}
 	return b
 }
 
-func max(a, b float64) float64 {
+func mathMax(a, b float64) float64 {
 	if a > b {
 		return a
 	}

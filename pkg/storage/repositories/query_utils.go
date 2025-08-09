@@ -252,7 +252,7 @@ func (q *QueryUtils) BatchDeleteQuery(ctx context.Context, keys []struct{ PK, SK
 
 // FilterActiveItems filters out expired/inactive items based on common patterns
 func (q *QueryUtils) FilterActiveItems(items []map[string]interface{}, currentTimestamp int64) []map[string]interface{} {
-	var activeItems []map[string]interface{}
+	activeItems := make([]map[string]interface{}, 0, len(items))
 
 	for _, item := range items {
 		// Check for expiration
@@ -278,7 +278,7 @@ func (q *QueryUtils) FilterActiveItems(items []map[string]interface{}, currentTi
 	return activeItems
 }
 
-// Common query patterns used across repositories
+// CommonQueries contains common query patterns used across repositories
 type CommonQueries struct {
 	*QueryUtils
 }
@@ -298,7 +298,7 @@ func (c *CommonQueries) GetUserFollows(ctx context.Context, username string, lim
 	})
 }
 
-// GetUserFollowers retrieves followers for a user with pagination  
+// GetUserFollowers retrieves followers for a user with pagination
 func (c *CommonQueries) GetUserFollowers(ctx context.Context, username string, limit int, cursor string) (*QueryResult[map[string]interface{}], error) {
 	return c.GSIStatusQuery(ctx, "gsi1-index", fmt.Sprintf("follow#%s", username), &QueryOptions{
 		Limit:  limit,

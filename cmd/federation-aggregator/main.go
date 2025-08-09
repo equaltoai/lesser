@@ -1,3 +1,4 @@
+// Package main implements the federation-aggregator Lambda function for aggregating federation statistics.
 package main
 
 import (
@@ -38,7 +39,7 @@ type FederationAggregatorProcessor struct {
 
 // AggregationEvent represents the input for federation aggregation
 type AggregationEvent struct {
-	Type      string    `json:"type"`      // "hourly", "daily", "weekly"
+	Type      string    `json:"type"` // "hourly", "daily", "weekly"
 	StartTime time.Time `json:"startTime"`
 	EndTime   time.Time `json:"endTime"`
 	Domains   []string  `json:"domains,omitempty"` // Optional: specific domains to aggregate
@@ -49,21 +50,21 @@ type FederationAggregation struct {
 	PK string `dynamorm:"pk"`
 	SK string `dynamorm:"sk"`
 
-	Period    string    `json:"period"`    // hourly, daily, weekly
+	Period    string    `json:"period"` // hourly, daily, weekly
 	StartTime time.Time `json:"startTime"`
 	EndTime   time.Time `json:"endTime"`
 
 	// Aggregated metrics
-	TotalActivities      int                `json:"totalActivities"`
-	SuccessfulActivities int                `json:"successfulActivities"`
-	FailedActivities     int                `json:"failedActivities"`
-	ActiveDomains        int                `json:"activeDomains"`
-	TotalInboundBytes    int64              `json:"totalInboundBytes"`
-	TotalOutboundBytes   int64              `json:"totalOutboundBytes"`
-	AvgResponseTime      float64            `json:"avgResponseTime"`
-	ActivityTypeCounts   map[string]int     `json:"activityTypeCounts"`
+	TotalActivities      int                    `json:"totalActivities"`
+	SuccessfulActivities int                    `json:"successfulActivities"`
+	FailedActivities     int                    `json:"failedActivities"`
+	ActiveDomains        int                    `json:"activeDomains"`
+	TotalInboundBytes    int64                  `json:"totalInboundBytes"`
+	TotalOutboundBytes   int64                  `json:"totalOutboundBytes"`
+	AvgResponseTime      float64                `json:"avgResponseTime"`
+	ActivityTypeCounts   map[string]int         `json:"activityTypeCounts"`
 	DomainStats          map[string]*DomainStat `json:"domainStats"`
-	SoftwareDistribution map[string]int     `json:"softwareDistribution"`
+	SoftwareDistribution map[string]int         `json:"softwareDistribution"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -71,14 +72,14 @@ type FederationAggregation struct {
 
 // DomainStat represents per-domain statistics
 type DomainStat struct {
-	Domain         string  `json:"domain"`
-	ActivityCount  int     `json:"activityCount"`
-	SuccessCount   int     `json:"successCount"`
-	ErrorCount     int     `json:"errorCount"`
-	InboundBytes   int64   `json:"inboundBytes"`
-	OutboundBytes  int64   `json:"outboundBytes"`
-	AvgResponseTime float64 `json:"avgResponseTime"`
-	LastSeen       time.Time `json:"lastSeen"`
+	Domain          string    `json:"domain"`
+	ActivityCount   int       `json:"activityCount"`
+	SuccessCount    int       `json:"successCount"`
+	ErrorCount      int       `json:"errorCount"`
+	InboundBytes    int64     `json:"inboundBytes"`
+	OutboundBytes   int64     `json:"outboundBytes"`
+	AvgResponseTime float64   `json:"avgResponseTime"`
+	LastSeen        time.Time `json:"lastSeen"`
 }
 
 // NewFederationAggregatorProcessor creates a new federation aggregator processor
@@ -112,10 +113,10 @@ func (p *FederationAggregatorProcessor) initializeAWSClients(ctx context.Context
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
-	
+
 	p.lambdaClient = awslambda.NewFromConfig(awsCfg)
 	p.sqsClient = sqs.NewFromConfig(awsCfg)
-	
+
 	return nil
 }
 
@@ -139,8 +140,8 @@ func (p *FederationAggregatorProcessor) HandleSQS(ctx *lift.Context, event event
 				zap.String("message_id", record.MessageId),
 				zap.Error(err),
 			)
-			return lift.NewLiftError("MESSAGE_PROCESSING_FAILED", 
-				fmt.Sprintf("failed to process message %s: %v", record.MessageId, err), 
+			return lift.NewLiftError("MESSAGE_PROCESSING_FAILED",
+				fmt.Sprintf("failed to process message %s: %v", record.MessageId, err),
 				500)
 		}
 	}
@@ -194,7 +195,7 @@ func main() {
 	app.Use(patterns.RecoveryMiddleware(logger))
 
 	// Handle SQS events for custom aggregation requests
-	app.SQS("federation-aggregator", func(ctx *lift.Context) error {
+	_ = app.SQS("federation-aggregator", func(ctx *lift.Context) error {
 		// Extract SQS event from Lift context
 		if ctx.Request.RawEvent == nil {
 			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
@@ -262,19 +263,10 @@ func (p *FederationAggregatorProcessor) handleAggregationEvent(ctx context.Conte
 		zap.Time("end_time", event.EndTime),
 		zap.Strings("domains", event.Domains))
 
-	// Get all federation activities for the time period
-	activities, err := p.federationActivityRepository.GetRecentActivities(ctx, event.StartTime, 10000)
+	// Get filtered activities for the time period
+	filteredActivities, err := p.getFilteredActivities(ctx, event)
 	if err != nil {
-		return fmt.Errorf("failed to get federation activities: %w", err)
-	}
-
-	// Filter activities by end time
-	var filteredActivities []*models.FederationActivity
-	for _, activity := range activities {
-		if activity.Timestamp.After(event.EndTime) {
-			continue
-		}
-		filteredActivities = append(filteredActivities, activity)
+		return err
 	}
 
 	if len(filteredActivities) == 0 {
@@ -285,135 +277,15 @@ func (p *FederationAggregatorProcessor) handleAggregationEvent(ctx context.Conte
 		return nil
 	}
 
-	// Create aggregation
-	aggregation := &FederationAggregation{
-		PK:                   fmt.Sprintf("fed_agg#%s", event.Type),
-		SK:                   fmt.Sprintf("agg#%s", event.StartTime.Format("20060102150405")),
-		Period:               event.Type,
-		StartTime:            event.StartTime,
-		EndTime:              event.EndTime,
-		ActivityTypeCounts:   make(map[string]int),
-		DomainStats:          make(map[string]*DomainStat),
-		SoftwareDistribution: make(map[string]int),
-		CreatedAt:            time.Now(),
-		UpdatedAt:            time.Now(),
+	// Create and populate aggregation
+	aggregation := p.createAggregation(event)
+	domainSoftware := p.processActivities(filteredActivities, event.Domains, aggregation)
+
+	// Calculate per-domain averages and software distribution
+	if err := p.calculateDomainMetrics(ctx, event, aggregation); err != nil {
+		p.logger.Warn("failed to calculate domain metrics", zap.Error(err))
 	}
-
-	// Process activities
-	totalResponseTime := float64(0)
-	responseTimeCount := 0
-	domainSoftware := make(map[string]string)
-
-	for _, activity := range filteredActivities {
-		// Filter by specific domains if provided
-		if len(event.Domains) > 0 {
-			found := false
-			for _, d := range event.Domains {
-				if activity.Domain == d {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-
-		// Update total counts
-		aggregation.TotalActivities++
-		if activity.Success {
-			aggregation.SuccessfulActivities++
-			if activity.ResponseTime > 0 {
-				totalResponseTime += activity.ResponseTime
-				responseTimeCount++
-			}
-		} else {
-			aggregation.FailedActivities++
-		}
-
-		// Update bytes transferred
-		aggregation.TotalInboundBytes += activity.InboundSize
-		aggregation.TotalOutboundBytes += activity.OutboundSize
-
-		// Update activity type counts
-		aggregation.ActivityTypeCounts[activity.ActivityType]++
-
-		// Update per-domain stats
-		domainStat, exists := aggregation.DomainStats[activity.Domain]
-		if !exists {
-			domainStat = &DomainStat{
-				Domain: activity.Domain,
-			}
-			aggregation.DomainStats[activity.Domain] = domainStat
-		}
-
-		domainStat.ActivityCount++
-		if activity.Success {
-			domainStat.SuccessCount++
-		} else {
-			domainStat.ErrorCount++
-		}
-		domainStat.InboundBytes += activity.InboundSize
-		domainStat.OutboundBytes += activity.OutboundSize
-		
-		if activity.Timestamp.After(domainStat.LastSeen) {
-			domainStat.LastSeen = activity.Timestamp
-		}
-
-		// Track software if available
-		if activity.InstanceInfo != nil && activity.InstanceInfo.Software != "" {
-			domainSoftware[activity.Domain] = activity.InstanceInfo.Software
-		}
-	}
-
-	// Calculate averages
-	if responseTimeCount > 0 {
-		aggregation.AvgResponseTime = totalResponseTime / float64(responseTimeCount)
-	}
-
-	// Calculate per-domain averages
-	for _, domainStat := range aggregation.DomainStats {
-		if domainStat.SuccessCount > 0 {
-			// Get domain-specific response times
-			domainActivities, err := p.federationActivityRepository.ListByDomain(
-				ctx, domainStat.Domain, event.StartTime, event.EndTime, 1000)
-			if err == nil {
-				totalDomainResponseTime := float64(0)
-				domainResponseCount := 0
-				for _, act := range domainActivities {
-					if act.Success && act.ResponseTime > 0 {
-						totalDomainResponseTime += act.ResponseTime
-						domainResponseCount++
-					}
-				}
-				if domainResponseCount > 0 {
-					domainStat.AvgResponseTime = totalDomainResponseTime / float64(domainResponseCount)
-				}
-			}
-		}
-	}
-
-	// Set active domains count
-	aggregation.ActiveDomains = len(aggregation.DomainStats)
-
-	// Build software distribution
-	for domain, software := range domainSoftware {
-		if _, exists := aggregation.DomainStats[domain]; exists {
-			aggregation.SoftwareDistribution[software]++
-		}
-	}
-
-	// Get instance info for domains without software detection
-	for domain := range aggregation.DomainStats {
-		if _, hasSoftware := domainSoftware[domain]; !hasSoftware {
-			info, err := p.federationActivityRepository.GetInstanceInfo(ctx, domain)
-			if err == nil && info.Software != "" {
-				aggregation.SoftwareDistribution[info.Software]++
-			} else {
-				aggregation.SoftwareDistribution["unknown"]++
-			}
-		}
-	}
+	p.buildSoftwareDistribution(ctx, aggregation, domainSoftware)
 
 	// Store aggregation
 	if err := p.storeAggregation(ctx, aggregation); err != nil {
@@ -431,25 +303,13 @@ func (p *FederationAggregatorProcessor) handleAggregationEvent(ctx context.Conte
 		zap.Float64("avg_response_time", aggregation.AvgResponseTime))
 
 	// Trigger next level aggregation if applicable
-	if event.Type == "hourly" {
-		// Check if we should trigger daily aggregation
-		if event.EndTime.Hour() == 0 {
-			dailyEvent := AggregationEvent{
-				Type:      "daily",
-				StartTime: event.EndTime.Add(-24 * time.Hour),
-				EndTime:   event.EndTime,
-			}
-			if err := p.triggerAggregation(ctx, dailyEvent); err != nil {
-				p.logger.Warn("failed to trigger daily aggregation", zap.Error(err))
-			}
-		}
-	}
+	p.triggerNextLevelAggregation(ctx, event)
 
 	return nil
 }
 
 // storeAggregation stores federation aggregation data
-func (p *FederationAggregatorProcessor) storeAggregation(ctx context.Context, agg *FederationAggregation) error {
+func (p *FederationAggregatorProcessor) storeAggregation(_ context.Context, agg *FederationAggregation) error {
 	// Store using DynamORM directly since no specific interface method exists
 	err := p.db.Model(agg).Create()
 	if err != nil {
@@ -469,17 +329,17 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 		zap.String("type", event.Type),
 		zap.Time("start", event.StartTime),
 		zap.Time("end", event.EndTime))
-	
+
 	// Prepare the event payload
 	eventPayload, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal aggregation event: %w", err)
 	}
-	
+
 	// Option 1: Use SQS for async processing (preferred for resilience)
-	queueURL := fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/federation-aggregator-queue", 
+	queueURL := fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/federation-aggregator-queue",
 		p.cfg.Region, p.cfg.AWSAccountID)
-	
+
 	sqsInput := &sqs.SendMessageInput{
 		QueueUrl:    &queueURL,
 		MessageBody: aws.String(string(eventPayload)),
@@ -491,7 +351,7 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 		},
 		DelaySeconds: 0, // Process immediately
 	}
-	
+
 	sqsResult, sqsErr := p.sqsClient.SendMessage(ctx, sqsInput)
 	if sqsErr == nil {
 		p.logger.Info("Successfully queued aggregation via SQS",
@@ -499,34 +359,34 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 			zap.String("type", event.Type))
 		return nil
 	}
-	
+
 	// If SQS fails, fallback to direct Lambda invocation
 	p.logger.Warn("SQS send failed, falling back to direct Lambda invocation",
 		zap.Error(sqsErr))
-	
+
 	// Option 2: Direct Lambda invocation (fallback)
 	functionName := "federation-aggregator" // This Lambda function name
-	
+
 	lambdaInput := &awslambda.InvokeInput{
 		FunctionName:   aws.String(functionName),
 		InvocationType: types.InvocationTypeEvent, // Async invocation
 		Payload:        eventPayload,
 	}
-	
+
 	lambdaResult, err := p.lambdaClient.Invoke(ctx, lambdaInput)
 	if err != nil {
 		return fmt.Errorf("failed to invoke lambda and send SQS message: lambda_err=%w, sqs_err=%v", err, sqsErr)
 	}
-	
+
 	if lambdaResult.FunctionError != nil {
 		return fmt.Errorf("lambda function returned error: %s", *lambdaResult.FunctionError)
 	}
-	
+
 	p.logger.Info("Successfully triggered aggregation via direct Lambda invocation",
 		zap.String("function_name", functionName),
 		zap.String("type", event.Type),
 		zap.Int32("status_code", lambdaResult.StatusCode))
-	
+
 	return nil
 }
 
@@ -552,4 +412,196 @@ func (f *FederationAggregation) BeforeCreate() error {
 func (f *FederationAggregation) BeforeUpdate() error {
 	f.UpdatedAt = time.Now()
 	return nil
+}
+
+// getFilteredActivities retrieves and filters activities for the aggregation period
+func (p *FederationAggregatorProcessor) getFilteredActivities(ctx context.Context, event AggregationEvent) ([]*models.FederationActivity, error) {
+	// Get all federation activities for the time period
+	activities, err := p.federationActivityRepository.GetRecentActivities(ctx, event.StartTime, 10000)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get federation activities: %w", err)
+	}
+
+	// Filter activities by end time
+	filteredActivities := make([]*models.FederationActivity, 0, len(activities))
+	for _, activity := range activities {
+		if activity.Timestamp.After(event.EndTime) {
+			continue
+		}
+		filteredActivities = append(filteredActivities, activity)
+	}
+
+	return filteredActivities, nil
+}
+
+// createAggregation creates a new aggregation structure
+func (p *FederationAggregatorProcessor) createAggregation(event AggregationEvent) *FederationAggregation {
+	return &FederationAggregation{
+		PK:                   fmt.Sprintf("fed_agg#%s", event.Type),
+		SK:                   fmt.Sprintf("agg#%s", event.StartTime.Format("20060102150405")),
+		Period:               event.Type,
+		StartTime:            event.StartTime,
+		EndTime:              event.EndTime,
+		ActivityTypeCounts:   make(map[string]int),
+		DomainStats:          make(map[string]*DomainStat),
+		SoftwareDistribution: make(map[string]int),
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+	}
+}
+
+// processActivities processes activities and updates aggregation stats
+func (p *FederationAggregatorProcessor) processActivities(activities []*models.FederationActivity, domains []string, aggregation *FederationAggregation) map[string]string {
+	totalResponseTime := float64(0)
+	responseTimeCount := 0
+	domainSoftware := make(map[string]string)
+
+	for _, activity := range activities {
+		// Filter by specific domains if provided
+		if len(domains) > 0 && !p.isDomainIncluded(activity.Domain, domains) {
+			continue
+		}
+
+		// Update counts and metrics
+		p.updateActivityMetrics(activity, aggregation, &totalResponseTime, &responseTimeCount)
+		
+		// Update domain stats
+		p.updateDomainStats(activity, aggregation)
+		
+		// Track software if available
+		if activity.InstanceInfo != nil && activity.InstanceInfo.Software != "" {
+			domainSoftware[activity.Domain] = activity.InstanceInfo.Software
+		}
+	}
+
+	// Calculate average response time
+	if responseTimeCount > 0 {
+		aggregation.AvgResponseTime = totalResponseTime / float64(responseTimeCount)
+	}
+
+	return domainSoftware
+}
+
+// isDomainIncluded checks if a domain is in the filter list
+func (p *FederationAggregatorProcessor) isDomainIncluded(domain string, domains []string) bool {
+	for _, d := range domains {
+		if domain == d {
+			return true
+		}
+	}
+	return false
+}
+
+// updateActivityMetrics updates aggregation metrics from an activity
+func (p *FederationAggregatorProcessor) updateActivityMetrics(activity *models.FederationActivity, aggregation *FederationAggregation, totalResponseTime *float64, responseTimeCount *int) {
+	aggregation.TotalActivities++
+	
+	if activity.Success {
+		aggregation.SuccessfulActivities++
+		if activity.ResponseTime > 0 {
+			*totalResponseTime += activity.ResponseTime
+			*responseTimeCount++
+		}
+	} else {
+		aggregation.FailedActivities++
+	}
+
+	// Update bytes transferred
+	aggregation.TotalInboundBytes += activity.InboundSize
+	aggregation.TotalOutboundBytes += activity.OutboundSize
+
+	// Update activity type counts
+	aggregation.ActivityTypeCounts[activity.ActivityType]++
+}
+
+// updateDomainStats updates per-domain statistics
+func (p *FederationAggregatorProcessor) updateDomainStats(activity *models.FederationActivity, aggregation *FederationAggregation) {
+	domainStat, exists := aggregation.DomainStats[activity.Domain]
+	if !exists {
+		domainStat = &DomainStat{
+			Domain: activity.Domain,
+		}
+		aggregation.DomainStats[activity.Domain] = domainStat
+	}
+
+	domainStat.ActivityCount++
+	if activity.Success {
+		domainStat.SuccessCount++
+	} else {
+		domainStat.ErrorCount++
+	}
+	
+	domainStat.InboundBytes += activity.InboundSize
+	domainStat.OutboundBytes += activity.OutboundSize
+
+	if activity.Timestamp.After(domainStat.LastSeen) {
+		domainStat.LastSeen = activity.Timestamp
+	}
+}
+
+// calculateDomainMetrics calculates per-domain average response times
+func (p *FederationAggregatorProcessor) calculateDomainMetrics(ctx context.Context, event AggregationEvent, aggregation *FederationAggregation) error {
+	for _, domainStat := range aggregation.DomainStats {
+		if domainStat.SuccessCount > 0 {
+			// Get domain-specific response times
+			domainActivities, err := p.federationActivityRepository.ListByDomain(
+				ctx, domainStat.Domain, event.StartTime, event.EndTime, 1000)
+			if err != nil {
+				continue // Skip this domain on error
+			}
+			
+			totalDomainResponseTime := float64(0)
+			domainResponseCount := 0
+			for _, act := range domainActivities {
+				if act.Success && act.ResponseTime > 0 {
+					totalDomainResponseTime += act.ResponseTime
+					domainResponseCount++
+				}
+			}
+			
+			if domainResponseCount > 0 {
+				domainStat.AvgResponseTime = totalDomainResponseTime / float64(domainResponseCount)
+			}
+		}
+	}
+
+	// Set active domains count
+	aggregation.ActiveDomains = len(aggregation.DomainStats)
+	return nil
+}
+
+// buildSoftwareDistribution builds the software distribution map
+func (p *FederationAggregatorProcessor) buildSoftwareDistribution(ctx context.Context, aggregation *FederationAggregation, domainSoftware map[string]string) {
+	// Build software distribution from known software
+	for domain, software := range domainSoftware {
+		if _, exists := aggregation.DomainStats[domain]; exists {
+			aggregation.SoftwareDistribution[software]++
+		}
+	}
+
+	// Get instance info for domains without software detection
+	for domain := range aggregation.DomainStats {
+		if _, hasSoftware := domainSoftware[domain]; !hasSoftware {
+			info, err := p.federationActivityRepository.GetInstanceInfo(ctx, domain)
+			if err == nil && info.Software != "" {
+				aggregation.SoftwareDistribution[info.Software]++
+			} else {
+				aggregation.SoftwareDistribution["unknown"]++
+			}
+		}
+	}
+}
+
+// triggerNextLevelAggregation triggers daily aggregation after hourly completion
+func (p *FederationAggregatorProcessor) triggerNextLevelAggregation(ctx context.Context, event AggregationEvent) {
+	if event.Type == "hourly" && event.EndTime.Hour() == 0 {
+		dailyEvent := AggregationEvent{
+			Type:      "daily",
+			StartTime: event.EndTime.Add(-24 * time.Hour),
+			EndTime:   event.EndTime,
+		}
+		if err := p.triggerAggregation(ctx, dailyEvent); err != nil {
+			p.logger.Warn("failed to trigger daily aggregation", zap.Error(err))
+		}
+	}
 }

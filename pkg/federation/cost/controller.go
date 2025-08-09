@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // controller implements the Controller interface for cost-aware federation
@@ -133,7 +134,7 @@ func (c *controller) GetRetryPolicy(ctx context.Context, instance string) (*Retr
 // TrackActivity records a federation activity and its estimated cost
 func (c *controller) TrackActivity(ctx context.Context, instance string, activityType string, sizeBytes int64) error {
 	// Get current period
-	period := time.Now().Format("2006-01")
+	period := time.Now().Format(common.MonthFormat)
 
 	// Get current cost data
 	cost, err := c.getInstanceCost(ctx, instance, period)
@@ -184,7 +185,7 @@ func (c *controller) TrackActivity(ctx context.Context, instance string, activit
 
 // GetRemainingBudget returns the remaining budget for an instance
 func (c *controller) GetRemainingBudget(ctx context.Context, instance string) (float64, error) {
-	period := time.Now().Format("2006-01")
+	period := time.Now().Format(common.MonthFormat)
 
 	cost, err := c.getInstanceCost(ctx, instance, period)
 	if err != nil {
@@ -274,12 +275,14 @@ func (c *controller) RecordFailure(ctx context.Context, instance string, err err
 	}
 
 	// Update error rate in cost tracking
-	period := time.Now().Format("2006-01")
+	period := time.Now().Format(common.MonthFormat)
 	cost, _ := c.getInstanceCost(ctx, instance, period)
 	if cost != nil {
 		cost.ErrorCount++
 		cost.ErrorRate = float64(cost.ErrorCount) / float64(cost.RequestCount)
-		c.storage.RecordCost(ctx, cost)
+		if err := c.storage.RecordCost(ctx, cost); err != nil {
+			c.logger.Warn("failed to record federation cost", zap.Error(err))
+		}
 	}
 
 	// Update health score

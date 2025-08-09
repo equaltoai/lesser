@@ -33,7 +33,7 @@ func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger)
 // GetFollowRequest gets a follow request by follower and target IDs
 func (r *RelationshipRepository) GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error) {
 	var relationship models.RelationshipRecord
-	
+
 	err := r.db.WithContext(ctx).Model(&relationship).
 		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerID)).
 		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
@@ -66,7 +66,7 @@ func (r *RelationshipRepository) GetFollowRequest(ctx context.Context, followerI
 // HasFollowRequest checks if there's a follow request between two users
 func (r *RelationshipRepository) HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
 	var relationship models.RelationshipRecord
-	
+
 	err := r.db.WithContext(ctx).Model(&relationship).
 		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", requesterID)).
 		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
@@ -148,7 +148,7 @@ func (r *RelationshipRepository) DeleteRelationship(ctx context.Context, followe
 // GetRelationship retrieves a specific follow relationship
 func (r *RelationshipRepository) GetRelationship(ctx context.Context, followerUsername, followingUsername string) (*models.RelationshipRecord, error) {
 	var relationship models.RelationshipRecord
-	
+
 	query := r.db.WithContext(ctx).Model(&relationship).
 		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerUsername)).
 		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", followingUsername))
@@ -177,7 +177,7 @@ func (r *RelationshipRepository) GetFollowers(ctx context.Context, username stri
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var relationships []models.RelationshipRecord
 	err := query.All(&relationships)
 	if err != nil {
@@ -186,7 +186,7 @@ func (r *RelationshipRepository) GetFollowers(ctx context.Context, username stri
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query followers: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(relationships) > limit {
@@ -219,7 +219,7 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var relationships []models.RelationshipRecord
 	err := query.All(&relationships)
 	if err != nil {
@@ -228,7 +228,7 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query following: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(relationships) > limit {
@@ -329,7 +329,7 @@ func (r *RelationshipRepository) GetPendingFollowRequests(ctx context.Context, u
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var relationships []models.RelationshipRecord
 	err := query.All(&relationships)
 	if err != nil {
@@ -338,7 +338,7 @@ func (r *RelationshipRepository) GetPendingFollowRequests(ctx context.Context, u
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to query pending requests: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(relationships) > limit {
@@ -421,7 +421,7 @@ func (r *RelationshipRepository) RejectFollowRequest(ctx context.Context, follow
 // HasPendingFollowRequest checks if there's a pending follow request between two users
 func (r *RelationshipRepository) HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
 	var relationship models.RelationshipRecord
-	
+
 	err := r.db.WithContext(ctx).Model(&relationship).
 		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", requesterID)).
 		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
@@ -471,7 +471,7 @@ func (r *RelationshipRepository) CreateMove(ctx context.Context, move *storage.M
 // GetMove retrieves the most recent move for an actor
 func (r *RelationshipRepository) GetMove(ctx context.Context, actor string) (*storage.Move, error) {
 	var moveRecord models.Move
-	
+
 	query := r.db.WithContext(ctx).Model(&moveRecord).
 		Where("PK", "=", fmt.Sprintf("MOVE#ACTOR#%s", actor)).
 		Limit(1)
@@ -525,7 +525,7 @@ func (r *RelationshipRepository) GetAccountMoves(ctx context.Context, actor stri
 }
 
 // UpdateMoveProgress updates move migration progress
-func (r *RelationshipRepository) UpdateMoveProgress(ctx context.Context, actor, target string, progress map[string]interface{}) error {
+func (r *RelationshipRepository) UpdateMoveProgress(ctx context.Context, actor, target string, _ map[string]interface{}) error {
 	move := &models.Move{
 		PK: fmt.Sprintf("MOVE#ACTOR#%s", actor),
 		SK: fmt.Sprintf("TARGET#%s", target),
@@ -624,7 +624,7 @@ func (r *RelationshipRepository) GetMoveByTarget(ctx context.Context, target str
 // HasMovedFrom checks if newActor has moved from oldActor
 func (r *RelationshipRepository) HasMovedFrom(ctx context.Context, oldActor, newActor string) (bool, error) {
 	var moveRecord models.Move
-	
+
 	err := r.db.WithContext(ctx).Model(&moveRecord).
 		Where("PK", "=", fmt.Sprintf("MOVE#ACTOR#%s", oldActor)).
 		Where("SK", "=", fmt.Sprintf("TARGET#%s", newActor)).
@@ -654,7 +654,7 @@ func (r *RelationshipRepository) HasMovedFrom(ctx context.Context, oldActor, new
 // IsEndorsed checks if a user has endorsed (pinned) a target account
 func (r *RelationshipRepository) IsEndorsed(ctx context.Context, userID, targetID string) (bool, error) {
 	var pin models.AccountPin
-	
+
 	err := r.db.WithContext(ctx).Model(&pin).
 		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", userID)).
 		Where("SK", "=", fmt.Sprintf("PIN#%s", targetID)).
@@ -679,7 +679,7 @@ func (r *RelationshipRepository) IsEndorsed(ctx context.Context, userID, targetI
 // GetRelationshipNote retrieves a private note on an account
 func (r *RelationshipRepository) GetRelationshipNote(ctx context.Context, userID, targetID string) (*storage.AccountNote, error) {
 	var noteRecord models.AccountNote
-	
+
 	err := r.db.WithContext(ctx).Model(&noteRecord).
 		Where("PK", "=", fmt.Sprintf("ACCOUNT_NOTE#%s", userID)).
 		Where("SK", "=", fmt.Sprintf("NOTE#%s", targetID)).
@@ -781,7 +781,7 @@ func (r *RelationshipRepository) GetCollectionItems(ctx context.Context, collect
 
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
-	
+
 	var items []models.CollectionItem
 	err := query.All(&items)
 	if err != nil {
@@ -790,7 +790,7 @@ func (r *RelationshipRepository) GetCollectionItems(ctx context.Context, collect
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get collection items: %w", err)
 	}
-	
+
 	// Generate next cursor
 	var nextCursor string
 	if len(items) > limit {
@@ -818,7 +818,7 @@ func (r *RelationshipRepository) GetCollectionItems(ctx context.Context, collect
 // IsInCollection checks if an item is in a collection
 func (r *RelationshipRepository) IsInCollection(ctx context.Context, collection, itemID string) (bool, error) {
 	var item models.CollectionItem
-	
+
 	err := r.db.WithContext(ctx).Model(&item).
 		Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)).
 		Where("SK", "=", fmt.Sprintf("ITEM#%s", itemID)).

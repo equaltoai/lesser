@@ -1,3 +1,4 @@
+// Package model contains GraphQL model definitions and custom scalar types.
 package model
 
 import (

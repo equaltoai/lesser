@@ -26,12 +26,12 @@ type CloudWatchMetrics struct {
 
 // EnhancedMetricBuffer provides thread-safe buffering with automatic flushing
 type EnhancedMetricBuffer struct {
-	metrics     []types.MetricDatum
-	maxSize     int
-	flushSize   int
-	lastFlush   time.Time
-	mu          sync.RWMutex
-	flushFunc   func([]types.MetricDatum) error
+	metrics   []types.MetricDatum
+	maxSize   int
+	flushSize int
+	lastFlush time.Time
+	mu        sync.RWMutex
+	flushFunc func([]types.MetricDatum) error
 }
 
 // MetricConfig configures CloudWatch metrics behavior
@@ -96,7 +96,6 @@ func NewCloudWatchMetrics(awsConfig aws.Config, config MetricConfig, logger *zap
 	return cwm
 }
 
-
 // RecordLiftMetric records a Lift framework specific metric
 func (cwm *CloudWatchMetrics) RecordLiftMetric(ctx *lift.Context, name string, value float64, unit types.StandardUnit, extraDims map[string]string) {
 	dimensions := cwm.buildDimensions(map[string]string{
@@ -110,7 +109,7 @@ func (cwm *CloudWatchMetrics) RecordLiftMetric(ctx *lift.Context, name string, v
 }
 
 // RecordDynamORMMetrics records comprehensive DynamoDB operation metrics
-func (cwm *CloudWatchMetrics) RecordDynamORMMetrics(ctx context.Context, metrics DynamORMMetrics) {
+func (cwm *CloudWatchMetrics) RecordDynamORMMetrics(_ context.Context, metrics DynamORMMetrics) {
 	baseDims := map[string]string{
 		"Operation":   metrics.Operation,
 		"TableName":   metrics.TableName,
@@ -241,10 +240,9 @@ func (cwm *CloudWatchMetrics) addMetric(name string, value float64, unit types.S
 }
 
 // FlushMetrics manually flushes all buffered metrics
-func (cwm *CloudWatchMetrics) FlushMetrics(ctx context.Context) error {
+func (cwm *CloudWatchMetrics) FlushMetrics(_ context.Context) error {
 	return cwm.buffer.Flush()
 }
-
 
 // buildDimensions combines base dimensions with additional dimensions
 func (cwm *CloudWatchMetrics) buildDimensions(baseDims, extraDims map[string]string) []types.Dimension {
@@ -286,7 +284,7 @@ func (cwm *CloudWatchMetrics) getOperationName(ctx *lift.Context) string {
 	if ctx.Request.Path != "" && ctx.Request.Method != "" {
 		return fmt.Sprintf("%s_%s", ctx.Request.Method, sanitizePath(ctx.Request.Path))
 	}
-	return "unknown"
+	return StatusUnknown
 }
 
 // flushToCloudWatch sends metrics to CloudWatch
@@ -432,17 +430,17 @@ func classifyDynamoDBError(err error) string {
 	case contains(errStr, "InternalServerError"):
 		return "internal_server_error"
 	default:
-		return "unknown"
+		return StatusUnknown
 	}
 }
 
 // contains checks if a string contains a substring (case-insensitive)
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(s) > len(substr) && 
-			(s[:len(substr)] == substr || 
-			 s[len(s)-len(substr):] == substr ||
-			 containsHelper(s, substr))))
+	return len(s) >= len(substr) && (s == substr ||
+		(len(s) > len(substr) &&
+			(s[:len(substr)] == substr ||
+				s[len(s)-len(substr):] == substr ||
+				containsHelper(s, substr))))
 }
 
 func containsHelper(s, substr string) bool {

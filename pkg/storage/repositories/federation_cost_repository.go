@@ -9,6 +9,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // FederationCostRepository handles federation cost tracking operations using DynamORM
@@ -29,12 +30,11 @@ func NewFederationCostRepository(db core.DB, tableName string, logger *zap.Logge
 
 // RecordFederationCost records a federation cost tracking entry
 func (r *FederationCostRepository) RecordFederationCost(ctx context.Context, cost *models.FederationCostTracking) error {
-	// Set table name
-	if cost.TableName() == "" {
-		// Use reflection to set the table name dynamically
-		cost.PK = cost.PK // This will trigger the table name to be set when we access it
+	// Ensure keys are properly initialized
+	if cost.PK == "" || cost.SK == "" {
+		cost.UpdateKeys()
 	}
-	
+
 	err := r.db.WithContext(ctx).Model(cost).Create()
 	if err != nil {
 		r.logger.Error("Failed to record federation cost",
@@ -44,31 +44,31 @@ func (r *FederationCostRepository) RecordFederationCost(ctx context.Context, cos
 			zap.Error(err))
 		return fmt.Errorf("failed to record federation cost: %w", err)
 	}
-	
+
 	r.logger.Debug("Recorded federation cost",
 		zap.String("domain", cost.Domain),
 		zap.String("activity_type", cost.ActivityType),
 		zap.Int64("total_cost_micro_cents", cost.TotalCostMicroCents),
 		zap.Bool("success", cost.Success))
-	
+
 	return nil
 }
 
 // GetFederationCosts retrieves federation costs for a domain within a time range
 func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domain string, startTime, endTime time.Time, limit int) ([]*models.FederationCostTracking, error) {
 	var costs []*models.FederationCostTracking
-	
+
 	// Use GSI1 for time-based queries
-	startDate := startTime.Format("20060102")
-	endDate := endTime.Format("20060102")
-	
+	startDate := startTime.Format(common.CompactDateFormat)
+	endDate := endTime.Format(common.CompactDateFormat)
+
 	query := r.db.WithContext(ctx).Model(&models.FederationCostTracking{}).
 		Index("GSI1").
 		Where("GSI1PK", ">=", fmt.Sprintf("FED_COSTS#%s", startDate)).
 		Where("GSI1PK", "<=", fmt.Sprintf("FED_COSTS#%s", endDate)).
 		Filter("GSI1SK", "CONTAINS", domain). // Filter for specific domain
 		Limit(limit)
-	
+
 	err := query.All(&costs)
 	if err != nil {
 		r.logger.Error("Failed to get federation costs",
@@ -78,25 +78,25 @@ func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domai
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get federation costs: %w", err)
 	}
-	
+
 	return costs, nil
 }
 
 // GetFederationCostsByActivityType retrieves federation costs by activity type within a time range
 func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationCostTracking, error) {
 	var costs []*models.FederationCostTracking
-	
+
 	// Use GSI2 for activity type queries
-	timestampStart := startTime.Format("20060102150405")
-	timestampEnd := endTime.Format("20060102150405")
-	
+	timestampStart := startTime.Format(common.CompactTimeFormat)
+	timestampEnd := endTime.Format(common.CompactTimeFormat)
+
 	query := r.db.WithContext(ctx).Model(&models.FederationCostTracking{}).
 		Index("GSI2").
 		Where("GSI2PK", "=", fmt.Sprintf("FED_TYPE#%s", activityType)).
 		Where("GSI2SK", ">=", fmt.Sprintf("DOMAIN#%s", timestampStart)).
 		Where("GSI2SK", "<=", fmt.Sprintf("DOMAIN#%s", timestampEnd)).
 		Limit(limit)
-	
+
 	err := query.All(&costs)
 	if err != nil {
 		r.logger.Error("Failed to get federation costs by activity type",
@@ -106,7 +106,7 @@ func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get federation costs by activity type: %w", err)
 	}
-	
+
 	return costs, nil
 }
 
@@ -115,40 +115,40 @@ func (r *FederationCostRepository) GetDailyCostSummary(ctx context.Context, doma
 	// Get all costs for the domain on the specific date
 	startTime := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 	endTime := startTime.Add(24 * time.Hour)
-	
+
 	costs, err := r.GetFederationCosts(ctx, domain, startTime, endTime, 10000) // Get all costs for the day
 	if err != nil {
 		return nil, err
 	}
-	
+
 	summary := &DailyCostSummary{
-		Domain:               domain,
-		Date:                 date,
-		TotalActivities:      int64(len(costs)),
+		Domain:                domain,
+		Date:                  date,
+		TotalActivities:       int64(len(costs)),
 		ActivityTypeBreakdown: make(map[string]*ActivityTypeCostStats),
 	}
-	
+
 	var totalCost int64
 	var totalDataTransfer int64
 	var totalResponseTime int64
 	var successCount int64
-	
+
 	for _, cost := range costs {
 		totalCost += cost.TotalCostMicroCents
 		totalDataTransfer += cost.DataTransferBytes
 		totalResponseTime += cost.ResponseTimeMs
-		
+
 		if cost.Success {
 			successCount++
 		}
-		
+
 		// Update activity type breakdown
 		if summary.ActivityTypeBreakdown[cost.ActivityType] == nil {
 			summary.ActivityTypeBreakdown[cost.ActivityType] = &ActivityTypeCostStats{
 				ActivityType: cost.ActivityType,
 			}
 		}
-		
+
 		stats := summary.ActivityTypeBreakdown[cost.ActivityType]
 		stats.Count++
 		stats.TotalCostMicroCents += cost.TotalCostMicroCents
@@ -159,7 +159,7 @@ func (r *FederationCostRepository) GetDailyCostSummary(ctx context.Context, doma
 			stats.FailureCount++
 		}
 	}
-	
+
 	summary.TotalCostMicroCents = totalCost
 	summary.TotalDataTransferBytes = totalDataTransfer
 	if summary.TotalActivities > 0 {
@@ -167,7 +167,7 @@ func (r *FederationCostRepository) GetDailyCostSummary(ctx context.Context, doma
 		summary.SuccessRate = float64(successCount) / float64(summary.TotalActivities)
 		summary.AverageCostPerActivity = float64(totalCost) / float64(summary.TotalActivities)
 	}
-	
+
 	// Calculate activity type success rates and averages
 	for _, stats := range summary.ActivityTypeBreakdown {
 		if stats.Count > 0 {
@@ -176,7 +176,7 @@ func (r *FederationCostRepository) GetDailyCostSummary(ctx context.Context, doma
 			stats.AverageResponseTime = float64(totalResponseTime) / float64(stats.Count)
 		}
 	}
-	
+
 	return summary, nil
 }
 
@@ -190,24 +190,24 @@ func (r *FederationCostRepository) CreateOrUpdateBudget(ctx context.Context, bud
 			zap.Error(err))
 		return fmt.Errorf("failed to create/update federation budget: %w", err)
 	}
-	
+
 	r.logger.Info("Created/updated federation budget",
 		zap.String("domain", budget.Domain),
 		zap.String("period", budget.Period),
 		zap.Int64("combined_limit", budget.CombinedLimitMicroCents))
-	
+
 	return nil
 }
 
 // GetBudget retrieves a federation budget for a domain and period
 func (r *FederationCostRepository) GetBudget(ctx context.Context, domain, period string) (*models.FederationBudget, error) {
 	var budget models.FederationBudget
-	
+
 	err := r.db.WithContext(ctx).Model(&models.FederationBudget{}).
 		Where("PK", "=", fmt.Sprintf("FED_BUDGET#%s#%s", domain, period)).
 		Where("SK", "=", "CONFIG").
 		First(&budget)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("budget not found for domain %s period %s", domain, period)
@@ -218,7 +218,7 @@ func (r *FederationCostRepository) GetBudget(ctx context.Context, domain, period
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get federation budget: %w", err)
 	}
-	
+
 	return &budget, nil
 }
 
@@ -234,19 +234,19 @@ func (r *FederationCostRepository) UpdateBudgetUsage(ctx context.Context, domain
 			return err
 		}
 	}
-	
+
 	// Add usage
 	budget.AddUsage(activityType, direction, cost)
-	
+
 	// Update status based on usage
 	if budget.IsOverCombinedLimit() {
 		budget.Status = "over_limit"
 	} else if budget.GetCombinedUsagePercent() >= budget.AlertThresholdPercent {
-		budget.Status = "warning"
+		budget.Status = StatusWarning
 	} else {
 		budget.Status = "active"
 	}
-	
+
 	// Save updated budget
 	return r.CreateOrUpdateBudget(ctx, budget)
 }
@@ -254,19 +254,19 @@ func (r *FederationCostRepository) UpdateBudgetUsage(ctx context.Context, domain
 // GetActiveBudgets retrieves all active budgets
 func (r *FederationCostRepository) GetActiveBudgets(ctx context.Context, limit int) ([]*models.FederationBudget, error) {
 	var budgets []*models.FederationBudget
-	
+
 	query := r.db.WithContext(ctx).Model(&models.FederationBudget{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "ACTIVE_BUDGETS").
 		Filter("IsActive", "=", true).
 		Limit(limit)
-	
+
 	err := query.All(&budgets)
 	if err != nil {
 		r.logger.Error("Failed to get active budgets", zap.Error(err))
 		return nil, fmt.Errorf("failed to get active budgets: %w", err)
 	}
-	
+
 	return budgets, nil
 }
 
@@ -276,14 +276,14 @@ func (r *FederationCostRepository) GetBudgetsOverLimit(ctx context.Context, limi
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var overLimitBudgets []*models.FederationBudget
 	for _, budget := range budgets {
 		if budget.IsOverCombinedLimit() && len(overLimitBudgets) < limit {
 			overLimitBudgets = append(overLimitBudgets, budget)
 		}
 	}
-	
+
 	return overLimitBudgets, nil
 }
 
@@ -293,89 +293,89 @@ func (r *FederationCostRepository) GetBudgetsNeedingAlerts(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var alertBudgets []*models.FederationBudget
 	for _, budget := range budgets {
 		if budget.ShouldSendAlert() && len(alertBudgets) < limit {
 			alertBudgets = append(alertBudgets, budget)
 		}
 	}
-	
+
 	return alertBudgets, nil
 }
 
 // CheckBudgetLimits checks if an activity would exceed budget limits
-func (r *FederationCostRepository) CheckBudgetLimits(ctx context.Context, domain, period, activityType, direction string, estimatedCost int64) (*BudgetCheckResult, error) {
+func (r *FederationCostRepository) CheckBudgetLimits(ctx context.Context, domain, period, activityType, _ string, estimatedCost int64) (*BudgetCheckResult, error) {
 	budget, err := r.GetBudget(ctx, domain, period)
 	if err != nil {
 		// If no budget exists, allow the activity but warn
 		if err.Error() == fmt.Sprintf("budget not found for domain %s period %s", domain, period) {
 			return &BudgetCheckResult{
-				Allowed:       true,
-				WarningLevel:  "info",
-				Message:       "No budget configured for domain",
-				CurrentUsage:  0,
-				LimitPercent:  0,
+				Allowed:      true,
+				WarningLevel: "info",
+				Message:      "No budget configured for domain",
+				CurrentUsage: 0,
+				LimitPercent: 0,
 			}, nil
 		}
 		return nil, err
 	}
-	
+
 	// Check if adding this cost would exceed limits
 	projectedCombinedCost := budget.CurrentCombinedCost + estimatedCost
 	projectedUsagePercent := float64(projectedCombinedCost) / float64(budget.CombinedLimitMicroCents) * 100.0
-	
+
 	result := &BudgetCheckResult{
-		CurrentUsage: budget.CurrentCombinedCost,
-		LimitAmount:  budget.CombinedLimitMicroCents,
-		LimitPercent: budget.GetCombinedUsagePercent(),
+		CurrentUsage:          budget.CurrentCombinedCost,
+		LimitAmount:           budget.CombinedLimitMicroCents,
+		LimitPercent:          budget.GetCombinedUsagePercent(),
 		ProjectedUsagePercent: projectedUsagePercent,
 	}
-	
+
 	// Check activity type specific limits
 	if limit, exists := budget.ActivityTypeLimits[activityType]; exists {
 		activityUsage := budget.ActivityTypeUsage[activityType]
 		projectedActivityUsage := activityUsage + estimatedCost
 		activityUsagePercent := float64(projectedActivityUsage) / float64(limit) * 100.0
-		
+
 		if projectedActivityUsage >= limit {
 			result.Allowed = false
-			result.WarningLevel = "error"
+			result.WarningLevel = StatusError
 			result.Message = fmt.Sprintf("Activity type %s would exceed limit (%d%%)", activityType, int(activityUsagePercent))
 			return result, nil
 		}
 	}
-	
+
 	// Check combined limits
 	if projectedCombinedCost >= budget.CombinedLimitMicroCents {
 		result.Allowed = false
-		result.WarningLevel = "error" 
+		result.WarningLevel = StatusError
 		result.Message = fmt.Sprintf("Combined budget would be exceeded (%d%%)", int(projectedUsagePercent))
 		return result, nil
 	}
-	
+
 	// Check if we should rate limit
 	if budget.RateLimitOnThreshold && projectedUsagePercent >= budget.AlertThresholdPercent {
 		result.Allowed = true
 		result.ShouldRateLimit = true
-		result.WarningLevel = "warning"
+		result.WarningLevel = StatusWarning
 		result.Message = fmt.Sprintf("Budget usage high (%d%%), rate limiting recommended", int(projectedUsagePercent))
 		return result, nil
 	}
-	
+
 	// Check if we should send alerts
 	if projectedUsagePercent >= budget.AlertThresholdPercent {
 		result.Allowed = true
-		result.WarningLevel = "warning"
+		result.WarningLevel = StatusWarning
 		result.Message = fmt.Sprintf("Budget usage approaching limit (%d%%)", int(projectedUsagePercent))
 		return result, nil
 	}
-	
+
 	// All good
 	result.Allowed = true
 	result.WarningLevel = "info"
 	result.Message = fmt.Sprintf("Budget usage normal (%d%%)", int(projectedUsagePercent))
-	
+
 	return result, nil
 }
 
@@ -385,7 +385,7 @@ func (r *FederationCostRepository) ResetPeriodBudgets(ctx context.Context, perio
 	if err != nil {
 		return err
 	}
-	
+
 	var resetCount int
 	for _, budget := range budgets {
 		if budget.Period == period {
@@ -400,32 +400,32 @@ func (r *FederationCostRepository) ResetPeriodBudgets(ctx context.Context, perio
 			resetCount++
 		}
 	}
-	
+
 	r.logger.Info("Reset period budgets",
 		zap.String("period", period),
 		zap.Int("reset_count", resetCount),
 		zap.Time("new_period_start", newPeriodStart),
 		zap.Time("new_period_end", newPeriodEnd))
-	
+
 	return nil
 }
 
 // createDefaultBudget creates a default budget for a domain and period
 func (r *FederationCostRepository) createDefaultBudget(domain, period string) *models.FederationBudget {
 	now := time.Now()
-	
+
 	// Default limits (in microcents) - these are conservative defaults
 	var inboundLimit, outboundLimit, combinedLimit int64
 	var periodStart, periodEnd time.Time
-	
+
 	switch period {
-	case "daily":
+	case PeriodDaily:
 		inboundLimit = 10000   // $0.01 per day inbound
 		outboundLimit = 50000  // $0.05 per day outbound
 		combinedLimit = 100000 // $0.10 per day combined
 		periodStart = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		periodEnd = periodStart.Add(24 * time.Hour)
-	case "weekly":
+	case PeriodWeekly:
 		inboundLimit = 70000   // $0.07 per week inbound
 		outboundLimit = 350000 // $0.35 per week outbound
 		combinedLimit = 700000 // $0.70 per week combined
@@ -434,7 +434,7 @@ func (r *FederationCostRepository) createDefaultBudget(domain, period string) *m
 		periodStart = now.AddDate(0, 0, -weekday)
 		periodStart = time.Date(periodStart.Year(), periodStart.Month(), periodStart.Day(), 0, 0, 0, 0, periodStart.Location())
 		periodEnd = periodStart.Add(7 * 24 * time.Hour)
-	case "monthly":
+	case PeriodMonthly:
 		inboundLimit = 300000   // $0.30 per month inbound
 		outboundLimit = 1500000 // $1.50 per month outbound
 		combinedLimit = 3000000 // $3.00 per month combined
@@ -448,7 +448,7 @@ func (r *FederationCostRepository) createDefaultBudget(domain, period string) *m
 		periodStart = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		periodEnd = periodStart.Add(24 * time.Hour)
 	}
-	
+
 	return &models.FederationBudget{
 		Domain:                  domain,
 		Period:                  period,
@@ -485,15 +485,15 @@ type DailyCostSummary struct {
 
 // ActivityTypeCostStats represents cost statistics for a specific activity type
 type ActivityTypeCostStats struct {
-	ActivityType           string  `json:"activity_type"`
-	Count                  int64   `json:"count"`
-	SuccessCount           int64   `json:"success_count"`
-	FailureCount           int64   `json:"failure_count"`
-	SuccessRate            float64 `json:"success_rate"`
-	TotalCostMicroCents    int64   `json:"total_cost_micro_cents"`
-	AverageCostMicroCents  int64   `json:"average_cost_micro_cents"`
-	TotalDataTransferred   int64   `json:"total_data_transferred"`
-	AverageResponseTime    float64 `json:"average_response_time"`
+	ActivityType          string  `json:"activity_type"`
+	Count                 int64   `json:"count"`
+	SuccessCount          int64   `json:"success_count"`
+	FailureCount          int64   `json:"failure_count"`
+	SuccessRate           float64 `json:"success_rate"`
+	TotalCostMicroCents   int64   `json:"total_cost_micro_cents"`
+	AverageCostMicroCents int64   `json:"average_cost_micro_cents"`
+	TotalDataTransferred  int64   `json:"total_data_transferred"`
+	AverageResponseTime   float64 `json:"average_response_time"`
 }
 
 // BudgetCheckResult represents the result of a budget check

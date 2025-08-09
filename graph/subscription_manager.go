@@ -13,8 +13,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// Stream name constants
+const (
+	StreamNamePublic = "public"
+)
+
 // GraphQLSubscriptionManager manages lifecycle of all GraphQL subscriptions
 // and connects to the stream-router's event bus for real-time updates
+//
+//nolint:revive // Named this way for clarity in a codebase with multiple subscription types
 type GraphQLSubscriptionManager struct {
 	logger           *zap.Logger
 	eventBus         *streaming.EventBus
@@ -26,16 +33,18 @@ type GraphQLSubscriptionManager struct {
 }
 
 // GraphQLSubscription represents an active GraphQL subscription
+//
+//nolint:revive // Named this way for clarity in a codebase with multiple subscription types
 type GraphQLSubscription struct {
 	ID            string
-	Type          string                    // timeline, notification, cost, etc.
-	UserID        string                   // User context
-	Params        map[string]interface{}   // Subscription parameters
-	Filter        *streaming.EventFilter   // Event bus filter
-	Subscriber    *streaming.Subscriber    // Event bus subscriber
-	OutputChannel interface{}             // Typed output channel
-	Context       context.Context          // Subscription context
-	Cancel        context.CancelFunc       // Cancel function
+	Type          string                 // timeline, notification, cost, etc.
+	UserID        string                 // User context
+	Params        map[string]interface{} // Subscription parameters
+	Filter        *streaming.EventFilter // Event bus filter
+	Subscriber    *streaming.Subscriber  // Event bus subscriber
+	OutputChannel interface{}            // Typed output channel
+	Context       context.Context        // Subscription context
+	Cancel        context.CancelFunc     // Cancel function
 	Created       time.Time
 	LastActivity  time.Time
 }
@@ -120,7 +129,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 	case model.TimelineTypeHome:
 		streamName = fmt.Sprintf("user:%s", username)
 	case model.TimelineTypePublic:
-		streamName = "public"
+		streamName = StreamNamePublic
 	case model.TimelineTypeLocal:
 		streamName = "public:local"
 	case model.TimelineTypeDirect:
@@ -385,6 +394,65 @@ func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Conte
 	return sm.createQuotePollingSubscription(ctx, subscriptionID, username, noteID, noteObj, ch)
 }
 
+// SubscribeToMetricsUpdates subscribes to real-time metrics updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Context, username string, categories []string, services []string, threshold *float64) (<-chan *model.MetricsUpdate, error) {
+	if !sm.IsRunning() {
+		return nil, fmt.Errorf("subscription manager is not running")
+	}
+
+	ch := make(chan *model.MetricsUpdate, 100)
+
+	// Create filter for metrics events
+	filter := &streaming.EventFilter{
+		Types: []streaming.EventType{
+			streaming.EventTypeMetricsUpdate,
+		},
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	// Build streams for metrics filtering
+	streams := []string{"metrics:global"} // Always include global metrics
+	if len(categories) > 0 {
+		for _, category := range categories {
+			streams = append(streams, fmt.Sprintf("metrics:%s", category))
+			if username != "" {
+				streams = append(streams, fmt.Sprintf("metrics:%s:user:%s", category, username))
+			}
+		}
+	}
+	if len(services) > 0 {
+		for _, service := range services {
+			streams = append(streams, fmt.Sprintf("metrics:service:%s", service))
+		}
+	}
+	if username != "" {
+		streams = append(streams, fmt.Sprintf("metrics:user:%s", username))
+	}
+
+	filter.Streams = streams
+
+	// Add category metadata filters if specified
+	if len(categories) > 0 {
+		if filter.Metadata == nil {
+			filter.Metadata = make(map[string]string)
+		}
+		filter.Metadata["subscription_type"] = SubscriptionTypeMetrics
+	}
+
+	subscriptionID := fmt.Sprintf("metrics_%s_%d", username, time.Now().UnixNano())
+
+	if sm.eventBus != nil && sm.eventBus.IsRunning() {
+		return sm.createMetricsEventBusSubscription(ctx, subscriptionID, username, categories, services, threshold, filter, ch)
+	}
+
+	sm.logger.Info("Event bus not available, using polling fallback for metrics updates",
+		zap.String("username", username),
+		zap.Strings("categories", categories),
+		zap.Strings("services", services))
+
+	return sm.createMetricsPollingSubscription(ctx, subscriptionID, username, categories, services, threshold, ch)
+}
+
 // Helper function to get string value from pointer
 func getStringValue(ptr *string) string {
 	if ptr == nil {
@@ -452,7 +520,7 @@ func (sm *GraphQLSubscriptionManager) cleanupSubscription(sub *GraphQLSubscripti
 		sub.Cancel()
 	}
 	if sub.Subscriber != nil && sm.eventBus != nil {
-		sm.eventBus.Unsubscribe(sub.Subscriber.ID)
+		_ = sm.eventBus.Unsubscribe(sub.Subscriber.ID)
 	}
 }
 

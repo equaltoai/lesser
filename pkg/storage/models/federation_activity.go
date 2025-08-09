@@ -61,16 +61,16 @@ type FederationActivity struct {
 type InstanceInfo struct {
 	Domain      string    `json:"domain"`
 	Software    string    `json:"software,omitempty"`     // Mastodon, Pleroma, etc.
-	Version     string    `json:"version,omitempty"`       // Software version
-	PublicKey   string    `json:"public_key,omitempty"`    // Instance public key
-	SharedInbox string    `json:"shared_inbox,omitempty"`  // Shared inbox URL
+	Version     string    `json:"version,omitempty"`      // Software version
+	PublicKey   string    `json:"public_key,omitempty"`   // Instance public key
+	SharedInbox string    `json:"shared_inbox,omitempty"` // Shared inbox URL
 	LastSeen    time.Time `json:"last_seen"`
 	FirstSeen   time.Time `json:"first_seen"`
 }
 
 // TableName returns the DynamoDB table name
 func (FederationActivity) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the model before creation
@@ -137,7 +137,7 @@ func (fa *FederationActivity) Validate() error {
 		return fmt.Errorf("ID is required")
 	}
 	if strings.TrimSpace(fa.Domain) == "" {
-		return fmt.Errorf("Domain is required")
+		return fmt.Errorf("domain is required")
 	}
 	if strings.TrimSpace(fa.ActivityType) == "" {
 		return fmt.Errorf("ActivityType is required")

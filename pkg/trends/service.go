@@ -1,3 +1,4 @@
+// Package trends provides trending content analysis and aggregation services.
 package trends
 
 import (
@@ -38,8 +39,11 @@ type TrendScore struct {
 type TrendType string
 
 const (
+	// TrendTypeHashtag represents hashtag trend type
 	TrendTypeHashtag TrendType = "hashtag"
+	// TrendTypeStatus represents status/post trend type
 	TrendTypeStatus  TrendType = "status"
+	// TrendTypeLink represents link/URL trend type
 	TrendTypeLink    TrendType = "link"
 )
 

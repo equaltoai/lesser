@@ -10,12 +10,12 @@ type DNSCache struct {
 	// Keys - EXACT pattern from legacy: PK=DNSCACHE#hostname, SK=ENTRY
 	PK string `dynamorm:"pk" json:"-"`
 	SK string `dynamorm:"sk" json:"-"`
-	
+
 	// Business fields matching legacy implementation
 	Hostname   string    `json:"hostname"`
 	IPs        []string  `json:"ips"`
 	ResolvedAt time.Time `json:"resolved_at"`
-	TTL        int       `json:"ttl"`        // seconds
+	TTL        int       `json:"ttl"`                       // seconds
 	ExpiresAt  int64     `json:"expires_at" dynamorm:"ttl"` // Unix timestamp for DynamoDB TTL
 }
 
@@ -23,7 +23,7 @@ type DNSCache struct {
 func (d *DNSCache) UpdateKeys() {
 	if d.Hostname != "" {
 		d.PK = fmt.Sprintf("DNSCACHE#%s", d.Hostname)
-		d.SK = "ENTRY"
+		d.SK = SKEntry
 	}
 }
 

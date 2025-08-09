@@ -1,3 +1,4 @@
+// Package config provides application configuration management for Lesser's serverless deployment.
 package config
 
 import (

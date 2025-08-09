@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/cost"
 	liftPkg "github.com/equaltoai/lesser/pkg/lift"
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -29,9 +29,9 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 						return next.Handle(ctx)
 					})
 				})
-				
+
 				// Add a simple handler
-				app.GET("/test", func(ctx *lift.Context) error {
+				_ = app.GET("/test", func(ctx *lift.Context) error {
 					return ctx.JSON(map[string]string{"status": "ok"})
 				})
 			}
@@ -43,9 +43,9 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 				// New infrastructure initialization
 				config := liftPkg.DefaultConfig()
 				app := liftPkg.NewHTTPApp(config, logger)
-				
+
 				// Add a simple handler
-				app.GET("/test", func(ctx *lift.Context) error {
+				_ = app.GET("/test", func(ctx *lift.Context) error {
 					return ctx.JSON(map[string]string{"status": "ok"})
 				})
 			}
@@ -62,13 +62,13 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 				return next.Handle(ctx)
 			})
 		})
-		oldApp.GET("/test", func(ctx *lift.Context) error {
+		_ = oldApp.GET("/test", func(ctx *lift.Context) error {
 			return ctx.JSON(map[string]string{"status": "ok"})
 		})
 
 		config := liftPkg.DefaultConfig()
 		newApp := liftPkg.NewHTTPApp(config, logger)
-		newApp.GET("/test", func(ctx *lift.Context) error {
+		_ = newApp.GET("/test", func(ctx *lift.Context) error {
 			return ctx.JSON(map[string]string{"status": "ok"})
 		})
 
@@ -115,7 +115,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 
 	b.Run("AuthenticatedRequests", func(b *testing.B) {
 		// Create legacy handler for comparison
-		legacyHandler := func(ctx context.Context, req events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+		legacyHandler := func(_ context.Context, _ events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 			return &events.APIGatewayV2HTTPResponse{
 				StatusCode: 200,
 				Body:       `{"status":"ok"}`,
@@ -124,7 +124,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 
 		b.Run("LegacyWrapper", func(b *testing.B) {
 			app := lift.New()
-			app.GET("/test", wrapHandler(legacyHandler))
+			_ = app.GET("/test", wrapHandler(legacyHandler))
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -149,7 +149,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 
 		b.Run("NativeLift", func(b *testing.B) {
 			app := lift.New()
-			app.GET("/test", func(ctx *lift.Context) error {
+			_ = app.GET("/test", func(ctx *lift.Context) error {
 				return ctx.JSON(map[string]string{"status": "ok"})
 			})
 
@@ -178,8 +178,8 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 	b.Run("MemoryAllocation", func(b *testing.B) {
 		config := liftPkg.DefaultConfig()
 		app := liftPkg.NewHTTPApp(config, logger)
-		
-		app.GET("/test", func(ctx *lift.Context) error {
+
+		_ = app.GET("/test", func(ctx *lift.Context) error {
 			// Simulate some work
 			data := make(map[string]interface{})
 			for j := 0; j < 10; j++ {
@@ -190,7 +190,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 
 		b.ReportAllocs()
 		b.ResetTimer()
-		
+
 		for i := 0; i < b.N; i++ {
 			// Create a test context manually
 			ctx := &lift.Context{
@@ -216,9 +216,9 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 	b.Run("StandardMiddlewareStack", func(b *testing.B) {
 		config := liftPkg.DefaultConfig()
 		app := liftPkg.NewHTTPApp(config, logger)
-		
+
 		// Add a handler that does minimal work
-		app.GET("/test", func(ctx *lift.Context) error {
+		_ = app.GET("/test", func(ctx *lift.Context) error {
 			return ctx.Status(200).Text("OK")
 		})
 
@@ -246,11 +246,11 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 		config := liftPkg.DefaultConfig()
 		config.EnableCostTracking = true
 		app := liftPkg.NewHTTPApp(config, logger)
-		
-		app.GET("/test", func(ctx *lift.Context) error {
+
+		_ = app.GET("/test", func(ctx *lift.Context) error {
 			// Track some operations
 			liftPkg.TrackCost(ctx, func(t *cost.Tracker) {
-				t.TrackDynamoRead(1)
+				_ = t.TrackDynamoRead(1)
 			})
 			return ctx.Status(200).Text("OK")
 		})
@@ -272,15 +272,14 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 			// Set up cost tracker for the benchmark
 			tracker := cost.NewWithRequest("bench-req", "bench-op")
 			ctx.Set("cost_tracker", tracker)
-			
+
 			// Call the handler directly since we don't have test utilities
-			handler := func(ctx *lift.Context) error {
+			handler := func(ctx *lift.Context) {
 				liftPkg.TrackCost(ctx, func(t *cost.Tracker) {
-					t.TrackDynamoRead(1)
+					_ = t.TrackDynamoRead(1)
 				})
-				return nil
 			}
-			_ = handler(ctx)
+			handler(ctx)
 		}
 	})
 }
@@ -291,16 +290,16 @@ func TestPerformanceMetrics(t *testing.T) {
 
 	t.Run("ColdStartTime", func(t *testing.T) {
 		start := time.Now()
-		
+
 		// Initialize new infrastructure
 		config := liftPkg.DefaultConfig()
 		app := liftPkg.NewHTTPApp(config, logger)
-		app.GET("/test", func(ctx *lift.Context) error {
+		_ = app.GET("/test", func(ctx *lift.Context) error {
 			return ctx.JSON(map[string]string{"status": "ok"})
 		})
-		
+
 		coldStartTime := time.Since(start)
-		
+
 		// Cold start should be under 15ms (excluding imports)
 		if coldStartTime > 15*time.Millisecond {
 			t.Logf("Warning: Cold start time %v exceeds target of 15ms", coldStartTime)
@@ -310,8 +309,8 @@ func TestPerformanceMetrics(t *testing.T) {
 	t.Run("RequestLatency", func(t *testing.T) {
 		config := liftPkg.DefaultConfig()
 		app := liftPkg.NewHTTPApp(config, logger)
-		
-		app.GET("/test", func(ctx *lift.Context) error {
+
+		_ = app.GET("/test", func(ctx *lift.Context) error {
 			return ctx.JSON(map[string]string{"status": "ok"})
 		})
 

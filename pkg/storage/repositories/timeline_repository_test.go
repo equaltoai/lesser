@@ -114,6 +114,7 @@ func TestCreateTimelineEntries_ValidEntries(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+//nolint:dupl // test setup patterns are similar for different timeline types
 func TestGetHomeTimeline_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
@@ -175,6 +176,7 @@ func TestGetPublicTimeline_LocalFlag(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+//nolint:dupl // test setup patterns are similar for different timeline types
 func TestGetListTimeline_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
@@ -255,6 +257,7 @@ func TestGetHashtagTimeline_LocalFlag(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+//nolint:dupl // test setup patterns are similar for different timeline query types
 func TestGetTimelineEntriesByPost_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
@@ -304,6 +307,7 @@ func TestGetTimelineEntriesByActor_Parameters(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+//nolint:dupl // test setup patterns are similar for different timeline query types
 func TestGetTimelineEntriesByVisibility_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)

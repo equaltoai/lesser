@@ -1,3 +1,4 @@
+// Package lift provides testing utilities and test cases for Lift framework handler validation.
 package lift
 
 import (
@@ -130,10 +131,10 @@ func (s *HandlerTestSuite) createTestContext(tc HandlerTestCase) *lift.Context {
 
 	// Create API Gateway v2 request
 	request := events.APIGatewayV2HTTPRequest{
-		RouteKey: fmt.Sprintf("%s %s", tc.Method, tc.Path),
-		RawPath:  tc.Path,
-		Headers:  headers,
-		Body:     string(bodyBytes),
+		RouteKey:       fmt.Sprintf("%s %s", tc.Method, tc.Path),
+		RawPath:        tc.Path,
+		Headers:        headers,
+		Body:           string(bodyBytes),
 		RawQueryString: queryString,
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
 			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
@@ -187,9 +188,8 @@ func (s *HandlerTestSuite) validateResults(t *testing.T, ctx *lift.Context, tc H
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), tc.ExpectedError)
 		return
-	} else {
-		assert.NoError(t, err)
 	}
+	assert.NoError(t, err)
 
 	// Check status code
 	assert.Equal(t, tc.ExpectedStatus, ctx.Response.StatusCode, "Unexpected status code")
@@ -298,7 +298,7 @@ func WithQueryParams(params map[string]string) ContextOption {
 func WithPathParams(params map[string]string) ContextOption {
 	return func(ctx *lift.Context) {
 		for k, v := range params {
-			ctx.Request.Request.PathParams[k] = v
+			ctx.Request.PathParams[k] = v
 		}
 	}
 }
@@ -323,7 +323,7 @@ func WithAuth(username string, scopes []string) ContextOption {
 // AssertJSONResponse validates JSON response
 func AssertJSONResponse(t *testing.T, ctx *lift.Context, expected interface{}) {
 	t.Helper()
-	
+
 	var actual interface{}
 	bodyBytes, ok := ctx.Response.Body.([]byte)
 	if !ok {
@@ -337,9 +337,9 @@ func AssertJSONResponse(t *testing.T, ctx *lift.Context, expected interface{}) {
 // AssertErrorResponse validates error response
 func AssertErrorResponse(t *testing.T, ctx *lift.Context, expectedStatus int, expectedMessage string) {
 	t.Helper()
-	
+
 	assert.Equal(t, expectedStatus, ctx.Response.StatusCode, "Unexpected status code")
-	
+
 	var errorResp map[string]interface{}
 	bodyBytes, ok := ctx.Response.Body.([]byte)
 	if !ok {
@@ -347,7 +347,7 @@ func AssertErrorResponse(t *testing.T, ctx *lift.Context, expectedStatus int, ex
 	}
 	err := json.Unmarshal(bodyBytes, &errorResp)
 	assert.NoError(t, err, "Failed to unmarshal error response")
-	
+
 	if expectedMessage != "" {
 		message, ok := errorResp["error"].(string)
 		if !ok {
@@ -430,13 +430,13 @@ type SSEReader struct {
 // ReadEvent reads the next SSE event
 func (r *SSEReader) ReadEvent() (map[string]string, error) {
 	event := make(map[string]string)
-	
+
 	for {
 		line, err := r.readLine()
 		if err != nil {
 			return nil, err
 		}
-		
+
 		if line == "" {
 			// Empty line signals end of event
 			if len(event) > 0 {
@@ -444,12 +444,12 @@ func (r *SSEReader) ReadEvent() (map[string]string, error) {
 			}
 			continue
 		}
-		
+
 		if strings.HasPrefix(line, ":") {
 			// Comment line, skip
 			continue
 		}
-		
+
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) == 2 {
 			field := strings.TrimSpace(parts[0])
@@ -462,7 +462,7 @@ func (r *SSEReader) ReadEvent() (map[string]string, error) {
 // readLine reads a single line from the SSE stream
 func (r *SSEReader) readLine() (string, error) {
 	r.buffer.Reset()
-	
+
 	for {
 		b := make([]byte, 1)
 		n, err := r.reader.Read(b)
@@ -475,7 +475,7 @@ func (r *SSEReader) readLine() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		
+
 		if b[0] == '\n' {
 			return r.buffer.String(), nil
 		}

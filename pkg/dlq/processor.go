@@ -31,11 +31,11 @@ type Processor struct {
 // NewProcessor creates a new DLQ processor
 func NewProcessor(db core.DB, tableName string, logger *zap.Logger) *Processor {
 	return &Processor{
-		db:               db,
-		dlqRepo:          repositories.NewDLQRepository(db, tableName, logger),
-		costTrackingRepo: repositories.NewCostTrackingRepository(db, tableName, logger),
-		logger:           logger,
-		errorClassifier:  NewErrorClassifier(),
+		db:                db,
+		dlqRepo:           repositories.NewDLQRepository(db, tableName, logger),
+		costTrackingRepo:  repositories.NewCostTrackingRepository(db, tableName, logger),
+		logger:            logger,
+		errorClassifier:   NewErrorClassifier(),
 		reprocessorClient: NewReprocessorClient(logger),
 	}
 }
@@ -91,7 +91,7 @@ func (p *Processor) ProcessDLQMessages(ctx context.Context, event events.SQSEven
 // processMessage processes an individual DLQ message
 func (p *Processor) processMessage(ctx context.Context, record events.SQSMessage) error {
 	start := time.Now()
-	
+
 	// Parse original message from DLQ record
 	originalMessage, err := p.parseOriginalMessage(record)
 	if err != nil {
@@ -146,9 +146,9 @@ func (p *Processor) processMessage(ctx context.Context, record events.SQSMessage
 // parseOriginalMessage extracts the original failed message from the DLQ record
 func (p *Processor) parseOriginalMessage(record events.SQSMessage) (*OriginalMessage, error) {
 	originalMessage := &OriginalMessage{
-		MessageID:    record.MessageId,
-		Body:         record.Body,
-		Attributes:   make(map[string]string),
+		MessageID:     record.MessageId,
+		Body:          record.Body,
+		Attributes:    make(map[string]string),
 		ReceiptHandle: record.ReceiptHandle,
 	}
 
@@ -175,7 +175,7 @@ func (p *Processor) parseOriginalMessage(record events.SQSMessage) (*OriginalMes
 func (p *Processor) createDLQMessage(record events.SQSMessage, originalMessage *OriginalMessage) *models.DLQMessage {
 	// Extract service name from queue ARN or attributes
 	service := p.extractServiceName(record)
-	
+
 	// Classify the error
 	errorInfo := p.errorClassifier.ClassifyError(originalMessage.Body, service)
 
@@ -209,8 +209,8 @@ func (p *Processor) createDLQMessage(record events.SQSMessage, originalMessage *
 
 	// Add metadata
 	metadata := map[string]interface{}{
-		"queue_arn":           record.EventSourceARN,
-		"receipt_handle":      record.ReceiptHandle,
+		"queue_arn":                 record.EventSourceARN,
+		"receipt_handle":            record.ReceiptHandle,
 		"approximate_receive_count": record.Attributes["ApproximateReceiveCount"],
 	}
 	builder.WithMetadata(metadata)
@@ -235,11 +235,11 @@ func (p *Processor) createDLQMessage(record events.SQSMessage, originalMessage *
 func (p *Processor) extractServiceName(record events.SQSMessage) string {
 	// Try to extract from queue ARN
 	queueName := p.extractQueueName(record.EventSourceARN)
-	
+
 	// Remove common suffixes to get service name
 	serviceName := strings.ReplaceAll(queueName, "-dlq", "")
 	serviceName = strings.ReplaceAll(serviceName, "-queue", "")
-	
+
 	// Common service mappings
 	serviceMapping := map[string]string{
 		"notification-processor-dlq": "notification-processor",
@@ -248,11 +248,11 @@ func (p *Processor) extractServiceName(record events.SQSMessage) string {
 		"federation-delivery-dlq":    "federation-delivery",
 		"search-indexer-dlq":         "search-indexer",
 	}
-	
+
 	if mappedService, exists := serviceMapping[queueName]; exists {
 		return mappedService
 	}
-	
+
 	return serviceName
 }
 
@@ -276,7 +276,7 @@ func (p *Processor) attemptReprocessing(ctx context.Context, dlqMessage *models.
 
 	// Mark as reprocessing
 	dlqMessage.MarkForReprocessing()
-	
+
 	// Attempt reprocessing based on service
 	switch dlqMessage.Service {
 	case "notification-processor":
@@ -299,7 +299,7 @@ func (p *Processor) trackCosts(ctx context.Context, dlqMessage *models.DLQMessag
 	// Calculate processing costs
 	lambdaCostMicroCents := int64(20) // Base Lambda cost
 	storageCostMicroCents := int64(5) // DynamoDB operation cost
-	
+
 	// Additional costs based on reprocessing
 	var reprocessingCostMicroCents int64
 	if dlqMessage.ReprocessingCount > 0 {
@@ -320,11 +320,11 @@ func (p *Processor) trackCosts(ctx context.Context, dlqMessage *models.DLQMessag
 		TotalCostMicroCents:  totalCostMicroCents,
 		EstimatedCostDollars: float64(totalCostMicroCents) / 1_000_000.0,
 		Properties: map[string]interface{}{
-			"dlq_message_id":        dlqMessage.ID,
-			"service":               dlqMessage.Service,
-			"error_type":            dlqMessage.ErrorType,
-			"reprocessing_count":    dlqMessage.ReprocessingCount,
-			"status":                dlqMessage.Status,
+			"dlq_message_id":         dlqMessage.ID,
+			"service":                dlqMessage.Service,
+			"error_type":             dlqMessage.ErrorType,
+			"reprocessing_count":     dlqMessage.ReprocessingCount,
+			"status":                 dlqMessage.Status,
 			"processing_duration_ms": processingDuration.Milliseconds(),
 		},
 		Tags: map[string]string{
@@ -344,7 +344,7 @@ func (p *Processor) ScheduledReprocessing(ctx context.Context) error {
 	// Get services to process
 	services := []string{
 		"notification-processor",
-		"activity-processor", 
+		"activity-processor",
 		"media-processor",
 		"federation-delivery",
 		"search-indexer",

@@ -10,11 +10,11 @@ type CollectionItem struct {
 	// Primary keys - MUST match legacy exactly
 	PK string `dynamorm:"pk" json:"PK"` // COLLECTION#{collection}
 	SK string `dynamorm:"sk" json:"SK"` // ITEM#{itemID}
-	
+
 	// GSI1 for reverse lookups (what collections is an item in)
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // ITEM#{itemID}
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // COLLECTION#{collection}
-	
+
 	// Collection item data
 	Collection string    `json:"Collection"` // The collection ID (e.g., featured, likes, etc.)
 	ItemID     string    `json:"ItemID"`     // The item being added/removed
@@ -23,7 +23,7 @@ type CollectionItem struct {
 	AddedAt    time.Time `json:"AddedAt"`    // When it was added
 	Position   int       `json:"Position"`   // Optional position in ordered collections
 	CreatedAt  time.Time `json:"CreatedAt"`  // Database timestamp
-	
+
 	// Optional TTL for cleanup
 	TTL *int64 `dynamorm:"ttl" json:"TTL,omitempty"`
 }
@@ -39,7 +39,7 @@ const (
 
 // TableName returns the DynamoDB table name
 func (CollectionItem) TableName() string {
-	return "lesser-main"
+	return MainTableName
 }
 
 // BeforeCreate sets up the record before creation

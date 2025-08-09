@@ -1,3 +1,5 @@
+// Package main implements the actor service Lambda function that handles
+// ActivityPub actor operations, federation lookups, and actor profile management.
 package main
 
 /*
@@ -93,7 +95,7 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 		if common.IsNotFound(err) {
 			return liftErrors.NotFoundError("actor")
 		}
-		h.logger.Error("failed to get actor", 
+		h.logger.Error("failed to get actor",
 			zap.Error(err),
 			zap.String("username", username),
 			zap.Any("request_id", requestID))
@@ -283,7 +285,7 @@ func main() {
 			start := time.Now()
 			err := next.Handle(ctx)
 			duration := time.Since(start)
-			
+
 			requestID := ctx.Get("requestID")
 			logger.Info("request completed",
 				zap.Any("request_id", requestID),
@@ -322,12 +324,12 @@ func main() {
 			ctx.Response.Headers["Access-Control-Allow-Origin"] = "*"
 			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
 			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Accept, Authorization, Content-Type, Signature, Date, Digest"
-			
+
 			// Handle preflight requests
 			if ctx.Request.Method == "OPTIONS" {
 				return ctx.Status(http.StatusNoContent).JSON(nil)
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	})
@@ -336,7 +338,7 @@ func main() {
 	handler := NewHandler(cfg, actorRepo, logger)
 
 	// Define routes for ActivityPub federation
-	app.GET("/users/:username", handler.HandleActorProfile)
+	_ = app.GET("/users/:username", handler.HandleActorProfile)
 
 	// Start the Lambda handler
 	lambda.Start(app.HandleRequest)

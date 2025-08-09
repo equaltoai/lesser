@@ -62,7 +62,7 @@ type Timeline struct {
 
 // TableName returns the DynamoDB table name for the Timeline model
 func (Timeline) TableName() string {
-	return "lesser-main" // Use the main table
+	return MainTableName // Use the main table
 }
 
 // BeforeCreate sets up the model before creation
@@ -115,7 +115,7 @@ func (t *Timeline) setupGSIKeys() {
 	timestampStr := fmt.Sprintf("%010d", reverseTimestamp)
 
 	// GSI1 - Used for public timeline in legacy (TIMELINE#PUBLIC#LOCAL/FEDERATED)
-	if t.TimelineType == "PUBLIC" {
+	if t.TimelineType == TimelinePublic {
 		t.GSI1PK = fmt.Sprintf("TIMELINE#PUBLIC#%s", t.TimelineID) // LOCAL or FEDERATED
 		t.GSI1SK = fmt.Sprintf("%s#%s", timestampStr, t.PostID)
 	} else if t.PostID != "" {
@@ -181,7 +181,7 @@ func (t *Timeline) IsHomeTimeline() bool {
 
 // IsPublicTimeline returns true if this is a public timeline entry
 func (t *Timeline) IsPublicTimeline() bool {
-	return t.TimelineType == "PUBLIC"
+	return t.TimelineType == TimelinePublic
 }
 
 // IsListTimeline returns true if this is a list timeline entry

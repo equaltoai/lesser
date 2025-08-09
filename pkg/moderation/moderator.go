@@ -6,7 +6,18 @@ import (
 	"time"
 )
 
+// Moderation action constants
+const (
+	actionAllow    = "allow"
+	actionFlag     = "flag"
+	actionHide     = "hide"
+	actionEscalate = "escalate"
+	actionBlock    = "block"
+)
+
 // ModerationStorage defines storage operations needed by the moderator
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific storage
 type ModerationStorage interface {
 	StoreModerationDecision(ctx context.Context, decision *ModerationResult) error
 	UpdateModerationDecision(ctx context.Context, contentID string, review *ModerationReview) error
@@ -37,7 +48,7 @@ func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmiss
 		ContentType: content.Type,
 		SubmittedAt: content.SubmittedAt,
 		ProcessedAt: time.Now(),
-		Action:      "allow", // Default to allow
+		Action:      actionAllow, // Default to allow
 		Confidence:  0.0,
 	}
 
@@ -191,7 +202,7 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 // evaluatePatternMatches evaluates pattern match results
 func (m *Moderator) evaluatePatternMatches(matches []*PatternMatch) (float64, string) {
 	if len(matches) == 0 {
-		return 0.0, "allow"
+		return 0.0, actionAllow
 	}
 
 	var maxScore float64
@@ -217,7 +228,7 @@ func (m *Moderator) evaluatePatternMatches(matches []*PatternMatch) (float64, st
 // evaluateAIAnalysis evaluates AI analysis results
 func (m *Moderator) evaluateAIAnalysis(analysis *AIAnalysisResult) (float64, string) {
 	var maxScore float64
-	action := "allow"
+	action := actionAllow
 
 	if analysis.TextAnalysis != nil {
 		score := analysis.TextAnalysis.ModerationScore
@@ -235,11 +246,11 @@ func (m *Moderator) evaluateAIAnalysis(analysis *AIAnalysisResult) (float64, str
 
 	// Determine action based on score
 	if maxScore >= 80 {
-		action = "block"
+		action = actionBlock
 	} else if maxScore >= 60 {
-		action = "escalate"
+		action = actionEscalate
 	} else if maxScore >= 40 {
-		action = "flag"
+		action = actionFlag
 	}
 
 	return maxScore, action
@@ -248,19 +259,19 @@ func (m *Moderator) evaluateAIAnalysis(analysis *AIAnalysisResult) (float64, str
 // determineHighestSeverityAction determines the most restrictive action
 func (m *Moderator) determineHighestSeverityAction(actions []string) string {
 	if len(actions) == 0 {
-		return "allow"
+		return actionAllow
 	}
 
 	actionSeverity := map[string]int{
-		"allow":    0,
-		"flag":     1,
-		"hide":     2,
-		"escalate": 3,
-		"block":    4,
+		actionAllow:    0,
+		actionFlag:     1,
+		actionHide:     2,
+		actionEscalate: 3,
+		actionBlock:    4,
 	}
 
 	highestSeverity := 0
-	result := "allow"
+	result := actionAllow
 
 	for _, action := range actions {
 		if severity, exists := actionSeverity[action]; exists && severity > highestSeverity {
@@ -328,16 +339,16 @@ func (m *Moderator) generateRecommendations(result *ModerationResult) []string {
 	var recommendations []string
 
 	switch result.Action {
-	case "block":
+	case actionBlock:
 		recommendations = append(recommendations, "Content blocked - remove immediately")
 		recommendations = append(recommendations, "Consider user suspension if repeat offense")
-	case "escalate":
+	case actionEscalate:
 		recommendations = append(recommendations, "Escalate to human moderator for review")
 		recommendations = append(recommendations, "Monitor user activity closely")
-	case "flag":
+	case actionFlag:
 		recommendations = append(recommendations, "Flag for moderator attention")
 		recommendations = append(recommendations, "Consider content warning")
-	case "hide":
+	case actionHide:
 		recommendations = append(recommendations, "Hide content from public view")
 		recommendations = append(recommendations, "Allow appeal process")
 	}
@@ -413,6 +424,7 @@ func generateTextHash(text string) string {
 
 // Types for moderation system
 
+// ContentSubmission represents content submitted for moderation
 type ContentSubmission struct {
 	ID          string         `json:"id"`
 	Type        string         `json:"type"` // post/comment/message/profile
@@ -424,6 +436,9 @@ type ContentSubmission struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
+// ModerationResult represents the result of content moderation
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific result
 type ModerationResult struct {
 	ContentID       string            `json:"content_id"`
 	ContentType     string            `json:"content_type"`
@@ -438,11 +453,15 @@ type ModerationResult struct {
 	ProcessedAt     time.Time         `json:"processed_at"`
 }
 
+// AIAnalysisResult represents AI analysis results for moderation
 type AIAnalysisResult struct {
 	TextAnalysis  *TextAnalysis  `json:"text_analysis,omitempty"`
 	ImageAnalysis *ImageAnalysis `json:"image_analysis,omitempty"`
 }
 
+// ModerationFilter represents filters for querying moderation results
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific filter
 type ModerationFilter struct {
 	Action      string    `json:"action,omitempty"`
 	MinScore    float64   `json:"min_score,omitempty"`
@@ -453,6 +472,9 @@ type ModerationFilter struct {
 	Limit       int       `json:"limit,omitempty"`
 }
 
+// ModerationQueueItem represents an item in the moderation queue
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific queue item
 type ModerationQueueItem struct {
 	ContentID   string    `json:"content_id"`
 	ContentType string    `json:"content_type"`
@@ -463,6 +485,9 @@ type ModerationQueueItem struct {
 	Priority    string    `json:"priority"`
 }
 
+// ModerationReview represents a human review of moderated content
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific review
 type ModerationReview struct {
 	ContentID       string                      `json:"content_id"`
 	ReviewerID      string                      `json:"reviewer_id"`
@@ -473,6 +498,7 @@ type ModerationReview struct {
 	ReviewedAt      time.Time                   `json:"reviewed_at"`
 }
 
+// PatternFeedback represents feedback on pattern match accuracy
 type PatternFeedback struct {
 	WasMatch         bool `json:"was_match"`
 	WasFalsePositive bool `json:"was_false_positive"`

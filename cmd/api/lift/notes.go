@@ -89,11 +89,11 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 
 	// Check rate limit based on reputation
 	limit := notes.CalculateNoteLimit(float64(rep.TotalScore))
-	
+
 	// Use the notes service to check rate limiting
 	notesService := notes.NewService(h.repos, h.logger)
 	canCreate, remaining := notesService.CheckRateLimit(ctx.Context, userID, float64(rep.TotalScore))
-	
+
 	if !canCreate {
 		return ctx.Status(429).JSON(map[string]any{
 			"error": "Rate limit exceeded",
@@ -161,7 +161,7 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 
 	// Optional auth - for personalized scoring
 	var userID string
-	
+
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {

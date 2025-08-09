@@ -18,97 +18,14 @@ import (
 
 // HandleGetScheduledStatusesLift handles GET /api/v1/scheduled_statuses
 func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check read scope
-		if !claims.HasScope(auth.ScopeRead) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	// Authenticate request
+	username, err := h.authenticateScheduledStatusRequest(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Parse pagination parameters
-	limit := 20
-	limitStr := ctx.Query("limit")
-	
-	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
-	if limitStr == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
-		parts := strings.Split(ctx.Request.Path, "?")
-		if len(parts) > 1 {
-			params, _ := url.ParseQuery(parts[1])
-			if params.Get("limit") != "" {
-				limitStr = params.Get("limit")
-			}
-		}
-	}
-	
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 40 {
-			limit = l
-		}
-	}
-
-	maxID := ctx.Query("max_id")
-	minID := ctx.Query("min_id")
-	
-	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
-	if maxID == "" && minID == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
-		parts := strings.Split(ctx.Request.Path, "?")
-		if len(parts) > 1 {
-			params, _ := url.ParseQuery(parts[1])
-			if params.Get("max_id") != "" {
-				maxID = params.Get("max_id")
-			}
-			if params.Get("min_id") != "" {
-				minID = params.Get("min_id")
-			}
-		}
-	}
-
-	// Determine cursor
-	cursor := ""
-	if maxID != "" {
-		cursor = fmt.Sprintf("ID#%s", maxID)
-	} else if minID != "" {
-		// min_id requests newer posts, so we need reverse pagination
-		cursor = fmt.Sprintf("MIN#%s", minID)
-	}
+	limit, cursor := h.parseScheduledStatusPagination(ctx)
 
 	// Get scheduled statuses
 	scheduledStatuses, nextCursor, err := h.repos.ScheduledStatus().GetScheduledStatuses(ctx.Context, username, limit, cursor)
@@ -120,44 +37,191 @@ func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Convert to API format
-	apiStatuses := make([]models.ScheduledStatus, 0, len(scheduledStatuses))
-	for _, scheduled := range scheduledStatuses {
-		apiStatus := models.ScheduledStatus{
-			ID:          scheduled.ID,
-			ScheduledAt: scheduled.ScheduledAt.Format(time.RFC3339),
-			Params: models.StatusParams{
-				Text:        scheduled.Status,
-				MediaIDs:    scheduled.MediaIDs,
-				Sensitive:   scheduled.Sensitive,
-				SpoilerText: scheduled.SpoilerText,
-				Visibility:  scheduled.Visibility,
-				Language:    scheduled.Language,
-				InReplyToID: scheduled.InReplyToID,
-				Poll:        h.convertScheduledPoll(scheduled.Poll),
-			},
-			MediaAttachments: h.loadScheduledMediaAttachments(ctx, scheduled.ID),
-		}
+	apiStatuses := h.convertScheduledStatusesToAPI(ctx, scheduledStatuses)
 
-		// Add application ID if present
-		if scheduled.ApplicationID != "" {
-			apiStatus.Params.ApplicationID = scheduled.ApplicationID
-		}
-
-		apiStatuses = append(apiStatuses, apiStatus)
-	}
-
-	// Set Link header for pagination if needed
-	if nextCursor != "" {
-		// Extract ID from cursor (format: "ID#<id>")
-		if len(nextCursor) > 3 {
-			nextID := nextCursor[3:]
-			linkHeader := fmt.Sprintf(`<%s/api/v1/scheduled_statuses?max_id=%s&limit=%d>; rel="next"`,
-				h.cfg.BaseURL(), nextID, limit)
-			ctx.Response.Headers["Link"] = linkHeader
-		}
-	}
+	// Set pagination header if needed
+	h.setScheduledStatusPaginationHeader(ctx, nextCursor, limit)
 
 	return ctx.JSON(apiStatuses)
+}
+
+// authenticateScheduledStatusRequest handles authentication for scheduled status requests
+func (h *Handler) authenticateScheduledStatusRequest(ctx *lift.Context) (string, error) {
+	// Check for test username
+	testUsername := h.getScheduledStatusTestUsername(ctx)
+	if testUsername != "" {
+		return testUsername, nil
+	}
+
+	// Extract auth header
+	authHeader := h.extractScheduledStatusAuthHeader(ctx)
+
+	// Extract and validate token
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	// Validate token and check scope
+	return h.validateScheduledStatusToken(ctx, token)
+}
+
+// getScheduledStatusTestUsername extracts test username from headers
+func (h *Handler) getScheduledStatusTestUsername(ctx *lift.Context) string {
+	testUsername := ctx.Header("X-Test-Username")
+	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	}
+	return testUsername
+}
+
+// extractScheduledStatusAuthHeader extracts authorization header
+func (h *Handler) extractScheduledStatusAuthHeader(ctx *lift.Context) string {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+
+	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
+		if authHeader == "" {
+			authHeader = ctx.Request.Request.Headers["authorization"]
+		}
+	}
+
+	return authHeader
+}
+
+// validateScheduledStatusToken validates the token and checks scope
+func (h *Handler) validateScheduledStatusToken(ctx *lift.Context, token string) (string, error) {
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	if !claims.HasScope(auth.ScopeRead) {
+		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+	}
+
+	return claims.Username, nil
+}
+
+// parseScheduledStatusPagination parses pagination parameters
+func (h *Handler) parseScheduledStatusPagination(ctx *lift.Context) (int, string) {
+	// Parse limit
+	limit := h.parseScheduledStatusLimit(ctx)
+
+	// Parse cursor
+	cursor := h.parseScheduledStatusCursor(ctx)
+
+	return limit, cursor
+}
+
+// parseScheduledStatusLimit parses the limit parameter
+func (h *Handler) parseScheduledStatusLimit(ctx *lift.Context) int {
+	limit := 20
+	limitStr := ctx.Query("limit")
+
+	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
+	if limitStr == "" {
+		limitStr = h.extractScheduledQueryParam(ctx, "limit")
+	}
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 40 {
+			limit = l
+		}
+	}
+
+	return limit
+}
+
+// parseScheduledStatusCursor parses pagination cursor from max_id/min_id
+func (h *Handler) parseScheduledStatusCursor(ctx *lift.Context) string {
+	maxID := ctx.Query("max_id")
+	minID := ctx.Query("min_id")
+
+	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
+	if maxID == "" && minID == "" {
+		maxID = h.extractScheduledQueryParam(ctx, "max_id")
+		minID = h.extractScheduledQueryParam(ctx, "min_id")
+	}
+
+	// Determine cursor
+	if maxID != "" {
+		return fmt.Sprintf("ID#%s", maxID)
+	} else if minID != "" {
+		// min_id requests newer posts, so we need reverse pagination
+		return fmt.Sprintf("MIN#%s", minID)
+	}
+
+	return ""
+}
+
+// extractScheduledQueryParam extracts a query parameter from the request path (fallback for test mode)
+func (h *Handler) extractScheduledQueryParam(ctx *lift.Context, param string) string {
+	if ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
+		parts := strings.Split(ctx.Request.Path, "?")
+		if len(parts) > 1 {
+			params, _ := url.ParseQuery(parts[1])
+			return params.Get(param)
+		}
+	}
+	return ""
+}
+
+// convertScheduledStatusesToAPI converts scheduled statuses to API format
+func (h *Handler) convertScheduledStatusesToAPI(ctx *lift.Context, scheduledStatuses []*storage.ScheduledStatus) []models.ScheduledStatus {
+	apiStatuses := make([]models.ScheduledStatus, 0, len(scheduledStatuses))
+	
+	for _, scheduled := range scheduledStatuses {
+		apiStatus := h.convertSingleScheduledStatus(ctx, scheduled)
+		apiStatuses = append(apiStatuses, apiStatus)
+	}
+	
+	return apiStatuses
+}
+
+// convertSingleScheduledStatus converts a single scheduled status to API format
+func (h *Handler) convertSingleScheduledStatus(ctx *lift.Context, scheduled *storage.ScheduledStatus) models.ScheduledStatus {
+	apiStatus := models.ScheduledStatus{
+		ID:          scheduled.ID,
+		ScheduledAt: scheduled.ScheduledAt.Format(time.RFC3339),
+		Params: models.StatusParams{
+			Text:        scheduled.Status,
+			MediaIDs:    scheduled.MediaIDs,
+			Sensitive:   scheduled.Sensitive,
+			SpoilerText: scheduled.SpoilerText,
+			Visibility:  scheduled.Visibility,
+			Language:    scheduled.Language,
+			InReplyToID: scheduled.InReplyToID,
+			Poll:        h.convertScheduledPoll(scheduled.Poll),
+		},
+		MediaAttachments: h.loadScheduledMediaAttachments(ctx, scheduled.ID),
+	}
+
+	// Add application ID if present
+	if scheduled.ApplicationID != "" {
+		apiStatus.Params.ApplicationID = scheduled.ApplicationID
+	}
+
+	return apiStatus
+}
+
+// setScheduledStatusPaginationHeader sets the Link header for pagination
+func (h *Handler) setScheduledStatusPaginationHeader(ctx *lift.Context, nextCursor string, limit int) {
+	if nextCursor == "" {
+		return
+	}
+
+	// Extract ID from cursor (format: "ID#<id>")
+	if len(nextCursor) > 3 {
+		nextID := nextCursor[3:]
+		linkHeader := fmt.Sprintf(`<%s/api/v1/scheduled_statuses?max_id=%s&limit=%d>; rel="next"`,
+			h.cfg.BaseURL(), nextID, limit)
+		ctx.Response.Headers["Link"] = linkHeader
+	}
 }
 
 // HandleGetScheduledStatusLift handles GET /api/v1/scheduled_statuses/:id
@@ -249,104 +313,191 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 
 // HandleUpdateScheduledStatusLift handles PUT /api/v1/scheduled_statuses/:id
 func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
-	id := ctx.Param("id")
-	if id == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
+	// Get and validate status ID
+	id, err := h.getScheduledStatusUpdateID(ctx)
+	if err != nil {
+		return err
 	}
 
-	// Test hook - check for test username header
+	// Authenticate user
+	username, err := h.authenticateScheduledUpdateRequest(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Get and verify ownership of scheduled status
+	existing, err := h.getAndVerifyScheduledStatus(ctx, id, username)
+	if err != nil {
+		return err
+	}
+
+	// Parse and apply updates
+	if err := h.applyScheduledStatusUpdates(ctx, existing); err != nil {
+		return err
+	}
+
+	// Save updated status
+	if err := h.saveUpdatedScheduledStatus(ctx, existing, id); err != nil {
+		return err
+	}
+
+	// Return updated status
+	return h.returnUpdatedScheduledStatus(ctx, existing)
+}
+
+// getScheduledStatusUpdateID gets and validates the status ID
+func (h *Handler) getScheduledStatusUpdateID(ctx *lift.Context) (string, error) {
+	id := ctx.Param("id")
+	if id == "" {
+		return "", ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
+	}
+	return id, nil
+}
+
+// authenticateScheduledUpdateRequest authenticates the update request
+func (h *Handler) authenticateScheduledUpdateRequest(ctx *lift.Context) (string, error) {
+	// Check for test mode
+	testUsername := h.getScheduledUpdateTestUsername(ctx)
+	if testUsername != "" {
+		return testUsername, nil
+	}
+
+	// Normal authentication flow
+	return h.authenticateScheduledUpdateWithToken(ctx)
+}
+
+// getScheduledUpdateTestUsername extracts test username from headers
+func (h *Handler) getScheduledUpdateTestUsername(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
 	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
+	return testUsername
+}
 
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
+// authenticateScheduledUpdateWithToken authenticates using bearer token
+func (h *Handler) authenticateScheduledUpdateWithToken(ctx *lift.Context) (string, error) {
+	// Extract auth header
+	authHeader := h.extractScheduledUpdateAuthHeader(ctx)
 
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write scope
-		if !claims.HasScope(auth.ScopeWrite) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	// Extract and validate token
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
 	}
 
-	// Get existing scheduled status
+	// Validate token and check scope
+	return h.validateScheduledUpdateToken(ctx, token)
+}
+
+// extractScheduledUpdateAuthHeader extracts authorization header
+func (h *Handler) extractScheduledUpdateAuthHeader(ctx *lift.Context) string {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+
+	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
+		if authHeader == "" {
+			authHeader = ctx.Request.Request.Headers["authorization"]
+		}
+	}
+
+	return authHeader
+}
+
+// validateScheduledUpdateToken validates the token and checks scope
+func (h *Handler) validateScheduledUpdateToken(ctx *lift.Context, token string) (string, error) {
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+	}
+
+	if !claims.HasScope(auth.ScopeWrite) {
+		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+	}
+
+	return claims.Username, nil
+}
+
+// getAndVerifyScheduledStatus gets the scheduled status and verifies ownership
+func (h *Handler) getAndVerifyScheduledStatus(ctx *lift.Context, id, username string) (*storage.ScheduledStatus, error) {
 	existing, err := h.repos.ScheduledStatus().GetScheduledStatus(ctx.Context, id)
 	if err != nil || existing == nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "scheduled status not found"})
+		return nil, ctx.Status(404).JSON(map[string]string{"error": "scheduled status not found"})
 	}
 
-	// Verify ownership
 	if existing.Username != username {
-		return ctx.Status(404).JSON(map[string]string{"error": "scheduled status not found"})
+		return nil, ctx.Status(404).JSON(map[string]string{"error": "scheduled status not found"})
 	}
 
+	return existing, nil
+}
+
+// applyScheduledStatusUpdates parses the request and applies updates
+func (h *Handler) applyScheduledStatusUpdates(ctx *lift.Context, existing *storage.ScheduledStatus) error {
 	// Parse request
+	req, err := h.parseScheduledUpdateRequest(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Update scheduled time if provided
+	if req.ScheduledAt != "" {
+		if err := h.updateScheduledTime(ctx, existing, req.ScheduledAt); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// parseScheduledUpdateRequest parses the update request body
+func (h *Handler) parseScheduledUpdateRequest(ctx *lift.Context) (*models.ScheduledStatusUpdateRequest, error) {
 	var req models.ScheduledStatusUpdateRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Try fallback parsing for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+				return nil, ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
 			}
 		} else {
-			return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+			return nil, ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
 		}
 	}
+	return &req, nil
+}
 
-	// Update scheduled time if provided
-	if req.ScheduledAt != "" {
-		scheduledTime, err := time.Parse(time.RFC3339, req.ScheduledAt)
-		if err != nil {
-			return ctx.Status(422).JSON(map[string]string{"error": "invalid scheduled_at format"})
-		}
-
-		// Validate scheduled time is in the future
-		if scheduledTime.Before(time.Now().Add(5 * time.Minute)) {
-			return ctx.Status(422).JSON(map[string]string{"error": "scheduled_at must be at least 5 minutes in the future"})
-		}
-
-		existing.ScheduledAt = scheduledTime
+// updateScheduledTime updates the scheduled time if valid
+func (h *Handler) updateScheduledTime(ctx *lift.Context, existing *storage.ScheduledStatus, scheduledAt string) error {
+	scheduledTime, err := time.Parse(time.RFC3339, scheduledAt)
+	if err != nil {
+		return ctx.Status(422).JSON(map[string]string{"error": "invalid scheduled_at format"})
 	}
 
-	// Update the scheduled status
+	if scheduledTime.Before(time.Now().Add(5 * time.Minute)) {
+		return ctx.Status(422).JSON(map[string]string{"error": "scheduled_at must be at least 5 minutes in the future"})
+	}
+
+	existing.ScheduledAt = scheduledTime
+	return nil
+}
+
+// saveUpdatedScheduledStatus saves the updated scheduled status
+func (h *Handler) saveUpdatedScheduledStatus(ctx *lift.Context, existing *storage.ScheduledStatus, id string) error {
 	if err := h.repos.ScheduledStatus().UpdateScheduledStatus(ctx.Context, existing); err != nil {
 		h.logger.Error("failed to update scheduled status",
 			zap.String("id", id),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
+	return nil
+}
 
-	// Return updated status
+// returnUpdatedScheduledStatus builds and returns the updated status response
+func (h *Handler) returnUpdatedScheduledStatus(ctx *lift.Context, existing *storage.ScheduledStatus) error {
 	apiStatus := models.ScheduledStatus{
 		ID:          existing.ID,
 		ScheduledAt: existing.ScheduledAt.Format(time.RFC3339),

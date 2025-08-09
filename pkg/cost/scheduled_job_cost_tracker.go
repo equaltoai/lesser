@@ -47,36 +47,36 @@ type JobExecution struct {
 	Priority    string
 
 	// Execution context
-	Environment     string
-	Region          string
-	FunctionName    string
-	RequestID       string
-	ScheduledTime   time.Time
+	Environment       string
+	Region            string
+	FunctionName      string
+	RequestID         string
+	ScheduledTime     time.Time
 	NextScheduledTime time.Time
 
 	// Execution timing
 	StartTime time.Time
 	EndTime   time.Time
-	
+
 	// Resource usage tracking
-	lambdaInvocations    int64
-	lambdaDurationMs     int64
-	lambdaMemoryUsedMB   int
-	dynamoDBReadOps      int64
-	dynamoDBWriteOps     int64
-	dynamoDBReadCapacity float64
+	lambdaInvocations     int64
+	lambdaDurationMs      int64
+	lambdaMemoryUsedMB    int
+	dynamoDBReadOps       int64
+	dynamoDBWriteOps      int64
+	dynamoDBReadCapacity  float64
 	dynamoDBWriteCapacity float64
-	sqsMessages          int64
-	s3Operations         int64
-	cloudWatchLogs       int64
-	dataTransferBytes    int64
-	externalAPIRequests  int64
+	sqsMessages           int64
+	s3Operations          int64
+	cloudWatchLogs        int64
+	dataTransferBytes     int64
+	externalAPIRequests   int64
 
 	// Business metrics
-	itemsProcessed  int64
-	itemsSkipped    int64
-	itemsErrored    int64
-	batchSize       int
+	itemsProcessed int64
+	itemsSkipped   int64
+	itemsErrored   int64
+	batchSize      int
 
 	// Error tracking
 	errorMessage string
@@ -84,14 +84,14 @@ type JobExecution struct {
 	maxRetries   int
 
 	// Cascading tracking
-	triggeredJobs        []string
+	triggeredJobs           []string
 	cascadingCostMicroCents int64
-	downstreamOperations int64
+	downstreamOperations    int64
 
 	// Custom properties and metrics
-	properties map[string]interface{}
+	properties         map[string]interface{}
 	performanceMetrics map[string]float64
-	tags       map[string]string
+	tags               map[string]string
 
 	// Internal tracking
 	record *models.ScheduledJobCostRecord
@@ -100,13 +100,13 @@ type JobExecution struct {
 // NewJobExecution creates a new job execution tracker
 func NewJobExecution(jobName, schedule string) *JobExecution {
 	return &JobExecution{
-		JobName:   jobName,
-		Schedule:  schedule,
-		StartTime: time.Now(),
-		properties: make(map[string]interface{}),
+		JobName:            jobName,
+		Schedule:           schedule,
+		StartTime:          time.Now(),
+		properties:         make(map[string]interface{}),
 		performanceMetrics: make(map[string]float64),
-		tags:      make(map[string]string),
-		triggeredJobs: make([]string, 0),
+		tags:               make(map[string]string),
+		triggeredJobs:      make([]string, 0),
 	}
 }
 
@@ -251,10 +251,10 @@ func (je *JobExecution) FinishWithCancellation(ctx context.Context, tracker *Sch
 func (je *JobExecution) finishExecution(ctx context.Context, tracker *ScheduledJobCostTracker, status string) error {
 	// Calculate costs based on resource usage
 	lambdaCost, dynamoDBCost, sqsCost, s3Cost, cloudWatchCost, dataTransferCost := je.calculateCosts()
-	
+
 	// External API costs (placeholder - would need specific pricing)
 	externalAPICost := je.externalAPIRequests * 100 // 100 microcents per request as example
-	
+
 	// Build the cost record
 	record := models.NewScheduledJobCostRecordBuilder().
 		ForJob(je.JobName, je.Schedule).
@@ -290,11 +290,11 @@ func (je *JobExecution) finishExecution(ctx context.Context, tracker *ScheduledJ
 	for key, value := range je.properties {
 		record.SetJobProperty(key, value)
 	}
-	
+
 	for key, value := range je.performanceMetrics {
 		record.SetPerformanceMetric(key, value)
 	}
-	
+
 	for key, value := range je.tags {
 		record.AddTag(key, value)
 	}
@@ -329,7 +329,7 @@ func (je *JobExecution) calculateCosts() (lambdaCost, dynamoDBCost, sqsCost, s3C
 	// Use the calculation functions from the models package
 	logSizeMB := je.cloudWatchLogs / 1000 // Approximate log size
 	dataTransferMB := je.dataTransferBytes / (1024 * 1024)
-	
+
 	lambdaCost, dynamoDBCost, sqsCost, s3Cost, cloudWatchCost, dataTransferCost, _ = models.CalculateScheduledJobCosts(
 		je.lambdaDurationMs,
 		je.lambdaMemoryUsedMB,
@@ -360,18 +360,18 @@ type MultiStepJobExecution struct {
 
 // JobStepExecution represents a single step in a multi-step job
 type JobStepExecution struct {
-	StepName    string
-	StartTime   time.Time
-	EndTime     time.Time
-	Status      string
-	Error       string
-	
+	StepName  string
+	StartTime time.Time
+	EndTime   time.Time
+	Status    string
+	Error     string
+
 	// Resource usage for this step
-	lambdaDurationMs     int64
-	dynamoDBOperations   int64
-	itemsProcessed       int64
-	itemsErrored         int64
-	
+	lambdaDurationMs   int64
+	dynamoDBOperations int64
+	itemsProcessed     int64
+	itemsErrored       int64
+
 	// Step-specific metrics
 	properties map[string]interface{}
 	metrics    map[string]float64
@@ -394,10 +394,10 @@ func (msje *MultiStepJobExecution) StartStep(stepName string) *JobStepExecution 
 		properties: make(map[string]interface{}),
 		metrics:    make(map[string]float64),
 	}
-	
+
 	msje.steps[stepName] = step
 	msje.currentStep = stepName
-	
+
 	return step
 }
 
@@ -407,29 +407,29 @@ func (msje *MultiStepJobExecution) FinishStep(stepName, status string, err error
 	if !exists {
 		return
 	}
-	
+
 	step.EndTime = time.Now()
 	step.Status = status
 	if err != nil {
 		step.Error = err.Error()
 	}
-	
+
 	// Aggregate step metrics into job metrics
 	msje.TrackLambdaUsage(1, step.lambdaDurationMs, 0)
 	msje.TrackItemsProcessed(step.itemsProcessed, 0, step.itemsErrored)
-	
+
 	// Add step summary to job properties
 	stepSummary := map[string]interface{}{
-		"status":           step.Status,
-		"duration_ms":      step.EndTime.Sub(step.StartTime).Milliseconds(),
-		"items_processed":  step.itemsProcessed,
-		"items_errored":    step.itemsErrored,
+		"status":          step.Status,
+		"duration_ms":     step.EndTime.Sub(step.StartTime).Milliseconds(),
+		"items_processed": step.itemsProcessed,
+		"items_errored":   step.itemsErrored,
 	}
-	
+
 	if step.Error != "" {
 		stepSummary["error"] = step.Error
 	}
-	
+
 	msje.SetProperty(fmt.Sprintf("step_%s", stepName), stepSummary)
 }
 
@@ -475,59 +475,59 @@ func (step *JobStepExecution) SetStepMetric(key string, value float64) {
 // Scheduled Job Cost Tracker Service Methods
 
 // TrackCostAggregationJob tracks the cost aggregation job itself
-func (tracker *ScheduledJobCostTracker) TrackCostAggregationJob(ctx context.Context, period string, windowStart, windowEnd time.Time) (*JobExecution, error) {
+func (tracker *ScheduledJobCostTracker) TrackCostAggregationJob(_ context.Context, period string, windowStart, windowEnd time.Time) (*JobExecution, error) {
 	execution := NewJobExecution("cost-aggregation", "hourly").
 		WithCategory("maintenance").
 		WithPriority("normal")
-	
+
 	execution.SetProperty("aggregation_period", period)
 	execution.SetProperty("window_start", windowStart)
 	execution.SetProperty("window_end", windowEnd)
-	
+
 	return execution, nil
 }
 
 // TrackCleanupJob tracks cleanup jobs (expired data, old logs, etc.)
-func (tracker *ScheduledJobCostTracker) TrackCleanupJob(ctx context.Context, cleanupType string, schedule string) (*JobExecution, error) {
+func (tracker *ScheduledJobCostTracker) TrackCleanupJob(_ context.Context, cleanupType string, schedule string) (*JobExecution, error) {
 	execution := NewJobExecution(fmt.Sprintf("cleanup-%s", cleanupType), schedule).
 		WithCategory("maintenance").
 		WithPriority("low")
-	
+
 	execution.SetProperty("cleanup_type", cleanupType)
-	
+
 	return execution, nil
 }
 
 // TrackTrendCalculationJob tracks trend calculation jobs
-func (tracker *ScheduledJobCostTracker) TrackTrendCalculationJob(ctx context.Context, trendType string, schedule string) (*JobExecution, error) {
+func (tracker *ScheduledJobCostTracker) TrackTrendCalculationJob(_ context.Context, trendType string, schedule string) (*JobExecution, error) {
 	execution := NewJobExecution(fmt.Sprintf("trend-calculation-%s", trendType), schedule).
 		WithCategory("analytics").
 		WithPriority("normal")
-	
+
 	execution.SetProperty("trend_type", trendType)
-	
+
 	return execution, nil
 }
 
 // TrackIndexOptimizationJob tracks database index optimization jobs
-func (tracker *ScheduledJobCostTracker) TrackIndexOptimizationJob(ctx context.Context, tableName string) (*JobExecution, error) {
+func (tracker *ScheduledJobCostTracker) TrackIndexOptimizationJob(_ context.Context, tableName string) (*JobExecution, error) {
 	execution := NewJobExecution("index-optimization", "weekly").
 		WithCategory("optimization").
 		WithPriority("low")
-	
+
 	execution.SetProperty("table_name", tableName)
-	
+
 	return execution, nil
 }
 
 // TrackDeadLetterQueueProcessingJob tracks DLQ processing jobs
-func (tracker *ScheduledJobCostTracker) TrackDeadLetterQueueProcessingJob(ctx context.Context, queueName string) (*JobExecution, error) {
+func (tracker *ScheduledJobCostTracker) TrackDeadLetterQueueProcessingJob(_ context.Context, queueName string) (*JobExecution, error) {
 	execution := NewJobExecution("dlq-processing", "hourly").
 		WithCategory("recovery").
 		WithPriority("high")
-	
+
 	execution.SetProperty("queue_name", queueName)
-	
+
 	return execution, nil
 }
 

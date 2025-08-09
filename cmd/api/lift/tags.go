@@ -89,9 +89,9 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 			Uses     string `json:"uses"`
 			Accounts string `json:"accounts"`
 		}{
-			Day:      entry.Date, // Already a string timestamp
+			Day:      entry.Date,       // Already a string timestamp
 			Uses:     entry.UsageCount, // Already a string
-			Accounts: entry.UserCount, // Already a string
+			Accounts: entry.UserCount,  // Already a string
 		}
 	}
 
@@ -438,7 +438,12 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 			Name:          ft.Name,
 			URL:           ft.URL,
 			StatusesCount: ft.StatusesCount,
-			LastStatusAt:  func() string { if ft.LastStatusAt == nil { return "" }; return ft.LastStatusAt.Format(time.RFC3339) }(),
+			LastStatusAt: func() string {
+				if ft.LastStatusAt == nil {
+					return ""
+				}
+				return ft.LastStatusAt.Format(time.RFC3339)
+			}(),
 		}
 	}
 
@@ -534,7 +539,12 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		Name:          featuredTag.Name,
 		URL:           featuredTag.URL,
 		StatusesCount: featuredTag.StatusesCount,
-		LastStatusAt:  func() string { if featuredTag.LastStatusAt == nil { return "" }; return featuredTag.LastStatusAt.Format(time.RFC3339) }(),
+		LastStatusAt: func() string {
+			if featuredTag.LastStatusAt == nil {
+				return ""
+			}
+			return featuredTag.LastStatusAt.Format(time.RFC3339)
+		}(),
 	}
 
 	return ctx.JSON(tag)
@@ -693,7 +703,12 @@ func (h *Handler) HandleGetAccountFeaturedTagsLift(ctx *lift.Context) error {
 			Name:          ft.Name,
 			URL:           ft.URL,
 			StatusesCount: ft.StatusesCount,
-			LastStatusAt:  func() string { if ft.LastStatusAt == nil { return "" }; return ft.LastStatusAt.Format(time.RFC3339) }(),
+			LastStatusAt: func() string {
+				if ft.LastStatusAt == nil {
+					return ""
+				}
+				return ft.LastStatusAt.Format(time.RFC3339)
+			}(),
 		}
 	}
 
