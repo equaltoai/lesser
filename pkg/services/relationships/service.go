@@ -143,8 +143,8 @@ type RelationshipResult struct {
 	Events       []*streaming.Event  `json:"events"`
 }
 
-// RelationshipsResult contains multiple relationships
-type RelationshipsResult struct {
+// Result contains multiple relationships
+type Result struct {
 	Relationships []*RelationshipData `json:"relationships"`
 	Events        []*streaming.Event  `json:"events"`
 }
@@ -685,7 +685,7 @@ func (s *Service) GetRelationship(ctx context.Context, query *GetRelationshipQue
 }
 
 // GetRelationships retrieves relationship statuses for multiple users
-func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQuery) (*RelationshipsResult, error) {
+func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQuery) (*Result, error) {
 	s.logger.Debug("getting relationships",
 		zap.String("requester_id", query.RequesterID),
 		zap.Int("target_count", len(query.TargetIDs)))
@@ -715,7 +715,7 @@ func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQ
 		relationships = append(relationships, relationship)
 	}
 
-	return &RelationshipsResult{
+	return &Result{
 		Relationships: relationships,
 		Events:        []*streaming.Event{}, // No events for read operations
 	}, nil
@@ -723,7 +723,7 @@ func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQ
 
 // Private helper methods
 
-func (s *Service) validateFollowCommand(ctx context.Context, cmd *FollowCommand) error {
+func (s *Service) validateFollowCommand(_ context.Context, cmd *FollowCommand) error {
 	if cmd.FollowerID == "" {
 		return fmt.Errorf("follower_id is required")
 	}
@@ -733,7 +733,7 @@ func (s *Service) validateFollowCommand(ctx context.Context, cmd *FollowCommand)
 	return nil
 }
 
-func (s *Service) validateUnfollowCommand(ctx context.Context, cmd *UnfollowCommand) error {
+func (s *Service) validateUnfollowCommand(_ context.Context, cmd *UnfollowCommand) error {
 	if cmd.FollowerID == "" {
 		return fmt.Errorf("follower_id is required")
 	}
@@ -743,7 +743,7 @@ func (s *Service) validateUnfollowCommand(ctx context.Context, cmd *UnfollowComm
 	return nil
 }
 
-func (s *Service) validateBlockCommand(ctx context.Context, cmd *BlockCommand) error {
+func (s *Service) validateBlockCommand(_ context.Context, cmd *BlockCommand) error {
 	if cmd.BlockerID == "" {
 		return fmt.Errorf("blocker_id is required")
 	}
@@ -753,7 +753,7 @@ func (s *Service) validateBlockCommand(ctx context.Context, cmd *BlockCommand) e
 	return nil
 }
 
-func (s *Service) validateUnblockCommand(ctx context.Context, cmd *UnblockCommand) error {
+func (s *Service) validateUnblockCommand(_ context.Context, cmd *UnblockCommand) error {
 	if cmd.BlockerID == "" {
 		return fmt.Errorf("blocker_id is required")
 	}
@@ -763,7 +763,7 @@ func (s *Service) validateUnblockCommand(ctx context.Context, cmd *UnblockComman
 	return nil
 }
 
-func (s *Service) validateMuteCommand(ctx context.Context, cmd *MuteCommand) error {
+func (s *Service) validateMuteCommand(_ context.Context, cmd *MuteCommand) error {
 	if cmd.MuterID == "" {
 		return fmt.Errorf("muter_id is required")
 	}
@@ -773,7 +773,7 @@ func (s *Service) validateMuteCommand(ctx context.Context, cmd *MuteCommand) err
 	return nil
 }
 
-func (s *Service) validateUnmuteCommand(ctx context.Context, cmd *UnmuteCommand) error {
+func (s *Service) validateUnmuteCommand(_ context.Context, cmd *UnmuteCommand) error {
 	if cmd.MuterID == "" {
 		return fmt.Errorf("muter_id is required")
 	}
