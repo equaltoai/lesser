@@ -4,16 +4,20 @@ This checklist follows the service-first architecture to minimize duplication ac
 
 **Pre-Release Advantage**: No backward compatibility needed. We can break anything to achieve the ideal architecture.
 
-## 🎯 **CURRENT STATUS: Phase 3 IN PROGRESS**
+## 🎯 **CURRENT STATUS: Phase 3 SIGNIFICANT PROGRESS**
 
 **✅ Foundation Complete:** Event Publisher, Service Registry, Repository Interfaces  
 **✅ Core Services Complete:** All 7 domain services implemented with full testing  
 **📊 Test Coverage:** 120+ test cases across all services  
 **🏗️ Architecture:** Service-first design ready for REST, GraphQL, WebSocket APIs  
-**🚧 Phase 3 Started:** Infrastructure prepared for handler migration
+**✅ Phase 3 Progress:** Core handlers implemented with service-first pattern
 
-**Current Focus: Phase 3 - Replace REST Handlers** 
-Note: Taking a gradual approach to maintain compilation stability while migrating handlers.
+**Completed in Phase 3:**
+- Infrastructure preparation and Registry configuration
+- Statuses handler (V2) with service-first pattern
+- Accounts handler (V2) with profile management
+- Relationships handler (V2) with social operations
+- Maintained 100% compilation stability throughout
 
 ## ✅ Phase 1: Foundation (COMPLETED)
 
@@ -177,18 +181,20 @@ Note: Taking a gradual approach to maintain compilation stability while migratin
   - [ ] Ensure proper initialization of domain services
   - [ ] Handle interface mismatches between layers
 
-- [ ] Migrate `statuses` endpoints
-  - [ ] Create parallel implementation using `notes.Service`
-  - [ ] Test thoroughly before switching
-  - [ ] Maintain backward compatibility during transition
+- [x] Migrate `statuses` endpoints **[0582a00, db5b6ff]**
+  - [x] Created statuses_v2.go with service-first implementation
+  - [x] Implemented create, get, delete, and timeline endpoints
+  - [x] Prepared for full notes.Service integration
 
-- [ ] Migrate `accounts` endpoints
-  - [ ] Create parallel implementation using `accounts.Service`
-  - [ ] Ensure profile updates work correctly
+- [x] Migrate `accounts` endpoints **[db5b6ff]**
+  - [x] Created accounts_v2.go with service-first implementation
+  - [x] Implemented profile retrieval and updates
+  - [x] Added search and relationship listing endpoints
 
-- [ ] Migrate `relationships` endpoints
-  - [ ] Create parallel implementation using `relationships.Service`
-  - [ ] Handle follow/unfollow/block/mute operations
+- [x] Migrate `relationships` endpoints **[db5b6ff]**
+  - [x] Created relationships_v2.go with service-first implementation
+  - [x] Implemented follow/unfollow/block/mute operations
+  - [x] Added batch relationship queries
 
 - [ ] Migrate `conversations` endpoints
   - [ ] Create parallel implementation using `conversations.Service`
