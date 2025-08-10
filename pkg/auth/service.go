@@ -11,7 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
@@ -20,7 +20,7 @@ import (
 //
 //nolint:revive // Auth prefix clarifies this is the authentication service
 type AuthService struct {
-	repos           core.RepositoryStorage
+	repos           StorageProvider
 	oauthService    *OAuthService
 	sessionManager  *SessionManager
 	rateLimiter     *RateLimiter
@@ -38,7 +38,7 @@ var (
 )
 
 // NewAuthService creates a comprehensive auth service
-func NewAuthService(repos core.RepositoryStorage) (*AuthService, error) {
+func NewAuthService(repos StorageProvider) (*AuthService, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "development-secret-change-me"
@@ -490,7 +490,7 @@ func (as *AuthService) GetUserWallets(ctx context.Context, username string) ([]*
 }
 
 // GetStore returns the repository storage instance (for handlers that need direct access)
-func (as *AuthService) GetStore() core.RepositoryStorage {
+func (as *AuthService) GetStore() StorageProvider {
 	return as.repos
 }
 

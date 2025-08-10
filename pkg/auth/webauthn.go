@@ -11,7 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"go.uber.org/zap"
@@ -35,12 +35,12 @@ const (
 // WebAuthnService handles WebAuthn operations
 type WebAuthnService struct {
 	webAuthn *webauthn.WebAuthn
-	repos    core.RepositoryStorage
+	repos    StorageProvider
 	domain   string
 }
 
 // NewWebAuthnService creates a new WebAuthn service
-func NewWebAuthnService(repos core.RepositoryStorage, domain string, displayName string) (*WebAuthnService, error) {
+func NewWebAuthnService(repos StorageProvider, domain string, displayName string) (*WebAuthnService, error) {
 	// Configure WebAuthn
 	wconfig := &webauthn.Config{
 		RPDisplayName: displayName,                   // Display name for the site

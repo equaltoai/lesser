@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -4080,7 +4079,7 @@ func (m *MockStorage) CountStatusesForAdmin(ctx context.Context, filter *reposit
 }
 
 // RecordSearchAnalytics mocks the RecordSearchAnalytics method
-func (m *MockStorage) RecordSearchAnalytics(ctx context.Context, analytics *middleware.SearchAnalytics) error {
+func (m *MockStorage) RecordSearchAnalytics(ctx context.Context, analytics interface{}) error {
 	args := m.Called(ctx, analytics)
 	return args.Error(0)
 }

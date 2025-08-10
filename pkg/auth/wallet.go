@@ -11,7 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -53,12 +53,12 @@ type WalletVerifyRequest struct {
 
 // WalletService handles wallet authentication
 type WalletService struct {
-	repos  core.RepositoryStorage
+	repos  StorageProvider
 	logger *zap.Logger
 }
 
 // NewWalletService creates a new wallet service
-func NewWalletService(repos core.RepositoryStorage) *WalletService {
+func NewWalletService(repos StorageProvider) *WalletService {
 	return &WalletService{
 		repos:  repos,
 		logger: common.Logger(),

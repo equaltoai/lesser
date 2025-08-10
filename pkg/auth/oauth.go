@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -65,11 +64,11 @@ type Claims struct {
 // OAuthService handles OAuth 2.0 operations
 type OAuthService struct {
 	jwtSecret []byte
-	repos     core.RepositoryStorage
+	repos     StorageProvider
 }
 
 // NewOAuthService creates a new OAuth service
-func NewOAuthService(jwtSecret string, repos core.RepositoryStorage) *OAuthService {
+func NewOAuthService(jwtSecret string, repos StorageProvider) *OAuthService {
 	return &OAuthService{
 		jwtSecret: []byte(jwtSecret),
 		repos:     repos,
