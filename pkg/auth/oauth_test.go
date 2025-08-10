@@ -332,11 +332,11 @@ func TestOAuthService_ValidateScopes(t *testing.T) {
 	// Note: This test is limited due to mock infrastructure limitations.
 	// The scope validation logic is implemented correctly but requires
 	// proper database mocking to test end-to-end.
-	
+
 	// Test the global ValidateScopes function instead
 	err := ValidateScopes([]string{ScopeRead, ScopeWrite})
 	assert.NoError(t, err)
-	
+
 	err = ValidateScopes([]string{"invalid-scope"})
 	assert.Equal(t, ErrInvalidScope, err)
 }

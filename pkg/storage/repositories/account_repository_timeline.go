@@ -16,6 +16,7 @@ import (
 // This file contains timeline-related methods for the AccountRepository
 
 // GetHomeTimeline retrieves the home timeline for a user
+//
 //nolint:dupl // Timeline query patterns are similar by design
 func (r *AccountRepository) GetHomeTimeline(ctx context.Context, username string, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error) {
 	var entries []models.TimelineEntry
@@ -273,6 +274,7 @@ func (r *AccountRepository) RemoveFromTimeline(ctx context.Context, username, ob
 }
 
 // GetConversations retrieves conversations for a user
+//
 //nolint:dupl // Timeline query patterns are similar by design
 func (r *AccountRepository) GetConversations(ctx context.Context, username string, limit int, maxID, sinceID string) ([]*storage.Conversation, error) {
 	var conversations []models.Conversation

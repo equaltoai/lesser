@@ -358,3 +358,30 @@ func (r *LikeRepository) IncrementReblogCount(_ context.Context, objectID string
 
 	return nil
 }
+
+// HasReblogged checks if a user has reblogged/boosted a specific status
+func (r *LikeRepository) HasReblogged(ctx context.Context, actorID, statusID string) (bool, error) {
+	// Query for an announce with the specific pattern
+	pk := fmt.Sprintf("OBJECT#%s#ANNOUNCES", statusID)
+	sk := fmt.Sprintf("ACTOR#%s", actorID)
+
+	var announces []models.Announce
+	err := r.db.WithContext(ctx).Model(&models.Announce{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Limit(1).
+		All(&announces)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil // Not found = not reblogged
+		}
+		r.logger.Error("failed to check if reblogged",
+			zap.String("actor_id", actorID),
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		return false, fmt.Errorf("failed to check reblog status: %w", err)
+	}
+
+	return len(announces) > 0, nil
+}

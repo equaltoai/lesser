@@ -335,7 +335,7 @@ func (h *Handler) validateFilterContext(ctx *lift.Context, contexts []string) er
 		"thread":        true,
 		"account":       true,
 	}
-	
+
 	for _, contextVal := range contexts {
 		if !validContexts[contextVal] {
 			return ctx.Status(422).JSON(map[string]string{"error": "invalid context supplied"})
@@ -355,7 +355,7 @@ func (h *Handler) validateFilterAction(ctx *lift.Context, params *createFilterPa
 	if params.FilterAction != "warn" && params.FilterAction != "hide" && params.FilterAction != "blur" {
 		return ctx.Status(422).JSON(map[string]string{"error": "invalid filter_action"})
 	}
-	
+
 	return nil
 }
 
@@ -389,7 +389,7 @@ func (h *Handler) saveFilter(ctx *lift.Context, filter *storage.Filter) error {
 // addFilterKeywords adds keywords to a filter
 func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywordsAttributes []map[string]any) []*storage.FilterKeyword {
 	keywords := make([]*storage.FilterKeyword, 0)
-	
+
 	if len(keywordsAttributes) == 0 {
 		return keywords
 	}
@@ -471,7 +471,6 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 }
 
 // Helper functions for HandleUpdateFilterLift
-
 
 // validateFilterOwnership validates that the user owns the filter
 func (h *Handler) validateFilterOwnership(ctx *lift.Context, filterID, username string) (*storage.Filter, error) {

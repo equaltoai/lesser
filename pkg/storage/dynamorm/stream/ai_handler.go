@@ -23,8 +23,8 @@ type ModerationRepository interface {
 
 // AIAnalysisStreamHandler processes DynamoDB stream events for AI analysis results
 type AIAnalysisStreamHandler struct {
-	logger           *zap.Logger
-	moderationRepo   ModerationRepository
+	logger         *zap.Logger
+	moderationRepo ModerationRepository
 }
 
 // NewAIAnalysisStreamHandler creates a new AI analysis stream handler
@@ -137,14 +137,14 @@ func (h *AIAnalysisStreamHandler) processAnalysisResult(analysis *models.AIAnaly
 	// 2. Apply moderation actions if necessary
 	// 3. Send notifications to interested parties
 	// 4. Update metrics and analytics
-	
+
 	// For high-risk content, take immediate action
 	if analysis.OverallRisk > 0.8 && analysis.ModerationAction != "none" {
 		h.logger.Warn("High-risk content detected",
 			zap.String("objectID", analysis.ObjectID),
 			zap.String("moderationAction", analysis.ModerationAction),
 			zap.Float64("risk", analysis.OverallRisk))
-		
+
 		// Apply automatic moderation actions based on analysis results
 		if err := h.applyModerationAction(context.Background(), analysis); err != nil {
 			h.logger.Error("Failed to apply automatic moderation action",
@@ -216,14 +216,14 @@ func (h *AIAnalysisStreamHandler) logAnalysisStats(analysis *models.AIAnalysis) 
 func (h *AIAnalysisStreamHandler) applyModerationAction(ctx context.Context, analysis *models.AIAnalysis) error {
 	// Get appropriate thresholds based on content type
 	thresholds := ai.GetThresholds(strings.ToLower(analysis.ObjectType))
-	
+
 	// Determine action based on overall risk and specific analysis results
 	action := h.determineModerationAction(analysis, thresholds)
-	
+
 	if action == ai.ActionNone {
 		return nil // No action needed
 	}
-	
+
 	// Create moderation event to record the AI decision
 	moderationEvent := &storage.ModerationEvent{
 		EventType:       "ai_moderation",
@@ -236,7 +236,7 @@ func (h *AIAnalysisStreamHandler) applyModerationAction(ctx context.Context, ana
 		Evidence:        h.buildEvidenceSlice(analysis),
 		Reason:          fmt.Sprintf("AI analysis detected risk score of %.2f with action: %s", analysis.OverallRisk, action),
 	}
-	
+
 	// Create the moderation event
 	if err := h.moderationRepo.CreateModerationEvent(ctx, moderationEvent); err != nil {
 		h.logger.Error("Failed to create moderation event",
@@ -244,7 +244,7 @@ func (h *AIAnalysisStreamHandler) applyModerationAction(ctx context.Context, ana
 			zap.Error(err))
 		return fmt.Errorf("failed to create moderation event: %w", err)
 	}
-	
+
 	// Apply specific action based on the decision
 	switch action {
 	case ai.ActionFlag:
@@ -266,27 +266,27 @@ func (h *AIAnalysisStreamHandler) applyModerationAction(ctx context.Context, ana
 // determineModerationAction determines the appropriate moderation action
 func (h *AIAnalysisStreamHandler) determineModerationAction(analysis *models.AIAnalysis, thresholds ai.ThresholdSet) string {
 	risk := analysis.OverallRisk
-	
+
 	// Check for immediate removal conditions
 	if h.shouldAutoRemove(analysis, thresholds) {
 		return ai.ActionRemove
 	}
-	
+
 	// Check for hiding conditions
 	if h.shouldAutoHide(analysis, thresholds) {
 		return ai.ActionHide
 	}
-	
+
 	// Check for flagging conditions
 	if risk >= thresholds.Flag {
 		return ai.ActionFlag
 	}
-	
+
 	// Check for review conditions
 	if risk >= thresholds.WarnAuthor {
 		return ai.ActionReview
 	}
-	
+
 	return ai.ActionNone
 }
 
@@ -296,18 +296,18 @@ func (h *AIAnalysisStreamHandler) shouldAutoRemove(analysis *models.AIAnalysis, 
 	if analysis.OverallRisk >= thresholds.AutoRemove {
 		return true
 	}
-	
+
 	// Specific high-confidence violations
-	if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW && 
+	if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW &&
 		analysis.ImageAnalysis.NSFWConfidence > 0.95 {
 		return true
 	}
-	
+
 	if analysis.TextAnalysis != nil && analysis.TextAnalysis.ToxicityScore > 0.9 &&
 		analysis.Confidence > 0.8 {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -317,112 +317,112 @@ func (h *AIAnalysisStreamHandler) shouldAutoHide(analysis *models.AIAnalysis, th
 	if analysis.OverallRisk >= thresholds.AutoHide {
 		return true
 	}
-	
+
 	// Specific moderate-confidence violations
-	if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW && 
+	if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW &&
 		analysis.ImageAnalysis.NSFWConfidence > 0.8 {
 		return true
 	}
-	
+
 	if analysis.SpamAnalysis != nil && analysis.SpamAnalysis.SpamScore > 0.8 {
 		return true
 	}
-	
+
 	return false
 }
 
 // flagContent creates a flag for the content
 func (h *AIAnalysisStreamHandler) flagContent(ctx context.Context, analysis *models.AIAnalysis, reason string) error {
 	flag := &storage.Flag{
-		ContentID:    analysis.ObjectID,
-		FlaggerID:    "ai_system",
-		Reason:       reason,
-		Status:       string(storage.FlagStatusPending),
-		Actor:        "ai_system",
-		Content:      fmt.Sprintf("AI moderation: %s (confidence: %.2f)", reason, analysis.Confidence),
+		ContentID: analysis.ObjectID,
+		FlaggerID: "ai_system",
+		Reason:    reason,
+		Status:    string(storage.FlagStatusPending),
+		Actor:     "ai_system",
+		Content:   fmt.Sprintf("AI moderation: %s (confidence: %.2f)", reason, analysis.Confidence),
 	}
-	
+
 	if err := h.moderationRepo.CreateFlag(ctx, flag); err != nil {
 		return fmt.Errorf("failed to flag content: %w", err)
 	}
-	
+
 	h.logger.Info("Content flagged by AI",
 		zap.String("objectID", analysis.ObjectID),
 		zap.String("reason", reason))
-	
+
 	return nil
 }
 
 // hideContent creates a moderation decision to hide the content
 func (h *AIAnalysisStreamHandler) hideContent(ctx context.Context, analysis *models.AIAnalysis, reason string) error {
 	decision := &storage.ModerationDecision{
-		ObjectID:      analysis.ObjectID,
-		DeciderID:     "ai_system",
-		Decision:      "hide",
-		Action:        "hide_content",
-		Reason:        reason,
-		Appeal:        true,
-		Decided:       time.Now(),
+		ObjectID:       analysis.ObjectID,
+		DeciderID:      "ai_system",
+		Decision:       "hide",
+		Action:         "hide_content",
+		Reason:         reason,
+		Appeal:         true,
+		Decided:        time.Now(),
 		ConsensusScore: analysis.Confidence,
-		ReviewerCount: 1,
-		Metadata:      h.buildEvidence(analysis),
+		ReviewerCount:  1,
+		Metadata:       h.buildEvidence(analysis),
 	}
-	
+
 	if err := h.moderationRepo.CreateModerationDecision(ctx, decision); err != nil {
 		return fmt.Errorf("failed to hide content: %w", err)
 	}
-	
+
 	h.logger.Warn("Content hidden by AI",
 		zap.String("objectID", analysis.ObjectID),
 		zap.String("reason", reason))
-	
+
 	return nil
 }
 
 // removeContent creates a moderation decision to remove the content
 func (h *AIAnalysisStreamHandler) removeContent(ctx context.Context, analysis *models.AIAnalysis, reason string) error {
 	decision := &storage.ModerationDecision{
-		ObjectID:      analysis.ObjectID,
-		DeciderID:     "ai_system",
-		Decision:      "delete",
-		Action:        "remove_content",
-		Reason:        reason,
-		Appeal:        true,
-		Decided:       time.Now(),
+		ObjectID:       analysis.ObjectID,
+		DeciderID:      "ai_system",
+		Decision:       "delete",
+		Action:         "remove_content",
+		Reason:         reason,
+		Appeal:         true,
+		Decided:        time.Now(),
 		ConsensusScore: analysis.Confidence,
-		ReviewerCount: 1,
-		Metadata:      h.buildEvidence(analysis),
+		ReviewerCount:  1,
+		Metadata:       h.buildEvidence(analysis),
 	}
-	
+
 	if err := h.moderationRepo.CreateModerationDecision(ctx, decision); err != nil {
 		return fmt.Errorf("failed to remove content: %w", err)
 	}
-	
+
 	h.logger.Error("Content removed by AI",
 		zap.String("objectID", analysis.ObjectID),
 		zap.String("reason", reason))
-	
+
 	return nil
 }
 
 // flagForReview creates a flag for human review
 func (h *AIAnalysisStreamHandler) flagForReview(ctx context.Context, analysis *models.AIAnalysis, reason string) error {
 	flag := &storage.Flag{
-		ContentID:    analysis.ObjectID,
-		FlaggerID:    "ai_system",
-		Reason:       reason,
-		Status:       string(storage.FlagStatusPending),
-		Actor:        "ai_system",
-		Content:      fmt.Sprintf("AI moderation for review: %s (confidence: %.2f)", reason, analysis.Confidence),
+		ContentID: analysis.ObjectID,
+		FlaggerID: "ai_system",
+		Reason:    reason,
+		Status:    string(storage.FlagStatusPending),
+		Actor:     "ai_system",
+		Content:   fmt.Sprintf("AI moderation for review: %s (confidence: %.2f)", reason, analysis.Confidence),
 	}
-	
+
 	if err := h.moderationRepo.CreateFlag(ctx, flag); err != nil {
 		return fmt.Errorf("failed to flag for review: %w", err)
 	}
-	
+
 	h.logger.Info("Content flagged for human review",
 		zap.String("objectID", analysis.ObjectID))
-	
+
 	return nil
 }
 
@@ -432,19 +432,19 @@ func (h *AIAnalysisStreamHandler) determineCategory(analysis *models.AIAnalysis)
 	if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW {
 		return "nsfw"
 	}
-	
+
 	if analysis.TextAnalysis != nil && analysis.TextAnalysis.ToxicityScore > 0.5 {
 		return "toxicity"
 	}
-	
+
 	if analysis.SpamAnalysis != nil && analysis.SpamAnalysis.SpamScore > 0.5 {
 		return "spam"
 	}
-	
+
 	if analysis.AIDetection != nil && analysis.AIDetection.AIGeneratedProbability > 0.7 {
 		return "ai_generated"
 	}
-	
+
 	return "general"
 }
 
@@ -469,7 +469,7 @@ func (h *AIAnalysisStreamHandler) buildEvidence(analysis *models.AIAnalysis) map
 		"confidence":   analysis.Confidence,
 		"analysis_id":  analysis.ID,
 	}
-	
+
 	if analysis.TextAnalysis != nil {
 		evidence["text_analysis"] = map[string]interface{}{
 			"toxicity_score": analysis.TextAnalysis.ToxicityScore,
@@ -477,16 +477,16 @@ func (h *AIAnalysisStreamHandler) buildEvidence(analysis *models.AIAnalysis) map
 			"contains_pii":   analysis.TextAnalysis.ContainsPII,
 		}
 	}
-	
+
 	if analysis.ImageAnalysis != nil {
 		evidence["image_analysis"] = map[string]interface{}{
-			"is_nsfw":           analysis.ImageAnalysis.IsNSFW,
-			"nsfw_confidence":   analysis.ImageAnalysis.NSFWConfidence,
-			"violence_score":    analysis.ImageAnalysis.ViolenceScore,
-			"weapons_detected":  analysis.ImageAnalysis.WeaponsDetected,
+			"is_nsfw":          analysis.ImageAnalysis.IsNSFW,
+			"nsfw_confidence":  analysis.ImageAnalysis.NSFWConfidence,
+			"violence_score":   analysis.ImageAnalysis.ViolenceScore,
+			"weapons_detected": analysis.ImageAnalysis.WeaponsDetected,
 		}
 	}
-	
+
 	if analysis.SpamAnalysis != nil {
 		evidence["spam_analysis"] = map[string]interface{}{
 			"spam_score":       analysis.SpamAnalysis.SpamScore,
@@ -494,15 +494,15 @@ func (h *AIAnalysisStreamHandler) buildEvidence(analysis *models.AIAnalysis) map
 			"repetition_score": analysis.SpamAnalysis.RepetitionScore,
 		}
 	}
-	
+
 	if analysis.AIDetection != nil {
 		evidence["ai_detection"] = map[string]interface{}{
-			"ai_probability":      analysis.AIDetection.AIGeneratedProbability,
-			"generation_model":    analysis.AIDetection.GenerationModel,
-			"semantic_coherence":  analysis.AIDetection.SemanticCoherence,
+			"ai_probability":     analysis.AIDetection.AIGeneratedProbability,
+			"generation_model":   analysis.AIDetection.GenerationModel,
+			"semantic_coherence": analysis.AIDetection.SemanticCoherence,
 		}
 	}
-	
+
 	return evidence
 }
 
@@ -516,7 +516,7 @@ func (h *AIAnalysisStreamHandler) buildEvidenceSlice(analysis *models.AIAnalysis
 			"analysis_id":  analysis.ID,
 		},
 	}
-	
+
 	if analysis.TextAnalysis != nil {
 		evidence = append(evidence, map[string]interface{}{
 			"type":           "text_analysis",
@@ -525,7 +525,7 @@ func (h *AIAnalysisStreamHandler) buildEvidenceSlice(analysis *models.AIAnalysis
 			"contains_pii":   analysis.TextAnalysis.ContainsPII,
 		})
 	}
-	
+
 	if analysis.ImageAnalysis != nil {
 		evidence = append(evidence, map[string]interface{}{
 			"type":             "image_analysis",
@@ -535,7 +535,7 @@ func (h *AIAnalysisStreamHandler) buildEvidenceSlice(analysis *models.AIAnalysis
 			"weapons_detected": analysis.ImageAnalysis.WeaponsDetected,
 		})
 	}
-	
+
 	if analysis.SpamAnalysis != nil {
 		evidence = append(evidence, map[string]interface{}{
 			"type":             "spam_analysis",
@@ -544,7 +544,7 @@ func (h *AIAnalysisStreamHandler) buildEvidenceSlice(analysis *models.AIAnalysis
 			"repetition_score": analysis.SpamAnalysis.RepetitionScore,
 		})
 	}
-	
+
 	if analysis.AIDetection != nil {
 		evidence = append(evidence, map[string]interface{}{
 			"type":               "ai_detection",
@@ -553,7 +553,7 @@ func (h *AIAnalysisStreamHandler) buildEvidenceSlice(analysis *models.AIAnalysis
 			"semantic_coherence": analysis.AIDetection.SemanticCoherence,
 		})
 	}
-	
+
 	return evidence
 }
 
@@ -565,7 +565,7 @@ func (h *AIAnalysisStreamHandler) ProcessStreamRecords(ctx context.Context, reco
 				zap.String("eventID", record.EventID),
 				zap.String("eventName", record.EventName),
 				zap.Error(err))
-			
+
 			// Continue processing other records even if one fails
 			continue
 		}

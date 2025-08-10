@@ -250,6 +250,8 @@ func (h *StreamRouterHandler) processRecord(ctx *lift.Context, record events.Dyn
 		return h.processNotificationEvent(ctx, record)
 	case "USER", "ACTOR":
 		return h.processAccountEvent(ctx, record)
+	case "TOMBSTONE":
+		return h.processTombstoneEvent(ctx, record)
 	default:
 		logger.Debug("ignoring event for unknown entity type")
 		return nil
@@ -574,7 +576,6 @@ func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record even
 	return nil
 }
 
-
 // convertEventAttributeValue converts from events.DynamoDBAttributeValue to SDK v2 types.AttributeValue
 func convertEventAttributeValue(attr events.DynamoDBAttributeValue) types.AttributeValue {
 	switch attr.DataType() {
@@ -621,9 +622,6 @@ func extractUsernameFromActorID(actorID string) string {
 	return ""
 }
 
-
-
-
 // createAccountPayload creates a proper account payload for streaming
 func createAccountPayload(accountID, eventType string) (map[string]any, error) {
 	// Create account streaming payload with proper structure
@@ -661,8 +659,6 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 }
 
 // Helper methods for StreamRouterHandler
-
-
 
 // publishStatusEventToInternalBus publishes a status event to the internal event bus
 func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context, record events.DynamoDBEventRecord, status *models.Status, streams []string) error {
@@ -1057,6 +1053,178 @@ func isStaleConnection(err error) bool {
 	}
 
 	return false
+}
+
+// processTombstoneEvent processes tombstone events and removes deleted objects from timelines
+func (h *StreamRouterHandler) processTombstoneEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+	logger := h.logger.With(
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("event_name", record.EventName),
+	)
+
+	// Only process INSERT events for tombstones (when they are created)
+	if record.EventName != eventNameInsert {
+		return nil
+	}
+
+	// Convert from events.DynamoDBAttributeValue to SDK v2 types
+	tombstoneItem := make(map[string]types.AttributeValue)
+	for k, v := range record.Change.NewImage {
+		tombstoneItem[k] = convertEventAttributeValue(v)
+	}
+
+	// Unmarshal the tombstone record
+	var tombstone models.Tombstone
+	if err := attributevalue.UnmarshalMap(tombstoneItem, &tombstone); err != nil {
+		logger.Error("failed to unmarshal tombstone record", zap.Error(err))
+		return nil // Don't fail the stream processing
+	}
+
+	logger = logger.With(
+		zap.String("object_id", tombstone.ID),
+		zap.String("deleted_by", tombstone.DeletedBy),
+		zap.String("former_type", tombstone.FormerType),
+	)
+
+	logger.Info("processing tombstone event for object deletion")
+
+	// Create deletion messages for different streams based on former object type
+	deletionMessage := StreamMessage{
+		Event:  "delete",
+		Stream: "", // Will be set for each stream
+		Payload: json.RawMessage(fmt.Sprintf(`{
+			"id": "%s",
+			"type": "%s",
+			"deleted_by": "%s",
+			"deleted_at": "%s",
+			"former_type": "%s"
+		}`, tombstone.ID, "Tombstone", tombstone.DeletedBy, 
+			tombstone.Deleted.Format(time.RFC3339), tombstone.FormerType)),
+	}
+
+	// Send deletion events to relevant streams based on the former object type
+	if err := h.broadcastDeletionToStreams(ctx, &tombstone, deletionMessage); err != nil {
+		logger.Error("failed to broadcast deletion to streams", zap.Error(err))
+		// Don't return error - this is not critical
+	}
+
+	// Remove the object from user timelines (followers of the deleter)
+	if err := h.removeFromFollowerTimelines(ctx, tombstone.DeletedBy, tombstone.ID); err != nil {
+		logger.Warn("failed to remove from follower timelines", zap.Error(err))
+	}
+
+	logger.Info("successfully processed tombstone event")
+	return nil
+}
+
+// broadcastDeletionToStreams sends deletion events to appropriate streams
+func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx *lift.Context, tombstone *models.Tombstone, message StreamMessage) error {
+	objectID := tombstone.ID
+	
+	// Based on the former object type, determine which streams to update
+	switch tombstone.FormerType {
+	case "Note", "Article", "Status":
+		// Public timeline
+		message.Stream = "public"
+		if err := h.broadcastMessage(ctx, message); err != nil {
+			h.logger.Warn("failed to broadcast deletion to public stream", zap.Error(err))
+		}
+
+		// Local timeline (if it was a local object)
+		message.Stream = "public:local"
+		if err := h.broadcastMessage(ctx, message); err != nil {
+			h.logger.Warn("failed to broadcast deletion to local stream", zap.Error(err))
+		}
+
+		// Hashtag streams - extract hashtags from the deleted object if available
+		if err := h.removeFromHashtagStreams(ctx, objectID); err != nil {
+			h.logger.Warn("failed to remove from hashtag streams", zap.Error(err))
+		}
+
+	case "Follow", "Like", "Announce":
+		// For activity deletions, we might need different handling
+		h.logger.Debug("processing deletion of activity object",
+			zap.String("object_id", objectID),
+			zap.String("type", tombstone.FormerType))
+	}
+
+	return nil
+}
+
+// removeFromFollowerTimelines removes the deleted object from followers' home timelines  
+func (h *StreamRouterHandler) removeFromFollowerTimelines(ctx *lift.Context, actorID, objectID string) error {
+	// Extract username from actor ID
+	username := h.extractUsernameFromActorID(actorID)
+	
+	// Get followers (limited batch for stream processing efficiency)
+	followers, _, err := h.getFollowersForUser(ctx, username, 100)
+	if err != nil {
+		return fmt.Errorf("failed to get followers: %w", err)
+	}
+
+	// Create deletion message for home timelines
+	deletionMessage := StreamMessage{
+		Event: "delete",
+		Payload: json.RawMessage(fmt.Sprintf(`{"id": "%s"}`, objectID)),
+	}
+
+	// Send to each follower's home timeline
+	for _, follower := range followers {
+		streamName := fmt.Sprintf("user:%s", follower)
+		deletionMessage.Stream = streamName
+		
+		if err := h.broadcastMessage(ctx, deletionMessage); err != nil {
+			h.logger.Warn("failed to send deletion to follower timeline",
+				zap.String("follower", follower),
+				zap.String("object_id", objectID),
+				zap.Error(err))
+			// Continue with other followers
+		}
+	}
+
+	return nil
+}
+
+// removeFromHashtagStreams removes objects from hashtag streams (implementation placeholder)
+func (h *StreamRouterHandler) removeFromHashtagStreams(_ *lift.Context, objectID string) error {
+	// This would need to:
+	// 1. Look up hashtags associated with the deleted object
+	// 2. Send deletion events to each hashtag stream
+	// For now, just log that this should be implemented
+	h.logger.Debug("hashtag stream removal needed", zap.String("object_id", objectID))
+	return nil
+}
+
+// getFollowersForUser gets a limited list of followers for an actor (placeholder implementation)
+func (h *StreamRouterHandler) getFollowersForUser(_ *lift.Context, username string, limit int) ([]string, string, error) {
+	// This would use the relationship repository to get actual followers
+	// For now, return empty slice to avoid errors
+	h.logger.Debug("getting followers for user", 
+		zap.String("username", username),
+		zap.Int("limit", limit))
+	return []string{}, "", nil
+}
+
+// extractUsernameFromActorID extracts username from actor ID URL  
+func (h *StreamRouterHandler) extractUsernameFromActorID(actorID string) string {
+	// Extract from URLs like https://domain.com/users/username
+	parts := strings.Split(actorID, "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-1]
+	}
+	return actorID
+}
+
+// broadcastMessage broadcasts a message to WebSocket connections
+func (h *StreamRouterHandler) broadcastMessage(ctx *lift.Context, message StreamMessage) error {
+	// Marshal the message
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Use existing broadcast method
+	return h.broadcastToStream(ctx, message.Stream, message.Event, payload)
 }
 
 func main() {

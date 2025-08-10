@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
@@ -21,19 +24,23 @@ type BandwidthTracker struct {
 	storage     core.RepositoryStorage
 	logger      *zap.Logger
 	costTracker CostTracker
+	cloudWatch  *cloudwatch.Client
 
 	// In-memory cache for active sessions
 	sessionCache sync.Map
 	cacheTTL     time.Duration
+	namespace    string
 }
 
 // NewBandwidthTracker creates a new bandwidth tracker
-func NewBandwidthTracker(storage core.RepositoryStorage, logger *zap.Logger, costTracker CostTracker) *BandwidthTracker {
+func NewBandwidthTracker(storage core.RepositoryStorage, logger *zap.Logger, costTracker CostTracker, cloudWatch *cloudwatch.Client) *BandwidthTracker {
 	return &BandwidthTracker{
 		storage:     storage,
 		logger:      logger,
 		costTracker: costTracker,
+		cloudWatch:  cloudWatch,
 		cacheTTL:    5 * time.Minute,
+		namespace:   "Lesser/Streaming/Bandwidth",
 	}
 }
 
@@ -53,6 +60,9 @@ func (bt *BandwidthTracker) TrackBandwidth(ctx context.Context, userID string, b
 			zap.Error(err))
 		// Don't return error to avoid breaking streaming - just log it
 	}
+
+	// Also publish to CloudWatch for real-time bandwidth tracking
+	bt.publishBandwidthMetric(ctx, userID, bytesTransferred, now)
 
 	// Track cost (simplified since we're not doing direct DynamoDB operations)
 	if bt.costTracker != nil {
@@ -121,10 +131,15 @@ func (bt *BandwidthTracker) GetOptimalQuality(ctx context.Context, userID string
 	return bt.selectQualityByBandwidth(safeBandwidth)
 }
 
-// RecordBandwidthMeasurement records a bandwidth measurement sample (simplified)
-func (bt *BandwidthTracker) RecordBandwidthMeasurement(_ context.Context, userID string, bandwidth int) error {
+// RecordBandwidthMeasurement records a bandwidth measurement sample with CloudWatch integration
+func (bt *BandwidthTracker) RecordBandwidthMeasurement(ctx context.Context, userID string, bandwidth int) error {
+	now := time.Now()
+
 	// Update in-memory cache
-	bt.updateCache(userID, int64(bandwidth), time.Now())
+	bt.updateCache(userID, int64(bandwidth), now)
+
+	// Publish real-time bandwidth measurement to CloudWatch
+	bt.publishBandwidthMetric(ctx, userID, int64(bandwidth), now)
 
 	// Track cost (simplified)
 	if bt.costTracker != nil {
@@ -134,19 +149,68 @@ func (bt *BandwidthTracker) RecordBandwidthMeasurement(_ context.Context, userID
 	return nil
 }
 
-// GetBandwidthHistory retrieves bandwidth measurement history (simplified)
-func (bt *BandwidthTracker) GetBandwidthHistory(_ context.Context, userID string, duration time.Duration) ([]BandwidthMeasurement, error) {
-	// Return empty history for now - in a full implementation this could query analytics data
-	bt.logger.Debug("bandwidth history requested",
-		zap.String("userID", userID),
-		zap.Duration("duration", duration))
+// GetBandwidthHistory retrieves bandwidth measurement history from CloudWatch
+func (bt *BandwidthTracker) GetBandwidthHistory(ctx context.Context, userID string, duration time.Duration) ([]BandwidthMeasurement, error) {
+	if bt.cloudWatch == nil {
+		bt.logger.Warn("CloudWatch client not available, returning empty history")
+		return []BandwidthMeasurement{}, nil
+	}
 
-	// Track cost (simplified)
+	endTime := time.Now()
+	startTime := endTime.Add(-duration)
+
+	// Query CloudWatch for bandwidth measurements
+	input := &cloudwatch.GetMetricStatisticsInput{
+		Namespace:  aws.String(bt.namespace),
+		MetricName: aws.String("BytesTransferred"),
+		Dimensions: []types.Dimension{
+			{
+				Name:  aws.String("UserID"),
+				Value: aws.String(userID),
+			},
+		},
+		StartTime:  aws.Time(startTime),
+		EndTime:    aws.Time(endTime),
+		Period:     aws.Int32(60), // 1-minute intervals
+		Statistics: []types.Statistic{types.StatisticSum, types.StatisticAverage},
+	}
+
+	result, err := bt.cloudWatch.GetMetricStatistics(ctx, input)
+	if err != nil {
+		bt.logger.Error("failed to get bandwidth history from CloudWatch",
+			zap.String("userID", userID),
+			zap.Duration("duration", duration),
+			zap.Error(err))
+		return []BandwidthMeasurement{}, nil
+	}
+
+	// Convert CloudWatch datapoints to BandwidthMeasurement
+	measurements := make([]BandwidthMeasurement, 0, len(result.Datapoints))
+	for _, datapoint := range result.Datapoints {
+		if datapoint.Sum != nil && datapoint.Timestamp != nil {
+			// Convert bytes to bandwidth (kbps)
+			// Assume 1-minute period, convert bytes to bits and then to kbps
+			bandwidthKbps := int((*datapoint.Sum * 8) / 1000 / 60) // bytes to kbps over 60 seconds
+
+			measurements = append(measurements, BandwidthMeasurement{
+				UserID:    userID,
+				Bandwidth: bandwidthKbps,
+				Timestamp: *datapoint.Timestamp,
+			})
+		}
+	}
+
+	bt.logger.Debug("retrieved bandwidth history from CloudWatch",
+		zap.String("userID", userID),
+		zap.Duration("duration", duration),
+		zap.Int("measurements", len(measurements)))
+
+	// Track cost (CloudWatch query)
 	if bt.costTracker != nil {
 		bt.costTracker.TrackDynamoRead(1)
 	}
 
-	return []BandwidthMeasurement{}, nil
+	return measurements, nil
 }
 
 // Helper types and methods
@@ -224,4 +288,65 @@ func (bt *BandwidthTracker) selectQualityByBandwidth(bandwidth int) Quality {
 	default:
 		return Quality240p
 	}
+}
+
+// publishBandwidthMetric publishes bandwidth data to CloudWatch
+func (bt *BandwidthTracker) publishBandwidthMetric(_ context.Context, userID string, bytesTransferred int64, timestamp time.Time) {
+	if bt.cloudWatch == nil {
+		return
+	}
+
+	// Create bandwidth metric
+	metricData := []types.MetricDatum{
+		{
+			MetricName: aws.String("BytesTransferred"),
+			Dimensions: []types.Dimension{
+				{
+					Name:  aws.String("UserID"),
+					Value: aws.String(userID),
+				},
+			},
+			Timestamp: aws.Time(timestamp),
+			Value:     aws.Float64(float64(bytesTransferred)),
+			Unit:      types.StandardUnitBytes,
+		},
+	}
+
+	// Also publish bandwidth rate (kbps)
+	if cached, ok := bt.sessionCache.Load(userID); ok {
+		if stats, ok := cached.(*cachedBandwidthStats); ok {
+			if stats.AverageBandwidth > 0 {
+				metricData = append(metricData, types.MetricDatum{
+					MetricName: aws.String("BandwidthKbps"),
+					Dimensions: []types.Dimension{
+						{
+							Name:  aws.String("UserID"),
+							Value: aws.String(userID),
+						},
+					},
+					Timestamp: aws.Time(timestamp),
+					Value:     aws.Float64(float64(stats.AverageBandwidth)),
+					Unit:      types.StandardUnitCount,
+				})
+			}
+		}
+	}
+
+	// Publish metrics to CloudWatch (async)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		input := &cloudwatch.PutMetricDataInput{
+			Namespace:  aws.String(bt.namespace),
+			MetricData: metricData,
+		}
+
+		_, err := bt.cloudWatch.PutMetricData(ctx, input)
+		if err != nil {
+			bt.logger.Warn("failed to publish bandwidth metrics to CloudWatch",
+				zap.String("userID", userID),
+				zap.Error(err))
+		}
+	}()
 }

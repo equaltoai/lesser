@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -39,6 +40,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+)
+
+const (
+	// Error type constants
+	errorTypePermanent = "permanent"
+	errorTypeTemporary = "temporary"
 )
 
 // FederationDeliveryProcessor handles federation delivery from SQS messages
@@ -278,10 +285,42 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 		return fmt.Errorf("failed to get signing actor: %w", err)
 	}
 
+	targetDomain := extractDomainFromURL(msg.TargetInbox)
+
+	// Perform health assessment before delivery
+	shouldDeliver, healthReason := p.assessTargetHealth(ctx, targetDomain, msg.RetryCount)
+	if !shouldDeliver {
+		logger.Warn("skipping delivery due to target health",
+			zap.String("delivery_id", msg.DeliveryID),
+			zap.String("target_domain", targetDomain),
+			zap.String("reason", healthReason),
+			zap.Int("retry_count", msg.RetryCount))
+
+		// If health is poor and we've tried multiple times, delay significantly
+		if msg.RetryCount >= 2 {
+			delayMinutes := calculateHealthBasedBackoff(msg.RetryCount, healthReason)
+			nextRetry := time.Now().Add(time.Duration(delayMinutes) * time.Minute)
+
+			// Update message for delayed retry
+			msg.RetryCount++
+			msg.LastAttemptAt = &[]time.Time{time.Now()}[0]
+			msg.NextRetryAfter = &nextRetry
+			msg.FailureReason = fmt.Sprintf("Health assessment failed: %s", healthReason)
+
+			// Requeue with delay
+			if err := p.requeueDelivery(ctx, &msg, delayMinutes); err != nil {
+				logger.Error("failed to requeue health-delayed delivery",
+					zap.String("delivery_id", msg.DeliveryID),
+					zap.Error(err))
+			}
+			return nil
+		}
+	}
+
 	// Create delivery status record using DynamORM model
 	deliveryStatus := &models.DeliveryStatus{
 		ActivityID:   msg.DeliveryID,
-		TargetDomain: extractDomainFromURL(msg.TargetInbox),
+		TargetDomain: targetDomain,
 		Status:       "attempting",
 		Attempts:     msg.RetryCount + 1,
 		LastAttempt:  time.Now(),
@@ -289,70 +328,94 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 	}
 	deliveryStatus.UpdateKeys()
 
-	// Attempt delivery
-	err = p.deliveryService.DeliverActivity(ctx, msg.Activity, msg.TargetInbox, signingActor)
+	// Attempt delivery with optimized routing
+	err = p.deliverWithRoutingOptimization(ctx, msg.Activity, msg.TargetInbox, signingActor, targetDomain)
 	if err != nil {
 		deliveryStatus.Status = "failed"
 		deliveryStatus.Error = err.Error()
 
-		// Check if we should retry
-		if msg.RetryCount < msg.MaxRetries {
-			// Calculate exponential backoff
-			backoffMinutes := calculateBackoff(msg.RetryCount)
-			nextRetry := time.Now().Add(time.Duration(backoffMinutes) * time.Minute)
+		// Classify the error to determine if we should retry
+		errorType := p.classifyDeliveryError(err)
+		
+		logger.Info("delivery failed - analyzing error",
+			zap.String("delivery_id", msg.DeliveryID),
+			zap.String("error_type", errorType),
+			zap.String("error_message", err.Error()),
+			zap.Int("retry_count", msg.RetryCount),
+			zap.Int("max_retries", msg.MaxRetries))
 
-			logger.Warn("delivery failed, will retry",
-				zap.String("delivery_id", msg.DeliveryID),
-				zap.Int("retry_count", msg.RetryCount),
-				zap.Time("next_retry", nextRetry),
-				zap.Error(err))
-
-			// Update message for retry
-			msg.RetryCount++
-			msg.LastAttemptAt = &deliveryStatus.LastAttempt
-			msg.NextRetryAfter = &nextRetry
-			msg.FailureReason = err.Error()
-
-			// Update delivery status for retry
-			deliveryStatus.NextRetry = nextRetry
-			deliveryStatus.UpdateKeys()
-
-			// Send back to queue with delay
-			if err := p.requeueDelivery(ctx, &msg, backoffMinutes); err != nil {
-				logger.Error("failed to requeue delivery",
+		// Check if this is a permanent error or max retries exceeded
+		if errorType == errorTypePermanent || msg.RetryCount >= msg.MaxRetries {
+			if errorType == errorTypePermanent {
+				logger.Warn("permanent error detected, not retrying",
 					zap.String("delivery_id", msg.DeliveryID),
+					zap.String("error", err.Error()))
+			} else {
+				logger.Error("delivery failed after max retries",
+					zap.String("delivery_id", msg.DeliveryID),
+					zap.Int("attempts", msg.RetryCount+1),
 					zap.Error(err))
 			}
 
-			// Store delivery status
+			deliveryStatus.Status = "permanently_failed"
+			deliveryStatus.UpdateKeys()
+
+			// Store final status
 			if err := p.storeDeliveryStatus(ctx, deliveryStatus); err != nil {
 				logger.Error("failed to store delivery status",
 					zap.String("delivery_id", msg.DeliveryID),
 					zap.Error(err))
 			}
 
-			// Don't return error - we've handled the retry
-			return nil
+			// Send to dead letter queue by returning error
+			return fmt.Errorf("delivery permanently failed (type=%s, attempts=%d): %w", 
+				errorType, msg.RetryCount+1, err)
 		}
 
-		// Max retries exceeded
-		logger.Error("delivery failed after max retries",
+		// This is a temporary error - schedule retry
+		backoffMinutes := p.calculateRetryBackoff(msg.RetryCount, errorType, targetDomain)
+		nextRetry := time.Now().Add(time.Duration(backoffMinutes) * time.Minute)
+
+		logger.Warn("temporary error detected, scheduling retry",
 			zap.String("delivery_id", msg.DeliveryID),
-			zap.Int("attempts", msg.RetryCount+1),
+			zap.String("error_type", errorType),
+			zap.Int("retry_count", msg.RetryCount),
+			zap.Time("next_retry", nextRetry),
+			zap.Int("backoff_minutes", backoffMinutes),
 			zap.Error(err))
 
-		deliveryStatus.Status = "permanently_failed"
+		// Update message for retry
+		msg.RetryCount++
+		msg.LastAttemptAt = &deliveryStatus.LastAttempt
+		msg.NextRetryAfter = &nextRetry
+		msg.FailureReason = fmt.Sprintf("%s: %s", errorType, err.Error())
+
+		// Update delivery status for retry
+		deliveryStatus.Status = "retrying"
+		deliveryStatus.NextRetry = nextRetry
 		deliveryStatus.UpdateKeys()
 
-		// Store final status
+		// Send back to queue with delay
+		if err := p.requeueDelivery(ctx, &msg, backoffMinutes); err != nil {
+			logger.Error("failed to requeue delivery",
+				zap.String("delivery_id", msg.DeliveryID),
+				zap.Error(err))
+			// Return the original delivery error since requeuing failed
+			return err
+		}
+
+		// Store delivery status
 		if err := p.storeDeliveryStatus(ctx, deliveryStatus); err != nil {
 			logger.Error("failed to store delivery status",
 				zap.String("delivery_id", msg.DeliveryID),
 				zap.Error(err))
 		}
 
-		// Send to dead letter queue by returning error
-		return fmt.Errorf("delivery permanently failed after %d attempts: %w", msg.RetryCount+1, err)
+		// Log retry metrics
+		p.recordRetryMetrics(ctx, msg.DeliveryID, errorType, msg.RetryCount, backoffMinutes)
+
+		// Don't return error - we've handled the retry
+		return nil
 	}
 
 	// Success!
@@ -364,7 +427,12 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 	logger.Info("successfully delivered activity",
 		zap.String("delivery_id", msg.DeliveryID),
 		zap.String("target_inbox", msg.TargetInbox),
-		zap.Int("attempts", msg.RetryCount+1))
+		zap.String("target_domain", targetDomain),
+		zap.Int("attempts", msg.RetryCount+1),
+		zap.Duration("total_time", time.Since(msg.CreatedAt)))
+
+	// Record success metrics
+	p.recordSuccessMetrics(ctx, msg.DeliveryID, msg.Activity.Type, targetDomain, msg.RetryCount+1, time.Since(msg.CreatedAt))
 
 	// Store successful delivery status
 	if err := p.storeDeliveryStatus(ctx, deliveryStatus); err != nil {
@@ -453,6 +521,236 @@ func (p *FederationDeliveryProcessor) storeDeliveryStatus(ctx context.Context, s
 	// Use the CreateObject method to store the delivery status record
 	// The Object repository will handle the operations
 	return p.repos.Object().CreateObject(ctx, status)
+}
+
+// assessTargetHealth performs health assessment of target domain before delivery
+func (p *FederationDeliveryProcessor) assessTargetHealth(ctx context.Context, targetDomain string, retryCount int) (bool, string) {
+	// Get instance health information
+	instanceStats, err := p.repos.Federation().GetInstanceStats(ctx, targetDomain)
+	if err != nil {
+		p.logger.Debug("no instance stats available, allowing delivery",
+			zap.String("domain", targetDomain),
+			zap.Error(err))
+		return true, "no_stats"
+	}
+
+	// Check basic health indicators
+	if instanceStats.ErrorRate > 0.5 {
+		return false, fmt.Sprintf("high_error_rate_%.2f", instanceStats.ErrorRate)
+	}
+
+	if instanceStats.AvgResponseTime > 30000 { // 30 seconds
+		return false, fmt.Sprintf("slow_response_time_%.0fms", instanceStats.AvgResponseTime)
+	}
+
+	// For retry attempts, be more strict
+	if retryCount > 0 {
+		if instanceStats.ErrorRate > 0.2 {
+			return false, fmt.Sprintf("retry_error_rate_%.2f", instanceStats.ErrorRate)
+		}
+		if instanceStats.AvgResponseTime > 15000 { // 15 seconds for retries
+			return false, fmt.Sprintf("retry_slow_response_%.0fms", instanceStats.AvgResponseTime)
+		}
+	}
+
+	// Check if instance was recently seen
+	if time.Since(instanceStats.LastSeen) > 24*time.Hour {
+		return false, fmt.Sprintf("stale_last_seen_%s", instanceStats.LastSeen.Format(time.RFC3339))
+	}
+
+	return true, "healthy"
+}
+
+// calculateHealthBasedBackoff calculates backoff based on health assessment
+func calculateHealthBasedBackoff(retryCount int, healthReason string) int {
+	baseBackoff := calculateBackoff(retryCount)
+
+	// Increase backoff based on health issues
+	switch {
+	case strings.Contains(healthReason, "high_error_rate"):
+		return baseBackoff * 3 // 3x longer for high error rates
+	case strings.Contains(healthReason, "slow_response"):
+		return baseBackoff * 2 // 2x longer for slow responses
+	case strings.Contains(healthReason, "stale_last_seen"):
+		return baseBackoff * 4 // 4x longer for stale instances
+	default:
+		return baseBackoff
+	}
+}
+
+// deliverWithRoutingOptimization attempts delivery with route optimization
+func (p *FederationDeliveryProcessor) deliverWithRoutingOptimization(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor, targetDomain string) error {
+	// First try standard delivery
+	err := p.deliveryService.DeliverActivity(ctx, activity, targetInbox, signingActor)
+	if err != nil {
+		// Log delivery failure with routing context
+		p.logger.Debug("standard delivery failed, no alternate routes available",
+			zap.String("target_domain", targetDomain),
+			zap.String("target_inbox", targetInbox),
+			zap.Error(err))
+
+		// Record routing failure analytics
+		if analyticsErr := p.recordRoutingFailure(ctx, targetDomain, targetInbox, err); analyticsErr != nil {
+			p.logger.Debug("failed to record routing analytics", zap.Error(analyticsErr))
+		}
+
+		return err
+	}
+
+	// Record successful routing analytics
+	if analyticsErr := p.recordRoutingSuccess(ctx, targetDomain, targetInbox); analyticsErr != nil {
+		p.logger.Debug("failed to record routing analytics", zap.Error(analyticsErr))
+	}
+
+	return nil
+}
+
+// recordRoutingFailure records failed delivery analytics
+func (p *FederationDeliveryProcessor) recordRoutingFailure(ctx context.Context, targetDomain, _ string, deliveryErr error) error {
+	activity := &storage.FederationActivity{
+		ID:           fmt.Sprintf("delivery_failure_%d", time.Now().UnixNano()),
+		Domain:       targetDomain,
+		Type:         "egress",
+		ActivityType: "delivery_failure",
+		Success:      false,
+		ErrorMessage: deliveryErr.Error(),
+		Timestamp:    time.Now(),
+		ResponseTime: 0, // Unknown since delivery failed
+		ByteSize:     0, // Unknown since delivery failed
+	}
+
+	return p.repos.Federation().RecordFederationActivity(ctx, activity)
+}
+
+// recordRoutingSuccess records successful delivery analytics
+func (p *FederationDeliveryProcessor) recordRoutingSuccess(ctx context.Context, targetDomain, _ string) error {
+	activity := &storage.FederationActivity{
+		ID:           fmt.Sprintf("delivery_success_%d", time.Now().UnixNano()),
+		Domain:       targetDomain,
+		Type:         "egress",
+		ActivityType: "delivery_success",
+		Success:      true,
+		Timestamp:    time.Now(),
+		ResponseTime: 0, // Would need to measure in real implementation
+		ByteSize:     0, // Would need to measure in real implementation
+	}
+
+	return p.repos.Federation().RecordFederationActivity(ctx, activity)
+}
+
+// classifyDeliveryError classifies delivery errors as temporary or permanent
+func (p *FederationDeliveryProcessor) classifyDeliveryError(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Permanent HTTP errors (4xx except 429)
+	permanentPatterns := []string{
+		"status 400", "status 401", "status 403", "status 404", 
+		"status 405", "status 406", "status 410", "status 413",
+		"status 422", "status 451",
+		"signature verification failed",
+		"invalid actor",
+		"blocked domain",
+		"spam detected",
+		"account suspended",
+		"invalid request format",
+		"malformed json",
+	}
+
+	for _, pattern := range permanentPatterns {
+		if strings.Contains(errStr, pattern) {
+			return errorTypePermanent
+		}
+	}
+
+	// Temporary errors (5xx, network issues, timeouts)
+	temporaryPatterns := []string{
+		"status 500", "status 502", "status 503", "status 504",
+		"status 429", // Rate limiting
+		"timeout", "connection refused", "connection reset",
+		"no such host", "network unreachable", "temporary failure",
+		"service unavailable", "internal server error",
+		"bad gateway", "gateway timeout",
+		"context deadline exceeded",
+		"i/o timeout",
+	}
+
+	for _, pattern := range temporaryPatterns {
+		if strings.Contains(errStr, pattern) {
+			return errorTypeTemporary
+		}
+	}
+
+	// Default to temporary for unknown errors to be safe
+	return errorTypeTemporary
+}
+
+// calculateRetryBackoff calculates retry backoff with error-type specific adjustments
+func (p *FederationDeliveryProcessor) calculateRetryBackoff(retryCount int, errorType, _ string) int {
+	// Base exponential backoff
+	baseBackoff := calculateBackoff(retryCount)
+	
+	// Adjust based on error type
+	switch errorType {
+	case "rate_limit":
+		// Longer backoff for rate limiting
+		return baseBackoff * 3
+	case "server_error":
+		// Moderate backoff for server errors
+		return baseBackoff * 2
+	case "network":
+		// Standard backoff for network issues
+		return baseBackoff
+	case "timeout":
+		// Slightly longer for timeout issues
+		return int(float64(baseBackoff) * 1.5)
+	default:
+		// Default backoff for other temporary errors
+		return baseBackoff
+	}
+}
+
+// recordRetryMetrics records comprehensive metrics for retry attempts
+func (p *FederationDeliveryProcessor) recordRetryMetrics(_ context.Context, deliveryID, errorType string, retryCount, backoffMinutes int) {
+	p.logger.Info("federation_retry_metric",
+		zap.String("metric_type", "retry_attempt"),
+		zap.String("delivery_id", deliveryID),
+		zap.String("error_type", errorType),
+		zap.Int("retry_count", retryCount),
+		zap.Int("backoff_minutes", backoffMinutes),
+		zap.Time("timestamp", time.Now()))
+	
+	// Additional structured metrics for monitoring systems
+	p.logger.Info("federation_delivery_status",
+		zap.String("delivery_id", deliveryID),
+		zap.String("status", "retrying"),
+		zap.String("reason", fmt.Sprintf("%s_error", errorType)),
+		zap.Int("attempt_number", retryCount+1),
+		zap.Duration("next_retry_in", time.Duration(backoffMinutes)*time.Minute))
+}
+
+// recordSuccessMetrics records metrics for successful deliveries
+func (p *FederationDeliveryProcessor) recordSuccessMetrics(_ context.Context, deliveryID, activityType, targetDomain string, totalAttempts int, totalDuration time.Duration) {
+	p.logger.Info("federation_success_metric",
+		zap.String("metric_type", "delivery_success"),
+		zap.String("delivery_id", deliveryID),
+		zap.String("activity_type", activityType),
+		zap.String("target_domain", targetDomain),
+		zap.Int("total_attempts", totalAttempts),
+		zap.Duration("total_duration", totalDuration),
+		zap.Bool("required_retry", totalAttempts > 1),
+		zap.Time("timestamp", time.Now()))
+	
+	// Log domain-specific success rate data
+	p.logger.Info("federation_domain_metric",
+		zap.String("metric_type", "domain_delivery"),
+		zap.String("target_domain", targetDomain),
+		zap.String("result", "success"),
+		zap.Int("attempts_needed", totalAttempts),
+		zap.Duration("time_to_deliver", totalDuration))
 }
 
 // extractDomainFromURL extracts the domain from a URL (helper function)

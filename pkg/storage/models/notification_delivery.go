@@ -141,7 +141,7 @@ func isValidDeliveryMethod(method string) bool {
 func isValidDeliveryStatus(status string) bool {
 	validStatuses := map[string]bool{
 		StatusPending: true,
-		"sent":    true,
+		"sent":        true,
 		StatusFailed:  true,
 	}
 	return validStatuses[status]

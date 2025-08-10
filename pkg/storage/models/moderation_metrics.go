@@ -208,15 +208,15 @@ type AdvancedModerationAction string
 
 const (
 	// AdvancedModerationActionAllow represents allowing content
-	AdvancedModerationActionAllow        AdvancedModerationAction = "allow"
+	AdvancedModerationActionAllow AdvancedModerationAction = "allow"
 	// AdvancedModerationActionFlag represents flagging content
-	AdvancedModerationActionFlag         AdvancedModerationAction = "flag"
+	AdvancedModerationActionFlag AdvancedModerationAction = "flag"
 	// AdvancedModerationActionQuarantine represents quarantining content
-	AdvancedModerationActionQuarantine   AdvancedModerationAction = "quarantine"
+	AdvancedModerationActionQuarantine AdvancedModerationAction = "quarantine"
 	// AdvancedModerationActionRemove represents removing content
-	AdvancedModerationActionRemove       AdvancedModerationAction = "remove"
+	AdvancedModerationActionRemove AdvancedModerationAction = "remove"
 	// AdvancedModerationActionShadowBan represents shadow banning
-	AdvancedModerationActionShadowBan    AdvancedModerationAction = "shadow_ban"
+	AdvancedModerationActionShadowBan AdvancedModerationAction = "shadow_ban"
 	// AdvancedModerationActionReportToAuth represents reporting to authorities
 	AdvancedModerationActionReportToAuth AdvancedModerationAction = "report_to_authorities"
 )
@@ -226,11 +226,11 @@ type AdvancedSeverity string
 
 const (
 	// AdvancedSeverityLow represents low severity
-	AdvancedSeverityLow      AdvancedSeverity = "low"
+	AdvancedSeverityLow AdvancedSeverity = "low"
 	// AdvancedSeverityMedium represents medium severity
-	AdvancedSeverityMedium   AdvancedSeverity = "medium"
+	AdvancedSeverityMedium AdvancedSeverity = "medium"
 	// AdvancedSeverityHigh represents high severity
-	AdvancedSeverityHigh     AdvancedSeverity = "high"
+	AdvancedSeverityHigh AdvancedSeverity = "high"
 	// AdvancedSeverityCritical represents critical severity
 	AdvancedSeverityCritical AdvancedSeverity = "critical"
 )

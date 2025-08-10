@@ -35,7 +35,7 @@ type CircuitState int
 
 const (
 	// StateClosed represents normal operation
-	StateClosed   CircuitState = iota
+	StateClosed CircuitState = iota
 	// StateOpen represents circuit open - rejecting requests
 	StateOpen
 	// StateHalfOpen represents testing recovery

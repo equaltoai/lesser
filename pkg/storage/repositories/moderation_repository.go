@@ -667,9 +667,11 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 
 		// Filter by severity if specified
 		if severity != "" {
+			// Parse severity to float64 for comparison
+			severityFloat, _ := strconv.ParseFloat(severity, 64)
 			filtered := patternModels[:0]
 			for _, p := range patternModels {
-				if p.Severity == severity {
+				if p.Severity == severityFloat {
 					filtered = append(filtered, p)
 				}
 			}
@@ -681,18 +683,15 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 	result := make([]*storage.ModerationPattern, len(patternModels))
 	for i, model := range patternModels {
 		result[i] = &storage.ModerationPattern{
-			ID:          model.ID,
+			ID:          model.PatternID,
 			Name:        model.Name,
 			Description: model.Description,
 			Type:        model.Type,
 			Content:     model.Pattern,
-			Severity:    model.Severity,
+			Severity:    fmt.Sprintf("%.2f", model.Severity),
 			Active:      model.Active,
 			CreatedAt:   model.CreatedAt,
 			UpdatedAt:   model.UpdatedAt,
-		}
-		if !model.LastMatch.IsZero() {
-			result[i].LastMatch = &model.LastMatch
 		}
 	}
 
@@ -703,21 +702,23 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 func (r *ModerationRepository) UpdateModerationPattern(ctx context.Context, pattern *storage.ModerationPattern) error {
 	pattern.UpdatedAt = time.Now()
 
+	// Parse severity from string to float64
+	severity, _ := strconv.ParseFloat(pattern.Severity, 64)
+	
 	// Create model
 	model := &models.ModerationPattern{
-		ID:          pattern.ID,
+		PK:          fmt.Sprintf("PATTERN#%s", pattern.ID),
+		SK:          "METADATA",
+		PatternID:   pattern.ID,
 		Name:        pattern.Name,
 		Description: pattern.Description,
 		Type:        pattern.Type,
 		Pattern:     pattern.Content,
-		Severity:    pattern.Severity,
+		Severity:    severity,
 		Active:      pattern.Active,
 		CreatedAt:   pattern.CreatedAt,
 		UpdatedAt:   pattern.UpdatedAt,
 		TTL:         time.Now().Add(90 * 24 * time.Hour).Unix(),
-	}
-	if pattern.LastMatch != nil && !pattern.LastMatch.IsZero() {
-		model.LastMatch = *pattern.LastMatch
 	}
 	model.UpdateKeys()
 
@@ -788,14 +789,19 @@ func (r *ModerationRepository) CreateModerationPattern(ctx context.Context, patt
 	pattern.CreatedAt = now
 	pattern.UpdatedAt = now
 
+	// Parse severity from string to float64
+	severity, _ := strconv.ParseFloat(pattern.Severity, 64)
+	
 	// Create model
 	model := &models.ModerationPattern{
-		ID:          pattern.ID,
+		PK:          fmt.Sprintf("PATTERN#%s", pattern.ID),
+		SK:          "METADATA",
+		PatternID:   pattern.ID,
 		Name:        pattern.Name,
 		Description: pattern.Description,
 		Type:        pattern.Type,
 		Pattern:     pattern.Content,
-		Severity:    pattern.Severity,
+		Severity:    severity,
 		Active:      pattern.Active,
 		CreatedAt:   pattern.CreatedAt,
 		UpdatedAt:   pattern.UpdatedAt,
@@ -829,18 +835,15 @@ func (r *ModerationRepository) GetModerationPattern(ctx context.Context, pattern
 
 	// Convert to storage pattern
 	pattern := &storage.ModerationPattern{
-		ID:          model.ID,
+		ID:          model.PatternID,
 		Name:        model.Name,
 		Description: model.Description,
 		Type:        model.Type,
 		Content:     model.Pattern,
-		Severity:    model.Severity,
+		Severity:    fmt.Sprintf("%.2f", model.Severity),
 		Active:      model.Active,
 		CreatedAt:   model.CreatedAt,
 		UpdatedAt:   model.UpdatedAt,
-	}
-	if !model.LastMatch.IsZero() {
-		pattern.LastMatch = &model.LastMatch
 	}
 
 	return pattern, nil
@@ -1035,22 +1038,22 @@ func (r *ModerationRepository) executeGSI2Query(ctx context.Context, gsi2pk stri
 // processModelsToEvents converts models to events with filtering
 func (r *ModerationRepository) processModelsToEvents(models []models.ModerationEvent, filter *storage.ModerationEventFilter, limit int) []*storage.ModerationEvent {
 	events := make([]*storage.ModerationEvent, 0, len(models))
-	
+
 	for _, model := range models {
 		if model.Type != ModerationTypeEvent {
 			continue
 		}
-		
+
 		event := r.modelToEvent(&model)
 		if r.matchesEventFilter(event, filter) {
 			events = append(events, event)
 		}
-		
+
 		if len(events) >= limit {
 			break
 		}
 	}
-	
+
 	return events
 }
 
@@ -2727,6 +2730,214 @@ func (r *ModerationRepository) IncrementFalseReports(ctx context.Context, userna
 	return nil
 }
 
+// CreateAuditLog creates a new audit log entry
+func (r *ModerationRepository) CreateAuditLog(ctx context.Context, auditLog *storage.AuditLog) error {
+	if auditLog.ID == "" {
+		auditLog.ID = fmt.Sprintf("audit_%s", generateRandomString())
+	}
+	auditLog.Timestamp = time.Now()
+	auditLog.CreatedAt = auditLog.Timestamp
+
+	// Create model and update keys
+	model := &models.AuditLog{
+		ID:          auditLog.ID,
+		AdminID:     auditLog.AdminID,
+		AdminRole:   auditLog.AdminRole,
+		Action:      auditLog.Action,
+		TargetType:  auditLog.TargetType,
+		TargetID:    auditLog.TargetID,
+		Reason:      auditLog.Reason,
+		Details:     auditLog.Details,
+		IPAddress:   auditLog.IPAddress,
+		UserAgent:   auditLog.UserAgent,
+		RequestID:   auditLog.RequestID,
+		Timestamp:   auditLog.Timestamp,
+		CreatedAt:   auditLog.CreatedAt,
+	}
+	model.UpdateKeys()
+
+	// Create the audit log entry
+	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("Failed to create audit log entry",
+			zap.Error(err),
+			zap.String("audit_id", auditLog.ID),
+			zap.String("admin_id", auditLog.AdminID),
+			zap.String("action", auditLog.Action))
+		return fmt.Errorf("failed to create audit log entry: %w", err)
+	}
+
+	r.logger.Debug("Created audit log entry",
+		zap.String("audit_id", auditLog.ID),
+		zap.String("admin_id", auditLog.AdminID),
+		zap.String("action", auditLog.Action),
+		zap.String("target_type", auditLog.TargetType),
+		zap.String("target_id", auditLog.TargetID))
+
+	return nil
+}
+
+// GetAuditLogs retrieves audit log entries with pagination
+func (r *ModerationRepository) GetAuditLogs(ctx context.Context, limit int, cursor string) ([]*storage.AuditLog, string, error) {
+	query := r.db.WithContext(ctx).Model(&models.AuditLog{}).
+		Where("PK", "=", "AUDIT_LOG").
+		Limit(limit)
+
+	if cursor != "" {
+		query = query.Where("SK", ">", cursor)
+	}
+
+	var models []*models.AuditLog
+	if err := query.Scan(&models); err != nil {
+		r.logger.Error("Failed to get audit logs",
+			zap.Error(err),
+			zap.Int("limit", limit))
+		return nil, "", fmt.Errorf("failed to get audit logs: %w", err)
+	}
+
+	// Convert models to storage types
+	logs := make([]*storage.AuditLog, 0, len(models))
+	for _, model := range models {
+		log := &storage.AuditLog{
+			ID:          model.ID,
+			AdminID:     model.AdminID,
+			AdminRole:   model.AdminRole,
+			Action:      model.Action,
+			TargetType:  model.TargetType,
+			TargetID:    model.TargetID,
+			Reason:      model.Reason,
+			Details:     model.Details,
+			IPAddress:   model.IPAddress,
+			UserAgent:   model.UserAgent,
+			RequestID:   model.RequestID,
+			Timestamp:   model.Timestamp,
+			CreatedAt:   model.CreatedAt,
+		}
+		logs = append(logs, log)
+	}
+
+	// Get next cursor - use the last item's SK if we got results
+	nextCursor := ""
+	if len(models) > 0 {
+		nextCursor = models[len(models)-1].SK
+	}
+
+	r.logger.Debug("Retrieved audit logs",
+		zap.Int("count", len(logs)),
+		zap.String("next_cursor", nextCursor))
+
+	return logs, nextCursor, nil
+}
+
+// GetAuditLogsByAdmin retrieves audit log entries for a specific admin
+func (r *ModerationRepository) GetAuditLogsByAdmin(ctx context.Context, adminID string, limit int, cursor string) ([]*storage.AuditLog, string, error) {
+	query := r.db.WithContext(ctx).Model(&models.AuditLog{}).
+		Where("GSI1PK", "=", fmt.Sprintf("ADMIN#%s", adminID)).
+		Index("gsi1").
+		Limit(limit)
+
+	if cursor != "" {
+		query = query.Where("GSI1SK", ">", cursor)
+	}
+
+	var models []*models.AuditLog
+	if err := query.Scan(&models); err != nil {
+		r.logger.Error("Failed to get audit logs by admin",
+			zap.Error(err),
+			zap.String("admin_id", adminID),
+			zap.Int("limit", limit))
+		return nil, "", fmt.Errorf("failed to get audit logs by admin: %w", err)
+	}
+
+	// Convert models to storage types
+	logs := make([]*storage.AuditLog, 0, len(models))
+	for _, model := range models {
+		log := &storage.AuditLog{
+			ID:          model.ID,
+			AdminID:     model.AdminID,
+			AdminRole:   model.AdminRole,
+			Action:      model.Action,
+			TargetType:  model.TargetType,
+			TargetID:    model.TargetID,
+			Reason:      model.Reason,
+			Details:     model.Details,
+			IPAddress:   model.IPAddress,
+			UserAgent:   model.UserAgent,
+			RequestID:   model.RequestID,
+			Timestamp:   model.Timestamp,
+			CreatedAt:   model.CreatedAt,
+		}
+		logs = append(logs, log)
+	}
+
+	// Get next cursor - use the last item's GSI1SK if we got results
+	nextCursor := ""
+	if len(models) > 0 {
+		nextCursor = models[len(models)-1].GSI1SK
+	}
+
+	r.logger.Debug("Retrieved audit logs by admin",
+		zap.String("admin_id", adminID),
+		zap.Int("count", len(logs)),
+		zap.String("next_cursor", nextCursor))
+
+	return logs, nextCursor, nil
+}
+
+// GetAuditLogsByTarget retrieves audit log entries for a specific target
+func (r *ModerationRepository) GetAuditLogsByTarget(ctx context.Context, targetID string, limit int, cursor string) ([]*storage.AuditLog, string, error) {
+	query := r.db.WithContext(ctx).Model(&models.AuditLog{}).
+		Where("GSI2PK", "=", fmt.Sprintf("TARGET#%s", targetID)).
+		Index("gsi2").
+		Limit(limit)
+
+	if cursor != "" {
+		query = query.Where("GSI2SK", ">", cursor)
+	}
+
+	var models []*models.AuditLog
+	if err := query.Scan(&models); err != nil {
+		r.logger.Error("Failed to get audit logs by target",
+			zap.Error(err),
+			zap.String("target_id", targetID),
+			zap.Int("limit", limit))
+		return nil, "", fmt.Errorf("failed to get audit logs by target: %w", err)
+	}
+
+	// Convert models to storage types
+	logs := make([]*storage.AuditLog, 0, len(models))
+	for _, model := range models {
+		log := &storage.AuditLog{
+			ID:          model.ID,
+			AdminID:     model.AdminID,
+			AdminRole:   model.AdminRole,
+			Action:      model.Action,
+			TargetType:  model.TargetType,
+			TargetID:    model.TargetID,
+			Reason:      model.Reason,
+			Details:     model.Details,
+			IPAddress:   model.IPAddress,
+			UserAgent:   model.UserAgent,
+			RequestID:   model.RequestID,
+			Timestamp:   model.Timestamp,
+			CreatedAt:   model.CreatedAt,
+		}
+		logs = append(logs, log)
+	}
+
+	// Get next cursor - use the last item's GSI2SK if we got results
+	nextCursor := ""
+	if len(models) > 0 {
+		nextCursor = models[len(models)-1].GSI2SK
+	}
+
+	r.logger.Debug("Retrieved audit logs by target",
+		zap.String("target_id", targetID),
+		zap.Int("count", len(logs)),
+		zap.String("next_cursor", nextCursor))
+
+	return logs, nextCursor, nil
+}
+
 // GetPendingModerationCount returns the count of pending moderation tasks for a specific moderator
 func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, moderatorID string) (int, error) {
 	r.logger.Debug("Getting pending moderation count for moderator",
@@ -2734,7 +2945,7 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 
 	// Count assigned reports that are still pending (open or in progress)
 	var reportCount int
-	
+
 	// Get open reports
 	openReportModels := []models.Report{}
 	err := r.db.WithContext(ctx).Model(&models.Report{}).
@@ -2742,7 +2953,7 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 		Where("Status", "=", string(storage.ReportStatusOpen)).
 		All(&openReportModels)
 	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Warn("failed to query open assigned reports", 
+		r.logger.Warn("failed to query open assigned reports",
 			zap.String("moderator_id", moderatorID),
 			zap.Error(err))
 	}
@@ -2754,7 +2965,7 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 		Where("Status", "=", string(storage.ReportStatusInProgress)).
 		All(&inProgressReportModels)
 	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Warn("failed to query in-progress assigned reports", 
+		r.logger.Warn("failed to query in-progress assigned reports",
 			zap.String("moderator_id", moderatorID),
 			zap.Error(err))
 	}
@@ -2769,7 +2980,7 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 		Where("Status", "=", string(storage.FlagStatusPending)).
 		All(&flagModels)
 	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Warn("failed to query assigned flags", 
+		r.logger.Warn("failed to query assigned flags",
 			zap.String("moderator_id", moderatorID),
 			zap.Error(err))
 	} else {
@@ -2786,4 +2997,337 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 		zap.Int("total_pending", totalPending))
 
 	return totalPending, nil
+}
+
+// StoreAnalysisResult stores detailed analysis results for audit/appeals
+func (r *ModerationRepository) StoreAnalysisResult(ctx context.Context, analysisData map[string]interface{}) error {
+	r.logger.Debug("Storing analysis result",
+		zap.String("content_id", fmt.Sprintf("%v", analysisData["content_id"])),
+		zap.String("analysis_type", fmt.Sprintf("%v", analysisData["analysis_type"])))
+
+	// Extract required fields
+	contentID, ok := analysisData["content_id"].(string)
+	if !ok || contentID == "" {
+		return fmt.Errorf("content_id is required")
+	}
+
+	authorID, ok := analysisData["author_id"].(string)
+	if !ok || authorID == "" {
+		return fmt.Errorf("author_id is required")
+	}
+
+	analysisType, ok := analysisData["analysis_type"].(string)
+	if !ok || analysisType == "" {
+		analysisType = "combined"
+	}
+
+	// Create analysis result model
+	model := &models.ModerationAnalysisResult{
+		ID:           fmt.Sprintf("analysis_%d", time.Now().UnixNano()),
+		ContentID:    contentID,
+		AuthorID:     authorID,
+		AnalysisType: analysisType,
+		AnalyzedAt:   time.Now(),
+	}
+
+	// Set optional fields
+	if contentType, ok := analysisData["content_type"].(string); ok {
+		model.ContentType = contentType
+	}
+
+	if confidence, ok := analysisData["confidence"].(float64); ok {
+		model.Confidence = confidence
+	}
+
+	if results, ok := analysisData["results"].(map[string]interface{}); ok {
+		model.Results = results
+	}
+
+	if patternMatches, ok := analysisData["pattern_matches"].([]interface{}); ok {
+		model.PatternMatches = patternMatches
+	}
+
+	if threatMatches, ok := analysisData["threat_matches"].([]interface{}); ok {
+		model.ThreatMatches = threatMatches
+	}
+
+	if reputationScore, ok := analysisData["reputation_score"]; ok {
+		model.ReputationScore = reputationScore
+	}
+
+	if processingTime, ok := analysisData["processing_time"].(int64); ok {
+		model.ProcessingTime = processingTime
+	}
+
+	// Update keys and create
+	model.UpdateKeys()
+
+	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("Failed to store analysis result",
+			zap.Error(err),
+			zap.String("content_id", contentID))
+		return fmt.Errorf("failed to store analysis result: %w", err)
+	}
+
+	r.logger.Debug("Successfully stored analysis result",
+		zap.String("content_id", contentID),
+		zap.String("analysis_id", model.ID))
+
+	return nil
+}
+
+// StoreDecision stores a moderation decision with enforcement tracking
+func (r *ModerationRepository) StoreDecision(ctx context.Context, decisionData map[string]interface{}) error {
+	r.logger.Debug("Storing moderation decision",
+		zap.String("content_id", fmt.Sprintf("%v", decisionData["content_id"])),
+		zap.String("action", fmt.Sprintf("%v", decisionData["action"])))
+
+	// Extract required fields
+	contentID, ok := decisionData["content_id"].(string)
+	if !ok || contentID == "" {
+		return fmt.Errorf("content_id is required")
+	}
+
+	action, ok := decisionData["action"].(string)
+	if !ok || action == "" {
+		return fmt.Errorf("action is required")
+	}
+
+	// Create decision result model
+	model := &models.ModerationDecisionResult{
+		ID:                fmt.Sprintf("decision_%d", time.Now().UnixNano()),
+		ContentID:         contentID,
+		Action:            action,
+		DecidedAt:         time.Now(),
+		EnforcementStatus: "pending",
+	}
+
+	// Set optional fields
+	if authorID, ok := decisionData["author_id"].(string); ok {
+		model.AuthorID = authorID
+	}
+
+	if confidence, ok := decisionData["confidence"].(float64); ok {
+		model.Confidence = confidence
+	}
+
+	if reasons, ok := decisionData["reasons"].([]interface{}); ok {
+		model.Reasons = reasons
+	}
+
+	if requiresReview, ok := decisionData["requires_review"].(bool); ok {
+		model.RequiresReview = requiresReview
+	}
+
+	if reviewPriority, ok := decisionData["review_priority"].(int); ok {
+		model.ReviewPriority = reviewPriority
+	}
+
+	if recommendations, ok := decisionData["recommendations"].([]string); ok {
+		model.Recommendations = recommendations
+	}
+
+	if expiresAt, ok := decisionData["expires_at"].(time.Time); ok {
+		model.ExpiresAt = &expiresAt
+	}
+
+	if metadata, ok := decisionData["metadata"].(map[string]interface{}); ok {
+		model.Metadata = metadata
+	}
+
+	// Update keys and create
+	model.UpdateKeys()
+
+	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("Failed to store decision",
+			zap.Error(err),
+			zap.String("content_id", contentID))
+		return fmt.Errorf("failed to store decision: %w", err)
+	}
+
+	// Add to review queue if requires review
+	if model.RequiresReview {
+		if err := r.addToReviewQueue(ctx, model); err != nil {
+			r.logger.Warn("Failed to add decision to review queue",
+				zap.Error(err),
+				zap.String("decision_id", model.ID))
+		}
+	}
+
+	r.logger.Debug("Successfully stored decision",
+		zap.String("content_id", contentID),
+		zap.String("decision_id", model.ID),
+		zap.String("action", action))
+
+	return nil
+}
+
+// GetReviewQueue retrieves review queue items with filtering
+func (r *ModerationRepository) GetReviewQueue(ctx context.Context, filters map[string]interface{}) ([]*models.ModerationReviewQueue, error) {
+	status := StatusPending
+	if filterStatus, ok := filters["status"].(string); ok && filterStatus != "" {
+		status = filterStatus
+	}
+
+	limit := 50
+	if filterLimit, ok := filters["limit"].(int); ok && filterLimit > 0 {
+		limit = filterLimit
+	}
+
+	r.logger.Debug("Getting review queue",
+		zap.String("status", status),
+		zap.Int("limit", limit))
+
+	var queueItems []*models.ModerationReviewQueue
+
+	err := r.db.WithContext(ctx).Model(&models.ModerationReviewQueue{}).
+		Where("PK", "=", fmt.Sprintf("REVIEW_QUEUE#%s", status)).
+		Where("SK", "prefix", "PRIORITY#").
+		Limit(limit).
+		All(&queueItems)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []*models.ModerationReviewQueue{}, nil
+		}
+		r.logger.Error("Failed to get review queue",
+			zap.Error(err),
+			zap.String("status", status))
+		return nil, fmt.Errorf("failed to get review queue: %w", err)
+	}
+
+	r.logger.Debug("Retrieved review queue items",
+		zap.String("status", status),
+		zap.Int("count", len(queueItems)))
+
+	return queueItems, nil
+}
+
+// GetDecisionHistory retrieves decision history for a specific content ID
+func (r *ModerationRepository) GetDecisionHistory(ctx context.Context, contentID string) ([]*models.ModerationDecisionResult, error) {
+	r.logger.Debug("Getting decision history",
+		zap.String("content_id", contentID))
+
+	var decisions []*models.ModerationDecisionResult
+
+	err := r.db.WithContext(ctx).Model(&models.ModerationDecisionResult{}).
+		Where("PK", "=", fmt.Sprintf("DECISION_RESULT#%s", contentID)).
+		Where("SK", "prefix", "TIME#").
+		All(&decisions)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []*models.ModerationDecisionResult{}, nil
+		}
+		r.logger.Error("Failed to get decision history",
+			zap.Error(err),
+			zap.String("content_id", contentID))
+		return nil, fmt.Errorf("failed to get decision history: %w", err)
+	}
+
+	r.logger.Debug("Retrieved decision history",
+		zap.String("content_id", contentID),
+		zap.Int("count", len(decisions)))
+
+	return decisions, nil
+}
+
+// UpdateEnforcementStatus updates the enforcement status of a decision
+func (r *ModerationRepository) UpdateEnforcementStatus(ctx context.Context, contentID, status string) error {
+	r.logger.Debug("Updating enforcement status",
+		zap.String("content_id", contentID),
+		zap.String("status", status))
+
+	// Get the most recent decision for this content
+	var decisions []*models.ModerationDecisionResult
+	err := r.db.WithContext(ctx).Model(&models.ModerationDecisionResult{}).
+		Where("PK", "=", fmt.Sprintf("DECISION_RESULT#%s", contentID)).
+		Where("SK", "prefix", "TIME#").
+		Limit(1).
+		All(&decisions)
+
+	if err != nil || len(decisions) == 0 {
+		r.logger.Error("No decision found to update enforcement status",
+			zap.Error(err),
+			zap.String("content_id", contentID))
+		return fmt.Errorf("no decision found for content_id: %s", contentID)
+	}
+
+	decision := decisions[0]
+	decision.EnforcementStatus = status
+	now := time.Now()
+
+	switch status {
+	case "applied":
+		decision.EnforcedAt = &now
+		decision.EnforcementError = ""
+	case "failed":
+		decision.EnforcedAt = &now
+		// Keep existing error message if any
+	case "expired":
+		decision.EnforcedAt = &now
+	}
+
+	// Update keys (in case GSI keys need updating)
+	decision.UpdateKeys()
+
+	if err := r.db.WithContext(ctx).Model(decision).Update(); err != nil {
+		r.logger.Error("Failed to update enforcement status",
+			zap.Error(err),
+			zap.String("content_id", contentID))
+		return fmt.Errorf("failed to update enforcement status: %w", err)
+	}
+
+	r.logger.Debug("Successfully updated enforcement status",
+		zap.String("content_id", contentID),
+		zap.String("status", status))
+
+	return nil
+}
+
+// addToReviewQueue adds a decision to the review queue
+func (r *ModerationRepository) addToReviewQueue(ctx context.Context, decision *models.ModerationDecisionResult) error {
+	queueItem := &models.ModerationReviewQueue{
+		ID:        fmt.Sprintf("queue_%d", time.Now().UnixNano()),
+		ContentID: decision.ContentID,
+		AuthorID:  decision.AuthorID,
+		Status:    "pending",
+		Priority:  decision.ReviewPriority,
+		Category:  "moderation",
+		Severity:  "medium", // Default
+		Reason:    fmt.Sprintf("Action: %s (requires review)", decision.Action),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// Set evidence from decision
+	if len(decision.Reasons) > 0 || len(decision.Recommendations) > 0 {
+		queueItem.Evidence = map[string]interface{}{
+			"reasons":         decision.Reasons,
+			"recommendations": decision.Recommendations,
+			"confidence":      decision.Confidence,
+		}
+	}
+
+	// Set deadline based on priority
+	switch {
+	case queueItem.Priority >= 8:
+		deadline := time.Now().Add(1 * time.Hour)
+		queueItem.Deadline = &deadline
+	case queueItem.Priority >= 5:
+		deadline := time.Now().Add(24 * time.Hour)
+		queueItem.Deadline = &deadline
+	default:
+		deadline := time.Now().Add(7 * 24 * time.Hour)
+		queueItem.Deadline = &deadline
+	}
+
+	// Update keys and create
+	queueItem.UpdateKeys()
+
+	if err := r.db.WithContext(ctx).Model(queueItem).Create(); err != nil {
+		return fmt.Errorf("failed to add to review queue: %w", err)
+	}
+
+	return nil
 }

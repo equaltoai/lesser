@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -14,17 +15,21 @@ import (
 
 // RelationshipRepository implements relationship operations using DynamORM
 type RelationshipRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db         core.DB
+	tableName  string
+	logger     *zap.Logger
+	blockRepo  *BlockRepository
+	socialRepo *SocialRepository
 }
 
 // NewRelationshipRepository creates a new relationship repository
 func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger) *RelationshipRepository {
 	return &RelationshipRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:         db,
+		tableName:  tableName,
+		logger:     logger,
+		blockRepo:  NewBlockRepository(db, tableName, logger),
+		socialRepo: NewSocialRepository(db, logger),
 	}
 }
 
@@ -674,6 +679,128 @@ func (r *RelationshipRepository) IsEndorsed(ctx context.Context, userID, targetI
 	return true, nil
 }
 
+// CreateEndorsement creates a new endorsement (account pin) relationship
+func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsement *storage.AccountPin) error {
+	// Validate that the endorser follows the endorsed account
+	// Extract usernames from actor IDs if needed
+	endorserUsername := r.extractUsernameFromID(endorsement.Username)
+	endorsedActorID := endorsement.PinnedActorID
+	
+	// Check if endorser follows the endorsed account
+	isFollowing, err := r.IsFollowing(ctx, endorserUsername, endorsedActorID)
+	if err != nil {
+		r.logger.Error("failed to check follow relationship for endorsement",
+			zap.String("endorser", endorserUsername),
+			zap.String("endorsed", endorsedActorID),
+			zap.Error(err))
+		return fmt.Errorf("failed to check follow relationship: %w", err)
+	}
+	
+	if !isFollowing {
+		return fmt.Errorf("cannot endorse an account you are not following")
+	}
+	
+	// Check current endorsement count (Mastodon typically allows 4 endorsements)
+	currentPins, err := r.socialRepo.GetAccountPins(ctx, endorserUsername)
+	if err != nil {
+		r.logger.Error("failed to get current endorsements",
+			zap.String("endorser", endorserUsername),
+			zap.Error(err))
+		return fmt.Errorf("failed to get current endorsements: %w", err)
+	}
+	
+	if len(currentPins) >= 4 {
+		return fmt.Errorf("maximum number of endorsements reached (4)")
+	}
+	
+	// Create the endorsement using social repository
+	err = r.socialRepo.CreateAccountPin(ctx, endorsement)
+	if err != nil {
+		r.logger.Error("failed to create endorsement",
+			zap.String("endorser", endorserUsername),
+			zap.String("endorsed", endorsedActorID),
+			zap.Error(err))
+		return fmt.Errorf("failed to create endorsement: %w", err)
+	}
+	
+	r.logger.Info("created endorsement",
+		zap.String("endorser", endorserUsername),
+		zap.String("endorsed", endorsedActorID))
+	
+	return nil
+}
+
+// DeleteEndorsement removes an endorsement (account pin) relationship
+func (r *RelationshipRepository) DeleteEndorsement(ctx context.Context, endorserID, endorsedID string) error {
+	// Extract username from endorser ID if needed
+	endorserUsername := r.extractUsernameFromID(endorserID)
+	
+	// Delete the endorsement using social repository
+	err := r.socialRepo.DeleteAccountPin(ctx, endorserUsername, endorsedID)
+	if err != nil {
+		r.logger.Error("failed to delete endorsement",
+			zap.String("endorser", endorserUsername),
+			zap.String("endorsed", endorsedID),
+			zap.Error(err))
+		return fmt.Errorf("failed to delete endorsement: %w", err)
+	}
+	
+	r.logger.Info("deleted endorsement",
+		zap.String("endorser", endorserUsername),
+		zap.String("endorsed", endorsedID))
+	
+	return nil
+}
+
+// GetEndorsements retrieves all endorsements (account pins) for a user
+func (r *RelationshipRepository) GetEndorsements(ctx context.Context, userID string, limit int, cursor string) ([]*storage.AccountPin, string, error) {
+	// Extract username from user ID if needed
+	username := r.extractUsernameFromID(userID)
+	
+	// Use social repository to get endorsements with pagination
+	endorsements, nextCursor, err := r.socialRepo.GetAccountPinsPaginated(ctx, username, limit, cursor)
+	if err != nil {
+		r.logger.Error("failed to get endorsements",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, "", fmt.Errorf("failed to get endorsements: %w", err)
+	}
+	
+	return endorsements, nextCursor, nil
+}
+
+// IsFollowing checks if followerUsername is following the targetActorID
+func (r *RelationshipRepository) IsFollowing(ctx context.Context, followerUsername, targetActorID string) (bool, error) {
+	// Extract target username from actor ID
+	targetUsername := r.extractUsernameFromID(targetActorID)
+	
+	// Check relationship
+	relationship, err := r.GetRelationship(ctx, followerUsername, targetUsername)
+	if err != nil {
+		// If relationship not found, user is not following
+		if fmt.Sprintf("%v", err) == "follow relationship not found" {
+			return false, nil
+		}
+		return false, err
+	}
+	
+	// Check if relationship is accepted
+	return relationship.State == models.RelationshipAccepted, nil
+}
+
+// extractUsernameFromID extracts username from an actor ID or returns the input if it's already a username
+func (r *RelationshipRepository) extractUsernameFromID(actorIDOrUsername string) string {
+	// If it contains "https://" or has slashes, it's an actor ID, extract username
+	if strings.Contains(actorIDOrUsername, "://") || strings.Contains(actorIDOrUsername, "/") {
+		parts := strings.Split(actorIDOrUsername, "/")
+		if len(parts) > 0 {
+			return parts[len(parts)-1]
+		}
+	}
+	// Otherwise it's already a username
+	return actorIDOrUsername
+}
+
 // ===== Relationship Note Methods =====
 
 // GetRelationshipNote retrieves a private note on an account
@@ -878,4 +1005,51 @@ func (r *RelationshipRepository) ClearCollection(ctx context.Context, collection
 		zap.Int("items_removed", len(items)))
 
 	return nil
+}
+
+// ===== Block Methods =====
+
+// CreateBlock creates a new block relationship
+func (r *RelationshipRepository) CreateBlock(ctx context.Context, blockerActor, blockedActor, activityID string) error {
+	return r.blockRepo.CreateBlock(ctx, blockerActor, blockedActor, activityID)
+}
+
+// DeleteBlock removes a block relationship (for Undo Block)
+func (r *RelationshipRepository) DeleteBlock(ctx context.Context, blockerActor, blockedActor string) error {
+	return r.blockRepo.DeleteBlock(ctx, blockerActor, blockedActor)
+}
+
+// IsBlocked checks if one actor has blocked another
+func (r *RelationshipRepository) IsBlocked(ctx context.Context, blockerActor, blockedActor string) (bool, error) {
+	return r.blockRepo.IsBlocked(ctx, blockerActor, blockedActor)
+}
+
+// IsBlockedBidirectional checks if either actor has blocked the other
+func (r *RelationshipRepository) IsBlockedBidirectional(ctx context.Context, actor1, actor2 string) (bool, error) {
+	return r.blockRepo.IsBlockedBidirectional(ctx, actor1, actor2)
+}
+
+// GetBlockedUsers returns a list of users blocked by the given actor
+func (r *RelationshipRepository) GetBlockedUsers(ctx context.Context, blockerActor string, limit int, cursor string) ([]string, string, error) {
+	return r.blockRepo.GetBlockedUsers(ctx, blockerActor, limit, cursor)
+}
+
+// GetUsersWhoBlocked returns a list of users who have blocked the given actor
+func (r *RelationshipRepository) GetUsersWhoBlocked(ctx context.Context, blockedActor string, limit int, cursor string) ([]string, string, error) {
+	return r.blockRepo.GetUsersWhoBlocked(ctx, blockedActor, limit, cursor)
+}
+
+// GetBlock retrieves a specific block relationship
+func (r *RelationshipRepository) GetBlock(ctx context.Context, blockerActor, blockedActor string) (*storage.Block, error) {
+	return r.blockRepo.GetBlock(ctx, blockerActor, blockedActor)
+}
+
+// CountBlockedUsers returns the number of users blocked by the given actor
+func (r *RelationshipRepository) CountBlockedUsers(ctx context.Context, blockerActor string) (int, error) {
+	return r.blockRepo.CountBlockedUsers(ctx, blockerActor)
+}
+
+// CountUsersWhoBlocked returns the number of users who have blocked the given actor
+func (r *RelationshipRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor string) (int, error) {
+	return r.blockRepo.CountUsersWhoBlocked(ctx, blockedActor)
 }

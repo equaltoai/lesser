@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/google/uuid"
 )
 
 // Metrics represents system metrics data
@@ -619,10 +619,10 @@ func (m *MetricRecord) Validate() error {
 // isValidAggregationLevel checks if the aggregation level is valid
 func isValidAggregationLevel(level string) bool {
 	validLevels := map[string]bool{
-		"raw":    true,
-		"5min":   true,
-		"hourly": true,
-		PeriodDaily:  true,
+		"raw":       true,
+		"5min":      true,
+		"hourly":    true,
+		PeriodDaily: true,
 	}
 	return validLevels[strings.ToLower(level)]
 }

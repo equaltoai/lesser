@@ -548,14 +548,14 @@ func (h *Handler) isStatusEmbeddable(note *activitypub.Note) bool {
 			return true
 		}
 	}
-	
+
 	// Check "cc" field
 	for _, cc := range note.CC {
 		if cc == activitypub.PublicAddress {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -575,7 +575,7 @@ func (h *Handler) getEmbedAuthorInfo(ctx *lift.Context, note *activitypub.Note) 
 	if len(parts) > 0 {
 		username := parts[len(parts)-1]
 		info.username = username
-		
+
 		actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 		if err == nil {
 			info.actor = actor
@@ -600,16 +600,16 @@ func (h *Handler) formatEmbedTimestamp(note *activitypub.Note) string {
 // generateEmbedHTML generates the HTML for the embed page
 func (h *Handler) generateEmbedHTML(note *activitypub.Note, authorInfo embedAuthorInfo, timestamp string) string {
 	var htmlBuilder strings.Builder
-	
+
 	// Add HTML header and styles
 	h.writeEmbedHTMLHeader(&htmlBuilder, authorInfo.name)
-	
+
 	// Add body content
 	h.writeEmbedBodyContent(&htmlBuilder, note, authorInfo, timestamp)
-	
+
 	// Add footer and scripts
 	h.writeEmbedHTMLFooter(&htmlBuilder)
-	
+
 	return htmlBuilder.String()
 }
 

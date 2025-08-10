@@ -148,7 +148,7 @@ func (h *Handler) convertSingleConversation(ctx context.Context, conv *storage.C
 // getConversationParticipants gets participant actors for a conversation
 func (h *Handler) getConversationParticipants(ctx context.Context, conv *storage.Conversation, currentActor *activitypub.Actor, converter mastodon.Converter) []*activitypub.Actor {
 	participantActors := make([]*activitypub.Actor, 0, len(conv.Participants)-1)
-	
+
 	for _, participantID := range conv.Participants {
 		if participantID == currentActor.ID {
 			continue // Skip current user

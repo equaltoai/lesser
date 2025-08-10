@@ -18,8 +18,8 @@ func createMockMP4Data() []byte {
 
 	// Write mvhd atom (movie header)
 	mvhdData := make([]byte, 32)
-	mvhdData[0] = 0 // version 0
-	binary.BigEndian.PutUint32(mvhdData[12:16], 1000) // timescale = 1000
+	mvhdData[0] = 0                                    // version 0
+	binary.BigEndian.PutUint32(mvhdData[12:16], 1000)  // timescale = 1000
 	binary.BigEndian.PutUint32(mvhdData[16:20], 30000) // duration = 30000 (30 seconds at 1000 timescale)
 	writeAtom(&moovBuf, "mvhd", mvhdData)
 
@@ -28,8 +28,8 @@ func createMockMP4Data() []byte {
 
 	// Write tkhd atom (track header) - version 0
 	tkhdData := make([]byte, 84)
-	tkhdData[0] = 0 // version 0
-	tkhdData[3] = 0x07 // flags: track enabled, in movie, in preview
+	tkhdData[0] = 0                                    // version 0
+	tkhdData[3] = 0x07                                 // flags: track enabled, in movie, in preview
 	binary.BigEndian.PutUint32(tkhdData[20:24], 30000) // duration
 	// Width and height are fixed point 16.16 at the end
 	binary.BigEndian.PutUint32(tkhdData[76:80], 1920<<16) // width = 1920
@@ -144,9 +144,9 @@ func TestVideoMetadataParserIsValidMP4(t *testing.T) {
 
 func TestCodecDetection(t *testing.T) {
 	testCases := []struct {
-		codec    string
-		isVideo  bool
-		isAudio  bool
+		codec   string
+		isVideo bool
+		isAudio bool
 	}{
 		{"avc1", true, false},
 		{"hev1", true, false},
@@ -170,7 +170,7 @@ func TestCodecDetection(t *testing.T) {
 // Benchmark the parser performance
 func BenchmarkParseVideoMetadata(b *testing.B) {
 	mockData := createMockMP4Data()
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := ParseVideoMetadata(mockData)

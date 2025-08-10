@@ -106,17 +106,17 @@ func (p *Parser) isEmojiRune(r rune) bool {
 	if p.isInPrimaryEmojiRange(r) {
 		return true
 	}
-	
+
 	// Check secondary emoji blocks
 	if p.isInSecondaryEmojiRange(r) {
 		return true
 	}
-	
+
 	// Check individual emoji characters
 	if p.isIndividualEmoji(r) {
 		return true
 	}
-	
+
 	// Check if it's a printable character that might be an emoji variant
 	return unicode.IsGraphic(r) && !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
@@ -175,7 +175,7 @@ func (p *Parser) isIndividualEmoji(r rune) bool {
 		0x267E, 0x267F, 0x2699, 0x269B, 0x269C, 0x26C8, 0x26CE,
 		0x26CF, 0x26D1, 0x26D3, 0x26D4, 0x26FD,
 	}
-	
+
 	for _, emoji := range individualEmojis {
 		if r == emoji {
 			return true

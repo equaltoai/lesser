@@ -67,7 +67,7 @@ func (mp *MediaProcessor) generateVideoThumbnails(_ context.Context, event Media
 
 // trackTranscodingCosts records detailed transcoding costs and metrics
 func (mp *MediaProcessor) trackTranscodingCosts(ctx context.Context, metrics *TranscodingJobMetrics) {
-	// Track individual cost components
+	// Track individual cost components (legacy spending transactions)
 	for service, cost := range metrics.CostBreakdown {
 		transaction := &models.MediaSpendingTransaction{
 			UserID:           metrics.Username,
@@ -94,6 +94,102 @@ func (mp *MediaProcessor) trackTranscodingCosts(ctx context.Context, metrics *Tr
 				zap.Int64("cost", cost),
 				zap.Error(err))
 			continue
+		}
+	}
+
+	const formatUnknown = "unknown"
+	
+	// NEW: Create enhanced MediaAnalytics with variant-level cost tracking
+	if mp.mediaAnalyticsRepo != nil {
+		analytics := &models.MediaAnalytics{}
+		analytics.SetGeneralEvent("processing_completed", metrics.MediaID, metrics.Username)
+
+		// Set media format based on input format
+		format := formatUnknown
+		if strings.Contains(metrics.InputFormat, "video") {
+			format = "video"
+		} else if strings.Contains(metrics.InputFormat, "audio") {
+			format = "audio"
+		} else if strings.Contains(metrics.InputFormat, "image") {
+			format = "image"
+		}
+		analytics.Format = format
+
+		// Set duration if available
+		if metrics.InputDuration > 0 {
+			analytics.Duration = float64(metrics.InputDuration) / 1000.0 // Convert ms to seconds
+		}
+
+		// Create variant cost entries based on output variants
+		for variant := range metrics.OutputVariants {
+			variantCost := models.MediaVariantCost{
+				VariantKey:       variant,
+				ProcessingTimeMs: metrics.ProcessingTimeMs,
+				OutputSizeBytes:  metrics.OutputSizes[variant], // if available
+			}
+
+			// Parse variant information (assuming format: "resolution_codec_bitrate")
+			parts := strings.Split(variant, "_")
+			if len(parts) >= 3 {
+				variantCost.Resolution = parts[0]
+				variantCost.Codec = parts[1]
+				_, _ = fmt.Sscanf(parts[2], "%d", &variantCost.Bitrate)
+			} else {
+				// Fallback for non-standard variant names
+				variantCost.Resolution = variant
+				variantCost.Codec = "unknown"
+			}
+
+			// Distribute costs proportionally across variants
+			// In a real implementation, this would be more sophisticated
+			variantCount := len(metrics.OutputVariants)
+			if variantCount > 0 {
+				variantCost.ProcessingCost = metrics.CostBreakdown[serviceMediaConvert] / int64(variantCount)
+				variantCost.StorageCost = metrics.CostBreakdown[serviceS3Storage] / int64(variantCount)
+				variantCost.TotalCost = variantCost.ProcessingCost + variantCost.StorageCost
+			}
+
+			// Set quality metrics (would be populated by actual transcoding results)
+			variantCost.CompressionRatio = 0.7 // Default assumption
+			variantCost.DeliveryCount = 1      // Initial delivery
+
+			analytics.AddVariantCost(variantCost.Resolution, variantCost.Codec, variantCost.Bitrate, variantCost)
+		}
+
+		// If no variants, create a single "original" variant
+		if len(metrics.OutputVariants) == 0 {
+			originalCost := models.MediaVariantCost{
+				VariantKey:       "original",
+				Resolution:       "original",
+				Codec:            "original",
+				Bitrate:          0,
+				ProcessingCost:   metrics.TotalCostMicros,
+				StorageCost:      metrics.CostBreakdown[serviceS3Storage],
+				TotalCost:        metrics.TotalCostMicros,
+				ProcessingTimeMs: metrics.ProcessingTimeMs,
+				OutputSizeBytes:  metrics.InputSize,
+				CompressionRatio: 1.0,
+				DeliveryCount:    1,
+			}
+			analytics.AddVariantCost("original", "original", 0, originalCost)
+		}
+
+		// Set service-specific costs
+		analytics.MediaConvertCost = metrics.CostBreakdown[serviceMediaConvert]
+		analytics.S3StorageCost = metrics.CostBreakdown[serviceS3Storage]
+		analytics.LambdaCost = metrics.CostBreakdown["lambda_processing"]
+
+		// Record the analytics
+		if err := mp.mediaAnalyticsRepo.RecordMediaAnalytics(ctx, analytics); err != nil {
+			mp.logger.Error("failed to record media analytics with variant costs",
+				zap.String("media_id", metrics.MediaID),
+				zap.Error(err))
+		} else {
+			mp.logger.Debug("recorded enhanced media analytics",
+				zap.String("media_id", metrics.MediaID),
+				zap.String("format", format),
+				zap.Int("variant_count", len(analytics.VariantCosts)),
+				zap.Int64("total_variant_cost", analytics.TotalVariantCost))
 		}
 	}
 

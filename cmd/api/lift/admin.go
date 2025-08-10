@@ -13,6 +13,8 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -24,10 +26,10 @@ const (
 	actionSilence = "silence"
 	actionEnable  = "enable"
 	actionReject  = "reject"
-	
+
 	roleAdmin     = "admin"
 	roleModerator = "moderator"
-	
+
 	// ActivityPub actor types
 	actorTypeService = "Service"
 	actorTypeGroup   = "Group"
@@ -211,7 +213,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 			RawQuery: url.Values{
 				"limit":  []string{strconv.Itoa(limit)},
 				"cursor": []string{nextCursor},
-		}.Encode(),
+			}.Encode(),
 		}
 		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
 	}
@@ -321,15 +323,15 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 
 	// Validate action type
 	validActions := map[string]bool{
-		actionSuspend:     true,
+		actionSuspend: true,
 		"unsuspend":   true,
-		actionSilence:     true,
+		actionSilence: true,
 		"unsilence":   true,
 		"sensitive":   true,
 		"unsensitive": true,
 		"disable":     true,
-		actionEnable:      true,
-		actionApprove:     true,
+		actionEnable:  true,
+		actionApprove: true,
 	}
 
 	if !validActions[req.Type] {
@@ -621,7 +623,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 				"limit":  []string{strconv.Itoa(limit)},
 				"cursor": []string{nextCursor},
 				"status": []string{string(status)},
-		}.Encode(),
+			}.Encode(),
 		}
 		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
 	}
@@ -1699,3 +1701,360 @@ func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username stri
 }
 
 // getStringFromMap is already defined in statuses.go
+
+// Admin Status Moderation Endpoints
+
+// HandleAdminGetStatusesLift handles GET /api/v1/admin/statuses
+//
+//nolint:gocognit,gocyclo // This function handles many filter parameters which is necessary for comprehensive admin functionality
+func (h *Handler) HandleAdminGetStatusesLift(ctx *lift.Context) error {
+	// Check admin access
+	_, err := h.requireAdminLift(ctx)
+	if err != nil {
+		ctx.Status(http.StatusForbidden)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	// Parse query parameters
+	limit := 20
+	if l := ctx.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	cursor := ctx.Query("cursor")
+	local := ctx.Query("local") == boolTrue
+	remote := ctx.Query("remote") == boolTrue
+	byDomain := ctx.Query("by_domain")
+	visibility := ctx.Query("visibility")
+	flagged := ctx.Query("flagged") == boolTrue
+	reported := ctx.Query("reported") == boolTrue 
+	withMedia := ctx.Query("media") == boolTrue
+	sensitive := ctx.Query("sensitive") == boolTrue
+	
+	// Parse date filters
+	var minDate, maxDate *time.Time
+	if minDateStr := ctx.Query("min_date"); minDateStr != "" {
+		if parsed, err := time.Parse(time.RFC3339, minDateStr); err == nil {
+			minDate = &parsed
+		}
+	}
+	if maxDateStr := ctx.Query("max_date"); maxDateStr != "" {
+		if parsed, err := time.Parse(time.RFC3339, maxDateStr); err == nil {
+			maxDate = &parsed
+		}
+	}
+
+	// Build filter for admin status listing
+	filter := &repositories.StatusFilter{
+		ByDomain:   byDomain,
+		Visibility: visibility,
+		MinDate:    minDate,
+		MaxDate:    maxDate,
+	}
+
+	// Set boolean filters only if explicitly requested
+	if local {
+		filter.Local = &local
+	}
+	if remote {
+		filter.Remote = &remote
+	}
+	if ctx.Query("flagged") != "" {
+		filter.Flagged = &flagged
+	}
+	if ctx.Query("reported") != "" {
+		filter.Reported = &reported
+	}
+	if ctx.Query("media") != "" {
+		filter.WithMedia = &withMedia
+	}
+	if ctx.Query("sensitive") != "" {
+		filter.Sensitive = &sensitive
+	}
+
+	// Get statuses using the new filtering method
+	storageStatuses, nextCursor, err := h.repos.Status().ListStatusesForAdmin(ctx.Context, filter, limit, cursor)
+
+	// Convert to []any for JSON response
+	statusesAny := make([]any, len(storageStatuses))
+	for i, status := range storageStatuses {
+		statusesAny[i] = status
+	}
+
+	if err != nil {
+		h.logger.Error("failed to get admin statuses", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get statuses"})
+	}
+
+	// Optionally add total count header for administrative purposes
+	if ctx.Query("include_count") == boolTrue {
+		if totalCount, countErr := h.repos.Status().CountStatusesForAdmin(ctx.Context, filter); countErr == nil {
+			ctx.Response.Headers["X-Total-Count"] = strconv.FormatInt(totalCount, 10)
+		}
+	}
+
+	// Add Link header for pagination if there's more data
+	if nextCursor != "" {
+		// Build query parameters
+		params := url.Values{
+			"limit":  []string{strconv.Itoa(limit)},
+			"cursor": []string{nextCursor},
+		}
+		
+		// Add filter parameters to maintain filter state across pagination
+		if local {
+			params.Add("local", "true")
+		}
+		if remote {
+			params.Add("remote", "true")
+		}
+		if byDomain != "" {
+			params.Add("by_domain", byDomain)
+		}
+		if visibility != "" {
+			params.Add("visibility", visibility)
+		}
+		if ctx.Query("flagged") != "" {
+			params.Add("flagged", ctx.Query("flagged"))
+		}
+		if ctx.Query("reported") != "" {
+			params.Add("reported", ctx.Query("reported"))
+		}
+		if ctx.Query("media") != "" {
+			params.Add("media", ctx.Query("media"))
+		}
+		if ctx.Query("sensitive") != "" {
+			params.Add("sensitive", ctx.Query("sensitive"))
+		}
+		if ctx.Query("min_date") != "" {
+			params.Add("min_date", ctx.Query("min_date"))
+		}
+		if ctx.Query("max_date") != "" {
+			params.Add("max_date", ctx.Query("max_date"))
+		}
+		
+		nextURL := url.URL{
+			Path:     "/api/v1/admin/statuses",
+			RawQuery: params.Encode(),
+		}
+		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
+	}
+
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(statusesAny)
+}
+
+// HandleAdminGetStatusLift handles GET /api/v1/admin/statuses/:id
+func (h *Handler) HandleAdminGetStatusLift(ctx *lift.Context) error {
+	// Check admin access
+	_, err := h.requireAdminLift(ctx)
+	if err != nil {
+		ctx.Status(http.StatusForbidden)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	statusID := ctx.Param("id")
+
+	// Get status
+	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	if err != nil {
+		if err == storage.ErrNotFound {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "status not found"})
+		}
+		h.logger.Error("failed to get status", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get status"})
+	}
+
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(status)
+}
+
+// HandleAdminDeleteStatusLift handles DELETE /api/v1/admin/statuses/:id
+func (h *Handler) HandleAdminDeleteStatusLift(ctx *lift.Context) error {
+	// Check admin access
+	adminClaims, err := h.requireAdminLift(ctx)
+	if err != nil {
+		ctx.Status(http.StatusForbidden)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	statusID := ctx.Param("id")
+
+	// Get the status first to validate it exists
+	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	if err != nil {
+		if err == storage.ErrNotFound {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "status not found"})
+		}
+		h.logger.Error("failed to get status for deletion", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get status"})
+	}
+
+	// Log admin action
+	h.logger.Info("admin delete status",
+		zap.String("admin", adminClaims.Username),
+		zap.String("status_id", statusID),
+		zap.Any("status", status))
+
+	// Delete the status
+	err = h.repos.Status().DeleteStatus(ctx.Context, statusID)
+	if err != nil {
+		h.logger.Error("failed to delete status", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to delete status"})
+	}
+
+	// Create audit log entry
+	if err := h.createAuditLogEntry(ctx.Context, adminClaims.Username, "delete_status", "status", statusID, "Admin deleted status", nil); err != nil {
+		h.logger.Warn("failed to create audit log entry", zap.Error(err))
+		// Don't fail the request due to audit log issues
+	}
+
+	ctx.Status(http.StatusNoContent)
+	return nil
+}
+
+// HandleAdminMarkStatusSensitiveLift handles POST /api/v1/admin/statuses/:id/sensitive
+func (h *Handler) HandleAdminMarkStatusSensitiveLift(ctx *lift.Context) error {
+	// Check admin access
+	adminClaims, err := h.requireAdminLift(ctx)
+	if err != nil {
+		ctx.Status(http.StatusForbidden)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	statusID := ctx.Param("id")
+
+	// Get the existing status first
+	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	if err != nil {
+		if err == storage.ErrNotFound {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "status not found"})
+		}
+		h.logger.Error("failed to get status for update", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get status"})
+	}
+
+	// Update the status fields
+	status.Sensitive = true
+	status.UpdatedAt = time.Now()
+
+	err = h.repos.Status().UpdateStatus(ctx.Context, status)
+	if err != nil {
+		if err == storage.ErrNotFound {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "status not found"})
+		}
+		h.logger.Error("failed to mark status as sensitive", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to update status"})
+	}
+
+	// Log admin action
+	h.logger.Info("admin mark status sensitive",
+		zap.String("admin", adminClaims.Username),
+		zap.String("status_id", statusID))
+
+	// Create audit log entry
+	if err := h.createAuditLogEntry(ctx.Context, adminClaims.Username, "mark_sensitive", "status", statusID, "Admin marked status as sensitive", nil); err != nil {
+		h.logger.Warn("failed to create audit log entry", zap.Error(err))
+	}
+
+	// Get updated status
+	updatedStatus, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	if err != nil {
+		h.logger.Error("failed to get updated status", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get updated status"})
+	}
+
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(updatedStatus)
+}
+
+// HandleAdminUnmarkStatusSensitiveLift handles POST /api/v1/admin/statuses/:id/unsensitive
+func (h *Handler) HandleAdminUnmarkStatusSensitiveLift(ctx *lift.Context) error {
+	// Check admin access
+	adminClaims, err := h.requireAdminLift(ctx)
+	if err != nil {
+		ctx.Status(http.StatusForbidden)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	statusID := ctx.Param("id")
+
+	// Get the existing status first
+	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	if err != nil {
+		if err == storage.ErrNotFound {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "status not found"})
+		}
+		h.logger.Error("failed to get status for update", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get status"})
+	}
+
+	// Update the status fields
+	status.Sensitive = false
+	status.UpdatedAt = time.Now()
+
+	err = h.repos.Status().UpdateStatus(ctx.Context, status)
+	if err != nil {
+		if err == storage.ErrNotFound {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "status not found"})
+		}
+		h.logger.Error("failed to unmark status as sensitive", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to update status"})
+	}
+
+	// Log admin action
+	h.logger.Info("admin unmark status sensitive",
+		zap.String("admin", adminClaims.Username),
+		zap.String("status_id", statusID))
+
+	// Create audit log entry
+	if err := h.createAuditLogEntry(ctx.Context, adminClaims.Username, "unmark_sensitive", "status", statusID, "Admin unmarked status as sensitive", nil); err != nil {
+		h.logger.Warn("failed to create audit log entry", zap.Error(err))
+	}
+
+	// Get updated status
+	updatedStatus, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	if err != nil {
+		h.logger.Error("failed to get updated status", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get updated status"})
+	}
+
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(updatedStatus)
+}
+
+// Helper function to create audit log entries
+func (h *Handler) createAuditLogEntry(ctx context.Context, adminID, action, targetType, targetID, reason string, details any) error {
+	auditEntry := &storage.AuditLog{
+		ID:         uuid.New().String(),
+		AdminID:    adminID,
+		AdminRole:  roleAdmin, // Could check actual role
+		Action:     action,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Reason:     reason,
+		Details:    details,
+		Timestamp:  time.Now(),
+		CreatedAt:  time.Now(),
+	}
+
+	return h.repos.Moderation().CreateAuditLog(ctx, auditEntry)
+}

@@ -283,7 +283,7 @@ func costTrackingMiddleware() func(lift.Handler) lift.Handler {
 			start := time.Now()
 			err := next.Handle(ctx)
 			duration := time.Since(start)
-			
+
 			trackRequestCost(ctx, duration)
 			return err
 		})

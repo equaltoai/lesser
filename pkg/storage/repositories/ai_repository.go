@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AIRepository handles AI analysis data persistence

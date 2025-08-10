@@ -11,12 +11,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// MockDB is a mock implementation of core.DB for testing
-type MockDB struct {
+// PollMockDB is a mock implementation of core.DB for testing polls
+type PollMockDB struct {
 	mock.Mock
 }
 
-func (m *MockDB) WithContext(ctx context.Context) interface{} {
+func (m *PollMockDB) WithContext(ctx context.Context) interface{} {
 	args := m.Called(ctx)
 	return args.Get(0)
 }

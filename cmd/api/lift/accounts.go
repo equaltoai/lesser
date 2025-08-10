@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/mail"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1162,8 +1163,8 @@ func (h *Handler) getRelationshipMapLift(ctx context.Context, currentUsername, t
 	muted, _ := h.repos.Social().IsMuted(ctx, currentActor.ID, targetActor.ID)
 
 	// Check if blocked
-	blocking, _ := h.repos.Social().IsBlocked(ctx, currentActor.ID, targetActor.ID)
-	blockedBy, _ := h.repos.Social().IsBlocked(ctx, targetActor.ID, currentActor.ID)
+	blocking, _ := h.repos.Relationship().IsBlocked(ctx, currentActor.ID, targetActor.ID)
+	blockedBy, _ := h.repos.Relationship().IsBlocked(ctx, targetActor.ID, currentActor.ID)
 
 	// Build relationship response
 	relationship := map[string]any{
@@ -1434,4 +1435,241 @@ func (h *Handler) getFieldVerificationTimeLift(ctx context.Context, username, fi
 	}
 
 	return nil
+}
+
+// HandleActivityPubFollowersLift handles ActivityPub followers collection endpoint
+func (h *Handler) HandleActivityPubFollowersLift(ctx *lift.Context) error {
+	return h.handleActivityPubCollection(ctx, "followers")
+}
+
+// HandleActivityPubFollowingLift handles ActivityPub following collection endpoint  
+func (h *Handler) HandleActivityPubFollowingLift(ctx *lift.Context) error {
+	return h.handleActivityPubCollection(ctx, "following")
+}
+
+// handleActivityPubCollection handles ActivityPub collection requests with proper format
+func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType string) error {
+	// Extract username from path parameters
+	username := ctx.Param("username")
+	if username == "" {
+		return ctx.Status(400).JSON(map[string]string{"error": "missing username"})
+	}
+
+	// Check if actor exists
+	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	if err != nil {
+		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
+	}
+
+	// Check Accept header for content negotiation
+	acceptHeader := ctx.Header("Accept")
+	isActivityPub := strings.Contains(acceptHeader, "application/activity+json") ||
+		strings.Contains(acceptHeader, "application/ld+json") ||
+		strings.Contains(acceptHeader, "application/json")
+
+	// If not requesting ActivityPub format, redirect to API endpoint
+	if !isActivityPub {
+		// Return Mastodon API format instead
+		switch collectionType {
+		case string(relationshipFollowers):
+			return h.HandleGetAccountFollowersLift(ctx)
+		case string(relationshipFollowing):
+			return h.HandleGetAccountFollowingLift(ctx)
+		}
+	}
+
+	// Parse query parameters for pagination
+	isPage := ctx.Query("page") != ""
+	cursor := ctx.Query("cursor") 
+	limit := 20 // default limit
+	if l := ctx.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed >= 1 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	// If not requesting a page, return the collection metadata
+	if !isPage {
+		return h.returnActivityPubCollection(ctx, actor, collectionType)
+	}
+
+	// Get collection data with pagination
+	return h.returnActivityPubCollectionPage(ctx, actor, collectionType, cursor, limit)
+}
+
+// returnActivityPubCollection returns ActivityPub OrderedCollection metadata
+func (h *Handler) returnActivityPubCollection(ctx *lift.Context, actor *activitypub.Actor, collectionType string) error {
+	// Check privacy settings for followers collection
+	if collectionType == string(relationshipFollowers) && actor.ManuallyApprovesFollowers {
+		// Check if the requester is authorized to view followers
+		authHeader := ctx.Header("Authorization")
+		if authHeader != "" {
+			token, err := auth.ExtractBearerToken(authHeader)
+			if err == nil {
+				oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+				claims, err := oauthSvc.ValidateAccessToken(token)
+				if err != nil || claims.Username != actor.PreferredUsername {
+					// Other users cannot see private followers
+					return h.returnEmptyCollection(ctx, actor, collectionType)
+				}
+			} else {
+				// No valid authentication, return empty collection
+				return h.returnEmptyCollection(ctx, actor, collectionType)
+			}
+		} else {
+			// No authentication, return empty collection for private accounts
+			return h.returnEmptyCollection(ctx, actor, collectionType)
+		}
+	}
+
+	// Get total count
+	var totalItems int
+	var err error
+
+	switch collectionType {
+	case "followers":
+		totalItems, err = h.repos.Relationship().CountFollowers(ctx.Context, actor.PreferredUsername)
+	case "following":
+		totalItems, err = h.repos.Relationship().CountFollowing(ctx.Context, actor.PreferredUsername)
+	}
+
+	if err != nil {
+		h.logger.Error("failed to get collection count", zap.String("type", collectionType), zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+	}
+
+	// Build collection URL
+	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+
+	// Build the collection
+	collection := &activitypub.OrderedCollection{
+		Collection: activitypub.Collection{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.Context,
+				ID:      collectionID,
+				Type:    activitypub.OrderedCollectionType,
+			},
+			TotalItems: totalItems,
+		},
+	}
+
+	// Only add first page link if there are items
+	if totalItems > 0 {
+		collection.First = fmt.Sprintf("%s?page=1", collectionID)
+	}
+
+	// Set ActivityPub content type and caching headers
+	ctx.Response.Header("Content-Type", "application/activity+json")
+	ctx.Response.Header("Cache-Control", "max-age=300")
+	return ctx.JSON(collection)
+}
+
+// returnActivityPubCollectionPage returns ActivityPub OrderedCollectionPage with items
+func (h *Handler) returnActivityPubCollectionPage(ctx *lift.Context, actor *activitypub.Actor, collectionType, cursor string, limit int) error {
+	// Check privacy settings for followers collection
+	if collectionType == string(relationshipFollowers) && actor.ManuallyApprovesFollowers {
+		// Check if the requester is authorized to view followers
+		authHeader := ctx.Header("Authorization")
+		if authHeader != "" {
+			token, err := auth.ExtractBearerToken(authHeader)
+			if err == nil {
+				oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+				claims, err := oauthSvc.ValidateAccessToken(token)
+				if err != nil || claims.Username != actor.PreferredUsername {
+					// Other users cannot see private followers
+					return h.returnEmptyCollection(ctx, actor, collectionType)
+				}
+			} else {
+				// No valid authentication, return empty collection
+				return h.returnEmptyCollection(ctx, actor, collectionType)
+			}
+		} else {
+			// No authentication, return empty collection for private accounts
+			return h.returnEmptyCollection(ctx, actor, collectionType)
+		}
+	}
+
+	// Get relationships based on type
+	var usernames []string
+	var nextCursor string
+	var err error
+
+	switch collectionType {
+	case "followers":
+		usernames, nextCursor, err = h.repos.Relationship().GetFollowers(ctx.Context, actor.PreferredUsername, limit, cursor)
+	case "following":
+		usernames, nextCursor, err = h.repos.Relationship().GetFollowing(ctx.Context, actor.PreferredUsername, limit, cursor)
+	}
+
+	if err != nil {
+		h.logger.Error("failed to get collection data", zap.String("type", collectionType), zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+	}
+
+	// Convert usernames to actor URLs
+	orderedItems := make([]any, len(usernames))
+	for i, username := range usernames {
+		orderedItems[i] = fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), username)
+	}
+
+	// Build collection and page URLs
+	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+	pageID := fmt.Sprintf("%s?page=1", collectionID)
+	if cursor != "" {
+		pageID = fmt.Sprintf("%s&cursor=%s", pageID, cursor)
+	}
+
+	// Build the page
+	page := &activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      pageID,
+					Type:    activitypub.OrderedCollectionPageType,
+				},
+				OrderedItems: orderedItems,
+			},
+			PartOf: collectionID,
+		},
+	}
+
+	// Add next link if there are more items
+	if nextCursor != "" {
+		page.Next = fmt.Sprintf("%s?page=1&cursor=%s&limit=%d", collectionID, nextCursor, limit)
+	}
+
+	// Add prev link if this is not the first page
+	if cursor != "" {
+		// For simplicity, just link back to the first page
+		// In a full implementation, you'd calculate the previous cursor
+		page.Prev = fmt.Sprintf("%s?page=1", collectionID)
+	}
+
+	// Set ActivityPub content type and caching headers
+	ctx.Response.Header("Content-Type", "application/activity+json")
+	ctx.Response.Header("Cache-Control", "max-age=300")
+	return ctx.JSON(page)
+}
+
+// returnEmptyCollection returns an empty ActivityPub collection for privacy protection
+func (h *Handler) returnEmptyCollection(ctx *lift.Context, actor *activitypub.Actor, collectionType string) error {
+	// Build collection URL
+	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+
+	// Return empty collection
+	collection := &activitypub.OrderedCollection{
+		Collection: activitypub.Collection{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.Context,
+				ID:      collectionID,
+				Type:    activitypub.OrderedCollectionType,
+			},
+			TotalItems: 0,
+		},
+	}
+
+	ctx.Response.Header("Content-Type", "application/activity+json")
+	ctx.Response.Header("Cache-Control", "max-age=300")
+	return ctx.JSON(collection)
 }

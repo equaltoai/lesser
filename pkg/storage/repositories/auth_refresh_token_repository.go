@@ -145,7 +145,7 @@ func (r *AuthRefreshTokenRepository) RotateRefreshToken(ctx context.Context, old
 		oldToken.Revoked = true
 		oldToken.RevokedReason = "Rotated"
 		oldToken.LastUsedAt = now.Unix()
-		
+
 		if err := tx.Model(oldToken).Update(); err != nil {
 			return fmt.Errorf("failed to revoke old token: %w", err)
 		}
@@ -190,19 +190,19 @@ func (r *AuthRefreshTokenRepository) RevokeTokenFamily(ctx context.Context, fami
 	// Use transaction to revoke all tokens atomically
 	err = r.db.Transaction(func(tx *core.Tx) error {
 		now := time.Now().Unix()
-		
+
 		for _, token := range tokens {
 			if !token.Revoked {
 				token.Revoked = true
 				token.RevokedReason = reason
 				token.LastUsedAt = now
-				
+
 				if err := tx.Model(&token).Update(); err != nil {
 					return fmt.Errorf("failed to revoke token %s: %w", token.Token, err)
 				}
 			}
 		}
-		
+
 		return nil
 	})
 
@@ -253,20 +253,20 @@ func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userI
 	tokensToRevoke := 0
 	err = r.db.Transaction(func(tx *core.Tx) error {
 		now := time.Now().Unix()
-		
+
 		for _, token := range tokens {
 			if !token.Revoked {
 				tokensToRevoke++
 				token.Revoked = true
 				token.RevokedReason = reason
 				token.LastUsedAt = now
-				
+
 				if err := tx.Model(&token).Update(); err != nil {
 					return fmt.Errorf("failed to revoke token %s: %w", token.Token, err)
 				}
 			}
 		}
-		
+
 		return nil
 	})
 

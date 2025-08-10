@@ -65,11 +65,11 @@ type VoteType string
 
 const (
 	// VoteHelpful represents a helpful vote
-	VoteHelpful    VoteType = "helpful"
+	VoteHelpful VoteType = "helpful"
 	// VoteNotHelpful represents a not helpful vote
 	VoteNotHelpful VoteType = "not_helpful"
 	// VoteNeutral represents a neutral vote
-	VoteNeutral    VoteType = "neutral"
+	VoteNeutral VoteType = "neutral"
 )
 
 // VisibilityStatus represents the visibility state of a note
@@ -77,11 +77,11 @@ type VisibilityStatus string
 
 const (
 	// VisibilityPending represents pending visibility status
-	VisibilityPending  VisibilityStatus = "pending"
+	VisibilityPending VisibilityStatus = "pending"
 	// VisibilityVisible represents visible visibility status
-	VisibilityVisible  VisibilityStatus = "visible"
+	VisibilityVisible VisibilityStatus = "visible"
 	// VisibilityHidden represents hidden visibility status
-	VisibilityHidden   VisibilityStatus = "hidden"
+	VisibilityHidden VisibilityStatus = "hidden"
 	// VisibilityDisputed represents disputed visibility status
 	VisibilityDisputed VisibilityStatus = "disputed"
 )

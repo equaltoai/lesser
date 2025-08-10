@@ -14,10 +14,10 @@ import (
 
 // DistributedCircuitBreaker implements circuit breaker pattern with DynamORM persistence
 type DistributedCircuitBreaker struct {
-	repo              *repositories.CircuitBreakerRepository
-	thresholdManager  *RouteThresholdManager
-	logger            *zap.Logger
-	config            *models.CircuitBreakerConfig
+	repo             *repositories.CircuitBreakerRepository
+	thresholdManager *RouteThresholdManager
+	logger           *zap.Logger
+	config           *models.CircuitBreakerConfig
 }
 
 // NewDistributedCircuitBreaker creates a new circuit breaker
@@ -232,7 +232,9 @@ func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 					zap.String("instanceID", instanceID))
 
 				// Record state change (non-blocking)
-				go func() { _ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, "circuit recovered") }()
+				go func() {
+					_ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, "circuit recovered")
+				}()
 			}
 
 		case types.CircuitOpen:
@@ -243,7 +245,9 @@ func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 			state.Reason = "unexpected success during open state"
 
 			// Record state change (non-blocking)
-			go func() { _ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, "unexpected success during open state") }()
+			go func() {
+				_ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, "unexpected success during open state")
+			}()
 		}
 
 		return nil
@@ -256,8 +260,8 @@ func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 	// Record metric (non-blocking)
 	go func() {
 		if err := dcb.repo.RecordMetric(context.Background(), instanceID, true, nil, ""); err != nil {
-			dcb.logger.Warn("failed to record success metric", 
-				zap.String("instance_id", instanceID), 
+			dcb.logger.Warn("failed to record success metric",
+				zap.String("instance_id", instanceID),
 				zap.Error(err))
 		}
 	}()
@@ -297,7 +301,9 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 					zap.String("errorType", errorType))
 
 				// Record state change (non-blocking)
-				go func() { _ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, state.Reason) }()
+				go func() {
+					_ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, state.Reason)
+				}()
 			}
 
 		case types.CircuitHalfOpen:
@@ -314,7 +320,9 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 				zap.String("errorType", errorType))
 
 			// Record state change (non-blocking)
-			go func() { _ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, state.Reason) }()
+			go func() {
+				_ = dcb.repo.RecordStateChange(context.Background(), instanceID, oldStatus, state.Status, state.Reason)
+			}()
 		}
 
 		return nil
@@ -327,7 +335,7 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 	// Record metric (non-blocking)
 	go func() {
 		if metricErr := dcb.repo.RecordMetric(context.Background(), instanceID, false, err, errorType); metricErr != nil {
-			dcb.logger.Warn("failed to record failure metric", 
+			dcb.logger.Warn("failed to record failure metric",
 				zap.String("instance_id", instanceID),
 				zap.String("error_type", errorType),
 				zap.Error(metricErr))

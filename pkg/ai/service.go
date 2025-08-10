@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -990,12 +991,33 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 		return existingKey, nil
 	}
 
-	// Download the image
-	resp, err := http.Get(imageURL)
+	// Validate the URL for security
+	parsedURL, err := url.Parse(imageURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// Only allow HTTP/HTTPS schemes
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return "", fmt.Errorf("invalid URL scheme: %s (only http/https allowed)", parsedURL.Scheme)
+	}
+
+	// Prevent local network access
+	if parsedURL.Host == "localhost" || parsedURL.Host == "127.0.0.1" || strings.HasPrefix(parsedURL.Host, "10.") ||
+		strings.HasPrefix(parsedURL.Host, "192.168.") || strings.HasPrefix(parsedURL.Host, "172.") {
+		return "", fmt.Errorf("access to local networks not allowed")
+	}
+
+	// Download the image using the validated URL
+	resp, err := http.Get(parsedURL.String())
 	if err != nil {
 		return "", fmt.Errorf("failed to download image: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			s.logger.Warn("failed to close response body", zap.Error(err))
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download image: HTTP %d", resp.StatusCode)
@@ -1016,8 +1038,8 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 		// Set appropriate metadata
 		Metadata: map[string]string{
 			"original-url": imageURL,
-			"purpose":     "ai-analysis",
-			"uploaded-at": time.Now().Format(time.RFC3339),
+			"purpose":      "ai-analysis",
+			"uploaded-at":  time.Now().Format(time.RFC3339),
 		},
 		// Set TTL for cleanup (30 days)
 		Expires: aws.Time(time.Now().Add(30 * 24 * time.Hour)),
@@ -1054,7 +1076,7 @@ func (s *AIService) getFileExtensionFromContentType(contentType string) string {
 func (s *AIService) QueueAnalysisRequest(ctx context.Context, objectID string, objectType string, forceAnalysis bool) (string, error) {
 	// Generate unique request ID
 	requestID := generateID("ai-req")
-	
+
 	// Create analysis request
 	request := &AnalysisRequest{
 		ID:            requestID,
@@ -1082,13 +1104,13 @@ func (s *AIService) QueueAnalysisRequest(ctx context.Context, objectID string, o
 			zap.Error(err))
 		return "", fmt.Errorf("failed to queue analysis request: %w", err)
 	}
-	
+
 	s.logger.Info("AI analysis request queued",
 		zap.String("requestID", requestID),
 		zap.String("objectID", objectID),
 		zap.String("objectType", objectType),
 		zap.Bool("forceAnalysis", forceAnalysis))
-	
+
 	return requestID, nil
 }
 
@@ -1147,22 +1169,22 @@ func (s *AIService) sendToSQSQueue(ctx context.Context, request *AnalysisRequest
 }
 
 // GetAnalysisRequest retrieves the status of an analysis request
-func (s *AIService) GetAnalysisRequest(ctx context.Context, requestID string) (*AnalysisRequest, error) {
+func (s *AIService) GetAnalysisRequest(_ context.Context, requestID string) (*AnalysisRequest, error) {
 	// Try to find the analysis by looking for analysis records with this ID
 	// Since we store analysis results with the request ID as the analysis ID,
 	// we need to search through recent analyses to find the request
-	
+
 	// For a more robust implementation, we'd store request records separately
 	// For now, we'll return a proper "not found" response if we can't locate it
-	
+
 	s.logger.Info("Looking up analysis request",
 		zap.String("requestID", requestID))
-	
+
 	// Since we don't have a separate request tracking table yet,
 	// we'll implement a basic status lookup that returns appropriate states
 	return &AnalysisRequest{
-		ID:         requestID,
-		Status:     StatusPending, // Default to pending for new requests
+		ID:          requestID,
+		Status:      StatusPending,                // Default to pending for new requests
 		RequestedAt: time.Now().Add(-time.Minute), // Reasonable default
 	}, nil
 }
@@ -1178,7 +1200,7 @@ func (s *AIService) storeAnalysisRequest(ctx context.Context, request *AnalysisR
 		Version:          "1.0",
 		OverallRisk:      0.0, // Will be calculated when analysis completes
 		ModerationAction: "pending",
-		Confidence:       0.0, // Will be calculated when analysis completes
+		Confidence:       0.0,                                   // Will be calculated when analysis completes
 		TTL:              time.Now().Add(24 * time.Hour).Unix(), // Clean up after 24 hours
 	}
 
@@ -1195,7 +1217,7 @@ func (s *AIService) storeAnalysisRequest(ctx context.Context, request *AnalysisR
 		zap.String("requestID", request.ID),
 		zap.String("objectID", request.ObjectID),
 		zap.String("objectType", request.ObjectType))
-		
+
 	return nil
 }
 

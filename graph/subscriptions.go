@@ -159,4 +159,3 @@ func getGlobalStreamRouterEventBus() *streaming.EventBus {
 	// Note: In separate Lambda deployments, this will return nil and we'll fall back to polling
 	return streaming.GetGlobalEventBus(zap.NewNop())
 }
-

@@ -440,7 +440,7 @@ func (s *Service) convertModerationEvent(event *storage.ModerationEvent) Moderat
 	modEvent := ModerationEvent{
 		ID:         event.ID,
 		Type:       event.EventType,
-		Outcome:    event.EventType, // Use event type as outcome for now
+		Outcome:    s.deriveOutcomeFromEvent(event),
 		OccurredAt: event.Created,
 	}
 
@@ -844,5 +844,75 @@ func (s *Service) setCachedTimestamp(ctx context.Context, key string, value time
 		s.logger.Debug("Failed to cache timestamp",
 			zap.String("key", key),
 			zap.Error(err))
+	}
+}
+
+// deriveOutcomeFromEvent derives the outcome of a moderation event from its properties
+func (s *Service) deriveOutcomeFromEvent(event *storage.ModerationEvent) string {
+	// Check the event data for explicit outcome information
+	if event.Data != nil {
+		if outcome, exists := event.Data["outcome"]; exists {
+			if outcomeStr, ok := outcome.(string); ok && outcomeStr != "" {
+				return outcomeStr
+			}
+		}
+
+		// Check for status field which might indicate outcome
+		if status, exists := event.Data["status"]; exists {
+			if statusStr, ok := status.(string); ok && statusStr != "" {
+				return statusStr
+			}
+		}
+	}
+
+	// Derive outcome from event type and category
+	switch strings.ToLower(event.EventType) {
+	case "warn", "warning":
+		return OutcomeUpheld // Warnings are typically upheld when issued
+
+	case "silence", "suspend", "ban":
+		// These are enforcement actions, so they're upheld
+		return OutcomeUpheld
+
+	case "report":
+		// Reports need to be investigated, default to pending
+		// unless we have more specific information
+		switch strings.ToLower(event.Category) {
+		case "spam", "harassment", "violence":
+			// Serious categories likely to be upheld if they resulted in an event
+			return OutcomeUpheld
+		default:
+			return OutcomePending
+		}
+
+	case "appeal":
+		// Appeals could go either way, check severity or confidence
+		if event.ConfidenceScore > 0.8 {
+			return OutcomeUpheld
+		} else if event.ConfidenceScore < 0.3 {
+			return OutcomeDismissed
+		}
+		return OutcomePending
+
+	case "review", "investigation":
+		// Reviews are typically pending until resolved
+		return OutcomePending
+
+	case "dismiss", "rejected", "false_positive":
+		return OutcomeDismissed
+
+	case "confirmed", "validated", "enforced":
+		return OutcomeUpheld
+
+	default:
+		// For unknown event types, check severity to make a reasonable guess
+		switch strings.ToLower(event.Severity) {
+		case "low", "minor":
+			return OutcomeDismissed
+		case "high", "critical", "severe":
+			return OutcomeUpheld
+		default:
+			return OutcomePending // Conservative default
+		}
 	}
 }

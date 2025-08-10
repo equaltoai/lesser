@@ -61,8 +61,8 @@ func DefaultAIConfig() *AIConfig {
 		EnableImageAnalysis: true,
 		BedrockModelID:      "anthropic.claude-v2",
 		ToxicityModelARN:    "", // Custom model if available
-		S3Bucket:   "lesser-media-analysis",
-		AIQueueURL: "", // Set from environment
+		S3Bucket:            "lesser-media-analysis",
+		AIQueueURL:          "", // Set from environment
 	}
 }
 

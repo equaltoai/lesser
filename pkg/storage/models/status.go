@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -58,6 +59,12 @@ type Status struct {
 	Mentions       []string          `json:"mentions,omitempty"`        // Extracted mentions
 	URLs           []string          `json:"urls,omitempty"`            // Extracted URLs
 	MediaCount     int               `json:"media_count"`               // Number of media attachments
+	
+	// Addressing fields for direct messages and limited visibility
+	ToRecipients  []string `json:"to_recipients,omitempty"`  // Primary recipients (visible to all)
+	CcRecipients  []string `json:"cc_recipients,omitempty"`  // Carbon copy recipients (visible to all)
+	BtoRecipients []string `json:"bto_recipients,omitempty"` // Blind to recipients (hidden from others)
+	BccRecipients []string `json:"bcc_recipients,omitempty"` // Blind carbon copy (hidden from all)
 
 	// Engagement metrics (cached for performance)
 	LikeCount   int `json:"like_count"`
@@ -164,6 +171,12 @@ func (s *Status) extractFromNote() {
 	if s.Note.InReplyTo != "" {
 		s.InReplyToID = extractStatusIDFromURL(s.Note.InReplyTo)
 	}
+
+	// Extract addressing fields
+	s.ToRecipients = s.Note.To
+	s.CcRecipients = s.Note.CC
+	s.BtoRecipients = s.Note.BTo
+	s.BccRecipients = s.Note.BCC
 
 	// Extract visibility from Note or set default
 	if s.Note.Visibility != "" {
@@ -291,7 +304,7 @@ func extractStatusIDFromURL(url string) string {
 // determineVisibilityFromAudience determines visibility based on To/CC fields
 func determineVisibilityFromAudience(to, cc []string) string {
 	publicAddress := "https://www.w3.org/ns/activitystreams#Public"
-
+	
 	// Check if public address is in To field
 	for _, addr := range to {
 		if addr == publicAddress {
@@ -306,13 +319,22 @@ func determineVisibilityFromAudience(to, cc []string) string {
 		}
 	}
 
-	// If no public address found, it's either private or direct
-	// This is a simplified check - in reality, you'd need more logic
-	if len(to) == 1 {
-		return "direct"
+	// Check if it's addressed to followers only
+	hasFollowersCollection := false
+	for _, addr := range append(to, cc...) {
+		if strings.Contains(addr, "/followers") {
+			hasFollowersCollection = true
+			break
+		}
 	}
 
-	return "private"
+	// If addressed to followers collection, it's private/followers-only
+	if hasFollowersCollection {
+		return VisibilityPrivate
+	}
+
+	// If only specific actors mentioned and no collections, it's direct
+	return VisibilityDirect
 }
 
 // IsPublic returns true if the status is publicly visible
@@ -350,7 +372,184 @@ func (s *Status) IsFlagged() bool {
 	return s.Flagged
 }
 
+// IsRecipient checks if the given actor ID is a recipient of this status
+func (s *Status) IsRecipient(actorID string) bool {
+	// Check To recipients
+	for _, recipient := range s.ToRecipients {
+		if recipient == actorID || strings.Contains(recipient, "/followers") {
+			return true
+		}
+	}
+	
+	// Check CC recipients
+	for _, recipient := range s.CcRecipients {
+		if recipient == actorID || strings.Contains(recipient, "/followers") {
+			return true
+		}
+	}
+	
+	// Check BTo recipients (blind to - hidden from others but still a recipient)
+	for _, recipient := range s.BtoRecipients {
+		if recipient == actorID {
+			return true
+		}
+	}
+	
+	// Check BCC recipients (blind carbon copy - hidden from all but still a recipient)
+	for _, recipient := range s.BccRecipients {
+		if recipient == actorID {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// IsVisibleTo checks if the status is visible to the given actor ID
+func (s *Status) IsVisibleTo(actorID string) bool {
+	switch s.Visibility {
+	case VisibilityPublic, VisibilityUnlisted:
+		return true
+	case VisibilityPrivate:
+		// Check if actor is a follower or the author
+		return actorID == s.AuthorID || s.IsRecipient(actorID)
+	case VisibilityDirect:
+		// Only visible to author and direct recipients
+		return actorID == s.AuthorID || s.IsRecipient(actorID)
+	default:
+		return false
+	}
+}
+
+// GetVisibleRecipients returns recipients that should be visible to the requesting actor
+func (s *Status) GetVisibleRecipients(requestingActorID string) []string {
+	var visible []string
+	
+	// Add To recipients (always visible)
+	visible = append(visible, s.ToRecipients...)
+	
+	// Add CC recipients (always visible)
+	visible = append(visible, s.CcRecipients...)
+	
+	// BTo recipients are only visible to the recipients themselves, not to others
+	if s.IsRecipient(requestingActorID) {
+		visible = append(visible, s.BtoRecipients...)
+	}
+	
+	// BCC recipients are never visible to anyone (not even other recipients)
+	
+	return visible
+}
+
+// IsDirect returns true if the status is a direct message
+func (s *Status) IsDirect() bool {
+	return s.Visibility == VisibilityDirect
+}
+
+// IsPrivate returns true if the status is private/followers-only
+func (s *Status) IsPrivate() bool {
+	return s.Visibility == VisibilityPrivate
+}
+
 // UpdateKeys updates the GSI keys for this status (required by DynamORM)
 func (s *Status) UpdateKeys() {
 	s.setupGSIKeys()
+}
+
+// ShouldAppearInTimeline checks if status should appear in a given timeline type
+func (s *Status) ShouldAppearInTimeline(timelineType string, viewerID string) bool {
+	switch timelineType {
+	case VisibilityPublic:
+		return s.Visibility == VisibilityPublic && !s.Deleted
+	case "home":
+		// Home timeline includes all visibility levels if viewer has access
+		return !s.Deleted && s.IsVisibleTo(viewerID)
+	case "conversations":
+		// Conversations timeline only includes direct messages
+		return s.Visibility == VisibilityDirect && s.IsVisibleTo(viewerID) && !s.Deleted
+	case "local":
+		// Local timeline includes public posts from local users
+		return s.Visibility == VisibilityPublic && !s.Deleted && s.isLocalStatus()
+	default:
+		return false
+	}
+}
+
+// isLocalStatus checks if this status is from a local user
+func (s *Status) isLocalStatus() bool {
+	// This assumes the author ID format includes the domain
+	// Adjust logic based on your actual actor ID format
+	return strings.Contains(s.AuthorID, os.Getenv("DOMAIN_NAME"))
+}
+
+// GetAllRecipients returns all recipients across all addressing fields
+func (s *Status) GetAllRecipients() []string {
+	recipients := make([]string, 0)
+	recipients = append(recipients, s.ToRecipients...)
+	recipients = append(recipients, s.CcRecipients...)
+	recipients = append(recipients, s.BtoRecipients...)
+	recipients = append(recipients, s.BccRecipients...)
+	return recipients
+}
+
+// HasSpecificRecipients checks if status has specific actor recipients (not just collections)
+func (s *Status) HasSpecificRecipients() bool {
+	allRecipients := s.GetAllRecipients()
+	publicAddr := "https://www.w3.org/ns/activitystreams#Public"
+	
+	for _, recipient := range allRecipients {
+		// Skip public address and collections
+		if recipient != publicAddr && !strings.Contains(recipient, "/followers") {
+			return true
+		}
+	}
+	return false
+}
+
+// IsConversation returns true if this status is part of a conversation (has replies or is a reply)
+func (s *Status) IsConversation() bool {
+	return s.InReplyToID != "" || s.ReplyCount > 0
+}
+
+// RequiresFollowCheck returns true if visibility requires checking follower relationship
+func (s *Status) RequiresFollowCheck() bool {
+	return s.Visibility == VisibilityPrivate
+}
+
+// GetPrivacyScore returns a numeric score representing how private this status is (higher = more private)
+func (s *Status) GetPrivacyScore() int {
+	switch s.Visibility {
+	case VisibilityPublic:
+		return 1
+	case VisibilityUnlisted:
+		return 2
+	case VisibilityPrivate:
+		return 3
+	case VisibilityDirect:
+		return 4
+	default:
+		return 4 // Default to most private
+	}
+}
+
+// CanBeReblogged returns true if this status can be reblogged (boosted)
+func (s *Status) CanBeReblogged() bool {
+	// Direct messages and deleted posts cannot be reblogged
+	return s.Visibility != VisibilityDirect && !s.Deleted
+}
+
+// SanitizeForActor removes sensitive information based on viewer's relationship to the post
+func (s *Status) SanitizeForActor(viewerID string) *Status {
+	// Create a copy to avoid modifying the original
+	sanitized := *s
+	
+	// Remove BCC recipients (never visible to anyone)
+	sanitized.BccRecipients = nil
+	
+	// Remove BTo recipients if viewer is not a recipient
+	if !s.IsRecipient(viewerID) {
+		sanitized.BtoRecipients = nil
+	}
+	
+	return &sanitized
 }

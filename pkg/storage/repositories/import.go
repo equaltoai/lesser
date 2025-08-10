@@ -10,8 +10,8 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // ImportRepository handles import-related database operations using DynamORM
@@ -386,9 +386,9 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 		summary.TotalImports++
 
 		switch cost.Status {
-		case "completed":
+		case StatusCompleted:
 			summary.CompletedImports++
-		case "failed":
+		case StatusFailed:
 			summary.FailedImports++
 		}
 

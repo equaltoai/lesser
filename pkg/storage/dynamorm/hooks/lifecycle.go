@@ -19,21 +19,21 @@ const (
 	// BeforeCreate represents a before create hook
 	BeforeCreate HookType = "before_create"
 	// AfterCreate represents an after create hook
-	AfterCreate  HookType = "after_create"
+	AfterCreate HookType = "after_create"
 	// BeforeUpdate represents a before update hook
 	BeforeUpdate HookType = "before_update"
 	// AfterUpdate represents an after update hook
-	AfterUpdate  HookType = "after_update"
+	AfterUpdate HookType = "after_update"
 	// BeforeDelete represents a before delete hook
 	BeforeDelete HookType = "before_delete"
 	// AfterDelete represents an after delete hook
-	AfterDelete  HookType = "after_delete"
+	AfterDelete HookType = "after_delete"
 	// AfterFind represents an after find hook
-	AfterFind    HookType = "after_find"
+	AfterFind HookType = "after_find"
 	// BeforeSave represents a before save hook
-	BeforeSave   HookType = "before_save"
+	BeforeSave HookType = "before_save"
 	// AfterSave represents an after save hook
-	AfterSave    HookType = "after_save"
+	AfterSave HookType = "after_save"
 )
 
 // HookFunc is a function that gets executed during model lifecycle events
@@ -424,7 +424,7 @@ func NotificationHook(ctx context.Context, model any) error {
 	if notificationRepo == nil {
 		// No notification repository available, skip notification creation
 		if logger := getLoggerFromContext(ctx); logger != nil {
-			logger.Debug("notification_repository_not_available", 
+			logger.Debug("notification_repository_not_available",
 				zap.String("model_type", reflect.TypeOf(model).String()))
 		}
 		return nil
@@ -517,7 +517,7 @@ type FavoriteModel interface {
 	GetStatusAuthorID() string
 }
 
-// PollModel interface for poll-related models  
+// PollModel interface for poll-related models
 type PollModel interface {
 	GetPollID() string
 	GetAuthorID() string
@@ -566,12 +566,12 @@ func getNotificationRepository(ctx context.Context) NotificationRepository {
 
 func createFollowNotification(ctx context.Context, follow FollowModel, repo NotificationRepository) error {
 	notification := map[string]any{
-		"type":        "follow",
-		"user_id":     follow.GetFolloweeID(),
-		"from_user":   follow.GetFollowerID(),
-		"created_at":  time.Now(),
+		"type":       "follow",
+		"user_id":    follow.GetFolloweeID(),
+		"from_user":  follow.GetFollowerID(),
+		"created_at": time.Now(),
 	}
-	
+
 	// Create notification record
 	if err := repo.CreateNotification(ctx, notification); err != nil {
 		if logger := getLoggerFromContext(ctx); logger != nil {
@@ -583,7 +583,7 @@ func createFollowNotification(ctx context.Context, follow FollowModel, repo Noti
 		}
 		return err
 	}
-	
+
 	// Send push notification asynchronously
 	go func() {
 		if err := repo.SendPushNotification(ctx, follow.GetFolloweeID(), notification); err != nil {
@@ -596,7 +596,7 @@ func createFollowNotification(ctx context.Context, follow FollowModel, repo Noti
 			}
 		}
 	}()
-	
+
 	return nil
 }
 
@@ -605,13 +605,13 @@ func createStatusNotifications(ctx context.Context, status StatusModel, repo Not
 	mentions := status.GetMentions()
 	for _, mentionedUser := range mentions {
 		notification := map[string]any{
-			"type":        "mention",
-			"user_id":     mentionedUser,
-			"from_user":   status.GetUserID(),
-			"status_id":   status.GetUserID(), // Assuming GetUserID returns status ID
-			"created_at":  time.Now(),
+			"type":       "mention",
+			"user_id":    mentionedUser,
+			"from_user":  status.GetUserID(),
+			"status_id":  status.GetUserID(), // Assuming GetUserID returns status ID
+			"created_at": time.Now(),
 		}
-		
+
 		if err := repo.CreateNotification(ctx, notification); err != nil {
 			if logger := getLoggerFromContext(ctx); logger != nil {
 				logger.Error("failed_to_create_mention_notification",
@@ -623,7 +623,7 @@ func createStatusNotifications(ctx context.Context, status StatusModel, repo Not
 			// Continue with other mentions even if one fails
 			continue
 		}
-		
+
 		// Send push notification asynchronously
 		go func(user string, notif map[string]any) {
 			if err := repo.SendPushNotification(ctx, user, notif); err != nil {
@@ -637,19 +637,19 @@ func createStatusNotifications(ctx context.Context, status StatusModel, repo Not
 			}
 		}(mentionedUser, notification)
 	}
-	
+
 	return nil
 }
 
 func createMentionNotification(ctx context.Context, mention MentionModel, repo NotificationRepository) error {
 	notification := map[string]any{
-		"type":        "mention",
-		"user_id":     mention.GetMentionedUserID(),
-		"from_user":   mention.GetUserID(),
-		"status_id":   mention.GetStatusID(),
-		"created_at":  time.Now(),
+		"type":       "mention",
+		"user_id":    mention.GetMentionedUserID(),
+		"from_user":  mention.GetUserID(),
+		"status_id":  mention.GetStatusID(),
+		"created_at": time.Now(),
 	}
-	
+
 	if err := repo.CreateNotification(ctx, notification); err != nil {
 		if logger := getLoggerFromContext(ctx); logger != nil {
 			logger.Error("failed_to_create_mention_notification",
@@ -660,7 +660,7 @@ func createMentionNotification(ctx context.Context, mention MentionModel, repo N
 		}
 		return err
 	}
-	
+
 	// Send push notification asynchronously
 	go func() {
 		if err := repo.SendPushNotification(ctx, mention.GetMentionedUserID(), notification); err != nil {
@@ -673,19 +673,19 @@ func createMentionNotification(ctx context.Context, mention MentionModel, repo N
 			}
 		}
 	}()
-	
+
 	return nil
 }
 
 func createReblogNotification(ctx context.Context, reblog ReblogModel, repo NotificationRepository) error {
 	notification := map[string]any{
-		"type":        "reblog",
-		"user_id":     reblog.GetOriginalAuthorID(),
-		"from_user":   reblog.GetUserID(),
-		"status_id":   reblog.GetStatusID(),
-		"created_at":  time.Now(),
+		"type":       "reblog",
+		"user_id":    reblog.GetOriginalAuthorID(),
+		"from_user":  reblog.GetUserID(),
+		"status_id":  reblog.GetStatusID(),
+		"created_at": time.Now(),
 	}
-	
+
 	if err := repo.CreateNotification(ctx, notification); err != nil {
 		if logger := getLoggerFromContext(ctx); logger != nil {
 			logger.Error("failed_to_create_reblog_notification",
@@ -696,7 +696,7 @@ func createReblogNotification(ctx context.Context, reblog ReblogModel, repo Noti
 		}
 		return err
 	}
-	
+
 	// Send push notification asynchronously
 	go func() {
 		if err := repo.SendPushNotification(ctx, reblog.GetOriginalAuthorID(), notification); err != nil {
@@ -709,19 +709,19 @@ func createReblogNotification(ctx context.Context, reblog ReblogModel, repo Noti
 			}
 		}
 	}()
-	
+
 	return nil
 }
 
 func createFavoriteNotification(ctx context.Context, favorite FavoriteModel, repo NotificationRepository) error {
 	notification := map[string]any{
-		"type":        "favourite",
-		"user_id":     favorite.GetStatusAuthorID(),
-		"from_user":   favorite.GetUserID(),
-		"status_id":   favorite.GetStatusID(),
-		"created_at":  time.Now(),
+		"type":       "favourite",
+		"user_id":    favorite.GetStatusAuthorID(),
+		"from_user":  favorite.GetUserID(),
+		"status_id":  favorite.GetStatusID(),
+		"created_at": time.Now(),
 	}
-	
+
 	if err := repo.CreateNotification(ctx, notification); err != nil {
 		if logger := getLoggerFromContext(ctx); logger != nil {
 			logger.Error("failed_to_create_favorite_notification",
@@ -732,7 +732,7 @@ func createFavoriteNotification(ctx context.Context, favorite FavoriteModel, rep
 		}
 		return err
 	}
-	
+
 	// Send push notification asynchronously
 	go func() {
 		if err := repo.SendPushNotification(ctx, favorite.GetStatusAuthorID(), notification); err != nil {
@@ -745,7 +745,7 @@ func createFavoriteNotification(ctx context.Context, favorite FavoriteModel, rep
 			}
 		}
 	}()
-	
+
 	return nil
 }
 
@@ -754,14 +754,14 @@ func createPollNotification(ctx context.Context, poll PollModel, repo Notificati
 	if !poll.HasEnded() {
 		return nil
 	}
-	
+
 	notification := map[string]any{
-		"type":        "poll",
-		"user_id":     poll.GetAuthorID(),
-		"poll_id":     poll.GetPollID(),
-		"created_at":  time.Now(),
+		"type":       "poll",
+		"user_id":    poll.GetAuthorID(),
+		"poll_id":    poll.GetPollID(),
+		"created_at": time.Now(),
 	}
-	
+
 	if err := repo.CreateNotification(ctx, notification); err != nil {
 		if logger := getLoggerFromContext(ctx); logger != nil {
 			logger.Error("failed_to_create_poll_notification",
@@ -772,7 +772,7 @@ func createPollNotification(ctx context.Context, poll PollModel, repo Notificati
 		}
 		return err
 	}
-	
+
 	// Send push notification asynchronously
 	go func() {
 		if err := repo.SendPushNotification(ctx, poll.GetAuthorID(), notification); err != nil {
@@ -785,7 +785,7 @@ func createPollNotification(ctx context.Context, poll PollModel, repo Notificati
 			}
 		}
 	}()
-	
+
 	return nil
 }
 

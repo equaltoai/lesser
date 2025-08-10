@@ -1,5 +1,14 @@
 # Modern Auth Implementation Quick Start
 
+## Overview: Email-Free Authentication
+
+Lesser implements **passwordless authentication only** - no email verification, no SMS, no traditional passwords. Our modern auth stack supports:
+
+🔑 **Passkeys (WebAuthn/FIDO2)** - Primary method, backed by Apple/Google/Microsoft  
+🦊 **Crypto Wallets** - MetaMask, Phantom, WalletConnect integration  
+🛡️ **Zero Knowledge** - No PII collection, no verification emails  
+📱 **Cross-Device Sync** - Automatic via iCloud Keychain, Google Password Manager  
+
 ## Priority 1: Core JWT Infrastructure (3 days)
 
 ### Day 1: JWT & Session Management

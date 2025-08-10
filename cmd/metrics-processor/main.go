@@ -44,17 +44,17 @@ const (
 
 // Metric event type constants
 const (
-	metricEventUser        = "user_event"
-	metricEventActor       = "actor_event"
-	metricEventObject      = "object_event"
+	metricEventUser         = "user_event"
+	metricEventActor        = "actor_event"
+	metricEventObject       = "object_event"
 	metricEventNotification = "notification_event"
-	metricEventEngagement  = "engagement_event"
-	metricEventSocial      = "social_event"
-	metricEventMedia       = "media_event"
-	metricEventModeration  = "moderation_event"
-	metricEventSecurity    = "security_event"
+	metricEventEngagement   = "engagement_event"
+	metricEventSocial       = "social_event"
+	metricEventMedia        = "media_event"
+	metricEventModeration   = "moderation_event"
+	metricEventSecurity     = "security_event"
 	metricEventCostTracking = "cost_tracking_event"
-	metricEventFederation  = "federation_event"
+	metricEventFederation   = "federation_event"
 )
 
 // Handler processes DynamoDB streams for real-time metrics pipeline
@@ -506,7 +506,7 @@ func (p *MetricsStreamProcessor) triggerModerationQueueUpdate(record *models.Met
 			zap.Error(err),
 			zap.String("record_id", record.MetricID))
 	} else {
-		p.logger.Debug("published moderation queue update to GraphQL subscriptions", 
+		p.logger.Debug("published moderation queue update to GraphQL subscriptions",
 			zap.String("record_id", record.MetricID))
 	}
 }
@@ -521,7 +521,7 @@ func (p *MetricsStreamProcessor) triggerThreatIntelligence(record *models.Metric
 			zap.Error(err),
 			zap.String("record_id", record.MetricID))
 	} else {
-		p.logger.Debug("published threat intelligence update to GraphQL subscriptions", 
+		p.logger.Debug("published threat intelligence update to GraphQL subscriptions",
 			zap.String("record_id", record.MetricID))
 	}
 }
@@ -536,7 +536,7 @@ func (p *MetricsStreamProcessor) triggerPerformanceAlert(record *models.MetricRe
 			zap.Error(err),
 			zap.String("record_id", record.MetricID))
 	} else {
-		p.logger.Debug("published performance alert to GraphQL subscriptions", 
+		p.logger.Debug("published performance alert to GraphQL subscriptions",
 			zap.String("record_id", record.MetricID))
 	}
 }
@@ -551,31 +551,57 @@ func (p *MetricsStreamProcessor) triggerInfrastructureEvent(record *models.Metri
 			zap.Error(err),
 			zap.String("record_id", record.MetricID))
 	} else {
-		p.logger.Debug("published infrastructure event to GraphQL subscriptions", 
+		p.logger.Debug("published infrastructure event to GraphQL subscriptions",
 			zap.String("record_id", record.MetricID))
 	}
 }
 
 // createStreamingEvent creates a streaming event from a metric record
 func (p *MetricsStreamProcessor) createStreamingEvent(eventType streaming.EventType, action streaming.EventAction, record *models.MetricRecord) *streaming.InternalEvent {
-	// Extract user ID from dimensions if available
-	userID := ""
-	tenantID := ""
-	actorID := ""
-	if dims := record.Dimensions; dims != nil {
-		if uid, exists := dims["user_id"]; exists {
-			userID = uid
-		}
-		if tid, exists := dims["tenant_id"]; exists {
-			tenantID = tid
-		}
-		if aid, exists := dims["actor_id"]; exists {
-			actorID = aid
-		}
+	userID, tenantID, actorID := p.extractEventUserInfo(record)
+	metadata := p.buildEventMetadata(record, tenantID, actorID)
+	priority := p.calculateEventPriority(record)
+
+	return &streaming.InternalEvent{
+		ID:        record.MetricID,
+		Type:      eventType,
+		Action:    action,
+		UserID:    userID,
+		ActorID:   actorID,
+		Timestamp: record.Timestamp,
+		Data:      record,
+		Metadata:  metadata,
+		Priority:  priority,
+		Streams:   p.determineEventStreams(record),
 	}
-	
-	// Create comprehensive metadata with essential metric information
-	metadata := map[string]string{
+}
+
+// extractEventUserInfo extracts user information from record dimensions
+func (p *MetricsStreamProcessor) extractEventUserInfo(record *models.MetricRecord) (string, string, string) {
+	if record.Dimensions == nil {
+		return "", "", ""
+	}
+
+	userID := record.Dimensions["user_id"]
+	tenantID := record.Dimensions["tenant_id"]
+	actorID := record.Dimensions["actor_id"]
+
+	return userID, tenantID, actorID
+}
+
+// buildEventMetadata creates comprehensive metadata for the streaming event
+func (p *MetricsStreamProcessor) buildEventMetadata(record *models.MetricRecord, tenantID, actorID string) map[string]string {
+	metadata := p.createBaseEventMetadata(record)
+	p.addEventUserInfo(metadata, tenantID, actorID)
+	p.addEventPercentiles(metadata, record)
+	p.addEventDimensions(metadata, record)
+
+	return metadata
+}
+
+// createBaseEventMetadata creates the base metadata structure
+func (p *MetricsStreamProcessor) createBaseEventMetadata(record *models.MetricRecord) map[string]string {
+	return map[string]string{
 		"service_name":      record.ServiceName,
 		"metric_type":       record.MetricType,
 		"aggregation_level": record.AggregationLevel,
@@ -585,106 +611,143 @@ func (p *MetricsStreamProcessor) createStreamingEvent(eventType streaming.EventT
 		"min":               fmt.Sprintf("%.2f", record.Min),
 		"max":               fmt.Sprintf("%.2f", record.Max),
 		"timestamp":         record.Timestamp.Format(time.RFC3339),
-		"subscription_type": "metrics", // Mark as metrics subscription event
+		"subscription_type": "metrics",
 	}
-	
-	// Add tenant and actor information for filtering
+}
+
+// addEventUserInfo adds tenant and actor information to metadata
+func (p *MetricsStreamProcessor) addEventUserInfo(metadata map[string]string, tenantID, actorID string) {
 	if tenantID != "" {
 		metadata["tenant_id"] = tenantID
 	}
 	if actorID != "" {
 		metadata["actor_id"] = actorID
 	}
-	
-	// Add percentiles if available
-	if record.P95 > 0 {
-		metadata["p95"] = fmt.Sprintf("%.2f", record.P95)
+}
+
+// addEventPercentiles adds percentile data to metadata
+func (p *MetricsStreamProcessor) addEventPercentiles(metadata map[string]string, record *models.MetricRecord) {
+	percentiles := map[string]float64{
+		"p50": record.P50,
+		"p95": record.P95,
+		"p99": record.P99,
 	}
-	if record.P50 > 0 {
-		metadata["p50"] = fmt.Sprintf("%.2f", record.P50)
-	}
-	if record.P99 > 0 {
-		metadata["p99"] = fmt.Sprintf("%.2f", record.P99)
-	}
-	
-	// Add cost information if present in dimensions
-	if dims := record.Dimensions; dims != nil {
-		if userCost, exists := dims["user_cost_microcents"]; exists {
-			metadata["user_cost_microcents"] = userCost
-		}
-		if instanceCost, exists := dims["instance_cost_microcents"]; exists {
-			metadata["instance_cost_microcents"] = instanceCost
-		}
-		if totalCost, exists := dims["total_cost_microcents"]; exists {
-			metadata["total_cost_microcents"] = totalCost
-		}
-		if domain, exists := dims["instance_domain"]; exists {
-			metadata["instance_domain"] = domain
-		}
-		if size, exists := dims["record_size_bytes"]; exists {
-			metadata["record_size_bytes"] = size
-		}
-		// Add all other dimensions as metadata for flexible filtering
-		for key, value := range dims {
-			if _, exists := metadata[key]; !exists {
-				metadata["dim_"+key] = value // Prefix custom dimensions
-			}
+
+	for key, value := range percentiles {
+		if value > 0 {
+			metadata[key] = fmt.Sprintf("%.2f", value)
 		}
 	}
-	
-	// Determine priority based on metric type and values
-	priority := streaming.PriorityNormal
-	if record.MetricType == metricEventSecurity || record.MetricType == metricEventModeration {
-		priority = streaming.PriorityHigh
+}
+
+// addEventDimensions adds dimension information to metadata
+func (p *MetricsStreamProcessor) addEventDimensions(metadata map[string]string, record *models.MetricRecord) {
+	if record.Dimensions == nil {
+		return
 	}
-	if record.Count > 1000 || record.Sum > 10000 { // High-volume events get higher priority
-		priority = streaming.PriorityHigh
+
+	p.addEventKnownDimensions(metadata, record.Dimensions)
+	p.addEventCustomDimensions(metadata, record.Dimensions)
+}
+
+// addEventKnownDimensions adds known dimension keys to metadata
+func (p *MetricsStreamProcessor) addEventKnownDimensions(metadata map[string]string, dimensions map[string]string) {
+	knownKeys := []string{
+		"user_cost_microcents", "instance_cost_microcents", "total_cost_microcents",
+		"instance_domain", "record_size_bytes",
 	}
-	
-	// Create the event with the metric record as data payload
-	return &streaming.InternalEvent{
-		ID:        record.MetricID,
-		Type:      eventType,
-		Action:    action,
-		UserID:    userID,
-		ActorID:   actorID,
-		Timestamp: record.Timestamp,
-		Data:      record,  // Store the full record in the Data field
-		Metadata:  metadata,
-		Priority:  priority,
-		Streams:   p.determineEventStreams(record), // Set target streams for GraphQL subscriptions
+
+	for _, key := range knownKeys {
+		if value, exists := dimensions[key]; exists {
+			metadata[key] = value
+		}
 	}
+}
+
+// addEventCustomDimensions adds custom dimensions with prefix to metadata
+func (p *MetricsStreamProcessor) addEventCustomDimensions(metadata map[string]string, dimensions map[string]string) {
+	for key, value := range dimensions {
+		if _, exists := metadata[key]; !exists {
+			metadata["dim_"+key] = value
+		}
+	}
+}
+
+// calculateEventPriority determines event priority based on metric type and values
+func (p *MetricsStreamProcessor) calculateEventPriority(record *models.MetricRecord) streaming.EventPriority {
+	if p.isSecurityOrModerationEvent(record) {
+		return streaming.PriorityHigh
+	}
+	if p.isHighVolumeEvent(record) {
+		return streaming.PriorityHigh
+	}
+	return streaming.PriorityNormal
+}
+
+// isSecurityOrModerationEvent checks if the event is security or moderation related
+func (p *MetricsStreamProcessor) isSecurityOrModerationEvent(record *models.MetricRecord) bool {
+	return record.MetricType == metricEventSecurity || record.MetricType == metricEventModeration
+}
+
+// isHighVolumeEvent checks if the event represents high volume activity
+func (p *MetricsStreamProcessor) isHighVolumeEvent(record *models.MetricRecord) bool {
+	return record.Count > 1000 || record.Sum > 10000
 }
 
 // publishMetricsSubscriptionEvent publishes a metrics event specifically for GraphQL subscriptions
 func (p *MetricsStreamProcessor) publishMetricsSubscriptionEvent(record *models.MetricRecord, subscriptionCategory string) {
-	// Create a specialized metrics subscription event
-	eventType := streaming.EventTypeMetricsUpdate // New event type for metrics subscriptions
-	action := streaming.ActionUpdate
-	
-	// Create comprehensive metadata for GraphQL subscription filtering
+	metadata := p.buildMetricsMetadata(record, subscriptionCategory)
+	userID, tenantID, actorID := p.extractUserInfo(record)
+	priority := p.determinePriority(record, subscriptionCategory)
+
+	metricsEvent := &streaming.InternalEvent{
+		ID:        fmt.Sprintf("metrics_%s_%s", record.MetricID, subscriptionCategory),
+		Type:      streaming.EventTypeMetricsUpdate,
+		Action:    streaming.ActionUpdate,
+		UserID:    userID,
+		ActorID:   actorID,
+		Timestamp: record.Timestamp,
+		Data:      record,
+		Metadata:  metadata,
+		Priority:  priority,
+		Streams:   p.getSubscriptionStreams(subscriptionCategory, userID, tenantID, record.ServiceName),
+	}
+
+	p.publishEventAndLog(metricsEvent, subscriptionCategory, record)
+}
+
+// buildMetricsMetadata creates comprehensive metadata for GraphQL subscription filtering
+func (p *MetricsStreamProcessor) buildMetricsMetadata(record *models.MetricRecord, subscriptionCategory string) map[string]string {
 	metadata := map[string]string{
-		"subscription_category": subscriptionCategory, // moderation, security, performance, etc.
+		"subscription_category": subscriptionCategory,
 		"service_name":          record.ServiceName,
 		"metric_type":           record.MetricType,
 		"aggregation_level":     record.AggregationLevel,
 		"timestamp":             record.Timestamp.Format(time.RFC3339),
-		"subscription_type":     "metrics", // Identify as metrics subscription
+		"subscription_type":     "metrics",
 	}
-	
-	// Add metric values for threshold filtering in subscriptions
+
+	p.addMetricValues(metadata, record)
+	p.addPercentiles(metadata, record)
+	p.addDimensionInfo(metadata, record)
+
+	return metadata
+}
+
+// addMetricValues adds metric values to metadata for threshold filtering
+func (p *MetricsStreamProcessor) addMetricValues(metadata map[string]string, record *models.MetricRecord) {
 	if record.Count > 0 {
 		metadata["count"] = fmt.Sprintf("%d", record.Count)
 		metadata["sum"] = fmt.Sprintf("%.2f", record.Sum)
 		metadata["min"] = fmt.Sprintf("%.2f", record.Min)
 		metadata["max"] = fmt.Sprintf("%.2f", record.Max)
-		if record.Count > 0 {
-			average := record.Sum / float64(record.Count)
-			metadata["average"] = fmt.Sprintf("%.2f", average)
-		}
+		average := record.Sum / float64(record.Count)
+		metadata["average"] = fmt.Sprintf("%.2f", average)
 	}
-	
-	// Add percentiles for performance analysis subscriptions
+}
+
+// addPercentiles adds percentile information to metadata
+func (p *MetricsStreamProcessor) addPercentiles(metadata map[string]string, record *models.MetricRecord) {
 	if record.P50 > 0 {
 		metadata["p50"] = fmt.Sprintf("%.2f", record.P50)
 	}
@@ -694,130 +757,153 @@ func (p *MetricsStreamProcessor) publishMetricsSubscriptionEvent(record *models.
 	if record.P99 > 0 {
 		metadata["p99"] = fmt.Sprintf("%.2f", record.P99)
 	}
-	
-	// Extract user/tenant information from dimensions for subscription targeting
-	userID := ""
-	tenantID := ""
-	actorID := ""
-	if record.Dimensions != nil {
-		if uid, exists := record.Dimensions["user_id"]; exists {
-			userID = uid
-			metadata["user_id"] = uid
-		}
-		if tid, exists := record.Dimensions["tenant_id"]; exists {
-			tenantID = tid
-			metadata["tenant_id"] = tid
-		}
-		if aid, exists := record.Dimensions["actor_id"]; exists {
-			actorID = aid
-			metadata["actor_id"] = aid
-		}
-		
-		// Add cost information for cost-related subscriptions
-		if userCost, exists := record.Dimensions["user_cost_microcents"]; exists {
-			metadata["user_cost_microcents"] = userCost
-		}
-		if instanceCost, exists := record.Dimensions["instance_cost_microcents"]; exists {
-			metadata["instance_cost_microcents"] = instanceCost
-		}
-		if totalCost, exists := record.Dimensions["total_cost_microcents"]; exists {
-			metadata["total_cost_microcents"] = totalCost
-		}
-		if domain, exists := record.Dimensions["instance_domain"]; exists {
-			metadata["instance_domain"] = domain
+}
+
+// addDimensionInfo extracts and adds dimension information to metadata
+func (p *MetricsStreamProcessor) addDimensionInfo(metadata map[string]string, record *models.MetricRecord) {
+	if record.Dimensions == nil {
+		return
+	}
+
+	p.addUserDimensions(metadata, record.Dimensions)
+	p.addCostDimensions(metadata, record.Dimensions)
+}
+
+// addUserDimensions adds user/tenant/actor information from dimensions
+func (p *MetricsStreamProcessor) addUserDimensions(metadata map[string]string, dimensions map[string]string) {
+	for key, value := range dimensions {
+		switch key {
+		case "user_id", "tenant_id", "actor_id", "instance_domain":
+			metadata[key] = value
 		}
 	}
-	
-	// Determine priority based on subscription category and values
-	priority := streaming.PriorityNormal
+}
+
+// addCostDimensions adds cost information from dimensions
+func (p *MetricsStreamProcessor) addCostDimensions(metadata map[string]string, dimensions map[string]string) {
+	costKeys := []string{"user_cost_microcents", "instance_cost_microcents", "total_cost_microcents"}
+	for _, key := range costKeys {
+		if value, exists := dimensions[key]; exists {
+			metadata[key] = value
+		}
+	}
+}
+
+// extractUserInfo gets user, tenant, and actor IDs from record dimensions
+func (p *MetricsStreamProcessor) extractUserInfo(record *models.MetricRecord) (string, string, string) {
+	if record.Dimensions == nil {
+		return "", "", ""
+	}
+
+	userID := record.Dimensions["user_id"]
+	tenantID := record.Dimensions["tenant_id"]
+	actorID := record.Dimensions["actor_id"]
+
+	return userID, tenantID, actorID
+}
+
+// determinePriority calculates event priority based on category and values
+func (p *MetricsStreamProcessor) determinePriority(record *models.MetricRecord, subscriptionCategory string) streaming.EventPriority {
 	switch subscriptionCategory {
 	case "security", "moderation":
-		priority = streaming.PriorityHigh
+		return streaming.PriorityHigh
 	case "performance":
-		if record.P95 > 1000 || record.Max > 5000 { // High latency gets high priority
-			priority = streaming.PriorityHigh
+		if record.P95 > 1000 || record.Max > 5000 {
+			return streaming.PriorityHigh
 		}
 	case "cost":
-		if totalCost, exists := record.Dimensions["total_cost_microcents"]; exists {
-			if cost, err := strconv.ParseInt(totalCost, 10, 64); err == nil && cost > 100000 { // >$0.001
-				priority = streaming.PriorityHigh
-			}
+		if p.isHighCost(record) {
+			return streaming.PriorityHigh
 		}
 	}
-	
-	// Create the specialized metrics subscription event
-	metricsEvent := &streaming.InternalEvent{
-		ID:        fmt.Sprintf("metrics_%s_%s", record.MetricID, subscriptionCategory),
-		Type:      eventType,
-		Action:    action,
-		UserID:    userID,
-		ActorID:   actorID,
-		Timestamp: record.Timestamp,
-		Data:      record, // Full metric record for GraphQL resolvers
-		Metadata:  metadata,
-		Priority:  priority,
-		Streams:   p.getSubscriptionStreams(subscriptionCategory, userID, tenantID, record.ServiceName),
+	return streaming.PriorityNormal
+}
+
+// isHighCost checks if the record represents high cost activity
+func (p *MetricsStreamProcessor) isHighCost(record *models.MetricRecord) bool {
+	if record.Dimensions == nil {
+		return false
 	}
-	
-	// Publish to the global event bus for GraphQL subscription consumption
-	if err := streaming.PublishGlobal(metricsEvent); err != nil {
-		p.logger.Error("failed to publish metrics subscription event to GraphQL",
-			zap.Error(err),
-			zap.String("subscription_category", subscriptionCategory),
-			zap.String("metric_id", record.MetricID),
-			zap.String("service", record.ServiceName),
-			zap.String("metric_type", record.MetricType))
+
+	totalCost, exists := record.Dimensions["total_cost_microcents"]
+	if !exists {
+		return false
+	}
+
+	cost, err := strconv.ParseInt(totalCost, 10, 64)
+	return err == nil && cost > 100000 // >$0.001
+}
+
+// publishEventAndLog publishes the event and logs the result
+func (p *MetricsStreamProcessor) publishEventAndLog(event *streaming.InternalEvent, subscriptionCategory string, record *models.MetricRecord) {
+	if err := streaming.PublishGlobal(event); err != nil {
+		p.logPublishError(err, subscriptionCategory, record)
 	} else {
-		p.logger.Debug("published metrics event to GraphQL subscriptions",
-			zap.String("subscription_category", subscriptionCategory),
-			zap.String("metric_id", record.MetricID),
-			zap.String("service", record.ServiceName),
-			zap.String("metric_type", record.MetricType),
-			zap.Strings("streams", metricsEvent.Streams))
+		p.logPublishSuccess(event, subscriptionCategory, record)
 	}
+}
+
+// logPublishError logs failed event publishing
+func (p *MetricsStreamProcessor) logPublishError(err error, subscriptionCategory string, record *models.MetricRecord) {
+	p.logger.Error("failed to publish metrics subscription event to GraphQL",
+		zap.Error(err),
+		zap.String("subscription_category", subscriptionCategory),
+		zap.String("metric_id", record.MetricID),
+		zap.String("service", record.ServiceName),
+		zap.String("metric_type", record.MetricType))
+}
+
+// logPublishSuccess logs successful event publishing
+func (p *MetricsStreamProcessor) logPublishSuccess(event *streaming.InternalEvent, subscriptionCategory string, record *models.MetricRecord) {
+	p.logger.Debug("published metrics event to GraphQL subscriptions",
+		zap.String("subscription_category", subscriptionCategory),
+		zap.String("metric_id", record.MetricID),
+		zap.String("service", record.ServiceName),
+		zap.String("metric_type", record.MetricType),
+		zap.Strings("streams", event.Streams))
 }
 
 // getSubscriptionStreams determines which GraphQL subscription streams should receive the metrics event
 func (p *MetricsStreamProcessor) getSubscriptionStreams(category, userID, tenantID, serviceName string) []string {
 	streams := []string{}
-	
+
 	// Global metrics dashboard stream
 	streams = append(streams, "metrics:global")
-	
+
 	// Category-specific streams
 	streams = append(streams, fmt.Sprintf("metrics:%s", category))
-	
+
 	// Service-specific streams
 	streams = append(streams, fmt.Sprintf("metrics:service:%s", serviceName))
-	
+
 	// User-specific streams if user ID available
 	if userID != "" {
 		streams = append(streams, fmt.Sprintf("metrics:user:%s", userID))
 		streams = append(streams, fmt.Sprintf("metrics:%s:user:%s", category, userID))
 	}
-	
+
 	// Tenant-specific streams if tenant ID available
 	if tenantID != "" {
 		streams = append(streams, fmt.Sprintf("metrics:tenant:%s", tenantID))
 		streams = append(streams, fmt.Sprintf("metrics:%s:tenant:%s", category, tenantID))
 	}
-	
+
 	// Combined category-service streams for more specific filtering
 	streams = append(streams, fmt.Sprintf("metrics:%s:service:%s", category, serviceName))
-	
+
 	return streams
 }
 
 // determineEventStreams determines target streams for general metric events (non-subscription specific)
 func (p *MetricsStreamProcessor) determineEventStreams(record *models.MetricRecord) []string {
 	streams := []string{}
-	
+
 	// Service-based routing
 	streams = append(streams, fmt.Sprintf("service:%s", record.ServiceName))
-	
+
 	// Metric type routing
 	streams = append(streams, fmt.Sprintf("metrics:%s", record.MetricType))
-	
+
 	// User-based routing if available
 	if record.Dimensions != nil {
 		if userID, exists := record.Dimensions["user_id"]; exists && userID != "" {
@@ -827,10 +913,10 @@ func (p *MetricsStreamProcessor) determineEventStreams(record *models.MetricReco
 			streams = append(streams, fmt.Sprintf("tenant:%s", tenantID))
 		}
 	}
-	
+
 	// Global stream for dashboard and monitoring
 	streams = append(streams, "global")
-	
+
 	return streams
 }
 

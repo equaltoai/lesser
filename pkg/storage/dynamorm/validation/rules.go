@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // Rule represents a validation rule

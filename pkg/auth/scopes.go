@@ -7,7 +7,7 @@ const (
 	ReadFollows       = "read:follows"
 	ReadBlocks        = "read:blocks"
 	ReadFilters       = "read:filters"
-	
+
 	// Write scopes
 	WriteNotifications = "write:notifications"
 	WriteFollows       = "write:follows"

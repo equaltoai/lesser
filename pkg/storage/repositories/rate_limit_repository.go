@@ -258,16 +258,37 @@ func (r *RateLimitRepository) CheckAPIRateLimit(ctx context.Context, userID, end
 	current.Count++
 	current.UpdatedAt = now
 
-	// Check limit
+	// Check limit with escalating penalties
 	if current.Count > limit {
-		// Block for increasing durations based on how much over limit
-		blockDuration := time.Duration(current.Count/limit) * time.Hour
-		if blockDuration > 24*time.Hour {
-			blockDuration = 24 * time.Hour
+		// Get violation history for escalating penalties
+		violationCount, err := r.GetViolationCount(ctx, userID, "", 24*time.Hour)
+		if err != nil {
+			r.logger.Warn("failed to get violation count, using default penalty",
+				zap.String("user_id", userID),
+				zap.Error(err))
+			violationCount = 1
+		} else {
+			violationCount++ // Current violation
 		}
 
+		// Calculate escalating penalty
+		penaltyDuration := r.calculatePenaltyDuration(violationCount)
 		current.Blocked = true
-		current.BlockedUntil = now.Add(blockDuration)
+		current.BlockedUntil = now.Add(penaltyDuration)
+		current.ViolationCount = violationCount
+		if current.FirstViolation.IsZero() {
+			current.FirstViolation = now
+		}
+		current.LastViolation = now
+
+		// Record the violation
+		violation := models.NewRateLimitViolation(userID, "", endpoint, "api", int(penaltyDuration.Minutes()))
+		if err := r.db.WithContext(ctx).Model(violation).Create(); err != nil {
+			r.logger.Error("failed to record API rate limit violation",
+				zap.String("user_id", userID),
+				zap.String("endpoint", endpoint),
+				zap.Error(err))
+		}
 
 		// Update the record
 		if err := r.updateAPIRateLimit(ctx, &current); err != nil {
@@ -277,7 +298,7 @@ func (r *RateLimitRepository) CheckAPIRateLimit(ctx context.Context, userID, end
 				zap.Error(err))
 		}
 
-		return fmt.Errorf("rate limit exceeded (%d > %d)", current.Count, limit)
+		return fmt.Errorf("rate limit exceeded (%d > %d), blocked for %v", current.Count, limit, penaltyDuration)
 	}
 
 	// Update counter
@@ -348,4 +369,256 @@ func (r *RateLimitRepository) updateAPIRateLimit(ctx context.Context, limit *mod
 	}
 
 	return nil
+}
+
+// CheckFederationRateLimit checks and updates federation rate limiting for a domain/endpoint combination
+func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, domain, endpoint string, limit int, window time.Duration) error {
+	now := time.Now()
+	windowStart := now.Truncate(window)
+	key := fmt.Sprintf("DOMAIN#%s:%s", domain, endpoint)
+
+	// Get current rate limit data
+	var current models.APIRateLimit
+	pk := fmt.Sprintf("RATELIMIT#%s", key)
+	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
+
+	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&current)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create new rate limit record
+			current = *models.NewFederationRateLimit(domain, endpoint, windowStart)
+		} else {
+			r.logger.Error("failed to get federation rate limit",
+				zap.String("domain", domain),
+				zap.String("endpoint", endpoint),
+				zap.Error(err))
+			// Don't fail the request if we can't get rate limit data
+			return nil
+		}
+	}
+
+	// Check if explicitly blocked
+	if current.Blocked && now.Before(current.BlockedUntil) {
+		return fmt.Errorf("federation rate limit exceeded for domain %s, blocked until %v", domain, current.BlockedUntil)
+	}
+
+	// Reset if new window
+	if current.Window.Before(windowStart) {
+		current.Count = 0
+		current.Window = windowStart
+		current.Blocked = false
+	}
+
+	// Increment counter
+	current.Count++
+	current.UpdatedAt = now
+
+	// Check limit with escalating penalties
+	if current.Count > limit {
+		// Get violation history for escalating penalties
+		violationCount, err := r.GetViolationCount(ctx, "", domain, 24*time.Hour)
+		if err != nil {
+			r.logger.Warn("failed to get violation count, using default penalty",
+				zap.String("domain", domain),
+				zap.Error(err))
+			violationCount = 1
+		} else {
+			violationCount++ // Current violation
+		}
+
+		// Calculate escalating penalty
+		penaltyDuration := r.calculatePenaltyDuration(violationCount)
+		current.Blocked = true
+		current.BlockedUntil = now.Add(penaltyDuration)
+		current.ViolationCount = violationCount
+		if current.FirstViolation.IsZero() {
+			current.FirstViolation = now
+		}
+		current.LastViolation = now
+
+		// Record the violation
+		violation := models.NewRateLimitViolation("", domain, endpoint, "federation", int(penaltyDuration.Minutes()))
+		if err := r.db.WithContext(ctx).Model(violation).Create(); err != nil {
+			r.logger.Error("failed to record federation rate limit violation",
+				zap.String("domain", domain),
+				zap.String("endpoint", endpoint),
+				zap.Error(err))
+		}
+
+		// Update the rate limit record
+		if err := r.updateAPIRateLimit(ctx, &current); err != nil {
+			r.logger.Error("failed to update blocked federation rate limit",
+				zap.String("domain", domain),
+				zap.String("endpoint", endpoint),
+				zap.Error(err))
+		}
+
+		return fmt.Errorf("federation rate limit exceeded for domain %s (%d > %d), blocked for %v", domain, current.Count, limit, penaltyDuration)
+	}
+
+	// Update counter
+	if err := r.updateAPIRateLimit(ctx, &current); err != nil {
+		r.logger.Error("failed to update federation rate limit counter",
+			zap.String("domain", domain),
+			zap.String("endpoint", endpoint),
+			zap.Error(err))
+		// Don't fail the request if we can't update the counter
+	}
+
+	return nil
+}
+
+// GetFederationRateLimitInfo returns current federation rate limit info
+func (r *RateLimitRepository) GetFederationRateLimitInfo(ctx context.Context, domain, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
+	now := time.Now()
+	windowStart := now.Truncate(window)
+	resetTime = windowStart.Add(window)
+	key := fmt.Sprintf("DOMAIN#%s:%s", domain, endpoint)
+
+	// Get current rate limit data
+	var current models.APIRateLimit
+	pk := fmt.Sprintf("RATELIMIT#%s", key)
+	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
+
+	err = r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&current)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// No data yet, full limit available
+			return limit, resetTime, nil
+		}
+		r.logger.Error("failed to get federation rate limit info",
+			zap.String("domain", domain),
+			zap.String("endpoint", endpoint),
+			zap.Error(err))
+		// Return full limit on error to avoid blocking legitimate requests
+		return limit, resetTime, nil
+	}
+
+	// Calculate remaining
+	remaining = limit - current.Count
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	return remaining, resetTime, nil
+}
+
+// GetViolationCount returns the number of violations in a time period for escalating penalties
+func (r *RateLimitRepository) GetViolationCount(ctx context.Context, userID, domain string, since time.Duration) (int, error) {
+	identifier := userID
+	if domain != "" {
+		identifier = fmt.Sprintf("DOMAIN#%s", domain)
+	}
+
+	var violations []models.RateLimitViolation
+	pk := fmt.Sprintf("RATELIMIT_VIOLATION#%s", identifier)
+	sinceKey := time.Now().Add(-since).Format(time.RFC3339Nano)
+
+	err := r.db.WithContext(ctx).Model(&models.RateLimitViolation{}).
+		Where("PK", "=", pk).
+		Where("SK", ">", sinceKey).
+		All(&violations)
+
+	if err != nil {
+		r.logger.Error("failed to get violation count",
+			zap.String("user_id", userID),
+			zap.String("domain", domain),
+			zap.Duration("since", since),
+			zap.Error(err))
+		return 0, err
+	}
+
+	return len(violations), nil
+}
+
+// calculatePenaltyDuration calculates escalating penalty duration based on violation count
+func (r *RateLimitRepository) calculatePenaltyDuration(violationCount int) time.Duration {
+	switch violationCount {
+	case 1:
+		return time.Minute // First violation: 1 minute
+	case 2:
+		return 5 * time.Minute // Second violation: 5 minutes
+	case 3:
+		return 15 * time.Minute // Third violation: 15 minutes
+	default:
+		return time.Hour // Repeated violations: 1 hour
+	}
+}
+
+// IsUserBlocked checks if a user is currently blocked due to rate limiting
+func (r *RateLimitRepository) IsUserBlocked(ctx context.Context, userID string) (bool, time.Time, error) {
+	now := time.Now()
+	
+	// Check recent rate limit records for any blocks
+	var rateLimits []models.APIRateLimit
+	pk := fmt.Sprintf("RATELIMIT#%s", userID)
+	
+	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+		Where("PK", "=", pk).
+		All(&rateLimits)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, time.Time{}, nil
+		}
+		return false, time.Time{}, err
+	}
+	
+	// Find the longest block time that's still active
+	var latestBlockUntil time.Time
+	isBlocked := false
+	
+	for _, limit := range rateLimits {
+		if limit.Blocked && now.Before(limit.BlockedUntil) {
+			isBlocked = true
+			if limit.BlockedUntil.After(latestBlockUntil) {
+				latestBlockUntil = limit.BlockedUntil
+			}
+		}
+	}
+	
+	return isBlocked, latestBlockUntil, nil
+}
+
+// IsDomainBlocked checks if a federation domain is currently blocked
+func (r *RateLimitRepository) IsDomainBlocked(ctx context.Context, domain string) (bool, time.Time, error) {
+	now := time.Now()
+	
+	// Check recent rate limit records for any blocks
+	var rateLimits []models.APIRateLimit
+	pkPrefix := fmt.Sprintf("RATELIMIT#DOMAIN#%s", domain)
+	
+	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+		Where("PK", "begins_with", pkPrefix).
+		All(&rateLimits)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, time.Time{}, nil
+		}
+		return false, time.Time{}, err
+	}
+	
+	// Find the longest block time that's still active
+	var latestBlockUntil time.Time
+	isBlocked := false
+	
+	for _, limit := range rateLimits {
+		if limit.Blocked && now.Before(limit.BlockedUntil) {
+			isBlocked = true
+			if limit.BlockedUntil.After(latestBlockUntil) {
+				latestBlockUntil = limit.BlockedUntil
+			}
+		}
+	}
+	
+	return isBlocked, latestBlockUntil, nil
 }

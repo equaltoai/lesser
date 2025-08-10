@@ -25,59 +25,59 @@ type FederationAnalyticsTimeSeries struct {
 	Timestamp time.Time `json:"timestamp"` // Start time of the time window
 
 	// Critical federation health metrics (following federation-analytics-guidance.md)
-	
+
 	// 1. Availability Metrics (40% weight in health scoring)
-	InstanceReachability   float64 `json:"instance_reachability"`   // % instances responding (0-1)
-	EndpointAvailability   float64 `json:"endpoint_availability"`   // % endpoints up (0-1) 
-	LastSuccessfulContact  *time.Time `json:"last_successful_contact,omitempty"`
-	ConsecutiveFailures    int64   `json:"consecutive_failures"`
-	CircuitBreakerActive   bool    `json:"circuit_breaker_active"`
+	InstanceReachability  float64    `json:"instance_reachability"` // % instances responding (0-1)
+	EndpointAvailability  float64    `json:"endpoint_availability"` // % endpoints up (0-1)
+	LastSuccessfulContact *time.Time `json:"last_successful_contact,omitempty"`
+	ConsecutiveFailures   int64      `json:"consecutive_failures"`
+	CircuitBreakerActive  bool       `json:"circuit_breaker_active"`
 
 	// 2. Performance Metrics (30% weight)
-	InboxDeliveryP50       int64   `json:"inbox_delivery_p50_ms"`       // ms
-	InboxDeliveryP95       int64   `json:"inbox_delivery_p95_ms"`       // ms
-	InboxDeliveryP99       int64   `json:"inbox_delivery_p99_ms"`       // ms
-	OutboxProcessingTime   int64   `json:"outbox_processing_time_ms"`   // ms
-	SignatureVerificationTime int64 `json:"signature_verification_ms"`  // ms
-	MediaDeliveryTime      int64   `json:"media_delivery_time_ms"`      // ms
+	InboxDeliveryP50          int64 `json:"inbox_delivery_p50_ms"`     // ms
+	InboxDeliveryP95          int64 `json:"inbox_delivery_p95_ms"`     // ms
+	InboxDeliveryP99          int64 `json:"inbox_delivery_p99_ms"`     // ms
+	OutboxProcessingTime      int64 `json:"outbox_processing_time_ms"` // ms
+	SignatureVerificationTime int64 `json:"signature_verification_ms"` // ms
+	MediaDeliveryTime         int64 `json:"media_delivery_time_ms"`    // ms
 
 	// 3. Throughput Metrics (20% weight)
 	IncomingActivitiesPerSec float64 `json:"incoming_activities_per_sec"`
 	OutgoingActivitiesPerSec float64 `json:"outgoing_activities_per_sec"`
-	QueueDepth             int64   `json:"queue_depth"`
-	ProcessingBacklog      int64   `json:"processing_backlog_ms"`
-	BurstCapacity          float64 `json:"burst_capacity"`
+	QueueDepth               int64   `json:"queue_depth"`
+	ProcessingBacklog        int64   `json:"processing_backlog_ms"`
+	BurstCapacity            float64 `json:"burst_capacity"`
 
 	// 4. Error Metrics (10% weight)
-	SignatureFailures      int64   `json:"signature_failures"`
-	TimeoutRate           float64 `json:"timeout_rate"`         // 0-1
-	RateLimitHits         int64   `json:"rate_limit_hits"`
-	MalformedActivities   int64   `json:"malformed_activities"`
-	ValidationFailures    int64   `json:"validation_failures"`
-	ErrorRate             float64 `json:"error_rate"`           // Total error rate (0-1)
+	SignatureFailures   int64   `json:"signature_failures"`
+	TimeoutRate         float64 `json:"timeout_rate"` // 0-1
+	RateLimitHits       int64   `json:"rate_limit_hits"`
+	MalformedActivities int64   `json:"malformed_activities"`
+	ValidationFailures  int64   `json:"validation_failures"`
+	ErrorRate           float64 `json:"error_rate"` // Total error rate (0-1)
 
 	// 5. Cost Efficiency Metrics
-	PerActivityCost       float64 `json:"per_activity_cost_usd"`
-	BandwidthCost         float64 `json:"bandwidth_cost_usd"`
-	ComputeCost           float64 `json:"compute_cost_usd"`
-	StorageCost           float64 `json:"storage_cost_usd"`
-	EgressCost            float64 `json:"egress_cost_usd"`
+	PerActivityCost float64 `json:"per_activity_cost_usd"`
+	BandwidthCost   float64 `json:"bandwidth_cost_usd"`
+	ComputeCost     float64 `json:"compute_cost_usd"`
+	StorageCost     float64 `json:"storage_cost_usd"`
+	EgressCost      float64 `json:"egress_cost_usd"`
 
 	// Volume metrics for aggregation
-	TotalInboundVolume    int64   `json:"total_inbound_volume"`    // bytes
-	TotalOutboundVolume   int64   `json:"total_outbound_volume"`   // bytes
-	ActivityCount         int64   `json:"activity_count"`
-	SuccessfulActivities  int64   `json:"successful_activities"`
-	FailedActivities      int64   `json:"failed_activities"`
+	TotalInboundVolume   int64 `json:"total_inbound_volume"`  // bytes
+	TotalOutboundVolume  int64 `json:"total_outbound_volume"` // bytes
+	ActivityCount        int64 `json:"activity_count"`
+	SuccessfulActivities int64 `json:"successful_activities"`
+	FailedActivities     int64 `json:"failed_activities"`
 
 	// Health Score (calculated field)
-	HealthScore           float64 `json:"health_score"`            // 0-100
+	HealthScore float64 `json:"health_score"` // 0-100
 
 	// Aggregation metadata
 	WindowStart      time.Time `json:"window_start"`
 	WindowEnd        time.Time `json:"window_end"`
-	SampleCount      int64     `json:"sample_count"`     // Number of raw samples aggregated
-	AggregationLevel string    `json:"aggregation_level"` // raw, 5min, hourly, daily, monthly
+	SampleCount      int64     `json:"sample_count"`              // Number of raw samples aggregated
+	AggregationLevel string    `json:"aggregation_level"`         // raw, 5min, hourly, daily, monthly
 	CompressedData   []byte    `json:"compressed_data,omitempty"` // Compressed historical data
 
 	// Timestamps
@@ -114,7 +114,7 @@ func (f *FederationAnalyticsTimeSeries) setTTL() {
 	case PeriodRaw:
 		retentionDuration = 1 * time.Hour // Real-time: 1 hour retention
 	case Period5Min:
-		retentionDuration = 24 * time.Hour // Near-time: 24 hours retention  
+		retentionDuration = 24 * time.Hour // Near-time: 24 hours retention
 	case PeriodHourly:
 		retentionDuration = 7 * 24 * time.Hour // Hourly: 7 days retention
 	case PeriodDaily:
@@ -190,10 +190,10 @@ func GetTimeBucket(timestamp time.Time, period string) time.Time {
 // NewFederationAnalyticsTimeSeries creates a new time series record with proper defaults
 func NewFederationAnalyticsTimeSeries(domain, period string, timestamp time.Time) *FederationAnalyticsTimeSeries {
 	now := time.Now()
-	
+
 	// Get the proper time bucket
 	bucketTime := GetTimeBucket(timestamp, period)
-	
+
 	fs := &FederationAnalyticsTimeSeries{
 		Domain:           domain,
 		Period:           period,
@@ -205,10 +205,10 @@ func NewFederationAnalyticsTimeSeries(domain, period string, timestamp time.Time
 		UpdatedAt:        now,
 		SampleCount:      0,
 	}
-	
+
 	// Set keys and TTL
 	fs.UpdateKeys()
-	
+
 	return fs
 }
 
@@ -259,7 +259,7 @@ func (f *FederationAnalyticsTimeSeries) ShouldTriggerAlert() (bool, string) {
 	if f.SignatureFailures > 100 {
 		return true, "CRITICAL: Signature failures exceed 100/period"
 	}
-	
+
 	// Warning alerts
 	if f.InboxDeliveryP95 > 5000 {
 		return true, "WARNING: P95 latency exceeds 5 seconds"
@@ -267,7 +267,7 @@ func (f *FederationAnalyticsTimeSeries) ShouldTriggerAlert() (bool, string) {
 	if f.QueueDepth > 10000 {
 		return true, "WARNING: Queue depth exceeds 10,000"
 	}
-	
+
 	return false, ""
 }
 
@@ -276,16 +276,16 @@ func (f *FederationAnalyticsTimeSeries) Aggregate(rawMetrics []*FederationAnalyt
 	if len(rawMetrics) == 0 {
 		return
 	}
-	
+
 	// Initialize aggregation variables
 	var totalInbound, totalOutbound int64
 	var totalActivities, successfulActivities, failedActivities int64
 	var totalP50, totalP95, totalP99, totalSigVerif time.Duration
 	var totalErrors, totalTimeouts, totalRateLimits int64
 	var reachabilitySum, availabilitySum float64
-	
+
 	count := int64(len(rawMetrics))
-	
+
 	// Aggregate all metrics
 	for _, raw := range rawMetrics {
 		totalInbound += raw.TotalInboundVolume
@@ -293,20 +293,20 @@ func (f *FederationAnalyticsTimeSeries) Aggregate(rawMetrics []*FederationAnalyt
 		totalActivities += raw.ActivityCount
 		successfulActivities += raw.SuccessfulActivities
 		failedActivities += raw.FailedActivities
-		
+
 		totalP50 += time.Duration(raw.InboxDeliveryP50) * time.Millisecond
 		totalP95 += time.Duration(raw.InboxDeliveryP95) * time.Millisecond
 		totalP99 += time.Duration(raw.InboxDeliveryP99) * time.Millisecond
 		totalSigVerif += time.Duration(raw.SignatureVerificationTime) * time.Millisecond
-		
+
 		totalErrors += raw.SignatureFailures + raw.ValidationFailures + raw.MalformedActivities
 		totalTimeouts += raw.SignatureFailures // Approximation
 		totalRateLimits += raw.RateLimitHits
-		
+
 		reachabilitySum += raw.InstanceReachability
 		availabilitySum += raw.EndpointAvailability
 	}
-	
+
 	// Set aggregated values
 	f.TotalInboundVolume = totalInbound
 	f.TotalOutboundVolume = totalOutbound
@@ -314,26 +314,26 @@ func (f *FederationAnalyticsTimeSeries) Aggregate(rawMetrics []*FederationAnalyt
 	f.SuccessfulActivities = successfulActivities
 	f.FailedActivities = failedActivities
 	f.SampleCount = count
-	
+
 	// Calculate averages
 	if count > 0 {
 		f.InboxDeliveryP50 = int64(totalP50.Milliseconds() / count)
 		f.InboxDeliveryP95 = int64(totalP95.Milliseconds() / count)
 		f.InboxDeliveryP99 = int64(totalP99.Milliseconds() / count)
 		f.SignatureVerificationTime = int64(totalSigVerif.Milliseconds() / count)
-		
+
 		f.InstanceReachability = reachabilitySum / float64(count)
 		f.EndpointAvailability = availabilitySum / float64(count)
-		
+
 		// Calculate error rate
 		if totalActivities > 0 {
 			f.ErrorRate = float64(failedActivities) / float64(totalActivities)
 		}
 	}
-	
+
 	// Calculate health score
 	f.CalculateHealthScore()
-	
+
 	// Update timestamp
 	f.UpdatedAt = time.Now()
 }
@@ -341,7 +341,7 @@ func (f *FederationAnalyticsTimeSeries) Aggregate(rawMetrics []*FederationAnalyt
 // FederationAlert represents an alert condition for federation monitoring
 type FederationAlert struct {
 	Domain      string    `json:"domain"`
-	Level       string    `json:"level"`        // CRITICAL, WARNING, INFO
+	Level       string    `json:"level"` // CRITICAL, WARNING, INFO
 	Message     string    `json:"message"`
 	HealthScore float64   `json:"health_score"`
 	Timestamp   time.Time `json:"timestamp"`

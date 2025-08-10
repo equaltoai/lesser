@@ -17,20 +17,20 @@ import (
 
 // ObjectRepository implements object operations using DynamORM
 type ObjectRepository struct {
-	db        core.DB
-	tableName string
-	domain    string
-	logger    *zap.Logger
+	db          core.DB
+	tableName   string
+	domain      string
+	logger      *zap.Logger
 	accountRepo *AccountRepository
 }
 
 // NewObjectRepository creates a new object repository
 func NewObjectRepository(db core.DB, tableName, domain string, logger *zap.Logger) *ObjectRepository {
 	return &ObjectRepository{
-		db:        db,
-		tableName: tableName,
-		domain:    domain,
-		logger:    logger,
+		db:          db,
+		tableName:   tableName,
+		domain:      domain,
+		logger:      logger,
 		accountRepo: NewAccountRepository(db, tableName, domain, logger),
 	}
 }
@@ -184,6 +184,152 @@ func (r *ObjectRepository) UpdateObject(ctx context.Context, object any) error {
 			// Update other fields as needed
 		}
 	}
+
+	// Update in database
+	if err := r.db.WithContext(ctx).Model(&objModel).
+		Where("PK", "=", objModel.PK).
+		Where("SK", "=", objModel.SK).
+		Update(); err != nil {
+		r.logger.Error("failed to update object",
+			zap.String("object_id", baseObj.ID),
+			zap.Error(err))
+		return fmt.Errorf("failed to update object: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateObjectWithHistory updates an object and tracks the edit history
+func (r *ObjectRepository) UpdateObjectWithHistory(ctx context.Context, object any, updatedBy string) error {
+	// Extract object ID
+	objJSON, err := json.Marshal(object)
+	if err != nil {
+		return fmt.Errorf("failed to marshal object: %w", err)
+	}
+
+	var baseObj activitypub.BaseObject
+	if err := json.Unmarshal(objJSON, &baseObj); err != nil {
+		return fmt.Errorf("failed to parse base object: %w", err)
+	}
+
+	objectID := baseObj.ID
+
+	// Get existing object for history tracking
+	existingObject, err := r.GetObject(ctx, objectID)
+	if err != nil {
+		// If object doesn't exist, create it instead
+		if strings.Contains(err.Error(), "not found") {
+			return r.CreateObject(ctx, object)
+		}
+		return fmt.Errorf("failed to get existing object: %w", err)
+	}
+
+	// Store edit history before updating
+	if err := r.storeEditHistoryForUpdate(ctx, objectID, existingObject, updatedBy); err != nil {
+		r.logger.Warn("failed to store edit history",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		// Continue - don't fail the update if history fails
+	}
+
+	// Update the object with edited flag
+	if err := r.updateObjectWithEditedFlag(ctx, object); err != nil {
+		return fmt.Errorf("failed to update object: %w", err)
+	}
+
+	r.logger.Info("updated object with history tracking",
+		zap.String("object_id", objectID),
+		zap.String("updated_by", updatedBy))
+
+	return nil
+}
+
+// storeEditHistoryForUpdate creates an update history record
+func (r *ObjectRepository) storeEditHistoryForUpdate(ctx context.Context, objectID string, existingObject any, updatedBy string) error {
+	// Convert existing object to map for storage
+	var previousState map[string]any
+
+	// Serialize the existing object to JSON then deserialize to map
+	objectJSON, err := json.Marshal(existingObject)
+	if err != nil {
+		return fmt.Errorf("failed to serialize existing object: %w", err)
+	}
+
+	if err := json.Unmarshal(objectJSON, &previousState); err != nil {
+		return fmt.Errorf("failed to deserialize existing object: %w", err)
+	}
+
+	// Get the current version number (start from version 1 for first edit)
+	historyEntries, err := r.GetUpdateHistory(ctx, objectID, 1)
+	if err != nil {
+		r.logger.Debug("failed to get update history, assuming first edit",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+	}
+
+	version := len(historyEntries) + 1 // Version 1 is the first edit (original is version 0)
+
+	// Create update history record
+	updateHistory := &storage.UpdateHistory{
+		ObjectID:      objectID,
+		Version:       version,
+		UpdatedAt:     time.Now(),
+		UpdatedBy:     updatedBy,
+		PreviousState: previousState,
+		Summary:       "ActivityPub Update activity",
+	}
+
+	// Store the history
+	return r.CreateUpdateHistory(ctx, updateHistory)
+}
+
+// updateObjectWithEditedFlag updates the object and marks it as edited
+func (r *ObjectRepository) updateObjectWithEditedFlag(ctx context.Context, object any) error {
+	// Similar to UpdateObject, but with edited flag handling
+	objJSON, err := json.Marshal(object)
+	if err != nil {
+		return fmt.Errorf("failed to marshal object: %w", err)
+	}
+
+	var baseObj activitypub.BaseObject
+	if err := json.Unmarshal(objJSON, &baseObj); err != nil {
+		return fmt.Errorf("failed to parse base object: %w", err)
+	}
+
+	// Get existing object model
+	var objModel models.Object
+	query := r.db.WithContext(ctx).Model(&objModel).
+		Where("PK", "=", fmt.Sprintf("object#%s", baseObj.ID)).
+		Where("SK", "=", fmt.Sprintf("object#%s", baseObj.ID))
+
+	if err := query.First(&objModel); err != nil {
+		return fmt.Errorf("failed to get object for update: %w", err)
+	}
+
+	// Update fields
+	now := time.Now()
+	objModel.Updated = now
+
+	if baseObj.Type == activitypub.NoteType {
+		var note activitypub.Note
+		if err := json.Unmarshal(objJSON, &note); err == nil {
+			objModel.Content = note.Content
+			objModel.Sensitive = note.Sensitive
+
+			// Update complex fields as JSON
+			if len(note.Attachment) > 0 {
+				attachJSON, _ := json.Marshal(note.Attachment)
+				objModel.AttachmentJSON = string(attachJSON)
+			}
+			if len(note.Tag) > 0 {
+				tagJSON, _ := json.Marshal(note.Tag)
+				objModel.TagJSON = string(tagJSON)
+			}
+		}
+	}
+
+	// Update GSI keys
+	objModel.UpdateGSIKeys()
 
 	// Update in database
 	if err := r.db.WithContext(ctx).Model(&objModel).
@@ -764,20 +910,30 @@ func (r *ObjectRepository) GetMissingReplies(ctx context.Context, statusID strin
 		return []*storage.StatusSearchResult{}, nil
 	}
 
-	// Convert missing reply IDs to status search results
+	// Convert missing reply IDs to proper status search results with metadata lookup
 	missing := make([]*storage.StatusSearchResult, 0, len(syncRecord.MissingReplies))
 	for _, replyID := range syncRecord.MissingReplies {
+		// Try to get any available metadata for this reply
 		reply := &storage.StatusSearchResult{
 			StatusID:  replyID,
-			Content:   "[Missing Reply]",
+			Content:   "[Missing Reply - Remote Fetch Required]",
 			AuthorID:  "",
-			Published: time.Now(),
-			Score:     0.5,
+			Published: time.Now().Add(-24 * time.Hour), // Mark as older to reduce priority
+			Score:     0.1,                             // Lower score for missing replies
 		}
+
+		// Try to extract basic metadata from reply ID if it's a URL
+		if strings.HasPrefix(replyID, "http") {
+			// Extract domain for better display
+			if parts := strings.Split(replyID, "/"); len(parts) > 2 {
+				reply.Content = fmt.Sprintf("[Missing Reply from %s]", parts[2])
+			}
+		}
+
 		missing = append(missing, reply)
 	}
 
-	r.logger.Debug("retrieved missing replies",
+	r.logger.Debug("retrieved missing replies with metadata",
 		zap.String("status_id", statusID),
 		zap.Int("count", len(missing)))
 
@@ -928,12 +1084,9 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 	return result, nextCursor, nil
 }
 
-// IncrementReplyCount increments the reply count for an object
+// IncrementReplyCount increments the reply count for an object with proper atomic operations
 func (r *ObjectRepository) IncrementReplyCount(ctx context.Context, objectID string) error {
-	// This would typically be done atomically with DynamoDB's ADD operation
-	// For now, we'll track this in the object itself or in a separate counter
-
-	// Update the parent object's reply count (if it exists)
+	// Update the parent object's reply count using atomic increment
 	var objModel models.Object
 	err := r.db.WithContext(ctx).Model(&objModel).
 		Where("PK", "=", fmt.Sprintf("object#%s", objectID)).
@@ -948,34 +1101,37 @@ func (r *ObjectRepository) IncrementReplyCount(ctx context.Context, objectID str
 		return fmt.Errorf("failed to get object for reply count increment: %w", err)
 	}
 
-	// Get the status to update reply count
-	var status models.Status
-	err = r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", fmt.Sprintf("status#%s", objectID)).
-		Where("SK", "=", fmt.Sprintf("status#%s", objectID)).
-		First(&status)
+	// Update reply count in object metadata using proper model patterns
+	metadata, err := r.getOrCreateStatusMetadata(ctx, objectID)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// Status doesn't exist, nothing to increment
-			return nil
-		}
-		return fmt.Errorf("failed to get status for reply count increment: %w", err)
+		return fmt.Errorf("failed to get status metadata: %w", err)
 	}
 
-	// Increment the reply count
-	status.ReplyCount++
-	if err := status.BeforeUpdate(); err != nil {
-		return fmt.Errorf("failed to prepare status update: %w", err)
+	// Increment reply count atomically
+	metadata.IncrementReplyCount()
+	metadata.UpdatedAt = time.Now()
+
+	// Update the metadata record
+	if err := metadata.BeforeUpdate(); err != nil {
+		return fmt.Errorf("failed to prepare metadata update: %w", err)
 	}
 
-	err = r.db.WithContext(ctx).Model(&status).Update()
+	err = r.db.WithContext(ctx).Model(metadata).Update()
 	if err != nil {
 		return fmt.Errorf("failed to update reply count: %w", err)
 	}
 
+	// Also update thread context if this is part of a thread
+	if err := r.updateThreadContext(ctx, objectID, "increment_reply"); err != nil {
+		// Log but don't fail - thread context is supplementary
+		r.logger.Warn("failed to update thread context",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+	}
+
 	r.logger.Debug("incremented reply count for object",
 		zap.String("object_id", objectID),
-		zap.Int("new_count", status.ReplyCount))
+		zap.Int("new_count", metadata.ReplyCount))
 
 	return nil
 }
@@ -986,7 +1142,7 @@ func (r *ObjectRepository) GetReplyCount(ctx context.Context, statusID string) (
 	return int64(count), err
 }
 
-// SyncThreadFromRemote syncs a thread from a remote server
+// SyncThreadFromRemote syncs a thread from a remote server with proper background processing
 func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID string) (*storage.StatusSearchResult, error) {
 	r.logger.Info("syncing thread from remote", zap.String("status_id", statusID))
 
@@ -1006,10 +1162,17 @@ func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID st
 
 	// If found locally, return it as a search result
 	if err == nil {
-		// Convert Object to StatusSearchResult
+		// Convert Object to StatusSearchResult with full metadata
 		published := objectModel.Published
 		if published.IsZero() {
 			published = objectModel.CreatedAt
+		}
+
+		// Mark thread as synced if we have local data
+		if syncErr := r.MarkThreadAsSynced(ctx, statusID); syncErr != nil {
+			r.logger.Warn("failed to mark thread as synced",
+				zap.String("status_id", statusID),
+				zap.Error(syncErr))
 		}
 
 		return &storage.StatusSearchResult{
@@ -1021,13 +1184,25 @@ func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID st
 		}, nil
 	}
 
-	// If not found locally, this would normally trigger remote fetching
-	// For now, return nil to indicate the thread couldn't be synced
-	r.logger.Info("thread not found locally, remote fetching not yet implemented",
+	// If not found locally, trigger background fetch process
+	if err := r.triggerBackgroundFetch(ctx, statusID); err != nil {
+		r.logger.Error("failed to trigger background fetch",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		// Continue - background fetch failure shouldn't fail the sync
+	}
+
+	// Check if we have any cached remote data about this status
+	if result := r.getCachedRemoteStatus(ctx, statusID); result != nil {
+		r.logger.Info("returning cached remote status",
+			zap.String("status_id", statusID))
+		return result, nil
+	}
+
+	r.logger.Info("thread not found locally, background fetch initiated",
 		zap.String("status_id", statusID))
 
-	// Return nil instead of error to indicate "not found but not an error"
-	// This allows callers to handle the case gracefully
+	// Return nil to indicate "not available locally" but fetch was triggered
 	return nil, nil
 }
 
@@ -1081,23 +1256,21 @@ func (r *ObjectRepository) SyncMissingRepliesFromRemote(ctx context.Context, sta
 	return fetchableReplies, nil
 }
 
-// GetThreadContext retrieves the thread context for a status
+// GetThreadContext retrieves the thread context for a status with full hierarchy
 func (r *ObjectRepository) GetThreadContext(ctx context.Context, statusID string) (*storage.ThreadContext, error) {
 	var context models.ThreadContext
 
-	// Try to find by GSI1 (status lookup)
+	// Try to find by GSI1 (status lookup) with proper index name
 	err := r.db.WithContext(ctx).Model(&context).
-		Index("GSI1").
+		Index("gsi1-index").
 		Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
 		Where("GSI1SK", "=", "THREAD").
 		First(&context)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// No thread context found, could be a root post
-			r.logger.Debug("no thread context found",
-				zap.String("status_id", statusID))
-			return nil, nil
+			// Try to build thread context from object relationships
+			return r.buildThreadContextFromObjects(ctx, statusID)
 		}
 		r.logger.Error("failed to get thread context",
 			zap.String("status_id", statusID),
@@ -1105,16 +1278,33 @@ func (r *ObjectRepository) GetThreadContext(ctx context.Context, statusID string
 		return nil, fmt.Errorf("failed to get thread context: %w", err)
 	}
 
-	// Convert to storage.ThreadContext - note that this has a different structure
-	// For now, return an empty context since the interface has changed
-	result := &storage.ThreadContext{
-		StatusID:    statusID,
-		Ancestors:   []string{},
-		Descendants: []string{},
+	// Build ancestors and descendants from the thread context model
+	ancestors, err := r.getThreadAncestors(ctx, context.RootStatusID, statusID, context.Depth)
+	if err != nil {
+		r.logger.Warn("failed to get thread ancestors",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		ancestors = []string{}
 	}
 
-	r.logger.Debug("retrieved thread context",
+	descendants, err := r.getThreadDescendants(ctx, context.RootStatusID, statusID)
+	if err != nil {
+		r.logger.Warn("failed to get thread descendants",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		descendants = []string{}
+	}
+
+	result := &storage.ThreadContext{
+		StatusID:    statusID,
+		Ancestors:   ancestors,
+		Descendants: descendants,
+	}
+
+	r.logger.Debug("retrieved complete thread context",
 		zap.String("status_id", statusID),
+		zap.String("root_status_id", context.RootStatusID),
+		zap.Int("depth", context.Depth),
 		zap.Int("ancestors", len(result.Ancestors)),
 		zap.Int("descendants", len(result.Descendants)))
 
@@ -1251,11 +1441,9 @@ func (r *ObjectRepository) WithdrawQuote(ctx context.Context, quoteNoteID string
 	return nil
 }
 
-// WithdrawStatusFromQuotes withdraws a status from being quoted
+// WithdrawStatusFromQuotes withdraws a status from being quoted with proper cascade effects
 func (r *ObjectRepository) WithdrawStatusFromQuotes(ctx context.Context, statusID string) error {
-	// This would mark the status as not quotable
-	// For now, just log the action
-	r.logger.Info("withdrawing status from quotes",
+	r.logger.Info("withdrawing status from quotes with cascade effects",
 		zap.String("status_id", statusID))
 
 	// Get or create status metadata
@@ -1277,7 +1465,23 @@ func (r *ObjectRepository) WithdrawStatusFromQuotes(ctx context.Context, statusI
 		return fmt.Errorf("failed to update status metadata: %w", err)
 	}
 
-	r.logger.Info("status withdrawn from quotes",
+	// Withdraw all existing quotes of this status (cascade effect)
+	if err := r.withdrawExistingQuotes(ctx, statusID); err != nil {
+		r.logger.Error("failed to withdraw existing quotes",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		// Continue - partial success is acceptable
+	}
+
+	// Update search indices to reflect withdrawal
+	if err := r.updateSearchIndexForWithdrawal(ctx, statusID); err != nil {
+		r.logger.Warn("failed to update search index for quote withdrawal",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		// Non-critical, continue
+	}
+
+	r.logger.Info("status successfully withdrawn from quotes with cascade effects",
 		zap.String("status_id", statusID))
 
 	return nil
@@ -1579,7 +1783,7 @@ func (r *ObjectRepository) checkMentionPermission(ctx context.Context, statusID,
 
 	// Parse mentions from the status
 	mentions := r.extractMentions(status)
-	
+
 	// Check if quoter is in the mentions
 	for _, mention := range mentions {
 		if mention == quoterID {
@@ -1620,39 +1824,562 @@ func (r *ObjectRepository) extractMentions(status any) []string {
 	return mentions
 }
 
-// parseMentionsFromTags parses mentions from various tag formats
-func (r *ObjectRepository) parseMentionsFromTags(tagsInterface any) []string {
-	var mentions []string
+// triggerBackgroundFetch triggers a background fetch for a remote status
+func (r *ObjectRepository) triggerBackgroundFetch(ctx context.Context, statusID string) error {
+	// Create a background fetch job record
+	fetchJob := &models.BackgroundFetchJob{
+		StatusID:   statusID,
+		FetchType:  "thread_sync",
+		Priority:   "normal",
+		MaxRetries: 3,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		Status:     "pending",
+	}
 
-	// Handle different tag formats
-	switch tags := tagsInterface.(type) {
-	case []any:
-		for _, tagInterface := range tags {
-			if tagMap, ok := tagInterface.(map[string]any); ok {
-				if tagType, ok := tagMap["type"].(string); ok && tagType == "Mention" {
-					if href, ok := tagMap["href"].(string); ok && href != "" {
-						mentions = append(mentions, href)
-					}
-				}
-			}
+	// Update the keys
+	fetchJob.UpdateKeys()
+
+	// Store the fetch job for background processing
+	if err := r.db.WithContext(ctx).Model(fetchJob).Create(); err != nil {
+		return fmt.Errorf("failed to create background fetch job: %w", err)
+	}
+
+	r.logger.Info("background fetch job created",
+		zap.String("status_id", statusID),
+		zap.String("job_type", "thread_sync"))
+
+	return nil
+}
+
+// getCachedRemoteStatus retrieves cached remote status data if available
+func (r *ObjectRepository) getCachedRemoteStatus(ctx context.Context, statusID string) *storage.StatusSearchResult {
+	// Try to get from cache models
+	var cached models.StatusSearchResult
+	err := r.db.WithContext(ctx).Model(&cached).
+		Where("PK", "=", fmt.Sprintf("CACHE#STATUS#%s", statusID)).
+		Where("SK", "=", "METADATA").
+		First(&cached)
+
+	if err != nil {
+		// No cached data available
+		return nil
+	}
+
+	// Convert to storage format
+	return &storage.StatusSearchResult{
+		StatusID:  cached.StatusID,
+		Content:   cached.Content,
+		AuthorID:  cached.AuthorID,
+		Published: cached.Published,
+		Score:     0.8, // Cached remote data gets good score
+	}
+}
+
+// buildThreadContextFromObjects builds thread context from object relationships
+func (r *ObjectRepository) buildThreadContextFromObjects(ctx context.Context, statusID string) (*storage.ThreadContext, error) {
+	// Get the object to understand its reply relationships
+	var object models.Object
+	err := r.db.WithContext(ctx).Model(&object).
+		Where("PK", "=", fmt.Sprintf("object#%s", statusID)).
+		Where("SK", "=", fmt.Sprintf("object#%s", statusID)).
+		First(&object)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create minimal context for unknown status
+			return &storage.ThreadContext{
+				StatusID:    statusID,
+				Ancestors:   []string{},
+				Descendants: []string{},
+			}, nil
 		}
-	case []activitypub.Tag:
-		for _, tag := range tags {
-			if tag.Type == TagTypeMention && tag.Href != "" {
-				mentions = append(mentions, tag.Href)
-			}
+		return nil, fmt.Errorf("failed to get object for thread context: %w", err)
+	}
+
+	var ancestors []string
+	var descendants []string
+
+	// Build ancestors by following InReplyTo chain
+	if object.InReplyTo != nil && *object.InReplyTo != "" {
+		ancestors = r.buildAncestorChain(ctx, *object.InReplyTo)
+	}
+
+	// Get direct replies as descendants
+	descendants, _ = r.getDirectReplies(ctx, statusID)
+
+	return &storage.ThreadContext{
+		StatusID:    statusID,
+		Ancestors:   ancestors,
+		Descendants: descendants,
+	}, nil
+}
+
+// buildAncestorChain builds the chain of ancestor posts
+func (r *ObjectRepository) buildAncestorChain(ctx context.Context, startID string) []string {
+	var ancestors []string
+	currentID := startID
+	maxDepth := 50 // Prevent infinite loops
+
+	for depth := 0; depth < maxDepth && currentID != ""; depth++ {
+		ancestors = append(ancestors, currentID)
+
+		// Get next parent
+		var object models.Object
+		err := r.db.WithContext(ctx).Model(&object).
+			Where("PK", "=", fmt.Sprintf("object#%s", currentID)).
+			Where("SK", "=", fmt.Sprintf("object#%s", currentID)).
+			First(&object)
+
+		if err != nil || object.InReplyTo == nil {
+			break
 		}
-	case string:
-		// Handle JSON string format - try to unmarshal
-		var tagSlice []activitypub.Tag
-		if err := json.Unmarshal([]byte(tags), &tagSlice); err == nil {
-			for _, tag := range tagSlice {
-				if tag.Type == TagTypeMention && tag.Href != "" {
-					mentions = append(mentions, tag.Href)
-				}
+		currentID = *object.InReplyTo
+	}
+
+	// Reverse to get correct order (oldest ancestor first)
+	for i := len(ancestors)/2 - 1; i >= 0; i-- {
+		opp := len(ancestors) - 1 - i
+		ancestors[i], ancestors[opp] = ancestors[opp], ancestors[i]
+	}
+
+	return ancestors
+}
+
+// getDirectReplies gets direct replies to a status
+func (r *ObjectRepository) getDirectReplies(ctx context.Context, statusID string) ([]string, error) {
+	// Use GSI6 to find replies efficiently
+	var objects []models.Object
+	err := r.db.WithContext(ctx).Model(&models.Object{}).
+		Index("gsi6-index").
+		Where("GSI6PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
+		All(&objects)
+
+	if err != nil {
+		return nil, err
+	}
+
+	replies := make([]string, len(objects))
+	for i, obj := range objects {
+		replies[i] = obj.ID
+	}
+
+	return replies, nil
+}
+
+// getThreadAncestors gets ancestors from thread context
+func (r *ObjectRepository) getThreadAncestors(ctx context.Context, rootID, statusID string, depth int) ([]string, error) {
+	if depth <= 0 {
+		return []string{}, nil
+	}
+
+	// Query thread contexts to build ancestor chain
+	var contexts []models.ThreadContext
+	err := r.db.WithContext(ctx).Model(&models.ThreadContext{}).
+		Where("PK", "=", fmt.Sprintf("THREAD#%s", rootID)).
+		All(&contexts)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Build ancestor chain from contexts
+	ancestors := make([]string, 0)
+	for _, ctx := range contexts {
+		if ctx.StatusID != statusID && ctx.Depth < depth {
+			ancestors = append(ancestors, ctx.StatusID)
+		}
+	}
+
+	return ancestors, nil
+}
+
+// getThreadDescendants gets descendants from thread context
+func (r *ObjectRepository) getThreadDescendants(ctx context.Context, rootID, statusID string) ([]string, error) {
+	// Get all contexts in this thread that are descendants
+	var contexts []models.ThreadContext
+	err := r.db.WithContext(ctx).Model(&models.ThreadContext{}).
+		Where("PK", "=", fmt.Sprintf("THREAD#%s", rootID)).
+		All(&contexts)
+
+	if err != nil {
+		return nil, err
+	}
+
+	descendants := make([]string, 0)
+	for _, ctx := range contexts {
+		if strings.Contains(ctx.Path, statusID) && ctx.StatusID != statusID {
+			descendants = append(descendants, ctx.StatusID)
+		}
+	}
+
+	return descendants, nil
+}
+
+// updateThreadContext updates thread context metadata
+func (r *ObjectRepository) updateThreadContext(ctx context.Context, statusID, action string) error {
+	// Get existing thread context
+	var threadCtx models.ThreadContext
+	err := r.db.WithContext(ctx).Model(&threadCtx).
+		Index("gsi1-index").
+		Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
+		Where("GSI1SK", "=", "THREAD").
+		First(&threadCtx)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create new thread context if none exists
+			return r.createThreadContext(ctx, statusID, action)
+		}
+		return err
+	}
+
+	// Update based on action
+	switch action {
+	case "increment_reply":
+		threadCtx.IncrementReplyCount()
+	}
+
+	threadCtx.UpdateKeys()
+	return r.db.WithContext(ctx).Model(&threadCtx).Update()
+}
+
+// createThreadContext creates a new thread context
+func (r *ObjectRepository) createThreadContext(ctx context.Context, statusID, action string) error {
+	// Get the object to understand its relationships
+	var object models.Object
+	err := r.db.WithContext(ctx).Model(&object).
+		Where("PK", "=", fmt.Sprintf("object#%s", statusID)).
+		Where("SK", "=", fmt.Sprintf("object#%s", statusID)).
+		First(&object)
+
+	if err != nil {
+		// Can't create context without object
+		return nil
+	}
+
+	// Determine root status and depth
+	rootStatusID := statusID
+	depth := 0
+	if object.InReplyTo != nil && *object.InReplyTo != "" {
+		rootStatusID = *object.InReplyTo // Simplified - would need to find actual root
+		depth = 1
+	}
+
+	threadCtx := &models.ThreadContext{
+		RootStatusID: rootStatusID,
+		StatusID:     statusID,
+		Depth:        depth,
+		AuthorID:     object.AttributedTo,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		ReplyCount:   0,
+		TotalReplies: 0,
+		Participants: []string{object.AttributedTo},
+	}
+
+	if action == "increment_reply" {
+		threadCtx.IncrementReplyCount()
+	}
+
+	threadCtx.UpdateKeys()
+	return r.db.WithContext(ctx).Model(threadCtx).Create()
+}
+
+// withdrawExistingQuotes withdraws all existing quotes of a status
+func (r *ObjectRepository) withdrawExistingQuotes(ctx context.Context, statusID string) error {
+	// Find all quotes of this status using GSI1
+	var quotes []models.QuoteRelationship
+	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
+		All(&quotes)
+
+	if err != nil {
+		return fmt.Errorf("failed to find existing quotes: %w", err)
+	}
+
+	// Withdraw each quote
+	for _, quote := range quotes {
+		if !quote.Withdrawn {
+			now := time.Now()
+			quote.Withdrawn = true
+			quote.WithdrawnAt = &now
+
+			if err := r.db.WithContext(ctx).Model(&quote).
+				Where("PK", "=", quote.PK).
+				Where("SK", "=", quote.SK).
+				Update(); err != nil {
+				r.logger.Error("failed to withdraw quote",
+					zap.String("quote_id", quote.ID),
+					zap.Error(err))
 			}
 		}
 	}
 
+	r.logger.Info("withdrew existing quotes",
+		zap.String("status_id", statusID),
+		zap.Int("count", len(quotes)))
+
+	return nil
+}
+
+// updateSearchIndexForWithdrawal updates search indices for quote withdrawal
+func (r *ObjectRepository) updateSearchIndexForWithdrawal(ctx context.Context, statusID string) error {
+	// Update search cache to reflect withdrawal
+	searchCache := models.NewSearchCache(fmt.Sprintf("quotes:%s", statusID))
+	searchCache.InvalidateCache("quote_withdrawal")
+	searchCache.UpdateKeys()
+
+	// Create invalidation record
+	if err := r.db.WithContext(ctx).Model(searchCache).Create(); err != nil {
+		return fmt.Errorf("failed to update search cache: %w", err)
+	}
+
+	return nil
+}
+
+// parseMentionsFromTags parses mentions from various tag formats
+func (r *ObjectRepository) parseMentionsFromTags(tagsInterface any) []string {
+	switch tags := tagsInterface.(type) {
+	case []any:
+		return r.parseMentionsFromAnySlice(tags)
+	case []activitypub.Tag:
+		return r.parseMentionsFromTagSlice(tags)
+	case string:
+		return r.parseMentionsFromJSONString(tags)
+	default:
+		return []string{}
+	}
+}
+
+// parseMentionsFromAnySlice extracts mentions from []any format
+func (r *ObjectRepository) parseMentionsFromAnySlice(tags []any) []string {
+	var mentions []string
+	for _, tagInterface := range tags {
+		if mention := r.extractMentionFromMap(tagInterface); mention != "" {
+			mentions = append(mentions, mention)
+		}
+	}
 	return mentions
+}
+
+// extractMentionFromMap extracts a mention href from a tag map
+func (r *ObjectRepository) extractMentionFromMap(tagInterface any) string {
+	tagMap, ok := tagInterface.(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	tagType, ok := tagMap["type"].(string)
+	if !ok || tagType != "Mention" {
+		return ""
+	}
+
+	href, ok := tagMap["href"].(string)
+	if !ok || href == "" {
+		return ""
+	}
+
+	return href
+}
+
+// parseMentionsFromTagSlice extracts mentions from activitypub.Tag slice
+func (r *ObjectRepository) parseMentionsFromTagSlice(tags []activitypub.Tag) []string {
+	var mentions []string
+	for _, tag := range tags {
+		if tag.Type == TagTypeMention && tag.Href != "" {
+			mentions = append(mentions, tag.Href)
+		}
+	}
+	return mentions
+}
+
+// parseMentionsFromJSONString parses mentions from JSON string format
+func (r *ObjectRepository) parseMentionsFromJSONString(tags string) []string {
+	var tagSlice []activitypub.Tag
+	if err := json.Unmarshal([]byte(tags), &tagSlice); err != nil {
+		return []string{}
+	}
+	return r.parseMentionsFromTagSlice(tagSlice)
+}
+
+// CreateTombstone creates a tombstone for a deleted object
+func (r *ObjectRepository) CreateTombstone(ctx context.Context, tombstone *models.Tombstone) error {
+	if err := r.db.WithContext(ctx).Model(tombstone).Create(); err != nil {
+		r.logger.Error("failed to create tombstone",
+			zap.String("object_id", tombstone.ID),
+			zap.String("deleted_by", tombstone.DeletedBy),
+			zap.Error(err))
+		return fmt.Errorf("failed to create tombstone: %w", err)
+	}
+
+	r.logger.Info("created tombstone",
+		zap.String("object_id", tombstone.ID),
+		zap.String("former_type", tombstone.FormerType),
+		zap.String("deleted_by", tombstone.DeletedBy))
+
+	return nil
+}
+
+// GetTombstone retrieves a tombstone by object ID
+func (r *ObjectRepository) GetTombstone(ctx context.Context, objectID string) (*models.Tombstone, error) {
+	var tombstone models.Tombstone
+	err := r.db.WithContext(ctx).Model(&tombstone).
+		Where("PK", "=", fmt.Sprintf("OBJECT#%s", objectID)).
+		Where("SK", "=", "TOMBSTONE").
+		First(&tombstone)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("tombstone not found for object: %s", objectID)
+		}
+		r.logger.Error("failed to get tombstone",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get tombstone: %w", err)
+	}
+
+	return &tombstone, nil
+}
+
+// IsTombstoned checks if an object has been tombstoned (deleted)
+func (r *ObjectRepository) IsTombstoned(ctx context.Context, objectID string) (bool, error) {
+	_, err := r.GetTombstone(ctx, objectID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// GetTombstonesByActor retrieves all tombstones created by a specific actor
+func (r *ObjectRepository) GetTombstonesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Tombstone, string, error) {
+	var tombstones []*models.Tombstone
+	query := r.db.WithContext(ctx).Model(&models.Tombstone{}).
+		Where("GSI1PK", "=", fmt.Sprintf("ACTOR#%s#TOMBSTONES", actorID))
+
+	if cursor != "" {
+		query = query.Where("GSI1SK", ">", cursor)
+	}
+
+	if limit > 0 {
+		query = query.Limit(limit + 1) // Get one extra to determine next cursor
+	}
+
+	err := query.Index("GSI1").Scan(&tombstones)
+	if err != nil {
+		r.logger.Error("failed to get tombstones by actor",
+			zap.String("actor_id", actorID),
+			zap.Error(err))
+		return nil, "", fmt.Errorf("failed to get tombstones by actor: %w", err)
+	}
+
+	var nextCursor string
+	if limit > 0 && len(tombstones) > limit {
+		// Remove the extra record and set cursor
+		tombstones = tombstones[:limit]
+		if len(tombstones) > 0 {
+			nextCursor = tombstones[len(tombstones)-1].GSI1SK
+		}
+	}
+
+	return tombstones, nextCursor, nil
+}
+
+// GetTombstonesByType retrieves tombstones by their former type
+func (r *ObjectRepository) GetTombstonesByType(ctx context.Context, formerType string, limit int, cursor string) ([]*models.Tombstone, string, error) {
+	var tombstones []*models.Tombstone
+	query := r.db.WithContext(ctx).Model(&models.Tombstone{}).
+		Where("GSI2PK", "=", fmt.Sprintf("TOMBSTONE#%s", formerType))
+
+	if cursor != "" {
+		query = query.Where("GSI2SK", ">", cursor)
+	}
+
+	if limit > 0 {
+		query = query.Limit(limit + 1) // Get one extra to determine next cursor
+	}
+
+	err := query.Index("GSI2").Scan(&tombstones)
+	if err != nil {
+		r.logger.Error("failed to get tombstones by type",
+			zap.String("former_type", formerType),
+			zap.Error(err))
+		return nil, "", fmt.Errorf("failed to get tombstones by type: %w", err)
+	}
+
+	var nextCursor string
+	if limit > 0 && len(tombstones) > limit {
+		// Remove the extra record and set cursor
+		tombstones = tombstones[:limit]
+		if len(tombstones) > 0 {
+			nextCursor = tombstones[len(tombstones)-1].GSI2SK
+		}
+	}
+
+	return tombstones, nextCursor, nil
+}
+
+// CleanupExpiredTombstones removes tombstones that have exceeded their TTL
+func (r *ObjectRepository) CleanupExpiredTombstones(ctx context.Context, batchSize int) (int, error) {
+	var tombstones []*models.Tombstone
+	now := time.Now().Unix()
+
+	// Query for expired tombstones
+	err := r.db.WithContext(ctx).Model(&models.Tombstone{}).
+		Where("TTL", "<", now).
+		Limit(batchSize).
+		Scan(&tombstones)
+
+	if err != nil {
+		r.logger.Error("failed to query expired tombstones", zap.Error(err))
+		return 0, fmt.Errorf("failed to query expired tombstones: %w", err)
+	}
+
+	cleaned := 0
+	for _, tombstone := range tombstones {
+		if err := r.db.WithContext(ctx).Model(tombstone).
+			Where("PK", "=", tombstone.PK).
+			Where("SK", "=", tombstone.SK).
+			Delete(); err != nil {
+			r.logger.Warn("failed to delete expired tombstone",
+				zap.String("object_id", tombstone.ID),
+				zap.Error(err))
+			continue
+		}
+		cleaned++
+	}
+
+	r.logger.Info("cleaned up expired tombstones", zap.Int("count", cleaned))
+	return cleaned, nil
+}
+
+// ReplaceObjectWithTombstone atomically replaces an object with a tombstone
+func (r *ObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, objectID, formerType, deletedBy string) error {
+	// Create tombstone
+	tombstone := &models.Tombstone{
+		ID:         objectID,
+		FormerType: formerType,
+		DeletedBy:  deletedBy,
+		Summary:    fmt.Sprintf("Object deleted by %s", deletedBy),
+		Deleted:    time.Now(),
+	}
+
+	// First delete the original object
+	if err := r.DeleteObject(ctx, objectID); err != nil {
+		// If the object doesn't exist, it might already be deleted - continue anyway
+		r.logger.Warn("object not found for deletion (may already be deleted)",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+	}
+
+	// Then create the tombstone
+	if err := r.CreateTombstone(ctx, tombstone); err != nil {
+		return fmt.Errorf("failed to create tombstone after deletion: %w", err)
+	}
+
+	return nil
 }

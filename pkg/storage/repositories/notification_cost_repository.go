@@ -6,11 +6,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // NotificationCostRepository handles notification cost tracking operations
@@ -300,11 +300,11 @@ func (r *NotificationCostRepository) AggregateNotificationCosts(ctx context.Cont
 	// Create and populate aggregation
 	aggregation := r.createAggregation(period, deliveryMethod, windowStart, windowEnd)
 	timings := r.aggregateCostData(aggregation, allCosts)
-	
+
 	// Calculate statistics
 	r.calculateAverages(aggregation, timings)
 	r.calculateBreakdownStatistics(aggregation)
-	
+
 	// Save aggregation
 	return r.saveAggregation(ctx, aggregation)
 }
@@ -312,7 +312,7 @@ func (r *NotificationCostRepository) AggregateNotificationCosts(ctx context.Cont
 // collectCostRecords collects all cost tracking records in the time window
 func (r *NotificationCostRepository) collectCostRecords(ctx context.Context, deliveryMethod string, windowStart, windowEnd time.Time) []*models.NotificationCostTracking {
 	var allCosts []*models.NotificationCostTracking
-	
+
 	currentDate := windowStart
 	for currentDate.Before(windowEnd) || currentDate.Equal(windowEnd) {
 		dailyCosts := r.fetchDailyCosts(ctx, currentDate)
@@ -320,7 +320,7 @@ func (r *NotificationCostRepository) collectCostRecords(ctx context.Context, del
 		allCosts = append(allCosts, filtered...)
 		currentDate = currentDate.AddDate(0, 0, 1)
 	}
-	
+
 	return allCosts
 }
 
@@ -339,13 +339,13 @@ func (r *NotificationCostRepository) fetchDailyCosts(ctx context.Context, date t
 // filterCosts filters costs by delivery method and time range
 func (r *NotificationCostRepository) filterCosts(costs []*models.NotificationCostTracking, deliveryMethod string, windowStart, windowEnd time.Time) []*models.NotificationCostTracking {
 	var filtered []*models.NotificationCostTracking
-	
+
 	for _, cost := range costs {
 		if r.shouldIncludeCost(cost, deliveryMethod, windowStart, windowEnd) {
 			filtered = append(filtered, cost)
 		}
 	}
-	
+
 	return filtered
 }
 
@@ -373,13 +373,13 @@ func (r *NotificationCostRepository) createAggregation(period, deliveryMethod st
 type aggregateTimings struct {
 	totalProcessingTime float64
 	totalDeliveryTime   float64
-	totalTime          float64
+	totalTime           float64
 }
 
 // aggregateCostData aggregates all cost data into the aggregation
 func (r *NotificationCostRepository) aggregateCostData(aggregation *models.NotificationCostAggregation, costs []*models.NotificationCostTracking) aggregateTimings {
 	timings := aggregateTimings{}
-	
+
 	for _, cost := range costs {
 		r.updateTotalCounts(aggregation, cost)
 		r.updateCostTotals(aggregation, cost)
@@ -388,20 +388,20 @@ func (r *NotificationCostRepository) aggregateCostData(aggregation *models.Notif
 		r.updateChannelBreakdown(aggregation, cost)
 		r.updateUserBreakdown(aggregation, cost)
 	}
-	
+
 	return timings
 }
 
 // updateTotalCounts updates total notification counts
 func (r *NotificationCostRepository) updateTotalCounts(aggregation *models.NotificationCostAggregation, cost *models.NotificationCostTracking) {
 	aggregation.TotalNotifications++
-	
+
 	if cost.Success {
 		aggregation.SuccessfulDeliveries++
 	} else {
 		aggregation.FailedDeliveries++
 	}
-	
+
 	aggregation.TotalRetries += int64(cost.RetryCount)
 }
 
@@ -908,4 +908,47 @@ type DeliveryMethodSpending struct {
 	TotalCostDollars      float64
 	AverageCostMicroCents int64
 	AverageCostDollars    float64
+}
+
+// GetDailySpending retrieves the current daily spending for a user
+func (r *NotificationCostRepository) GetDailySpending(ctx context.Context, username string) (int64, error) {
+	// Calculate today's date range
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	tomorrow := today.Add(24 * time.Hour)
+
+	// Query cost records for today
+	var costs []models.NotificationCostTracking
+
+	// Query by GSI1 (user index) with timestamp range
+	gsi1PK := fmt.Sprintf("USER#%s", username)
+	startSK := fmt.Sprintf("COST#%s", today.Format(time.RFC3339))
+	endSK := fmt.Sprintf("COST#%s", tomorrow.Format(time.RFC3339))
+
+	err := r.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
+		Where("GSI1PK", "=", gsi1PK).
+		Where("GSI1SK", ">=", startSK).
+		Where("GSI1SK", "<", endSK).
+		All(&costs)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return 0, nil // No costs found, return 0
+		}
+		return 0, fmt.Errorf("failed to get daily spending: %w", err)
+	}
+
+	// Sum up the total costs
+	var totalCost int64
+	for _, cost := range costs {
+		totalCost += cost.TotalCostMicroCents
+	}
+
+	r.logger.Debug("calculated daily spending",
+		zap.String("username", username),
+		zap.String("date", today.Format("2006-01-02")),
+		zap.Int("cost_records", len(costs)),
+		zap.Int64("total_cost_micro_cents", totalCost),
+		zap.Float64("total_cost_dollars", float64(totalCost)/1_000_000.0))
+
+	return totalCost, nil
 }

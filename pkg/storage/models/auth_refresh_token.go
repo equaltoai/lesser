@@ -13,9 +13,9 @@ type AuthRefreshToken struct {
 	SK string `dynamorm:"sk" json:"-"` // TOKEN (constant sort key)
 
 	// GSI keys for querying by user and family
-	UserID string `dynamorm:"index:user-index,pk" json:"user_id"`                    // GSI PK for user-index
-	Family string `dynamorm:"index:family-index,pk" json:"family"`                   // GSI PK for family-index
-	UserFamily string `dynamorm:"index:user-family-index,pk" json:"user_family"`     // GSI PK for user-family queries
+	UserID      string `dynamorm:"index:user-index,pk" json:"user_id"`                                            // GSI PK for user-index
+	Family      string `dynamorm:"index:family-index,pk" json:"family"`                                           // GSI PK for family-index
+	UserFamily  string `dynamorm:"index:user-family-index,pk" json:"user_family"`                                 // GSI PK for user-family queries
 	CreatedAtSK string `dynamorm:"index:user-index,sk;index:family-index,sk;index:user-family-index,sk" json:"-"` // SK for all GSIs
 
 	// Core token data

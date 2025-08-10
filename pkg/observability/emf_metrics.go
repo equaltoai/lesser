@@ -45,12 +45,6 @@ type EMFLog struct {
 	Metrics    map[string]interface{} `json:",inline"`
 }
 
-// EMFMetadata contains CloudWatch-specific metadata
-type EMFMetadata struct {
-	Timestamp         int64                  `json:"Timestamp"`
-	CloudWatchMetrics []EMFCloudWatchMetrics `json:"CloudWatchMetrics"`
-}
-
 // EMFCloudWatchMetrics defines the metrics structure for CloudWatch
 type EMFCloudWatchMetrics struct {
 	Namespace  string                `json:"Namespace"`

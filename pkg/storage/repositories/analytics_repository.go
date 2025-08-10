@@ -10,12 +10,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
+)
+
+const (
+	// DefaultDomain is the default domain for local development
+	DefaultDomain = "localhost"
 )
 
 // TrendingRepository implements trending and analytics operations using DynamORM
@@ -30,7 +35,7 @@ func NewTrendingRepository(db core.DB, logger *zap.Logger) *TrendingRepository {
 	// Get domain from environment, default to localhost for development
 	domain := os.Getenv("DOMAIN")
 	if domain == "" {
-		domain = "localhost"
+		domain = DefaultDomain
 	}
 
 	return &TrendingRepository{
@@ -1174,7 +1179,7 @@ func (r *TrendingRepository) scoreUserHistory(ctx context.Context, userID, norma
 		if !strings.HasPrefix(strings.ToLower(entry.Query), normalizedQuery) {
 			continue
 		}
-		
+
 		score := r.calculateUserHistoryScore(entry.SearchedAt)
 		suggestions[entry.Query] += score
 	}
@@ -1184,7 +1189,7 @@ func (r *TrendingRepository) scoreUserHistory(ctx context.Context, userID, norma
 func (r *TrendingRepository) calculateUserHistoryScore(searchedAt time.Time) float64 {
 	age := time.Since(searchedAt)
 	recencyScore := 1.0 / (1 + age.Hours()/24) // Decay over days
-	return recencyScore * 2 // User history weighted 2x
+	return recencyScore * 2                    // User history weighted 2x
 }
 
 // scorePopularQueries scores suggestions from popular queries
@@ -1198,7 +1203,7 @@ func (r *TrendingRepository) scorePopularQueries(ctx context.Context, normalized
 		if !strings.HasPrefix(strings.ToLower(stat.Query), normalizedQuery) {
 			continue
 		}
-		
+
 		score := r.calculatePopularQueryScore(stat.LastUsed, stat.Count)
 		suggestions[stat.Query] += score
 	}
@@ -1207,8 +1212,8 @@ func (r *TrendingRepository) scorePopularQueries(ctx context.Context, normalized
 // calculatePopularQueryScore calculates score based on popularity and recency
 func (r *TrendingRepository) calculatePopularQueryScore(lastUsed time.Time, count int) float64 {
 	age := time.Since(lastUsed)
-	recencyScore := 1.0 / (1 + age.Hours()/168)        // Decay over weeks
-	popularityScore := math.Log1p(float64(count))      // Logarithmic scaling
+	recencyScore := 1.0 / (1 + age.Hours()/168)   // Decay over weeks
+	popularityScore := math.Log1p(float64(count)) // Logarithmic scaling
 	return recencyScore * popularityScore
 }
 
@@ -1227,7 +1232,7 @@ func (r *TrendingRepository) scoreHashtagSuggestions(ctx context.Context, normal
 		if !r.hashtagMatchesQuery(hashtag.Name, normalizedQuery) {
 			continue
 		}
-		
+
 		suggestion := r.formatHashtagSuggestion(hashtag.Name)
 		score := float64(hashtag.UsageCount) / 100
 		suggestions[suggestion] += score
@@ -1260,23 +1265,23 @@ func (r *TrendingRepository) extractTopSuggestions(suggestions map[string]float6
 		query string
 		score float64
 	}
-	
+
 	scoredList := make([]scoredSuggestion, 0, len(suggestions))
 	for query, score := range suggestions {
 		scoredList = append(scoredList, scoredSuggestion{query, score})
 	}
-	
+
 	// Sort by score descending
 	sort.Slice(scoredList, func(i, j int) bool {
 		return scoredList[i].score > scoredList[j].score
 	})
-	
+
 	// Extract top suggestions
 	result := make([]string, 0, limit)
 	for i := 0; i < len(scoredList) && i < limit; i++ {
 		result = append(result, scoredList[i].query)
 	}
-	
+
 	return result
 }
 
@@ -2212,13 +2217,13 @@ func (r *TrendingRepository) IncrementQueryCount(ctx context.Context, query stri
 	// Normalize query for consistent counting
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 	queryHash := r.hashQuery(normalizedQuery)
-	
+
 	now := time.Now()
 	date := now.Format(common.DateFormat)
 
 	// Update counters for different time buckets
 	timeBuckets := []string{"daily", "weekly", "monthly"}
-	
+
 	for _, bucket := range timeBuckets {
 		if err := r.incrementCounterForBucket(ctx, queryHash, normalizedQuery, bucket, date, count, now); err != nil {
 			r.logger.Error("failed to increment counter for bucket",
@@ -2236,17 +2241,17 @@ func (r *TrendingRepository) IncrementQueryCount(ctx context.Context, query stri
 func (r *TrendingRepository) GetQueryCount(ctx context.Context, query string) (int, error) {
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 	queryHash := r.hashQuery(normalizedQuery)
-	
+
 	// Get daily count by default
 	pk := fmt.Sprintf("POPULAR_QUERY#%s", queryHash)
 	sk := "COUNTER#daily"
-	
+
 	var counter models.PopularQueryCounter
 	err := r.db.WithContext(ctx).Model(&models.PopularQueryCounter{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&counter)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return 0, nil
@@ -2256,7 +2261,7 @@ func (r *TrendingRepository) GetQueryCount(ctx context.Context, query string) (i
 			zap.Error(err))
 		return 0, fmt.Errorf("failed to get query count: %w", err)
 	}
-	
+
 	return int(counter.Count), nil
 }
 
@@ -2280,7 +2285,7 @@ func (r *TrendingRepository) GetTopQueries(ctx context.Context, limit int, timeR
 
 	// Query using GSI8 for ranking
 	gsi8PK := fmt.Sprintf("POPULAR#%s#%s", bucket, endDate)
-	
+
 	var counters []models.PopularQueryCounter
 	err := r.db.WithContext(ctx).Model(&models.PopularQueryCounter{}).
 		Where("GSI8PK", "=", gsi8PK).
@@ -2334,11 +2339,11 @@ func (r *TrendingRepository) incrementCounterForBucket(ctx context.Context, quer
 
 	// Create or update counter
 	counter := &models.PopularQueryCounter{
-		QueryHash:   queryHash,
-		Query:       query,
-		TimeBucket:  bucket,
-		Date:        date,
-		UpdatedAt:   now,
+		QueryHash:  queryHash,
+		Query:      query,
+		TimeBucket: bucket,
+		Date:       date,
+		UpdatedAt:  now,
 	}
 
 	if errors.IsNotFound(err) {
@@ -2386,4 +2391,63 @@ func (r *TrendingRepository) hashQuery(query string) string {
 		h = h[:32] // Limit length
 	}
 	return h
+}
+
+// GetActorInteraction retrieves the timestamp of the last interaction between two actors
+// This looks for the most recent engagement (like, boost, reply) between the actors
+func (r *TrendingRepository) GetActorInteraction(ctx context.Context, actor1, actor2 string) (*time.Time, error) {
+	// Query for any engagement activities involving both actors
+	// We'll look for engagement records where either actor engaged with the other's content
+
+	var engagements []models.StatusEngagement
+
+	// Create a search pattern that would match engagements between these actors
+	// Since StatusEngagement has PK=STATUS_ENGAGEMENT#statusID and SK=engagementType#timestamp#userID,
+	// we need to search by user engagement patterns
+
+	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+		Where("SK", "begins_with", "like#").
+		Where("UserID", "=", actor1).
+		Limit(50). // Limit to recent engagements for performance
+		All(&engagements)
+
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("failed to query actor interactions",
+			zap.String("actor1", actor1),
+			zap.String("actor2", actor2),
+			zap.Error(err))
+		return nil, err
+	}
+
+	// Look for interactions in the reverse direction as well
+	var reverseEngagements []models.StatusEngagement
+	err = r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+		Where("SK", "begins_with", "like#").
+		Where("UserID", "=", actor2).
+		Limit(50).
+		All(&reverseEngagements)
+
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("failed to query reverse actor interactions",
+			zap.String("actor1", actor1),
+			zap.String("actor2", actor2),
+			zap.Error(err))
+		return nil, err
+	}
+
+	// Combine and find the most recent interaction
+	allEngagements := append(engagements, reverseEngagements...)
+
+	if len(allEngagements) == 0 {
+		return nil, nil // No interactions found
+	}
+
+	// Sort by engagement time to find the most recent
+	sort.Slice(allEngagements, func(i, j int) bool {
+		return allEngagements[i].EngagedAt.After(allEngagements[j].EngagedAt)
+	})
+
+	// Return the most recent interaction timestamp
+	mostRecent := allEngagements[0].EngagedAt
+	return &mostRecent, nil
 }

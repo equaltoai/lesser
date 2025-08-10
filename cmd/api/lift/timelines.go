@@ -163,14 +163,14 @@ func (h *Handler) fetchHomeTimelineEntries(ctx *lift.Context, username string, p
 // convertHomeTimelineEntries converts timeline entries to API statuses
 func (h *Handler) convertHomeTimelineEntries(ctx *lift.Context, entries []*storageModels.Timeline, actor *activitypub.Actor, username string) []models.Status {
 	statuses := []models.Status{}
-	
+
 	for _, entry := range entries {
 		status := h.convertSingleTimelineEntry(ctx, entry, actor, username)
 		if status != nil {
 			statuses = append(statuses, *status)
 		}
 	}
-	
+
 	return statuses
 }
 
@@ -191,7 +191,7 @@ func (h *Handler) convertSingleTimelineEntry(ctx *lift.Context, entry *storageMo
 
 	// Get the actor who created the object
 	objActor := h.getObjectActor(ctx, obj)
-	
+
 	// Check if blocked
 	if h.isActorBlocked(ctx, actor, objActor) {
 		return nil
@@ -199,6 +199,16 @@ func (h *Handler) convertSingleTimelineEntry(ctx *lift.Context, entry *storageMo
 
 	// Convert to status
 	status := h.converter.ObjectToStatus(obj, objActor)
+
+	// Check visibility - only show statuses the user is allowed to see
+	if !h.canActorSeeStatus(&status, actor.ID) {
+		return nil // Skip this status if user can't see it
+	}
+
+	// Filter out direct messages from home timeline (they belong in conversations)
+	if status.Visibility == VisibilityDirect {
+		return nil
+	}
 
 	// Add interaction data
 	h.enrichStatusWithInteractions(ctx, &status, entry, actor, username)
@@ -241,12 +251,12 @@ func (h *Handler) isActorBlocked(ctx *lift.Context, actor, objActor *activitypub
 	if objActor == nil {
 		return false
 	}
-	
-	if _, err := h.repos.Social().GetBlock(ctx.Context, actor.ID, objActor.ID); err == nil {
+
+	if isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, actor.ID, objActor.ID); err == nil && isBlocked {
 		// Blocked user
 		return true
 	}
-	
+
 	return false
 }
 
@@ -382,7 +392,6 @@ func (h *Handler) parsePublicTimelineParams(ctx *lift.Context) PublicTimelinePar
 	return params
 }
 
-
 // processTimelineEntries converts timeline entries to status responses
 func (h *Handler) processTimelineEntries(ctx *lift.Context, entries []*storageModels.Timeline, currentActor *activitypub.Actor, params PublicTimelineParams) []models.Status {
 	statuses := make([]models.Status, 0, len(entries))
@@ -425,6 +434,21 @@ func (h *Handler) processTimelineEntry(ctx *lift.Context, entry *storageModels.T
 	// Convert to status
 	status := h.converter.ObjectToStatus(obj, objActor)
 
+	// Only show public and unlisted statuses in public timeline
+	if status.Visibility != VisibilityPublic && status.Visibility != VisibilityUnlisted {
+		return models.Status{}, true // skip non-public statuses
+	}
+
+	// For unlisted posts, only show if user is authenticated (or it's truly public)
+	if status.Visibility == VisibilityUnlisted && currentActor == nil {
+		return models.Status{}, true // skip unlisted posts for unauthenticated users
+	}
+
+	// Check if the authenticated user can see this status (if authenticated)
+	if currentActor != nil && !h.canActorSeeStatus(&status, currentActor.ID) {
+		return models.Status{}, true // skip if user can't see it
+	}
+
 	// Add interaction data
 	h.addInteractionData(ctx, &status, entry.PostID, currentActor)
 
@@ -434,11 +458,10 @@ func (h *Handler) processTimelineEntry(ctx *lift.Context, entry *storageModels.T
 	return status, false // don't skip
 }
 
-
 // isBlocked checks if the current actor has blocked the object actor
 func (h *Handler) isBlocked(ctx *lift.Context, currentActor, objActor *activitypub.Actor) bool {
 	if currentActor != nil && objActor != nil {
-		if _, err := h.repos.Social().GetBlock(ctx.Context, currentActor.ID, objActor.ID); err == nil {
+		if isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, currentActor.ID, objActor.ID); err == nil && isBlocked {
 			return true // blocked user
 		}
 	}
@@ -516,7 +539,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 
 	// Get authenticated user (if any)
 	user := h.getTagTimelineUser(ctx)
-	
+
 	// Parse query parameters
 	params := h.parseTagTimelineParams(ctx, hashtag)
 
@@ -593,7 +616,7 @@ func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) *Tag
 // processTagTimelineEntries converts timeline entries to statuses
 func (h *Handler) processTagTimelineEntries(ctx *lift.Context, entries []*storageModels.Timeline, params *TagTimelineParams, user *TagTimelineUser) []models.Status {
 	statuses := []models.Status{}
-	
+
 	for _, entry := range entries {
 		if params.OnlyMedia && !entry.HasMedia {
 			continue
@@ -639,15 +662,14 @@ func (h *Handler) processTagTimelineEntry(ctx *lift.Context, entry *storageModel
 	return status, false
 }
 
-
 // isUserBlocked checks if current user has blocked the object author
 func (h *Handler) isUserBlocked(ctx *lift.Context, currentActor, objActor *activitypub.Actor) bool {
 	if currentActor == nil || objActor == nil {
 		return false
 	}
 
-	_, err := h.repos.Social().GetBlock(ctx.Context, currentActor.ID, objActor.ID)
-	return err == nil
+	isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, currentActor.ID, objActor.ID)
+	return err == nil && isBlocked
 }
 
 // addStatusInteractions adds interaction counts and user interaction state
@@ -922,8 +944,8 @@ func (h *Handler) getListObjectActor(ctx *lift.Context, obj any) *activitypub.Ac
 
 // isListUserBlocked checks if the current user has blocked the object's author in list timeline
 func (h *Handler) isListUserBlocked(ctx *lift.Context, currentActor, objActor *activitypub.Actor) bool {
-	_, err := h.repos.Social().GetBlock(ctx.Context, currentActor.ID, objActor.ID)
-	return err == nil // If no error, block exists
+	isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, currentActor.ID, objActor.ID)
+	return err == nil && isBlocked // If no error and blocked, return true
 }
 
 // addListInteractionData adds interaction counts and user interaction status to a list timeline status
@@ -1110,14 +1132,14 @@ func (h *Handler) fetchDirectTimelineEntries(ctx *lift.Context, username string,
 // convertDirectTimelineEntries converts direct timeline entries to API statuses
 func (h *Handler) convertDirectTimelineEntries(ctx *lift.Context, entries []*storageModels.Timeline, actor *activitypub.Actor, username string) []models.Status {
 	statuses := []models.Status{}
-	
+
 	for _, entry := range entries {
 		status := h.convertSingleDirectTimelineEntry(ctx, entry, actor, username)
 		if status != nil {
 			statuses = append(statuses, *status)
 		}
 	}
-	
+
 	return statuses
 }
 
@@ -1138,7 +1160,7 @@ func (h *Handler) convertSingleDirectTimelineEntry(ctx *lift.Context, entry *sto
 
 	// Get the actor who created the object
 	objActor := h.getDirectTimelineObjectActor(ctx, obj)
-	
+
 	// Check if blocked
 	if h.isActorBlockedForDirect(ctx, actor, objActor) {
 		return nil
@@ -1188,12 +1210,12 @@ func (h *Handler) isActorBlockedForDirect(ctx *lift.Context, actor, objActor *ac
 	if objActor == nil {
 		return false
 	}
-	
-	if _, err := h.repos.Social().GetBlock(ctx.Context, actor.ID, objActor.ID); err == nil {
+
+	if isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, actor.ID, objActor.ID); err == nil && isBlocked {
 		// Blocked user
 		return true
 	}
-	
+
 	return false
 }
 

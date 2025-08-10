@@ -247,14 +247,14 @@ func (r *AccountRepository) Block(ctx context.Context, blockerUsername, blockedU
 
 	// Remove any existing follow relationships in both directions
 	if err := r.Unfollow(ctx, blockerUsername, blockedUsername); err != nil {
-		r.logger.Warn("failed to unfollow after block", 
+		r.logger.Warn("failed to unfollow after block",
 			zap.String("blocker", blockerUsername),
 			zap.String("blocked", blockedUsername),
 			zap.Error(err))
 	}
 	if err := r.Unfollow(ctx, blockedUsername, blockerUsername); err != nil {
 		r.logger.Warn("failed to unfollow reverse after block",
-			zap.String("blocked", blockedUsername), 
+			zap.String("blocked", blockedUsername),
 			zap.String("blocker", blockerUsername),
 			zap.Error(err))
 	}
@@ -304,6 +304,7 @@ func (r *AccountRepository) IsBlocked(ctx context.Context, blockerUsername, bloc
 }
 
 // GetBlocks retrieves all users blocked by a user
+//
 //nolint:dupl // Social relationship query patterns are shared between repositories
 func (r *AccountRepository) GetBlocks(ctx context.Context, username string) ([]*storage.Block, error) {
 	var blocks []models.Block

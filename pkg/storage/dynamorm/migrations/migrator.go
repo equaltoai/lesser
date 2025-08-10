@@ -13,8 +13,8 @@ import (
 
 // Migration key constants
 const (
-	migrationHistoryPK = "MIGRATION#HISTORY"
-	migrationLockPK    = "MIGRATION#LOCK"
+	migrationHistoryPK     = "MIGRATION#HISTORY"
+	migrationLockPK        = "MIGRATION#LOCK"
 	migrationStatusApplied = "applied"
 )
 

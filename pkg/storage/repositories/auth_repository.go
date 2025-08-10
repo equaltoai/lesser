@@ -358,30 +358,30 @@ func (r *AuthRepository) StoreWalletCredential(ctx context.Context, credential *
 	reverseIndexPK := fmt.Sprintf("WALLET#%s#%s", credential.Type, normalizedAddress)
 	reverseIndexSK := "USER#" + credential.Username
 
-	// Create a generic model for the index record
-	type IndexRecord struct {
-		PK       string `dynamorm:"pk"`
-		SK       string `dynamorm:"sk"`
-		Type     string `json:"Type"`
-		Username string `json:"Username"`
-	}
-
-	indexModel := &IndexRecord{
-		PK:       reverseIndexPK,
-		SK:       reverseIndexSK,
-		Type:     "WalletIndex",
+	// Create reverse index with retry logic for production reliability
+	// Convert storage.WalletCredential to models.WalletCredential for the index
+	walletModel := &models.WalletCredential{
 		Username: credential.Username,
+		Address:  normalizedAddress,
+		ChainID:  credential.ChainID,
+		Type:     credential.Type,
+		ENS:      credential.ENS,
+		LinkedAt: credential.LinkedAt,
+		LastUsed: credential.LastUsed,
 	}
+	walletModel.PK = reverseIndexPK
+	walletModel.SK = reverseIndexSK
 
-	// Note: In a real implementation, you might want to use a transaction here
-	// For now, we'll just log if the reverse index fails
-	err = r.db.WithContext(ctx).Model(indexModel).Create()
+	err = r.createReverseIndexWithRetry(ctx, walletModel, credential.Username, normalizedAddress)
 	if err != nil {
-		r.logger.Warn("failed to create wallet reverse index",
+		r.logger.Error("failed to create wallet reverse index after retries",
 			zap.String("username", credential.Username),
 			zap.String("address", normalizedAddress),
 			zap.Error(err))
-		// Don't fail the operation, just log the warning
+
+		// In production, this should trigger an alert/metric
+		// The main credential is still saved, but reverse lookups may fail
+		// Consider implementing a background job to retry failed reverse indexes
 	}
 
 	r.logger.Debug("stored wallet credential",
@@ -660,4 +660,103 @@ func (r *AuthRepository) DeleteWalletChallenge(ctx context.Context, challengeID 
 
 	r.logger.Debug("deleted wallet challenge", zap.String("challenge_id", challengeID))
 	return nil
+}
+
+// createReverseIndexWithRetry attempts to create a reverse index with exponential backoff
+func (r *AuthRepository) createReverseIndexWithRetry(ctx context.Context, indexModel *models.WalletCredential, username, address string) error {
+	maxRetries := 3
+	baseDelay := 100 * time.Millisecond
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := r.db.WithContext(ctx).Model(indexModel).Create()
+		if err == nil {
+			// Success
+			if attempt > 0 {
+				r.logger.Info("reverse index created successfully after retry",
+					zap.String("username", username),
+					zap.String("address", address),
+					zap.Int("attempt", attempt+1))
+			}
+			return nil
+		}
+
+		// Check if it's a recoverable error
+		if !r.isRecoverableIndexError(err) {
+			// Non-recoverable error (e.g., validation error)
+			r.logger.Warn("non-recoverable reverse index error",
+				zap.String("username", username),
+				zap.String("address", address),
+				zap.Error(err))
+			return err
+		}
+
+		// If this is the last attempt, don't wait
+		if attempt == maxRetries-1 {
+			r.logger.Error("max retries exceeded for reverse index",
+				zap.String("username", username),
+				zap.String("address", address),
+				zap.Int("attempts", maxRetries),
+				zap.Error(err))
+			return err
+		}
+
+		// Wait with exponential backoff
+		delay := baseDelay * (1 << attempt) // 100ms, 200ms, 400ms
+		r.logger.Debug("retrying reverse index creation",
+			zap.String("username", username),
+			zap.String("address", address),
+			zap.Int("attempt", attempt+1),
+			zap.Duration("delay", delay),
+			zap.Error(err))
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			// Continue to next retry
+		}
+	}
+
+	return fmt.Errorf("unexpected end of retry loop")
+}
+
+// isRecoverableIndexError determines if an index creation error is worth retrying
+func (r *AuthRepository) isRecoverableIndexError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// Recoverable errors (temporary issues)
+	recoverableErrors := []string{
+		"throttling",
+		"timeout",
+		"service unavailable",
+		"internal server error",
+		"provisioned throughput exceeded",
+	}
+
+	for _, recoverable := range recoverableErrors {
+		if strings.Contains(strings.ToLower(errStr), recoverable) {
+			return true
+		}
+	}
+
+	// Non-recoverable errors (data/validation issues)
+	nonRecoverableErrors := []string{
+		"conditional check failed", // Item already exists
+		"validation exception",
+		"resource not found",
+		"access denied",
+	}
+
+	for _, nonRecoverable := range nonRecoverableErrors {
+		if strings.Contains(strings.ToLower(errStr), nonRecoverable) {
+			return false
+		}
+	}
+
+	// Default to recoverable for unknown errors (be optimistic)
+	return true
 }

@@ -293,4 +293,3 @@ func processFile(filename string) (int, error) {
 
 	return replacements, nil
 }
-

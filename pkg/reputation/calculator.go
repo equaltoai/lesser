@@ -177,11 +177,11 @@ func (c *Calculator) calculateModerationScore(input *CalculationInput) int {
 		switch event.Type {
 		case "report":
 			switch event.Outcome {
-			case "upheld":
+			case OutcomeUpheld:
 				reportsUpheld++
 				// Deduct based on severity
 				score -= event.Severity * 10
-			case "dismissed":
+			case OutcomeDismissed:
 				reportsDismissed++
 				// Bonus for false reports
 				score += 5

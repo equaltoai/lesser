@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TrendingLink represents a trending link

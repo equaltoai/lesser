@@ -228,15 +228,15 @@ const (
 
 // AnalysisRequest represents a queued AI analysis request
 type AnalysisRequest struct {
-	ID            string    `json:"id" dynamodbav:"ID"`
-	ObjectID      string    `json:"object_id" dynamodbav:"ObjectID"`
-	ObjectType    string    `json:"object_type" dynamodbav:"ObjectType"`
-	ForceAnalysis bool      `json:"force_analysis" dynamodbav:"ForceAnalysis"`
-	RequestedAt   time.Time `json:"requested_at" dynamodbav:"RequestedAt"`
-	Status        string    `json:"status" dynamodbav:"Status"`
+	ID            string     `json:"id" dynamodbav:"ID"`
+	ObjectID      string     `json:"object_id" dynamodbav:"ObjectID"`
+	ObjectType    string     `json:"object_type" dynamodbav:"ObjectType"`
+	ForceAnalysis bool       `json:"force_analysis" dynamodbav:"ForceAnalysis"`
+	RequestedAt   time.Time  `json:"requested_at" dynamodbav:"RequestedAt"`
+	Status        string     `json:"status" dynamodbav:"Status"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty" dynamodbav:"CompletedAt,omitempty"`
-	Error         *string   `json:"error,omitempty" dynamodbav:"Error,omitempty"`
-	ResultID      *string   `json:"result_id,omitempty" dynamodbav:"ResultID,omitempty"`
+	Error         *string    `json:"error,omitempty" dynamodbav:"Error,omitempty"`
+	ResultID      *string    `json:"result_id,omitempty" dynamodbav:"ResultID,omitempty"`
 }
 
 // Analysis request statuses

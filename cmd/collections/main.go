@@ -5,15 +5,21 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -31,6 +37,7 @@ type CollectionsHandler struct {
 	actorRepo        *repositories.ActorRepository
 	relationshipRepo *repositories.RelationshipRepository
 	likeRepo         *repositories.LikeRepository
+	repos            core.RepositoryStorage
 	logger           *zap.Logger
 	cfg              *config.Config
 }
@@ -40,25 +47,35 @@ func NewCollectionsHandler() (*CollectionsHandler, error) {
 	logger := common.Logger()
 	cfg := config.Get()
 
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
 	// Initialize DynamORM database connection using the established pattern
 	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize DynamORM database: %w", err)
 	}
 
-	// Initialize repositories
+	// Initialize repositories through factory
 	tableName := cfg.DynamoTableName
 	if tableName == "" {
 		tableName = "lesser-main" // Default table name
 	}
-	actorRepo := repositories.NewActorRepository(db, tableName, logger)
-	relationshipRepo := repositories.NewRelationshipRepository(db, tableName, logger)
-	likeRepo := repositories.NewLikeRepository(db, tableName, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create repository factory: %w", err)
+	}
 
 	return &CollectionsHandler{
-		actorRepo:        actorRepo,
-		relationshipRepo: relationshipRepo,
-		likeRepo:         likeRepo,
+		actorRepo:        repos.Actor(),
+		relationshipRepo: repos.Relationship(),
+		likeRepo:         repos.Like(),
+		repos:            repos,
 		logger:           logger,
 		cfg:              cfg,
 	}, nil
@@ -118,8 +135,15 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		return lift.NewLiftError("DATABASE_ERROR", "database error", 500)
 	}
 
+	// Log privacy settings for observability
+	ch.logger.Debug("processing collection request",
+		zap.String("username", username),
+		zap.String("collection_type", collectionType),
+		zap.Bool("manually_approves_followers", actor.ManuallyApprovesFollowers),
+		zap.Any("request_id", requestID))
+
 	// Parse query parameters
-	isPage := ctx.Query("page") == "true"
+	isPage := ctx.Query("page") != ""
 	cursor := ctx.Query("cursor")
 	limit := 20 // default
 	if l := ctx.Query("limit"); l != "" {
@@ -174,36 +198,35 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 
 // returnCollection returns the collection metadata (not a page)
 func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activitypub.Actor, collectionType string) error {
-	// Get total count (we'll get a small sample to determine if there are any items)
-	// In a production system, you might want to add a count method to storage
+	// Get total count using proper count methods
 	var hasItems bool
 	var itemCount int
 
 	switch collectionType {
 	case collectionTypeFollowers:
-		usernames, _, err := ch.relationshipRepo.GetFollowers(ctx.Context, actor.PreferredUsername, 1, "")
+		count, err := ch.relationshipRepo.CountFollowers(ctx.Context, actor.PreferredUsername)
 		if err != nil {
-			ch.logger.Error("failed to get count", zap.Error(err))
+			ch.logger.Error("failed to get followers count", zap.Error(err))
 			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
-		hasItems = len(usernames) > 0
-		itemCount = len(usernames)
+		hasItems = count > 0
+		itemCount = count
 	case collectionTypeFollowing:
-		usernames, _, err := ch.relationshipRepo.GetFollowing(ctx.Context, actor.PreferredUsername, 1, "")
+		count, err := ch.relationshipRepo.CountFollowing(ctx.Context, actor.PreferredUsername)
 		if err != nil {
-			ch.logger.Error("failed to get count", zap.Error(err))
+			ch.logger.Error("failed to get following count", zap.Error(err))
 			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
-		hasItems = len(usernames) > 0
-		itemCount = len(usernames)
+		hasItems = count > 0
+		itemCount = count
 	case collectionTypeLiked:
 		likes, _, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, 1, "")
 		if err != nil {
-			ch.logger.Error("failed to get count", zap.Error(err))
+			ch.logger.Error("failed to get liked count", zap.Error(err))
 			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
 		hasItems = len(likes) > 0
-		itemCount = len(likes)
+		itemCount = len(likes) // TODO: Add CountActorLikes method
 	}
 
 	// Build collection URL
@@ -223,7 +246,7 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 
 	// Only add first page link if there are items
 	if hasItems {
-		collection.First = fmt.Sprintf("%s?page=true", collectionID)
+		collection.First = fmt.Sprintf("%s?page=1", collectionID)
 	}
 
 	// Set ActivityPub content type and caching headers
@@ -242,7 +265,7 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 
 	// Build collection and page URLs
 	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
-	pageID := fmt.Sprintf("%s?page=true", collectionID)
+	pageID := fmt.Sprintf("%s?page=1", collectionID)
 	if cursor != "" {
 		pageID = fmt.Sprintf("%s&cursor=%s", pageID, cursor)
 	}
@@ -260,7 +283,12 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 		// For followers/following, convert usernames to actor URLs
 		orderedItems = make([]any, len(usernames))
 		for i, username := range usernames {
-			orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.cfg.Domain, username)
+			// Use full HTTPS URL format
+			if strings.HasPrefix(ch.cfg.Domain, "http") {
+				orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.cfg.Domain, username)
+			} else {
+				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", ch.cfg.Domain, username)
+			}
 		}
 	}
 
@@ -271,7 +299,7 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 				BaseObject: activitypub.BaseObject{
 					Context: activitypub.Context,
 					ID:      pageID,
-					Type:    "OrderedCollectionPage", // The constant doesn't exist, use string literal
+					Type:    activitypub.OrderedCollectionPageType,
 				},
 				OrderedItems: orderedItems,
 			},
@@ -281,14 +309,14 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 
 	// Add next link if there are more items
 	if nextCursor != "" {
-		page.Next = fmt.Sprintf("%s?page=true&cursor=%s&limit=%d", collectionID, nextCursor, limit)
+		page.Next = fmt.Sprintf("%s?page=1&cursor=%s&limit=%d", collectionID, nextCursor, limit)
 	}
 
 	// Add prev link if this is not the first page
 	if cursor != "" {
 		// In a real implementation, you'd need to implement reverse pagination
 		// For now, we'll just indicate that there are previous items
-		page.Prev = fmt.Sprintf("%s?page=true", collectionID)
+		page.Prev = fmt.Sprintf("%s?page=1", collectionID)
 	}
 
 	// Set ActivityPub content type and caching headers
@@ -354,6 +382,12 @@ func main() {
 			return next.Handle(ctx)
 		})
 	})
+
+	// Add federation rate limiting middleware (fourth in chain)
+	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
+		app.Use(ratelimit.FederationRateLimitMiddleware(handler.repos))
+		handler.logger.Info("enabled federation rate limiting middleware for collections service")
+	}
 
 	// Add CORS middleware for ActivityPub federation compatibility
 	app.Use(func(next lift.Handler) lift.Handler {

@@ -131,7 +131,7 @@ class ProfessionalCommunity:
         """Integrated job posting system"""
         return {
             'post_types': ['full_time', 'freelance', 'internship'],
-            'verification': 'company_email_required',
+            'verification': 'wallet_or_passkey_required',
             'visibility': 'members_only',
             'application_tracking': True
         }

@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+const (
+	// HTTPScheme represents the HTTP URL scheme
+	HTTPScheme = "http"
+	// HTTPSScheme represents the HTTPS URL scheme
+	HTTPSScheme = "https"
+)
+
 var (
 	// Username: 1-30 chars, alphanumeric + underscore + hyphen, no double underscore
 	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_\-]{0,28}[a-zA-Z0-9])?$`)
@@ -76,7 +83,7 @@ func ValidateActorID(actorID string) error {
 	}
 
 	// Must be HTTPS in production
-	if u.Scheme != "https" && u.Scheme != "http" {
+	if u.Scheme != HTTPSScheme && u.Scheme != HTTPScheme {
 		return fmt.Errorf("actor ID must use HTTP(S)")
 	}
 

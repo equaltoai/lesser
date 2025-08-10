@@ -392,12 +392,12 @@ func getExtensionFromMimeType(mimeType string) string {
 		MimeTypeImagePng:  ".png",
 		MimeTypeImageGif:  ".gif",
 		MimeTypeImageWebp: ".webp",
-		"video/mp4":  ".mp4",
-		"video/webm": ".webm",
-		"audio/mpeg": ".mp3",
-		"audio/mp3":  ".mp3",
-		"audio/ogg":  ".ogg",
-		"audio/wav":  ".wav",
+		"video/mp4":       ".mp4",
+		"video/webm":      ".webm",
+		"audio/mpeg":      ".mp3",
+		"audio/mp3":       ".mp3",
+		"audio/ogg":       ".ogg",
+		"audio/wav":       ".wav",
 	}
 
 	if ext, ok := extensions[mimeType]; ok {
@@ -497,7 +497,7 @@ func (h *Handler) GetMediaProcessingStatus(ctx context.Context, mediaID string) 
 	progress := (completedTasks * 100) / len(tasks)
 
 	status, _ := jobData["Status"].(string)
-	if status == "completed" || status == "failed" {
+	if status == statusCompleted || status == ExportStatusFailed {
 		return false, 100, nil
 	}
 
@@ -848,7 +848,7 @@ func (h *Handler) authenticateMediaUploadRequest(ctx *lift.Context) (string, err
 // parseMediaUpload parses multipart media upload data
 func (h *Handler) parseMediaUpload(ctx *lift.Context) (*mediaV1UploadData, error) {
 	bodyBytes := h.prepareRequestBody(ctx)
-	
+
 	// Parse boundary from content type
 	boundary, err := h.extractMediaBoundary(ctx)
 	if err != nil {
@@ -931,7 +931,7 @@ func (h *Handler) parseMultipartData(bodyBytes []byte, boundary string) (*mediaV
 // processMediaV1MultipartPart processes a single multipart part for v1 endpoint
 func (h *Handler) processMediaV1MultipartPart(part *multipart.Part, data *mediaV1UploadData) error {
 	buf := new(bytes.Buffer)
-	
+
 	switch part.FormName() {
 	case "file":
 		if _, err := buf.ReadFrom(part); err != nil {
@@ -1019,7 +1019,7 @@ func (h *Handler) uploadMediaToS3(ctx context.Context, username string, data *me
 
 	// Build media URL (using CDN if configured)
 	mediaURL := h.buildMediaURL(bucketName, s3Key)
-	
+
 	return mediaID, mediaURL, nil
 }
 
@@ -1054,11 +1054,11 @@ func (h *Handler) extractS3KeyFromURL(mediaURL string) string {
 	if idx := strings.Index(mediaURL, "//"); idx != -1 {
 		mediaURL = mediaURL[idx+2:]
 	}
-	
+
 	// Remove the domain part
 	if idx := strings.Index(mediaURL, "/"); idx != -1 {
 		return mediaURL[idx+1:]
 	}
-	
+
 	return ""
 }

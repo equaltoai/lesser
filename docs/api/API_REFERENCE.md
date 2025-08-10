@@ -104,7 +104,7 @@ interface UserProfile {
   trust_indicators: {
     score: number;               // 0-100 overall trust
     badges: TrustBadge[];        // Visual trust indicators
-    verification_level: 'none' | 'email' | 'phone' | 'government';
+    verification_level: 'none' | 'passkey' | 'wallet' | 'government';
   };
   
   cost_transparency: {
@@ -1108,6 +1108,70 @@ type StreamType =
 **Docs**: https://docs.joinmastodon.org/methods/admin/
 
 For users with admin/moderator privileges:
+
+#### Status Management (NEW)
+**Endpoint**: `GET /api/v1/admin/statuses`
+
+List statuses with comprehensive filtering for moderation.
+
+**Query Parameters**:
+- `local` (boolean): Filter local statuses only
+- `remote` (boolean): Filter remote statuses only
+- `by_domain` (string): Filter by specific domain
+- `visibility` (string): Filter by visibility (public, unlisted, private, direct)
+- `flagged` (boolean): Filter flagged statuses
+- `reported` (boolean): Filter reported statuses
+- `with_media` (boolean): Filter statuses with media
+- `sensitive` (boolean): Filter sensitive statuses
+- `min_date` (ISO 8601): Minimum creation date
+- `max_date` (ISO 8601): Maximum creation date
+- `limit` (integer): Number of results (default: 20, max: 100)
+- `cursor` (string): Pagination cursor
+
+**Response**:
+```json
+{
+  "statuses": [
+    {
+      "id": "123456789",
+      "created_at": "2024-01-01T00:00:00Z",
+      "account": {
+        "id": "987654321",
+        "username": "user",
+        "domain": "remote.example"
+      },
+      "content": "<p>Status content</p>",
+      "visibility": "public",
+      "flagged": false,
+      "sensitive": false,
+      "media_attachments": [],
+      "replies_count": 0,
+      "reblogs_count": 0,
+      "favourites_count": 0
+    }
+  ],
+  "next_cursor": "abc123"
+}
+```
+
+**Endpoint**: `GET /api/v1/admin/statuses/count`
+
+Get count of statuses matching filter criteria.
+
+**Query Parameters**: Same as above (excluding pagination)
+
+**Response**:
+```json
+{
+  "count": 42,
+  "breakdown": {
+    "local": 30,
+    "remote": 12,
+    "flagged": 5,
+    "with_media": 15
+  }
+}
+```
 
 #### Reports Management
 **Endpoint**: `GET /api/v1/admin/reports`

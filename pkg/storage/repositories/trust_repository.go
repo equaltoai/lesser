@@ -28,17 +28,15 @@ func NewTrustRepository(db core.DB, logger *zap.Logger) *TrustRepository {
 }
 
 // convertToModelEvidence converts storage.TrustEvidence to models.TrustEvidence
+// Since storage.TrustEvidence is an alias for models.TrustEvidence, no conversion needed
 func convertToModelEvidence(evidence []storage.TrustEvidence) []models.TrustEvidence {
-	result := make([]models.TrustEvidence, len(evidence))
-	copy(result, evidence)
-	return result
+	return evidence
 }
 
 // convertFromModelEvidence converts models.TrustEvidence to storage.TrustEvidence
+// Since storage.TrustEvidence is an alias for models.TrustEvidence, no conversion needed
 func convertFromModelEvidence(evidence []models.TrustEvidence) []storage.TrustEvidence {
-	result := make([]storage.TrustEvidence, len(evidence))
-	copy(result, evidence)
-	return result
+	return evidence
 }
 
 // isNotFound checks if an error is a not found error
@@ -512,7 +510,7 @@ func (r *TrustRepository) expandTrustNetwork(ctx context.Context, current trustN
 
 // shouldAddToQueue determines if a relationship should be added to propagation queue
 func (r *TrustRepository) shouldAddToQueue(rel *storage.TrustRelationship, category string, visited map[string]bool) bool {
-	return !visited[rel.TrusterID] && 
+	return !visited[rel.TrusterID] &&
 		(string(rel.Category) == category || rel.Category == trust.TrustCategoryGeneral)
 }
 

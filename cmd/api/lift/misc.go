@@ -9,28 +9,30 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 const (
 	// Search type constants
 	searchTypeStatuses = "statuses"
-	
+
 	// Boolean string constants for parameter parsing
 	boolTrue = "true"
-	
+
 	// Common status constants
-	statusCompleted = "completed"
-	
+	statusCompleted  = "completed"
+	statusPending    = "pending"
+	statusProcessing = "processing"
+
 	// Moderation category constants
 	moderationCategoryOther   = "other"
 	moderationCategoryGeneral = "general"
-	
+
 	// API path components
 	pathComponentStatuses = "statuses"
 )
@@ -295,7 +297,7 @@ func (h *Handler) getActorFromAuthorID(ctx *lift.Context, authorID string) *acti
 	if len(parts) == 0 {
 		return nil
 	}
-	
+
 	username := parts[len(parts)-1]
 	actor, _ := h.repos.Actor().GetActor(ctx.Context, username)
 	return actor
@@ -493,14 +495,14 @@ func (h *Handler) parseNotificationExcludeTypes(ctx *lift.Context, filter *stora
 // convertNotificationsToAPI converts storage notifications to API format
 func (h *Handler) convertNotificationsToAPI(ctx *lift.Context, notifications []*storage.Notification) []*models.Notification {
 	apiNotifications := make([]*models.Notification, 0, len(notifications))
-	
+
 	for _, notif := range notifications {
 		apiNotif := h.convertSingleNotification(ctx, notif)
 		if apiNotif != nil {
 			apiNotifications = append(apiNotifications, apiNotif)
 		}
 	}
-	
+
 	return apiNotifications
 }
 
@@ -584,7 +586,7 @@ func (h *Handler) setNotificationPaginationHeader(ctx *lift.Context, cursor stri
 	if host == "" {
 		host = ctx.Header("Host")
 	}
-	
+
 	baseURL := fmt.Sprintf("https://%s%s", host, "/api/v1/notifications")
 	nextURL := fmt.Sprintf("%s?max_id=%s", baseURL, cursor)
 	if limit > 0 {
@@ -617,6 +619,19 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 	var vapidPublicKey string
 	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
+		// Check if we're in production mode
+		env := os.Getenv("ENV")
+		if env == "" {
+			env = os.Getenv("ENVIRONMENT")
+		}
+		if env == "production" || env == "prod" {
+			// In production, VAPID keys are required for push notifications
+			h.logger.Error("VAPID keys are required in production but not found", zap.Error(err))
+			return ctx.Status(500).JSON(map[string]string{
+				"error": "VAPID keys not configured - push notifications unavailable",
+			})
+		}
+		
 		h.logger.Warn("failed to get VAPID keys, using placeholder", zap.Error(err))
 		// Use a placeholder that clients will recognize as invalid
 		vapidPublicKey = "BCkMmVdKDnKYwzVCDC99Iuc9GvId-x7-kKtuHnLgfF98ENiZp_aj-UNthbCdI70DqN1zUVis-x0Wrot2sBagkMc="

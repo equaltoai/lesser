@@ -42,7 +42,7 @@ func TestNotificationDeliveryRequest_Marshal(t *testing.T) {
 	request := NotificationDeliveryRequest{
 		NotificationID: "notif_123",
 		UserID:         "user_456",
-		Channels:       []string{"email", "push", "websocket"},
+		Channels:       []string{"push", "websocket"}, // Email removed - not supported by Lesser
 		Priority:       "high",
 		RetryCount:     0,
 		ScheduledAt:    &scheduledTime,
@@ -130,12 +130,17 @@ func TestDeliverToChannel_Success(t *testing.T) {
 	// Test channel validation
 	result := processor.deliverToChannel(ctx, notification, userPrefs, "invalid_channel")
 	assert.False(t, result.Success)
-	assert.Contains(t, result.Error, "unknown delivery channel")
+	assert.Contains(t, result.Error, "unsupported delivery channel")
 
 	// Test that email delivery channel is not supported (Lesser doesn't support email)
 	result = processor.deliverToChannel(ctx, notification, userPrefs, "email")
 	assert.False(t, result.Success)
-	assert.Contains(t, result.Error, "unknown delivery channel")
+	assert.Contains(t, result.Error, "unsupported delivery channel")
+
+	// Test that SMS delivery channel is not supported (Lesser doesn't support SMS)
+	result = processor.deliverToChannel(ctx, notification, userPrefs, "sms")
+	assert.False(t, result.Success)
+	assert.Contains(t, result.Error, "unsupported delivery channel")
 
 	// Test disabled push
 	userPrefs.PushNotifications = false
@@ -169,7 +174,7 @@ func TestProcessMessage_ScheduledDelivery(t *testing.T) {
 	request := NotificationDeliveryRequest{
 		NotificationID: "notif_123",
 		UserID:         "user_456",
-		Channels:       []string{"email"},
+		Channels:       []string{"push"}, // Changed from email to push - email not supported
 		ScheduledAt:    &futureTime,
 	}
 

@@ -427,7 +427,6 @@ type LinkTrendStorage struct {
 	Velocity      float64
 }
 
-
 var (
 	logger  *zap.Logger
 	cfg     *config.Config

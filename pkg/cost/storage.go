@@ -9,8 +9,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // Storage handles persistence of cost data

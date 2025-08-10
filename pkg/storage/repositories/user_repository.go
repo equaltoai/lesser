@@ -1448,7 +1448,7 @@ func (r *UserRepository) calculateTrustScore(ctx context.Context, actorID, categ
 
 	// Combine and finalize scores
 	r.combineTrustScores(score)
-	
+
 	r.logTrustCalculation(actorID, category, score)
 
 	return score, nil
@@ -1526,14 +1526,14 @@ type propagationNode struct {
 // calculatePropagatedTrustScore calculates trust propagated through the network
 func (r *UserRepository) calculatePropagatedTrustScore(ctx context.Context, score *storage.TrustScore, actorID, category string, trusterScores map[string]float64) {
 	config := r.defaultPropagationConfig()
-	
+
 	visited := make(map[string]bool)
 	visited[actorID] = true
-	
+
 	queue := r.initializePropagationQueue(trusterScores, config.minTrustScore)
-	
+
 	propagatedTrust, propagatedWeight := r.processPropagationQueue(ctx, queue, visited, category, config)
-	
+
 	if propagatedWeight > 0 {
 		score.PropagatedScore = propagatedTrust / propagatedWeight
 	}
@@ -1542,7 +1542,7 @@ func (r *UserRepository) calculatePropagatedTrustScore(ctx context.Context, scor
 // initializePropagationQueue creates initial queue from direct trusters
 func (r *UserRepository) initializePropagationQueue(trusterScores map[string]float64, minTrustScore float64) []propagationNode {
 	queue := make([]propagationNode, 0)
-	
+
 	for trusterID, trustValue := range trusterScores {
 		if trustValue >= minTrustScore {
 			queue = append(queue, propagationNode{
@@ -1552,7 +1552,7 @@ func (r *UserRepository) initializePropagationQueue(trusterScores map[string]flo
 			})
 		}
 	}
-	
+
 	return queue
 }
 
@@ -1560,25 +1560,25 @@ func (r *UserRepository) initializePropagationQueue(trusterScores map[string]flo
 func (r *UserRepository) processPropagationQueue(ctx context.Context, queue []propagationNode, visited map[string]bool, category string, config userTrustPropagationConfig) (float64, float64) {
 	propagatedTrust := 0.0
 	propagatedWeight := 0.0
-	
+
 	for len(queue) > 0 && len(visited) < config.maxVisited {
 		node := queue[0]
 		queue = queue[1:]
-		
+
 		if !r.shouldProcessNode(node, visited, config.maxDepth) {
 			continue
 		}
 		visited[node.actorID] = true
-		
+
 		contribution, newNodes := r.processNode(ctx, node, category, visited, config)
 		if contribution > 0 {
 			propagatedTrust += contribution
 			propagatedWeight += r.calculateNodeWeight(node, config.propagationRate)
 		}
-		
+
 		queue = append(queue, newNodes...)
 	}
-	
+
 	return propagatedTrust, propagatedWeight
 }
 
@@ -1597,20 +1597,20 @@ func (r *UserRepository) processNode(ctx context.Context, node propagationNode, 
 			zap.Error(err))
 		return 0, nil
 	}
-	
+
 	if nodeScore.Score < config.minTrustScore {
 		return 0, nil
 	}
-	
+
 	// Calculate contribution
 	contribution := r.calculateContribution(node, nodeScore.Score, config)
-	
+
 	// Get next level nodes if not at max depth
 	var newNodes []propagationNode
 	if node.depth < config.maxDepth {
 		newNodes = r.expandPropagation(ctx, node, contribution, category, visited)
 	}
-	
+
 	return contribution, newNodes
 }
 
@@ -1640,7 +1640,7 @@ func (r *UserRepository) expandPropagation(ctx context.Context, node propagation
 	if err != nil {
 		return nil
 	}
-	
+
 	var newNodes []propagationNode
 	for _, rel := range nodeRelationships {
 		if r.shouldAddToPropagation(rel, category, visited) {
@@ -1651,7 +1651,7 @@ func (r *UserRepository) expandPropagation(ctx context.Context, node propagation
 			})
 		}
 	}
-	
+
 	return newNodes
 }
 
@@ -1664,7 +1664,7 @@ func (r *UserRepository) shouldAddToPropagation(rel *storage.TrustRelationship, 
 func (r *UserRepository) combineTrustScores(score *storage.TrustScore) {
 	const directWeight = 0.7
 	const propagatedWeightFactor = 0.3
-	
+
 	if score.DirectScore > 0 && score.PropagatedScore > 0 {
 		score.Score = (score.DirectScore * directWeight) + (score.PropagatedScore * propagatedWeightFactor)
 	} else if score.DirectScore > 0 {
@@ -1672,7 +1672,7 @@ func (r *UserRepository) combineTrustScores(score *storage.TrustScore) {
 	} else {
 		score.Score = score.PropagatedScore
 	}
-	
+
 	// Apply bounds
 	if score.Score > 1.0 {
 		score.Score = 1.0
@@ -1897,7 +1897,6 @@ func (r *UserRepository) updatePreferenceField(prefs *storage.UserPreferences, k
 		return fmt.Errorf("unknown preference key: %s", key)
 	}
 }
-
 
 // GetPreference gets a specific preference value
 func (r *UserRepository) GetPreference(ctx context.Context, username, key string) (any, error) {
@@ -2353,10 +2352,30 @@ func (r *UserRepository) IsNotificationMuted(ctx context.Context, userID, target
 		return false, nil
 	}
 
-	// For now, check if notification is muted via reblog filters
-	// In the future, this could be expanded to include a dedicated NotificationSettings field
+	// Check for dedicated notification preferences first
+	var notifPrefs models.NotificationPreferences
+	err = r.db.WithContext(ctx).Model(&models.NotificationPreferences{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("SK", "=", "NOTIFICATION_PREFS").
+		First(&notifPrefs)
 
-	// Check if the targetID is in reblog filters as muted
+	if err == nil {
+		// Use notification preferences to determine mute status
+		// Check if all notification types are disabled (effectively muted)
+		if !notifPrefs.MentionEnabled && !notifPrefs.ReblogEnabled &&
+			!notifPrefs.FavoriteEnabled && !notifPrefs.FollowEnabled {
+			r.logger.Debug("all notifications disabled for user",
+				zap.String("userID", userID))
+			return true, nil
+		}
+	} else if !errors.IsNotFound(err) {
+		// Log non-not-found errors but don't fail
+		r.logger.Debug("failed to get notification preferences, checking reblog filters",
+			zap.String("userID", userID),
+			zap.Error(err))
+	}
+
+	// Fallback to reblog filters for backwards compatibility
 	if prefs.ReblogFilters != nil {
 		if showReblogs, exists := prefs.ReblogFilters[targetID]; exists && !showReblogs {
 			// If reblogs are muted for this user, consider notifications muted too
@@ -2366,10 +2385,6 @@ func (r *UserRepository) IsNotificationMuted(ctx context.Context, userID, target
 			return true, nil
 		}
 	}
-
-	// Future enhancement: Could check additional notification settings here
-	// For example, notification type preferences, global mute settings, etc.
-	// Currently using the reblog filter as a proxy for notification preferences
 
 	return false, nil
 }
@@ -2444,9 +2459,13 @@ func (r *UserRepository) CreateBookmark(ctx context.Context, username, objectID 
 			zap.String("object_id", objectID),
 			zap.Error(err))
 
-		// For now, we'll treat any error as success (matching legacy behavior)
-		// In a production system, you might want to check for specific error types
-		return nil
+		// Check for specific error types to handle appropriately
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			// Bookmark already exists, this is expected behavior
+			return nil
+		}
+		// For other errors, return them to the caller
+		return fmt.Errorf("failed to create bookmark: %w", err)
 	}
 
 	r.logger.Info("bookmark created successfully",
@@ -2641,12 +2660,11 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, befor
 	r.logger.Debug("deleting expired timeline entries",
 		zap.Time("before", before))
 
-	// This is a complex operation that would require scanning the table
-	// In a real implementation, you might want to use DynamoDB TTL instead
-	// For now, we'll implement a basic version that scans and deletes
+	// Use TTL-based approach for efficiency. This method handles cleanup
+	// of entries that didn't get auto-deleted due to DynamoDB TTL delays
 
-	// Note: This is not the most efficient approach for large datasets
-	// Consider using DynamoDB TTL for automatic expiration
+	// Note: DynamoDB TTL typically deletes within 48 hours, but we may need
+	// manual cleanup for immediate consistency requirements
 
 	var expiredEntries []*models.Timeline
 
@@ -2758,10 +2776,20 @@ func (r *UserRepository) GetDirectTimeline(ctx context.Context, username string,
 
 // GetFollowRequestState returns the state of a follow request between two users
 func (r *UserRepository) GetFollowRequestState(ctx context.Context, followerID, targetID string) (string, error) {
-	// This should use the relationship repository if available
+	// Check if there's a pending follow request from follower to target
 	if r.deps != nil {
-		// Try to get the follow request through dependencies
-		// For now, just return "none" as a default
+		requests, _, err := r.deps.GetPendingFollowRequests(ctx, targetID, 100, "")
+		if err != nil {
+			r.logger.Debug("failed to get pending follow requests",
+				zap.String("targetID", targetID),
+				zap.Error(err))
+			return "none", nil //nolint:goconst // This "none" is for relationship status
+		}
+		for _, req := range requests {
+			if req == followerID {
+				return "pending", nil
+			}
+		}
 		return "none", nil //nolint:goconst // This "none" is for relationship status, not replies policy
 	}
 
@@ -3122,7 +3150,7 @@ func (r *UserRepository) addHashtagTimelineEntries(baseEntry *models.Timeline, t
 		if tag.Type != "Hashtag" || tag.Name == "" {
 			continue
 		}
-		
+
 		// Extract and normalize hashtag name
 		hashtagName := strings.TrimPrefix(tag.Name, "#")
 		hashtagName = strings.ToLower(hashtagName)
@@ -3210,9 +3238,26 @@ func (r *UserRepository) createListTimelineEntries(ctx context.Context, username
 			// No replies
 			shouldInclude = baseEntry.InReplyTo == ""
 		case "followed":
-			// Replies to followed accounts only
-			// For now, include all non-replies. In the future, check if replied-to account is followed
-			shouldInclude = baseEntry.InReplyTo == ""
+			// Replies to followed accounts only - check if replied-to account is followed
+			if baseEntry.InReplyTo == "" {
+				// Not a reply, include it
+				shouldInclude = true
+			} else {
+				// Check if the replied-to account is followed by list owner
+				repliedToAccount := extractAccountFromReply(baseEntry.InReplyTo)
+				if repliedToAccount != "" && r.deps != nil {
+					// Use GetFollowers to check if the list owner follows the replied-to account
+					followers, _, err := r.deps.GetFollowers(ctx, repliedToAccount, 1000, "")
+					if err == nil {
+						for _, follower := range followers {
+							if follower == list.Username {
+								shouldInclude = true
+								break
+							}
+						}
+					}
+				}
+			}
 		case "list":
 			// All posts including replies
 			shouldInclude = true
@@ -3233,6 +3278,21 @@ func (r *UserRepository) createListTimelineEntries(ctx context.Context, username
 
 	log.Debug("created list timeline entries", zap.Int("count", len(entries)))
 	return entries, nil
+}
+
+// extractAccountFromReply extracts the account ID/username from an InReplyTo field
+func extractAccountFromReply(inReplyTo string) string {
+	// InReplyTo is typically a post ID like "POST#user#timestamp" or URL
+	// Extract the username/account part
+	if strings.HasPrefix(inReplyTo, "POST#") {
+		parts := strings.Split(inReplyTo, "#")
+		if len(parts) >= 2 {
+			return parts[1] // Return the username part
+		}
+	}
+	// For URLs, extract from path (ActivityPub URLs typically contain username)
+	// This is a simplified extraction - could be enhanced for different URL patterns
+	return ""
 }
 
 // determineVisibility determines the visibility of a post based on addressing

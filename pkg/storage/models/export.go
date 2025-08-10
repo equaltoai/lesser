@@ -2,8 +2,8 @@ package models
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // Export represents a data export request

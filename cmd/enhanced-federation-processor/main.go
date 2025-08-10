@@ -21,8 +21,8 @@ import (
 
 // Handler processes SQS messages for enhanced federation retry
 type Handler struct {
-	retryProcessor  *federation.EnhancedRetryProcessor
-	logger          *zap.Logger
+	retryProcessor *federation.EnhancedRetryProcessor
+	logger         *zap.Logger
 }
 
 // NewHandler creates a new enhanced federation processor handler

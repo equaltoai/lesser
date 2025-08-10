@@ -152,10 +152,10 @@ func (r *TimelineRepository) GetHashtagTimeline(ctx context.Context, hashtag str
 
 // getTimelineEntries is a helper method to retrieve timeline entries
 func (r *TimelineRepository) getTimelineEntries(_ context.Context, timelineType, timelineID string, limit int, cursor string) ([]*models.Timeline, string, error) {
-	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
+	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
 	query := r.db.Model(&models.Timeline{}).
 		Where("PK", "=", pk).
-		OrderBy("SK", "DESC") // Most recent first
+		OrderBy("SK", "ASC") // ASC because we use reverse timestamp
 
 	// Handle cursor-based pagination
 	if cursor != "" {
@@ -309,8 +309,10 @@ func (r *TimelineRepository) GetTimelineEntriesByLanguage(_ context.Context, lan
 
 // GetTimelineEntry retrieves a specific timeline entry
 func (r *TimelineRepository) GetTimelineEntry(_ context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) (*models.Timeline, error) {
-	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
-	sk := fmt.Sprintf("%d#%s", timelineAt.Unix(), entryID)
+	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
+	// Use reverse timestamp like the model does
+	reverseTimestamp := 9999999999 - timelineAt.Unix()
+	sk := fmt.Sprintf("%010d#%s", reverseTimestamp, entryID)
 
 	var entry models.Timeline
 	err := r.db.Model(&models.Timeline{}).
@@ -340,8 +342,10 @@ func (r *TimelineRepository) UpdateTimelineEntry(_ context.Context, entry *model
 
 // DeleteTimelineEntry deletes a specific timeline entry
 func (r *TimelineRepository) DeleteTimelineEntry(_ context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) error {
-	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
-	sk := fmt.Sprintf("%d#%s", timelineAt.Unix(), entryID)
+	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
+	// Use reverse timestamp like the model does
+	reverseTimestamp := 9999999999 - timelineAt.Unix()
+	sk := fmt.Sprintf("%010d#%s", reverseTimestamp, entryID)
 
 	entry := &models.Timeline{
 		PK: pk,
@@ -441,7 +445,7 @@ func (r *TimelineRepository) DeleteExpiredTimelineEntries(_ context.Context, bef
 
 // CountTimelineEntries counts the number of entries in a timeline
 func (r *TimelineRepository) CountTimelineEntries(_ context.Context, timelineType, timelineID string) (int, error) {
-	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
+	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
 
 	count, err := r.db.Model(&models.Timeline{}).
 		Where("PK", "=", pk).
@@ -455,9 +459,13 @@ func (r *TimelineRepository) CountTimelineEntries(_ context.Context, timelineTyp
 
 // GetTimelineEntriesInRange retrieves timeline entries within a time range
 func (r *TimelineRepository) GetTimelineEntriesInRange(_ context.Context, timelineType, timelineID string, startTime, endTime time.Time, limit int) ([]*models.Timeline, error) {
-	pk := fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)
-	startSK := fmt.Sprintf("%d#", startTime.Unix())
-	endSK := fmt.Sprintf("%d#", endTime.Unix())
+	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
+	// Use reverse timestamp like the model does
+	startReverseTimestamp := 9999999999 - startTime.Unix()
+	endReverseTimestamp := 9999999999 - endTime.Unix()
+	// Note: with reverse timestamp, the range logic is inverted
+	startSK := fmt.Sprintf("%010d#", endReverseTimestamp)   // Earlier time becomes larger reverse timestamp
+	endSK := fmt.Sprintf("%010d#", startReverseTimestamp)   // Later time becomes smaller reverse timestamp
 
 	var entries []*models.Timeline
 	err := r.db.Model(&models.Timeline{}).
@@ -477,8 +485,8 @@ func (r *TimelineRepository) GetTimelineEntriesInRange(_ context.Context, timeli
 // GetTimelineEntriesWithFilters retrieves timeline entries with various filters
 func (r *TimelineRepository) GetTimelineEntriesWithFilters(_ context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, cursor string) ([]*models.Timeline, string, error) {
 	query := r.db.Model(&models.Timeline{}).
-		Where("PK", "=", fmt.Sprintf("timeline#%s#%s", timelineType, timelineID)).
-		OrderBy("SK", "DESC")
+		Where("PK", "=", fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)).
+		OrderBy("SK", "ASC") // ASC because we use reverse timestamp
 
 	// Apply filters
 	if filters.OnlyMedia {
@@ -535,6 +543,56 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(_ context.Context, ti
 	}
 
 	return entries, nextCursor, nil
+}
+
+// GetConversations retrieves conversations for a user (timeline interface compatibility)
+// This bridges between timeline interface and conversation repository
+func (r *TimelineRepository) GetConversations(ctx context.Context, username string, limit int, cursor string) ([]*models.Conversation, string, error) {
+	// Query user's conversation participant records using the established pattern
+	// PK = USER_CONVERSATIONS#username, SK = timestamp#conversationID
+	pk := fmt.Sprintf("USER_CONVERSATIONS#%s", username)
+	
+	query := r.db.WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
+		Where("PK", "=", pk).
+		OrderBy("SK", "DESC") // Most recent first (timestamp-based sorting)
+
+	// Handle cursor-based pagination
+	if cursor != "" {
+		query = query.Where("SK", "<", cursor) // < for getting older conversations
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var participantRecords []*models.ConversationParticipantRecord
+	err := query.All(&participantRecords)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get conversation participant records: %w", err)
+	}
+
+	// Extract conversations from participant records
+	conversations := make([]*models.Conversation, 0, len(participantRecords))
+	for _, record := range participantRecords {
+		if record.Conversation != nil {
+			conversations = append(conversations, record.Conversation)
+		}
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if len(conversations) > limit {
+		// We got more results than requested, so there are more pages
+		nextCursor = participantRecords[limit-1].SK
+		conversations = conversations[:limit] // Trim to requested limit
+	}
+
+	return conversations, nextCursor, nil
+}
+
+// RemoveFromTimelines removes timeline entries for a specific object across all timelines
+func (r *TimelineRepository) RemoveFromTimelines(ctx context.Context, objectID string) error {
+	// Use the existing DeleteTimelineEntriesByPost method which handles all timeline entries for an object
+	return r.DeleteTimelineEntriesByPost(ctx, objectID)
 }
 
 // TimelineFilters represents filters for timeline queries

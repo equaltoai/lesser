@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -12,7 +13,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/reputation"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -25,6 +28,7 @@ type WebFingerHandler struct {
 	actorRepo  *repositories.ActorRepository
 	userRepo   *repositories.UserRepository
 	statusRepo *repositories.StatusRepository
+	repos      core.RepositoryStorage
 	logger     *zap.Logger
 	cfg        *config.Config
 	repService *reputation.Service
@@ -73,6 +77,7 @@ func NewWebFingerHandler() (*WebFingerHandler, error) {
 		actorRepo:  repos.Actor(),
 		userRepo:   repos.User(),
 		statusRepo: repos.Status(),
+		repos:      repos,
 		logger:     logger,
 		cfg:        cfg,
 		repService: repService,
@@ -105,6 +110,7 @@ func (wh *WebFingerHandler) RegisterRoutes(app *lift.App) {
 	_ = app.GET("/.well-known/webfinger", wh.handleWebFinger)
 	_ = app.GET("/.well-known/nodeinfo", wh.handleNodeInfoDiscovery)
 	_ = app.GET("/.well-known/reputation-keys", wh.handleReputationKeys)
+	_ = app.GET("/.well-known/host-meta", wh.handleHostMeta)
 	_ = app.GET("/nodeinfo/2.0", wh.handleNodeInfo20)
 	_ = app.GET("/nodeinfo/2.1", wh.handleNodeInfo21)
 }
@@ -360,6 +366,30 @@ func (wh *WebFingerHandler) handleReputationKeys(ctx *lift.Context) error {
 	return ctx.JSON(keys)
 }
 
+// handleHostMeta returns the XRD host-meta document for federation discovery
+func (wh *WebFingerHandler) handleHostMeta(ctx *lift.Context) error {
+	wh.logger.Info("handling host-meta request",
+		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+	)
+
+	// Generate XRD host-meta document as required by ActivityPub federation
+	xrd := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
+  <Link rel="lrdd" type="application/xrd+xml" template="%s/.well-known/webfinger?resource={uri}"/>
+</XRD>`, wh.cfg.BaseURL())
+
+	// Set proper content type for XRD documents and caching
+	ctx.Response.Headers["Content-Type"] = "application/xrd+xml"
+	ctx.Response.Headers["Cache-Control"] = "max-age=86400" // Cache for 24 hours
+	
+	wh.logger.Debug("returning host-meta XRD document",
+		zap.String("baseURL", wh.cfg.BaseURL()),
+		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+	)
+
+	return ctx.Text(xrd)
+}
+
 // Helper methods for user and post counts using DynamORM repositories
 
 // getUserCount gets the total user count using UserRepository
@@ -449,6 +479,12 @@ func main() {
 			return next.Handle(ctx)
 		})
 	})
+
+	// Add federation rate limiting middleware (fourth in chain)
+	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
+		app.Use(ratelimit.FederationRateLimitMiddleware(handler.repos))
+		handler.logger.Info("enabled federation rate limiting middleware for webfinger service")
+	}
 
 	// Register all webfinger routes
 	handler.RegisterRoutes(app)

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -187,7 +186,7 @@ func getOperationName(ctx *lift.Context) string {
 	if ctx.Request.Path != "" && ctx.Request.Method != "" {
 		return ctx.Request.Method + "_" + sanitizePathForMetrics(ctx.Request.Path)
 	}
-	return monitoring.StatusUnknown
+	return HealthStatusUnknown
 }
 
 func sanitizePathForMetrics(path string) string {
@@ -237,7 +236,7 @@ func getStatusCodeRange(statusCode int) string {
 	case statusCode >= 500:
 		return "5xx"
 	default:
-		return monitoring.StatusUnknown
+		return HealthStatusUnknown
 	}
 }
 
@@ -294,7 +293,7 @@ func classifyDynamoDBError(err error) string {
 	case containsString(errStr, "InternalServerError"):
 		return "internal_server_error"
 	default:
-		return monitoring.StatusUnknown
+		return HealthStatusUnknown
 	}
 }
 

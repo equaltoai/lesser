@@ -464,10 +464,10 @@ func (p *FederationAggregatorProcessor) processActivities(activities []*models.F
 
 		// Update counts and metrics
 		p.updateActivityMetrics(activity, aggregation, &totalResponseTime, &responseTimeCount)
-		
+
 		// Update domain stats
 		p.updateDomainStats(activity, aggregation)
-		
+
 		// Track software if available
 		if activity.InstanceInfo != nil && activity.InstanceInfo.Software != "" {
 			domainSoftware[activity.Domain] = activity.InstanceInfo.Software
@@ -495,7 +495,7 @@ func (p *FederationAggregatorProcessor) isDomainIncluded(domain string, domains 
 // updateActivityMetrics updates aggregation metrics from an activity
 func (p *FederationAggregatorProcessor) updateActivityMetrics(activity *models.FederationActivity, aggregation *FederationAggregation, totalResponseTime *float64, responseTimeCount *int) {
 	aggregation.TotalActivities++
-	
+
 	if activity.Success {
 		aggregation.SuccessfulActivities++
 		if activity.ResponseTime > 0 {
@@ -530,7 +530,7 @@ func (p *FederationAggregatorProcessor) updateDomainStats(activity *models.Feder
 	} else {
 		domainStat.ErrorCount++
 	}
-	
+
 	domainStat.InboundBytes += activity.InboundSize
 	domainStat.OutboundBytes += activity.OutboundSize
 
@@ -549,7 +549,7 @@ func (p *FederationAggregatorProcessor) calculateDomainMetrics(ctx context.Conte
 			if err != nil {
 				continue // Skip this domain on error
 			}
-			
+
 			totalDomainResponseTime := float64(0)
 			domainResponseCount := 0
 			for _, act := range domainActivities {
@@ -558,7 +558,7 @@ func (p *FederationAggregatorProcessor) calculateDomainMetrics(ctx context.Conte
 					domainResponseCount++
 				}
 			}
-			
+
 			if domainResponseCount > 0 {
 				domainStat.AvgResponseTime = totalDomainResponseTime / float64(domainResponseCount)
 			}

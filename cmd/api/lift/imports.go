@@ -13,10 +13,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+)
+
+// Import status constants
+const (
+	ImportStatusFailed    = "failed"
+	ImportStatusCancelled = "cancelled"
 )
 
 // ImportRequest represents a data import request
@@ -72,6 +79,16 @@ func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
 
 	// Check for existing imports
 	if err := h.checkExistingImports(ctx, username, req.Type); err != nil {
+		return err
+	}
+
+	// Check rate limits
+	if err := h.checkImportRateLimit(ctx, username, req.Type); err != nil {
+		return err
+	}
+
+	// Check budget limits before creating import
+	if err := h.checkImportBudgetLimits(ctx, username, req, len(fileData)); err != nil {
 		return err
 	}
 
@@ -218,10 +235,9 @@ func (h *Handler) processImportFileData(ctx *lift.Context, data string) ([]byte,
 		return nil, ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": "file too large (max 10MB)"})
 	}
 
-	// Detect and validate file format
-	contentType := h.detectContentType(fileData)
-	if !h.isValidImportFormat(contentType) {
-		return nil, ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": fmt.Sprintf("unsupported file format: %s", contentType)})
+	// Perform comprehensive file validation
+	if err := h.validateImportFile(ctx, fileData, "unknown"); err != nil {
+		return nil, err
 	}
 
 	return fileData, nil
@@ -303,33 +319,35 @@ func (h *Handler) createImportRecord(ctx *lift.Context, importID, username strin
 	}
 
 	// Queue import processing job
-	h.queueImportJob(ctx, importID, username, req, s3Key, now)
+	if err := h.queueImportJobSQS(ctx, importID, username, req, s3Key); err != nil {
+		h.logger.Error("failed to queue import job", zap.Error(err))
+		// Don't fail the request, job can be retried later or processed manually
+	}
 
 	return nil
 }
 
-// queueImportJob queues the import for processing
-func (h *Handler) queueImportJob(ctx *lift.Context, importID, username string, req *ImportRequest, s3Key string, now time.Time) {
-	queueJob := map[string]any{
-		"importID":  importID,
-		"username":  username,
-		"type":      req.Type,
-		"mode":      req.Mode,
-		"s3Key":     s3Key,
-		"timestamp": now.Unix(),
+// queueImportJobSQS queues the import job using SQS
+func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string, req *ImportRequest, s3Key string) error {
+	// Create job queue service
+	jobQueue, err := services.NewJobQueueService(h.logger)
+	if err != nil {
+		return fmt.Errorf("failed to create job queue service: %w", err)
 	}
 
-	if err := h.repos.Object().CreateObject(ctx.Context, map[string]any{
-		"PK":        fmt.Sprintf("IMPORT_QUEUE#%s", importID),
-		"SK":        fmt.Sprintf("JOB#%s", importID),
-		"Type":      "ImportQueueJob",
-		"JobData":   queueJob,
-		"CreatedAt": now,
-		"TTL":       now.Add(1 * time.Hour).Unix(), // 1 hour TTL for queue items
-	}); err != nil {
-		h.logger.Error("failed to queue import processor", zap.Error(err))
-		// Don't fail the request, import can be retried later
+	// Create import job message
+	msg := services.ImportJobMessage{
+		ImportID:  importID,
+		Username:  username,
+		Type:      req.Type,
+		Mode:      req.Mode,
+		S3Key:     s3Key,
+		Timestamp: time.Now().Unix(),
+		Options:   make(map[string]any), // Could be extended for future options
 	}
+
+	// Queue the job
+	return jobQueue.QueueImportJob(ctx.Context, msg)
 }
 
 // HandleGetImportStatusLift handles GET /api/v1/imports/:id
@@ -507,6 +525,109 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 	return ctx.JSON(imports)
 }
 
+// HandleCancelImportLift handles DELETE /api/v1/imports/:id
+func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
+	// Test mode support
+	testUsername := ctx.Header("X-Test-Username")
+	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	}
+
+	var username string
+	if testUsername != "" {
+		// Test mode - skip auth
+		username = testUsername
+	} else {
+		// Extract and validate token
+		authHeader := ctx.Header("Authorization")
+		if authHeader == "" {
+			authHeader = ctx.Header("authorization")
+		}
+
+		// Try direct access to headers if ctx.Header doesn't work
+		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+			authHeader = ctx.Request.Request.Headers["Authorization"]
+			if authHeader == "" {
+				authHeader = ctx.Request.Request.Headers["authorization"]
+			}
+		}
+
+		token, err := auth.ExtractBearerToken(authHeader)
+		if err != nil {
+			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
+		}
+
+		// Validate token and require write scope
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		claims, err := oauthSvc.ValidateAccessToken(token)
+		if err != nil {
+			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
+		}
+
+		if !claims.HasScope(auth.ScopeWrite) {
+			return ctx.Status(http.StatusForbidden).JSON(map[string]any{"error": "insufficient scope"})
+		}
+
+		username = claims.Username
+	}
+
+	// Get import ID from path parameter
+	importID := ctx.Param("id")
+	if importID == "" {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": "missing import ID"})
+	}
+
+	// Get import job
+	importRec, err := h.repos.Import().GetImport(ctx.Context, importID)
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).JSON(map[string]any{"error": fmt.Sprintf("import not found: %s", importID)})
+	}
+
+	// Verify ownership
+	if importRec.Username != username {
+		return ctx.Status(http.StatusForbidden).JSON(map[string]any{"error": "not authorized to cancel this import"})
+	}
+
+	// Check if import can be cancelled
+	if importRec.Status == statusCompleted {
+		return ctx.Status(http.StatusConflict).JSON(map[string]any{"error": "import already completed"})
+	}
+	
+	if importRec.Status == ImportStatusFailed {
+		return ctx.Status(http.StatusConflict).JSON(map[string]any{"error": "import already failed"})
+	}
+	
+	if importRec.Status == ImportStatusCancelled {
+		return ctx.Status(http.StatusConflict).JSON(map[string]any{"error": "import already cancelled"})
+	}
+
+	// Update import status to cancelled
+	if err := h.repos.Import().UpdateImportStatus(ctx.Context, importID, "cancelled", nil, "cancelled by user"); err != nil {
+		h.logger.Error("failed to cancel import", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]any{"error": "failed to cancel import"})
+	}
+
+	h.logger.Info("import cancelled by user",
+		zap.String("import_id", importID),
+		zap.String("username", username))
+
+	// Return updated job status
+	job := ImportJob{
+		ID:        importRec.ID,
+		Status:    "cancelled",
+		Type:      importRec.Type,
+		CreatedAt: importRec.CreatedAt.Format(time.RFC3339),
+		Processed: importRec.Progress,
+	}
+
+	// Add total if available
+	if importRec.Total > 0 {
+		job.Total = &importRec.Total
+	}
+
+	return ctx.JSON(job)
+}
+
 // Helper methods
 
 func (h *Handler) detectContentType(data []byte) string {
@@ -541,4 +662,170 @@ func (h *Handler) isValidImportFormat(contentType string) bool {
 		}
 	}
 	return false
+}
+
+// checkImportRateLimit validates rate limits for import operations
+func (h *Handler) checkImportRateLimit(ctx *lift.Context, username string, importType string) error {
+	// Basic rate limiting - check for existing pending imports
+	existingJobs, err := h.repos.Import().GetUserImportsByStatus(ctx.Context, username, []string{"pending", "processing"})
+	if err != nil {
+		h.logger.Warn("failed to check existing jobs for rate limiting", zap.Error(err))
+		return nil // Don't block on check error
+	}
+
+	// Count imports of the same type in the last day
+	recentCount := 0
+	oneDayAgo := time.Now().Add(-24 * time.Hour)
+	for _, job := range existingJobs {
+		if job.Type == importType && job.CreatedAt.After(oneDayAgo) {
+			recentCount++
+		}
+	}
+
+	// Allow 1 import per day per type for regular users (more restrictive than exports)
+	if recentCount >= 1 {
+		return ctx.Status(http.StatusTooManyRequests).JSON(map[string]any{
+			"error":          "rate limit exceeded",
+			"limit":          1,
+			"window_seconds": 86400, // 24 hours
+			"retry_after":    86400,
+		})
+	}
+	
+	return nil
+}
+
+// checkImportBudgetLimits validates that the user has not exceeded their import budget limits
+func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, req *ImportRequest, fileSize int) error {
+	// Get import repository to access budget methods
+	importRepo := h.repos.Import()
+	
+	// Estimate import cost based on file size and type
+	estimatedCost := h.estimateImportCost(req, fileSize)
+	
+	// Check budget limits (export cost = 0 for imports)
+	budget, withinLimits, err := importRepo.CheckBudgetLimits(ctx.Context, username, estimatedCost, 0)
+	if err != nil {
+		h.logger.Warn("failed to check budget limits, allowing import", zap.Error(err))
+		return nil // Don't block on budget check errors
+	}
+	
+	if !withinLimits {
+		var limitType string
+		var remaining int64
+		
+		if budget.IsImportOverLimit(estimatedCost) {
+			limitType = "import"
+			remaining = budget.GetRemainingImportBudget()
+		} else if budget.IsCombinedOverLimit(estimatedCost, 0) {
+			limitType = "combined"
+			remaining = budget.GetRemainingCombinedBudget()
+		}
+		
+		return ctx.Status(http.StatusPaymentRequired).JSON(map[string]any{
+			"error":              fmt.Sprintf("%s budget limit exceeded", limitType),
+			"estimated_cost":     float64(estimatedCost) / 1_000_000.0, // Convert to dollars
+			"remaining_budget":   float64(remaining) / 1_000_000.0,     // Convert to dollars
+			"budget_period":      budget.Period,
+			"budget_resets_at":   budget.NextResetAt.Format(time.RFC3339),
+		})
+	}
+	
+	return nil
+}
+
+// estimateImportCost provides a rough cost estimate for an import operation
+func (h *Handler) estimateImportCost(req *ImportRequest, fileSize int) int64 {
+	baseCost := int64(30000) // $0.03 base cost in microcents
+	
+	// Scale cost based on file size (per KB)
+	fileSizeKB := int64(fileSize) / 1024
+	if fileSizeKB < 1 {
+		fileSizeKB = 1
+	}
+	sizeCost := fileSizeKB * 1000 // $0.001 per KB
+	
+	// Adjust cost based on import type
+	switch req.Type {
+	case ExportTypeFollowers, ExportTypeFollowing:
+		baseCost *= 3 // Relationship imports require external lookups
+	case "lists":
+		baseCost *= 2 // List processing is moderately expensive
+	case "bookmarks":
+		baseCost *= 2 // Bookmark processing requires object resolution
+	}
+	
+	// Overwrite mode costs more than merge
+	if req.Mode == "overwrite" {
+		baseCost *= 2
+	}
+	
+	return baseCost + sizeCost
+}
+
+// validateImportFile performs comprehensive file validation
+func (h *Handler) validateImportFile(ctx *lift.Context, data []byte, importType string) error {
+	// Create file validation service
+	fileValidator, err := services.NewFileValidationService(h.logger)
+	if err != nil {
+		h.logger.Warn("failed to create file validator, skipping advanced validation", zap.Error(err))
+		// Fall back to basic validation
+		return h.basicFileValidation(data)
+	}
+
+	// Configure validation based on import type
+	config := services.DefaultImportValidationConfig()
+	
+	// Adjust limits based on import type
+	switch importType {
+	case ExportTypeFollowers, ExportTypeFollowing:
+		config.MaxSizeBytes = 50 * 1024 * 1024 // 50MB for relationship lists
+	case "blocks", "mutes":
+		config.MaxSizeBytes = 10 * 1024 * 1024 // 10MB for smaller lists
+	case "bookmarks", "lists":
+		config.MaxSizeBytes = 20 * 1024 * 1024 // 20MB for medium lists
+	}
+
+	// Perform validation
+	result, err := fileValidator.ValidateFile(ctx.Context, data, config)
+	if err != nil {
+		h.logger.Error("file validation failed", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]any{"error": "file validation failed"})
+	}
+
+	// Check validation result
+	if !result.Valid {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{
+			"error":    "file validation failed",
+			"details":  result.Errors,
+			"warnings": result.Warnings,
+		})
+	}
+
+	// Log warnings if any
+	if len(result.Warnings) > 0 {
+		h.logger.Warn("file validation warnings",
+			zap.String("import_type", importType),
+			zap.Strings("warnings", result.Warnings))
+	}
+
+	// Log validation metadata
+	h.logger.Info("file validation successful",
+		zap.String("import_type", importType),
+		zap.String("content_type", result.ContentType),
+		zap.String("detected_format", result.DetectedFormat),
+		zap.Int64("file_size", result.FileSize),
+		zap.String("md5_hash", result.MD5Hash))
+
+	return nil
+}
+
+// basicFileValidation performs basic validation as fallback
+func (h *Handler) basicFileValidation(data []byte) error {
+	// Basic content type detection
+	contentType := h.detectContentType(data)
+	if !h.isValidImportFormat(contentType) {
+		return fmt.Errorf("unsupported file format: %s", contentType)
+	}
+	return nil
 }

@@ -22,27 +22,27 @@ type CloudWatchMetricsRepository struct {
 
 // CloudWatchMetrics represents metrics data from CloudWatch
 type CloudWatchMetrics struct {
-	MetricName  string
-	Value       float64
-	Unit        string
-	Timestamp   time.Time
-	Dimensions  map[string]string
+	MetricName string
+	Value      float64
+	Unit       string
+	Timestamp  time.Time
+	Dimensions map[string]string
 }
 
 // ServiceMetrics represents aggregated metrics for a service
 type ServiceMetrics struct {
-	ServiceName        string
-	RequestCount       int64
-	ErrorCount         int64
-	LatencyP50Ms       float64
-	LatencyP90Ms       float64
-	LatencyP99Ms       float64
-	DynamoDBReads      int64
-	DynamoDBWrites     int64
-	LambdaInvocations  int64
-	S3Requests         int64
-	DataTransferBytes  int64
-	EstimatedCostUSD   float64
+	ServiceName       string
+	RequestCount      int64
+	ErrorCount        int64
+	LatencyP50Ms      float64
+	LatencyP90Ms      float64
+	LatencyP99Ms      float64
+	DynamoDBReads     int64
+	DynamoDBWrites    int64
+	LambdaInvocations int64
+	S3Requests        int64
+	DataTransferBytes int64
+	EstimatedCostUSD  float64
 }
 
 // NewCloudWatchMetricsRepository creates a new CloudWatch metrics repository
@@ -66,7 +66,7 @@ func (r *CloudWatchMetricsRepository) GetServiceMetrics(ctx context.Context, ser
 
 	// Query all metrics in parallel
 	errChan := make(chan error, 6)
-	
+
 	// API Gateway metrics (requests, latency, errors)
 	go func() {
 		if err := r.getAPIGatewayMetrics(ctx, metrics, startTime, endTime); err != nil {
@@ -216,7 +216,7 @@ func (r *CloudWatchMetricsRepository) getMetricSum(ctx context.Context, namespac
 // getMetricPercentile retrieves a specific percentile of a metric
 func (r *CloudWatchMetricsRepository) getMetricPercentile(ctx context.Context, namespace, metricName string, percentile float64, startTime, endTime time.Time, dimensions map[string]string) (float64, error) {
 	extendedStatistic := fmt.Sprintf("p%g", percentile)
-	
+
 	cwDimensions := make([]types.Dimension, 0, len(dimensions))
 	for name, value := range dimensions {
 		cwDimensions = append(cwDimensions, types.Dimension{
@@ -227,12 +227,12 @@ func (r *CloudWatchMetricsRepository) getMetricPercentile(ctx context.Context, n
 
 	input := &cloudwatch.GetMetricStatisticsInput{
 		Namespace:          aws.String(namespace),
-		MetricName:        aws.String(metricName),
-		StartTime:         aws.Time(startTime),
-		EndTime:           aws.Time(endTime),
-		Period:            aws.Int32(300), // 5-minute intervals
+		MetricName:         aws.String(metricName),
+		StartTime:          aws.Time(startTime),
+		EndTime:            aws.Time(endTime),
+		Period:             aws.Int32(300), // 5-minute intervals
 		ExtendedStatistics: []string{extendedStatistic},
-		Dimensions:        cwDimensions,
+		Dimensions:         cwDimensions,
 	}
 
 	result, err := r.client.GetMetricStatistics(ctx, input)
@@ -339,8 +339,8 @@ func (r *CloudWatchMetricsRepository) calculateEstimatedCost(metrics *ServiceMet
 	cost := 0.0
 
 	// DynamoDB costs (per million units)
-	cost += (float64(metrics.DynamoDBReads) / 1000000.0) * 0.25   // $0.25 per million read units
-	cost += (float64(metrics.DynamoDBWrites) / 1000000.0) * 1.25  // $1.25 per million write units
+	cost += (float64(metrics.DynamoDBReads) / 1000000.0) * 0.25  // $0.25 per million read units
+	cost += (float64(metrics.DynamoDBWrites) / 1000000.0) * 1.25 // $1.25 per million write units
 
 	// Lambda costs (per million invocations)
 	cost += (float64(metrics.LambdaInvocations) / 1000000.0) * 0.20 // $0.20 per million requests
@@ -395,7 +395,7 @@ func (r *CloudWatchMetricsRepository) GetCostBreakdown(ctx context.Context, peri
 		DynamoDBCost:     dynamoDBCost,
 		LambdaCost:       lambdaCost,
 		APIGatewayCost:   apiGatewayCost,
-		S3Cost:          s3Cost,
+		S3Cost:           s3Cost,
 		DataTransferCost: dataTransferCost,
 		Breakdown: []*CostItem{
 			{Operation: "DynamoDB Reads", Count: int(metrics.DynamoDBReads), Cost: dynamoReadCost},
@@ -416,7 +416,7 @@ type CostBreakdown struct {
 	DynamoDBCost     float64
 	LambdaCost       float64
 	APIGatewayCost   float64
-	S3Cost          float64
+	S3Cost           float64
 	DataTransferCost float64
 	Breakdown        []*CostItem
 }

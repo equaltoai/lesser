@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -17,6 +18,9 @@ import (
 const (
 	ExportStatusCompleted = statusCompleted // Using common constant
 	ExportStatusFailed    = "failed"
+	ExportTypeArchive     = "archive"
+	ExportTypeFollowers   = "followers"
+	ExportTypeFollowing   = "following"
 )
 
 // ExportRequest represents a data export request
@@ -72,6 +76,16 @@ func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
 		return err
 	}
 
+	// Check rate limits
+	if err := h.checkExportRateLimit(ctx, username, req.Type); err != nil {
+		return err
+	}
+
+	// Check budget limits before creating export
+	if err := h.checkExportBudgetLimits(ctx, username, req); err != nil {
+		return err
+	}
+
 	// Create export job
 	exportID := uuid.New().String()
 	export, err := h.createExportJob(ctx, exportID, username, req)
@@ -80,7 +94,10 @@ func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
 	}
 
 	// Queue export for processing
-	h.queueExportJob(ctx, exportID, username, req.Type)
+	if err := h.queueExportJobSQS(ctx, exportID, username, req); err != nil {
+		h.logger.Error("failed to queue export job", zap.Error(err))
+		// Don't fail the request, job can be retried later or processed manually
+	}
 
 	// Return job status
 	job := ExportJob{
@@ -172,7 +189,7 @@ func (h *Handler) parseExportRequest(ctx *lift.Context) (*ExportRequest, error) 
 
 	// Set defaults
 	if req.Type == "" {
-		req.Type = "archive"
+		req.Type = ExportTypeArchive
 	}
 	if req.Format == "" {
 		req.Format = "activitypub"
@@ -287,27 +304,45 @@ func (h *Handler) processExportDateRange(ctx *lift.Context, dateRange *DateRange
 	return exportDateRange, nil
 }
 
-// queueExportJob queues the export for processing
-func (h *Handler) queueExportJob(ctx *lift.Context, exportID, username, exportType string) {
-	now := time.Now()
-	queueJob := map[string]any{
-		"exportID":  exportID,
-		"username":  username,
-		"type":      exportType,
-		"timestamp": now.Unix(),
+// queueExportJobSQS queues the export job using SQS
+func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string, req *ExportRequest) error {
+	// Create job queue service
+	jobQueue, err := services.NewJobQueueService(h.logger)
+	if err != nil {
+		return fmt.Errorf("failed to create job queue service: %w", err)
 	}
 
-	if err := h.repos.Object().CreateObject(ctx.Context, map[string]any{
-		"PK":        fmt.Sprintf("EXPORT_QUEUE#%s", exportID),
-		"SK":        fmt.Sprintf("JOB#%s", exportID),
-		"Type":      "ExportQueueJob",
-		"JobData":   queueJob,
-		"CreatedAt": now,
-		"TTL":       now.Add(1 * time.Hour).Unix(), // 1 hour TTL for queue items
-	}); err != nil {
-		h.logger.Error("failed to queue export processor", zap.Error(err))
-		// Don't fail the request, export can be retried later
+	// Convert DateRange to service format
+	var dateRange *services.ExportDateRange
+	if req.DateRange != nil {
+		startTime, err := time.Parse(common.DateFormat, req.DateRange.Start)
+		if err != nil {
+			return fmt.Errorf("invalid start date: %w", err)
+		}
+		endTime, err := time.Parse(common.DateFormat, req.DateRange.End)
+		if err != nil {
+			return fmt.Errorf("invalid end date: %w", err)
+		}
+		dateRange = &services.ExportDateRange{
+			Start: startTime,
+			End:   endTime,
+		}
 	}
+
+	// Create export job message
+	msg := services.ExportJobMessage{
+		ExportID:     exportID,
+		Username:     username,
+		Type:         req.Type,
+		Format:       req.Format,
+		IncludeMedia: req.IncludeMedia,
+		DateRange:    dateRange,
+		Options:      req.Options,
+		Timestamp:    time.Now().Unix(),
+	}
+
+	// Queue the job
+	return jobQueue.QueueExportJob(ctx.Context, msg)
 }
 
 // HandleGetExportStatusLift handles GET /api/v1/exports/:id
@@ -555,4 +590,180 @@ func (h *Handler) addFailedExportFields(job *ExportJob, export *models.Export) {
 	if export.Error != "" {
 		job.Error = &export.Error
 	}
+}
+
+// HandleDownloadExportLift handles GET /api/v1/exports/:id/download
+func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
+	// Authenticate user (using existing pattern from status handler)
+	testUsername := ctx.Header("X-Test-Username")
+	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	}
+
+	var username string
+	if testUsername != "" {
+		// Test mode - skip auth
+		username = testUsername
+	} else {
+		// Extract and validate token
+		authHeader := ctx.Header("Authorization")
+		if authHeader == "" {
+			authHeader = ctx.Header("authorization")
+		}
+
+		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+			authHeader = ctx.Request.Request.Headers["Authorization"]
+			if authHeader == "" {
+				authHeader = ctx.Request.Request.Headers["authorization"]
+			}
+		}
+
+		token, err := auth.ExtractBearerToken(authHeader)
+		if err != nil {
+			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
+		}
+
+		// Validate token
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		claims, err := oauthSvc.ValidateAccessToken(token)
+		if err != nil {
+			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
+		}
+
+		username = claims.Username
+	}
+
+	// Get export ID from path parameter
+	exportID := ctx.Param("id")
+	if exportID == "" {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": "missing export ID"})
+	}
+
+	// Get export job
+	export, err := h.repos.Export().GetExport(ctx.Context, exportID)
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).JSON(map[string]any{"error": fmt.Sprintf("export not found: %s", exportID)})
+	}
+
+	// Verify ownership
+	if export.Username != username {
+		return ctx.Status(http.StatusForbidden).JSON(map[string]any{"error": "not authorized to download this export"})
+	}
+
+	// Check if export is completed
+	if export.Status != ExportStatusCompleted {
+		return ctx.Status(http.StatusConflict).JSON(map[string]any{"error": fmt.Sprintf("export not ready (status: %s)", export.Status)})
+	}
+
+	// Check if download URL is available and not expired
+	if export.DownloadURL == "" {
+		return ctx.Status(http.StatusGone).JSON(map[string]any{"error": "download URL not available"})
+	}
+
+	if export.ExpiresAt != nil && time.Now().After(*export.ExpiresAt) {
+		return ctx.Status(http.StatusGone).JSON(map[string]any{"error": "download URL has expired"})
+	}
+
+	// Redirect to the pre-signed S3 URL  
+	ctx.Set("Location", export.DownloadURL)
+	return ctx.Status(http.StatusFound).JSON(map[string]any{
+		"download_url": export.DownloadURL,
+		"expires_at":   export.ExpiresAt.Format(time.RFC3339),
+	})
+}
+
+// checkExportBudgetLimits validates that the user has not exceeded their export budget limits
+func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, req *ExportRequest) error {
+	// Get import repository to access budget methods
+	importRepo := h.repos.Import()
+	
+	// Estimate export cost (simplified estimation)
+	estimatedCost := h.estimateExportCost(req)
+	
+	// Check budget limits (import cost = 0 for exports)
+	budget, withinLimits, err := importRepo.CheckBudgetLimits(ctx.Context, username, 0, estimatedCost)
+	if err != nil {
+		h.logger.Warn("failed to check budget limits, allowing export", zap.Error(err))
+		return nil // Don't block on budget check errors
+	}
+	
+	if !withinLimits {
+		var limitType string
+		var remaining int64
+		
+		if budget.IsExportOverLimit(estimatedCost) {
+			limitType = "export"
+			remaining = budget.GetRemainingExportBudget()
+		} else if budget.IsCombinedOverLimit(0, estimatedCost) {
+			limitType = "combined"
+			remaining = budget.GetRemainingCombinedBudget()
+		}
+		
+		return ctx.Status(http.StatusPaymentRequired).JSON(map[string]any{
+			"error":              fmt.Sprintf("%s budget limit exceeded", limitType),
+			"estimated_cost":     float64(estimatedCost) / 1_000_000.0, // Convert to dollars
+			"remaining_budget":   float64(remaining) / 1_000_000.0,     // Convert to dollars
+			"budget_period":      budget.Period,
+			"budget_resets_at":   budget.NextResetAt.Format(time.RFC3339),
+		})
+	}
+	
+	return nil
+}
+
+// estimateExportCost provides a rough cost estimate for an export operation
+func (h *Handler) estimateExportCost(req *ExportRequest) int64 {
+	baseCost := int64(50000) // $0.05 base cost in microcents
+	
+	// Adjust cost based on export type
+	switch req.Type {
+	case ExportTypeArchive:
+		baseCost *= 10 // Archive exports are more expensive
+	case ExportTypeFollowers, ExportTypeFollowing:
+		baseCost *= 3 // Relationship exports are moderately expensive
+	}
+	
+	// Adjust cost based on format
+	switch req.Format {
+	case "activitypub", "mastodon":
+		baseCost *= 2 // JSON formats are more expensive than CSV
+	}
+	
+	// Media inclusion significantly increases cost
+	if req.IncludeMedia {
+		baseCost *= 5
+	}
+	
+	return baseCost
+}
+
+// checkExportRateLimit validates rate limits for export operations
+func (h *Handler) checkExportRateLimit(ctx *lift.Context, username string, exportType string) error {
+	// Basic rate limiting - check for existing pending exports
+	existingJobs, err := h.repos.Export().GetUserExportsByStatus(ctx.Context, username, []string{"pending", "processing"})
+	if err != nil {
+		h.logger.Warn("failed to check existing jobs for rate limiting", zap.Error(err))
+		return nil // Don't block on check error
+	}
+
+	// Count exports of the same type in the last hour
+	recentCount := 0
+	oneHourAgo := time.Now().Add(-time.Hour)
+	for _, job := range existingJobs {
+		if job.Type == exportType && job.CreatedAt.After(oneHourAgo) {
+			recentCount++
+		}
+	}
+
+	// Allow 1 export per hour per type for regular users
+	if recentCount >= 1 {
+		return ctx.Status(http.StatusTooManyRequests).JSON(map[string]any{
+			"error":          "rate limit exceeded",
+			"limit":          1,
+			"window_seconds": 3600,
+			"retry_after":    3600,
+		})
+	}
+	
+	return nil
 }

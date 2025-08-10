@@ -87,7 +87,7 @@ type DASHManifest struct {
 	ManifestURL     string
 	GeneratedAt     time.Time
 	CacheDuration   time.Duration
-	
+
 	// Live streaming specific fields
 	IsLive                     bool
 	AvailabilityStartTime      time.Time
@@ -180,11 +180,11 @@ type MediaMetadata struct {
 	VideoProfile    string                       `json:"video_profile,omitempty"`    // e.g., "High", "Main", "Baseline"
 	VideoLevel      string                       `json:"video_level,omitempty"`      // e.g., "4.0", "3.1"
 	QualitySettings map[Quality]QualityCodecInfo `json:"quality_settings,omitempty"` // Per-quality codec info
-	
+
 	// Live streaming specific fields
 	IsLive    bool      `json:"is_live,omitempty"`
 	StartTime time.Time `json:"start_time,omitempty"`
-	
+
 	// I-frame/keyframe information for trick play
 	KeyframePositions []float64 `json:"keyframe_positions,omitempty"` // PTS positions of keyframes in seconds
 }

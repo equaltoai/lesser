@@ -18,11 +18,11 @@ type RouteThresholdManager struct {
 // ThresholdConfig defines the thresholds from the route optimization guidance
 type ThresholdConfig struct {
 	// Latency Thresholds (from guidance document)
-	P95LatencyThreshold  time.Duration // 5s - Trigger route change
-	P99LatencyThreshold  time.Duration // 10s - Hard limit before timeout
-	AvgLatencyThreshold  time.Duration // 2s - Sustained poor performance
-	DegradationWindow    time.Duration // 5min - Window for degradation detection
-	DegradationIncrease  float64       // 0.5 - 50% increase triggers degradation
+	P95LatencyThreshold time.Duration // 5s - Trigger route change
+	P99LatencyThreshold time.Duration // 10s - Hard limit before timeout
+	AvgLatencyThreshold time.Duration // 2s - Sustained poor performance
+	DegradationWindow   time.Duration // 5min - Window for degradation detection
+	DegradationIncrease float64       // 0.5 - 50% increase triggers degradation
 
 	// Success Rate Thresholds
 	CriticalSuccessRate  float64 // 0.5 - < 50% = Open circuit immediately
@@ -43,9 +43,9 @@ type ThresholdConfig struct {
 	LowPriorityTTL    time.Duration // 10min - Bulk updates, deletes
 
 	// Emergency Mode Configuration
-	EmergencyThreshold float64       // 0.3 - When to enter emergency mode
-	RecoveryProbeInterval time.Duration // 30s - Probe interval during recovery
-	RecoverySuccessThreshold int      // 3 - Consecutive successes to mark healthy
+	EmergencyThreshold       float64       // 0.3 - When to enter emergency mode
+	RecoveryProbeInterval    time.Duration // 30s - Probe interval during recovery
+	RecoverySuccessThreshold int           // 3 - Consecutive successes to mark healthy
 }
 
 // RouteHealthStatus represents the current health status of a route
@@ -135,11 +135,11 @@ func NewRouteThresholdManager(logger *zap.Logger, config *ThresholdConfig) *Rout
 func DefaultThresholdConfig() *ThresholdConfig {
 	return &ThresholdConfig{
 		// Latency Thresholds
-		P95LatencyThreshold:  5 * time.Second,
-		P99LatencyThreshold:  10 * time.Second,
-		AvgLatencyThreshold:  2 * time.Second,
-		DegradationWindow:    5 * time.Minute,
-		DegradationIncrease:  0.5, // 50%
+		P95LatencyThreshold: 5 * time.Second,
+		P99LatencyThreshold: 10 * time.Second,
+		AvgLatencyThreshold: 2 * time.Second,
+		DegradationWindow:   5 * time.Minute,
+		DegradationIncrease: 0.5, // 50%
 
 		// Success Rate Thresholds
 		CriticalSuccessRate:  0.5,  // 50%
@@ -160,8 +160,8 @@ func DefaultThresholdConfig() *ThresholdConfig {
 		LowPriorityTTL:    10 * time.Minute,
 
 		// Emergency Mode
-		EmergencyThreshold:        0.3,
-		RecoveryProbeInterval:     30 * time.Second,
+		EmergencyThreshold:       0.3,
+		RecoveryProbeInterval:    30 * time.Second,
 		RecoverySuccessThreshold: 3,
 	}
 }

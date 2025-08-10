@@ -2,8 +2,8 @@ package models
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // WeeklyActivity represents activity metrics for a specific week

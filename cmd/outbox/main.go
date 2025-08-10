@@ -13,12 +13,14 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -444,7 +446,6 @@ func (op *OutboxProcessor) trackDeliveryStatus(ctx context.Context, msg Activity
 	return nil
 }
 
-
 // recordComprehensiveCostTracking records comprehensive cost tracking for outbound federation
 func (op *OutboxProcessor) recordComprehensiveCostTracking(msg ActivityDeliveryMessage, result DeliveryResult, costParams *federation.CostCalculationParams, totalDuration time.Duration) {
 	// Update cost parameters with final results
@@ -523,6 +524,309 @@ func extractDomainFromURL(urlStr string) string {
 	// Return as-is if no protocol prefix
 	return urlStr
 }
+
+// HandleOutboxPost handles POST requests to the ActivityPub outbox endpoint
+func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
+	requestID, _ := ctx.Get("requestID").(string)
+	if requestID == "" {
+		requestID = fmt.Sprintf("outbox-post-%d", time.Now().UnixNano())
+		ctx.Set("requestID", requestID)
+	}
+
+	username := ctx.Param("username")
+	if username == "" {
+		op.logger.Warn("missing username parameter", zap.String("request_id", requestID))
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			"error": "missing username parameter",
+		})
+	}
+
+	op.logger.Info("processing outbox POST request",
+		zap.String("request_id", requestID),
+		zap.String("username", username),
+	)
+
+	// Authenticate request
+	claims, actor, err := op.authenticateOutboxRequest(ctx, username)
+	if err != nil {
+		return err
+	}
+
+	op.logger.Info("authenticated outbox request",
+		zap.String("request_id", requestID),
+		zap.String("username", claims.Username),
+		zap.String("actor_id", actor.ID),
+	)
+
+	// Parse the activity from request body
+	activity, err := op.parseActivityFromRequest(ctx)
+	if err != nil {
+		return err
+	}
+
+	op.logger.Info("parsed activity from request",
+		zap.String("request_id", requestID),
+		zap.String("activity_type", activity.Type),
+		zap.String("activity_id", activity.ID),
+	)
+
+	// Set the actor and published timestamp if not set
+	activity.Actor = actor.ID
+	if activity.Published == nil {
+		now := time.Now()
+		activity.Published = &now
+	}
+
+	// Generate activity ID if not provided
+	if activity.ID == "" {
+		activity.ID = fmt.Sprintf("%s/activities/%s-%d-%s", 
+			actor.ID, 
+			strings.ToLower(activity.Type), 
+			time.Now().Unix(), 
+			generateRandomStringOutbox())
+	}
+
+	// Store the activity in the outbox
+	if err := op.activityRepository.CreateActivity(ctx.Request.Context(), activity); err != nil {
+		op.logger.Error("failed to store activity in outbox",
+			zap.String("request_id", requestID),
+			zap.String("activity_id", activity.ID),
+			zap.Error(err),
+		)
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
+			"error": "failed to store activity",
+		})
+	}
+
+	// Trigger federation delivery based on activity type and addressing
+	if err := op.triggerFederationDelivery(ctx.Request.Context(), activity, actor); err != nil {
+		op.logger.Warn("failed to trigger federation delivery",
+			zap.String("request_id", requestID),
+			zap.String("activity_id", activity.ID),
+			zap.Error(err),
+		)
+		// Don't fail the request - federation delivery will be retried
+	}
+
+	op.logger.Info("outbox POST completed successfully",
+		zap.String("request_id", requestID),
+		zap.String("activity_id", activity.ID),
+		zap.String("activity_type", activity.Type),
+	)
+
+	// Return the activity as JSON
+	ctx.Status(http.StatusCreated)
+	return ctx.JSON(activity)
+}
+
+// authenticateOutboxRequest authenticates the request and verifies actor matching
+func (op *OutboxProcessor) authenticateOutboxRequest(ctx *lift.Context, username string) (*auth.Claims, *activitypub.Actor, error) {
+	// Extract Bearer token
+	token := op.getBearerToken(ctx)
+	if token == "" {
+		op.logger.Warn("missing authentication token")
+		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{
+			"error": "authentication required",
+		})
+	}
+
+	// Validate the token directly using JWT parsing (avoiding complex storage interface)
+	claims, err := op.validateJWTToken(token)
+	if err != nil {
+		op.logger.Warn("invalid access token", zap.Error(err))
+		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{
+			"error": "invalid token",
+		})
+	}
+
+	// Verify write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		op.logger.Warn("insufficient scope", zap.String("username", claims.Username))
+		return nil, nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{
+			"error": "insufficient scope - write access required",
+		})
+	}
+
+	// Verify the authenticated user matches the username in the path
+	if claims.Username != username {
+		op.logger.Warn("username mismatch",
+			zap.String("token_username", claims.Username),
+			zap.String("path_username", username),
+		)
+		return nil, nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{
+			"error": "cannot post to another user's outbox",
+		})
+	}
+
+	// Get the actor for the authenticated user
+	actor, err := op.actorRepository.GetActor(ctx.Request.Context(), username)
+	if err != nil {
+		op.logger.Error("failed to get actor", zap.String("username", username), zap.Error(err))
+		return nil, nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
+			"error": "failed to get actor information",
+		})
+	}
+
+	return claims, actor, nil
+}
+
+// getBearerToken extracts Bearer token from Authorization header
+func (op *OutboxProcessor) getBearerToken(ctx *lift.Context) string {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+
+	if authHeader == "" {
+		return ""
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return ""
+	}
+
+	return token
+}
+
+// parseActivityFromRequest parses the ActivityPub activity from the request body
+func (op *OutboxProcessor) parseActivityFromRequest(ctx *lift.Context) (*activitypub.Activity, error) {
+	var activity activitypub.Activity
+
+	// Parse the request body as JSON
+	if err := ctx.ParseRequest(&activity); err != nil {
+		op.logger.Error("failed to parse activity JSON", zap.Error(err))
+		return nil, ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			"error": "invalid JSON activity",
+		})
+	}
+
+	// Validate required fields
+	if activity.Type == "" {
+		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
+			"error": "activity type is required",
+		})
+	}
+
+	// Validate activity type
+	validTypes := []string{
+		activitypub.CreateType,
+		activitypub.UpdateType,
+		activitypub.DeleteType,
+		activitypub.FollowType,
+		activitypub.UndoType,
+		activitypub.LikeType,
+		activitypub.AnnounceType,
+		activitypub.AcceptType,
+		activitypub.RejectType,
+	}
+
+	validType := false
+	for _, vt := range validTypes {
+		if activity.Type == vt {
+			validType = true
+			break
+		}
+	}
+
+	if !validType {
+		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
+			"error": fmt.Sprintf("unsupported activity type: %s", activity.Type),
+		})
+	}
+
+	return &activity, nil
+}
+
+// triggerFederationDelivery triggers appropriate federation delivery based on activity
+func (op *OutboxProcessor) triggerFederationDelivery(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	switch activity.Type {
+	case activitypub.CreateType, activitypub.UpdateType, activitypub.AnnounceType:
+		// Public/unlisted content should be delivered to followers
+		return op.deliverToFollowersAndRecipients(ctx, activity, actor)
+
+	case activitypub.FollowType, activitypub.LikeType:
+		// Targeted activities should be delivered to specific recipients
+		return op.federationService.DeliverToRecipients(ctx, activity, actor)
+
+	case activitypub.DeleteType, activitypub.UndoType:
+		// Deletions and undos should be delivered broadly
+		return op.deliverToFollowersAndRecipients(ctx, activity, actor)
+
+	case activitypub.AcceptType, activitypub.RejectType:
+		// Accept/Reject should be delivered to specific recipients
+		return op.federationService.DeliverToRecipients(ctx, activity, actor)
+
+	default:
+		op.logger.Info("no federation delivery configured for activity type",
+			zap.String("activity_type", activity.Type),
+			zap.String("activity_id", activity.ID),
+		)
+		return nil
+	}
+}
+
+// deliverToFollowersAndRecipients delivers to both followers and specific recipients
+func (op *OutboxProcessor) deliverToFollowersAndRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	// Deliver to followers if this is public/unlisted content
+	if op.isPublicOrUnlisted(activity) {
+		if err := op.federationService.DeliverToFollowers(ctx, activity, actor); err != nil {
+			op.logger.Error("failed to deliver to followers", zap.Error(err))
+			// Continue to deliver to specific recipients
+		}
+	}
+
+	// Also deliver to specific recipients (mentions, replies, etc.)
+	if err := op.federationService.DeliverToRecipients(ctx, activity, actor); err != nil {
+		op.logger.Error("failed to deliver to recipients", zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+// isPublicOrUnlisted checks if the activity is public or unlisted
+func (op *OutboxProcessor) isPublicOrUnlisted(activity *activitypub.Activity) bool {
+	// Check if the activity has public addressing
+	for _, addr := range activity.To {
+		if addr == activitypub.PublicAddress {
+			return true
+		}
+	}
+
+	for _, addr := range activity.CC {
+		if addr == activitypub.PublicAddress {
+			return true
+		}
+	}
+
+	return false
+}
+
+// generateRandomStringOutbox generates a random string for activity IDs
+func generateRandomStringOutbox() string {
+	return fmt.Sprintf("%x", time.Now().UnixNano())
+}
+
+// validateJWTToken validates a JWT token and returns claims
+func (op *OutboxProcessor) validateJWTToken(tokenString string) (*auth.Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &auth.Claims{}, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(op.cfg.JWTSecret), nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	if claims, ok := token.Claims.(*auth.Claims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("invalid token")
+}
+
 
 func main() {
 	processor, err := NewOutboxProcessor()
@@ -611,6 +915,10 @@ func main() {
 		return processor.HandleSQS(ctx, event)
 	})
 
+	// Add REST API handlers for ActivityPub outbox endpoint
+	_ = app.POST("/users/:username/outbox", func(ctx *lift.Context) error {
+		return processor.HandleOutboxPost(ctx)
+	})
+
 	lambda.Start(app.HandleRequest)
 }
-

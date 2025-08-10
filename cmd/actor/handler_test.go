@@ -40,7 +40,7 @@ func (m *MockActorRepository) GetActorByUsername(ctx context.Context, username s
 func createTestActor(username string) *activitypub.Actor {
 	domain := "test.example.com"
 	now := time.Now()
-	
+
 	return &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
@@ -70,9 +70,9 @@ func createTestActor(username string) *activitypub.Actor {
 			PublicKeyPem: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...\n-----END PUBLIC KEY-----",
 		},
 		ManuallyApprovesFollowers: false,
-		Discoverable:             true,
-		LastStatusAt:             &now,
-		CreatedAt:                &now,
+		Discoverable:              true,
+		LastStatusAt:              &now,
+		CreatedAt:                 &now,
 	}
 }
 
@@ -297,16 +297,16 @@ func createTestHandler(mockRepo *MockActorRepository) *TestHandler {
 	cfg := &config.Config{
 		Domain: "test.example.com",
 	}
-	
+
 	logger := zap.NewNop() // No-op logger for tests
-	
+
 	return NewTestHandler(cfg, mockRepo, logger)
 }
 
 // Test helper to setup test app with handler
 func setupTestApp(handler *TestHandler) *lifttesting.TestApp {
 	app := lifttesting.NewTestApp()
-	
+
 	// Add request ID middleware
 	app.App().Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
@@ -315,14 +315,14 @@ func setupTestApp(handler *TestHandler) *lifttesting.TestApp {
 			return next.Handle(ctx)
 		})
 	})
-	
+
 	// Add logging middleware
 	app.App().Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			err := next.Handle(ctx)
 			duration := time.Since(start)
-			
+
 			requestID := ctx.Get("requestID")
 			if requestID != nil {
 				// In real app, this would log properly
@@ -332,7 +332,7 @@ func setupTestApp(handler *TestHandler) *lifttesting.TestApp {
 			return err
 		})
 	})
-	
+
 	// Add recovery middleware
 	app.App().Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
@@ -346,25 +346,25 @@ func setupTestApp(handler *TestHandler) *lifttesting.TestApp {
 			return next.Handle(ctx)
 		})
 	})
-	
+
 	// Add CORS middleware
 	app.App().Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			ctx.Response.Headers["Access-Control-Allow-Origin"] = "*"
 			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
 			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Accept, Authorization, Content-Type, Signature, Date, Digest"
-			
+
 			if ctx.Request.Method == "OPTIONS" {
 				return ctx.Status(204).JSON(nil)
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	})
-	
+
 	// Define routes
 	_ = app.App().GET("/users/:username", handler.HandleActorProfile)
-	
+
 	return app
 }
 
@@ -373,14 +373,14 @@ func TestHandleActorProfile_Success_JSON(t *testing.T) {
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("testuser")
 	mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test with ActivityPub JSON accept header
 	response := app.WithHeader("Accept", "application/activity+json").GET("/users/testuser")
-	
+
 	// Assertions
 	assert.Equal(t, 200, response.StatusCode)
 	// Note: The Lift testing framework may override content-type for JSON responses
@@ -388,7 +388,7 @@ func TestHandleActorProfile_Success_JSON(t *testing.T) {
 	contentType := response.Headers["Content-Type"]
 	assert.True(t, contentType == "application/activity+json" || contentType == "application/json",
 		"Expected content type to be 'application/activity+json' or 'application/json', got '%s'", contentType)
-	
+
 	// Parse and verify JSON response
 	var actor activitypub.Actor
 	err := json.Unmarshal([]byte(response.Body), &actor)
@@ -396,7 +396,7 @@ func TestHandleActorProfile_Success_JSON(t *testing.T) {
 	assert.Equal(t, "testuser", actor.PreferredUsername)
 	assert.Equal(t, "Person", actor.Type)
 	assert.Equal(t, "https://test.example.com/users/testuser", actor.ID)
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -406,18 +406,18 @@ func TestHandleActorProfile_Success_HTML(t *testing.T) {
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("testuser")
 	mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test with HTML accept header (browser request)
 	response := app.WithHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8").GET("/users/testuser")
-	
+
 	// Assertions
 	assert.Equal(t, 200, response.StatusCode)
 	assert.Contains(t, response.Headers["Content-Type"], "html")
-	
+
 	// Verify HTML content
 	assert.Contains(t, response.Body, "<html")
 	assert.Contains(t, response.Body, "Test User Testuser")
@@ -425,7 +425,7 @@ func TestHandleActorProfile_Success_HTML(t *testing.T) {
 	assert.Contains(t, response.Body, "This is a test actor for testuser")
 	assert.Contains(t, response.Body, `<meta property="og:type" content="profile">`)
 	assert.Contains(t, response.Body, `<link rel="alternate" type="application/activity+json"`)
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -435,25 +435,25 @@ func TestHandleActorProfile_Success_DefaultJSON(t *testing.T) {
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("testuser")
 	mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test with JSON accept header
 	response := app.WithHeader("Accept", "application/json").GET("/users/testuser")
-	
+
 	// Assertions
 	assert.Equal(t, 200, response.StatusCode)
 	// Test framework may override content type - check that we got JSON
 	assert.Contains(t, response.Headers["Content-Type"], "json")
-	
+
 	// Parse and verify JSON response
 	var actor activitypub.Actor
 	err := json.Unmarshal([]byte(response.Body), &actor)
 	assert.NoError(t, err)
 	assert.Equal(t, "testuser", actor.PreferredUsername)
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -463,25 +463,25 @@ func TestHandleActorProfile_Success_LDJson(t *testing.T) {
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("testuser")
 	mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test with LD+JSON accept header
 	response := app.WithHeader("Accept", "application/ld+json").GET("/users/testuser")
-	
+
 	// Assertions
 	assert.Equal(t, 200, response.StatusCode)
 	// Test framework may override content type - check that we got JSON
 	assert.Contains(t, response.Headers["Content-Type"], "json")
-	
+
 	// Parse and verify JSON response
 	var actor activitypub.Actor
 	err := json.Unmarshal([]byte(response.Body), &actor)
 	assert.NoError(t, err)
 	assert.Equal(t, "testuser", actor.PreferredUsername)
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -490,18 +490,18 @@ func TestHandleActorProfile_UserNotFound(t *testing.T) {
 	// Setup mocks
 	mockRepo := &MockActorRepository{}
 	mockRepo.On("GetActorByUsername", mock.Anything, "nonexistent").Return(nil, errors.New("actor not found"))
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test with non-existent user
 	response := app.WithHeader("Accept", "application/activity+json").GET("/users/nonexistent")
-	
+
 	// Assertions
 	assert.Equal(t, 404, response.StatusCode)
 	assert.Contains(t, response.Body, "not found")
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -509,18 +509,18 @@ func TestHandleActorProfile_UserNotFound(t *testing.T) {
 func TestHandleActorProfile_MissingUsername(t *testing.T) {
 	// Setup mocks (no expectations since handler should return early)
 	mockRepo := &MockActorRepository{}
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test with missing username parameter
 	response := app.WithHeader("Accept", "application/activity+json").GET("/users/")
-	
+
 	// This will likely result in a 404 from the router, not our handler
 	// But let's verify it doesn't succeed
 	assert.NotEqual(t, 200, response.StatusCode)
-	
+
 	// No mock expectations to verify since handler wasn't reached
 }
 
@@ -528,17 +528,17 @@ func TestHandleActorProfile_DatabaseError(t *testing.T) {
 	// Setup mocks
 	mockRepo := &MockActorRepository{}
 	mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(nil, errors.New("database connection failed"))
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test with database error
 	response := app.WithHeader("Accept", "application/activity+json").GET("/users/testuser")
-	
+
 	// Assertions
 	assert.Equal(t, 500, response.StatusCode)
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -547,7 +547,7 @@ func TestHandleActorProfile_ContentNegotiation(t *testing.T) {
 	// Setup mocks
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("testuser")
-	
+
 	testCases := []struct {
 		name         string
 		acceptHeader string
@@ -585,23 +585,23 @@ func TestHandleActorProfile_ContentNegotiation(t *testing.T) {
 			expectJSON:   false,
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Reset mock for each test
 			mockRepo.ExpectedCalls = nil
 			mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(testActor, nil)
-			
+
 			// Setup handler and app
 			handler := createTestHandler(mockRepo)
 			app := setupTestApp(handler)
-			
+
 			// Test with specific accept header
 			response := app.WithHeader("Accept", tc.acceptHeader).GET("/users/testuser")
-			
+
 			// Assertions
 			assert.Equal(t, 200, response.StatusCode)
-			
+
 			if tc.expectJSON {
 				// Should be valid ActivityPub JSON
 				assert.Contains(t, response.Headers["Content-Type"], "json")
@@ -615,7 +615,7 @@ func TestHandleActorProfile_ContentNegotiation(t *testing.T) {
 				assert.Contains(t, response.Body, "<html")
 				assert.Contains(t, response.Body, "testuser")
 			}
-			
+
 			// Verify mock expectations
 			mockRepo.AssertExpectations(t)
 		})
@@ -629,18 +629,18 @@ func TestHandleActorProfile_HTMLGeneration(t *testing.T) {
 	testActor.Name = "John Doe"
 	testActor.BaseObject.Summary = "Software developer and open source enthusiast"
 	mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test HTML generation
 	response := app.WithHeader("Accept", "text/html").GET("/users/testuser")
-	
+
 	// Assertions
 	assert.Equal(t, 200, response.StatusCode)
 	assert.Contains(t, response.Headers["Content-Type"], "html")
-	
+
 	// Verify HTML structure - check key elements exist
 	html := response.Body
 	assert.Contains(t, html, "<html")
@@ -649,11 +649,11 @@ func TestHandleActorProfile_HTMLGeneration(t *testing.T) {
 	assert.Contains(t, html, "Software developer and open source enthusiast")
 	assert.Contains(t, html, `property="og:type"`)
 	assert.Contains(t, html, `application/activity+json`)
-	
+
 	// Verify ActivityPub discovery
 	assert.Contains(t, html, "ActivityPub")
 	assert.Contains(t, html, "testuser")
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -662,32 +662,32 @@ func TestHandleActorProfile_HTMLWithoutOptionalFields(t *testing.T) {
 	// Setup mocks with minimal actor data
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("minimal")
-	testActor.Name = "" // No display name
+	testActor.Name = ""               // No display name
 	testActor.BaseObject.Summary = "" // No bio in BaseObject
-	testActor.Icon = nil // No avatar
+	testActor.Icon = nil              // No avatar
 	testActor.Followers = ""
 	testActor.Following = ""
 	mockRepo.On("GetActorByUsername", mock.Anything, "minimal").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test HTML generation with minimal data
 	response := app.WithHeader("Accept", "text/html").GET("/users/minimal")
-	
+
 	// Assertions
 	assert.Equal(t, 200, response.StatusCode)
 	assert.Equal(t, "text/html; charset=utf-8", response.Headers["Content-Type"])
-	
+
 	// Verify HTML uses username as fallback for display name
 	html := response.Body
 	assert.Contains(t, html, "<title>minimal (@minimal@test.example.com)</title>")
-	assert.Contains(t, html, "<h1>minimal</h1>") // Username used as display name
-	assert.NotContains(t, html, `<img src=`) // No avatar image
-	assert.NotContains(t, html, `<div class="bio">`) // No bio section
+	assert.Contains(t, html, "<h1>minimal</h1>")       // Username used as display name
+	assert.NotContains(t, html, `<img src=`)           // No avatar image
+	assert.NotContains(t, html, `<div class="bio">`)   // No bio section
 	assert.NotContains(t, html, `<div class="stats">`) // No stats section
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -697,20 +697,20 @@ func TestHandleActorProfile_CORSHeaders(t *testing.T) {
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("testuser")
 	mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test CORS headers are set
 	response := app.WithHeader("Accept", "application/activity+json").GET("/users/testuser")
-	
+
 	// Assertions
 	assert.Equal(t, 200, response.StatusCode)
 	assert.Equal(t, "*", response.Headers["Access-Control-Allow-Origin"])
 	assert.Equal(t, "GET, HEAD, OPTIONS", response.Headers["Access-Control-Allow-Methods"])
 	assert.Equal(t, "Accept, Authorization, Content-Type, Signature, Date, Digest", response.Headers["Access-Control-Allow-Headers"])
-	
+
 	// Verify mock expectations
 	mockRepo.AssertExpectations(t)
 }
@@ -718,17 +718,17 @@ func TestHandleActorProfile_CORSHeaders(t *testing.T) {
 func TestHandleActorProfile_OPTIONSRequest(t *testing.T) {
 	// Setup mocks (no expectations since OPTIONS shouldn't reach the handler)
 	mockRepo := &MockActorRepository{}
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test OPTIONS request (preflight) - this may be handled differently by the test framework
 	response := app.OPTIONS("/users/testuser")
-	
+
 	// Assertions - just verify the request doesn't fail completely
 	assert.True(t, response.StatusCode >= 200 && response.StatusCode < 300, "OPTIONS should succeed")
-	
+
 	// No mock expectations to verify since handler wasn't reached
 }
 
@@ -736,7 +736,7 @@ func TestHandleActorProfile_CaseInsensitiveAcceptHeader(t *testing.T) {
 	// Setup mocks
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("testuser")
-	
+
 	// Test both uppercase and lowercase accept headers
 	testCases := []struct {
 		name   string
@@ -746,30 +746,30 @@ func TestHandleActorProfile_CaseInsensitiveAcceptHeader(t *testing.T) {
 		{"Uppercase Accept", "Accept"},
 		{"Mixed case AcCePt", "AcCePt"},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Reset mock for each test
 			mockRepo.ExpectedCalls = nil
 			mockRepo.On("GetActorByUsername", mock.Anything, "testuser").Return(testActor, nil)
-			
+
 			// Setup handler and app
 			handler := createTestHandler(mockRepo)
 			app := setupTestApp(handler)
-			
+
 			// Test with different case accept headers
 			response := app.WithHeader(tc.header, "application/activity+json").GET("/users/testuser")
-			
+
 			// Assertions
 			assert.Equal(t, 200, response.StatusCode)
 			assert.Contains(t, response.Headers["Content-Type"], "json")
-			
+
 			// Parse and verify JSON response
 			var actor activitypub.Actor
 			err := json.Unmarshal([]byte(response.Body), &actor)
 			assert.NoError(t, err)
 			assert.Equal(t, "testuser", actor.PreferredUsername)
-			
+
 			// Verify mock expectations
 			mockRepo.AssertExpectations(t)
 		})
@@ -782,14 +782,14 @@ func BenchmarkHandleActorProfile_JSON(b *testing.B) {
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("benchuser")
 	mockRepo.On("GetActorByUsername", mock.Anything, "benchuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		response := app.WithHeader("Accept", "application/activity+json").GET("/users/benchuser")
 		if response.StatusCode != 200 {
@@ -803,14 +803,14 @@ func BenchmarkHandleActorProfile_HTML(b *testing.B) {
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("benchuser")
 	mockRepo.On("GetActorByUsername", mock.Anything, "benchuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		response := app.WithHeader("Accept", "text/html").GET("/users/benchuser")
 		if response.StatusCode != 200 {
@@ -825,11 +825,11 @@ func TestActorHandler_IntegrationTest(t *testing.T) {
 	mockRepo := &MockActorRepository{}
 	testActor := createTestActor("integrationuser")
 	mockRepo.On("GetActorByUsername", mock.Anything, "integrationuser").Return(testActor, nil)
-	
+
 	// Setup handler and app
 	handler := createTestHandler(mockRepo)
 	app := setupTestApp(handler)
-	
+
 	// Test the complete integration flow
 	t.Run("FederatedRequest", func(t *testing.T) {
 		// Simulate a federated server request
@@ -837,32 +837,32 @@ func TestActorHandler_IntegrationTest(t *testing.T) {
 			WithHeader("Accept", "application/activity+json").
 			WithHeader("User-Agent", "Mastodon/4.0.0").
 			GET("/users/integrationuser")
-		
+
 		assert.Equal(t, 200, response.StatusCode)
 		assert.Contains(t, response.Headers["Content-Type"], "json")
-		
+
 		// Parse response
 		var actor activitypub.Actor
 		err := json.Unmarshal([]byte(response.Body), &actor)
 		assert.NoError(t, err)
 		assert.Equal(t, "integrationuser", actor.PreferredUsername)
 	})
-	
+
 	t.Run("BrowserRequest", func(t *testing.T) {
 		// Simulate a browser request
 		response := app.
 			WithHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8").
 			WithHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)").
 			GET("/users/integrationuser")
-		
+
 		assert.Equal(t, 200, response.StatusCode)
 		assert.Contains(t, response.Headers["Content-Type"], "html")
-		
+
 		// Verify HTML content
 		assert.Contains(t, response.Body, "<html")
 		assert.Contains(t, response.Body, "integrationuser")
 	})
-	
+
 	// Verify all mock expectations
 	mockRepo.AssertExpectations(t)
 }

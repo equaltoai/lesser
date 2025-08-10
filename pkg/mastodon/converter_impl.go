@@ -10,9 +10,9 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // converterImpl implements the Converter interface
@@ -509,4 +509,54 @@ func (c *converterImpl) NotesToStatus(note any) models.Status {
 	}
 
 	return status
+}
+
+// PollToAPI converts a storage poll to API format
+func (c *converterImpl) PollToAPI(poll *storage.Poll, userVotes []int) models.Poll {
+	if poll == nil {
+		return models.Poll{}
+	}
+
+	// Calculate expires at string and expired status
+	var expiresAtStr string
+	var expired bool
+	if poll.ExpiresAt != nil {
+		expiresAtStr = poll.ExpiresAt.Format(time.RFC3339)
+		expired = time.Now().After(*poll.ExpiresAt)
+	}
+
+	// Calculate total votes
+	totalVotes := 0
+	if len(poll.VotesCount) > 0 {
+		for _, count := range poll.VotesCount {
+			totalVotes += count
+		}
+	}
+
+	// Create poll options
+	optionsData := make([]models.PollOption, len(poll.Options))
+	for i, option := range poll.Options {
+		votesCount := 0
+		if i < len(poll.VotesCount) {
+			votesCount = poll.VotesCount[i]
+		}
+
+		optionsData[i] = models.PollOption{
+			Title:      option,
+			VotesCount: votesCount,
+		}
+	}
+
+	return models.Poll{
+		ID:          poll.ID,
+		ExpiresAt:   expiresAtStr,
+		Expired:     expired,
+		Multiple:    poll.Multiple,
+		VotesCount:  totalVotes,
+		VotersCount: poll.VotersCount,
+		Voted:       len(userVotes) > 0,
+		OwnVotes:    userVotes,
+		OptionsData: optionsData,
+		Emojis:      []any{}, // TODO: Extract emojis from options if needed
+	}
 }

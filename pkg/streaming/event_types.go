@@ -12,68 +12,68 @@ type EventType string
 
 const (
 	// EventTypeStatus represents basic status events
-	EventTypeStatus          EventType = "status"
+	EventTypeStatus EventType = "status"
 	// EventTypeStatusUpdate represents status update events
-	EventTypeStatusUpdate    EventType = "status.update"
+	EventTypeStatusUpdate EventType = "status.update"
 	// EventTypeStatusDelete represents status deletion events
-	EventTypeStatusDelete    EventType = "status.delete"
+	EventTypeStatusDelete EventType = "status.delete"
 	// EventTypeStatusFavourite represents status favoriting events
 	EventTypeStatusFavourite EventType = "status.favourite"
 	// EventTypeStatusReblog represents status reblogging events
-	EventTypeStatusReblog    EventType = "status.reblog"
+	EventTypeStatusReblog EventType = "status.reblog"
 
 	// EventTypeTimelineUpdate represents timeline update events
-	EventTypeTimelineUpdate  EventType = "timeline.update"
+	EventTypeTimelineUpdate EventType = "timeline.update"
 	// EventTypeTimelineRefresh represents timeline refresh events
 	EventTypeTimelineRefresh EventType = "timeline.refresh"
 
 	// EventTypeAccountUpdate represents account update events
-	EventTypeAccountUpdate   EventType = "account.update"
+	EventTypeAccountUpdate EventType = "account.update"
 	// EventTypeAccountFollow represents account follow events
-	EventTypeAccountFollow   EventType = "account.follow"
+	EventTypeAccountFollow EventType = "account.follow"
 	// EventTypeAccountUnfollow represents account unfollow events
 	EventTypeAccountUnfollow EventType = "account.unfollow"
 
 	// EventTypeNotification represents basic notification events
-	EventTypeNotification     EventType = "notification"
+	EventTypeNotification EventType = "notification"
 	// EventTypeNotificationRead represents notification read events
 	EventTypeNotificationRead EventType = "notification.read"
 
 	// EventTypeModeration represents basic moderation events
-	EventTypeModeration       EventType = "moderation"
+	EventTypeModeration EventType = "moderation"
 	// EventTypeModerationFlag represents content flagging events
-	EventTypeModerationFlag   EventType = "moderation.flag"
+	EventTypeModerationFlag EventType = "moderation.flag"
 	// EventTypeModerationReview represents moderation review events
 	EventTypeModerationReview EventType = "moderation.review"
 
 	// EventTypeTrustUpdate represents trust score update events
-	EventTypeTrustUpdate      EventType = "trust.update"
+	EventTypeTrustUpdate EventType = "trust.update"
 	// EventTypeReputationUpdate represents reputation score update events
 	EventTypeReputationUpdate EventType = "reputation.update"
 	// EventTypeVouchUpdate represents vouch update events
-	EventTypeVouchUpdate      EventType = "vouch.update"
+	EventTypeVouchUpdate EventType = "vouch.update"
 
 	// EventTypeAIAnalysis represents AI content analysis events
-	EventTypeAIAnalysis       EventType = "ai.analysis"
+	EventTypeAIAnalysis EventType = "ai.analysis"
 	// EventTypeAIClassification represents AI classification events
 	EventTypeAIClassification EventType = "ai.classification"
 	// EventTypeAIModeration represents AI moderation events
-	EventTypeAIModeration     EventType = "ai.moderation"
+	EventTypeAIModeration EventType = "ai.moderation"
 
 	// EventTypeHashtagTrend represents hashtag trending events
-	EventTypeHashtagTrend  EventType = "hashtag.trend"
+	EventTypeHashtagTrend EventType = "hashtag.trend"
 	// EventTypeHashtagUpdate represents hashtag update events
 	EventTypeHashtagUpdate EventType = "hashtag.update"
 
 	// EventTypeMediaUpdate represents media update events
-	EventTypeMediaUpdate  EventType = "media.update"
+	EventTypeMediaUpdate EventType = "media.update"
 	// EventTypeMediaProcess represents media processing events
 	EventTypeMediaProcess EventType = "media.process"
 
 	// EventTypeCostUpdate represents cost update events
 	EventTypeCostUpdate EventType = "cost.update"
 	// EventTypeCostAlert represents cost alert events
-	EventTypeCostAlert  EventType = "cost.alert"
+	EventTypeCostAlert EventType = "cost.alert"
 
 	// EventTypeSystemAlert represents system alert events
 	EventTypeSystemAlert EventType = "system.alert"
@@ -89,33 +89,33 @@ type EventAction string
 
 const (
 	// ActionCreate represents content creation actions
-	ActionCreate      EventAction = "create"
+	ActionCreate EventAction = "create"
 	// ActionUpdate represents content update actions
-	ActionUpdate      EventAction = "update"
+	ActionUpdate EventAction = "update"
 	// ActionDelete represents content deletion actions
-	ActionDelete      EventAction = "delete"
+	ActionDelete EventAction = "delete"
 	// ActionRead represents content read actions
-	ActionRead        EventAction = "read"
+	ActionRead EventAction = "read"
 	// ActionFollow represents follow actions
-	ActionFollow      EventAction = "follow"
+	ActionFollow EventAction = "follow"
 	// ActionUnfollow represents unfollow actions
-	ActionUnfollow    EventAction = "unfollow"
+	ActionUnfollow EventAction = "unfollow"
 	// ActionFavourite represents favorite actions
-	ActionFavourite   EventAction = "favourite"
+	ActionFavourite EventAction = "favourite"
 	// ActionUnfavourite represents unfavorite actions
 	ActionUnfavourite EventAction = "unfavourite"
 	// ActionReblog represents reblog actions
-	ActionReblog      EventAction = "reblog"
+	ActionReblog EventAction = "reblog"
 	// ActionUnreblog represents unreblog actions
-	ActionUnreblog    EventAction = "unreblog"
+	ActionUnreblog EventAction = "unreblog"
 	// ActionFlag represents content flagging actions
-	ActionFlag        EventAction = "flag"
+	ActionFlag EventAction = "flag"
 	// ActionReview represents content review actions
-	ActionReview      EventAction = "review"
+	ActionReview EventAction = "review"
 	// ActionApprove represents content approval actions
-	ActionApprove     EventAction = "approve"
+	ActionApprove EventAction = "approve"
 	// ActionReject represents content rejection actions
-	ActionReject      EventAction = "reject"
+	ActionReject EventAction = "reject"
 )
 
 // InternalEvent represents an event in the internal event bus
@@ -152,11 +152,11 @@ type EventPriority int
 
 const (
 	// PriorityLow represents low priority events
-	PriorityLow    EventPriority = 1
+	PriorityLow EventPriority = 1
 	// PriorityNormal represents normal priority events
 	PriorityNormal EventPriority = 2
 	// PriorityHigh represents high priority events
-	PriorityHigh   EventPriority = 3
+	PriorityHigh EventPriority = 3
 	// PriorityUrgent represents urgent priority events
 	PriorityUrgent EventPriority = 4
 )
@@ -397,27 +397,27 @@ type MediaEventPayload struct {
 
 // MetricsEventPayload represents the payload for metrics update events sent to GraphQL subscriptions
 type MetricsEventPayload struct {
-	MetricID            string            `json:"metric_id"`
-	ServiceName         string            `json:"service_name"`
-	MetricType          string            `json:"metric_type"`
-	SubscriptionCategory string           `json:"subscription_category"` // moderation, security, performance, etc.
-	AggregationLevel    string            `json:"aggregation_level"`     // raw, 5min, hourly, daily
-	Timestamp           time.Time         `json:"timestamp"`
-	Count               int64             `json:"count,omitempty"`
-	Sum                 float64           `json:"sum,omitempty"`
-	Min                 float64           `json:"min,omitempty"`
-	Max                 float64           `json:"max,omitempty"`
-	Average             float64           `json:"average,omitempty"`
-	P50                 float64           `json:"p50,omitempty"`
-	P95                 float64           `json:"p95,omitempty"`
-	P99                 float64           `json:"p99,omitempty"`
-	Unit                string            `json:"unit,omitempty"`
-	UserCostMicrocents  int64             `json:"user_cost_microcents,omitempty"`
-	TotalCostMicrocents int64             `json:"total_cost_microcents,omitempty"`
-	Dimensions          map[string]string `json:"dimensions,omitempty"`
-	UserID              string            `json:"user_id,omitempty"`
-	TenantID            string            `json:"tenant_id,omitempty"`
-	InstanceDomain      string            `json:"instance_domain,omitempty"`
+	MetricID             string            `json:"metric_id"`
+	ServiceName          string            `json:"service_name"`
+	MetricType           string            `json:"metric_type"`
+	SubscriptionCategory string            `json:"subscription_category"` // moderation, security, performance, etc.
+	AggregationLevel     string            `json:"aggregation_level"`     // raw, 5min, hourly, daily
+	Timestamp            time.Time         `json:"timestamp"`
+	Count                int64             `json:"count,omitempty"`
+	Sum                  float64           `json:"sum,omitempty"`
+	Min                  float64           `json:"min,omitempty"`
+	Max                  float64           `json:"max,omitempty"`
+	Average              float64           `json:"average,omitempty"`
+	P50                  float64           `json:"p50,omitempty"`
+	P95                  float64           `json:"p95,omitempty"`
+	P99                  float64           `json:"p99,omitempty"`
+	Unit                 string            `json:"unit,omitempty"`
+	UserCostMicrocents   int64             `json:"user_cost_microcents,omitempty"`
+	TotalCostMicrocents  int64             `json:"total_cost_microcents,omitempty"`
+	Dimensions           map[string]string `json:"dimensions,omitempty"`
+	UserID               string            `json:"user_id,omitempty"`
+	TenantID             string            `json:"tenant_id,omitempty"`
+	InstanceDomain       string            `json:"instance_domain,omitempty"`
 }
 
 // CreateEvent creates a new internal event with common defaults

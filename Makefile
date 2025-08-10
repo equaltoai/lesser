@@ -42,6 +42,28 @@ test-coverage:
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
+# Run tests with coverage and enforce minimum coverage
+test-coverage-enforce:
+	@echo "Running tests with coverage enforcement..."
+	go test -v -coverprofile=coverage.out ./...
+	@echo "Checking coverage requirements..."
+	@go tool cover -func=coverage.out | tail -n 1 | awk '{print "Total coverage: " $$3}' 
+	@go tool cover -func=coverage.out | tail -n 1 | awk '{gsub(/%/,"",$$3); if($$3 < 70) {print "Coverage " $$3 "% is below minimum 70%"; exit 1} else {print "Coverage " $$3 "% meets minimum requirements"}}'
+	go tool cover -html=coverage.out -o coverage.html
+
+# Run tests with detailed coverage by package
+test-coverage-detail:
+	@echo "Running detailed coverage analysis..."
+	@for pkg in $$(go list ./pkg/...); do \
+		echo "Testing $$pkg..."; \
+		go test -v -coverprofile=coverage_tmp.out $$pkg; \
+		if [ -f coverage_tmp.out ]; then \
+			coverage=$$(go tool cover -func=coverage_tmp.out | tail -n 1 | awk '{gsub(/%/,"",$$3); print $$3}'); \
+			echo "$$pkg: $${coverage}%"; \
+		fi; \
+		rm -f coverage_tmp.out; \
+	done
+
 # Format code
 fmt:
 	@echo "Formatting code..."
@@ -78,6 +100,10 @@ install-tools:
 	@echo "Installing development tools..."
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install github.com/aws/aws-lambda-go/cmd/build-lambda-zip@latest
+	go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install github.com/99designs/gqlgen@latest
+	@echo "Development tools installed successfully!"
 
 # Create zip files for Lambda deployment
 package: build
@@ -161,31 +187,262 @@ clean-win:
 	@if exist coverage.out del coverage.out
 	@if exist coverage.html del coverage.html
 
+# Run local development server
+dev:
+	@echo "Starting local development server..."
+	@if [ ! -f .env ]; then \
+		echo "No .env file found. Run 'make dev-init' first."; \
+		exit 1; \
+	fi
+	@echo "Loading environment from .env..."
+	@export $$(cat .env | grep -v '^#' | xargs) && \
+		go run ./cmd/api
+
+# Tail Lambda logs
+logs:
+	@echo "Tailing Lambda logs..."
+	@if [ -z "$(FUNCTION)" ]; then \
+		echo "Usage: make logs FUNCTION=function-name"; \
+		echo "Available functions: api, graphql, inbox, outbox, etc."; \
+		exit 1; \
+	fi
+	aws logs tail /aws/lambda/lesser-$(FUNCTION) --follow
+
+# Deploy with Pulumi (alias for deploy-infra)
+pulumi-up: deploy-infra
+
+# Destroy infrastructure with Pulumi
+pulumi-destroy:
+	@echo "Destroying infrastructure with Pulumi..."
+	@echo "WARNING: This will destroy all resources!"
+	@read -p "Are you sure? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
+	cd infra && pulumi destroy --yes
+
+# Test harness and integration tests
+test-integration:
+	@echo "Running integration tests..."
+	@TEST_ENV=integration go test -tags=integration -v -timeout=30m ./pkg/testing/harness/...
+	@TEST_ENV=integration go test -tags=integration -v -timeout=30m ./cmd/*/...
+
+# Unit tests only
+test-unit:
+	@echo "Running unit tests only..."
+	go test -short -v ./...
+
+# Benchmark tests
+test-benchmark:
+	@echo "Running benchmark tests..."
+	go test -bench=. -benchmem -v ./pkg/testing/benchmarks/...
+
+# Test with race detection
+test-race:
+	@echo "Running tests with race detection..."
+	go test -race -v ./...
+
+# Test specific package
+test-package:
+	@echo "Testing specific package: $(PKG)"
+	@if [ -z "$(PKG)" ]; then \
+		echo "Usage: make test-package PKG=path/to/package"; \
+		exit 1; \
+	fi
+	go test -v ./$(PKG)
+
+# Run tests in watch mode (requires entr)
+test-watch:
+	@echo "Running tests in watch mode (requires 'entr' command)..."
+	@if ! command -v entr >/dev/null 2>&1; then \
+		echo "Error: 'entr' command not found. Install with: brew install entr"; \
+		exit 1; \
+	fi
+	@find . -name "*.go" | entr -c make test
+
+# Additional test targets
+test-api:
+	@echo "Running API tests..."
+	cd tests && python -m pytest api/ -v
+
+test-federation:
+	@echo "Running federation tests..."
+	cd tests && python -m pytest federation/ -v
+
+test-search:
+	@echo "Running search tests..."
+	cd tests && python -m pytest search/ -v
+
+test-ai:
+	@echo "Running AI integration tests..."
+	cd tests && python -m pytest ai/ -v
+
+test-auth:
+	@echo "Running authentication tests..."
+	cd tests && python -m pytest auth/ -v
+
+test-load:
+	@echo "Running k6 load tests..."
+	@$(MAKE) k6-local
+
+# Load testing targets
+k6-auth:
+	@echo "Testing auth endpoints..."
+	k6 run tests/load/auth_test.js
+
+k6-timeline:
+	@echo "Testing timeline performance..."
+	k6 run tests/load/timeline_test.js
+
+k6-posting:
+	@echo "Testing post creation..."
+	k6 run tests/load/posting_test.js
+
+k6-federation:
+	@echo "Testing federation..."
+	k6 run tests/load/federation_test.js
+
+# Generate code targets
+generate:
+	@echo "Generating code..."
+	@$(MAKE) gqlgen
+
+# Security and code quality
+sec-scan:
+	@echo "Running security scan..."
+	gosec ./...
+
+vuln-check:
+	@echo "Checking for vulnerabilities..."
+	govulncheck ./...
+
+# Documentation targets
+docs:
+	@echo "Building documentation..."
+	@echo "Documentation is in markdown format in the docs/ directory"
+	@echo "See docs/DOCUMENTATION_INDEX.md for a complete guide"
+
+docs-serve:
+	@echo "Serving documentation locally..."
+	@command -v mdbook >/dev/null 2>&1 || { echo "mdbook not installed. Run 'cargo install mdbook' first."; exit 1; }
+	mdbook serve docs/
+
+# Database operations
+db-migrate:
+	@echo "Running database migrations..."
+	go run ./cmd/migrate
+
+db-seed:
+	@echo "Seeding database with test data..."
+	go run ./cmd/seed
+
+db-reset:
+	@echo "Resetting database..."
+	@echo "WARNING: This will delete all data!"
+	@read -p "Are you sure? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
+	go run ./cmd/reset-db
+
+# Monitoring and debugging
+metrics:
+	@echo "Showing CloudWatch metrics..."
+	@if [ -z "$(METRIC)" ]; then \
+		echo "Usage: make metrics METRIC=metric-name"; \
+		echo "Examples: make metrics METRIC=Invocations"; \
+		exit 1; \
+	fi
+	aws cloudwatch get-metric-statistics \
+		--namespace AWS/Lambda \
+		--metric-name $(METRIC) \
+		--start-time $$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) \
+		--end-time $$(date -u +%Y-%m-%dT%H:%M:%S) \
+		--period 300 \
+		--statistics Sum,Average
+
+status:
+	@echo "Checking system status..."
+	@echo "Checking Lambda functions..."
+	@aws lambda list-functions --query 'Functions[?starts_with(FunctionName, `lesser-`)].{Name:FunctionName,Runtime:Runtime,LastModified:LastModified}' --output table
+	@echo ""
+	@echo "Checking DynamoDB tables..."
+	@aws dynamodb list-tables --query 'TableNames[?contains(@, `lesser`)]' --output table
+
+# Performance profiling
+profile-cpu:
+	@echo "Running CPU profile..."
+	go test -cpuprofile cpu.prof -bench . ./...
+	go tool pprof cpu.prof
+
+profile-mem:
+	@echo "Running memory profile..."
+	go test -memprofile mem.prof -bench . ./...
+	go tool pprof mem.prof
+
 # Help
 help:
 	@echo "Available targets:"
+	@echo ""
+	@echo "Building:"
 	@echo "  build           - Build all Lambda functions"
 	@echo "  build-<name>    - Build specific Lambda function"
-	@echo "  build-win       - Build all Lambda functions (Windows)"
-	@echo "  test            - Run tests"
-	@echo "  test-coverage   - Run tests with coverage"
-	@echo "  fmt             - Format code"
-	@echo "  lint            - Run linter"
-	@echo "  lint-fix        - Run linter with auto-fix"
-	@echo "  lint-new        - Run linter on new code only"
-	@echo "  lint-<name>     - Run specific linter (e.g., make lint-gosec)"
-	@echo "  clean           - Clean build artifacts"
-	@echo "  clean-win       - Clean build artifacts (Windows)"
-	@echo "  install-tools   - Install development tools"
+	@echo "  build-lambdas   - Build all Lambda deployment packages"
 	@echo "  package         - Create Lambda deployment packages"
-	@echo "  deploy-infra    - Deploy infrastructure with Pulumi"
-	@echo "  deploy-functions - Deploy Lambda functions"
-	@echo "  local-dynamodb  - Start local DynamoDB"
+	@echo "  generate        - Generate GraphQL code"
+	@echo ""
+	@echo "Testing:"
+	@echo "  test                  - Run all Go unit tests"
+	@echo "  test-unit             - Run unit tests only (short)"
+	@echo "  test-integration      - Run integration tests"
+	@echo "  test-benchmark        - Run benchmark tests"
+	@echo "  test-coverage         - Run tests with coverage"
+	@echo "  test-coverage-enforce - Run tests with minimum 70% coverage requirement"
+	@echo "  test-coverage-detail  - Run detailed coverage by package"
+	@echo "  test-race             - Run tests with race detection"
+	@echo "  test-package PKG=path - Test specific package"
+	@echo "  test-watch            - Run tests in watch mode (requires entr)"
+	@echo "  test-api              - Run Python API tests"
+	@echo "  test-federation       - Run federation tests"
+	@echo "  test-search           - Run search tests"
+	@echo "  test-ai               - Run AI integration tests"
+	@echo "  test-auth             - Run authentication tests"
+	@echo "  test-load             - Run k6 load tests"
+	@echo ""
+	@echo "Load Testing:"
+	@echo "  k6-auth         - Test auth endpoints"
+	@echo "  k6-timeline     - Test timeline performance"
+	@echo "  k6-posting      - Test post creation"
+	@echo "  k6-federation   - Test federation"
+	@echo ""
+	@echo "Development:"
+	@echo "  dev             - Run local development server"
 	@echo "  dev-init        - Initialize development environment"
-	@echo "  init-deploy     - Initialize deployment (VAPID keys + admin account)"
-	@echo "  build-init-deploy - Build init-deploy tool only"
+	@echo "  fmt             - Format Go code"
+	@echo "  lint            - Run linters"
+	@echo "  clean           - Clean build artifacts"
+	@echo ""
+	@echo "Deployment:"
+	@echo "  deploy          - Deploy with Pulumi"
+	@echo "  deploy-preview  - Preview deployment"
+	@echo "  pulumi-up       - Deploy infrastructure"
+	@echo "  pulumi-destroy  - Destroy infrastructure"
+	@echo "  init-deploy     - Initialize deployment"
+	@echo ""
+	@echo "Monitoring:"
+	@echo "  logs            - Tail Lambda logs (FUNCTION=name)"
+	@echo "  metrics         - Show CloudWatch metrics (METRIC=name)"
+	@echo "  status          - Check system status"
+	@echo ""
+	@echo "Database:"
+	@echo "  db-migrate      - Run database migrations"
+	@echo "  db-seed         - Seed database with test data"
+	@echo "  db-reset        - Reset database (destructive)"
+	@echo "  local-dynamodb  - Start local DynamoDB"
+	@echo ""
+	@echo "Security:"
+	@echo "  sec-scan        - Run security scan"
+	@echo "  vuln-check      - Check for vulnerabilities"
+	@echo ""
+	@echo "Utilities:"
 	@echo "  tidy            - Run go mod tidy"
 	@echo "  vendor          - Vendor dependencies"
+	@echo "  install-tools   - Install development tools"
+	@echo "  docs            - Show documentation info"
 	@echo "  help            - Show this help"
 
 .PHONY: integration-test

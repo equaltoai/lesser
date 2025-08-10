@@ -1,0 +1,301 @@
+package auth
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/testing/mocks"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestCreateRefreshToken(t *testing.T) {
+	mockStorage := mocks.NewMockStorage()
+	logger := zap.NewNop()
+
+	store := NewRefreshTokenStore(mockStorage, logger)
+
+	ctx := context.Background()
+
+	// Setup mock to return success for CreateRefreshToken
+	mockStorage.On("CreateRefreshToken", ctx, 
+		"user123", "iPhone 12", "192.168.1.1").Return(&storage.RefreshToken{
+		Token:      "test-token-123",
+		UserID:     "user123",
+		DeviceName: "iPhone 12",
+		IPAddress:  "192.168.1.1",
+		Generation: 1,
+		ExpiresAt:  time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:  time.Now(),
+		IsRevoked:  false,
+	}, nil)
+
+	token, err := store.CreateRefreshToken(ctx, "user123", "iPhone 12", "192.168.1.1")
+
+	require.NoError(t, err)
+	require.NotEmpty(t, token.Token)
+	require.Equal(t, "user123", token.UserID)
+	require.Equal(t, "iPhone 12", token.DeviceName)
+	require.Equal(t, "192.168.1.1", token.IPAddress)
+	require.Equal(t, 1, token.Generation)
+	require.False(t, token.IsRevoked)
+	
+	mockStorage.AssertExpectations(t)
+}
+
+func TestValidateRefreshToken(t *testing.T) {
+	mockStorage := mocks.NewMockStorage()
+	logger := zap.NewNop()
+
+	store := NewRefreshTokenStore(mockStorage, logger)
+
+	ctx := context.Background()
+	
+	testToken := &storage.RefreshToken{
+		Token:      "valid-token-123",
+		UserID:     "user123",
+		DeviceName: "iPhone 12",
+		IPAddress:  "192.168.1.1",
+		Generation: 1,
+		ExpiresAt:  time.Now().Add(24 * time.Hour), // Not expired
+		CreatedAt:  time.Now().Add(-1 * time.Hour),
+		IsRevoked:  false,
+	}
+
+	// Test valid token
+	mockStorage.On("GetRefreshToken", ctx, "valid-token-123").Return(testToken, nil)
+	
+	token, err := store.ValidateRefreshToken(ctx, "valid-token-123")
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	require.Equal(t, "user123", token.UserID)
+	
+	// Test expired token
+	expiredToken := &storage.RefreshToken{
+		Token:      "expired-token-123",
+		UserID:     "user123",
+		ExpiresAt:  time.Now().Add(-1 * time.Hour), // Expired
+		IsRevoked:  false,
+	}
+	
+	mockStorage.On("GetRefreshToken", ctx, "expired-token-123").Return(expiredToken, nil)
+	
+	token, err = store.ValidateRefreshToken(ctx, "expired-token-123")
+	require.Error(t, err)
+	require.Nil(t, token)
+	assert.Contains(t, err.Error(), "expired")
+	
+	// Test revoked token
+	revokedToken := &storage.RefreshToken{
+		Token:      "revoked-token-123",
+		UserID:     "user123",
+		ExpiresAt:  time.Now().Add(24 * time.Hour),
+		IsRevoked:  true,
+	}
+	
+	mockStorage.On("GetRefreshToken", ctx, "revoked-token-123").Return(revokedToken, nil)
+	
+	token, err = store.ValidateRefreshToken(ctx, "revoked-token-123")
+	require.Error(t, err)
+	require.Nil(t, token)
+	assert.Contains(t, err.Error(), "revoked")
+	
+	mockStorage.AssertExpectations(t)
+}
+
+func TestRevokeRefreshToken(t *testing.T) {
+	mockStorage := mocks.NewMockStorage()
+	logger := zap.NewNop()
+
+	store := NewRefreshTokenStore(mockStorage, logger)
+
+	ctx := context.Background()
+	
+	// Setup mock to return success for RevokeRefreshToken
+	mockStorage.On("RevokeRefreshToken", ctx, "token-to-revoke").Return(nil)
+	
+	err := store.RevokeRefreshToken(ctx, "token-to-revoke")
+	require.NoError(t, err)
+	
+	mockStorage.AssertExpectations(t)
+}
+
+func TestRotateRefreshToken(t *testing.T) {
+	mockStorage := mocks.NewMockStorage()
+	logger := zap.NewNop()
+
+	store := NewRefreshTokenStore(mockStorage, logger)
+
+	ctx := context.Background()
+	
+	oldToken := &storage.RefreshToken{
+		Token:      "old-token-123",
+		UserID:     "user123",
+		DeviceName: "iPhone 12",
+		IPAddress:  "192.168.1.1",
+		Generation: 1,
+		ExpiresAt:  time.Now().Add(24 * time.Hour),
+		CreatedAt:  time.Now().Add(-1 * time.Hour),
+		IsRevoked:  false,
+	}
+	
+	newToken := &storage.RefreshToken{
+		Token:      "new-token-456",
+		UserID:     "user123",
+		DeviceName: "iPhone 12",
+		IPAddress:  "192.168.1.1",
+		Generation: 2, // Incremented generation
+		ExpiresAt:  time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:  time.Now(),
+		IsRevoked:  false,
+	}
+	
+	// Setup mocks for rotation
+	mockStorage.On("GetRefreshToken", ctx, "old-token-123").Return(oldToken, nil)
+	mockStorage.On("RevokeRefreshToken", ctx, "old-token-123").Return(nil)
+	mockStorage.On("CreateRefreshToken", ctx, 
+		"user123", "iPhone 12", "192.168.1.1").Return(newToken, nil)
+	
+	rotatedToken, err := store.RotateRefreshToken(ctx, "old-token-123")
+	require.NoError(t, err)
+	require.NotNil(t, rotatedToken)
+	require.Equal(t, "new-token-456", rotatedToken.Token)
+	require.Equal(t, 2, rotatedToken.Generation)
+	require.Equal(t, "user123", rotatedToken.UserID)
+	
+	mockStorage.AssertExpectations(t)
+}
+
+func TestRevokeAllUserTokens(t *testing.T) {
+	mockStorage := mocks.NewMockStorage()
+	logger := zap.NewNop()
+
+	store := NewRefreshTokenStore(mockStorage, logger)
+
+	ctx := context.Background()
+	
+	// Setup mock to return success for RevokeAllUserTokens
+	mockStorage.On("RevokeAllUserTokens", ctx, "user123").Return(nil)
+	
+	err := store.RevokeAllUserTokens(ctx, "user123")
+	require.NoError(t, err)
+	
+	mockStorage.AssertExpectations(t)
+}
+
+func TestListUserTokens(t *testing.T) {
+	mockStorage := mocks.NewMockStorage()
+	logger := zap.NewNop()
+
+	store := NewRefreshTokenStore(mockStorage, logger)
+
+	ctx := context.Background()
+	
+	tokens := []*storage.RefreshToken{
+		{
+			Token:      "token-1",
+			UserID:     "user123",
+			DeviceName: "iPhone 12",
+			IPAddress:  "192.168.1.1",
+			Generation: 1,
+			ExpiresAt:  time.Now().Add(24 * time.Hour),
+			CreatedAt:  time.Now().Add(-2 * time.Hour),
+			IsRevoked:  false,
+		},
+		{
+			Token:      "token-2",
+			UserID:     "user123",
+			DeviceName: "iPad Pro",
+			IPAddress:  "192.168.1.2",
+			Generation: 1,
+			ExpiresAt:  time.Now().Add(24 * time.Hour),
+			CreatedAt:  time.Now().Add(-1 * time.Hour),
+			IsRevoked:  false,
+		},
+	}
+	
+	// Setup mock to return user's tokens
+	mockStorage.On("ListUserTokens", ctx, "user123").Return(tokens, nil)
+	
+	userTokens, err := store.ListUserTokens(ctx, "user123")
+	require.NoError(t, err)
+	require.Len(t, userTokens, 2)
+	require.Equal(t, "iPhone 12", userTokens[0].DeviceName)
+	require.Equal(t, "iPad Pro", userTokens[1].DeviceName)
+	
+	mockStorage.AssertExpectations(t)
+}
+
+// RefreshTokenStore wraps the storage interface for refresh token operations
+type RefreshTokenStore struct {
+	storage storage.Storage
+	logger  *zap.Logger
+}
+
+// NewRefreshTokenStore creates a new refresh token store
+func NewRefreshTokenStore(storage storage.Storage, logger *zap.Logger) *RefreshTokenStore {
+	return &RefreshTokenStore{
+		storage: storage,
+		logger:  logger,
+	}
+}
+
+// CreateRefreshToken creates a new refresh token
+func (s *RefreshTokenStore) CreateRefreshToken(ctx context.Context, userID, deviceName, ipAddress string) (*storage.RefreshToken, error) {
+	return s.storage.CreateRefreshToken(ctx, userID, deviceName, ipAddress)
+}
+
+// ValidateRefreshToken validates a refresh token and returns the token if valid
+func (s *RefreshTokenStore) ValidateRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
+	refreshToken, err := s.storage.GetRefreshToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Check if token is revoked
+	if refreshToken.IsRevoked {
+		return nil, storage.ErrTokenRevoked
+	}
+	
+	// Check if token is expired
+	if time.Now().After(refreshToken.ExpiresAt) {
+		return nil, storage.ErrTokenExpired
+	}
+	
+	return refreshToken, nil
+}
+
+// RevokeRefreshToken revokes a specific refresh token
+func (s *RefreshTokenStore) RevokeRefreshToken(ctx context.Context, token string) error {
+	return s.storage.RevokeRefreshToken(ctx, token)
+}
+
+// RotateRefreshToken rotates a refresh token (revokes old, creates new)
+func (s *RefreshTokenStore) RotateRefreshToken(ctx context.Context, oldToken string) (*storage.RefreshToken, error) {
+	// Get the old token
+	refreshToken, err := s.storage.GetRefreshToken(ctx, oldToken)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Revoke the old token
+	if err := s.storage.RevokeRefreshToken(ctx, oldToken); err != nil {
+		return nil, err
+	}
+	
+	// Create a new token with incremented generation
+	return s.storage.CreateRefreshToken(ctx, refreshToken.UserID, refreshToken.DeviceName, refreshToken.IPAddress)
+}
+
+// RevokeAllUserTokens revokes all refresh tokens for a user
+func (s *RefreshTokenStore) RevokeAllUserTokens(ctx context.Context, userID string) error {
+	return s.storage.RevokeAllUserTokens(ctx, userID)
+}
+
+// ListUserTokens lists all active refresh tokens for a user
+func (s *RefreshTokenStore) ListUserTokens(ctx context.Context, userID string) ([]*storage.RefreshToken, error) {
+	return s.storage.ListUserTokens(ctx, userID)
+}

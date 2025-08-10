@@ -311,7 +311,8 @@ func (r *ActorRepository) DeleteActor(ctx context.Context, username string) erro
 // SearchAccounts searches for actors by username or display name
 func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limit int, _ bool, _ int) ([]*activitypub.Actor, error) {
 	if query == "" {
-		return []*activitypub.Actor{}, nil
+		// For empty query, return recent active discoverable actors
+		return r.getRecentActiveActors(ctx, limit)
 	}
 
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
@@ -428,11 +429,11 @@ func convertStorageActorFields(fields []storage.ActorField) []models.ActorField 
 
 // KMSEncryptor implements envelope encryption using AWS KMS
 type KMSEncryptor struct {
-	kmsClient *kms.Client
-	keyID     string
-	mutex     sync.RWMutex
+	kmsClient    *kms.Client
+	keyID        string
+	mutex        sync.RWMutex
 	dataKeyCache map[string]*dataKeyCacheEntry
-	logger    *zap.Logger
+	logger       *zap.Logger
 }
 
 // dataKeyCacheEntry represents a cached data key with TTL
@@ -504,16 +505,16 @@ func (e *KMSEncryptor) Encrypt(plaintext []byte) ([]byte, error) {
 
 	// Format: [encryptedDataKeyLength(4 bytes)][encryptedDataKey][ciphertext]
 	result := make([]byte, 4+len(encryptedDataKey)+len(ciphertext))
-	
+
 	// Store encrypted data key length (big endian)
 	result[0] = byte(len(encryptedDataKey) >> 24)
 	result[1] = byte(len(encryptedDataKey) >> 16)
 	result[2] = byte(len(encryptedDataKey) >> 8)
 	result[3] = byte(len(encryptedDataKey))
-	
+
 	// Store encrypted data key
 	copy(result[4:4+len(encryptedDataKey)], encryptedDataKey)
-	
+
 	// Store ciphertext
 	copy(result[4+len(encryptedDataKey):], ciphertext)
 
@@ -783,6 +784,7 @@ func (r *ActorRepository) modelToActivityPubActor(model *models.Actor) (*activit
 }
 
 // GetAccountSuggestions gets suggested accounts for a user based on "friends of friends" algorithm
+//
 //nolint:dupl // Account suggestion algorithms are shared between actor repositories
 func (r *ActorRepository) GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error) {
 	log := r.logger.With(zap.String("method", "GetAccountSuggestions"), zap.String("user_id", userID))
@@ -1037,21 +1039,109 @@ func (r *ActorRepository) RemoveAccountSuggestion(ctx context.Context, userID, t
 
 // getDiscoverableActors returns actors marked as discoverable
 func (r *ActorRepository) getDiscoverableActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
-	// Use the existing SearchAccounts method with empty query to get discoverable accounts
-	actors, err := r.SearchAccounts(ctx, "", limit*2, false, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get discoverable actors: %w", err)
+	return r.getRecentActiveActors(ctx, limit)
+}
+
+// getRecentActiveActors returns recently active actors using the activity index
+func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
+	log := r.logger.With(zap.String("method", "getRecentActiveActors"))
+
+	// Query using the activity index (GSI5) to get recently active actors
+	// Try multiple days to get enough results
+	var allActors []models.Actor
+	now := time.Now()
+
+	for days := 0; days < 7 && len(allActors) < limit*2; days++ {
+		searchDate := now.AddDate(0, 0, -days)
+		dateKey := "ACTIVE#" + searchDate.Format(common.DateFormat)
+
+		var actors []models.Actor
+		err := r.db.WithContext(ctx).Model(&models.Actor{}).
+			Index("activity-index").
+			Where("GSI5PK", "=", dateKey).
+			OrderBy("GSI5SK", "DESC"). // Get most recent first
+			Limit(limit).
+			All(&actors)
+		if err != nil {
+			log.Warn("failed to query activity index", zap.String("date", dateKey), zap.Error(err))
+			continue
+		}
+
+		allActors = append(allActors, actors...)
 	}
 
-	// Filter for discoverable only
-	var discoverable []*activitypub.Actor
-	for _, actor := range actors {
-		if actor.Discoverable && len(discoverable) < limit {
-			discoverable = append(discoverable, actor)
+	// If no recent activity found, fall back to popularity index
+	if len(allActors) == 0 {
+		log.Debug("no recent activity found, falling back to popularity index")
+		return r.getPopularActors(ctx, limit)
+	}
+
+	// Convert to activitypub.Actor slice and filter for discoverable
+	result := make([]*activitypub.Actor, 0, limit)
+	seen := make(map[string]bool)
+
+	for _, actor := range allActors {
+		if len(result) >= limit {
+			break
+		}
+
+		// Avoid duplicates
+		if seen[actor.Username] {
+			continue
+		}
+		seen[actor.Username] = true
+
+		if actor.Actor != nil && actor.Actor.Discoverable {
+			result = append(result, actor.Actor)
 		}
 	}
 
-	return discoverable, nil
+	log.Debug("retrieved recent active actors", zap.Int("count", len(result)))
+	return result, nil
+}
+
+// getPopularActors returns actors sorted by popularity (follower count)
+func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
+	log := r.logger.With(zap.String("method", "getPopularActors"))
+
+	// Query popularity buckets starting from highest
+	buckets := []string{"10K+", "1K+", "100+", "10+", "0-9"}
+	var allActors []models.Actor
+
+	for _, bucket := range buckets {
+		if len(allActors) >= limit {
+			break
+		}
+
+		var actors []models.Actor
+		err := r.db.WithContext(ctx).Model(&models.Actor{}).
+			Index("popularity-index").
+			Where("GSI4PK", "=", "ACTOR_RANK#"+bucket).
+			OrderBy("GSI4SK", "DESC"). // Highest follower count first
+			Limit(limit - len(allActors)).
+			All(&actors)
+		if err != nil {
+			log.Warn("failed to query popularity index", zap.String("bucket", bucket), zap.Error(err))
+			continue
+		}
+
+		allActors = append(allActors, actors...)
+	}
+
+	// Convert to activitypub.Actor slice
+	result := make([]*activitypub.Actor, 0, len(allActors))
+	for _, actor := range allActors {
+		if len(result) >= limit {
+			break
+		}
+
+		if actor.Actor != nil && actor.Actor.Discoverable {
+			result = append(result, actor.Actor)
+		}
+	}
+
+	log.Debug("retrieved popular actors", zap.Int("count", len(result)))
+	return result, nil
 }
 
 // extractUsernameFromActorID extracts username from actor ID
@@ -1070,6 +1160,7 @@ func (r *ActorRepository) extractUsernameFromActorID(actorID string) string {
 }
 
 // GetCachedRemoteActor retrieves a cached remote actor by handle
+//
 //nolint:dupl // Remote actor caching patterns are shared between actor repositories
 func (r *ActorRepository) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
 	log := r.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("handle", handle))

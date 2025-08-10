@@ -245,6 +245,13 @@ type Remove struct {
 	Target string `json:"target"` // The collection to remove from
 }
 
+// Tombstone represents a deleted object placeholder per ActivityPub spec
+type Tombstone struct {
+	BaseObject
+	FormerType string `json:"formerType,omitempty"` // The original object type
+	Deleted    string `json:"deleted,omitempty"`    // ISO 8601 timestamp of deletion
+}
+
 // WebFingerResource represents a WebFinger response
 type WebFingerResource struct {
 	Subject string          `json:"subject"`
@@ -336,7 +343,9 @@ const (
 	VideoType             = "Video"
 	DocumentType          = "Document"
 	CollectionType        = "Collection"
-	OrderedCollectionType = "OrderedCollection"
+	OrderedCollectionType     = "OrderedCollection"
+	OrderedCollectionPageType = "OrderedCollectionPage"
+	TombstoneType             = "Tombstone"
 
 	// Collection types
 	InboxCollection     = "inbox"

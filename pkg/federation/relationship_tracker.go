@@ -28,36 +28,36 @@ type RelationshipTracker struct {
 	storage core.RepositoryStorage
 	db      dynamormcore.DB
 	logger  *zap.Logger
-	
+
 	// S3 client for archival operations
-	s3Client     *s3.Client
+	s3Client      *s3.Client
 	archiveBucket string
-	
+
 	// In-memory cache for active relationships (performance optimization)
 	relationshipCache map[string]*models.FederationRelationship
 	cacheMutex        sync.RWMutex
-	
+
 	// Configuration
-	warmupDuration    time.Duration
-	archiveAfter      time.Duration
-	cleanupInterval   time.Duration
+	warmupDuration  time.Duration
+	archiveAfter    time.Duration
+	cleanupInterval time.Duration
 }
 
 // NewRelationshipTracker creates a new relationship tracker with DynamORM persistence
 func NewRelationshipTracker(store core.RepositoryStorage, db dynamormcore.DB, logger *zap.Logger) *RelationshipTracker {
 	rt := &RelationshipTracker{
 		storage:           store,
-		db:               db,
-		logger:           logger,
+		db:                db,
+		logger:            logger,
 		relationshipCache: make(map[string]*models.FederationRelationship),
-		warmupDuration:   1 * time.Hour,
-		archiveAfter:     90 * 24 * time.Hour,
-		cleanupInterval:  1 * time.Hour,
+		warmupDuration:    1 * time.Hour,
+		archiveAfter:      90 * 24 * time.Hour,
+		cleanupInterval:   1 * time.Hour,
 	}
-	
+
 	// Start background cleanup process
 	go rt.backgroundCleanup()
-	
+
 	return rt
 }
 
@@ -78,14 +78,14 @@ func (rt *RelationshipTracker) TrackDeliveryAttempt(ctx context.Context, attempt
 			zap.String("target", attempt.TargetDomain),
 			zap.Error(err))
 	}
-	
+
 	if err := rt.trackInstanceRelationship(ctx, attempt); err != nil {
 		rt.logger.Error("Failed to track instance relationship",
 			zap.String("source", attempt.SourceDomain),
 			zap.String("target", attempt.TargetDomain),
 			zap.Error(err))
 	}
-	
+
 	// Update legacy federation edge for backward compatibility
 	edge := &storage.FederationEdge{
 		SourceDomain:   attempt.SourceDomain,
@@ -117,7 +117,7 @@ func (rt *RelationshipTracker) TrackInboundActivity(ctx context.Context, activit
 		Timestamp:      activity.Timestamp,
 		UserID:         activity.UserID, // Add this field to InboundActivity if not present
 	}
-	
+
 	// Track relationships
 	if err := rt.trackUserRelationship(ctx, attempt); err != nil {
 		rt.logger.Error("Failed to track inbound user relationship",
@@ -125,14 +125,14 @@ func (rt *RelationshipTracker) TrackInboundActivity(ctx context.Context, activit
 			zap.String("target", activity.TargetDomain),
 			zap.Error(err))
 	}
-	
+
 	if err := rt.trackInstanceRelationship(ctx, attempt); err != nil {
 		rt.logger.Error("Failed to track inbound instance relationship",
 			zap.String("source", activity.SourceDomain),
 			zap.String("target", activity.TargetDomain),
 			zap.Error(err))
 	}
-	
+
 	// Update legacy federation edge for backward compatibility
 	edge := &storage.FederationEdge{
 		SourceDomain:   activity.SourceDomain,
@@ -255,19 +255,19 @@ func (rt *RelationshipTracker) trackUserRelationship(ctx context.Context, attemp
 		// Can't track user-level without user ID
 		return nil
 	}
-	
+
 	// Generate relationship ID
 	relID := rt.generateRelationshipID(attempt.UserID, attempt.TargetDomain, attempt.ActivityType)
-	
+
 	// Get or create relationship
 	rel, err := rt.getOrCreateRelationship(ctx, attempt.UserID, attempt.TargetDomain, attempt.ActivityType, relID)
 	if err != nil {
 		return fmt.Errorf("failed to get/create relationship: %w", err)
 	}
-	
+
 	// Update success rate and metrics
 	rel.UpdateSuccessRate(attempt.Success, attempt.ResponseTimeMs)
-	
+
 	// Check for state transitions
 	if newState, shouldTransition := rel.ShouldTransitionState(); shouldTransition {
 		rt.logger.Info("Relationship state transition",
@@ -275,10 +275,10 @@ func (rt *RelationshipTracker) trackUserRelationship(ctx context.Context, attemp
 			zap.String("target", attempt.TargetDomain),
 			zap.String("old_state", string(rel.State)),
 			zap.String("new_state", string(newState)))
-		
+
 		rel.TransitionToState(newState)
 	}
-	
+
 	// Save the relationship
 	return rt.saveRelationship(ctx, rel)
 }
@@ -290,20 +290,20 @@ func (rt *RelationshipTracker) trackInstanceRelationship(ctx context.Context, at
 	if err != nil {
 		return fmt.Errorf("failed to get/create aggregate: %w", err)
 	}
-	
+
 	// Update aggregate metrics
 	if attempt.Success {
 		agg.TotalSuccesses15m++
 	} else {
 		agg.TotalFailures15m++
 	}
-	
+
 	// Recalculate success rate
 	total := agg.TotalSuccesses15m + agg.TotalFailures15m
 	if total > 0 {
 		agg.OverallSuccessRate = float64(agg.TotalSuccesses15m) / float64(total)
 	}
-	
+
 	// Update response time (weighted average)
 	if attempt.ResponseTimeMs > 0 {
 		if agg.AvgResponseTime == 0 {
@@ -312,7 +312,7 @@ func (rt *RelationshipTracker) trackInstanceRelationship(ctx context.Context, at
 			agg.AvgResponseTime = agg.AvgResponseTime*0.9 + attempt.ResponseTimeMs*0.1
 		}
 	}
-	
+
 	// Save the aggregate
 	return rt.saveAggregate(ctx, agg)
 }
@@ -327,21 +327,21 @@ func (rt *RelationshipTracker) getOrCreateRelationship(ctx context.Context, user
 		return cached, nil
 	}
 	rt.cacheMutex.RUnlock()
-	
+
 	// Try to get from database
 	var rel models.FederationRelationship
 	pk := fmt.Sprintf("USER#%s#FEDERATION", userID)
 	sk := fmt.Sprintf("REL#%s#%s#%s", targetInstance, relType, relID)
-	
+
 	err := rt.db.WithContext(ctx).Model(&models.FederationRelationship{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&rel)
-	
+
 	if err != nil && !errors.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to query relationship: %w", err)
 	}
-	
+
 	if errors.IsNotFound(err) {
 		// Create new relationship
 		now := time.Now()
@@ -362,12 +362,12 @@ func (rt *RelationshipTracker) getOrCreateRelationship(ctx context.Context, user
 		}
 		rel.UpdateKeys()
 	}
-	
+
 	// Cache the relationship
 	rt.cacheMutex.Lock()
 	rt.relationshipCache[cacheKey] = &rel
 	rt.cacheMutex.Unlock()
-	
+
 	return &rel, nil
 }
 
@@ -375,62 +375,62 @@ func (rt *RelationshipTracker) getOrCreateRelationship(ctx context.Context, user
 func (rt *RelationshipTracker) getOrCreateAggregate(ctx context.Context, instanceDomain, period string) (*models.FederationRelationshipAggregate, error) {
 	now := time.Now()
 	timestamp := now.Truncate(15 * time.Minute) // 15-minute buckets
-	
+
 	var agg models.FederationRelationshipAggregate
 	pk := fmt.Sprintf("INSTANCE#%s#FEDERATION_AGG", instanceDomain)
 	sk := fmt.Sprintf("PERIOD#%s#%s", period, timestamp.Format("20060102150405"))
-	
+
 	err := rt.db.WithContext(ctx).Model(&models.FederationRelationshipAggregate{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&agg)
-	
+
 	if err != nil && !errors.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to query aggregate: %w", err)
 	}
-	
+
 	if errors.IsNotFound(err) {
 		// Create new aggregate
 		agg = models.FederationRelationshipAggregate{
-			InstanceDomain:     instanceDomain,
-			Period:             period,
-			Timestamp:          timestamp,
-			StateTransitions:   make(map[string]int64),
-			CreatedAt:          now,
+			InstanceDomain:   instanceDomain,
+			Period:           period,
+			Timestamp:        timestamp,
+			StateTransitions: make(map[string]int64),
+			CreatedAt:        now,
 		}
 		agg.UpdateKeys()
 	}
-	
+
 	return &agg, nil
 }
 
 // saveRelationship persists a federation relationship
 func (rt *RelationshipTracker) saveRelationship(ctx context.Context, rel *models.FederationRelationship) error {
 	rel.UpdateKeys()
-	
+
 	err := rt.db.WithContext(ctx).Model(rel).Create()
 	if err != nil {
 		return fmt.Errorf("failed to save relationship: %w", err)
 	}
-	
+
 	// Update cache
 	cacheKey := fmt.Sprintf("%s:%s:%s", rel.UserID, rel.TargetInstance, rel.RelationshipType)
 	rt.cacheMutex.Lock()
 	rt.relationshipCache[cacheKey] = rel
 	rt.cacheMutex.Unlock()
-	
+
 	return nil
 }
 
 // saveAggregate persists a federation relationship aggregate
 func (rt *RelationshipTracker) saveAggregate(ctx context.Context, agg *models.FederationRelationshipAggregate) error {
 	agg.UpdateKeys()
-	
+
 	err := rt.db.WithContext(ctx).Model(agg).Create()
 	if err != nil {
 		return fmt.Errorf("failed to save aggregate: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -446,23 +446,23 @@ func (rt *RelationshipTracker) generateRelationshipID(userID, targetInstance, re
 func (rt *RelationshipTracker) backgroundCleanup() {
 	ticker := time.NewTicker(rt.cleanupInterval)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		
+
 		// Process state transitions
 		if err := rt.processStateTransitions(ctx); err != nil {
 			rt.logger.Error("Failed to process state transitions", zap.Error(err))
 		}
-		
+
 		// Archive dormant relationships
 		if err := rt.archiveDormantRelationships(ctx); err != nil {
 			rt.logger.Error("Failed to archive dormant relationships", zap.Error(err))
 		}
-		
+
 		// Clean cache of old entries
 		rt.cleanCache()
-		
+
 		cancel()
 	}
 }
@@ -471,23 +471,23 @@ func (rt *RelationshipTracker) backgroundCleanup() {
 func (rt *RelationshipTracker) processStateTransitions(ctx context.Context) error {
 	// Query active and idle relationships that might need transitions
 	states := []models.RelationshipState{models.StateActive, models.StateIdle, models.StateDormant}
-	
+
 	for _, state := range states {
 		var relationships []models.FederationRelationship
-		
+
 		err := rt.db.WithContext(ctx).Model(&models.FederationRelationship{}).
 			Index("gsi1").
 			Where("GSI1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", state)).
 			Limit(100). // Process in batches
 			Scan(&relationships)
-		
+
 		if err != nil {
 			rt.logger.Error("Failed to query relationships for state transitions",
 				zap.String("state", string(state)),
 				zap.Error(err))
 			continue
 		}
-		
+
 		for _, rel := range relationships {
 			if newState, shouldTransition := rel.ShouldTransitionState(); shouldTransition {
 				rt.logger.Info("Processing state transition",
@@ -495,9 +495,9 @@ func (rt *RelationshipTracker) processStateTransitions(ctx context.Context) erro
 					zap.String("target", rel.TargetInstance),
 					zap.String("old_state", string(rel.State)),
 					zap.String("new_state", string(newState)))
-				
+
 				rel.TransitionToState(newState)
-				
+
 				if err := rt.saveRelationship(ctx, &rel); err != nil {
 					rt.logger.Error("Failed to save state transition",
 						zap.String("rel_id", rel.ID),
@@ -506,7 +506,7 @@ func (rt *RelationshipTracker) processStateTransitions(ctx context.Context) erro
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -514,18 +514,18 @@ func (rt *RelationshipTracker) processStateTransitions(ctx context.Context) erro
 func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) error {
 	// Query relationships that should be archived
 	var relationships []models.FederationRelationship
-	
+
 	err := rt.db.WithContext(ctx).Model(&models.FederationRelationship{}).
 		Index("gsi1").
 		Where("GSI1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", models.StateDormant)).
 		Where("GSI1SK", "<", fmt.Sprintf("%d", time.Now().Add(-rt.archiveAfter).Unix())).
 		Limit(100).
 		Scan(&relationships)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to query dormant relationships: %w", err)
 	}
-	
+
 	for _, rel := range relationships {
 		// Archive to S3 if client is configured
 		if err := rt.archiveToS3(ctx, &rel); err != nil {
@@ -536,10 +536,10 @@ func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) 
 				zap.Error(err))
 			continue
 		}
-		
+
 		// Transition to archived state after successful archival
 		rel.TransitionToState(models.StateArchived)
-		
+
 		// Create index entry and remove full record
 		index := &models.FederationRelationshipIndex{
 			RelationshipID:  rel.ID,
@@ -551,7 +551,7 @@ func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) 
 			CreatedAt:       time.Now(),
 		}
 		index.UpdateKeys()
-		
+
 		// Save index and delete full record
 		if err := rt.db.WithContext(ctx).Model(index).Create(); err != nil {
 			rt.logger.Error("Failed to create relationship index",
@@ -559,20 +559,20 @@ func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) 
 				zap.Error(err))
 			continue
 		}
-		
+
 		// Delete full relationship record
 		if err := rt.db.WithContext(ctx).Model(&rel).Delete(); err != nil {
 			rt.logger.Error("Failed to delete archived relationship",
 				zap.String("rel_id", rel.ID),
 				zap.Error(err))
 		}
-		
+
 		rt.logger.Info("Archived relationship",
 			zap.String("rel_id", rel.ID),
 			zap.String("user_id", rel.UserID),
 			zap.String("target", rel.TargetInstance))
 	}
-	
+
 	return nil
 }
 
@@ -580,7 +580,7 @@ func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) 
 func (rt *RelationshipTracker) cleanCache() {
 	rt.cacheMutex.Lock()
 	defer rt.cacheMutex.Unlock()
-	
+
 	// Remove entries older than 1 hour
 	cutoff := time.Now().Add(-1 * time.Hour)
 	for key, rel := range rt.relationshipCache {
@@ -661,7 +661,7 @@ func (rt *RelationshipTracker) calculateSuccessRate(ctx context.Context, targetD
 			zap.Error(err))
 		return 0.5 // Default neutral rate
 	}
-	
+
 	return agg.OverallSuccessRate
 }
 
@@ -744,11 +744,11 @@ func (rt *RelationshipTracker) GetRelationshipByID(ctx context.Context, userID, 
 // GetUserRelationships retrieves all federation relationships for a user
 func (rt *RelationshipTracker) GetUserRelationships(ctx context.Context, userID string, limit int) ([]*models.FederationRelationship, error) {
 	var relationships []models.FederationRelationship
-	
+
 	query := rt.db.WithContext(ctx).Model(&models.FederationRelationship{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s#FEDERATION", userID)).
 		Limit(limit)
-	
+
 	err := query.Scan(&relationships)
 	if err != nil {
 		rt.logger.Error("Failed to query user relationships",
@@ -756,13 +756,13 @@ func (rt *RelationshipTracker) GetUserRelationships(ctx context.Context, userID 
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query user relationships: %w", err)
 	}
-	
+
 	// Convert to pointer slice
 	result := make([]*models.FederationRelationship, len(relationships))
 	for i := range relationships {
 		result[i] = &relationships[i]
 	}
-	
+
 	return result, nil
 }
 
@@ -771,19 +771,19 @@ func (rt *RelationshipTracker) GetInstanceAggregate(ctx context.Context, instanc
 	if period == "" {
 		period = "15min"
 	}
-	
+
 	return rt.getOrCreateAggregate(ctx, instanceDomain, period)
 }
 
 // GetRelationshipsByState retrieves relationships in a specific state
 func (rt *RelationshipTracker) GetRelationshipsByState(ctx context.Context, state models.RelationshipState, limit int) ([]*models.FederationRelationship, error) {
 	var relationships []models.FederationRelationship
-	
+
 	query := rt.db.WithContext(ctx).Model(&models.FederationRelationship{}).
 		Index("gsi1").
 		Where("GSI1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", state)).
 		Limit(limit)
-	
+
 	err := query.Scan(&relationships)
 	if err != nil {
 		rt.logger.Error("Failed to query relationships by state",
@@ -791,13 +791,13 @@ func (rt *RelationshipTracker) GetRelationshipsByState(ctx context.Context, stat
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to query relationships by state: %w", err)
 	}
-	
+
 	// Convert to pointer slice
 	result := make([]*models.FederationRelationship, len(relationships))
 	for i := range relationships {
 		result[i] = &relationships[i]
 	}
-	
+
 	return result, nil
 }
 
@@ -808,20 +808,20 @@ func (rt *RelationshipTracker) ForceStateTransition(ctx context.Context, userID,
 	if err != nil {
 		return fmt.Errorf("failed to get relationship: %w", err)
 	}
-	
+
 	oldState := rel.State
 	rel.TransitionToState(newState)
-	
+
 	if err := rt.saveRelationship(ctx, rel); err != nil {
 		return fmt.Errorf("failed to save state transition: %w", err)
 	}
-	
+
 	rt.logger.Info("Forced state transition",
 		zap.String("user_id", userID),
 		zap.String("target", targetInstance),
 		zap.String("old_state", string(oldState)),
 		zap.String("new_state", string(newState)))
-	
+
 	return nil
 }
 
@@ -832,16 +832,16 @@ func (rt *RelationshipTracker) GetHealthScore(ctx context.Context, targetInstanc
 	if err != nil {
 		return 0.0, fmt.Errorf("failed to get aggregate: %w", err)
 	}
-	
+
 	// Calculate health score based on success rate and response time
 	successScore := agg.OverallSuccessRate * 100 // 0-100
-	
+
 	// Response time penalty: penalize high response times
 	responseTimePenalty := 0.0
 	if agg.AvgResponseTime > 1000 { // > 1 second
 		responseTimePenalty = math.Min((agg.AvgResponseTime-1000)/10000*50, 50) // Up to 50 point penalty
 	}
-	
+
 	healthScore := successScore - responseTimePenalty
 	if healthScore < 0 {
 		healthScore = 0
@@ -849,7 +849,7 @@ func (rt *RelationshipTracker) GetHealthScore(ctx context.Context, targetInstanc
 	if healthScore > 100 {
 		healthScore = 100
 	}
-	
+
 	return healthScore, nil
 }
 
@@ -860,7 +860,7 @@ func (rt *RelationshipTracker) GetUnhealthyRelationships(ctx context.Context, th
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active relationships: %w", err)
 	}
-	
+
 	// Filter for unhealthy relationships
 	var unhealthy []*models.FederationRelationship
 	for _, rel := range activeRelationships {
@@ -871,7 +871,7 @@ func (rt *RelationshipTracker) GetUnhealthyRelationships(ctx context.Context, th
 			}
 		}
 	}
-	
+
 	return unhealthy, nil
 }
 
@@ -880,19 +880,19 @@ func (rt *RelationshipTracker) ReactivateRelationship(ctx context.Context, userI
 	// Check if there's an archived index entry
 	var index models.FederationRelationshipIndex
 	indexPK := fmt.Sprintf("FEDERATION_REL_INDEX#%s", rt.generateRelationshipID(userID, targetInstance, relType))
-	
+
 	err := rt.db.WithContext(ctx).Model(&models.FederationRelationshipIndex{}).
 		Where("PK", "=", indexPK).
 		Where("SK", "=", "INDEX").
 		First(&index)
-	
+
 	if errors.IsNotFound(err) {
 		// No archived relationship, create a new active one
 		return rt.ForceStateTransition(ctx, userID, targetInstance, relType, models.StateActive)
 	} else if err != nil {
 		return fmt.Errorf("failed to check for archived relationship: %w", err)
 	}
-	
+
 	// Restore from S3 archive if ArchiveLocation is set
 	if index.ArchiveLocation != "" {
 		if restoredRel, err := rt.restoreFromS3(ctx, index.ArchiveLocation); err != nil {
@@ -905,36 +905,36 @@ func (rt *RelationshipTracker) ReactivateRelationship(ctx context.Context, userI
 			restoredRel.State = models.StateActive
 			restoredRel.StateChangedAt = now
 			restoredRel.UpdatedAt = now
-			
+
 			// Set warmup period for reactivated relationship
 			warmupEnd := now.Add(rt.warmupDuration)
 			restoredRel.WarmupUntil = &warmupEnd
 			restoredRel.CurrentRate = 0.1
-			
+
 			// Save the restored relationship
 			if err := rt.saveRelationship(ctx, restoredRel); err != nil {
 				return fmt.Errorf("failed to save restored relationship: %w", err)
 			}
-			
+
 			// Delete the index entry (relationship is now active)
 			if err := rt.db.WithContext(ctx).Model(&index).Delete(); err != nil {
 				rt.logger.Warn("Failed to delete index after restoration",
 					zap.String("rel_id", restoredRel.ID),
 					zap.Error(err))
 			}
-			
+
 			rt.logger.Info("Restored relationship from S3 archive",
 				zap.String("user_id", userID),
 				zap.String("target", targetInstance),
 				zap.String("rel_type", relType),
 				zap.String("archive_location", index.ArchiveLocation))
-			
+
 			return nil
 		}
 	}
-	
+
 	// For archived relationships without S3 location or failed restore, create a new active relationship with historical baseline
-	
+
 	now := time.Now()
 	rel := &models.FederationRelationship{
 		ID:               rt.generateRelationshipID(userID, targetInstance, relType),
@@ -951,28 +951,28 @@ func (rt *RelationshipTracker) ReactivateRelationship(ctx context.Context, userI
 		CreatedAt:        index.CreatedAt,
 		UpdatedAt:        now,
 	}
-	
+
 	// Set warmup period
 	warmupEnd := now.Add(rt.warmupDuration)
 	rel.WarmupUntil = &warmupEnd
-	
+
 	// Save the reactivated relationship
 	if err := rt.saveRelationship(ctx, rel); err != nil {
 		return fmt.Errorf("failed to save reactivated relationship: %w", err)
 	}
-	
+
 	// Delete the index entry (relationship is now active)
 	if err := rt.db.WithContext(ctx).Model(&index).Delete(); err != nil {
 		rt.logger.Warn("Failed to delete index after reactivation",
 			zap.String("rel_id", rel.ID),
 			zap.Error(err))
 	}
-	
+
 	rt.logger.Info("Reactivated relationship",
 		zap.String("user_id", userID),
 		zap.String("target", targetInstance),
 		zap.String("rel_type", relType))
-	
+
 	return nil
 }
 
@@ -986,7 +986,7 @@ type DeliveryAttempt struct {
 	Success        bool
 	ResponseTimeMs float64
 	Timestamp      time.Time
-	UserID         string  // Local user ID for user-level tracking
+	UserID         string // Local user ID for user-level tracking
 }
 
 // InboundActivity represents an inbound federation activity
@@ -995,7 +995,7 @@ type InboundActivity struct {
 	TargetDomain string
 	ActivityType string
 	Timestamp    time.Time
-	UserID       string  // Local user ID for user-level tracking
+	UserID       string // Local user ID for user-level tracking
 }
 
 // RelationshipAnalysis represents analysis of federation relationship strength
@@ -1102,7 +1102,7 @@ func (rt *RelationshipTracker) archiveToS3(ctx context.Context, rel *models.Fede
 				zap.String("rel_id", rel.ID),
 				zap.Int("attempt", attempt+1),
 				zap.Duration("backoff", backoffDuration))
-			
+
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -1117,14 +1117,14 @@ func (rt *RelationshipTracker) archiveToS3(ctx context.Context, rel *models.Fede
 			ContentType:     aws.String("application/json"),
 			ContentEncoding: aws.String("gzip"),
 			Metadata: map[string]string{
-				"relationship-id":  rel.ID,
-				"user-id":          rel.UserID,
-				"target-instance":  rel.TargetInstance,
-				"archived-at":      now.Format(time.RFC3339),
-				"last-activity":    rel.LastActivity.Format(time.RFC3339),
-				"original-state":   string(rel.State),
-				"total-attempts":   fmt.Sprintf("%d", rel.TotalAttempts),
-				"success-rate":     fmt.Sprintf("%.2f", rel.SuccessRate),
+				"relationship-id": rel.ID,
+				"user-id":         rel.UserID,
+				"target-instance": rel.TargetInstance,
+				"archived-at":     now.Format(time.RFC3339),
+				"last-activity":   rel.LastActivity.Format(time.RFC3339),
+				"original-state":  string(rel.State),
+				"total-attempts":  fmt.Sprintf("%d", rel.TotalAttempts),
+				"success-rate":    fmt.Sprintf("%.2f", rel.SuccessRate),
 			},
 		}
 
@@ -1132,7 +1132,7 @@ func (rt *RelationshipTracker) archiveToS3(ctx context.Context, rel *models.Fede
 		if err == nil {
 			// Success - update relationship with archive location
 			rel.ArchiveLocation = s3Key
-			
+
 			// Emit metrics for monitoring
 			rt.logger.Info("Successfully archived relationship to S3",
 				zap.String("rel_id", rel.ID),
@@ -1142,7 +1142,7 @@ func (rt *RelationshipTracker) archiveToS3(ctx context.Context, rel *models.Fede
 				zap.Int("original_size", len(jsonData)),
 				zap.Int("compressed_size", compressedData.Len()),
 				zap.Float64("compression_ratio", float64(compressedData.Len())/float64(len(jsonData))))
-			
+
 			return nil
 		}
 
@@ -1284,7 +1284,7 @@ func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocatio
 				zap.String("archive_location", archiveLocation),
 				zap.Int("attempt", attempt+1),
 				zap.Duration("backoff", backoffDuration))
-			
+
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()

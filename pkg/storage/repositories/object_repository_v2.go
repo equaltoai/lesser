@@ -260,7 +260,7 @@ func (r *ObjectRepositoryV2) GetObjectsByActor(ctx context.Context, actorID stri
 func (r *ObjectRepositoryV2) CountObjectReplies(ctx context.Context, objectID string) (int, error) {
 	// This is using a different GSI pattern, keep original implementation
 	// Would need to enhance BaseRepository for complex GSI queries
-	query := r.db.WithContext(ctx).Model(&models.Object{}).
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi2-index"). // Assuming GSI2 is used for reply relationships
 		Where("GSI2PK", "=", fmt.Sprintf("reply#%s", objectID))
 
@@ -421,7 +421,7 @@ func (r *ObjectRepositoryV2) CreateUpdateHistory(ctx context.Context, history *s
 	updateHistory.UpdateKeys()
 
 	// Create using raw DynamORM for now
-	err := r.db.WithContext(ctx).Model(updateHistory).Create()
+	err := r.BaseRepository.db.WithContext(ctx).Model(updateHistory).Create()
 	if err != nil {
 		r.logger.Error("failed to create update history",
 			zap.String("object_id", history.ObjectID),
@@ -445,7 +445,7 @@ func (r *ObjectRepositoryV2) GetUpdateHistory(ctx context.Context, objectID stri
 	}
 
 	// Build the query - query by PK and SK prefix
-	query := r.db.WithContext(ctx).Model(&models.UpdateHistory{}).
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.UpdateHistory{}).
 		Where("PK", "=", fmt.Sprintf("OBJECT#%s#HISTORY", objectID)).
 		OrderBy("SK", "DESC"). // Newest version first
 		Limit(limit)
@@ -497,7 +497,7 @@ func (r *ObjectRepositoryV2) CountReplies(ctx context.Context, objectID string) 
 	}
 
 	// Use GSI6 to efficiently count replies
-	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
+	count, err := r.BaseRepository.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi6-index").
 		Where("GSI6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
 		Count()
@@ -531,7 +531,7 @@ func (r *ObjectRepositoryV2) GetReplies(ctx context.Context, objectID string, li
 	}
 
 	// Use GSI6 to efficiently get replies
-	query := r.db.WithContext(ctx).Model(&models.Object{}).
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi6-index").
 		Where("GSI6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
 		OrderBy("GSI6SK", "ASC"). // Oldest first

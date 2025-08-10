@@ -7,8 +7,8 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/moderation"
-	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
 )
@@ -396,7 +396,7 @@ func (ec *EventConverter) ConvertToMetricsUpdate(event *streaming.InternalEvent)
 		return ec.convertMetricRecordToUpdate(record, event)
 	}
 
-	// Try to extract MetricsEventPayload from event data  
+	// Try to extract MetricsEventPayload from event data
 	if payload, ok := event.Data.(*streaming.MetricsEventPayload); ok {
 		return ec.convertMetricsPayloadToUpdate(payload, event)
 	}
@@ -410,13 +410,13 @@ func (ec *EventConverter) convertMetricRecordToUpdate(record *models.MetricRecor
 	update := &model.MetricsUpdate{
 		MetricID:         record.MetricID,
 		ServiceName:      record.ServiceName,
-		MetricType:      record.MetricType,
+		MetricType:       record.MetricType,
 		AggregationLevel: record.AggregationLevel,
-		Timestamp:       model.Time(record.Timestamp),
-		Count:           int(record.Count),
-		Sum:             record.Sum,
-		Min:             record.Min,
-		Max:             record.Max,
+		Timestamp:        model.Time(record.Timestamp),
+		Count:            int(record.Count),
+		Sum:              record.Sum,
+		Min:              record.Min,
+		Max:              record.Max,
 	}
 
 	// Calculate average if not already set
@@ -448,7 +448,7 @@ func (ec *EventConverter) convertMetricRecordToUpdate(record *models.MetricRecor
 		if category, exists := event.Metadata["subscription_category"]; exists {
 			update.SubscriptionCategory = category
 		}
-		
+
 		// Extract cost information
 		if userCost, exists := event.Metadata["user_cost_microcents"]; exists {
 			if cost64, err := parseIntFromString(userCost); err == nil {
@@ -462,7 +462,7 @@ func (ec *EventConverter) convertMetricRecordToUpdate(record *models.MetricRecor
 				update.TotalCostMicrocents = &cost
 			}
 		}
-		
+
 		// Extract user/tenant information
 		if userID, exists := event.Metadata["user_id"]; exists {
 			update.UserID = &userID
@@ -495,15 +495,15 @@ func (ec *EventConverter) convertMetricsPayloadToUpdate(payload *streaming.Metri
 	update := &model.MetricsUpdate{
 		MetricID:             payload.MetricID,
 		ServiceName:          payload.ServiceName,
-		MetricType:          payload.MetricType,
+		MetricType:           payload.MetricType,
 		SubscriptionCategory: payload.SubscriptionCategory,
-		AggregationLevel:    payload.AggregationLevel,
-		Timestamp:           model.Time(payload.Timestamp),
-		Count:               int(payload.Count),
-		Sum:                 payload.Sum,
-		Min:                 payload.Min,
-		Max:                 payload.Max,
-		Average:             payload.Average,
+		AggregationLevel:     payload.AggregationLevel,
+		Timestamp:            model.Time(payload.Timestamp),
+		Count:                int(payload.Count),
+		Sum:                  payload.Sum,
+		Min:                  payload.Min,
+		Max:                  payload.Max,
+		Average:              payload.Average,
 	}
 
 	// Add optional fields if available
@@ -565,93 +565,111 @@ func (ec *EventConverter) convertEventMetadataToUpdate(event *streaming.Internal
 		Timestamp: model.Time(event.Timestamp),
 	}
 
-	// Extract required fields from metadata
-	if serviceName, exists := event.Metadata["service_name"]; exists {
+	ec.extractBasicFields(event.Metadata, update)
+	ec.extractNumericFields(event.Metadata, update)
+	ec.extractPercentileFields(event.Metadata, update)
+	ec.extractOptionalFields(event.Metadata, update)
+	ec.extractDimensions(event.Metadata, update)
+
+	return update
+}
+
+// extractBasicFields extracts basic string fields from metadata
+func (ec *EventConverter) extractBasicFields(metadata map[string]string, update *model.MetricsUpdate) {
+	if serviceName, exists := metadata["service_name"]; exists {
 		update.ServiceName = serviceName
 	}
-	if metricType, exists := event.Metadata["metric_type"]; exists {
+	if metricType, exists := metadata["metric_type"]; exists {
 		update.MetricType = metricType
 	}
-	if category, exists := event.Metadata["subscription_category"]; exists {
+	if category, exists := metadata["subscription_category"]; exists {
 		update.SubscriptionCategory = category
 	}
-	if level, exists := event.Metadata["aggregation_level"]; exists {
+	if level, exists := metadata["aggregation_level"]; exists {
 		update.AggregationLevel = level
 	}
+}
 
-	// Extract numeric fields
-	if count, exists := event.Metadata["count"]; exists {
+// extractNumericFields extracts numeric fields from metadata
+func (ec *EventConverter) extractNumericFields(metadata map[string]string, update *model.MetricsUpdate) {
+	if count, exists := metadata["count"]; exists {
 		if c, err := parseIntFromString(count); err == nil {
 			update.Count = int(c)
 		}
 	}
-	if sum, exists := event.Metadata["sum"]; exists {
+	if sum, exists := metadata["sum"]; exists {
 		if s, err := parseFloatFromString(sum); err == nil {
 			update.Sum = s
 		}
 	}
-	if minVal, exists := event.Metadata["min"]; exists {
+	if minVal, exists := metadata["min"]; exists {
 		if m, err := parseFloatFromString(minVal); err == nil {
 			update.Min = m
 		}
 	}
-	if maxVal, exists := event.Metadata["max"]; exists {
+	if maxVal, exists := metadata["max"]; exists {
 		if m, err := parseFloatFromString(maxVal); err == nil {
 			update.Max = m
 		}
 	}
-	if avg, exists := event.Metadata["average"]; exists {
+	if avg, exists := metadata["average"]; exists {
 		if a, err := parseFloatFromString(avg); err == nil {
 			update.Average = a
 		}
 	}
+}
 
-	// Extract percentiles
-	if p50, exists := event.Metadata["p50"]; exists {
+// extractPercentileFields extracts percentile fields from metadata
+func (ec *EventConverter) extractPercentileFields(metadata map[string]string, update *model.MetricsUpdate) {
+	if p50, exists := metadata["p50"]; exists {
 		if p, err := parseFloatFromString(p50); err == nil {
 			update.P50 = &p
 		}
 	}
-	if p95, exists := event.Metadata["p95"]; exists {
+	if p95, exists := metadata["p95"]; exists {
 		if p, err := parseFloatFromString(p95); err == nil {
 			update.P95 = &p
 		}
 	}
-	if p99, exists := event.Metadata["p99"]; exists {
+	if p99, exists := metadata["p99"]; exists {
 		if p, err := parseFloatFromString(p99); err == nil {
 			update.P99 = &p
 		}
 	}
+}
 
-	// Extract optional fields
-	if unit, exists := event.Metadata["unit"]; exists {
+// extractOptionalFields extracts optional fields from metadata
+func (ec *EventConverter) extractOptionalFields(metadata map[string]string, update *model.MetricsUpdate) {
+	if unit, exists := metadata["unit"]; exists {
 		update.Unit = &unit
 	}
-	if userCost, exists := event.Metadata["user_cost_microcents"]; exists {
-		if cost64, err := parseIntFromString(userCost); err == nil {
-			cost := int(cost64)
-			update.UserCostMicrocents = &cost
-		}
-	}
-	if totalCost, exists := event.Metadata["total_cost_microcents"]; exists {
-		if cost64, err := parseIntFromString(totalCost); err == nil {
-			cost := int(cost64)
-			update.TotalCostMicrocents = &cost
-		}
-	}
-	if userID, exists := event.Metadata["user_id"]; exists {
+	ec.extractCostField(metadata, "user_cost_microcents", &update.UserCostMicrocents)
+	ec.extractCostField(metadata, "total_cost_microcents", &update.TotalCostMicrocents)
+	if userID, exists := metadata["user_id"]; exists {
 		update.UserID = &userID
 	}
-	if tenantID, exists := event.Metadata["tenant_id"]; exists {
+	if tenantID, exists := metadata["tenant_id"]; exists {
 		update.TenantID = &tenantID
 	}
-	if domain, exists := event.Metadata["instance_domain"]; exists {
+	if domain, exists := metadata["instance_domain"]; exists {
 		update.InstanceDomain = &domain
 	}
+}
 
-	// Extract dimensions (prefixed with "dim_")
+// extractCostField extracts and converts cost fields from metadata
+func (ec *EventConverter) extractCostField(metadata map[string]string, key string, target **int) {
+	if costStr, exists := metadata[key]; exists {
+		if cost64, err := parseIntFromString(costStr); err == nil {
+			cost := int(cost64)
+			*target = &cost
+		}
+	}
+}
+
+// extractDimensions extracts dimension fields from metadata
+func (ec *EventConverter) extractDimensions(metadata map[string]string, update *model.MetricsUpdate) {
 	dimensions := make([]*model.MetricsDimension, 0)
-	for key, value := range event.Metadata {
+	for key, value := range metadata {
 		if strings.HasPrefix(key, "dim_") {
 			dimensionKey := strings.TrimPrefix(key, "dim_")
 			dimensions = append(dimensions, &model.MetricsDimension{
@@ -661,8 +679,6 @@ func (ec *EventConverter) convertEventMetadataToUpdate(event *streaming.Internal
 		}
 	}
 	update.Dimensions = dimensions
-
-	return update
 }
 
 // Helper functions for parsing metadata strings

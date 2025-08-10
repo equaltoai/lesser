@@ -168,7 +168,7 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 		request.Status = "expired"
 		if updateErr := s.repos.Recovery().UpdateRecoveryRequest(ctx, request); updateErr != nil {
 			// Log the error but still return the expiration error as primary
-			s.logger.Error("failed to update expired recovery request", 
+			s.logger.Error("failed to update expired recovery request",
 				zap.String("request_id", requestID),
 				zap.Error(updateErr))
 		}

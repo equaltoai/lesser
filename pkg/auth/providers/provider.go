@@ -49,4 +49,3 @@ type Config struct {
 	UserInfoURL  string
 	Scopes       []string
 }
-

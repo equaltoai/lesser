@@ -56,7 +56,7 @@ instance:
   
 admin:
   username: "admin"          # Your admin username
-  email: "admin@your-domain.com"
+  display_name: "Administrator"  # Admin display name
   
 features:
   open_registration: false   # Start closed, open later

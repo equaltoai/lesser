@@ -39,13 +39,13 @@ type HealthStatus string
 
 const (
 	// HealthStatusHealthy represents a healthy status
-	HealthStatusHealthy  HealthStatus = "healthy"
+	HealthStatusHealthy HealthStatus = "healthy"
 	// HealthStatusWarning represents a warning status
-	HealthStatusWarning  HealthStatus = "warning"
+	HealthStatusWarning HealthStatus = "warning"
 	// HealthStatusCritical represents a critical status
 	HealthStatusCritical HealthStatus = "critical"
 	// HealthStatusUnknown represents an unknown status
-	HealthStatusUnknown  HealthStatus = "unknown"
+	HealthStatusUnknown HealthStatus = "unknown"
 )
 
 // NewHealthMonitor creates a new health monitor

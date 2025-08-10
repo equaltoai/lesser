@@ -32,6 +32,9 @@ type Converter interface {
 	// Notes conversions
 	NotesToStatus(note any) models.Status
 
+	// Poll conversions
+	PollToAPI(poll *storage.Poll, userVotes []int) models.Poll
+
 	// Utility methods
 	ExtractUsernameFromActorID(actorID string) string
 	ExtractIDFromURL(url string) string

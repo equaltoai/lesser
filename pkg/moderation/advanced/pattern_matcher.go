@@ -84,7 +84,7 @@ func (pm *PatternMatcher) CreatePattern(ctx context.Context, pattern *Moderation
 	pm.patterns.Store(pattern.ID, pattern)
 
 	// Pre-compile regex if applicable
-	if pattern.PatternType == patternTypeRegex {
+	if pattern.Type == patternTypeRegex {
 		if regex, err := regexp.Compile(pattern.Pattern); err == nil {
 			pm.regexCache.Store(pattern.ID, regex)
 		}
@@ -93,7 +93,7 @@ func (pm *PatternMatcher) CreatePattern(ctx context.Context, pattern *Moderation
 	pm.logger.Info("created pattern",
 		zap.String("patternID", pattern.ID),
 		zap.String("name", pattern.Name),
-		zap.String("severity", string(pattern.Severity)))
+		zap.Float64("severity", pattern.Severity))
 
 	return nil
 }
@@ -121,7 +121,7 @@ func (pm *PatternMatcher) UpdatePattern(ctx context.Context, patternID string, u
 	pm.patterns.Store(patternID, updated)
 
 	// Pre-compile regex if applicable
-	if updated.PatternType == patternTypeRegex {
+	if updated.Type == patternTypeRegex {
 		if regex, err := regexp.Compile(updated.Pattern); err == nil {
 			pm.regexCache.Store(updated.ID, regex)
 		}
@@ -197,7 +197,7 @@ func (pm *PatternMatcher) validatePattern(pattern *ModerationPattern) error {
 	}
 
 	// Validate regex if applicable
-	if pattern.PatternType == patternTypeRegex {
+	if pattern.Type == patternTypeRegex {
 		_, err := regexp.Compile(pattern.Pattern)
 		if err != nil {
 			return fmt.Errorf("invalid regex pattern: %w", err)
@@ -206,8 +206,8 @@ func (pm *PatternMatcher) validatePattern(pattern *ModerationPattern) error {
 
 	// Validate pattern type
 	validTypes := map[string]bool{patternTypeRegex: true, patternTypeKeyword: true, patternTypePhrase: true}
-	if !validTypes[pattern.PatternType] {
-		return fmt.Errorf("invalid pattern type: %s", pattern.PatternType)
+	if !validTypes[pattern.Type] {
+		return fmt.Errorf("invalid pattern type: %s", pattern.Type)
 	}
 
 	return nil
@@ -218,7 +218,7 @@ func (pm *PatternMatcher) checkPattern(pattern *ModerationPattern, content, lowe
 	var matchText string
 	var location string
 
-	switch pattern.PatternType {
+	switch pattern.Type {
 	case patternTypeRegex:
 		// Get compiled regex from cache
 		var regex *regexp.Regexp
@@ -298,7 +298,7 @@ func (pm *PatternMatcher) loadPatterns(ctx context.Context) error {
 		pm.patterns.Store(pattern.ID, pattern)
 
 		// Pre-compile regex
-		if pattern.PatternType == patternTypeRegex {
+		if pattern.Type == patternTypeRegex {
 			if regex, err := regexp.Compile(pattern.Pattern); err == nil {
 				pm.regexCache.Store(pattern.ID, regex)
 			}

@@ -4,6 +4,49 @@
 
 Lesser now supports real-time activity streaming via WebSocket connections, enabling clients to receive live updates for timelines, notifications, and other events. This implementation follows the Mastodon streaming API specification while leveraging AWS serverless architecture.
 
+## WebSocket-Only Architecture
+
+Lesser uses **WebSocket connections only** and does not support Server-Sent Events (SSE) for streaming. This architectural decision is driven by serverless constraints and performance optimization.
+
+### Why No SSE Support?
+
+**Serverless Lambda Limitations:**
+- Lambda functions have a maximum timeout of 15 minutes
+- Long-running HTTP connections are not suitable for Lambda architecture
+- SSE requires persistent HTTP connections that can't be maintained across Lambda invocations
+- Automatic scaling would break existing SSE connections
+
+**Cost Optimization:**
+- Lambda billing is per-request, not per-connection-time
+- Long-running SSE connections would result in expensive timeout-based billing
+- WebSocket API Gateway provides dedicated infrastructure for persistent connections
+- Pay-per-message model is more cost-effective than pay-per-connection-time
+
+**Performance Benefits:**
+- WebSocket API Gateway handles 10,000+ concurrent connections natively
+- Bi-directional communication enables efficient subscription management
+- Connection lifecycle management is handled by AWS infrastructure
+- Automatic dead connection detection and cleanup
+
+### Client Implementation Notes
+
+**Traditional Mastodon Clients:**
+Most Mastodon clients support both WebSocket and SSE streaming. Lesser's WebSocket-only approach is fully compatible with existing Mastodon client libraries that auto-negotiate connection types.
+
+**Web Browser Support:**  
+Modern browsers support WebSocket connections natively. If you're building a web client, use the WebSocket API instead of EventSource for SSE:
+
+```javascript
+// ✅ Use WebSocket (supported)
+const ws = new WebSocket('wss://lesser.example.com/api/v1/streaming?access_token=' + token);
+
+// ❌ Don't use SSE (not supported)
+// const eventSource = new EventSource('/api/v1/streaming?access_token=' + token);
+```
+
+**Mobile App Considerations:**
+WebSocket connections are more efficient on mobile devices as they allow proper connection lifecycle management and battery optimization through connection pooling.
+
 ## Architecture
 
 ### Components

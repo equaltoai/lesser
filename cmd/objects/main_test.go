@@ -136,12 +136,12 @@ func TestHandler_generateObjectHTML(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := handler.generateObjectHTML(tt.obj)
-			
+
 			// Check that all expected strings are contained in the result
 			for _, expected := range tt.contains {
 				assert.Contains(t, result, expected, "Expected HTML to contain: %s", expected)
 			}
-			
+
 			// Ensure it's valid HTML structure
 			assert.Contains(t, result, "<!DOCTYPE html>")
 			assert.Contains(t, result, "<html")
@@ -170,7 +170,7 @@ func TestHandler_extractObjectData(t *testing.T) {
 		}
 
 		data := handler.extractObjectData(note)
-		
+
 		assert.Equal(t, "Note", data.objectType)
 		assert.Equal(t, "Test note content", data.content)
 		assert.Equal(t, "@alice", data.attributedTo)
@@ -191,7 +191,7 @@ func TestHandler_extractObjectData(t *testing.T) {
 		}
 
 		data := handler.extractObjectData(objMap)
-		
+
 		assert.Equal(t, "Article", data.objectType)
 		assert.Equal(t, "Article content", data.content)
 		assert.Equal(t, "Article Title", data.name)
@@ -203,9 +203,9 @@ func TestHandler_extractObjectData(t *testing.T) {
 
 	t.Run("Extract from unknown object type", func(t *testing.T) {
 		unknownObj := struct{ Unknown string }{"test"}
-		
+
 		data := handler.extractObjectData(unknownObj)
-		
+
 		assert.Equal(t, "Object", data.objectType)
 		assert.Equal(t, "Unknown object type", data.content)
 		assert.Equal(t, "unknown", data.id)

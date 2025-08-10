@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -29,8 +31,8 @@ func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
 		return err
 	}
 
-	// Perform the search
-	actors, err := h.performAccountSearch(ctx.Context, params)
+	// Perform the search with privacy enforcement
+	actors, err := h.performAccountSearch(ctx.Context, params, authenticatedUser)
 	if err != nil {
 		return err
 	}
@@ -43,7 +45,7 @@ func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
 	// Convert results to API format
 	accounts := h.convertSearchResultsToAccounts(actors)
 
-	// Set response headers and log analytics
+	// Record privacy-safe analytics and set response headers
 	h.finalizeAccountSearchResponse(ctx, params, accounts, authenticatedUser)
 
 	return ctx.JSON(accounts)
@@ -101,7 +103,7 @@ func (h *Handler) parseSearchLimit(ctx *lift.Context) int {
 	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
-	
+
 	if limitStr != "" {
 		if parsedLimit, err := strconv.Atoi(limitStr); err == nil {
 			if parsedLimit > 80 {
@@ -121,7 +123,7 @@ func (h *Handler) parseSearchOffset(ctx *lift.Context) int {
 	if offsetStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		offsetStr = ctx.Request.Request.QueryParams["offset"]
 	}
-	
+
 	if offsetStr != "" {
 		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil {
 			return parsedOffset
@@ -158,7 +160,7 @@ func (h *Handler) authenticateAccountSearch(ctx *lift.Context, followingOnly boo
 
 	// Try to authenticate from header
 	authenticatedUser := h.authenticateFromSearchHeader(ctx, followingOnly)
-	
+
 	// If following filter is requested but no auth, return error
 	if followingOnly && authenticatedUser == "" {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for following filter"})
@@ -202,9 +204,36 @@ func (h *Handler) authenticateFromSearchHeader(ctx *lift.Context, followingOnly 
 	return claims.Username
 }
 
-// performAccountSearch performs the actual search
-func (h *Handler) performAccountSearch(ctx context.Context, params *accountSearchParams) ([]*activitypub.Actor, error) {
-	actors, err := h.repos.Search().SearchAccounts(ctx, params.query, params.limit, params.followingOnly, params.offset)
+// performAccountSearch performs the actual search with privacy enforcement
+func (h *Handler) performAccountSearch(ctx context.Context, params *accountSearchParams, authenticatedUser string) ([]*activitypub.Actor, error) {
+	// Use privacy-aware search method
+	searchRepo := h.repos.Search()
+	
+	// Convert username to actor ID for privacy checks
+	var searcherActorID string
+	if authenticatedUser != "" {
+		// Build actor ID from username - adjust format as needed for your system
+		searcherActorID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, authenticatedUser)
+	}
+
+	// Use privacy-aware search if we have an authenticated user
+	if searcherActorID != "" {
+		actors, err := searchRepo.SearchAccountsWithPrivacy(ctx, params.query, params.limit, params.followingOnly, params.offset, searcherActorID)
+		if err != nil {
+			h.logger.Error("privacy-aware account search failed",
+				zap.String("query", params.query),
+				zap.Int("limit", params.limit),
+				zap.Int("offset", params.offset),
+				zap.Bool("following", params.followingOnly),
+				zap.String("searcher", authenticatedUser),
+				zap.Error(err))
+			return nil, fmt.Errorf("privacy-aware search failed: %w", err)
+		}
+		return actors, nil
+	}
+
+	// Fallback to regular search for unauthenticated users
+	actors, err := searchRepo.SearchAccounts(ctx, params.query, params.limit, params.followingOnly, params.offset)
 	if err != nil {
 		h.logger.Error("account search failed",
 			zap.String("query", params.query),
@@ -243,27 +272,47 @@ func (h *Handler) addRemoteSearchResults(ctx context.Context, actors *[]*activit
 func (h *Handler) convertSearchResultsToAccounts(actors []*activitypub.Actor) []models.Account {
 	converter := mastodon.NewConverter(h.cfg.BaseURL())
 	accounts := make([]models.Account, 0, len(actors))
-	
+
 	for _, actor := range actors {
 		account := converter.ActorToAccount(actor)
 		accounts = append(accounts, account)
 	}
-	
+
 	return accounts
 }
 
-// finalizeAccountSearchResponse sets headers and logs analytics
+// finalizeAccountSearchResponse sets headers and logs privacy-safe analytics
 func (h *Handler) finalizeAccountSearchResponse(ctx *lift.Context, params *accountSearchParams, accounts []models.Account, authenticatedUser string) {
 	// Add search metadata to response headers
 	ctx.Response.Header("X-Total-Count", fmt.Sprintf("%d", len(accounts)))
 
-	// Log search analytics
+	// Record privacy-safe search analytics
+	var userID *string
+	if authenticatedUser != "" && len(authenticatedUser) > 0 {
+		userID = &authenticatedUser
+	}
+
+	// Record the search event for analytics
+	searchRepo := h.repos.Search()
+	// Record search analytics
+	if searchRepo != nil {
+		// We don't have search time here, so we'll use 0
+		err := searchRepo.RecordSearchWithPrivacy(ctx.Context, params.query, "accounts", len(accounts), 0, userID)
+		if err != nil {
+			h.logger.Warn("failed to record search analytics",
+				zap.String("search_type", "accounts"),
+				zap.Error(err))
+		}
+	}
+
+	// Log search completion (without sensitive query data)
 	h.logger.Info("account search completed",
-		zap.String("query", params.query),
+		zap.String("query_length", fmt.Sprintf("%d_chars", len(params.query))),
 		zap.Int("results", len(accounts)),
 		zap.Int("limit", params.limit),
 		zap.Int("offset", params.offset),
-		zap.Bool("authenticated", authenticatedUser != ""))
+		zap.Bool("authenticated", authenticatedUser != ""),
+		zap.Bool("following_filter", params.followingOnly))
 }
 
 // HandleGetSearchSuggestionsLift handles GET /api/v1/accounts/search/suggestions
@@ -303,6 +352,227 @@ func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 		zap.Int("count", len(response)))
 
 	return ctx.JSON(response)
+}
+
+// HandleStatusSearchLift handles POST/GET /api/v1/search/statuses
+// Search for statuses with privacy enforcement
+func (h *Handler) HandleStatusSearchLift(ctx *lift.Context) error {
+	// Parse search parameters
+	params, err := h.parseStatusSearchParams(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Authenticate user - status search requires authentication for privacy
+	authenticatedUser, err := h.authenticateStatusSearch(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Perform the status search with privacy enforcement
+	statuses, err := h.performStatusSearch(ctx.Context, params, authenticatedUser)
+	if err != nil {
+		return err
+	}
+
+	// Convert results to API format
+	results := h.convertStatusSearchResults(statuses)
+
+	// Set response headers and log analytics
+	h.finalizeStatusSearchResponse(ctx, params, results, authenticatedUser)
+
+	return ctx.JSON(results)
+}
+
+// statusSearchParams holds parsed status search parameters
+type statusSearchParams struct {
+	query     string
+	limit     int
+	maxID     *string
+	minID     *string
+	accountID string
+	localOnly bool
+}
+
+// parseStatusSearchParams parses and validates status search parameters
+func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParams, error) {
+	params := &statusSearchParams{
+		limit: 20,
+	}
+
+	// Extract query
+	params.query = h.extractSearchQuery(ctx)
+	if params.query == "" {
+		return nil, ctx.Status(400).JSON(map[string]string{"error": "q parameter is required"})
+	}
+
+	// Parse limit
+	params.limit = h.parseSearchLimit(ctx)
+	if params.limit > 40 {
+		params.limit = 40 // Status search has lower limit for performance
+	}
+
+	// Parse pagination parameters
+	if maxID := ctx.Query("max_id"); maxID != "" {
+		params.maxID = &maxID
+	}
+	if minID := ctx.Query("min_id"); minID != "" {
+		params.minID = &minID
+	}
+
+	// Parse account filter
+	params.accountID = ctx.Query("account_id")
+
+	// Parse local only filter
+	params.localOnly = ctx.Query("local") == boolTrue
+
+	return params, nil
+}
+
+// authenticateStatusSearch handles authentication for status search
+func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
+	// Check test mode first
+	testUsername := h.extractTestUsernameForSearch(ctx)
+	if testUsername != "" {
+		return testUsername, nil
+	}
+
+	// Status search requires authentication for privacy
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "invalid authorization header"})
+	}
+
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "invalid access token"})
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+	}
+
+	return claims.Username, nil
+}
+
+// performStatusSearch performs the actual status search with privacy enforcement
+func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchParams, authenticatedUser string) ([]storage.StatusSearchResult, error) {
+	searchRepo := h.repos.Search()
+	
+	// Convert username to actor ID for privacy checks
+	searcherActorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, authenticatedUser)
+
+	// Build search options
+	options := storage.StatusSearchOptions{
+		Limit:     params.limit,
+		AccountID: params.accountID,
+		LocalOnly: params.localOnly,
+	}
+
+	// Use privacy-aware search
+	if searchRepo != nil {
+		results, err := searchRepo.SearchStatusesWithPrivacy(ctx, params.query, options, searcherActorID)
+		if err != nil {
+			h.logger.Error("privacy-aware status search failed",
+				zap.String("query", params.query),
+				zap.Int("limit", params.limit),
+				zap.String("searcher", authenticatedUser),
+				zap.Error(err))
+			return nil, fmt.Errorf("privacy-aware status search failed: %w", err)
+		}
+
+		// Convert pointer slice to value slice
+		statuses := make([]storage.StatusSearchResult, 0, len(results))
+		for _, result := range results {
+			if result != nil {
+				statuses = append(statuses, *result)
+			}
+		}
+		return statuses, nil
+	}
+
+	// Fallback to regular search (though this should be avoided for status search)
+	results, err := searchRepo.SearchStatusesWithOptions(ctx, params.query, options)
+	if err != nil {
+		h.logger.Error("status search failed",
+			zap.String("query", params.query),
+			zap.Int("limit", params.limit),
+			zap.Error(err))
+		return nil, fmt.Errorf("status search failed: %w", err)
+	}
+
+	// Convert pointer slice to value slice
+	statuses := make([]storage.StatusSearchResult, 0, len(results))
+	for _, result := range results {
+		if result != nil {
+			statuses = append(statuses, *result)
+		}
+	}
+	return statuses, nil
+}
+
+// convertStatusSearchResults converts status search results to API format
+func (h *Handler) convertStatusSearchResults(statuses []storage.StatusSearchResult) []map[string]interface{} {
+	results := make([]map[string]interface{}, 0, len(statuses))
+
+	for _, status := range statuses {
+		result := map[string]interface{}{
+			"id":               status.StatusID,
+			"content":          status.Content,
+			"url":              status.URL,
+			"account_id":       status.AuthorID,
+			"account_username": status.AuthorUsername,
+			"created_at":       status.Published.Format(time.RFC3339),
+			"score":            status.Score,
+		}
+
+		// Add highlights if available
+		if len(status.Highlights) > 0 {
+			result["highlights"] = status.Highlights
+		}
+
+		results = append(results, result)
+	}
+
+	return results
+}
+
+// finalizeStatusSearchResponse sets headers and logs privacy-safe analytics
+func (h *Handler) finalizeStatusSearchResponse(ctx *lift.Context, params *statusSearchParams, results []map[string]interface{}, authenticatedUser string) {
+	// Add search metadata to response headers
+	ctx.Response.Header("X-Total-Count", fmt.Sprintf("%d", len(results)))
+
+	// Record privacy-safe search analytics
+	var userID *string
+	if authenticatedUser != "" {
+		userID = &authenticatedUser
+	}
+
+	// Record the search event for analytics
+	searchRepo := h.repos.Search()
+	if searchRepo != nil {
+		err := searchRepo.RecordSearchWithPrivacy(ctx.Context, params.query, "statuses", len(results), 0, userID)
+		if err != nil {
+			h.logger.Warn("failed to record status search analytics",
+				zap.String("search_type", "statuses"),
+				zap.Error(err))
+		}
+	}
+
+	// Log search completion (without sensitive query data)
+	h.logger.Info("status search completed",
+		zap.String("query_length", fmt.Sprintf("%d_chars", len(params.query))),
+		zap.Int("results", len(results)),
+		zap.Int("limit", params.limit),
+		zap.String("searcher", authenticatedUser),
+		zap.Bool("local_only", params.localOnly))
 }
 
 // isValidHandle checks if a query looks like a federated handle (@user@domain.com)

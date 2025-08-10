@@ -7,53 +7,54 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HashtagRepository implements hashtag-related database operations using DynamORM
 type HashtagRepository struct {
-	db                core.DB
-	tableName         string
-	logger            *zap.Logger
-	domain            string
+	db                 core.DB
+	tableName          string
+	logger             *zap.Logger
+	domain             string
 	trendingCalculator *TrendingCalculator
+	trendingEngine     *TrendingEngine
 }
 
 // TrendingCalculatorConfig holds configuration for trending algorithm
 type TrendingCalculatorConfig struct {
 	// Time decay parameters
-	DecayHalfLife          time.Duration // How quickly scores decay
-	MinimumAge             time.Duration // Minimum age before considering trending
-	MaximumAge             time.Duration // Maximum age for trending consideration
-	
+	DecayHalfLife time.Duration // How quickly scores decay
+	MinimumAge    time.Duration // Minimum age before considering trending
+	MaximumAge    time.Duration // Maximum age for trending consideration
+
 	// Scoring weights
-	UsageWeight            float64 // Weight for usage count
-	EngagementWeight       float64 // Weight for engagement metrics
-	DiversityWeight        float64 // Weight for user diversity
-	TrustWeight            float64 // Weight for trust scores
-	MomentumWeight         float64 // Weight for trending momentum
-	
+	UsageWeight      float64 // Weight for usage count
+	EngagementWeight float64 // Weight for engagement metrics
+	DiversityWeight  float64 // Weight for user diversity
+	TrustWeight      float64 // Weight for trust scores
+	MomentumWeight   float64 // Weight for trending momentum
+
 	// Thresholds
-	MinimumUsage           int64   // Minimum usage count to consider
-	MinimumUsers           int64   // Minimum unique users to consider
-	TrendingThreshold      float64 // Score threshold for trending
-	
+	MinimumUsage      int64   // Minimum usage count to consider
+	MinimumUsers      int64   // Minimum unique users to consider
+	TrendingThreshold float64 // Score threshold for trending
+
 	// Time windows for analysis
-	TimeWindows            []TrendingTimeWindow
+	TimeWindows []TrendingTimeWindow
 }
 
 // TrendingTimeWindow defines a time window for trending analysis
 type TrendingTimeWindow struct {
-	Name        string        // e.g., "1h", "6h", "24h", "7d"
-	Duration    time.Duration // Window duration
-	Weight      float64       // Weight in final score calculation
-	MinScore    float64       // Minimum score for this window
+	Name     string        // e.g., "1h", "6h", "24h", "7d"
+	Duration time.Duration // Window duration
+	Weight   float64       // Weight in final score calculation
+	MinScore float64       // Minimum score for this window
 }
 
 // TrendingCalculator handles sophisticated hashtag trending computation
@@ -78,60 +79,60 @@ type TrendingMetrics struct {
 
 // WindowMetrics holds metrics for a specific time window
 type WindowMetrics struct {
-	UsageCount     int64
-	UniqueUsers    int64
-	Engagements    int64
-	AverageTrust   float64
-	GrowthRate     float64
-	Velocity       float64 // Usage per hour
+	UsageCount   int64
+	UniqueUsers  int64
+	Engagements  int64
+	AverageTrust float64
+	GrowthRate   float64
+	Velocity     float64 // Usage per hour
 }
 
 // TrendingScore represents the calculated trending score
 type TrendingScore struct {
-	HashtagName    string
-	OverallScore   float64
+	HashtagName     string
+	OverallScore    float64
 	ComponentScores map[string]float64 // Individual component scores
-	Metrics        *TrendingMetrics
-	Rank           int
-	Timestamp      time.Time
+	Metrics         *TrendingMetrics
+	Rank            int
+	Timestamp       time.Time
 }
 
 // TrendingAnalytics provides insights into the trending calculation process
 type TrendingAnalytics struct {
-	Period              time.Time `json:"period"`
-	TotalHashtags       int64     `json:"total_hashtags"`
-	TotalUsage          int64     `json:"total_usage"`
-	UniqueUsers         int64     `json:"unique_users"`
-	TrendingCandidates  int64     `json:"trending_candidates"`
-	AverageUsagePerTag  float64   `json:"average_usage_per_tag"`
-	AverageUsersPerTag  float64   `json:"average_users_per_tag"`
-	TrendingThreshold   float64   `json:"trending_threshold"`
-	MinimumUsage        int64     `json:"minimum_usage"`
-	MinimumUsers        int64     `json:"minimum_users"`
-	CalculationWindows  int       `json:"calculation_windows"`
-	GeneratedAt         time.Time `json:"generated_at"`
+	Period             time.Time `json:"period"`
+	TotalHashtags      int64     `json:"total_hashtags"`
+	TotalUsage         int64     `json:"total_usage"`
+	UniqueUsers        int64     `json:"unique_users"`
+	TrendingCandidates int64     `json:"trending_candidates"`
+	AverageUsagePerTag float64   `json:"average_usage_per_tag"`
+	AverageUsersPerTag float64   `json:"average_users_per_tag"`
+	TrendingThreshold  float64   `json:"trending_threshold"`
+	MinimumUsage       int64     `json:"minimum_usage"`
+	MinimumUsers       int64     `json:"minimum_users"`
+	CalculationWindows int       `json:"calculation_windows"`
+	GeneratedAt        time.Time `json:"generated_at"`
 }
 
 // NewHashtagRepository creates a new hashtag repository
 func NewHashtagRepository(db core.DB, tableName string, logger *zap.Logger, domain string) *HashtagRepository {
 	config := TrendingCalculatorConfig{
 		// Time decay parameters
-		DecayHalfLife: 2 * time.Hour,     // Scores decay by half every 2 hours
+		DecayHalfLife: 2 * time.Hour,      // Scores decay by half every 2 hours
 		MinimumAge:    5 * time.Minute,    // Must be at least 5 minutes old
 		MaximumAge:    7 * 24 * time.Hour, // Don't consider older than 7 days
-		
+
 		// Scoring weights (total should be ~1.0)
 		UsageWeight:      0.3,  // 30% weight for usage count
 		EngagementWeight: 0.25, // 25% weight for engagements
 		DiversityWeight:  0.2,  // 20% weight for user diversity
 		TrustWeight:      0.1,  // 10% weight for trust scores
 		MomentumWeight:   0.15, // 15% weight for momentum/velocity
-		
+
 		// Thresholds
-		MinimumUsage:      3,    // At least 3 uses
-		MinimumUsers:      2,    // At least 2 different users
-		TrendingThreshold: 1.0,  // Score > 1.0 to be trending
-		
+		MinimumUsage:      3,   // At least 3 uses
+		MinimumUsers:      2,   // At least 2 different users
+		TrendingThreshold: 1.0, // Score > 1.0 to be trending
+
 		// Multiple time windows for analysis
 		TimeWindows: []TrendingTimeWindow{
 			{Name: "1h", Duration: time.Hour, Weight: 0.4, MinScore: 0.1},
@@ -140,13 +141,14 @@ func NewHashtagRepository(db core.DB, tableName string, logger *zap.Logger, doma
 			{Name: "7d", Duration: 7 * 24 * time.Hour, Weight: 0.1, MinScore: 2.0},
 		},
 	}
-	
+
 	return &HashtagRepository{
 		db:                 db,
 		tableName:          tableName,
 		logger:             logger,
 		domain:             domain,
 		trendingCalculator: NewTrendingCalculator(config, logger),
+		trendingEngine:     NewTrendingEngine(db, logger),
 	}
 }
 
@@ -227,6 +229,111 @@ func (r *HashtagRepository) IndexHashtag(_ context.Context, hashtag string, stat
 	}
 
 	return nil
+}
+
+// IndexStatusHashtags indexes a status with its hashtags for efficient search
+func (r *HashtagRepository) IndexStatusHashtags(ctx context.Context, statusID string, authorID string, authorHandle string, statusURL string, content string, hashtags []string, published time.Time, visibility string) error {
+	if len(hashtags) == 0 {
+		return nil // Nothing to index
+	}
+
+	now := time.Now()
+	ttl := now.Add(90 * 24 * time.Hour).Unix() // 90 days TTL
+
+	// Create index entries for each hashtag
+	indexEntries := make([]*models.HashtagStatusIndex, 0, len(hashtags))
+
+	for _, hashtag := range hashtags {
+		tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
+
+		indexEntry := &models.HashtagStatusIndex{
+			StatusID:     statusID,
+			AuthorID:     authorID,
+			AuthorHandle: authorHandle,
+			StatusURL:    statusURL,
+			Content:      r.truncateContent(content, 200), // Store excerpt for search results
+			Visibility:   visibility,
+			Published:    published,
+			HashtagName:  tagLower,
+			TTL:          ttl,
+			CreatedAt:    now,
+		}
+		indexEntry.UpdateKeys()
+
+		indexEntries = append(indexEntries, indexEntry)
+	}
+
+	// Batch create all index entries
+	for _, entry := range indexEntries {
+		err := r.db.WithContext(ctx).Model(entry).Create()
+		if err != nil {
+			r.logger.Error("failed to create hashtag status index",
+				zap.String("status_id", statusID),
+				zap.String("hashtag", entry.HashtagName),
+				zap.Error(err))
+			// Continue with other entries rather than failing entirely
+		}
+	}
+
+	r.logger.Debug("indexed status hashtags",
+		zap.String("status_id", statusID),
+		zap.Int("hashtag_count", len(hashtags)),
+		zap.Strings("hashtags", hashtags))
+
+	return nil
+}
+
+// RemoveStatusFromHashtagIndex removes a status from all hashtag indexes
+func (r *HashtagRepository) RemoveStatusFromHashtagIndex(ctx context.Context, statusID string) error {
+	// Query all hashtag index entries for this status using the reverse index
+	var indexEntries []models.HashtagStatusIndex
+	err := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
+		Index("status-hashtag-index").
+		Where("GSI1PK", "=", fmt.Sprintf("STATUS_HASHTAGS#%s", statusID)).
+		Where("GSI1SK", "BEGINS_WITH", "HASHTAG#").
+		All(&indexEntries)
+
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to query hashtag index entries for status: %w", err)
+	}
+
+	// Delete all found entries
+	for _, entry := range indexEntries {
+		err := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
+			Where("PK", "=", entry.PK).
+			Where("SK", "=", entry.SK).
+			Delete()
+
+		if err != nil {
+			r.logger.Warn("failed to delete hashtag index entry",
+				zap.String("status_id", statusID),
+				zap.String("hashtag", entry.HashtagName),
+				zap.Error(err))
+			// Continue with other entries
+		}
+	}
+
+	r.logger.Debug("removed status from hashtag indexes",
+		zap.String("status_id", statusID),
+		zap.Int("entries_removed", len(indexEntries)))
+
+	return nil
+}
+
+// truncateContent truncates content to the specified length for indexing
+func (r *HashtagRepository) truncateContent(content string, maxLength int) string {
+	if len(content) <= maxLength {
+		return content
+	}
+
+	// Try to truncate at word boundary
+	truncated := content[:maxLength]
+	lastSpace := strings.LastIndex(truncated, " ")
+	if lastSpace > maxLength/2 { // Only use word boundary if it's not too short
+		truncated = truncated[:lastSpace]
+	}
+
+	return truncated + "..."
 }
 
 // GetHashtagInfo retrieves information about a specific hashtag
@@ -395,43 +502,119 @@ func (r *HashtagRepository) GetHashtagStats(ctx context.Context, hashtag string)
 	return stats, nil
 }
 
-// GetHashtagTimelineAdvanced retrieves hashtag timeline with advanced filtering
-func (r *HashtagRepository) GetHashtagTimelineAdvanced(_ context.Context, hashtag string, maxID *string, limit int, _ string) ([]*storage.StatusSearchResult, error) {
+// GetHashtagTimelineAdvanced retrieves hashtag timeline with advanced filtering using efficient indexing
+func (r *HashtagRepository) GetHashtagTimelineAdvanced(ctx context.Context, hashtag string, maxID *string, limit int, visibility string) ([]*storage.StatusSearchResult, error) {
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 
-	// Build query for hashtag usage
-	query := r.db.Model(&models.HashtagUsage{}).
-		Where("PK", "=", fmt.Sprintf("HASHTAG#%s", tagLower))
-
-	// Add maxID filter if provided
-	if maxID != nil && *maxID != "" {
-		query = query.Where("SK", "<", fmt.Sprintf("USAGE#%s", *maxID))
-	}
-
-	// Set limit
+	// Set reasonable limit
 	if limit <= 0 || limit > 40 {
 		limit = 20
 	}
-	query = query.Limit(limit).OrderBy("SK", "DESC") // Descending order
 
-	var usageRecords []*models.HashtagUsage
-	err := query.All(&usageRecords)
+	var results []*storage.StatusSearchResult
+	var err error
+
+	if visibility != "" && visibility != models.VisibilityPublic {
+		// Use visibility-filtered index for non-public content
+		results, err = r.getHashtagTimelineByVisibility(ctx, tagLower, maxID, limit, visibility)
+	} else {
+		// Use main hashtag timeline index for public/all content
+		results, err = r.getHashtagTimelineFromIndex(ctx, tagLower, maxID, limit)
+	}
+
 	if err != nil {
-		r.logger.Error("failed to get hashtag timeline",
-			zap.String("hashtag", tagLower),
-			zap.Error(err))
 		return nil, fmt.Errorf("failed to get hashtag timeline: %w", err)
 	}
 
-	// Convert to status search results
-	results := make([]*storage.StatusSearchResult, len(usageRecords))
-	for i, usage := range usageRecords {
+	r.logger.Debug("retrieved hashtag timeline",
+		zap.String("hashtag", tagLower),
+		zap.Int("results", len(results)),
+		zap.Int("limit", limit),
+		zap.String("visibility", visibility))
+
+	return results, nil
+}
+
+// getHashtagTimelineFromIndex retrieves timeline using the main hashtag index
+func (r *HashtagRepository) getHashtagTimelineFromIndex(ctx context.Context, hashtag string, maxID *string, limit int) ([]*storage.StatusSearchResult, error) {
+	// Build query for hashtag timeline index
+	query := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
+		Where("PK", "=", fmt.Sprintf("HASHTAG_TIMELINE#%s", hashtag)).
+		Where("SK", "BEGINS_WITH", "STATUS#")
+
+	// Add maxID filter if provided (cursor-based pagination)
+	if maxID != nil && *maxID != "" {
+		// Convert maxID to timestamp-desc format for proper comparison
+		// This would need the actual timestamp of the maxID status
+		query = query.Where("SK", "<", fmt.Sprintf("STATUS#%s", *maxID))
+	}
+
+	// Set limit and order (SK already contains descending timestamp)
+	query = query.Limit(limit).OrderBy("SK", "ASC") // ASC because timestamp is already reversed
+
+	var indexEntries []models.HashtagStatusIndex
+	err := query.All(&indexEntries)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []*storage.StatusSearchResult{}, nil
+		}
+		return nil, fmt.Errorf("failed to query hashtag timeline index: %w", err)
+	}
+
+	// Convert index entries to search results
+	results := make([]*storage.StatusSearchResult, len(indexEntries))
+	for i, entry := range indexEntries {
 		results[i] = &storage.StatusSearchResult{
-			StatusID:  usage.StatusID,
-			AuthorID:  usage.AuthorID,
-			Published: usage.UsedAt,
-			Content:   "", // Not available in usage record
-			URL:       "", // Not available in usage record
+			StatusID:       entry.StatusID,
+			Content:        entry.Content,
+			URL:            entry.StatusURL,
+			AuthorID:       entry.AuthorID,
+			AuthorUsername: entry.AuthorHandle,
+			Published:      entry.Published,
+			Score:          1.0, // All results have equal relevance in timeline
+			Highlights:     []string{"hashtag_timeline"},
+		}
+	}
+
+	return results, nil
+}
+
+// getHashtagTimelineByVisibility retrieves timeline filtered by visibility
+func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, hashtag string, maxID *string, limit int, visibility string) ([]*storage.StatusSearchResult, error) {
+	// Use the visibility-filtered GSI
+	query := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
+		Index("hashtag-visibility-index").
+		Where("GSI2PK", "=", fmt.Sprintf("HASHTAG_VIS#%s#%s", hashtag, visibility)).
+		Where("GSI2SK", "BEGINS_WITH", "TIMELINE#")
+
+	// Add cursor-based pagination if maxID provided
+	if maxID != nil && *maxID != "" {
+		query = query.Where("GSI2SK", "<", fmt.Sprintf("TIMELINE#%s", *maxID))
+	}
+
+	query = query.Limit(limit).OrderBy("GSI2SK", "ASC") // ASC because timestamp is reversed
+
+	var indexEntries []models.HashtagStatusIndex
+	err := query.All(&indexEntries)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []*storage.StatusSearchResult{}, nil
+		}
+		return nil, fmt.Errorf("failed to query hashtag timeline by visibility: %w", err)
+	}
+
+	// Convert to search results
+	results := make([]*storage.StatusSearchResult, len(indexEntries))
+	for i, entry := range indexEntries {
+		results[i] = &storage.StatusSearchResult{
+			StatusID:       entry.StatusID,
+			Content:        entry.Content,
+			URL:            entry.StatusURL,
+			AuthorID:       entry.AuthorID,
+			AuthorUsername: entry.AuthorHandle,
+			Published:      entry.Published,
+			Score:          1.0,
+			Highlights:     []string{"hashtag_timeline_filtered"},
 		}
 	}
 
@@ -867,60 +1050,22 @@ func (r *HashtagRepository) GetTrendingHashtags(ctx context.Context, since time.
 			zap.Int("limit", limit),
 			zap.Time("since", since))
 	}()
-	
+
 	// Safety check on limit
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	
-	// Step 1: Get candidate hashtags that have been active recently
-	candidates, err := r.getCandidateHashtags(ctx, since, limit*3) // Get more candidates for better filtering
+
+	// Use the enhanced trending engine for sophisticated trending analysis
+	result, err := r.trendingEngine.CalculateTrending(ctx, since, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get candidate hashtags: %w", err)
+		return nil, fmt.Errorf("failed to calculate trending hashtags: %w", err)
 	}
-	
-	if len(candidates) == 0 {
-		r.logger.Info("no candidate hashtags found for trending analysis")
-		return []*storage.TrendingHashtag{}, nil
-	}
-	
-	// Step 2: Calculate trending scores for each candidate
-	trendingScores, err := r.calculateTrendingScores(ctx, candidates)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate trending scores: %w", err)
-	}
-	
-	// Step 3: Filter by trending threshold and sort by score
-	filtered := r.filterAndSortByScore(trendingScores, limit)
-	
-	// Step 4: Store trending results for historical tracking
-	go func() {
-		if err := r.storeTrendingResults(context.Background(), filtered); err != nil {
-			r.logger.Warn("failed to store trending results", zap.Error(err))
-		}
-	}()
-	
-	// Step 5: Convert to storage format
-	result := make([]*storage.TrendingHashtag, len(filtered))
-	for i, score := range filtered {
-		result[i] = &storage.TrendingHashtag{
-			Name:        score.HashtagName,
-			URL:         fmt.Sprintf("https://%s/tags/%s", r.domain, score.HashtagName),
-			UsageCount:  score.Metrics.TotalUsage,
-			UniqueUsers: score.Metrics.UniqueUsers,
-			LastUsed:    score.Metrics.LastUsed,
-			FirstSeen:   score.Metrics.FirstSeen,
-			UserID:      "", // Not applicable for hashtags
-			CreatedAt:   score.Timestamp,
-		}
-	}
-	
-	r.logger.Info("calculated trending hashtags",
-		zap.Int("candidates", len(candidates)),
-		zap.Int("scored", len(trendingScores)),
+
+	r.logger.Info("calculated trending hashtags using enhanced engine",
 		zap.Int("trending", len(result)),
 		zap.Duration("calculation_time", time.Since(start)))
-	
+
 	return result, nil
 }
 
@@ -940,7 +1085,7 @@ func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) 
 			UpdatedAt:   trend.Timestamp,
 		}
 		trendModel.UpdateKeys()
-		
+
 		err := r.db.Model(trendModel).Create()
 		if err != nil {
 			r.logger.Error("failed to store hashtag trend",
@@ -949,11 +1094,11 @@ func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) 
 				zap.Error(err))
 			return fmt.Errorf("failed to store hashtag trend: %w", err)
 		}
-		
+
 		r.logger.Debug("stored hashtag trend",
 			zap.String("hashtag", trend.HashtagName),
 			zap.Float64("score", trend.OverallScore))
-		
+
 	case *storage.TrendingHashtag:
 		// Convert storage type to model
 		trendModel := &models.HashtagTrend{
@@ -967,7 +1112,7 @@ func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) 
 			UpdatedAt:   trend.CreatedAt,
 		}
 		trendModel.UpdateKeys()
-		
+
 		err := r.db.Model(trendModel).Create()
 		if err != nil {
 			r.logger.Error("failed to store storage hashtag trend",
@@ -975,13 +1120,13 @@ func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) 
 				zap.Error(err))
 			return fmt.Errorf("failed to store hashtag trend: %w", err)
 		}
-		
+
 	default:
 		r.logger.Warn("unknown trend data type for storage",
 			zap.String("type", fmt.Sprintf("%T", trendData)))
 		return fmt.Errorf("unsupported trend data type: %T", trendData)
 	}
-	
+
 	return nil
 }
 

@@ -356,17 +356,17 @@ func (s *streamingService) GenerateDASHManifest(mediaID string) (*DASHManifest, 
 func (s *streamingService) GetStreamingAnalytics(mediaID string) (*StreamingAnalytics, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	// Build metric queries
 	metricQueries := s.buildMetricQueries(mediaID)
-	
+
 	// Execute queries and collect results
 	results := s.executeMetricQueries(ctx, metricQueries)
-	
+
 	// Calculate analytics from results
 	analytics := s.calculateAnalytics(results)
 	analytics.MediaID = mediaID // Set the media ID
-	
+
 	return analytics, nil
 }
 
@@ -383,13 +383,13 @@ func (s *streamingService) buildMetricQueries(mediaID string) map[string]*cloudw
 	startTime := endTime.Add(-24 * time.Hour)
 	namespace := "Lesser/Streaming"
 	period := int32(3600) // 1 hour periods
-	
+
 	return map[string]*cloudwatch.GetMetricStatisticsInput{
-		"SessionCount": s.createMetricQuery(namespace, "StreamingEvent", mediaID, startTime, endTime, period, types.StatisticSum, map[string]string{"EventType": "session_start"}),
-		"QualitySwitches": s.createMetricQuery(namespace, "QualitySwitches", mediaID, startTime, endTime, period, types.StatisticSum, nil),
-		"RebufferEvents": s.createMetricQuery(namespace, "RebufferEvents", mediaID, startTime, endTime, period, types.StatisticSum, nil),
+		"SessionCount":       s.createMetricQuery(namespace, "StreamingEvent", mediaID, startTime, endTime, period, types.StatisticSum, map[string]string{"EventType": "session_start"}),
+		"QualitySwitches":    s.createMetricQuery(namespace, "QualitySwitches", mediaID, startTime, endTime, period, types.StatisticSum, nil),
+		"RebufferEvents":     s.createMetricQuery(namespace, "RebufferEvents", mediaID, startTime, endTime, period, types.StatisticSum, nil),
 		"AvgSessionDuration": s.createMetricQuery(namespace, "SessionDuration", mediaID, startTime, endTime, period, types.StatisticAverage, nil),
-		"BytesTransferred": s.createMetricQuery(namespace, "BytesTransferred", mediaID, startTime, endTime, period, types.StatisticSum, nil),
+		"BytesTransferred":   s.createMetricQuery(namespace, "BytesTransferred", mediaID, startTime, endTime, period, types.StatisticSum, nil),
 	}
 }
 
@@ -401,7 +401,7 @@ func (s *streamingService) createMetricQuery(namespace, metricName, mediaID stri
 			Value: &mediaID,
 		},
 	}
-	
+
 	// Add extra dimensions if provided
 	for name, value := range extraDimensions {
 		nameCopy := name
@@ -411,7 +411,7 @@ func (s *streamingService) createMetricQuery(namespace, metricName, mediaID stri
 			Value: &valueCopy,
 		})
 	}
-	
+
 	return &cloudwatch.GetMetricStatisticsInput{
 		Namespace:  &namespace,
 		MetricName: &metricName,
@@ -427,12 +427,12 @@ func (s *streamingService) createMetricQuery(namespace, metricName, mediaID stri
 func (s *streamingService) executeMetricQueries(ctx context.Context, metricQueries map[string]*cloudwatch.GetMetricStatisticsInput) map[string]*metricResult {
 	results := make(map[string]*metricResult)
 	resultsChan := make(chan *metricResult, len(metricQueries))
-	
+
 	// Launch concurrent queries
 	for name, query := range metricQueries {
 		go s.executeQuery(ctx, name, query, resultsChan)
 	}
-	
+
 	// Collect results
 	for i := 0; i < len(metricQueries); i++ {
 		result := <-resultsChan
@@ -442,7 +442,7 @@ func (s *streamingService) executeMetricQueries(ctx context.Context, metricQueri
 			fmt.Printf("Failed to get metric %s: %v\n", result.name, result.err)
 		}
 	}
-	
+
 	return results
 }
 
@@ -458,7 +458,7 @@ func extractMetricValues(result *cloudwatch.GetMetricStatisticsOutput) []float64
 	if result == nil || len(result.Datapoints) == 0 {
 		return []float64{}
 	}
-	
+
 	values := make([]float64, 0, len(result.Datapoints))
 	for _, point := range result.Datapoints {
 		if point.Sum != nil {
@@ -476,27 +476,27 @@ func (s *streamingService) calculateAnalytics(results map[string]*metricResult) 
 	var totalRebufferEvents int64
 	var averageWatchTime float64
 	var totalBandwidth int64
-	
+
 	// Aggregate session count
 	if sessionResult := results["SessionCount"]; sessionResult != nil {
 		totalViews = sumValues(sessionResult.values)
 	}
-	
+
 	// Aggregate rebuffer events
 	if rebufferResult := results["RebufferEvents"]; rebufferResult != nil {
 		totalRebufferEvents = sumValues(rebufferResult.values)
 	}
-	
+
 	// Calculate average watch time
 	if durationResult := results["AvgSessionDuration"]; durationResult != nil && len(durationResult.values) > 0 {
 		averageWatchTime = averageValues(durationResult.values)
 	}
-	
+
 	// Aggregate bandwidth
 	if bandwidthResult := results["BytesTransferred"]; bandwidthResult != nil {
 		totalBandwidth = sumValues(bandwidthResult.values)
 	}
-	
+
 	// Use default quality breakdown (could be enhanced with actual CloudWatch data)
 	qualityBreakdown := map[string]int64{
 		"480p":  totalViews * 30 / 100,
@@ -504,7 +504,7 @@ func (s *streamingService) calculateAnalytics(results map[string]*metricResult) 
 		"1080p": totalViews * 25 / 100,
 		"4k":    totalViews * 5 / 100,
 	}
-	
+
 	return &StreamingAnalytics{
 		MediaID:          "", // Will be set by caller
 		ViewCount:        totalViews,
@@ -600,4 +600,3 @@ func (s *streamingService) RecordStreamingEvent(ctx context.Context, event *Stre
 
 	return nil
 }
-

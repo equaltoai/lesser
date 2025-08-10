@@ -552,4 +552,3 @@ func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext
 
 	return float64(totalEngagement) / float64(postCount)
 }
-

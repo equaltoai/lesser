@@ -9,13 +9,13 @@ type EventType string
 
 const (
 	// EventTypeFlagged represents a flagged content event
-	EventTypeFlagged  EventType = "flagged"
+	EventTypeFlagged EventType = "flagged"
 	// EventTypeReviewed represents a reviewed content event
 	EventTypeReviewed EventType = "reviewed"
 	// EventTypeAppealed represents an appealed content event
 	EventTypeAppealed EventType = "appealed"
 	// EventTypeExpired represents an expired content event
-	EventTypeExpired  EventType = "expired"
+	EventTypeExpired EventType = "expired"
 )
 
 // Category represents the category of moderation
@@ -23,19 +23,19 @@ type Category string
 
 const (
 	// CategorySpam represents spam content category
-	CategorySpam           Category = "spam"
+	CategorySpam Category = "spam"
 	// CategoryHateSpeech represents hate speech content category
-	CategoryHateSpeech     Category = "hate_speech"
+	CategoryHateSpeech Category = "hate_speech"
 	// CategoryHarassment represents harassment content category
-	CategoryHarassment     Category = "harassment"
+	CategoryHarassment Category = "harassment"
 	// CategoryMisinformation represents misinformation content category
 	CategoryMisinformation Category = "misinformation"
 	// CategoryNSFW represents NSFW content category
-	CategoryNSFW           Category = "nsfw"
+	CategoryNSFW Category = "nsfw"
 	// CategoryViolence represents violence-related content
-	CategoryViolence       Category = "violence"
+	CategoryViolence Category = "violence"
 	// CategoryOther represents other content categories
-	CategoryOther          Category = "other"
+	CategoryOther Category = "other"
 )
 
 // Severity represents the severity level
@@ -43,11 +43,11 @@ type Severity int
 
 const (
 	// SeverityLow represents low severity level
-	SeverityLow      Severity = 1
+	SeverityLow Severity = 1
 	// SeverityMedium represents medium severity level
-	SeverityMedium   Severity = 2
+	SeverityMedium Severity = 2
 	// SeverityHigh represents high severity level
-	SeverityHigh     Severity = 3
+	SeverityHigh Severity = 3
 	// SeverityCritical represents critical severity level
 	SeverityCritical Severity = 4
 )
@@ -57,7 +57,7 @@ type ActionType string
 
 const (
 	// ActionTypeNone represents no action taken
-	ActionTypeNone    ActionType = "none"
+	ActionTypeNone ActionType = "none"
 	// ActionTypeWarning represents a warning action
 	ActionTypeWarning ActionType = "warning"
 	// ActionTypeSilence represents a silence action
@@ -65,7 +65,7 @@ const (
 	// ActionTypeSuspend represents a suspend action
 	ActionTypeSuspend ActionType = "suspend"
 	// ActionTypeRemove represents a remove action
-	ActionTypeRemove  ActionType = "remove"
+	ActionTypeRemove ActionType = "remove"
 )
 
 // Evidence represents supporting evidence for a moderation event

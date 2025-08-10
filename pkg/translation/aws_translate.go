@@ -323,12 +323,12 @@ func (s *Service) parseLanguageItem(langItem types.AttributeValue) *LanguageInfo
 	}
 
 	lang := &LanguageInfo{}
-	
+
 	// Extract language code
 	if code := s.extractStringValue(langMap.Value, "Code"); code != "" {
 		lang.Code = code
 	}
-	
+
 	// Extract language name
 	if name := s.extractStringValue(langMap.Value, "Name"); name != "" {
 		lang.Name = name

@@ -24,6 +24,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	"github.com/equaltoai/lesser/pkg/services"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -135,6 +136,44 @@ func (ep *ExportProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) e
 
 	// Process each message
 	for _, message := range event.Records {
+		// Try parsing as services.ExportJobMessage first (new format)
+		var exportMsg services.ExportJobMessage
+		if err := common.ParseRequestBody([]byte(message.Body), &exportMsg); err == nil {
+			// Convert to legacy format for processing
+			var dateRange *DateRange
+			if exportMsg.DateRange != nil {
+				dateRange = &DateRange{
+					Start: exportMsg.DateRange.Start,
+					End:   exportMsg.DateRange.End,
+				}
+			}
+
+			exportEvent := ExportGeneratorEvent{
+				ExportID:     exportMsg.ExportID,
+				Username:     exportMsg.Username,
+				Type:         exportMsg.Type,
+				Format:       exportMsg.Format,
+				Options:      exportMsg.Options,
+				IncludeMedia: exportMsg.IncludeMedia,
+				DateRange:    dateRange,
+			}
+			if err := ep.processExportJob(ctx.Request.Context(), exportEvent); err != nil {
+				ep.logger.Error("failed to process export job",
+					zap.String("export_id", exportEvent.ExportID),
+					zap.String("username", exportEvent.Username),
+					zap.String("request_id", ctx.GetRequestID()),
+					zap.Error(err))
+				// Update job status as failed
+				if updateErr := ep.exportRepo.UpdateExportStatus(ctx.Request.Context(), exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
+					ep.logger.Error("failed to update export status to failed",
+						zap.String("export_id", exportEvent.ExportID),
+						zap.Error(updateErr))
+				}
+			}
+			continue
+		}
+
+		// Fallback to legacy format
 		var exportEvent ExportGeneratorEvent
 		if err := common.ParseRequestBody([]byte(message.Body), &exportEvent); err != nil {
 			ep.logger.Error("failed to unmarshal event",
@@ -322,7 +361,7 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
-	
+
 	recordCount, err := ep.writeCSVData(ctx, writer, event, costTracking)
 	if err != nil {
 		return nil, 0, err
@@ -521,13 +560,13 @@ func (ep *ExportProcessor) trackReadCosts(costTracking *models.ExportCostTrackin
 	if costTracking == nil {
 		return
 	}
-	
+
 	// Estimate read capacity units (1 RCU per item, pagination queries)
 	estimatedRCU := float64(itemCount) / 1000 * 5 // 5 RCU per 1000 items (pagination overhead)
 	if estimatedRCU < 1 {
 		estimatedRCU = 1
 	}
-	
+
 	costTracking.DynamoDBReadUnits += estimatedRCU
 	costTracking.DynamoDBOperations++
 	costTracking.DynamoDBReadCost += ep.calculateDynamoDBReadCost(estimatedRCU)
@@ -974,8 +1013,8 @@ func (ep *ExportProcessor) getBookmarks(ctx context.Context, username string) ([
 func (ep *ExportProcessor) fetchBookmarkBatch(ctx context.Context, username, cursor string) ([]string, string, error) {
 	bookmarkIDs, nextCursor, err := ep.repos.User().GetBookmarks(ctx, username, 1000, cursor)
 	if err != nil {
-		ep.logger.Error("failed to get bookmarks", 
-			zap.String("username", username), 
+		ep.logger.Error("failed to get bookmarks",
+			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", fmt.Errorf("get bookmarks: %w", err)
 	}
@@ -985,14 +1024,14 @@ func (ep *ExportProcessor) fetchBookmarkBatch(ctx context.Context, username, cur
 // convertBookmarkIDsToInfo converts bookmark IDs to BookmarkInfo objects
 func (ep *ExportProcessor) convertBookmarkIDsToInfo(ctx context.Context, bookmarkIDs []string) []BookmarkInfo {
 	var bookmarks []BookmarkInfo
-	
+
 	for _, bookmarkID := range bookmarkIDs {
 		info := ep.convertSingleBookmark(ctx, bookmarkID)
 		if info != nil {
 			bookmarks = append(bookmarks, *info)
 		}
 	}
-	
+
 	return bookmarks
 }
 
@@ -1035,17 +1074,17 @@ func (ep *ExportProcessor) extractBookmarkData(obj any) (string, time.Time) {
 func (ep *ExportProcessor) extractBookmarkFromMap(v map[string]any) (string, time.Time) {
 	var statusURL string
 	var createdAt time.Time
-	
+
 	if url, ok := v["url"].(string); ok {
 		statusURL = url
 	} else if id, ok := v["id"].(string); ok {
 		statusURL = id // Fallback to ID if no URL
 	}
-	
+
 	if published, ok := v["published"].(string); ok {
 		createdAt, _ = time.Parse(time.RFC3339, published)
 	}
-	
+
 	return statusURL, createdAt
 }
 
@@ -1053,11 +1092,11 @@ func (ep *ExportProcessor) extractBookmarkFromMap(v map[string]any) (string, tim
 func (ep *ExportProcessor) extractBookmarkFromNote(v *activitypub.Note) (string, time.Time) {
 	statusURL := v.ID
 	createdAt := time.Now()
-	
+
 	if v.Published != nil {
 		createdAt = *v.Published
 	}
-	
+
 	return statusURL, createdAt
 }
 
@@ -1065,11 +1104,11 @@ func (ep *ExportProcessor) extractBookmarkFromNote(v *activitypub.Note) (string,
 func (ep *ExportProcessor) extractBookmarkFromArticle(v *activitypub.Article) (string, time.Time) {
 	statusURL := v.ID
 	createdAt := time.Now()
-	
+
 	if v.Published != nil {
 		createdAt = *v.Published
 	}
-	
+
 	return statusURL, createdAt
 }
 
@@ -1079,14 +1118,14 @@ func (ep *ExportProcessor) extractBookmarkFromBaseObject(v any) (string, time.Ti
 	if !ok {
 		return "", time.Time{}
 	}
-	
+
 	statusURL := baseObj.ID
 	createdAt := time.Now()
-	
+
 	if baseObj.Published != nil {
 		createdAt = *baseObj.Published
 	}
-	
+
 	return statusURL, createdAt
 }
 

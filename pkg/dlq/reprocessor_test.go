@@ -13,7 +13,7 @@ import (
 // Test the HTTP HEAD logic by checking response codes directly
 func TestValidateMediaAccessibilityLogic(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	
+
 	tests := []struct {
 		name          string
 		statusCode    int
@@ -69,7 +69,7 @@ func TestValidateMediaAccessibilityLogic(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test the classification logic directly
 			err := classifyMediaResponse(tt.statusCode, "http://example.com/media.jpg", logger)
-			
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error for status %d, got nil", tt.statusCode)
@@ -87,7 +87,7 @@ func TestValidateMediaAccessibilityLogic(t *testing.T) {
 
 func TestValidateInboxAccessibilityLogic(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	
+
 	tests := []struct {
 		name        string
 		statusCode  int
@@ -119,7 +119,7 @@ func TestValidateInboxAccessibilityLogic(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test the classification logic directly
 			err := classifyInboxResponse(tt.statusCode, "http://example.com/inbox", logger)
-			
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error for status %d, got nil", tt.statusCode)
@@ -135,7 +135,7 @@ func TestValidateInboxAccessibilityLogic(t *testing.T) {
 
 func TestBasicURLValidation(t *testing.T) {
 	client := NewReprocessorClient(zaptest.NewLogger(t))
-	
+
 	tests := []struct {
 		name        string
 		url         string
@@ -180,7 +180,7 @@ func TestBasicURLValidation(t *testing.T) {
 
 func TestValidateMediaAccessibility_InvalidURL(t *testing.T) {
 	client := NewReprocessorClient(zaptest.NewLogger(t))
-	
+
 	err := client.validateMediaAccessibility(context.Background(), "invalid-url")
 	if err == nil {
 		t.Error("Expected error for invalid URL, got nil")
@@ -192,7 +192,7 @@ func TestValidateMediaAccessibility_InvalidURL(t *testing.T) {
 
 func TestValidateInboxAccessibility_InvalidURL(t *testing.T) {
 	client := NewReprocessorClient(zaptest.NewLogger(t))
-	
+
 	err := client.validateInboxAccessibility(context.Background(), "invalid-url")
 	if err == nil {
 		t.Error("Expected error for invalid URL, got nil")

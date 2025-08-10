@@ -40,6 +40,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/observability"
+	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -127,7 +128,7 @@ func init() {
 			EnableAIDetection:   false,
 			EnableImageAnalysis: false,
 			BedrockModelID:      "anthropic.claude-v2",
-			S3Bucket:           cfg.S3BucketName,
+			S3Bucket:            cfg.S3BucketName,
 		}
 		aiService = ai.NewAIService(awsCfg, aiConfig, tableName)
 		logger.Info("AI service initialized")
@@ -143,11 +144,11 @@ func init() {
 
 	// Initialize GraphQL resolver with all dependencies
 	resolver := &graph.Resolver{
-		Storage:     repos,
-		CostTracker: costTracker,
+		Storage:      repos,
+		CostTracker:  costTracker,
 		MastodonConv: mastodon.NewConverter(cfg.BaseURL()),
-		Logger:      logger,
-		AIService:   aiService,
+		Logger:       logger,
+		AIService:    aiService,
 	}
 
 	// Create GraphQL schema
@@ -489,16 +490,28 @@ func main() {
 	// 5. CORS middleware
 	app.Use(createCORSMiddleware())
 
-	// 6. Authentication middleware
+	// 6. Rate limiting middleware (before auth to catch anonymous users)
+	if os.Getenv("DISABLE_RATE_LIMITING") != "true" {
+		// Create GraphQL-specific rate limiting config
+		graphqlConfig := ratelimit.DefaultRateLimitConfig()
+		// Add GraphQL-specific limits
+		graphqlConfig.EndpointLimits["POST:/graphql"] = ratelimit.EndpointLimit{Limit: 100, Window: 5 * time.Minute} // 100 queries per 5 minutes
+		graphqlConfig.EndpointLimits["GET:/graphql"] = ratelimit.EndpointLimit{Limit: 100, Window: 5 * time.Minute}  // 100 queries per 5 minutes (GET for introspection)
+		
+		app.Use(ratelimit.Middleware(repos, graphqlConfig))
+		logger.Info("enabled rate limiting middleware for GraphQL service")
+	}
+
+	// 7. Authentication middleware
 	app.Use(createAuthMiddleware())
 
-	// 7. Cost tracking middleware
+	// 8. Cost tracking middleware
 	app.Use(createCostTrackingMiddleware())
 
-	// 8. DataLoader middleware
+	// 9. DataLoader middleware
 	app.Use(createDataLoaderMiddleware())
 
-	// 9. EMF performance monitoring middleware
+	// 10. EMF performance monitoring middleware
 	if emfMetricsService != nil {
 		app.Use(observability.CreateEMFPerformanceMonitoringMiddleware(emfMetricsService))
 	}
@@ -523,10 +536,10 @@ func main() {
 			"uptime":      time.Since(initTime).String(),
 			"environment": os.Getenv("ENV"),
 			"features": map[string]bool{
-				"graphql":      true,
+				"graphql":       true,
 				"subscriptions": true,
-				"playground":   os.Getenv("ENABLE_PLAYGROUND") == envTrue,
-				"dataloaders":  true,
+				"playground":    os.Getenv("ENABLE_PLAYGROUND") == envTrue,
+				"dataloaders":   true,
 				"cost_tracking": true,
 			},
 		})
@@ -535,7 +548,7 @@ func main() {
 	// Ready endpoint for load balancers
 	_ = app.GET("/ready", func(ctx *lift.Context) error {
 		return ctx.JSON(map[string]interface{}{
-			"ready": true,
+			"ready":     true,
 			"timestamp": time.Now().Unix(),
 		})
 	})

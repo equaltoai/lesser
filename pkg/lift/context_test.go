@@ -52,7 +52,6 @@ func createTestContextWithHeaders(headers map[string]string) *lift.Context {
 	return ctx
 }
 
-
 func TestGetPaginationParams(t *testing.T) {
 	tests := []struct {
 		name           string

@@ -3,9 +3,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -29,17 +34,21 @@ import (
 
 // NotificationProcessor handles notification delivery across multiple channels
 type NotificationProcessor struct {
-	db                   core.DB
-	tableName            string
-	logger               *zap.Logger
-	notificationRepo     *repositories.NotificationRepository
-	userRepo             *repositories.UserRepository
-	costTrackingRepo     *repositories.CostTrackingRepository
-	notificationCostRepo *repositories.NotificationCostRepository
-	snsClient            *sns.Client
-	apiGatewayClient     *apigatewaymanagementapi.Client
-	domain               string
-	webSocketEndpoint    string
+	db                        core.DB
+	tableName                 string
+	logger                    *zap.Logger
+	notificationRepo          *repositories.NotificationRepository
+	userRepo                  *repositories.UserRepository
+	costTrackingRepo          *repositories.CostTrackingRepository
+	notificationCostRepo      *repositories.NotificationCostRepository
+	webSocketSubscriptionRepo *repositories.WebSocketSubscriptionManagerRepository
+	snsClient                 *sns.Client
+	apiGatewayClient          *apigatewaymanagementapi.Client
+	sqsClient                 *sqs.Client
+	domain                    string
+	webSocketEndpoint         string
+	retryQueueURL             string
+	deadLetterQueueURL        string
 }
 
 // NotificationDeliveryRequest represents a request to deliver a notification
@@ -75,6 +84,37 @@ type UserPreferences struct {
 	PushEndpoint           string `json:"push_endpoint"`
 }
 
+// RetryableError represents an error that can be retried
+type RetryableError struct {
+	OriginalError error
+	RetryAfter    time.Duration
+	IsTemporary   bool
+}
+
+func (r *RetryableError) Error() string {
+	return fmt.Sprintf("retryable error: %s (retry after: %v)", r.OriginalError.Error(), r.RetryAfter)
+}
+
+// RetryPolicy defines the retry configuration
+type RetryPolicy struct {
+	MaxRetries    int
+	InitialDelay  time.Duration
+	MaxDelay      time.Duration
+	BackoffFactor float64
+	JitterPercent float64
+}
+
+// DefaultRetryPolicy returns the default retry policy for notifications
+func DefaultRetryPolicy() *RetryPolicy {
+	return &RetryPolicy{
+		MaxRetries:    5,
+		InitialDelay:  time.Second,
+		MaxDelay:      5 * time.Minute,
+		BackoffFactor: 2.0,
+		JitterPercent: 0.1, // 10% jitter
+	}
+}
+
 // NewNotificationProcessor creates a new notification processor instance
 func NewNotificationProcessor(db core.DB, tableName string, domain string) *NotificationProcessor {
 	// Initialize repositories
@@ -83,20 +123,26 @@ func NewNotificationProcessor(db core.DB, tableName string, domain string) *Noti
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
 	costTrackingRepo := repositories.NewCostTrackingRepository(db, tableName, logger)
 	notificationCostRepo := repositories.NewNotificationCostRepository(db, tableName, logger)
+	webSocketSubscriptionRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, tableName, logger)
 
 	// Get configuration from environment
 	webSocketEndpoint := os.Getenv("WEBSOCKET_ENDPOINT")
+	retryQueueURL := os.Getenv("NOTIFICATION_RETRY_QUEUE_URL")
+	deadLetterQueueURL := os.Getenv("NOTIFICATION_DLQ_URL")
 
 	return &NotificationProcessor{
-		db:                   db,
-		tableName:            tableName,
-		logger:               common.Logger(),
-		notificationRepo:     notificationRepo,
-		userRepo:             userRepo,
-		costTrackingRepo:     costTrackingRepo,
-		notificationCostRepo: notificationCostRepo,
-		domain:               domain,
-		webSocketEndpoint:    webSocketEndpoint,
+		db:                        db,
+		tableName:                 tableName,
+		logger:                    common.Logger(),
+		notificationRepo:          notificationRepo,
+		userRepo:                  userRepo,
+		costTrackingRepo:          costTrackingRepo,
+		notificationCostRepo:      notificationCostRepo,
+		webSocketSubscriptionRepo: webSocketSubscriptionRepo,
+		domain:                    domain,
+		webSocketEndpoint:         webSocketEndpoint,
+		retryQueueURL:             retryQueueURL,
+		deadLetterQueueURL:        deadLetterQueueURL,
 	}
 }
 
@@ -109,6 +155,9 @@ func (np *NotificationProcessor) initializeAWSClients(ctx context.Context) error
 
 	// Initialize SNS client for push notifications
 	np.snsClient = sns.NewFromConfig(cfg)
+
+	// Initialize SQS client for retries and DLQ
+	np.sqsClient = sqs.NewFromConfig(cfg)
 
 	// Initialize API Gateway Management API client for WebSocket
 	if np.webSocketEndpoint != "" {
@@ -188,11 +237,12 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 
 	// Check if this is a scheduled delivery
 	if request.ScheduledAt != nil && time.Now().Before(*request.ScheduledAt) {
-		np.logger.Info("notification scheduled for future delivery",
+		np.logger.Info("notification scheduled for future delivery, requeuing",
 			zap.String("notification_id", request.NotificationID),
 			zap.Time("scheduled_at", *request.ScheduledAt),
 		)
-		return nil // Skip for now, would requeue in real implementation
+		// Requeue with delay until scheduled time
+		return np.requeueScheduledNotification(ctx, request)
 	}
 
 	// Get the notification
@@ -265,15 +315,44 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 	}
 
 	// Handle retry logic for failed deliveries
-	if lastError != nil && request.RetryCount < 3 {
-		np.logger.Info("scheduling retry for failed delivery",
+	if lastError != nil {
+		retryPolicy := DefaultRetryPolicy()
+		if request.RetryCount < retryPolicy.MaxRetries {
+			// Check if error is retryable
+			if np.isRetryableError(lastError) {
+				np.logger.Info("scheduling retry for failed delivery",
+					zap.String("notification_id", request.NotificationID),
+					zap.Int("retry_count", request.RetryCount),
+					zap.Int("next_retry_count", request.RetryCount+1),
+					zap.Error(lastError),
+				)
+				// Queue retry with exponential backoff
+				return np.scheduleRetry(ctx, request, lastError)
+			}
+			np.logger.Error("permanent error, sending to dead letter queue",
+				zap.String("notification_id", request.NotificationID),
+				zap.Error(lastError),
+			)
+			return np.sendToDeadLetterQueue(ctx, request, lastError)
+		}
+		np.logger.Error("maximum retries exceeded, sending to dead letter queue",
 			zap.String("notification_id", request.NotificationID),
-			zap.Int("retry_count", request.RetryCount+1),
+			zap.Int("retry_count", request.RetryCount),
+			zap.Int("max_retries", retryPolicy.MaxRetries),
+			zap.Error(lastError),
 		)
+		return np.sendToDeadLetterQueue(ctx, request, lastError)
+	}
 
-		// In a real implementation, you'd requeue the message with exponential backoff
-		// For now, we'll just log the retry attempt
-		return fmt.Errorf("delivery failed, retry needed: %w", lastError)
+	// If no errors occurred, update the notification as successfully delivered
+	if lastError == nil {
+		notification.Data["delivery_status"] = "delivered"
+		notification.Data["delivered_at"] = time.Now().Format(time.RFC3339)
+		if err := np.notificationRepo.UpdateNotification(ctx, notification); err != nil {
+			np.logger.Warn("failed to update successful delivery status",
+				zap.String("notification_id", request.NotificationID),
+				zap.Error(err))
+		}
 	}
 
 	return lastError
@@ -286,10 +365,20 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 		Timestamp: start,
 	}
 
-	// Initialize cost tracking builder
+	// Get retry count from the notification data if available
+	retryCount := 0
+	if notification.Data != nil {
+		if rc, ok := notification.Data["retry_count"].(int); ok {
+			retryCount = rc
+		} else if rc, ok := notification.Data["retry_count"].(float64); ok {
+			retryCount = int(rc)
+		}
+	}
+
+	// Initialize cost tracking builder with retry information
 	costBuilder := models.NewNotificationCostTrackingBuilder().
 		WithNotification(notification.ID, notification.UserID, notification.UserID, notification.Type).
-		WithDelivery(channel, channel, false, 0).
+		WithDelivery(channel, channel, false, retryCount).
 		WithContext("", "notification-processor", os.Getenv("AWS_LAMBDA_FUNCTION_NAME"), os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME")).
 		WithTimestamp(start)
 
@@ -308,7 +397,7 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 				costBuilder.WithError(result.Error)
 			} else {
 				result.Success = true
-				costBuilder.WithDelivery(channel, channel, true, 0)
+				costBuilder.WithDelivery(channel, channel, true, retryCount)
 
 				// Calculate push cost
 				pushCost := models.CalculatePushCost(1)
@@ -328,7 +417,7 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 				costBuilder.WithError(result.Error)
 			} else {
 				result.Success = true
-				costBuilder.WithDelivery(channel, channel, true, 0)
+				costBuilder.WithDelivery(channel, channel, true, retryCount)
 
 				// Calculate websocket cost
 				websocketCost := models.CalculateWebSocketCost(1)
@@ -358,12 +447,17 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 		0, // Response size would be set by specific delivery methods
 	)
 
-	// Add additional context
+	// Add additional context including retry information
 	costBuilder.WithProperty("notification_type", notification.Type)
 	costBuilder.WithProperty("delivery_channel", channel)
 	costBuilder.WithProperty("user_preferences_enabled", userPrefs != nil)
+	costBuilder.WithProperty("retry_count", retryCount)
+	costBuilder.WithProperty("is_retry", retryCount > 0)
 	costBuilder.WithTag("domain", np.domain)
 	costBuilder.WithTag("delivery_method", channel)
+	if retryCount > 0 {
+		costBuilder.WithTag("retry_attempt", fmt.Sprintf("retry_%d", retryCount))
+	}
 
 	// Create cost tracking record
 	costTracking := costBuilder.Build()
@@ -386,6 +480,8 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 		zap.String("channel", channel),
 		zap.Bool("success", result.Success),
 		zap.String("error", result.Error),
+		zap.Int("retry_count", retryCount),
+		zap.Bool("is_retry", retryCount > 0),
 		zap.Duration("total_duration", totalDuration),
 		zap.Duration("delivery_duration", deliveryDuration),
 		zap.Int64("cost_micro_cents", result.Cost),
@@ -521,7 +617,7 @@ func (np *NotificationProcessor) sendWebSocketMessage(ctx context.Context, conne
 
 func (np *NotificationProcessor) getUserPreferences(ctx context.Context, userID string) (*UserPreferences, error) {
 	// Get user preferences from storage
-	userPrefs, err := np.userRepo.GetUserPreferences(ctx, userID)
+	prefs, err := np.userRepo.GetUserPreferences(ctx, userID)
 	if err != nil {
 		np.logger.Warn("failed to get user preferences, using defaults",
 			zap.String("user_id", userID),
@@ -535,22 +631,26 @@ func (np *NotificationProcessor) getUserPreferences(ctx context.Context, userID 
 	}
 
 	// Convert storage preferences to notification preferences
-	_ = userPrefs // Use the variable to avoid unused error
+	// Check if prefs has preferences map
+	if prefs != nil && prefs.Preferences != nil {
+		return &UserPreferences{
+			PushNotifications:      prefs.Preferences["push_enabled"] == "true",
+			WebSocketNotifications: prefs.Preferences["websocket_enabled"] != "false", // Default true
+			PushEndpoint:           prefs.Preferences["push_endpoint"],
+		}, nil
+	}
+
+	// Default preferences
 	return &UserPreferences{
-		PushNotifications:      true, // Could be derived from userPrefs fields
-		WebSocketNotifications: true, // Could be derived from userPrefs fields
-		PushEndpoint:           "",   // Would be stored in user preferences
+		PushNotifications:      true,
+		WebSocketNotifications: true,
+		PushEndpoint:           "",
 	}, nil
 }
 
-func (np *NotificationProcessor) getActiveWebSocketConnections(_ context.Context, userID string) ([]string, error) {
-	// Query the WebSocket connections from storage using userRepo
-	// In a full implementation, this would query a WebSocket connections table
-	// For now, we'll return an empty list as a safe fallback
-	connections := []struct {
-		ConnectionID string
-	}{}
-	var err error
+func (np *NotificationProcessor) getActiveWebSocketConnections(ctx context.Context, userID string) ([]string, error) {
+	// Query active WebSocket connections from the WebSocket subscription repository
+	connectionIDs, err := np.webSocketSubscriptionRepo.GetUserConnections(ctx, userID)
 	if err != nil {
 		np.logger.Warn("failed to get active websocket connections",
 			zap.String("user_id", userID),
@@ -559,11 +659,9 @@ func (np *NotificationProcessor) getActiveWebSocketConnections(_ context.Context
 		return []string{}, nil
 	}
 
-	// Extract connection IDs
-	connectionIDs := make([]string, len(connections))
-	for i, conn := range connections {
-		connectionIDs[i] = conn.ConnectionID
-	}
+	np.logger.Debug("found active websocket connections",
+		zap.String("user_id", userID),
+		zap.Int("connection_count", len(connectionIDs)))
 
 	return connectionIDs, nil
 }
@@ -796,21 +894,42 @@ func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, us
 		np.logger.Error("failed to get user budget",
 			zap.String("username", username),
 			zap.Error(err))
-		// On error, allow the notification (fail open)
+		// On error, allow the notification (fail open) but log the issue
 		return true, nil
 	}
 
-	// If no budget is set, use default limits
+	// If no budget is set, use default limits and enforce them
 	if budget == nil {
 		// Default budget: $0.01 per user per day (1000 micro-cents)
 		dailyBudgetMicroCents := int64(1000)
 
-		np.logger.Debug("no budget set, using default",
+		// Get current daily spending to check against default budget
+		currentSpending, err := np.notificationCostRepo.GetDailySpending(ctx, username)
+		if err != nil {
+			np.logger.Warn("failed to get current daily spending, allowing notification",
+				zap.String("username", username),
+				zap.Error(err))
+			return true, nil
+		}
+
+		projectedSpending := currentSpending + estimatedCostMicroCents
+
+		np.logger.Debug("checking against default budget",
 			zap.String("username", username),
 			zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents),
+			zap.Int64("current_spending_micro_cents", currentSpending),
+			zap.Int64("projected_spending_micro_cents", projectedSpending),
 			zap.Int64("daily_budget_micro_cents", dailyBudgetMicroCents))
 
-		// For now, always allow (budget checking can be enabled by setting budgets)
+		// Enforce default budget
+		if projectedSpending > dailyBudgetMicroCents {
+			np.logger.Warn("notification would exceed default daily budget",
+				zap.String("username", username),
+				zap.Int64("projected_spending_micro_cents", projectedSpending),
+				zap.Int64("daily_budget_micro_cents", dailyBudgetMicroCents))
+			return false, nil
+		}
+
 		return true, nil
 	}
 
@@ -852,4 +971,285 @@ func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, us
 	}
 
 	return true, nil
+}
+
+// requeueScheduledNotification requeues a notification for future delivery
+func (np *NotificationProcessor) requeueScheduledNotification(ctx context.Context, request NotificationDeliveryRequest) error {
+	if np.sqsClient == nil || np.retryQueueURL == "" {
+		return fmt.Errorf("SQS client or retry queue URL not configured")
+	}
+
+	// Calculate delay until scheduled time
+	delay := time.Until(*request.ScheduledAt)
+	if delay < 0 {
+		// If scheduled time has passed, deliver immediately
+		delay = 0
+	}
+
+	// Requeue with delay (SQS supports up to 15 minutes delay)
+	delaySeconds := int32(delay.Seconds())
+	if delaySeconds > 900 { // 15 minutes max
+		delaySeconds = 900
+	}
+
+	// Serialize request
+	messageBody, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scheduled notification request: %w", err)
+	}
+
+	// Send to retry queue with delay
+	_, err = np.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:     aws.String(np.retryQueueURL),
+		MessageBody:  aws.String(string(messageBody)),
+		DelaySeconds: delaySeconds,
+		MessageAttributes: map[string]types.MessageAttributeValue{
+			"notification_id": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(request.NotificationID),
+			},
+			"retry_type": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String("scheduled"),
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to requeue scheduled notification: %w", err)
+	}
+
+	np.logger.Info("requeued scheduled notification",
+		zap.String("notification_id", request.NotificationID),
+		zap.Time("scheduled_at", *request.ScheduledAt),
+		zap.Int32("delay_seconds", delaySeconds))
+
+	return nil
+}
+
+// scheduleRetry schedules a retry for a failed notification with exponential backoff
+func (np *NotificationProcessor) scheduleRetry(ctx context.Context, request NotificationDeliveryRequest, originalError error) error {
+	if np.sqsClient == nil || np.retryQueueURL == "" {
+		return fmt.Errorf("SQS client or retry queue URL not configured")
+	}
+
+	retryPolicy := DefaultRetryPolicy()
+
+	// Calculate exponential backoff delay
+	delay := np.calculateRetryDelay(request.RetryCount, retryPolicy)
+
+	// Create retry request
+	retryRequest := request
+	retryRequest.RetryCount++
+
+	// Serialize request
+	messageBody, err := json.Marshal(retryRequest)
+	if err != nil {
+		return fmt.Errorf("failed to marshal retry request: %w", err)
+	}
+
+	// Calculate SQS delay (max 15 minutes)
+	delaySeconds := int32(delay.Seconds())
+	if delaySeconds > 900 {
+		delaySeconds = 900
+	}
+
+	// Send to retry queue with delay
+	_, err = np.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:     aws.String(np.retryQueueURL),
+		MessageBody:  aws.String(string(messageBody)),
+		DelaySeconds: delaySeconds,
+		MessageAttributes: map[string]types.MessageAttributeValue{
+			"notification_id": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(request.NotificationID),
+			},
+			"retry_type": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String("failed_delivery"),
+			},
+			"retry_count": {
+				DataType:    aws.String("Number"),
+				StringValue: aws.String(fmt.Sprintf("%d", retryRequest.RetryCount)),
+			},
+			"original_error": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(originalError.Error()),
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to schedule retry: %w", err)
+	}
+
+	np.logger.Info("scheduled notification retry",
+		zap.String("notification_id", request.NotificationID),
+		zap.Int("retry_count", retryRequest.RetryCount),
+		zap.Duration("delay", delay),
+		zap.Int32("delay_seconds", delaySeconds),
+		zap.Error(originalError))
+
+	return nil
+}
+
+// sendToDeadLetterQueue sends a failed notification to the dead letter queue
+func (np *NotificationProcessor) sendToDeadLetterQueue(ctx context.Context, request NotificationDeliveryRequest, finalError error) error {
+	if np.sqsClient == nil || np.deadLetterQueueURL == "" {
+		np.logger.Error("SQS client or DLQ URL not configured, cannot send to DLQ",
+			zap.String("notification_id", request.NotificationID))
+		// Return the original error since we couldn't DLQ it
+		return finalError
+	}
+
+	// Create DLQ message with failure details
+	dlqMessage := map[string]interface{}{
+		"original_request": request,
+		"final_error":      finalError.Error(),
+		"failed_at":        time.Now().Format(time.RFC3339),
+		"retry_count":      request.RetryCount,
+	}
+
+	// Serialize DLQ message
+	messageBody, err := json.Marshal(dlqMessage)
+	if err != nil {
+		np.logger.Error("failed to marshal DLQ message",
+			zap.String("notification_id", request.NotificationID),
+			zap.Error(err))
+		return finalError
+	}
+
+	// Send to dead letter queue
+	_, err = np.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    aws.String(np.deadLetterQueueURL),
+		MessageBody: aws.String(string(messageBody)),
+		MessageAttributes: map[string]types.MessageAttributeValue{
+			"notification_id": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(request.NotificationID),
+			},
+			"user_id": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(request.UserID),
+			},
+			"failure_type": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String("max_retries_exceeded"),
+			},
+			"retry_count": {
+				DataType:    aws.String("Number"),
+				StringValue: aws.String(fmt.Sprintf("%d", request.RetryCount)),
+			},
+		},
+	})
+
+	if err != nil {
+		np.logger.Error("failed to send message to dead letter queue",
+			zap.String("notification_id", request.NotificationID),
+			zap.Error(err))
+		return finalError
+	}
+
+	np.logger.Error("notification sent to dead letter queue",
+		zap.String("notification_id", request.NotificationID),
+		zap.String("user_id", request.UserID),
+		zap.Int("retry_count", request.RetryCount),
+		zap.Error(finalError))
+
+	// Return nil since we successfully handled the failure by sending to DLQ
+	return nil
+}
+
+// calculateRetryDelay calculates the delay for a retry attempt with jitter
+func (np *NotificationProcessor) calculateRetryDelay(retryCount int, policy *RetryPolicy) time.Duration {
+	// Calculate exponential backoff
+	delay := time.Duration(float64(policy.InitialDelay) * math.Pow(policy.BackoffFactor, float64(retryCount)))
+
+	// Cap at max delay
+	if delay > policy.MaxDelay {
+		delay = policy.MaxDelay
+	}
+
+	// Add jitter to avoid thundering herd
+	if policy.JitterPercent > 0 {
+		jitterRange := time.Duration(float64(delay) * policy.JitterPercent)
+
+		// Generate random jitter
+		jitterBytes := make([]byte, 8)
+		if _, err := rand.Read(jitterBytes); err != nil {
+			// If we can't generate random jitter, proceed without it
+			np.logger.Warn("failed to generate random jitter", zap.Error(err))
+			return delay
+		}
+
+		// Convert to int64 for calculation
+		jitterValue := int64(0)
+		for i, b := range jitterBytes {
+			jitterValue |= int64(b) << (i * 8)
+		}
+
+		// Apply jitter (can be positive or negative)
+		jitter := time.Duration(jitterValue%int64(jitterRange*2)) - jitterRange
+		delay += jitter
+
+		// Ensure delay is not negative
+		if delay < 0 {
+			delay = policy.InitialDelay
+		}
+	}
+
+	return delay
+}
+
+// isRetryableError determines if an error is retryable
+func (np *NotificationProcessor) isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errorStr := strings.ToLower(err.Error())
+
+	// Permanent errors that should not be retried
+	permanentErrors := []string{
+		"invalid notification",
+		"user not found",
+		"notification not found",
+		"invalid request",
+		"unauthorized",
+		"forbidden",
+		"malformed",
+		"budget exceeded", // Budget errors are permanent for that period
+	}
+
+	for _, permErr := range permanentErrors {
+		if strings.Contains(errorStr, permErr) {
+			return false
+		}
+	}
+
+	// Temporary errors that can be retried
+	temporaryErrors := []string{
+		"timeout",
+		"connection refused",
+		"connection reset",
+		"network",
+		"unavailable",
+		"throttled",
+		"rate limit",
+		"internal server error",
+		"service unavailable",
+		"bad gateway",
+		"gateway timeout",
+		"temporary",
+	}
+
+	for _, tempErr := range temporaryErrors {
+		if strings.Contains(errorStr, tempErr) {
+			return true
+		}
+	}
+
+	// Default to retryable for unknown errors (fail open for retries)
+	// This helps ensure transient issues don't permanently lose notifications
+	return true
 }

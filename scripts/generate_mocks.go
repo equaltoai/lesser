@@ -154,7 +154,7 @@ func parseMethodParams(funcType *ast.FuncType, m *Method) {
 func extractParamsFromField(param *ast.Field) []Param {
 	var params []Param
 	paramType := exprToString(param.Type)
-	
+
 	if len(param.Names) == 0 {
 		// Unnamed parameter
 		params = append(params, Param{Type: paramType})
@@ -167,7 +167,7 @@ func extractParamsFromField(param *ast.Field) []Param {
 			})
 		}
 	}
-	
+
 	return params
 }
 

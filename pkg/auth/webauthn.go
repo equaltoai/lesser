@@ -337,7 +337,7 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 	usedCredential.BackupState = credential.Flags.BackupState
 	usedCredential.LastUsedAt = time.Now()
 
-	if err := s.repos.Account().UpdateWebAuthnCredential(ctx, usedCredential.ID, usedCredential.SignCount); err != nil {
+	if err := s.repos.Account().UpdateWebAuthnLastUsed(ctx, usedCredential.ID, usedCredential.SignCount); err != nil {
 		common.Logger().Error("failed to update credential", zap.Error(err))
 	}
 
@@ -398,7 +398,7 @@ func (s *WebAuthnService) UpdateCredentialName(ctx context.Context, username str
 	}
 
 	credential.Name = newName
-	return s.repos.Account().UpdateWebAuthnCredential(ctx, credential.ID, credential.SignCount)
+	return s.repos.Account().UpdateWebAuthnLastUsed(ctx, credential.ID, credential.SignCount)
 }
 
 // webAuthnUser implements the webauthn.User interface

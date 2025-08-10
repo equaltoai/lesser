@@ -40,20 +40,20 @@ const (
 
 // WebSocket event types
 const (
-	WSEventConnect     = "connect"
-	WSEventDisconnect  = "disconnect"
-	WSEventMessageIn   = "message_in"
-	WSEventMessageOut  = "message_out"
-	WSEventSubscribe   = "subscribe"
+	WSEventConnect    = "connect"
+	WSEventDisconnect = "disconnect"
+	WSEventMessageIn  = "message_in"
+	WSEventMessageOut = "message_out"
+	WSEventSubscribe  = "subscribe"
 )
 
 // Other repository constants
 const (
-	ActivityTypeNote     = "Note"
-	ModerationTypeEvent  = "EVENT"
-	VisibilityPublic     = "public"
-	VisibilityDisabled   = "disabled"
-	TagTypeMention       = "Mention"
+	ActivityTypeNote    = "Note"
+	ModerationTypeEvent = "EVENT"
+	VisibilityPublic    = "public"
+	VisibilityDisabled  = "disabled"
+	TagTypeMention      = "Mention"
 )
 
 // User preference keys

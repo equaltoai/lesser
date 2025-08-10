@@ -101,12 +101,12 @@ func (h *Handler) parseDirectoryLocal(ctx *lift.Context) bool {
 // extractQueryParam extracts a query parameter with test mode fallback
 func (h *Handler) extractQueryParam(ctx *lift.Context, param string) string {
 	value := ctx.Query(param)
-	
+
 	// Test mode fallback - extract from path query string
 	if value == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
 		value = h.extractFromPathQuery(ctx.Request.Path, param)
 	}
-	
+
 	return value
 }
 
@@ -131,7 +131,7 @@ func (h *Handler) extractFromPathQuery(path, param string) string {
 // convertActorsToDirectory converts actors to directory account format
 func (h *Handler) convertActorsToDirectory(ctx context.Context, actors []*activitypub.Actor, localOnly bool) []map[string]any {
 	accounts := make([]map[string]any, 0, len(actors))
-	
+
 	for _, actor := range actors {
 		// Filter local only if requested
 		if localOnly && !h.isLocalLift(actor.ID) {

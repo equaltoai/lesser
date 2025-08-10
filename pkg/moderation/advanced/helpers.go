@@ -15,4 +15,3 @@ func minFloat64(a, b float64) float64 {
 	}
 	return b
 }
-

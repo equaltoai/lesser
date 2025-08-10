@@ -10,7 +10,7 @@ type ModerationAction string
 
 const (
 	// ModerationActionRemove represents a remove moderation action
-	ModerationActionRemove  ModerationAction = "remove"
+	ModerationActionRemove ModerationAction = "remove"
 	// ModerationActionSuspend represents a suspend moderation action
 	ModerationActionSuspend ModerationAction = "suspend"
 	// ModerationActionSilence represents a silence moderation action
@@ -28,15 +28,15 @@ type ModerationStatus string
 
 const (
 	// ModerationStatusPending represents a pending moderation status
-	ModerationStatusPending   ModerationStatus = "pending"
+	ModerationStatusPending ModerationStatus = "pending"
 	// ModerationStatusReviewing represents a reviewing moderation status
 	ModerationStatusReviewing ModerationStatus = "reviewing"
 	// ModerationStatusActioned represents an actioned moderation status
-	ModerationStatusActioned  ModerationStatus = "actioned"
+	ModerationStatusActioned ModerationStatus = "actioned"
 	// ModerationStatusAppealed represents an appealed moderation status
-	ModerationStatusAppealed  ModerationStatus = "appealed"
+	ModerationStatusAppealed ModerationStatus = "appealed"
 	// ModerationStatusResolved represents a resolved moderation status
-	ModerationStatusResolved  ModerationStatus = "resolved"
+	ModerationStatusResolved ModerationStatus = "resolved"
 	// ModerationStatusDismissed represents a dismissed moderation status
 	ModerationStatusDismissed ModerationStatus = "dismissed"
 )
@@ -48,9 +48,9 @@ const (
 	// ModerationContentTypeStatus represents status content type
 	ModerationContentTypeStatus ModerationContentType = "status"
 	// ModerationContentTypeUser represents user content type
-	ModerationContentTypeUser   ModerationContentType = "user"
+	ModerationContentTypeUser ModerationContentType = "user"
 	// ModerationContentTypeMedia represents media content type
-	ModerationContentTypeMedia  ModerationContentType = "media"
+	ModerationContentTypeMedia ModerationContentType = "media"
 	// ModerationContentTypeReport represents report content type
 	ModerationContentTypeReport ModerationContentType = "report"
 )
@@ -60,21 +60,21 @@ type ModerationReason string
 
 const (
 	// ModerationReasonSpam represents spam moderation reason
-	ModerationReasonSpam            ModerationReason = "spam"
+	ModerationReasonSpam ModerationReason = "spam"
 	// ModerationReasonHateSpeech represents hate speech moderation reason
-	ModerationReasonHateSpeech      ModerationReason = "hate_speech"
+	ModerationReasonHateSpeech ModerationReason = "hate_speech"
 	// ModerationReasonHarassment represents harassment moderation reason
-	ModerationReasonHarassment      ModerationReason = "harassment"
+	ModerationReasonHarassment ModerationReason = "harassment"
 	// ModerationReasonMisinformation represents misinformation moderation reason
-	ModerationReasonMisinformation  ModerationReason = "misinformation"
+	ModerationReasonMisinformation ModerationReason = "misinformation"
 	// ModerationReasonProhibitedWords represents prohibited words moderation reason
 	ModerationReasonProhibitedWords ModerationReason = "prohibited_words"
 	// ModerationReasonRateLimiting represents rate limiting moderation reason
-	ModerationReasonRateLimiting    ModerationReason = "rate_limiting"
+	ModerationReasonRateLimiting ModerationReason = "rate_limiting"
 	// ModerationReasonCopyright represents copyright moderation reason
-	ModerationReasonCopyright       ModerationReason = "copyright"
+	ModerationReasonCopyright ModerationReason = "copyright"
 	// ModerationReasonOther represents other/miscellaneous moderation reason
-	ModerationReasonOther           ModerationReason = "other"
+	ModerationReasonOther ModerationReason = "other"
 )
 
 // ModerationEvent represents a moderation event stored in DynamoDB
@@ -248,8 +248,8 @@ func (d *ModerationDecision) UpdateKeys() {
 // ModerationPattern represents a moderation pattern
 type ModerationPattern struct {
 	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "MODERATION_PATTERN#{pattern_id}"
-	SK string `dynamorm:"sk" json:"sk"` // "PATTERN"
+	PK string `dynamorm:"pk" json:"pk"` // Format: "PATTERN#{pattern_id}"
+	SK string `dynamorm:"sk" json:"sk"` // "METADATA"
 
 	// GSI1 - Active pattern queries
 	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // "MODERATION_PATTERNS#ACTIVE" (when active)
@@ -260,16 +260,19 @@ type ModerationPattern struct {
 	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // "{updated_at}#{pattern_id}"
 
 	// Pattern data
-	ID          string    `json:"id"`
+	PatternID   string    `json:"pattern_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
-	Type        string    `json:"type"` // "regex", "keyword", "ai"
+	Type        string    `json:"type"`     // "regex", "keyword", "phrase"
 	Pattern     string    `json:"pattern"`
-	Severity    string    `json:"severity"`
+	Category    string    `json:"category"` // "toxicity", "spam", "violence", etc.
+	Severity    float64   `json:"severity"` // 0.0 to 1.0
 	Active      bool      `json:"active"`
+	Flags       []string  `json:"flags,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
-	LastMatch   time.Time `json:"last_match,omitempty"`
+	HitCount    int64     `json:"hit_count"`
+	LastHit     time.Time `json:"last_hit,omitempty"`
 
 	// TTL for auto-cleanup
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
@@ -282,21 +285,21 @@ func (ModerationPattern) TableName() string {
 
 // UpdateKeys updates the keys based on current field values
 func (p *ModerationPattern) UpdateKeys() {
-	p.PK = fmt.Sprintf("MODERATION_PATTERN#%s", p.ID)
-	p.SK = "PATTERN"
+	p.PK = fmt.Sprintf("PATTERN#%s", p.PatternID)
+	p.SK = "METADATA"
 
 	// GSI1 - Active patterns
 	if p.Active {
 		p.GSI1PK = "MODERATION_PATTERNS#ACTIVE"
-		p.GSI1SK = fmt.Sprintf("%s#%s#%s", p.Severity, p.Type, p.ID)
+		p.GSI1SK = fmt.Sprintf("%.2f#%s#%s", p.Severity, p.Type, p.PatternID)
 	} else {
 		p.GSI1PK = ""
 		p.GSI1SK = ""
 	}
 
 	// GSI2 - Severity queries
-	p.GSI2PK = fmt.Sprintf("MODERATION_PATTERNS#%s", p.Severity)
-	p.GSI2SK = fmt.Sprintf("%s#%s", p.UpdatedAt.Format(time.RFC3339), p.ID)
+	p.GSI2PK = fmt.Sprintf("MODERATION_PATTERNS#%.2f", p.Severity)
+	p.GSI2SK = fmt.Sprintf("%s#%s", p.UpdatedAt.Format(time.RFC3339), p.PatternID)
 
 	// Set TTL (90 days)
 	if p.TTL == 0 {
@@ -364,7 +367,6 @@ type ModerationHistoryEntry struct {
 	ChangedData map[string]interface{} `json:"changed_data,omitempty"`
 }
 
-
 // Moderation represents an active moderation case being processed
 type Moderation struct {
 	ModerationID  string                   `json:"moderation_id"`
@@ -415,4 +417,283 @@ func (m *Moderation) GetPrimaryProhibitedWord() string {
 		return m.Evidence.ProhibitedWords[0]
 	}
 	return ""
+}
+
+// ModerationAnalysisResult stores detailed analysis results for audit/appeals
+type ModerationAnalysisResult struct {
+	// Primary key - analysis results by content
+	PK string `dynamorm:"pk" json:"pk"` // Format: "ANALYSIS#{content_id}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "RESULT#{timestamp}#{analysis_id}"
+
+	// GSI1 - Author queries (find analyses by content author)
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "AUTHOR#{author_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+
+	// GSI2 - Analysis type queries
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "ANALYSIS_TYPE#{type}"
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
+
+	// Type marker
+	Type string `json:"type"` // "ANALYSIS_RESULT"
+
+	// Analysis result data
+	ID              string                 `json:"id"`
+	ContentID       string                 `json:"content_id"`
+	ContentType     string                 `json:"content_type"` // text, image, video
+	AuthorID        string                 `json:"author_id"`
+	AnalysisType    string                 `json:"analysis_type"` // text, image, video, combined
+	Confidence      float64                `json:"confidence"`
+	Results         map[string]interface{} `json:"results"` // Full analysis results
+	PatternMatches  []interface{}          `json:"pattern_matches,omitempty"`
+	ThreatMatches   []interface{}          `json:"threat_matches,omitempty"`
+	ReputationScore interface{}            `json:"reputation_score,omitempty"`
+	ProcessingTime  int64                  `json:"processing_time"` // milliseconds
+	AnalyzedAt      time.Time              `json:"analyzed_at"`
+	CreatedAt       time.Time              `json:"created_at"`
+
+	// DynamoDB TTL (90 days for analysis results)
+	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table name
+func (ModerationAnalysisResult) TableName() string {
+	return MainTableName
+}
+
+// UpdateKeys updates the GSI keys based on current field values
+func (m *ModerationAnalysisResult) UpdateKeys() {
+	// Primary key - analysis results by content
+	m.PK = fmt.Sprintf("ANALYSIS#%s", m.ContentID)
+	m.SK = fmt.Sprintf("RESULT#%s#%s", m.AnalyzedAt.Format(time.RFC3339), m.ID)
+
+	// GSI1 - Author queries
+	m.GSI1PK = fmt.Sprintf(KeyPatternActor, m.AuthorID)
+	m.GSI1SK = fmt.Sprintf("TIME#%s", m.AnalyzedAt.Format(time.RFC3339))
+
+	// GSI2 - Analysis type queries
+	confidenceStr := fmt.Sprintf("%03d", int(m.Confidence*100))
+	m.GSI2PK = fmt.Sprintf("ANALYSIS_TYPE#%s", m.AnalysisType)
+	m.GSI2SK = fmt.Sprintf("CONFIDENCE#%s#%s", confidenceStr, m.AnalyzedAt.Format(time.RFC3339))
+
+	// Set type marker
+	m.Type = "ANALYSIS_RESULT"
+	m.CreatedAt = m.AnalyzedAt
+
+	// Set TTL (90 days default)
+	if m.TTL == 0 {
+		m.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
+	}
+}
+
+// ModerationDecisionResult stores enhanced decision results with enforcement tracking
+type ModerationDecisionResult struct {
+	// Primary key - decisions by content
+	PK string `dynamorm:"pk" json:"pk"` // Format: "DECISION_RESULT#{content_id}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "TIME#{RFC3339}#{decision_id}"
+
+	// GSI1 - Active decisions lookup
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // "CONTENT#{content_id}"
+
+	// GSI2 - Action type queries
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "ACTION#{action}"
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
+
+	// Type marker
+	Type string `json:"type"` // "DECISION_RESULT"
+
+	// Decision data
+	ID                string                 `json:"id"`
+	ContentID         string                 `json:"content_id"`
+	AuthorID          string                 `json:"author_id"`
+	Action            string                 `json:"action"` // allow, flag, quarantine, remove, shadow_ban
+	Confidence        float64                `json:"confidence"`
+	Reasons           []interface{}          `json:"reasons"`
+	RequiresReview    bool                   `json:"requires_review"`
+	ReviewPriority    int                    `json:"review_priority"`
+	Recommendations   []string               `json:"recommendations,omitempty"`
+	ExpiresAt         *time.Time             `json:"expires_at,omitempty"`
+	DecidedAt         time.Time              `json:"decided_at"`
+	EnforcementStatus string                 `json:"enforcement_status"` // pending, applied, failed, expired
+	EnforcedAt        *time.Time             `json:"enforced_at,omitempty"`
+	EnforcementError  string                 `json:"enforcement_error,omitempty"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt         time.Time              `json:"created_at"`
+
+	// DynamoDB TTL (90 days for decisions)
+	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table name
+func (ModerationDecisionResult) TableName() string {
+	return MainTableName
+}
+
+// UpdateKeys updates the GSI keys based on current field values
+func (m *ModerationDecisionResult) UpdateKeys() {
+	// Primary key - decision results by content
+	m.PK = fmt.Sprintf("DECISION_RESULT#%s", m.ContentID)
+	m.SK = fmt.Sprintf("TIME#%s#%s", m.DecidedAt.Format(time.RFC3339), m.ID)
+
+	// GSI1 - Active decisions lookup
+	if m.EnforcementStatus == "pending" || m.EnforcementStatus == "applied" {
+		m.GSI1PK = "ACTIVE_DECISIONS"
+		m.GSI1SK = fmt.Sprintf("CONTENT#%s", m.ContentID)
+	} else {
+		m.GSI1PK = ""
+		m.GSI1SK = ""
+	}
+
+	// GSI2 - Action type queries
+	confidenceStr := fmt.Sprintf("%03d", int(m.Confidence*100))
+	m.GSI2PK = fmt.Sprintf("ACTION#%s", m.Action)
+	m.GSI2SK = fmt.Sprintf("CONFIDENCE#%s#%s", confidenceStr, m.DecidedAt.Format(time.RFC3339))
+
+	// Set type marker
+	m.Type = "DECISION_RESULT"
+	m.CreatedAt = m.DecidedAt
+
+	// Set TTL (90 days default)
+	if m.TTL == 0 {
+		m.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
+	}
+}
+
+// ModerationReviewQueue represents items in the review queue
+type ModerationReviewQueue struct {
+	// Primary key - queue items by status and priority
+	PK string `dynamorm:"pk" json:"pk"` // Format: "REVIEW_QUEUE#{status}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "PRIORITY#{priority}#{RFC3339}#{item_id}"
+
+	// GSI1 - Content lookups
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "QUEUE_CONTENT#{content_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "STATUS#{status}"
+
+	// GSI2 - Assignee queries
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "ASSIGNEE#{assignee_id}" (when assigned)
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "PRIORITY#{priority}#{RFC3339}"
+
+	// Type marker
+	Type string `json:"type"` // "REVIEW_QUEUE"
+
+	// Queue item data
+	ID             string                 `json:"id"`
+	ContentID      string                 `json:"content_id"`
+	AuthorID       string                 `json:"author_id"`
+	Status         string                 `json:"status"`   // pending, assigned, reviewing, completed, dismissed
+	Priority       int                    `json:"priority"` // 1-10, higher is more urgent
+	AssignedTo     string                 `json:"assigned_to,omitempty"`
+	AssignedAt     *time.Time             `json:"assigned_at,omitempty"`
+	Category       string                 `json:"category"`
+	Severity       string                 `json:"severity"`
+	Reason         string                 `json:"reason"`
+	Evidence       map[string]interface{} `json:"evidence,omitempty"`
+	Deadline       *time.Time             `json:"deadline,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+	CompletedAt    *time.Time             `json:"completed_at,omitempty"`
+	ReviewCount    int                    `json:"review_count"`
+	LastReviewedAt *time.Time             `json:"last_reviewed_at,omitempty"`
+
+	// DynamoDB TTL (30 days for queue items)
+	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table name
+func (ModerationReviewQueue) TableName() string {
+	return MainTableName
+}
+
+// UpdateKeys updates the GSI keys based on current field values
+func (m *ModerationReviewQueue) UpdateKeys() {
+	// Primary key - queue items by status and priority
+	priorityStr := fmt.Sprintf("%02d", m.Priority)
+	m.PK = fmt.Sprintf("REVIEW_QUEUE#%s", m.Status)
+	m.SK = fmt.Sprintf("PRIORITY#%s#%s#%s", priorityStr, m.CreatedAt.Format(time.RFC3339), m.ID)
+
+	// GSI1 - Content lookups
+	m.GSI1PK = fmt.Sprintf("QUEUE_CONTENT#%s", m.ContentID)
+	m.GSI1SK = fmt.Sprintf("STATUS#%s", m.Status)
+
+	// GSI2 - Assignee queries (only when assigned)
+	if m.AssignedTo != "" {
+		m.GSI2PK = fmt.Sprintf("ASSIGNEE#%s", m.AssignedTo)
+		m.GSI2SK = fmt.Sprintf("PRIORITY#%s#%s", priorityStr, m.CreatedAt.Format(time.RFC3339))
+	} else {
+		m.GSI2PK = ""
+		m.GSI2SK = ""
+	}
+
+	// Set type marker
+	m.Type = "REVIEW_QUEUE"
+
+	// Set TTL (30 days default)
+	if m.TTL == 0 {
+		m.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
+	}
+}
+
+// AuditLog represents an audit trail entry for admin actions
+type AuditLog struct {
+	// Primary key - audit logs by timestamp
+	PK string `dynamorm:"pk" json:"pk"` // Format: "AUDIT_LOG"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "TIME#{RFC3339}#{log_id}"
+
+	// GSI1 - Actor queries (find actions by who performed them)
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "ADMIN#{admin_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+
+	// GSI2 - Target queries (find actions on specific targets)
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "TARGET#{target_id}"
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "ACTION#{action}#{RFC3339}"
+
+	// Type marker
+	Type string `json:"type"` // "AUDIT_LOG"
+
+	// Audit data
+	ID          string    `json:"id"`
+	AdminID     string    `json:"admin_id"`         // Who performed the action
+	AdminRole   string    `json:"admin_role"`       // admin or moderator
+	Action      string    `json:"action"`           // suspend, silence, resolve_report, etc.
+	TargetType  string    `json:"target_type"`      // account, status, report, domain
+	TargetID    string    `json:"target_id"`        // ID of the target
+	Reason      string    `json:"reason,omitempty"` // Reason for action
+	Details     any       `json:"details,omitempty"`// Additional details
+	IPAddress   string    `json:"ip_address,omitempty"`
+	UserAgent   string    `json:"user_agent,omitempty"`
+	RequestID   string    `json:"request_id,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
+	CreatedAt   time.Time `json:"created_at"`
+
+	// DynamoDB TTL - audit logs expire after 2 years
+	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table name
+func (AuditLog) TableName() string {
+	return MainTableName
+}
+
+// UpdateKeys updates the GSI keys based on current field values
+func (a *AuditLog) UpdateKeys() {
+	// Primary key - audit logs by time
+	a.PK = "AUDIT_LOG"
+	a.SK = fmt.Sprintf("TIME#%s#%s", a.Timestamp.Format(time.RFC3339), a.ID)
+
+	// GSI1 - Admin queries
+	a.GSI1PK = fmt.Sprintf("ADMIN#%s", a.AdminID)
+	a.GSI1SK = fmt.Sprintf("TIME#%s", a.Timestamp.Format(time.RFC3339))
+
+	// GSI2 - Target queries
+	a.GSI2PK = fmt.Sprintf("TARGET#%s", a.TargetID)
+	a.GSI2SK = fmt.Sprintf("ACTION#%s#%s", a.Action, a.Timestamp.Format(time.RFC3339))
+
+	// Set type marker
+	a.Type = "AUDIT_LOG"
+	a.CreatedAt = a.Timestamp
+
+	// Set TTL (2 years)
+	if a.TTL == 0 {
+		a.TTL = time.Now().Add(2 * 365 * 24 * time.Hour).Unix()
+	}
 }

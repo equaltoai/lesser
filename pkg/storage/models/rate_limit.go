@@ -74,12 +74,13 @@ func NewRateLimitLockout(identifier string, unlockTime time.Time) *RateLimitLock
 // APIRateLimit represents a rate limit counter for API endpoints
 type APIRateLimit struct {
 	// Primary keys
-	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{userID}#{endpoint}
+	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{userID|domain}#{endpoint}
 	SK string `dynamorm:"sk" json:"sk"` // WINDOW#{window_start}
 
 	// Attributes
 	Type         string    `json:"type"`               // "APIRateLimit"
 	UserID       string    `json:"user_id"`            // User identifier
+	Domain       string    `json:"domain,omitempty"`   // Domain for federation limits
 	Endpoint     string    `json:"endpoint"`           // API endpoint pattern
 	Count        int       `json:"count"`              // Current request count
 	Window       time.Time `json:"window"`             // Window start time
@@ -87,6 +88,11 @@ type APIRateLimit struct {
 	BlockedUntil time.Time `json:"blocked_until"`      // When block expires
 	UpdatedAt    time.Time `json:"updated_at"`         // Last update time
 	TTL          int64     `json:"ttl" dynamorm:"ttl"` // Automatic cleanup
+
+	// Escalating penalty tracking
+	ViolationCount int       `json:"violation_count"` // Number of violations
+	FirstViolation time.Time `json:"first_violation"` // When first violation occurred
+	LastViolation  time.Time `json:"last_violation"`  // Most recent violation
 }
 
 // UpdateKeys updates the DynamoDB keys for the APIRateLimit model
@@ -113,5 +119,70 @@ func NewAPIRateLimit(userID, endpoint string, windowStart time.Time) *APIRateLim
 		Blocked:   false,
 		UpdatedAt: now,
 		TTL:       windowStart.Add(25 * time.Hour).Unix(), // TTL after window + 1 day
+	}
+}
+
+// NewFederationRateLimit creates a new rate limit record for federation domains
+func NewFederationRateLimit(domain, endpoint string, windowStart time.Time) *APIRateLimit {
+	now := time.Now()
+	key := fmt.Sprintf("DOMAIN#%s:%s", domain, endpoint)
+
+	return &APIRateLimit{
+		PK:        fmt.Sprintf("RATELIMIT#%s", key),
+		SK:        fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339)),
+		Type:      "FederationRateLimit",
+		Domain:    domain,
+		Endpoint:  endpoint,
+		Count:     0,
+		Window:    windowStart,
+		Blocked:   false,
+		UpdatedAt: now,
+		TTL:       windowStart.Add(25 * time.Hour).Unix(), // TTL after window + 1 day
+	}
+}
+
+// RateLimitViolation represents a rate limit violation for escalating penalties
+type RateLimitViolation struct {
+	// Primary keys
+	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT_VIOLATION#{userID|domain}
+	SK string `dynamorm:"sk" json:"sk"` // timestamp of violation
+
+	// Attributes
+	Type           string    `json:"type"`               // "RateLimitViolation"
+	UserID         string    `json:"user_id"`            // User identifier
+	Domain         string    `json:"domain,omitempty"`   // Domain for federation violations
+	Endpoint       string    `json:"endpoint"`           // Endpoint that was rate limited
+	ViolationType  string    `json:"violation_type"`     // "api" or "federation"
+	Timestamp      time.Time `json:"timestamp"`          // When violation occurred
+	PenaltyMinutes int       `json:"penalty_minutes"`    // Minutes of penalty applied
+	TTL            int64     `json:"ttl" dynamorm:"ttl"` // Cleanup after 7 days
+}
+
+// UpdateKeys updates the DynamoDB keys for the RateLimitViolation model
+func (rlv *RateLimitViolation) UpdateKeys() {
+	if rlv.Type == "" {
+		rlv.Type = "RateLimitViolation"
+	}
+}
+
+// NewRateLimitViolation creates a new rate limit violation record
+func NewRateLimitViolation(userID, domain, endpoint, violationType string, penaltyMinutes int) *RateLimitViolation {
+	now := time.Now()
+	identifier := userID
+	if domain != "" {
+		identifier = fmt.Sprintf("DOMAIN#%s", domain)
+	}
+
+	return &RateLimitViolation{
+		PK:             fmt.Sprintf("RATELIMIT_VIOLATION#%s", identifier),
+		SK:             now.Format(time.RFC3339Nano),
+		Type:           "RateLimitViolation",
+		UserID:         userID,
+		Domain:         domain,
+		Endpoint:       endpoint,
+		ViolationType:  violationType,
+		Timestamp:      now,
+		PenaltyMinutes: penaltyMinutes,
+		TTL:            now.Add(7 * 24 * time.Hour).Unix(), // TTL for 7 days
 	}
 }

@@ -10,20 +10,20 @@ import (
 
 // VideoMetadata contains extracted video metadata from MP4/MOV files
 type VideoMetadata struct {
-	Width           int     `json:"width"`
-	Height          int     `json:"height"`
-	Duration        int     `json:"duration"`          // Duration in milliseconds
-	DurationSeconds float64 `json:"duration_seconds"`  // Duration in seconds (more precise)
-	Timescale       uint32  `json:"timescale"`         // Movie timescale from mvhd
-	CreationTime    uint32  `json:"creation_time"`     // Creation time from mvhd
+	Width            int     `json:"width"`
+	Height           int     `json:"height"`
+	Duration         int     `json:"duration"`          // Duration in milliseconds
+	DurationSeconds  float64 `json:"duration_seconds"`  // Duration in seconds (more precise)
+	Timescale        uint32  `json:"timescale"`         // Movie timescale from mvhd
+	CreationTime     uint32  `json:"creation_time"`     // Creation time from mvhd
 	ModificationTime uint32  `json:"modification_time"` // Modification time from mvhd
-	VideoCodec      string  `json:"video_codec"`       // Video codec identifier
-	AudioCodec      string  `json:"audio_codec"`       // Audio codec identifier
-	HasAudio        bool    `json:"has_audio"`         // Whether the file contains audio
-	HasVideo        bool    `json:"has_video"`         // Whether the file contains video
-	Bitrate         int64   `json:"bitrate"`           // Estimated bitrate in bits per second
-	FrameRate       float64 `json:"frame_rate"`        // Estimated frame rate
-	FileSize        int64   `json:"file_size"`         // File size in bytes
+	VideoCodec       string  `json:"video_codec"`       // Video codec identifier
+	AudioCodec       string  `json:"audio_codec"`       // Audio codec identifier
+	HasAudio         bool    `json:"has_audio"`         // Whether the file contains audio
+	HasVideo         bool    `json:"has_video"`         // Whether the file contains video
+	Bitrate          int64   `json:"bitrate"`           // Estimated bitrate in bits per second
+	FrameRate        float64 `json:"frame_rate"`        // Estimated frame rate
+	FileSize         int64   `json:"file_size"`         // File size in bytes
 }
 
 // MP4Atom represents an MP4/MOV atom (also known as box)
@@ -166,7 +166,7 @@ func (p *VideoMetadataParser) readAtom() (*MP4Atom, error) {
 
 	// Read atom size (4 bytes, big-endian)
 	size := binary.BigEndian.Uint32(p.data[p.offset : p.offset+4])
-	
+
 	// Read atom type (4 bytes)
 	var atomType [4]byte
 	copy(atomType[:], p.data[p.offset+4:p.offset+8])
@@ -248,7 +248,7 @@ func parseMvhdAtom(data []byte, metadata *VideoMetadata) error {
 
 	// Version (1 byte) + flags (3 bytes)
 	version := data[0]
-	
+
 	var timescale, duration uint32
 	var creationTime, modificationTime uint32
 
@@ -344,7 +344,7 @@ func parseTkhdAtom(data []byte, metadata *VideoMetadata) error {
 
 	// Version (1 byte) + flags (3 bytes)
 	version := data[0]
-	
+
 	var width, height uint32
 	var trackDuration uint32
 
@@ -354,22 +354,22 @@ func parseTkhdAtom(data []byte, metadata *VideoMetadata) error {
 		if len(data) < 84 {
 			return errors.New("tkhd v0 atom incomplete")
 		}
-		
+
 		// Skip creation/modification time (8 bytes)
 		// Track ID at offset 12
 		// Reserved at offset 16
 		trackDuration = binary.BigEndian.Uint32(data[20:24])
-		
+
 		// Width and height are at the end of the atom (fixed point 16.16)
-		width = binary.BigEndian.Uint32(data[76:80]) >> 16   // Convert from 16.16 fixed point
-		height = binary.BigEndian.Uint32(data[80:84]) >> 16  // Convert from 16.16 fixed point
-		
+		width = binary.BigEndian.Uint32(data[76:80]) >> 16  // Convert from 16.16 fixed point
+		height = binary.BigEndian.Uint32(data[80:84]) >> 16 // Convert from 16.16 fixed point
+
 	case 1:
 		// Version 1: 64-bit values
 		if len(data) < 96 {
 			return errors.New("tkhd v1 atom incomplete")
 		}
-		
+
 		// Skip 64-bit creation/modification time (16 bytes)
 		// Track ID at offset 20
 		// Reserved at offset 24
@@ -380,11 +380,11 @@ func parseTkhdAtom(data []byte, metadata *VideoMetadata) error {
 		} else {
 			trackDuration = uint32(dur64) // #nosec G115 - checked for overflow above
 		}
-		
+
 		// Width and height are at the end of the atom (fixed point 16.16)
-		width = binary.BigEndian.Uint32(data[88:92]) >> 16   // Convert from 16.16 fixed point
-		height = binary.BigEndian.Uint32(data[92:96]) >> 16  // Convert from 16.16 fixed point
-		
+		width = binary.BigEndian.Uint32(data[88:92]) >> 16  // Convert from 16.16 fixed point
+		height = binary.BigEndian.Uint32(data[92:96]) >> 16 // Convert from 16.16 fixed point
+
 	default:
 		return fmt.Errorf("unsupported tkhd version: %d", version)
 	}
@@ -494,7 +494,7 @@ func parseHdlrAtom(data []byte, metadata *VideoMetadata) error {
 
 	// Handler type is at offset 8-12
 	handlerType := string(data[8:12])
-	
+
 	switch handlerType {
 	case "vide":
 		metadata.HasVideo = true
@@ -545,7 +545,7 @@ func isVideoCodec(codec string) bool {
 		"avc1", "avc3", "hev1", "hvc1", "mp4v", "s263", "h263", "dvh1", "dvhe",
 		"av01", "vp08", "vp09", "jpeg", "mjp2",
 	}
-	
+
 	for _, vc := range videoCodecs {
 		if codec == vc {
 			return true
@@ -560,7 +560,7 @@ func isAudioCodec(codec string) bool {
 		"mp4a", "ac-3", "ec-3", "dtsc", "dtse", "dtsh", "dtsl", "opus", "fLaC",
 		"alac", "sowt", "twos", "lpcm",
 	}
-	
+
 	for _, ac := range audioCodecs {
 		if codec == ac {
 			return true
@@ -580,7 +580,7 @@ func (p *VideoMetadataParser) calculateDerivedMetadata(metadata *VideoMetadata) 
 	if metadata.DurationSeconds > 0 && metadata.HasVideo {
 		// Assume 24-30 fps for most content
 		metadata.FrameRate = 25.0 // Default assumption
-		
+
 		// Adjust based on common standards
 		if metadata.Height >= 1080 {
 			metadata.FrameRate = 30.0 // HD+ content often 30fps
@@ -595,7 +595,7 @@ func (p *VideoMetadataParser) fallbackMetadata(metadata *VideoMetadata) (*VideoM
 	// Set reasonable defaults based on file size and common resolutions
 	if metadata.Width == 0 || metadata.Height == 0 {
 		sizeMB := metadata.FileSize / (1024 * 1024)
-		
+
 		switch {
 		case sizeMB > 100: // Large file, likely HD or higher
 			metadata.Width = 1920
@@ -613,7 +613,7 @@ func (p *VideoMetadataParser) fallbackMetadata(metadata *VideoMetadata) (*VideoM
 	if metadata.Duration == 0 {
 		// Assume 1 Mbps average bitrate for estimation
 		estimatedSeconds := float64(metadata.FileSize) / (1024 * 1024 / 8) // MB -> seconds at 1 Mbps
-		if estimatedSeconds > 0 && estimatedSeconds < 7200 { // Reasonable range (0-2 hours)
+		if estimatedSeconds > 0 && estimatedSeconds < 7200 {               // Reasonable range (0-2 hours)
 			metadata.Duration = int(estimatedSeconds * 1000)
 			metadata.DurationSeconds = estimatedSeconds
 		} else {
@@ -626,15 +626,15 @@ func (p *VideoMetadataParser) fallbackMetadata(metadata *VideoMetadata) (*VideoM
 	if metadata.VideoCodec == "" {
 		metadata.VideoCodec = "avc1" // H.264 is most common
 	}
-	
+
 	metadata.HasVideo = true
 	metadata.HasAudio = true // Assume most videos have audio
-	
+
 	// Calculate estimated bitrate
 	if metadata.DurationSeconds > 0 {
 		metadata.Bitrate = int64(float64(metadata.FileSize*8) / metadata.DurationSeconds)
 	}
-	
+
 	metadata.FrameRate = 25.0 // Default frame rate
 
 	return metadata, errors.New("failed to parse video metadata, using fallback values")
@@ -645,7 +645,7 @@ func IsVideoCodecExported(codec string) bool {
 	return isVideoCodec(codec)
 }
 
-// IsAudioCodecExported is an exported version of isAudioCodec for testing/demo purposes  
+// IsAudioCodecExported is an exported version of isAudioCodec for testing/demo purposes
 func IsAudioCodecExported(codec string) bool {
 	return isAudioCodec(codec)
 }

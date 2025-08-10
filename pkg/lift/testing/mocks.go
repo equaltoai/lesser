@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-
 // MockAuthService provides a mock implementation of the auth service
 type MockAuthService struct {
 	mock.Mock
@@ -45,7 +44,6 @@ func (m *MockAuthService) RevokeToken(token string) error {
 	args := m.Called(token)
 	return args.Error(0)
 }
-
 
 // MockStorage provides a mock implementation of the storage interface
 type MockStorage struct {
@@ -166,7 +164,6 @@ func (m *MockStorage) GetFollowing(ctx context.Context, actorID string, limit in
 	return args.Get(0).([]*models.Actor), args.String(1), args.Error(2)
 }
 
-
 // MockActorRepository provides a mock actor repository
 type MockActorRepository struct {
 	mock.Mock
@@ -258,7 +255,6 @@ func (m *MockStatusRepository) GetByActor(ctx context.Context, actorID string, l
 	return args.Get(0).([]*models.Status), args.String(1), args.Error(2)
 }
 
-
 // MockHTTPClient provides a mock HTTP client
 type MockHTTPClient struct {
 	mock.Mock
@@ -307,7 +303,6 @@ func (m *MockHTTPClient) Delete(url string, headers map[string]string) (*Respons
 	return args.Get(0).(*Response), args.Error(1)
 }
 
-
 // SetupMockAuthService creates a configured mock auth service
 func SetupMockAuthService() *MockAuthService {
 	return &MockAuthService{}
@@ -322,7 +317,6 @@ func SetupMockStorage() *MockStorage {
 func SetupMockRepositories() (*MockActorRepository, *MockStatusRepository) {
 	return &MockActorRepository{}, &MockStatusRepository{}
 }
-
 
 // ExpectValidToken sets up expectations for a valid token
 func ExpectValidToken(mockAuth *MockAuthService, token string, claims *auth.EnhancedClaims) {
@@ -354,7 +348,6 @@ func ExpectStatusNotFound(mockStorage *MockStorage, statusID string) {
 	mockStorage.On("GetStatus", mock.Anything, statusID).Return(nil, errors.New("not found"))
 }
 
-
 var (
 	// ErrMockDatabase represents a mock database error
 	ErrMockDatabase = errors.New("mock database error")
@@ -368,7 +361,6 @@ var (
 	// ErrMockTimeout represents a mock timeout error
 	ErrMockTimeout = errors.New("mock timeout error")
 )
-
 
 // MockWithDelay simulates network delays
 type MockWithDelay struct {
@@ -398,7 +390,6 @@ func (m *MockWithFailure) ShouldFail() bool {
 	// Simple deterministic failure pattern for testing
 	return float64(m.CallCount%10) < (m.FailureRate * 10)
 }
-
 
 // BuildTestActor creates a test actor for mocking
 func BuildTestActor(username string) *models.Actor {

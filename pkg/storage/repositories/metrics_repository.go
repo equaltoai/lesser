@@ -7,10 +7,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MetricsRepository handles metrics persistence
@@ -23,8 +23,7 @@ type MetricsRepository struct {
 // MetricRecordRepository handles new reporting table schema with extensive indexing
 type MetricRecordRepository struct {
 	*BaseRepository[*models.MetricRecord]
-	tableName string
-	logger    *zap.Logger
+	logger *zap.Logger
 }
 
 // NewMetricsRepository creates a new metrics repository
@@ -468,7 +467,6 @@ func calculateStandardDeviation(values []float64, mean float64) float64 {
 func NewMetricRecordRepository(db core.DB, tableName string, logger *zap.Logger) *MetricRecordRepository {
 	return &MetricRecordRepository{
 		BaseRepository: NewBaseRepository[*models.MetricRecord](db, tableName, logger),
-		tableName:      tableName,
 		logger:         logger,
 	}
 }
@@ -481,7 +479,7 @@ func (r *MetricRecordRepository) GetMetricsByService(ctx context.Context, servic
 	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
 
-	err := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
 		Index("service-index").
 		Where("GSI1PK", "=", gsi1pk).
 		Where("GSI1SK", ">=", startSK).
@@ -509,7 +507,7 @@ func (r *MetricRecordRepository) GetMetricsByType(ctx context.Context, metricTyp
 	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
 
-	err := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
 		Index("metric-type-index").
 		Where("GSI2PK", "=", gsi2pk).
 		Where("GSI2SK", ">=", startSK).
@@ -536,7 +534,7 @@ func (r *MetricRecordRepository) GetMetricsByDate(ctx context.Context, date time
 	gsi3pk := fmt.Sprintf("DATE#%s", date.Format(common.DateFormat))
 
 	// Build the query
-	query := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
 		Index("date-index").
 		Where("GSI3PK", "=", gsi3pk)
 
@@ -567,7 +565,7 @@ func (r *MetricRecordRepository) GetMetricsByAggregationLevel(ctx context.Contex
 	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
 
-	err := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
 		Index("aggregation-index").
 		Where("GSI4PK", "=", gsi4pk).
 		Where("GSI4SK", ">=", startSK).
