@@ -82,6 +82,15 @@ type Registry struct {
 	analytics        AnalyticsService
 	notification     NotificationService
 
+	// Domain services (new service-first architecture)
+	notesService          interface{} // Initialized as notes.Service
+	accountsService       interface{} // Initialized as accounts.Service
+	relationshipsService  interface{} // Initialized as relationships.Service
+	conversationsService  interface{} // Initialized as conversations.Service
+	mediaService          interface{} // Initialized as media.Service
+	listsService          interface{} // Initialized as lists.Service
+	notificationsService  interface{} // Initialized as notifications.Service
+
 	// Service management
 	mu          sync.RWMutex
 	initialized map[string]bool
@@ -392,4 +401,98 @@ func (r *Registry) Health() map[string]interface{} {
 	}
 
 	return health
+}
+
+// Notes returns the notes service, initializing it if necessary
+func (r *Registry) Notes() interface{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.notesService == nil {
+		// Note: The actual initialization should be done with the concrete type
+		// For now, returning a placeholder - this will be properly implemented
+		// when we integrate the domain services
+		r.notesService = struct{}{}
+		r.initialized["Notes"] = true
+	}
+
+	return r.notesService
+}
+
+// Accounts returns the accounts service, initializing it if necessary
+func (r *Registry) Accounts() interface{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.accountsService == nil {
+		r.accountsService = struct{}{}
+		r.initialized["Accounts"] = true
+	}
+
+	return r.accountsService
+}
+
+// Relationships returns the relationships service, initializing it if necessary
+func (r *Registry) Relationships() interface{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.relationshipsService == nil {
+		r.relationshipsService = struct{}{}
+		r.initialized["Relationships"] = true
+	}
+
+	return r.relationshipsService
+}
+
+// Conversations returns the conversations service, initializing it if necessary
+func (r *Registry) Conversations() interface{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.conversationsService == nil {
+		r.conversationsService = struct{}{}
+		r.initialized["Conversations"] = true
+	}
+
+	return r.conversationsService
+}
+
+// Media returns the media service, initializing it if necessary
+func (r *Registry) Media() interface{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.mediaService == nil {
+		r.mediaService = struct{}{}
+		r.initialized["Media"] = true
+	}
+
+	return r.mediaService
+}
+
+// Lists returns the lists service, initializing it if necessary
+func (r *Registry) Lists() interface{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.listsService == nil {
+		r.listsService = struct{}{}
+		r.initialized["Lists"] = true
+	}
+
+	return r.listsService
+}
+
+// Notifications returns the notifications service, initializing it if necessary
+func (r *Registry) Notifications() interface{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.notificationsService == nil {
+		r.notificationsService = struct{}{}
+		r.initialized["Notifications"] = true
+	}
+
+	return r.notificationsService
 }
