@@ -58,6 +58,13 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/equaltoai/lesser/pkg/services/accounts"
+	"github.com/equaltoai/lesser/pkg/services/conversations"
+	"github.com/equaltoai/lesser/pkg/services/lists"
+	"github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/services/notifications"
+	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
@@ -83,13 +90,13 @@ type Registry struct {
 	notification     NotificationService
 
 	// Domain services (new service-first architecture)
-	notesService          interface{} // Initialized as notes.Service
-	accountsService       interface{} // Initialized as accounts.Service
-	relationshipsService  interface{} // Initialized as relationships.Service
-	conversationsService  interface{} // Initialized as conversations.Service
-	mediaService          interface{} // Initialized as media.Service
-	listsService          interface{} // Initialized as lists.Service
-	notificationsService  interface{} // Initialized as notifications.Service
+	notesService          *notes.Service
+	accountsService       *accounts.Service
+	relationshipsService  *relationships.Service
+	conversationsService  *conversations.Service
+	mediaService          *media.Service
+	listsService          *lists.Service
+	notificationsService  *notifications.Service
 
 	// Service management
 	mu          sync.RWMutex
@@ -404,15 +411,13 @@ func (r *Registry) Health() map[string]interface{} {
 }
 
 // Notes returns the notes service, initializing it if necessary
-func (r *Registry) Notes() interface{} {
+func (r *Registry) Notes() *notes.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.notesService == nil {
-		// Note: The actual initialization should be done with the concrete type
-		// For now, returning a placeholder - this will be properly implemented
-		// when we integrate the domain services
-		r.notesService = struct{}{}
+		// TODO: Initialize with real repositories
+		// For now, return nil - will be implemented when we integrate repositories
 		r.initialized["Notes"] = true
 	}
 
@@ -420,12 +425,12 @@ func (r *Registry) Notes() interface{} {
 }
 
 // Accounts returns the accounts service, initializing it if necessary
-func (r *Registry) Accounts() interface{} {
+func (r *Registry) Accounts() *accounts.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.accountsService == nil {
-		r.accountsService = struct{}{}
+		// TODO: Initialize with real repositories
 		r.initialized["Accounts"] = true
 	}
 
@@ -433,12 +438,12 @@ func (r *Registry) Accounts() interface{} {
 }
 
 // Relationships returns the relationships service, initializing it if necessary
-func (r *Registry) Relationships() interface{} {
+func (r *Registry) Relationships() *relationships.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.relationshipsService == nil {
-		r.relationshipsService = struct{}{}
+		// TODO: Initialize with real repositories
 		r.initialized["Relationships"] = true
 	}
 
@@ -446,12 +451,12 @@ func (r *Registry) Relationships() interface{} {
 }
 
 // Conversations returns the conversations service, initializing it if necessary
-func (r *Registry) Conversations() interface{} {
+func (r *Registry) Conversations() *conversations.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.conversationsService == nil {
-		r.conversationsService = struct{}{}
+		// TODO: Initialize with real repositories
 		r.initialized["Conversations"] = true
 	}
 
@@ -459,12 +464,12 @@ func (r *Registry) Conversations() interface{} {
 }
 
 // Media returns the media service, initializing it if necessary
-func (r *Registry) Media() interface{} {
+func (r *Registry) Media() *media.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.mediaService == nil {
-		r.mediaService = struct{}{}
+		// TODO: Initialize with real repositories
 		r.initialized["Media"] = true
 	}
 
@@ -472,12 +477,12 @@ func (r *Registry) Media() interface{} {
 }
 
 // Lists returns the lists service, initializing it if necessary
-func (r *Registry) Lists() interface{} {
+func (r *Registry) Lists() *lists.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.listsService == nil {
-		r.listsService = struct{}{}
+		// TODO: Initialize with real repositories
 		r.initialized["Lists"] = true
 	}
 
@@ -485,12 +490,12 @@ func (r *Registry) Lists() interface{} {
 }
 
 // Notifications returns the notifications service, initializing it if necessary
-func (r *Registry) Notifications() interface{} {
+func (r *Registry) Notifications() *notifications.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.notificationsService == nil {
-		r.notificationsService = struct{}{}
+		// TODO: Initialize with real repositories
 		r.initialized["Notifications"] = true
 	}
 
