@@ -325,7 +325,7 @@ func (r *MediaSessionRepository) trackQualityChange(ctx context.Context, session
 
 // modelToStreamingSession converts a DynamORM model to types.StreamingSession
 func (r *MediaSessionRepository) modelToStreamingSession(model *models.MediaSession) *types.StreamingSession {
-	return &types.StreamingSession{
+	session := &types.StreamingSession{
 		SessionID:        model.SessionID,
 		UserID:           model.UserID,
 		MediaID:          model.MediaID,
@@ -336,4 +336,81 @@ func (r *MediaSessionRepository) modelToStreamingSession(model *models.MediaSess
 		BytesTransferred: model.BytesTransferred,
 		BufferHealth:     model.BufferHealth,
 	}
+
+	// Set LastActivityTime from model's LastUpdate if available
+	if model.LastUpdate != nil {
+		session.LastActivityTime = *model.LastUpdate
+	} else {
+		session.LastActivityTime = model.StartTime
+	}
+
+	// Calculate duration watched based on session state
+	if model.EndTime != nil {
+		session.DurationWatched = int64(model.EndTime.Sub(model.StartTime).Seconds())
+	} else if model.Duration > 0 {
+		session.DurationWatched = int64(model.Duration)
+	}
+
+	// Set error field if session is inactive
+	if !model.Active && model.EndTime != nil {
+		session.Error = "session_ended"
+	}
+
+	return session
+}
+
+// GetActiveSessionsCount returns the count of active sessions for monitoring
+func (r *MediaSessionRepository) GetActiveSessionsCount(ctx context.Context) (int, error) {
+	var activeSessions []models.MediaSession
+
+	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
+		Where("Active", "=", true).
+		All(&activeSessions)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to count active sessions: %w", err)
+	}
+
+	// Track cost
+	if r.costTracker != nil {
+		r.costTracker.TrackDynamoRead(len(activeSessions))
+	}
+
+	return len(activeSessions), nil
+}
+
+// GetSessionsByTimeRange retrieves sessions within a specific time range for analytics
+func (r *MediaSessionRepository) GetSessionsByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int32) ([]*types.StreamingSession, error) {
+	var sessionModels []models.MediaSession
+
+	query := r.db.WithContext(ctx).Model(&models.MediaSession{}).
+		Where("StartTime", ">=", startTime.Format(time.RFC3339)).
+		Where("StartTime", "<=", endTime.Format(time.RFC3339))
+
+	if limit > 0 {
+		query = query.Limit(int(limit))
+	}
+
+	err := query.All(&sessionModels)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []*types.StreamingSession{}, nil
+		}
+		return nil, fmt.Errorf("failed to query sessions by time range: %w", err)
+	}
+
+	// Track cost
+	if r.costTracker != nil {
+		r.costTracker.TrackDynamoRead(len(sessionModels))
+	}
+
+	sessions := make([]*types.StreamingSession, 0, len(sessionModels))
+	for _, model := range sessionModels {
+		sessions = append(sessions, r.modelToStreamingSession(&model))
+	}
+
+	return sessions, nil
 }

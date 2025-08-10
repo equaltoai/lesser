@@ -676,10 +676,10 @@ func (r *WebSocketCostRepository) AggregateWebSocketCosts(ctx context.Context, o
 
 	// Initialize aggregation
 	aggregation := r.initializeAggregation(period, operationType, windowStart, windowEnd)
-	
+
 	// Create collectors for tracking metrics
 	collectors := r.createMetricCollectors(len(costs))
-	
+
 	// Process each cost record
 	for _, cost := range costs {
 		r.processCostRecord(cost, aggregation, collectors)
@@ -710,16 +710,16 @@ func (r *WebSocketCostRepository) initializeAggregation(period, operationType st
 
 // webSocketMetricCollectors holds collectors for various metrics
 type webSocketMetricCollectors struct {
-	uniqueUsers        map[string]bool
-	uniqueConnections  map[string]bool
-	uniqueStreams      map[string]bool
-	costValues         []float64
-	latencyValues      []float64
-	durationValues     []float64
-	totalProcessingTime float64
+	uniqueUsers          map[string]bool
+	uniqueConnections    map[string]bool
+	uniqueStreams        map[string]bool
+	costValues           []float64
+	latencyValues        []float64
+	durationValues       []float64
+	totalProcessingTime  float64
 	totalResponseLatency float64
-	totalMemoryUsage    float64
-	measurementCount    int64
+	totalMemoryUsage     float64
+	measurementCount     int64
 }
 
 // createMetricCollectors initializes metric collectors
@@ -738,13 +738,13 @@ func (r *WebSocketCostRepository) createMetricCollectors(capacity int) *webSocke
 func (r *WebSocketCostRepository) processCostRecord(cost *models.WebSocketCostRecord, aggregation *models.WebSocketCostAggregation, collectors *webSocketMetricCollectors) {
 	// Track unique entities
 	r.trackUniqueEntities(cost, collectors, aggregation)
-	
+
 	// Process operation-specific metrics
 	r.processOperationMetrics(cost, aggregation, collectors)
-	
+
 	// Aggregate cost components
 	r.aggregateCostComponents(cost, aggregation)
-	
+
 	// Collect performance metrics
 	r.collectPerformanceMetrics(cost, collectors)
 }
@@ -755,12 +755,12 @@ func (r *WebSocketCostRepository) trackUniqueEntities(cost *models.WebSocketCost
 		collectors.uniqueUsers[cost.UserID] = true
 	}
 	collectors.uniqueConnections[cost.ConnectionID] = true
-	
+
 	for _, stream := range cost.ActiveStreams {
 		collectors.uniqueStreams[stream] = true
 		aggregation.StreamPopularity[stream]++
 	}
-	
+
 	for _, streamType := range cost.StreamTypes {
 		aggregation.StreamTypeBreakdown[streamType]++
 	}
@@ -810,7 +810,7 @@ func (r *WebSocketCostRepository) aggregateCostComponents(cost *models.WebSocket
 // collectPerformanceMetrics collects performance-related metrics
 func (r *WebSocketCostRepository) collectPerformanceMetrics(cost *models.WebSocketCostRecord, collectors *webSocketMetricCollectors) {
 	collectors.costValues = append(collectors.costValues, cost.EstimatedCostDollars)
-	
+
 	if cost.ProcessingTimeMs > 0 {
 		collectors.totalProcessingTime += float64(cost.ProcessingTimeMs)
 		collectors.measurementCount++
@@ -829,13 +829,13 @@ func (r *WebSocketCostRepository) finalizeAggregation(aggregation *models.WebSoc
 	// Set unique counts
 	aggregation.UniqueUsers = int64(len(collectors.uniqueUsers))
 	aggregation.UniqueStreamsUsed = int64(len(collectors.uniqueStreams))
-	
+
 	// Calculate averages
 	r.calculateAverages(aggregation, collectors)
-	
+
 	// Calculate message metrics
 	r.calculateMessageMetrics(aggregation, windowStart, windowEnd)
-	
+
 	// Calculate percentiles
 	r.calculatePercentiles(aggregation, collectors)
 }
@@ -846,7 +846,7 @@ func (r *WebSocketCostRepository) calculateAverages(aggregation *models.WebSocke
 		aggregation.AverageProcessingTime = collectors.totalProcessingTime / float64(collectors.measurementCount)
 		aggregation.AverageMemoryUsage = collectors.totalMemoryUsage / float64(collectors.measurementCount)
 	}
-	
+
 	if len(collectors.latencyValues) > 0 {
 		var totalLatency float64
 		for _, latency := range collectors.latencyValues {
@@ -854,7 +854,7 @@ func (r *WebSocketCostRepository) calculateAverages(aggregation *models.WebSocke
 		}
 		aggregation.AverageResponseLatency = totalLatency / float64(len(collectors.latencyValues))
 	}
-	
+
 	if aggregation.TotalConnections > 0 {
 		aggregation.AverageConnectionDuration = aggregation.AverageConnectionDuration / float64(aggregation.TotalConnections)
 	}
@@ -865,7 +865,7 @@ func (r *WebSocketCostRepository) calculateMessageMetrics(aggregation *models.We
 	totalMessages := aggregation.TotalMessagesIn + aggregation.TotalMessagesOut
 	if totalMessages > 0 {
 		aggregation.AverageMessageSize = float64(aggregation.TotalMessageBytes) / float64(totalMessages)
-		
+
 		windowSeconds := windowEnd.Sub(windowStart).Seconds()
 		if windowSeconds > 0 {
 			aggregation.MessageThroughputPerSec = float64(totalMessages) / windowSeconds

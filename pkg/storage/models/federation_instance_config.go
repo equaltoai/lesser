@@ -10,15 +10,15 @@ type FederationTier string
 
 const (
 	// FederationTierFree represents the free federation tier
-	FederationTierFree       FederationTier = "free"
+	FederationTierFree FederationTier = "free"
 	// FederationTierBasic represents the basic federation tier
-	FederationTierBasic      FederationTier = "basic"
+	FederationTierBasic FederationTier = "basic"
 	// FederationTierPremium represents the premium federation tier
-	FederationTierPremium    FederationTier = "premium"
+	FederationTierPremium FederationTier = "premium"
 	// FederationTierEnterprise represents the enterprise federation tier
 	FederationTierEnterprise FederationTier = "enterprise"
 	// FederationTierBlocked represents a blocked federation tier
-	FederationTierBlocked    FederationTier = "blocked"
+	FederationTierBlocked FederationTier = "blocked"
 )
 
 // RetryPolicy defines retry behavior for federation operations

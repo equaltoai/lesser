@@ -7,23 +7,25 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Additional status constants for federation
 const (
-	StatusActive   = "active"
-	StatusInactive = "inactive"
+	StatusInactive    = "inactive"
+	ConnectionTypeAll = "all"
 )
 
 // FederationRepository implements federation tracking operations using DynamORM
@@ -535,6 +537,65 @@ func (r *FederationRepository) GetFederationNodes(ctx context.Context, depth int
 	return result, nil
 }
 
+// GetFederationNodesByHealth retrieves federation nodes filtered by health status
+func (r *FederationRepository) GetFederationNodesByHealth(ctx context.Context, healthStatus string, limit int) ([]*storage.FederationNode, error) {
+	var nodes []models.FederationNode
+
+	query := r.db.WithContext(ctx).Model(&models.FederationNode{}).
+		Index("gsi1").
+		Where("GSI1PK", "=", "FEDERATION_ACTIVE")
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	} else {
+		query = query.Limit(100) // Default limit
+	}
+
+	err := query.Scan(&nodes)
+	if err != nil {
+		r.logger.Error("Failed to query federation nodes by health",
+			zap.String("health", healthStatus),
+			zap.Int("limit", limit),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query federation nodes by health: %w", err)
+	}
+
+	// Filter by health status after retrieval (since health is not indexed)
+	var filteredNodes []models.FederationNode
+	for _, node := range nodes {
+		if healthStatus == "" || node.Health == healthStatus {
+			filteredNodes = append(filteredNodes, node)
+		}
+	}
+
+	// Convert to storage types
+	result := make([]*storage.FederationNode, len(filteredNodes))
+	for i, node := range filteredNodes {
+		result[i] = &storage.FederationNode{
+			Domain:            node.Domain,
+			DisplayName:       node.DisplayName,
+			Description:       node.Description,
+			Software:          node.Software,
+			Version:           node.Version,
+			UserCount:         node.UserCount,
+			StatusCount:       node.StatusCount,
+			ActiveUsers:       node.ActiveUsers,
+			FirstSeen:         node.FirstSeen,
+			LastSeen:          node.LastSeen,
+			Health:            node.Health,
+			ErrorRate:         node.ErrorRate,
+			ResponseTime:      node.ResponseTime,
+			ConnectionType:    node.ConnectionType,
+			TotalConnections:  node.TotalConnections,
+			ActiveConnections: node.ActiveConnections,
+			ActivityVolume:    node.ActivityVolume,
+			Metadata:          node.Metadata,
+		}
+	}
+
+	return result, nil
+}
+
 // GetFederationEdges retrieves edges between specified domains
 func (r *FederationRepository) GetFederationEdges(ctx context.Context, domains []string) ([]*storage.FederationEdge, error) {
 	if len(domains) == 0 {
@@ -624,9 +685,7 @@ func (r *FederationRepository) GetInstanceMetadata(ctx context.Context, domain s
 
 // CalculateFederationClusters calculates instance clusters based on connections
 func (r *FederationRepository) CalculateFederationClusters(ctx context.Context) ([]*storage.InstanceCluster, error) {
-	// This is a complex operation that would typically be done in a batch job
-	// For now, return pre-calculated clusters stored in DynamoDB
-
+	// First try to get pre-calculated clusters
 	var clusters []models.InstanceCluster
 
 	err := r.db.WithContext(ctx).Model(&models.InstanceCluster{}).
@@ -634,9 +693,20 @@ func (r *FederationRepository) CalculateFederationClusters(ctx context.Context) 
 		Limit(50). // Limit to 50 clusters
 		Scan(&clusters)
 
-	if err != nil {
+	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("Failed to query federation clusters", zap.Error(err))
 		return nil, fmt.Errorf("failed to query federation clusters: %w", err)
+	}
+
+	// If no pre-calculated clusters or very few, compute them
+	if len(clusters) < 3 {
+		r.logger.Info("Few or no pre-calculated clusters found, computing new clusters")
+		computedClusters, err := r.computeFederationClusters(ctx)
+		if err != nil {
+			r.logger.Warn("Failed to compute clusters, using existing ones", zap.Error(err))
+		} else {
+			clusters = computedClusters
+		}
 	}
 
 	// Convert to storage types
@@ -657,10 +727,264 @@ func (r *FederationRepository) CalculateFederationClusters(ctx context.Context) 
 	return result, nil
 }
 
+// computeFederationClusters computes new clusters based on connection patterns and health
+func (r *FederationRepository) computeFederationClusters(ctx context.Context) ([]models.InstanceCluster, error) {
+	// Get all active federation nodes
+	nodes, err := r.GetFederationNodes(ctx, 1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get federation nodes: %w", err)
+	}
+
+	if len(nodes) == 0 {
+		return []models.InstanceCluster{}, nil
+	}
+
+	// Get edges between domains
+	domains := make([]string, len(nodes))
+	for i, node := range nodes {
+		domains[i] = node.Domain
+	}
+
+	edges, err := r.GetFederationEdges(ctx, domains)
+	if err != nil {
+		r.logger.Warn("Failed to get federation edges, using node-based clustering", zap.Error(err))
+		edges = []*storage.FederationEdge{}
+	}
+
+	// Build adjacency matrix and calculate clusters
+	clusters := r.clusterByConnectionStrength(nodes, edges)
+
+	// Convert to models and store
+	var result []models.InstanceCluster
+	for i, cluster := range clusters {
+		model := models.InstanceCluster{
+			ClusterID:   fmt.Sprintf("cluster_%d_%d", time.Now().Unix(), i),
+			Name:        fmt.Sprintf("Cluster %d", i+1),
+			Instances:   cluster.Instances,
+			CenterNode:  cluster.CenterNode,
+			Cohesion:    cluster.Cohesion,
+			Size:        cluster.Size,
+			Description: cluster.Description,
+			UpdatedAt:   time.Now(),
+		}
+		model.UpdateKeys()
+
+		// Store the computed cluster
+		if err := r.db.WithContext(ctx).Model(&model).Create(); err != nil {
+			r.logger.Warn("Failed to store computed cluster", zap.String("cluster_id", model.ClusterID), zap.Error(err))
+		}
+
+		result = append(result, model)
+	}
+
+	return result, nil
+}
+
+// clusterByConnectionStrength uses a simple clustering algorithm based on connection strength
+func (r *FederationRepository) clusterByConnectionStrength(nodes []*storage.FederationNode, edges []*storage.FederationEdge) []*storage.InstanceCluster {
+	if len(nodes) == 0 {
+		return []*storage.InstanceCluster{}
+	}
+
+	// Build connection graph
+	connectionMap := make(map[string]map[string]float64)
+	for _, node := range nodes {
+		connectionMap[node.Domain] = make(map[string]float64)
+	}
+
+	// Populate connection strengths
+	for _, edge := range edges {
+		if connectionMap[edge.SourceDomain] != nil && connectionMap[edge.TargetDomain] != nil {
+			connectionMap[edge.SourceDomain][edge.TargetDomain] = edge.Strength
+			// Make bidirectional with average strength
+			if existing, ok := connectionMap[edge.TargetDomain][edge.SourceDomain]; ok {
+				connectionMap[edge.TargetDomain][edge.SourceDomain] = (existing + edge.Strength) / 2
+			} else {
+				connectionMap[edge.TargetDomain][edge.SourceDomain] = edge.Strength
+			}
+		}
+	}
+
+	// Simple clustering: group nodes with strong connections (strength > 0.5)
+	visited := make(map[string]bool)
+	var clusters []*storage.InstanceCluster
+
+	for _, node := range nodes {
+		if visited[node.Domain] {
+			continue
+		}
+
+		cluster := &storage.InstanceCluster{
+			Instances: []string{node.Domain},
+		}
+
+		visited[node.Domain] = true
+
+		// Find connected nodes with strong connections
+		r.addConnectedNodes(node.Domain, connectionMap, visited, cluster, 0.5)
+
+		// Calculate cluster properties
+		cluster.Size = len(cluster.Instances)
+		cluster.CenterNode = r.findCenterNode(cluster.Instances, connectionMap, nodes)
+		cluster.Cohesion = r.calculateCohesion(cluster.Instances, connectionMap)
+		cluster.Description = r.generateClusterDescription(cluster, nodes)
+
+		if cluster.Size > 1 {
+			clusters = append(clusters, cluster)
+		}
+	}
+
+	// Add remaining nodes as singleton clusters if they're healthy
+	for _, node := range nodes {
+		if !visited[node.Domain] && (node.Health == string(monitoring.HealthStatusHealthy) || node.Health == "") {
+			cluster := &storage.InstanceCluster{
+				Instances:   []string{node.Domain},
+				CenterNode:  node.Domain,
+				Cohesion:    1.0,
+				Size:        1,
+				Description: fmt.Sprintf("Isolated instance: %s (%s)", node.Domain, node.Software),
+			}
+			clusters = append(clusters, cluster)
+		}
+	}
+
+	return clusters
+}
+
+// addConnectedNodes recursively adds strongly connected nodes to the cluster
+func (r *FederationRepository) addConnectedNodes(domain string, connectionMap map[string]map[string]float64, visited map[string]bool, cluster *storage.InstanceCluster, threshold float64) {
+	for targetDomain, strength := range connectionMap[domain] {
+		if !visited[targetDomain] && strength > threshold {
+			visited[targetDomain] = true
+			cluster.Instances = append(cluster.Instances, targetDomain)
+			// Recursively add connected nodes (with higher threshold to avoid sprawl)
+			r.addConnectedNodes(targetDomain, connectionMap, visited, cluster, threshold+0.1)
+		}
+	}
+}
+
+// findCenterNode finds the most connected node in the cluster
+func (r *FederationRepository) findCenterNode(instances []string, connectionMap map[string]map[string]float64, nodes []*storage.FederationNode) string {
+	if len(instances) == 0 {
+		return ""
+	}
+	if len(instances) == 1 {
+		return instances[0]
+	}
+
+	maxConnections := -1.0
+	centerNode := instances[0]
+
+	for _, instance := range instances {
+		totalStrength := 0.0
+		connectionCount := 0
+
+		for _, otherInstance := range instances {
+			if instance != otherInstance {
+				if strength, exists := connectionMap[instance][otherInstance]; exists && strength > 0 {
+					totalStrength += strength
+					connectionCount++
+				}
+			}
+		}
+
+		// Consider both connection strength and health
+		nodeHealth := 1.0 // Default
+		for _, node := range nodes {
+			if node.Domain == instance {
+				switch node.Health {
+				case string(monitoring.HealthStatusHealthy):
+					nodeHealth = 1.0
+				case "degraded":
+					nodeHealth = 0.7
+				case "unhealthy":
+					nodeHealth = 0.4
+				case string(monitoring.HealthStatusCritical):
+					nodeHealth = 0.1
+				default:
+					nodeHealth = 0.8
+				}
+				break
+			}
+		}
+
+		score := totalStrength * nodeHealth
+		if score > maxConnections {
+			maxConnections = score
+			centerNode = instance
+		}
+	}
+
+	return centerNode
+}
+
+// calculateCohesion calculates how tightly connected the cluster is
+func (r *FederationRepository) calculateCohesion(instances []string, connectionMap map[string]map[string]float64) float64 {
+	if len(instances) <= 1 {
+		return 1.0
+	}
+
+	totalPossibleConnections := len(instances) * (len(instances) - 1) / 2
+	actualConnections := 0.0
+
+	for i, instance1 := range instances {
+		for j, instance2 := range instances[i+1:] {
+			_ = j // Avoid unused variable
+			if strength, exists := connectionMap[instance1][instance2]; exists && strength > 0 {
+				actualConnections += strength
+			}
+		}
+	}
+
+	return actualConnections / float64(totalPossibleConnections)
+}
+
+// generateClusterDescription creates a human-readable description
+func (r *FederationRepository) generateClusterDescription(cluster *storage.InstanceCluster, nodes []*storage.FederationNode) string {
+	if cluster.Size == 1 {
+		return fmt.Sprintf("Single instance cluster: %s", cluster.Instances[0])
+	}
+
+	// Count software types
+	softwareCount := make(map[string]int)
+	healthyCount := 0
+
+	for _, instance := range cluster.Instances {
+		for _, node := range nodes {
+			if node.Domain == instance {
+				softwareCount[node.Software]++
+				if node.Health == string(monitoring.HealthStatusHealthy) || node.Health == "" {
+					healthyCount++
+				}
+				break
+			}
+		}
+	}
+
+	dominantSoftware := ""
+	maxCount := 0
+	for software, count := range softwareCount {
+		if count > maxCount {
+			maxCount = count
+			dominantSoftware = software
+		}
+	}
+
+	cohesionLevel := "loosely"
+	if cluster.Cohesion > 0.7 {
+		cohesionLevel = "tightly"
+	} else if cluster.Cohesion > 0.4 {
+		cohesionLevel = "moderately"
+	}
+
+	return fmt.Sprintf("%d %s instances, %s connected, %d healthy, center: %s",
+		cluster.Size, dominantSoftware, cohesionLevel, healthyCount, cluster.CenterNode)
+}
+
 // GetInstanceConnections retrieves connections for a specific instance
 func (r *FederationRepository) GetInstanceConnections(ctx context.Context, domain string, connectionType string) ([]*storage.InstanceConnection, error) {
 	// Query using GSI2 for instance connections
-	pkValue := fmt.Sprintf(storage.InstanceConnectionsKey, domain)
+	pkValue := fmt.Sprintf("CONNECTION#%s", domain)
 	if connectionType != "" {
 		pkValue = fmt.Sprintf("INSTANCE#%s#CONNECTIONS#%s", domain, connectionType)
 	}
@@ -833,7 +1157,7 @@ func (r *FederationRepository) AttemptReconnection(ctx context.Context, userID, 
 
 	// Implement comprehensive reconnection logic
 	reconnectErr := r.performReconnection(ctx, attempt)
-	
+
 	// Update the attempt record with results
 	if reconnectErr == nil {
 		attempt.Success = true
@@ -849,7 +1173,7 @@ func (r *FederationRepository) AttemptReconnection(ctx context.Context, userID, 
 			zap.String("domain", domain),
 			zap.Error(reconnectErr))
 	}
-	
+
 	// Save the updated attempt record
 	err = r.db.WithContext(ctx).Model(attempt).Create()
 	if err != nil {
@@ -859,7 +1183,7 @@ func (r *FederationRepository) AttemptReconnection(ctx context.Context, userID, 
 			zap.Error(err))
 		// Don't return this error - the reconnection may have succeeded
 	}
-	
+
 	// Return the reconnection result
 	if reconnectErr != nil {
 		return fmt.Errorf("reconnection failed: %w", reconnectErr)
@@ -875,34 +1199,34 @@ func (r *FederationRepository) AttemptReconnection(ctx context.Context, userID, 
 // performReconnection performs comprehensive reconnection logic for a federation domain
 func (r *FederationRepository) performReconnection(ctx context.Context, attempt *models.ReconnectionAttempt) error {
 	domain := attempt.Domain
-	
+
 	// Phase 1: Basic connectivity test with exponential backoff
 	connectErr := r.performConnectivityTest(ctx, domain)
 	if connectErr != nil {
 		return fmt.Errorf("connectivity test failed: %w", connectErr)
 	}
-	
+
 	// Phase 2: NodeInfo verification to confirm ActivityPub support
 	nodeInfoErr := r.verifyNodeInfo(ctx, domain)
 	if nodeInfoErr != nil {
 		return fmt.Errorf("nodeinfo verification failed: %w", nodeInfoErr)
 	}
-	
+
 	// Phase 3: WebFinger resolution test
 	webfingerErr := r.testWebFingerResolution(ctx, domain)
 	if webfingerErr != nil {
 		return fmt.Errorf("webfinger resolution failed: %w", webfingerErr)
 	}
-	
+
 	// Phase 4: Update federation instance status
 	updateErr := r.updateFederationInstanceStatus(ctx, domain)
 	if updateErr != nil {
 		return fmt.Errorf("failed to update instance status: %w", updateErr)
 	}
-	
+
 	r.logger.Info("All reconnection phases completed successfully",
 		zap.String("domain", domain))
-	
+
 	return nil
 }
 
@@ -919,61 +1243,61 @@ func (r *FederationRepository) performConnectivityTest(ctx context.Context, doma
 			return nil
 		},
 	}
-	
+
 	// Test basic HTTPS connectivity
 	testURL := fmt.Sprintf("https://%s", domain)
 	startTime := time.Now()
-	
+
 	req, err := http.NewRequestWithContext(ctx, "HEAD", testURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	req.Header.Set("User-Agent", "Lesser/1.0 (ActivityPub)")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	
+
 	responseTime := time.Since(startTime)
-	
+
 	r.logger.Debug("Connectivity test completed",
 		zap.String("domain", domain),
 		zap.Int("status_code", resp.StatusCode),
 		zap.Duration("response_time", responseTime))
-	
+
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("server error: HTTP %d", resp.StatusCode)
 	}
-	
+
 	return nil
 }
 
 // verifyNodeInfo checks if the domain supports NodeInfo (ActivityPub indicator)
 func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string) error {
 	client := &http.Client{Timeout: 30 * time.Second}
-	
+
 	nodeInfoURL := fmt.Sprintf("https://%s/.well-known/nodeinfo", domain)
 	req, err := http.NewRequestWithContext(ctx, "GET", nodeInfoURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create nodeinfo request: %w", err)
 	}
-	
+
 	req.Header.Set("User-Agent", "Lesser/1.0 (ActivityPub)")
 	req.Header.Set("Accept", "application/json")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("nodeinfo request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	
+
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("nodeinfo not available: HTTP %d", resp.StatusCode)
 	}
-	
+
 	// Parse nodeinfo links to verify ActivityPub support
 	var nodeInfo struct {
 		Links []struct {
@@ -981,85 +1305,85 @@ func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string
 			Href string `json:"href"`
 		} `json:"links"`
 	}
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read nodeinfo response: %w", err)
 	}
-	
+
 	err = json.Unmarshal(body, &nodeInfo)
 	if err != nil {
 		return fmt.Errorf("failed to parse nodeinfo: %w", err)
 	}
-	
+
 	// Look for NodeInfo 2.0 or 2.1 link
 	var nodeInfoEndpoint string
 	for _, link := range nodeInfo.Links {
 		if link.Rel == "http://nodeinfo.diaspora.software/ns/schema/2.0" ||
-		   link.Rel == "http://nodeinfo.diaspora.software/ns/schema/2.1" {
+			link.Rel == "http://nodeinfo.diaspora.software/ns/schema/2.1" {
 			nodeInfoEndpoint = link.Href
 			break
 		}
 	}
-	
+
 	if nodeInfoEndpoint == "" {
 		return fmt.Errorf("no supported nodeinfo version found")
 	}
-	
+
 	r.logger.Debug("NodeInfo verification successful",
 		zap.String("domain", domain),
 		zap.String("nodeinfo_endpoint", nodeInfoEndpoint))
-	
+
 	return nil
 }
 
 // testWebFingerResolution tests WebFinger resolution capability
 func (r *FederationRepository) testWebFingerResolution(ctx context.Context, domain string) error {
 	client := &http.Client{Timeout: 30 * time.Second}
-	
+
 	// Test WebFinger with a common test pattern
 	webfingerURL := fmt.Sprintf("https://%s/.well-known/webfinger?resource=acct:test@%s", domain, domain)
 	req, err := http.NewRequestWithContext(ctx, "GET", webfingerURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create webfinger request: %w", err)
 	}
-	
+
 	req.Header.Set("User-Agent", "Lesser/1.0 (ActivityPub)")
 	req.Header.Set("Accept", "application/jrd+json, application/json")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("webfinger request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	
+
 	// 404 is acceptable for test account, 200 indicates working WebFinger
 	if resp.StatusCode != 200 && resp.StatusCode != 404 {
 		return fmt.Errorf("webfinger endpoint error: HTTP %d", resp.StatusCode)
 	}
-	
+
 	r.logger.Debug("WebFinger test completed",
 		zap.String("domain", domain),
 		zap.Int("status_code", resp.StatusCode))
-	
+
 	return nil
 }
 
 // updateFederationInstanceStatus updates the federation instance record with reconnection success
 func (r *FederationRepository) updateFederationInstanceStatus(ctx context.Context, domain string) error {
 	now := time.Now()
-	
+
 	// Try to get existing instance record
 	var instance models.FederationInstance
 	err := r.db.WithContext(ctx).Model(&models.FederationInstance{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
 		Where("SK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
 		First(&instance)
-	
+
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to query instance record: %w", err)
 	}
-	
+
 	// Update or create instance record
 	if errors.IsNotFound(err) {
 		// Create new instance record
@@ -1075,21 +1399,21 @@ func (r *FederationRepository) updateFederationInstanceStatus(ctx context.Contex
 		// Update existing record
 		instance.LastSeen = now
 		// Slightly improve trust score for successful reconnection
-		instance.TrustScore = math.Min(1.0, instance.TrustScore + 0.1)
+		instance.TrustScore = math.Min(1.0, instance.TrustScore+0.1)
 	}
-	
+
 	instance.UpdateKeys()
-	
+
 	// Save the instance record
 	err = r.db.WithContext(ctx).Model(&instance).Create()
 	if err != nil {
 		return fmt.Errorf("failed to save instance record: %w", err)
 	}
-	
+
 	r.logger.Info("Federation instance status updated",
 		zap.String("domain", domain),
 		zap.Float64("trust_score", instance.TrustScore))
-	
+
 	return nil
 }
 
@@ -2102,18 +2426,24 @@ func (r *FederationRepository) GetPublicOutbox(ctx context.Context, actorID stri
 }
 
 // GetStrongestConnectionsByType retrieves the strongest federation connections by type
-func (r *FederationRepository) GetStrongestConnectionsByType(_ context.Context, connectionType string, limit int) ([]*storage.FederationEdge, error) {
+func (r *FederationRepository) GetStrongestConnectionsByType(ctx context.Context, connectionType string, limit int) ([]*storage.FederationEdge, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 10
 	}
 
-	var edges []*models.FederationEdge
-	err := r.db.Model(&models.FederationEdge{}).
-		Where("ConnectionType", "=", connectionType).
-		OrderBy("Weight", "DESC").
-		Limit(limit).
-		All(&edges)
+	// Query edges using GSI2 for connection type queries
+	var edges []models.FederationEdge
 
+	query := r.db.WithContext(ctx).Model(&models.FederationEdge{}).
+		Index("gsi2").
+		Limit(limit)
+
+	// Filter by connection type if specified and not "all"
+	if connectionType != "" && connectionType != ConnectionTypeAll {
+		query = query.Where("GSI2PK", "begins_with", "INSTANCE#")
+	}
+
+	err := query.Scan(&edges)
 	if err != nil {
 		r.logger.Error("failed to get strongest connections by type",
 			zap.String("connection_type", connectionType),
@@ -2121,9 +2451,31 @@ func (r *FederationRepository) GetStrongestConnectionsByType(_ context.Context, 
 		return nil, fmt.Errorf("failed to get strongest connections by type: %w", err)
 	}
 
+	// Filter and sort by strength after retrieval (since sorting by non-indexed field is expensive in DynamoDB)
+	var filteredEdges []models.FederationEdge
+	for _, edge := range edges {
+		if connectionType == ConnectionTypeAll || edge.ConnectionType == connectionType {
+			filteredEdges = append(filteredEdges, edge)
+		}
+	}
+
+	// Sort by strength descending (strongest first)
+	for i := 0; i < len(filteredEdges)-1; i++ {
+		for j := i + 1; j < len(filteredEdges); j++ {
+			if filteredEdges[j].Strength > filteredEdges[i].Strength {
+				filteredEdges[i], filteredEdges[j] = filteredEdges[j], filteredEdges[i]
+			}
+		}
+	}
+
+	// Limit results after sorting
+	if len(filteredEdges) > limit {
+		filteredEdges = filteredEdges[:limit]
+	}
+
 	// Convert to storage.FederationEdge
-	result := make([]*storage.FederationEdge, len(edges))
-	for i, edge := range edges {
+	result := make([]*storage.FederationEdge, len(filteredEdges))
+	for i, edge := range filteredEdges {
 		result[i] = &storage.FederationEdge{
 			SourceDomain:   edge.SourceDomain,
 			TargetDomain:   edge.TargetDomain,
@@ -2153,7 +2505,7 @@ func (r *FederationRepository) StoreDetailedFederationMetrics(ctx context.Contex
 	// Update keys and calculate health score
 	metrics.UpdateKeys()
 	metrics.CalculateHealthScore()
-	
+
 	// Store the metrics
 	err := r.db.WithContext(ctx).Model(metrics).Create()
 	if err != nil {
@@ -2187,7 +2539,7 @@ func (r *FederationRepository) GetDetailedFederationMetrics(ctx context.Context,
 
 	// Query by primary key for the specific domain and period
 	pk := fmt.Sprintf("FEDERATION_TIMESERIES#%s#%s", domain, period)
-	
+
 	query := r.db.WithContext(ctx).Model(&models.FederationAnalyticsTimeSeries{}).
 		Where("PK", "=", pk)
 
@@ -2271,17 +2623,17 @@ func (r *FederationRepository) GetDomainHealthScore(ctx context.Context, domain 
 	// Get the most recent 5-minute metrics
 	endTime := time.Now()
 	startTime := endTime.Add(-5 * time.Minute)
-	
+
 	metrics, err := r.GetDetailedFederationMetrics(ctx, domain, "5min", startTime, endTime)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get recent metrics: %w", err)
 	}
-	
+
 	if len(metrics) == 0 {
 		// No recent data, return neutral score
 		return 50.0, nil
 	}
-	
+
 	// Return the most recent health score
 	latest := metrics[len(metrics)-1]
 	return latest.HealthScore, nil
@@ -2292,19 +2644,19 @@ func (r *FederationRepository) GetUnhealthyDomains(ctx context.Context, healthTh
 	if healthThreshold <= 0 {
 		healthThreshold = 60.0 // Default unhealthy threshold
 	}
-	
+
 	// Get recent 5-minute metrics across all domains
 	endTime := time.Now()
 	startTime := endTime.Add(-10 * time.Minute) // Look back 10 minutes for recent data
-	
+
 	metrics, err := r.GetDetailedMetricsByPeriod(ctx, "5min", startTime, endTime, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get recent metrics: %w", err)
 	}
-	
+
 	// Filter for unhealthy domains (get the most recent metric per domain)
 	domainMetrics := make(map[string]*models.FederationAnalyticsTimeSeries)
-	
+
 	// Group by domain and keep the most recent
 	for _, metric := range metrics {
 		existing, exists := domainMetrics[metric.Domain]
@@ -2312,7 +2664,7 @@ func (r *FederationRepository) GetUnhealthyDomains(ctx context.Context, healthTh
 			domainMetrics[metric.Domain] = metric
 		}
 	}
-	
+
 	// Filter for unhealthy
 	var unhealthy []*models.FederationAnalyticsTimeSeries
 	for _, metric := range domainMetrics {
@@ -2320,7 +2672,7 @@ func (r *FederationRepository) GetUnhealthyDomains(ctx context.Context, healthTh
 			unhealthy = append(unhealthy, metric)
 		}
 	}
-	
+
 	return unhealthy, nil
 }
 
@@ -2328,7 +2680,7 @@ func (r *FederationRepository) GetUnhealthyDomains(ctx context.Context, healthTh
 func (r *FederationRepository) AggregateFederationMetrics(ctx context.Context, domain, fromPeriod, toPeriod string, timestamp time.Time) error {
 	// Get the time bucket for the target period
 	targetBucket := models.GetTimeBucket(timestamp, toPeriod)
-	
+
 	// Define the aggregation window based on the target period
 	var windowStart, windowEnd time.Time
 	switch toPeriod {
@@ -2351,30 +2703,30 @@ func (r *FederationRepository) AggregateFederationMetrics(ctx context.Context, d
 	default:
 		return fmt.Errorf("unsupported aggregation period: %s", toPeriod)
 	}
-	
+
 	// Get source metrics within the window
 	sourceMetrics, err := r.GetDetailedFederationMetrics(ctx, domain, fromPeriod, windowStart, windowEnd)
 	if err != nil {
 		return fmt.Errorf("failed to get source metrics: %w", err)
 	}
-	
+
 	if len(sourceMetrics) == 0 {
 		// No data to aggregate
 		return nil
 	}
-	
+
 	// Create aggregated metric record
 	aggregated := models.NewFederationAnalyticsTimeSeries(domain, toPeriod, targetBucket)
-	
+
 	// Perform aggregation
 	aggregated.Aggregate(sourceMetrics)
-	
+
 	// Store the aggregated metric
 	err = r.StoreDetailedFederationMetrics(ctx, aggregated)
 	if err != nil {
 		return fmt.Errorf("failed to store aggregated metrics: %w", err)
 	}
-	
+
 	r.logger.Info("Aggregated federation metrics",
 		zap.String("domain", domain),
 		zap.String("from_period", fromPeriod),
@@ -2382,7 +2734,7 @@ func (r *FederationRepository) AggregateFederationMetrics(ctx context.Context, d
 		zap.Time("timestamp", targetBucket),
 		zap.Int("source_count", len(sourceMetrics)),
 		zap.Float64("health_score", aggregated.HealthScore))
-	
+
 	return nil
 }
 
@@ -2391,14 +2743,14 @@ func (r *FederationRepository) GetFederationAlertsData(ctx context.Context) ([]m
 	// Get recent 5-minute metrics across all domains
 	endTime := time.Now()
 	startTime := endTime.Add(-10 * time.Minute)
-	
+
 	metrics, err := r.GetDetailedMetricsByPeriod(ctx, "5min", startTime, endTime, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get recent metrics: %w", err)
 	}
-	
+
 	var alerts []models.FederationAlert
-	
+
 	// Check each metric for alert conditions
 	for _, metric := range metrics {
 		shouldAlert, message := metric.ShouldTriggerAlert()
@@ -2407,7 +2759,7 @@ func (r *FederationRepository) GetFederationAlertsData(ctx context.Context) ([]m
 			if metric.IsCritical() {
 				alertLevel = "CRITICAL"
 			}
-			
+
 			alert := models.FederationAlert{
 				Domain:      metric.Domain,
 				Level:       alertLevel,
@@ -2418,6 +2770,71 @@ func (r *FederationRepository) GetFederationAlertsData(ctx context.Context) ([]m
 			alerts = append(alerts, alert)
 		}
 	}
-	
+
 	return alerts, nil
+}
+
+// GetAffectedFollowersCount returns the count of followers affected by a domain severance
+// This counts how many followers from the specified remote domain were lost when severance occurred
+func (r *FederationRepository) GetAffectedFollowersCount(ctx context.Context, userID, domain string) (int, error) {
+	// Get the severed relationship for this domain
+	localInstance := os.Getenv("DOMAIN_NAME")
+	if localInstance == "" {
+		localInstance = DefaultDomain
+	}
+
+	rel, err := r.GetSeveredRelationship(ctx, localInstance, domain)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return 0, nil // No severance = no affected followers
+		}
+		r.logger.Error("failed to get severed relationship for affected followers count",
+			zap.String("user_id", userID),
+			zap.String("domain", domain),
+			zap.Error(err))
+		return 0, err
+	}
+
+	// Count affected follows where the follower is from the severed domain
+	// and they were following this user (user lost followers from the severed domain)
+	count := 0
+	for _, affected := range rel.AffectedFollows {
+		if affected.Direction == "follower" && affected.LocalUser == userID {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// GetAffectedFollowingCount returns the count of following relationships affected by a domain severance
+// This counts how many accounts this user was following on the severed domain
+func (r *FederationRepository) GetAffectedFollowingCount(ctx context.Context, userID, domain string) (int, error) {
+	// Get the severed relationship for this domain
+	localInstance := os.Getenv("DOMAIN_NAME")
+	if localInstance == "" {
+		localInstance = DefaultDomain
+	}
+
+	rel, err := r.GetSeveredRelationship(ctx, localInstance, domain)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return 0, nil // No severance = no affected following
+		}
+		r.logger.Error("failed to get severed relationship for affected following count",
+			zap.String("user_id", userID),
+			zap.String("domain", domain),
+			zap.Error(err))
+		return 0, err
+	}
+
+	// Count affected follows where this user was following someone on the severed domain
+	count := 0
+	for _, affected := range rel.AffectedFollows {
+		if affected.Direction == "following" && affected.LocalUser == userID {
+			count++
+		}
+	}
+
+	return count, nil
 }

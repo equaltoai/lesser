@@ -72,7 +72,7 @@ func (h *Handler) HandleTranslateStatusLift(ctx *lift.Context) error {
 
 // isTranslationEnabled checks if translation service is enabled
 func (h *Handler) isTranslationEnabled() bool {
-	return os.Getenv("TRANSLATION_ENABLED") == "true"
+	return os.Getenv("TRANSLATION_ENABLED") == boolTrue
 }
 
 // getTranslationStatusID gets and validates the status ID
@@ -264,7 +264,7 @@ func (h *Handler) translateSpoilerText(ctx *lift.Context, svc *translation.Servi
 // HandleGetTranslationLanguagesLift handles GET /api/v1/instance/translation_languages
 func (h *Handler) HandleGetTranslationLanguagesLift(ctx *lift.Context) error {
 	// Check if translation is enabled
-	translationEnabled := os.Getenv("TRANSLATION_ENABLED") == "true"
+	translationEnabled := os.Getenv("TRANSLATION_ENABLED") == boolTrue
 	if !translationEnabled {
 		return ctx.Status(422).JSON(map[string]string{"error": "translation service is not enabled"})
 	}

@@ -57,18 +57,8 @@ func (fah *FederationAnalyticsHandler) GetFederationNodes(w http.ResponseWriter,
 	var err error
 
 	if healthFilter != "" {
-		// For now, get all nodes and filter by health
-		// TODO: Add GetFederationNodesByHealth method to FederationRepository if needed
-		nodes, err = fah.storage.Federation().GetFederationNodes(r.Context(), depth)
-		if err == nil {
-			filtered := make([]*storage.FederationNode, 0)
-			for _, node := range nodes {
-				if node.Health == healthFilter {
-					filtered = append(filtered, node)
-				}
-			}
-			nodes = filtered
-		}
+		// Use the dedicated method for health-filtered queries
+		nodes, err = fah.storage.Federation().GetFederationNodesByHealth(r.Context(), healthFilter, 100)
 	} else {
 		nodes, err = fah.storage.Federation().GetFederationNodes(r.Context(), depth)
 	}
@@ -265,7 +255,7 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 		endTime = time.Now()
 	}
 
-	// Get detailed time series data from federation repository  
+	// Get detailed time series data from federation repository
 	timeSeries, err := fah.storage.Federation().GetDetailedFederationMetrics(r.Context(), domain, period, startTime, endTime)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get time series data: %v", err), http.StatusInternalServerError)
@@ -283,9 +273,9 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 		totalErrors += metric.FailedActivities
 		healthScores = append(healthScores, metric.HealthScore)
 		avgLatency += float64(metric.InboxDeliveryP95)
-		
+
 		// Track most recent health score
-		if metric.Timestamp.After(time.Now().Add(-10*time.Minute)) {
+		if metric.Timestamp.After(time.Now().Add(-10 * time.Minute)) {
 			recentHealthScore = metric.HealthScore
 		}
 	}
@@ -322,15 +312,15 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 		"end_time":   endTime,
 		"data":       timeSeries,
 		"summary": map[string]any{
-			"total_data_points":    len(timeSeries),
-			"total_activities":     totalActivities,
-			"total_errors":         totalErrors,
-			"error_rate":           errorRate,
-			"avg_health_score":     avgHealthScore,
-			"recent_health_score":  recentHealthScore,
-			"health_status":        healthStatus,
-			"avg_p95_latency_ms":   avgLatency,
-			"aggregation_level":    period,
+			"total_data_points":   len(timeSeries),
+			"total_activities":    totalActivities,
+			"total_errors":        totalErrors,
+			"error_rate":          errorRate,
+			"avg_health_score":    avgHealthScore,
+			"recent_health_score": recentHealthScore,
+			"health_status":       healthStatus,
+			"avg_p95_latency_ms":  avgLatency,
+			"aggregation_level":   period,
 		},
 		"health_thresholds": map[string]any{
 			"healthy":   80.0,
@@ -345,7 +335,7 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 		},
 		"data_retention": map[string]any{
 			"5min":    "24 hours",
-			"hourly":  "7 days", 
+			"hourly":  "7 days",
 			"daily":   "90 days",
 			"monthly": "2 years",
 		},

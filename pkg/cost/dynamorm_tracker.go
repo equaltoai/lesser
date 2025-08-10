@@ -73,7 +73,7 @@ func (ct *DynamORMCostTracker) TrackOperation(ctx context.Context, operation str
 			zap.L().Warn("failed to track DynamoDB read cost", zap.Error(err))
 		}
 		if err := contextTracker.TrackDynamoWrite(int(consumedWrites)); err != nil {
-			// Log tracking failure but don't fail the DB operation  
+			// Log tracking failure but don't fail the DB operation
 			zap.L().Warn("failed to track DynamoDB write cost", zap.Error(err))
 		}
 	}
@@ -222,6 +222,27 @@ func (ctdb *TrackingDB) Transaction(fn func(*core.Tx) error) error {
 // GetTracker returns the cost tracker
 func (ctdb *TrackingDB) GetTracker() *Tracker {
 	return ctdb.tracker
+}
+
+// TrackComprehendRequest tracks AWS Comprehend API requests for cost tracking
+func (ct *DynamORMCostTracker) TrackComprehendRequest(operation string, units int) {
+	// Track as a generic AWS service request
+	// Comprehend pricing is typically per unit (100 characters for text, per request for other operations)
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	
+	// Log the Comprehend request for cost tracking
+	if ct.logger != nil {
+		ct.logger.Debug("comprehend_request_tracked",
+			zap.String("operation", operation),
+			zap.Int("units", units),
+		)
+	}
+	
+	// You could extend the Tracker to have specific Comprehend metrics
+	// For now, we'll track it as a generic operation
+	// Comprehend costs approximately $0.0001 per unit for sentiment analysis
+	// and $0.001 per unit for entity recognition
 }
 
 // TrackingQuery wraps core.Query with cost tracking

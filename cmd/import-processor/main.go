@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	"github.com/equaltoai/lesser/pkg/services"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -59,6 +60,78 @@ type ImportResult struct {
 	Skipped int      `json:"skipped"`
 	Failed  int      `json:"failed"`
 	Errors  []string `json:"errors"`
+}
+
+// ImportTransaction represents a transaction for import operations
+type ImportTransaction struct {
+	importID   string
+	operations []func() error
+	rollbacks  []func() error
+	logger     *zap.Logger
+}
+
+// NewImportTransaction creates a new import transaction
+func NewImportTransaction(importID string, logger *zap.Logger) *ImportTransaction {
+	return &ImportTransaction{
+		importID:   importID,
+		operations: make([]func() error, 0),
+		rollbacks:  make([]func() error, 0),
+		logger:     logger,
+	}
+}
+
+// AddOperation adds an operation with its corresponding rollback
+func (t *ImportTransaction) AddOperation(operation func() error, rollback func() error) {
+	t.operations = append(t.operations, operation)
+	t.rollbacks = append(t.rollbacks, rollback)
+}
+
+// Execute executes all operations and rolls back on failure
+func (t *ImportTransaction) Execute(_ context.Context) error {
+	// Execute operations
+	for i, operation := range t.operations {
+		if err := operation(); err != nil {
+			// Rollback already executed operations in reverse order
+			t.logger.Warn("operation failed, rolling back",
+				zap.String("import_id", t.importID),
+				zap.Int("failed_operation", i),
+				zap.Error(err))
+
+			if rollbackErr := t.rollback(i); rollbackErr != nil {
+				t.logger.Error("rollback failed",
+					zap.String("import_id", t.importID),
+					zap.Error(rollbackErr))
+			}
+
+			return fmt.Errorf("operation %d failed: %w", i, err)
+		}
+	}
+
+	return nil
+}
+
+// rollback rolls back executed operations in reverse order
+func (t *ImportTransaction) rollback(lastExecutedIndex int) error {
+	var rollbackErrors []error
+
+	// Rollback in reverse order
+	for i := lastExecutedIndex - 1; i >= 0; i-- {
+		if i < len(t.rollbacks) && t.rollbacks[i] != nil {
+			if err := t.rollbacks[i](); err != nil {
+				rollbackErrors = append(rollbackErrors, err)
+				t.logger.Error("rollback operation failed",
+					zap.String("import_id", t.importID),
+					zap.Int("rollback_operation", i),
+					zap.Error(err))
+			}
+		}
+	}
+
+	if len(rollbackErrors) > 0 {
+		return fmt.Errorf("rollback failed with %d errors", len(rollbackErrors))
+	}
+
+	return nil
 }
 
 func init() {
@@ -132,6 +205,33 @@ func (p *ImportProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) er
 
 	// Process each message
 	for _, message := range event.Records {
+		// Try parsing as services.ImportJobMessage first (new format)
+		var importMsg services.ImportJobMessage
+		if err := common.ParseRequestBody([]byte(message.Body), &importMsg); err == nil {
+			// Convert to legacy format for processing
+			importEvent := ImportProcessorEvent{
+				ImportID: importMsg.ImportID,
+				Username: importMsg.Username,
+				Type:     importMsg.Type,
+				Mode:     importMsg.Mode,
+				S3Key:    importMsg.S3Key,
+			}
+			if err := p.processImportJob(ctx.Request.Context(), importEvent); err != nil {
+				p.logger.Error("failed to process import job",
+					zap.String("import_id", importEvent.ImportID),
+					zap.String("username", importEvent.Username),
+					zap.Error(err))
+				// Update job status as failed
+				if updateErr := p.importRepo.UpdateImportStatus(ctx.Request.Context(), importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
+					p.logger.Error("failed to update import status to failed",
+						zap.String("import_id", importEvent.ImportID),
+						zap.Error(updateErr))
+				}
+			}
+			continue
+		}
+
+		// Fallback to legacy format
 		var importEvent ImportProcessorEvent
 		if err := common.ParseRequestBody([]byte(message.Body), &importEvent); err != nil {
 			p.logger.Error("failed to unmarshal event",
@@ -398,7 +498,7 @@ func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportPro
 	return result, nil
 }
 
-func (p *ImportProcessor) processActivityPubImport(_ context.Context, event ImportProcessorEvent, data []byte, _ *models.ImportCostTracking) (ImportResult, error) {
+func (p *ImportProcessor) processActivityPubImport(ctx context.Context, event ImportProcessorEvent, data []byte, costTracking *models.ImportCostTracking) (ImportResult, error) {
 	result := ImportResult{
 		Errors: make([]string, 0),
 	}
@@ -408,23 +508,192 @@ func (p *ImportProcessor) processActivityPubImport(_ context.Context, event Impo
 		return result, fmt.Errorf("ActivityPub import only supported for archive type")
 	}
 
-	// This would be a complex operation involving:
-	// 1. Parsing the ActivityPub collection
-	// 2. Importing posts (if applicable)
-	// 3. Recreating follows/blocks/etc
-	// For now, we'll just count the items
-
 	var collection map[string]any
 	if err := common.ParseActivityPubObject(data, &collection); err != nil {
 		return result, fmt.Errorf("failed to parse ActivityPub collection: %w", err)
 	}
 
-	// Count items in the collection
+	// Process ActivityPub collection items
 	if items, ok := collection["orderedItems"].([]any); ok {
-		result.Success = len(items)
+		return p.processActivityPubItems(ctx, event, items, costTracking)
+	}
+
+	// If no orderedItems, check for items array
+	if items, ok := collection["items"].([]any); ok {
+		return p.processActivityPubItems(ctx, event, items, costTracking)
+	}
+
+	return result, fmt.Errorf("no items found in ActivityPub collection")
+}
+
+// processActivityPubItems processes individual items in an ActivityPub collection
+func (p *ImportProcessor) processActivityPubItems(ctx context.Context, event ImportProcessorEvent, items []any, costTracking *models.ImportCostTracking) (ImportResult, error) {
+	result := ImportResult{
+		Errors: make([]string, 0),
+	}
+
+	// Process items with transaction safety
+	for i, item := range items {
+		// Update progress
+		p.updateImportProgress(ctx, event.ImportID, i+1)
+
+		// Process item in a transaction-like manner
+		if err := p.processActivityPubItem(ctx, event, item, costTracking); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to import item %d: %v", i, err))
+
+			// Skip item but continue processing
+			continue
+		}
+
+		result.Success++
+
+		// Track costs for ActivityPub processing
+		if costTracking != nil {
+			costTracking.DynamoDBOperations++
+			costTracking.DynamoDBWriteUnits += 1.0
+			costTracking.DynamoDBWriteCost += p.calculateDynamoDBWriteCost(1.0)
+		}
 	}
 
 	return result, nil
+}
+
+// processActivityPubItem processes a single ActivityPub item
+func (p *ImportProcessor) processActivityPubItem(ctx context.Context, event ImportProcessorEvent, item any, _ *models.ImportCostTracking) error {
+	itemMap, ok := item.(map[string]any)
+	if !ok {
+		return fmt.Errorf("item is not a valid ActivityPub object")
+	}
+
+	itemType, ok := itemMap["type"].(string)
+	if !ok {
+		return fmt.Errorf("item missing type field")
+	}
+
+	switch itemType {
+	case "Create":
+		return p.importCreateActivity(ctx, event, itemMap)
+	case "Follow":
+		return p.importFollowActivity(ctx, event, itemMap)
+	case "Like":
+		return p.importLikeActivity(ctx, event, itemMap)
+	case "Announce":
+		return p.importAnnounceActivity(ctx, event, itemMap)
+	case "Note", "Article":
+		return p.importObject(ctx, event, itemMap)
+	default:
+		// Log unsupported type but don't fail
+		p.logger.Info("skipping unsupported ActivityPub type",
+			zap.String("type", itemType),
+			zap.String("import_id", event.ImportID))
+		return nil
+	}
+}
+
+// importCreateActivity imports a Create activity
+func (p *ImportProcessor) importCreateActivity(ctx context.Context, event ImportProcessorEvent, activityMap map[string]any) error {
+	// Extract the object from the Create activity
+	object, ok := activityMap["object"]
+	if !ok {
+		return fmt.Errorf("create activity missing object")
+	}
+
+	// Process the embedded object
+	if objMap, ok := object.(map[string]any); ok {
+		return p.importObject(ctx, event, objMap)
+	}
+
+	return fmt.Errorf("create activity object is not a valid object")
+}
+
+// importFollowActivity imports a Follow activity
+func (p *ImportProcessor) importFollowActivity(ctx context.Context, event ImportProcessorEvent, activityMap map[string]any) error {
+	target, ok := activityMap["object"].(string)
+	if !ok {
+		return fmt.Errorf("follow activity missing target object")
+	}
+
+	return p.followAccount(ctx, event.Username, target)
+}
+
+// importLikeActivity imports a Like activity
+func (p *ImportProcessor) importLikeActivity(ctx context.Context, event ImportProcessorEvent, activityMap map[string]any) error {
+	objectID, ok := activityMap["object"].(string)
+	if !ok {
+		return fmt.Errorf("like activity missing object ID")
+	}
+
+	// Create a like/favorite
+	like := models.NewLike(
+		fmt.Sprintf("%s/users/%s", p.baseURL, event.Username),
+		objectID,
+	)
+
+	return p.repos.Object().CreateObject(ctx, like)
+}
+
+// importAnnounceActivity imports an Announce (boost/share) activity
+func (p *ImportProcessor) importAnnounceActivity(ctx context.Context, event ImportProcessorEvent, activityMap map[string]any) error {
+	objectID, ok := activityMap["object"].(string)
+	if !ok {
+		return fmt.Errorf("announce activity missing object ID")
+	}
+
+	// Create an announce
+	announce := &models.Announce{
+		Actor:  fmt.Sprintf("%s/users/%s", p.baseURL, event.Username),
+		Object: objectID,
+	}
+	if err := announce.BeforeCreate(); err != nil {
+		return fmt.Errorf("failed to prepare announce: %w", err)
+	}
+
+	return p.repos.Object().CreateObject(ctx, announce)
+}
+
+// importObject imports a generic ActivityPub object (Note, Article, etc.)
+func (p *ImportProcessor) importObject(ctx context.Context, _ ImportProcessorEvent, objMap map[string]any) error {
+	id, ok := objMap["id"].(string)
+	if !ok {
+		return fmt.Errorf("object missing ID")
+	}
+
+	content, _ := objMap["content"].(string)
+	published, _ := objMap["published"].(string)
+
+	var publishedTime time.Time
+	if published != "" {
+		if pt, err := time.Parse(time.RFC3339, published); err == nil {
+			publishedTime = pt
+		} else {
+			publishedTime = time.Now()
+		}
+	} else {
+		publishedTime = time.Now()
+	}
+
+	// Create object record
+	obj := &models.Object{
+		ID:           id,
+		Type:         getStringFromMap(objMap, "type"),
+		Content:      content,
+		AttributedTo: getStringFromMap(objMap, "attributedTo"),
+		Published:    publishedTime,
+		Updated:      time.Now(),
+		IsRemote:     false, // Imported objects are treated as local
+		CreatedAt:    time.Now(),
+	}
+
+	return p.repos.Object().CreateObject(ctx, obj)
+}
+
+// getStringFromMap safely gets a string value from a map
+func getStringFromMap(m map[string]any, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
 }
 
 // CSV processing helper functions
@@ -432,7 +701,7 @@ func (p *ImportProcessor) processActivityPubImport(_ context.Context, event Impo
 // processFollowersCSV processes a followers CSV file
 func (p *ImportProcessor) processFollowersCSV(reader *csv.Reader) (ImportResult, error) {
 	result := ImportResult{Errors: make([]string, 0)}
-	
+
 	// For followers, we don't actually import them (they need to follow us)
 	// Just count the records
 	for {
@@ -449,14 +718,14 @@ func (p *ImportProcessor) processFollowersCSV(reader *csv.Reader) (ImportResult,
 		// In a real implementation, we might send follow invites or something
 		result.Skipped++
 	}
-	
+
 	return result, nil
 }
 
 // processFollowingCSV processes a following CSV file
 func (p *ImportProcessor) processFollowingCSV(ctx context.Context, event ImportProcessorEvent, reader *csv.Reader, costTracking *models.ImportCostTracking) (ImportResult, error) {
 	result := ImportResult{Errors: make([]string, 0)}
-	
+
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -479,7 +748,7 @@ func (p *ImportProcessor) processFollowingCSV(ctx context.Context, event ImportP
 
 		// Update progress and process follow
 		p.updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
-		
+
 		if err := p.followAccount(ctx, event.Username, accountAddress); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("Failed to follow %s: %v", accountAddress, err))
@@ -488,14 +757,14 @@ func (p *ImportProcessor) processFollowingCSV(ctx context.Context, event ImportP
 			p.trackFollowCosts(costTracking)
 		}
 	}
-	
+
 	return result, nil
 }
 
 // processBlocksCSV processes a blocks CSV file
 func (p *ImportProcessor) processBlocksCSV(ctx context.Context, event ImportProcessorEvent, reader *csv.Reader, costTracking *models.ImportCostTracking) (ImportResult, error) {
 	result := ImportResult{Errors: make([]string, 0)}
-	
+
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -517,7 +786,7 @@ func (p *ImportProcessor) processBlocksCSV(ctx context.Context, event ImportProc
 
 		// Update progress and process block
 		p.updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
-		
+
 		if err := p.blockAccount(ctx, event.Username, accountAddress); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("Failed to block %s: %v", accountAddress, err))
@@ -526,17 +795,17 @@ func (p *ImportProcessor) processBlocksCSV(ctx context.Context, event ImportProc
 			p.trackBlockCosts(costTracking)
 		}
 	}
-	
+
 	return result, nil
 }
 
 // processMutesCSV processes a mutes CSV file
 func (p *ImportProcessor) processMutesCSV(ctx context.Context, event ImportProcessorEvent, reader *csv.Reader, header []string) (ImportResult, error) {
 	result := ImportResult{Errors: make([]string, 0)}
-	
+
 	// Find hide notifications column
 	hideNotificationsIndex := p.findHideNotificationsIndex(header)
-	
+
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -560,7 +829,7 @@ func (p *ImportProcessor) processMutesCSV(ctx context.Context, event ImportProce
 
 		// Update progress and process mute
 		p.updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
-		
+
 		if err := p.muteAccount(ctx, event.Username, accountAddress, hideNotifications); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("Failed to mute %s: %v", accountAddress, err))
@@ -568,14 +837,14 @@ func (p *ImportProcessor) processMutesCSV(ctx context.Context, event ImportProce
 			result.Success++
 		}
 	}
-	
+
 	return result, nil
 }
 
 // processBookmarksCSV processes a bookmarks CSV file
 func (p *ImportProcessor) processBookmarksCSV(ctx context.Context, event ImportProcessorEvent, reader *csv.Reader) (ImportResult, error) {
 	result := ImportResult{Errors: make([]string, 0)}
-	
+
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -597,11 +866,15 @@ func (p *ImportProcessor) processBookmarksCSV(ctx context.Context, event ImportP
 
 		// Update progress and process bookmark
 		p.updateImportProgress(ctx, event.ImportID, result.Success+result.Skipped+result.Failed+1)
-		
-		p.bookmarkStatus(ctx, event.Username, statusURL)
-		result.Success++
+
+		if err := p.bookmarkStatus(ctx, event.Username, statusURL); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to bookmark %s: %v", statusURL, err))
+		} else {
+			result.Success++
+		}
 	}
-	
+
 	return result, nil
 }
 
@@ -741,28 +1014,32 @@ func (p *ImportProcessor) muteAccount(ctx context.Context, username, targetAccou
 	return p.repos.Object().CreateObject(ctx, mute)
 }
 
-func (p *ImportProcessor) bookmarkStatus(_ context.Context, username, statusURL string) {
+func (p *ImportProcessor) bookmarkStatus(ctx context.Context, username, statusURL string) error {
 	// Extract status ID from URL
 	// This is simplified - would need proper URL parsing
 	statusID := strings.TrimPrefix(statusURL, p.baseURL+"/")
 
-	// Create bookmark using a simple object since Bookmark model doesn't exist yet
-	// This would need a proper Bookmark model in production
-	bookmark := map[string]interface{}{
-		"actor":      fmt.Sprintf("%s/users/%s", p.baseURL, username),
-		"object":     statusID,
-		"status_url": statusURL,
-		"created_at": time.Now().Format(time.RFC3339),
+	// Create bookmark using the Bookmark model
+	bookmark := &models.Bookmark{
+		Username:  username,
+		ObjectID:  statusID,
+		CreatedAt: time.Now(),
 	}
 
-	// For now, log that we would create the bookmark
-	// In production, this needs a proper Bookmark model
-	p.logger.Info("would create bookmark",
+	// Prepare the bookmark for creation
+	bookmark.UpdateKeys()
+
+	// Create the bookmark in storage
+	if err := p.repos.Object().CreateObject(ctx, bookmark); err != nil {
+		return fmt.Errorf("failed to create bookmark: %w", err)
+	}
+
+	p.logger.Info("created bookmark",
 		zap.String("username", username),
 		zap.String("status_id", statusID),
 		zap.String("status_url", statusURL))
 
-	_ = bookmark // Use the variable to avoid compiler warning
+	return nil
 }
 
 func (p *ImportProcessor) createOrUpdateList(ctx context.Context, username, listName string) (string, error) {

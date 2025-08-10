@@ -1,7 +1,9 @@
 # Lesser Documentation Index
 
 ## 🎉 Start Here
-- **[MVP Complete Summary](MVP_COMPLETE_SUMMARY.md)** - Overview of all implemented features
+- **[Feature Status Summary](MVP_COMPLETE_SUMMARY.md)** - Overview of implemented features
+- **[Feature Compatibility Matrix](FEATURE_COMPATIBILITY_MATRIX.md)** - Detailed compatibility and status
+- **[Pre-Release Implementations](features/PRE_RELEASE_IMPLEMENTATIONS.md)** - Production-ready feature completions
 - **[Quick Start Guide](deployment/QUICK_START.md)** - Deploy Lesser in 15 minutes
 - **[Feature List](FEATURES.md)** - Detailed feature documentation
 - **[Architecture Overview](architecture/OVERVIEW.md)** - How Lesser works

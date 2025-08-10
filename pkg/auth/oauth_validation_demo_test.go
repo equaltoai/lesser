@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,18 +75,19 @@ func TestMastodonOAuthValidationDemo(t *testing.T) {
 	})
 
 	t.Run("OAuth Parameter Validation", func(t *testing.T) {
+		ctx := context.TODO()
 		service := &OAuthService{}
 
 		// Test 1: Empty client ID should be rejected
-		err := service.ValidateClient(nil, "", "secret")
+		err := service.ValidateClient(ctx, "", "secret")
 		assert.Equal(t, ErrInvalidRequest, err, "Empty client ID should be rejected")
 
 		// Test 2: Empty redirect URI should be rejected
-		err = service.ValidateRedirectURI(nil, "client", "")
+		err = service.ValidateRedirectURI(ctx, "client", "")
 		assert.Equal(t, ErrInvalidRequest, err, "Empty redirect URI should be rejected")
 
 		// Test 3: Empty client ID for redirect validation should be rejected
-		err = service.ValidateRedirectURI(nil, "", "https://example.com/callback")
+		err = service.ValidateRedirectURI(ctx, "", "https://example.com/callback")
 		assert.Equal(t, ErrInvalidRequest, err, "Empty client ID should be rejected")
 	})
 }

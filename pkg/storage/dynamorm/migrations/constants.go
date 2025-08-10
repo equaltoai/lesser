@@ -8,14 +8,14 @@ const (
 
 // Migration status constants
 const (
-	StatusActive      = "ACTIVE"
-	StatusCurrent     = "CURRENT"
-	StatusApplied     = "applied"
-	StatusRolledBack  = "rolled_back"
-	StatusPending     = "pending"
+	StatusActive     = "ACTIVE"
+	StatusCurrent    = "CURRENT"
+	StatusApplied    = "applied"
+	StatusRolledBack = "rolled_back"
+	StatusPending    = "pending"
 )
 
-// Event type constants  
+// Event type constants
 const (
 	EventInsert = "INSERT"
 	EventModify = "MODIFY"

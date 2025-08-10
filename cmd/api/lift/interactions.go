@@ -10,10 +10,10 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HandleFollowLift handles POST /api/v1/accounts/:id/follow
@@ -359,15 +359,8 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 	now := time.Now()
 	blockActivity.Published = &now
 
-	// Store the block
-	block := &storage.Block{
-		Actor:     actor.ID,
-		Object:    targetActor.ID,
-		ID:        blockActivity.ID,
-		Published: now,
-		CreatedAt: now,
-	}
-	if err := h.repos.Social().CreateBlock(ctx.Context, block); err != nil {
+	// Store the block using RelationshipRepository
+	if err := h.repos.Relationship().CreateBlock(ctx.Context, actor.ID, targetActor.ID, blockActivity.ID); err != nil {
 		h.logger.Error("failed to create block", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -495,16 +488,21 @@ func (h *Handler) HandleUnblockLift(ctx *lift.Context) error {
 		return ctx.Status(404).JSON(map[string]string{"error": "account not found"})
 	}
 
-	// Check if blocked
-	_, err = h.repos.Social().GetBlock(ctx.Context, actor.ID, targetActor.ID)
+	// Check if blocked using RelationshipRepository
+	isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, actor.ID, targetActor.ID)
 	if err != nil {
+		h.logger.Error("failed to check block status", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	}
+
+	if !isBlocked {
 		// Not blocked, but return success anyway for idempotency
 		h.logger.Info("block not found",
 			zap.String("actor", actor.ID),
 			zap.String("target", targetActor.ID))
 	} else {
 		// Delete the block
-		if err := h.repos.Social().DeleteBlock(ctx.Context, actor.ID, targetActor.ID); err != nil {
+		if err := h.repos.Relationship().DeleteBlock(ctx.Context, actor.ID, targetActor.ID); err != nil {
 			h.logger.Error("failed to delete block", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
@@ -621,8 +619,8 @@ func (h *Handler) HandleGetBlocksLift(ctx *lift.Context) error {
 		maxID = ctx.Request.Request.QueryParams["max_id"]
 	}
 
-	// Get blocks
-	blocks, cursor, err := h.repos.Social().GetBlockedUsers(ctx.Context, actor.ID, 40, maxID)
+	// Get blocks using RelationshipRepository
+	blockedUserIDs, cursor, err := h.repos.Relationship().GetBlockedUsers(ctx.Context, actor.ID, 40, maxID)
 	if err != nil {
 		h.logger.Error("failed to get blocks", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get blocks"})
@@ -630,8 +628,7 @@ func (h *Handler) HandleGetBlocksLift(ctx *lift.Context) error {
 
 	// Convert blocked actor IDs to accounts
 	accounts := []models.Account{}
-	for _, block := range blocks {
-		blockedID := block.Object
+	for _, blockedID := range blockedUserIDs {
 		// Extract username from actor ID
 		parts := strings.Split(blockedID, "/")
 		if len(parts) > 0 {

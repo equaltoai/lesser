@@ -2,9 +2,9 @@ package models
 
 import (
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"strings"
 	"time"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaSpending tracks spending and costs for media processing operations per user
@@ -395,9 +395,9 @@ func (ms *MediaSpending) AddSpending(transaction *MediaSpendingTransaction) {
 func (ms *MediaSpending) GetCostBreakdown() map[string]int64 {
 	return map[string]int64{
 		ResourceProcessing: ms.ProcessingSpendMicros,
-		"storage":    ms.StorageSpendMicros,
-		"bandwidth":  ms.BandwidthSpendMicros,
-		"compute":    ms.ComputeSpendMicros,
+		"storage":          ms.StorageSpendMicros,
+		"bandwidth":        ms.BandwidthSpendMicros,
+		"compute":          ms.ComputeSpendMicros,
 	}
 }
 

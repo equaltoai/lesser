@@ -464,7 +464,7 @@ const CampaignTools = {
         creation: 'template_based',
         signatures: {
             collection: 'integrated',
-            verification: 'email_confirm',
+            verification: 'passkey_or_wallet',
             privacy: 'gdpr_compliant',
             export: 'government_format'
         },

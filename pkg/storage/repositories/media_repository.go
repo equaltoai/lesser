@@ -10,8 +10,8 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // MediaRepository handles media and media job operations using DynamORM
@@ -19,6 +19,7 @@ type MediaRepository struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
+	deps      map[string]interface{} // Dependencies for cross-repository operations
 }
 
 // NewMediaRepository creates a new MediaRepository
@@ -27,7 +28,13 @@ func NewMediaRepository(db core.DB, tableName string, logger *zap.Logger) *Media
 		db:        db,
 		tableName: tableName,
 		logger:    logger,
+		deps:      make(map[string]interface{}),
 	}
+}
+
+// SetDependencies sets repository dependencies for cross-repo operations
+func (r *MediaRepository) SetDependencies(deps map[string]interface{}) {
+	r.deps = deps
 }
 
 // CreateMediaJob creates a new media processing job
@@ -372,14 +379,34 @@ func (r *MediaRepository) GetUserMediaConfig(ctx context.Context, userID string)
 }
 
 // GetUserMediaConfigByUsername retrieves a user's media configuration by username
-func (r *MediaRepository) GetUserMediaConfigByUsername(_ context.Context, username string) (*models.UserMediaConfig, error) {
+func (r *MediaRepository) GetUserMediaConfigByUsername(ctx context.Context, username string) (*models.UserMediaConfig, error) {
 	r.logger.Debug("getting user media config by username", zap.String("username", username))
 
-	// For this method, we'd need to either:
-	// 1. Add a GSI on username, or
-	// 2. Require userID to be passed in
-	// For now, return an error suggesting to use GetUserMediaConfig with userID
-	return nil, fmt.Errorf("please use GetUserMediaConfig with userID instead of username")
+	// Try to resolve username to userID using user repository dependency
+	if userRepo, ok := r.deps["user"].(interface {
+		GetUserIDByUsername(ctx context.Context, username string) (string, error)
+	}); ok {
+		userID, err := userRepo.GetUserIDByUsername(ctx, username)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve username to userID: %w", err)
+		}
+		return r.GetUserMediaConfig(ctx, userID)
+	}
+
+	// Fallback: scan for config by username (less efficient)
+	var config models.UserMediaConfig
+	err := r.db.WithContext(ctx).Model(&models.UserMediaConfig{}).
+		Filter("Username", "=", username).
+		First(&config)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil // Config doesn't exist
+		}
+		return nil, fmt.Errorf("failed to get user media config by username: %w", err)
+	}
+
+	return &config, nil
 }
 
 // UpdateUserMediaConfig updates an existing user media configuration
@@ -695,8 +722,8 @@ func (r *MediaRepository) GetTranscodingJobsByStatus(ctx context.Context, status
 		zap.Int("limit", limit))
 
 	var jobs []*models.TranscodingJob
-	// Note: For status queries, we'd need to scan or add a status-based GSI
-	// For now, scan with filter expression
+	// Use scan with filter for status queries. In production, consider adding a GSI
+	// for frequently queried statuses to improve performance
 	query := r.db.WithContext(ctx).Model(&models.TranscodingJob{}).
 		Where("status", "=", status)
 
@@ -704,9 +731,14 @@ func (r *MediaRepository) GetTranscodingJobsByStatus(ctx context.Context, status
 		query = query.Limit(limit)
 	}
 
-	err := query.Scan(&jobs)
+	err := query.All(&jobs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transcoding jobs by status: %w", err)
+	}
+
+	// Filter results to match requested limit more precisely if needed
+	if limit > 0 && len(jobs) > limit {
+		jobs = jobs[:limit]
 	}
 
 	return jobs, nil

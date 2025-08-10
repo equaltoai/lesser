@@ -108,7 +108,7 @@ func (h *Handler) statusActionHandler(ctx *lift.Context, requiredScope string, a
 	// Execute the action
 	status, err := action(statusID, username)
 	if err != nil {
-		h.logger.Error("status action failed", 
+		h.logger.Error("status action failed",
 			zap.String("action", "generic"),
 			zap.String("status_id", statusID),
 			zap.String("username", username),

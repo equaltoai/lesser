@@ -18,44 +18,44 @@ import (
 
 // EnhancedRetryMessage represents a message for polynomial retry delivery
 type EnhancedRetryMessage struct {
-	DeliveryID         string                 `json:"delivery_id"`
-	Activity          *activitypub.Activity  `json:"activity"`
-	SigningActorID    string                 `json:"signing_actor_id"`
-	ActivityType      string                 `json:"activity_type"`
-	RetryCount        int                    `json:"retry_count"`
-	MaxRetries        int                    `json:"max_retries"`
-	RetryPolicy       string                 `json:"retry_policy"`
-	MaxRetryDuration  time.Duration          `json:"max_retry_duration"`
-	CreatedAt         time.Time              `json:"created_at"`
-	NextRetryAt       time.Time              `json:"next_retry_at"`
-	TargetInboxes     []string               `json:"target_inboxes,omitempty"`
-	Recipients        []string               `json:"recipients,omitempty"`
-	FailedInboxes     map[string]string      `json:"failed_inboxes,omitempty"` // inbox -> error message
-	SuccessfulInboxes []string               `json:"successful_inboxes,omitempty"`
+	DeliveryID        string                `json:"delivery_id"`
+	Activity          *activitypub.Activity `json:"activity"`
+	SigningActorID    string                `json:"signing_actor_id"`
+	ActivityType      string                `json:"activity_type"`
+	RetryCount        int                   `json:"retry_count"`
+	MaxRetries        int                   `json:"max_retries"`
+	RetryPolicy       string                `json:"retry_policy"`
+	MaxRetryDuration  time.Duration         `json:"max_retry_duration"`
+	CreatedAt         time.Time             `json:"created_at"`
+	NextRetryAt       time.Time             `json:"next_retry_at"`
+	TargetInboxes     []string              `json:"target_inboxes,omitempty"`
+	Recipients        []string              `json:"recipients,omitempty"`
+	FailedInboxes     map[string]string     `json:"failed_inboxes,omitempty"` // inbox -> error message
+	SuccessfulInboxes []string              `json:"successful_inboxes,omitempty"`
 }
 
 // EnhancedRetryProcessor handles polynomial retry delivery for critical activities
 type EnhancedRetryProcessor struct {
 	deliveryService *DeliveryService
-	logger         *zap.Logger
-	sqsClient      *sqs.Client
-	queueURL       string
+	logger          *zap.Logger
+	sqsClient       *sqs.Client
+	queueURL        string
 }
 
 // NewEnhancedRetryProcessor creates a new enhanced retry processor
 func NewEnhancedRetryProcessor(deliveryService *DeliveryService, sqsClient *sqs.Client, queueURL string) *EnhancedRetryProcessor {
 	return &EnhancedRetryProcessor{
 		deliveryService: deliveryService,
-		logger:         deliveryService.logger,
-		sqsClient:      sqsClient,
-		queueURL:       queueURL,
+		logger:          deliveryService.logger,
+		sqsClient:       sqsClient,
+		queueURL:        queueURL,
 	}
 }
 
 // QueueForEnhancedRetry queues an activity for polynomial retry delivery
 func (p *EnhancedRetryProcessor) QueueForEnhancedRetry(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, recipients []string, activityType string) error {
 	deliveryID := generateEnhancedDeliveryID()
-	
+
 	message := &EnhancedRetryMessage{
 		DeliveryID:        deliveryID,
 		Activity:          activity,
@@ -80,7 +80,7 @@ func (p *EnhancedRetryProcessor) QueueForEnhancedRetry(ctx context.Context, acti
 
 	// Calculate delay for first retry
 	delay := p.calculatePolynomialDelay(1)
-	
+
 	// Send to SQS queue with delay
 	if p.sqsClient != nil {
 		_, err = p.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
@@ -205,10 +205,10 @@ func (p *EnhancedRetryProcessor) ProcessEnhancedRetry(ctx context.Context, messa
 func (p *EnhancedRetryProcessor) calculatePolynomialDelay(attempt int) time.Duration {
 	// Polynomial delay = attempt + 15 seconds + jitter
 	baseDelay := time.Duration(attempt)*time.Second + 15*time.Second
-	
+
 	// Add jitter (up to 5 seconds)
 	jitter := time.Duration(p.generateJitter()) * time.Second
-	
+
 	return baseDelay + jitter
 }
 
@@ -225,7 +225,7 @@ func (p *EnhancedRetryProcessor) generateJitter() int {
 func (p *EnhancedRetryProcessor) requeueForRetry(ctx context.Context, message *EnhancedRetryMessage) error {
 	// Increment retry count
 	message.RetryCount++
-	
+
 	// Calculate next retry delay
 	delay := p.calculatePolynomialDelay(message.RetryCount)
 	message.NextRetryAt = time.Now().Add(delay)

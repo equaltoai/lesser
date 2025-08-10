@@ -2,19 +2,24 @@ package auth
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
 // FederationDeliveryService represents the interface needed for federation delivery
 type FederationDeliveryService interface {
-	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string) error
+	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error
 }
 
 // RecoveryFederationService handles ActivityPub notifications for recovery
@@ -82,14 +87,14 @@ func (s *RecoveryFederationService) SendTrusteeInvitation(ctx context.Context, f
 		},
 	}
 
-	// Get the signing actor (not used in current interface)
-	_, err := s.repos.Actor().GetActor(ctx, fromUser)
+	// Get the signing actor
+	signingActor, err := s.repos.Actor().GetActor(ctx, fromUser)
 	if err != nil {
 		return fmt.Errorf("failed to get signing actor: %w", err)
 	}
 
 	// Send via federation
-	return s.fedService.DeliverActivity(ctx, activity, trusteeActorID+"/inbox")
+	return s.fedService.DeliverActivity(ctx, activity, trusteeActorID+"/inbox", signingActor)
 }
 
 // SendRecoveryRequest sends a recovery request to a trustee
@@ -144,11 +149,11 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 		},
 	}
 
-	// Get the system actor for signing (not used in current interface)
-	_, err := s.repos.Actor().GetActor(ctx, "system")
+	// Get or create the system actor for signing
+	systemActor, err := s.repos.Actor().GetActor(ctx, "system")
 	if err != nil {
-		// Create a minimal system actor if it doesn't exist (not used)
-		_ = &activitypub.Actor{
+		// Create a system actor if it doesn't exist
+		systemActor = &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
 				ID:   fmt.Sprintf("https://%s/actor/system", s.domain),
 				Type: "Service",
@@ -156,11 +161,22 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 			PreferredUsername: "system",
 			Inbox:             fmt.Sprintf("https://%s/actor/system/inbox", s.domain),
 			Outbox:            fmt.Sprintf("https://%s/actor/system/outbox", s.domain),
+			PublicKey: &activitypub.PublicKey{
+				ID:           fmt.Sprintf("https://%s/actor/system#main-key", s.domain),
+				Owner:        fmt.Sprintf("https://%s/actor/system", s.domain),
+				PublicKeyPem: s.getSystemPublicKey(),
+			},
+		}
+		
+		// Store the system actor for future use (with empty private key as we'll store it separately)
+		if storeErr := s.repos.Actor().CreateActor(ctx, systemActor, ""); storeErr != nil {
+			s.logger.Warn("failed to store system actor", zap.Error(storeErr))
+			// Continue anyway - we have the actor in memory
 		}
 	}
 
-	// Send via federation
-	return s.fedService.DeliverActivity(ctx, activity, trusteeActorID+"/inbox")
+	// Send via federation with proper signing actor
+	return s.fedService.DeliverActivity(ctx, activity, trusteeActorID+"/inbox", systemActor)
 }
 
 // HandleTrusteeConfirmation processes incoming trustee confirmations
@@ -212,6 +228,21 @@ func (s *RecoveryFederationService) SendRecoveryApprovalNotification(ctx context
 
 	// Create a notification activity
 	now := time.Now()
+	// Create the recovery notification as a proper Note object
+	recoveryNote := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			Type:      "Note",
+			ID:        fmt.Sprintf("https://%s/notes/%s", s.domain, generateActivityID()),
+			To:        []string{actor.ID},
+			Published: &now,
+		},
+		Content: fmt.Sprintf(
+			"<p>✅ <strong>Account Recovery Approved</strong></p><p>Your account recovery request has been approved by your trustees. You can now reset your authentication methods.</p><p>🔐 <a href=\"%s\">Complete Account Recovery</a></p><p>⚠️ This link expires in 24 hours.</p>",
+			recoveryURL,
+		),
+		AttributedTo: fmt.Sprintf("https://%s/actor/system", s.domain),
+	}
+
 	notificationActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Type:      "Create",
@@ -219,24 +250,155 @@ func (s *RecoveryFederationService) SendRecoveryApprovalNotification(ctx context
 			To:        []string{actor.ID},
 			Published: &now,
 		},
-		Actor: fmt.Sprintf("https://%s/actor/system", s.domain),
-		Object: map[string]any{
-			"type": "Note",
-			"content": fmt.Sprintf(
-				"<p>✅ <strong>Account Recovery Approved</strong></p><p>Your account recovery request has been approved by your trustees. You can now reset your authentication methods.</p><p>🔐 <a href=\"%s\">Complete Account Recovery</a></p><p>⚠️ This link expires in 24 hours.</p>",
-				recoveryURL,
-			),
-			"to": []string{actor.ID},
-		},
+		Actor:  fmt.Sprintf("https://%s/actor/system", s.domain),
+		Object: recoveryNote,
 	}
 
-	// Store for when user logs in next
-	// In production, this would also trigger push notifications, SMS, etc.
-	s.logger.Info("recovery approved, notification prepared",
+	// Store the notification locally for when user logs in next
+	notification := &models.Notification{
+		ID:       generateActivityID(),
+		UserID:   username,
+		Type:     "recovery_approved",
+		ActorID:  fmt.Sprintf("https://%s/actor/system", s.domain),
+		TargetID: notificationActivity.ID,
+		Title:    "Account Recovery Approved",
+		Body:     recoveryNote.Content,
+		IsRead:   false,
+		Data: map[string]interface{}{
+			"recovery_url": recoveryURL,
+			"expires_at":   now.Add(24 * time.Hour),
+			"activity":    notificationActivity,
+		},
+	}
+	
+	if err := s.repos.Notification().CreateNotification(ctx, notification); err != nil {
+		s.logger.Error("failed to store recovery notification", 
+			zap.Error(err),
+			zap.String("username", username))
+		// Continue anyway - notification is not critical
+	}
+
+	// If the user's actor has a known inbox, deliver the notification via federation
+	if actor.Inbox != "" {
+		// Get or create the system actor for signing
+		systemActor, err := s.repos.Actor().GetActor(ctx, "system")
+		if err != nil {
+			// Create system actor if it doesn't exist
+			systemActor = &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID:   fmt.Sprintf("https://%s/actor/system", s.domain),
+					Type: "Service",
+				},
+				PreferredUsername: "system",
+				Inbox:             fmt.Sprintf("https://%s/actor/system/inbox", s.domain),
+				Outbox:            fmt.Sprintf("https://%s/actor/system/outbox", s.domain),
+				PublicKey: &activitypub.PublicKey{
+					ID:           fmt.Sprintf("https://%s/actor/system#main-key", s.domain),
+					Owner:        fmt.Sprintf("https://%s/actor/system", s.domain),
+					PublicKeyPem: s.getSystemPublicKey(),
+				},
+			}
+		}
+		
+		// Deliver the notification activity via federation
+		if deliverErr := s.fedService.DeliverActivity(ctx, notificationActivity, actor.Inbox, systemActor); deliverErr != nil {
+			s.logger.Warn("failed to deliver recovery notification via federation",
+				zap.Error(deliverErr),
+				zap.String("username", username),
+				zap.String("inbox", actor.Inbox))
+			// Don't fail - we have the local notification stored
+		}
+	}
+
+	// In production, this would also trigger WebPush notifications and WebAuthn challenges
+	s.logger.Info("recovery approved, notification stored",
 		zap.String("username", username),
 		zap.String("recovery_url", recoveryURL),
 		zap.String("activity_id", notificationActivity.ID))
 
+	return nil
+}
+
+// getSystemPublicKey returns the system actor's public key PEM
+func (s *RecoveryFederationService) getSystemPublicKey() string {
+	// Try to get from environment first
+	if key := os.Getenv("SYSTEM_ACTOR_PUBLIC_KEY"); key != "" {
+		return key
+	}
+	
+	// Check if we have a cached key in storage
+	ctx := context.Background()
+	systemActor, err := s.repos.Actor().GetActor(ctx, "system")
+	if err == nil && systemActor != nil && systemActor.PublicKey != nil {
+		return systemActor.PublicKey.PublicKeyPem
+	}
+	
+	// Generate a new key pair for the system actor
+	privateKey, err := federation.GenerateRSAKeyPair(2048)
+	if err != nil {
+		s.logger.Error("failed to generate system actor key pair", zap.Error(err))
+		// Return empty - federation will fail but recovery service won't crash
+		return ""
+	}
+	
+	// Encode the public key to PEM
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		s.logger.Error("failed to marshal public key", zap.Error(err))
+		return ""
+	}
+	
+	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
+	
+	// Store the private key securely (in production, use AWS Secrets Manager or similar)
+	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		s.logger.Error("failed to marshal private key", zap.Error(err))
+		return string(publicKeyPEM)
+	}
+	
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	})
+	
+	// Store both keys for the system actor
+	if err := s.storeSystemActorKeys(string(publicKeyPEM), string(privateKeyPEM)); err != nil {
+		s.logger.Warn("failed to store system actor keys", zap.Error(err))
+	}
+	
+	return string(publicKeyPEM)
+}
+
+// storeSystemActorKeys stores the system actor's key pair
+func (s *RecoveryFederationService) storeSystemActorKeys(publicKeyPEM, privateKeyPEM string) error {
+	ctx := context.Background()
+	
+	// Create or update the system actor with the key pair
+	systemActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   fmt.Sprintf("https://%s/actor/system", s.domain),
+			Type: "Service",
+		},
+		PreferredUsername: "system",
+		Inbox:             fmt.Sprintf("https://%s/actor/system/inbox", s.domain),
+		Outbox:            fmt.Sprintf("https://%s/actor/system/outbox", s.domain),
+		PublicKey: &activitypub.PublicKey{
+			ID:           fmt.Sprintf("https://%s/actor/system#main-key", s.domain),
+			Owner:        fmt.Sprintf("https://%s/actor/system", s.domain),
+			PublicKeyPem: publicKeyPEM,
+		},
+	}
+	
+	// Store the actor with the private key
+	if err := s.repos.Actor().CreateActor(ctx, systemActor, privateKeyPEM); err != nil {
+		// Try updating if it already exists
+		s.logger.Debug("system actor may already exist, continuing", zap.Error(err))
+	}
+	
 	return nil
 }
 

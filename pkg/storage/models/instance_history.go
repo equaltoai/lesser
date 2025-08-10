@@ -18,12 +18,12 @@ type InstanceHistory struct {
 	GSI1SK string `dynamorm:"index:GSI1,sk"` // DATE#{YYYY-MM-DD}
 
 	// Business fields
-	Date        string    `json:"date"`         // YYYY-MM-DD format
-	MetricType  string    `json:"metric_type"`  // user_count, storage_bytes, post_count
-	Granularity string    `json:"granularity"`  // daily, weekly, monthly
-	Value       int64     `json:"value"`        // Current value
-	Delta       int64     `json:"delta"`        // Change from previous period
-	RecordedAt  time.Time `json:"recorded_at"`  // When this metric was recorded
+	Date        string    `json:"date"`        // YYYY-MM-DD format
+	MetricType  string    `json:"metric_type"` // user_count, storage_bytes, post_count
+	Granularity string    `json:"granularity"` // daily, weekly, monthly
+	Value       int64     `json:"value"`       // Current value
+	Delta       int64     `json:"delta"`       // Change from previous period
+	RecordedAt  time.Time `json:"recorded_at"` // When this metric was recorded
 
 	// Specific metric fields for detailed tracking
 	TotalUsers      int64 `json:"total_users,omitempty"`      // Total registered users

@@ -11,7 +11,7 @@ func TestParseKeyframeData(t *testing.T) {
 		SegmentDuration: 6, // 6 second segments
 		CDNBaseURL:      "https://cdn.example.com",
 	}
-	
+
 	generator := &HLSGenerator{
 		config: config,
 	}
@@ -37,7 +37,7 @@ func TestParseKeyframeData(t *testing.T) {
 		}
 
 		keyframes := generator.parseKeyframeData(jsonData, "test123", Quality1080p)
-		
+
 		if len(keyframes) != 4 {
 			t.Errorf("Expected 4 keyframes, got %d", len(keyframes))
 		}
@@ -92,7 +92,7 @@ segment001.ts
 #EXT-X-ENDLIST`
 
 		keyframes := generator.parseKeyframeData([]byte(playlist), "test123", Quality1080p)
-		
+
 		if len(keyframes) != 4 {
 			t.Errorf("Expected 4 keyframes from playlist, got %d", len(keyframes))
 		}
@@ -118,7 +118,7 @@ segment001.ts
 			0x25, 0x88, 0x84, 0x00, // IDR NAL header (type 5) + some data
 			0x12, 0x34, 0x56, 0x78,
 			// Some other data
-			0x00, 0x00, 0x00, 0x01, // Start code  
+			0x00, 0x00, 0x00, 0x01, // Start code
 			0x01, 0x23, 0x45, 0x67, // Non-IDR frame (type 1)
 			// Second IDR frame
 			0x00, 0x00, 0x00, 0x01, // Start code
@@ -127,12 +127,12 @@ segment001.ts
 		}
 
 		keyframes := generator.parseKeyframeData(h264Data, "test123", Quality720p)
-		
+
 		if len(keyframes) == 0 {
 			t.Logf("No keyframes detected, trying direct H.264 parser")
 			keyframes = generator.parseH264Keyframes(h264Data, "test123", Quality720p)
 		}
-		
+
 		if len(keyframes) != 2 {
 			t.Errorf("Expected 2 keyframes from H.264 stream, got %d", len(keyframes))
 			return // Don't continue if we don't have expected keyframes
@@ -165,12 +165,12 @@ segment001.ts
 		}
 
 		keyframes := generator.parseKeyframeData(h265Data, "test123", Quality720p)
-		
+
 		if len(keyframes) == 0 {
 			t.Logf("No keyframes detected, trying direct H.265 parser")
 			keyframes = generator.parseH265Keyframes(h265Data, "test123", Quality720p)
 		}
-		
+
 		if len(keyframes) != 2 {
 			t.Errorf("Expected 2 keyframes from H.265 stream, got %d", len(keyframes))
 		}
@@ -181,7 +181,7 @@ segment001.ts
 		mp4Data := []byte{
 			// Some header data
 			0x00, 0x00, 0x00, 0x20, // Atom size (32 bytes)
-			's', 't', 's', 's',     // stss atom
+			's', 't', 's', 's', // stss atom
 			0x00, 0x00, 0x00, 0x00, // Version and flags
 			0x00, 0x00, 0x00, 0x03, // Entry count (3 keyframes)
 			0x00, 0x00, 0x00, 0x01, // Sample 1 (keyframe)
@@ -194,12 +194,12 @@ segment001.ts
 		mp4Data = append(mp4Data, padding...)
 
 		keyframes := generator.parseKeyframeData(mp4Data, "test123", Quality480p)
-		
+
 		if len(keyframes) == 0 {
 			t.Logf("No keyframes detected, trying direct MP4 parser")
 			keyframes = generator.parseMP4Keyframes(mp4Data, "test123", Quality480p)
 		}
-		
+
 		if len(keyframes) != 3 {
 			t.Logf("Expected 3 keyframes from MP4 data, got %d (this may be due to minimal test data)", len(keyframes))
 		}
@@ -237,7 +237,7 @@ func TestGenerateIFramePlaylist(t *testing.T) {
 		SegmentDuration: 6,
 		CDNBaseURL:      "https://cdn.example.com",
 	}
-	
+
 	generator := &HLSGenerator{
 		config: config,
 	}
@@ -283,13 +283,13 @@ func TestKeyframePositionCalculation(t *testing.T) {
 
 	// Test keyframe positions across segment boundaries
 	keyframes := []Keyframe{
-		{PTS: 0.0, Duration: 2.0, URI: "seg0.ts"},   // Segment 0 (0-6s)
-		{PTS: 2.0, Duration: 2.0, URI: "seg0.ts"},   // Segment 0
-		{PTS: 4.0, Duration: 2.0, URI: "seg0.ts"},   // Segment 0
-		{PTS: 6.0, Duration: 2.0, URI: "seg1.ts"},   // Segment 1 (6-12s)
-		{PTS: 8.0, Duration: 2.0, URI: "seg1.ts"},   // Segment 1
-		{PTS: 10.0, Duration: 2.0, URI: "seg1.ts"},  // Segment 1
-		{PTS: 12.0, Duration: 2.0, URI: "seg2.ts"},  // Segment 2 (12-18s)
+		{PTS: 0.0, Duration: 2.0, URI: "seg0.ts"},  // Segment 0 (0-6s)
+		{PTS: 2.0, Duration: 2.0, URI: "seg0.ts"},  // Segment 0
+		{PTS: 4.0, Duration: 2.0, URI: "seg0.ts"},  // Segment 0
+		{PTS: 6.0, Duration: 2.0, URI: "seg1.ts"},  // Segment 1 (6-12s)
+		{PTS: 8.0, Duration: 2.0, URI: "seg1.ts"},  // Segment 1
+		{PTS: 10.0, Duration: 2.0, URI: "seg1.ts"}, // Segment 1
+		{PTS: 12.0, Duration: 2.0, URI: "seg2.ts"}, // Segment 2 (12-18s)
 	}
 
 	// Verify segment assignment based on PTS
@@ -312,7 +312,7 @@ func TestCodecSpecificKeyframeDetection(t *testing.T) {
 		SegmentDuration: 6,
 		CDNBaseURL:      "https://cdn.example.com",
 	}
-	
+
 	generator := &HLSGenerator{
 		config: config,
 	}
@@ -332,7 +332,7 @@ func TestCodecSpecificKeyframeDetection(t *testing.T) {
 		for _, test := range testData {
 			nalData := []byte{
 				0x00, 0x00, 0x00, 0x01, // Start code
-				0x20 | test.nalType,     // NAL header with type
+				0x20 | test.nalType,    // NAL header with type
 				0x12, 0x34, 0x56, 0x78, // Some data
 			}
 
@@ -340,7 +340,7 @@ func TestCodecSpecificKeyframeDetection(t *testing.T) {
 			hasKeyframes := len(keyframes) > 0
 
 			if hasKeyframes != test.expected {
-				t.Errorf("NAL type 0x%02x: expected keyframes=%t, got=%t", 
+				t.Errorf("NAL type 0x%02x: expected keyframes=%t, got=%t",
 					test.nalType, test.expected, hasKeyframes)
 			}
 		}
@@ -364,8 +364,8 @@ func TestCodecSpecificKeyframeDetection(t *testing.T) {
 			nalHeader := (test.nalType << 9) | 0x01 // Add layer ID and temporal ID
 			nalData := []byte{
 				0x00, 0x00, 0x00, 0x01, // Start code
-				byte(nalHeader >> 8),    // High byte
-				byte(nalHeader & 0xFF),  // Low byte
+				byte(nalHeader >> 8),   // High byte
+				byte(nalHeader & 0xFF), // Low byte
 				0x12, 0x34, 0x56, 0x78, // Some data
 			}
 
@@ -373,7 +373,7 @@ func TestCodecSpecificKeyframeDetection(t *testing.T) {
 			hasKeyframes := len(keyframes) > 0
 
 			if hasKeyframes != test.expected {
-				t.Errorf("H.265 NAL type %d: expected keyframes=%t, got=%t", 
+				t.Errorf("H.265 NAL type %d: expected keyframes=%t, got=%t",
 					test.nalType, test.expected, hasKeyframes)
 			}
 		}

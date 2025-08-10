@@ -23,6 +23,116 @@ func TestNewTimelineRepository(t *testing.T) {
 	assert.NotNil(t, repo.logger)
 }
 
+func TestGetConversations(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	repo := NewTimelineRepository(mockDB, "test-table", logger)
+
+	ctx := context.Background()
+	username := "testuser"
+	limit := 10
+	cursor := ""
+
+	// Set up test conversations
+	testConv1 := &models.Conversation{
+		ID:           "conv1",
+		Participants: []string{username, "user2"},
+		UpdatedAt:    time.Now(),
+	}
+	testConv2 := &models.Conversation{
+		ID:           "conv2",
+		Participants: []string{username, "user3"},
+		UpdatedAt:    time.Now().Add(-1 * time.Hour),
+	}
+
+	// Create participant records with conversations
+	testParticipantRecords := []*models.ConversationParticipantRecord{
+		{
+			PK:           fmt.Sprintf("USER_CONVERSATIONS#%s", username),
+			SK:           fmt.Sprintf("%d#conv1", time.Now().Unix()),
+			Conversation: testConv1,
+		},
+		{
+			PK:           fmt.Sprintf("USER_CONVERSATIONS#%s", username),
+			SK:           fmt.Sprintf("%d#conv2", time.Now().Add(-1*time.Hour).Unix()),
+			Conversation: testConv2,
+		},
+	}
+
+	// Set up expectations
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", &models.ConversationParticipantRecord{}).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", username)).Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
+	mockQuery.On("Limit", limit+1).Return(mockQuery) // limit + 1 for pagination check
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.ConversationParticipantRecord")).Run(func(args mock.Arguments) {
+		records := args.Get(0).(*[]*models.ConversationParticipantRecord)
+		*records = testParticipantRecords
+	}).Return(nil)
+
+	// Execute
+	conversations, nextCursor, err := repo.GetConversations(ctx, username, limit, cursor)
+
+	// Assert
+	assert.NoError(t, err)
+	assert.Len(t, conversations, 2)
+	assert.Equal(t, "conv1", conversations[0].ID)
+	assert.Equal(t, "conv2", conversations[1].ID)
+	assert.Empty(t, nextCursor) // No next cursor since we have fewer than limit+1 results
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestRemoveFromTimelines(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	repo := NewTimelineRepository(mockDB, "test-table", logger)
+
+	ctx := context.Background()
+	objectID := "post123"
+
+	// Set up test timeline entries to be deleted
+	testTimelines := []models.Timeline{
+		{
+			TimelineType: "HOME",
+			TimelineID:   "user1",
+			PostID:       objectID,
+		},
+		{
+			TimelineType: "HOME",
+			TimelineID:   "user2",
+			PostID:       objectID,
+		},
+	}
+
+	// Set up expectations for finding entries
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
+	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI2PK", "=", fmt.Sprintf("POST#%s", objectID)).Return(mockQuery)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Timeline")).Run(func(args mock.Arguments) {
+		timelines := args.Get(0).(*[]models.Timeline)
+		*timelines = testTimelines
+	}).Return(nil)
+
+	// Set up expectations for deletion
+	for i := range testTimelines {
+		mockDB.On("Model", &testTimelines[i]).Return(mockQuery)
+		mockQuery.On("Delete").Return(nil)
+	}
+
+	// Execute
+	err := repo.RemoveFromTimelines(ctx, objectID)
+
+	// Assert
+	assert.NoError(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 func TestCreateTimelineEntry_ValidEntry(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)

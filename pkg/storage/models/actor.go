@@ -39,6 +39,7 @@ type Actor struct {
 	Actor      *activitypub.Actor `dynamorm:"json" json:"actor"`
 	Username   string             `json:"username"`
 	PrivateKey string             `json:"private_key,omitempty"` // Encrypted private key
+	KeyType    string             `json:"key_type,omitempty"`    // Key type: RSA, ECDSA, Ed25519
 	NumericID  string             `json:"numeric_id"`            // Mastodon-compatible numeric ID
 
 	// Metadata

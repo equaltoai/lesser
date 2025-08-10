@@ -9,7 +9,7 @@ type ContentType string
 
 const (
 	// ContentTypeText represents text-based content
-	ContentTypeText  ContentType = "text"
+	ContentTypeText ContentType = "text"
 	// ContentTypeImage represents image content
 	ContentTypeImage ContentType = "image"
 	// ContentTypeVideo represents video content
@@ -17,7 +17,7 @@ const (
 	// ContentTypeAudio represents audio content
 	ContentTypeAudio ContentType = "audio"
 	// ContentTypeLink represents link content
-	ContentTypeLink  ContentType = "link"
+	ContentTypeLink ContentType = "link"
 )
 
 // Severity represents the severity level of a moderation issue
@@ -25,11 +25,11 @@ type Severity string
 
 const (
 	// SeverityLow represents low severity issues
-	SeverityLow      Severity = "low"
+	SeverityLow Severity = "low"
 	// SeverityMedium represents medium severity issues
-	SeverityMedium   Severity = "medium"
+	SeverityMedium Severity = "medium"
 	// SeverityHigh represents high severity issues
-	SeverityHigh     Severity = "high"
+	SeverityHigh Severity = "high"
 	// SeverityCritical represents critical severity issues
 	SeverityCritical Severity = "critical"
 )
@@ -39,15 +39,15 @@ type ModerationAction string
 
 const (
 	// ActionAllow represents allowing content to pass through
-	ActionAllow        ModerationAction = "allow"
+	ActionAllow ModerationAction = "allow"
 	// ActionFlag represents flagging content for review
-	ActionFlag         ModerationAction = "flag"
+	ActionFlag ModerationAction = "flag"
 	// ActionQuarantine represents quarantining content temporarily
-	ActionQuarantine   ModerationAction = "quarantine"
+	ActionQuarantine ModerationAction = "quarantine"
 	// ActionRemove represents removing content entirely
-	ActionRemove       ModerationAction = "remove"
+	ActionRemove ModerationAction = "remove"
 	// ActionShadowBan represents shadow banning the content author
-	ActionShadowBan    ModerationAction = "shadow_ban"
+	ActionShadowBan ModerationAction = "shadow_ban"
 	// ActionReportToAuth represents reporting content to authorities
 	ActionReportToAuth ModerationAction = "report_to_authorities"
 )
@@ -215,16 +215,18 @@ type ModerationPattern struct {
 	ID          string
 	Name        string
 	Description string
-	Pattern     string // Regex or keyword pattern
-	PatternType string // "regex", "keyword", "phrase"
-	Severity    Severity
+	Pattern     string   // Regex or keyword pattern
+	Type        string   // "regex", "keyword", "phrase"
+	Category    string   // Primary category
+	Severity    float64  // 0.0 to 1.0
 	Action      ModerationAction
-	Categories  []string
+	Flags       []string // Additional flags or categories
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	Active      bool
 	HitCount    int64
+	LastHit     time.Time
 }
 
 // ReputationScore represents an actor's reputation
@@ -340,10 +342,12 @@ type TimeRange struct {
 
 // PatternFilter for filtering patterns
 type PatternFilter struct {
-	Categories []string
-	Severity   Severity
-	Active     *bool
-	CreatedBy  string
+	Category    string  // Single category filter
+	Type        string  // Pattern type filter
+	Active      *bool   // Active status filter
+	MinSeverity float64 // Minimum severity filter
+	Limit       int     // Result limit
+	CreatedBy   string  // Filter by creator
 }
 
 // RealtimeStats represents current real-time statistics

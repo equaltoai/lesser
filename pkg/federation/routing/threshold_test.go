@@ -54,13 +54,13 @@ func TestRouteHealthAssessment(t *testing.T) {
 		{
 			name: "insufficient_samples",
 			metrics: &types.RouteMetrics{
-				TotalMessages:    5, // Less than minimum required (10)
-				SuccessfulCount:  5,
-				FailedCount:      0,
-				AvgLatency:       100 * time.Millisecond,
-				P95Latency:       200 * time.Millisecond,
-				P99Latency:       300 * time.Millisecond,
-				LastUpdated:      time.Now(),
+				TotalMessages:   5, // Less than minimum required (10)
+				SuccessfulCount: 5,
+				FailedCount:     0,
+				AvgLatency:      100 * time.Millisecond,
+				P95Latency:      200 * time.Millisecond,
+				P99Latency:      300 * time.Millisecond,
+				LastUpdated:     time.Now(),
 			},
 			expectedStatus: RouteHealthUnknown,
 			expectedAction: "collect more samples",
@@ -68,13 +68,13 @@ func TestRouteHealthAssessment(t *testing.T) {
 		{
 			name: "preferred_route",
 			metrics: &types.RouteMetrics{
-				TotalMessages:    100,
-				SuccessfulCount:  97, // 97% success rate > 95%
-				FailedCount:      3,
-				AvgLatency:       500 * time.Millisecond, // Good latency
-				P95Latency:       1 * time.Second,        // Good latency
-				P99Latency:       2 * time.Second,        // Good latency
-				LastUpdated:      time.Now(),
+				TotalMessages:   100,
+				SuccessfulCount: 97, // 97% success rate > 95%
+				FailedCount:     3,
+				AvgLatency:      500 * time.Millisecond, // Good latency
+				P95Latency:      1 * time.Second,        // Good latency
+				P99Latency:      2 * time.Second,        // Good latency
+				LastUpdated:     time.Now(),
 			},
 			expectedStatus: RouteHealthPreferred,
 			expectedAction: "preferred route",
@@ -82,13 +82,13 @@ func TestRouteHealthAssessment(t *testing.T) {
 		{
 			name: "healthy_route",
 			metrics: &types.RouteMetrics{
-				TotalMessages:    100,
-				SuccessfulCount:  92, // 92% success rate (90-95%)
-				FailedCount:      8,
-				AvgLatency:       800 * time.Millisecond,
-				P95Latency:       1500 * time.Millisecond,
-				P99Latency:       3 * time.Second,
-				LastUpdated:      time.Now(),
+				TotalMessages:   100,
+				SuccessfulCount: 92, // 92% success rate (90-95%)
+				FailedCount:     8,
+				AvgLatency:      800 * time.Millisecond,
+				P95Latency:      1500 * time.Millisecond,
+				P99Latency:      3 * time.Second,
+				LastUpdated:     time.Now(),
 			},
 			expectedStatus: RouteHealthHealthy,
 			expectedAction: "healthy route",
@@ -96,13 +96,13 @@ func TestRouteHealthAssessment(t *testing.T) {
 		{
 			name: "monitored_route",
 			metrics: &types.RouteMetrics{
-				TotalMessages:    100,
-				SuccessfulCount:  85, // 85% success rate (< 90%)
-				FailedCount:      15,
-				AvgLatency:       1 * time.Second,
-				P95Latency:       2 * time.Second,
-				P99Latency:       4 * time.Second,
-				LastUpdated:      time.Now(),
+				TotalMessages:   100,
+				SuccessfulCount: 85, // 85% success rate (< 90%)
+				FailedCount:     15,
+				AvgLatency:      1 * time.Second,
+				P95Latency:      2 * time.Second,
+				P99Latency:      4 * time.Second,
+				LastUpdated:     time.Now(),
 			},
 			expectedStatus: RouteHealthMonitored,
 			expectedAction: "monitor closely, consider alternatives",
@@ -110,13 +110,13 @@ func TestRouteHealthAssessment(t *testing.T) {
 		{
 			name: "degraded_route_by_success_rate",
 			metrics: &types.RouteMetrics{
-				TotalMessages:    100,
-				SuccessfulCount:  65, // 65% success rate (< 70%)
-				FailedCount:      35,
-				AvgLatency:       1 * time.Second,
-				P95Latency:       3 * time.Second,
-				P99Latency:       6 * time.Second,
-				LastUpdated:      time.Now(),
+				TotalMessages:   100,
+				SuccessfulCount: 65, // 65% success rate (< 70%)
+				FailedCount:     35,
+				AvgLatency:      1 * time.Second,
+				P95Latency:      3 * time.Second,
+				P99Latency:      6 * time.Second,
+				LastUpdated:     time.Now(),
 			},
 			expectedStatus: RouteHealthDegraded,
 			expectedAction: "reduce traffic, implement backpressure",
@@ -124,13 +124,13 @@ func TestRouteHealthAssessment(t *testing.T) {
 		{
 			name: "degraded_route_by_latency",
 			metrics: &types.RouteMetrics{
-				TotalMessages:    100,
-				SuccessfulCount:  92, // Good success rate
-				FailedCount:      8,
-				AvgLatency:       3 * time.Second,  // > 2s threshold
-				P95Latency:       8 * time.Second,  // > 5s threshold
-				P99Latency:       15 * time.Second, // > 10s threshold
-				LastUpdated:      time.Now(),
+				TotalMessages:   100,
+				SuccessfulCount: 92, // Good success rate
+				FailedCount:     8,
+				AvgLatency:      3 * time.Second,  // > 2s threshold
+				P95Latency:      8 * time.Second,  // > 5s threshold
+				P99Latency:      15 * time.Second, // > 10s threshold
+				LastUpdated:     time.Now(),
 			},
 			expectedStatus: RouteHealthDegraded,
 			expectedAction: "reduce traffic due to latency",
@@ -138,13 +138,13 @@ func TestRouteHealthAssessment(t *testing.T) {
 		{
 			name: "critical_route",
 			metrics: &types.RouteMetrics{
-				TotalMessages:    100,
-				SuccessfulCount:  45, // 45% success rate (< 50%)
-				FailedCount:      55,
-				AvgLatency:       2 * time.Second,
-				P95Latency:       5 * time.Second,
-				P99Latency:       8 * time.Second,
-				LastUpdated:      time.Now(),
+				TotalMessages:   100,
+				SuccessfulCount: 45, // 45% success rate (< 50%)
+				FailedCount:     55,
+				AvgLatency:      2 * time.Second,
+				P95Latency:      5 * time.Second,
+				P99Latency:      8 * time.Second,
+				LastUpdated:     time.Now(),
 			},
 			expectedStatus: RouteHealthCritical,
 			expectedAction: "open circuit immediately",
@@ -187,45 +187,45 @@ func TestEmergencyModeThresholds(t *testing.T) {
 	manager := NewRouteThresholdManager(logger, DefaultThresholdConfig())
 
 	tests := []struct {
-		name           string
-		healthyRoutes  int
-		totalRoutes    int
+		name            string
+		healthyRoutes   int
+		totalRoutes     int
 		shouldEmergency bool
 	}{
 		{
-			name:           "healthy_system",
-			healthyRoutes:  8,
-			totalRoutes:    10,
+			name:            "healthy_system",
+			healthyRoutes:   8,
+			totalRoutes:     10,
 			shouldEmergency: false, // 80% healthy > 30% threshold
 		},
 		{
-			name:           "degraded_but_not_emergency",
-			healthyRoutes:  4,
-			totalRoutes:    10,
+			name:            "degraded_but_not_emergency",
+			healthyRoutes:   4,
+			totalRoutes:     10,
 			shouldEmergency: false, // 40% healthy > 30% threshold
 		},
 		{
-			name:           "emergency_threshold",
-			healthyRoutes:  3,
-			totalRoutes:    10,
+			name:            "emergency_threshold",
+			healthyRoutes:   3,
+			totalRoutes:     10,
 			shouldEmergency: false, // 30% healthy = 30% threshold (not less)
 		},
 		{
-			name:           "emergency_mode",
-			healthyRoutes:  2,
-			totalRoutes:    10,
+			name:            "emergency_mode",
+			healthyRoutes:   2,
+			totalRoutes:     10,
 			shouldEmergency: true, // 20% healthy < 30% threshold
 		},
 		{
-			name:           "total_failure",
-			healthyRoutes:  0,
-			totalRoutes:    10,
+			name:            "total_failure",
+			healthyRoutes:   0,
+			totalRoutes:     10,
 			shouldEmergency: true, // 0% healthy < 30% threshold
 		},
 		{
-			name:           "no_routes",
-			healthyRoutes:  0,
-			totalRoutes:    0,
+			name:            "no_routes",
+			healthyRoutes:   0,
+			totalRoutes:     0,
 			shouldEmergency: false, // No routes means no emergency mode
 		},
 	}

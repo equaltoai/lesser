@@ -60,7 +60,7 @@ func (r *FeaturedTagRepository) CreateFeaturedTag(ctx context.Context, tag *stor
 		ID:            id,
 		Username:      tag.Username,
 		Name:          tagName,
-		URL:           fmt.Sprintf("https://localhost/tags/%s", tagName), // Placeholder domain
+		URL:           fmt.Sprintf("https://%s/tags/%s", DefaultDomain, tagName), // Placeholder domain
 		StatusesCount: statusesCount,
 		LastStatusAt: func() string {
 			if lastStatusAt != nil {

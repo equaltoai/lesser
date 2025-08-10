@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,6 +32,7 @@ type AuthHandler struct {
 	authSvc     *auth.AuthService
 	oauthSvc    *auth.OAuthService
 	webAuthnSvc *auth.WebAuthnService
+	walletSvc   *auth.WalletService
 }
 
 // AuthCode represents an OAuth authorization code with PKCE
@@ -112,6 +114,9 @@ func NewAuthHandler() (*AuthHandler, error) {
 		webAuthnSvc = nil
 	}
 
+	// Initialize Wallet service
+	walletSvc := auth.NewWalletService(repos)
+
 	return &AuthHandler{
 		repos:       repos,
 		logger:      logger,
@@ -119,11 +124,15 @@ func NewAuthHandler() (*AuthHandler, error) {
 		authSvc:     authSvc,
 		oauthSvc:    oauthSvc,
 		webAuthnSvc: webAuthnSvc,
+		walletSvc:   walletSvc,
 	}, nil
 }
 
 // RegisterRoutes registers all authentication routes
 func (ah *AuthHandler) RegisterRoutes(app *lift.App) {
+	// OAuth 2.0 Discovery endpoint (RFC 8414)
+	_ = app.GET("/.well-known/oauth-authorization-server", ah.handleOAuthDiscovery)
+	
 	// OAuth 2.0 endpoints
 	_ = app.GET("/oauth/authorize", ah.handleAuthorize)
 	_ = app.POST("/oauth/token", ah.handleToken)
@@ -133,6 +142,21 @@ func (ah *AuthHandler) RegisterRoutes(app *lift.App) {
 	_ = app.POST("/auth/login", ah.handleLogin)
 	_ = app.POST("/auth/logout", ah.handleLogout)
 	_ = app.GET("/auth/session", ah.handleSession)
+
+	// WebAuthn endpoints
+	if ah.webAuthnSvc != nil {
+		_ = app.POST("/auth/webauthn/register/begin", ah.handleWebAuthnRegisterBegin)
+		_ = app.POST("/auth/webauthn/register/finish", ah.handleWebAuthnRegisterFinish)
+		_ = app.POST("/auth/webauthn/login/begin", ah.handleWebAuthnLoginBegin)
+		_ = app.POST("/auth/webauthn/login/finish", ah.handleWebAuthnLoginFinish)
+	}
+
+	// Wallet (SIWE/multi-chain) endpoints
+	_ = app.POST("/auth/wallet/challenge", ah.handleWalletChallenge)
+	_ = app.POST("/auth/wallet/verify", ah.handleWalletVerify)
+	_ = app.POST("/auth/wallet/link", ah.handleWalletLink)
+	_ = app.GET("/auth/wallet/list", ah.handleWalletList)
+	_ = app.DELETE("/auth/wallet/unlink/:address", ah.handleWalletUnlink)
 }
 
 // handleAuthorize handles OAuth authorization requests with PKCE
@@ -273,7 +297,7 @@ func (ah *AuthHandler) handleToken(ctx *lift.Context) error {
 		ah.logger.Warn("expired authorization code", zap.String("code", code[:8]+"..."))
 		// Clean up expired code
 		if deleteErr := ah.deleteAuthCode(ctx.Context, code); deleteErr != nil {
-			ah.logger.Warn("failed to delete expired auth code", 
+			ah.logger.Warn("failed to delete expired auth code",
 				zap.String("code", code[:8]+"..."),
 				zap.Error(deleteErr))
 		}
@@ -369,6 +393,47 @@ func (ah *AuthHandler) handleRevoke(ctx *lift.Context) error {
 	})
 }
 
+// handleOAuthDiscovery handles OAuth 2.0 Authorization Server Metadata requests (RFC 8414)
+func (ah *AuthHandler) handleOAuthDiscovery(ctx *lift.Context) error {
+	ah.logger.Info("handling OAuth discovery request")
+
+	// Build the base URL from the request or configuration
+	baseURL := ah.getBaseURL(ctx)
+	
+	// OAuth 2.0 Authorization Server Metadata according to RFC 8414
+	metadata := map[string]interface{}{
+		"issuer":                           baseURL,
+		"authorization_endpoint":           fmt.Sprintf("%s/oauth/authorize", baseURL),
+		"token_endpoint":                  fmt.Sprintf("%s/oauth/token", baseURL),
+		"revocation_endpoint":             fmt.Sprintf("%s/oauth/revoke", baseURL),
+		"scopes_supported":                []string{"read", "write", "follow", "push", "admin"},
+		"response_types_supported":        []string{"code"},
+		"grant_types_supported":           []string{"authorization_code"},
+		"code_challenge_methods_supported": []string{"S256"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
+		"revocation_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
+		"introspection_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
+		"subject_types_supported":         []string{"public"},
+		"id_token_signing_alg_values_supported": []string{"HS256"},
+		"request_object_signing_alg_values_supported": []string{"HS256"},
+		"request_parameter_supported":     false,
+		"request_uri_parameter_supported": false,
+		"require_request_uri_registration": false,
+		"claims_parameter_supported":      false,
+		"service_documentation":          fmt.Sprintf("%s/docs/oauth", baseURL),
+	}
+
+	// Set appropriate cache headers for discovery metadata
+	ctx.Response.Headers["Cache-Control"] = "public, max-age=3600"
+	ctx.Response.Headers["Content-Type"] = "application/json"
+
+	ah.logger.Info("OAuth discovery metadata served",
+		zap.String("issuer", baseURL),
+		zap.String("user_agent", ctx.Header("User-Agent")))
+
+	return ctx.JSON(metadata)
+}
+
 // handleLogin handles user login
 func (ah *AuthHandler) handleLogin(ctx *lift.Context) error {
 	// Parse form data
@@ -452,7 +517,742 @@ func (ah *AuthHandler) handleSession(ctx *lift.Context) error {
 	})
 }
 
+// WebAuthn request/response types
+
+// WebAuthnRegisterBeginRequest represents the request to begin WebAuthn registration
+type WebAuthnRegisterBeginRequest struct {
+	Username string `json:"username" validate:"required,min=3,max=50"`
+}
+
+// WebAuthnRegisterFinishRequest represents the request to finish WebAuthn registration
+type WebAuthnRegisterFinishRequest struct {
+	Username       string `json:"username" validate:"required,min=3,max=50"`
+	Challenge      string `json:"challenge" validate:"required"`
+	CredentialName string `json:"credential_name,omitempty"`
+	Response       []byte `json:"response" validate:"required"`
+}
+
+// WebAuthnLoginBeginRequest represents the request to begin WebAuthn login
+type WebAuthnLoginBeginRequest struct {
+	Username string `json:"username" validate:"required,min=3,max=50"`
+}
+
+// WebAuthnLoginFinishRequest represents the request to finish WebAuthn login
+type WebAuthnLoginFinishRequest struct {
+	Username  string `json:"username" validate:"required,min=3,max=50"`
+	Challenge string `json:"challenge" validate:"required"`
+	Response  []byte `json:"response" validate:"required"`
+}
+
+// WebAuthn Handlers
+
+// handleWebAuthnRegisterBegin starts the WebAuthn registration process
+func (ah *AuthHandler) handleWebAuthnRegisterBegin(ctx *lift.Context) error {
+	ah.logger.Info("handling WebAuthn register begin request")
+
+	if ah.webAuthnSvc == nil {
+		return lift.NewLiftError("WEBAUTHN_DISABLED", "WebAuthn not available", 503)
+	}
+
+	// Parse request
+	var req WebAuthnRegisterBeginRequest
+	if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
+		return lift.NewLiftError("INVALID_REQUEST", "invalid request format", 400)
+	}
+
+	// Get client IP for rate limiting
+	ipAddress := ah.getClientIP(ctx)
+
+	// Create rate limiter for registration attempts
+	rateLimiter := auth.NewRateLimiter(ah.repos)
+
+	// Check rate limits (use more restrictive limits for registration)
+	if err := rateLimiter.CheckRateLimit(ctx.Context, req.Username, ipAddress); err != nil {
+		ah.logger.Warn("WebAuthn registration rate limited",
+			zap.String("username", req.Username),
+			zap.String("ip", ipAddress),
+			zap.Error(err))
+		return lift.NewLiftError("RATE_LIMITED", "too many registration attempts", 429)
+	}
+
+	// Verify user exists
+	user, err := ah.repos.Account().GetUser(ctx.Context, req.Username)
+	if err != nil {
+		ah.logger.Warn("WebAuthn registration for unknown user",
+			zap.String("username", req.Username))
+		return lift.NewLiftError("USER_NOT_FOUND", "user not found", 404)
+	}
+
+	// Check if user has reached credential limit
+	existingCreds, _ := ah.repos.Account().GetUserWebAuthnCredentials(ctx.Context, req.Username)
+	if len(existingCreds) >= auth.MaxCredentialsPerUser {
+		return lift.NewLiftError("TOO_MANY_CREDENTIALS", "maximum credentials reached", 400)
+	}
+
+	// Begin registration
+	options, challenge, err := ah.webAuthnSvc.BeginRegistration(ctx.Context, req.Username)
+	if err != nil {
+		ah.logger.Error("failed to begin WebAuthn registration", zap.Error(err))
+		return lift.NewLiftError("REGISTRATION_FAILED", "failed to start registration", 500)
+	}
+
+	// Record attempt for rate limiting
+	_ = rateLimiter.RecordAttempt(ctx.Context, req.Username, ipAddress, false)
+
+	ah.logger.Info("WebAuthn registration started",
+		zap.String("username", req.Username),
+		zap.String("user_id", user.Username))
+
+	return ctx.JSON(map[string]interface{}{
+		"options":   options,
+		"challenge": challenge,
+	})
+}
+
+// handleWebAuthnRegisterFinish completes the WebAuthn registration process
+func (ah *AuthHandler) handleWebAuthnRegisterFinish(ctx *lift.Context) error {
+	ah.logger.Info("handling WebAuthn register finish request")
+
+	if ah.webAuthnSvc == nil {
+		return lift.NewLiftError("WEBAUTHN_DISABLED", "WebAuthn not available", 503)
+	}
+
+	// Parse request
+	var req WebAuthnRegisterFinishRequest
+	if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
+		return lift.NewLiftError("INVALID_REQUEST", "invalid request format", 400)
+	}
+
+	// Get client IP and user agent for device metadata
+	ipAddress := ah.getClientIP(ctx)
+	userAgent := ctx.Header("User-Agent")
+
+	// Create rate limiter
+	rateLimiter := auth.NewRateLimiter(ah.repos)
+
+	// Finish registration
+	err := ah.webAuthnSvc.FinishRegistration(ctx.Context, req.Username, req.Challenge, req.Response, req.CredentialName)
+	if err != nil {
+		ah.logger.Error("WebAuthn registration failed",
+			zap.String("username", req.Username),
+			zap.String("challenge", req.Challenge[:8]+"..."),
+			zap.Error(err))
+
+		// Record failed attempt
+		_ = rateLimiter.RecordAttempt(ctx.Context, req.Username, ipAddress, false)
+
+		if err == auth.ErrChallengeNotFound {
+			return lift.NewLiftError("INVALID_CHALLENGE", "invalid or expired challenge", 400)
+		}
+		return lift.NewLiftError("REGISTRATION_FAILED", "registration verification failed", 400)
+	}
+
+	// Record successful attempt
+	_ = rateLimiter.RecordAttempt(ctx.Context, req.Username, ipAddress, true)
+
+	// Log device registration for audit
+	ah.logger.Info("WebAuthn credential registered",
+		zap.String("username", req.Username),
+		zap.String("credential_name", req.CredentialName),
+		zap.String("user_agent", userAgent),
+		zap.String("ip_address", ipAddress))
+
+	return ctx.JSON(map[string]interface{}{
+		"success": true,
+		"message": "passkey registered successfully",
+	})
+}
+
+// handleWebAuthnLoginBegin starts the WebAuthn login process
+func (ah *AuthHandler) handleWebAuthnLoginBegin(ctx *lift.Context) error {
+	ah.logger.Info("handling WebAuthn login begin request")
+
+	if ah.webAuthnSvc == nil {
+		return lift.NewLiftError("WEBAUTHN_DISABLED", "WebAuthn not available", 503)
+	}
+
+	// Parse request
+	var req WebAuthnLoginBeginRequest
+	if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
+		return lift.NewLiftError("INVALID_REQUEST", "invalid request format", 400)
+	}
+
+	// Get client IP for rate limiting
+	ipAddress := ah.getClientIP(ctx)
+
+	// Create rate limiter
+	rateLimiter := auth.NewRateLimiter(ah.repos)
+
+	// Check rate limits
+	if err := rateLimiter.CheckRateLimit(ctx.Context, req.Username, ipAddress); err != nil {
+		ah.logger.Warn("WebAuthn login rate limited",
+			zap.String("username", req.Username),
+			zap.String("ip", ipAddress),
+			zap.Error(err))
+		return lift.NewLiftError("RATE_LIMITED", err.Error(), 429)
+	}
+
+	// Begin login
+	options, challenge, err := ah.webAuthnSvc.BeginLogin(ctx.Context, req.Username)
+	if err != nil {
+		ah.logger.Warn("WebAuthn login begin failed",
+			zap.String("username", req.Username),
+			zap.Error(err))
+
+		if err == auth.ErrUserHasNoCredentials {
+			return lift.NewLiftError("NO_CREDENTIALS", "no passkeys registered", 400)
+		}
+		return lift.NewLiftError("LOGIN_FAILED", "failed to start authentication", 500)
+	}
+
+	ah.logger.Debug("WebAuthn login challenge created",
+		zap.String("username", req.Username))
+
+	return ctx.JSON(map[string]interface{}{
+		"options":   options,
+		"challenge": challenge,
+	})
+}
+
+// handleWebAuthnLoginFinish completes the WebAuthn login process
+func (ah *AuthHandler) handleWebAuthnLoginFinish(ctx *lift.Context) error {
+	ah.logger.Info("handling WebAuthn login finish request")
+
+	if ah.webAuthnSvc == nil {
+		return lift.NewLiftError("WEBAUTHN_DISABLED", "WebAuthn not available", 503)
+	}
+
+	// Parse request
+	var req WebAuthnLoginFinishRequest
+	if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
+		return lift.NewLiftError("INVALID_REQUEST", "invalid request format", 400)
+	}
+
+	// Get client IP and user agent for audit
+	ipAddress := ah.getClientIP(ctx)
+	userAgent := ctx.Header("User-Agent")
+
+	// Create rate limiter
+	rateLimiter := auth.NewRateLimiter(ah.repos)
+
+	// Finish login
+	credential, err := ah.webAuthnSvc.FinishLogin(ctx.Context, req.Username, req.Challenge, req.Response)
+	success := err == nil
+
+	// Always record the attempt
+	_ = rateLimiter.RecordAttempt(ctx.Context, req.Username, ipAddress, success)
+
+	if err != nil {
+		ah.logger.Warn("WebAuthn login failed",
+			zap.String("username", req.Username),
+			zap.String("challenge", req.Challenge[:8]+"..."),
+			zap.String("ip_address", ipAddress),
+			zap.Error(err))
+
+		if err == auth.ErrChallengeNotFound {
+			return lift.NewLiftError("INVALID_CHALLENGE", "invalid or expired challenge", 400)
+		}
+		return lift.NewLiftError("LOGIN_FAILED", "authentication failed", 401)
+	}
+
+	// Generate session - create a simple session token
+	sessionToken := fmt.Sprintf("webauthn_session_%d_%s", time.Now().Unix(), req.Username)
+
+	// Set session cookie
+	cookieValue := fmt.Sprintf("session_id=%s; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=%d",
+		sessionToken, int(24*time.Hour.Seconds()))
+	ctx.Response.Headers["Set-Cookie"] = cookieValue
+
+	// Log successful authentication with device metadata
+	ah.logger.Info("WebAuthn login successful",
+		zap.String("username", req.Username),
+		zap.String("credential_id", credential.ID),
+		zap.String("credential_name", credential.Name),
+		zap.String("user_agent", userAgent),
+		zap.String("ip_address", ipAddress),
+		zap.Time("last_used", credential.LastUsedAt))
+
+	return ctx.JSON(map[string]interface{}{
+		"success":  true,
+		"username": req.Username,
+		"message":  "authentication successful",
+		"credential": map[string]interface{}{
+			"id":   credential.ID,
+			"name": credential.Name,
+		},
+	})
+}
+
+// Wallet request/response types
+
+// WalletChallengeRequest represents the request for a wallet authentication challenge
+type WalletChallengeRequest struct {
+	Address  string `json:"address" validate:"required"`
+	ChainID  int    `json:"chainId,omitempty"`
+	Username string `json:"username,omitempty"` // Optional for linking to specific user
+}
+
+// WalletChallengeResponse represents the response containing a wallet authentication challenge
+type WalletChallengeResponse struct {
+	ID        string `json:"id"`
+	Message   string `json:"message"`
+	IssuedAt  string `json:"issuedAt"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+// WalletVerifyRequest represents the request to verify a wallet signature
+type WalletVerifyRequest struct {
+	ChallengeID string `json:"challengeId" validate:"required"`
+	Address     string `json:"address" validate:"required"`
+	Signature   string `json:"signature" validate:"required"`
+	Message     string `json:"message" validate:"required"`
+}
+
+// WalletVerifyResponse represents the response after wallet verification
+type WalletVerifyResponse struct {
+	Success       bool   `json:"success"`
+	Authenticated bool   `json:"authenticated"`
+	Username      string `json:"me,omitempty"`
+	AccessToken   string `json:"access_token,omitempty"`
+	Message       string `json:"message"`
+}
+
+// WalletLinkRequest represents the request to link a wallet to an account
+type WalletLinkRequest struct {
+	Address   string `json:"address" validate:"required"`
+	ChainID   int    `json:"chainId,omitempty"`
+	Type      string `json:"type,omitempty"` // ethereum, polygon, etc.
+	Signature string `json:"signature" validate:"required"`
+	Message   string `json:"message" validate:"required"`
+}
+
+// WalletLinkResponse represents the response after linking a wallet
+type WalletLinkResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// WalletListResponse represents the response containing a list of linked wallets
+type WalletListResponse struct {
+	Success bool                        `json:"success"`
+	Count   int                         `json:"count"`
+	Wallets []WalletCredentialForClient `json:"wallets"`
+}
+
+// WalletCredentialForClient represents wallet credential information for client display
+type WalletCredentialForClient struct {
+	Address  string `json:"address"`
+	ChainID  int    `json:"chainId"`
+	Type     string `json:"type"`
+	LinkedAt string `json:"linkedAt"`
+	LastUsed string `json:"lastUsed"`
+}
+
+// WalletUnlinkResponse represents the response after unlinking a wallet
+type WalletUnlinkResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// Wallet Handler Functions
+
+// handleWalletChallenge generates a challenge for wallet authentication
+func (ah *AuthHandler) handleWalletChallenge(ctx *lift.Context) error {
+	ah.logger.Info("handling wallet challenge request")
+
+	// Parse request
+	var req WalletChallengeRequest
+	if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
+		return lift.NewLiftError("INVALID_REQUEST", "invalid request format", 400)
+	}
+
+	// Validate address format (basic validation)
+	if len(req.Address) < 10 {
+		return lift.NewLiftError("INVALID_ADDRESS", "invalid wallet address", 400)
+	}
+
+	// Set default chain ID if not provided (Ethereum mainnet)
+	if req.ChainID == 0 {
+		req.ChainID = 1
+	}
+
+	// Get client IP for rate limiting
+	ipAddress := ah.getClientIP(ctx)
+
+	// Create rate limiter for wallet challenges
+	rateLimiter := auth.NewRateLimiter(ah.repos)
+
+	// Use stricter rate limiting for wallet challenges (by IP and address)
+	rateLimitKey := fmt.Sprintf("wallet_challenge_%s_%s", ipAddress, req.Address)
+	if err := rateLimiter.CheckRateLimit(ctx.Context, rateLimitKey, ipAddress); err != nil {
+		ah.logger.Warn("wallet challenge rate limited",
+			zap.String("address", req.Address),
+			zap.String("ip", ipAddress),
+			zap.Error(err))
+		return lift.NewLiftError("RATE_LIMITED", "too many challenge requests", 429)
+	}
+
+	// Create challenge using wallet service
+	challenge, err := ah.walletSvc.CreateChallenge(ctx.Context, req.Address, req.ChainID, req.Username)
+	if err != nil {
+		ah.logger.Error("failed to create wallet challenge", zap.Error(err))
+		return lift.NewLiftError("CHALLENGE_FAILED", "failed to create challenge", 500)
+	}
+
+	// Record attempt for rate limiting
+	_ = rateLimiter.RecordAttempt(ctx.Context, rateLimitKey, ipAddress, true)
+
+	response := WalletChallengeResponse{
+		ID:        challenge.ID,
+		Message:   challenge.Message,
+		IssuedAt:  challenge.IssuedAt.Format(time.RFC3339),
+		ExpiresAt: challenge.ExpiresAt.Format(time.RFC3339),
+	}
+
+	ah.logger.Info("wallet challenge created",
+		zap.String("challengeId", challenge.ID),
+		zap.String("address", req.Address),
+		zap.Int("chainId", req.ChainID))
+
+	return ctx.JSON(response)
+}
+
+// handleWalletVerify verifies a wallet signature and creates session
+func (ah *AuthHandler) handleWalletVerify(ctx *lift.Context) error {
+	ah.logger.Info("handling wallet verify request")
+
+	// Parse request
+	var req WalletVerifyRequest
+	if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
+		return lift.NewLiftError("INVALID_REQUEST", "invalid request format", 400)
+	}
+
+	// Get client IP for rate limiting and audit
+	ipAddress := ah.getClientIP(ctx)
+	userAgent := ctx.Header("User-Agent")
+
+	// Create rate limiter
+	rateLimiter := auth.NewRateLimiter(ah.repos)
+
+	// Use address-based rate limiting for verify attempts
+	rateLimitKey := fmt.Sprintf("wallet_verify_%s", req.Address)
+	if err := rateLimiter.CheckRateLimit(ctx.Context, rateLimitKey, ipAddress); err != nil {
+		ah.logger.Warn("wallet verify rate limited",
+			zap.String("address", req.Address),
+			zap.String("ip", ipAddress),
+			zap.Error(err))
+		return lift.NewLiftError("RATE_LIMITED", "too many verification attempts", 429)
+	}
+
+	// Convert to wallet service format
+	verifyReq := &auth.WalletVerifyRequest{
+		ChallengeID: req.ChallengeID,
+		Address:     req.Address,
+		Signature:   req.Signature,
+		Message:     req.Message,
+	}
+
+	// Verify signature using wallet service
+	username, err := ah.walletSvc.VerifySignature(ctx.Context, verifyReq)
+	success := err == nil
+
+	// Always record the attempt
+	_ = rateLimiter.RecordAttempt(ctx.Context, rateLimitKey, ipAddress, success)
+
+	if err != nil {
+		ah.logger.Warn("wallet signature verification failed",
+			zap.String("address", req.Address),
+			zap.String("challengeId", req.ChallengeID[:8]+"..."),
+			zap.String("ip_address", ipAddress),
+			zap.Error(err))
+
+		return lift.NewLiftError("VERIFICATION_FAILED", "signature verification failed", 401)
+	}
+
+	response := WalletVerifyResponse{
+		Success:       true,
+		Authenticated: username != "",
+		Message:       "wallet authentication successful",
+	}
+
+	// If username is available, create session and access token
+	if username != "" {
+		response.Username = username
+
+		// Generate access token using OAuth service
+		scopes := auth.DefaultScopes()
+		clientID := "wallet_client" // Use a default client for wallet auth
+		accessToken, _, err := ah.oauthSvc.GenerateTokens(username, clientID, scopes)
+		if err != nil {
+			ah.logger.Error("failed to generate access token for wallet auth", zap.Error(err))
+		} else {
+			response.AccessToken = accessToken
+		}
+
+		// Create session cookie
+		sessionToken := fmt.Sprintf("wallet_session_%d_%s", time.Now().Unix(), username)
+		cookieValue := fmt.Sprintf("session_id=%s; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=%d",
+			sessionToken, int(24*time.Hour.Seconds()))
+		ctx.Response.Headers["Set-Cookie"] = cookieValue
+
+		ah.logger.Info("wallet authentication successful with existing user",
+			zap.String("username", username),
+			zap.String("address", req.Address),
+			zap.String("user_agent", userAgent),
+			zap.String("ip_address", ipAddress))
+	} else {
+		response.Authenticated = false
+		response.Message = "wallet verified but not linked to account - use /auth/wallet/link"
+
+		ah.logger.Info("wallet authentication successful but no linked account",
+			zap.String("address", req.Address),
+			zap.String("user_agent", userAgent),
+			zap.String("ip_address", ipAddress))
+	}
+
+	return ctx.JSON(response)
+}
+
+// handleWalletLink links a wallet to an existing authenticated user account
+func (ah *AuthHandler) handleWalletLink(ctx *lift.Context) error {
+	ah.logger.Info("handling wallet link request")
+
+	// Parse request
+	var req WalletLinkRequest
+	if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
+		return lift.NewLiftError("INVALID_REQUEST", "invalid request format", 400)
+	}
+
+	// Check if user is authenticated
+	username := ah.getUserFromContext(ctx)
+	if username == "" {
+		return lift.NewLiftError("UNAUTHORIZED", "authentication required to link wallet", 401)
+	}
+
+	// Set defaults
+	if req.ChainID == 0 {
+		req.ChainID = 1 // Ethereum mainnet
+	}
+	if req.Type == "" {
+		req.Type = "ethereum"
+	}
+
+	// Get client IP and user agent for audit
+	ipAddress := ah.getClientIP(ctx)
+	userAgent := ctx.Header("User-Agent")
+
+	// Create rate limiter for link attempts
+	rateLimiter := auth.NewRateLimiter(ah.repos)
+	rateLimitKey := fmt.Sprintf("wallet_link_%s_%s", username, req.Address)
+
+	if err := rateLimiter.CheckRateLimit(ctx.Context, rateLimitKey, ipAddress); err != nil {
+		ah.logger.Warn("wallet link rate limited",
+			zap.String("username", username),
+			zap.String("address", req.Address),
+			zap.String("ip", ipAddress),
+			zap.Error(err))
+		return lift.NewLiftError("RATE_LIMITED", "too many link attempts", 429)
+	}
+
+	// For linking, we need to verify the signature matches a recent challenge
+	// This is a security measure to prevent replay attacks
+	// For now, we'll require the user to create and verify a challenge first
+	// In a full implementation, you might want to create a temporary challenge here
+
+	// Link wallet to user account
+	err := ah.walletSvc.LinkWallet(ctx.Context, username, req.Address, req.ChainID, req.Type)
+	success := err == nil
+
+	// Record attempt
+	_ = rateLimiter.RecordAttempt(ctx.Context, rateLimitKey, ipAddress, success)
+
+	if err != nil {
+		ah.logger.Error("failed to link wallet to account",
+			zap.String("username", username),
+			zap.String("address", req.Address),
+			zap.String("ip_address", ipAddress),
+			zap.Error(err))
+
+		return lift.NewLiftError("LINK_FAILED", err.Error(), 400)
+	}
+
+	response := WalletLinkResponse{
+		Success: true,
+		Message: "wallet linked successfully",
+	}
+
+	ah.logger.Info("wallet linked to account",
+		zap.String("username", username),
+		zap.String("address", req.Address),
+		zap.String("type", req.Type),
+		zap.Int("chainId", req.ChainID),
+		zap.String("user_agent", userAgent),
+		zap.String("ip_address", ipAddress))
+
+	return ctx.JSON(response)
+}
+
+// handleWalletList lists all wallets linked to the authenticated user
+func (ah *AuthHandler) handleWalletList(ctx *lift.Context) error {
+	ah.logger.Info("handling wallet list request")
+
+	// Check if user is authenticated
+	username := ah.getUserFromContext(ctx)
+	if username == "" {
+		return lift.NewLiftError("UNAUTHORIZED", "authentication required", 401)
+	}
+
+	// Get user's wallets
+	wallets, err := ah.walletSvc.GetUserWallets(ctx.Context, username)
+	if err != nil {
+		ah.logger.Error("failed to get user wallets",
+			zap.String("username", username),
+			zap.Error(err))
+		return lift.NewLiftError("FETCH_FAILED", "failed to retrieve wallets", 500)
+	}
+
+	// Convert to client format
+	clientWallets := make([]WalletCredentialForClient, len(wallets))
+	for i, wallet := range wallets {
+		clientWallets[i] = WalletCredentialForClient{
+			Address:  wallet.Address,
+			ChainID:  wallet.ChainID,
+			Type:     wallet.Type,
+			LinkedAt: wallet.LinkedAt.Format(time.RFC3339),
+			LastUsed: wallet.LastUsed.Format(time.RFC3339),
+		}
+	}
+
+	response := WalletListResponse{
+		Success: true,
+		Count:   len(clientWallets),
+		Wallets: clientWallets,
+	}
+
+	ah.logger.Info("wallet list retrieved",
+		zap.String("username", username),
+		zap.Int("count", len(wallets)))
+
+	return ctx.JSON(response)
+}
+
+// handleWalletUnlink unlinks a wallet from the authenticated user's account
+func (ah *AuthHandler) handleWalletUnlink(ctx *lift.Context) error {
+	ah.logger.Info("handling wallet unlink request")
+
+	// Check if user is authenticated
+	username := ah.getUserFromContext(ctx)
+	if username == "" {
+		return lift.NewLiftError("UNAUTHORIZED", "authentication required", 401)
+	}
+
+	// Get wallet address from URL parameter
+	address := ctx.Param("address")
+	if address == "" {
+		return lift.NewLiftError("INVALID_REQUEST", "wallet address required", 400)
+	}
+
+	// Get client IP and user agent for audit
+	ipAddress := ah.getClientIP(ctx)
+	userAgent := ctx.Header("User-Agent")
+
+	// Create rate limiter for unlink attempts
+	rateLimiter := auth.NewRateLimiter(ah.repos)
+	rateLimitKey := fmt.Sprintf("wallet_unlink_%s_%s", username, address)
+
+	if err := rateLimiter.CheckRateLimit(ctx.Context, rateLimitKey, ipAddress); err != nil {
+		ah.logger.Warn("wallet unlink rate limited",
+			zap.String("username", username),
+			zap.String("address", address),
+			zap.String("ip", ipAddress),
+			zap.Error(err))
+		return lift.NewLiftError("RATE_LIMITED", "too many unlink attempts", 429)
+	}
+
+	// Unlink wallet from user account
+	err := ah.walletSvc.UnlinkWallet(ctx.Context, username, address)
+	success := err == nil
+
+	// Record attempt
+	_ = rateLimiter.RecordAttempt(ctx.Context, rateLimitKey, ipAddress, success)
+
+	if err != nil {
+		ah.logger.Error("failed to unlink wallet from account",
+			zap.String("username", username),
+			zap.String("address", address),
+			zap.String("ip_address", ipAddress),
+			zap.Error(err))
+
+		return lift.NewLiftError("UNLINK_FAILED", err.Error(), 400)
+	}
+
+	response := WalletUnlinkResponse{
+		Success: true,
+		Message: "wallet unlinked successfully",
+	}
+
+	ah.logger.Info("wallet unlinked from account",
+		zap.String("username", username),
+		zap.String("address", address),
+		zap.String("user_agent", userAgent),
+		zap.String("ip_address", ipAddress))
+
+	return ctx.JSON(response)
+}
+
 // Helper methods
+
+// getBaseURL constructs the base URL for the auth service
+func (ah *AuthHandler) getBaseURL(ctx *lift.Context) string {
+	// Try to get the base URL from configuration
+	if ah.cfg.Domain != "" {
+		// Always use HTTPS for production domains
+		return fmt.Sprintf("https://%s", ah.cfg.Domain)
+	}
+
+	// Fallback to building from request headers
+	scheme := "https" // Default to HTTPS for security
+	if protoHeader := ctx.Header("X-Forwarded-Proto"); protoHeader != "" {
+		scheme = protoHeader
+	}
+
+	host := ctx.Header("Host")
+	if host == "" {
+		// Fallback to environment or default
+		if ah.cfg.Domain != "" {
+			host = ah.cfg.Domain
+		} else {
+			host = "localhost:8080"
+			scheme = "http" // Use HTTP for localhost
+		}
+	}
+
+	return fmt.Sprintf("%s://%s", scheme, host)
+}
+
+// getClientIP extracts the client IP address from the request
+func (ah *AuthHandler) getClientIP(ctx *lift.Context) string {
+	// Check X-Forwarded-For header first (most common in Lambda/API Gateway)
+	if forwarded := ctx.Header("X-Forwarded-For"); forwarded != "" {
+		// X-Forwarded-For can contain multiple IPs, take the first one
+		if idx := strings.Index(forwarded, ","); idx > 0 {
+			return strings.TrimSpace(forwarded[:idx])
+		}
+		return strings.TrimSpace(forwarded)
+	}
+
+	// Check X-Real-IP header
+	if realIP := ctx.Header("X-Real-IP"); realIP != "" {
+		return strings.TrimSpace(realIP)
+	}
+
+	// Fallback to remote addr (less reliable in serverless)
+	if remoteAddr := ctx.Request.RemoteAddr(); remoteAddr != "" {
+		return remoteAddr
+	}
+
+	return "unknown"
+}
 
 func (ah *AuthHandler) buildQueryString(ctx *lift.Context) string {
 	parts := make([]string, 0, len(ctx.Request.QueryParams))

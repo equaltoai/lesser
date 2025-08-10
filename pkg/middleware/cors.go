@@ -141,7 +141,7 @@ func setOriginHeader(headers map[string]string, origin string, allowed, useWildc
 	if !allowed {
 		return
 	}
-	
+
 	if useWildcard {
 		headers["Access-Control-Allow-Origin"] = "*"
 	} else if origin != "" {
@@ -161,9 +161,9 @@ func setPreflightHeaders(headers map[string]string, config CORSConfig) {
 }
 
 // handleActualRequest handles non-preflight requests
-func handleActualRequest(next func(events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error), 
+func handleActualRequest(next func(events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error),
 	request events.APIGatewayV2HTTPRequest, config CORSConfig, origin string, allowed, useWildcard bool) (*events.APIGatewayV2HTTPResponse, error) {
-	
+
 	response, err := next(request)
 	if err != nil {
 		return response, err
@@ -233,10 +233,10 @@ func CORSHTTP(config CORSConfig) func(http.Handler) http.Handler {
 func handleHTTPPreflight(w http.ResponseWriter, config CORSConfig, origin string, allowed, useWildcard bool) {
 	// Set origin header
 	setHTTPOriginHeader(w, origin, allowed, useWildcard)
-	
+
 	// Set preflight headers
 	setHTTPPreflightHeaders(w, config)
-	
+
 	// Add Vary header
 	w.Header().Set("Vary", "Origin")
 	w.WriteHeader(http.StatusNoContent)
@@ -247,7 +247,7 @@ func setHTTPOriginHeader(w http.ResponseWriter, origin string, allowed, useWildc
 	if !allowed {
 		return
 	}
-	
+
 	if useWildcard {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	} else if origin != "" {
@@ -288,7 +288,7 @@ func addHTTPVaryHeader(w http.ResponseWriter) {
 	if existing == "" {
 		w.Header().Set("Vary", "Origin")
 	} else if !strings.Contains(existing, "Origin") {
-		w.Header().Set("Vary", existing + ", Origin")
+		w.Header().Set("Vary", existing+", Origin")
 	}
 }
 

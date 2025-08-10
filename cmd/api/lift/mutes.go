@@ -298,8 +298,8 @@ func (h *Handler) getRelationshipLift(ctx context.Context, sourceUsername, targe
 	following := followRel != nil
 	followedByRel, _ := h.repos.Relationship().GetRelationship(ctx, targetUsername, sourceUsername)
 	followedBy := followedByRel != nil
-	blocked, _ := h.repos.Social().IsBlocked(ctx, sourceUsername, targetUsername)
-	blockedBy, _ := h.repos.Social().IsBlocked(ctx, targetUsername, sourceUsername)
+	blocked, _ := h.repos.Relationship().IsBlocked(ctx, sourceUsername, targetUsername)
+	blockedBy, _ := h.repos.Relationship().IsBlocked(ctx, targetUsername, sourceUsername)
 
 	// Check mute status
 	mute, _ := h.repos.Social().GetMute(ctx, sourceUsername, targetUsername)

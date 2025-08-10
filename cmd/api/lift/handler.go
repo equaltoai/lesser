@@ -4,6 +4,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -16,11 +17,22 @@ type Handler struct {
 	logger         *zap.Logger
 	authMiddleware *auth.Middleware
 	converter      mastodon.Converter
+	businessLogic  services.BusinessLogicService
+	authService    services.AuthenticationService
 }
 
 // NewHandler creates a new handler with dependencies
 func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, authMiddleware *auth.Middleware) *Handler {
 	converter := mastodon.NewConverter(cfg.BaseURL())
+
+	// Create service layer
+	serviceConfig := &services.ServiceConfig{
+		BaseURL:   cfg.BaseURL(),
+		JWTSecret: cfg.JWTSecret,
+	}
+	serviceFactory := services.NewServiceFactory(repos, serviceConfig, logger)
+	businessLogic := serviceFactory.CreateBusinessLogicService()
+	authService := serviceFactory.CreateAuthenticationService()
 
 	return &Handler{
 		cfg:            cfg,
@@ -28,6 +40,8 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		logger:         logger,
 		authMiddleware: authMiddleware,
 		converter:      converter,
+		businessLogic:  businessLogic,
+		authService:    authService,
 	}
 }
 

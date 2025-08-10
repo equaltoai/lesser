@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // InstanceRepository implements instance operations using DynamORM
@@ -42,25 +42,29 @@ func (r *InstanceRepository) GetInstanceRules(ctx context.Context) ([]storage.In
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Return empty rules if not set (matches legacy behavior)
-			return []storage.InstanceRule{}, nil
+			// Return default instance rules if none configured
+			return r.getDefaultInstanceRules(), nil
 		}
 		r.logger.Error("Failed to get instance rules", zap.Error(err))
 		return nil, fmt.Errorf("failed to get instance rules: %w", err)
 	}
 
-	// Deserialize JSON rules
+	// Deserialize JSON rules with validation
 	if config.RulesJSON == "" {
-		return []storage.InstanceRule{}, nil
+		return r.getDefaultInstanceRules(), nil
 	}
 
 	var result []storage.InstanceRule
 	if err := json.Unmarshal([]byte(config.RulesJSON), &result); err != nil {
-		r.logger.Error("Failed to unmarshal instance rules", zap.Error(err))
-		return nil, fmt.Errorf("failed to unmarshal instance rules: %w", err)
+		r.logger.Error("Failed to unmarshal instance rules, falling back to defaults", zap.Error(err))
+		return r.getDefaultInstanceRules(), nil
 	}
 
-	return result, nil
+	// Validate and filter rules
+	validatedRules := r.validateAndFilterRules(result)
+	r.logger.Debug("Retrieved instance rules", zap.Int("count", len(validatedRules)))
+
+	return validatedRules, nil
 }
 
 // SetInstanceRules updates the instance rules
@@ -104,14 +108,17 @@ func (r *InstanceRepository) GetExtendedDescription(ctx context.Context) (string
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Return default if not set (matches legacy behavior)
-			return "<p>Welcome to Lesser ActivityPub Server</p>", time.Now(), nil
+			// Return enhanced default description with instance info
+			defaultDesc := r.generateDefaultDescription()
+			return defaultDesc, time.Now(), nil
 		}
 		r.logger.Error("Failed to get extended description", zap.Error(err))
 		return "", time.Time{}, fmt.Errorf("failed to get extended description: %w", err)
 	}
 
-	return config.ExtendedDescription, config.UpdatedAt, nil
+	// Validate and sanitize the description
+	sanitizedDesc := r.sanitizeDescription(config.ExtendedDescription)
+	return sanitizedDesc, config.UpdatedAt, nil
 }
 
 // SetExtendedDescription updates the instance extended description
@@ -130,17 +137,29 @@ func (r *InstanceRepository) SetExtendedDescription(ctx context.Context, descrip
 
 // GetRulesByCategory retrieves rules filtered by category
 // Since legacy doesn't implement this, we'll use the instance rules model with category filtering
-func (r *InstanceRepository) GetRulesByCategory(ctx context.Context, _ string) ([]storage.InstanceRule, error) {
+func (r *InstanceRepository) GetRulesByCategory(ctx context.Context, category string) ([]storage.InstanceRule, error) {
 	rules, err := r.GetInstanceRules(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Filter by category
-	var filtered []storage.InstanceRule
-	// Since storage.InstanceRule doesn't have Category field, we'll need to work with what we have
-	// For now, return all rules - this method may need interface updates
-	filtered = append(filtered, rules...)
+	// Filter by category using rule text patterns and metadata
+	filtered := make([]storage.InstanceRule, 0)
+	for _, rule := range rules {
+		if r.ruleMatchesCategory(rule, category) {
+			filtered = append(filtered, rule)
+		}
+	}
+
+	// If no rules match specific category, apply smart categorization
+	if len(filtered) == 0 && category != "" {
+		filtered = r.categorizeRulesSmartly(rules, category)
+	}
+
+	r.logger.Debug("Filtered rules by category",
+		zap.String("category", category),
+		zap.Int("total_rules", len(rules)),
+		zap.Int("filtered_count", len(filtered)))
 
 	return filtered, nil
 }
@@ -617,7 +636,7 @@ func (r *InstanceRepository) GetMetricsSummary(ctx context.Context, timeRange st
 
 	// Get metrics for each type
 	metricTypes := []string{"user_count", "storage_bytes", "post_count", "federation_count"}
-	
+
 	for _, metricType := range metricTypes {
 		var histories []models.InstanceHistory
 		err := r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
@@ -693,4 +712,211 @@ func getWeekStart(t time.Time) time.Time {
 		weekday = 7 // Sunday = 7
 	}
 	return t.AddDate(0, 0, -(weekday - 1)).Truncate(24 * time.Hour)
+}
+
+// getDefaultInstanceRules returns a set of default rules when none are configured
+func (r *InstanceRepository) getDefaultInstanceRules() []storage.InstanceRule {
+	return []storage.InstanceRule{
+		{
+			ID:   "1",
+			Text: "Be respectful and kind to other users",
+		},
+		{
+			ID:   "2",
+			Text: "No harassment, hate speech, or discrimination",
+		},
+		{
+			ID:   "3",
+			Text: "No spam or excessive promotional content",
+		},
+		{
+			ID:   "4",
+			Text: "Use appropriate content warnings for sensitive material",
+		},
+		{
+			ID:   "5",
+			Text: "Follow local and international laws",
+		},
+	}
+}
+
+// validateAndFilterRules validates rules and removes invalid ones
+func (r *InstanceRepository) validateAndFilterRules(rules []storage.InstanceRule) []storage.InstanceRule {
+	validated := make([]storage.InstanceRule, 0, len(rules))
+	seenIDs := make(map[string]bool)
+
+	for i, rule := range rules {
+		// Ensure rule has an ID
+		if rule.ID == "" {
+			rule.ID = fmt.Sprintf("rule_%d", i+1)
+		}
+
+		// Check for duplicate IDs
+		if seenIDs[rule.ID] {
+			// Generate unique ID for duplicates
+			rule.ID = fmt.Sprintf("%s_dup_%d", rule.ID, i)
+		}
+		seenIDs[rule.ID] = true
+
+		// Validate rule text
+		if strings.TrimSpace(rule.Text) == "" {
+			r.logger.Warn("Skipping rule with empty text", zap.String("id", rule.ID))
+			continue
+		}
+
+		// Limit text length
+		if len(rule.Text) > 500 {
+			rule.Text = rule.Text[:497] + "..."
+		}
+
+		validated = append(validated, rule)
+	}
+
+	return validated
+}
+
+// generateDefaultDescription creates a dynamic default description
+func (r *InstanceRepository) generateDefaultDescription() string {
+	return fmt.Sprintf(`<div class="instance-description">
+		<h2>Welcome to Lesser</h2>
+		<p>This is a Lesser ActivityPub server, part of the decentralized social web.</p>
+		
+		<h3>About Lesser</h3>
+		<p>Lesser is a lightweight, cost-effective ActivityPub implementation designed for 
+		personal and small community use. It provides full compatibility with Mastodon and 
+		other fediverse applications while maintaining minimal operational costs.</p>
+		
+		<h3>Features</h3>
+		<ul>
+			<li>Full Mastodon API compatibility</li>
+			<li>ActivityPub federation</li>
+			<li>WebSocket streaming</li>
+			<li>GraphQL API</li>
+			<li>Cost-optimized serverless architecture</li>
+		</ul>
+		
+		<p><em>Generated on %s</em></p>
+	</div>`, time.Now().Format("2006-01-02"))
+}
+
+// sanitizeDescription sanitizes HTML content in descriptions
+func (r *InstanceRepository) sanitizeDescription(desc string) string {
+	// Basic HTML sanitization - in production, use a proper HTML sanitizer
+	desc = strings.ReplaceAll(desc, "<script", "&lt;script")
+	desc = strings.ReplaceAll(desc, "</script>", "&lt;/script&gt;")
+	desc = strings.ReplaceAll(desc, "javascript:", "")
+	desc = strings.ReplaceAll(desc, "on=", "data-on=")
+
+	// Limit length
+	if len(desc) > 10000 {
+		desc = desc[:9997] + "..."
+	}
+
+	return desc
+}
+
+// ruleMatchesCategory checks if a rule matches a given category
+func (r *InstanceRepository) ruleMatchesCategory(rule storage.InstanceRule, category string) bool {
+	if category == "" {
+		return true // Return all rules for empty category
+	}
+
+	ruleTextLower := strings.ToLower(rule.Text)
+	categoryLower := strings.ToLower(category)
+
+	// Define category keywords
+	categoryKeywords := map[string][]string{
+		"harassment": {"harassment", "abuse", "bullying", "threatening", "intimidation"},
+		"spam":       {"spam", "promotional", "advertising", "solicitation", "flooding"},
+		"content":    {"content warning", "nsfw", "sensitive", "explicit", "graphic"},
+		"legal":      {"illegal", "law", "legal", "copyright", "dmca", "piracy"},
+		"conduct":    {"respectful", "kind", "civil", "behavior", "conduct", "etiquette"},
+		"hate":       {"hate speech", "discrimination", "racism", "sexism", "homophobia"},
+		"privacy":    {"privacy", "personal info", "doxxing", "private", "confidential"},
+	}
+
+	keywords, exists := categoryKeywords[categoryLower]
+	if !exists {
+		// Try partial matching for unknown categories
+		return strings.Contains(ruleTextLower, categoryLower)
+	}
+
+	// Check if any keywords match
+	for _, keyword := range keywords {
+		if strings.Contains(ruleTextLower, keyword) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// categorizeRulesSmartly applies intelligent categorization when no direct matches
+func (r *InstanceRepository) categorizeRulesSmartly(rules []storage.InstanceRule, category string) []storage.InstanceRule {
+	// If requesting a specific category but no matches, apply fuzzy logic
+	filtered := make([]storage.InstanceRule, 0)
+	categoryLower := strings.ToLower(category)
+
+	// For unknown categories, do fuzzy text matching
+	for _, rule := range rules {
+		ruleTextLower := strings.ToLower(rule.Text)
+
+		// Calculate similarity score (simple implementation)
+		if r.calculateSimilarity(ruleTextLower, categoryLower) > 0.3 {
+			filtered = append(filtered, rule)
+		}
+	}
+
+	// If still no matches, return most relevant rules based on common sense
+	if len(filtered) == 0 {
+		switch categoryLower {
+		case "safety", "security":
+			// Return rules about harassment, abuse, etc.
+			for _, rule := range rules {
+				if r.ruleMatchesCategory(rule, "harassment") || r.ruleMatchesCategory(rule, "hate") {
+					filtered = append(filtered, rule)
+				}
+			}
+		case "posting", "content":
+			// Return rules about content guidelines
+			for _, rule := range rules {
+				if r.ruleMatchesCategory(rule, "content") || r.ruleMatchesCategory(rule, "spam") {
+					filtered = append(filtered, rule)
+				}
+			}
+		default:
+			// Return top 3 most important rules
+			if len(rules) > 3 {
+				filtered = rules[:3]
+			} else {
+				filtered = rules
+			}
+		}
+	}
+
+	return filtered
+}
+
+// calculateSimilarity calculates a simple text similarity score (0.0 to 1.0)
+func (r *InstanceRepository) calculateSimilarity(text1, text2 string) float64 {
+	words1 := strings.Fields(text1)
+	words2 := strings.Fields(text2)
+
+	if len(words1) == 0 || len(words2) == 0 {
+		return 0.0
+	}
+
+	matches := 0
+	for _, word1 := range words1 {
+		for _, word2 := range words2 {
+			if strings.Contains(word1, word2) || strings.Contains(word2, word1) {
+				matches++
+				break
+			}
+		}
+	}
+
+	// Return ratio of matching words to total unique words
+	totalWords := len(words1) + len(words2)
+	return float64(matches*2) / float64(totalWords)
 }

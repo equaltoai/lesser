@@ -528,10 +528,10 @@ func (h *Handler) createUndoAnnounceActivity(actor *activitypub.Actor, objectID 
 	now := time.Now()
 	return &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: activitypub.Context,
-			Type:    activitypub.UndoType,
-			ID:      fmt.Sprintf("%s/activities/undo-announce-%d-%s", actor.ID, now.Unix(), generateRandomStringForBoost()),
-			To:      []string{activitypub.PublicAddress},
+			Context:   activitypub.Context,
+			Type:      activitypub.UndoType,
+			ID:        fmt.Sprintf("%s/activities/undo-announce-%d-%s", actor.ID, now.Unix(), generateRandomStringForBoost()),
+			To:        []string{activitypub.PublicAddress},
 			Published: &now,
 		},
 		Actor: actor.ID,

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/google/uuid"
 )
 
 // ScheduledJobCostRecord represents detailed cost tracking for scheduled/cron jobs
@@ -454,12 +454,12 @@ func (sjcr *ScheduledJobCostRecord) GetPerformanceMetric(key string) (float64, b
 // isValidScheduledJobStatus checks if the job status is valid
 func isValidScheduledJobStatus(status string) bool {
 	validStatuses := map[string]bool{
-		StatusSuccess:   true,
-		"failed":    true,
-		"timeout":   true,
-		"cancelled": true,
-		"running":   true,
-		"queued":    true,
+		StatusSuccess: true,
+		"failed":      true,
+		"timeout":     true,
+		"cancelled":   true,
+		"running":     true,
+		"queued":      true,
 	}
 	return validStatuses[status]
 }

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/stretchr/testify/assert"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestActor_TableName(t *testing.T) {

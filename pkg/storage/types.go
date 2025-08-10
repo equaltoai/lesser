@@ -15,9 +15,9 @@ var (
 // Conflict resolution strategies
 const (
 	// ConflictResolutionLatest chooses the most recent version
-	ConflictResolutionLatest          = "latest"
+	ConflictResolutionLatest = "latest"
 	// ConflictResolutionHighestQuality chooses the highest quality version
-	ConflictResolutionHighestQuality  = "highest_quality"
+	ConflictResolutionHighestQuality = "highest_quality"
 	// ConflictResolutionLowestBandwidth chooses the lowest bandwidth version
 	ConflictResolutionLowestBandwidth = "lowest_bandwidth"
 )
@@ -104,11 +104,11 @@ type ConflictResolutionStrategy string
 
 const (
 	// ConflictResolutionMerge attempts to merge conflicting data
-	ConflictResolutionMerge     ConflictResolutionStrategy = "merge"
+	ConflictResolutionMerge ConflictResolutionStrategy = "merge"
 	// ConflictResolutionOverwrite overwrites existing data with new data
 	ConflictResolutionOverwrite ConflictResolutionStrategy = "overwrite"
 	// ConflictResolutionReject rejects conflicting data
-	ConflictResolutionReject    ConflictResolutionStrategy = "reject"
+	ConflictResolutionReject ConflictResolutionStrategy = "reject"
 )
 
 // DNSCacheEntry represents a DNS cache entry
@@ -190,13 +190,13 @@ type TrustEvidence = models.TrustEvidence
 // Trust category constants
 const (
 	// TrustCategoryContent represents trust in content quality
-	TrustCategoryContent   = models.TrustCategoryContent
+	TrustCategoryContent = models.TrustCategoryContent
 	// TrustCategoryBehavior represents trust in user behavior
-	TrustCategoryBehavior  = models.TrustCategoryBehavior
+	TrustCategoryBehavior = models.TrustCategoryBehavior
 	// TrustCategoryTechnical represents trust in technical aspects
 	TrustCategoryTechnical = models.TrustCategoryTechnical
 	// TrustCategoryGeneral represents general trust level
-	TrustCategoryGeneral   = models.TrustCategoryGeneral
+	TrustCategoryGeneral = models.TrustCategoryGeneral
 )
 
 // Note: Common storage errors are already defined in errors.go
@@ -1631,11 +1631,11 @@ type Severity string
 
 const (
 	// SeverityLow represents low severity issues
-	SeverityLow      Severity = "low"
+	SeverityLow Severity = "low"
 	// SeverityMedium represents medium severity issues
-	SeverityMedium   Severity = "medium"
+	SeverityMedium Severity = "medium"
 	// SeverityHigh represents high severity issues
-	SeverityHigh     Severity = "high"
+	SeverityHigh Severity = "high"
 	// SeverityCritical represents critical severity issues
 	SeverityCritical Severity = "critical"
 )
@@ -1643,22 +1643,22 @@ const (
 // EventType constants for moderation events
 const (
 	// EventTypeFlagged represents content flagging events
-	EventTypeFlagged   = "flagged"
+	EventTypeFlagged = "flagged"
 	// EventTypeApproved represents content approval events
-	EventTypeApproved  = "approved"
+	EventTypeApproved = "approved"
 	// EventTypeRejected represents content rejection events
-	EventTypeRejected  = "rejected"
+	EventTypeRejected = "rejected"
 	// EventTypeSuspended represents account suspension events
 	EventTypeSuspended = "suspended"
 	// EventTypeWarned represents warning events
-	EventTypeWarned    = "warned"
+	EventTypeWarned = "warned"
 )
 
 const (
 	// ActionTypeNone represents no moderation action
-	ActionTypeNone    ActionType = "none"
+	ActionTypeNone ActionType = "none"
 	// ActionTypeWarn represents a warning action
-	ActionTypeWarn    ActionType = "warn"
+	ActionTypeWarn ActionType = "warn"
 	// ActionTypeWarning represents a warning action (alternative)
 	ActionTypeWarning ActionType = "warning"
 	// ActionTypeSilence represents silencing content
@@ -1666,7 +1666,7 @@ const (
 	// ActionTypeSuspend represents suspending an account
 	ActionTypeSuspend ActionType = "suspend"
 	// ActionTypeDelete represents deleting content
-	ActionTypeDelete  ActionType = "delete"
+	ActionTypeDelete ActionType = "delete"
 	// ActionTypeRestore represents restoring content or account
 	ActionTypeRestore ActionType = "restore"
 )
@@ -1727,13 +1727,13 @@ type FlagStatus string
 
 const (
 	// FlagStatusPending represents a pending flag
-	FlagStatusPending   FlagStatus = "pending"
+	FlagStatusPending FlagStatus = "pending"
 	// FlagStatusReviewed represents a reviewed flag
-	FlagStatusReviewed  FlagStatus = "reviewed"
+	FlagStatusReviewed FlagStatus = "reviewed"
 	// FlagStatusApproved represents an approved flag
-	FlagStatusApproved  FlagStatus = "approved"
+	FlagStatusApproved FlagStatus = "approved"
 	// FlagStatusRejected represents a rejected flag
-	FlagStatusRejected  FlagStatus = "rejected"
+	FlagStatusRejected FlagStatus = "rejected"
 	// FlagStatusEscalated represents an escalated flag
 	FlagStatusEscalated FlagStatus = "escalated"
 )
@@ -1743,17 +1743,17 @@ type ReportStatus string
 
 const (
 	// ReportStatusOpen represents an open report
-	ReportStatusOpen       ReportStatus = "open"
+	ReportStatusOpen ReportStatus = "open"
 	// ReportStatusInProgress represents a report being processed
 	ReportStatusInProgress ReportStatus = "in_progress"
 	// ReportStatusResolved represents a resolved report
-	ReportStatusResolved   ReportStatus = "resolved"
+	ReportStatusResolved ReportStatus = "resolved"
 	// ReportStatusClosed represents a closed report
-	ReportStatusClosed     ReportStatus = "closed"
+	ReportStatusClosed ReportStatus = "closed"
 	// ReportStatusAppealed represents an appealed report
-	ReportStatusAppealed   ReportStatus = "appealed"
+	ReportStatusAppealed ReportStatus = "appealed"
 	// ReportStatusRejected represents a rejected report
-	ReportStatusRejected   ReportStatus = "rejected"
+	ReportStatusRejected ReportStatus = "rejected"
 )
 
 // ReportStats represents statistics for moderation reports
@@ -1913,15 +1913,15 @@ type SeveranceReason string
 
 const (
 	// SeveranceReasonDomainBlock represents severance due to domain blocking
-	SeveranceReasonDomainBlock      SeveranceReason = "domain_block"
+	SeveranceReasonDomainBlock SeveranceReason = "domain_block"
 	// SeveranceReasonAccountBlock represents severance due to account blocking
-	SeveranceReasonAccountBlock     SeveranceReason = "account_block"
+	SeveranceReasonAccountBlock SeveranceReason = "account_block"
 	// SeveranceReasonAccountSuspend represents severance due to account suspension
-	SeveranceReasonAccountSuspend   SeveranceReason = "account_suspend"
+	SeveranceReasonAccountSuspend SeveranceReason = "account_suspend"
 	// SeveranceReasonModerationAction represents severance due to moderation action
 	SeveranceReasonModerationAction SeveranceReason = "moderation_action"
 	// SeveranceReasonPolicyViolation represents severance due to policy violation
-	SeveranceReasonPolicyViolation  SeveranceReason = "policy_violation"
+	SeveranceReasonPolicyViolation SeveranceReason = "policy_violation"
 )
 
 // TrusteeConfig represents configuration for social recovery trustees
@@ -1990,10 +1990,10 @@ type RelayState struct {
 type StatusSearchOptions struct {
 	Query          string     `json:"query"`
 	AccountID      string     `json:"account_id,omitempty"`
-	MaxID          string     `json:"max_id,omitempty"`          // Legacy pagination support
-	MinID          string     `json:"min_id,omitempty"`          // Legacy pagination support
+	MaxID          string     `json:"max_id,omitempty"` // Legacy pagination support
+	MinID          string     `json:"min_id,omitempty"` // Legacy pagination support
 	Limit          int        `json:"limit,omitempty"`
-	Offset         int        `json:"offset,omitempty"`          // Legacy pagination support
+	Offset         int        `json:"offset,omitempty"` // Legacy pagination support
 	OnlyMedia      bool       `json:"only_media"`
 	ExcludeReplies bool       `json:"exclude_replies"`
 	ExcludeReblogs bool       `json:"exclude_reblogs"`
@@ -2001,8 +2001,25 @@ type StatusSearchOptions struct {
 	DateFrom       *time.Time `json:"date_from,omitempty"`
 	DateTo         *time.Time `json:"date_to,omitempty"`
 	LocalOnly      bool       `json:"local_only"`
-	
+
 	// New cursor-based pagination fields
-	Cursor    string `json:"cursor,omitempty"`       // Cursor for pagination
-	SortOrder string `json:"sort_order,omitempty"`   // Sort order: "relevance", "time_asc", "time_desc"
+	Cursor    string `json:"cursor,omitempty"`     // Cursor for pagination
+	SortOrder string `json:"sort_order,omitempty"` // Sort order: "relevance", "time_asc", "time_desc"
+}
+
+// AuditLog represents an audit log entry for admin actions
+type AuditLog struct {
+	ID          string    `json:"id"`
+	AdminID     string    `json:"admin_id"`         // Who performed the action
+	AdminRole   string    `json:"admin_role"`       // admin or moderator
+	Action      string    `json:"action"`           // suspend, silence, resolve_report, etc.
+	TargetType  string    `json:"target_type"`      // account, status, report, domain
+	TargetID    string    `json:"target_id"`        // ID of the target
+	Reason      string    `json:"reason,omitempty"` // Reason for action
+	Details     any       `json:"details,omitempty"`// Additional details
+	IPAddress   string    `json:"ip_address,omitempty"`
+	UserAgent   string    `json:"user_agent,omitempty"`
+	RequestID   string    `json:"request_id,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
+	CreatedAt   time.Time `json:"created_at"`
 }

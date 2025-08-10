@@ -37,6 +37,9 @@ const (
 
 	// MaxClockSkew is the maximum clock skew allowed (5 minutes)
 	MaxClockSkew = 5 * time.Minute
+
+	// RequestTargetHeader is the pseudo-header for request target
+	RequestTargetHeader = "(request-target)"
 )
 
 // Supported algorithms
@@ -112,7 +115,7 @@ func buildSignatureString(req *http.Request, headers []string) (string, error) {
 		var value string
 
 		switch header {
-		case "(request-target)":
+		case RequestTargetHeader:
 			value = fmt.Sprintf("%s %s", strings.ToLower(req.Method), req.URL.Path)
 			if req.URL.RawQuery != "" {
 				value += "?" + req.URL.RawQuery
@@ -235,34 +238,14 @@ func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 		}
 	}
 
-	// Build signature string
-	sigString, err := buildSignatureString(req, sig.Headers)
-	if err != nil {
-		return fmt.Errorf("failed to build signature string: %w", err)
-	}
-
-	// Verify the signature based on algorithm
-	var verifyErr error
-	switch sig.Algorithm {
-	case "rsa-sha256":
-		rsaKey, ok := publicKey.(*rsa.PublicKey)
-		if !ok {
-			return common.AuthenticationError{Message: "public key is not RSA"}
-		}
-
-		hash := sha256.Sum256([]byte(sigString))
-		verifyErr = rsa.VerifyPKCS1v15(rsaKey, crypto.SHA256, hash[:], sig.Signature)
-
-	default:
-		return common.AuthenticationError{Message: fmt.Sprintf("unsupported algorithm: %s", sig.Algorithm)}
-	}
-
-	if verifyErr != nil {
-		return common.AuthenticationError{Message: "signature verification failed"}
+	// Use enhanced verification for all algorithms
+	if err := VerifyHTTPSignatureEnhanced(req, publicKey, sig); err != nil {
+		return err
 	}
 
 	log.Info("verified HTTP signature",
 		zap.String("key_id", sig.KeyID),
+		zap.String("algorithm", sig.Algorithm),
 		zap.String("method", req.Method),
 		zap.String("path", req.URL.Path))
 
@@ -271,8 +254,6 @@ func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 
 // SignHTTPRequest signs an outgoing HTTP request
 func SignHTTPRequest(req *http.Request, privateKey crypto.PrivateKey, keyID string) error {
-	log := common.Logger()
-
 	// Set date header if not present
 	if req.Header.Get(DateHeader) == "" {
 		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
@@ -294,52 +275,10 @@ func SignHTTPRequest(req *http.Request, privateKey crypto.PrivateKey, keyID stri
 		req.Header.Set(DigestHeader, digest)
 	}
 
-	// Determine headers to sign
-	headers := []string{"(request-target)", "host", "date"}
-	if req.Header.Get(DigestHeader) != "" {
-		headers = append(headers, "digest")
-	}
-	if req.Header.Get("Content-Type") != "" {
-		headers = append(headers, "content-type")
-	}
-
-	// Build signature string
-	sigString, err := buildSignatureString(req, headers)
-	if err != nil {
-		return fmt.Errorf("failed to build signature string: %w", err)
-	}
-
-	// Sign the string based on key type
-	var signature []byte
-	switch key := privateKey.(type) {
-	case *rsa.PrivateKey:
-		hash := sha256.Sum256([]byte(sigString))
-		signature, err = rsa.SignPKCS1v15(nil, key, crypto.SHA256, hash[:])
-		if err != nil {
-			return fmt.Errorf("failed to sign: %w", err)
-		}
-
-	default:
-		return fmt.Errorf("unsupported private key type")
-	}
-
-	// Build signature header
-	sigHeader := fmt.Sprintf(
-		`keyId="%s",algorithm="%s",headers="%s",signature="%s"`,
-		keyID,
-		DefaultAlgorithm,
-		strings.Join(headers, " "),
-		base64.StdEncoding.EncodeToString(signature),
-	)
-
-	req.Header.Set(SignatureHeader, sigHeader)
-
-	log.Debug("signed HTTP request",
-		zap.String("key_id", keyID),
-		zap.String("method", req.Method),
-		zap.String("path", req.URL.Path))
-
-	return nil
+	// Use enhanced signing for better algorithm support
+	algorithm := DetermineSigningAlgorithm(privateKey, true) // Use legacy for max compatibility
+	
+	return SignHTTPRequestWithAlgorithm(req, privateKey, keyID, algorithm)
 }
 
 // GenerateRSAKeyPair generates a new RSA key pair

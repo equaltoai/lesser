@@ -1,0 +1,199 @@
+package services
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/pay-theory/dynamorm/pkg/core"
+	"go.uber.org/zap"
+)
+
+// federationService implements FederationService
+type federationService struct {
+	deps    *ServiceDependencies
+	storage StorageAdapter
+	logger  *zap.Logger
+}
+
+// NewFederationService creates a new federation service
+func NewFederationService(deps *ServiceDependencies) FederationService {
+	return &federationService{
+		deps:    deps,
+		storage: CreateStorageAdapter(deps.Repos),
+		logger:  deps.Logger.(*zap.Logger),
+	}
+}
+
+// DeliverToFollowers delivers an activity to all followers of the actor
+func (f *federationService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	// Use storage directly if it implements FederationStorage
+	var federationStorage federation.FederationStorage
+	
+	// Try to get DB from storage for DynamORM federation storage
+	if db := f.storage.GetDB(); db != nil {
+		// Check if it's a core.DB type
+		if coreDB, ok := db.(core.DB); ok {
+			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName())
+		} else {
+			// Fall back to a basic implementation or return error
+			return fmt.Errorf("unsupported database type for federation")
+		}
+	} else {
+		return fmt.Errorf("no database available for federation")
+	}
+	
+	deliveryService := federation.NewDeliveryService(federationStorage)
+	return deliveryService.DeliverToFollowers(ctx, activity, actor)
+}
+
+// DeliverToRecipients delivers an activity to specific recipients
+func (f *federationService) DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	// Use storage directly if it implements FederationStorage
+	var federationStorage federation.FederationStorage
+	
+	// Try to get DB from storage for DynamORM federation storage
+	if db := f.storage.GetDB(); db != nil {
+		// Check if it's a core.DB type
+		if coreDB, ok := db.(core.DB); ok {
+			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName())
+		} else {
+			// Fall back to a basic implementation or return error
+			return fmt.Errorf("unsupported database type for federation")
+		}
+	} else {
+		return fmt.Errorf("no database available for federation")
+	}
+	
+	deliveryService := federation.NewDeliveryService(federationStorage)
+
+	return deliveryService.DeliverToRecipients(ctx, activity, actor)
+}
+
+// DetermineRecipients determines who should receive an activity based on its type and visibility
+func (f *federationService) DetermineRecipients(ctx context.Context, activity *activitypub.Activity, visibility string) ([]string, error) {
+	recipients := make(map[string]bool)
+
+	// Extract actor from activity
+	actorID := activity.Actor
+	if actorID == "" {
+		return nil, fmt.Errorf("activity has no actor")
+	}
+
+	// Get actor username for follower lookup
+	actor, err := f.getActorByID(ctx, actorID)
+	if err != nil {
+		f.logger.Warn("failed to get actor for recipient determination", zap.Error(err))
+		return []string{}, nil
+	}
+
+	// Add recipients based on visibility
+	switch visibility {
+	case "public", "unlisted":
+		// Add all followers
+		followers, err := f.getFollowers(ctx, actor.PreferredUsername)
+		if err != nil {
+			f.logger.Warn("failed to get followers for delivery", zap.Error(err))
+		} else {
+			for _, follower := range followers {
+				recipients[follower] = true
+			}
+		}
+		
+		// Add mentioned users
+		mentions := f.extractMentions(activity)
+		for _, mention := range mentions {
+			recipients[mention] = true
+		}
+
+	case "private":
+		// Only followers
+		followers, err := f.getFollowers(ctx, actor.PreferredUsername)
+		if err != nil {
+			f.logger.Warn("failed to get followers for private delivery", zap.Error(err))
+		} else {
+			for _, follower := range followers {
+				recipients[follower] = true
+			}
+		}
+
+	case "direct":
+		// Only mentioned users
+		mentions := f.extractMentions(activity)
+		for _, mention := range mentions {
+			recipients[mention] = true
+		}
+	}
+
+	// Add users from To/CC fields
+	if activity.To != nil {
+		for _, recipient := range activity.To {
+			if recipient != activitypub.PublicAddress {
+				recipients[recipient] = true
+			}
+		}
+	}
+	
+	if activity.CC != nil {
+		for _, recipient := range activity.CC {
+			if recipient != activitypub.PublicAddress {
+				recipients[recipient] = true
+			}
+		}
+	}
+
+	// Convert to slice
+	recipientList := make([]string, 0, len(recipients))
+	for recipient := range recipients {
+		recipientList = append(recipientList, recipient)
+	}
+
+	return recipientList, nil
+}
+
+// Helper methods
+
+func (f *federationService) getActorByID(ctx context.Context, actorID string) (*activitypub.Actor, error) {
+	// Extract username from actor ID
+	// Format: https://domain/users/username or https://domain/@username
+	username := ""
+	if strings.Contains(actorID, "/users/") {
+		parts := strings.Split(actorID, "/users/")
+		if len(parts) == 2 {
+			username = parts[1]
+		}
+	} else if strings.Contains(actorID, "/@") {
+		parts := strings.Split(actorID, "/@")
+		if len(parts) == 2 {
+			username = parts[1]
+		}
+	}
+	
+	if username == "" {
+		return nil, fmt.Errorf("invalid actor ID format: %s", actorID)
+	}
+
+	return f.storage.GetActor(ctx, username)
+}
+
+func (f *federationService) getFollowers(ctx context.Context, username string) ([]string, error) {
+	followers, _, err := f.storage.GetFollowers(ctx, username, 1000, "")
+	return followers, err
+}
+
+func (f *federationService) extractMentions(activity *activitypub.Activity) []string {
+	var mentions []string
+
+	// Extract mentions from the activity object if it's a Note
+	if note, ok := activity.Object.(*activitypub.Note); ok {
+		for _, tag := range note.Tag {
+			if tag.Type == "Mention" && tag.Href != "" {
+				mentions = append(mentions, tag.Href)
+			}
+		}
+	}
+
+	return mentions
+}

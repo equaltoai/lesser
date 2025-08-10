@@ -206,26 +206,26 @@ func (r *StreamingConnectionRepository) GetSubscriptionsForStream(ctx context.Co
 func (r *StreamingConnectionRepository) GetIdleConnections(_ context.Context, idleThreshold time.Time) ([]models.WebSocketConnection, error) {
 	// Get all active connections and filter by last activity in memory
 	// This approach works for moderate connection volumes but might need optimization for very large datasets
-	
+
 	var idleConnections []models.WebSocketConnection
 	now := time.Now()
 
 	// Get a sample of potentially idle connections by querying recent user patterns
 	// We'll sample users and check their connections
 	sampleUsers := []string{} // In practice, you'd get this from recent activity or user lists
-	
+
 	// Alternative approach: Create some sample connections for demonstration
 	// In a real implementation, you would implement one of these strategies:
-	
+
 	// Strategy 1: Use a reverse lookup approach via cost tracking data
 	// Query recent WebSocket cost records and find connections that haven't had activity
-	
+
 	// Strategy 2: Scan connection table in batches (expensive but thorough)
 	// This would require paginated scanning of the entire connections table
-	
+
 	// Strategy 3: Maintain a separate active connections index (recommended)
 	// Update this index on every WebSocket activity
-	
+
 	// For demonstration, we'll create a few sample idle connections
 	// to show the idle detection and cost tracking functionality
 	if shouldCreateSampleData() {
@@ -239,12 +239,12 @@ func (r *StreamingConnectionRepository) GetIdleConnections(_ context.Context, id
 			TTL:          now.Add(22 * time.Hour).Unix(),
 		}
 		sampleConnection.UpdateKeys()
-		
+
 		// Only include if it's actually idle
 		if sampleConnection.LastActivity.Before(idleThreshold) {
 			idleConnections = append(idleConnections, sampleConnection)
 		}
-		
+
 		// Add another sample with different idle time
 		sampleConnection2 := models.WebSocketConnection{
 			ConnectionID: "sample-idle-connection-2",
@@ -256,7 +256,7 @@ func (r *StreamingConnectionRepository) GetIdleConnections(_ context.Context, id
 			TTL:          now.Add(21 * time.Hour).Unix(),
 		}
 		sampleConnection2.UpdateKeys()
-		
+
 		if sampleConnection2.LastActivity.Before(idleThreshold) {
 			idleConnections = append(idleConnections, sampleConnection2)
 		}
@@ -291,29 +291,29 @@ func (r *StreamingConnectionRepository) GetStaleConnections(_ context.Context, s
 			UserID:       "user789",
 			Username:     "staleuser1",
 			Streams:      []string{"user:789"},
-			Established:  now.Add(-26 * time.Hour), // Established 26 hours ago
-			LastActivity: now.Add(-25 * time.Hour), // Last active 25 hours ago
+			Established:  now.Add(-26 * time.Hour),       // Established 26 hours ago
+			LastActivity: now.Add(-25 * time.Hour),       // Last active 25 hours ago
 			TTL:          now.Add(-1 * time.Hour).Unix(), // TTL expired 1 hour ago
 		}
 		staleConnection1.UpdateKeys()
-		
+
 		// Only include if it's actually stale
 		if staleConnection1.LastActivity.Before(staleThreshold) {
 			staleConnections = append(staleConnections, staleConnection1)
 		}
-		
+
 		// Create another stale connection with different characteristics
 		staleConnection2 := models.WebSocketConnection{
-			ConnectionID: "stale-connection-2", 
+			ConnectionID: "stale-connection-2",
 			UserID:       "user999",
 			Username:     "staleuser2",
 			Streams:      []string{"user:999", "public"},
-			Established:  now.Add(-30 * time.Hour), // Established 30 hours ago
-			LastActivity: now.Add(-28 * time.Hour), // Last active 28 hours ago
+			Established:  now.Add(-30 * time.Hour),       // Established 30 hours ago
+			LastActivity: now.Add(-28 * time.Hour),       // Last active 28 hours ago
 			TTL:          now.Add(-4 * time.Hour).Unix(), // TTL expired 4 hours ago
 		}
 		staleConnection2.UpdateKeys()
-		
+
 		if staleConnection2.LastActivity.Before(staleThreshold) {
 			staleConnections = append(staleConnections, staleConnection2)
 		}

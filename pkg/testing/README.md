@@ -1,6 +1,263 @@
-# Testing Guide for Lesser
+# Lesser Testing Infrastructure
 
-This guide explains how to write tests for the Lesser project using Lift and DynamORM's built-in testing utilities.
+This package provides comprehensive testing infrastructure for the Lesser project, including integration test harness, mock services, test data factories, and performance benchmarks.
+
+**Note**: This document covers the enhanced testing infrastructure. For basic Lift/DynamORM testing patterns, see the [original testing guide](#original-testing-guide) below.
+
+## Overview
+
+The testing infrastructure is organized into several key components:
+
+- **Harness** (`harness/`): Integration test utilities and API clients
+- **Factories** (`factories/`): Test data generators for consistent test data
+- **Mocks** (`mocks/`): Enhanced mock implementations for external services
+- **Benchmarks** (`benchmarks/`): Performance benchmarks for critical paths
+
+## Quick Start
+
+### Integration Testing
+
+```go
+import (
+    "github.com/equaltoai/lesser/pkg/testing/harness"
+    "github.com/equaltoai/lesser/pkg/testing/factories"
+)
+
+func TestAPIIntegration(t *testing.T) {
+    // Create test harness
+    harness := harness.NewIntegrationTestHarness(t, nil)
+    
+    // Start test server with your app
+    harness.StartServer(myApp)
+    
+    // Create test data
+    actor := harness.CreateTestActor("testuser")
+    
+    // Make API requests
+    resp := harness.MakeRequest("GET", "/users/testuser", nil, nil)
+    assert.Equal(t, 200, resp.StatusCode)
+}
+```
+
+### Test Data Factories
+
+```go
+import "github.com/equaltoai/lesser/pkg/testing/factories"
+
+func TestWithFactories(t *testing.T) {
+    // Create actor factory
+    actorFactory := factories.NewActorFactory("test.example.com")
+    
+    // Generate test actors
+    actor := actorFactory.CreateActor(factories.ActorOptions{
+        Username: "testuser",
+        Bot:      false,
+        Locked:   false,
+    })
+    
+    // Create timeline scenarios
+    timelineFactory := factories.NewTimelineFactory("test.example.com")
+    timeline := timelineFactory.CreateTimelineScenario("user", factories.MixedTimeline)
+}
+```
+
+### Benchmarking
+
+```go
+import "github.com/equaltoai/lesser/pkg/testing/benchmarks"
+
+func BenchmarkStorageOperations(b *testing.B) {
+    storage := mocks.NewEnhancedMockStorage()
+    suite := benchmarks.NewStorageBenchmarkSuite(storage)
+    
+    suite.Setup(b)
+    suite.RunAllBenchmarks(b)
+}
+```
+
+## Components
+
+### Integration Test Harness
+
+The integration test harness (`harness/`) provides:
+
+- **IntegrationTestHarness**: Complete testing environment setup
+- **APIClient**: HTTP client for API testing
+- **MastodonAPIClient**: Mastodon-specific API methods
+- **ActivityPubClient**: ActivityPub protocol testing
+- **TestAssertions**: Common test assertions
+
+Features:
+- Automatic test data cleanup
+- Configurable storage backends (memory/DynamoDB)
+- Built-in test server management
+- Timeout and error handling
+- Comprehensive logging
+
+### Test Data Factories
+
+The factories (`factories/`) provide consistent test data generation:
+
+- **ActorFactory**: Creates actors, users, bots, and locked accounts
+- **ActivityFactory**: Generates ActivityPub activities, notes, and interactions
+- **TimelineFactory**: Creates timeline scenarios for different test cases
+
+Timeline scenarios:
+- `EmptyTimeline`: No content
+- `SimpleTimeline`: Basic posts
+- `MixedTimeline`: Posts, replies, boosts, likes
+- `HighVolumeTimeline`: Many posts for performance testing
+- `ConversationTimeline`: Threaded conversations
+
+### Enhanced Mock Services
+
+The mocks (`mocks/`) provide sophisticated mock implementations:
+
+- **EnhancedMockStorage**: Stateful storage mock with relationship tracking
+- **MockExternalService**: HTTP service mock with request logging
+- **MockLogger**: Logger that captures log entries
+
+Mock features:
+- Configurable latency simulation
+- Error rate simulation
+- Operation counting
+- State management
+- Request/response logging
+
+### Performance Benchmarks
+
+The benchmarks (`benchmarks/`) provide performance testing for:
+
+- **Storage operations**: Create/read/update/delete performance
+- **API endpoints**: HTTP request/response benchmarks
+- **Federation**: ActivityPub protocol performance
+- **Memory usage**: Allocation and garbage collection
+- **Concurrent access**: Thread safety and scalability
+
+## Make Targets
+
+### Basic Testing
+```bash
+make test                    # Run all unit tests
+make test-unit              # Run unit tests only (short)
+make test-integration       # Run integration tests
+make test-benchmark         # Run benchmark tests
+```
+
+### Coverage Testing
+```bash
+make test-coverage          # Run tests with coverage report
+make test-coverage-enforce  # Enforce minimum 70% coverage
+make test-coverage-detail   # Detailed coverage by package
+```
+
+### Advanced Testing
+```bash
+make test-race             # Run with race detection
+make test-package PKG=path # Test specific package
+make test-watch           # Run tests in watch mode
+```
+
+### Load Testing
+```bash
+make test-load            # Run k6 load tests
+make k6-auth              # Test authentication endpoints
+make k6-timeline          # Test timeline performance
+```
+
+## Configuration
+
+### Test Configuration
+
+```go
+config := &harness.TestConfig{
+    Domain:        "test.example.com",
+    TableName:     "test-table",
+    UseMemory:     true,              // Use in-memory storage
+    LogLevel:      zaptest.WarnLevel, // Reduce log noise
+    ServerTimeout: 30 * time.Second,
+    CleanupMode:   harness.CleanupOnSuccess, // Clean up on success only
+}
+```
+
+### Mock Configuration
+
+```go
+storage := mocks.NewEnhancedMockStorage()
+storage.SetLatencySimulation(5 * time.Millisecond) // Add 5ms latency
+storage.SetErrorRate(0.01) // 1% error rate
+```
+
+## Best Practices
+
+### Integration Tests
+
+1. **Use the harness**: Always use `IntegrationTestHarness` for integration tests
+2. **Clean test data**: Configure appropriate cleanup mode
+3. **Use factories**: Generate consistent test data with factories
+4. **Test realistic scenarios**: Use timeline scenarios that match real usage
+5. **Verify behavior**: Use assertions to validate expected behavior
+
+### Unit Tests
+
+1. **Use table-driven tests**: For testing multiple scenarios
+2. **Mock external dependencies**: Use enhanced mocks for external services
+3. **Test edge cases**: Include error conditions and boundary cases
+4. **Keep tests fast**: Use in-memory storage and minimal setup
+
+### Benchmarks
+
+1. **Establish baselines**: Record performance baselines for comparison
+2. **Test realistic loads**: Use scenarios that match production usage
+3. **Monitor memory**: Use `-benchmem` flag to track allocations
+4. **Test concurrency**: Use parallel benchmarks for concurrent access patterns
+
+### Coverage
+
+1. **Aim for 70%+ coverage**: Use `make test-coverage-enforce`
+2. **Focus on critical paths**: Ensure high coverage for important functionality
+3. **Don't chase 100%**: Focus on meaningful tests over coverage percentage
+4. **Review regularly**: Use detailed coverage reports to identify gaps
+
+## Examples
+
+See the example test files for complete usage examples:
+- `harness/example_test.go`: Integration testing examples
+- `benchmarks/example_test.go`: Benchmarking examples
+
+## Contributing
+
+When adding new test infrastructure:
+
+1. **Follow existing patterns**: Use the established structure and naming
+2. **Add documentation**: Include clear documentation and examples
+3. **Test your tests**: Ensure test utilities work correctly
+4. **Update Make targets**: Add new test categories to Makefile
+5. **Benchmark critical paths**: Add benchmarks for performance-sensitive code
+
+## Environment Variables
+
+- `CI`: Set to enable CI-specific behavior
+- `INTEGRATION_TEST`: Set to enable integration tests
+- `TEST_ENV`: Set to `integration` for integration test mode
+- `PKG`: Package path for `make test-package`
+
+## Dependencies
+
+- `testify`: Assertions and testing utilities
+- `zap`: Logging (with zaptest for testing)
+- `lift`: Web framework for API testing
+- `dynamorm`: ORM for DynamoDB testing
+- `entr`: File watching for `make test-watch` (optional)
+- `k6`: Load testing tool (optional)
+
+This testing infrastructure provides a solid foundation for maintaining code quality and performance in the Lesser project.
+
+---
+
+## Original Testing Guide
+
+The following section covers basic Lift and DynamORM testing patterns:
 
 ## Key Principles
 

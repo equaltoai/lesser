@@ -146,8 +146,8 @@ func (h *Handler) buildRelationshipLift(ctx context.Context, actor, targetActor 
 	}
 
 	// Check if blocking
-	_, err = h.repos.Social().GetBlock(ctx, actor.ID, targetActor.ID)
-	if err == nil {
+	isBlocking, err := h.repos.Relationship().IsBlocked(ctx, actor.ID, targetActor.ID)
+	if err == nil && isBlocking {
 		// Block exists
 		relationship.Blocking = true
 		// If blocking, can't be following
@@ -157,8 +157,8 @@ func (h *Handler) buildRelationshipLift(ctx context.Context, actor, targetActor 
 	}
 
 	// Check if blocked by
-	_, err = h.repos.Social().GetBlock(ctx, targetActor.ID, actor.ID)
-	if err == nil {
+	isBlockedBy, err := h.repos.Relationship().IsBlocked(ctx, targetActor.ID, actor.ID)
+	if err == nil && isBlockedBy {
 		// Blocked by the target
 		relationship.BlockedBy = true
 	}

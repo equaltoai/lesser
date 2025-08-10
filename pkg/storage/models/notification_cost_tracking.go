@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/google/uuid"
 )
 
 // NotificationCostTracking tracks costs for notification delivery operations

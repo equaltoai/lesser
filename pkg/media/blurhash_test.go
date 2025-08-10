@@ -54,7 +54,7 @@ func TestGenerateBlurhash(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hash, err := GenerateBlurhash(tt.img, tt.componentX, tt.componentY)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -71,7 +71,7 @@ func TestGenerateBlurhash(t *testing.T) {
 func TestGenerateBlurhashFromBytes(t *testing.T) {
 	// Create a test image
 	img := createSolidColorImage(100, 100, color.RGBA{255, 128, 0, 255})
-	
+
 	tests := []struct {
 		name     string
 		data     []byte
@@ -113,7 +113,7 @@ func TestGenerateBlurhashFromBytes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hash, err := GenerateBlurhashFromBytes(tt.data, tt.mimeType)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -177,7 +177,7 @@ func TestDecodeBlurhash(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			img, err := DecodeBlurhash(tt.hash, tt.width, tt.height)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -193,44 +193,44 @@ func TestDecodeBlurhash(t *testing.T) {
 
 func TestResizeForBlurhash(t *testing.T) {
 	tests := []struct {
-		name        string
-		srcWidth    int
-		srcHeight   int
-		maxWidth    int
-		wantWidth   int
-		wantHeight  int
+		name       string
+		srcWidth   int
+		srcHeight  int
+		maxWidth   int
+		wantWidth  int
+		wantHeight int
 	}{
 		{
-			name:        "Square image",
-			srcWidth:    100,
-			srcHeight:   100,
-			maxWidth:    32,
-			wantWidth:   32,
-			wantHeight:  32,
+			name:       "Square image",
+			srcWidth:   100,
+			srcHeight:  100,
+			maxWidth:   32,
+			wantWidth:  32,
+			wantHeight: 32,
 		},
 		{
-			name:        "Landscape image",
-			srcWidth:    200,
-			srcHeight:   100,
-			maxWidth:    32,
-			wantWidth:   32,
-			wantHeight:  16,
+			name:       "Landscape image",
+			srcWidth:   200,
+			srcHeight:  100,
+			maxWidth:   32,
+			wantWidth:  32,
+			wantHeight: 16,
 		},
 		{
-			name:        "Portrait image",
-			srcWidth:    100,
-			srcHeight:   200,
-			maxWidth:    32,
-			wantWidth:   32,
-			wantHeight:  64,
+			name:       "Portrait image",
+			srcWidth:   100,
+			srcHeight:  200,
+			maxWidth:   32,
+			wantWidth:  32,
+			wantHeight: 64,
 		},
 		{
-			name:        "Very wide image",
-			srcWidth:    1000,
-			srcHeight:   10,
-			maxWidth:    32,
-			wantWidth:   32,
-			wantHeight:  1, // Minimum height
+			name:       "Very wide image",
+			srcWidth:   1000,
+			srcHeight:  10,
+			maxWidth:   32,
+			wantWidth:  32,
+			wantHeight: 1, // Minimum height
 		},
 	}
 
@@ -238,7 +238,7 @@ func TestResizeForBlurhash(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			src := createSolidColorImage(tt.srcWidth, tt.srcHeight, color.RGBA{128, 128, 128, 255})
 			result := resizeForBlurhash(src, tt.maxWidth)
-			
+
 			bounds := result.Bounds()
 			assert.Equal(t, tt.wantWidth, bounds.Dx())
 			assert.Equal(t, tt.wantHeight, bounds.Dy())
@@ -248,10 +248,10 @@ func TestResizeForBlurhash(t *testing.T) {
 
 func TestGetDefaultBlurhash(t *testing.T) {
 	hash := GetDefaultBlurhash()
-	
+
 	assert.NotEmpty(t, hash)
 	assert.Equal(t, "L00000fQfQfQfQfQfQfQfQfQfQfQ", hash)
-	
+
 	// Verify it can be decoded
 	img, err := DecodeBlurhash(hash, 32, 32)
 	assert.NoError(t, err)
@@ -262,22 +262,22 @@ func TestProcessImageWithBlurhash(t *testing.T) {
 	// Create a test image
 	img := createGradientImage(800, 600)
 	jpegData := imageToJPEGBytes(img)
-	
+
 	// Process the image
 	results, err := ProcessImage(jpegData, "image/jpeg")
 	require.NoError(t, err)
-	
+
 	// Check that all sizes have blurhash
 	assert.Contains(t, results, "original")
 	assert.Contains(t, results, "small")
 	assert.Contains(t, results, "medium")
 	assert.Contains(t, results, "large")
-	
+
 	// Verify blurhash is generated for each size
 	for name, processed := range results {
 		assert.NotEmpty(t, processed.Blurhash, "Blurhash should be generated for %s", name)
 		assert.Greater(t, len(processed.Blurhash), 10, "Blurhash should be a valid string for %s", name)
-		
+
 		// All sizes should have the same blurhash (generated from original)
 		if name != "original" {
 			assert.Equal(t, results["original"].Blurhash, processed.Blurhash)
@@ -288,19 +288,19 @@ func TestProcessImageWithBlurhash(t *testing.T) {
 func TestBlurhashConsistency(t *testing.T) {
 	// Test that the same image produces the same blurhash
 	img := createGradientImage(100, 100)
-	
+
 	hash1, err := GenerateBlurhash(img, 4, 3)
 	require.NoError(t, err)
-	
+
 	hash2, err := GenerateBlurhash(img, 4, 3)
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, hash1, hash2, "Same image should produce same blurhash")
-	
+
 	// Different component values should produce different hashes
 	hash3, err := GenerateBlurhash(img, 5, 4)
 	require.NoError(t, err)
-	
+
 	assert.NotEqual(t, hash1, hash3, "Different components should produce different blurhash")
 }
 
@@ -355,7 +355,7 @@ func BenchmarkGenerateBlurhash(b *testing.B) {
 		b.Run(size.name, func(b *testing.B) {
 			img := createGradientImage(size.width, size.height)
 			b.ResetTimer()
-			
+
 			for i := 0; i < b.N; i++ {
 				_, _ = GenerateBlurhash(img, 4, 3)
 			}
@@ -367,7 +367,7 @@ func BenchmarkDecodeBlurhash(b *testing.B) {
 	// Generate a test hash
 	img := createGradientImage(100, 100)
 	hash, _ := GenerateBlurhash(img, 4, 3)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = DecodeBlurhash(hash, 100, 100)

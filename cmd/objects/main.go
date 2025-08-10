@@ -7,26 +7,35 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/ratelimit"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // Handler handles ActivityPub federation object requests
 type Handler struct {
-	db         core.DB
-	objectRepo *repositories.ObjectRepository
-	logger     *zap.Logger
-	cfg        *config.Config
+	db                     dynamormCore.DB
+	objectRepo             *repositories.ObjectRepository
+	authorizedFetchService *federation.AuthorizedFetchService
+	repos                  core.RepositoryStorage
+	logger                 *zap.Logger
+	cfg                    *config.Config
 }
 
 // NewHandler creates a new objects handler
@@ -43,11 +52,30 @@ func NewHandler() (*Handler, error) {
 	// Initialize object repository
 	objectRepo := repositories.NewObjectRepository(db, cfg.DynamoTableName, cfg.Domain, logger)
 
+	// Load AWS config for repository factory
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(), 
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	// Initialize repository storage for authorized fetch
+	repoStorage, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
+	}
+
+	// Initialize authorized fetch service
+	authorizedFetchService := federation.NewAuthorizedFetchService(repoStorage, cfg.Domain, logger)
+
 	return &Handler{
-		db:         db,
-		objectRepo: objectRepo,
-		logger:     logger,
-		cfg:        cfg,
+		db:                     db,
+		objectRepo:             objectRepo,
+		authorizedFetchService: authorizedFetchService,
+		repos:                  repoStorage,
+		logger:                 logger,
+		cfg:                    cfg,
 	}, nil
 }
 
@@ -57,6 +85,60 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 	objectID := ctx.Param("id")
 	if objectID == "" {
 		return lift.ValidationError("object ID is required")
+	}
+
+	// Check Accept header for content negotiation
+	acceptHeader := ctx.Header("Accept")
+	if acceptHeader == "" {
+		acceptHeader = ctx.Header("accept")
+	}
+
+	// Only enforce authorized fetch for ActivityPub JSON requests
+	if strings.Contains(acceptHeader, "application/activity+json") ||
+		strings.Contains(acceptHeader, "application/ld+json") ||
+		strings.Contains(acceptHeader, "application/json") {
+		// Check if authorized fetch is enabled
+		if h.authorizedFetchService.IsAuthorizedFetchEnabled(ctx.Request.Context()) {
+			h.logger.Debug("authorized fetch enabled, verifying request",
+				zap.String("object_id", objectID),
+				zap.String("request_id", ctx.GetRequestID()),
+			)
+
+			// Convert lift.Context to http.Request for signature verification
+			httpReq, err := h.convertLiftRequest(ctx)
+			if err != nil {
+				h.logger.Error("failed to convert request for authorized fetch",
+					zap.String("object_id", objectID),
+					zap.String("request_id", ctx.GetRequestID()),
+					zap.Error(err),
+				)
+				return lift.NewLiftError("REQUEST_CONVERSION_ERROR", "malformed request", 400).WithCause(err)
+			}
+
+			// Verify authorized fetch
+			_, err = h.authorizedFetchService.VerifyAuthorizedFetch(ctx.Request.Context(), httpReq)
+			if err != nil {
+				// Check if signature is missing vs invalid
+				if strings.Contains(err.Error(), "missing signature") {
+					h.logger.Debug("unauthorized request - missing signature",
+						zap.String("object_id", objectID),
+						zap.String("request_id", ctx.GetRequestID()),
+					)
+					return lift.NewLiftError("UNAUTHORIZED", "signature required for authorized fetch", 401)
+				}
+				h.logger.Debug("authorized fetch verification failed",
+					zap.String("object_id", objectID),
+					zap.String("request_id", ctx.GetRequestID()),
+					zap.Error(err),
+				)
+				return lift.NewLiftError("FORBIDDEN", "signature verification failed", 403).WithCause(err)
+			}
+
+			h.logger.Debug("authorized fetch verification successful",
+				zap.String("object_id", objectID),
+				zap.String("request_id", ctx.GetRequestID()),
+			)
+		}
 	}
 
 	h.logger.Info("fetching object",
@@ -80,12 +162,6 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 			zap.Error(err),
 		)
 		return lift.NewLiftError("OBJECT_FETCH_ERROR", "failed to fetch object", 500).WithCause(err)
-	}
-
-	// Check Accept header for content negotiation
-	acceptHeader := ctx.Header("Accept")
-	if acceptHeader == "" {
-		acceptHeader = ctx.Header("accept")
 	}
 
 	// Return HTML for browsers
@@ -126,8 +202,8 @@ type objectData struct {
 
 func (h *Handler) generateObjectHTML(objInterface any) string {
 	data := h.extractObjectData(objInterface)
-	return h.generateHTML(data.objectType, data.content, data.name, data.summary, 
-		data.attributedTo, data.id, data.published, data.updated, 
+	return h.generateHTML(data.objectType, data.content, data.name, data.summary,
+		data.attributedTo, data.id, data.published, data.updated,
 		data.sensitive, data.attachments, data.tags)
 }
 
@@ -137,12 +213,12 @@ func (h *Handler) extractObjectData(objInterface any) *objectData {
 	if note, ok := objInterface.(*activitypub.Note); ok {
 		return h.extractNoteData(note)
 	}
-	
+
 	// Handle generic object as map
 	if objMap, ok := objInterface.(map[string]any); ok {
 		return h.extractMapData(objMap)
 	}
-	
+
 	// Fallback for unknown object types
 	return &objectData{
 		objectType: "Object",
@@ -163,30 +239,30 @@ func (h *Handler) extractNoteData(note *activitypub.Note) *objectData {
 		tags:         note.Tag,
 		summary:      note.Summary,
 	}
-	
+
 	if note.Published != nil {
 		data.published = *note.Published
 	}
 	if note.Updated != nil {
 		data.updated = *note.Updated
 	}
-	
+
 	return data
 }
 
 // extractMapData extracts data from a generic map object
 func (h *Handler) extractMapData(objMap map[string]any) *objectData {
 	data := &objectData{}
-	
+
 	// Extract basic fields
 	h.extractBasicFields(objMap, data)
-	
+
 	// Extract date fields
 	h.extractDateFields(objMap, data)
-	
+
 	// Extract complex fields
 	h.extractComplexFields(objMap, data)
-	
+
 	return data
 }
 
@@ -464,6 +540,41 @@ func (h *Handler) extractUsernameFromURL(url string) string {
 	return url
 }
 
+// convertLiftRequest converts a Lift request to an http.Request for signature verification
+func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
+	// Build URL
+	u := &url.URL{
+		Scheme: "https",
+		Host:   ctx.Header("Host"),
+		Path:   ctx.Request.Path,
+	}
+	if ctx.Request.QueryParams != nil {
+		q := u.Query()
+		for k, v := range ctx.Request.QueryParams {
+			q.Set(k, v)
+		}
+		u.RawQuery = q.Encode()
+	}
+
+	// Create request with context (no body for GET requests)
+	req, err := http.NewRequestWithContext(ctx.Request.Context(), ctx.Request.Method, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Copy headers
+	for k, v := range ctx.Request.Headers {
+		req.Header.Set(k, v)
+	}
+
+	// Set host header if not present
+	if req.Header.Get("Host") == "" && ctx.Header("Host") != "" {
+		req.Host = ctx.Header("Host")
+	}
+
+	return req, nil
+}
+
 func main() {
 	// Initialize handler
 	handler, err := NewHandler()
@@ -519,6 +630,12 @@ func main() {
 			return next.Handle(ctx)
 		})
 	})
+
+	// Add federation rate limiting middleware (fourth in chain)
+	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
+		app.Use(ratelimit.FederationRateLimitMiddleware(handler.repos))
+		handler.logger.Info("enabled federation rate limiting middleware for objects service")
+	}
 
 	// ActivityPub federation endpoint
 	_ = app.GET("/objects/:id", handler.HandleGetObject)

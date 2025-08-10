@@ -823,81 +823,130 @@ func (bd *BatchDeleter) DeleteItemsWithRetry(ctx context.Context, keys []any, ma
 		return &BatchDeleteResult{}, nil
 	}
 
-	var lastResult *BatchDeleteResult
-	var lastErr error
-	backoff := 100 * time.Millisecond
-	remainingKeys := keys
+	retryState := bd.initializeRetryState(keys)
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			// Calculate exponential backoff delay with bounds checking
-			shift := attempt - 1
-			if shift > 63 {
-				shift = 63 // Cap at maximum shift for int64
-			}
-			if shift < 0 {
-				shift = 0 // Ensure non-negative for safe uint conversion
-			}
-			// Safe conversion: shift is guaranteed to be in range [0, 63]
-			// Use safe math to avoid potential overflow
-			delay := backoff * time.Duration(1<<(min(shift, 30)))
-			
-			if bd.logger != nil {
-				bd.logger.Info("retrying_batch_delete",
-					zap.Int("attempt", attempt),
-					zap.Int("remaining_keys", len(remainingKeys)),
-					zap.Duration("delay", delay),
-				)
-			}
-
-			select {
-			case <-time.After(delay):
-			case <-ctx.Done():
-				return lastResult, ctx.Err()
-			}
+		if shouldDelay := bd.handleRetryDelay(ctx, attempt, len(retryState.remainingKeys)); shouldDelay != nil {
+			return retryState.lastResult, shouldDelay
 		}
 
-		result, err := bd.DeleteItems(ctx, remainingKeys)
-		lastResult = result
+		result, err := bd.DeleteItems(ctx, retryState.remainingKeys)
+		retryState.lastResult = result
 
-		if err == nil && result.FailedItems == 0 {
-			// All items successfully processed
-			if bd.logger != nil && attempt > 0 {
-				bd.logger.Info("batch_delete_succeeded_after_retry",
-					zap.Int("attempts", attempt+1),
-					zap.Int("total_items", len(keys)),
-				)
-			}
+		if bd.isOperationSuccessful(result, err) {
+			bd.logSuccessAfterRetry(attempt, len(keys))
 			return result, nil
 		}
 
-		// Check if there are retryable errors
-		retryableErrors := make([]any, 0)
-		for _, batchErr := range result.Errors {
-			if bd.isRetryableError(batchErr.Error) {
-				retryableErrors = append(retryableErrors, batchErr.Item)
-			}
-		}
-
-		if len(retryableErrors) == 0 {
-			// No retryable errors, stop trying
+		retryableKeys := bd.extractRetryableKeys(result)
+		if len(retryableKeys) == 0 {
 			break
 		}
 
-		remainingKeys = retryableErrors
-		lastErr = err
+		retryState.remainingKeys = retryableKeys
+		retryState.lastErr = err
 	}
 
+	bd.logFinalFailure(maxRetries, len(keys), retryState.lastResult, retryState.lastErr)
+	return retryState.lastResult, fmt.Errorf("batch delete failed after %d attempts: %w", maxRetries+1, retryState.lastErr)
+}
+
+// retryState holds the state during retry operations
+type retryState struct {
+	remainingKeys []any
+	lastResult    *BatchDeleteResult
+	lastErr       error
+}
+
+// initializeRetryState creates initial retry state
+func (bd *BatchDeleter) initializeRetryState(keys []any) *retryState {
+	return &retryState{
+		remainingKeys: keys,
+	}
+}
+
+// handleRetryDelay manages the exponential backoff delay logic
+func (bd *BatchDeleter) handleRetryDelay(ctx context.Context, attempt int, remainingCount int) error {
+	if attempt == 0 {
+		return nil
+	}
+
+	delay := bd.calculateBackoffDelay(attempt)
+	bd.logRetryAttempt(attempt, remainingCount, delay)
+
+	select {
+	case <-time.After(delay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// calculateBackoffDelay computes exponential backoff delay with bounds checking
+func (bd *BatchDeleter) calculateBackoffDelay(attempt int) time.Duration {
+	backoff := 100 * time.Millisecond
+	shift := bd.safeBoundShift(attempt - 1)
+	return backoff * time.Duration(1<<min(shift, 30))
+}
+
+// safeBoundShift ensures shift value is within safe bounds
+func (bd *BatchDeleter) safeBoundShift(shift int) int {
+	if shift > 63 {
+		return 63
+	}
+	if shift < 0 {
+		return 0
+	}
+	return shift
+}
+
+// isOperationSuccessful checks if the delete operation completed successfully
+func (bd *BatchDeleter) isOperationSuccessful(result *BatchDeleteResult, err error) bool {
+	return err == nil && result.FailedItems == 0
+}
+
+// extractRetryableKeys identifies which keys can be retried
+func (bd *BatchDeleter) extractRetryableKeys(result *BatchDeleteResult) []any {
+	retryableErrors := make([]any, 0)
+	for _, batchErr := range result.Errors {
+		if bd.isRetryableError(batchErr.Error) {
+			retryableErrors = append(retryableErrors, batchErr.Item)
+		}
+	}
+	return retryableErrors
+}
+
+// logRetryAttempt logs information about retry attempts
+func (bd *BatchDeleter) logRetryAttempt(attempt int, remainingCount int, delay time.Duration) {
+	if bd.logger != nil {
+		bd.logger.Info("retrying_batch_delete",
+			zap.Int("attempt", attempt),
+			zap.Int("remaining_keys", remainingCount),
+			zap.Duration("delay", delay),
+		)
+	}
+}
+
+// logSuccessAfterRetry logs successful completion after retries
+func (bd *BatchDeleter) logSuccessAfterRetry(attempt int, totalItems int) {
+	if bd.logger != nil && attempt > 0 {
+		bd.logger.Info("batch_delete_succeeded_after_retry",
+			zap.Int("attempts", attempt+1),
+			zap.Int("total_items", totalItems),
+		)
+	}
+}
+
+// logFinalFailure logs the final failure after all retries exhausted
+func (bd *BatchDeleter) logFinalFailure(maxRetries int, totalItems int, lastResult *BatchDeleteResult, lastErr error) {
 	if bd.logger != nil {
 		bd.logger.Error("batch_delete_failed_after_retries",
 			zap.Int("attempts", maxRetries+1),
-			zap.Int("total_items", len(keys)),
+			zap.Int("total_items", totalItems),
 			zap.Int("failed_items", lastResult.FailedItems),
 			zap.Error(lastErr),
 		)
 	}
-
-	return lastResult, fmt.Errorf("batch delete failed after %d attempts: %w", maxRetries+1, lastErr)
 }
 
 // deleteWorker processes delete batches from the work channel

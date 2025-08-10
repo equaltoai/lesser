@@ -30,7 +30,7 @@ func (a *AnalyticsAggregator) RecordMetric(ctx context.Context, domain string, m
 	// Create raw time series record
 	now := time.Now()
 	rawMetric := models.NewFederationAnalyticsTimeSeries(domain, "raw", now)
-	
+
 	// Populate from the metric
 	rawMetric.ActivityCount = 1
 	rawMetric.TotalInboundVolume = metric.InboundBytes
@@ -46,7 +46,7 @@ func (a *AnalyticsAggregator) RecordMetric(ctx context.Context, domain string, m
 		rawMetric.EndpointAvailability = 0.0
 		rawMetric.ErrorRate = 1.0
 	}
-	
+
 	if metric.Success {
 		rawMetric.SuccessfulActivities = 1
 		rawMetric.FailedActivities = 0
@@ -55,7 +55,7 @@ func (a *AnalyticsAggregator) RecordMetric(ctx context.Context, domain string, m
 		rawMetric.FailedActivities = 1
 		rawMetric.ConsecutiveFailures = 1
 	}
-	
+
 	if metric.ErrorType != "" {
 		switch metric.ErrorType {
 		case "signature_failure":
@@ -70,26 +70,26 @@ func (a *AnalyticsAggregator) RecordMetric(ctx context.Context, domain string, m
 			rawMetric.ValidationFailures = 1
 		}
 	}
-	
+
 	// Set last successful contact if this was a success
 	if metric.Success {
 		rawMetric.LastSuccessfulContact = &now
 	}
-	
+
 	// Calculate health score
 	rawMetric.CalculateHealthScore()
-	
+
 	// Store the raw metric using detailed storage
 	err := a.federationRepo.StoreDetailedFederationMetrics(ctx, rawMetric)
 	if err != nil {
 		return fmt.Errorf("failed to store raw federation metric: %w", err)
 	}
-	
+
 	// Trigger 5-minute aggregation if we're at a 5-minute boundary
 	if now.Minute()%5 == 0 && now.Second() < 30 {
 		go a.triggerAggregation(context.Background(), domain, now)
 	}
-	
+
 	return nil
 }
 
@@ -102,7 +102,7 @@ func (a *AnalyticsAggregator) triggerAggregation(ctx context.Context, domain str
 			zap.Time("timestamp", timestamp),
 			zap.Error(err))
 	}
-	
+
 	// Hourly aggregation (every hour)
 	if timestamp.Minute() == 0 {
 		if err := a.federationRepo.AggregateFederationMetrics(ctx, domain, "5min", "hourly", timestamp); err != nil {
@@ -112,7 +112,7 @@ func (a *AnalyticsAggregator) triggerAggregation(ctx context.Context, domain str
 				zap.Error(err))
 		}
 	}
-	
+
 	// Daily aggregation (at midnight)
 	if timestamp.Hour() == 0 && timestamp.Minute() == 0 {
 		if err := a.federationRepo.AggregateFederationMetrics(ctx, domain, "hourly", "daily", timestamp); err != nil {
@@ -122,7 +122,7 @@ func (a *AnalyticsAggregator) triggerAggregation(ctx context.Context, domain str
 				zap.Error(err))
 		}
 	}
-	
+
 	// Monthly aggregation (first day of month)
 	if timestamp.Day() == 1 && timestamp.Hour() == 0 && timestamp.Minute() == 0 {
 		if err := a.federationRepo.AggregateFederationMetrics(ctx, domain, "daily", "monthly", timestamp); err != nil {
@@ -141,46 +141,46 @@ func (a *AnalyticsAggregator) GetDomainHealthStatus(ctx context.Context, domain 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get health score: %w", err)
 	}
-	
+
 	// Get recent metrics for additional context
 	endTime := time.Now()
 	startTime := endTime.Add(-30 * time.Minute)
-	
+
 	recentMetrics, err := a.federationRepo.GetDetailedMetricsByPeriod(ctx, "5min", startTime, endTime, 100)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get recent metrics: %w", err)
 	}
-	
+
 	status := &DomainHealthStatus{
 		Domain:      domain,
 		HealthScore: healthScore,
 		CheckedAt:   time.Now(),
 	}
-	
+
 	// Determine status
 	if healthScore >= 80 {
 		status.Status = "HEALTHY"
 	} else if healthScore >= 60 {
 		status.Status = "DEGRADED"
 	} else if healthScore >= 40 {
-		status.Status = "UNHEALTHY"  
+		status.Status = "UNHEALTHY"
 	} else {
 		status.Status = "CRITICAL"
 	}
-	
+
 	// Calculate recent statistics
 	if len(recentMetrics) > 0 {
 		var totalActivities, totalErrors int64
 		var totalLatency int64
 		var availabilitySum float64
-		
+
 		for _, metric := range recentMetrics {
 			totalActivities += metric.ActivityCount
 			totalErrors += metric.FailedActivities
 			totalLatency += metric.InboxDeliveryP95
 			availabilitySum += metric.InstanceReachability
 		}
-		
+
 		status.RecentActivities = totalActivities
 		status.RecentErrors = totalErrors
 		if totalActivities > 0 {
@@ -191,12 +191,12 @@ func (a *AnalyticsAggregator) GetDomainHealthStatus(ctx context.Context, domain 
 			status.AvailabilityRate = availabilitySum / float64(len(recentMetrics))
 		}
 	}
-	
+
 	// Check for alert conditions
 	shouldAlert, message := a.checkAlertConditions(status)
 	status.ShouldAlert = shouldAlert
 	status.AlertMessage = message
-	
+
 	return status, nil
 }
 
@@ -206,20 +206,20 @@ func (a *AnalyticsAggregator) checkAlertConditions(status *DomainHealthStatus) (
 	if status.AvailabilityRate < 0.5 {
 		return true, "CRITICAL: Instance reachability below 50%"
 	}
-	
+
 	if status.HealthScore < 40 {
 		return true, "CRITICAL: Health score below critical threshold"
 	}
-	
+
 	// Warning conditions
 	if status.AvgLatencyMs > 5000 {
 		return true, "WARNING: P95 latency exceeds 5 seconds"
 	}
-	
+
 	if status.RecentErrorRate > 0.1 {
 		return true, "WARNING: Error rate exceeds 10%"
 	}
-	
+
 	return false, ""
 }
 
@@ -228,12 +228,12 @@ func (a *AnalyticsAggregator) GetUnhealthyDomains(ctx context.Context, threshold
 	if threshold <= 0 {
 		threshold = 60.0 // Default to degraded threshold
 	}
-	
+
 	unhealthyMetrics, err := a.federationRepo.GetUnhealthyDomains(ctx, threshold)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get unhealthy domains: %w", err)
 	}
-	
+
 	var result []*DomainHealthStatus
 	for _, metric := range unhealthyMetrics {
 		status := &DomainHealthStatus{
@@ -246,7 +246,7 @@ func (a *AnalyticsAggregator) GetUnhealthyDomains(ctx context.Context, threshold
 			AvgLatencyMs:     metric.InboxDeliveryP95,
 			AvailabilityRate: metric.InstanceReachability,
 		}
-		
+
 		// Set status based on health score
 		if metric.HealthScore >= 60 {
 			status.Status = "DEGRADED"
@@ -255,34 +255,34 @@ func (a *AnalyticsAggregator) GetUnhealthyDomains(ctx context.Context, threshold
 		} else {
 			status.Status = "CRITICAL"
 		}
-		
+
 		// Check alert conditions
 		shouldAlert, message := a.checkAlertConditions(status)
 		status.ShouldAlert = shouldAlert
 		status.AlertMessage = message
-		
+
 		result = append(result, status)
 	}
-	
+
 	return result, nil
 }
 
 // Metric represents a single federation event to be recorded
 type Metric struct {
-	InboundBytes     int64  `json:"inbound_bytes"`
-	OutboundBytes    int64  `json:"outbound_bytes"`
-	ResponseTimeMs   int64  `json:"response_time_ms"`
-	SignatureTimeMs  int64  `json:"signature_time_ms"`
-	Success          bool   `json:"success"`
-	ErrorType        string `json:"error_type,omitempty"` // signature_failure, timeout, rate_limit, etc.
-	ActivityType     string `json:"activity_type"`        // follow, like, announce, etc.
+	InboundBytes    int64  `json:"inbound_bytes"`
+	OutboundBytes   int64  `json:"outbound_bytes"`
+	ResponseTimeMs  int64  `json:"response_time_ms"`
+	SignatureTimeMs int64  `json:"signature_time_ms"`
+	Success         bool   `json:"success"`
+	ErrorType       string `json:"error_type,omitempty"` // signature_failure, timeout, rate_limit, etc.
+	ActivityType    string `json:"activity_type"`        // follow, like, announce, etc.
 }
 
 // DomainHealthStatus represents the current health status of a federated domain
 type DomainHealthStatus struct {
 	Domain           string    `json:"domain"`
-	Status           string    `json:"status"`           // HEALTHY, DEGRADED, UNHEALTHY, CRITICAL
-	HealthScore      float64   `json:"health_score"`     // 0-100
+	Status           string    `json:"status"`       // HEALTHY, DEGRADED, UNHEALTHY, CRITICAL
+	HealthScore      float64   `json:"health_score"` // 0-100
 	CheckedAt        time.Time `json:"checked_at"`
 	RecentActivities int64     `json:"recent_activities"`
 	RecentErrors     int64     `json:"recent_errors"`

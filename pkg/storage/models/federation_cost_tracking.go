@@ -2,8 +2,8 @@ package models
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // FederationCostTracking represents comprehensive cost tracking for federation activities
@@ -81,6 +81,24 @@ type FederationCostTracking struct {
 	RetryCount int   `json:"retry_count"` // Number of retries performed
 	RetryCost  int64 `json:"retry_cost"`  // Additional cost penalties for retries
 
+	// NEW: Detailed per-delivery attribution
+	BytesSent         int64            `json:"bytes_sent"`         // Actual bytes sent per delivery attempt
+	RetryAttempts     int              `json:"retry_attempts"`     // Number of retry attempts for this specific delivery
+	DeliveryAttempts  int              `json:"delivery_attempts"`  // Total delivery attempts (including first)
+	RouteID           string           `json:"route_id,omitempty"` // Route used for delivery
+	DestinationServer string           `json:"destination_server"` // Destination server domain
+	RouteBreakdown    map[string]int64 `json:"route_breakdown"`    // Per-route cost breakdown in microcents
+
+	// NEW: Per-route delivery metrics
+	RouteLatency      map[string]int64   `json:"route_latency"`       // Per-route response times in ms
+	RouteErrors       map[string]int     `json:"route_errors"`        // Per-route error counts
+	RouteSuccessRates map[string]float64 `json:"route_success_rates"` // Per-route success rates
+
+	// NEW: Enhanced retry tracking
+	RetryDelaySeconds  []int64  `json:"retry_delay_seconds"`  // Delay between retry attempts
+	RetryErrorMessages []string `json:"retry_error_messages"` // Error messages for each retry
+	FinalRetrySuccess  bool     `json:"final_retry_success"`  // Whether final retry succeeded
+
 	// Performance metrics
 	ResponseTimeMs   int64 `json:"response_time_ms"`   // Total response time
 	ProcessingTimeMs int64 `json:"processing_time_ms"` // Time spent processing
@@ -125,6 +143,26 @@ func (f *FederationCostTracking) BeforeCreate() error {
 	}
 	f.UpdatedAt = now
 
+	// Initialize maps for detailed tracking
+	if f.RouteBreakdown == nil {
+		f.RouteBreakdown = make(map[string]int64)
+	}
+	if f.RouteLatency == nil {
+		f.RouteLatency = make(map[string]int64)
+	}
+	if f.RouteErrors == nil {
+		f.RouteErrors = make(map[string]int)
+	}
+	if f.RouteSuccessRates == nil {
+		f.RouteSuccessRates = make(map[string]float64)
+	}
+	if f.RetryDelaySeconds == nil {
+		f.RetryDelaySeconds = make([]int64, 0)
+	}
+	if f.RetryErrorMessages == nil {
+		f.RetryErrorMessages = make([]string, 0)
+	}
+
 	// Set TTL to 30 days from creation (detailed records)
 	f.TTL = now.AddDate(0, 0, 30).Unix()
 
@@ -163,6 +201,129 @@ func (f *FederationCostTracking) GetTotalCostDollars() float64 {
 // TableName returns the DynamoDB table name
 func (f *FederationCostTracking) TableName() string {
 	return "" // Will be set by the repository
+}
+
+// AddRouteDeliveryAttempt tracks a delivery attempt for a specific route
+func (f *FederationCostTracking) AddRouteDeliveryAttempt(routeID string, bytes int64, latencyMs int64, success bool, errorMsg string) {
+	// Initialize maps if needed
+	if f.RouteBreakdown == nil {
+		f.RouteBreakdown = make(map[string]int64)
+	}
+	if f.RouteLatency == nil {
+		f.RouteLatency = make(map[string]int64)
+	}
+	if f.RouteErrors == nil {
+		f.RouteErrors = make(map[string]int)
+	}
+	if f.RouteSuccessRates == nil {
+		f.RouteSuccessRates = make(map[string]float64)
+	}
+
+	// Calculate per-route cost based on bytes sent
+	routeCost := (bytes * f.DataTransferCost) / f.DataTransferBytes // proportional cost
+	f.RouteBreakdown[routeID] += routeCost
+
+	// Update latency (running average)
+	if existingLatency, exists := f.RouteLatency[routeID]; exists {
+		f.RouteLatency[routeID] = (existingLatency + latencyMs) / 2
+	} else {
+		f.RouteLatency[routeID] = latencyMs
+	}
+
+	// Track errors
+	if !success {
+		f.RouteErrors[routeID]++
+		if errorMsg != "" {
+			f.RetryErrorMessages = append(f.RetryErrorMessages, fmt.Sprintf("Route %s: %s", routeID, errorMsg))
+		}
+	}
+
+	// Update success rate
+	// In a real implementation, we'd need to track total attempts per route
+	// This is a simplified version assuming we track successes vs failures
+	if success {
+		f.RouteSuccessRates[routeID] = 1.0 // Simplified - would be running average
+	} else {
+		f.RouteSuccessRates[routeID] = 0.0 // Simplified - would be running average
+	}
+
+	// Update overall delivery tracking
+	f.DeliveryAttempts++
+	f.BytesSent += bytes
+	if !success {
+		f.RetryAttempts++
+	}
+	f.FinalRetrySuccess = success
+}
+
+// AddRetryDelay tracks the delay before a retry attempt
+func (f *FederationCostTracking) AddRetryDelay(delaySeconds int64) {
+	if f.RetryDelaySeconds == nil {
+		f.RetryDelaySeconds = make([]int64, 0)
+	}
+	f.RetryDelaySeconds = append(f.RetryDelaySeconds, delaySeconds)
+}
+
+// GetAverageRouteLatency returns the average latency across all routes
+func (f *FederationCostTracking) GetAverageRouteLatency() int64 {
+	if len(f.RouteLatency) == 0 {
+		return 0
+	}
+
+	total := int64(0)
+	for _, latency := range f.RouteLatency {
+		total += latency
+	}
+	return total / int64(len(f.RouteLatency))
+}
+
+// GetTotalRouteErrors returns the total error count across all routes
+func (f *FederationCostTracking) GetTotalRouteErrors() int {
+	total := 0
+	for _, errors := range f.RouteErrors {
+		total += errors
+	}
+	return total
+}
+
+// GetMostExpensiveRoute returns the route ID with the highest cost
+func (f *FederationCostTracking) GetMostExpensiveRoute() (string, int64) {
+	var maxRoute string
+	var maxCost int64
+
+	for routeID, cost := range f.RouteBreakdown {
+		if cost > maxCost {
+			maxCost = cost
+			maxRoute = routeID
+		}
+	}
+
+	return maxRoute, maxCost
+}
+
+// GetRetryEfficiency returns metrics about retry effectiveness
+func (f *FederationCostTracking) GetRetryEfficiency() map[string]interface{} {
+	efficiency := make(map[string]interface{})
+
+	efficiency["total_attempts"] = f.DeliveryAttempts
+	efficiency["retry_attempts"] = f.RetryAttempts
+	efficiency["final_success"] = f.FinalRetrySuccess
+
+	if f.DeliveryAttempts > 0 {
+		efficiency["retry_rate"] = float64(f.RetryAttempts) / float64(f.DeliveryAttempts)
+	}
+
+	if len(f.RetryDelaySeconds) > 0 {
+		totalDelay := int64(0)
+		for _, delay := range f.RetryDelaySeconds {
+			totalDelay += delay
+		}
+		efficiency["average_retry_delay_seconds"] = totalDelay / int64(len(f.RetryDelaySeconds))
+	}
+
+	efficiency["error_messages"] = len(f.RetryErrorMessages)
+
+	return efficiency
 }
 
 // FederationBudget represents budget limits for federation operations per instance

@@ -5,17 +5,16 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // PatternRepositoryBridge adapts the storage.Storage interface to the PatternRepository interface
 // This allows the PatternMatcher to work with the existing DynamORM-based storage layer
 type PatternRepositoryBridge struct {
-	storage core.RepositoryStorage
+	storage storage.Storage
 }
 
 // NewPatternRepositoryBridge creates a new bridge to adapt storage.Storage to PatternRepository
-func NewPatternRepositoryBridge(storage core.RepositoryStorage) PatternRepository {
+func NewPatternRepositoryBridge(storage storage.Storage) PatternRepository {
 	return &PatternRepositoryBridge{
 		storage: storage,
 	}

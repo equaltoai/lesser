@@ -505,7 +505,7 @@ func (as *AuthService) GetConfig() *Config {
 	}
 }
 
-// GenerateRecoveryToken generates a recovery token for email-free recovery
+// GenerateRecoveryToken generates a recovery token for WebAuthn/federation-based recovery
 func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username string, recoveryMethod string) (string, error) {
 	// Generate a secure random token
 	tokenBytes := make([]byte, 32)

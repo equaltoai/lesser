@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/google/uuid"
 )
 
 // DLQMessage represents a failed message captured from a dead letter queue

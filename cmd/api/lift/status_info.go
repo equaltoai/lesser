@@ -258,7 +258,7 @@ func (h *Handler) prepareEditAccount(actor *activitypub.Actor) models.Account {
 		converter := mastodon.NewConverter(h.cfg.BaseURL())
 		return converter.ActorToAccount(actor)
 	}
-	
+
 	// Create a minimal account for unknown actors
 	return models.Account{
 		ID:       "unknown",

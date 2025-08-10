@@ -332,6 +332,7 @@ func (r *AccountRepository) DeleteRefreshToken(ctx context.Context, token string
 // ===== OAuth Client Operations =====
 
 // CreateOAuthClient creates a new OAuth client
+//
 //nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
 	// Validate required fields
@@ -437,6 +438,7 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 }
 
 // UpdateOAuthClient updates an existing OAuth client
+//
 //nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
 	if len(updates) == 0 {
@@ -538,6 +540,7 @@ func (r *AccountRepository) DeleteOAuthClient(ctx context.Context, clientID stri
 }
 
 // ListOAuthClients lists OAuth clients with pagination
+//
 //nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, _ string) ([]*storage.OAuthClient, string, error) {
 	// For now, implement a simple scan since DynamORM doesn't have great pagination support
@@ -603,6 +606,7 @@ func (r *AccountRepository) GetOAuthApp(ctx context.Context, clientID string) (*
 }
 
 // SaveUserAppConsent saves user consent for an OAuth app
+//
 //nolint:dupl // OAuth operations are shared between account and oauth repositories
 func (r *AccountRepository) SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error {
 	// Create DynamORM model

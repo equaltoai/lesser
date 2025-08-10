@@ -18,6 +18,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// Activity type constants
+	activityTypeCreate = "Create"
+)
+
 // DynamoDBAPI defines the subset of DynamoDB operations we use for relay storage (disabled to break circular dependency)
 /*
 type DynamoDBAPI interface {
@@ -566,7 +571,7 @@ func (r *RelayService) doTrackRelayCost(ctx context.Context, relayURL, operation
 		// Data transfer (estimated based on activity size)
 		var estimatedSize int64 = 1024 // Default 1KB
 		switch activityType {
-		case "Create":
+		case activityTypeCreate:
 			estimatedSize = 4096 // 4KB for Create activities
 		case "Announce":
 			estimatedSize = 2048 // 2KB for Announce activities

@@ -18,6 +18,14 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// Key type constants
+	keyTypeRSA     = "RSA"
+	keyTypeECDSA   = "ECDSA"
+	keyTypeEd25519 = "Ed25519"
+	keyTypeUnknown = "unknown"
+)
+
 // EnhancedHTTPSignature provides enhanced HTTP signature with support for hs2019
 type EnhancedHTTPSignature struct {
 	HTTPSignature
@@ -38,9 +46,18 @@ func VerifyHTTPSignatureV2(req *http.Request, publicKey crypto.PublicKey) error 
 		return VerifyHTTPSignature(req, publicKey)
 	}
 
-	// For now, fall back to legacy verification
-	// A full implementation would parse structured fields according to the new draft
-	return VerifyHTTPSignature(req, publicKey)
+	// Parse structured signature according to HTTP Message Signatures draft-19
+	sig, err := parseStructuredSignature(signatureInput, signature)
+	if err != nil {
+		// If parsing fails, fall back to legacy verification
+		log := common.Logger()
+		log.Debug("failed to parse structured signature, falling back to legacy",
+			zap.Error(err))
+		return VerifyHTTPSignature(req, publicKey)
+	}
+
+	// Verify using structured signature
+	return VerifyHTTPSignatureEnhanced(req, publicKey, sig)
 }
 
 // VerifyHTTPSignatureEnhanced verifies signatures with support for multiple algorithms
@@ -98,7 +115,7 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 
 	default:
 		// Fall back to original implementation for rsa-sha256
-		if sig.Algorithm == "rsa-sha256" {
+		if sig.Algorithm == DefaultAlgorithm {
 			rsaKey, ok := publicKey.(*rsa.PublicKey)
 			if !ok {
 				return common.AuthenticationError{Message: "public key is not RSA"}
@@ -158,7 +175,7 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 	}
 
 	// Determine headers to sign
-	headers := []string{"(request-target)", "host", "date"}
+	headers := []string{RequestTargetHeader, "host", "date"}
 	if req.Header.Get(DigestHeader) != "" {
 		headers = append(headers, "digest")
 	}
@@ -284,14 +301,136 @@ func isCompatible(algorithm, keyType string) bool {
 	case AlgorithmHS2019:
 		return true // Works with all key types
 	case AlgorithmRSASHA256, AlgorithmRSASHA512:
-		return keyType == "RSA"
+		return keyType == keyTypeRSA
 	case AlgorithmECDSASHA256:
-		return keyType == "ECDSA"
+		return keyType == keyTypeECDSA
 	case AlgorithmEd25519:
-		return keyType == "Ed25519"
+		return keyType == keyTypeEd25519
 	default:
 		return false
 	}
 }
 
+// parseStructuredSignature parses structured signature fields from draft-19
+func parseStructuredSignature(signatureInput, signature string) (*HTTPSignature, error) {
+	// Parse signature-input structured field
+	// Format: sig=("@method" "@path" "host" "date");keyid="...";alg="...";created=...
+
+	// Find the signature parameters within parentheses
+	startParen := strings.Index(signatureInput, "(")
+	endParen := strings.Index(signatureInput, ")")
+	if startParen == -1 || endParen == -1 {
+		return nil, fmt.Errorf("invalid signature-input format: missing parentheses")
+	}
+
+	// Extract headers from within parentheses
+	headersStr := signatureInput[startParen+1 : endParen]
+	headerParts := strings.Fields(headersStr)
+	headers := make([]string, len(headerParts))
+	for i, h := range headerParts {
+		// Remove quotes and convert draft-19 format to legacy format
+		h = strings.Trim(h, `"`)
+		if h == "@method" {
+			h = RequestTargetHeader
+		} else if h == "@path" {
+			h = RequestTargetHeader // Simplified mapping
+		} else if strings.HasPrefix(h, "@") {
+			// Map other draft-19 pseudo-headers as needed
+			h = strings.TrimPrefix(h, "@")
+		}
+		headers[i] = h
+	}
+
+	// Parse parameters after the parentheses
+	params := signatureInput[endParen+1:]
+
+	// Extract keyid, algorithm, and other parameters
+	keyID := extractParameter(params, "keyid")
+	algorithm := extractParameter(params, "alg")
+	if algorithm == "" {
+		algorithm = AlgorithmHS2019 // Default
+	}
+
+	// Parse signature value (base64 encoded)
+	sigBytes, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signature: %w", err)
+	}
+
+	return &HTTPSignature{
+		KeyID:     keyID,
+		Algorithm: algorithm,
+		Headers:   headers,
+		Signature: sigBytes,
+	}, nil
+}
+
+// extractParameter extracts a parameter value from structured field parameters
+func extractParameter(params, name string) string {
+	// Look for name="value" pattern
+	pattern := name + "="
+	start := strings.Index(params, pattern)
+	if start == -1 {
+		return ""
+	}
+
+	start += len(pattern)
+	if start >= len(params) {
+		return ""
+	}
+
+	// Handle quoted values
+	if params[start] == '"' {
+		start++
+		end := strings.Index(params[start:], `"`)
+		if end == -1 {
+			return ""
+		}
+		return params[start : start+end]
+	}
+
+	// Handle unquoted values (up to semicolon or end)
+	end := strings.Index(params[start:], ";")
+	if end == -1 {
+		return strings.TrimSpace(params[start:])
+	}
+	return strings.TrimSpace(params[start : start+end])
+}
+
 // getKeyType returns the type of a crypto key
+
+// DetermineSigningAlgorithm determines the best signing algorithm based on key type and compatibility
+func DetermineSigningAlgorithm(privateKey crypto.PrivateKey, preferLegacy bool) string {
+	if preferLegacy {
+		// For maximum compatibility, use rsa-sha256 if the key supports it
+		if _, ok := privateKey.(*rsa.PrivateKey); ok {
+			return AlgorithmRSASHA256
+		}
+	}
+
+	// Use modern algorithm selection
+	switch privateKey.(type) {
+	case *rsa.PrivateKey:
+		return AlgorithmHS2019
+	case *ecdsa.PrivateKey:
+		return AlgorithmHS2019
+	case ed25519.PrivateKey:
+		return AlgorithmHS2019
+	default:
+		return AlgorithmRSASHA256
+	}
+}
+
+// DetectKeyType detects the type of a crypto key (public or private)
+func DetectKeyType(key interface{}) string {
+	switch key.(type) {
+	case *rsa.PublicKey, *rsa.PrivateKey:
+		return keyTypeRSA
+	case *ecdsa.PublicKey, *ecdsa.PrivateKey:
+		return keyTypeECDSA
+	case ed25519.PublicKey, ed25519.PrivateKey:
+		return keyTypeEd25519
+	default:
+		return keyTypeUnknown
+	}
+}

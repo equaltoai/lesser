@@ -39,36 +39,36 @@ type appContext struct {
 
 func main() {
 	flags := parseFlags()
-	
+
 	logger := initializeLogger()
 	defer syncLogger(logger)
-	
+
 	repos := initializeRepositories(logger)
-	
+
 	appCtx := &appContext{
 		ctx:    context.Background(),
 		logger: logger,
 		repos:  repos,
 	}
-	
+
 	// Handle different operation modes
 	if *flags.showConfig {
 		showCurrentConfiguration(appCtx)
 		return
 	}
-	
+
 	if *flags.generateVAPID {
 		generateVAPIDKeys(appCtx)
 	}
-	
+
 	if *flags.setRules != "" {
 		setInstanceRules(appCtx, *flags.setRules)
 	}
-	
+
 	if *flags.setDescription != "" {
 		setExtendedDescription(appCtx, *flags.setDescription)
 	}
-	
+
 	// If no action specified, show usage
 	if !hasAnyAction(flags) {
 		showUsage()
@@ -104,7 +104,7 @@ func syncLogger(logger *zap.Logger) {
 func initializeRepositories(logger *zap.Logger) *factory.RepositoryFactory {
 	// Get configuration for AWS region
 	cfg := config.Get()
-	
+
 	// Load AWS config
 	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion(cfg.Region),
@@ -112,19 +112,19 @@ func initializeRepositories(logger *zap.Logger) *factory.RepositoryFactory {
 	if err != nil {
 		log.Fatalf("Failed to load AWS config: %v", err)
 	}
-	
+
 	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to initialize DynamORM: %v", err)
 	}
-	
+
 	tableName := getTableName()
-	
+
 	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
 	if err != nil {
 		log.Fatalf("Failed to create repository factory: %v", err)
 	}
-	
+
 	return repos
 }
 
@@ -151,7 +151,7 @@ func showInstanceRules(appCtx *appContext) {
 		log.Printf("Failed to get rules: %v", err)
 		return
 	}
-	
+
 	fmt.Println("Current Rules:")
 	if len(rules) == 0 {
 		fmt.Println("  (no rules set)")
@@ -178,7 +178,7 @@ func showVAPIDConfiguration(appCtx *appContext) {
 		fmt.Println("\nVAPID Keys: Not configured")
 		return
 	}
-	
+
 	fmt.Printf("\nVAPID Public Key: %s\n", vapidKeys.PublicKey)
 	fmt.Printf("VAPID Subject: %s\n", vapidKeys.Subject)
 	fmt.Printf("Created: %s\n", vapidKeys.CreatedAt.Format("2006-01-02 15:04:05"))
@@ -187,17 +187,17 @@ func showVAPIDConfiguration(appCtx *appContext) {
 // generateVAPIDKeys generates and saves VAPID keys for push notifications
 func generateVAPIDKeys(appCtx *appContext) {
 	fmt.Println("Generating VAPID keys for web push notifications...")
-	
+
 	privateKey := generateECDSAKey()
 	publicKeyBase64, privateKeyBase64 := encodeKeys(privateKey)
 	domain := getDomain()
-	
+
 	vapidKeys := &storage.VAPIDKeys{
 		PublicKey:  publicKeyBase64,
 		PrivateKey: privateKeyBase64,
 		Subject:    fmt.Sprintf("mailto:admin@%s", domain),
 	}
-	
+
 	saveVAPIDKeys(appCtx, vapidKeys)
 	displayVAPIDSuccess(publicKeyBase64)
 }
@@ -220,7 +220,7 @@ func encodeKeys(privateKey *ecdsa.PrivateKey) (string, string) {
 	}
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 	publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
-	
+
 	// Encode private key (32 bytes)
 	privateKeyBytes := privateKey.D.Bytes()
 	// Pad to 32 bytes if necessary
@@ -229,7 +229,7 @@ func encodeKeys(privateKey *ecdsa.PrivateKey) (string, string) {
 		privateKeyBytes = append(padding, privateKeyBytes...)
 	}
 	privateKeyBase64 := base64.RawURLEncoding.EncodeToString(privateKeyBytes)
-	
+
 	return publicKeyBase64, privateKeyBase64
 }
 
@@ -263,7 +263,7 @@ func displayVAPIDSuccess(publicKeyBase64 string) {
 // setInstanceRules sets the instance rules from comma-separated text
 func setInstanceRules(appCtx *appContext, rulesText string) {
 	rules := parseRules(rulesText)
-	
+
 	if err := appCtx.repos.Instance().SetInstanceRules(appCtx.ctx, rules); err != nil {
 		log.Fatalf("Failed to set rules: %v", err)
 	}

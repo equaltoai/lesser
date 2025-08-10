@@ -58,7 +58,7 @@ func (aqs *AdaptiveQualitySelector) SelectQualityWithSession(sessionID string, b
 				bufferHealth = bufferHealth * 0.5 // Be more conservative
 			}
 		}
-		
+
 		// Consider quality switch frequency to avoid thrashing
 		sessionDuration := time.Since(sessionMetrics.StartTime)
 		if sessionDuration > time.Minute {
@@ -78,7 +78,7 @@ func (aqs *AdaptiveQualitySelector) SelectQualityWithSession(sessionID string, b
 				}
 			}
 		}
-		
+
 		// Use QoE score to influence decisions
 		if sessionMetrics.QoEScore < 0.3 { // Poor quality of experience
 			bufferHealth = bufferHealth * 0.7 // Be more conservative
@@ -230,20 +230,20 @@ func (aqs *AdaptiveQualitySelector) selectOptimalQualityWithMetrics(supportedQua
 
 	for _, q := range supportedQualities {
 		score := aqs.calculateQualityScore(q, bandwidth, bufferHealth)
-		
+
 		// Enhanced scoring with session metrics
 		if sessionMetrics != nil {
 			// Bonus for quality consistency (reduce switching)
 			if q == sessionMetrics.CurrentQuality {
 				score += 0.1 // Stability bonus
 			}
-			
+
 			// Penalty for qualities that have caused problems recently
 			if timeInQuality, exists := sessionMetrics.TimeInEachQuality[q]; exists {
 				totalTime := time.Since(sessionMetrics.StartTime)
 				if totalTime > time.Minute {
 					qualityRatio := float64(timeInQuality) / float64(totalTime)
-					
+
 					// If we've spent significant time in this quality and had rebuffers, penalize it
 					if qualityRatio > 0.2 && sessionMetrics.RebufferEvents > 0 {
 						rebufferPenalty := float64(sessionMetrics.RebufferEvents) * 0.05
@@ -251,14 +251,14 @@ func (aqs *AdaptiveQualitySelector) selectOptimalQualityWithMetrics(supportedQua
 					}
 				}
 			}
-			
+
 			// Consider segment success rate for this quality
 			if sessionMetrics.SegmentSuccessRate < 0.95 { // Less than 95% success
 				failurePenalty := (1.0 - sessionMetrics.SegmentSuccessRate) * 0.2
 				score -= failurePenalty
 			}
 		}
-		
+
 		if score > bestScore {
 			bestScore = score
 			bestQuality = q
@@ -271,7 +271,7 @@ func (aqs *AdaptiveQualitySelector) selectOptimalQualityWithMetrics(supportedQua
 		zap.Int("bandwidth", bandwidth),
 		zap.Float64("bufferHealth", bufferHealth),
 	}
-	
+
 	if sessionMetrics != nil {
 		logFields = append(logFields,
 			zap.Int("rebufferEvents", sessionMetrics.RebufferEvents),
@@ -279,7 +279,7 @@ func (aqs *AdaptiveQualitySelector) selectOptimalQualityWithMetrics(supportedQua
 			zap.Float64("qoeScore", sessionMetrics.QoEScore),
 		)
 	}
-	
+
 	aqs.logger.Debug("selected optimal quality with metrics", logFields...)
 
 	return bestQuality

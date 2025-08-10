@@ -185,12 +185,12 @@ func (g *DASHGenerator) getCodecsForLive(quality Quality, metadata *MediaMetadat
 			return codecInfo.VideoCodec + ",mp4a.40.2" // Add AAC audio
 		}
 	}
-	
+
 	// Use general metadata codec info
 	if metadata.VideoCodec != "" {
 		return metadata.VideoCodec + ",mp4a.40.2"
 	}
-	
+
 	// Fallback to quality-based codec selection optimized for live streaming
 	switch quality {
 	case Quality4K:
@@ -299,7 +299,7 @@ func (g *DASHGenerator) GenerateLiveMPD(mediaID string, windowSize int) (*DASHMa
 	// Calculate suggested presentation delay (live edge buffer)
 	// This prevents viewers from getting too close to the live edge
 	suggestedPresentationDelay := float64(g.config.SegmentDuration * 4) // 4 segments buffer
-	if suggestedPresentationDelay < 12.0 { // Minimum 12 seconds for stability
+	if suggestedPresentationDelay < 12.0 {                              // Minimum 12 seconds for stability
 		suggestedPresentationDelay = 12.0
 	}
 
@@ -328,13 +328,13 @@ func (g *DASHGenerator) GenerateLiveMPD(mediaID string, windowSize int) (*DASHMa
 	// Add representations for each available quality with live-specific settings
 	for i, quality := range metadata.AvailableQualities {
 		info := GetQualityInfo(quality)
-		
+
 		// Use quality-specific codec settings if available
 		bandwidth := info.Bandwidth * 1000 // Convert to bps
 		if codecInfo, exists := metadata.QualitySettings[quality]; exists && codecInfo.Bandwidth > 0 {
 			bandwidth = codecInfo.Bandwidth
 		}
-		
+
 		representation := DASHRepresentation{
 			ID:              fmt.Sprintf("video_%d", i),
 			Quality:         quality,
@@ -429,7 +429,7 @@ func (g *DASHGenerator) GenerateMPDWithSubtitles(manifest *DASHManifest, subtitl
 	if manifest.IsLive {
 		return g.GenerateLiveMPDContentWithSubtitles(manifest, subtitles)
 	}
-	
+
 	// For VOD, add subtitle adaptation sets to the standard MPD
 	return g.generateVODMPDWithSubtitles(manifest, subtitles)
 }
@@ -519,7 +519,7 @@ func (g *DASHGenerator) createLiveVideoAdaptationSet(manifest *DASHManifest) Ada
 		if rep.Height > adaptationSet.MaxHeight {
 			adaptationSet.MaxHeight = rep.Height
 		}
-		
+
 		// Try to detect frame rate from quality level
 		if rep.Quality == Quality4K && maxFrameRate < 60 {
 			maxFrameRate = 60
@@ -527,7 +527,7 @@ func (g *DASHGenerator) createLiveVideoAdaptationSet(manifest *DASHManifest) Ada
 			maxFrameRate = 30
 		}
 	}
-	
+
 	if maxFrameRate > 0 {
 		adaptationSet.MaxFrameRate = fmt.Sprintf("%.0f", maxFrameRate)
 	}
@@ -535,8 +535,8 @@ func (g *DASHGenerator) createLiveVideoAdaptationSet(manifest *DASHManifest) Ada
 	// Calculate availability time offset for live edge management
 	// This controls when segments become available relative to their media time
 	_ = manifest.SuggestedPresentationDelay // Available for future use
-	
-	// Calculate presentation time offset for synchronized playback  
+
+	// Calculate presentation time offset for synchronized playback
 	// This aligns the media timeline with wall clock time
 	_ = int64(time.Since(manifest.AvailabilityStartTime).Seconds() * 1000) // Available for future use
 
@@ -544,7 +544,7 @@ func (g *DASHGenerator) createLiveVideoAdaptationSet(manifest *DASHManifest) Ada
 	for _, rep := range manifest.Representations {
 		// Create segment template based on stream characteristics
 		segmentTemplate := g.createLiveSegmentTemplate(manifest, rep)
-		
+
 		adaptationSet.Representations = append(adaptationSet.Representations, Representation{
 			ID:        rep.ID,
 			Bandwidth: rep.Bandwidth,
@@ -566,18 +566,18 @@ func (g *DASHGenerator) createLiveSegmentTemplate(manifest *DASHManifest, rep DA
 	// Calculate presentation time offset for live streams
 	// This ensures proper synchronization across different qualities
 	presentationTimeOffset := int64(time.Since(manifest.AvailabilityStartTime).Seconds() * 1000)
-	
+
 	// For live streams, we use time-based addressing for DVR functionality
 	// This allows clients to seek to specific wall clock times
 	segmentTemplate := LiveSegmentTemplate{
 		Media:                  rep.SegmentTemplate,
 		Initialization:         fmt.Sprintf("init-%s.mp4", rep.ID),
 		Duration:               g.config.SegmentDuration * 1000, // Convert to milliseconds
-		Timescale:              1000, // 1000 units per second for precise timing
+		Timescale:              1000,                            // 1000 units per second for precise timing
 		AvailabilityTimeOffset: manifest.SuggestedPresentationDelay,
 		PresentationTimeOffset: presentationTimeOffset,
 	}
-	
+
 	return segmentTemplate
 }
 
@@ -604,7 +604,7 @@ func (g *DASHGenerator) GenerateLiveMPDContentWithSubtitles(manifest *DASHManife
 			},
 		},
 	}
-	
+
 	// Add subtitle adaptation sets for live streams
 	if len(subtitles) > 0 {
 		subtitleAdaptationSet := g.createLiveSubtitleAdaptationSet(subtitles, manifest.MediaID)
@@ -640,7 +640,7 @@ func (g *DASHGenerator) generateVODMPDWithSubtitles(manifest *DASHManifest, subt
 			},
 		},
 	}
-	
+
 	// Add subtitle adaptation sets
 	if len(subtitles) > 0 {
 		subtitleAdaptationSet := g.createSubtitleAdaptationSet(subtitles, manifest.MediaID)
@@ -665,15 +665,15 @@ func (g *DASHGenerator) createLiveSubtitleAdaptationSet(subtitles []SubtitleTrac
 		SegmentAlignment: true,
 		Representations:  []Representation{},
 	}
-	
+
 	for i, subtitle := range subtitles {
 		// Generate DASH-specific URLs and templates from HLS subtitle info
 		baseURL := fmt.Sprintf("%s/live/%s/subtitles/%s/", g.config.CDNBaseURL, mediaID, subtitle.Language)
 		segmentTemplate := "segment-$Time$.vtt"
-		
+
 		representation := Representation{
 			ID:        fmt.Sprintf("subtitle_%d", i),
-			Bandwidth: 1000, // Low bandwidth for subtitles
+			Bandwidth: 1000,   // Low bandwidth for subtitles
 			Codecs:    "wvtt", // WebVTT codec
 			BaseURL: BaseURL{
 				Value: baseURL,
@@ -687,7 +687,7 @@ func (g *DASHGenerator) createLiveSubtitleAdaptationSet(subtitles []SubtitleTrac
 		}
 		adaptationSet.Representations = append(adaptationSet.Representations, representation)
 	}
-	
+
 	return adaptationSet
 }
 
@@ -699,12 +699,12 @@ func (g *DASHGenerator) createSubtitleAdaptationSet(subtitles []SubtitleTrack, m
 		SegmentAlignment: true,
 		Representations:  []Representation{},
 	}
-	
+
 	for i, subtitle := range subtitles {
 		// Generate DASH-specific URLs and templates from HLS subtitle info
 		baseURL := fmt.Sprintf("%s/media/%s/subtitles/%s/", g.config.CDNBaseURL, mediaID, subtitle.Language)
 		segmentTemplate := "segment$Number$.vtt"
-		
+
 		representation := Representation{
 			ID:        fmt.Sprintf("subtitle_%d", i),
 			Bandwidth: 1000,
@@ -722,7 +722,7 @@ func (g *DASHGenerator) createSubtitleAdaptationSet(subtitles []SubtitleTrack, m
 		}
 		adaptationSet.Representations = append(adaptationSet.Representations, representation)
 	}
-	
+
 	return adaptationSet
 }
 
@@ -733,36 +733,36 @@ func (g *DASHGenerator) ValidateLiveManifest(content string) error {
 	if err != nil {
 		return fmt.Errorf("invalid live MPD XML: %w", err)
 	}
-	
+
 	// Validate live-specific requirements
 	if mpd.Type != "dynamic" {
 		return fmt.Errorf("live MPD must have type='dynamic'")
 	}
-	
+
 	if mpd.AvailabilityStartTime == "" {
 		return fmt.Errorf("live MPD must have availabilityStartTime")
 	}
-	
+
 	if mpd.PublishTime == "" {
 		return fmt.Errorf("live MPD should have publishTime")
 	}
-	
+
 	// Validate periods
 	if len(mpd.Periods) == 0 {
 		return fmt.Errorf("no periods defined in live MPD")
 	}
-	
+
 	for _, period := range mpd.Periods {
 		if len(period.AdaptationSets) == 0 {
 			return fmt.Errorf("period %s has no adaptation sets", period.ID)
 		}
-		
+
 		for _, adaptationSet := range period.AdaptationSets {
 			if len(adaptationSet.Representations) == 0 {
 				return fmt.Errorf("adaptation set %s has no representations", adaptationSet.ID)
 			}
 		}
 	}
-	
+
 	return nil
 }

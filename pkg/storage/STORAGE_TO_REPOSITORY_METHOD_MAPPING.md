@@ -229,10 +229,11 @@ These methods exist in repositories but are not where you might expect:
    - `DeleteStatusPin(ctx, userID, objectID)` → `Social().DeleteStatusPin(ctx, userID, objectID)`
    - `GetStatusPins(ctx, userID)` → `Social().GetStatusPins(ctx, userID)`
 
-3. **Endorsement Methods** - ⚠️ Partially Implemented
+3. **Endorsement Methods** - ✅ Implemented
    - `IsEndorsed(ctx, endorser, endorsed)` → `Relationship().IsEndorsed(ctx, endorser, endorsed)`
-   - `CreateEndorsement(ctx, endorsement)` - ❌ NOT IMPLEMENTED - Need to add to RelationshipRepository
-   - `DeleteEndorsement(ctx, endorser, endorsed)` - ❌ NOT IMPLEMENTED - Need to add to RelationshipRepository
+   - `CreateEndorsement(ctx, endorsement)` → `Relationship().CreateEndorsement(ctx, endorsement)`
+   - `DeleteEndorsement(ctx, endorser, endorsed)` → `Relationship().DeleteEndorsement(ctx, endorser, endorsed)`
+   - `GetEndorsements(ctx, userID, limit, cursor)` → `Relationship().GetEndorsements(ctx, userID, limit, cursor)`
 
 4. **Account Note Methods** - ✅ Implemented (with different names)
    - `GetAccountNote(ctx, owner, target)` → `User().GetAccountNote(ctx, owner, target)` OR `Social().GetAccountNote(ctx, owner, target)`
@@ -240,9 +241,10 @@ These methods exist in repositories but are not where you might expect:
 
 ## Methods Still Need Work
 
-1. **Endorsement Methods** - Need to implement in RelationshipRepository:
-   - `CreateEndorsement(ctx, endorsement)` - Not implemented
-   - `DeleteEndorsement(ctx, endorser, endorsed)` - Not implemented
+1. **Endorsement Methods** - ✅ Implemented in RelationshipRepository:
+   - `CreateEndorsement(ctx, endorsement)` - ✅ Implemented with follow validation and limit enforcement
+   - `DeleteEndorsement(ctx, endorser, endorsed)` - ✅ Implemented  
+   - `GetEndorsements(ctx, userID, limit, cursor)` - ✅ Implemented with pagination
 
 2. **Parameter Type Mismatches** - Methods exist but with different parameter types:
    - Count methods in lift handlers expect actorID but repositories use username

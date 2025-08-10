@@ -42,9 +42,9 @@ const (
 	// TrendTypeHashtag represents hashtag trend type
 	TrendTypeHashtag TrendType = "hashtag"
 	// TrendTypeStatus represents status/post trend type
-	TrendTypeStatus  TrendType = "status"
+	TrendTypeStatus TrendType = "status"
 	// TrendTypeLink represents link/URL trend type
-	TrendTypeLink    TrendType = "link"
+	TrendTypeLink TrendType = "link"
 )
 
 // Service provides trending functionality

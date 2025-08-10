@@ -456,12 +456,12 @@ func (r *ScheduledStatusRepository) parseFocus(focus string) map[string]float64 
 	if focus == "" {
 		return map[string]float64{"x": 0.0, "y": 0.0}
 	}
-	
+
 	parts := strings.Split(focus, ",")
 	if len(parts) != 2 {
 		return map[string]float64{"x": 0.0, "y": 0.0}
 	}
-	
+
 	var x, y float64
 	if _, err := fmt.Sscanf(parts[0], "%f", &x); err != nil {
 		x = 0.0
@@ -469,6 +469,6 @@ func (r *ScheduledStatusRepository) parseFocus(focus string) map[string]float64 
 	if _, err := fmt.Sscanf(parts[1], "%f", &y); err != nil {
 		y = 0.0
 	}
-	
+
 	return map[string]float64{"x": x, "y": y}
 }

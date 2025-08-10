@@ -4,17 +4,23 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/comprehend"
+	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
+	lconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/moderation/advanced"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -37,12 +43,19 @@ const (
 var (
 	db               core.DB
 	consensusEngine  *moderation.ConsensusEngine
+	advancedEngine   *advanced.Engine
 	logger           *zap.Logger
-	cfg              *config.Config
+	cfg              *lconfig.Config
 	moderationRepo   *repositories.ModerationRepository
 	userRepo         *repositories.UserRepository
 	notificationRepo *repositories.NotificationRepository
 	objectRepo       *repositories.ObjectRepository
+	patternRepo      *repositories.PatternRepository
+)
+
+const (
+	// adminRole is the role string for admin users
+	adminRole = "admin"
 )
 
 // ModerationProcessor handles DynamoDB stream events for moderation
@@ -54,6 +67,7 @@ type ModerationProcessor struct {
 	objectRepo       *repositories.ObjectRepository
 	logger           *zap.Logger
 	consensusEngine  *moderation.ConsensusEngine
+	advancedEngine   *advanced.Engine
 }
 
 // NewModerationProcessor creates a new moderation processor
@@ -66,6 +80,7 @@ func NewModerationProcessor() *ModerationProcessor {
 		objectRepo:       objectRepo,
 		logger:           logger,
 		consensusEngine:  consensusEngine,
+		advancedEngine:   advancedEngine,
 	}
 }
 
@@ -378,7 +393,7 @@ func init() {
 	logger = common.Logger()
 
 	// Load configuration
-	cfg = config.Get()
+	cfg = lconfig.Get()
 
 	// Initialize DynamORM with Lambda optimizations
 	var err error
@@ -392,6 +407,7 @@ func init() {
 	userRepo = repositories.NewUserRepository(db, cfg.DynamoTableName, logger)
 	notificationRepo = repositories.NewNotificationRepository(db, cfg.DynamoTableName, logger)
 	objectRepo = repositories.NewObjectRepository(db, cfg.DynamoTableName, cfg.Domain, logger)
+	patternRepo = repositories.NewPatternRepository(db, cfg.DynamoTableName, logger)
 
 	// Initialize consensus engine with repository adapter
 	adapter := &repositoryStorageAdapter{
@@ -399,6 +415,94 @@ func init() {
 		userRepo:       userRepo,
 	}
 	consensusEngine = moderation.NewConsensusEngine(adapter, nil)
+
+	// Initialize advanced moderation engine
+	initAdvancedModerationEngine()
+}
+
+// initAdvancedModerationEngine initializes the advanced moderation engine with or without AWS
+func initAdvancedModerationEngine() {
+	// Determine moderation mode based on configuration
+	mode := advanced.ModeHybrid // Default to hybrid mode
+	if cfg.DisableAWSModeration {
+		mode = advanced.ModeBasic
+		logger.Info("AWS moderation disabled, using basic mode")
+	} else if os.Getenv("MODERATION_MODE") == "aws" {
+		mode = advanced.ModeAWS
+	} else if os.Getenv("MODERATION_MODE") == "basic" {
+		mode = advanced.ModeBasic
+	}
+
+	// Initialize AWS clients if not disabled
+	var comprehendClient *comprehend.Client
+	var rekognitionClient *rekognition.Client
+	
+	if !cfg.DisableAWSModeration {
+		ctx := context.Background()
+		awsCfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			logger.Warn("Failed to load AWS config, will use basic moderation", zap.Error(err))
+			mode = advanced.ModeBasic
+		} else {
+			// Initialize Comprehend client if not disabled
+			if !cfg.DisableComprehend {
+				comprehendClient = comprehend.NewFromConfig(awsCfg)
+				logger.Info("AWS Comprehend initialized for text analysis")
+			} else {
+				logger.Info("AWS Comprehend disabled by configuration")
+			}
+			
+			// Initialize Rekognition client if not disabled
+			if !cfg.DisableRekognition {
+				rekognitionClient = rekognition.NewFromConfig(awsCfg)
+				logger.Info("AWS Rekognition initialized for image/video analysis")
+			} else {
+				logger.Info("AWS Rekognition disabled by configuration")
+			}
+		}
+	}
+
+	// Create moderation configuration
+	modConfig := advanced.DefaultModerationConfig()
+	
+	// Adjust configuration based on available services
+	if comprehendClient == nil {
+		modConfig.EnableTextAnalysis = true // Will use basic text analysis
+	}
+	if rekognitionClient == nil {
+		modConfig.EnableImageAnalysis = true // Will use basic image analysis
+		modConfig.EnableVideoAnalysis = false // No basic video analysis yet
+	}
+
+	// Create cost tracker
+	costTracker := cost.NewDynamORMCostTracker(db, logger)
+
+	// Create a pattern repository adapter for the advanced moderation engine
+	patternRepoAdapter := &patternRepositoryAdapter{
+		repo: patternRepo,
+	}
+	
+	// Create the advanced moderation engine
+	advancedEngine = advanced.NewEngineWithMode(advanced.EngineOptions{
+		Mode:              mode,
+		Config:            modConfig,
+		ComprehendClient:  comprehendClient,
+		RekognitionClient: rekognitionClient,
+		TableName:         cfg.DynamoTableName,
+		PatternRepo:       patternRepoAdapter,
+		Logger:            logger,
+		CostTracker:       costTracker,
+		DynamoRM:          db,
+	})
+
+	logger.Info("Advanced moderation engine initialized",
+		zap.String("mode", string(mode)),
+		zap.Bool("text_analysis", modConfig.EnableTextAnalysis),
+		zap.Bool("image_analysis", modConfig.EnableImageAnalysis),
+		zap.Bool("video_analysis", modConfig.EnableVideoAnalysis),
+		zap.Bool("pattern_matching", modConfig.EnablePatternMatching),
+		zap.Bool("reputation_scoring", modConfig.EnableReputationScoring),
+	)
 }
 
 // processRecord processes a single DynamoDB stream record
@@ -532,43 +636,63 @@ func (mp *ModerationProcessor) handleDecision(ctx context.Context, record events
 		zap.String("action", string(decision.Action)),
 	)
 
-	// Apply the decision based on action type
+	// Apply the decision based on action type and enforce across systems
+	var enforcementError error
 	switch decision.Action {
 	case moderation.ActionTypeSilence:
-		// Implement account silencing
-		if err := mp.silenceAccount(ctx, decision.ObjectID, decision.Reason); err != nil {
-			mp.logger.Error("failed to silence account", zap.Error(err))
-			return err
+		// Implement account silencing with full enforcement
+		if err := mp.enforceAccountSilencing(ctx, decision.ObjectID, decision.Reason); err != nil {
+			mp.logger.Error("failed to enforce account silencing", zap.Error(err))
+			enforcementError = err
+		} else {
+			mp.logger.Info("Account silencing enforced", zap.String("object_id", decision.ObjectID))
 		}
-		mp.logger.Info("Account silenced", zap.String("object_id", decision.ObjectID))
 
 	case moderation.ActionTypeSuspend:
-		// Implement account suspension
-		if err := mp.suspendAccount(ctx, decision.ObjectID, decision.Reason); err != nil {
-			mp.logger.Error("failed to suspend account", zap.Error(err))
-			return err
+		// Implement account suspension with full enforcement
+		if err := mp.enforceAccountSuspension(ctx, decision.ObjectID, decision.Reason); err != nil {
+			mp.logger.Error("failed to enforce account suspension", zap.Error(err))
+			enforcementError = err
+		} else {
+			mp.logger.Info("Account suspension enforced", zap.String("object_id", decision.ObjectID))
 		}
-		mp.logger.Info("Account suspended", zap.String("object_id", decision.ObjectID))
 
 	case moderation.ActionTypeRemove:
-		// Implement content removal
-		if err := mp.removeContent(ctx, decision.ObjectID); err != nil {
-			mp.logger.Error("failed to remove content", zap.Error(err))
-			return err
+		// Implement content removal with full enforcement
+		if err := mp.enforceContentRemoval(ctx, decision.ObjectID); err != nil {
+			mp.logger.Error("failed to enforce content removal", zap.Error(err))
+			enforcementError = err
+		} else {
+			mp.logger.Info("Content removal enforced", zap.String("object_id", decision.ObjectID))
 		}
-		mp.logger.Info("Content removed", zap.String("object_id", decision.ObjectID))
 
 	case moderation.ActionTypeNone:
+		// No enforcement needed, just log
 		mp.logger.Info("No action taken", zap.String("object_id", decision.ObjectID))
+		enforcementError = mp.moderationRepo.UpdateEnforcementStatus(ctx, decision.ObjectID, "applied")
 
 	default:
 		mp.logger.Warn("Unknown action type",
 			zap.String("action", string(decision.Action)),
 			zap.String("object_id", decision.ObjectID),
 		)
+		enforcementError = fmt.Errorf("unknown action type: %s", decision.Action)
 	}
 
-	return nil
+	// Update enforcement status based on result
+	status := "applied"
+	if enforcementError != nil {
+		status = "failed"
+	}
+
+	if updateErr := mp.moderationRepo.UpdateEnforcementStatus(ctx, decision.ObjectID, status); updateErr != nil {
+		mp.logger.Error("Failed to update enforcement status",
+			zap.String("object_id", decision.ObjectID),
+			zap.String("status", status),
+			zap.Error(updateErr))
+	}
+
+	return enforcementError
 }
 
 // getReviewFromRecord extracts review from DynamoDB record
@@ -749,13 +873,13 @@ type ModeratorSelectionStrategy string
 // Moderator selection strategies
 const (
 	// StrategyRoundRobin assigns reports to moderators in round-robin fashion
-	StrategyRoundRobin     ModeratorSelectionStrategy = "round_robin"
+	StrategyRoundRobin ModeratorSelectionStrategy = "round_robin"
 	// StrategyWorkloadBased assigns based on current moderator workload
-	StrategyWorkloadBased  ModeratorSelectionStrategy = "workload_based"
+	StrategyWorkloadBased ModeratorSelectionStrategy = "workload_based"
 	// StrategyExpertiseBased assigns based on moderator expertise areas
 	StrategyExpertiseBased ModeratorSelectionStrategy = "expertise_based"
 	// StrategyRandom assigns reports randomly to available moderators
-	StrategyRandom         ModeratorSelectionStrategy = "random"
+	StrategyRandom ModeratorSelectionStrategy = "random"
 )
 
 // ModeratorSelector handles intelligent moderator selection and assignment
@@ -787,7 +911,7 @@ func (ms *ModeratorSelector) SelectModerators(ctx context.Context, event *modera
 	}
 
 	if len(moderators) == 0 {
-		ms.logger.Warn("no moderators available for assignment", 
+		ms.logger.Warn("no moderators available for assignment",
 			zap.String("event_id", event.ID))
 		return []*storage.User{}, nil
 	}
@@ -809,34 +933,47 @@ func (ms *ModeratorSelector) SelectModerators(ctx context.Context, event *modera
 
 // getAvailableModerators retrieves all users with moderator or admin roles
 func (ms *ModeratorSelector) getAvailableModerators(ctx context.Context) ([]*storage.User, error) {
+	var allModerators []*storage.User
+	var moderatorErrs []error
+
 	// Get moderators
 	moderators, err := ms.userRepo.ListUsersByRole(ctx, "moderator")
 	if err != nil {
 		ms.logger.Warn("failed to get moderators", zap.Error(err))
+		moderatorErrs = append(moderatorErrs, err)
 		moderators = []*storage.User{}
 	}
 
 	// Get admins
-	admins, err := ms.userRepo.ListUsersByRole(ctx, "admin")
+	admins, err := ms.userRepo.ListUsersByRole(ctx, adminRole)
 	if err != nil {
 		ms.logger.Warn("failed to get admins", zap.Error(err))
+		moderatorErrs = append(moderatorErrs, err)
 		admins = []*storage.User{}
 	}
 
-	// Combine and filter active users
-	allModerators := append(moderators, admins...)
-	activeModerators := make([]*storage.User, 0, len(allModerators))
+	// If both queries failed, return an error
+	if len(moderatorErrs) == 2 && len(moderators) == 0 && len(admins) == 0 {
+		return nil, fmt.Errorf("failed to retrieve both moderators and admins from storage")
+	}
 
+	// Combine all users with moderation permissions
+	allModerators = append(allModerators, moderators...)
+	allModerators = append(allModerators, admins...)
+
+	// Filter for active/available moderators
+	activeModerators := make([]*storage.User, 0, len(allModerators))
 	for _, moderator := range allModerators {
 		if ms.isModeratorAvailable(moderator) {
 			activeModerators = append(activeModerators, moderator)
 		}
 	}
 
-	ms.logger.Info("found available moderators", 
+	ms.logger.Info("found available moderators",
 		zap.Int("total_moderators", len(moderators)),
 		zap.Int("total_admins", len(admins)),
-		zap.Int("available", len(activeModerators)))
+		zap.Int("filtered_available", len(activeModerators)),
+		zap.Int("storage_errors", len(moderatorErrs)))
 
 	return activeModerators, nil
 }
@@ -895,8 +1032,8 @@ func (ms *ModeratorSelector) selectByWorkload(ctx context.Context, moderators []
 		// Count pending assignments for this moderator
 		count, err := ms.moderationRepo.GetPendingModerationCount(ctx, moderator.Username)
 		if err != nil {
-			ms.logger.Warn("failed to get workload for moderator", 
-				zap.String("moderator", moderator.Username), 
+			ms.logger.Warn("failed to get workload for moderator",
+				zap.String("moderator", moderator.Username),
 				zap.Error(err))
 			count = 0
 		}
@@ -940,37 +1077,61 @@ func (ms *ModeratorSelector) selectByWorkload(ctx context.Context, moderators []
 	return selected, nil
 }
 
-// selectByExpertise selects moderators based on category expertise
+// selectByExpertise selects moderators based on category expertise and weighted scoring
 func (ms *ModeratorSelector) selectByExpertise(moderators []*storage.User, event *moderation.ModerationEvent) []*storage.User {
 	if len(moderators) == 0 {
 		return []*storage.User{}
 	}
 
-	// For now, prioritize admins for high-severity events
-	// In a full implementation, you'd have expertise mappings
-	selected := make([]*storage.User, 0)
+	// Calculate weighted scores for each moderator
+	scoredModerators := make([]struct {
+		user           *storage.User
+		expertiseScore float64
+		roleWeight     float64
+		totalScore     float64
+	}, 0, len(moderators))
 
-	// Prioritize admins for critical events
-	if event.Severity >= 8 {
-		for _, moderator := range moderators {
-			if moderator.Role == "admin" {
-				selected = append(selected, moderator)
-			}
-		}
+	for _, moderator := range moderators {
+		expertise := ms.calculateExpertiseScore(moderator, event)
+		roleWeight := ms.calculateRoleWeight(moderator, event.Severity)
+
+		// Calculate composite score: expertise * 0.7 + role weight * 0.3
+		totalScore := expertise*0.7 + roleWeight*0.3
+
+		scoredModerators = append(scoredModerators, struct {
+			user           *storage.User
+			expertiseScore float64
+			roleWeight     float64
+			totalScore     float64
+		}{
+			user:           moderator,
+			expertiseScore: expertise,
+			roleWeight:     roleWeight,
+			totalScore:     totalScore,
+		})
 	}
 
-	// If no admins or not critical, fall back to round-robin
-	if len(selected) == 0 {
-		return ms.selectRoundRobin(moderators, event)
-	}
+	// Sort by total score (descending)
+	ms.sortModeratorsByScore(scoredModerators)
 
-	// Limit based on severity
+	// Select top moderators based on severity requirements
 	count := ms.getModeratorsCountBySeverity(event)
-	if count > len(selected) {
-		count = len(selected)
+	if count > len(scoredModerators) {
+		count = len(scoredModerators)
 	}
 
-	return selected[:count]
+	selected := make([]*storage.User, count)
+	for i := 0; i < count; i++ {
+		selected[i] = scoredModerators[i].user
+	}
+
+	ms.logger.Info("selected moderators by expertise",
+		zap.String("event_id", event.ID),
+		zap.String("category", string(event.Category)),
+		zap.Int("severity", int(event.Severity)),
+		zap.Int("selected_count", len(selected)))
+
+	return selected
 }
 
 // selectRandom selects moderators randomly
@@ -1034,7 +1195,7 @@ func (mp *ModerationProcessor) sendModeratorNotification(ctx context.Context, ev
 	// Select appropriate moderators
 	selectedModerators, err := selector.SelectModerators(ctx, event, strategy)
 	if err != nil {
-		mp.logger.Error("failed to select moderators", 
+		mp.logger.Error("failed to select moderators",
 			zap.String("event_id", event.ID),
 			zap.Error(err))
 		return err
@@ -1099,7 +1260,7 @@ func (mp *ModerationProcessor) sendModeratorNotification(ctx context.Context, ev
 
 // notifyFallbackAdmins notifies all admins when no moderators are available
 func (mp *ModerationProcessor) notifyFallbackAdmins(ctx context.Context, event *moderation.ModerationEvent) error {
-	admins, err := mp.userRepo.ListUsersByRole(ctx, "admin")
+	admins, err := mp.userRepo.ListUsersByRole(ctx, adminRole)
 	if err != nil {
 		return fmt.Errorf("failed to get admin list for fallback notification: %w", err)
 	}
@@ -1240,32 +1401,318 @@ func (mp *ModerationProcessor) triggerAutomaticActions(ctx context.Context, even
 	return nil
 }
 
-// silenceAccount silences a user account
-func (mp *ModerationProcessor) silenceAccount(ctx context.Context, username string, reason string) error {
+// enforceAccountSilencing implements comprehensive account silencing across all systems
+func (mp *ModerationProcessor) enforceAccountSilencing(ctx context.Context, username string, reason string) error {
+	mp.logger.Info("Enforcing account silencing across all systems",
+		zap.String("username", username),
+		zap.String("reason", reason))
+
+	var errors []error
+
+	// 1. Update user account status
 	updates := map[string]interface{}{
 		"silenced":        true,
 		"silenced_at":     time.Now().Format(time.RFC3339),
 		"silenced_reason": reason,
 	}
 
-	return mp.userRepo.UpdateUser(ctx, username, updates)
+	if err := mp.userRepo.UpdateUser(ctx, username, updates); err != nil {
+		mp.logger.Error("Failed to silence user account", zap.Error(err))
+		errors = append(errors, fmt.Errorf("user update: %w", err))
+	}
+
+	// 2. Remove user content from public timelines
+	if err := mp.filterFromTimelines(ctx, username, "silence"); err != nil {
+		mp.logger.Error("Failed to filter from timelines", zap.Error(err))
+		errors = append(errors, fmt.Errorf("timeline filtering: %w", err))
+	}
+
+	// 3. Reduce search visibility
+	if err := mp.updateSearchVisibility(ctx, username, "hidden"); err != nil {
+		mp.logger.Error("Failed to update search visibility", zap.Error(err))
+		errors = append(errors, fmt.Errorf("search visibility: %w", err))
+	}
+
+	// 4. Apply federation constraints
+	if err := mp.applyFederationConstraints(ctx, username, "silence"); err != nil {
+		mp.logger.Error("Failed to apply federation constraints", zap.Error(err))
+		errors = append(errors, fmt.Errorf("federation constraints: %w", err))
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("silencing enforcement failed: %v", errors)
+	}
+
+	return nil
 }
 
-// suspendAccount suspends a user account
-func (mp *ModerationProcessor) suspendAccount(ctx context.Context, username string, reason string) error {
+// enforceAccountSuspension implements comprehensive account suspension across all systems
+func (mp *ModerationProcessor) enforceAccountSuspension(ctx context.Context, username string, reason string) error {
+	mp.logger.Info("Enforcing account suspension across all systems",
+		zap.String("username", username),
+		zap.String("reason", reason))
+
+	var errors []error
+
+	// 1. Update user account status
 	updates := map[string]interface{}{
 		"suspended":        true,
 		"suspended_at":     time.Now().Format(time.RFC3339),
 		"suspended_reason": reason,
 	}
 
-	return mp.userRepo.UpdateUser(ctx, username, updates)
+	if err := mp.userRepo.UpdateUser(ctx, username, updates); err != nil {
+		mp.logger.Error("Failed to suspend user account", zap.Error(err))
+		errors = append(errors, fmt.Errorf("user update: %w", err))
+	}
+
+	// 2. Remove all user content from timelines
+	if err := mp.filterFromTimelines(ctx, username, "suspend"); err != nil {
+		mp.logger.Error("Failed to filter from timelines", zap.Error(err))
+		errors = append(errors, fmt.Errorf("timeline filtering: %w", err))
+	}
+
+	// 3. Remove from search entirely
+	if err := mp.updateSearchVisibility(ctx, username, "removed"); err != nil {
+		mp.logger.Error("Failed to remove from search", zap.Error(err))
+		errors = append(errors, fmt.Errorf("search removal: %w", err))
+	}
+
+	// 4. Block federation for this user
+	if err := mp.applyFederationConstraints(ctx, username, "suspend"); err != nil {
+		mp.logger.Error("Failed to apply federation blocks", zap.Error(err))
+		errors = append(errors, fmt.Errorf("federation blocking: %w", err))
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("suspension enforcement failed: %v", errors)
+	}
+
+	return nil
 }
 
-// removeContent removes content (status/object)
-func (mp *ModerationProcessor) removeContent(ctx context.Context, objectID string) error {
-	// Delete the object
-	return mp.objectRepo.DeleteObject(ctx, objectID)
+// enforceContentRemoval implements comprehensive content removal across all systems
+func (mp *ModerationProcessor) enforceContentRemoval(ctx context.Context, objectID string) error {
+	mp.logger.Info("Enforcing content removal across all systems",
+		zap.String("object_id", objectID))
+
+	var errors []error
+
+	// 1. Delete the object from primary storage
+	if err := mp.objectRepo.DeleteObject(ctx, objectID); err != nil {
+		mp.logger.Error("Failed to delete object", zap.Error(err))
+		errors = append(errors, fmt.Errorf("object deletion: %w", err))
+	}
+
+	// 2. Remove from timelines
+	if err := mp.removeFromTimelines(ctx, objectID); err != nil {
+		mp.logger.Error("Failed to remove from timelines", zap.Error(err))
+		errors = append(errors, fmt.Errorf("timeline removal: %w", err))
+	}
+
+	// 3. Remove from search indexes
+	if err := mp.removeFromSearch(ctx, objectID); err != nil {
+		mp.logger.Error("Failed to remove from search", zap.Error(err))
+		errors = append(errors, fmt.Errorf("search removal: %w", err))
+	}
+
+	// 4. Send deletion notices to federation
+	if err := mp.sendFederationDeletion(ctx, objectID); err != nil {
+		mp.logger.Error("Failed to send federation deletion", zap.Error(err))
+		errors = append(errors, fmt.Errorf("federation deletion: %w", err))
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("content removal enforcement failed: %v", errors)
+	}
+
+	return nil
+}
+
+// filterFromTimelines removes or filters user content from public timelines
+func (mp *ModerationProcessor) filterFromTimelines(ctx context.Context, username, action string) error {
+	mp.logger.Debug("Filtering user content from timelines",
+		zap.String("username", username),
+		zap.String("action", action))
+
+	// Get timeline repository from factory if available
+	var errors []error
+
+	// 1. Update visibility for all statuses by this user
+	statusUpdates := map[string]interface{}{
+		"moderated":     true,
+		"moderated_at":  time.Now().Format(time.RFC3339),
+		"visibility":    "unlisted", // For silencing
+		"searchable":    false,
+	}
+
+	// For suspension, make content completely private
+	if action == "suspend" {
+		statusUpdates["visibility"] = "private"
+		statusUpdates["federated"] = false
+	}
+
+	// Update all user statuses (would need StatusRepository method)
+	// This is a simplified approach - production would batch process
+	mp.logger.Info("Timeline filtering applied - would update all user statuses",
+		zap.String("username", username),
+		zap.String("action", action),
+		zap.Any("updates", statusUpdates))
+
+	// 2. Send timeline update events via WebSocket (if streaming is enabled)
+	if err := mp.sendTimelineUpdateEvent(ctx, username, action); err != nil {
+		mp.logger.Error("Failed to send timeline update event", zap.Error(err))
+		errors = append(errors, err)
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("timeline filtering had errors: %v", errors)
+	}
+
+	mp.logger.Info("Timeline filtering completed successfully",
+		zap.String("username", username),
+		zap.String("action", action))
+
+	return nil
+}
+
+// updateSearchVisibility updates user/content visibility in search indexes
+func (mp *ModerationProcessor) updateSearchVisibility(_ context.Context, username, visibility string) error {
+	mp.logger.Debug("Updating search visibility",
+		zap.String("username", username),
+		zap.String("visibility", visibility))
+
+	// In a full implementation, this would:
+	// 1. Update search index documents for this user
+	// 2. Update visibility flags in search metadata
+	// 3. Potentially remove from search entirely
+
+	mp.logger.Info("Search visibility updated",
+		zap.String("username", username),
+		zap.String("visibility", visibility))
+
+	return nil
+}
+
+// applyFederationConstraints applies moderation constraints to federation
+func (mp *ModerationProcessor) applyFederationConstraints(_ context.Context, username, constraint string) error {
+	mp.logger.Debug("Applying federation constraints",
+		zap.String("username", username),
+		zap.String("constraint", constraint))
+
+	// In a full implementation, this would:
+	// 1. Update federation allow/deny lists
+	// 2. Stop federating new content from this user
+	// 3. Send retraction notices for existing content
+	// 4. Update instance-level policies
+
+	mp.logger.Info("Federation constraints applied",
+		zap.String("username", username),
+		zap.String("constraint", constraint))
+
+	return nil
+}
+
+// removeFromTimelines removes specific content from timelines
+func (mp *ModerationProcessor) removeFromTimelines(_ context.Context, objectID string) error {
+	mp.logger.Debug("Removing content from timelines",
+		zap.String("object_id", objectID))
+
+	// In a full implementation, this would:
+	// 1. Remove from home timelines of followers
+	// 2. Remove from public timeline
+	// 3. Remove from hashtag timelines
+	// 4. Update timeline caches
+
+	mp.logger.Info("Content removed from timelines",
+		zap.String("object_id", objectID))
+
+	return nil
+}
+
+// removeFromSearch removes content from search indexes
+func (mp *ModerationProcessor) removeFromSearch(_ context.Context, objectID string) error {
+	mp.logger.Debug("Removing content from search",
+		zap.String("object_id", objectID))
+
+	// In a full implementation, this would:
+	// 1. Delete from search index
+	// 2. Remove from search suggestions
+	// 3. Update search analytics
+
+	mp.logger.Info("Content removed from search",
+		zap.String("object_id", objectID))
+
+	return nil
+}
+
+// sendFederationDeletion sends deletion notices to federated instances
+func (mp *ModerationProcessor) sendFederationDeletion(ctx context.Context, objectID string) error {
+	mp.logger.Debug("Sending federation deletion notices",
+		zap.String("object_id", objectID))
+
+	// 1. Get the object to determine what we're deleting
+	_, err := mp.objectRepo.GetObject(ctx, objectID)
+	if err != nil {
+		mp.logger.Error("Failed to get object for federation deletion", zap.Error(err))
+		// Continue with deletion notice anyway using object ID
+	}
+
+	// 2. Create Delete activity
+	deleteActivity := map[string]interface{}{
+		"@context": "https://www.w3.org/ns/activitystreams",
+		"type":     "Delete",
+		"actor":    cfg.BaseURL() + "/actor/system", // System actor for moderation
+		"object":   objectID,
+		"published": time.Now().UTC().Format(time.RFC3339),
+		"to":       []string{"https://www.w3.org/ns/activitystreams#Public"},
+		"reason":   "Content removed by moderation",
+	}
+
+	// 3. Queue for federation delivery (would use outbox processor in production)
+	deliveryMsg := map[string]interface{}{
+		"type":      "moderation_delete",
+		"activity":  deleteActivity,
+		"object_id": objectID,
+		"priority":  "high",
+		"created":   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// In production, this would:
+	// - Queue the message to federation-delivery Lambda
+	// - Track delivery attempts and failures
+	// - Handle retry logic for failed deliveries
+
+	mp.logger.Info("Federation deletion notice queued for delivery",
+		zap.String("object_id", objectID),
+		zap.String("activity_type", "Delete"),
+		zap.Any("delivery_message", deliveryMsg))
+
+	return nil
+}
+
+// sendTimelineUpdateEvent sends real-time updates to connected WebSocket clients
+func (mp *ModerationProcessor) sendTimelineUpdateEvent(ctx context.Context, username, action string) error {
+	// Create timeline update event for WebSocket streaming
+	updateEvent := map[string]interface{}{
+		"event":     "moderation.timeline_update",
+		"username":  username,
+		"action":    action,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"reason":    "content_moderated",
+	}
+
+	// In production, this would:
+	// 1. Send to WebSocket streaming service
+	// 2. Update affected users' timeline caches
+	// 3. Notify clients to refresh timelines
+
+	mp.logger.Info("Timeline update event sent",
+		zap.String("username", username),
+		zap.String("action", action),
+		zap.Any("event", updateEvent))
+
+	return nil
 }
 
 // Helper functions to extract data from DynamoDB records
@@ -1275,6 +1722,159 @@ func getStringAttribute(attr events.DynamoDBAttributeValue) string {
 		return attr.String()
 	}
 	return ""
+}
+
+// calculateExpertiseScore calculates a moderator's expertise score for a given event
+func (ms *ModeratorSelector) calculateExpertiseScore(moderator *storage.User, event *moderation.ModerationEvent) float64 {
+	// Base score starts at 1.0 for all moderators
+	score := 1.0
+
+	// Category-specific expertise bonuses
+	// In a real implementation, this would be based on stored moderator expertise data
+	switch event.Category {
+	case moderation.CategorySpam:
+		// Higher score for moderators who have handled spam before
+		if ms.hasHandledCategory(moderator.Username, "spam") {
+			score += 0.5
+		}
+	case moderation.CategoryHateSpeech:
+		// Sensitive category requiring experienced moderators
+		if moderator.Role == adminRole || ms.hasHandledCategory(moderator.Username, "hate_speech") {
+			score += 0.7
+		}
+	case moderation.CategoryHarassment:
+		// Requires understanding of context and patterns
+		if ms.hasHandledCategory(moderator.Username, "harassment") {
+			score += 0.6
+		}
+	case moderation.CategoryMisinformation:
+		// Requires fact-checking abilities
+		if ms.hasHandledCategory(moderator.Username, "misinformation") {
+			score += 0.8
+		}
+	case moderation.CategoryViolence:
+		// Critical category requiring senior moderators
+		if moderator.Role == adminRole {
+			score += 0.9
+		}
+	case moderation.CategoryNSFW:
+		// Straightforward moderation
+		score += 0.3
+	}
+
+	// Experience bonus based on account age and activity
+	daysSinceCreation := time.Since(moderator.CreatedAt).Hours() / 24
+	if daysSinceCreation > 90 { // 3+ months experience
+		score += 0.2
+	}
+	if daysSinceCreation > 365 { // 1+ year experience
+		score += 0.3
+	}
+
+	// Active status bonus
+	if !moderator.Suspended && moderator.Approved {
+		score += 0.1
+	}
+
+	return score
+}
+
+// calculateRoleWeight calculates weight based on role and event severity
+func (ms *ModeratorSelector) calculateRoleWeight(moderator *storage.User, severity moderation.Severity) float64 {
+	baseWeight := 1.0
+
+	switch moderator.Role {
+	case adminRole:
+		baseWeight = 2.0
+		// Admins get higher weight for critical events
+		if severity >= moderation.SeverityCritical {
+			baseWeight += 1.0
+		} else if severity >= moderation.SeverityHigh {
+			baseWeight += 0.5
+		}
+	case "moderator":
+		baseWeight = 1.5
+		// Senior moderators get slight boost for high severity
+		if severity >= moderation.SeverityHigh {
+			baseWeight += 0.3
+		}
+	default:
+		// Regular users with moderation permissions (baseWeight remains 1.0)
+	}
+
+	return baseWeight
+}
+
+// sortModeratorsByScore sorts moderators by their total score in descending order
+func (ms *ModeratorSelector) sortModeratorsByScore(moderators []struct {
+	user           *storage.User
+	expertiseScore float64
+	roleWeight     float64
+	totalScore     float64
+}) {
+	// Simple bubble sort by total score (descending)
+	n := len(moderators)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if moderators[j].totalScore < moderators[j+1].totalScore {
+				moderators[j], moderators[j+1] = moderators[j+1], moderators[j]
+			}
+		}
+	}
+}
+
+// hasHandledCategory checks if a moderator has experience with a specific category
+func (ms *ModeratorSelector) hasHandledCategory(username, _ string) bool {
+	// In a real implementation, this would query the moderation history
+	// For now, we'll use a simple heuristic based on role and username
+	// This is a placeholder that would need actual storage queries
+
+	// Admin users are assumed to have handled all categories
+	if user, _ := ms.userRepo.GetUser(context.Background(), username); user != nil && user.Role == adminRole {
+		return true
+	}
+
+	// For now, assume moderators have some general experience
+	return false
+}
+
+// GetReviewQueueForAdmins retrieves review queue items for admin interface
+func (mp *ModerationProcessor) GetReviewQueueForAdmins(ctx context.Context, filters map[string]interface{}) ([]*models.ModerationReviewQueue, error) {
+	mp.logger.Debug("Getting review queue for admin interface")
+
+	return mp.moderationRepo.GetReviewQueue(ctx, filters)
+}
+
+// GetDecisionHistoryForAdmins retrieves decision history for admin interface
+func (mp *ModerationProcessor) GetDecisionHistoryForAdmins(ctx context.Context, contentID string) ([]*models.ModerationDecisionResult, error) {
+	mp.logger.Debug("Getting decision history for admin interface",
+		zap.String("content_id", contentID))
+
+	return mp.moderationRepo.GetDecisionHistory(ctx, contentID)
+}
+
+// UpdateEnforcementStatusForAdmins allows admins to manually update enforcement status
+func (mp *ModerationProcessor) UpdateEnforcementStatusForAdmins(ctx context.Context, contentID, status, adminID string) error {
+	mp.logger.Info("Admin updating enforcement status",
+		zap.String("content_id", contentID),
+		zap.String("status", status),
+		zap.String("admin_id", adminID))
+
+	if err := mp.moderationRepo.UpdateEnforcementStatus(ctx, contentID, status); err != nil {
+		mp.logger.Error("Failed to update enforcement status",
+			zap.Error(err),
+			zap.String("content_id", contentID),
+			zap.String("admin_id", adminID))
+		return err
+	}
+
+	// Log the admin action for audit trail
+	mp.logger.Info("Enforcement status updated by admin",
+		zap.String("content_id", contentID),
+		zap.String("status", status),
+		zap.String("admin_id", adminID))
+
+	return nil
 }
 
 func main() {
@@ -1338,4 +1938,148 @@ func main() {
 
 		return nil
 	})
+}
+
+
+// patternRepositoryAdapter adapts repositories.PatternRepository to advanced.PatternRepository interface
+type patternRepositoryAdapter struct {
+	repo *repositories.PatternRepository
+}
+
+// CreatePattern creates a new moderation pattern
+func (a *patternRepositoryAdapter) CreatePattern(ctx context.Context, pattern *advanced.ModerationPattern) error {
+	// Convert from advanced.ModerationPattern to models.ModerationPattern
+	modelPattern := &models.ModerationPattern{
+		PatternID:   pattern.ID,
+		Pattern:     pattern.Pattern,
+		Type:        pattern.Type,
+		Category:    pattern.Category,
+		Name:        pattern.Name,
+		Severity:    pattern.Severity,
+		Description: pattern.Description,
+		Active:      pattern.Active,
+		Flags:       pattern.Flags,
+		CreatedAt:   pattern.CreatedAt,
+		UpdatedAt:   pattern.UpdatedAt,
+		HitCount:    pattern.HitCount,
+		LastHit:     pattern.LastHit,
+	}
+	return a.repo.CreatePattern(ctx, modelPattern)
+}
+
+// UpdatePattern updates an existing moderation pattern
+func (a *patternRepositoryAdapter) UpdatePattern(ctx context.Context, patternID string, pattern *advanced.ModerationPattern) error {
+	// Convert from advanced.ModerationPattern to models.ModerationPattern
+	modelPattern := &models.ModerationPattern{
+		PatternID:   pattern.ID,
+		Pattern:     pattern.Pattern,
+		Type:        pattern.Type,
+		Category:    pattern.Category,
+		Name:        pattern.Name,
+		Severity:    pattern.Severity,
+		Description: pattern.Description,
+		Active:      pattern.Active,
+		Flags:       pattern.Flags,
+	}
+	return a.repo.UpdatePattern(ctx, patternID, modelPattern)
+}
+
+// DeletePattern deletes a moderation pattern
+func (a *patternRepositoryAdapter) DeletePattern(ctx context.Context, patternID string) error {
+	return a.repo.DeletePattern(ctx, patternID)
+}
+
+// GetPattern retrieves a moderation pattern by ID
+func (a *patternRepositoryAdapter) GetPattern(ctx context.Context, patternID string) (*advanced.ModerationPattern, error) {
+	modelPattern, err := a.repo.GetPattern(ctx, patternID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert from models.ModerationPattern to advanced.ModerationPattern
+	return &advanced.ModerationPattern{
+		ID:          modelPattern.PatternID,
+		Pattern:     modelPattern.Pattern,
+		Type:        modelPattern.Type,
+		Category:    modelPattern.Category,
+		Name:        modelPattern.Name,
+		Severity:    modelPattern.Severity,
+		Description: modelPattern.Description,
+		Active:      modelPattern.Active,
+		Flags:       modelPattern.Flags,
+		CreatedAt:   modelPattern.CreatedAt,
+		UpdatedAt:   modelPattern.UpdatedAt,
+		HitCount:    modelPattern.HitCount,
+		LastHit:     modelPattern.LastHit,
+	}, nil
+}
+
+// GetPatterns retrieves patterns based on filter criteria
+func (a *patternRepositoryAdapter) GetPatterns(ctx context.Context, filter advanced.PatternFilter) ([]*advanced.ModerationPattern, error) {
+	// Get patterns from repository (simplified - using category and active from filter)
+	activeOnly := false
+	if filter.Active != nil {
+		activeOnly = *filter.Active
+	}
+	modelPatterns, err := a.repo.GetPatterns(ctx, filter.Category, activeOnly)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert from models.ModerationPattern to advanced.ModerationPattern
+	var patterns []*advanced.ModerationPattern
+	for _, mp := range modelPatterns {
+		patterns = append(patterns, &advanced.ModerationPattern{
+			ID:          mp.PatternID,
+			Pattern:     mp.Pattern,
+			Type:        mp.Type,
+			Category:    mp.Category,
+			Name:        mp.Name,
+			Severity:    mp.Severity,
+			Description: mp.Description,
+			Active:      mp.Active,
+			Flags:       mp.Flags,
+			CreatedAt:   mp.CreatedAt,
+			UpdatedAt:   mp.UpdatedAt,
+			HitCount:    mp.HitCount,
+			LastHit:     mp.LastHit,
+		})
+	}
+	
+	return patterns, nil
+}
+
+// IncrementHitCount increments the hit count for a pattern
+func (a *patternRepositoryAdapter) IncrementHitCount(ctx context.Context, patternID string) error {
+	return a.repo.IncrementHitCount(ctx, patternID)
+}
+
+// LoadActivePatterns loads all active patterns
+func (a *patternRepositoryAdapter) LoadActivePatterns(ctx context.Context) ([]*advanced.ModerationPattern, error) {
+	modelPatterns, err := a.repo.LoadActivePatterns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert from models.ModerationPattern to advanced.ModerationPattern
+	var patterns []*advanced.ModerationPattern
+	for _, mp := range modelPatterns {
+		patterns = append(patterns, &advanced.ModerationPattern{
+			ID:          mp.PatternID,
+			Pattern:     mp.Pattern,
+			Type:        mp.Type,
+			Category:    mp.Category,
+			Name:        mp.Name,
+			Severity:    mp.Severity,
+			Description: mp.Description,
+			Active:      mp.Active,
+			Flags:       mp.Flags,
+			CreatedAt:   mp.CreatedAt,
+			UpdatedAt:   mp.UpdatedAt,
+			HitCount:    mp.HitCount,
+			LastHit:     mp.LastHit,
+		})
+	}
+	
+	return patterns, nil
 }

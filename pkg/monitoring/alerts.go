@@ -16,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"go.uber.org/zap"
+	
+	"github.com/equaltoai/lesser/pkg/observability"
 )
 
 // AlertSeverity represents the severity level of an alert
@@ -52,15 +54,17 @@ const (
 
 // Alert represents an alert to be sent
 type Alert struct {
-	Type        AlertType     `json:"type"`
-	Severity    AlertSeverity `json:"severity"`
-	Title       string        `json:"title"`
-	Description string        `json:"description"`
-	Service     string        `json:"service"`
-	Region      string        `json:"region"`
-	Timestamp   time.Time     `json:"timestamp"`
+	Type        AlertType              `json:"type"`
+	Severity    AlertSeverity          `json:"severity"`
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+	Service     string                 `json:"service"`
+	Region      string                 `json:"region"`
+	Timestamp   time.Time              `json:"timestamp"`
 	Metadata    map[string]interface{} `json:"metadata"`
-	Source      string        `json:"source"`
+	Source      string                 `json:"source"`
+	RunbookURL  string                 `json:"runbook_url,omitempty"`
+	Priority    string                 `json:"priority,omitempty"` // P0, P1, P2
 }
 
 // WebhookConfig contains webhook endpoint configuration
@@ -83,12 +87,12 @@ type AlertManager struct {
 
 // AlertManagerConfig contains configuration for the alert manager
 type AlertManagerConfig struct {
-	Logger        *zap.Logger
-	SNSClient     *sns.Client
-	SNSTopicArn   string
-	WebhookURL    string
+	Logger         *zap.Logger
+	SNSClient      *sns.Client
+	SNSTopicArn    string
+	WebhookURL     string
 	WebhookHeaders map[string]string
-	Enabled       bool
+	Enabled        bool
 }
 
 // AlertRateLimiter prevents alert flooding
@@ -289,7 +293,7 @@ func (am *AlertManager) sendSNS(ctx context.Context, alert *Alert) error {
 	message := am.formatSNSMessage(alert)
 
 	// Create subject line
-	subject := fmt.Sprintf("[%s] %s Alert: %s", 
+	subject := fmt.Sprintf("[%s] %s Alert: %s",
 		strings.ToUpper(string(alert.Severity)),
 		alert.Service,
 		alert.Title)
@@ -360,21 +364,25 @@ func (am *AlertManager) formatSNSMessage(alert *Alert) string {
 }
 
 // CheckErrorRate triggers alert if error rate is too high
-func (am *AlertManager) CheckErrorRate(ctx context.Context, errorRate float64) {
+func (am *AlertManager) CheckErrorRate(ctx context.Context, service string, errorRate float64) {
 	var severity AlertSeverity
 	var threshold float64
+	var priority string
 
-	// Determine severity based on error rate
+	// Determine severity based on error rate using constants
 	switch {
-	case errorRate > 10.0:
+	case errorRate >= observability.AlertP0ErrorRatePercent:
 		severity = SeverityCritical
-		threshold = 10.0
-	case errorRate > 5.0:
+		threshold = observability.AlertP0ErrorRatePercent
+		priority = "P0"
+	case errorRate >= observability.AlertP1ErrorRatePercent:
 		severity = SeverityError
-		threshold = 5.0
-	case errorRate > 2.0:
+		threshold = observability.AlertP1ErrorRatePercent
+		priority = "P1"
+	case errorRate >= observability.AlertP2ErrorRatePercent:
 		severity = SeverityWarning
-		threshold = 2.0
+		threshold = observability.AlertP2ErrorRatePercent
+		priority = "P2"
 	default:
 		// No alert needed
 		return
@@ -383,61 +391,100 @@ func (am *AlertManager) CheckErrorRate(ctx context.Context, errorRate float64) {
 	alert := &Alert{
 		Type:        AlertTypeErrorRate,
 		Severity:    severity,
-		Title:       fmt.Sprintf("High Error Rate Detected (%.1f%%)", errorRate),
-		Description: fmt.Sprintf("Error rate %.1f%% exceeds threshold of %.1f%%", errorRate, threshold),
-		Service:     "api",
+		Priority:    priority,
+		Title:       fmt.Sprintf("[%s] High Error Rate: %s (%.1f%%)", priority, service, errorRate),
+		Description: fmt.Sprintf("Error rate %.1f%% exceeds %s threshold of %.1f%%. Review logs and investigate failed requests immediately.", errorRate, priority, threshold),
+		Service:     service,
 		Region:      os.Getenv("AWS_REGION"),
+		RunbookURL:  observability.RunbookHighErrorRate,
 		Metadata: map[string]interface{}{
 			"error_rate_percent": errorRate,
 			"threshold_percent":  threshold,
+			"priority":          priority,
+			"evaluation_window": getEvaluationWindow(priority),
 		},
 	}
 
 	if err := am.SendAlert(ctx, alert); err != nil {
 		am.logger.Error("failed to send error rate alert",
 			zap.Error(err),
-			zap.Float64("error_rate", errorRate))
+			zap.String("service", service),
+			zap.Float64("error_rate", errorRate),
+			zap.String("priority", priority))
 	}
 }
 
 // CheckLatency triggers alert if latency is too high
-func (am *AlertManager) CheckLatency(ctx context.Context, latencyMs float64) {
+func (am *AlertManager) CheckLatency(ctx context.Context, service string, latencyMs float64, percentile string) {
 	var severity AlertSeverity
 	var threshold float64
+	var priority string
 
-	// Determine severity based on latency
-	switch {
-	case latencyMs > 5000:
-		severity = SeverityCritical
-		threshold = 5000
-	case latencyMs > 2000:
-		severity = SeverityError
-		threshold = 2000
-	case latencyMs > 1000:
-		severity = SeverityWarning
-		threshold = 1000
+	// Determine severity based on latency and percentile using constants
+	switch percentile {
+	case "P99":
+		switch {
+		case latencyMs >= observability.AlertP0LatencyP99Milliseconds:
+			severity = SeverityCritical
+			threshold = observability.AlertP0LatencyP99Milliseconds
+			priority = "P0"
+		case latencyMs >= float64(observability.AlertP1LatencyP90Milliseconds*2): // P99 should be higher than P90
+			severity = SeverityError
+			threshold = float64(observability.AlertP1LatencyP90Milliseconds * 2)
+			priority = "P1"
+		case latencyMs >= float64(observability.AlertP2LatencyP90Milliseconds*2):
+			severity = SeverityWarning
+			threshold = float64(observability.AlertP2LatencyP90Milliseconds * 2)
+			priority = "P2"
+		default:
+			return
+		}
+	case "P90":
+		switch {
+		case latencyMs >= float64(observability.AlertP0LatencyP99Milliseconds/2): // P90 critical at half P99
+			severity = SeverityCritical
+			threshold = float64(observability.AlertP0LatencyP99Milliseconds / 2)
+			priority = "P0"
+		case latencyMs >= observability.AlertP1LatencyP90Milliseconds:
+			severity = SeverityError
+			threshold = observability.AlertP1LatencyP90Milliseconds
+			priority = "P1"
+		case latencyMs >= observability.AlertP2LatencyP90Milliseconds:
+			severity = SeverityWarning
+			threshold = observability.AlertP2LatencyP90Milliseconds
+			priority = "P2"
+		default:
+			return
+		}
 	default:
-		// No alert needed
 		return
 	}
 
 	alert := &Alert{
 		Type:        AlertTypeLatency,
 		Severity:    severity,
-		Title:       fmt.Sprintf("High Latency Detected (%.0fms)", latencyMs),
-		Description: fmt.Sprintf("Latency %.0fms exceeds threshold of %.0fms", latencyMs, threshold),
-		Service:     "api",
+		Priority:    priority,
+		Title:       fmt.Sprintf("[%s] High Latency: %s %s (%.0fms)", priority, service, percentile, latencyMs),
+		Description: fmt.Sprintf("%s latency %.0fms exceeds %s threshold of %.0fms. Check for performance bottlenecks and resource constraints.", percentile, latencyMs, priority, threshold),
+		Service:     service,
 		Region:      os.Getenv("AWS_REGION"),
+		RunbookURL:  observability.RunbookHighLatency,
 		Metadata: map[string]interface{}{
-			"latency_ms":   latencyMs,
-			"threshold_ms": threshold,
+			"latency_ms":        latencyMs,
+			"threshold_ms":      threshold,
+			"percentile":        percentile,
+			"priority":          priority,
+			"evaluation_window": getEvaluationWindow(priority),
 		},
 	}
 
 	if err := am.SendAlert(ctx, alert); err != nil {
 		am.logger.Error("failed to send latency alert",
 			zap.Error(err),
-			zap.Float64("latency_ms", latencyMs))
+			zap.String("service", service),
+			zap.Float64("latency_ms", latencyMs),
+			zap.String("percentile", percentile),
+			zap.String("priority", priority))
 	}
 }
 
@@ -503,7 +550,7 @@ func (am *AlertManager) CheckHealth(ctx context.Context, service string, isHealt
 		Service:     service,
 		Region:      os.Getenv("AWS_REGION"),
 		Metadata: map[string]interface{}{
-			"healthy":      false,
+			"healthy":       false,
 			"error_message": errorMsg,
 		},
 	}
@@ -574,5 +621,172 @@ func (am *AlertManager) CheckCapacity(ctx context.Context, resource string, util
 			zap.Error(err),
 			zap.String("resource", resource),
 			zap.Float64("utilization", utilization))
+	}
+}
+
+// CheckQueueDepth triggers alert for queue depth issues
+func (am *AlertManager) CheckQueueDepth(ctx context.Context, queueName string, depth int64) {
+	var severity AlertSeverity
+	var threshold int64
+	var priority string
+
+	// Determine severity based on queue depth using constants
+	switch {
+	case depth >= observability.AlertP0QueueDepthMessages:
+		severity = SeverityCritical
+		threshold = observability.AlertP0QueueDepthMessages
+		priority = "P0"
+	case depth >= observability.AlertP1QueueDepthMessages:
+		severity = SeverityError
+		threshold = observability.AlertP1QueueDepthMessages
+		priority = "P1"
+	case depth >= observability.AlertP2QueueDepthMessages:
+		severity = SeverityWarning
+		threshold = observability.AlertP2QueueDepthMessages
+		priority = "P2"
+	default:
+		// No alert needed
+		return
+	}
+
+	alert := &Alert{
+		Type:        AlertTypeCapacity,
+		Severity:    severity,
+		Priority:    priority,
+		Title:       fmt.Sprintf("[%s] Queue Backlog: %s (%d messages)", priority, queueName, depth),
+		Description: fmt.Sprintf("Queue depth %d exceeds %s threshold of %d. Messages may be backing up due to processing issues.", depth, priority, threshold),
+		Service:     "queue",
+		Region:      os.Getenv("AWS_REGION"),
+		RunbookURL:  observability.RunbookQueueBacklog,
+		Metadata: map[string]interface{}{
+			"queue_name":        queueName,
+			"queue_depth":       depth,
+			"threshold":         threshold,
+			"priority":          priority,
+			"evaluation_window": getEvaluationWindow(priority),
+		},
+	}
+
+	if err := am.SendAlert(ctx, alert); err != nil {
+		am.logger.Error("failed to send queue depth alert",
+			zap.Error(err),
+			zap.String("queue_name", queueName),
+			zap.Int64("depth", depth),
+			zap.String("priority", priority))
+	}
+}
+
+// CheckFederationHealth triggers alert for federation issues
+func (am *AlertManager) CheckFederationHealth(ctx context.Context, instance string, failureRate float64, totalRequests int64) {
+	var severity AlertSeverity
+	var threshold float64
+	var priority string
+
+	// Only alert if we have sufficient data
+	if totalRequests < 10 {
+		return
+	}
+
+	// Determine severity based on federation failure rate
+	switch {
+	case failureRate >= observability.AlertP1FederationFailurePercent:
+		severity = SeverityError
+		threshold = observability.AlertP1FederationFailurePercent
+		priority = "P1"
+	case failureRate >= 10.0: // P2 threshold for federation
+		severity = SeverityWarning
+		threshold = 10.0
+		priority = "P2"
+	default:
+		// No alert needed
+		return
+	}
+
+	alert := &Alert{
+		Type:        AlertTypeHealth,
+		Severity:    severity,
+		Priority:    priority,
+		Title:       fmt.Sprintf("[%s] Federation Issues: %s (%.1f%% failure rate)", priority, instance, failureRate),
+		Description: fmt.Sprintf("Federation failure rate %.1f%% with %s exceeds %s threshold of %.1f%%. Check network connectivity and remote instance health.", failureRate, instance, priority, threshold),
+		Service:     "federation",
+		Region:      os.Getenv("AWS_REGION"),
+		RunbookURL:  observability.RunbookFederationIssue,
+		Metadata: map[string]interface{}{
+			"instance":          instance,
+			"failure_rate":      failureRate,
+			"threshold":         threshold,
+			"total_requests":    totalRequests,
+			"priority":          priority,
+			"evaluation_window": getEvaluationWindow(priority),
+		},
+	}
+
+	if err := am.SendAlert(ctx, alert); err != nil {
+		am.logger.Error("failed to send federation health alert",
+			zap.Error(err),
+			zap.String("instance", instance),
+			zap.Float64("failure_rate", failureRate),
+			zap.String("priority", priority))
+	}
+}
+
+// CheckColdStarts triggers alert for excessive cold starts
+func (am *AlertManager) CheckColdStarts(ctx context.Context, service string, coldStartsPerMinute int64) {
+	var severity AlertSeverity
+	var threshold int64
+	var priority string
+
+	// Determine severity based on cold start frequency
+	switch {
+	case coldStartsPerMinute >= observability.AlertP2ColdStartsPerMinute*2: // P1 at 2x P2 threshold
+		severity = SeverityError
+		threshold = observability.AlertP2ColdStartsPerMinute * 2
+		priority = "P1"
+	case coldStartsPerMinute >= observability.AlertP2ColdStartsPerMinute:
+		severity = SeverityWarning
+		threshold = observability.AlertP2ColdStartsPerMinute
+		priority = "P2"
+	default:
+		// No alert needed
+		return
+	}
+
+	alert := &Alert{
+		Type:        AlertTypeCapacity,
+		Severity:    severity,
+		Priority:    priority,
+		Title:       fmt.Sprintf("[%s] Excessive Cold Starts: %s (%d/min)", priority, service, coldStartsPerMinute),
+		Description: fmt.Sprintf("Cold starts %d/min exceeds %s threshold of %d. Consider provisioned concurrency or optimization.", coldStartsPerMinute, priority, threshold),
+		Service:     service,
+		Region:      os.Getenv("AWS_REGION"),
+		RunbookURL:  observability.RunbookColdStartIssue,
+		Metadata: map[string]interface{}{
+			"cold_starts_per_minute": coldStartsPerMinute,
+			"threshold":              threshold,
+			"priority":               priority,
+			"evaluation_window":      getEvaluationWindow(priority),
+		},
+	}
+
+	if err := am.SendAlert(ctx, alert); err != nil {
+		am.logger.Error("failed to send cold start alert",
+			zap.Error(err),
+			zap.String("service", service),
+			zap.Int64("cold_starts_per_minute", coldStartsPerMinute),
+			zap.String("priority", priority))
+	}
+}
+
+// getEvaluationWindow returns the evaluation window for a given priority
+func getEvaluationWindow(priority string) int {
+	switch priority {
+	case "P0":
+		return observability.AlertWindowP0Minutes
+	case "P1":
+		return observability.AlertWindowP1Minutes
+	case "P2":
+		return observability.AlertWindowP2Minutes
+	default:
+		return 5 // Default 5 minutes
 	}
 }

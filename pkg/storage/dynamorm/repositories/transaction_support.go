@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TransactionManager provides high-level transaction management for repositories
@@ -113,11 +113,11 @@ func (tm *TransactionManager) BeginTransaction(_ context.Context) (*TransactionC
 		logger:        tm.logger,
 		tracker:       tm.tracker,
 	}
-	
+
 	if tm.logger != nil {
 		tm.logger.Debug("transaction_begun", zap.Time("start_time", txCtx.startTime))
 	}
-	
+
 	return txCtx, nil
 }
 
@@ -128,23 +128,23 @@ func (tm *TransactionManager) CommitTransaction(_ context.Context, txCtx *Transa
 	if txCtx == nil {
 		return fmt.Errorf("transaction context is nil")
 	}
-	
+
 	if txCtx.operationsCnt == 0 {
 		if tm.logger != nil {
-			tm.logger.Info("empty_transaction_committed", 
+			tm.logger.Info("empty_transaction_committed",
 				zap.Duration("duration", time.Since(txCtx.startTime)),
 			)
 		}
 		return nil
 	}
-	
+
 	if tm.logger != nil {
 		tm.logger.Info("transaction_committed",
 			zap.Int("operation_count", txCtx.operationsCnt),
 			zap.Duration("duration", time.Since(txCtx.startTime)),
 		)
 	}
-	
+
 	return nil
 }
 
@@ -155,17 +155,17 @@ func (tm *TransactionManager) RollbackTransaction(_ context.Context, txCtx *Tran
 	if txCtx == nil {
 		return fmt.Errorf("transaction context is nil")
 	}
-	
+
 	if tm.logger != nil {
 		tm.logger.Warn("transaction_rolled_back",
 			zap.Int("operation_count", txCtx.operationsCnt),
 			zap.Duration("duration", time.Since(txCtx.startTime)),
 		)
 	}
-	
+
 	// Reset operation count to indicate rollback
 	txCtx.operationsCnt = 0
-	
+
 	return nil
 }
 
@@ -174,72 +174,72 @@ func (tm *TransactionManager) RollbackTransaction(_ context.Context, txCtx *Tran
 // Put adds a Put operation to the transaction
 func (tc *TransactionContext) Put(item any) error {
 	tc.operationsCnt++
-	
+
 	// Check if transaction is available
 	if tc.tx == nil {
 		return fmt.Errorf("transaction not initialized")
 	}
-	
+
 	// Create MockTx wrapper for the actual transaction
 	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-	
+
 	if err := txOps.Put(item); err != nil {
 		return fmt.Errorf("transaction put failed: %w", err)
 	}
-	
+
 	return nil
 }
 
 // Delete adds a Delete operation to the transaction
 func (tc *TransactionContext) Delete(item any) error {
 	tc.operationsCnt++
-	
+
 	// Check if transaction is available
 	if tc.tx == nil {
 		return fmt.Errorf("transaction not initialized")
 	}
-	
+
 	// Create MockTx wrapper for the actual transaction
 	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-	
+
 	if err := txOps.Delete(item); err != nil {
 		return fmt.Errorf("transaction delete failed: %w", err)
 	}
-	
+
 	return nil
 }
 
 // Update adds an Update operation to the transaction
 func (tc *TransactionContext) Update(item any) error {
 	tc.operationsCnt++
-	
+
 	// Check if transaction is available
 	if tc.tx == nil {
 		return fmt.Errorf("transaction not initialized")
 	}
-	
+
 	// Create MockTx wrapper for the actual transaction
 	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-	
+
 	if err := txOps.Update(item); err != nil {
 		return fmt.Errorf("transaction update failed: %w", err)
 	}
-	
+
 	return nil
 }
 
 // ConditionCheck adds a condition check to the transaction
 func (tc *TransactionContext) ConditionCheck(key any, condition string, values ...any) error {
 	tc.operationsCnt++
-	
+
 	// Check if transaction is available
 	if tc.tx == nil {
 		return fmt.Errorf("transaction not initialized")
 	}
-	
+
 	// Create MockTx wrapper for the actual transaction
 	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-	
+
 	// For condition checks, we need the table name. Since this is a generic method,
 	// we'll assume the key contains the table information or use a default
 	tableName := "default-table"
@@ -250,52 +250,52 @@ func (tc *TransactionContext) ConditionCheck(key any, condition string, values .
 	} else {
 		return fmt.Errorf("condition check requires key to be map[string]any")
 	}
-	
+
 	return nil
 }
 
 // UpdateWithExpression adds an Update operation with expression to the transaction
 func (tc *TransactionContext) UpdateWithExpression(item any, expression string, values ...any) error {
 	tc.operationsCnt++
-	
+
 	// Check if transaction is available
 	if tc.tx == nil {
 		return fmt.Errorf("transaction not initialized")
 	}
-	
+
 	// Create MockTx wrapper for the actual transaction
 	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-	
+
 	if err := txOps.UpdateWithExpression(item, expression, values...); err != nil {
 		return fmt.Errorf("transaction update with expression failed: %w", err)
 	}
-	
+
 	return nil
 }
 
 // DeleteByKey adds a Delete operation by key to the transaction
 func (tc *TransactionContext) DeleteByKey(tableName string, key map[string]any) error {
 	tc.operationsCnt++
-	
+
 	// Check if transaction is available
 	if tc.tx == nil {
 		return fmt.Errorf("transaction not initialized")
 	}
-	
+
 	// Create MockTx wrapper for the actual transaction
 	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-	
+
 	if err := txOps.DeleteByKey(tableName, key); err != nil {
 		return fmt.Errorf("transaction delete by key failed: %w", err)
 	}
-	
+
 	return nil
 }
 
 // TransactionalGet performs a get operation within the transaction context
 func (tc *TransactionContext) TransactionalGet(_ any) error {
 	tc.operationsCnt++
-	
+
 	// Note: Pure read operations don't affect transactions in DynamoDB
 	// This is mainly for consistency tracking and cost monitoring
 	return nil
@@ -319,7 +319,7 @@ func (tc *TransactionContext) TransactionalDelete(item any) error {
 // TransactionalBatchGet performs batch get operations within transaction context
 func (tc *TransactionContext) TransactionalBatchGet(items []any) error {
 	tc.operationsCnt += len(items)
-	
+
 	// Batch reads don't participate in DynamoDB transactions
 	// This is mainly for cost tracking and consistency
 	return nil
@@ -333,14 +333,14 @@ func (tc *TransactionContext) TransactionalBatchWrite(puts []any, deletes []any)
 			return fmt.Errorf("batch put failed: %w", err)
 		}
 	}
-	
+
 	// Add delete operations
 	for _, item := range deletes {
 		if err := tc.Delete(item); err != nil {
 			return fmt.Errorf("batch delete failed: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -604,20 +604,20 @@ func isRetryableError(err error) bool {
 // ExecuteIsolated executes a transaction with full isolation guarantees
 func (tm *TransactionManager) ExecuteIsolated(_ context.Context, isolationLevel string, fn func(*TransactionContext) error) error {
 	startTime := time.Now()
-	
+
 	if tm.logger != nil {
 		tm.logger.Debug("isolated_transaction_starting",
 			zap.String("isolation_level", isolationLevel),
 			zap.Time("start_time", startTime),
 		)
 	}
-	
+
 	// Track initial costs
 	var initialCost *cost.OperationCost
 	if tm.tracker != nil {
 		initialCost = tm.tracker.CalculateCost()
 	}
-	
+
 	err := tm.db.Transaction(func(tx *core.Tx) error {
 		txCtx := &TransactionContext{
 			tx:            tx,
@@ -626,11 +626,11 @@ func (tm *TransactionManager) ExecuteIsolated(_ context.Context, isolationLevel 
 			logger:        tm.logger,
 			tracker:       tm.tracker,
 		}
-		
+
 		// Execute the transaction function with isolation
 		return fn(txCtx)
 	})
-	
+
 	// Track transaction cost with isolation overhead
 	if tm.tracker != nil && err == nil {
 		finalCost := tm.tracker.CalculateCost()
@@ -641,7 +641,7 @@ func (tm *TransactionManager) ExecuteIsolated(_ context.Context, isolationLevel 
 			zap.L().Warn("failed to track isolated transaction cost", zap.Error(trackErr))
 		}
 	}
-	
+
 	if tm.logger != nil {
 		tm.logger.Info("isolated_transaction_completed",
 			zap.String("isolation_level", isolationLevel),
@@ -649,7 +649,7 @@ func (tm *TransactionManager) ExecuteIsolated(_ context.Context, isolationLevel 
 			zap.Error(err),
 		)
 	}
-	
+
 	return err
 }
 
@@ -661,13 +661,13 @@ func (tm *TransactionManager) ExecuteWithConsistency(ctx context.Context, consis
 		Logger:          tm.logger,
 		CostTracker:     tm.tracker,
 	}
-	
+
 	if tm.logger != nil {
 		tm.logger.Debug("consistent_transaction_starting",
 			zap.String("consistency_level", consistencyLevel),
 		)
 	}
-	
+
 	return tm.ExecuteWithRetry(ctx, config, fn)
 }
 
@@ -676,7 +676,7 @@ func (tm *TransactionManager) ExecuteNested(_ context.Context, parentTx *Transac
 	if parentTx == nil {
 		return fmt.Errorf("parent transaction context is required for nested transactions")
 	}
-	
+
 	// Create a nested context that shares the parent transaction
 	nestedCtx := &TransactionContext{
 		tx:            parentTx.tx,
@@ -685,15 +685,15 @@ func (tm *TransactionManager) ExecuteNested(_ context.Context, parentTx *Transac
 		logger:        tm.logger,
 		tracker:       tm.tracker,
 	}
-	
+
 	if tm.logger != nil {
 		tm.logger.Debug("nested_transaction_starting",
 			zap.Int("parent_operations", parentTx.operationsCnt),
 		)
 	}
-	
+
 	err := fn(nestedCtx)
-	
+
 	// Merge operation counts on success
 	if err == nil {
 		parentTx.operationsCnt += nestedCtx.operationsCnt
@@ -709,7 +709,7 @@ func (tm *TransactionManager) ExecuteNested(_ context.Context, parentTx *Transac
 			zap.Error(err),
 		)
 	}
-	
+
 	return err
 }
 

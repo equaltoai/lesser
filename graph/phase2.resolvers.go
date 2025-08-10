@@ -30,22 +30,21 @@ func floatPtr(f float64) *float64 {
 	return &f
 }
 
-
 // Pattern is the resolver for the pattern field.
-func (r *moderationPatternResolver) Pattern(ctx context.Context, obj *moderation.ModerationPattern) (string, error) {
+func (r *moderationPatternResolver) Pattern(_ context.Context, obj *moderation.ModerationPattern) (string, error) {
 	if obj == nil {
 		return "", nil
 	}
-	
+
 	return obj.Content, nil // Content contains the pattern
 }
 
 // Type is the resolver for the type field.
-func (r *moderationPatternResolver) Type(ctx context.Context, obj *moderation.ModerationPattern) (model.PatternType, error) {
+func (r *moderationPatternResolver) Type(_ context.Context, obj *moderation.ModerationPattern) (model.PatternType, error) {
 	if obj == nil {
 		return model.PatternTypeRegex, nil // Default to regex
 	}
-	
+
 	// Convert string type to PatternType enum
 	switch strings.ToLower(obj.Type) {
 	case "keyword":
@@ -60,11 +59,11 @@ func (r *moderationPatternResolver) Type(ctx context.Context, obj *moderation.Mo
 }
 
 // Severity is the resolver for the severity field.
-func (r *moderationPatternResolver) Severity(ctx context.Context, obj *moderation.ModerationPattern) (model.ModerationSeverity, error) {
+func (r *moderationPatternResolver) Severity(_ context.Context, obj *moderation.ModerationPattern) (model.ModerationSeverity, error) {
 	if obj == nil {
 		return model.ModerationSeverityLow, nil // Default to low
 	}
-	
+
 	// Convert string severity to ModerationSeverity enum
 	switch strings.ToLower(obj.Severity) {
 	case "critical":
@@ -81,48 +80,48 @@ func (r *moderationPatternResolver) Severity(ctx context.Context, obj *moderatio
 }
 
 // FalsePositiveRate is the resolver for the falsePositiveRate field.
-func (r *moderationPatternResolver) FalsePositiveRate(ctx context.Context, obj *moderation.ModerationPattern) (float64, error) {
+func (r *moderationPatternResolver) FalsePositiveRate(_ context.Context, obj *moderation.ModerationPattern) (float64, error) {
 	if obj == nil {
 		return 0.0, nil
 	}
-	
+
 	// Calculate false positive rate from available data
 	if obj.MatchCount > 0 && obj.FalsePositiveCount >= 0 {
 		return float64(obj.FalsePositiveCount) / float64(obj.MatchCount), nil
 	}
-	
+
 	// Use effectiveness to approximate false positive rate
 	if obj.Effectiveness > 0 {
 		return 1.0 - obj.Effectiveness, nil
 	}
-	
+
 	return 0.05, nil // Default 5% false positive rate
 }
 
 // CreatedAt is the resolver for the createdAt field.
-func (r *moderationPatternResolver) CreatedAt(ctx context.Context, obj *moderation.ModerationPattern) (*model.Time, error) {
+func (r *moderationPatternResolver) CreatedAt(_ context.Context, obj *moderation.ModerationPattern) (*model.Time, error) {
 	if obj == nil {
 		return nil, nil
 	}
-	
+
 	if obj.CreatedAt.IsZero() {
 		return nil, nil
 	}
-	
+
 	gqlTime := model.Time(obj.CreatedAt)
 	return &gqlTime, nil
 }
 
 // UpdatedAt is the resolver for the updatedAt field.
-func (r *moderationPatternResolver) UpdatedAt(ctx context.Context, obj *moderation.ModerationPattern) (*model.Time, error) {
+func (r *moderationPatternResolver) UpdatedAt(_ context.Context, obj *moderation.ModerationPattern) (*model.Time, error) {
 	if obj == nil {
 		return nil, nil
 	}
-	
+
 	if obj.UpdatedAt.IsZero() {
 		return nil, nil
 	}
-	
+
 	gqlTime := model.Time(obj.UpdatedAt)
 	return &gqlTime, nil
 }
@@ -132,7 +131,7 @@ func (r *moderationPatternResolver) CreatedBy(ctx context.Context, obj *moderati
 	if obj == nil || obj.CreatedBy == "" {
 		return nil, nil
 	}
-	
+
 	// Use DataLoader to fetch the creator actor
 	actor, err := LoadActor(ctx, obj.CreatedBy)
 	if err != nil {
@@ -141,12 +140,12 @@ func (r *moderationPatternResolver) CreatedBy(ctx context.Context, obj *moderati
 			zap.Error(err))
 		return nil, nil // Return nil instead of error for optional field
 	}
-	
+
 	return actor, nil
 }
 
 // RequestStreamingURL generates a streaming URL for media
-func (r *mutationResolver) RequestStreamingURL(ctx context.Context, mediaID string, quality *model.StreamQuality) (*model.MediaStream, error) {
+func (r *mutationResolver) RequestStreamingURL(_ context.Context, mediaID string, quality *model.StreamQuality) (*model.MediaStream, error) {
 	// Track the mutation
 	_ = r.CostTracker.TrackDynamoWrite(1)
 
@@ -239,15 +238,15 @@ func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input mo
 
 	// Create the pattern using the correct struct from pkg/moderation
 	pattern := &moderation.ModerationPattern{
-		ID:                fmt.Sprintf("pattern-%s", generateID()),
-		Content:           input.Pattern, // Note: Content field, not Pattern
-		Type:              string(input.Type),
-		Severity:          string(input.Severity),
-		MatchCount:        0,
+		ID:                 fmt.Sprintf("pattern-%s", generateID()),
+		Content:            input.Pattern, // Note: Content field, not Pattern
+		Type:               string(input.Type),
+		Severity:           string(input.Severity),
+		MatchCount:         0,
 		FalsePositiveCount: 0,
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
-		Active:            true,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+		Active:             true,
 	}
 
 	if input.Active != nil {
@@ -256,17 +255,17 @@ func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input mo
 
 	// Create the pattern in storage
 	storagePattern := &storage.ModerationPattern{
-		ID:       pattern.ID,
-		Pattern:  pattern.Content,
-		Content:  pattern.Content,
-		Type:     pattern.Type,
-		Severity: pattern.Severity,
-		Active:   pattern.Active,
-		Enabled:  pattern.Active,
+		ID:        pattern.ID,
+		Pattern:   pattern.Content,
+		Content:   pattern.Content,
+		Type:      pattern.Type,
+		Severity:  pattern.Severity,
+		Active:    pattern.Active,
+		Enabled:   pattern.Active,
 		CreatedAt: pattern.CreatedAt,
 		UpdatedAt: pattern.UpdatedAt,
 	}
-	
+
 	err := r.Storage.Moderation().CreateModerationPattern(ctx, storagePattern)
 	if err != nil {
 		r.Logger.Error("Failed to create moderation pattern",
@@ -289,7 +288,7 @@ func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id strin
 
 	// Get moderation repository
 	moderationRepo := r.Storage.Moderation()
-	
+
 	// Try to get the existing pattern from repository
 	existingPattern, err := moderationRepo.GetModerationPattern(ctx, id)
 	if err != nil {
@@ -298,7 +297,7 @@ func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id strin
 			zap.Error(err))
 		return nil, fmt.Errorf("pattern not found: %w", err)
 	}
-	
+
 	// Update the pattern with new values
 	existingPattern.Pattern = input.Pattern
 	existingPattern.Type = string(input.Type)
@@ -353,7 +352,7 @@ func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id strin
 }
 
 // TrainModerationModel trains the ML moderation model with samples
-func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*model.ModerationSample) (*model.TrainingResult, error) {
+func (r *mutationResolver) TrainModerationModel(_ context.Context, samples []*model.ModerationSample) (*model.TrainingResult, error) {
 	// Track the mutation
 	_ = r.CostTracker.TrackDynamoWrite(len(samples))
 
@@ -381,7 +380,7 @@ func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*
 }
 
 // SetFederationLimit sets limits for a specific domain
-func (r *mutationResolver) SetFederationLimit(ctx context.Context, domain string, limit model.FederationLimitInput) (*model.FederationLimit, error) {
+func (r *mutationResolver) SetFederationLimit(_ context.Context, domain string, limit model.FederationLimitInput) (*model.FederationLimit, error) {
 	// Track the mutation
 	_ = r.CostTracker.TrackDynamoWrite(1)
 
@@ -418,7 +417,7 @@ func (r *mutationResolver) SetFederationLimit(ctx context.Context, domain string
 }
 
 // PauseFederation pauses federation with a domain
-func (r *mutationResolver) PauseFederation(ctx context.Context, domain string, reason string, until *model.Time) (*model.FederationManagementStatus, error) {
+func (r *mutationResolver) PauseFederation(_ context.Context, domain string, reason string, until *model.Time) (*model.FederationManagementStatus, error) {
 	// Track the mutation
 	_ = r.CostTracker.TrackDynamoWrite(1)
 
@@ -444,7 +443,7 @@ func (r *mutationResolver) PauseFederation(ctx context.Context, domain string, r
 }
 
 // ResumeFederation resumes federation with a domain
-func (r *mutationResolver) ResumeFederation(ctx context.Context, domain string) (*model.FederationManagementStatus, error) {
+func (r *mutationResolver) ResumeFederation(_ context.Context, domain string) (*model.FederationManagementStatus, error) {
 	// Track the mutation
 	_ = r.CostTracker.TrackDynamoWrite(1)
 
@@ -466,7 +465,7 @@ func (r *mutationResolver) ResumeFederation(ctx context.Context, domain string) 
 }
 
 // SetInstanceBudget sets the monthly budget for an instance
-func (r *mutationResolver) SetInstanceBudget(ctx context.Context, domain string, monthlyUsd float64, autoLimit *bool) (*model.InstanceBudget, error) {
+func (r *mutationResolver) SetInstanceBudget(_ context.Context, domain string, monthlyUsd float64, autoLimit *bool) (*model.InstanceBudget, error) {
 	// Track the mutation
 	_ = r.CostTracker.TrackDynamoWrite(1)
 
@@ -496,7 +495,7 @@ func (r *mutationResolver) SetInstanceBudget(ctx context.Context, domain string,
 }
 
 // OptimizeFederationCosts runs cost optimization analysis
-func (r *mutationResolver) OptimizeFederationCosts(ctx context.Context, threshold float64) (*model.CostOptimizationResult, error) {
+func (r *mutationResolver) OptimizeFederationCosts(_ context.Context, threshold float64) (*model.CostOptimizationResult, error) {
 	// Track the mutation
 	_ = r.CostTracker.TrackDynamoWrite(1)
 
@@ -720,11 +719,11 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 		if strings.Contains(strings.ToLower(issue), HealthStatusError) {
 			issueType = HealthStatusError
 		} else if strings.Contains(strings.ToLower(issue), "performance") {
-			issueType = "performance"  
+			issueType = "performance"
 		} else if strings.Contains(strings.ToLower(issue), "timeout") {
 			issueType = "timeout"
 		}
-		
+
 		// Determine impact from issue description
 		impact := "Minor issue, no immediate action required"
 		if strings.Contains(strings.ToLower(issue), "critical") {
@@ -734,7 +733,7 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 		} else if strings.Contains(strings.ToLower(issue), "warning") {
 			impact = "Potential issue, monitoring recommended"
 		}
-		
+
 		healthIssue := &model.HealthIssue{
 			Type:        issueType,
 			Severity:    severity,
@@ -837,7 +836,7 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 }
 
 // MediaStreamURL returns a streaming URL for the specified media
-func (r *queryResolver) MediaStreamURL(ctx context.Context, mediaID string) (*model.MediaStream, error) {
+func (r *queryResolver) MediaStreamURL(_ context.Context, mediaID string) (*model.MediaStream, error) {
 	// Track the query
 	_ = r.CostTracker.TrackDynamoRead(1)
 
@@ -881,7 +880,7 @@ func (r *queryResolver) MediaStreamURL(ctx context.Context, mediaID string) (*mo
 }
 
 // SupportedBitrates returns available bitrates for a media item
-func (r *queryResolver) SupportedBitrates(ctx context.Context, mediaID string) ([]*model.Bitrate, error) {
+func (r *queryResolver) SupportedBitrates(_ context.Context, _ string) ([]*model.Bitrate, error) {
 	// Track the query
 	_ = r.CostTracker.TrackDynamoRead(1)
 
@@ -938,7 +937,7 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, active *bool, se
 	if first != nil {
 		limitFilter = *first
 	}
-	
+
 	storagePatterns, err := r.Storage.Moderation().GetModerationPatterns(ctx, activeFilter, severityFilter, limitFilter)
 	if err != nil {
 		r.Logger.Error("Failed to get moderation patterns",
@@ -967,7 +966,7 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, active *bool, se
 }
 
 // ModerationEffectiveness returns effectiveness metrics for a pattern
-func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID string, period model.Period) (*model.ModerationEffectiveness, error) {
+func (r *queryResolver) ModerationEffectiveness(_ context.Context, patternID string, _ model.Period) (*model.ModerationEffectiveness, error) {
 	// Track the query
 	_ = r.CostTracker.TrackDynamoRead(2)
 
@@ -996,7 +995,7 @@ func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID s
 }
 
 // FederationLimits returns configured federation limits
-func (r *queryResolver) FederationLimits(ctx context.Context, active *bool, first *int, after *string) ([]*model.FederationLimit, error) {
+func (r *queryResolver) FederationLimits(_ context.Context, active *bool, _ *int, _ *string) ([]*model.FederationLimit, error) {
 	// Track the query
 	_ = r.CostTracker.TrackDynamoRead(1)
 
@@ -1039,7 +1038,7 @@ func (r *queryResolver) FederationLimits(ctx context.Context, active *bool, firs
 }
 
 // InstanceBudgets returns budget information for instances
-func (r *queryResolver) InstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error) {
+func (r *queryResolver) InstanceBudgets(_ context.Context, exceeded *bool) ([]*model.InstanceBudget, error) {
 	// Track the query
 	_ = r.CostTracker.TrackDynamoRead(1)
 
@@ -1082,7 +1081,7 @@ func (r *queryResolver) InstanceBudgets(ctx context.Context, exceeded *bool) ([]
 }
 
 // FederationHealth returns health status for instances
-func (r *queryResolver) FederationHealth(ctx context.Context, threshold *float64) ([]*model.FederationManagementStatus, error) {
+func (r *queryResolver) FederationHealth(_ context.Context, threshold *float64) ([]*model.FederationManagementStatus, error) {
 	// Track the query
 	_ = r.CostTracker.TrackDynamoRead(1)
 
@@ -1456,7 +1455,7 @@ func convertModerationEventToAlert(event *streaming.InternalEvent) *model.Modera
 	alert.Timestamp = model.Time(event.Timestamp)
 	alert.Handled = false
 	alert.Confidence = 0.8 // Default confidence
-	
+
 	// Set severity based on event action
 	switch event.Action {
 	case streaming.ActionFlag:
@@ -1480,7 +1479,7 @@ func convertModerationEventToAlert(event *streaming.InternalEvent) *model.Modera
 		} else {
 			alert.MatchedText = "Content flagged for review"
 		}
-		
+
 		// Extract confidence if available
 		if confidenceStr, ok := event.Metadata["confidence"]; ok {
 			alert.Confidence = parseFloatOrZero(confidenceStr)
@@ -1547,12 +1546,12 @@ func convertCostEventToBudgetAlert(event *streaming.InternalEvent) *model.Budget
 		if spentStr, ok := event.Metadata["spent_usd"]; ok {
 			alert.SpentUsd = parseFloatOrZero(spentStr)
 		}
-		
+
 		// Calculate percentage
 		if alert.BudgetUsd > 0 {
 			alert.PercentUsed = (alert.SpentUsd / alert.BudgetUsd) * 100
 		}
-		
+
 		// Set alert level based on percentage
 		if alert.PercentUsed >= 90 {
 			alert.AlertLevel = model.AlertLevelCritical
@@ -1561,7 +1560,7 @@ func convertCostEventToBudgetAlert(event *streaming.InternalEvent) *model.Budget
 		} else {
 			alert.AlertLevel = model.AlertLevelInfo
 		}
-		
+
 		// Check for projected overspend
 		if projectedStr, ok := event.Metadata["projected_overspend"]; ok {
 			overspend := parseFloatOrZero(projectedStr)
@@ -1591,7 +1590,7 @@ func convertHealthEventToFederationUpdate(event *streaming.InternalEvent) *model
 		if domain, ok := event.Metadata["domain"]; ok {
 			update.Domain = domain
 		}
-		
+
 		// Parse previous and current status
 		if prevStatus, ok := event.Metadata["previous_status"]; ok {
 			update.PreviousStatus = parseHealthStatus(prevStatus)
@@ -1599,7 +1598,7 @@ func convertHealthEventToFederationUpdate(event *streaming.InternalEvent) *model
 		if currStatus, ok := event.Metadata["current_status"]; ok {
 			update.CurrentStatus = parseHealthStatus(currStatus)
 		}
-		
+
 		// Extract health issues if any
 		if issueType, ok := event.Metadata["issue_type"]; ok {
 			issue := &model.HealthIssue{
@@ -1607,7 +1606,7 @@ func convertHealthEventToFederationUpdate(event *streaming.InternalEvent) *model
 				Description: event.Metadata["issue_description"],
 				Severity:    model.IssueSeverityMedium,
 			}
-			
+
 			// Parse severity if available
 			if sev, ok := event.Metadata["issue_severity"]; ok {
 				switch sev {
@@ -1619,7 +1618,7 @@ func convertHealthEventToFederationUpdate(event *streaming.InternalEvent) *model
 					issue.Severity = model.IssueSeverityMedium
 				}
 			}
-			
+
 			update.Issues = append(update.Issues, issue)
 		}
 	}

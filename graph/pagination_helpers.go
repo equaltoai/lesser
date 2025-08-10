@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
 // PaginationOptions represents GraphQL pagination parameters
 type PaginationOptions struct {
-	First  *int           `json:"first,omitempty"`
-	After  *model.Cursor  `json:"after,omitempty"`
-	Last   *int           `json:"last,omitempty"`
-	Before *model.Cursor  `json:"before,omitempty"`
+	First  *int          `json:"first,omitempty"`
+	After  *model.Cursor `json:"after,omitempty"`
+	Last   *int          `json:"last,omitempty"`
+	Before *model.Cursor `json:"before,omitempty"`
 }
 
 // CursorData represents cursor data for GraphQL pagination
@@ -102,8 +102,8 @@ func DecodeGraphQLCursor(cursor model.Cursor) (*CursorData, error) {
 
 // BuildPageInfo creates PageInfo for GraphQL connections
 func BuildPageInfo(
-	edges []interface{}, 
-	hasPreviousPage bool, 
+	edges []interface{},
+	hasPreviousPage bool,
 	hasNextPage bool,
 	getCursor func(interface{}) model.Cursor,
 ) *model.PageInfo {
@@ -135,7 +135,7 @@ func ConvertToDynamORMPagination(opts *PaginationOptions) (*repositories.Paginat
 			if err != nil {
 				return nil, fmt.Errorf("invalid after cursor: %w", err)
 			}
-			
+
 			// Convert to DynamORM cursor format
 			if cursorData != nil {
 				dynamormOpts.Cursor = repositories.EncodeCursor(&repositories.CursorData{
@@ -149,7 +149,7 @@ func ConvertToDynamORMPagination(opts *PaginationOptions) (*repositories.Paginat
 
 	// Handle backward pagination (last/before)
 	if opts.Last != nil {
-		dynamormOpts.Limit = *opts.Last + 1 // Request one extra to determine hasPreviousPage
+		dynamormOpts.Limit = *opts.Last + 1                     // Request one extra to determine hasPreviousPage
 		dynamormOpts.SortOrder = repositories.SearchSortTimeAsc // Reverse for backward pagination
 
 		if opts.Before != nil {
@@ -157,7 +157,7 @@ func ConvertToDynamORMPagination(opts *PaginationOptions) (*repositories.Paginat
 			if err != nil {
 				return nil, fmt.Errorf("invalid before cursor: %w", err)
 			}
-			
+
 			// Convert to DynamORM cursor format
 			if cursorData != nil {
 				dynamormOpts.Cursor = repositories.EncodeCursor(&repositories.CursorData{
@@ -180,48 +180,48 @@ func ApplyPaginationToResults[T any](
 	getTimestamp func(T) time.Time, //nolint:revive // unused but required for consistent API
 	getScore func(T) float64, //nolint:revive // unused but required for consistent API
 ) ([]T, bool, bool, error) {
-	
+
 	hasNextPage := false
 	hasPreviousPage := false
 
 	// Handle forward pagination (first/after)
 	if opts.First != nil {
 		requestedLimit := *opts.First
-		
+
 		// Check if we have more results than requested
 		if len(results) > requestedLimit {
 			hasNextPage = true
 			results = results[:requestedLimit] // Take only requested amount
 		}
-		
+
 		// If we used after cursor, we have a previous page
 		if opts.After != nil && *opts.After != "" {
 			hasPreviousPage = true
 		}
-		
+
 		return results, hasPreviousPage, hasNextPage, nil
 	}
 
 	// Handle backward pagination (last/before)
 	if opts.Last != nil {
 		requestedLimit := *opts.Last
-		
+
 		// Check if we have more results than requested
 		if len(results) > requestedLimit {
 			hasPreviousPage = true
 			results = results[len(results)-requestedLimit:] // Take last N items
 		}
-		
+
 		// If we used before cursor, we have a next page
 		if opts.Before != nil && *opts.Before != "" {
 			hasNextPage = true
 		}
-		
+
 		// Reverse results for backward pagination since we queried in reverse
 		for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
 			results[i], results[j] = results[j], results[i]
 		}
-		
+
 		return results, hasPreviousPage, hasNextPage, nil
 	}
 
@@ -237,27 +237,27 @@ func CreateObjectEdges[T any](
 	getTimestamp func(T) time.Time,
 	getScore func(T) float64,
 ) ([]*model.ObjectEdge, error) {
-	
+
 	edges := make([]*model.ObjectEdge, len(items))
-	
+
 	for i, item := range items {
 		object, err := convertToObject(item)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert item %d: %w", i, err)
 		}
-		
+
 		cursor := EncodeGraphQLCursor(&CursorData{
 			ID:        getID(item),
 			Timestamp: getTimestamp(item),
 			Score:     getScore(item),
 		})
-		
+
 		edges[i] = &model.ObjectEdge{
 			Node:   object,
 			Cursor: cursor,
 		}
 	}
-	
+
 	return edges, nil
 }
 
@@ -268,26 +268,26 @@ func CreateNotificationEdges[T any](
 	getID func(T) string,
 	getTimestamp func(T) time.Time,
 ) ([]*model.NotificationEdge, error) {
-	
+
 	edges := make([]*model.NotificationEdge, len(items))
-	
+
 	for i, item := range items {
 		notification, err := convertToNotification(item)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert notification %d: %w", i, err)
 		}
-		
+
 		cursor := EncodeGraphQLCursor(&CursorData{
 			ID:        getID(item),
 			Timestamp: getTimestamp(item),
 		})
-		
+
 		edges[i] = &model.NotificationEdge{
 			Node:   notification,
 			Cursor: cursor,
 		}
 	}
-	
+
 	return edges, nil
 }
 
@@ -298,26 +298,26 @@ func CreateHashtagEdges[T any](
 	getID func(T) string,
 	getTimestamp func(T) time.Time,
 ) ([]*model.HashtagEdge, error) {
-	
+
 	edges := make([]*model.HashtagEdge, len(items))
-	
+
 	for i, item := range items {
 		hashtag, err := convertToHashtag(item)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert hashtag %d: %w", i, err)
 		}
-		
+
 		cursor := EncodeGraphQLCursor(&CursorData{
 			ID:        getID(item),
 			Timestamp: getTimestamp(item),
 		})
-		
+
 		edges[i] = &model.HashtagEdge{
 			Node:   hashtag,
 			Cursor: cursor,
 		}
 	}
-	
+
 	return edges, nil
 }
 
@@ -328,26 +328,26 @@ func CreateSeveredRelationshipEdges[T any](
 	getID func(T) string,
 	getTimestamp func(T) time.Time,
 ) ([]*model.SeveredRelationshipEdge, error) {
-	
+
 	edges := make([]*model.SeveredRelationshipEdge, len(items))
-	
+
 	for i, item := range items {
 		relationship, err := convertToSeveredRelationship(item)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert severed relationship %d: %w", i, err)
 		}
-		
+
 		cursor := EncodeGraphQLCursor(&CursorData{
 			ID:        getID(item),
 			Timestamp: getTimestamp(item),
 		})
-		
+
 		edges[i] = &model.SeveredRelationshipEdge{
 			Node:   relationship,
 			Cursor: cursor,
 		}
 	}
-	
+
 	return edges, nil
 }
 
@@ -358,25 +358,25 @@ func CreateAffectedRelationshipEdges[T any](
 	getID func(T) string,
 	getTimestamp func(T) time.Time,
 ) ([]*model.AffectedRelationshipEdge, error) {
-	
+
 	edges := make([]*model.AffectedRelationshipEdge, len(items))
-	
+
 	for i, item := range items {
 		relationship, err := convertToAffectedRelationship(item)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert affected relationship %d: %w", i, err)
 		}
-		
+
 		cursor := EncodeGraphQLCursor(&CursorData{
 			ID:        getID(item),
 			Timestamp: getTimestamp(item),
 		})
-		
+
 		edges[i] = &model.AffectedRelationshipEdge{
 			Node:   relationship,
 			Cursor: cursor,
 		}
 	}
-	
+
 	return edges, nil
 }

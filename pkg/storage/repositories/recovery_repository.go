@@ -245,7 +245,7 @@ func (r *RecoveryRepository) GetActiveRecoveryRequests(ctx context.Context, user
 	// Filter for active (pending and not expired) requests
 	result := make([]*storage.SocialRecoveryRequest, 0)
 	for _, req := range requests {
-		if req.Status == "pending" && now.Before(req.ExpiresAt) {
+		if req.Status == models.StatusPending && now.Before(req.ExpiresAt) {
 			// Convert ReceivedVotes map to TrusteeVotes slice and count
 			trusteeVotes := make([]string, 0, len(req.ReceivedVotes))
 			for trusteeID, voted := range req.ReceivedVotes {

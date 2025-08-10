@@ -160,15 +160,15 @@ func (g *HLSGenerator) GenerateIFramePlaylist(mediaID string, quality Quality, m
 	builder.WriteString("#EXT-X-I-FRAMES-ONLY\n")
 	builder.WriteString("#EXT-X-PLAYLIST-TYPE:VOD\n")
 	builder.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
-	
+
 	// Get keyframe positions from metadata or calculate them
 	keyframes := g.getKeyframePositions(mediaID, quality, metadata)
-	
+
 	if len(keyframes) == 0 {
 		// Fallback to estimated keyframes if none provided
 		keyframes = g.estimateKeyframePositions(metadata)
 	}
-	
+
 	// Calculate target duration as the maximum interval between keyframes
 	maxInterval := 0.0
 	for i := 1; i < len(keyframes); i++ {
@@ -177,14 +177,14 @@ func (g *HLSGenerator) GenerateIFramePlaylist(mediaID string, quality Quality, m
 			maxInterval = interval
 		}
 	}
-	
+
 	// Set target duration (ceiling of max interval)
 	targetDuration := int(maxInterval) + 1
 	if targetDuration < 1 {
 		targetDuration = g.config.SegmentDuration * 2
 	}
 	builder.WriteString(fmt.Sprintf("#EXT-X-TARGETDURATION:%d\n", targetDuration))
-	
+
 	// Add I-frame entries with precise byte ranges
 	for _, keyframe := range keyframes {
 		// Each keyframe includes a byte range that captures just the I-frame data
@@ -211,7 +211,6 @@ func (g *HLSGenerator) getVariantPlaylistURL(mediaID string, quality Quality) st
 func (g *HLSGenerator) getSegmentURL(mediaID string, quality Quality, index int) string {
 	return fmt.Sprintf("%s/media/%s/%s/segment%03d.ts", g.config.CDNBaseURL, mediaID, quality, index)
 }
-
 
 // getCodecsWithMetadata returns codec string using metadata if available, otherwise falls back to defaults
 func (g *HLSGenerator) getCodecsWithMetadata(mediaID string, quality Quality) string {
@@ -387,12 +386,12 @@ func (g *HLSGenerator) getKeyframePositions(mediaID string, quality Quality, met
 			return g.parseKeyframeData(keyframeData, mediaID, quality)
 		}
 	}
-	
+
 	// Check if metadata contains keyframe information
 	if metadata != nil && metadata.KeyframePositions != nil {
 		return g.convertMetadataKeyframes(metadata.KeyframePositions, mediaID, quality)
 	}
-	
+
 	return nil
 }
 
@@ -401,11 +400,11 @@ func (g *HLSGenerator) estimateKeyframePositions(metadata *MediaMetadata) []Keyf
 	if metadata == nil || metadata.Duration <= 0 {
 		return nil
 	}
-	
+
 	// Estimate GOP (Group of Pictures) size based on typical encoding settings
 	// Default to 2-second GOPs for adaptive streaming
 	gopDuration := 2.0
-	
+
 	// For higher quality levels, we might have longer GOPs
 	switch metadata.VideoProfile {
 	case "High":
@@ -413,34 +412,34 @@ func (g *HLSGenerator) estimateKeyframePositions(metadata *MediaMetadata) []Keyf
 	case "Main":
 		gopDuration = 2.5
 	}
-	
+
 	keyframes := []Keyframe{}
 	numKeyframes := int(metadata.Duration / gopDuration)
-	
+
 	// Calculate estimated file size per keyframe
 	// This is a rough estimate based on bitrate
 	bytesPerSecond := int64(metadata.Bitrate * 125) // Convert kbps to bytes per second
-	iframeSize := bytesPerSecond / 10 // I-frames are typically larger, estimate 10% of bitrate
-	
+	iframeSize := bytesPerSecond / 10               // I-frames are typically larger, estimate 10% of bitrate
+
 	for i := 0; i <= numKeyframes; i++ {
 		pts := float64(i) * gopDuration
 		if pts > metadata.Duration {
 			pts = metadata.Duration
 		}
-		
+
 		// Calculate duration to next keyframe
 		duration := gopDuration
-		if pts + duration > metadata.Duration {
+		if pts+duration > metadata.Duration {
 			duration = metadata.Duration - pts
 		}
-		
+
 		// Estimate byte offset based on constant bitrate assumption
 		byteOffset := int64(pts * float64(bytesPerSecond))
-		
+
 		// Determine which segment this keyframe belongs to
 		segmentIndex := int(pts / float64(g.config.SegmentDuration))
 		segmentURI := g.getSegmentURL(metadata.MediaID, Quality1080p, segmentIndex) // Default to 1080p for I-frames
-		
+
 		keyframe := Keyframe{
 			PTS:        pts,
 			ByteOffset: byteOffset,
@@ -448,14 +447,14 @@ func (g *HLSGenerator) estimateKeyframePositions(metadata *MediaMetadata) []Keyf
 			Duration:   duration,
 			URI:        segmentURI,
 		}
-		
+
 		keyframes = append(keyframes, keyframe)
-		
+
 		if pts >= metadata.Duration {
 			break
 		}
 	}
-	
+
 	return keyframes
 }
 
@@ -486,7 +485,7 @@ func (g *HLSGenerator) parseKeyframeData(data []byte, mediaID string, quality Qu
 // convertMetadataKeyframes converts metadata keyframe info to Keyframe structs
 func (g *HLSGenerator) convertMetadataKeyframes(positions []float64, mediaID string, quality Quality) []Keyframe {
 	keyframes := []Keyframe{}
-	
+
 	for i, pts := range positions {
 		duration := 0.0
 		if i < len(positions)-1 {
@@ -495,9 +494,9 @@ func (g *HLSGenerator) convertMetadataKeyframes(positions []float64, mediaID str
 			// Last keyframe duration estimate
 			duration = 2.0
 		}
-		
+
 		segmentIndex := int(pts / float64(g.config.SegmentDuration))
-		
+
 		keyframe := Keyframe{
 			PTS:        pts,
 			ByteOffset: int64(pts * 100000), // Estimate
@@ -505,26 +504,26 @@ func (g *HLSGenerator) convertMetadataKeyframes(positions []float64, mediaID str
 			Duration:   duration,
 			URI:        g.getSegmentURL(mediaID, quality, segmentIndex),
 		}
-		
+
 		keyframes = append(keyframes, keyframe)
 	}
-	
+
 	return keyframes
 }
 
 // GenerateIFrameMasterPlaylist generates a master playlist with I-frame variants for trick play
 func (g *HLSGenerator) GenerateIFrameMasterPlaylist(manifest *HLSManifest) string {
 	var builder strings.Builder
-	
+
 	// Write HLS header
 	builder.WriteString("#EXTM3U\n")
 	builder.WriteString("#EXT-X-VERSION:6\n")
-	
+
 	// Add I-frame variants for each quality
 	for _, variant := range manifest.Variants {
 		// I-frame playlists have higher bandwidth requirements for smooth scrubbing
 		iframeBandwidth := variant.Bandwidth / 10 // Roughly 10% for I-frames only
-		
+
 		builder.WriteString(fmt.Sprintf("#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\",URI=\"%s\"\n",
 			iframeBandwidth,
 			variant.Resolution,
@@ -532,7 +531,7 @@ func (g *HLSGenerator) GenerateIFrameMasterPlaylist(manifest *HLSManifest) strin
 			g.getIFramePlaylistURL(manifest.MediaID, variant.Quality),
 		))
 	}
-	
+
 	// Add regular variants
 	for _, variant := range manifest.Variants {
 		builder.WriteString(fmt.Sprintf("#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\"\n",
@@ -542,7 +541,7 @@ func (g *HLSGenerator) GenerateIFrameMasterPlaylist(manifest *HLSManifest) strin
 		))
 		builder.WriteString(variant.PlaylistURL + "\n")
 	}
-	
+
 	return builder.String()
 }
 
@@ -556,16 +555,16 @@ type KeyframeMetadata struct {
 	MediaID   string          `json:"media_id"`
 	Quality   string          `json:"quality"`
 	Keyframes []KeyframeEntry `json:"keyframes"`
-	GOP       int             `json:"gop_size,omitempty"`       // Group of Pictures size
-	Framerate float64         `json:"framerate,omitempty"`      // Video framerate
-	Duration  float64         `json:"duration,omitempty"`       // Total duration in seconds
-	Codec     string          `json:"codec,omitempty"`          // Video codec (H264, H265, etc.)
+	GOP       int             `json:"gop_size,omitempty"`  // Group of Pictures size
+	Framerate float64         `json:"framerate,omitempty"` // Video framerate
+	Duration  float64         `json:"duration,omitempty"`  // Total duration in seconds
+	Codec     string          `json:"codec,omitempty"`     // Video codec (H264, H265, etc.)
 }
 
 // KeyframeEntry represents a single keyframe in JSON format
 type KeyframeEntry struct {
 	PTS        float64 `json:"pts"`         // Presentation timestamp in seconds
-	DTS        float64 `json:"dts"`         // Decode timestamp in seconds  
+	DTS        float64 `json:"dts"`         // Decode timestamp in seconds
 	ByteOffset int64   `json:"byte_offset"` // Byte offset in the file
 	ByteLength int64   `json:"byte_size"`   // Size of I-frame data in bytes
 	FrameNum   int     `json:"frame_num"`   // Frame number
@@ -625,79 +624,123 @@ func (g *HLSGenerator) parseJSONKeyframeData(data []byte, mediaID string, qualit
 }
 
 // parseIFramePlaylist parses HLS I-frame playlist format
-func (g *HLSGenerator) parseIFramePlaylist(data []byte, mediaID string, quality Quality) []Keyframe {
+func (g *HLSGenerator) parseIFramePlaylist(data []byte, _ string, _ Quality) []Keyframe {
 	content := string(data)
-	
-	// Check if it's an HLS playlist
-	if !strings.Contains(content, "#EXTM3U") || !strings.Contains(content, "#EXT-X-I-FRAMES-ONLY") {
+
+	if !g.isValidIFramePlaylist(content) {
 		return []Keyframe{}
 	}
 
 	lines := strings.Split(content, "\n")
-	keyframes := []Keyframe{}
-	
-	var currentPTS float64
-	var currentByteRange int64
-	var currentOffset int64
-	var currentURI string
+	parser := g.newIFramePlaylistParser()
+	keyframes := parser.parseLines(lines)
 
-	// Regex patterns for parsing
-	extinfRegex := regexp.MustCompile(`#EXTINF:([0-9.]+),`)
-	byteRangeRegex := regexp.MustCompile(`#EXT-X-BYTERANGE:(\d+)@(\d+)`)
+	g.fixKeyframeDurations(keyframes)
+	return keyframes
+}
+
+// isValidIFramePlaylist checks if content is a valid HLS I-frame playlist
+func (g *HLSGenerator) isValidIFramePlaylist(content string) bool {
+	return strings.Contains(content, "#EXTM3U") && strings.Contains(content, "#EXT-X-I-FRAMES-ONLY")
+}
+
+// iFramePlaylistParser handles parsing of HLS I-frame playlist lines
+type iFramePlaylistParser struct {
+	currentPTS       float64
+	currentByteRange int64
+	currentOffset    int64
+	currentURI       string
+	extinfRegex      *regexp.Regexp
+	byteRangeRegex   *regexp.Regexp
+}
+
+// newIFramePlaylistParser creates a new I-frame playlist parser
+func (g *HLSGenerator) newIFramePlaylistParser() *iFramePlaylistParser {
+	return &iFramePlaylistParser{
+		extinfRegex:    regexp.MustCompile(`#EXTINF:([0-9.]+),`),
+		byteRangeRegex: regexp.MustCompile(`#EXT-X-BYTERANGE:(\\d+)@(\\d+)`),
+	}
+}
+
+// parseLines processes all lines in the playlist
+func (p *iFramePlaylistParser) parseLines(lines []string) []Keyframe {
+	var keyframes []Keyframe
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
-		if strings.HasPrefix(line, "#EXTINF:") {
-			// Parse duration
-			matches := extinfRegex.FindStringSubmatch(line)
-			if len(matches) > 1 {
-				if duration, err := strconv.ParseFloat(matches[1], 64); err == nil {
-					currentPTS += duration // Accumulate PTS
-				}
-			}
-		} else if strings.HasPrefix(line, "#EXT-X-BYTERANGE:") {
-			// Parse byte range
-			matches := byteRangeRegex.FindStringSubmatch(line)
-			if len(matches) > 2 {
-				if length, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
-					currentByteRange = length
-				}
-				if offset, err := strconv.ParseInt(matches[2], 10, 64); err == nil {
-					currentOffset = offset
-				}
-			}
-		} else if !strings.HasPrefix(line, "#") && line != "" {
-			// This is a URI line
-			currentURI = line
-			
-			// We have enough info to create a keyframe
-			if currentByteRange > 0 {
-				duration := 0.0
-				if len(keyframes) > 0 {
-					duration = currentPTS - keyframes[len(keyframes)-1].PTS
-				} else {
-					duration = 2.0 // Default
-				}
 
-				keyframe := Keyframe{
-					PTS:        currentPTS,
-					ByteOffset: currentOffset,
-					ByteLength: currentByteRange,
-					Duration:   duration,
-					URI:        currentURI,
-				}
-				keyframes = append(keyframes, keyframe)
-			}
+		if keyframe := p.processLine(line, keyframes); keyframe != nil {
+			keyframes = append(keyframes, *keyframe)
 		}
 	}
 
-	// Fix durations (calculate proper intervals)
-	for i := 0; i < len(keyframes)-1; i++ {
-		keyframes[i].Duration = keyframes[i+1].PTS - keyframes[i].PTS
+	return keyframes
+}
+
+// processLine handles a single line from the playlist
+func (p *iFramePlaylistParser) processLine(line string, existingKeyframes []Keyframe) *Keyframe {
+	switch {
+	case strings.HasPrefix(line, "#EXTINF:"):
+		p.parseExtInf(line)
+		return nil
+	case strings.HasPrefix(line, "#EXT-X-BYTERANGE:"):
+		p.parseByteRange(line)
+		return nil
+	case !strings.HasPrefix(line, "#") && line != "":
+		return p.parseURILine(line, existingKeyframes)
+	default:
+		return nil
+	}
+}
+
+// parseExtInf parses EXTINF line for duration information
+func (p *iFramePlaylistParser) parseExtInf(line string) {
+	matches := p.extinfRegex.FindStringSubmatch(line)
+	if len(matches) > 1 {
+		if duration, err := strconv.ParseFloat(matches[1], 64); err == nil {
+			p.currentPTS += duration // Accumulate PTS
+		}
+	}
+}
+
+// parseByteRange parses EXT-X-BYTERANGE line for byte range information
+func (p *iFramePlaylistParser) parseByteRange(line string) {
+	matches := p.byteRangeRegex.FindStringSubmatch(line)
+	if len(matches) > 2 {
+		if length, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
+			p.currentByteRange = length
+		}
+		if offset, err := strconv.ParseInt(matches[2], 10, 64); err == nil {
+			p.currentOffset = offset
+		}
+	}
+}
+
+// parseURILine processes URI lines and creates keyframes
+func (p *iFramePlaylistParser) parseURILine(line string, existingKeyframes []Keyframe) *Keyframe {
+	p.currentURI = line
+
+	if p.currentByteRange <= 0 {
+		return nil
 	}
 
-	return keyframes
+	duration := p.calculateDuration(existingKeyframes)
+
+	return &Keyframe{
+		PTS:        p.currentPTS,
+		ByteOffset: p.currentOffset,
+		ByteLength: p.currentByteRange,
+		Duration:   duration,
+		URI:        p.currentURI,
+	}
+}
+
+// calculateDuration determines the duration for the current keyframe
+func (p *iFramePlaylistParser) calculateDuration(existingKeyframes []Keyframe) float64 {
+	if len(existingKeyframes) > 0 {
+		return p.currentPTS - existingKeyframes[len(existingKeyframes)-1].PTS
+	}
+	return 2.0 // Default duration
 }
 
 // parseVideoStreamKeyframes analyzes video stream data to find I-frames/keyframes
@@ -728,11 +771,11 @@ func (g *HLSGenerator) parseVideoStreamKeyframes(data []byte, mediaID string, qu
 // parseH264Keyframes finds H.264 I-frames by analyzing NAL units
 func (g *HLSGenerator) parseH264Keyframes(data []byte, mediaID string, quality Quality) []Keyframe {
 	keyframes := []Keyframe{}
-	
+
 	// H.264 NAL unit start codes: 0x000001 or 0x00000001
 	startCode3 := []byte{0x00, 0x00, 0x01}
 	startCode4 := []byte{0x00, 0x00, 0x00, 0x01}
-	
+
 	var currentPTS float64
 	gopDuration := 2.0 // Assume 2-second GOP
 	for i := 0; i < len(data)-4; i++ {
@@ -767,18 +810,18 @@ func (g *HLSGenerator) parseH264Keyframes(data []byte, mediaID string, quality Q
 			// Find next NAL unit to determine size
 			nextNalPos := len(data)
 			for j := nalStart + 1; j < len(data)-4; j++ {
-				if bytes.Equal(data[j:j+4], startCode4) || 
-				   (j < len(data)-3 && bytes.Equal(data[j:j+3], startCode3)) {
+				if bytes.Equal(data[j:j+4], startCode4) ||
+					(j < len(data)-3 && bytes.Equal(data[j:j+3], startCode3)) {
 					nextNalPos = j
 					break
 				}
 			}
 
 			byteLength := int64(nextNalPos - (nalStart - nalHeaderLen))
-			
+
 			// Calculate segment index
 			segmentIndex := int(currentPTS / float64(g.config.SegmentDuration))
-			
+
 			keyframe := Keyframe{
 				PTS:        currentPTS,
 				ByteOffset: int64(nalStart - nalHeaderLen),
@@ -787,7 +830,7 @@ func (g *HLSGenerator) parseH264Keyframes(data []byte, mediaID string, quality Q
 				URI:        g.getSegmentURL(mediaID, quality, segmentIndex),
 			}
 			keyframes = append(keyframes, keyframe)
-			
+
 			currentPTS += gopDuration
 		}
 
@@ -801,11 +844,11 @@ func (g *HLSGenerator) parseH264Keyframes(data []byte, mediaID string, quality Q
 // parseH265Keyframes finds H.265/HEVC I-frames by analyzing NAL units
 func (g *HLSGenerator) parseH265Keyframes(data []byte, mediaID string, quality Quality) []Keyframe {
 	keyframes := []Keyframe{}
-	
+
 	// H.265 uses similar NAL unit structure but different type values
 	startCode3 := []byte{0x00, 0x00, 0x01}
 	startCode4 := []byte{0x00, 0x00, 0x00, 0x01}
-	
+
 	var currentPTS float64
 	gopDuration := 2.0
 
@@ -843,8 +886,8 @@ func (g *HLSGenerator) parseH265Keyframes(data []byte, mediaID string, quality Q
 			// Find next NAL unit
 			nextNalPos := len(data)
 			for j := nalStart + 2; j < len(data)-4; j++ {
-				if bytes.Equal(data[j:j+4], startCode4) || 
-				   (j < len(data)-3 && bytes.Equal(data[j:j+3], startCode3)) {
+				if bytes.Equal(data[j:j+4], startCode4) ||
+					(j < len(data)-3 && bytes.Equal(data[j:j+3], startCode3)) {
 					nextNalPos = j
 					break
 				}
@@ -852,7 +895,7 @@ func (g *HLSGenerator) parseH265Keyframes(data []byte, mediaID string, quality Q
 
 			byteLength := int64(nextNalPos - (nalStart - nalHeaderLen))
 			segmentIndex := int(currentPTS / float64(g.config.SegmentDuration))
-			
+
 			keyframe := Keyframe{
 				PTS:        currentPTS,
 				ByteOffset: int64(nalStart - nalHeaderLen),
@@ -861,7 +904,7 @@ func (g *HLSGenerator) parseH265Keyframes(data []byte, mediaID string, quality Q
 				URI:        g.getSegmentURL(mediaID, quality, segmentIndex),
 			}
 			keyframes = append(keyframes, keyframe)
-			
+
 			currentPTS += gopDuration
 		}
 
@@ -874,149 +917,197 @@ func (g *HLSGenerator) parseH265Keyframes(data []byte, mediaID string, quality Q
 
 // parseMP4Keyframes extracts keyframe information from MP4 container format
 func (g *HLSGenerator) parseMP4Keyframes(data []byte, mediaID string, quality Quality) []Keyframe {
-	keyframes := []Keyframe{}
-	
-	// Look for MP4 'stss' (sync sample) atom which lists keyframe samples
-	stssIndex := bytes.Index(data, []byte("stss"))
-	if stssIndex == -1 {
+	stssData, entryCount := g.parseStssAtom(data)
+	if stssData == nil {
 		return []Keyframe{}
 	}
 
-	// Backup to find the atom size (4 bytes before "stss")
-	if stssIndex < 4 {
-		return []Keyframe{}
+	sampleTimes := g.parseSampleTimes(data)
+	chunkOffsets := g.parseChunkOffsets(data)
+
+	keyframes := g.buildKeyframes(stssData, entryCount, sampleTimes, chunkOffsets, data, mediaID, quality)
+	g.fixKeyframeDurations(keyframes)
+
+	return keyframes
+}
+
+// parseStssAtom extracts sync sample atom data
+func (g *HLSGenerator) parseStssAtom(data []byte) ([]byte, uint32) {
+	stssIndex := bytes.Index(data, []byte("stss"))
+	if stssIndex == -1 || stssIndex < 4 {
+		return nil, 0
 	}
 
 	atomStart := stssIndex - 4
 	if atomStart+8 > len(data) {
-		return []Keyframe{}
+		return nil, 0
 	}
 
-	// Read atom size
 	atomSize := binary.BigEndian.Uint32(data[atomStart : atomStart+4])
 	if atomSize == 0 || int(atomSize) > len(data)-atomStart {
-		return []Keyframe{}
+		return nil, 0
 	}
 
-	// Parse stss atom
 	stssData := data[atomStart+8 : atomStart+int(atomSize)]
 	if len(stssData) < 8 {
-		return []Keyframe{}
+		return nil, 0
 	}
 
-	// Skip version and flags (4 bytes)
 	entryCount := binary.BigEndian.Uint32(stssData[4:8])
-	if entryCount == 0 || entryCount > 10000 { // Sanity check
-		return []Keyframe{}
+	if entryCount == 0 || entryCount > 10000 {
+		return nil, 0
 	}
 
-	// Each entry is 4 bytes (sample number)
 	expectedSize := 8 + int(entryCount)*4
 	if len(stssData) < expectedSize {
-		return []Keyframe{}
+		return nil, 0
 	}
 
-	// Also need to find 'stts' (time-to-sample) and 'stco' (chunk offset) atoms
-	// for timing and position information
+	return stssData, entryCount
+}
+
+// parseSampleTimes extracts timing information from stts atom
+func (g *HLSGenerator) parseSampleTimes(data []byte) []uint32 {
 	sttsIndex := bytes.Index(data, []byte("stts"))
-	stcoIndex := bytes.Index(data, []byte("stco"))
-	
+	if sttsIndex < 4 || sttsIndex+4 >= len(data) {
+		return nil
+	}
+
+	sttsAtomStart := sttsIndex - 4
+	sttsSize := binary.BigEndian.Uint32(data[sttsAtomStart : sttsAtomStart+4])
+	if sttsSize == 0 || int(sttsSize) > len(data)-sttsAtomStart {
+		return nil
+	}
+
+	sttsData := data[sttsAtomStart+8 : sttsAtomStart+int(sttsSize)]
+	if len(sttsData) < 8 {
+		return nil
+	}
+
+	sttsEntries := binary.BigEndian.Uint32(sttsData[4:8])
+	if sttsEntries == 0 || sttsEntries > 1000 || len(sttsData) < int(8+sttsEntries*8) {
+		return nil
+	}
+
+	return g.extractSampleTimes(sttsData, sttsEntries)
+}
+
+// extractSampleTimes processes time-to-sample entries
+func (g *HLSGenerator) extractSampleTimes(sttsData []byte, sttsEntries uint32) []uint32 {
 	var sampleTimes []uint32
+	currentTime := uint32(0)
+
+	for i := uint32(0); i < sttsEntries; i++ {
+		offset := 8 + i*8
+		sampleCount := binary.BigEndian.Uint32(sttsData[offset : offset+4])
+		sampleDuration := binary.BigEndian.Uint32(sttsData[offset+4 : offset+8])
+
+		for j := uint32(0); j < sampleCount; j++ {
+			sampleTimes = append(sampleTimes, currentTime)
+			currentTime += sampleDuration
+		}
+	}
+
+	return sampleTimes
+}
+
+// parseChunkOffsets extracts chunk offset information from stco atom
+func (g *HLSGenerator) parseChunkOffsets(data []byte) []uint32 {
+	stcoIndex := bytes.Index(data, []byte("stco"))
+	if stcoIndex < 4 || stcoIndex+4 >= len(data) {
+		return nil
+	}
+
+	stcoAtomStart := stcoIndex - 4
+	stcoSize := binary.BigEndian.Uint32(data[stcoAtomStart : stcoAtomStart+4])
+	if stcoSize == 0 || int(stcoSize) > len(data)-stcoAtomStart {
+		return nil
+	}
+
+	stcoData := data[stcoAtomStart+8 : stcoAtomStart+int(stcoSize)]
+	if len(stcoData) < 8 {
+		return nil
+	}
+
+	stcoEntries := binary.BigEndian.Uint32(stcoData[4:8])
+	if stcoEntries == 0 || stcoEntries > 10000 || len(stcoData) < int(8+stcoEntries*4) {
+		return nil
+	}
+
+	return g.extractChunkOffsets(stcoData, stcoEntries)
+}
+
+// extractChunkOffsets processes chunk offset entries
+func (g *HLSGenerator) extractChunkOffsets(stcoData []byte, stcoEntries uint32) []uint32 {
 	var chunkOffsets []uint32
 
-	// Parse stts atom for timing
-	if sttsIndex >= 4 && sttsIndex+4 < len(data) {
-		sttsAtomStart := sttsIndex - 4
-		sttsSize := binary.BigEndian.Uint32(data[sttsAtomStart : sttsAtomStart+4])
-		if sttsSize > 0 && int(sttsSize) <= len(data)-sttsAtomStart {
-			sttsData := data[sttsAtomStart+8 : sttsAtomStart+int(sttsSize)]
-			if len(sttsData) >= 8 {
-				sttsEntries := binary.BigEndian.Uint32(sttsData[4:8])
-				if sttsEntries > 0 && sttsEntries <= 1000 && len(sttsData) >= int(8+sttsEntries*8) {
-					// Parse time-to-sample entries
-					currentTime := uint32(0)
-					for i := uint32(0); i < sttsEntries; i++ {
-						offset := 8 + i*8
-						sampleCount := binary.BigEndian.Uint32(sttsData[offset : offset+4])
-						sampleDuration := binary.BigEndian.Uint32(sttsData[offset+4 : offset+8])
-						
-						// Add all samples with this duration
-						for j := uint32(0); j < sampleCount; j++ {
-							sampleTimes = append(sampleTimes, currentTime)
-							currentTime += sampleDuration
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Parse stco atom for chunk offsets
-	if stcoIndex >= 4 && stcoIndex+4 < len(data) {
-		stcoAtomStart := stcoIndex - 4
-		stcoSize := binary.BigEndian.Uint32(data[stcoAtomStart : stcoAtomStart+4])
-		if stcoSize > 0 && int(stcoSize) <= len(data)-stcoAtomStart {
-			stcoData := data[stcoAtomStart+8 : stcoAtomStart+int(stcoSize)]
-			if len(stcoData) >= 8 {
-				stcoEntries := binary.BigEndian.Uint32(stcoData[4:8])
-				if stcoEntries > 0 && stcoEntries <= 10000 && len(stcoData) >= int(8+stcoEntries*4) {
-					for i := uint32(0); i < stcoEntries; i++ {
-						offset := 8 + i*4
-						chunkOffset := binary.BigEndian.Uint32(stcoData[offset : offset+4])
-						chunkOffsets = append(chunkOffsets, chunkOffset)
-					}
-				}
-			}
-		}
-	}
-
-	// Process keyframe samples
-	timescale := uint32(25) // Default to 25 fps, would need 'mvhd' atom for actual value
-	for i := uint32(0); i < entryCount; i++ {
+	for i := uint32(0); i < stcoEntries; i++ {
 		offset := 8 + i*4
-		sampleNum := binary.BigEndian.Uint32(stssData[offset : offset+4])
-		
-		// Convert to 0-based index
-		sampleIndex := sampleNum - 1
-		
-		// Get timing information
-		var pts float64
-		if int(sampleIndex) < len(sampleTimes) {
-			pts = float64(sampleTimes[sampleIndex]) / float64(timescale)
-		} else {
-			// Estimate based on position
-			pts = float64(sampleIndex) * 2.0 // Assume 2-second GOP
-		}
+		chunkOffset := binary.BigEndian.Uint32(stcoData[offset : offset+4])
+		chunkOffsets = append(chunkOffsets, chunkOffset)
+	}
 
-		// Get byte offset (rough estimate)
-		var byteOffset int64
-		if len(chunkOffsets) > 0 {
-			chunkIndex := int(sampleIndex) % len(chunkOffsets)
-			byteOffset = int64(chunkOffsets[chunkIndex])
-		} else {
-			// Estimate based on position in file
-			byteOffset = int64(float64(len(data)) * float64(sampleIndex) / float64(entryCount))
-		}
+	return chunkOffsets
+}
 
-		segmentIndex := int(pts / float64(g.config.SegmentDuration))
-		
-		// Estimate I-frame size (typically larger than P/B frames)
-		estimatedSize := int64(math.Max(float64(len(data))/float64(entryCount)*2, 4096))
-		
-		keyframe := Keyframe{
-			PTS:        pts,
-			ByteOffset: byteOffset,
-			ByteLength: estimatedSize,
-			Duration:   2.0, // Will be corrected later
-			URI:        g.getSegmentURL(mediaID, quality, segmentIndex),
-		}
+// buildKeyframes creates keyframe objects from parsed data
+func (g *HLSGenerator) buildKeyframes(stssData []byte, entryCount uint32, sampleTimes, chunkOffsets []uint32, data []byte, mediaID string, quality Quality) []Keyframe {
+	var keyframes []Keyframe
+	timescale := uint32(25) // Default to 25 fps
+
+	for i := uint32(0); i < entryCount; i++ {
+		keyframe := g.createKeyframe(stssData, i, sampleTimes, chunkOffsets, data, mediaID, quality, timescale, entryCount)
 		keyframes = append(keyframes, keyframe)
 	}
 
-	// Fix durations between keyframes
+	return keyframes
+}
+
+// createKeyframe creates a single keyframe from sample data
+func (g *HLSGenerator) createKeyframe(stssData []byte, index uint32, sampleTimes, chunkOffsets []uint32, data []byte, mediaID string, quality Quality, timescale, entryCount uint32) Keyframe {
+	offset := 8 + index*4
+	sampleNum := binary.BigEndian.Uint32(stssData[offset : offset+4])
+	sampleIndex := sampleNum - 1
+
+	pts := g.calculatePTS(sampleIndex, sampleTimes, timescale)
+	byteOffset := g.calculateByteOffset(sampleIndex, chunkOffsets, data, entryCount)
+	estimatedSize := g.estimateKeyframeSize(data, entryCount)
+	segmentIndex := int(pts / float64(g.config.SegmentDuration))
+
+	return Keyframe{
+		PTS:        pts,
+		ByteOffset: byteOffset,
+		ByteLength: estimatedSize,
+		Duration:   2.0, // Will be corrected later
+		URI:        g.getSegmentURL(mediaID, quality, segmentIndex),
+	}
+}
+
+// calculatePTS computes presentation timestamp for a sample
+func (g *HLSGenerator) calculatePTS(sampleIndex uint32, sampleTimes []uint32, timescale uint32) float64 {
+	if int(sampleIndex) < len(sampleTimes) {
+		return float64(sampleTimes[sampleIndex]) / float64(timescale)
+	}
+	return float64(sampleIndex) * 2.0 // Assume 2-second GOP
+}
+
+// calculateByteOffset computes byte offset for a sample
+func (g *HLSGenerator) calculateByteOffset(sampleIndex uint32, chunkOffsets []uint32, data []byte, entryCount uint32) int64 {
+	if len(chunkOffsets) > 0 {
+		chunkIndex := int(sampleIndex) % len(chunkOffsets)
+		return int64(chunkOffsets[chunkIndex])
+	}
+	return int64(float64(len(data)) * float64(sampleIndex) / float64(entryCount))
+}
+
+// estimateKeyframeSize estimates the size of a keyframe
+func (g *HLSGenerator) estimateKeyframeSize(data []byte, entryCount uint32) int64 {
+	return int64(math.Max(float64(len(data))/float64(entryCount)*2, 4096))
+}
+
+// fixKeyframeDurations corrects duration values between keyframes
+func (g *HLSGenerator) fixKeyframeDurations(keyframes []Keyframe) {
 	for i := 0; i < len(keyframes)-1; i++ {
 		keyframes[i].Duration = keyframes[i+1].PTS - keyframes[i].PTS
 	}
-
-	return keyframes
 }

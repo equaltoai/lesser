@@ -24,6 +24,7 @@ type StatusMetadata struct {
 	// Reply-related metadata
 	AllowReplies     bool   `json:"allow_replies"`     // Whether replies are allowed
 	ReplyPermissions string `json:"reply_permissions"` // JSON serialized reply permissions
+	ReplyCount       int    `json:"reply_count"`       // Cache of reply count
 
 	// Moderation metadata
 	ContentWarning  string   `json:"content_warning"`  // Content warning text
@@ -162,4 +163,25 @@ func (sm *StatusMetadata) IsQuotable() bool {
 // IsPubliclyQuotable returns whether the status can be quoted by anyone
 func (sm *StatusMetadata) IsPubliclyQuotable() bool {
 	return sm.IsQuotable() && sm.QuoteType == VisibilityPublic
+}
+
+// IncrementReplyCount increments the reply count
+func (sm *StatusMetadata) IncrementReplyCount() {
+	sm.ReplyCount++
+}
+
+// DecrementReplyCount decrements the reply count (with minimum of 0)
+func (sm *StatusMetadata) DecrementReplyCount() {
+	if sm.ReplyCount > 0 {
+		sm.ReplyCount--
+	}
+}
+
+// SetReplyCount sets the reply count to a specific value
+func (sm *StatusMetadata) SetReplyCount(count int) {
+	if count < 0 {
+		sm.ReplyCount = 0
+	} else {
+		sm.ReplyCount = count
+	}
 }

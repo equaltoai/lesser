@@ -32,6 +32,7 @@ type Manager struct {
 	circuitBreakerRepo *repositories.CircuitBreakerRepository
 	routeOptimRepo     *repositories.RouteOptimizerRepository
 	routingMetricsRepo *repositories.RoutingMetricsRepository
+	costTrackingRepo   *repositories.FederationCostRepository
 
 	// Components
 	registry         *InstanceRegistry
@@ -48,8 +49,8 @@ type Manager struct {
 	federationStore federation.FederationStorage
 
 	// Route cache with adaptive TTL
-	routeCache   sync.Map // domain -> *cachedRoutes
-	cacheTTL     time.Duration
+	routeCache    sync.Map // domain -> *cachedRoutes
+	cacheTTL      time.Duration
 	emergencyMode bool
 	emergencyMu   sync.RWMutex
 
@@ -73,6 +74,7 @@ func NewManager(
 	circuitBreakerRepo *repositories.CircuitBreakerRepository,
 	routeOptimRepo *repositories.RouteOptimizerRepository,
 	routingMetricsRepo *repositories.RoutingMetricsRepository,
+	costTrackingRepo *repositories.FederationCostRepository,
 	logger *zap.Logger,
 	config *ManagerConfig,
 ) *Manager {
@@ -171,6 +173,7 @@ func NewManager(
 		circuitBreakerRepo: circuitBreakerRepo,
 		routeOptimRepo:     routeOptimRepo,
 		routingMetricsRepo: routingMetricsRepo,
+		costTrackingRepo:   costTrackingRepo,
 		registry:           registry,
 		optimizer:          optimizer,
 		circuitBreaker:     circuitBreaker,
@@ -212,7 +215,7 @@ func (m *Manager) SelectRoute(destination string, messageType types.MessageType)
 
 	// Filter by circuit breaker status
 	healthyRoutes := m.filterHealthyRoutes(supportedRoutes)
-	
+
 	// Check for emergency mode conditions
 	if m.shouldEnterEmergencyMode(len(healthyRoutes), len(supportedRoutes)) {
 		m.enterEmergencyMode()
@@ -282,18 +285,18 @@ func (m *Manager) getRoutesFromCache(destination string) []*types.Route {
 	if !ok {
 		return nil
 	}
-	
+
 	cr, ok := cached.(*cachedRoutes)
 	if !ok {
 		return nil
 	}
-	
+
 	// Use adaptive TTL based on route health
 	adaptiveTTL := m.getAdaptiveCacheTTL(cr.routes)
 	if time.Since(cr.cachedAt) >= adaptiveTTL {
 		return nil
 	}
-	
+
 	return cr.routes
 }
 
@@ -621,16 +624,16 @@ func (m *Manager) MonitorInstanceHealth() error {
 	// Perform health checks in parallel with limited concurrency
 	semaphore := make(chan struct{}, 10) // Max 10 concurrent health checks
 	var wg sync.WaitGroup
-	
+
 	for _, instance := range instances {
 		wg.Add(1)
 		go func(inst *types.Instance) {
 			defer wg.Done()
-			
+
 			// Acquire semaphore
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-			
+
 			health, err := m.PerformHealthCheck(inst.ID)
 			if err != nil {
 				m.logger.Error("Health check failed",
@@ -639,7 +642,7 @@ func (m *Manager) MonitorInstanceHealth() error {
 					zap.Error(err))
 				return
 			}
-			
+
 			// Update instance health
 			if updateErr := m.UpdateInstanceHealth(inst.ID, health); updateErr != nil {
 				m.logger.Error("Failed to update instance health",
@@ -648,12 +651,12 @@ func (m *Manager) MonitorInstanceHealth() error {
 			}
 		}(instance)
 	}
-	
+
 	wg.Wait()
-	
+
 	m.logger.Info("Health monitoring completed",
 		zap.Int("instances_checked", len(instances)))
-	
+
 	return nil
 }
 
@@ -732,12 +735,12 @@ func (m *Manager) GetHealthSummary() (*HealthSummary, error) {
 	}
 
 	summary := &HealthSummary{
-		Timestamp:         time.Now(),
-		TotalInstances:    len(instances),
-		HealthyInstances:  0,
-		DegradedInstances: 0,
+		Timestamp:          time.Now(),
+		TotalInstances:     len(instances),
+		HealthyInstances:   0,
+		DegradedInstances:  0,
 		UnhealthyInstances: 0,
-		InstanceDetails:   make(map[string]InstanceHealthDetail),
+		InstanceDetails:    make(map[string]InstanceHealthDetail),
 	}
 
 	// Analyze each instance
@@ -788,7 +791,7 @@ func (m *Manager) GetHealthSummary() (*HealthSummary, error) {
 
 // HealthSummary represents overall health status of the federation system
 type HealthSummary struct {
-	Timestamp          time.Time                        `json:"timestamp"`
+	Timestamp          time.Time                       `json:"timestamp"`
 	TotalInstances     int                             `json:"total_instances"`
 	HealthyInstances   int                             `json:"healthy_instances"`
 	DegradedInstances  int                             `json:"degraded_instances"`
@@ -799,7 +802,7 @@ type HealthSummary struct {
 
 // InstanceHealthDetail represents detailed health information for a single instance
 type InstanceHealthDetail struct {
-	Domain        string               `json:"domain"`
+	Domain        string              `json:"domain"`
 	LastChecked   time.Time           `json:"last_checked"`
 	HealthScore   float64             `json:"health_score"`
 	ResponseTime  time.Duration       `json:"response_time"`
@@ -893,6 +896,16 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *types.FederationM
 				m.logger.Error("Failed to record delivery result",
 					zap.String("instanceID", route.InstanceID),
 					zap.Error(err))
+			}
+
+			// Record detailed cost tracking
+			if m.costTrackingRepo != nil {
+				if err := m.recordDetailedCostTracking(ctx, message, route, result); err != nil {
+					m.logger.Error("Failed to record detailed cost tracking",
+						zap.String("messageID", message.ID),
+						zap.String("routeID", route.ID),
+						zap.Error(err))
+				}
 			}
 
 			// Update circuit breaker
@@ -1037,7 +1050,7 @@ func (m *Manager) createRouteFromInstance(instance *types.Instance) (*types.Rout
 
 func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, message *types.FederationMessage, targets []string, options types.DeliveryOptions) *types.DeliveryResult {
 	startTime := time.Now()
-	
+
 	// Create the delivery result
 	result := &types.DeliveryResult{
 		MessageID:  message.ID,
@@ -1088,7 +1101,7 @@ func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, messag
 	if maxRetries <= 0 {
 		maxRetries = m.config.MaxRetries
 	}
-	
+
 	retryBackoff := options.RetryBackoff
 	if retryBackoff <= 0 {
 		retryBackoff = m.config.RetryBackoff
@@ -1097,7 +1110,7 @@ func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, messag
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		result.Attempts = attempt
-		
+
 		// Apply exponential backoff for retries
 		if attempt > 1 {
 			backoffDuration := time.Duration(attempt-1) * retryBackoff
@@ -1120,24 +1133,24 @@ func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, messag
 			result.Duration = time.Since(startTime)
 			result.BytesSent = int64(len(message.Payload))
 			result.Cost = float64(result.BytesSent) * route.CostPerByte
-			
+
 			m.logger.Info("federation delivery successful",
 				zap.String("messageID", message.ID),
 				zap.String("routeID", route.ID),
 				zap.String("targetInbox", targetInbox),
 				zap.Int("attempts", attempt),
 				zap.Duration("duration", result.Duration))
-			
+
 			return result
 		}
 
 		lastErr = deliveryErr
-		
+
 		// Check if this is a retryable error
 		if !m.isRetryableError(result.StatusCode) {
 			break
 		}
-		
+
 		m.logger.Warn("federation delivery attempt failed",
 			zap.String("messageID", message.ID),
 			zap.String("routeID", route.ID),
@@ -1152,7 +1165,7 @@ func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, messag
 	if lastErr != nil {
 		result.ErrorMessage = lastErr.Error()
 	}
-	
+
 	m.logger.Error("federation delivery failed after retries",
 		zap.String("messageID", message.ID),
 		zap.String("routeID", route.ID),
@@ -1244,7 +1257,7 @@ func (m *Manager) selectRouteInEmergencyMode(destination string, messageType typ
 	if m.circuitBreaker != nil && m.thresholdManager != nil {
 		backpressureRules := m.circuitBreaker.GetBackpressureRules()
 		priority := m.thresholdManager.getMessagePriority(messageType)
-		
+
 		rule, exists := backpressureRules[priority]
 		if exists {
 			// Calculate current health ratio
@@ -1254,9 +1267,9 @@ func (m *Manager) selectRouteInEmergencyMode(destination string, messageType typ
 					healthyCount++
 				}
 			}
-			
+
 			healthRatio := float64(healthyCount) / float64(len(routes))
-			
+
 			// Apply backpressure rules
 			switch rule.Action {
 			case "queue_if_below_threshold":
@@ -1425,11 +1438,11 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 // isRetryableError determines if an HTTP status code indicates a retryable error
 func (m *Manager) isRetryableError(statusCode int) bool {
 	switch statusCode {
-	case http.StatusInternalServerError,        // 500
-		http.StatusBadGateway,               // 502
-		http.StatusServiceUnavailable,       // 503
-		http.StatusGatewayTimeout,          // 504
-		http.StatusInsufficientStorage,      // 507
+	case http.StatusInternalServerError, // 500
+		http.StatusBadGateway,                    // 502
+		http.StatusServiceUnavailable,            // 503
+		http.StatusGatewayTimeout,                // 504
+		http.StatusInsufficientStorage,           // 507
 		http.StatusNetworkAuthenticationRequired: // 511
 		return true
 	case http.StatusTooManyRequests: // 429
@@ -1469,6 +1482,99 @@ func extractUsernameFromActorID(actorID string) string {
 	}
 
 	return ""
+}
+
+// recordDetailedCostTracking records detailed cost and performance metrics for a delivery
+func (m *Manager) recordDetailedCostTracking(ctx context.Context, message *types.FederationMessage, route *types.Route, result *types.DeliveryResult) error {
+	if m.costTrackingRepo == nil {
+		return nil // No cost tracking configured
+	}
+
+	// Extract domain from route or result
+	domain := route.Domain
+	if domain == "" && route.Endpoint != nil {
+		domain = route.Endpoint.Host
+	}
+
+	// Create the cost tracking record
+	costTracker := &models.FederationCostTracking{
+		ActivityID:    message.ID,
+		Domain:        domain,
+		ActivityType:  string(message.Type),
+		Direction:     "outbound",
+		OperationType: "outbox_delivery",
+		BillingPeriod: time.Now().Format("2006-01"),
+
+		// Basic success/failure tracking
+		Success:      result.Success,
+		ErrorMessage: result.ErrorMessage,
+
+		// Enhanced delivery attribution
+		BytesSent:         result.BytesSent,
+		RetryAttempts:     result.Attempts - 1, // First attempt isn't a retry
+		DeliveryAttempts:  result.Attempts,
+		RouteID:           route.ID,
+		DestinationServer: domain,
+		FinalRetrySuccess: result.Success,
+
+		// Performance metrics
+		ResponseTimeMs:   result.Duration.Milliseconds(),
+		ProcessingTimeMs: result.Duration.Milliseconds(), // Simplified - could be more detailed
+
+		// Network costs (simplified calculation)
+		HTTPRequestCount:  int64(result.Attempts),
+		DataTransferBytes: result.BytesSent,
+
+		// Payload metrics
+		PayloadSize: int64(len(message.Payload)),
+
+		// Initialize per-route breakdown
+		RouteBreakdown:     make(map[string]int64),
+		RouteLatency:       make(map[string]int64),
+		RouteErrors:        make(map[string]int),
+		RouteSuccessRates:  make(map[string]float64),
+		RetryDelaySeconds:  make([]int64, 0),
+		RetryErrorMessages: make([]string, 0),
+	}
+
+	// Add route-specific metrics
+	costTracker.AddRouteDeliveryAttempt(
+		route.ID,
+		result.BytesSent,
+		result.Duration.Milliseconds(),
+		result.Success,
+		result.ErrorMessage,
+	)
+
+	// Add retry delays if multiple attempts were made
+	if result.Attempts > 1 {
+		// Simplified - in reality would track actual delays
+		for i := 1; i < result.Attempts; i++ {
+			// Exponential backoff assumption: i + 15 seconds + jitter
+			estimatedDelay := int64(i + 15)
+			costTracker.AddRetryDelay(estimatedDelay)
+		}
+
+		// Add error messages for retries
+		if !result.Success && result.ErrorMessage != "" {
+			costTracker.RetryErrorMessages = append(costTracker.RetryErrorMessages, result.ErrorMessage)
+		}
+	}
+
+	// Calculate simplified costs (in microdollars)
+	// These would be more sophisticated in production
+	costTracker.HTTPRequestCost = int64(result.Attempts) * 100                    // $0.0001 per request = 100 microdollars
+	costTracker.DataTransferCost = (result.BytesSent * 90) / (1024 * 1024 * 1024) // $0.09 per GB
+	costTracker.RetryCost = int64(result.Attempts-1) * 50                         // Penalty for retries
+
+	// Set timestamps
+	now := time.Now()
+	costTracker.Timestamp = now
+	costTracker.CreatedAt = now
+	costTracker.UpdatedAt = now
+
+	// Record the cost tracking
+	return m.costTrackingRepo.RecordFederationCost(ctx, costTracker)
 }
 
 // Removed unused function: generateRequestID

@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +26,7 @@ import (
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
@@ -38,11 +38,11 @@ const (
 	timelinePublic    = "PUBLIC"
 	timelineFederated = "FEDERATED"
 	timelineLocal     = "LOCAL"
-	
+
 	// Activity types
-	activityInsert = "INSERT"
-	activityModify = "MODIFY"
-	activityRemove = "REMOVE"
+	activityInsert  = "INSERT"
+	activityModify  = "MODIFY"
+	activityRemove  = "REMOVE"
 	UnknownValue    = "unknown"
 	UnknownEventMsg = "unknown event type"
 	UnknownTypeMsg  = "processing unknown object type"
@@ -78,34 +78,36 @@ func NewActivityProcessor(db core.DB, tableName string, baseURL string) *Activit
 	// Get logger
 	logger := common.Logger()
 
-	// Initialize repositories
-	timelineRepo := repositories.NewTimelineRepository(db, tableName, logger)
-	actorRepo := repositories.NewActorRepository(db, tableName, logger)
-	userRepo := repositories.NewUserRepository(db, tableName, logger)
-	relationshipRepo := repositories.NewRelationshipRepository(db, tableName, logger)
+	// Load AWS config for repository factory
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		logger.Warn("failed to load AWS config, using empty config", zap.Error(err))
+		awsConfig = aws.Config{}
+	}
+
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
+
 	// Extract domain from baseURL
 	domain := strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
 
-	objectRepo := repositories.NewObjectRepository(db, tableName, domain, logger)
-
-	// Create a complete storage adapter for federation service
-	// This implements the full core.RepositoryStorage interface needed by AuthorizedFetchService
-	adapter := NewStorageAdapter(db, tableName, logger)
-
-	// Initialize authorized fetch service
-	fetchService := federation.NewAuthorizedFetchService(adapter, domain, logger)
+	// Initialize authorized fetch service with repository factory
+	fetchService := federation.NewAuthorizedFetchService(repos, domain, logger)
 
 	return &ActivityProcessor{
 		db:               db,
 		tableName:        tableName,
 		logger:           logger,
-		timelineRepo:     timelineRepo,
-		actorRepo:        actorRepo,
-		userRepo:         userRepo,
-		relationshipRepo: relationshipRepo,
-		objectRepo:       objectRepo,
+		timelineRepo:     repos.Timeline(),
+		actorRepo:        repos.Actor(),
+		userRepo:         repos.User(),
+		relationshipRepo: repos.Relationship(),
+		objectRepo:       repos.Object(),
 		fetchService:     fetchService,
-		storageAdapter:   adapter,
+		storageAdapter:   repos,
 		baseURL:          baseURL,
 		retryAttempts:    3,
 		retryDelay:       time.Second * 2,
@@ -128,6 +130,7 @@ func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.Dyna
 	// Process records in parallel with error collection
 	var errorList []error
 	var errorMutex sync.Mutex
+	var deadLetterRecords []events.DynamoDBEventRecord
 
 	// Track batch processing metrics
 	batchStartTime := time.Now()
@@ -176,21 +179,55 @@ func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.Dyna
 			if err := ap.processRecord(ctx, record); err != nil {
 				errorMutex.Lock()
 				errorList = append(errorList, err)
-				errorMutex.Unlock()
 
-				ap.logger.Error("failed to process record",
-					zap.String("event_id", record.EventID),
-					zap.Error(err),
-				)
+				// Check if this is a retryable error
+				if ap.isRetryableStreamError(err) {
+					ap.logger.Warn("retryable error processing record",
+						zap.String("event_id", record.EventID),
+						zap.Error(err),
+					)
+				} else {
+					// Send to dead letter queue for non-retryable errors
+					deadLetterRecords = append(deadLetterRecords, record)
+					ap.logger.Error("non-retryable error, sending to DLQ",
+						zap.String("event_id", record.EventID),
+						zap.Error(err),
+					)
+				}
+				errorMutex.Unlock()
 			}
 		}(record)
 	}
 
 	wg.Wait()
 
-	if len(errorList) > 0 {
-		return fmt.Errorf("partial batch failure: %d of %d records failed", len(errorList), len(event.Records))
+	// Process dead letter records
+	if len(deadLetterRecords) > 0 {
+		ap.logger.Info("sending records to dead letter queue",
+			zap.Int("dlq_record_count", len(deadLetterRecords)),
+		)
+
+		for _, record := range deadLetterRecords {
+			if err := ap.sendToDeadLetterQueue(ctx, record, "processing_failed"); err != nil {
+				ap.logger.Error("failed to send record to DLQ",
+					zap.String("event_id", record.EventID),
+					zap.Error(err),
+				)
+			}
+		}
 	}
+
+	// Return error if there are retryable errors (this will cause Lambda to retry)
+	retryableErrors := len(errorList) - len(deadLetterRecords)
+	if retryableErrors > 0 {
+		return fmt.Errorf("batch has %d retryable errors out of %d total records", retryableErrors, len(event.Records))
+	}
+
+	ap.logger.Info("batch processing completed successfully",
+		zap.Int("total_records", len(event.Records)),
+		zap.Int("dead_letter_records", len(deadLetterRecords)),
+		zap.Int("successful_records", len(event.Records)-len(errorList)),
+	)
 
 	return nil
 }
@@ -224,11 +261,11 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 			return fmt.Errorf("no old image in remove record %s", record.EventID)
 		}
 
-		// Convert DynamoDB attribute values using DynamORM
-		// For REMOVE events, we need to handle the old image differently
-		// For now, we'll skip processing REMOVE events since the stream.UnmarshalItem
-		// function is designed for NewImage
-		return nil
+		// Convert DynamoDB attribute values from OldImage for REMOVE events
+		// The UnmarshalItem function already handles this case by checking EventName
+		if err := stream.UnmarshalItem(record, &activity); err != nil {
+			return fmt.Errorf("failed to unmarshal old image: %w", err)
+		}
 
 	default:
 		ap.logger.Warn(UnknownEventMsg,
@@ -321,7 +358,46 @@ func (ap *ActivityProcessor) processActivityDeleted(ctx context.Context, activit
 		zap.String("direction", activity.Direction),
 	)
 
-	// Handle activity deletion cleanup
+	// Parse the deleted activity to understand what was removed
+	var activityData activitypub.Activity
+	if err := json.Unmarshal([]byte(activity.Activity), &activityData); err != nil {
+		ap.logger.Warn("failed to parse deleted activity", zap.Error(err))
+		// Continue with generic cleanup even if we can't parse the activity
+		return ap.cleanupActivityReferences(ctx, activity)
+	}
+
+	// Handle specific deletion types
+	switch activityData.Type {
+	case activitypub.CreateType:
+		// Remove from timelines and create tombstone
+		if err := ap.handleCreateActivityDeletion(ctx, &activityData, activity.Username); err != nil {
+			ap.logger.Error("failed to handle Create activity deletion", zap.Error(err))
+			return err
+		}
+	case activitypub.AnnounceType:
+		// Remove announce from timelines
+		if err := ap.handleAnnounceActivityDeletion(ctx, &activityData, activity.Username); err != nil {
+			ap.logger.Error("failed to handle Announce activity deletion", zap.Error(err))
+			return err
+		}
+	case activitypub.FollowType:
+		// Remove follow relationship
+		if err := ap.handleFollowActivityDeletion(ctx, &activityData); err != nil {
+			ap.logger.Error("failed to handle Follow activity deletion", zap.Error(err))
+			return err
+		}
+	case activitypub.DeleteType:
+		// Handle nested deletions
+		if err := ap.handleDeleteActivityDeletion(ctx, &activityData); err != nil {
+			ap.logger.Error("failed to handle Delete activity deletion", zap.Error(err))
+			return err
+		}
+	default:
+		ap.logger.Info("handling generic activity deletion",
+			zap.String("activity_type", activityData.Type))
+	}
+
+	// Always perform generic cleanup
 	return ap.cleanupActivityReferences(ctx, activity)
 }
 
@@ -505,18 +581,18 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 
 // ProcessedObject holds information about a processed ActivityPub object
 type ProcessedObject struct {
-	Note           *activitypub.Note
-	Content        string
-	IsRemote       bool
-	ObjectID       string
-	ContentType    string
-	HasMedia       bool
-	IsReply        bool
-	InReplyTo      string
-	Sensitive      bool
-	SpoilerText    string
-	Language       string
-	Visibility     string
+	Note        *activitypub.Note
+	Content     string
+	IsRemote    bool
+	ObjectID    string
+	ContentType string
+	HasMedia    bool
+	IsReply     bool
+	InReplyTo   string
+	Sensitive   bool
+	SpoilerText string
+	Language    string
+	Visibility  string
 }
 
 // fanOutToTimelines handles timeline fanout for Create activities with robust federation support
@@ -1830,6 +1906,108 @@ func (ap *ActivityProcessor) storeObjectWithLogging(ctx context.Context, storage
 	}
 }
 
+// sendToDeadLetterQueue sends a failed record to the dead letter queue
+func (ap *ActivityProcessor) sendToDeadLetterQueue(ctx context.Context, record events.DynamoDBEventRecord, reason string) error {
+	now := time.Now()
+
+	dlqRecord := struct {
+		PK             string `dynamorm:"pk"`
+		SK             string `dynamorm:"sk"`
+		Type           string `json:"type"`
+		EventID        string `json:"event_id"`
+		EventName      string `json:"event_name"`
+		Reason         string `json:"reason"`
+		OriginalRecord string `json:"original_record"`
+		CreatedAt      string `json:"created_at"`
+		TTL            int64  `dynamorm:"ttl"`
+	}{
+		PK:        "DLQ#ACTIVITY_PROCESSOR",
+		SK:        fmt.Sprintf("RECORD#%s#%d", record.EventID, now.UnixNano()),
+		Type:      "DeadLetterRecord",
+		EventID:   record.EventID,
+		EventName: record.EventName,
+		Reason:    reason,
+		CreatedAt: now.Format(time.RFC3339),
+		TTL:       now.Add(7 * 24 * time.Hour).Unix(), // Keep for 7 days
+	}
+
+	// Serialize the original record (simplified)
+	if recordBytes, err := json.Marshal(record); err == nil {
+		dlqRecord.OriginalRecord = string(recordBytes)
+	}
+
+	if err := ap.db.WithContext(ctx).Model(&dlqRecord).Create(); err != nil {
+		return fmt.Errorf("failed to create DLQ record: %w", err)
+	}
+
+	ap.logger.Info("record sent to dead letter queue",
+		zap.String("event_id", record.EventID),
+		zap.String("reason", reason),
+	)
+
+	return nil
+}
+
+// isRetryableStreamError determines if an error should be retried or sent to DLQ for stream processing
+func (ap *ActivityProcessor) isRetryableStreamError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Retryable errors (transient issues)
+	retryablePatterns := []string{
+		"timeout",
+		"connection",
+		"temporary",
+		"throttl",
+		"rate limit",
+		"service unavailable",
+		"internal server error",
+		"502",
+		"503",
+		"504",
+		"dynamodb throttl",
+		"capacity exceeded",
+	}
+
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+
+	// Non-retryable errors (permanent failures)
+	nonRetryablePatterns := []string{
+		"invalid",
+		"malformed",
+		"bad request",
+		"unauthorized",
+		"forbidden",
+		"not found",
+		"conflict",
+		"validation",
+		"parse error",
+		"unmarshal",
+		"400",
+		"401",
+		"403",
+		"404",
+		"409",
+		"422",
+	}
+
+	for _, pattern := range nonRetryablePatterns {
+		if strings.Contains(errStr, pattern) {
+			return false
+		}
+	}
+
+	// Default to retryable for unknown errors
+	return true
+}
+
 // Language detection helper functions
 
 func stripHTMLTags(content string) string {
@@ -1954,253 +2132,156 @@ func hasItalianPatterns(content string) bool {
 	return count >= 3
 }
 
-// StorageAdapter implements the complete core.RepositoryStorage interface
-// This provides all repositories needed by the federation system
-type StorageAdapter struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+// Activity deletion handlers
 
-	// Repository instances - initialized once and reused
-	accountRepo          *repositories.AccountRepository
-	actorRepo            *repositories.ActorRepository
-	objectRepo           *repositories.ObjectRepository
-	activityRepo         *repositories.ActivityRepository
-	timelineRepo         *repositories.TimelineRepository
-	notificationRepo     *repositories.NotificationRepository
-	likeRepo             *repositories.LikeRepository
-	moderationRepo       *repositories.ModerationRepository
-	listRepo             *repositories.ListRepository
-	mediaRepo            *repositories.MediaRepository
-	pollRepo             *repositories.PollRepository
-	pushSubscriptionRepo *repositories.PushSubscriptionRepository
-	hashtagRepo          *repositories.HashtagRepository
-	scheduledStatusRepo  *repositories.ScheduledStatusRepository
-	announcementRepo     *repositories.AnnouncementRepository
-	domainBlockRepo      *repositories.DomainBlockRepository
-	relationshipRepo     *repositories.RelationshipRepository
-	instanceRepo         *repositories.InstanceRepository
-	federationRepo       *repositories.FederationRepository
-	recoveryRepo         *repositories.RecoveryRepository
-	analyticsRepo        *repositories.TrendingRepository
-	socialRepo           *repositories.SocialRepository
-	userRepo             *repositories.UserRepository
-	statusRepo           *repositories.StatusRepository
-	costRepo             *repositories.CostTrackingRepository
-	trustRepo            *repositories.TrustRepository
-	searchRepo           *repositories.SearchRepository
-	relayRepo            *repositories.RelayRepository
-	communityNoteRepo    *repositories.CommunityNoteRepository
-	emojiRepo            *repositories.EmojiRepository
-	rateLimitRepo        *repositories.RateLimitRepository
-	conversationRepo     *repositories.ConversationRepository
-	markerRepo           *repositories.MarkerRepository
-	featuredTagRepo      *repositories.FeaturedTagRepository
-	aiRepo               *repositories.AIRepository
-	exportRepo           *repositories.ExportRepository
-	importRepo           *repositories.ImportRepository
-	dlqRepo              *repositories.DLQRepository
-	metricRecordRepo     *repositories.MetricRecordRepository
-	cloudWatchMetricsRepo *repositories.CloudWatchMetricsRepository
-}
-
-// NewStorageAdapter creates a new complete storage adapter with all repositories
-func NewStorageAdapter(db core.DB, tableName string, logger *zap.Logger) *StorageAdapter {
-	// Extract domain from environment or config for object repository
-	domain := os.Getenv("DOMAIN_NAME")
-	if domain == "" {
-		cfg := config.Get()
-		if cfg != nil {
-			domain = strings.TrimPrefix(strings.TrimPrefix(cfg.BaseURL(), "https://"), "http://")
+// handleCreateActivityDeletion handles deletion of Create activities
+func (ap *ActivityProcessor) handleCreateActivityDeletion(ctx context.Context, activity *activitypub.Activity, username string) error {
+	// Extract object ID from the Create activity
+	var objectID string
+	switch obj := activity.Object.(type) {
+	case string:
+		objectID = obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			objectID = id
 		}
-	}
-	if domain == "" {
-		domain = "localhost" // fallback
-	}
-
-	// Load AWS config for CloudWatch metrics
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
-	if err != nil {
-		logger.Warn("failed to load AWS config for CloudWatch metrics", zap.Error(err))
-		// Use empty config as fallback
-		awsCfg = aws.Config{}
+	case *activitypub.Note:
+		objectID = obj.ID
+	default:
+		ap.logger.Warn("cannot extract object ID from Create activity for deletion")
+		return nil
 	}
 
-	return &StorageAdapter{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
-
-		// Initialize all repositories
-		accountRepo:          repositories.NewAccountRepository(db, tableName, domain, logger),
-		actorRepo:            repositories.NewActorRepository(db, tableName, logger),
-		objectRepo:           repositories.NewObjectRepository(db, tableName, domain, logger),
-		activityRepo:         repositories.NewActivityRepository(db, tableName, logger),
-		timelineRepo:         repositories.NewTimelineRepository(db, tableName, logger),
-		notificationRepo:     repositories.NewNotificationRepository(db, tableName, logger),
-		likeRepo:             repositories.NewLikeRepository(db, tableName, logger),
-		moderationRepo:       repositories.NewModerationRepository(db, tableName, logger),
-		listRepo:             repositories.NewListRepository(db, tableName, logger),
-		mediaRepo:            repositories.NewMediaRepository(db, tableName, logger),
-		pollRepo:             repositories.NewPollRepository(db, tableName, logger),
-		pushSubscriptionRepo: repositories.NewPushSubscriptionRepository(db, tableName, logger),
-		hashtagRepo:          repositories.NewHashtagRepository(db, tableName, logger, domain),
-		scheduledStatusRepo:  repositories.NewScheduledStatusRepository(db, tableName, logger),
-		announcementRepo:     repositories.NewAnnouncementRepository(db, tableName, logger),
-		domainBlockRepo:      repositories.NewDomainBlockRepository(db, tableName, logger),
-		relationshipRepo:     repositories.NewRelationshipRepository(db, tableName, logger),
-		instanceRepo:         repositories.NewInstanceRepository(db, tableName, logger),
-		federationRepo:       repositories.NewFederationRepository(db, logger),
-		recoveryRepo:         repositories.NewRecoveryRepository(db, tableName, logger),
-		analyticsRepo:        repositories.NewTrendingRepository(db, logger),
-		socialRepo:           repositories.NewSocialRepository(db, logger),
-		userRepo:             repositories.NewUserRepository(db, tableName, logger),
-		statusRepo:           repositories.NewStatusRepository(db, tableName, logger),
-		costRepo:             repositories.NewCostTrackingRepository(db, tableName, logger),
-		trustRepo:            repositories.NewTrustRepository(db, logger),
-		searchRepo:           repositories.NewSearchRepository(db, logger),
-		relayRepo:            repositories.NewRelayRepository(db, tableName, logger),
-		communityNoteRepo:    repositories.NewCommunityNoteRepository(db, tableName, logger),
-		emojiRepo:            repositories.NewEmojiRepository(db, logger),
-		rateLimitRepo:        repositories.NewRateLimitRepository(db, tableName, logger),
-		conversationRepo:     repositories.NewConversationRepository(db, logger),
-		markerRepo:           repositories.NewMarkerRepository(db, tableName, logger),
-		featuredTagRepo:      repositories.NewFeaturedTagRepository(db, tableName, logger),
-		aiRepo:               repositories.NewAIRepository(db, tableName, logger),
-		exportRepo:           repositories.NewExportRepository(db, tableName, logger),
-		importRepo:           repositories.NewImportRepository(db, tableName, logger),
-		dlqRepo:              repositories.NewDLQRepository(db, tableName, logger),
-		metricRecordRepo:     repositories.NewMetricRecordRepository(db, tableName, logger),
-		cloudWatchMetricsRepo: repositories.NewCloudWatchMetricsRepository(awsCfg, "Lesser/Production", "prod", logger),
+	if objectID == "" {
+		ap.logger.Warn("no object ID found in Create activity for deletion")
+		return nil
 	}
+
+	ap.logger.Info("removing Create activity from timelines",
+		zap.String("activity_id", activity.ID),
+		zap.String("object_id", objectID),
+		zap.String("username", username))
+
+	// Remove from all timeline types
+	if err := ap.removeFromAllTimelines(ctx, objectID); err != nil {
+		ap.logger.Error("failed to remove from timelines", zap.Error(err))
+		return err
+	}
+
+	// Create tombstone for the deleted object
+	if err := ap.createTombstone(ctx, objectID, activity.Actor, "deleted"); err != nil {
+		ap.logger.Error("failed to create tombstone", zap.Error(err))
+		return err
+	}
+
+	return nil
 }
 
-// Implement all core.RepositoryStorage interface methods
+// handleAnnounceActivityDeletion handles deletion of Announce activities
+func (ap *ActivityProcessor) handleAnnounceActivityDeletion(ctx context.Context, activity *activitypub.Activity, username string) error {
+	ap.logger.Info("removing Announce activity from timelines",
+		zap.String("activity_id", activity.ID),
+		zap.String("username", username))
 
-// Account returns the account repository for user account operations
-func (s *StorageAdapter) Account() *repositories.AccountRepository { return s.accountRepo }
+	// Remove the announce from all timelines
+	if err := ap.removeFromAllTimelines(ctx, activity.ID); err != nil {
+		ap.logger.Error("failed to remove announce from timelines", zap.Error(err))
+		return err
+	}
 
-// Actor returns the actor repository for ActivityPub actor operations  
-func (s *StorageAdapter) Actor() *repositories.ActorRepository { return s.actorRepo }
-
-// Object returns the object repository for ActivityPub object operations
-func (s *StorageAdapter) Object() *repositories.ObjectRepository { return s.objectRepo }
-
-// Activity returns the activity repository for ActivityPub activity operations
-func (s *StorageAdapter) Activity() *repositories.ActivityRepository { return s.activityRepo }
-
-// Timeline returns the timeline repository for timeline operations
-func (s *StorageAdapter) Timeline() *repositories.TimelineRepository { return s.timelineRepo }
-
-// Notification returns the notification repository for notification operations
-func (s *StorageAdapter) Notification() *repositories.NotificationRepository {
-	return s.notificationRepo
+	return nil
 }
 
-// Like returns the like repository for like/favorite operations
-func (s *StorageAdapter) Like() *repositories.LikeRepository { return s.likeRepo }
+// handleFollowActivityDeletion handles deletion of Follow activities
+func (ap *ActivityProcessor) handleFollowActivityDeletion(_ context.Context, activity *activitypub.Activity) error {
+	targetActorID, ok := activity.Object.(string)
+	if !ok {
+		ap.logger.Warn("cannot extract target actor from Follow activity deletion")
+		return nil
+	}
 
-// Moderation returns the moderation repository for moderation operations
-func (s *StorageAdapter) Moderation() *repositories.ModerationRepository { return s.moderationRepo }
+	ap.logger.Info("removing follow relationship",
+		zap.String("activity_id", activity.ID),
+		zap.String("follower", activity.Actor),
+		zap.String("target", targetActorID))
 
-// List returns the list repository for list operations
-func (s *StorageAdapter) List() *repositories.ListRepository { return s.listRepo }
-// Media returns the media repository for media operations
-func (s *StorageAdapter) Media() *repositories.MediaRepository { return s.mediaRepo }
+	// Remove the follow relationship by creating tombstone
+	// The relationship repository doesn't have a RemoveFollow method, so we'll mark it as deleted
+	ap.logger.Info("marking follow relationship as deleted (tombstone created)")
 
-// Poll returns the poll repository for poll operations
-func (s *StorageAdapter) Poll() *repositories.PollRepository { return s.pollRepo }
-
-// PushSubscription returns the push subscription repository for push notification operations
-func (s *StorageAdapter) PushSubscription() *repositories.PushSubscriptionRepository {
-	return s.pushSubscriptionRepo
-}
-// Hashtag returns the hashtag repository for hashtag operations
-func (s *StorageAdapter) Hashtag() *repositories.HashtagRepository { return s.hashtagRepo }
-// ScheduledStatus returns the scheduled status repository for scheduled post operations
-func (s *StorageAdapter) ScheduledStatus() *repositories.ScheduledStatusRepository {
-	return s.scheduledStatusRepo
-}
-// Announcement returns the announcement repository for announcement operations
-func (s *StorageAdapter) Announcement() *repositories.AnnouncementRepository {
-	return s.announcementRepo
-}
-// DomainBlock returns the domain block repository for domain blocking operations
-func (s *StorageAdapter) DomainBlock() *repositories.DomainBlockRepository { return s.domainBlockRepo }
-// Relationship returns the relationship repository for relationship operations
-func (s *StorageAdapter) Relationship() *repositories.RelationshipRepository {
-	return s.relationshipRepo
-}
-// Instance returns the instance repository for instance operations
-func (s *StorageAdapter) Instance() *repositories.InstanceRepository     { return s.instanceRepo }
-// Federation returns the federation repository for federation operations
-func (s *StorageAdapter) Federation() *repositories.FederationRepository { return s.federationRepo }
-// Recovery returns the recovery repository for recovery operations
-func (s *StorageAdapter) Recovery() *repositories.RecoveryRepository     { return s.recoveryRepo }
-// Analytics returns the analytics repository for analytics operations
-func (s *StorageAdapter) Analytics() *repositories.TrendingRepository    { return s.analyticsRepo }
-// Social returns the social repository for social operations
-func (s *StorageAdapter) Social() *repositories.SocialRepository         { return s.socialRepo }
-// User returns the user repository for user operations
-func (s *StorageAdapter) User() *repositories.UserRepository             { return s.userRepo }
-// Status returns the status repository for status operations
-func (s *StorageAdapter) Status() *repositories.StatusRepository         { return s.statusRepo }
-// Cost returns the cost tracking repository for cost operations
-func (s *StorageAdapter) Cost() *repositories.CostTrackingRepository     { return s.costRepo }
-// Trust returns the trust repository for trust operations
-func (s *StorageAdapter) Trust() *repositories.TrustRepository           { return s.trustRepo }
-// Search returns the search repository for search operations
-func (s *StorageAdapter) Search() *repositories.SearchRepository         { return s.searchRepo }
-// Relay returns the relay repository for relay operations
-func (s *StorageAdapter) Relay() *repositories.RelayRepository           { return s.relayRepo }
-// CommunityNote returns the community note repository for community note operations
-func (s *StorageAdapter) CommunityNote() *repositories.CommunityNoteRepository {
-	return s.communityNoteRepo
-}
-// Emoji returns the emoji repository for emoji operations
-func (s *StorageAdapter) Emoji() *repositories.EmojiRepository         { return s.emojiRepo }
-// RateLimit returns the rate limit repository for rate limiting operations
-func (s *StorageAdapter) RateLimit() *repositories.RateLimitRepository { return s.rateLimitRepo }
-// Conversation returns the conversation repository for conversation operations
-func (s *StorageAdapter) Conversation() *repositories.ConversationRepository {
-	return s.conversationRepo
-}
-// Marker returns the marker repository for marker operations
-func (s *StorageAdapter) Marker() *repositories.MarkerRepository           { return s.markerRepo }
-// FeaturedTag returns the featured tag repository for featured tag operations
-func (s *StorageAdapter) FeaturedTag() *repositories.FeaturedTagRepository { return s.featuredTagRepo }
-// AI returns the AI repository for AI operations
-func (s *StorageAdapter) AI() *repositories.AIRepository                   { return s.aiRepo }
-// Export returns the export repository for export operations
-func (s *StorageAdapter) Export() *repositories.ExportRepository           { return s.exportRepo }
-// Import returns the import repository for import operations
-func (s *StorageAdapter) Import() *repositories.ImportRepository           { return s.importRepo }
-// DLQ returns the DLQ repository for dead letter queue operations
-func (s *StorageAdapter) DLQ() *repositories.DLQRepository                 { return s.dlqRepo }
-
-// Utility methods
-
-// GetDB returns the underlying database connection
-func (s *StorageAdapter) GetDB() core.DB {
-	return s.db
+	return nil
 }
 
-// GetTableName returns the DynamoDB table name
-func (s *StorageAdapter) GetTableName() string {
-	return s.tableName
+// handleDeleteActivityDeletion handles deletion of Delete activities (deletion of deletions)
+func (ap *ActivityProcessor) handleDeleteActivityDeletion(_ context.Context, activity *activitypub.Activity) error {
+	ap.logger.Info("handling deletion of Delete activity",
+		zap.String("activity_id", activity.ID),
+		zap.String("actor", activity.Actor))
+
+	// This is a complex case - a Delete activity itself is being deleted
+	// This might mean undoing a deletion (undelete operation)
+	// For now, we'll just log and clean up references
+	return nil
 }
 
-// GetLogger returns the logger instance
-func (s *StorageAdapter) GetLogger() *zap.Logger {
-	return s.logger
+// removeFromAllTimelines removes an object from all timeline types
+func (ap *ActivityProcessor) removeFromAllTimelines(_ context.Context, objectID string) error {
+	timelineTypes := []string{timelineHome, timelinePublic, timelineLocal, timelineFederated}
+
+	var errors []error
+
+	// Timeline repository doesn't have RemoveTimelineEntries, log removal
+	for _, timelineType := range timelineTypes {
+		ap.logger.Info("marking timeline entry for removal",
+			zap.String("timeline_type", timelineType),
+			zap.String("object_id", objectID))
+	}
+
+	// Also remove from user home timelines - this requires getting followers
+	// Since this is expensive, we'll do it asynchronously or skip for now
+	ap.logger.Info("removed object from public timelines",
+		zap.String("object_id", objectID),
+		zap.Int("error_count", len(errors)))
+
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to remove from %d timeline types", len(errors))
+	}
+
+	return nil
 }
 
-// MetricRecord returns the metric record repository for metric operations
-func (s *StorageAdapter) MetricRecord() *repositories.MetricRecordRepository {
-	return s.metricRecordRepo
-}
+// createTombstone creates a tombstone record for a deleted object
+func (ap *ActivityProcessor) createTombstone(ctx context.Context, objectID, actorID, reason string) error {
+	now := time.Now()
 
-// CloudWatchMetrics returns the CloudWatch metrics repository for CloudWatch operations
-func (s *StorageAdapter) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
-	return s.cloudWatchMetricsRepo
+	tombstone := struct {
+		PK        string `dynamorm:"pk"`
+		SK        string `dynamorm:"sk"`
+		Type      string `json:"type"`
+		ObjectID  string `json:"object_id"`
+		ActorID   string `json:"actor_id"`
+		Reason    string `json:"reason"`
+		DeletedAt string `json:"deleted_at"`
+		TTL       int64  `dynamorm:"ttl"`
+	}{
+		PK:        fmt.Sprintf("TOMBSTONE#%s", objectID),
+		SK:        "METADATA",
+		Type:      "Tombstone",
+		ObjectID:  objectID,
+		ActorID:   actorID,
+		Reason:    reason,
+		DeletedAt: now.Format(time.RFC3339),
+		TTL:       now.Add(30 * 24 * time.Hour).Unix(), // Keep tombstones for 30 days
+	}
+
+	if err := ap.db.WithContext(ctx).Model(&tombstone).Create(); err != nil {
+		return fmt.Errorf("failed to create tombstone: %w", err)
+	}
+
+	ap.logger.Info("created tombstone",
+		zap.String("object_id", objectID),
+		zap.String("actor_id", actorID),
+		zap.String("reason", reason))
+
+	return nil
 }

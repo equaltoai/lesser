@@ -476,7 +476,7 @@ func WebSocketCostMiddleware(costTracker *WebSocketCostTracker) func(lift.Handle
 // extractWebSocketEvent extracts the WebSocket event from the Lift context
 func extractWebSocketEvent(ctx *lift.Context) events.APIGatewayWebsocketProxyRequest {
 	var event events.APIGatewayWebsocketProxyRequest
-	
+
 	if ctx.Request.RawEvent != nil {
 		if wsEvent, ok := ctx.Request.RawEvent.(events.APIGatewayWebsocketProxyRequest); ok {
 			return wsEvent
@@ -486,7 +486,7 @@ func extractWebSocketEvent(ctx *lift.Context) events.APIGatewayWebsocketProxyReq
 			_ = json.Unmarshal(ctx.Request.Body, &event)
 		}
 	}
-	
+
 	return event
 }
 

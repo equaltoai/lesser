@@ -17,7 +17,8 @@ func ExampleRouteManagerIntegration(db core.DB, tableName string, logger *zap.Lo
 	routeOptimRepo := repositories.NewRouteOptimizerRepository(db, tableName, logger)
 	circuitBreakerRepo := repositories.NewCircuitBreakerRepository(db, tableName, logger)
 	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger)
-	
+	federationCostRepo := repositories.NewFederationCostRepository(db, tableName, logger)
+
 	// Create a mock federation instance repository for the example
 	instanceRepo := &MockFederationInstanceRepository{
 		logger: logger,
@@ -47,9 +48,9 @@ func ExampleRouteManagerIntegration(db core.DB, tableName string, logger *zap.Lo
 		},
 		OptimizerConfig: &OptimizerConfig{
 			// Values from guidance document
-			LatencyWeight:        0.4,  // 40% weight
-			ReliabilityWeight:    0.5,  // 50% weight (most important)
-			CostWeight:           0.1,  // 10% weight
+			LatencyWeight:        0.4, // 40% weight
+			ReliabilityWeight:    0.5, // 50% weight (most important)
+			CostWeight:           0.1, // 10% weight
 			MaxAcceptableLatency: 10 * time.Second,
 			MinAcceptableSuccess: 0.5, // 50% minimum
 			HistoryWindow:        15 * time.Minute,
@@ -62,10 +63,11 @@ func ExampleRouteManagerIntegration(db core.DB, tableName string, logger *zap.Lo
 	// Create the route manager with all components wired up
 	manager := NewManager(
 		instanceRepo,
-		nil, // instanceHealthRepo - would be provided in real usage
+		nil, // instanceHealthRepo - analytics service integration
 		circuitBreakerRepo,
 		routeOptimRepo,
 		routingMetricsRepo,
+		federationCostRepo,
 		logger,
 		config,
 	)
@@ -110,9 +112,9 @@ func ExampleUsageScenario(manager *Manager, logger *zap.Logger) {
 
 	// Simulate route selection for different message types
 	messageTypes := []types.MessageType{
-		types.MessageTypeCreate,  // Normal priority
-		types.MessageTypeFollow,  // High priority
-		types.MessageTypeDelete,  // Low priority
+		types.MessageTypeCreate, // Normal priority
+		types.MessageTypeFollow, // High priority
+		types.MessageTypeDelete, // Low priority
 	}
 
 	for _, msgType := range messageTypes {
@@ -179,7 +181,7 @@ func ExampleUsageScenario(manager *Manager, logger *zap.Logger) {
 
 // MockFederationInstanceRepository is a simple mock for demonstration
 type MockFederationInstanceRepository struct {
-	logger *zap.Logger
+	logger    *zap.Logger
 	instances map[string]*types.Instance
 }
 
@@ -188,11 +190,11 @@ func (m *MockFederationInstanceRepository) GetInstance(_ context.Context, instan
 	if m.instances == nil {
 		m.instances = make(map[string]*types.Instance)
 	}
-	
+
 	if instance, exists := m.instances[instanceID]; exists {
 		return instance, nil
 	}
-	
+
 	return nil, fmt.Errorf("instance not found: %s", instanceID)
 }
 
@@ -201,7 +203,7 @@ func (m *MockFederationInstanceRepository) RegisterInstance(_ context.Context, i
 	if m.instances == nil {
 		m.instances = make(map[string]*types.Instance)
 	}
-	
+
 	m.instances[instance.ID] = instance
 	m.logger.Info("Mock instance registered", zap.String("instanceID", instance.ID))
 	return nil
@@ -209,7 +211,7 @@ func (m *MockFederationInstanceRepository) RegisterInstance(_ context.Context, i
 
 // UpdateInstanceHealth updates the health status of an instance in the mock repository
 func (m *MockFederationInstanceRepository) UpdateInstanceHealth(_ context.Context, instanceID string, health *types.HealthStatus) error {
-	m.logger.Debug("Mock health update", 
+	m.logger.Debug("Mock health update",
 		zap.String("instanceID", instanceID),
 		zap.Bool("reachable", health.Reachable),
 		zap.Float64("errorRate", health.ErrorRate))
@@ -219,7 +221,7 @@ func (m *MockFederationInstanceRepository) UpdateInstanceHealth(_ context.Contex
 // ListHealthyInstances returns all healthy instances from the mock repository
 func (m *MockFederationInstanceRepository) ListHealthyInstances(_ context.Context) ([]*types.Instance, error) {
 	var healthy []*types.Instance
-	
+
 	if m.instances != nil {
 		for _, instance := range m.instances {
 			if instance.Status == types.InstanceStatusActive {
@@ -227,14 +229,14 @@ func (m *MockFederationInstanceRepository) ListHealthyInstances(_ context.Contex
 			}
 		}
 	}
-	
+
 	return healthy, nil
 }
 
 // BatchGetInstances retrieves multiple instances by IDs from the mock repository
 func (m *MockFederationInstanceRepository) BatchGetInstances(_ context.Context, instanceIDs []string) ([]*types.Instance, error) {
 	var instances []*types.Instance
-	
+
 	if m.instances != nil {
 		for _, id := range instanceIDs {
 			if instance, exists := m.instances[id]; exists {
@@ -242,36 +244,58 @@ func (m *MockFederationInstanceRepository) BatchGetInstances(_ context.Context, 
 			}
 		}
 	}
-	
+
 	return instances, nil
 }
 
 // CreateInstance creates a new instance in the mock repository
-func (m *MockFederationInstanceRepository) CreateInstance(ctx context.Context, instance *types.Instance) error { return m.RegisterInstance(ctx, instance) }
+func (m *MockFederationInstanceRepository) CreateInstance(ctx context.Context, instance *types.Instance) error {
+	return m.RegisterInstance(ctx, instance)
+}
 
 // GetInstanceByDomain retrieves an instance by domain from the mock repository
-func (m *MockFederationInstanceRepository) GetInstanceByDomain(ctx context.Context, domain string) (*types.Instance, error) { return m.GetInstance(ctx, domain) }
+func (m *MockFederationInstanceRepository) GetInstanceByDomain(ctx context.Context, domain string) (*types.Instance, error) {
+	return m.GetInstance(ctx, domain)
+}
 
 // UpdateInstance updates an existing instance in the mock repository
-func (m *MockFederationInstanceRepository) UpdateInstance(ctx context.Context, instance *types.Instance) error { return m.RegisterInstance(ctx, instance) }
+func (m *MockFederationInstanceRepository) UpdateInstance(ctx context.Context, instance *types.Instance) error {
+	return m.RegisterInstance(ctx, instance)
+}
 
 // DeleteInstance removes an instance from the mock repository
-func (m *MockFederationInstanceRepository) DeleteInstance(_ context.Context, instanceID string) error { delete(m.instances, instanceID); return nil }
+func (m *MockFederationInstanceRepository) DeleteInstance(_ context.Context, instanceID string) error {
+	delete(m.instances, instanceID)
+	return nil
+}
 
 // ListInstancesByStatus returns instances filtered by status (mock implementation)
-func (m *MockFederationInstanceRepository) ListInstancesByStatus(ctx context.Context, _ types.InstanceStatus, _ int) ([]*types.Instance, error) { return m.ListHealthyInstances(ctx) }
+func (m *MockFederationInstanceRepository) ListInstancesByStatus(ctx context.Context, _ types.InstanceStatus, _ int) ([]*types.Instance, error) {
+	return m.ListHealthyInstances(ctx)
+}
 
 // GetInstancesByTier returns instances filtered by tier level (mock implementation)
-func (m *MockFederationInstanceRepository) GetInstancesByTier(ctx context.Context, _ types.TierLevel, _ int) ([]*types.Instance, error) { return m.ListHealthyInstances(ctx) }
+func (m *MockFederationInstanceRepository) GetInstancesByTier(ctx context.Context, _ types.TierLevel, _ int) ([]*types.Instance, error) {
+	return m.ListHealthyInstances(ctx)
+}
 
 // SearchInstances searches for instances matching a pattern (mock implementation)
-func (m *MockFederationInstanceRepository) SearchInstances(ctx context.Context, _ string, _ int) ([]*types.Instance, error) { return m.ListHealthyInstances(ctx) }
+func (m *MockFederationInstanceRepository) SearchInstances(ctx context.Context, _ string, _ int) ([]*types.Instance, error) {
+	return m.ListHealthyInstances(ctx)
+}
 
 // ListAllInstances returns all instances with pagination support (mock implementation)
-func (m *MockFederationInstanceRepository) ListAllInstances(ctx context.Context, _ int, _ map[string]interface{}) ([]*types.Instance, map[string]interface{}, error) { instances, err := m.ListHealthyInstances(ctx); return instances, nil, err }
+func (m *MockFederationInstanceRepository) ListAllInstances(ctx context.Context, _ int, _ map[string]interface{}) ([]*types.Instance, map[string]interface{}, error) {
+	instances, err := m.ListHealthyInstances(ctx)
+	return instances, nil, err
+}
 
 // UpdateInstanceUsage updates the usage metrics for an instance (mock implementation)
-func (m *MockFederationInstanceRepository) UpdateInstanceUsage(_ context.Context, _ string, _ int64) error { return nil }
+func (m *MockFederationInstanceRepository) UpdateInstanceUsage(_ context.Context, _ string, _ int64) error {
+	return nil
+}
 
 // GetHealthHistory retrieves health history for an instance (mock implementation)
-func (m *MockFederationInstanceRepository) GetHealthHistory(_ context.Context, _ string, _ time.Duration) ([]*types.HealthStatus, error) { return nil, nil }
+func (m *MockFederationInstanceRepository) GetHealthHistory(_ context.Context, _ string, _ time.Duration) ([]*types.HealthStatus, error) {
+	return nil, nil
+}

@@ -713,12 +713,7 @@ func (sm *GraphQLSubscriptionManager) createMetricsEventBusSubscription(ctx cont
 
 // processMetricsEvents processes metrics events from the event bus
 func (sm *GraphQLSubscriptionManager) processMetricsEvents(subscription *GraphQLSubscription, ch chan *model.MetricsUpdate, categories, services []string, threshold *float64) {
-	defer func() {
-		close(ch)
-		sm.subscriptionsMux.Lock()
-		delete(sm.subscriptions, subscription.ID)
-		sm.subscriptionsMux.Unlock()
-	}()
+	defer sm.cleanupMetricsSubscription(subscription, ch)
 
 	for {
 		select {
@@ -726,61 +721,7 @@ func (sm *GraphQLSubscriptionManager) processMetricsEvents(subscription *GraphQL
 			if event == nil {
 				return
 			}
-
-			subscription.LastActivity = time.Now()
-
-			if metricsUpdate := sm.converter.ConvertToMetricsUpdate(event); metricsUpdate != nil {
-				// Apply category filter if specified
-				if len(categories) > 0 {
-					categoryMatch := false
-					for _, category := range categories {
-						if metricsUpdate.SubscriptionCategory == category {
-							categoryMatch = true
-							break
-						}
-					}
-					if !categoryMatch {
-						continue
-					}
-				}
-
-				// Apply service filter if specified
-				if len(services) > 0 {
-					serviceMatch := false
-					for _, service := range services {
-						if metricsUpdate.ServiceName == service {
-							serviceMatch = true
-							break
-						}
-					}
-					if !serviceMatch {
-						continue
-					}
-				}
-
-				// Apply threshold filter if specified
-				if threshold != nil {
-					if metricsUpdate.Sum < *threshold && metricsUpdate.Max < *threshold {
-						continue
-					}
-				}
-
-				select {
-				case ch <- metricsUpdate:
-					sm.logger.Debug("sent metrics event to GraphQL subscription",
-						zap.String("subscription_id", subscription.ID),
-						zap.String("event_id", event.ID),
-						zap.String("metric_type", metricsUpdate.MetricType),
-						zap.String("service", metricsUpdate.ServiceName),
-						zap.String("category", metricsUpdate.SubscriptionCategory))
-				case <-subscription.Context.Done():
-					return
-				default:
-					sm.logger.Warn("metrics subscription channel full, dropping event",
-						zap.String("subscription_id", subscription.ID),
-						zap.String("metric_id", metricsUpdate.MetricID))
-				}
-			}
+			sm.handleMetricsEvent(subscription, event, ch, categories, services, threshold)
 
 		case <-subscription.Subscriber.Quit:
 			return
@@ -788,4 +729,110 @@ func (sm *GraphQLSubscriptionManager) processMetricsEvents(subscription *GraphQL
 			return
 		}
 	}
+}
+
+// cleanupMetricsSubscription handles cleanup when metrics subscription ends
+func (sm *GraphQLSubscriptionManager) cleanupMetricsSubscription(subscription *GraphQLSubscription, ch chan *model.MetricsUpdate) {
+	close(ch)
+	sm.subscriptionsMux.Lock()
+	delete(sm.subscriptions, subscription.ID)
+	sm.subscriptionsMux.Unlock()
+}
+
+// handleMetricsEvent processes a single metrics event
+func (sm *GraphQLSubscriptionManager) handleMetricsEvent(subscription *GraphQLSubscription, event *streaming.InternalEvent, ch chan *model.MetricsUpdate, categories, services []string, threshold *float64) {
+	subscription.LastActivity = time.Now()
+
+	metricsUpdate := sm.converter.ConvertToMetricsUpdate(event)
+	if metricsUpdate == nil {
+		return
+	}
+
+	if !sm.shouldSendMetricsUpdate(metricsUpdate, categories, services, threshold) {
+		return
+	}
+
+	sm.sendMetricsUpdate(subscription, event, ch, metricsUpdate)
+}
+
+// shouldSendMetricsUpdate determines if a metrics update should be sent based on filters
+func (sm *GraphQLSubscriptionManager) shouldSendMetricsUpdate(update *model.MetricsUpdate, categories, services []string, threshold *float64) bool {
+	if !sm.matchesCategories(update, categories) {
+		return false
+	}
+
+	if !sm.matchesServices(update, services) {
+		return false
+	}
+
+	if !sm.meetsThreshold(update, threshold) {
+		return false
+	}
+
+	return true
+}
+
+// matchesCategories checks if the update matches the category filter
+func (sm *GraphQLSubscriptionManager) matchesCategories(update *model.MetricsUpdate, categories []string) bool {
+	if len(categories) == 0 {
+		return true
+	}
+
+	for _, category := range categories {
+		if update.SubscriptionCategory == category {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesServices checks if the update matches the service filter
+func (sm *GraphQLSubscriptionManager) matchesServices(update *model.MetricsUpdate, services []string) bool {
+	if len(services) == 0 {
+		return true
+	}
+
+	for _, service := range services {
+		if update.ServiceName == service {
+			return true
+		}
+	}
+	return false
+}
+
+// meetsThreshold checks if the update meets the threshold requirements
+func (sm *GraphQLSubscriptionManager) meetsThreshold(update *model.MetricsUpdate, threshold *float64) bool {
+	if threshold == nil {
+		return true
+	}
+	return update.Sum >= *threshold || update.Max >= *threshold
+}
+
+// sendMetricsUpdate attempts to send the metrics update through the channel
+func (sm *GraphQLSubscriptionManager) sendMetricsUpdate(subscription *GraphQLSubscription, event *streaming.InternalEvent, ch chan *model.MetricsUpdate, metricsUpdate *model.MetricsUpdate) {
+	select {
+	case ch <- metricsUpdate:
+		sm.logMetricsEventSent(subscription, event, metricsUpdate)
+	case <-subscription.Context.Done():
+		return
+	default:
+		sm.logMetricsEventDropped(subscription, metricsUpdate)
+	}
+}
+
+// logMetricsEventSent logs when a metrics event is successfully sent
+func (sm *GraphQLSubscriptionManager) logMetricsEventSent(subscription *GraphQLSubscription, event *streaming.InternalEvent, metricsUpdate *model.MetricsUpdate) {
+	sm.logger.Debug("sent metrics event to GraphQL subscription",
+		zap.String("subscription_id", subscription.ID),
+		zap.String("event_id", event.ID),
+		zap.String("metric_type", metricsUpdate.MetricType),
+		zap.String("service", metricsUpdate.ServiceName),
+		zap.String("category", metricsUpdate.SubscriptionCategory))
+}
+
+// logMetricsEventDropped logs when a metrics event is dropped due to full channel
+func (sm *GraphQLSubscriptionManager) logMetricsEventDropped(subscription *GraphQLSubscription, metricsUpdate *model.MetricsUpdate) {
+	sm.logger.Warn("metrics subscription channel full, dropping event",
+		zap.String("subscription_id", subscription.ID),
+		zap.String("metric_id", metricsUpdate.MetricID))
 }

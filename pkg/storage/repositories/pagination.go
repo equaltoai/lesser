@@ -13,11 +13,11 @@ type SearchSortOrder string
 // Search sort order constants
 const (
 	// SearchSortRelevance sorts by relevance/score (default)
-	SearchSortRelevance  SearchSortOrder = "relevance"
+	SearchSortRelevance SearchSortOrder = "relevance"
 	// SearchSortTimeAsc sorts by time ascending (oldest first)
-	SearchSortTimeAsc    SearchSortOrder = "time_asc"
+	SearchSortTimeAsc SearchSortOrder = "time_asc"
 	// SearchSortTimeDesc sorts by time descending (newest first)
-	SearchSortTimeDesc   SearchSortOrder = "time_desc"
+	SearchSortTimeDesc SearchSortOrder = "time_desc"
 )
 
 // PaginationOptions represents pagination parameters for search
@@ -57,17 +57,17 @@ func (p *PaginationOptions) Validate() error {
 	if p.Limit <= 0 {
 		p.Limit = 20
 	}
-	
+
 	// Enforce maximum limit for search operations
 	if p.Limit > 50 {
 		p.Limit = 50
 	}
-	
+
 	// Set default sort order
 	if p.SortOrder == "" {
 		p.SortOrder = SearchSortRelevance
 	}
-	
+
 	// Validate sort order
 	switch p.SortOrder {
 	case SearchSortRelevance, SearchSortTimeAsc, SearchSortTimeDesc:
@@ -75,7 +75,7 @@ func (p *PaginationOptions) Validate() error {
 	default:
 		return fmt.Errorf("invalid sort order: %s", p.SortOrder)
 	}
-	
+
 	return nil
 }
 
@@ -84,17 +84,17 @@ func EncodeCursor(data *CursorData) string {
 	if data == nil {
 		return ""
 	}
-	
+
 	// Handle empty cursor data
 	if data.LastEvaluatedKey == nil && data.LastID == "" && data.LastScore == 0 && data.LastTimestamp.IsZero() {
 		return ""
 	}
-	
+
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return ""
 	}
-	
+
 	return base64.URLEncoding.EncodeToString(jsonData)
 }
 
@@ -103,18 +103,18 @@ func DecodeCursor(cursor string) (*CursorData, error) {
 	if cursor == "" {
 		return &CursorData{}, nil
 	}
-	
+
 	jsonData, err := base64.URLEncoding.DecodeString(cursor)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor format: %w", err)
 	}
-	
+
 	var data CursorData
 	err = json.Unmarshal(jsonData, &data)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor data: %w", err)
 	}
-	
+
 	return &data, nil
 }
 
@@ -127,7 +127,7 @@ func CreateNextCursor(lastEvaluatedKey map[string]interface{}, lastScore float64
 		LastID:           lastID,
 		SortOrder:        sortOrder,
 	}
-	
+
 	return EncodeCursor(data)
 }
 
@@ -146,12 +146,12 @@ func ShouldContinuePagination(resultCount, requestedLimit, totalProcessed, maxSc
 	if resultCount > requestedLimit {
 		return true
 	}
-	
+
 	// Continue if we haven't reached the scan limit and got full batch (might have more)
 	if totalProcessed < maxScan && resultCount == requestedLimit {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -160,7 +160,7 @@ func ApplyPaginationLimits[T any](results []T, requestedLimit int) ([]T, bool) {
 	if len(results) <= requestedLimit {
 		return results, false
 	}
-	
+
 	// Return requested limit and indicate there are more results
 	return results[:requestedLimit], true
 }

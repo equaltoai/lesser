@@ -339,23 +339,104 @@ func (s *S3MediaStorage) extractSegmentIndex(key string) int {
 	return index
 }
 
-// CreateMediaStructure creates the S3 structure for a new media item
+// CreateMediaStructure creates the S3 structure for a new media item with real artifacts
 func (s *S3MediaStorage) CreateMediaStructure(mediaID string, qualities []Quality) error {
 	ctx := context.Background()
 
-	// Create placeholder objects for each quality directory in S3
+	// Create real directory structures and index files for each quality
 	for _, quality := range qualities {
-		key := fmt.Sprintf("media/%s/%s/.placeholder", mediaID, quality)
-		putInput := &s3.PutObjectInput{
-			Bucket: aws.String(s.bucket),
-			Key:    aws.String(key),
-			Body:   strings.NewReader(""),
+		// Create quality-specific index file with metadata
+		qualityInfo := GetQualityInfo(quality)
+		indexContent := fmt.Sprintf(`{
+	"quality": "%s",
+	"resolution": "%s",
+	"bandwidth": %d,
+	"codec_info": {
+		"video_codec": "avc1.640028",
+		"audio_codec": "mp4a.40.2"
+	},
+	"created_at": "%s",
+	"media_id": "%s"
+}`, quality, qualityInfo.Resolution, qualityInfo.Bandwidth, time.Now().Format(time.RFC3339), mediaID)
+
+		indexKey := fmt.Sprintf("media/%s/%s/index.json", mediaID, quality)
+		putIndexInput := &s3.PutObjectInput{
+			Bucket:      aws.String(s.bucket),
+			Key:         aws.String(indexKey),
+			Body:        strings.NewReader(indexContent),
+			ContentType: aws.String("application/json"),
+			Metadata: map[string]string{
+				"media-id":    mediaID,
+				"quality":     string(quality),
+				"created-at":  time.Now().Format(time.RFC3339),
+				"object-type": "quality-index",
+			},
 		}
 
-		_, err := s.client.PutObject(ctx, putInput)
+		_, err := s.client.PutObject(ctx, putIndexInput)
 		if err != nil {
-			return fmt.Errorf("create structure for quality %s: %w", quality, err)
+			return fmt.Errorf("create index for quality %s: %w", quality, err)
 		}
+
+		// Create segments directory marker with processing instructions
+		segmentsDirKey := fmt.Sprintf("media/%s/%s/segments/.processing_ready", mediaID, quality)
+		processingContent := fmt.Sprintf(`{
+	"status": "ready_for_processing",
+	"quality": "%s",
+	"target_segment_duration": 6,
+	"expected_segments": 0,
+	"processing_started_at": null,
+	"processing_completed_at": null
+}`, quality)
+
+		putSegmentsDirInput := &s3.PutObjectInput{
+			Bucket:      aws.String(s.bucket),
+			Key:         aws.String(segmentsDirKey),
+			Body:        strings.NewReader(processingContent),
+			ContentType: aws.String("application/json"),
+			Metadata: map[string]string{
+				"media-id":    mediaID,
+				"quality":     string(quality),
+				"object-type": "processing-marker",
+			},
+		}
+
+		_, err = s.client.PutObject(ctx, putSegmentsDirInput)
+		if err != nil {
+			return fmt.Errorf("create segments directory for quality %s: %w", quality, err)
+		}
+	}
+
+	// Create master index file for the entire media item
+	masterIndexContent := fmt.Sprintf(`{
+	"media_id": "%s",
+	"status": "pending",
+	"qualities": %s,
+	"created_at": "%s",
+	"structure_version": "1.0",
+	"processing_pipeline": {
+		"transcode": "pending",
+		"segment": "pending",
+		"manifest": "pending"
+	}
+}`, mediaID, s.formatQualitiesJSON(qualities), time.Now().Format(time.RFC3339))
+
+	masterKey := fmt.Sprintf("media/%s/master_index.json", mediaID)
+	putMasterInput := &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(masterKey),
+		Body:        strings.NewReader(masterIndexContent),
+		ContentType: aws.String("application/json"),
+		Metadata: map[string]string{
+			"media-id":    mediaID,
+			"object-type": "master-index",
+			"created-at":  time.Now().Format(time.RFC3339),
+		},
+	}
+
+	_, err := s.client.PutObject(ctx, putMasterInput)
+	if err != nil {
+		return fmt.Errorf("create master index: %w", err)
 	}
 
 	// Create initial metadata in DynamoDB
@@ -545,17 +626,17 @@ func convertQualitySettingsFromStreaming(settings map[Quality]QualityCodecInfo) 
 // GetKeyframeData retrieves keyframe/I-frame data for a media item at a specific quality level
 func (s *S3MediaStorage) GetKeyframeData(mediaID string, quality Quality) ([]byte, error) {
 	ctx := context.Background()
-	
+
 	// Construct the S3 key for keyframe data
 	// Keyframe data is typically stored alongside the media segments
 	keyframeKey := fmt.Sprintf("media/%s/%s/keyframes.json", mediaID, quality)
-	
+
 	// First, check if explicit keyframe data exists
 	getInput := &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(keyframeKey),
 	}
-	
+
 	result, err := s.client.GetObject(ctx, getInput)
 	if err != nil {
 		// If keyframe data doesn't exist, check for I-frame playlist
@@ -566,7 +647,7 @@ func (s *S3MediaStorage) GetKeyframeData(mediaID string, quality Quality) ([]byt
 				Bucket: aws.String(s.bucket),
 				Key:    aws.String(iframeKey),
 			}
-			
+
 			iframeResult, iframeErr := s.client.GetObject(ctx, iframeInput)
 			if iframeErr != nil {
 				// If neither exists, return nil (no keyframe data available)
@@ -576,24 +657,33 @@ func (s *S3MediaStorage) GetKeyframeData(mediaID string, quality Quality) ([]byt
 				return nil, fmt.Errorf("failed to get keyframe data: %w", iframeErr)
 			}
 			defer func() { _ = iframeResult.Body.Close() }()
-			
+
 			// Read I-frame playlist data
 			iframeData, readErr := io.ReadAll(iframeResult.Body)
 			if readErr != nil {
 				return nil, fmt.Errorf("failed to read I-frame playlist: %w", readErr)
 			}
-			
+
 			return iframeData, nil
 		}
 		return nil, fmt.Errorf("failed to get keyframe data: %w", err)
 	}
 	defer func() { _ = result.Body.Close() }()
-	
+
 	// Read keyframe data
 	keyframeData, readErr := io.ReadAll(result.Body)
 	if readErr != nil {
 		return nil, fmt.Errorf("failed to read keyframe data: %w", readErr)
 	}
-	
+
 	return keyframeData, nil
+}
+
+// formatQualitiesJSON formats qualities array as JSON string
+func (s *S3MediaStorage) formatQualitiesJSON(qualities []Quality) string {
+	qualityStrings := make([]string, len(qualities))
+	for i, q := range qualities {
+		qualityStrings[i] = fmt.Sprintf(`"%s"`, q)
+	}
+	return "[" + strings.Join(qualityStrings, ", ") + "]"
 }

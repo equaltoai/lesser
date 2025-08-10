@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -78,16 +79,43 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 	}
 }
 
-// createCORSMiddleware creates a CORS middleware
+// createCORSMiddleware creates a CORS middleware with security headers
 func createCORSMiddleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Set CORS headers
+			// CORS headers for Mastodon client compatibility
 			ctx.Response.Header("Access-Control-Allow-Origin", "*")
 			ctx.Response.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
 			ctx.Response.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Accept-Encoding, Accept-Language, Date, Digest, Host, Signature, User-Agent, X-Forwarded-For, X-Forwarded-Proto, X-CSRF-Token")
+			ctx.Response.Header("Access-Control-Expose-Headers", "Link, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset")
+			ctx.Response.Header("Access-Control-Max-Age", "86400") // 24 hours
 
-			// Handle OPTIONS requests
+			// Security headers
+			ctx.Response.Header("X-Frame-Options", "DENY")
+			ctx.Response.Header("X-Content-Type-Options", "nosniff")
+			ctx.Response.Header("X-XSS-Protection", "1; mode=block")
+			ctx.Response.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+			
+			// Content Security Policy - strict but allows Mastodon client functionality
+			csp := "default-src 'self'; " +
+				"script-src 'self' 'unsafe-inline'; " +
+				"style-src 'self' 'unsafe-inline'; " +
+				"img-src 'self' data: https:; " +
+				"media-src 'self' https:; " +
+				"connect-src 'self' wss: https:; " +
+				"font-src 'self' data:; " +
+				"object-src 'none'; " +
+				"base-uri 'self'; " +
+				"form-action 'self'; " +
+				"frame-ancestors 'none'"
+			ctx.Response.Header("Content-Security-Policy", csp)
+
+			// HTTPS enforcement (HSTS) - only if over HTTPS
+			if ctx.Header("X-Forwarded-Proto") == "https" || ctx.Header("CloudFront-Forwarded-Proto") == "https" {
+				ctx.Response.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+			}
+
+			// Handle OPTIONS requests (CORS preflight)
 			if ctx.Request.Method == "OPTIONS" {
 				return ctx.Status(200).Text("")
 			}
@@ -139,7 +167,6 @@ func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 	}
 }
 
-
 // Helper functions for cost tracking
 
 // GetCostTracker retrieves the cost tracker from the Lift context
@@ -179,5 +206,88 @@ func GetLogger(ctx *lift.Context) *zap.Logger {
 		return logger
 	}
 	return zap.L() // fallback to global logger
+}
+
+// Permission levels for RBAC
+const (
+	PermissionAdmin     = "admin"
+	PermissionModerator = "moderator"
+	PermissionViewer    = "viewer"
+)
+
+// createRBACMiddleware creates middleware for role-based access control
+// This middleware should be used after authentication middleware
+func createRBACMiddleware(requiredPermission string) lift.Middleware {
+	return func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			// Check if the user has the required permissions
+			if err := checkUserPermissions(ctx, requiredPermission); err != nil {
+				ctx.Status(403)
+				return ctx.JSON(map[string]string{
+					"error": "insufficient_permissions",
+					"message": "You do not have permission to access this resource",
+					"required_permission": requiredPermission,
+				})
+			}
+
+			return next.Handle(ctx)
+		})
+	}
+}
+
+// checkUserPermissions checks if the current user has the required permission level
+func checkUserPermissions(ctx *lift.Context, requiredPermission string) error {
+	// Get user claims from context (set by auth middleware)
+	claims, ok := ctx.Get("claims").(*auth.Claims)
+	if !ok || claims == nil {
+		return fmt.Errorf("unauthorized: no valid claims found")
+	}
+
+	// Get user role from claims or fetch from storage
+	// The Claims struct doesn't have a Role field, so we need to fetch it from storage
+	userRole := "user" // Default role
+
+	// TODO: Fetch user role from storage using claims.Username
+	// For now, we'll need to get the user role from the storage
+	// This is a simplified implementation
+
+	// Check permission hierarchy
+	switch requiredPermission {
+	case PermissionAdmin:
+		// Only admins can access admin resources
+		if userRole != PermissionAdmin {
+			return fmt.Errorf("forbidden: admin access required")
+		}
+	case PermissionModerator:
+		// Admins and moderators can access moderator resources
+		if userRole != "admin" && userRole != "moderator" {
+			return fmt.Errorf("forbidden: moderator access required")
+		}
+	case PermissionViewer:
+		// Admins, moderators, and viewers can access viewer resources
+		if userRole != "admin" && userRole != "moderator" && userRole != "viewer" {
+			return fmt.Errorf("forbidden: viewer access required")
+		}
+	default:
+		// Unknown permission level
+		return fmt.Errorf("forbidden: unknown permission level")
+	}
+
+	return nil
+}
+
+// AdminOnlyMiddleware creates middleware that requires admin permissions
+func AdminOnlyMiddleware() lift.Middleware {
+	return createRBACMiddleware(PermissionAdmin)
+}
+
+// ModeratorOrHigherMiddleware creates middleware that requires moderator or admin permissions
+func ModeratorOrHigherMiddleware() lift.Middleware {
+	return createRBACMiddleware(PermissionModerator)
+}
+
+// ViewerOrHigherMiddleware creates middleware that requires viewer, moderator, or admin permissions
+func ViewerOrHigherMiddleware() lift.Middleware {
+	return createRBACMiddleware(PermissionViewer)
 }
 

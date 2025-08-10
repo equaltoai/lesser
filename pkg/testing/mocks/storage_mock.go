@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
@@ -258,9 +260,9 @@ type MockStoragePreset string
 
 const (
 	// PresetEmpty represents an empty preset with no data
-	PresetEmpty          MockStoragePreset = "empty"
+	PresetEmpty MockStoragePreset = "empty"
 	// PresetWithTestUser represents a preset with test user data
-	PresetWithTestUser   MockStoragePreset = "test_user"
+	PresetWithTestUser MockStoragePreset = "test_user"
 	// PresetWithMultiUsers represents a preset with multiple test users
 	PresetWithMultiUsers MockStoragePreset = "multi_users"
 )
@@ -4045,6 +4047,48 @@ func (m *MockStorage) WriteToTimeline(ctx context.Context, timeline *storage.Tim
 func (m *MockStorage) WriteToTimelines(ctx context.Context, entries []*storage.TimelineEntry) error {
 	args := m.Called(ctx, entries)
 	return args.Error(0)
+}
+
+// GetConversations mocks the GetConversations method
+func (m *MockStorage) GetConversations(ctx context.Context, username string, limit int, cursor string) ([]*models.Conversation, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*models.Conversation), args.String(1), args.Error(2)
+}
+
+// RemoveFromTimelines mocks the RemoveFromTimelines method
+func (m *MockStorage) RemoveFromTimelines(ctx context.Context, objectID string) error {
+	args := m.Called(ctx, objectID)
+	return args.Error(0)
+}
+
+// ListStatusesForAdmin mocks the ListStatusesForAdmin method
+func (m *MockStorage) ListStatusesForAdmin(ctx context.Context, filter *repositories.StatusFilter, limit int, cursor string) ([]*models.Status, string, error) {
+	args := m.Called(ctx, filter, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*models.Status), args.String(1), args.Error(2)
+}
+
+// CountStatusesForAdmin mocks the CountStatusesForAdmin method
+func (m *MockStorage) CountStatusesForAdmin(ctx context.Context, filter *repositories.StatusFilter) (int64, error) {
+	args := m.Called(ctx, filter)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// RecordSearchAnalytics mocks the RecordSearchAnalytics method
+func (m *MockStorage) RecordSearchAnalytics(ctx context.Context, analytics *middleware.SearchAnalytics) error {
+	args := m.Called(ctx, analytics)
+	return args.Error(0)
+}
+
+// CheckRateLimit mocks the CheckRateLimit method
+func (m *MockStorage) CheckRateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, error) {
+	args := m.Called(ctx, key, limit, window)
+	return args.Get(0).(bool), args.Error(1)
 }
 
 // MockRepositoryStorage implements the RepositoryStorage interface for testing

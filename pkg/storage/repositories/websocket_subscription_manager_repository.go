@@ -214,3 +214,48 @@ func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(_ context.Con
 
 	return connections, nil
 }
+
+// GetUserConnections retrieves all active connection IDs for a user
+func (r *WebSocketSubscriptionManagerRepository) GetUserConnections(ctx context.Context, userID string) ([]string, error) {
+	var connections []models.WebSocketEventConnection
+
+	// Query connections by GSI2 (UserID index)
+	err := r.db.WithContext(ctx).Model(&models.WebSocketEventConnection{}).
+		Where("GSI2PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("GSI2SK", "begins_with", "CONNECTION#").
+		All(&connections)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("failed to get user connections: %w", err)
+	}
+
+	// Extract connection IDs and filter for active connections
+	var connectionIDs []string
+	currentTime := time.Now()
+
+	for _, conn := range connections {
+		// Check if connection is still valid (not expired)
+		if conn.TTL > 0 && currentTime.Unix() > conn.TTL {
+			// Connection has expired, skip it
+			continue
+		}
+
+		// Check if connection was seen recently (within last hour as a reasonable threshold)
+		if !conn.LastSeen.IsZero() && currentTime.Sub(conn.LastSeen) > time.Hour {
+			// Connection hasn't been seen recently, might be stale
+			continue
+		}
+
+		connectionIDs = append(connectionIDs, conn.ConnectionID)
+	}
+
+	r.logger.Debug("retrieved user connections",
+		zap.String("user_id", userID),
+		zap.Int("total_connections", len(connections)),
+		zap.Int("active_connections", len(connectionIDs)))
+
+	return connectionIDs, nil
+}

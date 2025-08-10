@@ -2,6 +2,8 @@
 package factory
 
 import (
+	"context"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -20,46 +22,47 @@ type RepositoryFactory struct {
 	awsConfig aws.Config
 
 	// Repository instances (initialize once)
-	accountRepo          *repositories.AccountRepository
-	actorRepo            *repositories.ActorRepository
-	objectRepo           *repositories.ObjectRepository
-	activityRepo         *repositories.ActivityRepository
-	userRepo             *repositories.UserRepository
-	trustRepo            *repositories.TrustRepository
-	conversationRepo     *repositories.ConversationRepository
-	timelineRepo         *repositories.TimelineRepository
-	notificationRepo     *repositories.NotificationRepository
-	likeRepo             *repositories.LikeRepository
-	moderationRepo       *repositories.ModerationRepository
-	relationshipRepo     *repositories.RelationshipRepository
-	listRepo             *repositories.ListRepository
-	mediaRepo            *repositories.MediaRepository
-	pollRepo             *repositories.PollRepository
-	pushSubscriptionRepo *repositories.PushSubscriptionRepository
-	instanceRepo         *repositories.InstanceRepository
-	hashtagRepo          *repositories.HashtagRepository
-	scheduledStatusRepo  *repositories.ScheduledStatusRepository
-	announcementRepo     *repositories.AnnouncementRepository
-	domainBlockRepo      *repositories.DomainBlockRepository
-	federationRepo       *repositories.FederationRepository
-	recoveryRepo         *repositories.RecoveryRepository
-	analyticsRepo        *repositories.TrendingRepository
-	socialRepo           *repositories.SocialRepository
-	statusRepo           *repositories.StatusRepository
-	costRepo             *repositories.CostTrackingRepository
-	searchRepo           *repositories.SearchRepository
-	relayRepo            *repositories.RelayRepository
-	communityNoteRepo    *repositories.CommunityNoteRepository
-	emojiRepo            *repositories.EmojiRepository
-	rateLimitRepo        *repositories.RateLimitRepository
-	markerRepo           *repositories.MarkerRepository
-	featuredTagRepo      *repositories.FeaturedTagRepository
-	aiRepo               *repositories.AIRepository
-	exportRepo           *repositories.ExportRepository
-	importRepo           *repositories.ImportRepository
-	dlqRepo              *repositories.DLQRepository
-	metricRecordRepo     *repositories.MetricRecordRepository
+	accountRepo           *repositories.AccountRepository
+	actorRepo             *repositories.ActorRepository
+	objectRepo            *repositories.ObjectRepository
+	activityRepo          *repositories.ActivityRepository
+	userRepo              *repositories.UserRepository
+	trustRepo             *repositories.TrustRepository
+	conversationRepo      *repositories.ConversationRepository
+	timelineRepo          *repositories.TimelineRepository
+	notificationRepo      *repositories.NotificationRepository
+	likeRepo              *repositories.LikeRepository
+	moderationRepo        *repositories.ModerationRepository
+	relationshipRepo      *repositories.RelationshipRepository
+	listRepo              *repositories.ListRepository
+	mediaRepo             *repositories.MediaRepository
+	pollRepo              *repositories.PollRepository
+	pushSubscriptionRepo  *repositories.PushSubscriptionRepository
+	instanceRepo          *repositories.InstanceRepository
+	hashtagRepo           *repositories.HashtagRepository
+	scheduledStatusRepo   *repositories.ScheduledStatusRepository
+	announcementRepo      *repositories.AnnouncementRepository
+	domainBlockRepo       *repositories.DomainBlockRepository
+	federationRepo        *repositories.FederationRepository
+	recoveryRepo          *repositories.RecoveryRepository
+	analyticsRepo         *repositories.TrendingRepository
+	socialRepo            *repositories.SocialRepository
+	statusRepo            *repositories.StatusRepository
+	costRepo              *repositories.CostTrackingRepository
+	searchRepo            *repositories.SearchRepository
+	relayRepo             *repositories.RelayRepository
+	communityNoteRepo     *repositories.CommunityNoteRepository
+	emojiRepo             *repositories.EmojiRepository
+	rateLimitRepo         *repositories.RateLimitRepository
+	markerRepo            *repositories.MarkerRepository
+	featuredTagRepo       *repositories.FeaturedTagRepository
+	aiRepo                *repositories.AIRepository
+	exportRepo            *repositories.ExportRepository
+	importRepo            *repositories.ImportRepository
+	dlqRepo               *repositories.DLQRepository
+	metricRecordRepo      *repositories.MetricRecordRepository
 	cloudWatchMetricsRepo *repositories.CloudWatchMetricsRepository
+	publicKeyCacheRepo    *repositories.PublicKeyCacheRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -126,6 +129,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.dlqRepo = repositories.NewDLQRepository(f.db, f.tableName, f.logger)
 	f.metricRecordRepo = repositories.NewMetricRecordRepository(f.db, f.tableName, f.logger)
 	f.cloudWatchMetricsRepo = repositories.NewCloudWatchMetricsRepository(f.awsConfig, "Lesser/Production", "prod", f.logger)
+	f.publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(f.db, f.tableName, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -137,10 +141,38 @@ func (f *RepositoryFactory) setupDependencies() {
 	if f.scheduledStatusRepo != nil && f.mediaRepo != nil {
 		f.scheduledStatusRepo.SetMediaRepository(f.mediaRepo)
 	}
-	
+
+	// Set up search repository dependencies for privacy enforcement
+	if f.searchRepo != nil && f.relationshipRepo != nil {
+		// Create a deps adapter that implements SearchRepositoryDeps
+		deps := &searchRepositoryDeps{
+			relationshipRepo: f.relationshipRepo,
+		}
+		f.searchRepo.SetDependencies(deps)
+	}
+
 	// Additional repository dependencies can be configured here as needed.
-	// Currently, only the ScheduledStatusRepository requires the MediaRepository dependency.
-	// All other repositories are self-contained and don't require cross-repository dependencies.
+}
+
+// searchRepositoryDeps implements SearchRepositoryDeps interface
+type searchRepositoryDeps struct {
+	relationshipRepo *repositories.RelationshipRepository
+}
+
+func (d *searchRepositoryDeps) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	return d.relationshipRepo.GetFollowing(ctx, username, limit, cursor)
+}
+
+func (d *searchRepositoryDeps) IsBlocked(ctx context.Context, blockerActor, blockedActor string) (bool, error) {
+	return d.relationshipRepo.IsBlocked(ctx, blockerActor, blockedActor)
+}
+
+func (d *searchRepositoryDeps) IsBlockedBidirectional(ctx context.Context, actor1, actor2 string) (bool, error) {
+	return d.relationshipRepo.IsBlockedBidirectional(ctx, actor1, actor2)
+}
+
+func (d *searchRepositoryDeps) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	return d.relationshipRepo.GetFollowers(ctx, username, limit, cursor)
 }
 
 // Getter methods for each repository type
@@ -304,10 +336,12 @@ func (f *RepositoryFactory) Emoji() *repositories.EmojiRepository {
 func (f *RepositoryFactory) RateLimit() *repositories.RateLimitRepository {
 	return f.rateLimitRepo
 }
+
 // Marker returns the Marker repository instance
 func (f *RepositoryFactory) Marker() *repositories.MarkerRepository {
 	return f.markerRepo
 }
+
 // FeaturedTag returns the FeaturedTag repository instance
 func (f *RepositoryFactory) FeaturedTag() *repositories.FeaturedTagRepository {
 	return f.featuredTagRepo
@@ -341,6 +375,11 @@ func (f *RepositoryFactory) MetricRecord() *repositories.MetricRecordRepository 
 // CloudWatchMetrics returns the CloudWatchMetrics repository instance
 func (f *RepositoryFactory) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
 	return f.cloudWatchMetricsRepo
+}
+
+// PublicKeyCache returns the PublicKeyCache repository instance
+func (f *RepositoryFactory) PublicKeyCache() *repositories.PublicKeyCacheRepository {
+	return f.publicKeyCacheRepo
 }
 
 // Additional repositories can be added here as needed

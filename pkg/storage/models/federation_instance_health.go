@@ -2,8 +2,8 @@ package models
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // FederationInstanceHealthTracking tracks health metrics for federated instances

@@ -463,3 +463,76 @@ func TestNotification_setupGSIKeys(t *testing.T) {
 	assert.Empty(t, notification.GSI2PK)
 	assert.Empty(t, notification.GSI2SK)
 }
+
+// TestCalculateEmailCost verifies email cost calculations always return 0
+func TestCalculateEmailCost(t *testing.T) {
+	// Email notifications are not supported by Lesser
+	cost := CalculateEmailCost(1)
+	assert.Equal(t, int64(0), cost)
+
+	cost = CalculateEmailCost(100)
+	assert.Equal(t, int64(0), cost)
+
+	cost = CalculateEmailCost(1000)
+	assert.Equal(t, int64(0), cost)
+}
+
+// TestCalculateSMSCost verifies SMS cost calculations always return 0
+func TestCalculateSMSCost(t *testing.T) {
+	// SMS notifications are not supported by Lesser
+	cost := CalculateSMSCost(1)
+	assert.Equal(t, int64(0), cost)
+
+	cost = CalculateSMSCost(100)
+	assert.Equal(t, int64(0), cost)
+
+	cost = CalculateSMSCost(1000)
+	assert.Equal(t, int64(0), cost)
+}
+
+// TestNotificationCostTracking_AddCost verifies email/SMS costs are ignored
+func TestNotificationCostTracking_AddCost(t *testing.T) {
+	tracking := &NotificationCostTracking{}
+
+	// Test that email costs are ignored
+	tracking.AddCost("email", 1000)
+	assert.Equal(t, int64(0), tracking.TotalCostMicroCents)
+
+	// Test that SMS costs are ignored
+	tracking.AddCost("sms", 1000)
+	assert.Equal(t, int64(0), tracking.TotalCostMicroCents)
+
+	// Test that push costs are added
+	tracking.AddCost("push", 500)
+	assert.Equal(t, int64(500), tracking.PushCostMicroCents)
+	assert.Equal(t, int64(500), tracking.TotalCostMicroCents)
+
+	// Test that websocket costs are added
+	tracking.AddCost("websocket", 300)
+	assert.Equal(t, int64(300), tracking.WebSocketCostMicroCents)
+	assert.Equal(t, int64(800), tracking.TotalCostMicroCents)
+}
+
+// TestNotificationDelivery_EmailSMSChannelsRejected verifies email/SMS channels are rejected
+func TestNotificationDelivery_EmailSMSChannelsRejected(t *testing.T) {
+	// Test email delivery method validation
+	delivery := NewNotificationDelivery("notif_123", "email")
+	err := delivery.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid delivery method")
+
+	// Test SMS delivery method validation
+	delivery = NewNotificationDelivery("notif_123", "sms")
+	err = delivery.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid delivery method")
+
+	// Test valid delivery methods
+	delivery = NewNotificationDelivery("notif_123", "push")
+	err = delivery.Validate()
+	assert.NoError(t, err)
+
+	delivery = NewNotificationDelivery("notif_123", "websocket")
+	err = delivery.Validate()
+	assert.NoError(t, err)
+}

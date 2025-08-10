@@ -10,13 +10,13 @@ type TrustCategory string
 
 const (
 	// TrustCategoryContent represents trust category for content
-	TrustCategoryContent   TrustCategory = "content"   // Trust in content moderation
+	TrustCategoryContent TrustCategory = "content" // Trust in content moderation
 	// TrustCategoryBehavior represents trust category for behavior
-	TrustCategoryBehavior  TrustCategory = "behavior"  // Trust in behavior assessment
+	TrustCategoryBehavior TrustCategory = "behavior" // Trust in behavior assessment
 	// TrustCategoryTechnical represents trust category for technical aspects
 	TrustCategoryTechnical TrustCategory = "technical" // Trust in technical decisions
 	// TrustCategoryGeneral represents general trust category
-	TrustCategoryGeneral   TrustCategory = "general"   // General trust
+	TrustCategoryGeneral TrustCategory = "general" // General trust
 )
 
 // TrustEvidence represents evidence supporting a trust relationship

@@ -474,7 +474,7 @@ type StreamingPreferences {
 }
 
 type NotificationPreferences {
-  email: Boolean!
+  email: Boolean! # Always false - Email notifications are not supported by Lesser
   push: Boolean!
   inApp: Boolean!
   digest: DigestFrequency!

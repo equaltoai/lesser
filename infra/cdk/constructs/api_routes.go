@@ -118,6 +118,10 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	addRoute(api, "GET /.well-known/nodeinfo", functions.APIFunction)
 	addRoute(api, "GET /nodeinfo/{proxy+}", functions.APIFunction)
 	
+	// Instance-level ActivityPub endpoints
+	addRoute(api, "GET /inbox", functions.InboxFunction)
+	addRoute(api, "POST /inbox", functions.InboxFunction)
+	
 	addRoute(api, "GET /users/{username}", functions.APIFunction)
 	addRoute(api, "GET /users/{username}/inbox", functions.InboxFunction)
 	addRoute(api, "POST /users/{username}/inbox", functions.InboxFunction)

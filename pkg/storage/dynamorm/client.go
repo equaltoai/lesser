@@ -114,4 +114,3 @@ func WithTimeoutBuffer(db core.DB, buffer time.Duration) core.DB {
 
 	return lambdaDB.WithLambdaTimeoutBuffer(buffer)
 }
-

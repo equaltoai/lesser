@@ -10,17 +10,17 @@ type SeveranceReason string
 
 const (
 	// SeveranceReasonBlocked represents a blocked severance reason
-	SeveranceReasonBlocked     SeveranceReason = "blocked"
+	SeveranceReasonBlocked SeveranceReason = "blocked"
 	// SeveranceReasonUnavailable represents an unavailable severance reason
 	SeveranceReasonUnavailable SeveranceReason = "unavailable"
 	// SeveranceReasonSuspended represents a suspended severance reason
-	SeveranceReasonSuspended   SeveranceReason = "suspended"
+	SeveranceReasonSuspended SeveranceReason = "suspended"
 	// SeveranceReasonDefederated represents a defederated severance reason
 	SeveranceReasonDefederated SeveranceReason = "defederated"
 	// SeveranceReasonLimited represents a limited severance reason
-	SeveranceReasonLimited     SeveranceReason = "limited"
+	SeveranceReasonLimited SeveranceReason = "limited"
 	// SeveranceReasonRestored represents a restored severance reason
-	SeveranceReasonRestored    SeveranceReason = "restored" // Added for restored relationships
+	SeveranceReasonRestored SeveranceReason = "restored" // Added for restored relationships
 )
 
 // SeveredRelationship represents a broken federation relationship (matches legacy structure)

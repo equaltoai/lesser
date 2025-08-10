@@ -245,7 +245,7 @@ func (de *DecisionEngine) calculateWeightedScore(signals []Signal) (float64, flo
 func (de *DecisionEngine) getSignalWeight(signal Signal) float64 {
 	// Base weights by type
 	typeWeights := map[string]float64{
-		signalTypeThreat:                     3.0,
+		signalTypeThreat:             3.0,
 		"explicit_content":           2.5,
 		"violence":                   2.5,
 		"toxicity":                   2.0,

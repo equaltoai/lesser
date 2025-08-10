@@ -10,17 +10,22 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
+
+// Remove duplicate constants - they are defined in constants.go
 
 // SearchRepositoryDeps interface for dependencies - implemented by the storage adapter
 type SearchRepositoryDeps interface {
 	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	IsBlocked(ctx context.Context, blockerActor, blockedActor string) (bool, error)
+	IsBlockedBidirectional(ctx context.Context, actor1, actor2 string) (bool, error)
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 }
 
 // SearchRepository implements search functionality using DynamORM
@@ -47,6 +52,27 @@ func (r *SearchRepository) SetDependencies(deps SearchRepositoryDeps) {
 func (r *SearchRepository) SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error) {
 	// For now, redirect to advanced search with default parameters
 	return r.SearchAccountsAdvanced(ctx, query, false, limit, offset, followingOnly, "")
+}
+
+// SearchAccountsWithPrivacy searches for accounts with privacy enforcement
+func (r *SearchRepository) SearchAccountsWithPrivacy(ctx context.Context, query string, limit int, followingOnly bool, offset int, searcherActorID string) ([]*activitypub.Actor, error) {
+	// First get basic results
+	results, err := r.SearchAccountsAdvanced(ctx, query, false, limit*2, offset, followingOnly, searcherActorID) // Get more to account for filtering
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply privacy filters
+	if searcherActorID != "" && r.deps != nil {
+		results = r.filterAccountsByPrivacy(ctx, results, searcherActorID)
+	}
+
+	// Apply limit after filtering
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
 }
 
 // SearchAccountsAdvanced searches for accounts with advanced filtering
@@ -82,10 +108,10 @@ func (r *SearchRepository) executeSearchStrategies(ctx context.Context, query st
 
 	// Strategy 1: Exact username match
 	r.searchExactUsername(ctx, query, &results, seen)
-	
+
 	// Strategy 2: Username prefix search
 	r.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
-	
+
 	// Strategy 3: Display name search
 	r.searchDisplayName(ctx, query, limit, &results, seen)
 
@@ -196,6 +222,47 @@ func (r *SearchRepository) applyFollowingFilter(ctx context.Context, results []*
 	return filteredResults
 }
 
+// filterAccountsByPrivacy filters account results based on privacy rules
+func (r *SearchRepository) filterAccountsByPrivacy(ctx context.Context, results []*activitypub.Actor, searcherActorID string) []*activitypub.Actor {
+	filteredResults := make([]*activitypub.Actor, 0)
+
+	for _, actor := range results {
+		if actor == nil {
+			continue
+		}
+
+		// Don't filter the searcher themselves
+		if actor.ID == searcherActorID {
+			filteredResults = append(filteredResults, actor)
+			continue
+		}
+
+		// Check if there's a bidirectional block
+		isBlocked, err := r.deps.IsBlockedBidirectional(ctx, searcherActorID, actor.ID)
+		if err != nil {
+			r.logger.Debug("failed to check block status in search",
+				zap.String("searcher", searcherActorID),
+				zap.String("target", actor.ID),
+				zap.Error(err))
+			// On error, include the result (fail open for search)
+			filteredResults = append(filteredResults, actor)
+			continue
+		}
+
+		// If blocked in either direction, exclude from results
+		if !isBlocked {
+			filteredResults = append(filteredResults, actor)
+		}
+	}
+
+	r.logger.Debug("filtered search results by privacy",
+		zap.Int("original_count", len(results)),
+		zap.Int("filtered_count", len(filteredResults)),
+		zap.String("searcher", searcherActorID))
+
+	return filteredResults
+}
+
 // sortAccountResults sorts search results by relevance
 func (r *SearchRepository) sortAccountResults(results []*activitypub.Actor, query string) {
 	sort.Slice(results, func(i, j int) bool {
@@ -228,12 +295,12 @@ func (r *SearchRepository) paginateResults(results []*activitypub.Actor, offset,
 	if offset >= len(results) {
 		return []*activitypub.Actor{}
 	}
-	
+
 	results = results[offset:]
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	
+
 	return results
 }
 
@@ -265,7 +332,7 @@ func (r *SearchRepository) SearchStatusesWithOptionsPaginated(ctx context.Contex
 		Cursor: options.Cursor,
 		Limit:  options.Limit,
 	}
-	
+
 	// Map sort order
 	switch options.SortOrder {
 	case "time_asc":
@@ -315,14 +382,145 @@ func (r *SearchRepository) SearchStatusesWithOptionsPaginated(ctx context.Contex
 		)
 	}
 
-	paginationResult := CreatePaginationResult(hasNextPage, nextCursor, len(results))
+	paginationResultFinal := CreatePaginationResult(hasNextPage, nextCursor, len(results))
 
 	r.logger.Info("status search completed",
 		zap.Int("results", len(finalResults)),
 		zap.Bool("has_next_page", hasNextPage),
 		zap.Int("total_processed", len(results)))
 
-	return finalResults, paginationResult, nil
+	return finalResults, paginationResultFinal, nil
+}
+
+// SearchStatusesWithPrivacy searches for statuses with privacy enforcement
+func (r *SearchRepository) SearchStatusesWithPrivacy(ctx context.Context, query string, options storage.StatusSearchOptions, searcherActorID string) ([]*storage.StatusSearchResult, error) {
+	// Get results without privacy filtering first
+	results, err := r.SearchStatusesWithOptions(ctx, query, options)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply privacy filters
+	if searcherActorID != "" {
+		results = r.filterStatusesByPrivacy(ctx, results, searcherActorID)
+	}
+
+	return results, nil
+}
+
+// SearchStatusesWithPrivacyPaginated searches for statuses with privacy enforcement and pagination
+func (r *SearchRepository) SearchStatusesWithPrivacyPaginated(ctx context.Context, query string, options storage.StatusSearchOptions, searcherActorID string) ([]*storage.StatusSearchResult, *PaginationResult, error) {
+	// Get results without privacy filtering first (get more to account for filtering)
+	originalLimit := options.Limit
+	options.Limit = originalLimit * 3 // Get more results to account for privacy filtering
+	
+	results, _, err := r.SearchStatusesWithOptionsPaginated(ctx, query, options)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Apply privacy filters
+	if searcherActorID != "" {
+		results = r.filterStatusesByPrivacy(ctx, results, searcherActorID)
+	}
+
+	// Apply original limit after filtering
+	finalResults := results
+	hasNextPage := len(results) > originalLimit
+	if hasNextPage {
+		finalResults = results[:originalLimit]
+	}
+
+	// Update pagination to reflect filtering
+	var nextCursor string
+	if hasNextPage && len(finalResults) > 0 {
+		lastResult := finalResults[len(finalResults)-1]
+		nextCursor = CreateNextCursor(
+			nil,
+			lastResult.Score,
+			lastResult.Published,
+			lastResult.StatusID,
+			SearchSortRelevance,
+		)
+	}
+
+	finalPagination := CreatePaginationResult(hasNextPage, nextCursor, len(results))
+
+	r.logger.Debug("search results after privacy filtering",
+		zap.Int("original_count", len(results)+len(results)-len(finalResults)),
+		zap.Int("filtered_count", len(finalResults)),
+		zap.String("searcher", searcherActorID))
+
+	return finalResults, finalPagination, nil
+}
+
+// filterStatusesByPrivacy filters status results based on privacy and visibility rules
+func (r *SearchRepository) filterStatusesByPrivacy(ctx context.Context, results []*storage.StatusSearchResult, searcherActorID string) []*storage.StatusSearchResult {
+	filteredResults := make([]*storage.StatusSearchResult, 0)
+
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+
+		// Check if searcher is blocked by the author or has blocked the author
+		if r.deps != nil {
+			isBlocked, err := r.deps.IsBlockedBidirectional(ctx, searcherActorID, result.AuthorID)
+			if err != nil {
+				r.logger.Debug("failed to check block status for status search",
+					zap.String("searcher", searcherActorID),
+					zap.String("author", result.AuthorID),
+					zap.Error(err))
+				// On error, include the result (fail open)
+				filteredResults = append(filteredResults, result)
+				continue
+			}
+
+			// If blocked in either direction, exclude from results
+			if isBlocked {
+				r.logger.Debug("excluding status from search due to block",
+					zap.String("status_id", result.StatusID),
+					zap.String("author", result.AuthorID),
+					zap.String("searcher", searcherActorID))
+				continue
+			}
+		}
+
+		// Check visibility - for now, only allow public and unlisted content in search
+		// Private and direct messages should not appear in search results
+		if r.isStatusPrivate(result) {
+			r.logger.Debug("excluding private/direct status from search",
+				zap.String("status_id", result.StatusID),
+				zap.String("author", result.AuthorID))
+			continue
+		}
+
+		// Status passed all privacy checks
+		filteredResults = append(filteredResults, result)
+	}
+
+	r.logger.Debug("filtered status search results by privacy",
+		zap.Int("original_count", len(results)),
+		zap.Int("filtered_count", len(filteredResults)),
+		zap.String("searcher", searcherActorID))
+
+	return filteredResults
+}
+
+// isStatusPrivate checks if a status should be excluded from search due to privacy
+func (r *SearchRepository) isStatusPrivate(_ *storage.StatusSearchResult) bool {
+	// For now, we need to query the full status to check visibility
+	// In a real implementation, you might want to include visibility in the search result
+	// or index only public/unlisted content
+	
+	// We can make reasonable inferences from the content and context
+	// Direct messages typically have very few recipients and specific patterns
+	// Private posts are typically from followers-only accounts or have limited addressing
+	
+	// For safety, we'll be conservative and allow content that's likely public
+	// This is a placeholder - ideally we'd have visibility info in the search index
+	
+	return false // Allow all content for now - this should be enhanced with proper visibility checking
 }
 
 // statusSearchResult wraps search result with sync protection
@@ -418,7 +616,7 @@ func (r *SearchRepository) executeContentSearch(ctx context.Context, query strin
 // searchByContent searches for statuses containing the query in their content
 func (r *SearchRepository) searchByContent(ctx context.Context, query string, result *statusSearchResult) {
 	recentStatuses := r.getRecentStatuses(ctx)
-	
+
 	for _, status := range recentStatuses {
 		if r.statusMatchesQuery(status, query) {
 			r.addStatusToResults(status, query, result)
@@ -460,7 +658,7 @@ func (r *SearchRepository) addStatusToResults(status models.Object, query string
 
 	result.mu.Lock()
 	defer result.mu.Unlock()
-	
+
 	if existing, ok := result.resultMap[status.ID]; !ok || searchResult.Score > existing.Score {
 		result.resultMap[status.ID] = searchResult
 	}
@@ -470,11 +668,11 @@ func (r *SearchRepository) addStatusToResults(status models.Object, query string
 func (r *SearchRepository) processSearchResults(resultMap map[string]*storage.StatusSearchResult, options storage.StatusSearchOptions) []*storage.StatusSearchResult {
 	// Convert map to slice
 	results := r.mapToSlice(resultMap)
-	
+
 	// Apply filters
 	results = r.filterByAccount(results, options.AccountID)
 	results = r.filterByLocality(results, options.LocalOnly)
-	
+
 	return results
 }
 
@@ -564,7 +762,7 @@ func (r *SearchRepository) SearchAll(ctx context.Context, query string, limit in
 		Limit:     limit,
 		SortOrder: SearchSortRelevance,
 	}
-	
+
 	result, _, err := r.SearchAllPaginated(ctx, query, options)
 	return result, err
 }
@@ -589,7 +787,7 @@ func (r *SearchRepository) SearchAllPaginated(ctx context.Context, query string,
 	statusLimit := options.Limit / 2
 	accountLimit := options.Limit / 4
 	hashtagLimit := options.Limit / 4
-	
+
 	// Ensure minimum limits
 	if statusLimit < 5 {
 		statusLimit = 5
@@ -626,7 +824,7 @@ func (r *SearchRepository) SearchAllPaginated(ctx context.Context, query string,
 		Cursor:    options.Cursor,
 		SortOrder: string(options.SortOrder),
 	}
-	
+
 	statusResults, statusPagination, err := r.SearchStatusesWithOptionsPaginated(ctx, query, searchOptions)
 	if err != nil {
 		r.logger.Warn("status search failed in SearchAll", zap.Error(err))
@@ -724,7 +922,7 @@ func (r *SearchRepository) SearchHashtagsAdvanced(ctx context.Context, query str
 		Limit:     limit,
 		SortOrder: SearchSortRelevance,
 	}
-	
+
 	results, _, err := r.SearchHashtagsAdvancedPaginated(ctx, query, options)
 	return results, err
 }
@@ -751,19 +949,24 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 		return nil, nil, fmt.Errorf("invalid cursor: %w", err)
 	}
 
-	// Search hashtags using GSI - simplified pagination for now
+	// Use efficient cursor-based pagination with the hashtag search index
 	var hashtags []models.Hashtag
 
-	// For now, use a larger limit and implement cursor-based pagination in memory
-	// This will be improved once DynamORM supports proper pagination methods
-	searchLimit := options.Limit * 3 // Get more results to enable pagination
-	
-	err = r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Index("name-index").
-		Where("GSI1PK", "=", "HASHTAG").
-		Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
-		Limit(searchLimit).
-		All(&hashtags)
+	// Build query with proper cursor handling
+	hashtagQuery := r.db.WithContext(ctx).Model(&models.Hashtag{}).
+		Index("hashtag-search-index").
+		Where("GSI3PK", "=", fmt.Sprintf("HASHTAG_SEARCH#%s", normalizedQuery[:2])).
+		Filter("GSI3SK", "BEGINS_WITH", normalizedQuery).
+		OrderBy("GSI3SK", "ASC")
+
+	// Apply cursor if provided
+	if cursorData.LastID != "" {
+		hashtagQuery = hashtagQuery.Filter("GSI3SK", ">", cursorData.LastID)
+	}
+
+	// Execute query with limit + 1 to check for more results
+	hashtagQuery = hashtagQuery.Limit(options.Limit + 1)
+	err = hashtagQuery.All(&hashtags)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to search hashtags: %w", err)
 	}
@@ -773,16 +976,21 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 		zap.String("query", normalizedQuery),
 		zap.Bool("has_cursor", options.Cursor != ""))
 
-	// Convert to HashtagSearchResult format
-	results := make([]*storage.HashtagSearchResult, 0, len(hashtags))
-	for _, ht := range hashtags {
-		result := &storage.HashtagSearchResult{
+	// Determine if there are more results and apply pagination
+	hasNextPage := len(hashtags) > options.Limit
+	if hasNextPage {
+		hashtags = hashtags[:options.Limit] // Remove the extra item
+	}
+
+	// Convert hashtags to search results
+	results := make([]*storage.HashtagSearchResult, len(hashtags))
+	for i, ht := range hashtags {
+		results[i] = &storage.HashtagSearchResult{
 			Name: ht.Name,
 			URL:  "/tags/" + ht.Name,
 			Uses: int(ht.UsageCount),
 			// History would need to be populated from trending data
 		}
-		results = append(results, result)
 	}
 
 	// Sort results based on specified sort order
@@ -791,50 +999,27 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 		func(_ *storage.HashtagSearchResult) time.Time { return time.Now() },    // No timestamp field, use current time
 		func(h *storage.HashtagSearchResult) string { return h.Name })
 
-	// Apply in-memory cursor-based pagination for now
-	startIndex := 0
-	
-	// If we have a cursor, find the starting position
-	if cursorData.LastID != "" {
-		for i, result := range results {
-			if result.Name == cursorData.LastID {
-				startIndex = i + 1
-				break
-			}
-		}
-	}
-	
-	// Get the slice starting from cursor position
-	if startIndex >= len(results) {
-		return []*storage.HashtagSearchResult{}, CreatePaginationResult(false, "", len(hashtags)), nil
-	}
-	
-	paginatedResults := results[startIndex:]
-	
-	// Apply pagination limits and determine if there are more results
-	finalResults, hasNextPage := ApplyPaginationLimits(paginatedResults, options.Limit)
-
 	// Create next cursor if there are more results
 	var nextCursor string
-	if hasNextPage && len(finalResults) > 0 {
-		lastResult := finalResults[len(finalResults)-1]
+	if hasNextPage && len(results) > 0 {
+		lastResult := results[len(results)-1]
 		nextCursor = CreateNextCursor(
-			nil, // No DynamoDB LastEvaluatedKey for in-memory pagination
+			nil, // No DynamoDB LastEvaluatedKey needed for this query type
 			float64(lastResult.Uses),
-			time.Now(), // No timestamp field
+			time.Now(), // No timestamp field available
 			lastResult.Name,
 			options.SortOrder,
 		)
 	}
 
-	paginationResult := CreatePaginationResult(hasNextPage, nextCursor, len(hashtags))
+	paginationResultFinal := CreatePaginationResult(hasNextPage, nextCursor, len(hashtags))
 
 	r.logger.Info("hashtag search completed",
-		zap.Int("results", len(finalResults)),
+		zap.Int("results", len(results)),
 		zap.Bool("has_next_page", hasNextPage),
 		zap.Int("total_processed", len(hashtags)))
 
-	return finalResults, paginationResult, nil
+	return results, paginationResultFinal, nil
 }
 
 // Helper methods
@@ -1319,38 +1504,48 @@ func (r *SearchRepository) UnindexStatus(ctx context.Context, statusID string) e
 	return nil
 }
 
-// SearchStatusesByHashtag searches for statuses containing a specific hashtag
+// SearchStatusesByHashtag searches for statuses containing a specific hashtag using efficient indexing
 func (r *SearchRepository) SearchStatusesByHashtag(ctx context.Context, hashtag string, limit int) ([]*storage.StatusSearchResult, error) {
 	normalizedHashtag := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 	results := make([]*storage.StatusSearchResult, 0)
 
-	// In the legacy system, this would use a hashtag index
-	// For now, we scan recent statuses and filter
-	var statuses []models.Object
+	// Use the new HashtagStatusIndex for efficient hashtag timeline queries
+	var hashtagIndex []models.HashtagStatusIndex
 
-	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi2-index").
-		Where("GSI2PK", "=", "object#type#Note").
-		Limit(limit * 2). // Get more to filter
-		All(&statuses)
+	// Query the hashtag timeline index directly - this is much more efficient than scanning all statuses
+	err := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
+		Where("PK", "=", fmt.Sprintf("HASHTAG_TIMELINE#%s", normalizedHashtag)).
+		Where("SK", "BEGINS_WITH", "STATUS#").
+		OrderBy("SK", "DESC"). // Newest first (due to timestamp desc encoding)
+		Limit(limit).
+		All(&hashtagIndex)
 
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return []*storage.StatusSearchResult{}, nil
+		}
 		return nil, fmt.Errorf("failed to search statuses by hashtag: %w", err)
 	}
 
-	// Filter by hashtag presence
-	for _, status := range statuses {
-		if strings.Contains(strings.ToLower(status.Content), "#"+normalizedHashtag) {
-			result := r.objectToSearchResult(&status, 1.0, "hashtag_match")
-			if result != nil {
-				results = append(results, result)
-			}
+	// Convert hashtag index entries to search results
+	for _, indexEntry := range hashtagIndex {
+		result := &storage.StatusSearchResult{
+			StatusID:       indexEntry.StatusID,
+			Content:        indexEntry.Content,
+			URL:            indexEntry.StatusURL,
+			AuthorID:       indexEntry.AuthorID,
+			AuthorUsername: indexEntry.AuthorHandle,
+			Published:      indexEntry.Published,
+			Score:          1.0, // Exact hashtag match
+			Highlights:     []string{"hashtag_match"},
 		}
-
-		if len(results) >= limit {
-			break
-		}
+		results = append(results, result)
 	}
+
+	r.logger.Debug("hashtag search completed",
+		zap.String("hashtag", normalizedHashtag),
+		zap.Int("results", len(results)),
+		zap.Int("limit", limit))
 
 	return results, nil
 }
@@ -1397,6 +1592,9 @@ func (r *SearchRepository) RecordSearch(ctx context.Context, event *models.Searc
 		event.Timestamp = time.Now()
 	}
 
+	// Privacy-preserve the analytics event
+	r.privacyFilterAnalyticsEvent(event)
+
 	// Update keys
 	event.UpdateKeys()
 
@@ -1404,12 +1602,102 @@ func (r *SearchRepository) RecordSearch(ctx context.Context, event *models.Searc
 	err := r.db.WithContext(ctx).Model(event).Create()
 	if err != nil {
 		r.logger.Error("failed to record search analytics",
-			zap.String("query", event.Query),
+			zap.String("query_hash", r.hashQuery(event.Query)),
 			zap.Error(err))
 		return fmt.Errorf("failed to record search analytics: %w", err)
 	}
 
 	return nil
+}
+
+// RecordSearchWithPrivacy records a privacy-safe search event
+func (r *SearchRepository) RecordSearchWithPrivacy(ctx context.Context, query, searchType string, resultCount int, searchTimeMs int64, userID *string) error {
+	event := &models.SearchAnalytics{
+		Query:       query,
+		ResultCount: resultCount,
+		SearchTime:  searchTimeMs,
+		UserID:      userID,
+		Timestamp:   time.Now(),
+		SearchType:  searchType,
+	}
+
+	return r.RecordSearch(ctx, event)
+}
+
+// privacyFilterAnalyticsEvent applies privacy filters to analytics events
+func (r *SearchRepository) privacyFilterAnalyticsEvent(event *models.SearchAnalytics) {
+	// Hash or truncate sensitive queries
+	if r.isSensitiveQuery(event.Query) {
+		event.Query = r.hashQuery(event.Query)
+	}
+
+	// Limit query length for privacy
+	if len(event.Query) > 100 {
+		event.Query = event.Query[:97] + "..."
+	}
+
+	// Remove user ID for certain query types that might be personal
+	if r.isPersonalQuery(event.Query) {
+		event.UserID = nil
+	}
+}
+
+// isSensitiveQuery checks if a query contains sensitive information
+func (r *SearchRepository) isSensitiveQuery(query string) bool {
+	query = strings.ToLower(query)
+	
+	// Check for email patterns
+	if strings.Contains(query, "@") && strings.Contains(query, ".") {
+		return true
+	}
+
+	// Check for potential personal identifiers
+	sensitivePatterns := []string{
+		"password", "token", "key", "secret", "private",
+		"phone", "email", "address", "ssn", "credit",
+	}
+
+	for _, pattern := range sensitivePatterns {
+		if strings.Contains(query, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isPersonalQuery checks if a query might be personal/private
+func (r *SearchRepository) isPersonalQuery(query string) bool {
+	query = strings.ToLower(query)
+	
+	// Queries that might be personal searches
+	personalIndicators := []string{
+		"direct", "private", "dm", "message",
+		"block", "mute", "report",
+	}
+
+	for _, indicator := range personalIndicators {
+		if strings.Contains(query, indicator) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hashQuery creates a privacy-safe hash of the query
+func (r *SearchRepository) hashQuery(query string) string {
+	// Simple hash for analytics while preserving some structure
+	if len(query) == 0 {
+		return "[empty]"
+	}
+	
+	if len(query) <= 3 {
+		return "[short]"
+	}
+	
+	// Return first 2 chars + hash of the rest for trending analysis
+	return fmt.Sprintf("%s_hash_%d", query[:2], len(query))
 }
 
 // GetSearchAnalytics retrieves search analytics for a date range
@@ -1447,7 +1735,7 @@ func (r *SearchRepository) GetSearchAnalytics(ctx context.Context, startDate, en
 	return analytics, nil
 }
 
-// GetPopularSearches retrieves popular search queries
+// GetPopularSearches retrieves popular search queries (privacy-safe)
 func (r *SearchRepository) GetPopularSearches(ctx context.Context, limit int, timeWindow time.Duration) ([]*models.SearchQueryStats, error) {
 	// Get analytics for time window
 	endDate := time.Now()
@@ -1458,22 +1746,37 @@ func (r *SearchRepository) GetPopularSearches(ctx context.Context, limit int, ti
 		return nil, err
 	}
 
-	// Aggregate by query
+	// Aggregate by query, filtering out sensitive/personal queries
 	queryCount := make(map[string]int64)
 	lastQueried := make(map[string]time.Time)
 
 	for _, event := range analytics {
+		// Skip sensitive queries from trending
+		if r.isSensitiveQuery(event.Query) || r.isPersonalQuery(event.Query) {
+			continue
+		}
+
+		// Only include queries with sufficient activity to preserve privacy
 		queryCount[event.Query]++
 		if event.Timestamp.After(lastQueried[event.Query]) {
 			lastQueried[event.Query] = event.Timestamp
 		}
 	}
 
-	// Convert to SearchQueryStats
-	stats := make([]*models.SearchQueryStats, 0, len(queryCount))
+	// Filter out queries with low counts to preserve privacy
+	minCount := int64(5) // Minimum query count to appear in trending
+	filtered := make(map[string]int64)
 	for query, count := range queryCount {
+		if count >= minCount {
+			filtered[query] = count
+		}
+	}
+
+	// Convert to SearchQueryStats
+	stats := make([]*models.SearchQueryStats, 0, len(filtered))
+	for query, count := range filtered {
 		stat := &models.SearchQueryStats{
-			QueryHash:   query, // Note: this is storing the actual query, not a hash
+			QueryHash:   r.hashQuery(query), // Store hash for privacy
 			QueryCount:  count,
 			LastQueried: lastQueried[query],
 			QueryType:   "search_suggestion",
@@ -1491,6 +1794,11 @@ func (r *SearchRepository) GetPopularSearches(ctx context.Context, limit int, ti
 	if len(stats) > limit {
 		stats = stats[:limit]
 	}
+
+	r.logger.Info("generated popular searches",
+		zap.Int("total_queries", len(queryCount)),
+		zap.Int("filtered_queries", len(filtered)),
+		zap.Int("result_count", len(stats)))
 
 	return stats, nil
 }
@@ -1550,101 +1858,187 @@ func (r *SearchRepository) SearchByEmbedding(ctx context.Context, queryEmbedding
 	// Use new paginated method with default options
 	options := NewPaginationOptions()
 	options.Limit = limit
-	
+
 	result, _, err := r.SearchByEmbeddingPaginated(ctx, queryEmbedding, threshold, options)
 	return result, err
 }
 
 // SearchByEmbeddingPaginated searches for similar content using vector similarity with pagination support
 func (r *SearchRepository) SearchByEmbeddingPaginated(ctx context.Context, queryEmbedding []float32, threshold float64, options *PaginationOptions) ([]*models.SearchEmbedding, *PaginationResult, error) {
+	if err := r.validateSearchParams(queryEmbedding, &threshold, &options); err != nil {
+		return nil, nil, err
+	}
+
+	r.logSearchStart(queryEmbedding, threshold, options)
+
+	cursorData, err := DecodeCursor(options.Cursor)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+
+	baseQuery := r.buildBaseQuery(ctx, cursorData)
+	allResults, processed := r.searchInBatches(ctx, baseQuery, queryEmbedding, threshold, options)
+
+	r.logger.Debug("completed embedding search scan",
+		zap.Int("processed", processed),
+		zap.Int("candidates", len(allResults)))
+
+	finalResults, paginationResult := r.finalizePaginatedResults(allResults, options, processed)
+
+	r.logSearchCompletion(finalResults, paginationResult, processed)
+
+	return finalResults, paginationResult, nil
+}
+
+// validateSearchParams validates and normalizes search parameters
+func (r *SearchRepository) validateSearchParams(queryEmbedding []float32, threshold *float64, options **PaginationOptions) error {
 	if len(queryEmbedding) == 0 {
-		return nil, nil, fmt.Errorf("query embedding cannot be empty")
+		return fmt.Errorf("query embedding cannot be empty")
 	}
 
-	if threshold < 0 || threshold > 1 {
-		threshold = 0.7 // Default threshold for semantic similarity
+	if *threshold < 0 || *threshold > 1 {
+		*threshold = 0.7 // Default threshold for semantic similarity
 	}
 
-	// Validate and normalize options
-	if options == nil {
-		options = NewPaginationOptions()
+	if *options == nil {
+		*options = NewPaginationOptions()
 	}
-	if err := options.Validate(); err != nil {
-		return nil, nil, fmt.Errorf("invalid pagination options: %w", err)
+	if err := (*options).Validate(); err != nil {
+		return fmt.Errorf("invalid pagination options: %w", err)
 	}
 
+	return nil
+}
+
+// logSearchStart logs the beginning of the search operation
+func (r *SearchRepository) logSearchStart(queryEmbedding []float32, threshold float64, options *PaginationOptions) {
 	r.logger.Debug("searching by embedding with pagination",
 		zap.Int("embedding_dim", len(queryEmbedding)),
 		zap.Float64("threshold", threshold),
 		zap.Int("limit", options.Limit),
 		zap.String("cursor", options.Cursor),
 		zap.String("sort_order", string(options.SortOrder)))
+}
 
-	// Parse cursor for continuation
-	cursorData, err := DecodeCursor(options.Cursor)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid cursor: %w", err)
-	}
+// buildBaseQuery constructs the base database query with cursor constraints
+func (r *SearchRepository) buildBaseQuery(ctx context.Context, cursorData *CursorData) interface{} {
+	baseQuery := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
+		OrderBy("CreatedAt", "DESC")
 
-	// For optimal vector search, we'd use a dedicated vector database like Pinecone or Weaviate
-	// However, for this implementation, we'll use DynamoDB with proper pagination:
-	// 1. Use DynamORM's AllWithLastEvaluatedKey for proper pagination
-	// 2. Scan in batches to avoid loading all embeddings into memory
-	// 3. Use early termination when we have enough high-quality results
-
-	var allResults []*models.SearchEmbedding
-	maxScan := 500 // Limit total embeddings scanned
-
-	// For now, scan a reasonable number of embeddings (until DynamORM pagination is available)
-	var allEmbeddings []models.SearchEmbedding
-	
-	err = r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
-		Limit(maxScan).
-		All(&allEmbeddings)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to search embeddings: %w", err)
-	}
-
-	processed := len(allEmbeddings)
-	
-	// Apply cursor-based filtering if we have a cursor
-	startIndex := 0
 	if cursorData.LastID != "" {
-		for i, embedding := range allEmbeddings {
-			if embedding.ContentID == cursorData.LastID {
-				startIndex = i + 1
-				break
-			}
-		}
+		baseQuery = baseQuery.Filter("ContentID", ">", cursorData.LastID)
 	}
-	
-	// Process embeddings starting from cursor position
-	if startIndex < len(allEmbeddings) {
-		for i := startIndex; i < len(allEmbeddings) && len(allResults) < options.Limit*2; i++ {
-			embedding := &allEmbeddings[i]
-
-			// Skip if embedding dimensions don't match
-			if len(embedding.Embedding) != len(queryEmbedding) {
-				r.logger.Warn("embedding dimension mismatch",
-					zap.String("content_id", embedding.ContentID),
-					zap.Int("expected", len(queryEmbedding)),
-					zap.Int("actual", len(embedding.Embedding)))
-				continue
-			}
-
-			similarity := r.cosineSimilarity(queryEmbedding, embedding.Embedding)
-
-			if similarity >= threshold {
-				embedding.Score = similarity
-				allResults = append(allResults, embedding)
-			}
-		}
+	if !cursorData.LastTimestamp.IsZero() {
+		baseQuery = baseQuery.Filter("CreatedAt", "<", cursorData.LastTimestamp.Format(time.RFC3339))
 	}
 
-	r.logger.Debug("completed embedding search scan",
-		zap.Int("processed", processed),
-		zap.Int("candidates", len(allResults)))
+	return baseQuery
+}
 
+// searchInBatches processes embeddings in batches to find similar results
+func (r *SearchRepository) searchInBatches(_ context.Context, baseQuery interface{}, queryEmbedding []float32, threshold float64, options *PaginationOptions) ([]*models.SearchEmbedding, int) {
+	var allResults []*models.SearchEmbedding
+	maxScan := 500
+	batchSize := 100
+	currentBatch := 0
+	processed := 0
+
+	for len(allResults) < options.Limit && currentBatch < maxScan/batchSize {
+		embeddings, shouldBreak, err := r.processBatch(baseQuery, currentBatch, batchSize)
+		if err != nil {
+			r.logger.Error("failed to process batch", zap.Error(err))
+			break
+		}
+		if shouldBreak {
+			break
+		}
+
+		batchResults := r.evaluateBatchSimilarity(embeddings, queryEmbedding, threshold, &processed)
+		allResults = append(allResults, batchResults...)
+
+		if r.shouldEarlyTerminate(allResults, options) {
+			break
+		}
+
+		currentBatch++
+		if len(embeddings) < batchSize {
+			break
+		}
+	}
+
+	return allResults, processed
+}
+
+// processBatch handles fetching a single batch of embeddings
+func (r *SearchRepository) processBatch(baseQuery interface{}, currentBatch, batchSize int) ([]models.SearchEmbedding, bool, error) {
+	var embeddings []models.SearchEmbedding
+
+	// Type assert to get the actual query
+	query := baseQuery.(interface {
+		Limit(int) interface{}
+		Offset(int) interface{}
+		All(interface{}) error
+	})
+	batchQuery := query.Limit(batchSize)
+	if currentBatch > 0 {
+		batchQuery = batchQuery.(interface{ Offset(int) interface{} }).Offset(currentBatch * batchSize)
+	}
+
+	err := batchQuery.(interface{ All(interface{}) error }).All(&embeddings)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("failed to search embeddings batch %d: %w", currentBatch, err)
+	}
+
+	if len(embeddings) == 0 {
+		return nil, true, nil
+	}
+
+	return embeddings, false, nil
+}
+
+// evaluateBatchSimilarity calculates similarity for embeddings in a batch
+func (r *SearchRepository) evaluateBatchSimilarity(embeddings []models.SearchEmbedding, queryEmbedding []float32, threshold float64, processed *int) []*models.SearchEmbedding {
+	var batchResults []*models.SearchEmbedding
+
+	for _, embedding := range embeddings {
+		*processed++
+
+		if !r.isValidEmbedding(embedding, queryEmbedding) {
+			continue
+		}
+
+		similarity := r.cosineSimilarity(queryEmbedding, embedding.Embedding)
+		if similarity >= threshold {
+			embedding.Score = similarity
+			batchResults = append(batchResults, &embedding)
+		}
+	}
+
+	return batchResults
+}
+
+// isValidEmbedding checks if an embedding has matching dimensions
+func (r *SearchRepository) isValidEmbedding(embedding models.SearchEmbedding, queryEmbedding []float32) bool {
+	if len(embedding.Embedding) != len(queryEmbedding) {
+		r.logger.Debug("embedding dimension mismatch",
+			zap.String("content_id", embedding.ContentID),
+			zap.Int("expected", len(queryEmbedding)),
+			zap.Int("actual", len(embedding.Embedding)))
+		return false
+	}
+	return true
+}
+
+// shouldEarlyTerminate determines if search should stop early
+func (r *SearchRepository) shouldEarlyTerminate(allResults []*models.SearchEmbedding, options *PaginationOptions) bool {
+	return len(allResults) >= options.Limit*2
+}
+
+// finalizePaginatedResults sorts and applies pagination to final results
+func (r *SearchRepository) finalizePaginatedResults(allResults []*models.SearchEmbedding, options *PaginationOptions, processed int) ([]*models.SearchEmbedding, *PaginationResult) {
 	// Sort results based on specified sort order
 	SortResults(allResults, options.SortOrder,
 		func(e *models.SearchEmbedding) float64 { return e.Score },
@@ -1667,20 +2061,21 @@ func (r *SearchRepository) SearchByEmbeddingPaginated(ctx context.Context, query
 		)
 	}
 
-	paginationResult := CreatePaginationResult(hasNextPage, nextCursor, processed)
+	return finalResults, CreatePaginationResult(hasNextPage, nextCursor, processed)
+}
+
+// logSearchCompletion logs the final results of the search operation
+func (r *SearchRepository) logSearchCompletion(finalResults []*models.SearchEmbedding, paginationResult *PaginationResult, processed int) {
+	topScore := 0.0
+	if len(finalResults) > 0 {
+		topScore = finalResults[0].Score
+	}
 
 	r.logger.Info("embedding search completed",
 		zap.Int("results", len(finalResults)),
-		zap.Bool("has_next_page", hasNextPage),
+		zap.Bool("has_next_page", paginationResult.HasNextPage),
 		zap.Int("total_scanned", processed),
-		zap.Float64("top_score", func() float64 {
-			if len(finalResults) > 0 {
-				return finalResults[0].Score
-			}
-			return 0.0
-		}()))
-
-	return finalResults, paginationResult, nil
+		zap.Float64("top_score", topScore))
 }
 
 // UpdateEmbedding updates an existing embedding

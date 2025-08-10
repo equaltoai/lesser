@@ -1,8 +1,8 @@
 package models
 
 import (
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // FederationStats represents federation activity statistics

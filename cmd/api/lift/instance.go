@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -38,6 +39,19 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	var vapidPublicKey string
 	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
+		// Check if we're in production mode
+		env := os.Getenv("ENV")
+		if env == "" {
+			env = os.Getenv("ENVIRONMENT")
+		}
+		if env == "production" || env == "prod" {
+			// In production, VAPID keys are required for push notifications
+			h.logger.Error("VAPID keys are required in production but not found", zap.Error(err))
+			return ctx.Status(500).JSON(map[string]string{
+				"error": "VAPID keys not configured - push notifications unavailable",
+			})
+		}
+		
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		vapidPublicKey = ""
 	} else {
@@ -371,7 +385,7 @@ func (h *Handler) markdownToHTMLLift(markdown string) string {
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Process each line and update paragraph state
 		result, newParagraphState := h.processMarkdownLine(line, trimmed, inParagraph)
 		if result != "" {
@@ -397,7 +411,7 @@ func (h *Handler) processMarkdownLine(line, trimmed string, inParagraph bool) (s
 		}
 		return header, false
 	}
-	
+
 	// Handle empty lines
 	if trimmed == "" {
 		if inParagraph {
@@ -405,7 +419,7 @@ func (h *Handler) processMarkdownLine(line, trimmed string, inParagraph bool) (s
 		}
 		return "", false
 	}
-	
+
 	// Handle regular text
 	if !inParagraph {
 		return "<p>" + line, true
@@ -420,7 +434,7 @@ func (h *Handler) convertMarkdownHeader(trimmed string) string {
 		"## ":  "h2",
 		"# ":   "h1",
 	}
-	
+
 	// Check prefixes in order (longest first to avoid false matches)
 	for prefix, tag := range headerPrefixes {
 		if strings.HasPrefix(trimmed, prefix) {
@@ -428,7 +442,7 @@ func (h *Handler) convertMarkdownHeader(trimmed string) string {
 			return fmt.Sprintf("<%s>%s</%s>", tag, content, tag)
 		}
 	}
-	
+
 	return ""
 }
 

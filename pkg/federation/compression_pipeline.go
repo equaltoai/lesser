@@ -31,25 +31,25 @@ func NewCompressionPipeline(federationRepo *repositories.FederationRepository, l
 // CompressOldData implements the multi-level compression strategy
 func (c *CompressionPipeline) CompressOldData(ctx context.Context) error {
 	now := time.Now()
-	
+
 	// Level 1: Compress 24h old 5-minute data (GZIP_JSON)
 	cutoff24h := now.Add(-24 * time.Hour)
 	if err := c.compressTimeSeriesData(ctx, "5min", cutoff24h, "GZIP_JSON"); err != nil {
 		c.logger.Error("Failed to compress 24h old data", zap.Error(err))
 		return fmt.Errorf("failed to compress 24h old data: %w", err)
 	}
-	
+
 	// Level 2: Archive 7-day old data to S3 (would integrate with S3 in production)
 	cutoff7d := now.Add(-7 * 24 * time.Hour)
 	if err := c.archiveToS3(ctx, cutoff7d); err != nil {
 		c.logger.Error("Failed to archive 7d old data", zap.Error(err))
 		return fmt.Errorf("failed to archive 7d old data: %w", err)
 	}
-	
+
 	c.logger.Info("Compression pipeline completed",
 		zap.Time("24h_cutoff", cutoff24h),
 		zap.Time("7d_cutoff", cutoff7d))
-	
+
 	return nil
 }
 
@@ -58,17 +58,17 @@ func (c *CompressionPipeline) compressTimeSeriesData(ctx context.Context, period
 	// Get old time series data (would need to implement this query in the repo)
 	endTime := cutoff
 	startTime := cutoff.Add(-24 * time.Hour) // Process 24 hours at a time
-	
+
 	// Get data by period across all domains
 	oldMetrics, err := c.federationRepo.GetDetailedMetricsByPeriod(ctx, period, startTime, endTime, 1000)
 	if err != nil {
 		return fmt.Errorf("failed to get old metrics: %w", err)
 	}
-	
+
 	if len(oldMetrics) == 0 {
 		return nil // Nothing to compress
 	}
-	
+
 	compressed := 0
 	for _, metric := range oldMetrics {
 		// Compress the metric data
@@ -80,10 +80,10 @@ func (c *CompressionPipeline) compressTimeSeriesData(ctx context.Context, period
 				zap.Error(err))
 			continue
 		}
-		
+
 		// Update the record with compressed data
 		metric.CompressedData = compressedData
-		
+
 		// Store the compressed version
 		if err := c.federationRepo.StoreDetailedFederationMetrics(ctx, metric); err != nil {
 			c.logger.Warn("Failed to store compressed metric",
@@ -92,17 +92,17 @@ func (c *CompressionPipeline) compressTimeSeriesData(ctx context.Context, period
 				zap.Error(err))
 			continue
 		}
-		
+
 		compressed++
 	}
-	
+
 	c.logger.Info("Compressed time series data",
 		zap.String("period", period),
 		zap.String("method", method),
 		zap.Int("compressed", compressed),
 		zap.Int("total", len(oldMetrics)),
 		zap.Time("cutoff", cutoff))
-	
+
 	return nil
 }
 
@@ -125,26 +125,26 @@ func (c *CompressionPipeline) gzipCompress(metric *models.FederationAnalyticsTim
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metric: %w", err)
 	}
-	
+
 	// Compress with GZIP
 	var buf bytes.Buffer
 	gzWriter := gzip.NewWriter(&buf)
-	
+
 	if _, err := gzWriter.Write(jsonData); err != nil {
 		return nil, fmt.Errorf("failed to write gzip data: %w", err)
 	}
-	
+
 	if err := gzWriter.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
 	}
-	
+
 	compressionRatio := float64(len(jsonData)) / float64(buf.Len())
 	c.logger.Debug("GZIP compression completed",
 		zap.String("domain", metric.Domain),
 		zap.Int("original_size", len(jsonData)),
 		zap.Int("compressed_size", buf.Len()),
 		zap.Float64("compression_ratio", compressionRatio))
-	
+
 	return buf.Bytes(), nil
 }
 
@@ -159,22 +159,22 @@ func (c *CompressionPipeline) statisticalSummaryCompress(metric *models.Federati
 		SuccessfulActivities: metric.SuccessfulActivities,
 		FailedActivities:     metric.FailedActivities,
 		HealthScore:          metric.HealthScore,
-		
+
 		// Statistical aggregates
 		Percentiles: map[string]int64{
 			"p50": metric.InboxDeliveryP50,
 			"p95": metric.InboxDeliveryP95,
 			"p99": metric.InboxDeliveryP99,
 		},
-		
+
 		// Key ratios
 		ErrorRate:            metric.ErrorRate,
 		InstanceReachability: metric.InstanceReachability,
-		
+
 		// Volume summary
 		TotalBytes: metric.TotalInboundVolume + metric.TotalOutboundVolume,
 	}
-	
+
 	// Serialize the summary
 	return json.Marshal(summary)
 }
@@ -186,12 +186,12 @@ func (c *CompressionPipeline) archiveToS3(_ context.Context, cutoff time.Time) e
 	// 2. Upload to S3 with Intelligent Tiering
 	// 3. Delete the DynamoDB records (TTL handles this automatically)
 	// 4. Update lifecycle policies for progressive archival
-	
+
 	c.logger.Info("S3 archival simulation",
 		zap.Time("cutoff", cutoff),
 		zap.String("format", "parquet"),
 		zap.String("storage_class", "INTELLIGENT_TIERING"))
-	
+
 	// Simulate archival process
 	// This would be implemented with actual S3 SDK calls
 	return nil
@@ -199,17 +199,17 @@ func (c *CompressionPipeline) archiveToS3(_ context.Context, cutoff time.Time) e
 
 // StatisticalSummary represents a compressed statistical summary of time series data
 type StatisticalSummary struct {
-	Domain               string            `json:"domain"`
-	Period               string            `json:"period"`
-	Timestamp            time.Time         `json:"timestamp"`
-	ActivityCount        int64             `json:"activity_count"`
-	SuccessfulActivities int64             `json:"successful_activities"`
-	FailedActivities     int64             `json:"failed_activities"`
-	HealthScore          float64           `json:"health_score"`
-	Percentiles          map[string]int64  `json:"percentiles"`
-	ErrorRate            float64           `json:"error_rate"`
-	InstanceReachability float64           `json:"instance_reachability"`
-	TotalBytes           int64             `json:"total_bytes"`
+	Domain               string           `json:"domain"`
+	Period               string           `json:"period"`
+	Timestamp            time.Time        `json:"timestamp"`
+	ActivityCount        int64            `json:"activity_count"`
+	SuccessfulActivities int64            `json:"successful_activities"`
+	FailedActivities     int64            `json:"failed_activities"`
+	HealthScore          float64          `json:"health_score"`
+	Percentiles          map[string]int64 `json:"percentiles"`
+	ErrorRate            float64          `json:"error_rate"`
+	InstanceReachability float64          `json:"instance_reachability"`
+	TotalBytes           int64            `json:"total_bytes"`
 }
 
 // CompressionStats tracks compression effectiveness
@@ -228,7 +228,7 @@ func CalculateCompressionStats(originalSize, compressedSize int64, recordCount i
 	if compressedSize > 0 {
 		ratio = float64(originalSize) / float64(compressedSize)
 	}
-	
+
 	return &CompressionStats{
 		TotalRecords:        recordCount,
 		CompressedRecords:   recordCount,

@@ -495,7 +495,6 @@ func (sm *subscriptionManager) matchesPerformanceFilter(alert *PerformanceAlert,
 	return true
 }
 
-
 // convertToMap converts an any to map[string]any
 func convertToMap(v any) (map[string]any, error) {
 	data, err := json.Marshal(v)
@@ -549,7 +548,7 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(_ context.Context, eve
 // handleConnect handles WebSocket connection events
 func (h *WebSocketHandler) handleConnect(connectionID string, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
 	userID := h.extractUserID(event)
-	
+
 	if err := h.subscriptionManager.HandleConnect(connectionID, userID); err != nil {
 		h.logger.Error("Failed to handle connect",
 			zap.String("connection_id", connectionID),

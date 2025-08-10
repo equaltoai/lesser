@@ -161,10 +161,22 @@ func resolveTenant(ctx *lift.Context) (string, error) {
 
 	// Strategy 4: JWT claims (if authenticated)
 	if claims, ok := ctx.Get("claims").(*auth.EnhancedClaims); ok {
-		// Check if claims contain tenant information
-		// This would need to be added to the JWT claims structure
-		// For now, we'll use the username as a fallback tenant identifier
-		return claims.Username, nil
+		// Extract tenant from username domain if federated
+		// e.g., "user@tenant.example.com" -> "tenant"
+		if strings.Contains(claims.Username, "@") {
+			parts := strings.Split(claims.Username, "@")
+			if len(parts) == 2 {
+				domain := parts[1]
+				// Extract subdomain as tenant if it's a federated identity
+				if tenantID := extractTenantFromSubdomain(domain); tenantID != "" {
+					return tenantID, nil
+				}
+			}
+		}
+
+		// For non-federated users, derive tenant from username
+		// This could be enhanced with a user->tenant mapping in the future
+		return deriveTenantFromUsername(claims.Username), nil
 	}
 
 	return "", errors.New("tenant context required")
@@ -310,4 +322,47 @@ func getClientIP(ctx *lift.Context) string {
 	}
 
 	return UnknownIP
+}
+
+// deriveTenantFromUsername derives a tenant ID from a username
+// This implements a default mapping strategy that can be customized
+func deriveTenantFromUsername(username string) string {
+	// Strategy 1: If username contains a tenant prefix (e.g., "tenant1_user")
+	if strings.Contains(username, "_") {
+		parts := strings.SplitN(username, "_", 2)
+		if len(parts) == 2 && isValidTenantID(parts[0]) {
+			return parts[0]
+		}
+	}
+
+	// Strategy 2: Hash-based partitioning for multi-tenant scenarios
+	// This provides consistent tenant assignment based on username
+	if len(username) > 0 {
+		// Use first character for simple partitioning (0-9, a-z)
+		firstChar := strings.ToLower(string(username[0]))
+		if firstChar >= "0" && firstChar <= "9" {
+			return "shard" + firstChar
+		} else if firstChar >= "a" && firstChar <= "z" {
+			return "shard" + firstChar
+		}
+	}
+
+	// Strategy 3: Default tenant for single-tenant deployments
+	return "default"
+}
+
+// isValidTenantID checks if a string is a valid tenant identifier
+func isValidTenantID(tenantID string) bool {
+	if len(tenantID) == 0 || len(tenantID) > 64 {
+		return false
+	}
+
+	// Tenant IDs should be alphanumeric with hyphens
+	for _, r := range tenantID {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+
+	return true
 }

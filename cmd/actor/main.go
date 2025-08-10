@@ -16,24 +16,29 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
 	liftErrors "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 var (
-	cfg       *config.Config
-	actorRepo *repositories.ActorRepository
-	logger    *zap.Logger
+	cfg                    *config.Config
+	actorRepo              *repositories.ActorRepository
+	authorizedFetchService *federation.AuthorizedFetchService
+	logger                 *zap.Logger
 )
 
 func init() {
@@ -52,21 +57,38 @@ func init() {
 		tableName = "lesser-main" // Default table name
 	}
 	actorRepo = repositories.NewActorRepository(db, tableName, logger)
+
+	// Load AWS config for repository factory
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		logger.Fatal("failed to load AWS config", zap.Error(err))
+	}
+
+	// Initialize repository storage and authorized fetch service
+	repoStorage, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
+	if err != nil {
+		logger.Fatal("failed to initialize repository factory", zap.Error(err))
+	}
+	authorizedFetchService = federation.NewAuthorizedFetchService(repoStorage, cfg.Domain, logger)
 }
 
 // Handler contains dependencies for the actor service
 type Handler struct {
-	cfg       *config.Config
-	actorRepo *repositories.ActorRepository
-	logger    *zap.Logger
+	cfg                    *config.Config
+	actorRepo              *repositories.ActorRepository
+	authorizedFetchService *federation.AuthorizedFetchService
+	logger                 *zap.Logger
 }
 
 // NewHandler creates a new handler instance
-func NewHandler(cfg *config.Config, actorRepo *repositories.ActorRepository, logger *zap.Logger) *Handler {
+func NewHandler(cfg *config.Config, actorRepo *repositories.ActorRepository, authorizedFetchService *federation.AuthorizedFetchService, logger *zap.Logger) *Handler {
 	return &Handler{
-		cfg:       cfg,
-		actorRepo: actorRepo,
-		logger:    logger,
+		cfg:                    cfg,
+		actorRepo:              actorRepo,
+		authorizedFetchService: authorizedFetchService,
+		logger:                 logger,
 	}
 }
 
@@ -112,6 +134,49 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 	if strings.Contains(accept, "application/activity+json") ||
 		strings.Contains(accept, "application/ld+json") ||
 		strings.Contains(accept, "application/json") {
+		// Check if authorized fetch is enabled for ActivityPub JSON requests
+		if h.authorizedFetchService.IsAuthorizedFetchEnabled(ctx.Context) {
+			h.logger.Debug("authorized fetch enabled, verifying request",
+				zap.String("username", username),
+				zap.Any("request_id", requestID),
+			)
+
+			// Convert lift.Context to http.Request for signature verification
+			httpReq, err := h.convertLiftRequest(ctx)
+			if err != nil {
+				h.logger.Error("failed to convert request for authorized fetch",
+					zap.String("username", username),
+					zap.Any("request_id", requestID),
+					zap.Error(err),
+				)
+				return lift.NewLiftError("REQUEST_CONVERSION_ERROR", "malformed request", 400).WithCause(err)
+			}
+
+			// Verify authorized fetch
+			_, err = h.authorizedFetchService.VerifyAuthorizedFetch(ctx.Context, httpReq)
+			if err != nil {
+				// Check if signature is missing vs invalid
+				if strings.Contains(err.Error(), "missing signature") {
+					h.logger.Debug("unauthorized request - missing signature",
+						zap.String("username", username),
+						zap.Any("request_id", requestID),
+					)
+					return lift.NewLiftError("UNAUTHORIZED", "signature required for authorized fetch", 401)
+				}
+				h.logger.Debug("authorized fetch verification failed",
+					zap.String("username", username),
+					zap.Any("request_id", requestID),
+					zap.Error(err),
+				)
+				return lift.NewLiftError("FORBIDDEN", "signature verification failed", 403).WithCause(err)
+			}
+
+			h.logger.Debug("authorized fetch verification successful",
+				zap.String("username", username),
+				zap.Any("request_id", requestID),
+			)
+		}
+
 		// Return ActivityStreams JSON
 		ctx.Response.Headers["Content-Type"] = "application/activity+json"
 		return ctx.JSON(actor)
@@ -266,6 +331,41 @@ func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 	return html
 }
 
+// convertLiftRequest converts a Lift request to an http.Request for signature verification
+func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
+	// Build URL
+	u := &url.URL{
+		Scheme: "https",
+		Host:   ctx.Header("Host"),
+		Path:   ctx.Request.Path,
+	}
+	if ctx.Request.QueryParams != nil {
+		q := u.Query()
+		for k, v := range ctx.Request.QueryParams {
+			q.Set(k, v)
+		}
+		u.RawQuery = q.Encode()
+	}
+
+	// Create request with context (no body for GET requests)
+	req, err := http.NewRequestWithContext(ctx.Context, ctx.Request.Method, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Copy headers
+	for k, v := range ctx.Request.Headers {
+		req.Header.Set(k, v)
+	}
+
+	// Set host header if not present
+	if req.Header.Get("Host") == "" && ctx.Header("Host") != "" {
+		req.Host = ctx.Header("Host")
+	}
+
+	return req, nil
+}
+
 func main() {
 	// Create a new Lift application
 	app := lift.New()
@@ -335,7 +435,7 @@ func main() {
 	})
 
 	// Create handler instance
-	handler := NewHandler(cfg, actorRepo, logger)
+	handler := NewHandler(cfg, actorRepo, authorizedFetchService, logger)
 
 	// Define routes for ActivityPub federation
 	_ = app.GET("/users/:username", handler.HandleActorProfile)

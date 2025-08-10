@@ -46,7 +46,7 @@ func NewExtendedDescriptionConfig(description string) *InstanceConfig {
 
 // AIInstanceConfig represents AI-specific instance configuration
 type AIInstanceConfig struct {
-	// Primary key fields 
+	// Primary key fields
 	PK string `dynamorm:"pk" json:"-"` // INSTANCE#CONFIG
 	SK string `dynamorm:"sk" json:"-"` // AI_CONFIG
 

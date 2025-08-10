@@ -66,16 +66,16 @@ func NewStreamer(
 
 	qualitySelector := NewAdaptiveQualitySelector(logger)
 	metricsTracker := NewMetricsTracker(cloudWatch, logger)
-	
+
 	// Connect quality selector to metrics tracker for enhanced decision making
 	qualitySelector.SetMetricsTracker(metricsTracker)
-	
+
 	return &Streamer{
 		config:           config,
 		storage:          storage,
 		hlsGenerator:     NewHLSGenerator(config, storage),
 		dashGenerator:    NewDASHGenerator(config, storage),
-		bandwidthTracker: NewBandwidthTracker(analytics, logger, costTracker),
+		bandwidthTracker: NewBandwidthTracker(analytics, logger, costTracker, cloudWatch),
 		qualitySelector:  qualitySelector,
 		sessionManager:   nil, // Will be set via SetSessionManager when repository is available
 		analytics:        analytics,
@@ -248,6 +248,32 @@ func (s *Streamer) GetSegmentURL(mediaID string, quality Quality, segment int) (
 	return request.URL, nil
 }
 
+// filterQualitiesByPreferences filters available qualities based on user preferences
+func (s *Streamer) filterQualitiesByPreferences(qualities []Quality, prefs *Preferences) []Quality {
+	if prefs == nil {
+		return qualities
+	}
+
+	filtered := make([]Quality, 0, len(qualities))
+	for _, quality := range qualities {
+		qualityInfo := GetQualityInfo(quality)
+
+		// Apply bandwidth constraints
+		if prefs.MaxBandwidthMbps > 0 && qualityInfo.Bandwidth > int(prefs.MaxBandwidthMbps*1000) {
+			continue
+		}
+
+		// Apply data saver mode (exclude high qualities)
+		if prefs.DataSaverMode && (quality == Quality4K || quality == Quality1080p) {
+			continue
+		}
+
+		filtered = append(filtered, quality)
+	}
+
+	return filtered
+}
+
 // GetSegmentURLs returns URLs for multiple segments
 func (s *Streamer) GetSegmentURLs(mediaID string, quality Quality, startSegment, count int) ([]string, error) {
 	urls := make([]string, 0, count)
@@ -275,9 +301,26 @@ func (s *Streamer) GetBandwidthStats(userID string) (*BandwidthStats, error) {
 	return s.bandwidthTracker.GetBandwidthStats(ctx, userID)
 }
 
-// GetOptimalQuality determines the best quality for a user
+// GetOptimalQuality determines the best quality for a user based on preferences and bandwidth
 func (s *Streamer) GetOptimalQuality(userID string, availableBandwidth int) Quality {
+	return s.GetOptimalQualityWithPreferences(userID, availableBandwidth, "", nil)
+}
+
+// GetOptimalQualityWithPreferences determines the best quality considering user preferences
+func (s *Streamer) GetOptimalQualityWithPreferences(userID string, availableBandwidth int, _ string, userPreferences *Preferences) Quality {
 	ctx := context.Background()
+
+	// Get user preferences if not provided
+	if userPreferences == nil {
+		// Try to get preferences from storage adapter if available
+		if storageAdapter, ok := s.analytics.(interface {
+			GetStreamingPreferences(ctx context.Context, username string) (*Preferences, error)
+		}); ok {
+			if prefs, err := storageAdapter.GetStreamingPreferences(ctx, userID); err == nil {
+				userPreferences = prefs
+			}
+		}
+	}
 
 	// Get user's bandwidth stats if available bandwidth not provided
 	if availableBandwidth == 0 {
@@ -287,10 +330,38 @@ func (s *Streamer) GetOptimalQuality(userID string, availableBandwidth int) Qual
 		}
 	}
 
+	// Apply user preference constraints
+	if userPreferences != nil {
+		// Respect max bandwidth preference
+		if userPreferences.MaxBandwidthMbps > 0 && availableBandwidth > int(userPreferences.MaxBandwidthMbps*1000) {
+			availableBandwidth = int(userPreferences.MaxBandwidthMbps * 1000)
+		}
+
+		// If data saver mode is enabled, reduce available bandwidth
+		if userPreferences.DataSaverMode {
+			availableBandwidth = int(float64(availableBandwidth) * 0.5) // Reduce by 50%
+		}
+
+		// If user disabled auto quality and set a specific quality, use it if bandwidth allows
+		if !userPreferences.AutoQuality && userPreferences.DefaultQuality != "" && userPreferences.DefaultQuality != "auto" {
+			preferredQuality := Quality(userPreferences.DefaultQuality)
+			qualityInfo := GetQualityInfo(preferredQuality)
+			// Only use preferred quality if bandwidth is sufficient
+			if availableBandwidth >= qualityInfo.Bandwidth {
+				return preferredQuality
+			}
+		}
+	}
+
 	// Use quality selector for adaptive selection
 	availableQualities := []Quality{
 		Quality240p, Quality360p, Quality480p,
 		Quality720p, Quality1080p, Quality4K,
+	}
+
+	// Filter qualities based on user preferences
+	if userPreferences != nil {
+		availableQualities = s.filterQualitiesByPreferences(availableQualities, userPreferences)
 	}
 
 	// Get current session if exists
@@ -312,7 +383,7 @@ func (s *Streamer) GetOptimalQuality(userID string, availableBandwidth int) Qual
 		return s.qualitySelector.(*AdaptiveQualitySelector).SelectQualityWithSession(
 			mostRecentSessionID, availableBandwidth, bufferHealth, availableQualities)
 	}
-	
+
 	return s.qualitySelector.SelectQuality(availableBandwidth, bufferHealth, availableQualities)
 }
 
@@ -331,19 +402,72 @@ func (s *Streamer) GetAvailableQualities(mediaID string) ([]QualityInfo, error) 
 	return qualities, nil
 }
 
+// GetAvailableQualitiesForUser returns available qualities for a media item filtered by user preferences
+func (s *Streamer) GetAvailableQualitiesForUser(mediaID, userID string) ([]QualityInfo, error) {
+	ctx := context.Background()
+
+	// Get base available qualities
+	qualities, err := s.GetAvailableQualities(mediaID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Try to get user preferences
+	var userPreferences *Preferences
+	if storageAdapter, ok := s.analytics.(interface {
+		GetStreamingPreferences(ctx context.Context, username string) (*Preferences, error)
+	}); ok {
+		if prefs, err := storageAdapter.GetStreamingPreferences(ctx, userID); err == nil {
+			userPreferences = prefs
+		}
+	}
+
+	// Filter qualities based on user preferences
+	if userPreferences != nil {
+		filteredQualities := make([]QualityInfo, 0, len(qualities))
+		for _, q := range qualities {
+			// Apply bandwidth constraints
+			if userPreferences.MaxBandwidthMbps > 0 && q.Bandwidth > int(userPreferences.MaxBandwidthMbps*1000) {
+				continue
+			}
+
+			// Apply data saver mode (exclude high qualities)
+			if userPreferences.DataSaverMode && (q.Quality == Quality4K || q.Quality == Quality1080p) {
+				continue
+			}
+
+			filteredQualities = append(filteredQualities, q)
+		}
+		return filteredQualities, nil
+	}
+
+	return qualities, nil
+}
+
 // Session management
 
 // StartSession starts a new streaming session
 // Sessions are automatically cleaned up after 24 hours using DynamoDB TTL
 func (s *Streamer) StartSession(userID, mediaID string, format MediaFormat) (*StreamingSession, error) {
+	return s.StartSessionWithPreferences(userID, mediaID, format, "", nil)
+}
+
+// StartSessionWithPreferences starts a new streaming session with user preferences
+func (s *Streamer) StartSessionWithPreferences(userID, mediaID string, format MediaFormat, _ string, userPreferences *Preferences) (*StreamingSession, error) {
 	ctx := context.Background()
+
+	// Determine initial quality based on preferences
+	initialQuality := s.config.DefaultQuality
+	if userPreferences != nil && !userPreferences.AutoQuality && userPreferences.DefaultQuality != "" && userPreferences.DefaultQuality != "auto" {
+		initialQuality = Quality(userPreferences.DefaultQuality)
+	}
 
 	session := &StreamingSession{
 		SessionID:        uuid.New().String(),
 		UserID:           userID,
 		MediaID:          mediaID,
 		Format:           format,
-		CurrentQuality:   s.config.DefaultQuality,
+		CurrentQuality:   initialQuality,
 		StartTime:        time.Now(),
 		LastSegmentIndex: -1,
 		BytesTransferred: 0,
@@ -427,9 +551,9 @@ func (s *Streamer) UpdateSession(sessionID string, quality Quality, segmentIndex
 	// Track segment loading success and buffer health
 	loadTime := time.Duration(500 * time.Millisecond) // Estimate based on typical segment load time
 	s.metricsTracker.TrackSegmentLoad(sessionID, segmentIndex, loadTime, bytesTransferred)
-	
+
 	// Track buffer health for adaptive bitrate decisions
-	bufferDuration := time.Duration(session.BufferHealth * 10) * time.Second // Convert buffer health to duration
+	bufferDuration := time.Duration(session.BufferHealth*10) * time.Second             // Convert buffer health to duration
 	estimatedBandwidth := int(float64(bytesTransferred*8) / loadTime.Seconds() / 1000) // Convert to kbps
 	s.metricsTracker.TrackBufferHealth(sessionID, bufferDuration, estimatedBandwidth)
 
@@ -439,14 +563,14 @@ func (s *Streamer) UpdateSession(sessionID string, quality Quality, segmentIndex
 	if qualitySwitched {
 		qualitySwitchEvents = 1
 	}
-	
+
 	// Detect potential rebuffering based on buffer health
 	if session.BufferHealth < 0.1 { // Very low buffer indicates rebuffering
 		rebufferEvents = 1
 		rebufferDuration := time.Duration(500) * time.Millisecond // Estimated rebuffer duration
 		s.metricsTracker.TrackRebufferEvent(sessionID, rebufferDuration)
 	}
-	
+
 	s.qualitySelector.UpdateMetrics(sessionID, rebufferEvents, qualitySwitchEvents)
 
 	return nil
@@ -471,7 +595,7 @@ func (s *Streamer) EndSession(sessionID string) error {
 
 	// Finalize metrics tracking and get final metrics
 	finalMetrics := s.metricsTracker.EndSession(sessionID)
-	
+
 	// Log session end with metrics
 	logFields := []zap.Field{
 		zap.String("sessionID", sessionID),
@@ -481,7 +605,7 @@ func (s *Streamer) EndSession(sessionID string) error {
 		zap.Int64("bytesTransferred", session.BytesTransferred),
 		zap.String("finalQuality", string(session.CurrentQuality)),
 	}
-	
+
 	if finalMetrics != nil {
 		logFields = append(logFields,
 			zap.Int("qualitySwitches", finalMetrics.QualitySwitches),
@@ -490,7 +614,7 @@ func (s *Streamer) EndSession(sessionID string) error {
 			zap.Float64("segmentSuccessRate", finalMetrics.SegmentSuccessRate),
 		)
 	}
-	
+
 	s.logger.Info("streaming session ended with metrics", logFields...)
 
 	// End session
@@ -524,6 +648,28 @@ func (s *Streamer) recordManifestGeneration(mediaID string, format string, durat
 	// Track using the analytics storage interface
 	ctx := context.Background()
 	return s.analytics.Analytics().RecordManifestGeneration(ctx, mediaID, format, duration)
+}
+
+// Preferences represents user streaming preferences for the streamer
+// This is a local type alias to avoid circular imports
+type Preferences struct {
+	Username                string `json:"username"`
+	DeviceID                string `json:"device_id,omitempty"`
+	DefaultQuality          string `json:"default_quality,omitempty"`
+	AutoQuality             bool   `json:"auto_quality"`
+	PreloadNext             bool   `json:"preload_next"`
+	DataSaverMode           bool   `json:"data_saver_mode"`
+	PreferredCodec          string `json:"preferred_codec,omitempty"`
+	MaxBandwidthMbps        int64  `json:"max_bandwidth_mbps,omitempty"`
+	BufferSizeSeconds       int    `json:"buffer_size_seconds,omitempty"`
+	HDREnabled              bool   `json:"hdr_enabled"`
+	ColorSpace              string `json:"color_space,omitempty"`
+	SubtitleEnabled         bool   `json:"subtitle_enabled"`
+	SubtitleLanguage        string `json:"subtitle_language,omitempty"`
+	AudioDescriptionEnabled bool   `json:"audio_description_enabled"`
+	ClosedCaptionsEnabled   bool   `json:"closed_captions_enabled"`
+	Version                 int    `json:"version"`
+	SchemaVersion           int    `json:"schema_version"`
 }
 
 // Note: Manifest cache cleanup is handled automatically by Go's garbage collector

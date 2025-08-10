@@ -464,7 +464,7 @@ func (h *WebSocketCostAggregatorHandler) storeAlertRecord(ctx context.Context, a
 		ID:            fmt.Sprintf("alert_%s_%d", alert.UserID, time.Now().UnixNano()),
 		UserID:        alert.UserID,
 		Username:      alert.Username,
-		ConnectionID:  "BUDGET_ALERT",  // Special connection ID for alerts
+		ConnectionID:  "BUDGET_ALERT", // Special connection ID for alerts
 		OperationType: "BUDGET_ALERT",
 		Timestamp:     alert.Timestamp,
 		// Store the total cost that triggered the alert in the cost field
@@ -630,8 +630,8 @@ func (h *WebSocketCostAggregatorHandler) getStaleConnections(ctx context.Context
 
 // CleanupBatchResult represents the result of cleaning up a batch of stale connections
 type CleanupBatchResult struct {
-	Cleaned                int
-	Errors                 int
+	Cleaned                 int
+	Errors                  int
 	ReclaimedCostMicroCents int64
 }
 
@@ -726,12 +726,12 @@ func (h *WebSocketCostAggregatorHandler) recordCleanupAction(ctx context.Context
 // sendCleanupAlert sends an alert about significant cleanup activity
 func (h *WebSocketCostAggregatorHandler) sendCleanupAlert(ctx context.Context, cleanedCount int, reclaimedCost int64) {
 	alertMessage := CleanupAlertMessage{
-		AlertType:        "CLEANUP_ALERT",
-		Timestamp:        time.Now().UTC(),
-		CleanedConnections: cleanedCount,
+		AlertType:               "CLEANUP_ALERT",
+		Timestamp:               time.Now().UTC(),
+		CleanedConnections:      cleanedCount,
 		ReclaimedCostMicroCents: reclaimedCost,
-		ReclaimedCostDollars: float64(reclaimedCost) / 1_000_000.0,
-		Message: fmt.Sprintf("Cleaned up %d stale WebSocket connections, reclaiming $%.4f in potential costs", 
+		ReclaimedCostDollars:    float64(reclaimedCost) / 1_000_000.0,
+		Message: fmt.Sprintf("Cleaned up %d stale WebSocket connections, reclaiming $%.4f in potential costs",
 			cleanedCount, float64(reclaimedCost)/1_000_000.0),
 	}
 
@@ -776,7 +776,7 @@ func getIdleTimeoutMinutes() int {
 	return 30 // Default: 30 minutes
 }
 
-// getStaleTimeoutHours returns the stale timeout in hours from environment or default  
+// getStaleTimeoutHours returns the stale timeout in hours from environment or default
 func getStaleTimeoutHours() int {
 	if timeoutStr := os.Getenv("STALE_TIMEOUT_HOURS"); timeoutStr != "" {
 		if timeout, err := strconv.Atoi(timeoutStr); err == nil && timeout > 0 {

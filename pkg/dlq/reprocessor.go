@@ -456,11 +456,17 @@ func (r *ReprocessorClient) validateMediaAccessibility(ctx context.Context, medi
 		return fmt.Errorf("media access denied (HTTP %d)", resp.StatusCode)
 
 	default:
-		// Other client/server errors - treat as retryable for now
-		r.logger.Debug("Media HEAD request returned error, allowing retry",
+		// Classify error based on HTTP status code semantics
+		if r.isRetryableHTTPStatus(resp.StatusCode) {
+			r.logger.Debug("Media HEAD request returned retryable error",
+				zap.String("url", mediaURL),
+				zap.Int("status_code", resp.StatusCode))
+			return nil
+		}
+		r.logger.Warn("Media HEAD request returned non-retryable error",
 			zap.String("url", mediaURL),
 			zap.Int("status_code", resp.StatusCode))
-		return nil
+		return fmt.Errorf("media validation failed with non-retryable error (HTTP %d)", resp.StatusCode)
 	}
 }
 
@@ -664,5 +670,46 @@ func GetDefaultStrategy(service string) *ReprocessingStrategy {
 		BackoffStrategy:    "exponential",
 		ValidateFirst:      true,
 		CheckAccessibility: false,
+	}
+}
+
+// isRetryableHTTPStatus determines if an HTTP status code indicates a retryable error
+func (r *ReprocessorClient) isRetryableHTTPStatus(statusCode int) bool {
+	switch {
+	case statusCode >= 200 && statusCode < 400:
+		// Success and redirects - not an error
+		return true
+
+	case statusCode >= 500 && statusCode < 600:
+		// Server errors - generally retryable
+		return true
+
+	case statusCode == 408: // Request Timeout
+		return true
+
+	case statusCode == 429: // Too Many Requests
+		return true
+
+	case statusCode == 502 || statusCode == 503 || statusCode == 504:
+		// Bad Gateway, Service Unavailable, Gateway Timeout
+		return true
+
+	case statusCode >= 400 && statusCode < 500:
+		// Client errors - generally not retryable
+		switch statusCode {
+		case 404, 410: // Not Found, Gone - permanent
+			return false
+		case 401, 403: // Unauthorized, Forbidden - depends on context
+			return false
+		case 400, 405, 406, 409, 422: // Bad Request, Method Not Allowed, etc.
+			return false
+		default:
+			// Unknown 4xx errors - be conservative and don't retry
+			return false
+		}
+
+	default:
+		// Unknown status codes - be conservative and don't retry
+		return false
 	}
 }

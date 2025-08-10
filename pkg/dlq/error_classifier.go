@@ -8,11 +8,11 @@ import (
 
 // Processor name constants
 const (
-	processorNotification     = "notification-processor"
-	processorActivity         = "activity-processor"
-	processorMedia            = "media-processor"
+	processorNotification       = "notification-processor"
+	processorActivity           = "activity-processor"
+	processorMedia              = "media-processor"
 	processorFederationDelivery = "federation-delivery"
-	processorSearchIndexer    = "search-indexer"
+	processorSearchIndexer      = "search-indexer"
 )
 
 // Priority level constants
@@ -507,4 +507,3 @@ type ErrorTrendAnalysis struct {
 }
 
 // Helper functions for pattern matching
-

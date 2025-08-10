@@ -174,12 +174,12 @@ func (h *Handler) extractScheduledQueryParam(ctx *lift.Context, param string) st
 // convertScheduledStatusesToAPI converts scheduled statuses to API format
 func (h *Handler) convertScheduledStatusesToAPI(ctx *lift.Context, scheduledStatuses []*storage.ScheduledStatus) []models.ScheduledStatus {
 	apiStatuses := make([]models.ScheduledStatus, 0, len(scheduledStatuses))
-	
+
 	for _, scheduled := range scheduledStatuses {
 		apiStatus := h.convertSingleScheduledStatus(ctx, scheduled)
 		apiStatuses = append(apiStatuses, apiStatus)
 	}
-	
+
 	return apiStatuses
 }
 

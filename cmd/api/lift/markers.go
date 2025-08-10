@@ -174,7 +174,9 @@ func (h *Handler) authenticateMarkersWithScope(ctx *lift.Context, requiredScope 
 }
 
 // parseMarkersRequest parses the markers request body
-func (h *Handler) parseMarkersRequest(ctx *lift.Context) (map[string]struct{ LastReadID string `json:"last_read_id"` }, error) {
+func (h *Handler) parseMarkersRequest(ctx *lift.Context) (map[string]struct {
+	LastReadID string `json:"last_read_id"`
+}, error) {
 	var req map[string]struct {
 		LastReadID string `json:"last_read_id"`
 	}
@@ -188,7 +190,9 @@ func (h *Handler) parseMarkersRequest(ctx *lift.Context) (map[string]struct{ Las
 }
 
 // parseMarkersRequestFallback handles fallback parsing for test environments
-func (h *Handler) parseMarkersRequestFallback(ctx *lift.Context, originalErr error) (map[string]struct{ LastReadID string `json:"last_read_id"` }, error) {
+func (h *Handler) parseMarkersRequestFallback(ctx *lift.Context, originalErr error) (map[string]struct {
+	LastReadID string `json:"last_read_id"`
+}, error) {
 	if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 		var req map[string]struct {
 			LastReadID string `json:"last_read_id"`
@@ -205,7 +209,9 @@ func (h *Handler) parseMarkersRequestFallback(ctx *lift.Context, originalErr err
 }
 
 // validateMarkers validates the markers request
-func (h *Handler) validateMarkers(req map[string]struct{ LastReadID string `json:"last_read_id"` }) error {
+func (h *Handler) validateMarkers(req map[string]struct {
+	LastReadID string `json:"last_read_id"`
+}) error {
 	// Check that at least one timeline is provided
 	if len(req) == 0 {
 		return &markerValidationError{message: "no markers provided"}
@@ -236,7 +242,9 @@ func (h *Handler) isValidTimelineType(timeline string) bool {
 }
 
 // saveMarkers saves all markers from the request
-func (h *Handler) saveMarkers(ctx *lift.Context, username string, req map[string]struct{ LastReadID string `json:"last_read_id"` }) {
+func (h *Handler) saveMarkers(ctx *lift.Context, username string, req map[string]struct {
+	LastReadID string `json:"last_read_id"`
+}) {
 	// Get current markers to determine versions
 	currentMarkers, _ := h.repos.Marker().GetMarkers(ctx.Context, username, nil)
 
