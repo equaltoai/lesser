@@ -12,7 +12,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
@@ -22,16 +21,18 @@ type FederationDeliveryService interface {
 	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error
 }
 
+// Use the common StorageProvider interface from interfaces.go
+
 // RecoveryFederationService handles ActivityPub notifications for recovery
 type RecoveryFederationService struct {
-	repos      core.RepositoryStorage
+	repos      StorageProvider
 	fedService FederationDeliveryService
 	logger     *zap.Logger
 	domain     string
 }
 
 // NewRecoveryFederationService creates a new recovery federation service
-func NewRecoveryFederationService(repos core.RepositoryStorage, fedService FederationDeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
+func NewRecoveryFederationService(repos StorageProvider, fedService FederationDeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
 	return &RecoveryFederationService{
 		repos:      repos,
 		fedService: fedService,

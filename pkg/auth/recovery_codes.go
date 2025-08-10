@@ -9,18 +9,18 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	
 	"go.uber.org/zap"
 )
 
 // RecoveryCodeService handles backup recovery codes
 type RecoveryCodeService struct {
-	repos  core.RepositoryStorage
+	repos  StorageProvider
 	logger *zap.Logger
 }
 
 // NewRecoveryCodeService creates a new recovery code service
-func NewRecoveryCodeService(repos core.RepositoryStorage, logger *zap.Logger) *RecoveryCodeService {
+func NewRecoveryCodeService(repos StorageProvider, logger *zap.Logger) *RecoveryCodeService {
 	return &RecoveryCodeService{
 		repos:  repos,
 		logger: logger,

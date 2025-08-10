@@ -8,19 +8,18 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // SocialRecoveryService handles account recovery through trusted contacts
 type SocialRecoveryService struct {
-	repos      core.RepositoryStorage
+	repos      StorageProvider
 	logger     *zap.Logger
 	fedService *RecoveryFederationService
 }
 
 // NewSocialRecoveryService creates a new social recovery service
-func NewSocialRecoveryService(repos core.RepositoryStorage, logger *zap.Logger) *SocialRecoveryService {
+func NewSocialRecoveryService(repos StorageProvider, logger *zap.Logger) *SocialRecoveryService {
 	return &SocialRecoveryService{
 		repos:  repos,
 		logger: logger,

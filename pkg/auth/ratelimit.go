@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	
 )
 
 // Rate limiting errors
@@ -36,11 +36,11 @@ const (
 
 // RateLimiter handles authentication rate limiting
 type RateLimiter struct {
-	repos core.RepositoryStorage
+	repos StorageProvider
 }
 
 // NewRateLimiter creates a new rate limiter
-func NewRateLimiter(repos core.RepositoryStorage) *RateLimiter {
+func NewRateLimiter(repos StorageProvider) *RateLimiter {
 	return &RateLimiter{
 		repos: repos,
 	}

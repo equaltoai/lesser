@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	
 )
 
 // Session errors
@@ -35,11 +35,11 @@ type Device = storage.Device
 
 // SessionManager handles session operations
 type SessionManager struct {
-	repos core.RepositoryStorage
+	repos StorageProvider
 }
 
 // NewSessionManager creates a new session manager
-func NewSessionManager(repos core.RepositoryStorage) *SessionManager {
+func NewSessionManager(repos StorageProvider) *SessionManager {
 	return &SessionManager{
 		repos: repos,
 	}
